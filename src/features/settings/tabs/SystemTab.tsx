@@ -107,10 +107,7 @@ function SystemTabComponent({ systemSettingsProps }: SystemTabProps) {
 
       <div className="border-t pt-6">
         <h3 className="mb-4 text-lg font-medium text-foreground">
-          {t(
-            'settings.system.agentBrowser.sectionTitle',
-            'Agent browser',
-          )}
+          {t('settings.system.agentBrowser.sectionTitle', 'Agent browser')}
         </h3>
         <ExtensionBridgeSettingsSection />
         <div className="mt-8 border-t pt-6">

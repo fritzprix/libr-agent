@@ -103,6 +103,7 @@ fn add_todo_tool() -> MCPTool {
             &[
                 "Ensure a goal exists or is implied before adding todos.",
                 "Write one actionable step per todo (flat list only — no subtasks).",
+                "Todos are cleared when session context is compacted (goal is kept). Successful ui__reportResult clears goal, todos, and scratchpad. Rebuild the checklist from the compact handoff if steps remain; updateGoal if the handoff intent diverges.",
             ],
             &[],
         ),

@@ -332,6 +332,30 @@ fn empty_compaction_response_is_retryable_before_degraded_tools() {
 }
 
 #[test]
+fn invalid_context_state_is_not_budget_retryable() {
+    let snapshot = tauri_mcp_agent_lib::agent::state::CompactionSnapshot {
+        phase: CompactionPhase::InFlight(InFlightCompaction {
+            kind: CompactionKind::Preflight,
+            current_tail_id: Some("tail".to_string()),
+            started_at_ms: 1234,
+        }),
+        last_compacted_tail_id: Some("tail".to_string()),
+        retry_attempt: 0,
+        recovery_phase: CompactionRecoveryPhase::CacheAligned,
+        summary_retry_count: 0,
+    };
+    let error = AgentRuntimeError::new(
+        AgentRuntimeErrorType::ContextLimitError,
+        "This session needs a larger context limit. Open Settings, raise Max Input Context, then try again.",
+    )
+    .with_code("INVALID_CONTEXT_STATE");
+
+    assert!(!should_retry_budget_related_blocking_compaction(
+        &snapshot, &error
+    ));
+}
+
+#[test]
 fn degraded_tool_phase_stops_retrying_preflight_compaction() {
     let snapshot = tauri_mcp_agent_lib::agent::state::CompactionSnapshot {
         phase: CompactionPhase::InFlight(InFlightCompaction {

@@ -96,6 +96,8 @@ vi.mock('@/components/ui', () => ({
 }));
 
 const temperatureProps = {
+  complexityModelMapping: {},
+  onComplexityModelMappingChange: vi.fn(),
   temperatureOverrideEnabled: false,
   temperature: 0.7,
   onTemperatureOverrideEnabledChange: vi.fn(),
@@ -299,14 +301,11 @@ describe('AIModelsTab', () => {
         onCustomProvidersChange={vi.fn()}
         onPreferredModelChange={vi.fn()}
         onFallbackModelChange={vi.fn()}
+        {...temperatureProps}
         temperatureOverrideEnabled={false}
-        temperature={0.7}
         onTemperatureOverrideEnabledChange={
           onTemperatureOverrideEnabledChange
         }
-        onTemperatureChange={vi.fn()}
-        thinkingEffort="off"
-        onThinkingEffortChange={vi.fn()}
       />,
     );
 
@@ -329,14 +328,11 @@ describe('AIModelsTab', () => {
         onCustomProvidersChange={vi.fn()}
         onPreferredModelChange={vi.fn()}
         onFallbackModelChange={vi.fn()}
+        {...temperatureProps}
         temperatureOverrideEnabled
-        temperature={0.7}
         onTemperatureOverrideEnabledChange={
           onTemperatureOverrideEnabledChange
         }
-        onTemperatureChange={vi.fn()}
-        thinkingEffort="off"
-        onThinkingEffortChange={vi.fn()}
       />,
     );
 

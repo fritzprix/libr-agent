@@ -151,6 +151,18 @@ pub async fn add_content(
             _ => unreachable!("Already validated above"),
         };
 
+    // Persist remote provenance URLs, or in-workspace file:// so list/read can
+    // derive a relative workspacePath. Out-of-workspace fileUrl is still readable
+    // for indexing above, but not stored.
+    let workspace = server
+        .session_manager
+        .get_session_workspace_dir_by_id(session_id);
+    let persistable_src_url = helpers::persistable_attachment_src_url(
+        args.src_url.as_deref(),
+        args.file_url.as_deref(),
+        &workspace,
+    );
+
     // Store the content
     let mut storage = server.storage.lock().await;
     let content_item = match storage
@@ -161,7 +173,7 @@ pub async fn add_content(
             size: final_size as usize,
             content: &content_text,
             chunks,
-            src_url: args.src_url.clone(),
+            src_url: persistable_src_url,
         })
         .await
     {
@@ -231,6 +243,12 @@ pub async fn add_content(
         }
     }
 
+    let workspace_path = content_item
+        .src_url
+        .as_deref()
+        .and_then(|url| helpers::exposed_workspace_path_from_src_url(url, &workspace));
+    let exposed_src = helpers::exposed_src_url(content_item.src_url.as_deref());
+
     let hint = SuccessHint::new(
         format!(
             "Attachment saved successfully\n  ID: {}\n  Filename: {}\n  Size: {} bytes, {} lines\n  Preview: {}",
@@ -260,7 +278,9 @@ pub async fn add_content(
         "lineCount": content_item.line_count,
         "preview": content_item.preview,
         "uploadedAt": content_item.uploaded_at,
-        "chunkCount": content_item.chunk_count
+        "chunkCount": content_item.chunk_count,
+        "workspacePath": workspace_path,
+        "srcUrl": exposed_src
     }))))
 }
 

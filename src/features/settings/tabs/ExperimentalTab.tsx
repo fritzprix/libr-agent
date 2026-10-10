@@ -48,7 +48,7 @@ function ExperimentalTabComponent({
             <p className="text-xs text-muted-foreground leading-normal max-w-2xl">
               {t(
                 'settings.experimental.inlineAudioAttachment.description',
-                'Convert attached audio files into base64 inline content for LLM requests. Disabling this saves significant context window tokens by keeping audio files as workspace-only references.',
+                'Sends full audio file data directly to the AI model. Turn this off to send file references only and save conversation token limits.',
               )}
             </p>
           </div>
@@ -73,7 +73,7 @@ function ExperimentalTabComponent({
           <p className="text-xs text-muted-foreground leading-normal max-w-2xl">
             {t(
               'settings.experimental.toolLoopRecoveryPolicy.description',
-              'By default, repeated tool loops trigger a clean resample (no intrusive guidance text). Budget exhausted → circuit breaker.',
+              'When a tool loop occurs, the AI tries again with a clean prompt. It stops if the loop continues.',
             )}
           </p>
         </div>
@@ -92,7 +92,7 @@ function ExperimentalTabComponent({
             <p className="text-xs text-muted-foreground leading-normal max-w-2xl">
               {t(
                 'settings.experimental.toolLoopLegacyGuidanceEnabled.description',
-                'Off by default. When enabled, injects loop-prevention guidance as tool errors instead of silently retrying with a clean resample.',
+                'When enabled, shows loop warning messages as tool errors instead of retrying silently.',
               )}
             </p>
           </div>
@@ -121,7 +121,7 @@ function ExperimentalTabComponent({
               )}
               description={t(
                 'settings.experimental.toolLoopMaxResampleRetries.description',
-                'How many clean resample attempts before hard-stopping when repeated tool-loop signatures are detected.',
+                'Number of retry attempts before stopping when a tool loop is detected.',
               )}
               placeholder={t(
                 'settings.experimental.toolLoopMaxResampleRetries.placeholder',

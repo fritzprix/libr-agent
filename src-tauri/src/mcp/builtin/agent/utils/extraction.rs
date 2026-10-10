@@ -169,6 +169,19 @@ fn latest_report_result_at(messages: &[Value]) -> Option<(usize, String)> {
             continue;
         }
 
+        // Prefer structured `result` when persisted — survives text spillover /
+        // marker drift better than parsing the STOP-wrapped summary.
+        if let Some(body) = message
+            .get("metadata")
+            .and_then(|m| m.get("structuredContent"))
+            .and_then(|sc| sc.get("result"))
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            return Some((idx, body.to_string()));
+        }
+
         for item in content {
             if item.get("type").and_then(|v| v.as_str()) != Some("text") {
                 continue;

@@ -45,9 +45,10 @@ pub async fn create_basic_isolated_command(
     }
 
     let clean_workspace = simplify_path(&config.workspace_path);
+    let clean_cwd = simplify_path(config.effective_working_directory());
 
-    // Set working directory
-    cmd.current_dir(&clean_workspace);
+    // Set working directory (optional cwd under session workspace)
+    cmd.current_dir(&clean_cwd);
 
     // Apply environment isolation: clear all inherited environment variables
     cmd.env_clear();

@@ -49,7 +49,7 @@ This skill turns LibrAgent's parent-child delegation primitives into a structure
 | Primitive | Role |
 |---|---|
 | `agent__listAgents(type="configs")` | Find the assistant to bench |
-| `agent__spawnSession(task="...")` | Spawn a child worker for one problem |
+| `agent__spawnSession(complexity="...", task="...")` | Spawn a child worker for one problem (`complexity` required) |
 | `agent__checkSession(sessionId, wait=true)` | Block until a child finishes, get its answer |
 | `agent__checkSession(sessionId)` (poll) | Monitor progress without blocking |
 | `agent__stopSession(sessionId)` | Cancel a stuck child |
@@ -297,6 +297,7 @@ By default, child sessions inherit the parent's `maxFanout`. If you need to benc
 ```
 agent__spawnSession({
   configId: "...",
+  complexity: "normal",
   task: "...",
   maxFanout: 20   // Override parent limit for this child
 })
@@ -319,7 +320,7 @@ When verifying results, use the most lightweight and accurate verification metho
 | Step | Tool | Parameters |
 |---|---|---|
 | Find assistant | `agent__listAgents` | `{ type: "configs", query: "..." }` |
-| Spawn child | `agent__spawnSession` | `{ configId, task, waitForResult: false }` |
+| Spawn child | `agent__spawnSession` | `{ configId, complexity, task, waitForResult: false }` |
 | Poll child | `agent__checkSession` | `{ sessionId }` |
 | Wait for child | `agent__checkSession` | `{ sessionId, wait: true, timeout: 300 }` |
 | Stop stuck child | `agent__stopSession` | `{ sessionId }` |

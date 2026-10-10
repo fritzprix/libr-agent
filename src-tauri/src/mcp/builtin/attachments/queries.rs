@@ -1,3 +1,4 @@
+use super::helpers::{exposed_src_url, exposed_workspace_path_from_src_url};
 use super::search;
 use super::server::AttachmentsServer;
 use super::types::*;
@@ -55,6 +56,10 @@ pub async fn list_content(
         (offset, limit)
     });
 
+    let workspace = server
+        .session_manager
+        .get_session_workspace_dir_by_id(session_id);
+
     let storage = server.storage.lock().await;
     let (contents, total) = match storage.list_content(session_id, offset, limit).await {
         Ok((contents, total)) => (contents, total),
@@ -84,14 +89,20 @@ pub async fn list_content(
             } else {
                 item.preview.clone()
             };
+            let workspace_path = item
+                .src_url
+                .as_deref()
+                .and_then(|url| exposed_workspace_path_from_src_url(url, &workspace))
+                .unwrap_or_else(|| "(none)".to_string());
             format!(
-                "[{}] ID: {}\n    Title: {}\n    Size: {} bytes, {} lines\n    Line Range: 1-{}\n    Preview: {}\n    Created: {}",
+                "[{}] ID: {}\n    Title: {}\n    Size: {} bytes, {} lines\n    Line Range: 1-{}\n    Workspace Path: {}\n    Preview: {}\n    Created: {}",
                 idx + 1,
                 item.id,
                 item.filename,
                 item.size,
                 item.line_count,
                 item.line_count,
+                workspace_path,
                 preview_text,
                 item.uploaded_at
             )
@@ -101,6 +112,11 @@ pub async fn list_content(
     let content_list: Vec<serde_json::Value> = contents
         .into_iter()
         .map(|item| {
+            let src_url = exposed_src_url(item.src_url.as_deref());
+            let workspace_path = item
+                .src_url
+                .as_deref()
+                .and_then(|url| exposed_workspace_path_from_src_url(url, &workspace));
             serde_json::json!({
                 "contentId": item.id,
                 "sessionId": item.session_id,
@@ -111,7 +127,9 @@ pub async fn list_content(
                 "preview": item.preview,
                 "uploadedAt": item.uploaded_at,
                 "chunkCount": item.chunk_count,
-                "lastAccessedAt": item.last_accessed_at
+                "lastAccessedAt": item.last_accessed_at,
+                "srcUrl": src_url,
+                "workspacePath": workspace_path
             })
         })
         .collect();
@@ -223,6 +241,53 @@ pub async fn read_content(
         }
     };
     let total_lines = content_item.line_count;
+
+    // Empty extract (encrypted/scanned/binary): do not emit the misleading
+    // "Requested range [1-0] / File has 0 lines" storage error — give agents a
+    // structured binary_or_unparsed status and optional workspace-path fallback.
+    if total_lines == 0 {
+        let mime_type = content_item.mime_type.clone();
+        let size_bytes = content_item.size;
+        let workspace = server
+            .session_manager
+            .get_session_workspace_dir_by_id(session_id);
+        let src_url = exposed_src_url(content_item.src_url.as_deref());
+        let workspace_path = content_item
+            .src_url
+            .as_deref()
+            .and_then(|url| exposed_workspace_path_from_src_url(url, &workspace));
+        drop(storage);
+        let mut guidance = vec![
+            "Text extraction yielded 0 lines (file may be encrypted, scanned, or binary)."
+                .to_string(),
+            "Do not treat this as a zero-byte or corrupted attachment solely from lineCount."
+                .to_string(),
+        ];
+        if let Some(ref path) = workspace_path {
+            guidance.push(format!(
+                "A workspace copy is at workspacePath '{path}'. Use workspace tools with that relative path (e.g. workspace__readFile for text-like files)."
+            ));
+        } else {
+            guidance.push(
+                "No workspacePath is recorded for this attachment; ask the user to re-attach so the file syncs into the session workspace."
+                    .to_string(),
+            );
+        }
+        let message = format!(
+            "Attachment '{}' has no extractable text (0 lines). mimeType={}, size={} bytes.",
+            args.content_id, mime_type, size_bytes
+        );
+        let hint = SuccessHint::new(message, guidance);
+        return Ok(hint.to_mcp_result_with_data(Some(serde_json::json!({
+            "status": "binary_or_unparsed",
+            "contentId": normalized_content_id,
+            "mimeType": mime_type,
+            "sizeBytes": size_bytes,
+            "lineCount": 0,
+            "srcUrl": src_url,
+            "workspacePath": workspace_path
+        }))));
+    }
 
     let content = match storage
         .read_content(

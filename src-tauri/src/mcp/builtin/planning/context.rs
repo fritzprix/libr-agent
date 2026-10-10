@@ -163,6 +163,8 @@ pub async fn get_service_context(
                 .to_string(),
         );
     } else {
+        // Goal retained with an empty list is normal after successful context
+        // compaction (todos are cleared; rebuild from the compact handoff if needed).
         parts.push("- Tasks: None".to_string());
     }
 

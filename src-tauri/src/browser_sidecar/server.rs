@@ -27,6 +27,10 @@ use super::runtime::{
 /// Bound CDP context/target creation so a stuck Chromium call cannot silence createSession.
 const SESSION_TARGET_TIMEOUT: Duration = Duration::from_secs(15);
 
+/// Cap page.evaluate so unresolved Promises cannot hold the sidecar RPC until the
+/// parent action timeout drops the browser session.
+const EVALUATE_SCRIPT_TIMEOUT: Duration = Duration::from_secs(25);
+
 pub fn run_sidecar_mode() -> Result<(), String> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -439,10 +443,21 @@ impl BrowserSidecarServer {
         }
 
         let page = self.get_session_page(&params.session_id).await?;
-        let result = page
-            .evaluate(params.script)
-            .await
-            .map_err(|e| format!("Failed to evaluate JavaScript: {e}"))?;
+        let result = match tokio::time::timeout(
+            EVALUATE_SCRIPT_TIMEOUT,
+            page.evaluate(params.script),
+        )
+        .await
+        {
+            Ok(Ok(result)) => result,
+            Ok(Err(e)) => return Err(format!("Failed to evaluate JavaScript: {e}")),
+            Err(_) => {
+                return Err(format!(
+                    "JavaScript evaluation timed out after {}s (unresolved Promise or long-running script). Return a value synchronously or use a bounded Promise.",
+                    EVALUATE_SCRIPT_TIMEOUT.as_secs()
+                ));
+            }
+        };
         let serialized = serialize_evaluation_result(result)?;
         serde_json::to_value(serialized)
             .map_err(|e| format!("Failed to serialize evaluate result: {e}"))

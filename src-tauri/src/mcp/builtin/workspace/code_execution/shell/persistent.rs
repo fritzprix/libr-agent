@@ -240,6 +240,7 @@ impl WorkspaceServer {
                     timeout_secs,
                     &session_id,
                     HashMap::new(), // Pass empty env vars for fallback
+                    None,
                 )
                 .await
             }

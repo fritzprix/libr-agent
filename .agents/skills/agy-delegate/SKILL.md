@@ -26,7 +26,13 @@ installed and on `PATH` (typically `~/.local/bin/agy`).
 ## Preconditions
 
 ```bash
+# Bash (Linux / macOS)
 command -v agy >/dev/null || { echo "agy not on PATH"; exit 1; }
+```
+
+```powershell
+# PowerShell (Windows)
+if (-not (Get-Command agy -ErrorAction SilentlyContinue)) { Write-Error "agy not on PATH"; exit 1 }
 ```
 
 Only run `agy models` when the user asked for a non-default model, or the
@@ -44,11 +50,13 @@ default id failed as unknown/stale.
 6. Optional: `--output-format json` when you need `status` / `response` fields
 
 Recipes: `references/cli.md`. Handoff / isolation: `references/handoff.md`.
-Optional wrapper: `scripts/run.sh` (same defaults as below).
+Optional wrappers: `scripts/run.sh` (Bash) or `scripts/run.ps1` (PowerShell).
 
 ## Default invoke (unattended)
 
 **Default model (do not change):** `gemini-3.8-flash-high`
+
+### Linux / macOS (Bash)
 
 ```bash
 agy -p "$TASK" \
@@ -59,15 +67,39 @@ agy -p "$TASK" \
 ```
 
 ```bash
-# from this skill directory — keep default model (do not pass --model)
+# Using bundled bash wrapper
 ./scripts/run.sh --dir "$WORKSPACE_ABS" -- "$TASK"
 ./scripts/run.sh --json --dir "$WORKSPACE_ABS" -- "$TASK"
 ```
 
-- Omit `--dangerously-skip-permissions` when the user must approve tool use
+### Windows (PowerShell)
+
+> [!IMPORTANT]
+> In PowerShell, unquoted multiline variables split across spaces. Always quote `"$TASK"` or pass via Here-String (`@' ... '@`).
+
+```powershell
+$TASK = @'
+Goal: ...
+Scope: ...
+'@
+
+& agy -p "$TASK" `
+  --model gemini-3.8-flash-high `
+  --dangerously-skip-permissions `
+  --print-timeout 300s `
+  --add-dir "$WORKSPACE_ABS"
+```
+
+```powershell
+# Using bundled PowerShell wrapper (recommended on Windows)
+& .agents/skills/agy-delegate/scripts/run.ps1 -Dir "$WORKSPACE_ABS" -Task "$TASK"
+& .agents/skills/agy-delegate/scripts/run.ps1 -Dir "$WORKSPACE_ABS" -Json -Task "$TASK"
+```
+
+- Omit `--dangerously-skip-permissions` / `-NoSkipPerms` when the user must approve tool use
 - Raise timeout for long coding/research turns; `0` waits until completion
-- Repeat `--add-dir` for extra roots
-- Use `--output-format json` to parse `status` (`SUCCESS` / …) and `response`
+- Repeat `--add-dir` / `-Dir` for extra roots
+- Use `--output-format json` / `-Json` to parse `status` (`SUCCESS` / …) and `response`
 
 ## Model selection (strict)
 
@@ -100,3 +132,6 @@ The agy session is not a clone of this Cursor chat:
 - Using this skill for LibrAgent Session API (use `libr-delegate`)
 - Interactive-only flags (`-i`) for automation — prefer `-p`
 - Changing `--model` without an explicit user request (including Pro/Claude “for quality”)
+- Unquoted variables in PowerShell (`agy -p $TASK` splits words into CLI flags; always quote or use Here-Strings)
+- Bash syntax in PowerShell (`&&`, `\`, `./scripts/run.sh` — use `;`, `` ` ``, or `run.ps1`)
+- Script sprawl: fabricating ad-hoc .bat/.py/.js wrappers instead of using direct invocations or the provided `run.sh`/`run.ps1`

@@ -52,7 +52,7 @@ const PREFILL_DISPLAY_FORMAT_OPTIONS = [
   {
     value: 'time',
     labelKey: 'settings.display.time',
-    fallback: 'Time to First Token (e.g., 245ms)',
+    fallback: 'Time to first response (e.g., 245ms)',
   },
   {
     value: 'tokensPerSecond',
@@ -285,7 +285,7 @@ function GeneralTabComponent({
             <p className="text-xs text-muted-foreground mt-1">
               {t(
                 'settings.display.toolDetailLevelDescription',
-                'Simple mode shows only tool names and status icons. Developer mode shows full parameters, error details, and execution time.',
+                'Simple mode shows tool names only. Detailed mode shows full parameters, errors, and execution time.',
               )}
             </p>
           </div>
@@ -342,7 +342,7 @@ function GeneralTabComponent({
               >
                 {t(
                   'settings.display.prefillDisplayFormat',
-                  'Prefill Performance Format',
+                  'Initial Response Speed Format',
                 )}
               </Label>
               <Select
@@ -370,7 +370,7 @@ function GeneralTabComponent({
               <p className="text-xs text-muted-foreground mt-1">
                 {t(
                   'settings.display.prefillDisplayFormatDescription',
-                  'Choose how prefill performance is displayed',
+                  'Select how to display the time before the AI starts its answer',
                 )}
               </p>
             </div>

@@ -71,7 +71,7 @@ function AdvancedShellIsolationSectionComponent({
             <p className="mt-1 text-xs text-muted-foreground">
               {t(
                 'settings.advanced.shellRuntimeBootstrapDescription',
-                'When enabled, persistent shells source conda.sh and nvm.sh only (not your full shell rc). PATH is extended without running conda activate.',
+                'Loads only Python and Node paths in the terminal to start commands faster.',
               )}
             </p>
           </div>

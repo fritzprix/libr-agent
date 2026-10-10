@@ -7,9 +7,9 @@ Use this file for concrete tool call patterns, manifest update rules, and troubl
 | Need | Tool / action |
 | --- | --- |
 | Create the org (once, from root session) | `agent__createOrg(name="...")` |
-| Assign an existing org-visible child | `agent__messageToSession(sessionId, message)` when an Idle child has the same `assistantId` and compatible workspace |
-| Spawn an org-visible child | `agent__spawnSession(configId, task)` from a session already in the org when no suitable child exists or isolation/capacity requires it |
-| Delegate outside Org view | Reuse a matching Idle child with `agent__messageToSession`, or use `agent__spawnSession(configId, task)` from a session that is not in an explicit org |
+| Assign an existing org-visible child | `agent__messageToSession(sessionId, complexity, message)` when an Idle child has the same `assistantId` and compatible workspace |
+| Spawn an org-visible child | `agent__spawnSession(configId, complexity, task)` from a session already in the org when no suitable child exists or isolation/capacity requires it |
+| Delegate outside Org view | Reuse a matching Idle child with `agent__messageToSession`, or use `agent__spawnSession(configId, complexity, task)` from a session that is not in an explicit org |
 | Identify the org root session | Read `orgLineage.rootSessionId` from `.libragent/teamwork.json` |
 | Resume org work | Resume the session matching `orgLineage.rootSessionId`, not a child |
 | Inspect org membership | `agent__getOrg(orgId)` if available |
@@ -40,6 +40,7 @@ agent__createOrg(
 // Step 3 — first member has no existing child to reuse, so spawn it
 agent__spawnSession(
   configId: "<researcher-assistant-id>",
+  complexity: "normal",
   task: "..."
 )
 ```
@@ -58,7 +59,7 @@ When a user clicks on the org or resumes teamwork, the entry point is always the
 rootSessionId = teamwork.json → executionSubstrate.orgLineage.rootSessionId
 
 // Resume the root, not whichever child was last active
-agent__messageToSession(rootSessionId, "Continue with the next phase of the objective.")
+agent__messageToSession(sessionId: rootSessionId, complexity: "normal", message: "Continue with the next phase of the objective.")
 ```
 
 Do not resume a child session directly and treat it as the org coordinator. Children may lack the full workspace constitution context.
@@ -72,7 +73,7 @@ workspace; verify it matches the intended org workspace before reuse. For a new
 child, inheritance is automatic when it is started from the org root:
 
 ```
-agent__spawnSession(configId: "...", task: "...")
+agent__spawnSession(configId: "...", complexity: "normal", task: "...")
 ```
 
 If a child starts outside the org inheritance path, it gets its own workspace and will not automatically see the same implementation context unless you explicitly pass `workspaceOverride`.
@@ -85,6 +86,7 @@ When org members need different operating rules (e.g., frontend specialist vs. b
 // Each specialist gets its own workspace directory containing a custom agents.md / SOUL.md
 agent__spawnSession(
   configId: "frontend-expert",
+  complexity: "normal",
   task: "Implement the React login component",
   workspaceOverride: "/shared-workspace/frontend/"
 )

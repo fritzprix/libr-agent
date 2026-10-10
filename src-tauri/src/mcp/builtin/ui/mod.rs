@@ -450,6 +450,9 @@ impl UiServer {
             .unwrap_or_default();
 
         let mut deliverables = Vec::new();
+        // Only enforce on-disk existence when we actually probed a session workspace.
+        // Without session_id we must not reject (cannot safely touch the host FS).
+        let mut missing_export_paths: Vec<String> = Vec::new();
         if !export_paths.is_empty() {
             for path_str in &export_paths {
                 let (exists, size_bytes, extension, name, absolute_path) = if let Some(ref sid) =
@@ -459,6 +462,38 @@ impl UiServer {
                         .await
                     {
                         Ok(full_path) => {
+                            // Attach mode: pull container → staging so shell-written
+                            // deliverables are visible before the host exists() probe.
+                            // Propagate non-missing docker failures (same as
+                            // sync_attach_before_host_read) — never trust stale staging.
+                            if let Ok(Some(session)) =
+                                crate::services::container_attach_fs::load_session(sid).await
+                            {
+                                if let Err(err) = crate::services::container_attach_fs::pull_container_file_to_host(
+                                    &session,
+                                    &full_path,
+                                )
+                                .await
+                                {
+                                    return Ok(guided_error(
+                                        ErrorCategory::OperationFailed,
+                                        format!(
+                                            "Cannot verify export_paths: attach sync failed for {path_str}: {err}"
+                                        ),
+                                        ToolGroup::UI,
+                                    )
+                                    .with_guidance(vec![
+                                        "Retry after the attach container is reachable (docker cp / sync)."
+                                            .to_string(),
+                                        "Do not claim status=success until export_paths can be synced from the container."
+                                            .to_string(),
+                                    ])
+                                    .to_mcp_result_with_data(Some(json!({
+                                        "attach_sync_failed_path": path_str,
+                                        "error": err,
+                                    }))));
+                                }
+                            }
                             let exists = full_path.exists();
                             let size = if exists {
                                 std::fs::metadata(&full_path).map(|m| m.len()).ok()
@@ -498,6 +533,10 @@ impl UiServer {
                     (false, None, ext, file_name, None)
                 };
 
+                if session_id.is_some() && !exists {
+                    missing_export_paths.push(path_str.clone());
+                }
+
                 deliverables.push(json!({
                     "path": path_str,
                     "absolute_path": absolute_path,
@@ -507,6 +546,32 @@ impl UiServer {
                     "exists": exists,
                 }));
             }
+        }
+
+        // checkSession-safe reject: do not emit Resource/STOP/type=reportResult.
+        // Missing files + success+STOP would settle Idle via RecurringStop and let
+        // parent checkSession (#2044) promote a hollow deliverable.
+        if status == "success" && !missing_export_paths.is_empty() {
+            let missing_list = missing_export_paths.join(", ");
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                format!(
+                    "Cannot report status=success: export_paths not found on disk: {missing_list}"
+                ),
+                ToolGroup::UI,
+            )
+            .with_guidance(vec![
+                "Write each missing deliverable with workspace__writeFile (or correct the path)."
+                    .to_string(),
+                "Verify the file exists (workspace__readFile / listDirectory), then call ui__reportResult again."
+                    .to_string(),
+                "Use status=partial only when intentionally delivering with known gaps — never claim success for missing files."
+                    .to_string(),
+            ])
+            .to_mcp_result_with_data(Some(json!({
+                "missing_export_paths": missing_export_paths,
+                "deliverables": deliverables,
+            }))));
         }
 
         let display_title = title.unwrap_or(match status {
@@ -559,6 +624,16 @@ impl UiServer {
                 backend_type: "BuiltInRust".to_string(),
             },
         };
+
+        // Episode complete: drop goal/todos/scratchpad so the next user request
+        // is not steered by stale planning context. partial/blocked keep planning
+        // for resume; missing-export reject never reaches here.
+        if status == "success" {
+            if let Some(ref sid) = session_id {
+                crate::agent::planning_reset::clear_planning_state_after_report_result_success(sid)
+                    .await;
+            }
+        }
 
         Ok(MCPResult {
             content: Some(vec![

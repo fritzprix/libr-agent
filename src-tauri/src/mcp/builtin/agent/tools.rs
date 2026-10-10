@@ -186,7 +186,8 @@ fn spawn_session_tool() -> MCPTool {
             "Spawn a brand-new isolated sub-agent session from an agent configuration template. Use this when no suitable existing session is available or when separate parallel capacity / isolated workspace is needed. To assign tasks to an existing session, reuse it via agent__messageToSession instead.",
             &["Agent configuration ID from agent__listAgents(type='configs')."],
             &[
-                "Pass configId (config template ID, NOT a sessionId) and a clear task description.",
+                "Pass configId (config template ID, NOT a sessionId), complexity (low|normal|high), and a clear task description.",
+                "Choose the minimum sufficient complexity so the child uses the cheapest suitable model.",
                 "Org children inherit org workspace by default unless workspaceOverride is set.",
                 "Set waitForResult=true to block until the child finishes (optional timeout, default 3600s).",
             ],
@@ -195,6 +196,13 @@ fn spawn_session_tool() -> MCPTool {
         input_schema: object_prop(
             vec![
                 ("configId".to_string(), string_prop_required("Exact agent configuration template ID to use (from agent__listAgents(type='configs')). Do NOT pass a sessionId here — for existing sessions use agent__messageToSession. Do not put the agent name here.")),
+                (
+                    "complexity".to_string(),
+                    enum_prop_required(
+                        vec!["low", "normal", "high"],
+                        crate::mcp::builtin::agent::utils::complexity_param_description(),
+                    ),
+                ),
                 ("workspaceOverride".to_string(), string_prop(None, None, Some("Absolute workspace path for the child session. If omitted, a plain child uses its default isolated workspace; an org child inherits the explicit org root workspace by default."))),
                 ("waitForResult".to_string(), {
                     let mut schema = boolean_prop(Some("If true, block until the session reaches a terminal result and return that final answer. Uses timeout (default 3600s) as the maximum wait."));
@@ -212,7 +220,11 @@ fn spawn_session_tool() -> MCPTool {
                 ),
                 ("task".to_string(), string_prop_required("The specific task description for the sub-agent.")),
             ],
-            vec!["configId".to_string(), "task".to_string()],
+            vec![
+                "configId".to_string(),
+                "complexity".to_string(),
+                "task".to_string(),
+            ],
             None,
         ),
         output_schema: None,
@@ -287,7 +299,8 @@ fn message_to_session_tool() -> MCPTool {
             "Assign a new task or send follow-up instructions to an existing delegated sub-agent session. Reuse a suitable idle session with the same assistant configuration when possible instead of starting a new session.",
             &["Session ID from agent__spawnSession or agent__listAgents(type='sessions')."],
             &[
-                "Pass sessionId (NOT an agent config template ID) and the message or task instruction.",
+                "Pass sessionId (NOT an agent config template ID), complexity (low|normal|high), and the message or task instruction.",
+                "Choose the minimum sufficient complexity; if it differs from the session's current model, the session escalates or downgrades before the message is injected.",
                 "Use to continue ongoing work, assign new work to an idle matching-role session, or recover a paused or error session.",
                 "Set waitForResponse=false to send without blocking.",
                 "Set reset=true only when the previous conversation and runtime state should be discarded. This clears messages, planning/compaction state, and pending messages, but does not clean workspace files (defaults to false).",
@@ -300,6 +313,13 @@ fn message_to_session_tool() -> MCPTool {
                 (
                     "sessionId".to_string(),
                     string_prop_required("ID of the target existing sub-agent session. Do NOT pass an agent config template ID here."),
+                ),
+                (
+                    "complexity".to_string(),
+                    enum_prop_required(
+                        vec!["low", "normal", "high"],
+                        crate::mcp::builtin::agent::utils::complexity_param_description(),
+                    ),
                 ),
                 (
                     "message".to_string(),
@@ -331,7 +351,11 @@ fn message_to_session_tool() -> MCPTool {
                     },
                 ),
             ],
-            vec!["sessionId".to_string(), "message".to_string()],
+            vec![
+                "sessionId".to_string(),
+                "complexity".to_string(),
+                "message".to_string(),
+            ],
             None,
         ),
         output_schema: None,

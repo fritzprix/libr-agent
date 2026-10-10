@@ -23,7 +23,7 @@ function AdvancedRuntimeControlsSectionComponent({
         )}
         description={t(
           'settings.advanced.loopPreventionThresholdDescription',
-          'Number of repeated identical tool outcomes before the agent attempts natural recovery or triggers a hard stop.',
+          'Number of repeated identical tool outcomes before the agent warns or stops.',
         )}
         placeholder={t(
           'settings.advanced.loopPreventionThresholdPlaceholder',
@@ -50,7 +50,7 @@ function AdvancedRuntimeControlsSectionComponent({
         )}
         description={t(
           'settings.advanced.loopPreventionHardBreakOffsetDescription',
-          'Additional identical tool calls allowed after natural recovery warning before hard-stopping the workflow. With threshold=3 and offset=1, natural recovery fires at call 3 and hard break at call 4.',
+          'Additional retry attempts after a loop warning before the agent stops completely.',
         )}
         placeholder={t(
           'settings.advanced.loopPreventionHardBreakOffsetPlaceholder',
@@ -79,7 +79,7 @@ function AdvancedRuntimeControlsSectionComponent({
         )}
         description={t(
           'settings.advanced.thinkingLoopMinPatternLengthDescription',
-          'Minimum repeating string length required to trigger a thinking loop detection. Larger values avoid false positives during long reasoning paths.',
+          'Minimum length of repeating text needed to detect a thinking loop. Larger values reduce false alarms in long reasoning.',
         )}
         placeholder={t(
           'settings.advanced.thinkingLoopMinPatternLengthPlaceholder',
@@ -111,7 +111,7 @@ function AdvancedRuntimeControlsSectionComponent({
         )}
         description={t(
           'settings.advanced.thinkingLoopMinRepetitionsDescription',
-          'Minimum number of times a repeating pattern must occur in the thinking block stream to trigger a thinking loop detection.',
+          'Minimum number of times a pattern must repeat in thinking to trigger loop detection.',
         )}
         placeholder={t(
           'settings.advanced.thinkingLoopMinRepetitionsPlaceholder',

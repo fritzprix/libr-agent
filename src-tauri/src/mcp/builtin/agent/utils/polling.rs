@@ -29,6 +29,28 @@ pub fn is_wait_complete_status(status: &str) -> bool {
     is_terminal_status(status) || status.eq_ignore_ascii_case("paused")
 }
 
+/// When a blocking wait times out, promote to success if the child already
+/// settled. Avoids false timeouts when Idle races the deadline or a
+/// `Notify::notify_waiters` wake is lost between status read and `select!`.
+pub fn should_promote_wait_timeout_to_terminal(status: &str) -> bool {
+    is_wait_complete_status(status)
+}
+
+/// Map a freshly fetched session JSON into a wait-success tuple when the child
+/// already settled. Used by [`handle_wait_timeout_result`] after a timeout error
+/// (and covered by unit tests without a live [`AgentSessionManager`]).
+///
+/// The `u64` is a loop-wake placeholder (`1`); callers currently discard it.
+pub fn promote_settled_session_after_wait_timeout(session: Option<Value>) -> Option<(Value, u64)> {
+    let session = session?;
+    let status = extract_session_status(&session);
+    if should_promote_wait_timeout_to_terminal(&status) {
+        Some((session, 1))
+    } else {
+        None
+    }
+}
+
 pub async fn wait_until_session_terminal(
     manager: &AgentSessionManager,
     session_id: &str,
@@ -59,6 +81,19 @@ pub async fn wait_until_session_terminal(
             }
         }
 
+        // Subscribe before the status read so a notify_one permit issued while
+        // we fetch is not lost. notify_waiters alone still requires an active
+        // waiter; session_bus also calls notify_one for late registrants.
+        let child_notified = child_notifier.notified();
+        let caller_wait = async {
+            if let Some(ref notifier) = caller_notifier {
+                notifier.notified().await;
+            } else {
+                futures::future::pending::<()>().await;
+            }
+        };
+        tokio::pin!(caller_wait);
+
         let session = fetch_session_value(manager, session_id)
             .await?
             .ok_or_else(|| format!("Agent session '{}' not found", session_id))?;
@@ -74,6 +109,20 @@ pub async fn wait_until_session_terminal(
             let limit = Duration::from_secs(timeout_seconds.clamp(5, 86_400));
             let elapsed = started_at.elapsed();
             if elapsed >= limit {
+                // Deadline hit: re-read once so Idle-during-wait is not a false timeout.
+                if let Some(session) = fetch_session_value(manager, session_id).await? {
+                    wake_count = wake_count.saturating_add(1);
+                    let status = extract_session_status(&session);
+                    if is_wait_complete_status(&status) {
+                        log::info!(
+                            "checkSession wait deadline recovered settled session {}: status={}, wake_count={}",
+                            session_id,
+                            status,
+                            wake_count
+                        );
+                        return Ok((session, wake_count));
+                    }
+                }
                 return Err(format!(
                     "agent__checkSession timed out after {}s for session {}",
                     timeout_seconds, session_id
@@ -86,14 +135,8 @@ pub async fn wait_until_session_terminal(
 
         tokio::select! {
             _ = sleep(sleep_cap) => {}
-            _ = child_notifier.notified() => {}
-            _ = async {
-                if let Some(ref notifier) = caller_notifier {
-                    notifier.notified().await;
-                } else {
-                    futures::future::pending::<()>().await;
-                }
-            } => {}
+            _ = child_notified => {}
+            _ = &mut caller_wait => {}
         }
     }
 }
@@ -114,13 +157,33 @@ pub async fn handle_wait_timeout_result(
                 category,
                 crate::mcp::error_normalization::ExternalMcpErrorCategory::Timeout
             ) {
+                // Single fetch: promote if settled, else reuse status for timeout text.
+                let fetched_session = match manager {
+                    Some(manager) => fetch_session_value(manager, session_id)
+                        .await
+                        .ok()
+                        .flatten(),
+                    None => None,
+                };
+
+                if let Some((session, wake_count)) =
+                    promote_settled_session_after_wait_timeout(fetched_session.clone())
+                {
+                    log::info!(
+                        "Promoting checkSession wait timeout to terminal for session {}: status={}",
+                        session_id,
+                        extract_session_status(&session)
+                    );
+                    return Ok((session, wake_count));
+                }
+
                 let (session_status, turn_count, latest_msgs_str, latest_msgs_json) = match manager
                 {
-                    Some(manager) => {
-                        let session_status = match fetch_session_value(manager, session_id).await {
-                            Ok(Some(session)) => extract_session_status(&session),
-                            Ok(None) | Err(_) => "unknown".to_string(),
-                        };
+                    Some(_) => {
+                        let session_status = fetched_session
+                            .as_ref()
+                            .map(extract_session_status)
+                            .unwrap_or_else(|| "unknown".to_string());
                         let turn_count = count_session_turns(session_id).await;
 
                         let repo = crate::state::get_message_repository();

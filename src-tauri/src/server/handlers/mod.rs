@@ -20,4 +20,6 @@ pub use sessions::{
     create_session, delete_session, get_child_sessions, get_session, resume_session_workflow,
     terminate_session,
 };
-pub use settings::get_preferred_model;
+pub use settings::{
+    get_complexity_model_mapping, get_preferred_model, put_complexity_model_mapping,
+};

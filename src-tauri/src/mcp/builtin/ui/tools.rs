@@ -91,6 +91,7 @@ pub fn report_result_tool() -> MCPTool {
             &[
                 "You are not waiting on another tool, process, or user clarification.",
                 "Do NOT use this while still exploring, debugging, or planning — finish the work first, then call once.",
+                "After compaction: do not treat empty Active Request or satisfied Next Actions alone as Done — confirm Working Intent / Recent User Requests first.",
             ],
             &[
                 "Call this exactly once when the outcome is ready.",
@@ -98,8 +99,11 @@ pub fn report_result_tool() -> MCPTool {
                 "For long reports: write the full document with workspace__writeFile (e.g. `.libragent/work/report.md`), put a short summary in `result`, and attach the path via `export_paths`. Do not paste the full report into assistant chat.",
                 "Never tell the user the deliverable was saved to scratchpad — scratchpad is private working memory, not a shareable output.",
                 "When the request has checkable acceptance criteria, put them in `criteria` and verification evidence (or unmet gaps) in `proof`. Skip both when the outcome is not objectively verifiable.",
+                "If a compact summary is in context and intent/criteria are unclear or unverified, read the latest `.libragent/pre_compaction_epoch_*.md` (context-recall) before `status=success`.",
                 "If your task produced deliverable files, pass their workspace-relative paths to `export_paths` to attach them with Preview/Open/Download actions.",
-                "After this tool returns: stop. Do not call any more tools. End your turn with at most a one-sentence confirmation.",
+                "For status=success, every `export_paths` entry must already exist on disk — write files first; missing paths reject success without settling the session.",
+                "On status=success, session planning (goal, todos, scratchpad) is cleared so the next request starts clean — recreate a goal if follow-up work continues in the same session.",
+                "After a successful return: stop. Do not call any more tools. End your turn with at most a one-sentence confirmation.",
             ],
             &[
                 "If you still need user input, use ui__presentInteractive with `interaction` instead.",

@@ -66,17 +66,24 @@ COMPACTION_TELEMETRY_SCHEMA_VERSION = "compaction-telemetry/v1"
 
 # Provisional session maxInputContext for compaction-* tasks.
 # Keys are family slugs (matched as ``compaction-<slug>`` with optional ``-vN``).
-# Source: c05 peaks (n=1), ~2k under so compaction can fire. Locked only as the
-# c06 eligibility map — do NOT retune to minimize compactionCount (not a penalty).
+# Floor: sys+tools ≈ 38.1k (2026-10-08). Budgets must stay above empty-resume
+# (sys+tools+summary) so compact→resume does not hard-fail INVALID_CONTEXT_STATE.
+# Still kept under typical task peaks so compaction can fire. Do NOT retune only
+# to minimize compactionCount (see c07 postmortem).
 # Env `LIBRAGENT_BENCH_MAX_INPUT_CONTEXT` wins.
 COMPACTION_TASK_MAX_INPUT_CONTEXT: dict[str, int] = {
-    "haystack": 42_500,  # peak 44_544
+    # Classic fact-recall-1 families (raised empty-resume floors)
+    "haystack": 49_000,  # was 42_500; empty-resume floor breached under 42.5k
     "puzzle-chain": 55_500,  # peak 57_519
-    "log-triage": 41_500,  # peak 43_407
+    "log-triage": 48_000,  # was 41_500; empty-resume > 41.5k
     "coding-spec": 52_500,  # peak 54_577
-    "fact-recall": 43_500,  # peak 45_665
+    "fact-recall": 49_000,  # was 43_500
+    # fact-recall-1 @v0.5 (anti-grep write-window pressure)
+    "cascade": 50_000,  # ~28×13k stage JSON; provisional
+    "mutchain": 50_000,  # 9×~18k excerpt metas; provisional
+    "codesweep": 52_500,  # quality among eligible
 }
-COMPACTION_SUITE_DEFAULT_MAX_INPUT_CONTEXT = 43_000
+COMPACTION_SUITE_DEFAULT_MAX_INPUT_CONTEXT = 49_000
 
 
 @dataclass(frozen=True)
@@ -1035,7 +1042,7 @@ def resolve_max_input_context(
 
     Precedence:
     1. ``LIBRAGENT_BENCH_MAX_INPUT_CONTEXT`` (suite-wide override)
-    2. Per-task provisional map for ``compaction-*`` tasks (c05 peak − ~2k)
+    2. Per-task provisional map for ``compaction-*`` tasks (above empty-resume floor)
     3. Suite default for unknown ``compaction-*`` task ids
     4. ``None`` for non-compaction tasks (omit field; keep global UI budget)
     """

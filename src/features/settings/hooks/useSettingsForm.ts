@@ -43,6 +43,7 @@ function getAiModelsComparableState(settings: SettingsFormState) {
     customProviders: normalizeCustomOpenAIProviders(settings.customProviders),
     preferredModel: settings.preferredModel,
     fallbackModel: settings.fallbackModel,
+    complexityModelMapping: settings.complexityModelMapping,
     temperatureOverrideEnabled: settings.temperatureOverrideEnabled,
     temperature: settings.temperature,
     thinkingEffort: settings.advanced.thinkingEffort,

@@ -32,6 +32,38 @@ Keep SKILL.md under ~150 lines. Split detailed content into `references/`. Link 
 
 Avoid deeply nested references. For files >100 lines, add a table of contents at the top.
 
+## Cross-Platform Compatibility
+
+LibrAgent runs across Windows, macOS, and Linux. Skills and their instructions must never leave agents stranded due to OS-specific assumptions.
+
+### 1. Dual Shell Command Recipes
+- Never provide Bash-only command snippets when guiding an agent to run terminal commands.
+- For commands with line continuations (`\`), environment variables (`$VAR`), or chaining (`&&`), provide both **Bash** and **PowerShell** invocations, or use single-line OS-neutral invocations.
+  - Bash: `tool -p "$TASK" --model model-name`
+  - PowerShell: `& tool -p "$TASK" --model model-name`
+- Note: PowerShell 5.1 (default on Windows) does NOT support `&&`. Use `;` or separate sequential commands.
+
+### 2. Safe Argument Passing & Quoting
+- Multiline prompts or strings with spaces/quotes break easily when passed to CLI arguments.
+- In PowerShell, unquoted variables like `-p $prompt` cause argument splitting (every word becomes a separate CLI positional arg). Always quote (`-p "$prompt"`) or use Here-Strings:
+  ```powershell
+  $TASK = @'
+  Multi-line content
+  '@
+  & command -p "$TASK"
+  ```
+- When feasible, prefer passing file paths (`--file path/to/prompt.md`) over raw string interpolation to eliminate shell escaping hazards.
+
+### 3. Bundled Scripts Parity
+- When bundling automation scripts under `scripts/`:
+  - Prefer cross-platform runtimes (Node.js or Python scripts) rather than shell-specific scripts (`.sh`).
+  - If a shell script is provided (e.g. `run.sh`), provide the Windows counterpart (`run.ps1` or `run.bat`).
+  - Never hardcode Unix-only paths like `/bin/bash` or `~/.local/bin` without platform detection or fallbacks.
+
+### 4. File Paths and Encodings
+- Use forward slashes (`/`) or platform-agnostic path joins in scripts and references.
+- Ensure text files (especially handoffs or script outputs) use UTF-8 without BOM to prevent encoding mismatches on Windows (`CP949` / UTF-16LE).
+
 ## What NOT to Include
 
 Do not add README.md, CHANGELOG.md, INSTALLATION_GUIDE.md, or other auxiliary docs. Only include files that help the agent do the job.

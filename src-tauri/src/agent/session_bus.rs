@@ -41,9 +41,20 @@ impl SessionBus {
     /// If nobody is waiting yet (no entry present), this is a no-op — the next
     /// caller to `get_or_create` will start fresh without missing any event,
     /// because they will check the current status before sleeping.
+    ///
+    /// `notify_waiters` alone drops wakes when no task is currently parked on
+    /// `notified()`. Also call `notify_one` so a permit is stored for a waiter
+    /// that subscribed (`notified()`) but has not yet been polled inside
+    /// `select!` — the common gap in `wait_until_session_terminal`.
+    ///
+    /// When waiters *are* already parked, `notify_waiters` drains them and
+    /// `notify_one` may leave a residual permit. The next loop iteration can
+    /// therefore observe one **benign spurious wake**; waiters must re-check
+    /// session status (they already do).
     pub fn notify_status_change(&self, session_id: &str) {
         if let Some(notifier) = self.notifiers.get(session_id) {
             notifier.notify_waiters();
+            notifier.notify_one();
         }
     }
 
@@ -92,19 +103,33 @@ mod tests {
         );
     }
 
-    /// SP1: firing notify when no waiter is registered is a no-op (no panic).
+    /// SP1: firing notify when no bus entry exists is a no-op (no panic).
     #[tokio::test]
     async fn test_sp1_sp2_notify_before_waiter_is_noop() {
         let bus = SessionBus::new();
-        // No waiter registered yet — fire is silently ignored.
+        // No entry yet — fire is silently ignored (cannot store a permit).
         bus.notify_status_change("sess-ghost");
         // Creating a notifier after the fire does NOT unblock retroactively.
-        // (tokio::sync::Notify does not store permits across notify_waiters calls.)
         let notifier = bus.get_or_create("sess-ghost");
         let blocked = timeout(Duration::from_millis(20), notifier.notified()).await;
         assert!(
             blocked.is_err(),
-            "Notify fired before waiter registered should not unblock a future waiter"
+            "Notify fired before get_or_create should not unblock a future waiter"
+        );
+    }
+
+    /// Permit from notify_one wakes a waiter that subscribed after the status
+    /// change but before awaiting (checkSession wait-loop gap).
+    #[tokio::test]
+    async fn test_notify_one_permit_wakes_late_subscriber() {
+        let bus = SessionBus::new();
+        let notifier = bus.get_or_create("sess-permit");
+        // Status change while no task is parked on notified() yet.
+        bus.notify_status_change("sess-permit");
+        let woke = timeout(Duration::from_millis(50), notifier.notified()).await;
+        assert!(
+            woke.is_ok(),
+            "notify_one permit should unblock a late notified() awaiter"
         );
     }
 

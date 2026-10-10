@@ -119,7 +119,7 @@ pub async fn check_session(
 
         let status = extract_session_status(&session_data);
         let turn_count = count_session_turns(&session_id).await;
-        if status == "paused" {
+        if status.eq_ignore_ascii_case("paused") {
             return build_paused_check_session_result(&storage_session_id, turn_count, &enrichment)
                 .await;
         }

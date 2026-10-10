@@ -140,8 +140,11 @@ pub fn format_transcript_recovery_suffix(relative_path: &str) -> String {
         "\n\n---\n### Context recovery\n\
 A full pre-compaction transcript was saved to `{path}`.\n\
 It contains the user/assistant messages and tool calls from before this compaction.\n\
-If you are unsure what to do next, need missing details, or this summary feels incomplete, \
-read `{path}` first (via `workspace__readFile` or `tail {path}` in the session workspace).",
+Before declaring done / calling `ui__reportResult(success)`, or when mapping completion to user intent: \
+restate Working Intent and Recent User Requests against Completion Criteria. \
+If intent or criteria are incomplete, unverified, or this summary feels incomplete, \
+read `{path}` first (via `workspace__readFile` or `tail {path}` in the session workspace) — \
+empty Active Request alone is not a Done signal.",
         path = relative_path
     )
 }
@@ -168,6 +171,10 @@ mod tests {
         assert!(suffix.contains("user/assistant messages and tool calls"));
         assert!(suffix.contains("workspace__readFile"));
         assert!(suffix.contains("tail .libragent/pre_compaction_epoch_4.md"));
+        assert!(suffix.contains("Before declaring done"));
+        assert!(suffix.contains("Working Intent"));
+        assert!(suffix.contains("Recent User Requests"));
+        assert!(suffix.contains("empty Active Request alone is not a Done signal"));
     }
 
     #[test]

@@ -1,3 +1,28 @@
+## [0.9.24] - 2026-10-10
+
+### 🚀 Features & Capabilities
+
+- **Sub-Agent Complexity Model Routing**: Explicit `complexity` level (`low` | `normal` | `high`) on `spawnSession` and `messageToSession`. Configure model overrides per complexity level under Settings → AI Models to route lightweight tasks to faster models while preserving preferred models for complex tasks.
+- **Post-Compaction Intent Gate**: Post-compaction completion is gated on recent user intent and working memory history, preventing agents from prematurely concluding work on empty active requests after compaction (#2042).
+- **Planning Lifecycle Automation**: Todos automatically clear upon successful context compaction, and goals, todos, and scratchpads reset after a successful `reportResult` to keep context clean for follow-up turns.
+- **ASD-STE100 & Plain Language Alignment**: Settings interface and all 8 locale dictionaries aligned with ASD-STE100 and clear Korean standards; added `i18n-language-standards` skill and validation workflow.
+- **Trace Eval Loop Skill**: Bundled `trace-eval-loop` skill to systematically analyze session ATIF trajectories and derive evidence-backed tool and harness improvements.
+
+### 🐛 Fixes & Hardening
+
+- **Attachment Workspace Security**: Expose session-relative `workspacePath` instead of leaking host `localPath` in attachment list and read operations (#2048).
+- **MCP & Workspace Tool Resilience**: Hardened workspace tools with idempotent `stopProcess`, WindowsApps Python shim stripping from isolated PATH, fetchUrl and evaluateJS error guards, and updated `runShell` schema examples to avoid overlapping dedicated file tools (#2043, #2057).
+- **CheckSession Wait Timeout Promotion**: Promote settled `checkSession` wait states instead of returning false timeouts when wait races completion (#2044).
+- **Deliverables & Container Export Validation**: Reject hollow `reportResult` successes when required `export_paths` are missing deliverables; map container `/app` paths before reportResult checks; raise task context budget floor to prevent `INVALID_CONTEXT_STATE` (#2051).
+- **Prevent `readFile` Spillover Loop**: Keep truncated `readFile` chunks inline to avoid infinite tool-result spillover file reading loops (#2039, #2041).
+- **Spotlight Visualizer CTA**: Route CSV visualization CTA via assistant picker (#2052, #2054).
+
+### 🔧 Performance & Internal
+
+- **SWE-bench Harbor Suite**: Added SWE-bench Verified diverse-8 suite (`pnpm bench:swe`) for rapid local coding-loop iteration.
+- **Compaction Benchmark v0.5**: Updated compaction benchmark suite to Hub @v0.5 write-window pressure suite.
+- **Cross-Platform Skills**: Added PowerShell `run.ps1` runner for `agy-delegate` cross-platform support.
+
 ## [0.9.23] - 2026-10-06
 
 ### 🚀 Features & Capabilities

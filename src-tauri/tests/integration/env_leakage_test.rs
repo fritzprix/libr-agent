@@ -16,6 +16,7 @@ async fn test_env_leakage_in_unix_isolation() {
     let config = IsolatedProcessConfig {
         session_id: "test-session".to_string(),
         workspace_path: workspace.path().to_path_buf(),
+        working_directory: None,
         command: "env".to_string(), // Execute 'env' to list variables
         args: vec![],
         env_vars: HashMap::new(),
@@ -100,6 +101,7 @@ async fn test_env_leakage_in_linux_high_isolation() {
     let config = IsolatedProcessConfig {
         session_id: "test-high-session".to_string(),
         workspace_path: workspace.path().to_path_buf(),
+        working_directory: None,
         command: "env".to_string(),
         args: vec![],
         env_vars: HashMap::new(),

@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use super::super::utils::{
     build_agent_tool_data, check_session_next_actions, insert_agent_session_id_fields,
-    read_required_string,
+    parse_complexity, read_required_string, resolve_model_for_complexity,
 };
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_agent_config_error, missing_agent_session_error,
@@ -143,6 +143,9 @@ async fn spawn_session_impl(
     let explicit_org = caller_explicit_org.clone();
     let assistant_id = read_required_string(&args, "configId")?;
     let task = read_required_string(&args, "task")?;
+    let complexity_raw = read_required_string(&args, "complexity")?;
+    let complexity = parse_complexity(&complexity_raw)?;
+    let resolved_model = resolve_model_for_complexity(complexity).await?;
     let requested_workspace_override = args
         .get("workspaceOverride")
         .and_then(|v| v.as_str())
@@ -165,7 +168,9 @@ async fn spawn_session_impl(
         None
     };
 
-    let body: crate::agent::types::CreateSessionRequest = serde_json::from_value(json!({
+    // When complexity mapping has no override, omit model/provider so the
+    // existing parent-inheritance → preferredModel chain stays zero-breaking.
+    let mut body_json = json!({
         "parentSessionId": caller_session_id,
         "assistantId": assistant_id.clone(),
         "request": task.clone(),
@@ -175,8 +180,14 @@ async fn spawn_session_impl(
         "orgRootSessionId": explicit_org
             .as_ref()
             .map(|(_, _, org_root_session_id)| org_root_session_id.as_str()),
-    }))
-    .map_err(|e| format!("Invalid arguments for {}: {}", tool_name, e))?;
+    });
+    if let Some(resolved) = resolved_model.as_ref() {
+        body_json["model"] = Value::String(resolved.model.clone());
+        body_json["provider"] = Value::String(resolved.provider.clone());
+    }
+
+    let body: crate::agent::types::CreateSessionRequest = serde_json::from_value(body_json)
+        .map_err(|e| format!("Invalid arguments for {}: {}", tool_name, e))?;
 
     let wait_for_result = args
         .get("waitForResult")
@@ -262,6 +273,17 @@ async fn spawn_session_impl(
     );
     response_data.insert("task".to_string(), Value::String(task.clone()));
     response_data.insert(
+        "complexity".to_string(),
+        Value::String(complexity.to_string()),
+    );
+    if let Some(resolved) = resolved_model.as_ref() {
+        response_data.insert("model".to_string(), Value::String(resolved.model.clone()));
+        response_data.insert(
+            "provider".to_string(),
+            Value::String(resolved.provider.clone()),
+        );
+    }
+    response_data.insert(
         "workspaceOverride".to_string(),
         Value::Bool(workspace_override_set),
     );
@@ -318,6 +340,8 @@ pub async fn message_to_session(
         .ok_or("AgentSessionManager not available")?;
     let session_ref = read_required_string(&args, "sessionId")?;
     let message_text = read_required_string(&args, "message")?;
+    let complexity_raw = read_required_string(&args, "complexity")?;
+    let complexity = parse_complexity(&complexity_raw)?;
     let reset = args.get("reset").and_then(|v| v.as_bool()).unwrap_or(false);
     let (wait_for_response, timeout_seconds) = match parse_message_to_session_wait_config(&args) {
         Ok(config) => config,
@@ -336,6 +360,29 @@ pub async fn message_to_session(
     };
     let session_id = target_session.id.clone();
     let display_id = crate::utils::session_id::display_session_id(&session_id);
+    let target_model = resolve_model_for_complexity(complexity).await?;
+    if let Some(resolved) = target_model.as_ref() {
+        if target_session.model != resolved.model || target_session.provider != resolved.provider {
+            log::info!(
+                "agent__messageToSession: escalating session {} model {}/{} -> {}/{} (complexity={})",
+                display_id,
+                target_session.model,
+                target_session.provider,
+                resolved.model,
+                resolved.provider,
+                complexity
+            );
+            manager
+                .update_session_config(
+                    session_id.clone(),
+                    Some(resolved.model.clone()),
+                    Some(resolved.provider.clone()),
+                    None,
+                    None,
+                )
+                .await?;
+        }
+    }
     let instruction_text = message_text.clone();
     let response = match crate::services::AgentService::send_message_to_session(
         manager,
@@ -385,6 +432,17 @@ pub async fn message_to_session(
     insert_agent_session_id_fields(&mut response_data, &session_id);
     response_data.insert("messageId".to_string(), Value::String(response.message_id));
     response_data.insert("status".to_string(), Value::String(response.status));
+    response_data.insert(
+        "complexity".to_string(),
+        Value::String(complexity.to_string()),
+    );
+    if let Some(resolved) = target_model.as_ref() {
+        response_data.insert("model".to_string(), Value::String(resolved.model.clone()));
+        response_data.insert(
+            "provider".to_string(),
+            Value::String(resolved.provider.clone()),
+        );
+    }
     // Persist message body for human card (collapsed preview).
     response_data.insert("instruction".to_string(), Value::String(instruction_text));
 

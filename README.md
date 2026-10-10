@@ -162,10 +162,10 @@ Long-running sessions maintain stability through context compaction, loop preven
 Download the latest installer from the **[Releases page](https://github.com/fritzprix/libr-agent/releases/latest)**.
 
 <!-- RELEASE_DOWNLOADS_START -->
-- **Windows:** [`LibrAgent_0.9.23_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.23/LibrAgent_0.9.23_x64-setup.exe) · [`LibrAgent_0.9.23_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.23/LibrAgent_0.9.23_x64_en-US.msi)
-- **macOS (Apple Silicon):** [`LibrAgent_0.9.23_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.23/LibrAgent_0.9.23_aarch64.dmg)
-- **Linux:** [`LibrAgent_0.9.23_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.23/LibrAgent_0.9.23_amd64.AppImage) · [`LibrAgent_0.9.23_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.23/LibrAgent_0.9.23_amd64.deb) · [`LibrAgent-0.9.23-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.23/LibrAgent-0.9.23-1.x86_64.rpm)
-- **All release assets:** [Releases page](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.23)
+- **Windows:** [`LibrAgent_0.9.24_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.24/LibrAgent_0.9.24_x64-setup.exe) · [`LibrAgent_0.9.24_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.24/LibrAgent_0.9.24_x64_en-US.msi)
+- **macOS (Apple Silicon):** [`LibrAgent_0.9.24_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.24/LibrAgent_0.9.24_aarch64.dmg)
+- **Linux:** [`LibrAgent_0.9.24_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.24/LibrAgent_0.9.24_amd64.AppImage) · [`LibrAgent_0.9.24_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.24/LibrAgent_0.9.24_amd64.deb) · [`LibrAgent-0.9.24-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.24/LibrAgent-0.9.24-1.x86_64.rpm)
+- **All release assets:** [Releases page](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.24)
 <!-- RELEASE_DOWNLOADS_END -->
 
 ### The 5-minute onboarding path
@@ -241,6 +241,6 @@ LibrAgent is MIT licensed and built in the open. Contributions are welcome, incl
 - [Contributing Guide](CONTRIBUTING.md)
 - [Issue Tracker](https://github.com/fritzprix/libr-agent/issues) [![Good First Issues](https://img.shields.io/github/issues/fritzprix/libr-agent/good%20first%20issue)](https://github.com/fritzprix/libr-agent/issues?q=is%3Aissue+is%3Aopen+label%3A%22good%20first%20issue%22)
 - [Discussions](https://github.com/fritzprix/libr-agent/discussions)
-- Benchmarks (Harbor / Terminal-Bench): See [Harbor guide](benchmarks/harbor/README.md) (`pnpm bench:diverse`, `pnpm bench:terminal`)
+- Benchmarks (Harbor / Terminal-Bench): See [Harbor guide](benchmarks/harbor/README.md) (`pnpm bench:diverse`, `pnpm bench:swe`, `pnpm bench:terminal`)
 
 **License**: MIT

@@ -116,34 +116,53 @@ Use `--dataset <org/name-version>` to run any dataset from the
 pnpm bench:registry                                            # runs default: fritzprix/libragent-diverse-9
 pnpm bench:diverse                                             # same diverse-9 suite (explicit)
 pnpm bench:diverse:n1                                          # first task only
+pnpm bench:swe                                                 # SWE-bench Verified diverse-8 (~1h warm)
+pnpm bench:swe:n1                                              # flask-5014 smoke only
 pnpm bench:fileop                                              # NovitaAI/tb21-file-recovery (file/data-focused 9)
 pnpm bench:fileop:n1                                           # first fileop task only
 pnpm xbench:registry                                           # Hermes on default diverse-9
-pnpm bench:registry --dataset swe-bench/swe-bench-verified-1.0 --n-tasks 1
+pnpm bench:registry --dataset swe-bench/swe-bench-verified --n-tasks 1
 pnpm bench:registry --dataset aider-bench/aider-bench-1.0
+```
+
+### SWE-bench Verified (coding / test-pass)
+
+`pnpm bench:swe` runs Hub dataset
+[`fritzprix/libragent-swe-diverse-8@v0.1`](https://hub.harborframework.com/datasets/fritzprix/libragent-swe-diverse-8)
+— an **8-task** easy slice of SWE-bench Verified (one instance per repo). Task
+IDs and selection rules: [`swe-diverse-8.md`](./swe-diverse-8.md). Manifest:
+[`libragent-swe-diverse-8/`](./libragent-swe-diverse-8/).
+
+```sh
+pnpm bench:swe          # Hub diverse-8 iteration suite
+pnpm bench:swe:n1       # first task only (smoke)
+pnpm bench:swe:all      # full swe-bench/swe-bench-verified (500)
+pnpm bench:swe:all --n-attempts 5   # leaderboard-style attempts
+
+# Re-publish / bump tag after editing dataset.toml
+yes | harbor publish benchmarks/harbor/libragent-swe-diverse-8 --public -t v0.1 --no-tasks
 ```
 
 ```sh
 # One-shot via node dispatcher (cross-platform)
-node scripts/run-harbor-bench.cjs --dataset swe-bench/swe-bench-verified-1.0 --n-tasks 1
+node scripts/run-harbor-bench.cjs --dataset fritzprix/libragent-swe-diverse-8@v0.1 --n-tasks 1
 node scripts/run-harbor-bench.cjs --preset dataset --dataset aider-bench/aider-bench-1.0
 
 # bash
-./scripts/run-harbor-bench.sh --dataset swe-bench/swe-bench-verified-1.0 --n-tasks 1
+./scripts/run-harbor-bench.sh --dataset fritzprix/libragent-swe-diverse-8@v0.1 --n-tasks 1
 
 # PowerShell
-.\scripts\run-harbor-bench.ps1 -Dataset swe-bench/swe-bench-verified-1.0 -NTasks 1
+.\scripts\run-harbor-bench.ps1 -Dataset fritzprix/libragent-swe-diverse-8@v0.1 -NTasks 1
 ```
 
 ### Adding a permanent alias to `package.json`
 
 For frequently-run benchmarks, add a shortcut pair to the `scripts` section of
-[`package.json`](../../package.json):
+[`package.json`](../../package.json). SWE shortcuts are already defined
+(`bench:swe` / `bench:swe:n1` / `bench:swe:all`). Example for Aider:
 
 ```jsonc
 // package.json → scripts
-"bench:swe":     "node scripts/run-harbor-bench.cjs --dataset swe-bench/swe-bench-verified-1.0 --n-tasks 1",
-"bench:swe:all": "node scripts/run-harbor-bench.cjs --dataset swe-bench/swe-bench-verified-1.0",
 "bench:aider":     "node scripts/run-harbor-bench.cjs --dataset aider-bench/aider-bench-1.0 --n-tasks 1",
 "bench:aider:all": "node scripts/run-harbor-bench.cjs --dataset aider-bench/aider-bench-1.0"
 ```
@@ -151,9 +170,8 @@ For frequently-run benchmarks, add a shortcut pair to the `scripts` section of
 Then run as usual:
 
 ```sh
-pnpm bench:swe          # first task only
-pnpm bench:swe:all      # full dataset, n-attempts=1 (default)
-pnpm bench:swe:all --n-attempts 5   # leaderboard submission
+pnpm bench:aider        # first task only
+pnpm bench:aider:all    # full dataset, n-attempts=1 (default)
 ```
 
 Or call the platform script directly:

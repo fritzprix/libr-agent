@@ -109,11 +109,11 @@ function ChatInterfaceTabComponent({
                   {strategy === 'window'
                     ? t(
                         'settings.contextStrategy.windowDescription',
-                        'Keep the N most recent messages. Simple and predictable.',
+                        'Keep only the last N messages.',
                       )
                     : t(
                         'settings.contextStrategy.compactDescription',
-                        'Summarize old turns and keep a recent window. Better for long sessions.',
+                        'Summarize older messages to keep the conversation history in long sessions.',
                       )}
                 </span>
               </button>
@@ -218,7 +218,7 @@ function ChatInterfaceTabComponent({
               <p className="mt-4 text-xs text-muted-foreground">
                 {t(
                   'settings.maxInputContextDescription',
-                  'Maximum token count before summarizing old turns. Higher values keep more detail but increase cost.',
+                  'Maximum token limit before summarizing older messages. Higher values keep more detail but increase cost.',
                 )}
               </p>
             </>
@@ -273,7 +273,10 @@ function ChatInterfaceTabComponent({
 
         <div className="min-w-0">
           <label className="block text-muted-foreground mb-2 font-medium">
-            {t('settings.chatInterface.diffContextLines', 'Diff Context Lines')}
+            {t(
+              'settings.chatInterface.diffContextLines',
+              'Code Diff Context Lines',
+            )}
           </label>
           <div className="flex max-w-xs items-center gap-2">
             <Button
@@ -309,7 +312,7 @@ function ChatInterfaceTabComponent({
           <p className="text-xs text-muted-foreground mt-1">
             {t(
               'settings.chatInterface.diffContextLinesDescription',
-              'Number of context lines to show in file edit diffs (1-10).',
+              'Number of unchanged lines to show around changes (1-10).',
             )}
           </p>
         </div>

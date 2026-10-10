@@ -50,3 +50,5 @@ Do not treat “done” prose without evidence as success.
 - Interactive `-i` for automation → hang / no captured result; use `-p`
 - Forgot permissions flag on tool-heavy tasks → blocked waiting for approval
 - Using LibrAgent HTTP endpoints here → wrong skill (`libr-delegate`)
+- Unquoted task variable on Windows → causes CLI argument splitting; always quote or use Here-Strings (`@' ... '@`)
+- Fabricating ad-hoc wrapper scripts (.bat/.py/.js) when encountering quoting errors → use `scripts/run.ps1` or a single Here-String invocation instead

@@ -73,26 +73,37 @@ impl WorkspaceServer {
 
         // Update status and kill process
         if let Some(entry) = registry.entries.get_mut(process_id) {
-            // Check if process is already terminated
+            // Idempotent: already-dead processes are a no-op success so agents
+            // do not enter panic loops on ✗ InvalidState after a natural exit.
             if matches!(
                 entry.status,
                 terminal_manager::ProcessStatus::Finished
                     | terminal_manager::ProcessStatus::Failed
                     | terminal_manager::ProcessStatus::Killed
             ) {
-                return Ok(guided_error(
-                    ErrorCategory::InvalidState,
+                let status_label = terminal_manager::process_status_label(&entry.status);
+                let exit_code = entry.exit_code;
+                drop(registry);
+                let hint = SuccessHint::new(
                     format!(
-                        "Process {} has already terminated with status: {:?}",
-                        process_id, entry.status
+                        "Process {} has already terminated (status: {})",
+                        process_id, status_label
                     ),
-                    ToolGroup::Workspace,
-                )
-                .guidance(vec![
-                    "Use workspace__listProcesses to see running processes".to_string(),
-                    "Only running processes can be stopped".to_string(),
-                ])
-                .to_mcp_result());
+                    vec![
+                        "No further stop action was needed.".to_string(),
+                        "Use workspace__readProcessOutput if you need the final stdout/stderr."
+                            .to_string(),
+                        "Use workspace__listProcesses to see still-running processes.".to_string(),
+                    ],
+                );
+                let response = serde_json::json!({
+                    "process_id": process_id,
+                    "stopped": false,
+                    "already_terminated": true,
+                    "status": status_label,
+                    "exit_code": exit_code
+                });
+                return Ok(hint.to_mcp_result_with_data(Some(response)));
             }
 
             // Kill process if running

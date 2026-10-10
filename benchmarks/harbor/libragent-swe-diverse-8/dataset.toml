@@ -1,0 +1,44 @@
+# Dataset manifest for fritzprix/libragent-swe-diverse-8
+# Add tasks using: harbor add <org>/<name>
+# Publish using: harbor publish
+
+[dataset]
+name = "fritzprix/libragent-swe-diverse-8"
+description = "LibrAgent iteration suite: 8 easy SWE-bench Verified tasks (one per repo, <15 min fix). Not a Verified solve-rate estimate."
+keywords = []
+[[dataset.authors]]
+name = "fritzprix"
+
+
+[[tasks]]
+name = "swe-bench/pallets__flask-5014"
+digest = "sha256:ec1cbb94086b650e100135585abf431332c601fd9a2fde86ad63aca305940c3c"
+
+[[tasks]]
+name = "swe-bench/pytest-dev__pytest-5809"
+digest = "sha256:10049be07d8ac35efe00bb63539692cf83c91d10ab257286890434ce54c06c0d"
+
+[[tasks]]
+name = "swe-bench/psf__requests-1142"
+digest = "sha256:24359408df5948c741ac080425763ca4e1250b0ad1e7079e5f865e10db491fe4"
+
+[[tasks]]
+name = "swe-bench/pylint-dev__pylint-6903"
+digest = "sha256:e940f7b89dd2b01d3ab515e59c996411b29a974a0b81c798e264aed67f527559"
+
+[[tasks]]
+name = "swe-bench/sphinx-doc__sphinx-9711"
+digest = "sha256:2dcf5b053828df3ded2a42f7a12dbd5831ab01c22ccd31c3044de2aae660cb11"
+
+[[tasks]]
+name = "swe-bench/django__django-12419"
+digest = "sha256:1d79ebe4b681e86a2a740db0687f395adacaa15637f1c876382e5605905871dd"
+
+[[tasks]]
+name = "swe-bench/sympy__sympy-20916"
+digest = "sha256:cc25a4ce8ba9e833280a831cecffb0b5921b7b9532f96fbdd3290325620b11d3"
+
+[[tasks]]
+name = "swe-bench/scikit-learn__scikit-learn-14141"
+digest = "sha256:f2609e6dc6ca2935f18bf13d058d3badf8e1a13f10ff0882d65e701b935cf93f"
+

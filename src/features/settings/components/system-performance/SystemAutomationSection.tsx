@@ -18,7 +18,7 @@ function SystemAutomationSectionComponent({
   return (
     <div className="space-y-4 rounded-xl border border-border/70 p-4">
       <h4 className="text-sm font-medium text-foreground">
-        {t('settings.system.automation', 'Automation Governance')}
+        {t('settings.system.automation', 'Automation Rules')}
       </h4>
 
       <NumberSettingField
@@ -28,7 +28,7 @@ function SystemAutomationSectionComponent({
         )}
         description={t(
           'settings.system.scheduledTaskMinimumIntervalDescription',
-          'Minimum allowed interval for new or re-enabled scheduled tasks. Set 0 to disable the guard.',
+          'Minimum interval for scheduled tasks. Set to 0 to remove this limit.',
         )}
         placeholder={t(
           'settings.system.placeholders.scheduledTaskMinimumInterval',

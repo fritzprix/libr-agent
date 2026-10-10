@@ -125,7 +125,7 @@ function AdvancedPerformanceSectionComponent({
           )}
           description={t(
             'settings.advanced.maxSuspendedProcessesDescription',
-            'Maximum number of processes that can be paused waiting on pollProcess. Should be ≥ active processes.',
+            'Maximum number of background shell processes that can wait for output.',
           )}
           placeholder={t(
             'settings.advanced.maxSuspendedProcessesPlaceholder',

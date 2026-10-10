@@ -563,9 +563,36 @@ pub async fn fetch_url(
     session_id: Option<String>,
 ) -> Result<MCPResult, String> {
     let url = match args.get("url").and_then(|v| v.as_str()) {
-        Some(u) => u.to_string(),
+        Some(u) => u.trim().to_string(),
         Option::None => return Ok(missing_param_error("url", ToolGroup::Browser)),
     };
+
+    let scheme = url.split_once(':').map(|(s, _)| s.to_ascii_lowercase());
+    if scheme.as_deref() == Some("file") {
+        return Ok(guided_error(
+            ErrorCategory::InvalidInput,
+            "Local file URLs are not supported by browser__fetchUrl. Use http:// or https:// URLs only",
+            ToolGroup::Browser,
+        )
+        .guidance(vec![
+            "Use workspace tools (listDirectory/readFile) for local files.".to_string(),
+            "If the file is a session attachment, use attachments__listAttachments / readAttachment."
+                .to_string(),
+        ])
+        .to_mcp_result());
+    }
+
+    if scheme.as_deref() != Some("http") && scheme.as_deref() != Some("https") {
+        return Ok(guided_error(
+            ErrorCategory::InvalidInput,
+            format!(
+                "Invalid URL format: '{}'. browser__fetchUrl requires http:// or https://",
+                url
+            ),
+            ToolGroup::Browser,
+        )
+        .to_mcp_result());
+    }
 
     let save_path = args
         .get("savePath")

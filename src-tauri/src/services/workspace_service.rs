@@ -468,6 +468,22 @@ impl WorkspaceService {
         let workspace_dir =
             crate::session::resolve_session_workspace_dir(session_manager, session_id).await?;
 
+        // Docker sessions: map absolute container paths (e.g. /app/...) to the
+        // host staging workspace before host canonicalize (which cannot see /app).
+        // Outside-workdir Err must fall through — the path may be a host absolute
+        // under docker_host_workspace_path / authorized roots (also starts with `/`).
+        match crate::session_isolation::map_docker_container_file_tool_path(session_id, file_path)
+            .await
+        {
+            Ok(Some(mapped)) => return Ok(mapped),
+            Ok(None) => {}
+            Err(err)
+                if err.contains(
+                    crate::session_isolation::OUTSIDE_DOCKER_WORKDIR_FILE_TOOL_MARKER,
+                ) => {}
+            Err(err) => return Err(err),
+        }
+
         // Normalize container / relative prefixes
         let trimmed = file_path.trim();
         let stripped = trimmed

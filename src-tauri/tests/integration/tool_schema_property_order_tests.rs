@@ -213,6 +213,7 @@ fn start_session_schema_property_order_puts_task_last() {
         &tool,
         &[
             "configId",
+            "complexity",
             "workspaceOverride",
             "waitForResult",
             "timeout",

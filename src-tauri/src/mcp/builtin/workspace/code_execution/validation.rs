@@ -406,6 +406,39 @@ fn docker_chdir_workdir_failure_guidance() -> Vec<String> {
     ]
 }
 
+/// Windows cmd.exe / App Execution Alias stub: binary found on PATH but not installed
+/// (Microsoft Store placeholder). Common for `python` / `python3` under WindowsApps.
+///
+/// Exit 9009 alone is NOT enough — on Windows that is the generic "command not found"
+/// code for any missing binary (`mvn`, `ffmpeg`, …).
+pub fn looks_like_windows_store_alias_stub(
+    exit_code: Option<i32>,
+    stdout: &str,
+    stderr: &str,
+    command: &str,
+) -> bool {
+    let combined = format!("{stdout}\n{stderr}").to_ascii_lowercase();
+    let cmd_lower = command.to_ascii_lowercase();
+    let store_text = combined.contains("microsoft store")
+        || combined.contains("app execution aliases")
+        || combined.contains("windowsapps");
+    let python_not_found = combined.contains("python was not found");
+    let pythonish_command = cmd_lower.contains("python");
+    (matches!(exit_code, Some(9009)) && (store_text || pythonish_command || python_not_found))
+        || (store_text && python_not_found)
+}
+
+fn windows_store_alias_stub_guidance() -> Vec<String> {
+    vec![
+        "Microsoft Store execution-alias stub detected — this program is NOT installed (exit 9009 is common for WindowsApps python/python3 placeholders)."
+            .to_string(),
+        "Do not search the filesystem for another interpreter; switch to an installed runtime (e.g. Node.js) or a native LibrAgent tool fallback."
+            .to_string(),
+        "If Python is required, install a real distribution and ensure its directory appears on PATH ahead of Local\\Microsoft\\WindowsApps."
+            .to_string(),
+    ]
+}
+
 /// Outcome-conditioned next-step hints for failed one-shot / persistent shell runs.
 pub fn shell_command_failure_guidance(
     exit_code: Option<i32>,
@@ -418,6 +451,9 @@ pub fn shell_command_failure_guidance(
     }
     if looks_like_docker_chdir_workdir_failure(stdout, stderr) {
         return docker_chdir_workdir_failure_guidance();
+    }
+    if looks_like_windows_store_alias_stub(exit_code, stdout, stderr, command) {
+        return windows_store_alias_stub_guidance();
     }
 
     match exit_code {
@@ -791,6 +827,36 @@ index 111..222 100644
             "",
             "chdir: cannot change directory"
         ));
+    }
+
+    #[test]
+    fn test_shell_command_failure_guidance_windows_store_alias_stub() {
+        let stderr = "Python was not found; run without arguments to install from the Microsoft Store, or disable this shortcut from Settings > Apps > Advanced app settings > App execution aliases.";
+        assert!(looks_like_windows_store_alias_stub(
+            Some(9009),
+            "",
+            stderr,
+            "python3 --version"
+        ));
+        assert!(
+            !looks_like_windows_store_alias_stub(
+                Some(9009),
+                "",
+                "'mvn' is not recognized as an internal or external command",
+                "mvn -v"
+            ),
+            "generic Windows 9009 must not be treated as a Store python stub"
+        );
+        let guidance = shell_command_failure_guidance(Some(9009), "", stderr, "python3 --version");
+        let joined = guidance.join("\n");
+        assert!(
+            joined.contains("execution-alias stub") || joined.contains("NOT installed"),
+            "expected Store-stub guidance, got: {joined}"
+        );
+        assert!(
+            !joined.contains("Review error output above for specific failure reasons"),
+            "generic exit-code guidance must not replace stub guidance: {joined}"
+        );
     }
 
     #[test]

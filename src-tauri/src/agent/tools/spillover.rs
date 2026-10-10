@@ -153,6 +153,64 @@ Do not page through this dump with repeated `workspace__readFile` chunk reads."
     )
 }
 
+const READ_FILE_RESULT_HEADER_PREFIX: &str = "📄 **`";
+/// Room for SuccessHint's leading "✓ " before the readFile header.
+const READ_FILE_RESULT_HEADER_MAX_OFFSET: usize = 32;
+
+/// Path from a `workspace__readFile` success header, when that header is at the start.
+///
+/// The header is `📄 **\`path\`**`. Only the leading header counts — a later copy
+/// inside file content must not change spillover behavior.
+fn read_file_header_path(text: &str) -> Option<&str> {
+    let start = text.find(READ_FILE_RESULT_HEADER_PREFIX)?;
+    if start > READ_FILE_RESULT_HEADER_MAX_OFFSET {
+        return None;
+    }
+    let after = &text[start + READ_FILE_RESULT_HEADER_PREFIX.len()..];
+    let end = after.find("`**")?;
+    Some(&after[..end])
+}
+
+fn path_targets_tool_result_spillover(path: &str) -> bool {
+    let normalized;
+    let path = if path.contains('\\') {
+        normalized = path.replace('\\', "/");
+        normalized.as_str()
+    } else {
+        path
+    };
+
+    path.split('/')
+        .zip(path.split('/').skip(1))
+        .any(|(parent, child)| parent == ".libragent" && child == "tool-results")
+}
+
+/// readFile already truncated this payload and told the agent how to continue.
+fn is_self_paginated_read_file_result(text: &str) -> bool {
+    if read_file_header_path(text).is_none() {
+        return false;
+    }
+
+    text.contains("Next chunk: workspace__readFile(")
+        || text.contains("truncated to stay under the inline limit")
+        || text.contains("…[hard-cut at ")
+        || text.contains("is too large to fit in one response")
+}
+
+/// Keep this tool text inline instead of writing another spillover file.
+///
+/// `workspace__readFile` caps its own body and appends next-chunk instructions.
+/// Spilling that response replaces those instructions with a new
+/// `.libragent/tool-results/` file. The agent reads that file, the next readFile
+/// response spills again, and the loop never ends (#2039).
+fn read_file_result_exempt_from_spillover(text: &str) -> bool {
+    if is_self_paginated_read_file_result(text) {
+        return true;
+    }
+
+    read_file_header_path(text).is_some_and(path_targets_tool_result_spillover)
+}
+
 fn build_tool_result_spillover_notice(
     relative_path: &str,
     original_text: &str,
@@ -256,6 +314,17 @@ pub async fn spill_oversized_tool_result_messages(
         let mut next_content = Vec::with_capacity(message.content.len());
         for (content_index, content) in message.content.into_iter().enumerate() {
             match content {
+                MCPContent::Text { text }
+                    if text.len() > inline_limit_bytes
+                        && read_file_result_exempt_from_spillover(&text) =>
+                {
+                    log::info!(
+                        "Leaving oversized workspace__readFile result inline for session {} ({} bytes) to avoid a spillover loop",
+                        session_id,
+                        text.len()
+                    );
+                    next_content.push(MCPContent::Text { text });
+                }
                 MCPContent::Text { text } if text.len() > inline_limit_bytes => {
                     let relative_path = format!(
                         "{}/{}-{}-{}.txt",

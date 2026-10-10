@@ -188,6 +188,27 @@ pub fn get_effective_path() -> String {
     get_effective_path_os().to_string_lossy().into_owned()
 }
 
+/// Drop `%LOCALAPPDATA%\Microsoft\WindowsApps` (and similar) entries that host
+/// 0-byte Microsoft Store execution-alias stubs (`python.exe` / `python3.exe`).
+/// Isolated shells should not advertise those stubs via PATH / Get-Command.
+#[cfg(windows)]
+pub fn strip_windows_apps_shim_dirs(path: &str) -> String {
+    let filtered: Vec<_> = std::env::split_paths(path)
+        .filter(|dir| {
+            !dir.to_string_lossy()
+                .to_ascii_lowercase()
+                .contains("windowsapps")
+        })
+        .collect();
+    if filtered.is_empty() {
+        path.to_string()
+    } else {
+        std::env::join_paths(filtered)
+            .map(|os| os.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| path.to_string())
+    }
+}
+
 /// Returns a list of environment variables that are safe to pass to external processes
 /// (whitelisted essential system variables), preventing the leakage of host secrets.
 pub fn get_isolated_env() -> Vec<(String, String)> {
@@ -275,8 +296,20 @@ pub fn get_isolated_env() -> Vec<(String, String)> {
         }
     }
 
-    let effective_path = get_effective_path();
-    if let Some(entry) = envs.iter_mut().find(|(k, _)| k == "PATH") {
+    let effective_path = {
+        #[cfg(windows)]
+        {
+            strip_windows_apps_shim_dirs(&get_effective_path())
+        }
+        #[cfg(not(windows))]
+        {
+            get_effective_path()
+        }
+    };
+    if let Some(entry) = envs
+        .iter_mut()
+        .find(|(k, _)| k.eq_ignore_ascii_case("PATH"))
+    {
         entry.1 = effective_path;
     } else {
         envs.push(("PATH".to_string(), effective_path));
@@ -330,7 +363,7 @@ mod tests {
         assert!(isolated.iter().all(|(k, _)| k != "MY_PRIVATE_VAR"));
 
         // Verify some essential vars are kept if they exist in the host
-        assert!(isolated.iter().any(|(k, _)| k == "PATH"));
+        assert!(isolated.iter().any(|(k, _)| k.eq_ignore_ascii_case("PATH")));
     }
 
     #[test]
@@ -384,5 +417,16 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(parts, vec!["/opt/custom/bin", "/usr/bin", "/bin"]);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_strip_windows_apps_shim_dirs_removes_store_aliases() {
+        let input = r"C:\Python312;C:\Users\test\AppData\Local\Microsoft\WindowsApps;C:\nodejs";
+        let stripped = strip_windows_apps_shim_dirs(input);
+        let lower = stripped.to_ascii_lowercase();
+        assert!(!lower.contains("windowsapps"), "got: {stripped}");
+        assert!(lower.contains(r"c:\python312"));
+        assert!(lower.contains(r"c:\nodejs"));
     }
 }

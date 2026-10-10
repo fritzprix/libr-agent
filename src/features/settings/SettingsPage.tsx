@@ -176,6 +176,9 @@ const SettingsPage: FC = function SettingsPage() {
                 providerEntries={PROVIDER_ENTRIES}
                 localPreferredModel={formState.preferredModel}
                 localFallbackModel={formState.fallbackModel}
+                complexityModelMapping={
+                  formState.complexityModelMapping ?? {}
+                }
                 temperatureOverrideEnabled={
                   formState.temperatureOverrideEnabled
                 }
@@ -184,6 +187,9 @@ const SettingsPage: FC = function SettingsPage() {
                 onCustomProvidersChange={handleCustomProvidersChange}
                 onPreferredModelChange={handlePreferredModelChange}
                 onFallbackModelChange={handleFallbackModelChange}
+                onComplexityModelMappingChange={(mapping) =>
+                  update('complexityModelMapping', mapping)
+                }
                 onTemperatureOverrideEnabledChange={(enabled) =>
                   update('temperatureOverrideEnabled', enabled)
                 }

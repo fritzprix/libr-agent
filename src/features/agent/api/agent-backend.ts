@@ -60,6 +60,8 @@ export async function saveAgentFile(
   args: {
     content?: string;
     fileUrl?: string;
+    /** Workspace file:// or remote provenance; never a blob: URL. */
+    srcUrl?: string;
     metadata?: AddAttachmentMetadata;
   },
 ): Promise<AttachmentItem> {

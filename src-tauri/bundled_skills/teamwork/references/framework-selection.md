@@ -57,8 +57,8 @@ After choosing the coordination model, choose the execution substrate explicitly
 
 | Execution need | Use this substrate | Then follow | Why |
 | --- | --- | --- | --- |
-| One-off specialist delegation | `agent__listAgents(type="sessions")` + `agent__messageToSession(...)` when a matching Idle child exists; otherwise `agent__spawnSession(...)` | `delegate` | Lightweight child session without org coupling |
-| Org-visible lineage under a governing teamwork session | `agent__prepareTeamworkWorkspace()`, then `agent__createOrg(...)`, then reuse with `agent__messageToSession(...)` or create with `agent__spawnSession(...)` | `org` | Preserves explicit org membership, Org view semantics, and parent-workspace inheritance while keeping teamwork artifacts in app-local storage |
+| One-off specialist delegation | `agent__listAgents(type="sessions")` + `agent__messageToSession(..., complexity=...)` when a matching Idle child exists; otherwise `agent__spawnSession(..., complexity=...)` | `delegate` | Lightweight child session without org coupling |
+| Org-visible lineage under a governing teamwork session | `agent__prepareTeamworkWorkspace()`, then `agent__createOrg(...)`, then reuse with `agent__messageToSession(..., complexity=...)` or create with `agent__spawnSession(..., complexity=...)` | `org` | Preserves explicit org membership, Org view semantics, and parent-workspace inheritance while keeping teamwork artifacts in app-local storage |
 | Recurring, cron, heartbeat, or resumable automation | Scheduled task groups via `scheduled_task__createScheduledTask(...)` and related `scheduled_task` tools | `schedule` | Keeps recurring collaboration separate from org lineage and under policy control |
 | Delay or recurrence inside the current conversation | `scheduled_task__scheduleCallback(...)` | `loop` | Session-bound clock follow-ups without teamwork scaffolding or global task groups |
 | Wait for process exit / kanban ticket / webhook | `workspace__spawnProcess` + `workspace__waitForProcess`, or external watch/MCP | `call-me-back` | Event-driven resume; do not fake completion with `loop` delays |

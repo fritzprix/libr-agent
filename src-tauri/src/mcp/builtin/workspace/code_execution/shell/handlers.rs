@@ -199,15 +199,6 @@ impl WorkspaceServer {
         let workspace_path = self
             .session_manager
             .get_session_workspace_dir_by_id(session_id);
-        if let Some(result) = self.apply_shell_policy_block(
-            tool_name,
-            raw_command,
-            &workspace_path,
-            None,
-            Some(&env_vars),
-        ) {
-            return Ok(result);
-        }
 
         // Get timeout (use default if not specified)
         let requested_timeout = args.get("timeout").and_then(|v| v.as_u64());
@@ -220,7 +211,54 @@ impl WorkspaceServer {
             }
         };
 
-        // Execute with configured isolation level (always workspace root anchored)
+        let requested_cwd = args.get("cwd").and_then(|v| v.as_str());
+        if requested_cwd.is_some() && utils::is_session_docker_isolated(session_id).await {
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                "cwd is not supported for Docker-isolated sessions",
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                "Chain directory changes in one command (e.g. 'cd subdir && command').".to_string(),
+                format!(
+                    "Or use {} for a sticky shell working directory.",
+                    PERSISTENT_SHELL_TOOL
+                ),
+            ])
+            .to_mcp_result());
+        }
+
+        let working_directory =
+            match utils::resolve_isolated_shell_cwd(&workspace_path, requested_cwd) {
+                Ok(cwd) => cwd,
+                Err(message) => {
+                    return Ok(guided_error(
+                        ErrorCategory::InvalidInput,
+                        message,
+                        ToolGroup::Workspace,
+                    )
+                    .guidance(vec![
+                        "Pass cwd as a path under the session workspace (relative or absolute)."
+                            .to_string(),
+                        "Create the directory first with workspace__createDirectory if needed."
+                            .to_string(),
+                    ])
+                    .to_mcp_result());
+                }
+            };
+
+        // Policy after cwd resolve so relative path checks use the real working dir.
+        if let Some(result) = self.apply_shell_policy_block(
+            tool_name,
+            raw_command,
+            &workspace_path,
+            working_directory.as_deref(),
+            Some(&env_vars),
+        ) {
+            return Ok(result);
+        }
+
+        // Execute with configured isolation level (workspace root unless cwd is set)
         let isolation_level = utils::get_shell_isolation_level().await;
         self.execute_shell_with_isolation(
             raw_command,
@@ -229,6 +267,7 @@ impl WorkspaceServer {
             timeout_secs,
             session_id,
             env_vars,
+            working_directory,
         )
         .await
     }
@@ -284,26 +323,7 @@ impl WorkspaceServer {
             );
         }
 
-        let env_vars = args.get("env").and_then(|v| v.as_object()).map(|obj| {
-            obj.iter()
-                .map(|(key, value)| (key.clone(), value.as_str().unwrap_or("").to_string()))
-                .collect::<std::collections::HashMap<_, _>>()
-        });
-
-        let workspace_path = self
-            .session_manager
-            .get_session_workspace_dir_by_id(session_id);
-        if let Some(result) = self.apply_shell_policy_block(
-            "spawnProcess",
-            raw_command,
-            &workspace_path,
-            None,
-            env_vars.as_ref(),
-        ) {
-            return Ok(result);
-        }
-
-        // Execute in background
+        // Policy + cwd resolve live in execute_shell_async (cwd must be known first).
         self.execute_shell_async(raw_command, &args, session_id)
             .await
     }

@@ -16,6 +16,8 @@ description: >
 
 LibrAgent exposes builtin tools as `server__tool` (for example `agent__spawnSession`). Use the exact names from the current session tool list when calling tools. Bare shorthand like `spawnSession` will fail at runtime.
 
+`agent__spawnSession` and `agent__messageToSession` require `complexity` (`low` | `normal` | `high`). Choose the **minimum sufficient** level. Mapped models come from Settings → Sub-Agent Model Routing; unset levels keep the normal parent/default model chain.
+
 Treat sub-agent delegation as session orchestration, not magic inheritance.
 
 A child session keeps lineage to its parent, but it does **not** automatically inherit the parent's workspace, workspace instruction files, or workspace-local skills. If the task depends on those, either restate them in the handoff, choose a different assistant, or avoid delegation.
@@ -122,10 +124,10 @@ Use the builtin agent tools deliberately:
 
 - `agent__listAgents(type="configs")` to find the right assistant and prefer its returned template ID
 - `agent__listAgents(type="sessions")` or the live sub-agent inventory to find an existing child with a matching assistant ID
-- `agent__messageToSession(sessionId="...", message="...")` to continue work or assign new work to a suitable idle matching-role child
+- `agent__messageToSession(sessionId="...", complexity="normal", message="...")` to continue work or assign new work to a suitable idle matching-role child (`complexity` is required: `low`|`normal`|`high`)
 - Set `reset=true` only when the previous conversation and runtime state should be discarded. This resets messages, planning/compaction state, and pending messages but does not clean workspace files.
-- `agent__spawnSession(configId="...", task="...", waitForResult=false)` to spawn a new child session using the configuration template ID. Do not pass a `sessionId` here; for existing sessions use `agent__messageToSession`.
-- `agent__spawnSession(configId="...", task="...", workspaceOverride="/absolute/path")` when the child must run in a shared existing workspace
+- `agent__spawnSession(configId="...", complexity="normal", task="...", waitForResult=false)` to spawn a new child session using the configuration template ID. Do not pass a `sessionId` here; for existing sessions use `agent__messageToSession`.
+- `agent__spawnSession(configId="...", complexity="normal", task="...", workspaceOverride="/absolute/path")` when the child must run in a shared existing workspace
 - `agent__checkSession(sessionId)` to poll
 - `agent__checkSession(sessionId, wait=true)` when you want to block until a terminal result
 Default to `waitForResult=false` unless the parent truly has nothing useful to do while waiting.

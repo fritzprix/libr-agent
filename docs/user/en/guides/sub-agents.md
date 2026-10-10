@@ -20,6 +20,8 @@ title: Sub-agents & orchestration
 Parents should first inspect existing children for a suitable **Idle session with the same assistant configuration** and reuse it with `messageToSession` when possible. When no suitable session exists, or a different role, parallel work, or isolated workspace is needed, they **start → poll/`checkSession` → correct with `messageToSession` → merge results**.
 Sibling sessions do not talk to each other (the parent hub relays).
 
+`spawnSession` / `messageToSession` require **complexity** (`low` | `normal` | `high`). In Settings → AI Models under **Sub-Agent Model Routing**, you can specify models for each level; if left unset, it falls back to the parent/preferred model as before. Choose the lowest complexity possible.
+
 ### Where it shows in the UI
 
 | Screen                   | Content                                                                              |

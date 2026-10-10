@@ -11,7 +11,10 @@ import type {
   ServiceConfig,
   CustomOpenAIProvider,
   ModelChoice,
+  ComplexityModelMapping,
+  ComplexityLevel,
 } from '@/lib/services/settings-service';
+import { COMPLEXITY_LEVELS } from '@/lib/services/settings-service';
 import { AgentModelPicker } from '@/features/agent/components/AgentModelPicker';
 import {
   AlertDialog,
@@ -45,6 +48,7 @@ interface AIModelsTabProps {
   providerEntries: AIServiceProvider[];
   localPreferredModel: ModelChoice;
   localFallbackModel?: ModelChoice | null;
+  complexityModelMapping: ComplexityModelMapping;
   temperatureOverrideEnabled: boolean;
   temperature: number;
   onPendingChange: (
@@ -54,6 +58,7 @@ interface AIModelsTabProps {
   onCustomProvidersChange: (providers: CustomOpenAIProvider[]) => void;
   onPreferredModelChange: (model: string, provider: string) => void;
   onFallbackModelChange: (model: string, provider: string) => void;
+  onComplexityModelMappingChange: (mapping: ComplexityModelMapping) => void;
   onTemperatureOverrideEnabledChange: (enabled: boolean) => void;
   onTemperatureChange: (temperature: number) => void;
   thinkingEffort: ThinkingEffort;
@@ -66,12 +71,14 @@ function AIModelsTabComponent({
   providerEntries,
   localPreferredModel,
   localFallbackModel,
+  complexityModelMapping,
   temperatureOverrideEnabled,
   temperature,
   onPendingChange,
   onCustomProvidersChange,
   onPreferredModelChange,
   onFallbackModelChange,
+  onComplexityModelMappingChange,
   onTemperatureOverrideEnabledChange,
   onTemperatureChange,
   thinkingEffort,
@@ -235,6 +242,33 @@ function AIModelsTabComponent({
     providers.find((entry) => entry.id === providerPendingRemoval)?.name ??
     providerPendingRemoval;
 
+  const handleComplexityLevelChange = useCallback(
+    (level: ComplexityLevel, model: string, provider: string) => {
+      if (!model.trim() || !provider.trim()) {
+        onComplexityModelMappingChange({
+          ...complexityModelMapping,
+          [level]: null,
+        });
+        return;
+      }
+      onComplexityModelMappingChange({
+        ...complexityModelMapping,
+        [level]: { model, provider },
+      });
+    },
+    [complexityModelMapping, onComplexityModelMappingChange],
+  );
+
+  const handleComplexityLevelInherit = useCallback(
+    (level: ComplexityLevel) => {
+      onComplexityModelMappingChange({
+        ...complexityModelMapping,
+        [level]: null,
+      });
+    },
+    [complexityModelMapping, onComplexityModelMappingChange],
+  );
+
   return (
     <div className="space-y-8">
       <div className="space-y-4">
@@ -243,7 +277,7 @@ function AIModelsTabComponent({
         </h3>
         <div className="min-w-0">
           <label className="block text-muted-foreground mb-2 font-medium">
-            {t('settings.llmPreference', 'Default LLM')}
+            {t('settings.llmPreference', 'Default AI Model')}
           </label>
           <AgentModelPicker
             currentModel={localPreferredModel.model}
@@ -258,7 +292,7 @@ function AIModelsTabComponent({
 
         <div className="min-w-0">
           <label className="block text-muted-foreground mb-2 font-medium">
-            {t('settings.aiModels.fallbackModel', 'Fallback LLM')}
+            {t('settings.aiModels.fallbackModel', 'Backup AI Model')}
           </label>
           <AgentModelPicker
             currentModel={localFallbackModel?.model ?? ''}
@@ -274,7 +308,7 @@ function AIModelsTabComponent({
           <p className="mt-1 text-xs text-muted-foreground">
             {t(
               'settings.aiModels.fallbackModelDescription',
-              'Used as a last resort when the primary model returns malformed or empty responses after all retries.',
+              'Used when the default model fails to respond after all retries.',
             )}
           </p>
         </div>
@@ -283,6 +317,80 @@ function AIModelsTabComponent({
           thinkingEffort={thinkingEffort}
           onThinkingEffortChange={onThinkingEffortChange}
         />
+
+        <div className="min-w-0 space-y-3">
+          <div>
+            <h4 className="text-sm font-medium text-foreground">
+              {t(
+                'settings.aiModels.complexityRouting',
+                'Sub-Agent Model Routing',
+              )}
+            </h4>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {t(
+                'settings.aiModels.complexityRoutingDescription',
+                'Override model/provider for sub-agents by task complexity. Unset levels inherit the default AI model.',
+              )}
+            </p>
+          </div>
+          <div className="space-y-3">
+            {COMPLEXITY_LEVELS.map((level) => {
+              const override = complexityModelMapping[level];
+              const inherits = !override?.model || !override?.provider;
+              return (
+                <div
+                  key={level}
+                  className="flex flex-col gap-2 sm:flex-row sm:items-center"
+                >
+                  <span className="w-20 shrink-0 text-sm font-medium capitalize text-muted-foreground">
+                    {t(`settings.aiModels.complexity.${level}`, level)}
+                  </span>
+                  <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                    <AgentModelPicker
+                      currentModel={
+                        inherits
+                          ? localPreferredModel.model
+                          : (override?.model ?? '')
+                      }
+                      currentProvider={
+                        inherits
+                          ? localPreferredModel.provider
+                          : (override?.provider ?? localPreferredModel.provider)
+                      }
+                      customProviders={providers}
+                      serviceConfigs={serviceConfigs}
+                      onConfigUpdate={(model, provider) =>
+                        handleComplexityLevelChange(level, model, provider)
+                      }
+                      disableConfigureAction
+                      className="w-full max-w-sm"
+                    />
+                    {!inherits ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleComplexityLevelInherit(level)}
+                      >
+                        {t(
+                          'settings.aiModels.complexityInherit',
+                          'Use default',
+                        )}
+                      </Button>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">
+                        {t(
+                          'settings.aiModels.complexityInheriting',
+                          'Using default',
+                        )}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
 
         <div className="min-w-0 space-y-3">
           <div className="flex items-center space-x-2">
@@ -326,7 +434,7 @@ function AIModelsTabComponent({
           <p className="text-xs text-muted-foreground">
             {t(
               'settings.aiModels.temperatureOverrideDescription',
-              'When disabled, provider and serving-engine defaults apply. Enable to send a custom temperature on AI requests.',
+              'When disabled, the recommended default of each model applies. Enable to set a custom value.',
             )}
           </p>
           {temperatureOverrideEnabled ? (
@@ -334,7 +442,7 @@ function AIModelsTabComponent({
               label={t('settings.aiModels.temperature', 'Temperature')}
               description={t(
                 'settings.aiModels.temperatureDescription',
-                'Controls randomness. Lower is more deterministic; higher is more creative. Range 0–2.',
+                'Controls response creativity. Lower values are more deterministic; higher values are more creative. Range 0–2.',
               )}
               value={temperature}
               min={0}
