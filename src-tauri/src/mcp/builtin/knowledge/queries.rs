@@ -48,7 +48,7 @@ pub async fn search_knowledge(
     };
 
     let query_embedding = if matches!(mode, "semantic" | "hybrid") {
-        match embed::generate_embedding(query) {
+        match embed::generate_embedding(query).await {
             Ok(embedding) => Some(embedding),
             Err(e) => {
                 return Ok(guided_error(
