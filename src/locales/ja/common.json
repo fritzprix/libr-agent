@@ -1687,6 +1687,10 @@
       "title": "おすすめスターターテンプレート",
       "subtitle": "事前設定されたテンプレートを使用して定期的な自動化タスクを素早く設定できます",
       "useTemplate": "このテンプレートを使用",
+      "knowledgeDistillTitle": "長く使える知識の日次蒸留",
+      "knowledgeDistillDesc": "毎晩、最近のセッションから決定や修正など長く使える内容だけを Knowledge に残します。日次ニュースや一時メモは除外します。",
+      "knowledgeDistillName": "長く使える知識の日次蒸留",
+      "knowledgeDistillMessage": "今日と最近のセッションを確認し、長く使える知識だけを Knowledge に保存してください。対象: アーキテクチャ決定、確定したバグ修正、プロジェクト規則/好み、重要な API や設定。除外: 日次ニュース、一時スナップショット、雑談。knowledge-distiller スキルに従い、記録前に Knowledge を検索して重複を避け、簡潔な独立要約と価値の高いエンティティ/関係だけを残し、distilled タグを付け、auto_extract はオフのままにしてください。セクション見出し、ISO 日付、短い略語はエンティティにしないでください。",
       "pcAuditTitle": "毎日のPC健全性＆セキュリティ診断",
       "pcAuditDesc": "毎晩午前0時にディスク使用量、未コミットのGit変更、不審なプロセス、パッケージ脆弱性を点検します。",
       "pcAuditName": "毎日のPC健全性＆セキュリティ診断",
@@ -1791,6 +1795,12 @@
         "5": "金曜日",
         "6": "土曜日"
       }
+    },
+    "setupKnowledgeDistill": {
+      "created": "長く使える知識の日次蒸留タスクを作成しました。",
+      "updated": "長く使える知識の日次蒸留タスクを更新しました。",
+      "failed": "スケジュールタスクを作成できませんでした。",
+      "noAssistant": "先にアシスタントを作成してから再試行してください。"
     }
   },
   "mentions": {
@@ -1950,6 +1960,11 @@
         "title": "思考の深さを調整できます",
         "body": "設定 → AI & Models の Thinking Effort で、速さと思考の深さを切り替えられます。",
         "cta": "AI & Models 設定を開く"
+      },
+      "knowledgeDistillSchedule": {
+        "title": "長く使える知識を定期蒸留しましょう",
+        "body": "日次ニュースではなく、決定や修正など長く使える内容だけを Knowledge に残す夜間タスクを作成できます。",
+        "cta": "夜間の蒸留タスクを作成"
       },
       "knowledgeGraph": {
         "title": "ナレッジグラフを見てみましょう",

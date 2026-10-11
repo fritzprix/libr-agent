@@ -11,6 +11,29 @@ const mockNavigate = vi.fn();
 let workflowStatus: 'idle' | 'busy' = 'idle';
 const settingsMock = { showFeatureTips: true };
 
+vi.mock('sonner', () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+
+vi.mock('@/features/scheduled-tasks/setupKnowledgeDistillSchedule', () => ({
+  setupKnowledgeDistillSchedule: vi.fn().mockResolvedValue({
+    created: true,
+    assistantId: 'ast-1',
+    task: { id: 'task-1' },
+  }),
+}));
+
+vi.mock('swr', async () => {
+  const actual = await vi.importActual<typeof import('swr')>('swr');
+  return {
+    ...actual,
+    mutate: vi.fn(),
+  };
+});
+
 vi.mock('react-router-dom', async () => {
   const actual =
     await vi.importActual<typeof import('react-router-dom')>(
@@ -47,6 +70,12 @@ vi.mock('react-i18next', () => ({
     t: (key: string, options?: { defaultValue?: string; title?: string }) => {
       if (key === 'spotlight.waitLine' && options?.title) {
         return `Tip · ${options.title}`;
+      }
+      if (key === 'spotlight.items.knowledgeDistillSchedule.title') {
+        return 'Schedule durable knowledge distillation';
+      }
+      if (key === 'spotlight.items.knowledgeDistillSchedule.body') {
+        return 'Create a nightly distill task';
       }
       if (key === 'spotlight.items.everydayChrome.title') {
         return 'Use your everyday Chrome';
@@ -105,7 +134,7 @@ describe('ComposerBusyTipStrip', () => {
     expect(screen.queryByTestId('composer-busy-tip-strip')).toBeNull();
   });
 
-  it('shows a tip while busy and rotates', () => {
+  it('shows a tip while busy and rotates', async () => {
     workflowStatus = 'busy';
     render(
       <MemoryRouter>
@@ -114,15 +143,21 @@ describe('ComposerBusyTipStrip', () => {
     );
 
     const tip = screen.getByTestId('composer-busy-tip');
-    expect(tip).toHaveTextContent('Tip · Use your everyday Chrome');
+    expect(tip).toHaveTextContent(
+      'Tip · Schedule durable knowledge distillation',
+    );
 
-    fireEvent.click(screen.getByTestId('composer-busy-tip'));
-    expect(mockNavigate).toHaveBeenCalledWith('/settings?tab=system');
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('composer-busy-tip'));
+    });
+    expect(mockNavigate).toHaveBeenCalledWith('/scheduled-tasks');
 
     act(() => {
       vi.advanceTimersByTime(WAIT_TIP_ROTATE_MS);
     });
 
+    // knowledge-distill tip was dismissed by the CTA; rotation continues
+    // with the remaining wait pool (index already advanced past 0).
     expect(screen.getByTestId('composer-busy-tip')).toHaveTextContent(
       'Tip · Try starter tasks',
     );

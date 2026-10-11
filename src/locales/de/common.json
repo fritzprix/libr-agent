@@ -1687,6 +1687,10 @@
       "title": "Empfohlene Starter-Vorlagen",
       "subtitle": "Richten Sie wiederkehrende automatisierte Aufgaben schnell mit vorkonfigurierten Vorlagen ein",
       "useTemplate": "Diese Vorlage verwenden",
+      "knowledgeDistillTitle": "Tägliche dauerhafte Wissensdestillation",
+      "knowledgeDistillDesc": "Jeden Abend dauerhafte Entscheidungen und Fixes aus aktuellen Sitzungen in Knowledge speichern — keine Tagesnews oder Notizen.",
+      "knowledgeDistillName": "Tägliche dauerhafte Wissensdestillation",
+      "knowledgeDistillMessage": "Prüfen Sie heutige und aktuelle Sitzungen. Speichern Sie nur dauerhaftes Wissen in Knowledge: Architekturentscheidungen, bestätigte Bugfixes, Projektregeln/Präferenzen sowie wichtige APIs oder Einstellungen. Überspringen Sie Tagesnews, einmalige Snapshots und Smalltalk. Folgen Sie dem knowledge-distiller-Skill: suchen Sie zuerst in Knowledge, um Duplikate zu vermeiden, speichern Sie knappe eigenständige Zusammenfassungen mit wenigen hochwertigen Entitäten/Beziehungen, markieren Sie mit distilled und lassen Sie auto_extract aus. Keine Abschnittsüberschriften, ISO-Daten oder kurzen Akronyme als Entitäten.",
       "pcAuditTitle": "Täglicher PC-Zustands- & Sicherheitscheck",
       "pcAuditDesc": "Überprüft jeden Mitternacht Festplattenspeicher, nicht gespeicherte Git-Änderungen, verdächtige Prozesse und Paket-Sicherheitslücken.",
       "pcAuditName": "Täglicher PC-Zustands- & Sicherheitscheck",
@@ -1791,6 +1795,12 @@
         "5": "Freitag",
         "6": "Samstag"
       }
+    },
+    "setupKnowledgeDistill": {
+      "created": "Nächtliche Wissensdestillationsaufgabe erstellt.",
+      "updated": "Nächtliche Wissensdestillationsaufgabe aktualisiert.",
+      "failed": "Geplante Aufgabe konnte nicht erstellt werden.",
+      "noAssistant": "Erstellen Sie zuerst einen Assistenten und versuchen Sie es erneut."
     }
   },
   "mentions": {
@@ -1950,6 +1960,11 @@
         "title": "Denkaufwand einstellen",
         "body": "Unter Einstellungen → AI & Models steuern Sie Thinking Effort für schnellere oder tiefere Antworten.",
         "cta": "AI & Models öffnen"
+      },
+      "knowledgeDistillSchedule": {
+        "title": "Dauerhaftes Wissen planen",
+        "body": "Erstellen Sie eine nächtliche Aufgabe, die bleibende Entscheidungen und Fixes — nicht Tagesnews — in Knowledge speichert.",
+        "cta": "Nächtliche Destillationsaufgabe erstellen"
       },
       "knowledgeGraph": {
         "title": "Wissensgraph erkunden",

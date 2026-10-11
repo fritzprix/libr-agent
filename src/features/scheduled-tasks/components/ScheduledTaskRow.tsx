@@ -1,6 +1,7 @@
 import { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
+  BookMarked,
   FolderOpen,
   Globe,
   Loader2,
@@ -9,6 +10,7 @@ import {
   Trash2,
   Zap,
   DatabaseZap,
+  type LucideIcon,
 } from 'lucide-react';
 import {
   STARTER_TASK_TEMPLATES,
@@ -249,6 +251,17 @@ function SummaryCard({ title, value, description }: SummaryCardProps) {
   );
 }
 
+function starterTemplateIcon(templateId: string): LucideIcon {
+  switch (templateId) {
+    case 'knowledge-distill':
+      return BookMarked;
+    case 'pc-health-audit':
+      return Shield;
+    default:
+      return Globe;
+  }
+}
+
 interface ScheduledTasksContentProps {
   enabledTaskCount: number;
   formatNextRun: (ms: number | null) => string;
@@ -304,9 +317,9 @@ export function ScheduledTasksContent({
             </Button>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {STARTER_TASK_TEMPLATES.map((template) => {
-              const Icon = template.id === 'pc-health-audit' ? Shield : Globe;
+              const Icon = starterTemplateIcon(template.id);
               return (
                 <Card
                   key={template.id}

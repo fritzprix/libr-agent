@@ -110,6 +110,18 @@ pub(super) async fn delete_chunks_atomic(
         )));
     }
 
+    // Capture linked entities before junction rows are removed so orphan graph
+    // cleanup matches delete_chunk_global.
+    let chunk_links = knowledge_chunk_entity::Entity::find()
+        .filter(knowledge_chunk_entity::Column::ChunkId.is_in(requested_ids.clone()))
+        .all(&txn)
+        .await
+        .map_err(DbError::SeaOrmQueryFailed)?;
+    let affected_entity_ids = chunk_links
+        .iter()
+        .map(|link| link.entity_id)
+        .collect::<HashSet<_>>();
+
     let delete_result = knowledge_chunk_v2::Entity::delete_many()
         .filter(knowledge_chunk_v2::Column::AssistantId.eq(assistant_id))
         .filter(knowledge_chunk_v2::Column::Id.is_in(requested_ids.clone()))
@@ -146,6 +158,9 @@ pub(super) async fn delete_chunks_atomic(
         .exec(&txn)
         .await
         .map_err(DbError::SeaOrmQueryFailed)?;
+
+    let orphan_entity_ids = find_orphan_entity_ids(&txn, &affected_entity_ids).await?;
+    delete_orphan_graph_state(&txn, assistant_id, orphan_entity_ids).await?;
 
     txn.commit().await.map_err(DbError::SeaOrmQueryFailed)?;
     Ok(())

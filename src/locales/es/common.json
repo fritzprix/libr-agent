@@ -1687,6 +1687,10 @@
       "title": "Plantillas recomendadas",
       "subtitle": "Configure rápidamente tareas automatizadas periódicas con plantillas predefinidas",
       "useTemplate": "Usar esta plantilla",
+      "knowledgeDistillTitle": "Destilación diaria de conocimiento duradero",
+      "knowledgeDistillDesc": "Cada noche, destile decisiones y correcciones duraderas de sesiones recientes en Knowledge — no noticias diarias ni notas temporales.",
+      "knowledgeDistillName": "Destilación diaria de conocimiento duradero",
+      "knowledgeDistillMessage": "Revise las sesiones de hoy y recientes. Guarde solo conocimiento duradero en Knowledge: decisiones de arquitectura, correcciones confirmadas, reglas/preferencias del proyecto y API o ajustes importantes. Omita noticias diarias, instantáneas puntuales y charla. Siga la habilidad knowledge-distiller: busque primero en Knowledge para evitar duplicados, registre resúmenes autónomos concisos con pocas entidades/relaciones de alto valor, etiquete con distilled y deje auto_extract desactivado. No convierta encabezados de sección, fechas ISO ni acrónimos cortos en entidades.",
       "pcAuditTitle": "Auditoría diaria de salud y seguridad del PC",
       "pcAuditDesc": "Inspecciona el espacio en disco, cambios sin confirmar de Git, procesos sospechosos y vulnerabilidades de paquetes cada medianoche.",
       "pcAuditName": "Auditoría diaria de salud y seguridad del PC",
@@ -1791,6 +1795,12 @@
         "5": "Viernes",
         "6": "Sábado"
       }
+    },
+    "setupKnowledgeDistill": {
+      "created": "Tarea nocturna de destilación creada.",
+      "updated": "Tarea nocturna de destilación actualizada.",
+      "failed": "No se pudo crear la tarea programada.",
+      "noAssistant": "Cree un asistente primero y vuelva a intentarlo."
     }
   },
   "mentions": {
@@ -1950,6 +1960,11 @@
         "title": "Ajusta el esfuerzo de pensamiento",
         "body": "En Ajustes → AI & Models, regula Thinking Effort para respuestas más rápidas o más profundas.",
         "cta": "Abrir AI & Models"
+      },
+      "knowledgeDistillSchedule": {
+        "title": "Programe destilación de conocimiento duradero",
+        "body": "Cree una tarea nocturna que guarde en Knowledge decisiones y correcciones duraderas, no noticias diarias.",
+        "cta": "Crear tarea de destilación nocturna"
       },
       "knowledgeGraph": {
         "title": "Explora el grafo de conocimiento",

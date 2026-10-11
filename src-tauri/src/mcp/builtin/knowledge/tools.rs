@@ -8,11 +8,12 @@ pub fn record_knowledge_tool() -> MCPTool {
         name: "recordKnowledge".to_string(),
         title: Some("Record Knowledge".to_string()),
         description: tool_description(
-            "Save a knowledge entry to the local knowledge base.\n\nCore fields: content (required), tags, source.\nAdvanced fields (graph): entities, relationships, auto_extract — use only when you already know the entity/relationship structure or need heuristic graph extraction.",
+            "Save a knowledge entry to the local knowledge base.\n\nCore fields: content (required), tags, source.\nAdvanced fields (graph): entities, relationships, auto_extract (default false).",
             &[],
             &[
-                "Start with content plus optional tags and source for most recordings.",
-                "Supply entities and relationships explicitly when you know the graph; set auto_extract=true only to fill gaps heuristically.",
+                "Start with content plus optional tags and source for most recordings. Tags are retrieval labels only — they do not create graph entities.",
+                "For long text, call this tool once per chunk of about 500–1000 characters so embeddings stay focused; do not pass an entire large document in one content field.",
+                "Supply entities and relationships explicitly when you know the graph. Leave auto_extract false (default) unless you intentionally want heuristic gap-fill.",
             ],
             &[],
         ),
@@ -35,8 +36,9 @@ pub fn record_knowledge_tool() -> MCPTool {
                 ),
                 (
                     "auto_extract".to_string(),
-                    boolean_prop(
-                        Some("Whether to run heuristic fallback extraction when structured entities or relationships are missing."),
+                    boolean_prop_with_default(
+                        false,
+                        Some("Opt-in heuristic graph extraction when entities or relationships are missing. Default false — tags alone never create entities."),
                     ),
                 ),
                 (
@@ -101,7 +103,9 @@ pub fn record_knowledge_tool() -> MCPTool {
                 ),
                 (
                     "content".to_string(),
-                    string_prop_required("The full text content to store in the knowledge base."),
+                    string_prop_required(
+                        "Text to store as one knowledge chunk. Prefer about 500–1000 characters per call; split longer documents across multiple recordKnowledge calls.",
+                    ),
                 ),
             ],
             vec!["content".to_string()],

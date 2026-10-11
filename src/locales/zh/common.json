@@ -1687,6 +1687,10 @@
       "title": "推荐入门模板",
       "subtitle": "使用预设模板快速创建定期自动化任务",
       "useTemplate": "使用此模板",
+      "knowledgeDistillTitle": "每日持久知识蒸馏",
+      "knowledgeDistillDesc": "每晚从近期会话中提炼长期有用的决策与修复写入 Knowledge，排除每日新闻和临时笔记。",
+      "knowledgeDistillName": "每日持久知识蒸馏",
+      "knowledgeDistillMessage": "检查今天和近期会话，只将持久知识写入 Knowledge：架构决策、已确认的缺陷修复、项目规则/偏好，以及重要 API 或设置。跳过每日新闻、一次性快照和闲聊。遵循 knowledge-distiller 技能：先搜索 Knowledge 避免重复，记录简洁独立摘要与少量高价值实体/关系，打上 distilled 标签，并保持 auto_extract 关闭。不要将章节标题、ISO 日期或短缩写提升为实体。",
       "pcAuditTitle": "每日 PC 健康与安全巡检",
       "pcAuditDesc": "每天午夜检查磁盘占用、未提交的 Git 更改、可疑进程和依赖包安全漏洞。",
       "pcAuditName": "每日 PC 健康与安全巡检",
@@ -1791,6 +1795,12 @@
         "5": "星期五",
         "6": "星期六"
       }
+    },
+    "setupKnowledgeDistill": {
+      "created": "已创建每日持久知识蒸馏任务。",
+      "updated": "已更新每日持久知识蒸馏任务。",
+      "failed": "无法创建计划任务。",
+      "noAssistant": "请先创建助手，然后再试。"
     }
   },
   "mentions": {
@@ -1950,6 +1960,11 @@
         "title": "可调节思考深度",
         "body": "在 设置 → AI & Models 中调整 Thinking Effort，在速度与深度之间取舍。",
         "cta": "打开 AI & Models 设置"
+      },
+      "knowledgeDistillSchedule": {
+        "title": "安排持久知识蒸馏",
+        "body": "创建夜间任务，将长期有用的决策与修复写入 Knowledge，而不是每日新闻。",
+        "cta": "创建夜间蒸馏任务"
       },
       "knowledgeGraph": {
         "title": "查看知识图谱",
