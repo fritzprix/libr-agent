@@ -337,9 +337,9 @@ pub async fn prepare_teamwork_workspace(
         caller_session_id
     );
     let mut follow_up = vec![super::orgs::teamwork_scaffold_writefile_guidance()];
-    if let Some(host_script) = super::orgs::teamwork_scaffold_optional_host_script_guidance(
-        session.workspace_isolation,
-    ) {
+    if let Some(host_script) =
+        super::orgs::teamwork_scaffold_optional_host_script_guidance(session.workspace_isolation)
+    {
         follow_up.push(host_script);
     }
     follow_up.push(

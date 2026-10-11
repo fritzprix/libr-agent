@@ -12,9 +12,7 @@ use crate::mcp::builtin::error_guidance::{
 use crate::mcp::types::MCPResult;
 use crate::models::chat::MessageSource;
 use crate::models::workspace_isolation::{DockerWorkspaceConfig, WorkspaceIsolationMode};
-use crate::repositories::{
-    AssistantRepository, SessionMetadata, SessionRepository, SessionStatus,
-};
+use crate::repositories::{AssistantRepository, SessionMetadata, SessionRepository, SessionStatus};
 
 use super::super::AgentServer;
 use super::check_session::check_session;
@@ -226,12 +224,10 @@ async fn spawn_session_impl(
             .as_ref()
             .and_then(org_child_inherited_docker_workspace)
         {
-            body_json["workspaceIsolation"] = serde_json::to_value(mode).map_err(|e| {
-                format!("Failed to serialize inherited workspaceIsolation: {e}")
-            })?;
-            body_json["dockerConfig"] = serde_json::to_value(docker_config).map_err(|e| {
-                format!("Failed to serialize inherited dockerConfig: {e}")
-            })?;
+            body_json["workspaceIsolation"] = serde_json::to_value(mode)
+                .map_err(|e| format!("Failed to serialize inherited workspaceIsolation: {e}"))?;
+            body_json["dockerConfig"] = serde_json::to_value(docker_config)
+                .map_err(|e| format!("Failed to serialize inherited dockerConfig: {e}"))?;
         }
     }
 

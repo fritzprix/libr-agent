@@ -6,10 +6,10 @@ use tauri_mcp_agent_lib::mcp::builtin::agent::handlers::{
     org_child_inherited_docker_workspace, teamwork_scaffold_optional_host_script_guidance,
     teamwork_scaffold_writefile_guidance,
 };
+use tauri_mcp_agent_lib::mcp::types::MCPContent;
 use tauri_mcp_agent_lib::models::workspace_isolation::{
     DockerWorkspaceConfig, WorkspaceIsolationMode,
 };
-use tauri_mcp_agent_lib::mcp::types::MCPContent;
 use tauri_mcp_agent_lib::repositories::{
     SessionMetadata, SessionRepository, SessionStatus, SqliteSessionRepository,
 };
@@ -225,7 +225,9 @@ fn teamwork_scaffold_writefile_guidance_warns_against_container_shell_script() {
 
 #[test]
 fn teamwork_scaffold_host_script_guidance_only_for_host_isolation() {
-    assert!(teamwork_scaffold_optional_host_script_guidance(WorkspaceIsolationMode::Host).is_some());
+    assert!(
+        teamwork_scaffold_optional_host_script_guidance(WorkspaceIsolationMode::Host).is_some()
+    );
     assert!(
         teamwork_scaffold_optional_host_script_guidance(WorkspaceIsolationMode::Docker).is_none()
     );
