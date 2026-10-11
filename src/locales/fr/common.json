@@ -1687,6 +1687,10 @@
       "title": "Modèles de démarrage suggérés",
       "subtitle": "Configurez rapidement des tâches récurrentes automatisées avec des modèles prédéfinis",
       "useTemplate": "Utiliser ce modèle",
+      "knowledgeDistillTitle": "Distillation quotidienne de connaissances durables",
+      "knowledgeDistillDesc": "Chaque soir, distillez les décisions et correctifs durables des sessions récentes dans Knowledge — pas les news ni les notes temporaires.",
+      "knowledgeDistillName": "Distillation quotidienne de connaissances durables",
+      "knowledgeDistillMessage": "Examinez les sessions d'aujourd'hui et récentes. Enregistrez uniquement des connaissances durables dans Knowledge : décisions d'architecture, correctifs confirmés, règles/préférences du projet, et API ou réglages importants. Ignorez les news du jour, les instantanés ponctuels et le bavardage. Suivez la compétence knowledge-distiller : cherchez d'abord dans Knowledge pour éviter les doublons, enregistrez des résumés autonomes concis avec quelques entités/relations de valeur, étiquetez avec distilled, et laissez auto_extract désactivé. N'élevez pas les titres de section, dates ISO ou acronymes courts en entités.",
       "pcAuditTitle": "Contrôle quotidien de santé et sécurité du PC",
       "pcAuditDesc": "Inspecte l'espace disque, les modifications Git non validées, les processus suspects et les vulnérabilités de paquets chaque nuit.",
       "pcAuditName": "Contrôle quotidien de santé et sécurité du PC",
@@ -1791,6 +1795,12 @@
         "5": "Vendredi",
         "6": "Samedi"
       }
+    },
+    "setupKnowledgeDistill": {
+      "created": "Tâche nocturne de distillation créée.",
+      "updated": "Tâche nocturne de distillation mise à jour.",
+      "failed": "Impossible de créer la tâche planifiée.",
+      "noAssistant": "Créez d'abord un assistant, puis réessayez."
     }
   },
   "mentions": {
@@ -1950,6 +1960,11 @@
         "title": "Régler la profondeur de réflexion",
         "body": "Dans Paramètres → AI & Models, ajustez Thinking Effort pour des réponses plus rapides ou plus approfondies.",
         "cta": "Ouvrir AI & Models"
+      },
+      "knowledgeDistillSchedule": {
+        "title": "Planifier une distillation durable",
+        "body": "Créez une tâche nocturne qui enregistre dans Knowledge les décisions et correctifs durables — pas les news du jour.",
+        "cta": "Créer la tâche de distillation"
       },
       "knowledgeGraph": {
         "title": "Explorer le graphe de connaissances",

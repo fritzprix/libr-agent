@@ -199,5 +199,12 @@ export function hrefToPath(href: Spotlight['href']): string {
   if (href.type === 'settings') {
     return `/settings?tab=${href.tab}`;
   }
+  if (href.type === 'action') {
+    // Action CTAs navigate here after setup; keep a stable fallback path.
+    if (href.action === 'setup-knowledge-distill-schedule') {
+      return '/scheduled-tasks';
+    }
+    return '/';
+  }
   return href.path;
 }

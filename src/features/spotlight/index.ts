@@ -16,6 +16,8 @@ export {
 export { WAIT_TIP_DELAY_MS, WAIT_TIP_ROTATE_MS } from './types';
 export { compareVersion, isVersionGreater } from './compare-version';
 export { useBusyComposerTip } from './use-wait-tip';
+export { runSpotlightCta } from './run-spotlight-cta';
+export type { SpotlightCtaResult } from './run-spotlight-cta';
 export { ReleaseSpotlightCard } from './components/ReleaseSpotlightCard';
 export { HubHintCard } from './components/HubHintCard';
 export { WaitTipLink } from './components/WaitTipLink';

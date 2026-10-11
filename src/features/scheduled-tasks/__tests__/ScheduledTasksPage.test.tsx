@@ -249,6 +249,9 @@ test('ScheduledTasksPage renders starter templates when there are no tasks', asy
 
   // Template titles
   expect(
+    screen.getByText('scheduledTasks.starterTemplates.knowledgeDistillTitle'),
+  ).toBeInTheDocument();
+  expect(
     screen.getByText('scheduledTasks.starterTemplates.pcAuditTitle'),
   ).toBeInTheDocument();
   expect(
@@ -256,6 +259,9 @@ test('ScheduledTasksPage renders starter templates when there are no tasks', asy
   ).toBeInTheDocument();
 
   // Template descriptions
+  expect(
+    screen.getByText('scheduledTasks.starterTemplates.knowledgeDistillDesc'),
+  ).toBeInTheDocument();
   expect(
     screen.getByText('scheduledTasks.starterTemplates.pcAuditDesc'),
   ).toBeInTheDocument();
@@ -267,14 +273,14 @@ test('ScheduledTasksPage renders starter templates when there are no tasks', asy
   const useTemplateButtons = screen.getAllByRole('button', {
     name: 'scheduledTasks.starterTemplates.useTemplate',
   });
-  expect(useTemplateButtons).toHaveLength(2);
+  expect(useTemplateButtons).toHaveLength(3);
 
-  // Click first template ("pc-health-audit")
+  // Click first template ("knowledge-distill")
   fireEvent.click(useTemplateButtons[0]);
 
   expect(screen.getByTestId('scheduled-task-modal')).toBeInTheDocument();
   expect(screen.getByTestId('modal-template-id')).toHaveTextContent(
-    'pc-health-audit',
+    'knowledge-distill',
   );
 
   // Close modal resets template

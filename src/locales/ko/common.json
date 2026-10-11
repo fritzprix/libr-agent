@@ -1683,6 +1683,10 @@
       "title": "추천 스타터 템플릿",
       "subtitle": "자주 사용되는 자동화 작업을 클릭 한 번으로 빠르게 생성하세요",
       "useTemplate": "이 템플릿으로 생성",
+      "knowledgeDistillTitle": "오래 쓸 지식 일일 증류",
+      "knowledgeDistillDesc": "매일 저녁 최근 세션에서 결정·해결책처럼 오래 남는 내용만 Knowledge에 모읍니다. 일일 뉴스나 임시 메모는 제외합니다.",
+      "knowledgeDistillName": "오래 쓸 지식 일일 증류",
+      "knowledgeDistillMessage": "오늘과 최근 세션을 검토해 Knowledge에 오래 재사용할 지식만 기록해줘. 대상: 아키텍처 결정, 확정된 버그 해결, 프로젝트 규칙/선호, 중요 API·설정. 제외: 일일 뉴스, 일시 스냅샷, 잡담. knowledge-distiller 스킬을 따르고, 기록 전 Knowledge를 검색해 중복을 피하며, 짧은 독립 요약과 가치 높은 엔티티/관계만 남기고 distilled 태그를 붙여. auto_extract는 끄고, 섹션 헤더·ISO 날짜·짧은 약어는 엔티티로 올리지 마.",
       "pcAuditTitle": "내 PC 헬스 & 보안 일일 점검",
       "pcAuditDesc": "매일 자정 디스크 용량, 미커밋 Git 파일, 의심 프로세스 및 패키지 취약점(audit)을 종합 점검합니다.",
       "pcAuditName": "내 PC 헬스 & 보안 일일 점검",
@@ -1787,6 +1791,12 @@
         "5": "금요일",
         "6": "토요일"
       }
+    },
+    "setupKnowledgeDistill": {
+      "created": "오래 쓸 지식 일일 증류 작업을 만들었습니다.",
+      "updated": "오래 쓸 지식 일일 증류 작업을 업데이트했습니다.",
+      "failed": "예약 작업을 만들지 못했습니다.",
+      "noAssistant": "먼저 어시스턴트를 만든 뒤 다시 시도하세요."
     }
   },
   "mentions": {
@@ -1946,6 +1956,11 @@
         "title": "사고 깊이를 조절할 수 있어요",
         "body": "설정 → AI & Models에서 Thinking Effort로 응답 깊이와 속도를 조절할 수 있어요.",
         "cta": "AI & Models 설정 열기"
+      },
+      "knowledgeDistillSchedule": {
+        "title": "오래 쓸 지식만 예약으로 모아요",
+        "body": "일일 뉴스나 임시 메모가 아니라, 결정과 해결책처럼 오래 남는 내용만 Knowledge에 쌓는 예약 작업을 만들어 보세요.",
+        "cta": "일일 증류 작업 만들기"
       },
       "knowledgeGraph": {
         "title": "지식 그래프를 살펴보세요",

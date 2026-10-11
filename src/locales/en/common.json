@@ -1687,6 +1687,10 @@
       "title": "Starter Templates",
       "subtitle": "Quickly set up recurring automated tasks with pre-configured templates",
       "useTemplate": "Use template",
+      "knowledgeDistillTitle": "Daily durable knowledge distillation",
+      "knowledgeDistillDesc": "Every evening, distill lasting decisions and fixes from recent sessions into Knowledge — not daily news or temporary notes.",
+      "knowledgeDistillName": "Daily durable knowledge distillation",
+      "knowledgeDistillMessage": "Review today's and recent sessions. Save only durable knowledge to Knowledge: architecture decisions, confirmed bug fixes, project rules/preferences, and important APIs or settings. Skip daily news, one-off snapshots, and chit-chat. Follow the knowledge-distiller skill: search Knowledge first to avoid duplicates, record concise stand-alone summaries with a few high-value entities/relationships, tag with distilled, and leave auto_extract off. Do not promote section headers, ISO dates, or short acronyms as entities.",
       "pcAuditTitle": "Daily PC Health & Security Audit",
       "pcAuditDesc": "Inspect disk usage, uncommitted Git changes, suspicious processes, and package vulnerabilities every midnight.",
       "pcAuditName": "Daily PC Health & Security Audit",
@@ -1791,6 +1795,12 @@
         "5": "Friday",
         "6": "Saturday"
       }
+    },
+    "setupKnowledgeDistill": {
+      "created": "Nightly knowledge distillation task created.",
+      "updated": "Nightly knowledge distillation task updated.",
+      "failed": "Could not create the scheduled task.",
+      "noAssistant": "Create an assistant first, then try again."
     }
   },
   "mentions": {
@@ -1950,6 +1960,11 @@
         "title": "Tune thinking effort",
         "body": "Adjust Thinking Effort under Settings → AI & Models when you need faster answers or deeper analysis.",
         "cta": "Open AI & Models settings"
+      },
+      "knowledgeDistillSchedule": {
+        "title": "Schedule durable knowledge distillation",
+        "body": "Create a nightly task that saves lasting decisions and fixes — not daily news — into Knowledge.",
+        "cta": "Create nightly distill task"
       },
       "knowledgeGraph": {
         "title": "Explore your knowledge graph",

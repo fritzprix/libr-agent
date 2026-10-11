@@ -106,6 +106,8 @@
     "bench:compaction:cascade": "node scripts/run-harbor-bench.cjs --preset dataset --dataset fritzprix/libragent-compaction-fact-recall-1@v0.5 --include *cascade*",
     "bench:compaction:mutchain": "node scripts/run-harbor-bench.cjs --preset dataset --dataset fritzprix/libragent-compaction-fact-recall-1@v0.5 --include *mutchain*",
     "bench:compaction:codesweep": "node scripts/run-harbor-bench.cjs --preset dataset --dataset fritzprix/libragent-compaction-fact-recall-1@v0.5 --include *codesweep*",
+    "bench:knowledge-bridge": "bash scripts/run-knowledge-bridge-bench.sh",
+    "bench:knowledge-bridge:dry": "bash scripts/run-knowledge-bridge-bench.sh --dry-run",
     "bench:upload": "node scripts/upload-harbor-bench.cjs",
     "bench:termial": "pnpm bench:terminal",
     "bench:termial:all": "pnpm bench:terminal:all",
