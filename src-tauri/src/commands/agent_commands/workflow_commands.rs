@@ -244,6 +244,25 @@ pub async fn agent_resume_workflow(
     })
 }
 
+/// Discard the last completed assistant turn and regenerate from the last user message.
+/// Only allowed when the session is idle.
+#[command]
+pub async fn agent_regenerate_last_turn(
+    manager: State<'_, AgentSessionManager>,
+    session_id: String,
+) -> Result<AgentResponse, String> {
+    let plan = manager.regenerate_last_turn(session_id.clone()).await?;
+
+    Ok(AgentResponse {
+        success: true,
+        message: format!("Regenerating last turn for session: {}", session_id),
+        data: Some(serde_json::json!({
+            "anchorUserMessageId": plan.anchor_user_message_id,
+            "deletedMessageIds": plan.deleted_message_ids,
+        })),
+    })
+}
+
 /// Terminate a running workflow
 #[command]
 pub async fn agent_terminate_workflow(

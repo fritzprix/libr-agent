@@ -1618,7 +1618,10 @@
         "exportCancelled": "Download cancelled",
         "exportError": "Failed to export message",
         "exportPdfError": "Failed to export PDF",
-        "exportHtmlError": "Failed to export HTML"
+        "exportHtmlError": "Failed to export HTML",
+        "regenerateAria": "Regenerate",
+        "regenerateTooltip": "Regenerate response",
+        "regenerateError": "Failed to regenerate response"
       }
     },
     "start": {

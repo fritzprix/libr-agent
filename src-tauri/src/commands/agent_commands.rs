@@ -36,6 +36,6 @@ pub use workflow_commands::{
     agent_append_tool_messages, agent_cancel_pending_prompt, agent_cancel_workflow,
     agent_get_pending_queue, agent_handle_llm_error, agent_handle_llm_response,
     agent_handle_tool_result, agent_inject_messages, agent_pause_workflow,
-    agent_report_llm_streaming_issue, agent_respond_tool_approval, agent_resume_workflow,
-    agent_send_message, agent_terminate_workflow,
+    agent_regenerate_last_turn, agent_report_llm_streaming_issue, agent_respond_tool_approval,
+    agent_resume_workflow, agent_send_message, agent_terminate_workflow,
 };

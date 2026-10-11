@@ -144,6 +144,37 @@ describe('MessageActionBar', () => {
     expect(mockSerialize).not.toHaveBeenCalled();
   });
 
+  it('shows regenerate only when canRegenerate is set', async () => {
+    const onRegenerate = vi.fn().mockResolvedValue(undefined);
+    const { rerender } = render(
+      <MessageActionBar message={createMessage()} />,
+    );
+
+    expect(
+      screen.queryByRole('button', {
+        name: 'agent.bubble.actionBar.regenerateAria',
+      }),
+    ).not.toBeInTheDocument();
+
+    rerender(
+      <MessageActionBar
+        message={createMessage()}
+        canRegenerate
+        onRegenerate={onRegenerate}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'agent.bubble.actionBar.regenerateAria',
+      }),
+    );
+
+    await waitFor(() => {
+      expect(onRegenerate).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('keeps a single primary copy control (no text-only button)', () => {
     render(<MessageActionBar message={createMessage()} />);
 

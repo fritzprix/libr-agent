@@ -300,6 +300,15 @@ export function useAgentSessionEvents(
                 break;
               }
 
+              case 'messagesRemoved': {
+                liveMutationEpoch += 1;
+                const removedIds = new Set(payload.messageIds);
+                setters.setMessages((prev) =>
+                  prev.filter((message) => !removedIds.has(message.id)),
+                );
+                break;
+              }
+
               case 'toolExecutionStarted': {
                 setters.setWorkflowPhase('using_tools');
                 logger.info('Workflow phase: using_tools', {

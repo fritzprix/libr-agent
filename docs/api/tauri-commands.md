@@ -39,7 +39,7 @@ Implements the core agent runtime loop, session branching, LLM streaming callbac
 
 #### Catalog
 - **Session Lifecycle**: `agent_create_session`, `agent_create_session_with_initial_message`, `agent_resume_session`, `agent_open_session`, `agent_init_session_with_messages`, `agent_get_session`, `agent_get_all_sessions`, `agent_list_sessions`, `agent_list_attention_sessions`, `agent_delete_session`, `agent_delete_session_only`, `remove_session`, `agent_clear_all_sessions`, `agent_factory_reset`.
-- **Workflow Execution**: `agent_send_message`, `agent_execute_command`, `agent_pause_workflow`, `agent_resume_workflow`, `agent_terminate_workflow`, `agent_cancel_workflow`, `agent_set_execution_mode`.
+- **Workflow Execution**: `agent_send_message`, `agent_execute_command`, `agent_pause_workflow`, `agent_resume_workflow`, `agent_regenerate_last_turn`, `agent_terminate_workflow`, `agent_cancel_workflow`, `agent_set_execution_mode`.
 - **LLM & Tool Handling**: `agent_handle_llm_response`, `agent_handle_llm_error`, `agent_report_llm_streaming_issue`, `agent_handle_tool_result`, `agent_call_builtin_tool`, `agent_respond_tool_approval`.
 - **Subagent & Session Tree**: `agent_get_child_session_ids`, `agent_get_child_sessions`, `agent_get_descendant_session_ids`.
 - **Attachments & Context**: `agent_add_attachment`, `agent_delete_attachment`, `delete_attachments`, `agent_get_service_contexts`, `agent_get_compact_context`, `agent_handle_compact_response`, `agent_handle_compact_error`.

@@ -1618,7 +1618,10 @@
         "exportCancelled": "Download abgebrochen",
         "exportError": "Nachricht konnte nicht exportiert werden",
         "exportPdfError": "PDF konnte nicht exportiert werden",
-        "exportHtmlError": "HTML konnte nicht exportiert werden"
+        "exportHtmlError": "HTML konnte nicht exportiert werden",
+        "regenerateAria": "Neu generieren",
+        "regenerateTooltip": "Antwort neu generieren",
+        "regenerateError": "Antwort konnte nicht neu generiert werden"
       }
     },
     "start": {

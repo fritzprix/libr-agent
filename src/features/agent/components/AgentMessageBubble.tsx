@@ -32,6 +32,9 @@ interface AgentMessageBubbleProps {
   messageLayout?: MessageLayoutStyle;
   /** Tool display detail level; passed down from parent to avoid context subscription. */
   toolDetailLevel?: 'simple' | 'developer';
+  /** Show regenerate on this bubble's action bar (latest idle assistant turn). */
+  canRegenerate?: boolean;
+  onRegenerate?: () => void | Promise<void>;
 }
 
 interface ChannelBubbleMetadata {
@@ -65,6 +68,8 @@ function AgentMessageBubbleImpl({
   toolErrorGroup = false,
   messageLayout = 'document',
   toolDetailLevel = 'simple',
+  canRegenerate = false,
+  onRegenerate,
 }: AgentMessageBubbleProps) {
   const { t, i18n } = useTranslation();
   const isSimpleMode = toolDetailLevel === 'simple';
@@ -304,6 +309,8 @@ function AgentMessageBubbleImpl({
                     displayContent={displayContent}
                     toolResultsMap={toolResultsMap}
                     tone="assistant"
+                    canRegenerate={canRegenerate}
+                    onRegenerate={onRegenerate}
                   />
                 </div>
                 {msg.createdAt ? (
@@ -330,6 +337,8 @@ function AgentMessageBubbleImpl({
                   displayContent={displayContent}
                   toolResultsMap={toolResultsMap}
                   tone={isStandardUserMessage ? 'user' : 'assistant'}
+                  canRegenerate={canRegenerate && !isStandardUserMessage}
+                  onRegenerate={onRegenerate}
                 />
                 {msg.createdAt && (
                   <span
@@ -382,7 +391,9 @@ const arePropsEqual = (
     prev.messageLayout !== next.messageLayout ||
     prev.toolDetailLevel !== next.toolDetailLevel ||
     prev.groupedMessages !== next.groupedMessages ||
-    prev.groupedToolCalls !== next.groupedToolCalls
+    prev.groupedToolCalls !== next.groupedToolCalls ||
+    prev.canRegenerate !== next.canRegenerate ||
+    prev.onRegenerate !== next.onRegenerate
   ) {
     return false;
   }

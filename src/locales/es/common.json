@@ -1618,7 +1618,10 @@
         "exportCancelled": "Descarga cancelada",
         "exportError": "Error al exportar el mensaje",
         "exportPdfError": "Error al exportar el PDF",
-        "exportHtmlError": "Error al exportar el HTML"
+        "exportHtmlError": "Error al exportar el HTML",
+        "regenerateAria": "Regenerar",
+        "regenerateTooltip": "Regenerar respuesta",
+        "regenerateError": "No se pudo regenerar la respuesta"
       }
     },
     "start": {

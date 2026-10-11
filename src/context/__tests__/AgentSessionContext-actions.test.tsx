@@ -53,6 +53,37 @@ describe('AgentSessionContext – User Actions', () => {
             );
         });
 
+        it('invokes regenerate last turn and marks the session viewed', async () => {
+            safeInvokeMock.mockResolvedValue({
+                success: true,
+                message: 'ok',
+                data: {
+                    deletedMessageIds: ['a1'],
+                    anchorUserMessageId: 'u1',
+                },
+            });
+
+            const { result } = renderHook(
+                () => useAgentSessionActions(),
+                { wrapper: defaultWrapper }
+            );
+
+            await waitFor(() => {
+                expect(mockMarkSessionViewed).toHaveBeenCalledTimes(1);
+            });
+
+            mockMarkSessionViewed.mockClear();
+
+            await act(async () => {
+                await result.current.regenerateLastTurn();
+            });
+
+            expect(safeInvokeMock).toHaveBeenCalledWith('agent_regenerate_last_turn', {
+                sessionId: TEST_SESSION_ID,
+            });
+            expect(mockMarkSessionViewed).toHaveBeenCalledTimes(1);
+        });
+
         it('clears global approval counts and marks the session viewed when YOLO auto-approves pending tools', async () => {
             let eventHandler: ((event: unknown) => void) | undefined;
             listenMock.mockImplementation(

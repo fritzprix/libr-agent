@@ -1618,7 +1618,10 @@
         "exportCancelled": "ダウンロードがキャンセルされました",
         "exportError": "メッセージのエクスポートに失敗しました",
         "exportPdfError": "PDF のエクスポートに失敗しました",
-        "exportHtmlError": "HTML のエクスポートに失敗しました"
+        "exportHtmlError": "HTML のエクスポートに失敗しました",
+        "regenerateAria": "再生成",
+        "regenerateTooltip": "応答を再生成",
+        "regenerateError": "応答の再生成に失敗しました"
       }
     },
     "start": {
