@@ -111,6 +111,22 @@ impl TeamworkScaffoldStatus {
     }
 }
 
+/// Canonical: `executionSubstrate.orgLineage.intended`.
+/// Alias: top-level `orgLineage.intended` (common when skill/tool text omits nesting).
+fn read_org_lineage_intended(manifest: &Value) -> Option<bool> {
+    manifest
+        .get("executionSubstrate")
+        .and_then(|value| value.get("orgLineage"))
+        .and_then(|value| value.get("intended"))
+        .and_then(Value::as_bool)
+        .or_else(|| {
+            manifest
+                .get("orgLineage")
+                .and_then(|value| value.get("intended"))
+                .and_then(Value::as_bool)
+        })
+}
+
 pub fn inspect_teamwork_scaffold(workspace_path: &Path) -> TeamworkScaffoldStatus {
     const REQUIRED_FILES: &[&str] = &[
         "agents.md",
@@ -150,11 +166,7 @@ pub fn inspect_teamwork_scaffold(workspace_path: &Path) -> TeamworkScaffoldStatu
                         .and_then(|value| value.get("mode"))
                         .and_then(Value::as_str)
                         .map(str::to_string);
-                    org_lineage_intended = manifest
-                        .get("executionSubstrate")
-                        .and_then(|value| value.get("orgLineage"))
-                        .and_then(|value| value.get("intended"))
-                        .and_then(Value::as_bool);
+                    org_lineage_intended = read_org_lineage_intended(&manifest);
                 }
                 Err(error) => manifest_parse_error = Some(error.to_string()),
             },
