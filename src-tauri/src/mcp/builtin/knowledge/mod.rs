@@ -1,9 +1,8 @@
 use async_trait::async_trait;
-use sea_orm::*;
+use sea_orm::DatabaseConnection;
 use serde_json::Value;
 use std::sync::Arc;
 
-use crate::entity::knowledge_chunk_v2;
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{
     BuiltinServerMetadata, ContextVolatility, MCPResult, MCPTool, ServiceContext,
@@ -93,20 +92,15 @@ impl BuiltinMCPServer for KnowledgeServer {
     }
 
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
-        let assistant_id = &self.assistant_id;
-        let chunk_count = knowledge_chunk_v2::Entity::find()
-            .filter(knowledge_chunk_v2::Column::AssistantId.eq(assistant_id))
-            .count(self.db.as_ref())
-            .await
-            .ok();
-
-        ServiceContext::new(format!(
-            "# Knowledge Base\n\nAssistant ID: {}\nStored Chunks: {}",
-            assistant_id,
-            chunk_count
-                .map(|count| count.to_string())
-                .unwrap_or_else(|| "unknown".to_string()),
-        ))
-        .with_volatility(ContextVolatility::Medium)
+        // Keep this prompt static (no live counts / assistant IDs) so LLM prefix
+        // caching stays warm across record/prune churn (Tool Design Manifesto Rule 6).
+        ServiceContext::new(
+            "# Knowledge Base\n\n\
+             Persistent assistant-scoped memory. Use knowledge__searchKnowledge to retrieve \
+             entries, knowledge__recordKnowledge to store durable facts, and \
+             knowledge__exploreContext for graph neighborhood around a known entity."
+                .to_string(),
+        )
+        .with_volatility(ContextVolatility::Stable)
     }
 }

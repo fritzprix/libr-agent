@@ -218,14 +218,16 @@ pub async fn record_knowledge(
                 details.push("Graph enrichment was skipped for this entry.".to_string());
             }
 
-            let mut next_steps =
-                vec!["Use knowledge__searchKnowledge to query this information".to_string()];
-            if !extraction_plan.entities.is_empty() {
-                next_steps.push(
+            // Steady-path success: no "search what you just saved" nudge (Rule 7).
+            // Only suggest exploreContext when graph entities were actually persisted.
+            let next_steps = if !extraction_plan.entities.is_empty() {
+                vec![
                     "Use knowledge__exploreContext with one of the extracted entities to inspect the relationship graph."
                         .to_string(),
-                );
-            }
+                ]
+            } else {
+                vec![]
+            };
 
             let hint = SuccessHint::new(details.join("\n"), next_steps);
             Ok(hint.to_mcp_result_with_data(Some(json!({
@@ -481,14 +483,13 @@ pub async fn prune_knowledge(
                 }
             }
 
+            // Steady-path success: no post-delete search nudge (Rule 7).
             Ok(SuccessHint::new(
                 format!(
                     "Deleted knowledge chunks: {}.",
                     format_chunk_id_list(&validated_ids)
                 ),
-                vec![
-                    "Use knowledge__searchKnowledge to confirm the remaining entries.".to_string(),
-                ],
+                vec![],
             )
             .to_mcp_result_with_data(Some(json!({
                 "action": action,

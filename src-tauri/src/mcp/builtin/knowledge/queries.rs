@@ -104,11 +104,16 @@ pub async fn search_knowledge(
             Ok(
                 SuccessHint::new(output_text, vec![]).to_mcp_result_with_data(Some(json!({
                     "mode": mode,
-                    "results": results.iter().map(|(m, d)| json!({
-                        "id": m.id,
-                        "content": m.content,
-                        "score": d
-                    })).collect::<Vec<_>>()
+                    "results": results.iter().map(|(m, d)| {
+                        let tags = parse_db_tags(m.tags.as_ref());
+                        json!({
+                            "id": m.id,
+                            "content": m.content,
+                            "score": d,
+                            "source": m.source,
+                            "tags": tags,
+                        })
+                    }).collect::<Vec<_>>()
                 }))),
             )
         }
@@ -141,14 +146,31 @@ pub async fn explore_context(
     {
         Ok(context) => {
             if context.get("error").is_some() {
-                return Ok(SuccessHint::new(
+                let mut result = guided_error(
+                    ErrorCategory::ResourceNotFound,
                     format!("Entity '{}' not found in graph.", entity_name),
-                    vec![
-                        "Use knowledge__recordKnowledge to add information about this entity."
-                            .to_string(),
-                    ],
+                    ToolGroup::Knowledge,
                 )
-                .to_mcp_result());
+                .with_guidance(vec![
+                    "Use knowledge__searchKnowledge to find entity names that exist in stored chunks."
+                        .to_string(),
+                    "Use knowledge__recordKnowledge with entities/relationships (or auto_extract) to add this entity to the graph."
+                        .to_string(),
+                    format!(
+                        "Retry knowledge__exploreContext with an exact entity name from prior knowledge results (depth={}).",
+                        depth
+                    ),
+                ])
+                .to_mcp_result();
+                result.structured_content = Some(json!({
+                    "entity_name": entity_name,
+                    "depth": depth,
+                    "found": false,
+                    "nodes": [],
+                    "edges": [],
+                    "chunks": [],
+                }));
+                return Ok(result);
             }
 
             let summary = format_graph_context(entity_name, depth, &context);
