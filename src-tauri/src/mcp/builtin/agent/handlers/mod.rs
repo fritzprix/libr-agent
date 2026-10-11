@@ -33,9 +33,11 @@ pub use enrichment::{
 };
 pub use orgs::{
     create_org, create_org_scaffold_preflight, existing_explicit_org_identity, get_org,
-    inspect_teamwork_scaffold, TeamworkScaffoldStatus,
+    inspect_teamwork_scaffold, teamwork_scaffold_optional_host_script_guidance,
+    teamwork_scaffold_writefile_guidance, TeamworkScaffoldStatus,
 };
 pub use sessions::{
     compact_session_context, delete_session, message_to_session,
-    parse_message_to_session_wait_config, spawn_session, stop_session,
+    org_child_inherited_docker_workspace, parse_message_to_session_wait_config, spawn_session,
+    stop_session,
 };

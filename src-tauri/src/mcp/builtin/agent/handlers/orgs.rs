@@ -5,6 +5,7 @@ use std::path::Path;
 use super::super::utils::{build_agent_tool_data, read_required_string};
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHint, ToolGroup};
 use crate::mcp::types::MCPResult;
+use crate::models::workspace_isolation::WorkspaceIsolationMode;
 use crate::repositories::{session_repository::SessionRepository, SessionMetadata};
 
 use super::super::AgentServer;
@@ -12,6 +13,29 @@ use super::shared::{
     caller_session_not_found_result, invalid_explicit_org_result, missing_explicit_org_result,
     read_optional_string,
 };
+
+/// Primary scaffold recipe: `workspace__writeFile` under `@teamwork/`.
+///
+/// Harbor docker-attach shells cannot see host skill paths such as
+/// `@system-skills/.../init_task_force.py`, so writeFile is the portable default.
+pub fn teamwork_scaffold_writefile_guidance() -> String {
+    "Scaffold or repair with workspace__writeFile under @teamwork/: agents.md, MISSION.md, ROLES.md, coordination/KANBAN.md, coordination/HANDOFF.md, coordination/DECISIONS.md, coordination/RISKS.md, coordination/DISCUSSION.md, and @teamwork/.libragent/teamwork.json with executionSubstrate.mode=\"org\" and executionSubstrate.orgLineage.intended=true. Do not call workspace__runShell on @system-skills/.../init_task_force.py — that skill path is not visible inside Docker attach workspaces."
+        .to_string()
+}
+
+/// Optional host-only script path. Omitted for Docker sessions (attach or managed)
+/// where `workspace__runShell` cannot reach host skill scripts.
+pub fn teamwork_scaffold_optional_host_script_guidance(
+    isolation: WorkspaceIsolationMode,
+) -> Option<String> {
+    if isolation != WorkspaceIsolationMode::Host {
+        return None;
+    }
+    Some(
+        "Optional on host sessions only: the teamwork skill script scripts/init_task_force.py can write the same set when invoked with --output set to the prepareTeamworkWorkspace artifactPath (host filesystem, not a container shell)."
+            .to_string(),
+    )
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct TeamworkScaffoldStatus {
@@ -174,10 +198,7 @@ pub fn create_org_scaffold_preflight(scaffold: &TeamworkScaffoldStatus) -> Resul
         "If @teamwork/ has not been prepared yet, call agent__prepareTeamworkWorkspace() from the root session first."
             .to_string(),
     );
-    guidance.push(
-        "Use the teamwork skill or init_task_force.py to create or repair the required scaffold artifacts under @teamwork/."
-            .to_string(),
-    );
+    guidance.push(teamwork_scaffold_writefile_guidance());
     guidance.push(
         "After the scaffold exists and @teamwork/.libragent/teamwork.json declares executionSubstrate.mode=\"org\" plus executionSubstrate.orgLineage.intended=true, call agent__createOrg(name=\"...\") again."
             .to_string(),
@@ -207,9 +228,8 @@ fn create_org_next_actions(org_id: &str, include_builder_guidance: bool) -> Vec<
 
     if include_builder_guidance {
         next_actions.push(json!({
-            "actionType": "skill",
-            "toolName": "teamwork",
-            "reason": "Scaffold or repair the teamwork artifact set for this org."
+            "toolName": "workspace__writeFile",
+            "reason": "Scaffold or repair missing @teamwork/ files (writeFile under @teamwork/, not shell+init_task_force.py)."
         }));
     }
 
@@ -221,10 +241,7 @@ fn create_org_hint_lines(scaffold: &TeamworkScaffoldStatus) -> Vec<String> {
 
     if !scaffold.is_ready_for_explicit_org() {
         lines.extend(scaffold.guidance_lines());
-        lines.push(
-            "Use the teamwork skill next to scaffold or repair the teamwork artifact set for this org."
-                .to_string(),
-        );
+        lines.push(teamwork_scaffold_writefile_guidance());
     }
 
     lines

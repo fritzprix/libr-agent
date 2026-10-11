@@ -93,5 +93,12 @@ fn keepers_still_document_completion_and_enablement_contracts() {
         .get("prepareTeamworkWorkspace")
         .expect("prepareTeamworkWorkspace");
     assert!(prepare.contains(TOOL_RELATED_ACTIONS));
-    assert!(prepare.contains("teamwork skill") || prepare.contains("init_task_force"));
+    assert!(
+        prepare.contains("workspace__writeFile") && prepare.contains("@teamwork/"),
+        "agent__prepareTeamworkWorkspace must lead with writeFile under @teamwork/"
+    );
+    assert!(
+        prepare.contains("Do not shell") || prepare.contains("Docker attach"),
+        "agent__prepareTeamworkWorkspace must warn against container shell+skill script"
+    );
 }
