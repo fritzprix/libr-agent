@@ -36,12 +36,27 @@ pub(super) struct MessageRowWithCursor {
 /// Message repository trait for abstraction and testability
 #[async_trait]
 pub trait MessageRepository: Send + Sync {
-    /// Retrieve a paginated list of messages for a specific session
+    /// Retrieve a paginated list of messages for a specific session (oldest-first).
     async fn get_page(
         &self,
         session_id: &str,
         page: u64,
         page_size: u64,
+    ) -> Result<Page<Message>, DbError> {
+        self.get_page_ordered(session_id, page, page_size, false)
+            .await
+    }
+
+    /// Paginated messages ordered by persisted `rowid`.
+    ///
+    /// When `newest_first` is true, page 1 returns the most recent messages
+    /// (`ORDER BY rowid DESC`). Otherwise pages walk oldest → newest.
+    async fn get_page_ordered(
+        &self,
+        session_id: &str,
+        page: u64,
+        page_size: u64,
+        newest_first: bool,
     ) -> Result<Page<Message>, DbError>;
 
     /// Oldest-first page after a `rowid` cursor (no `COUNT(*)` / `OFFSET`).

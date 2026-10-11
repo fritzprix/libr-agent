@@ -32,6 +32,8 @@ pub struct HistoryMessageListItem {
 pub struct HistorySessionReadResponse {
     pub session: HistorySessionItem,
     pub messages: Page<HistoryMessageListItem>,
+    /// Message list sort order: `"asc"` (oldest first) or `"desc"` (newest first).
+    pub order: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
