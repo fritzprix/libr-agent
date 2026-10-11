@@ -348,6 +348,22 @@ impl AgentSessionManager {
         .await
     }
 
+    /// Discard the last completed assistant turn (idle only) and re-run completion.
+    pub async fn regenerate_last_turn(
+        &self,
+        session_id: String,
+    ) -> Result<crate::agent::workflow::TruncateLastTurnPlan, String> {
+        self.ensure_session_active(&session_id).await?;
+        crate::agent::workflow::regenerate_last_turn(
+            &self.session_repo,
+            &self.active_sessions,
+            &self.proxy_manager,
+            &self.app_handle,
+            session_id,
+        )
+        .await
+    }
+
     /// Load messages from DB into in-memory cache
     pub async fn init_session_with_messages(&self, session_id: &str) -> Result<(), String> {
         crate::agent::lifecycle::init_session_with_messages(&self.active_sessions, session_id).await

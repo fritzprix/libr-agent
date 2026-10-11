@@ -9,6 +9,7 @@ import {
   FileDown,
   Loader2,
   Printer,
+  RefreshCw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -45,7 +46,7 @@ import { resolveMessageDocument } from '@/features/agent/lib/message-document';
 
 const logger = getLogger('MessageActionBar');
 
-type BusyAction = 'copy' | 'tools' | 'markdown' | 'pdf' | null;
+type BusyAction = 'copy' | 'tools' | 'markdown' | 'pdf' | 'regenerate' | null;
 
 export interface MessageActionBarProps {
   message: Message;
@@ -53,6 +54,9 @@ export interface MessageActionBarProps {
   toolResultsMap?: Map<string, Message>;
   /** Visual tone for user (primary) vs assistant/secondary bubbles */
   tone?: 'user' | 'assistant';
+  /** Show regenerate control for the latest completed assistant turn. */
+  canRegenerate?: boolean;
+  onRegenerate?: () => void | Promise<void>;
   className?: string;
 }
 
@@ -133,6 +137,8 @@ function MessageActionBarImpl({
   displayContent,
   toolResultsMap,
   tone = 'assistant',
+  canRegenerate = false,
+  onRegenerate,
   className,
 }: MessageActionBarProps) {
   const { t } = useTranslation();
@@ -143,6 +149,8 @@ function MessageActionBarImpl({
 
   const isBusy = busyAction !== null;
   const isUserTone = tone === 'user';
+  const showRegenerate =
+    canRegenerate && typeof onRegenerate === 'function' && !isUserTone;
 
   const hasToolCalls = useMemo(() => {
     if ((message.tool_calls?.length ?? 0) > 0) {
@@ -188,6 +196,21 @@ function MessageActionBarImpl({
       setBusyAction(null);
     }
   }, [bubbleCopyBody, canCopyBody, copyToClipboard, isBusy, t]);
+
+  const handleRegenerate = useCallback(async () => {
+    if (isBusy || !showRegenerate || !onRegenerate) {
+      return;
+    }
+    setBusyAction('regenerate');
+    try {
+      await onRegenerate();
+    } catch (error) {
+      logger.error('Failed to regenerate last turn', error);
+      toast.error(t('agent.bubble.actionBar.regenerateError'));
+    } finally {
+      setBusyAction(null);
+    }
+  }, [isBusy, onRegenerate, showRegenerate, t]);
 
   const handleCopyTools = useCallback(async () => {
     if (isBusy || !hasToolCalls) {
@@ -334,6 +357,22 @@ function MessageActionBarImpl({
       >
         <Copy className="h-3.5 w-3.5" />
       </IconActionButton>
+
+      {showRegenerate ? (
+        <IconActionButton
+          label={t('agent.bubble.actionBar.regenerateAria')}
+          tooltip={t('agent.bubble.actionBar.regenerateTooltip')}
+          onClick={() => {
+            void handleRegenerate();
+          }}
+          disabled={isBusy}
+          isBusy={busyAction === 'regenerate'}
+          showCheck={false}
+          isUserTone={isUserTone}
+        >
+          <RefreshCw className="h-3.5 w-3.5" />
+        </IconActionButton>
+      ) : null}
 
       <IconActionButton
         label={t('agent.bubble.actionBar.copyToolsAria')}

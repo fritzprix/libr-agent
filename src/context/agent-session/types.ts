@@ -23,6 +23,7 @@ export type AgentEventPayload =
       status: 'idle' | 'busy' | 'paused' | 'error' | 'queued' | 'provisioning';
     }
   | { type: 'messageAdded'; sessionId: string; message: RustMessage }
+  | { type: 'messagesRemoved'; sessionId: string; messageIds: string[] }
   | { type: 'toolExecutionStarted'; sessionId: string; toolName: string }
   | {
       type: 'toolExecutionCompleted';
@@ -170,6 +171,7 @@ export interface AgentSessionActionsContextValue {
   addMessage: (message: Message) => void;
   loadOlderMessages: () => Promise<void>;
   resumeSession: () => Promise<void>;
+  regenerateLastTurn: () => Promise<void>;
   respondToToolApproval: (
     toolCallId: string,
     approved: boolean,

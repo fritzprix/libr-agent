@@ -1618,7 +1618,10 @@
         "exportCancelled": "Téléchargement annulé",
         "exportError": "Échec de l’exportation du message",
         "exportPdfError": "Échec de l’exportation PDF",
-        "exportHtmlError": "Échec de l'exportation HTML"
+        "exportHtmlError": "Échec de l'exportation HTML",
+        "regenerateAria": "Régénérer",
+        "regenerateTooltip": "Régénérer la réponse",
+        "regenerateError": "Échec de la régénération de la réponse"
       }
     },
     "start": {

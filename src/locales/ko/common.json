@@ -1614,7 +1614,10 @@
         "exportCancelled": "다운로드가 취소되었습니다",
         "exportError": "메시지 내보내기에 실패했습니다",
         "exportPdfError": "PDF 내보내기에 실패했습니다",
-        "exportHtmlError": "HTML 내보내기에 실패했습니다"
+        "exportHtmlError": "HTML 내보내기에 실패했습니다",
+        "regenerateAria": "다시 생성",
+        "regenerateTooltip": "응답 다시 생성",
+        "regenerateError": "응답을 다시 생성하지 못했습니다"
       }
     },
     "start": {

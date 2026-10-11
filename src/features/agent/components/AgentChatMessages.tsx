@@ -107,8 +107,14 @@ export {
 
 export function AgentChatMessages() {
   const { t } = useTranslation();
-  const { messages, error, llmError, retryMessage, workflowStatus } =
-    useAgentChat();
+  const {
+    messages,
+    error,
+    llmError,
+    retryMessage,
+    regenerateLastTurn,
+    workflowStatus,
+  } = useAgentChat();
   const {
     session,
     pendingApprovals,
@@ -242,6 +248,10 @@ export function AgentChatMessages() {
 
   const latestGroupedMessageId =
     groupedMessages[groupedMessages.length - 1]?.message.id;
+  const canRegenerateLatest =
+    workflowStatus === 'idle' &&
+    !!latestGroupedMessageId &&
+    groupedMessages[groupedMessages.length - 1]?.message.role !== 'user';
 
   const renderMessageGroup = useCallback(
     (_index: number, groupedMessage: GroupedMessage) => {
@@ -252,6 +262,9 @@ export function AgentChatMessages() {
         groupedMessage.message.id === latestGroupedMessageId ||
         !!groupedMessage.message.isStreaming;
       const followChatScroll = isPinned && isLatestOrStreaming;
+      const canRegenerate =
+        canRegenerateLatest &&
+        groupedMessage.message.id === latestGroupedMessageId;
       const isCompactBoundary = groupedMessageContainsBoundary(
         groupedMessage,
         compactedRange?.toId,
@@ -281,6 +294,8 @@ export function AgentChatMessages() {
               followChatScroll={followChatScroll}
               messageLayout={messageLayout}
               toolDetailLevel={toolDetailLevel}
+              canRegenerate={canRegenerate}
+              onRegenerate={regenerateLastTurn}
             />
             {compactDivider}
           </div>
@@ -298,6 +313,8 @@ export function AgentChatMessages() {
               toolErrorGroup={true}
               messageLayout={messageLayout}
               toolDetailLevel={toolDetailLevel}
+              canRegenerate={canRegenerate}
+              onRegenerate={regenerateLastTurn}
             />
             {compactDivider}
           </div>
@@ -341,6 +358,8 @@ export function AgentChatMessages() {
             followChatScroll={followChatScroll}
             messageLayout={messageLayout}
             toolDetailLevel={toolDetailLevel}
+            canRegenerate={canRegenerate}
+            onRegenerate={regenerateLastTurn}
           />
           {compactDivider}
         </div>
@@ -348,11 +367,13 @@ export function AgentChatMessages() {
     },
     [
       assistantName,
+      canRegenerateLatest,
       compactedEvent,
       compactedRange?.toId,
       isPinned,
       latestGroupedMessageId,
       messageLayout,
+      regenerateLastTurn,
       retryMessage,
       toolDetailLevel,
       toolResultsMap,

@@ -2,6 +2,7 @@ pub mod cancel;
 pub mod compact_pending;
 pub mod finish;
 pub mod pause_resume;
+pub mod regenerate;
 pub mod start;
 pub mod tool;
 
@@ -16,5 +17,6 @@ pub use finish::{
     settle_session_and_go_idle_with_dispatcher,
 };
 pub use pause_resume::*;
+pub use regenerate::{plan_truncate_last_turn, regenerate_last_turn, TruncateLastTurnPlan};
 pub use start::*;
 pub use tool::*;

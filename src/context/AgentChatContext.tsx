@@ -121,6 +121,11 @@ interface AgentChatActionsContextValue {
   retryMessage: () => Promise<void>;
 
   /**
+   * Discard the last completed assistant turn and regenerate (idle only).
+   */
+  regenerateLastTurn: () => Promise<void>;
+
+  /**
    * Manually update service contexts from backend
    */
   updateServiceContexts: () => Promise<void>;
@@ -180,7 +185,8 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     llmError,
   } = useAgentSessionState();
 
-  const { setError, resumeSession } = useAgentSessionActions();
+  const { setError, resumeSession, regenerateLastTurn } =
+    useAgentSessionActions();
 
   const { cancelCompletionRequest, clearStreamingMessage } = useLLMService();
 
@@ -556,6 +562,42 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     }
   }, [session?.id, resumeSession]);
 
+  const regenerateLastTurnAction = useCallback(async () => {
+    if (!session?.id) {
+      logger.error('Cannot regenerate: no active session');
+      return;
+    }
+
+    if (workflowStatus !== 'idle') {
+      logger.error('Cannot regenerate: session is not idle', {
+        sessionId: session.id,
+        workflowStatus,
+      });
+      return;
+    }
+
+    logger.info('Regenerating last assistant turn', {
+      sessionId: session.id,
+    });
+
+    clearStreamingMessage(session.id);
+
+    try {
+      await regenerateLastTurn();
+    } catch (err) {
+      logger.error('Failed to regenerate last turn', err);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      setError(errorMessage);
+      throw err;
+    }
+  }, [
+    clearStreamingMessage,
+    regenerateLastTurn,
+    session?.id,
+    setError,
+    workflowStatus,
+  ]);
+
   const stateValue: AgentChatStateContextValue = useMemo(
     () => ({
       isSessionLoading,
@@ -602,6 +644,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
       cancel,
       cancelPendingPrompt,
       retryMessage,
+      regenerateLastTurn: regenerateLastTurnAction,
       updateServiceContexts,
       injectMessages,
       appendToolMessages,
@@ -612,6 +655,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
       cancel,
       cancelPendingPrompt,
       retryMessage,
+      regenerateLastTurnAction,
       updateServiceContexts,
       injectMessages,
       appendToolMessages,
