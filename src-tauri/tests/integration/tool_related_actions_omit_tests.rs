@@ -95,10 +95,10 @@ fn keepers_still_document_completion_and_enablement_contracts() {
     assert!(prepare.contains(TOOL_RELATED_ACTIONS));
     assert!(
         prepare.contains("workspace__writeFile") && prepare.contains("@teamwork/"),
-        "prepareTeamworkWorkspace must lead with writeFile under @teamwork/"
+        "agent__prepareTeamworkWorkspace must lead with writeFile under @teamwork/"
     );
     assert!(
         prepare.contains("Do not shell") || prepare.contains("Docker attach"),
-        "prepareTeamworkWorkspace must warn against container shell+skill script"
+        "agent__prepareTeamworkWorkspace must warn against container shell+skill script"
     );
 }
