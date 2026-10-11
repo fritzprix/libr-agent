@@ -22,7 +22,7 @@ Paths in this skill are relative to the directory containing this `SKILL.md` unl
 1. **One team, one effective workspace.** The governing coordinator and org-visible children keep the normal parent/override workspace inheritance model. Consequently, `agents.md` and `SOUL.md` are resolved from this shared effective workspace by default.
 2. **Prepare artifact storage first.** From the governing root session, call `agent__prepareTeamworkWorkspace()` to get an app-local artifact directory before scaffolding teamwork files.
 3. **Scaffold only in that artifact directory.** Do not write `agents.md`, `MISSION.md`, `ROLES.md`, `coordination/`, or role `skills/` into a repo root unless you intentionally want repo pollution.
-4. **Use deterministic scaffolding first.** `scripts/init_task_force.py` is the default path.
+4. **Scaffold with `workspace__writeFile` under `@teamwork/` first.** That path works in Harbor/Docker attach sessions. Use `scripts/init_task_force.py` only on host sessions with the skill's absolute base directory — never via `workspace__runShell` on `@system-skills/...` inside a container.
 5. **Refresh happens later.** Changes to `agents.md` or workspace skills do not take effect in the current turn.
 6. **Route execution explicitly.** Keep framework-specific operating rules in the specialist skill that matches the chosen substrate.
 
@@ -221,12 +221,11 @@ If the task force cannot surface blocked state, it is not robust.
 
 ## Bootstrap
 
-Prefer deterministic scaffolding:
+1. Call `agent__prepareTeamworkWorkspace()` from the governing root (empty `@teamwork/` root).
+2. **Default:** write the required scaffold with `workspace__writeFile` under `@teamwork/` (`agents.md`, `MISSION.md`, `ROLES.md`, `coordination/*`, and `@teamwork/.libragent/teamwork.json` with `executionSubstrate.mode="org"` and `orgLineage.intended=true`).
+3. **Host sessions only (optional):** run the skill script with an absolute skill base dir — never via container `workspace__runShell` on `@system-skills/...`:
 
 ```bash
-agent__prepareTeamworkWorkspace()
-# -> returns artifactPath
-
 python "<skill-base-dir>/scripts/init_task_force.py" \
   --output "/absolute/path/from/agent__prepareTeamworkWorkspace" \
   --team-name "Research Strike Team" \

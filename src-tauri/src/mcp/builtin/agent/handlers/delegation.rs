@@ -336,15 +336,17 @@ pub async fn prepare_teamwork_workspace(
         "Teamwork artifact directory is ready for session {}. Do not call agent__prepareTeamworkWorkspace again — the empty @teamwork/ root already exists.",
         caller_session_id
     );
-    let hint = SuccessHint::new(
-        message.clone(),
-        vec![
-            "Recommended follow-up: scaffold the full org teamwork set. Prefer the teamwork skill + scripts/init_task_force.py with --output set to this response's artifactPath field, or write under @teamwork/ (agents.md, MISSION.md, ROLES.md, coordination/*, and @teamwork/.libragent/teamwork.json with executionSubstrate.mode=\"org\" and orgLineage.intended=true)."
-                .to_string(),
-            "After that scaffold is complete, agent__createOrg(name=\"...\") from this root session, then agent__spawnSession for org members so they inherit the shared workspace. Spawning children before agent__createOrg leaves each spoke in an isolated workspace."
-                .to_string(),
-        ],
+    let mut follow_up = vec![super::orgs::teamwork_scaffold_writefile_guidance()];
+    if let Some(host_script) = super::orgs::teamwork_scaffold_optional_host_script_guidance(
+        session.workspace_isolation,
+    ) {
+        follow_up.push(host_script);
+    }
+    follow_up.push(
+        "After that scaffold is complete, agent__createOrg(name=\"...\") from this root session, then agent__spawnSession for org members so they inherit the shared workspace. Spawning children before agent__createOrg leaves each spoke in an isolated workspace."
+            .to_string(),
     );
+    let hint = SuccessHint::new(message.clone(), follow_up);
 
     let mut response_data = build_agent_tool_data(
         "prepareTeamworkWorkspace",
@@ -356,9 +358,8 @@ pub async fn prepare_teamwork_workspace(
         "success",
         vec![
             json!({
-                "actionType": "skill",
-                "toolName": "teamwork",
-                "reason": "Scaffold the full @teamwork/ artifact set (prefer init_task_force.py) before agent__createOrg."
+                "toolName": "workspace__writeFile",
+                "reason": "Scaffold the full @teamwork/ artifact set with writeFile before agent__createOrg (portable across Docker attach)."
             }),
             json!({
                 "toolName": "agent__createOrg",

@@ -114,6 +114,8 @@
     "bench:kn:hub": "pnpm bench:knowledge-bridge:hub",
     "bench:kn:dry": "pnpm bench:knowledge-bridge:dry",
     "bench:kn:hub:dry": "pnpm bench:knowledge-bridge:hub:dry",
+    "bench:org": "node scripts/run-harbor-bench.cjs --preset dataset --dataset fritzprix/libragent-org-collab-7@v0.2",
+    "bench:org:n1": "node scripts/run-harbor-bench.cjs --preset dataset --dataset fritzprix/libragent-org-collab-7@v0.2 --n-tasks 1",
     "bench:upload": "node scripts/upload-harbor-bench.cjs",
     "bench:termial": "pnpm bench:terminal",
     "bench:termial:all": "pnpm bench:terminal:all",

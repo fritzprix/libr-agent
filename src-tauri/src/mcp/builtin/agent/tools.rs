@@ -167,7 +167,7 @@ fn prepare_teamwork_workspace_tool() -> MCPTool {
             ],
             &[
                 "Do not call agent__prepareTeamworkWorkspace again after success.",
-                "Scaffold next via the teamwork skill (prefer scripts/init_task_force.py with --output = response artifactPath) or write the full set under @teamwork/ including coordination/* and @teamwork/.libragent/teamwork.json.",
+                "Scaffold next with workspace__writeFile under @teamwork/ (agents.md, MISSION.md, ROLES.md, coordination/*, and @teamwork/.libragent/teamwork.json with executionSubstrate.mode=\"org\" and orgLineage.intended=true). Do not shell @system-skills/.../init_task_force.py inside Docker attach workspaces.",
                 "Only after the org scaffold is complete, call agent__createOrg, then agent__spawnSession for org members.",
             ],
         ),
