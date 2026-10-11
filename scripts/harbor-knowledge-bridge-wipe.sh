@@ -84,6 +84,39 @@ if db_path is None:
 
 print(f"Wiping knowledge for assistant_id={assistant_id} in {db_path}")
 conn = sqlite3.connect(str(db_path))
+
+
+def try_load_sqlite_vec(connection: sqlite3.Connection) -> bool:
+    """Best-effort load of sqlite-vec so DELETE on knowledge_vectors works."""
+    try:
+        connection.enable_load_extension(True)
+    except Exception:
+        return False
+
+    # 1) Official Python helper if installed: pip install sqlite-vec
+    try:
+        import importlib
+
+        sqlite_vec = importlib.import_module("sqlite_vec")
+        load = getattr(sqlite_vec, "load", None)
+        if callable(load):
+            load(connection)
+            return True
+    except Exception:
+        pass
+
+    # 2) Explicit shared library path
+    ext = os.environ.get("LIBRAGENT_SQLITE_VEC_EXT", "").strip()
+    if ext:
+        try:
+            connection.load_extension(ext)
+            return True
+        except Exception as exc:
+            print(f"WARN: failed to load LIBRAGENT_SQLITE_VEC_EXT={ext}: {exc}")
+
+    return False
+
+
 try:
     cur = conn.cursor()
     tables = {
@@ -106,6 +139,15 @@ try:
     ]
     print(f"  chunks before: {len(chunk_ids)}")
 
+    vec_loaded = try_load_sqlite_vec(conn)
+    if vec_loaded:
+        print("  sqlite-vec: loaded")
+    else:
+        print(
+            "  sqlite-vec: not loaded "
+            "(vector DELETE will be skipped if vec0 is unavailable)"
+        )
+
     if chunk_ids:
         placeholders = ",".join("?" for _ in chunk_ids)
         if "knowledge_chunk_entities" in tables:
@@ -114,10 +156,16 @@ try:
                 chunk_ids,
             )
         if "knowledge_vectors" in tables:
-            cur.execute(
-                f"DELETE FROM knowledge_vectors WHERE rowid IN ({placeholders})",
-                chunk_ids,
-            )
+            try:
+                cur.execute(
+                    f"DELETE FROM knowledge_vectors WHERE rowid IN ({placeholders})",
+                    chunk_ids,
+                )
+            except sqlite3.OperationalError as exc:
+                # Stock CPython sqlite3 has no vec0; chunks still wipe cleanly.
+                # Orphan embeddings (if any) cannot match deleted chunk rowids
+                # via JOIN, and AUTOINCREMENT will not reuse those ids.
+                print(f"  WARN: skipped knowledge_vectors DELETE ({exc})")
         cur.execute(
             "DELETE FROM knowledge_chunks_v2 WHERE assistant_id = ?",
             (assistant_id,),

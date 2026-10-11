@@ -46,14 +46,21 @@ resolve_dataset_root() {
       echo "$LOCAL_DATASET_ROOT"
       return
     fi
-    harbor download "$HUB_DATASET" -o "$dest" --overwrite
-    echo "$dest/libragent-knowledge-bridge-2"
+    # Harbor prints progress on stdout; keep only our path on stdout.
+    harbor download "$HUB_DATASET" -o "$dest" --overwrite >&2
+    local root="$dest/libragent-knowledge-bridge-2"
+    if [[ ! -d "$root" ]]; then
+      echo "ERROR: Hub download did not produce $root" >&2
+      exit 1
+    fi
+    echo "$root"
     return
   fi
   echo "$LOCAL_DATASET_ROOT"
 }
 
-DATASET_ROOT="$(resolve_dataset_root)"
+# Use the last line only — Harbor may still leak progress onto stdout.
+DATASET_ROOT="$(resolve_dataset_root | tail -n1)"
 TASK_A="$DATASET_ROOT/kb-research-distill-v1"
 TASK_B="$DATASET_ROOT/kb-cold-solve-v1"
 
