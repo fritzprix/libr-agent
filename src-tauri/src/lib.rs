@@ -47,9 +47,8 @@ use commands::agent_commands::{
     agent_handle_tool_result, agent_init_session_with_messages, agent_inject_channel_message,
     agent_inject_channel_message_auto, agent_inject_messages, agent_list_attention_sessions,
     agent_list_sessions, agent_mark_session_viewed, agent_open_session, agent_pause_workflow,
-    agent_regenerate_last_turn, agent_report_llm_streaming_issue,
-    agent_respond_channel_permission, agent_respond_tool_approval, agent_resume_session,
-    agent_resume_workflow, agent_send_message,
+    agent_regenerate_last_turn, agent_report_llm_streaming_issue, agent_respond_channel_permission,
+    agent_respond_tool_approval, agent_resume_session, agent_resume_workflow, agent_send_message,
     agent_set_execution_mode, agent_terminate_workflow, agent_toggle_session_bookmark,
     agent_update_session_config, agent_update_session_name,
 };

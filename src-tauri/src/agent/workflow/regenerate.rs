@@ -23,15 +23,11 @@ pub fn plan_truncate_last_turn(messages: &[Message]) -> Result<TruncateLastTurnP
         .rposition(|message| {
             message.role == "user" && !message.is_internal_synthetic_user_message()
         })
-        .ok_or_else(|| {
-            "Cannot regenerate: no user message found to re-submit from".to_string()
-        })?;
+        .ok_or_else(|| "Cannot regenerate: no user message found to re-submit from".to_string())?;
 
     let tail = &messages[anchor_idx + 1..];
     if tail.is_empty() {
-        return Err(
-            "Cannot regenerate: no assistant turn after the last user message".to_string(),
-        );
+        return Err("Cannot regenerate: no assistant turn after the last user message".to_string());
     }
 
     if !tail
@@ -39,8 +35,7 @@ pub fn plan_truncate_last_turn(messages: &[Message]) -> Result<TruncateLastTurnP
         .any(|message| message.role == "assistant" || message.role == "tool")
     {
         return Err(
-            "Cannot regenerate: last turn has no assistant or tool messages to discard"
-                .to_string(),
+            "Cannot regenerate: last turn has no assistant or tool messages to discard".to_string(),
         );
     }
 
@@ -239,11 +234,7 @@ mod tests {
         assert_eq!(plan.anchor_user_message_id, "u1");
         assert_eq!(
             plan.deleted_message_ids,
-            vec![
-                "a1".to_string(),
-                "t1".to_string(),
-                "a2".to_string()
-            ]
+            vec!["a1".to_string(), "t1".to_string(), "a2".to_string()]
         );
     }
 
@@ -259,11 +250,7 @@ mod tests {
         assert_eq!(plan.anchor_user_message_id, "u1");
         assert_eq!(
             plan.deleted_message_ids,
-            vec![
-                "a1".to_string(),
-                "syn".to_string(),
-                "a2".to_string()
-            ]
+            vec!["a1".to_string(), "syn".to_string(), "a2".to_string()]
         );
     }
 

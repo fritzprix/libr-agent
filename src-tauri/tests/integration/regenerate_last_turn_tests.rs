@@ -185,8 +185,5 @@ async fn regenerate_rejects_when_session_is_busy() {
     .await
     .expect_err("busy sessions must reject regenerate");
 
-    assert!(
-        err.contains("must be Idle"),
-        "unexpected error: {err}"
-    );
+    assert!(err.contains("must be Idle"), "unexpected error: {err}");
 }
