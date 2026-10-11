@@ -1,7 +1,9 @@
 //! workspace__readFile handler and helpers.
 
 use super::super::edit_mode::{read_file_anchor_output_suffix, read_file_anchor_prefix_note};
-use super::super::workspace_server::path_validation_failure_guidance;
+use super::super::workspace_server::{
+    looks_like_confused_harness_path, path_operation_failure_guidance, with_harness_alias_hint,
+};
 use super::super::WorkspaceServer;
 use super::utils::{detect_language, format_file_size};
 #[cfg(test)]
@@ -112,8 +114,9 @@ impl WorkspaceServer {
                     format!("Path validation failed: {}", e),
                     ToolGroup::Workspace,
                 )
-                .guidance(path_validation_failure_guidance(
+                .guidance(path_operation_failure_guidance(
                     &e,
+                    path_str,
                     vec![
                         "Verify the file path is correct".to_string(),
                         "Use workspace__listDirectory to see available files".to_string(),
@@ -142,6 +145,20 @@ impl WorkspaceServer {
 
         // 5. File existence check
         if !safe_path.exists() {
+            if looks_like_confused_harness_path(path_str) {
+                return Ok(guided_error(
+                    ErrorCategory::ResourceNotFound,
+                    format!("File '{}' not found", path_str),
+                    ToolGroup::Workspace,
+                )
+                .guidance(with_harness_alias_hint(
+                    path_str,
+                    vec![
+                        "Use workspace__listDirectory('.') to explore available paths".to_string(),
+                    ],
+                ))
+                .to_mcp_result());
+            }
             return Ok(not_found_error("File", path_str, ToolGroup::Workspace));
         }
 

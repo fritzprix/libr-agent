@@ -3,7 +3,9 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 
-use crate::mcp::builtin::error_guidance::{operation_failed_error, SuccessHint, ToolGroup};
+use crate::mcp::builtin::error_guidance::{
+    guided_error, operation_failed_error, ErrorCategory, SuccessHint, ToolGroup,
+};
 use crate::mcp::builtin::history::types::{
     HistoryMessageListItem, HistoryMessageReadResponse, HistorySearchMatch, HistorySessionItem,
     HistorySessionReadResponse,
@@ -21,7 +23,9 @@ const DEFAULT_LIST_PAGE_SIZE: u64 = 20;
 const DEFAULT_MESSAGE_PAGE_SIZE: u64 = 50;
 const DEFAULT_SEARCH_PAGE_SIZE: u64 = 20;
 const MAX_PAGE_SIZE: u64 = 100;
-const MAX_MESSAGE_CHARS: usize = 3000;
+const MAX_MESSAGE_CHARS: usize = 50_000;
+const DEFAULT_MESSAGE_CHARS: usize = 50_000;
+const DEFAULT_READ_SESSION_ORDER: &str = "desc";
 const PREVIEW_CHARS: usize = 240;
 const SEARCH_SCAN_LIMIT: u64 = 1000;
 
@@ -42,6 +46,8 @@ pub struct ReadSessionArgs {
     session_id: String,
     page: Option<u64>,
     page_size: Option<u64>,
+    /// `"asc"` (oldest first) or `"desc"` (newest first). Defaults to `"desc"`.
+    order: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -119,6 +125,20 @@ pub async fn read_session(_server: &HistoryServer, args: Value) -> Result<MCPRes
         serde_json::from_value(args).map_err(|e| format!("Invalid readSession arguments: {e}"))?;
     let page = normalize_page(args.page.unwrap_or(DEFAULT_LIST_PAGE));
     let page_size = normalize_page_size(args.page_size.unwrap_or(DEFAULT_MESSAGE_PAGE_SIZE));
+    let order = match normalize_read_session_order(args.order.as_deref()) {
+        Ok(order) => order,
+        Err(message) => {
+            return Ok(
+                guided_error(ErrorCategory::InvalidInput, message, ToolGroup::Agent)
+                    .guidance(vec![
+                        "Use order=\"desc\" for newest messages first (default)".to_string(),
+                        "Use order=\"asc\" for oldest-first chronological paging".to_string(),
+                    ])
+                    .to_mcp_result(),
+            );
+        }
+    };
+    let newest_first = order == "desc";
 
     let session_repo = get_session_repository();
     let message_repo = get_message_repository();
@@ -143,7 +163,7 @@ pub async fn read_session(_server: &HistoryServer, args: Value) -> Result<MCPRes
     };
 
     let message_page = message_repo
-        .get_page(&args.session_id, page, page_size)
+        .get_page_ordered(&args.session_id, page, page_size, newest_first)
         .await
         .map_err(|e| e.to_string())?;
     let total_messages = message_page.total_items;
@@ -152,6 +172,7 @@ pub async fn read_session(_server: &HistoryServer, args: Value) -> Result<MCPRes
     let response = HistorySessionReadResponse {
         session: to_history_session_item_with_count(session, total_messages),
         messages,
+        order: order.to_string(),
     };
 
     let text = render_read_session_text(&response);
@@ -172,8 +193,8 @@ pub async fn read_message(_server: &HistoryServer, args: Value) -> Result<MCPRes
     let offset_chars = args.offset_chars.unwrap_or(0);
     let max_chars = args
         .max_chars
-        .unwrap_or(MAX_MESSAGE_CHARS)
-        .min(MAX_MESSAGE_CHARS);
+        .unwrap_or(DEFAULT_MESSAGE_CHARS)
+        .clamp(1, MAX_MESSAGE_CHARS);
 
     let message_repo = get_message_repository();
     let message = match message_repo
@@ -403,6 +424,21 @@ fn normalize_page(page: u64) -> u64 {
 
 fn normalize_page_size(page_size: u64) -> u64 {
     page_size.clamp(1, MAX_PAGE_SIZE)
+}
+
+fn normalize_read_session_order(order: Option<&str>) -> Result<&'static str, String> {
+    let normalized = order
+        .unwrap_or(DEFAULT_READ_SESSION_ORDER)
+        .trim()
+        .to_ascii_lowercase();
+    match normalized.as_str() {
+        "asc" => Ok("asc"),
+        "desc" => Ok("desc"),
+        _ => Err(format!(
+            "Invalid order '{}'. Use 'asc' (oldest first) or 'desc' (newest first).",
+            order.unwrap_or(DEFAULT_READ_SESSION_ORDER)
+        )),
+    }
 }
 
 fn parse_optional_status(status: Option<&str>) -> Result<Option<SessionStatus>, String> {
@@ -704,9 +740,14 @@ fn render_list_text(page: &Page<HistorySessionItem>) -> String {
 }
 
 fn render_read_session_text(response: &HistorySessionReadResponse) -> String {
+    let order_label = if response.order == "desc" {
+        "newest first"
+    } else {
+        "oldest first"
+    };
     let mut lines = vec![
         format!(
-            "Session {} (`{}`) has {} message(s). Showing page {} of {}.",
+            "Session {} (`{}`) has {} message(s). Showing page {} of {} (order={}, {}).",
             response
                 .session
                 .name
@@ -715,17 +756,20 @@ fn render_read_session_text(response: &HistorySessionReadResponse) -> String {
             response.session.session_id,
             response.messages.total_items,
             response.messages.page,
-            response.messages.total_pages
+            response.messages.total_pages,
+            response.order,
+            order_label
         ),
         format!(
-            "Status={} agentId={} lastMessageAt={}",
+            "Status={} agentId={} lastMessageAt={} totalPages={}",
             response.session.status,
             response.session.agent_id.as_deref().unwrap_or("unknown"),
             response
                 .session
                 .last_message_at
                 .map(|value| value.to_string())
-                .unwrap_or_else(|| "none".to_string())
+                .unwrap_or_else(|| "none".to_string()),
+            response.messages.total_pages
         ),
     ];
 
