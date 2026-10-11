@@ -315,7 +315,10 @@ async fn knowledge_search_structured_results_include_source_and_tags() {
     assert_eq!(results[0]["source"], "runbook.md");
     assert_eq!(results[0]["tags"], json!(["ops", "aurora"]));
     assert!(results[0]["id"].is_number());
-    assert!(results[0]["content"].as_str().unwrap().contains("RBK-TEST-001"));
+    assert!(results[0]["content"]
+        .as_str()
+        .unwrap()
+        .contains("RBK-TEST-001"));
 }
 
 #[tokio::test]
