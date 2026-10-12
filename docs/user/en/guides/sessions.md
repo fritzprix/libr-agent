@@ -25,6 +25,10 @@ Recently active sessions are retained warm in memory, making switching between s
 - **Mermaid** (`` ```mermaid ``) and **LaTeX** (`$…$` / `$$…$$`) render in chat messages, deliverable cards, and interactive markdown panels.
 - Per-message **Copy** / **Export PDF** keep diagrams and equations (PDF preprocess embeds Mermaid as images; math uses the PDF TeX path).
 
+### Regenerate last turn
+
+When the session is **idle** (not streaming), the latest assistant message shows a **Regenerate** action. It discards that completed turn and re-runs completion from the preceding user message. Use this when you want another take without pasting the same prompt again. Error-path retry remains available when a turn fails.
+
 ---
 
 ## Export

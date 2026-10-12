@@ -1964,11 +1964,17 @@
         "body": "Adjust Thinking Effort under Settings → AI & Models when you need faster answers or deeper analysis.",
         "cta": "Open AI & Models settings"
       },
+      "regenerateLastTurn": {
+        "title": "Regenerate the last reply",
+        "body": "On a finished chat, open the latest assistant message actions and choose Regenerate to discard that turn and try again from your last message.",
+        "cta": "Open chat"
+      },
       "knowledgeDistillSchedule": {
         "title": "Schedule durable knowledge distillation",
         "body": "Create a nightly task that saves lasting decisions and fixes — not daily news — into Knowledge.",
         "cta": "Create nightly distill task"
       },
+
       "knowledgeGraph": {
         "title": "Explore your knowledge graph",
         "body": "Open Knowledge to see how concepts the agent learned connect as a network graph.",

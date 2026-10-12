@@ -1964,11 +1964,17 @@
         "body": "設定 → AI & Models の Thinking Effort で、速さと思考の深さを切り替えられます。",
         "cta": "AI & Models 設定を開く"
       },
+      "regenerateLastTurn": {
+        "title": "最後の返信を再生成",
+        "body": "完了したチャットで、最新のアシスタントメッセージ操作から Regenerate を選ぶと、そのターンを破棄して直前のユーザーメッセージからやり直せます。",
+        "cta": "チャットを開く"
+      },
       "knowledgeDistillSchedule": {
         "title": "長く使える知識を定期蒸留しましょう",
         "body": "日次ニュースではなく、決定や修正など長く使える内容だけを Knowledge に残す夜間タスクを作成できます。",
         "cta": "夜間の蒸留タスクを作成"
       },
+
       "knowledgeGraph": {
         "title": "ナレッジグラフを見てみましょう",
         "body": "Knowledge で、エージェントが蓄えた概念のつながりをネットワークとして確認できます。",

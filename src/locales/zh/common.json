@@ -1964,11 +1964,17 @@
         "body": "在 设置 → AI & Models 中调整 Thinking Effort，在速度与深度之间取舍。",
         "cta": "打开 AI & Models 设置"
       },
+      "regenerateLastTurn": {
+        "title": "重新生成上一则回复",
+        "body": "在已结束的对话中，打开最新助手消息的操作并选择 Regenerate，即可丢弃该轮并从你的上一条消息重新生成。",
+        "cta": "打开聊天"
+      },
       "knowledgeDistillSchedule": {
         "title": "安排持久知识蒸馏",
         "body": "创建夜间任务，将长期有用的决策与修复写入 Knowledge，而不是每日新闻。",
         "cta": "创建夜间蒸馏任务"
       },
+
       "knowledgeGraph": {
         "title": "查看知识图谱",
         "body": "在 Knowledge 中以网络图查看智能体积累的概念关系。",

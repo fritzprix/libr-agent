@@ -1964,11 +1964,17 @@
         "body": "Unter Einstellungen → AI & Models steuern Sie Thinking Effort für schnellere oder tiefere Antworten.",
         "cta": "AI & Models öffnen"
       },
+      "regenerateLastTurn": {
+        "title": "Letzte Antwort neu erzeugen",
+        "body": "In einem abgeschlossenen Chat öffnen Sie die Aktionen der neuesten Assistentennachricht und wählen Regenerate, um diesen Turn zu verwerfen und ab Ihrer letzten Nachricht neu zu starten.",
+        "cta": "Chat öffnen"
+      },
       "knowledgeDistillSchedule": {
         "title": "Dauerhaftes Wissen planen",
         "body": "Erstellen Sie eine nächtliche Aufgabe, die bleibende Entscheidungen und Fixes — nicht Tagesnews — in Knowledge speichert.",
         "cta": "Nächtliche Destillationsaufgabe erstellen"
       },
+
       "knowledgeGraph": {
         "title": "Wissensgraph erkunden",
         "body": "Unter Knowledge sehen Sie, wie vom Agenten gelernte Konzepte vernetzt sind.",

@@ -1,3 +1,23 @@
+## [0.9.25] - 2026-10-12
+
+### 🚀 Features & Capabilities
+
+- **Regenerate last assistant turn**: On a completed (idle) session, use **Regenerate** on the latest assistant message to discard that turn and re-run from the preceding user message — without relying on error-path retry.
+- **One-click knowledge distill schedule**: Hub / wait tip CTA upserts a nightly scheduled task that distills durable decisions and fixes into Knowledge (not daily news).
+- **`science-search` skill**: Bundled skill to search ~200M scholarly papers (OpenAlex via ScienceMadeReadable), look up DOIs, find similar works, and walk citation graphs — no API key required.
+- **Shared workspace for delegated sessions**: `spawnSession` can inherit the caller workspace (`current` / `.` / `inherit`) so child audits share deliverables instead of silently reviewing an empty workspace.
+
+### 🐛 Fixes & Hardening
+
+- **Org / teamwork**: Stamp org identity on sibling manifests; accept top-level `orgLineage.intended` in teamwork scaffold; inherit Harbor Docker attach for child sessions.
+- **Knowledge**: Leaner service context, dual-channel search parity, hardened v2 prune / scoped semantic search / extract hygiene.
+
+### 🔧 Performance & Internal
+
+- **History tools**: Reverse `readSession` order and raise `readMessage` maxChars for more useful recent-context reads.
+- **Harbor knowledge-bridge**: Serial bench scripts and short `pnpm` aliases for record→search cross-session validation.
+- **Workspace**: Modularize `code_execution` validation by responsibility; dependency bumps (`uuid`, `ammonia`, `tokio`).
+
 ## [0.9.24] - 2026-10-10
 
 ### 🚀 Features & Capabilities

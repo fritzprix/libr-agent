@@ -1960,11 +1960,17 @@
         "body": "설정 → AI & Models에서 Thinking Effort로 응답 깊이와 속도를 조절할 수 있어요.",
         "cta": "AI & Models 설정 열기"
       },
+      "regenerateLastTurn": {
+        "title": "마지막 답변을 다시 생성해요",
+        "body": "끝난 대화에서 최신 어시스턴트 메시지 액션의 Regenerate로 그 턴을 지우고, 직전 사용자 메시지부터 다시 받을 수 있어요.",
+        "cta": "채팅 열기"
+      },
       "knowledgeDistillSchedule": {
         "title": "오래 쓸 지식만 예약으로 모아요",
         "body": "일일 뉴스나 임시 메모가 아니라, 결정과 해결책처럼 오래 남는 내용만 Knowledge에 쌓는 예약 작업을 만들어 보세요.",
         "cta": "일일 증류 작업 만들기"
       },
+
       "knowledgeGraph": {
         "title": "지식 그래프를 살펴보세요",
         "body": "Knowledge에서 AI가 모은 개념 관계를 네트워크로 볼 수 있어요.",
