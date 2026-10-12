@@ -18,6 +18,10 @@ async fn system_prompt_exposes_agent_runtime_identity() {
     assert!(prompt.contains("Agent Name: Ops Bot"));
     assert!(prompt.contains("Agent ID (Config ID): agent-123"));
     assert!(prompt.contains("Session ID: (unknown-session)"));
+    assert!(
+        !prompt.contains("Workspace root (absolute):"),
+        "placeholder sessions must not invent a workspace root path"
+    );
     assert!(prompt.contains("## Core Execution Principles"));
     assert!(
         prompt.contains("Before starting work: in one or two sentences, state the user's intent")

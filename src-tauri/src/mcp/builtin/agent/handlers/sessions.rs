@@ -48,6 +48,35 @@ pub fn org_child_inherited_docker_workspace(
     Some((WorkspaceIsolationMode::Docker, inherited))
 }
 
+/// Tokens that mean "use the caller's effective workspace root" (not a literal path).
+pub fn is_inherit_workspace_override(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "current" | "." | "inherit"
+    )
+}
+
+/// Resolve the child workspace path for `agent__spawnSession`.
+///
+/// - `workspaceOverride` of `current` / `.` / `inherit` → caller's workspace
+/// - any other override string → used as the workspace path (absolute expected)
+/// - no override + org root → org root workspace (existing behavior)
+/// - no override + plain session → `None` (isolated child workspace)
+pub fn resolve_spawn_workspace_binding(
+    requested_override: Option<&str>,
+    caller_workspace: &std::path::Path,
+    org_root_workspace: Option<&std::path::Path>,
+) -> Option<std::path::PathBuf> {
+    if let Some(raw) = requested_override {
+        let trimmed = raw.trim();
+        if is_inherit_workspace_override(trimmed) {
+            return Some(caller_workspace.to_path_buf());
+        }
+        return Some(std::path::PathBuf::from(trimmed));
+    }
+    org_root_workspace.map(std::path::Path::to_path_buf)
+}
+
 /// Resolve display path + SHARED/ISOLATED for a newly spawned child session.
 fn resolve_spawned_workspace_signal(
     caller_session_id: &str,
@@ -178,21 +207,17 @@ async fn spawn_session_impl(
         .map(str::to_string);
     let workspace_override_set = requested_workspace_override.is_some();
 
-    let effective_workspace_path = if let Some(workspace_override) = requested_workspace_override {
-        Some(workspace_override)
-    } else if explicit_org.is_some() {
-        let (_, _, org_root_session_id) = explicit_org
-            .as_ref()
-            .ok_or_else(|| "Explicit org metadata missing after org validation".to_string())?;
-        Some(
-            crate::session::get_session_manager()?
-                .get_session_workspace_dir_by_id(org_root_session_id)
-                .to_string_lossy()
-                .to_string(),
-        )
-    } else {
-        None
-    };
+    let session_manager = crate::session::get_session_manager()?;
+    let caller_workspace = session_manager.get_session_workspace_dir_by_id(caller_session_id);
+    let org_root_workspace = explicit_org.as_ref().map(|(_, _, org_root_session_id)| {
+        session_manager.get_session_workspace_dir_by_id(org_root_session_id)
+    });
+    let effective_workspace_path = resolve_spawn_workspace_binding(
+        requested_workspace_override.as_deref(),
+        &caller_workspace,
+        org_root_workspace.as_deref(),
+    )
+    .map(|path| path.to_string_lossy().into_owned());
 
     // When complexity mapping has no override, omit model/provider so the
     // existing parent-inheritance → preferredModel chain stays zero-breaking.

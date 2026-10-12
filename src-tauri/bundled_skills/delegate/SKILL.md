@@ -20,7 +20,7 @@ LibrAgent exposes builtin tools as `server__tool` (for example `agent__spawnSess
 
 Treat sub-agent delegation as session orchestration, not magic inheritance.
 
-A child session keeps lineage to its parent, but it does **not** automatically inherit the parent's workspace, workspace instruction files, or workspace-local skills. If the task depends on those, either restate them in the handoff, choose a different assistant, or avoid delegation.
+A plain child session keeps lineage to its parent, but it does **not** automatically inherit the parent's workspace, workspace instruction files, or workspace-local skills. When the child must see caller deliverables, **share the workspace on purpose**: pass `workspaceOverride="current"` (also `"."` or `"inherit"`) — the absolute workspace root is listed under Agent Runtime Identity — or inline the needed file contents in the task. Org children inherit the org root workspace by default.
 
 Read `references/delegation-patterns.md` when you need concrete handoff templates, troubleshooting patterns, or a quick matrix for what the child session can actually see.
 
@@ -56,15 +56,14 @@ Good delegation targets:
 - long-running analysis where the parent can keep working
 - specialized assistants that have assistant-scoped skills the parent lacks
 
-Avoid delegation when the child must rely on live parent-only state, such as:
+Scratchpad notes (`scratchpad__*`) are always session-private — children cannot read them. Copy any required notes into the task text.
 
-- the parent's temporary workspace files
-- the parent's workspace `agents.md` / `CLAUDE.md` instructions
-- workspace-local `skills/` content from the parent's workspace
-- the parent's scratchpad notes (`scratchpad__*` is session-isolated; children cannot read them)
-- any behavior that assumes random parent context is implicitly copied into the child
+When the child must rely on parent workspace files, instructions, or workspace-local skills, **do not abandon delegation**. Fix the handoff:
 
-If the work depends on any of those, delegation is usually the wrong move unless you can explicitly recreate that context for the child.
+- share the workspace with `workspaceOverride="current"` (or `"."` / `"inherit"`), or
+- inline the critical file excerpts / rules / procedure in the task
+
+Never silently replace a user-requested third-party review or audit with a parent self-evaluation. If the child cannot access dependencies, re-spawn with a correct workspace binding, inline the missing content, or report the blockage to the user.
 
 When the child finishes, require deliverables in its **final text response**. Parent recovery uses that text (`agent__checkSession` / `waitForResult`), not scratchpad IDs — child scratchpad notes are invisible to the parent.
 
@@ -94,8 +93,8 @@ Important limitations:
 - Do **not** assume `agent.md` exists. Workspace behavior instructions are loaded from the first non-empty file among `agents.md`, `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md`.
 - Persona / tone instructions are loaded separately from the first non-empty file among `.github/SOUL.md`, `SOUL.md`, `.github/soul.md`, and `soul.md`.
 - Both persona and workspace instruction content are cached for the session lifetime until the stable prompt cache is invalidated.
-- `agent__spawnSession` can override the child workspace with `workspaceOverride`; files and prompt state still follow the child session.
-- Default to each session's own workspace. Use `workspaceOverride` only when the child should work in the same effective workspace as the parent or another already-existing workspace.
+- Default plain children get an isolated workspace. Use `workspaceOverride="current"` (or `"."` / `"inherit"`) when the child must read or edit caller deliverables; use an absolute path only for a different existing root.
+- After spawn, Metadata `workspace: SHARED with caller` confirms the share; `ISOLATED` means relative paths in the parent root are not visible to the child.
 
 ## 3. Prepare the Handoff
 
@@ -127,10 +126,20 @@ Use the builtin agent tools deliberately:
 - `agent__messageToSession(sessionId="...", complexity="normal", message="...")` to continue work or assign new work to a suitable idle matching-role child (`complexity` is required: `low`|`normal`|`high`)
 - Set `reset=true` only when the previous conversation and runtime state should be discarded. This resets messages, planning/compaction state, and pending messages but does not clean workspace files.
 - `agent__spawnSession(configId="...", complexity="normal", task="...", waitForResult=false)` to spawn a new child session using the configuration template ID. Do not pass a `sessionId` here; for existing sessions use `agent__messageToSession`.
-- `agent__spawnSession(configId="...", complexity="normal", task="...", workspaceOverride="/absolute/path")` when the child must run in a shared existing workspace
+- `agent__spawnSession(configId="...", complexity="normal", task="...", workspaceOverride="current")` when the child must review or edit files in **this** session's workspace (preferred over guessing an absolute path)
+- `agent__spawnSession(..., workspaceOverride="/absolute/path")` only when the child must use a different existing workspace root
 - `agent__checkSession(sessionId)` to poll
 - `agent__checkSession(sessionId, wait=true)` when you want to block until a terminal result
 Default to `waitForResult=false` unless the parent truly has nothing useful to do while waiting.
+
+### Deliverable review / audit handoff
+
+When the user asks another agent to audit or review existing workspace deliverables:
+
+1. Spawn (or reuse) a child with `workspaceOverride="current"` so Metadata reports `SHARED with caller`.
+2. Point the task at relative paths that exist in the shared root (or inline contents if you intentionally keep isolation).
+3. Wait for the child's final text; present that as the independent review.
+4. If the child reports missing files under `ISOLATED`, fix the binding and re-spawn — do **not** grade your own work as a substitute.
 
 ## 5. Review the Result (Parent Owns Acceptance)
 
@@ -140,7 +149,7 @@ Do not blindly trust the child. The child **generates**; the parent **accepts**.
 
 - Confirm scope: correct workspace (`SHARED` vs `ISOLATED` in Metadata) and authorized paths
 - Spot-check deliverables in the child's **final text** (not scratchpad IDs)
-- If claims cite commands/files, inspect or re-run the critical check yourself before presenting as final
+- If the user asked for an independent / third-party review, the child's result is the review — do not replace it with a parent self-audit
 - Re-steer with `agent__messageToSession` if the child stopped short or missed the objective
 
 **Strict / high-stakes handoff** — stop here and follow **`delegation-eval-loop`**:
@@ -157,10 +166,10 @@ If the child cannot find a file, a local skill, or a workspace rule, assume isol
 
 Common causes:
 
-- the child is in a different workspace
+- the child is in a different workspace (forgot `workspaceOverride="current"`)
 - the child used a different assistant than intended
 - the needed procedure lived only in the parent's workspace `skills/` directory
-- the parent assumed files or rules would be copied without using `workspaceOverride` or explicit task text
+- the parent assumed files or rules would be copied without sharing the workspace or inlining content
 - the parent changed `agents.md` mid-session and expected the existing session prompt cache to refresh automatically
 
-When in doubt, restate the missing context explicitly or stop delegating that particular subtask.
+When in doubt, re-spawn with `workspaceOverride="current"` or restate the missing context in the task. Do not silently finish a requested delegation as a parent self-audit.
