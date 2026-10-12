@@ -568,6 +568,11 @@ pub async fn get_org(
         .filter(|session| session.status == crate::repositories::SessionStatus::Busy)
         .count();
     let root_display_id = crate::utils::session_id::display_session_id(&root_session.id);
+    let member_hint_id = members
+        .iter()
+        .find(|session| session.id != root_session.id)
+        .map(|session| crate::utils::session_id::display_session_id(&session.id))
+        .unwrap_or_else(|| root_display_id.clone());
     let message = format!(
         "Explicit org summary\n\nOrg: {} (ID: {})\nRoot session: {}\nMembers: {} (busy: {})\n\n{}",
         org_name,
@@ -614,8 +619,14 @@ pub async fn get_org(
     Ok(SuccessHint::new(
         message,
         vec![
-            "Use agent__checkSession(sessionId) to inspect a member.".to_string(),
-            "Use agent__messageToSession(sessionId, message) to coordinate members.".to_string(),
+            format!(
+                "Use agent__checkSession(\"{}\") to inspect a member.",
+                member_hint_id
+            ),
+            format!(
+                "Use agent__messageToSession(\"{}\", message) to coordinate members.",
+                member_hint_id
+            ),
         ],
     )
     .to_mcp_result_with_data(Some(Value::Object(response_data))))

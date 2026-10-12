@@ -6,8 +6,8 @@ use super::super::utils::{
     parse_complexity, read_required_string, resolve_model_for_complexity,
 };
 use crate::mcp::builtin::error_guidance::{
-    guided_error, missing_agent_config_error, missing_agent_session_error,
-    session_id_passed_as_agent_config_error, ErrorCategory, SuccessHint, ToolGroup,
+    guided_error, missing_agent_config_error, session_id_passed_as_agent_config_error,
+    ErrorCategory, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
 use crate::models::chat::MessageSource;
@@ -16,7 +16,7 @@ use crate::repositories::{AssistantRepository, SessionMetadata, SessionRepositor
 
 use super::super::AgentServer;
 use super::check_session::check_session;
-use super::delegation::load_accessible_delegated_session;
+use super::delegation::{load_accessible_delegated_session, missing_accessible_session_error};
 use super::enrichment::{
     apply_check_session_enrichment, display_sanitize_workspace_path, format_workspace_status_note,
     resolve_check_session_enrichment, WorkspaceRelation,
@@ -465,7 +465,7 @@ pub async fn message_to_session(
     {
         Ok(response) => response,
         Err(err) if err.contains("Session not found:") => {
-            return Ok(missing_agent_session_error(&session_ref));
+            return Ok(missing_accessible_session_error(caller_session_id, &session_ref).await);
         }
         Err(err) => return Err(err),
     };
@@ -613,7 +613,7 @@ pub async fn stop_session(
 
     if let Err(error) = manager.terminate_session(session_id.clone()).await {
         if error.contains("not found") {
-            return Ok(missing_agent_session_error(&session_ref));
+            return Ok(missing_accessible_session_error(caller_session_id, &session_ref).await);
         }
         return Err(error);
     }

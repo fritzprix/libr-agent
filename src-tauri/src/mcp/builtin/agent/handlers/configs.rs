@@ -781,10 +781,45 @@ async fn list_delegated_sessions(
         message.push_str(&pagination_note);
     }
 
-    let hint = SuccessHint::new(
-        message,
-        vec!["Use agent__checkSession(sessionId) to get results".to_string()],
-    );
+    let (follow_ups, next_actions) = if total == 0 {
+        (
+            vec![
+                "No delegated child sessions are available to inspect.".to_string(),
+                "Continue your assigned deliverable — do not call agent__checkSession without a listed sessionId."
+                    .to_string(),
+                "Re-read @teamwork/coordination/HANDOFF.md if you need sibling or handoff status."
+                    .to_string(),
+            ],
+            Vec::new(),
+        )
+    } else if let Some(first_id) = paged_results
+        .first()
+        .and_then(|row| row.get("id"))
+        .and_then(|id| id.as_str())
+    {
+        (
+            vec![format!(
+                "Use agent__checkSession(\"{}\") to inspect a listed session.",
+                first_id
+            )],
+            vec![json!({
+                "toolName": "agent__checkSession",
+                "reason": "Inspect one of the listed delegated sessions in more detail.",
+                "args": {
+                    "sessionId": first_id,
+                    "wait": false
+                }
+            })],
+        )
+    } else {
+        // Non-empty total but empty page (offset past end) — do not invent a checkSession target.
+        (
+            vec!["Adjust offset/limit to page into the session list.".to_string()],
+            Vec::new(),
+        )
+    };
+
+    let hint = SuccessHint::new(message, follow_ups);
     let response_message = hint.message.clone();
     let mut response_data = build_agent_tool_data(
         "agent__listAgents",
@@ -792,10 +827,7 @@ async fn list_delegated_sessions(
         None,
         &response_message,
         "success",
-        vec![json!({
-            "toolName": "agent__checkSession",
-            "reason": "Inspect one of the listed delegated sessions in more detail.",
-        })],
+        next_actions,
     );
     response_data.insert("type".to_string(), Value::String("sessions".to_string()));
     response_data.insert("sessions".to_string(), Value::Array(paged_results));
