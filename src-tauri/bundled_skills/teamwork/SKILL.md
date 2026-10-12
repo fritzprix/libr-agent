@@ -222,7 +222,7 @@ If the task force cannot surface blocked state, it is not robust.
 ## Bootstrap
 
 1. Call `agent__prepareTeamworkWorkspace()` from the governing root (empty `@teamwork/` root).
-2. **Default:** write the required scaffold with `workspace__writeFile` under `@teamwork/` (`agents.md`, `MISSION.md`, `ROLES.md`, `coordination/*`, and `@teamwork/.libragent/teamwork.json` with `executionSubstrate.mode="org"` and `orgLineage.intended=true`).
+2. **Default:** write the required scaffold with `workspace__writeFile` under `@teamwork/` (`agents.md`, `MISSION.md`, `ROLES.md`, `coordination/*`, and `@teamwork/.libragent/teamwork.json` with `executionSubstrate.mode="org"` and `executionSubstrate.orgLineage.intended=true`).
 3. **Host sessions only (optional):** run the skill script with an absolute skill base dir — never via container `workspace__runShell` on `@system-skills/...`:
 
 ```bash

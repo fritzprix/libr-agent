@@ -10,8 +10,8 @@ Use this file for concrete tool call patterns, manifest update rules, and troubl
 | Assign an existing org-visible child | `agent__messageToSession(sessionId, complexity, message)` when an Idle child has the same `assistantId` and compatible workspace |
 | Spawn an org-visible child | `agent__spawnSession(configId, complexity, task)` from a session already in the org when no suitable child exists or isolation/capacity requires it |
 | Delegate outside Org view | Reuse a matching Idle child with `agent__messageToSession`, or use `agent__spawnSession(configId, complexity, task)` from a session that is not in an explicit org |
-| Identify the org root session | Read `orgLineage.rootSessionId` from `.libragent/teamwork.json` |
-| Resume org work | Resume the session matching `orgLineage.rootSessionId`, not a child |
+| Identify the org root session | Read `executionSubstrate.orgLineage.rootSessionId` from `.libragent/teamwork.json` |
+| Resume org work | Resume the session matching `executionSubstrate.orgLineage.rootSessionId`, not a child |
 | Inspect org membership | `agent__getOrg(orgId)` if available |
 
 ## Pattern: Create Org and First Member
