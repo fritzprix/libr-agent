@@ -1,5 +1,6 @@
 ---
 title: Built-in Tools Guide
+description: "Reference for LibrAgent built-in MCP tools across workspace, browser, knowledge, and agent servers."
 ---
 
 # Built-in Tools Guide

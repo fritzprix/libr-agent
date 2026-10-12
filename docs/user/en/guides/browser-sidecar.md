@@ -1,5 +1,6 @@
 ---
 title: Browser Automation
+description: "Configure the agent browser (Sidecar) and everyday Chrome (userChrome) for login-aware automation."
 ---
 
 # Browser Automation (Browser Sidecar)

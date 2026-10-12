@@ -1,5 +1,6 @@
 ---
 title: Extensions로 MCP 설치하기
+description: "Extensions에서 추천 MCP 프리셋을 설치하고 어시스턴트 도구 권한을 켜는 방법을 설명합니다."
 ---
 
 # Extensions로 MCP 설치하기

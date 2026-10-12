@@ -1,5 +1,6 @@
 ---
 title: First agent chat
+description: "Pick an assistant, start a session, and learn how messages, tools, and skills work in your first LibrAgent chat."
 ---
 
 # First agent chat

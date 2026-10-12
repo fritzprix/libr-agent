@@ -1,5 +1,6 @@
 ---
 title: Playbooks Guide
+description: "Save successful work as Playbooks, re-run them, and use session pinning and slots in LibrAgent."
 ---
 
 # Playbooks Guide

@@ -1,5 +1,6 @@
 ---
 title: Troubleshooting Guide
+description: "Diagnose and fix common LibrAgent issues with models, tools, browser automation, and sessions."
 ---
 
 # Troubleshooting Guide

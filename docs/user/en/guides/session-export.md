@@ -1,5 +1,6 @@
 ---
 title: Session Export
+description: "Export conversations as Markdown or ATIF, or copy the visible chat window from Session Export."
 ---
 
 # Session Export

@@ -1,5 +1,6 @@
 ---
 title: Common questions
+description: "Short answers to common LibrAgent questions about install, models, MCP, skills, and automation."
 ---
 
 # Frequently asked questions

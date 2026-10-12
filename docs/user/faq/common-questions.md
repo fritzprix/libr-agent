@@ -1,5 +1,6 @@
 ---
 title: 자주 묻는 질문
+description: "설치, 모델, MCP, 스킬, 자동화에 대한 LibrAgent 자주 묻는 질문과 짧은 답변입니다."
 ---
 
 # 자주 묻는 질문 (FAQ)

@@ -1,5 +1,6 @@
 ---
 title: Scenario - Automated Pull Request Code Review
+description: "Walk through a LibrAgent scenario: paste a PR URL and get code-review feedback and suggestions."
 ---
 
 # Scenario: Automated Pull Request Code Review

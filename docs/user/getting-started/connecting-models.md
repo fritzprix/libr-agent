@@ -1,5 +1,6 @@
 ---
 title: 모델 연결하기
+description: "Settings의 AI & Models에서 Provider API 키와 기본 모델을 설정해 LibrAgent에 LLM을 연결하는 방법입니다."
 ---
 
 # 모델 연결하기

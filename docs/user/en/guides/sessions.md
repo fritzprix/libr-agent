@@ -1,5 +1,6 @@
 ---
 title: Sessions
+description: "Find, bookmark, and delete sessions; regenerate the last turn; manage workspace overrides and /reload."
 ---
 
 # Sessions

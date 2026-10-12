@@ -1,10 +1,15 @@
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
-import { defineConfig } from 'vitepress';
+import { fileURLToPath } from 'node:url';
+import { defineConfig, type HeadConfig } from 'vitepress';
 
 const require = createRequire(import.meta.url);
 const vueRoot = dirname(require.resolve('vue/package.json'));
+const websiteRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const repo = 'https://github.com/fritzprix/libr-agent';
+/** GitHub Pages site origin including VitePress `base`. */
+const siteHostname = 'https://fritzprix.github.io/libr-agent/';
+const ogImage = `${siteHostname}og-image.png`;
 
 const koNav = [
   { text: '시작하기', link: '/getting-started/5-minute-tutorial' },
@@ -129,6 +134,29 @@ const enSidebar = [
   },
 ];
 
+/** Absolute page URL with cleanUrls (no `.html`). */
+function absolutePageUrl(relativePath: string): string {
+  const clean = relativePath
+    .replace(/(?:(^|\/)index)?\.md$/u, '$1')
+    .replace(/\.md$/u, '');
+  if (!clean) {
+    return siteHostname;
+  }
+  return new URL(clean, siteHostname).href;
+}
+
+/** Map KO ↔ EN content paths for hreflang when a peer page exists. */
+function alternateLocalePath(relativePath: string): string | null {
+  const normalized = relativePath.replace(/\\/gu, '/');
+  if (normalized.startsWith('en/')) {
+    return normalized.slice(3) || 'index.md';
+  }
+  if (normalized === '404.md') {
+    return null;
+  }
+  return `en/${normalized}`;
+}
+
 export default defineConfig({
   title: 'LibrAgent',
   description:
@@ -140,8 +168,86 @@ export default defineConfig({
   cleanUrls: true,
   lastUpdated: true,
   ignoreDeadLinks: false,
-  head: [['meta', { name: 'theme-color', content: '#0f766e' }]],
+  sitemap: {
+    hostname: siteHostname,
+  },
+  head: [
+    ['link', { rel: 'icon', href: '/libr-agent/favicon.ico', sizes: 'any' }],
+    [
+      'link',
+      {
+        rel: 'icon',
+        type: 'image/png',
+        href: '/libr-agent/favicon.png',
+      },
+    ],
+    ['link', { rel: 'apple-touch-icon', href: '/libr-agent/app-icon.png' }],
+    ['meta', { name: 'theme-color', content: '#0f766e' }],
+    ['meta', { property: 'og:type', content: 'website' }],
+    ['meta', { property: 'og:site_name', content: 'LibrAgent Docs' }],
+    ['meta', { property: 'og:image', content: ogImage }],
+    ['meta', { name: 'twitter:card', content: 'summary_large_image' }],
+    ['meta', { name: 'twitter:image', content: ogImage }],
+  ],
+  transformPageData(pageData) {
+    if (pageData.relativePath === '404.md') {
+      return;
+    }
+
+    const url = absolutePageUrl(pageData.relativePath);
+    const isEn = pageData.relativePath.replace(/\\/gu, '/').startsWith('en/');
+    const title = pageData.title
+      ? `${pageData.title} | LibrAgent`
+      : 'LibrAgent';
+    const description =
+      pageData.description ||
+      (isEn
+        ? 'LibrAgent user docs — install, chat, and connect models'
+        : 'LibrAgent 사용자 문서 — 설치, 채팅, 모델 연결');
+    const ogLocale = isEn ? 'en_US' : 'ko_KR';
+
+    const head: HeadConfig[] = [
+      ['link', { rel: 'canonical', href: url }],
+      ['meta', { property: 'og:url', content: url }],
+      ['meta', { property: 'og:title', content: title }],
+      ['meta', { property: 'og:description', content: description }],
+      ['meta', { property: 'og:locale', content: ogLocale }],
+      ['meta', { name: 'twitter:title', content: title }],
+      ['meta', { name: 'twitter:description', content: description }],
+    ];
+
+    const altRel = alternateLocalePath(pageData.relativePath);
+    if (altRel) {
+      const altUrl = absolutePageUrl(altRel);
+      const selfHreflang = isEn ? 'en' : 'ko';
+      const altHreflang = isEn ? 'ko' : 'en';
+      head.push(
+        ['link', { rel: 'alternate', hreflang: selfHreflang, href: url }],
+        ['link', { rel: 'alternate', hreflang: altHreflang, href: altUrl }],
+        [
+          'link',
+          {
+            rel: 'alternate',
+            hreflang: 'x-default',
+            href: isEn ? altUrl : url,
+          },
+        ],
+      );
+      head.push([
+        'meta',
+        {
+          property: 'og:locale:alternate',
+          content: isEn ? 'ko_KR' : 'en_US',
+        },
+      ]);
+    }
+
+    pageData.frontmatter.head ??= [];
+    pageData.frontmatter.head.push(...head);
+  },
   vite: {
+    // srcDir is ../docs/user; keep static SEO assets under website/public.
+    publicDir: join(websiteRoot, 'public'),
     resolve: {
       alias: {
         vue: vueRoot,
@@ -203,6 +309,7 @@ export default defineConfig({
     },
   },
   themeConfig: {
+    logo: '/app-icon.png',
     socialLinks: [{ icon: 'github', link: repo }],
     search: {
       provider: 'local',

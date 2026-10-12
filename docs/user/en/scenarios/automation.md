@@ -1,5 +1,6 @@
 ---
 title: Scenario - Scheduled Tasks & Automation Workflows
+description: "Schedule recurring LibrAgent work — daily digests, weekly reports, and cleanup — with Scheduled Tasks."
 ---
 
 # Scenario: Scheduled Tasks & Automation Workflows

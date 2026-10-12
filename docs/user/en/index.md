@@ -1,5 +1,6 @@
 ---
 title: LibrAgent user docs
+description: "LibrAgent user documentation home — install, connect models, chat, skills, automation, MCP guides, and FAQ."
 ---
 
 # LibrAgent user docs

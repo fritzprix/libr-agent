@@ -1,5 +1,6 @@
 ---
 title: Installing Custom MCP Servers
+description: "Register custom stdio or HTTP MCP servers and configure headers and environment variables."
 ---
 
 # Installing Custom MCP Servers

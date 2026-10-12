@@ -1,5 +1,6 @@
 ---
 title: 자동화 (Scheduled Tasks)
+description: "Scheduled Tasks, loop·schedule 스킬, Org 자동화의 차이와 언제 무엇을 쓸지 정리합니다."
 ---
 
 # 자동화 — Scheduled Tasks

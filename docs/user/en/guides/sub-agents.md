@@ -1,5 +1,6 @@
 ---
 title: Sub-agents & orchestration
+description: "Coordinate child sessions, delegation, and Org/teamwork patterns for multi-agent orchestration in LibrAgent."
 ---
 
 # Sub-agents & orchestration

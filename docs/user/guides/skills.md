@@ -1,5 +1,6 @@
 ---
 title: 스킬 (Skills)
+description: "스킬 scope(워크스페이스·어시스턴트·글로벌·시스템), @skill 호출, 번들 스킬 카탈로그와 배포 방법을 설명합니다."
 ---
 
 # 스킬 (Skills)

@@ -1,5 +1,6 @@
 ---
 title: Skills Guide
+description: "Learn skill scopes, @skill invocation, the bundled skills catalog, and how to create and deploy custom skills."
 ---
 
 # Skills Guide

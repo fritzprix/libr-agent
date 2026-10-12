@@ -1,5 +1,6 @@
 ---
 title: Automation (Scheduled Tasks)
+description: "Compare Scheduled Tasks, loop/schedule skills, and Org automation — and choose the right LibrAgent approach."
 ---
 
 # Automation — Scheduled Tasks

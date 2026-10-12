@@ -1,5 +1,6 @@
 ---
 title: 세션
+description: "세션 검색·북마크·삭제, Regenerate, 워크스페이스 재정의와 /reload 사용법을 설명합니다."
 ---
 
 # 세션 관리하기

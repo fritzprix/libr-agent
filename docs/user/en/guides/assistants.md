@@ -1,5 +1,6 @@
 ---
 title: Assistants Guide
+description: "Create custom assistant profiles and configure General, Tools, and Skills for your LibrAgent agents."
 ---
 
 # Assistants Guide
