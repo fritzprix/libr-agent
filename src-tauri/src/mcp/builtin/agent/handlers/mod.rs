@@ -33,8 +33,9 @@ pub use enrichment::{
 };
 pub use orgs::{
     create_org, create_org_scaffold_preflight, existing_explicit_org_identity, get_org,
-    inspect_teamwork_scaffold, teamwork_scaffold_optional_host_script_guidance,
-    teamwork_scaffold_writefile_guidance, TeamworkScaffoldStatus,
+    inspect_teamwork_scaffold, stamp_org_identity_into_manifest,
+    teamwork_scaffold_optional_host_script_guidance, teamwork_scaffold_writefile_guidance,
+    TeamworkScaffoldStatus,
 };
 pub use sessions::{
     compact_session_context, delete_session, message_to_session,

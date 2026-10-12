@@ -127,6 +127,73 @@ fn read_org_lineage_intended(manifest: &Value) -> Option<bool> {
         })
 }
 
+fn insert_org_identity_fields(
+    org_obj: &mut serde_json::Map<String, Value>,
+    org_id: &str,
+    org_name: &str,
+    org_root_session_id: &str,
+) {
+    org_obj.insert("orgId".to_string(), Value::String(org_id.to_string()));
+    org_obj.insert("orgName".to_string(), Value::String(org_name.to_string()));
+    org_obj.insert(
+        "rootSessionId".to_string(),
+        Value::String(org_root_session_id.to_string()),
+    );
+    org_obj.insert(
+        "rootAction".to_string(),
+        Value::String("agent__createOrg".to_string()),
+    );
+}
+
+/// Stamp org identity into canonical `executionSubstrate.orgLineage`.
+///
+/// Sibling-alias manifests often omit the nested object; create it (preserving
+/// `intended` from the alias) so createOrg does not silently skip the write.
+/// When top-level `orgLineage` exists, mirror the same identity fields there.
+pub fn stamp_org_identity_into_manifest(
+    manifest: &mut Value,
+    org_id: &str,
+    org_name: &str,
+    org_root_session_id: &str,
+) -> bool {
+    let intended = read_org_lineage_intended(manifest).unwrap_or(true);
+
+    let stamped_nested = {
+        let Some(execution_substrate) = manifest.get_mut("executionSubstrate") else {
+            return false;
+        };
+        let Some(substrate_obj) = execution_substrate.as_object_mut() else {
+            return false;
+        };
+
+        let needs_seed = !substrate_obj
+            .get("orgLineage")
+            .and_then(Value::as_object)
+            .is_some();
+        if needs_seed {
+            substrate_obj.insert("orgLineage".to_string(), json!({ "intended": intended }));
+        }
+
+        let Some(org_obj) = substrate_obj
+            .get_mut("orgLineage")
+            .and_then(Value::as_object_mut)
+        else {
+            return false;
+        };
+        insert_org_identity_fields(org_obj, org_id, org_name, org_root_session_id);
+        true
+    };
+
+    if let Some(top_level) = manifest
+        .get_mut("orgLineage")
+        .and_then(Value::as_object_mut)
+    {
+        insert_org_identity_fields(top_level, org_id, org_name, org_root_session_id);
+    }
+
+    stamped_nested
+}
+
 pub fn inspect_teamwork_scaffold(workspace_path: &Path) -> TeamworkScaffoldStatus {
     const REQUIRED_FILES: &[&str] = &[
         "agents.md",
@@ -363,31 +430,27 @@ pub async fn create_org(
     if manifest_path.exists() {
         if let Ok(content) = std::fs::read_to_string(&manifest_path) {
             if let Ok(mut manifest) = serde_json::from_str::<Value>(&content) {
-                if let Some(execution_substrate) = manifest.get_mut("executionSubstrate") {
-                    if let Some(org_lineage) = execution_substrate.get_mut("orgLineage") {
-                        if let Some(org_obj) = org_lineage.as_object_mut() {
-                            org_obj.insert("orgId".to_string(), Value::String(org_id.clone()));
-                            org_obj.insert("orgName".to_string(), Value::String(org_name.clone()));
-                            org_obj.insert(
-                                "rootSessionId".to_string(),
-                                Value::String(org_root_session_id.clone()),
-                            );
-                            org_obj.insert(
-                                "rootAction".to_string(),
-                                Value::String("agent__createOrg".to_string()),
+                if stamp_org_identity_into_manifest(
+                    &mut manifest,
+                    &org_id,
+                    &org_name,
+                    &org_root_session_id,
+                ) {
+                    if let Ok(pretty) = serde_json::to_string_pretty(&manifest) {
+                        if let Err(e) = std::fs::write(&manifest_path, pretty) {
+                            log::error!("Failed to write updated teamwork manifest: {}", e);
+                        } else {
+                            log::info!(
+                                "Successfully updated teamwork manifest at {}",
+                                manifest_path.display()
                             );
                         }
                     }
-                }
-                if let Ok(pretty) = serde_json::to_string_pretty(&manifest) {
-                    if let Err(e) = std::fs::write(&manifest_path, pretty) {
-                        log::error!("Failed to write updated teamwork manifest: {}", e);
-                    } else {
-                        log::info!(
-                            "Successfully updated teamwork manifest at {}",
-                            manifest_path.display()
-                        );
-                    }
+                } else {
+                    log::warn!(
+                        "Could not stamp org identity into teamwork manifest at {} (missing executionSubstrate object)",
+                        manifest_path.display()
+                    );
                 }
             }
         }
