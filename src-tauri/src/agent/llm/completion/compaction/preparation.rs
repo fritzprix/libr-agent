@@ -26,6 +26,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use super::diagnostics::log_compaction_input_diagnostics;
+use super::hints::load_compaction_planning_seeds;
 use super::payload::{
     apply_compaction_retry_budget, build_compaction_request_payload,
     build_overflow_recovery_compaction_messages, estimate_compaction_non_message_tokens,
@@ -172,6 +173,9 @@ async fn prepare_compaction_request(
         retry_attempt,
     } = input;
 
+    // Snapshot goal/todos before clear_todos_after_successful_compaction runs post-persist.
+    let planning_seeds = load_compaction_planning_seeds(session_id).await;
+
     let Some(CompactionRequestPayload {
         compact_messages: base_compact_messages,
         to_id,
@@ -183,6 +187,7 @@ async fn prepare_compaction_request(
         split_idx,
         compact_context_record.as_ref(),
         started_at_ms,
+        planning_seeds,
     )
     else {
         let compact_record_summary = compact_context_record.as_ref().map(|record| {

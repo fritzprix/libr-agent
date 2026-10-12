@@ -1,12 +1,14 @@
 use crate::agent::compaction_text::sanitize_compaction_semantic_text;
 use crate::mcp::types::MCPContent;
 use crate::models::chat::Message;
+use crate::repositories::PlanningRepository;
 use once_cell::sync::Lazy;
 use regex::Regex;
 
 use super::instruction::{
-    truncate_instruction_text, ACTIVE_REQUEST_BULLET_LIMIT, INSTRUCTION_HINT_TEXT_LIMIT,
-    REFERENCE_CONTEXT_WINDOW_MESSAGES, REQUIRED_REFERENCE_BULLET_LIMIT,
+    truncate_instruction_hint, truncate_instruction_text, ACTIVE_REQUEST_BULLET_LIMIT,
+    INSTRUCTION_HINT_TEXT_LIMIT, REFERENCE_CONTEXT_WINDOW_MESSAGES,
+    REQUIRED_REFERENCE_BULLET_LIMIT,
 };
 
 static BACKTICK_REFERENCE_RE: Lazy<Regex> =
@@ -24,10 +26,30 @@ static SYMBOL_REFERENCE_RE: Lazy<Regex> = Lazy::new(|| {
 static IDENTIFIER_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^[A-Za-z_][A-Za-z0-9_]{1,79}$").expect("valid identifier regex"));
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Planning snapshot taken at compaction prepare time (before todo clear).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CompactionPlanningSeeds {
+    pub goal: Option<String>,
+    pub todos: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CompactionPreservationHints {
     pub active_request: Vec<String>,
     pub required_references: Vec<String>,
+    pub goal: Option<String>,
+    pub todos: Vec<String>,
+}
+
+impl CompactionPreservationHints {
+    pub fn merge_planning_seeds(&mut self, planning: &CompactionPlanningSeeds) {
+        if self.goal.is_none() {
+            self.goal = planning.goal.clone();
+        }
+        if self.todos.is_empty() && !planning.todos.is_empty() {
+            self.todos = planning.todos.clone();
+        }
+    }
 }
 
 fn extract_message_text_fragments(message: &Message) -> Vec<String> {
@@ -215,13 +237,18 @@ fn collect_prior_summary_hints(
     for bullet in extract_summary_section_bullets(&summary_body, "Active Request") {
         push_unique_limited(
             active_request,
-            truncate_instruction_text(&bullet, INSTRUCTION_HINT_TEXT_LIMIT),
+            truncate_instruction_hint(&bullet, INSTRUCTION_HINT_TEXT_LIMIT),
             ACTIVE_REQUEST_BULLET_LIMIT,
         );
     }
 
     for bullet in extract_summary_section_bullets(&summary_body, "Required References") {
-        push_unique_limited(required_references, bullet, REQUIRED_REFERENCE_BULLET_LIMIT);
+        // Path-safe: never apply the short prose truncate to reference bullets.
+        push_unique_limited(
+            required_references,
+            truncate_instruction_hint(&bullet, INSTRUCTION_HINT_TEXT_LIMIT),
+            REQUIRED_REFERENCE_BULLET_LIMIT,
+        );
     }
 }
 
@@ -284,13 +311,16 @@ pub(super) fn build_compaction_preservation_hints_from_parts(
         for fragment in extract_sanitized_message_text_fragments(message) {
             push_unique_limited(
                 &mut active_request,
-                truncate_instruction_text(&fragment, INSTRUCTION_HINT_TEXT_LIMIT),
+                truncate_instruction_hint(&fragment, INSTRUCTION_HINT_TEXT_LIMIT),
                 ACTIVE_REQUEST_BULLET_LIMIT,
             );
             for candidate in extract_reference_candidates_from_text(&fragment) {
                 push_unique_limited(
                     &mut required_references,
-                    format_reference_candidate(&candidate),
+                    truncate_instruction_hint(
+                        &format_reference_candidate(&candidate),
+                        INSTRUCTION_HINT_TEXT_LIMIT,
+                    ),
                     REQUIRED_REFERENCE_BULLET_LIMIT,
                 );
             }
@@ -305,7 +335,10 @@ pub(super) fn build_compaction_preservation_hints_from_parts(
     for candidate in raw_reference_candidates {
         push_unique_limited(
             &mut required_references,
-            format_reference_candidate(&candidate),
+            truncate_instruction_hint(
+                &format_reference_candidate(&candidate),
+                INSTRUCTION_HINT_TEXT_LIMIT,
+            ),
             REQUIRED_REFERENCE_BULLET_LIMIT,
         );
     }
@@ -321,7 +354,49 @@ pub(super) fn build_compaction_preservation_hints_from_parts(
     CompactionPreservationHints {
         active_request,
         required_references,
+        goal: None,
+        todos: Vec::new(),
     }
+}
+
+/// Load active goal + todos for compaction seeds. Must run before
+/// `clear_todos_after_successful_compaction`.
+pub async fn load_compaction_planning_seeds(session_id: &str) -> CompactionPlanningSeeds {
+    let Some(repo) = crate::state::try_get_planning_repository() else {
+        return CompactionPlanningSeeds::default();
+    };
+
+    let goal = match repo.get_active_goal(session_id).await {
+        Ok(Some(goal)) => {
+            let text = truncate_instruction_text(&goal.goal_text, INSTRUCTION_HINT_TEXT_LIMIT);
+            if text.is_empty() {
+                None
+            } else {
+                Some(text)
+            }
+        }
+        Ok(None) | Err(_) => None,
+    };
+
+    let todos = match repo.list_todos(session_id, true).await {
+        Ok(todos) => todos
+            .into_iter()
+            .filter_map(|todo| {
+                let marker = if todo.is_checked { "[x]" } else { "[ ]" };
+                let line = format!("{} {}", marker, todo.content.trim());
+                let truncated = truncate_instruction_hint(&line, INSTRUCTION_HINT_TEXT_LIMIT);
+                if truncated.is_empty() {
+                    None
+                } else {
+                    Some(truncated)
+                }
+            })
+            .take(10)
+            .collect(),
+        Err(_) => Vec::new(),
+    };
+
+    CompactionPlanningSeeds { goal, todos }
 }
 
 pub fn build_compaction_preservation_hints(messages: &[Message]) -> CompactionPreservationHints {

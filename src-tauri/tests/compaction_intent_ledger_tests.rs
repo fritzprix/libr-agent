@@ -1,9 +1,11 @@
-//! Windows-safe coverage for post-compaction intent ledger (#2042).
+//! Windows-safe coverage for post-compaction intent ledger (#2042)
+//! and Must-section gap-fill (#2084).
 //! Consolidated `integration_tests` is Linux/macOS-only (WebView link).
 
 use tauri_mcp_agent_lib::agent::llm::completion::{
     collect_recent_external_user_requests, ensure_intent_sections_in_summary,
-    format_recent_user_requests_section, RECENT_USER_REQUEST_LIMIT,
+    ensure_must_and_intent_sections, format_recent_user_requests_section, CompactionPlanningSeeds,
+    RECENT_USER_REQUEST_LIMIT,
 };
 use tauri_mcp_agent_lib::models::chat::{Message, MessageSource};
 
@@ -85,4 +87,51 @@ fn ensure_intent_sections_handles_colon_heading_and_crlf_divider() {
     assert!(!ensured.contains("- stale"));
     assert!(ensured.contains("[`u1`] Recover me"));
     assert!(ensured.contains("---\n### Context recovery"));
+}
+
+#[test]
+fn ensure_must_gap_fills_missing_td_cc_from_active_request_and_goal() {
+    let messages = vec![external_user("u1", "Ship the release notes")];
+    let summary = "### Active Request\n- None\n\n### Next Actions\n- Stop";
+    let planning = CompactionPlanningSeeds {
+        goal: Some("Publish RELEASE.md".to_string()),
+        todos: vec!["[ ] Draft notes".to_string()],
+    };
+
+    let ensured = ensure_must_and_intent_sections(summary, &messages, &planning);
+
+    assert!(ensured.contains("### Target Deliverable"));
+    assert!(ensured.contains("Publish RELEASE.md"));
+    assert!(ensured.contains("### Completion Criteria"));
+    assert!(ensured.contains("[ ] Satisfy active request"));
+    assert!(ensured.contains("### Working Intent"));
+    assert!(ensured.contains("### Required References"));
+    assert!(ensured.contains("### Recent User Requests"));
+}
+
+#[test]
+fn ensure_must_preserves_non_empty_llm_target_deliverable() {
+    let messages = vec![external_user("u1", "Ship the release notes")];
+    let summary = "### Target Deliverable\n- RELEASE.md published with changelog link\n\n### Active Request\n- None";
+
+    let ensured = ensure_must_and_intent_sections(
+        summary,
+        &messages,
+        &CompactionPlanningSeeds {
+            goal: Some("Publish RELEASE.md".to_string()),
+            todos: Vec::new(),
+        },
+    );
+
+    assert!(ensured.contains("RELEASE.md published with changelog link"));
+    assert_eq!(
+        ensured.matches("### Target Deliverable").count(),
+        1,
+        "must not duplicate or replace non-empty LLM Target Deliverable"
+    );
+    assert!(
+        !ensured.contains("Deliver: Publish RELEASE.md"),
+        "goal seed must not clobber non-empty LLM Target Deliverable"
+    );
+    assert!(ensured.contains("### Completion Criteria"));
 }

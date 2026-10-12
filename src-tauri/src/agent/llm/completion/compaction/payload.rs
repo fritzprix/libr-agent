@@ -4,7 +4,7 @@ use crate::mcp::types::MCPContent;
 use crate::models::chat::Message;
 use crate::repositories::CompactContextRecord;
 
-use super::hints::extract_summary_section_bullets;
+use super::hints::{extract_summary_section_bullets, CompactionPlanningSeeds};
 use super::instruction::{
     build_compaction_instruction, build_compaction_instruction_message,
     CompactionInstructionTemplateInput, REFERENCE_CONTEXT_WINDOW_MESSAGES,
@@ -76,6 +76,7 @@ fn build_incremental_compact_summary_message(
 fn build_compaction_instruction_template_input<'a>(
     all_messages: &'a [Message],
     compact_messages: &'a [Message],
+    planning_seeds: CompactionPlanningSeeds,
 ) -> CompactionInstructionTemplateInput<'a> {
     let prior_summary = compact_messages
         .iter()
@@ -96,6 +97,7 @@ fn build_compaction_instruction_template_input<'a>(
         prior_summary,
         latest_external_request_messages,
         reference_context_messages,
+        planning_seeds,
     }
 }
 
@@ -105,6 +107,7 @@ pub(super) fn build_compaction_request_payload(
     split_idx: usize,
     compact_record: Option<&CompactContextRecord>,
     created_at: i64,
+    planning_seeds: CompactionPlanningSeeds,
 ) -> Option<CompactionRequestPayload> {
     if split_idx == 0 {
         return None;
@@ -130,7 +133,11 @@ pub(super) fn build_compaction_request_payload(
             compact_messages.extend(messages[first_delta_message_idx..split_idx].iter().cloned());
 
             let instruction = build_compaction_instruction(
-                build_compaction_instruction_template_input(messages, &compact_messages),
+                build_compaction_instruction_template_input(
+                    messages,
+                    &compact_messages,
+                    planning_seeds,
+                ),
             );
             compact_messages.push(build_compaction_instruction_message(
                 session_id,
@@ -151,6 +158,7 @@ pub(super) fn build_compaction_request_payload(
     let instruction = build_compaction_instruction(build_compaction_instruction_template_input(
         messages,
         &compact_messages,
+        planning_seeds,
     ));
     compact_messages.push(build_compaction_instruction_message(
         session_id,
@@ -172,29 +180,54 @@ pub fn build_compaction_request_payload_for_testing(
     compact_record: Option<&CompactContextRecord>,
     created_at: i64,
 ) -> Option<CompactionRequestPayloadPreview> {
-    build_compaction_request_payload(session_id, messages, split_idx, compact_record, created_at)
-        .map(|payload| CompactionRequestPayloadPreview {
-            message_count: payload.compact_messages.len(),
-            to_id: payload.to_id,
-            compacted_delta_count: payload.compacted_delta_count,
-            reused_prior_summary: payload.reused_prior_summary,
-            instruction_text: payload
-                .compact_messages
-                .last()
-                .filter(|message| message.is_compaction_instruction())
-                .map(|message| {
-                    message
-                        .content
-                        .iter()
-                        .filter_map(|content| match content {
-                            MCPContent::Text { text, .. } => Some(text.as_str()),
-                            _ => None,
-                        })
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                })
-                .unwrap_or_default(),
-        })
+    build_compaction_request_payload_with_planning_for_testing(
+        session_id,
+        messages,
+        split_idx,
+        compact_record,
+        created_at,
+        CompactionPlanningSeeds::default(),
+    )
+}
+
+pub fn build_compaction_request_payload_with_planning_for_testing(
+    session_id: &str,
+    messages: &[Message],
+    split_idx: usize,
+    compact_record: Option<&CompactContextRecord>,
+    created_at: i64,
+    planning_seeds: CompactionPlanningSeeds,
+) -> Option<CompactionRequestPayloadPreview> {
+    build_compaction_request_payload(
+        session_id,
+        messages,
+        split_idx,
+        compact_record,
+        created_at,
+        planning_seeds,
+    )
+    .map(|payload| CompactionRequestPayloadPreview {
+        message_count: payload.compact_messages.len(),
+        to_id: payload.to_id,
+        compacted_delta_count: payload.compacted_delta_count,
+        reused_prior_summary: payload.reused_prior_summary,
+        instruction_text: payload
+            .compact_messages
+            .last()
+            .filter(|message| message.is_compaction_instruction())
+            .map(|message| {
+                message
+                    .content
+                    .iter()
+                    .filter_map(|content| match content {
+                        MCPContent::Text { text, .. } => Some(text.as_str()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
+            .unwrap_or_default(),
+    })
 }
 
 fn compact_message_preview(message: &Message) -> String {

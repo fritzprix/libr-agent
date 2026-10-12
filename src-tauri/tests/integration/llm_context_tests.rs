@@ -8,7 +8,8 @@ use tauri_mcp_agent_lib::agent::llm::completion::{
     build_checkpoint_backoff_split_candidates_for_testing, build_compact_context_selection_options,
     build_compact_summary_message_for_messages, build_compact_summary_text,
     build_compaction_preservation_hints, build_compaction_request_payload_for_testing,
-    build_overflow_recovery_compaction_messages,
+    build_compaction_request_payload_with_planning_for_testing,
+    build_overflow_recovery_compaction_messages, CompactionPlanningSeeds,
     derive_tail_recompaction_recovery_plan_for_testing,
     estimate_post_compact_resume_tokens_for_testing,
     find_preflight_compactable_end_exclusive_for_testing, find_resume_fit_split_idx_for_testing,
@@ -392,8 +393,8 @@ fn test_build_compaction_request_payload_incremental_path_injects_latest_externa
     assert!(
         payload
             .instruction_text
-            .contains("Keep its Target Deliverable, Completion Criteria, Working Intent, Active Request, and Required References unless newer messages clearly replace or resolve them."),
-        "incremental compaction should explicitly preserve prior deliverable, criteria, working-intent, active-request and reference anchors"
+            .contains("Keep its Must sections (Target Deliverable, Working Intent, Completion Criteria, Active Request, and Required References) unless newer messages clearly replace or resolve them."),
+        "incremental compaction should explicitly preserve prior Must-section anchors"
     );
     assert!(
         payload.instruction_text.contains(
@@ -445,8 +446,14 @@ fn test_build_compaction_request_payload_uses_simplified_instruction_template() 
     assert!(
         payload
             .instruction_text
-            .contains("Use headings only when helpful."),
-        "instruction should stop forcing every summary into a rigid heading template"
+            .contains("Must sections — always emit these headings"),
+        "instruction should require Must sections"
+    );
+    assert!(
+        payload
+            .instruction_text
+            .contains("Optional sections — omit when empty or low-value"),
+        "instruction should allow omitting Optional sections"
     );
     assert!(
         payload
@@ -485,8 +492,14 @@ fn test_build_compaction_request_payload_uses_simplified_instruction_template() 
     assert!(
         payload
             .instruction_text
-            .contains("You do not need to emit every possible section."),
-        "instruction should explicitly allow omitting low-value sections"
+            .contains("Always emit every Must section."),
+        "instruction should require Must section emission"
+    );
+    assert!(
+        payload
+            .instruction_text
+            .contains("Optional sections may be omitted when empty or low-value"),
+        "instruction should explicitly allow omitting Optional sections"
     );
     assert!(
         payload
@@ -539,8 +552,8 @@ fn test_build_compaction_request_payload_uses_simplified_instruction_template() 
     assert!(
         payload
             .instruction_text
-            .contains("Use these seeds if helpful:"),
-        "instruction should keep the preservation seeds in a compact form"
+            .contains("Fill or verify Must sections from these seeds"),
+        "instruction should frame seeds as Must gap-fill, not optional hints"
     );
     assert!(
         !payload.instruction_text.contains("Compression rules:"),
@@ -553,10 +566,70 @@ fn test_build_compaction_request_payload_uses_simplified_instruction_template() 
         "instruction should drop the older verbose hint wrapper"
     );
     assert!(
-        payload
+        !payload
+            .instruction_text
+            .contains("You do not need to emit every possible section."),
+        "instruction should no longer allow omitting Must sections"
+    );
+    assert!(
+        !payload
             .instruction_text
             .contains("Omit empty or low-value sections, and keep short sections brief."),
-        "instruction should prefer sufficient information over rigid section padding"
+        "instruction should not blanket-omit empty Must sections"
+    );
+}
+
+#[test]
+fn test_build_compaction_request_payload_renders_planning_seeds_and_path_safe_references() {
+    let long_path = format!(
+        "src-tauri/src/agent/llm/completion/compaction/{}",
+        "very_long_module_name_for_path_safe_truncation_check.rs"
+    );
+    assert!(long_path.chars().count() > 160);
+
+    let latest_request = TestMessageBuilder::new("m0", "user")
+        .text(format!(
+            "Keep `{}` visible while finishing the release notes.",
+            long_path
+        ))
+        .source(MessageSource::Ui)
+        .build();
+    let assistant = make_message("m1", "assistant", "Reviewing the long path.");
+
+    let payload = build_compaction_request_payload_with_planning_for_testing(
+        TEST_SESSION_ID,
+        &[latest_request, assistant],
+        2,
+        None,
+        456,
+        CompactionPlanningSeeds {
+            goal: Some("Ship RELEASE.md".to_string()),
+            todos: vec!["[ ] Draft release notes".to_string()],
+        },
+    )
+    .expect("payload should be built");
+
+    assert!(
+        payload.instruction_text.contains("Goal seed"),
+        "instruction should render the prepare-time goal seed"
+    );
+    assert!(
+        payload.instruction_text.contains("Ship RELEASE.md"),
+        "instruction should include the goal text"
+    );
+    assert!(
+        payload.instruction_text.contains("Todo snapshot seed"),
+        "instruction should render the prepare-time todo snapshot"
+    );
+    assert!(
+        payload
+            .instruction_text
+            .contains("[ ] Draft release notes"),
+        "instruction should include todo bullets"
+    );
+    assert!(
+        payload.instruction_text.contains(&long_path),
+        "Required References seed must keep path-like bullets intact beyond the 160-char prose truncate"
     );
 }
 
@@ -3253,6 +3326,8 @@ fn test_build_compaction_hard_fallback_summary_includes_sections_and_artifact_gu
         "Compaction summary was too short: got 41 chars.",
     );
 
+    assert!(summary.contains("### Target Deliverable"));
+    assert!(summary.contains("### Completion Criteria"));
     assert!(summary.contains("### Active Request"));
     assert!(summary.contains("### Required References"));
     assert!(summary.contains("### Current State"));
@@ -3264,7 +3339,7 @@ fn test_build_compaction_hard_fallback_summary_includes_sections_and_artifact_gu
     assert!(summary.contains("Auto-saved via fallback summary"));
     assert!(
         !summary.contains("### Working Intent"),
-        "fallback builder should defer Working Intent to ensure_intent_sections_in_summary"
+        "fallback builder should defer Working Intent to ensure_must_and_intent_sections"
     );
 
     let ensured = tauri_mcp_agent_lib::agent::llm::completion::ensure_intent_sections_in_summary(
@@ -3272,6 +3347,8 @@ fn test_build_compaction_hard_fallback_summary_includes_sections_and_artifact_gu
     );
     assert!(ensured.contains("### Working Intent"));
     assert!(ensured.contains("### Recent User Requests"));
+    assert!(ensured.contains("### Target Deliverable"));
+    assert!(ensured.contains("### Completion Criteria"));
     assert!(ensured.contains("Investigate compaction failures"));
 }
 

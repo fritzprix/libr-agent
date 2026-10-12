@@ -287,6 +287,7 @@ On successful compaction:
 
 ```text
 new_summary = fold(prev_summary, full_compacted_delta)
+ensure_must_and_intent_sections(new_summary)  // gap-fill Must; never clobber LLM Must
 ```
 
 Where `full_compacted_delta` is the uncompacted live range being folded in that
@@ -294,6 +295,22 @@ round.
 
 Normal compaction must not silently leave half of that selected delta outside the
 summary.
+
+**Must vs Optional handoff sections (#2084):**
+
+| Kind | Headings | Emit rule |
+| ---- | -------- | --------- |
+| Must | Target Deliverable, Working Intent, Completion Criteria, Active Request, Required References | Always present after ensure (placeholder/`Needs context-recall` OK) |
+| Optional | Progress, Stable Context, Key Decisions & Constraints, Current State, Recent Tool Results, Next Actions | Omit when empty/low-value |
+
+Seeds fill gaps only — never overwrite a Must section that already has non-empty
+LLM-authored body (same preserve policy as the #2042 Working Intent ledger).
+
+Pre-persist `ensure_must_and_intent_sections` (success + hard-fallback paths)
+injects missing/empty Must bullets from Active Request / goal seeds and always
+appends the deterministic Recent User Requests ledger (#2042). Soft Done remains
+prompt-gated; hard `ui__reportResult` reject on empty Active Request is out of
+scope.
 
 Handoff grounding (lossless): structured snippets may preserve exact collected
 values, paths, and identifiers. The summarizer must not invent a deliverable file
@@ -345,7 +362,11 @@ Therefore compaction must:
    `CacheAligned -> OverflowRecovery -> DegradedTools`
 7. if the ladder is exhausted but a compaction boundary did exist, persist a
    deterministic hard fallback summary with fixed handoff sections instead of
-   deadlocking the workflow
+   deadlocking the workflow. Hard fallback must emit Target Deliverable +
+   Completion Criteria (grounded placeholders from Active Request seeds) plus
+   Active Request / Required References / Current State / Recent Tool Results /
+   Next Actions / Fallback Note; Working Intent + Recent User Requests (+ any
+   remaining Must gap-fill) come from `ensure_must_and_intent_sections`
 8. if the artifact spill write fails, keep the fallback summary path alive anyway;
    artifact persistence is best-effort, not a gate on resume
 
@@ -700,13 +721,34 @@ async function runCompletionLoop(state: {
 
 ## 10. Compaction Instruction Seed Contract
 
-Compaction request assembly has two separate inputs:
+Compaction request assembly has three separate inputs:
 
 1. **Compaction body** — the prefix actually being summarized (`split_idx` / replayed
    request layout / overflow recovery subject)
-2. **Instruction seed** — the latest external request and nearby reference context
-   taken from the **full pre-compaction message stack**, even when that request is
-   outside the compacted body window
+2. **Instruction seed (messages)** — the latest external request and nearby reference
+   context taken from the **full pre-compaction message stack**, even when that
+   request is outside the compacted body window
+3. **Instruction seed (planning)** — active goal + todo snapshot loaded at
+   `prepare_compaction_request` time via `PlanningRepository`, **before**
+   `clear_todos_after_successful_compaction` (#2055). Goal is kept after compact;
+   todos are cleared post-persist so the handoff owns residue
+
+Seed contents:
+
+| Seed | Source | Truncation |
+| ---- | ------ | ---------- |
+| Active Request | Latest external-user block + prior-summary AR | Prose 160 chars |
+| Required References | Path/symbol extractors + prior-summary RR | Path-safe (higher limit; do not mangle paths at 160) |
+| Goal | `get_active_goal(session_id)` at prepare | Prose 160 chars |
+| Todos | `list_todos(session_id)` at prepare | Checkbox lines; path-aware truncate |
+
+Instruction copy: fill or verify Must sections from seeds; if the LLM already
+wrote a Must section with non-empty content, keep it. Incremental residual prefix
+preserves the Must list across rounds.
+
+**#2042 intent ledger:** `Recent User Requests` is never LLM-authored. Runtime
+`ensure_must_and_intent_sections` always replaces that section with the last-N
+external user turns and injects Working Intent only when missing/empty.
 
 Pseudocode:
 
@@ -714,11 +756,13 @@ Pseudocode:
 function buildCompactionInstructionInput(args: {
   allMessages: Message[];
   compactBodyMessages: Message[];
+  planningSeeds: { goal: string | null; todos: string[] };
 }): {
   hasPriorSummary: boolean;
   priorSummary: Message | null;
   latestExternalRequestMessages: Message[];
   referenceContextMessages: Message[];
+  planningSeeds: { goal: string | null; todos: string[] };
 } {
   const latestExternalRequestRange = findLatestExternalRequestSeedBlockRange(
     args.allMessages,
@@ -734,6 +778,7 @@ function buildCompactionInstructionInput(args: {
         ) ?? null,
       latestExternalRequestMessages: [],
       referenceContextMessages: [],
+      planningSeeds: args.planningSeeds,
     };
   }
 
@@ -749,6 +794,7 @@ function buildCompactionInstructionInput(args: {
       Math.max(0, start - REFERENCE_CONTEXT_WINDOW_MESSAGES),
       end,
     ),
+    planningSeeds: args.planningSeeds,
   };
 }
 ```
