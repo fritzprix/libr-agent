@@ -172,7 +172,12 @@ fn parse_section_heading_line(line: &str) -> Option<String> {
     }
 
     let candidate = if trimmed.starts_with('#') {
-        trimmed.trim_start_matches('#').trim()
+        // Normalize `### Working Intent:` the same as plain `### Working Intent`.
+        trimmed
+            .trim_start_matches('#')
+            .trim()
+            .trim_end_matches(':')
+            .trim()
     } else if !trimmed.starts_with("- ") && !trimmed.starts_with("* ") && trimmed.ends_with(':') {
         trimmed.trim_end_matches(':').trim()
     } else {

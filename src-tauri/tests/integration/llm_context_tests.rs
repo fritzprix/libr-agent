@@ -582,16 +582,21 @@ fn test_build_compaction_request_payload_uses_simplified_instruction_template() 
 #[test]
 fn test_build_compaction_request_payload_renders_planning_seeds_and_path_safe_references() {
     let long_path = format!(
-        "src-tauri/src/agent/llm/completion/compaction/{}",
-        "very_long_module_name_for_path_safe_truncation_check.rs"
+        "src-tauri/src/agent/llm/completion/compaction/{}/path_safe_truncation_check.rs",
+        "deep/".repeat(40).trim_end_matches('/')
     );
-    assert!(long_path.chars().count() > 160);
+    assert!(
+        long_path.chars().count() > 160,
+        "fixture path must exceed prose truncate limit (got {})",
+        long_path.chars().count()
+    );
 
+    let request_text = format!(
+        "Keep `{}` visible while finishing the release notes.",
+        long_path
+    );
     let latest_request = TestMessageBuilder::new("m0", "user")
-        .text(format!(
-            "Keep `{}` visible while finishing the release notes.",
-            long_path
-        ))
+        .text(&request_text)
         .source(MessageSource::Ui)
         .build();
     let assistant = make_message("m1", "assistant", "Reviewing the long path.");
