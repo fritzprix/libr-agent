@@ -1,34 +1,34 @@
 ---
 title: Sub-agents & orchestration
-description: "Coordinate child sessions, delegation, and Org/teamwork patterns for multi-agent orchestration in LibrAgent."
+description: "Coordinate child sessions, delegation, and Org/teamwork patterns with bundled skills."
 ---
 
 # Sub-agents & orchestration
 
-> A session can spawn **child sessions (sub-agents)** to split work.  
-> Pick a pattern with bundled **orchestration skills**.
+> A session can start **child sessions (sub-agents)** to split work.  
+> Pick parallel, pipeline, or team patterns with bundled **orchestration skills**.
 
 ---
 
 ## What is a sub-agent?
 
-|                   | Meaning                                                                                                        |
-| ----------------- | -------------------------------------------------------------------------------------------------------------- |
-| **Is**            | A **child session** created by the parent (e.g. via `agent__spawnSession`). Parent–child **lineage** is kept.  |
-| **Is not**        | A clone of the parent runtime. Workspace, local skills, and `agents.md` are **not** copied automatically.      |
-| **Who drives it** | Usually you attach `@skill:delegate` (etc.) so the agent manages spawn / poll / merge — not manual tool calls. |
+| | Meaning |
+| --- | --- |
+| **Is** | A **child session** created by the parent. The parent–child link shows in History. |
+| **Is not** | A clone of the parent. By default it uses a **separate work folder**; local skills and folder rules are **not** copied automatically. |
+| **Who drives it** | Usually you attach `@skill:delegate` (etc.) so the agent handles handoff, progress, and merge. |
 
-Parents should first inspect existing children for a suitable **Idle session with the same assistant configuration** and reuse it with `messageToSession` when possible. When no suitable session exists, or a different role, parallel work, or isolated workspace is needed, they **start → poll/`checkSession` → correct with `messageToSession` → merge results**.
-Sibling sessions do not talk to each other (the parent hub relays).
+Parents reuse an **idle child with the same role** when possible, and create a new child only when needed. Flow: **hand off → check progress → nudge → merge results**.  
+Sibling children do not talk to each other — the parent relays.
 
-`spawnSession` / `messageToSession` require **complexity** (`low` | `normal` | `high`). In Settings → AI Models under **Sub-Agent Model Routing**, you can specify models for each level; if left unset, it falls back to the parent/preferred model as before. Choose the lowest complexity possible.
+You can set **task difficulty** (low / normal / high) when delegating. Under **Settings → AI & Models → Sub-Agent Model Routing**, pick models per level; if unset, the parent or default model is used. Prefer the lowest difficulty that still works.
 
 ### Where it shows in the UI
 
-| Screen                   | Content                                                                              |
-| ------------------------ | ------------------------------------------------------------------------------------ |
-| **Chat / History**       | Child count on the session card. On delete: **with sub-agents** vs **keep children** |
-| Sidebar **Org** (`/org`) | **Explicit orgs** only. One-off delegation sessions do **not** appear here           |
+| Screen | Content |
+| --- | --- |
+| **Chat / History** | Child count on the card. On delete: **Delete all** vs **Delete only this** (keep children) |
+| Sidebar **Org** | **Explicit teams** only. One-off delegation does **not** appear here |
 
 ![Org view](../../assets/screenshots/guides/org.png)
 
@@ -36,17 +36,18 @@ Sibling sessions do not talk to each other (the parent hub relays).
 
 ## Isolation rules
 
-Children use their **own workspace** by default.
+Children use their **own work folder** by default. Parent-folder files do not follow automatically.
 
-- Workspace guidance (`agents.md` / `AGENTS.md` / `CLAUDE.md` / `GEMINI.md`) and workspace skills are read **on the child**.
-- **Assistant**-scoped skills follow the assistant chosen for the child.
-- **Global** skills are available to parent and child.
-- To share a folder, skills/agents set `workspaceOverride` (not an automatic copy).
-- `messageToSession(reset=true)` clears the previous conversation, planning, pending messages, and runtime state but does not delete workspace files. It also closes the browser session, so use `reset=false` when browser state must be preserved.
+- When they must see the same deliverables, tell the agent to **reuse the current work folder**.
+- Folder rules and project skills are read from **the folder the child uses**.
+- Skills tied to **one assistant** follow the assistant chosen for the child.
+- Skills for **your whole account** are available to parent and child.
+- To point elsewhere, set a session **workspace override**.
+- Asking to **reset the child’s conversation** clears chat and plans but keeps folder files. To keep browser tabs, continue without resetting.
 
-If the child “assumes” parent-only files, local `skills/`, or workspace rules, delegation fails. Put **goal, scope, output format, required paths** in the handoff, or use a shared workspace / `workspaceOverride`.
+If the child “assumes” parent-only files or rules, delegation fails. Put **goal, scope, output format, required paths** in the handoff, or **tell it to reuse the current work folder**.
 
-Tool names and troubleshooting: follow the bundled `@skill:delegate` body.
+Follow `@skill:delegate` for operating details.
 
 ---
 
@@ -56,27 +57,27 @@ Mention `@skill:name` or tell the agent the pattern name.
 
 ### 1) One-shot delegation · basics
 
-| Skill          | When                                                                                      |
-| -------------- | ----------------------------------------------------------------------------------------- |
-| **`delegate`** | Create / watch / nudge children and workspace isolation — **baseline** for other patterns |
-| **`recruit`**  | Create a new **specialist assistant config** (not session delegation itself)              |
-| **`boost`**    | Trim / strengthen tools on an **existing** assistant                                      |
+| Skill | When |
+| --- | --- |
+| **`delegate`** | Baseline: create / watch / nudge children and get results |
+| **`recruit`** | Create a new **specialist assistant** (not session delegation itself) |
+| **`boost`** | Trim or strengthen tools on an **existing** assistant |
 
 ```
 @skill:delegate
 Read only the auth module in this repo and summarize vulnerability candidates in Markdown.
 ```
 
-### 2) Work-splitting patterns (ephemeral children)
+### 2) Work-splitting (ephemeral children)
 
-| Skill                      | Pattern        | One line                                             |
-| -------------------------- | -------------- | ---------------------------------------------------- |
-| **`divide-conquer`**       | Parallel split | Non-overlapping pieces → merge                       |
-| **`hub-spoke`**            | Hub–spoke      | Coordinator steers workers; no worker-to-worker chat |
-| **`pipeline`**             | Sequential     | A output → B input → C …                             |
-| **`consensus-delegation`** | Multi-view     | Same question to 2–4 experts → parent reconciles     |
-| **`gatekeeper`**           | Quality gate   | Creator ↔ Reviewer loop (retry limit)               |
-| **`pair-programming`**     | Pair           | Driver / Navigator on a **shared workspace**         |
+| Skill | Pattern | One line |
+| --- | --- | --- |
+| **`divide-conquer`** | Parallel split | Non-overlapping pieces → merge |
+| **`hub-spoke`** | Hub–spoke | Coordinator steers workers; no worker-to-worker chat |
+| **`pipeline`** | Sequential | A output → B input → C … |
+| **`consensus-delegation`** | Multi-view | Same question to several experts → parent reconciles |
+| **`gatekeeper`** | Quality gate | Writer ↔ reviewer loop |
+| **`pair-programming`** | Pair | Two roles on a **shared work folder** |
 
 ```
 @skill:divide-conquer
@@ -90,17 +91,17 @@ Review this PR from security, performance, and maintainability angles and reconc
 
 ### 3) Persistent teams · Org
 
-Different from one-off delegation. Use when you need **team artifacts** and **Org UX**.
+Different from one-off delegation. Use when you need a **team** and the **Org** screen.
 
-| Skill                 | Role                                                                                     |
-| --------------------- | ---------------------------------------------------------------------------------------- |
-| **`teamwork`**        | Scaffold task force, artifact dirs, coordination model — **prepare first**               |
-| **`org`**             | After `agent__createOrg`, member sessions appear under Org. Resume from the **Org root** |
-| **`org-restructure`** | Add/trim roles or edit charters (`agents.md`, …) on an existing Org                      |
+| Skill | Role |
+| --- | --- |
+| **`teamwork`** | Design the task force and roles — **prepare first** |
+| **`org`** | Create member sessions visible under Org. Resume from the **Org root** |
+| **`org-restructure`** | Change roles or rules on an existing Org |
 
-Flow: `teamwork` scaffold → `org` create/spawn → resume from sidebar **Org** → change structure with `org-restructure`.
+Flow: `teamwork` prepare → `org` create → continue from sidebar **Org** → change structure with `org-restructure`.
 
-- **Org** ≠ scheduled automation (`schedule`) ≠ in-session clock reminders (`loop`) ≠ completion-signal resume (`call-me-back`)
+- **Org** ≠ scheduled tasks (`schedule`) ≠ in-session reminders (`loop`) ≠ wake-on-done (`call-me-back`)
 - Plain parent–child delegation alone does **not** show under **Org**
 
 ```
@@ -112,20 +113,20 @@ Create a research / implement / review task force and coordinate with hub-spoke.
 
 ## Quick picker
 
-| Goal                                | Use                                |
-| ----------------------------------- | ---------------------------------- |
-| One child, get the result           | `@skill:delegate`                  |
-| Parallel independent pieces         | `@skill:divide-conquer`            |
-| Central coordinator + workers       | `@skill:hub-spoke`                 |
-| Ordered stages                      | `@skill:pipeline`                  |
-| Same topic, many viewpoints         | `@skill:consensus-delegation`      |
-| Write ↔ strict review loop         | `@skill:gatekeeper`                |
-| Two agents pair on code             | `@skill:pair-programming`          |
-| Long-lived team + Org UI            | `@skill:teamwork` → `@skill:org`   |
-| Hire a new specialist assistant     | `@skill:recruit` (then `delegate`) |
-| Slim tools on an existing assistant | `@skill:boost`                     |
+| Goal | Use |
+| --- | --- |
+| One child, get the result | `@skill:delegate` |
+| Parallel independent pieces | `@skill:divide-conquer` |
+| Central coordinator + workers | `@skill:hub-spoke` |
+| Ordered stages | `@skill:pipeline` |
+| Same topic, many viewpoints | `@skill:consensus-delegation` |
+| Write ↔ strict review loop | `@skill:gatekeeper` |
+| Two agents pair on code | `@skill:pair-programming` |
+| Long-lived team + Org UI | `@skill:teamwork` → `@skill:org` |
+| Hire a new specialist assistant | `@skill:recruit` (then `delegate`) |
+| Slim tools on an existing assistant | `@skill:boost` |
 
-Skill scopes and install: [Skills](skills.md).
+Who a skill applies to: [Skills](skills.md).
 
 ---
 
@@ -133,12 +134,14 @@ Skill scopes and install: [Skills](skills.md).
 
 1. **Smallest structure first** — do not build a team if one agent is enough.
 2. **Self-contained handoffs** — children should not guess parent chat.
-3. **Async spawn by default** — for parallelism, skills often use `waitForResult=false`.
-4. **Verify child output** — paths, scope, missing workspace rules — before the final answer.
-5. **On delete** — choose whether to include sub-agents ([Sessions](sessions.md)).
+3. **Keep the parent free during parallel work** — follow the skill’s async handoff guidance.
+4. **Verify child output** before the final answer.
+5. **On delete** — choose whether to include sub-agents in History.
 
 ---
 
 ## Related
 
-- [Skills](skills.md) · [First agent chat](../getting-started/first-agent.md) · [Troubleshooting](troubleshooting.md)
+- [Skills](skills.md)
+- [First agent chat](../getting-started/first-agent.md)
+- [Troubleshooting](troubleshooting.md)

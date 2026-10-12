@@ -150,8 +150,8 @@ Save this research report to "./research/ai-platform-trends-2026.md".
 
 To allow the agent to navigate the web, enable browser tools in your assistant profile.
 
-1. Open `/assistants` and select your target assistant.
-2. Confirm that **Browser** (`browser-sidecar`) or **Web Search** tools are enabled.
+1. Open **Assistants** in the sidebar and select your target assistant.
+2. Confirm that **Browser** or **Web Search** tools are enabled.
 3. Save changes if you modified tool settings.
 
 ### Recommended System Prompt

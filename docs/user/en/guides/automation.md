@@ -5,8 +5,8 @@ description: "Compare Scheduled Tasks, loop/schedule skills, and Org automation 
 
 # Automation — Scheduled Tasks
 
-> Access the **Scheduled Tasks** screen (`/scheduled-tasks`) from the sidebar.  
-> Execute automated assistant sessions based on Cron expressions or fixed intervals.
+> Open **Scheduled Tasks** from the sidebar.  
+> Run assistant sessions automatically on a schedule (UI schedule picker or fixed intervals).
 
 ---
 
@@ -41,7 +41,7 @@ If **Scheduled Task Minimum Interval** is configured under **Settings**, short s
 
 | Automation Type | Execution Context |
 | --- | --- |
-| **Scheduled Tasks** (This Screen) | App-wide, recurring, background cron jobs |
+| **Scheduled Tasks** (This Screen) | App-wide, recurring background runs |
 | **`@skill:loop`** | In-session clock loops, periodic reminders, and polling |
 | **`@skill:call-me-back`** | Resumes sessions upon external process or webhook completion signals |
 | **`@skill:schedule`** | Procedural instructions guiding the agent to manage schedules |
@@ -57,7 +57,7 @@ For details on orchestrating multiple agents, refer to the [Sub-Agents & Orchest
 - Define explicit output formats and deliverables inside the task prompt.
 - When tasks require MCP tools, install them via [Extensions](extensions.md) and enable them in the target assistant's tool permissions.
 - Inspect execution logs in session **History** if a scheduled task fails.
-- Workspace overrides confine execution to specific folders. Background session callbacks do not clear a pinned chat session's workspace override when the scheduled task field is empty.
+- Set **Workspace** on a task to run in that folder. Leaving the task Workspace empty does not clear a work folder you already chose in an open chat.
 
 ---
 

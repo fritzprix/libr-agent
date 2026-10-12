@@ -5,8 +5,8 @@ description: "Scheduled Tasks, loop·schedule 스킬, Org 자동화의 차이와
 
 # 자동화 — Scheduled Tasks
 
-> 사이드바 **Scheduled Tasks** (`/scheduled-tasks`).  
-> Cron 기반으로 **어시스턴트 세션을 자동 실행**합니다. 일회성 서브 에이전트 위임·Org 팀과는 별개입니다.
+> 사이드바 **Scheduled Tasks**에서 관리합니다.  
+> 정해진 시간에 **어시스턴트 세션을 자동 실행**합니다. 일회성 서브 에이전트 위임·Org 팀과는 별개입니다.
 
 ---
 
@@ -41,7 +41,7 @@ Settings의 **Scheduled Task Minimum Interval**이 켜져 있으면 너무 짧�
 
 | 수단                            | 언제                              |
 | ------------------------------- | --------------------------------- |
-| **Scheduled Tasks** (이 페이지) | 앱 전역·반복·cron형 백그라운드    |
+| **Scheduled Tasks** (이 페이지) | 앱 전역·반복 백그라운드 실행      |
 | **`@skill:loop`**               | **지금 세션 안** 시계 기반 루프/리마인더/지연 |
 | **`@skill:call-me-back`**       | 프로세스·칸반·웹훅 **완료 신호**로 세션 재개 |
 | **`@skill:schedule`**           | 스케줄 운영 절차(에이전트용 스킬) |
@@ -57,7 +57,7 @@ Settings의 **Scheduled Task Minimum Interval**이 켜져 있으면 너무 짧�
 - 메시지에 목표·산출물 형식을 구체적으로 적으세요.
 - MCP가 필요하면 먼저 [Extensions](extensions.md)에 설치하고, 고른 **Assistant**의 Tools에서 허용하세요.
 - 실패 시 **History**에서 해당 실행 세션을 열어 로그를 확인합니다.
-- 작업에 **Workspace** override를 두면 해당 폴더에서 실행됩니다. **SESSION** 콜백은 태스크에 override가 비어 있어도, 핀된 채팅 세션의 자체 workspace override를 지우지 않습니다.
+- 작업에 **Workspace**를 지정하면 그 폴더에서 실행됩니다. 예약 작업의 Workspace를 비워 두어도, 이미 채팅에서 지정해 둔 작업 폴더는 그대로 유지됩니다.
 
 ---
 

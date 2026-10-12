@@ -68,7 +68,7 @@ MCP: **Extensions**에서 command·args·cwd를 점검하고, 터미널에서 �
 
 ### `Permission denied` / `File not found`
 
-세션 워크스페이스 경로와 OS 권한을 확인합니다. 하위 에이전트는 부모 폴더를 **자동 상속하지 않습니다** — [서브 에이전트](../guides/sub-agents.md).
+세션 작업 폴더 경로와 OS 권한을 확인합니다. 하위 에이전트는 기본적으로 **별도 폴더**를 씁니다. 같은 결과물이 필요하면 위임 때 지금 쓰는 작업 폴더를 그대로 쓰라고 하세요 — [서브 에이전트](../guides/sub-agents.md).
 
 ---
 

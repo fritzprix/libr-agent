@@ -1,121 +1,103 @@
 ---
 title: 스킬 (Skills)
-description: "스킬 scope(워크스페이스·어시스턴트·글로벌·시스템), @skill 호출, 번들 스킬 카탈로그와 배포 방법을 설명합니다."
+description: "스킬이 누구에게 적용되는지, @skill 호출, 만들기·배포(skill-creator / skill-deployer), 번들 스킬 요약을 설명합니다."
 ---
 
 # 스킬 (Skills)
 
-> 스킬은 `SKILL.md`가 있는 **재사용 절차**입니다. `@skill:이름`으로 불러오거나, 에이전트가 `<available_skills>`에서 고릅니다.  
-> 앱 기본 제공분은 번들(`bundled_skills` → 런타임 `system_skills`). 직접 만든 스킬은 **scope**에 따라 다른 폴더에 둡니다.
+> 스킬은 에이전트가 따르는 **재사용 절차**입니다. 채팅에서 `@skill:이름`으로 부르거나, 에이전트가 상황에 맞게 고릅니다.  
+> 앱에 기본으로 들어 있는 스킬과, 내가 만들어 **이 프로젝트 / 이 어시스턴트 / 내 계정 전체**에 두는 스킬이 있습니다.
 
 ---
 
 ## 스킬이란?
 
-|                   | 설명                                                                                                 |
-| ----------------- | ---------------------------------------------------------------------------------------------------- |
-| **무엇인가**      | `SKILL.md`(+ 선택적 `scripts/`·`references/`·`assets/`) 폴더. _언제·어떤 순서로_ 할지 적은 운영 절차 |
-| **무엇이 아닌가** | Settings 메뉴나 MCP 서버 자체는 아님. builtin/MCP를 **어떻게 쓸지** 알려 주는 레이어                 |
-| **누가 쓰나**     | 사용자가 `@skill:…`로 넣거나, 에이전트가 상황에 맞게 참조                                            |
+|                   | 설명                                                                 |
+| ----------------- | -------------------------------------------------------------------- |
+| **무엇인가**      | “이런 일일 때 이렇게 하라”고 적어 둔 **운영 절차** (플레이북에 가깝음) |
+| **무엇이 아닌가** | Settings 메뉴나 MCP(확장 도구) 자체가 아님. 이미 있는 도구를 **어떻게 쓸지** 알려 줌 |
+| **누가 쓰나**     | 사용자가 `@skill:…`로 넣거나, 에이전트가 알아서 참고                 |
 
-**builtin**이 실행기라면 **스킬**은 플레이북에 가깝습니다.  
-MCP 설치 UI는 [Extensions](extensions.md) / [커스텀 MCP](custom-mcp.md)를 보세요.
+도구(내장·MCP)가 **실행기**라면, 스킬은 **하는 방법**입니다.  
+MCP 설치는 [Extensions](extensions.md) / [커스텀 MCP](custom-mcp.md)를 보세요.
 
 ---
 
-## Scope (어디에 설치되나)
+## 누구에게 적용되나
 
-같은 이름의 스킬이 여러 scope에 있으면 **우선순위가 높은 쪽만** 남습니다(소문자 이름 기준 first-wins).
+스킬을 둘 때(또는 deployer에 맡길 때) **적용 범위**를 고릅니다.
 
-### 우선순위 (높음 → 낮음)
+| 적용 범위 | 의미 | 이럴 때 |
+| --- | --- | --- |
+| **이 프로젝트(워크스페이스)** | 지금 작업 폴더·이 세션 쪽만 | 기본 추천. 시험·프로젝트 전용 절차 |
+| **이 어시스턴트** | 고른 어시스턴트 프로필만 | 코딩 전용 / 리서치 전용처럼 역할이 다를 때 |
+| **내 계정 전체(글로벌)** | 거의 모든 세션에서 사용 | 자주 쓰는 나만의 절차를 항상 쓰고 싶을 때 |
+| **앱 기본 제공** | LibrAgent가 미리 넣어 둔 스킬 | 직접 만들지 않음. 목록은 아래 카탈로그 |
 
-`workspace` → `agent import` (IDE 스킬) → `assistant` → `custom` (`additionalSkillPaths`) → `global` (user) → `system` (번들 미러)
+같은 이름 스킬이 여러 범위에 있으면 **더 좁은 쪽**(프로젝트 → 어시스턴트 → 계정 전체 → 앱 기본)이 우선합니다.
 
-### Scope 한눈에
+프로젝트 폴더에 Cursor 등 IDE 스킬이 있으면 LibrAgent가 함께 찾아 쓸 수 있습니다.
 
-**workspace** — 이 세션/프로젝트만
+### 화면에서 확인
 
-- 경로: <code v-pre>{workspace}/.libragent/skills/{name}/</code>
-- 메모: 기본 추천. 지우기 쉬움.
-
-**assistant** — 특정 어시스턴트만
-
-- 경로: <code v-pre>{dataDir}/assistants/{assistantId}/skills/{name}/</code>
-- 메모: Assistants 편집의 Skills 탭과 연동.
-
-**global** (user) — 거의 모든 세션
-
-- 경로: <code v-pre>{dataDir}/user_skills/{name}/</code>
-- 메모: 전역 커스텀 스킬. “시스템에 넣고 싶다”면 여기 (아래 system 아님).
-
-**system** (번들) — 앱이 제공
-
-- 경로: <code v-pre>{dataDir}/system_skills/{name}/</code>
-- 메모: `bundled_skills` 미러. 커스텀을 여기에 넣지 마세요 (앱 시작 시 정리됨).
-
-**agent import** — 워크스페이스에 IDE 스킬이 있을 때
-
-- 경로: `.cursor/skills/`, `.agents/skills/` 등
-- 메모: 자동 발견.
-
-`dataDir` 예: Linux `~/.local/share/com.fritzprix.libragent/`, macOS `~/Library/Application Support/com.fritzprix.libragent/`, Windows `%APPDATA%\com.fritzprix.libragent\`.
+| 목적 | 어디 |
+| --- | --- |
+| 스킬 목록·폴더 관리 | 사이드바 **Extensions → Skills** |
+| 어시스턴트에 묶인 스킬 | **Assistants** → 편집 → **Skills** 탭 |
+| 새로 만들어 두기 | 아래 **만들기 · 배포하기** (`skill-deployer`) |
 
 ### 헷갈리기 쉬운 점
 
-| 말                              | 실제                                                            |
-| ------------------------------- | --------------------------------------------------------------- |
-| “시스템/글로벌에 넣고 싶다”     | 커스텀은 **user_skills (global)** — **system_skills 아님**      |
-| “번들 스킬 수정”                | 개발자가 `src-tauri/bundled_skills/`에 넣는 워크플로            |
-| 워크스페이스 루트에 `my-skill/` | 스캔 안 됨. 반드시 <code v-pre>.libragent/skills/{name}/</code> |
-
-### UI에서 scope
-
-| 목적              | 어디                             |
-| ----------------- | -------------------------------- |
-| 로컬 스킬 폴더    | 사이드바 **Extensions → Skills** |
-| 어시스턴트별 스킬 | Assistants → **Skills** 탭       |
-| 파일로 배포       | 아래 skill-deployer              |
+| 말 | 실제 |
+| --- | --- |
+| “시스템에 넣고 싶다” | **내 계정 전체(글로벌)** 에 두면 됩니다. 앱 기본 제공 영역에 직접 넣지 마세요. |
+| “앱에 들어 있는 스킬을 고치고 싶다” | 앱이 다시 덮어쓸 수 있습니다. 같은 절차는 **내 스킬**로 만들어 배포하세요. |
+| “폴더만 복사하면 되나?” | 가능은 하지만 위치가 틀리기 쉽습니다. **`skill-deployer`에 맡기는 것**을 권장합니다. |
 
 ---
 
 ## 쓰는 방법 (`@skill:`)
 
-1. Chat 세션 입력에 `@` → `@skill:`
-2. 이름 선택 후 할 일을 적습니다.
+1. Chat 입력에 `@` → `@skill:` 선택
+2. 이름 고른 뒤 할 일을 적습니다.
 
 ```
 @skill:deep-research
 경쟁사 A/B 최근 발표를 비교해 Markdown 보고서로 정리해줘.
 ```
 
-파일은 `@file:경로`로 넣을 수 있습니다. 목록은 **다음 에이전트 턴**에 갱신되는 경우가 많습니다.
+파일은 `@file:경로`로 넣을 수 있습니다. 스킬을 막 배포했다면 목록은 **다음 메시지**부터 보이는 경우가 많습니다.
 
 ---
 
-## 스킬 만들기 · 배포하기 (메타 스킬)
+## 만들기 · 배포하기
 
-| 단계         | 스킬                    | 역할                                       |
-| ------------ | ----------------------- | ------------------------------------------ |
-| 1. 작성·검증 | `@skill:skill-creator`  | frontmatter, `validate_skill.py --strict`  |
-| 2. 설치      | `@skill:skill-deployer` | workspace / global / assistant 경로에 복사 |
+직접 디스크 경로를 외울 필요는 없습니다. 채팅에서 두 스킬을 순서대로 쓰세요.
+
+| 단계 | 호출 | 하는 일 |
+| --- | --- | --- |
+| 1. 작성·검증 | `@skill:skill-creator` | 절차 초안을 만들고 형식·규칙을 검사 |
+| 2. 설치 | `@skill:skill-deployer` | **누구에게 적용할지** 골라 올바른 위치에 설치 |
 
 ```
 @skill:skill-creator
-weekly-notes 스킬을 만들고 --strict 로 검증해줘.
+weekly-notes 스킬을 만들고 엄격 모드로 검증해줘.
 ```
 
 ```
 @skill:skill-deployer
-weekly-notes 를 workspace scope로 이 세션에 배포해줘.
+weekly-notes 를 이 프로젝트(워크스페이스)에 배포해줘.
 ```
 
-`system_skills` / `bundled_skills`에는 **배포하지 않습니다.** 모르겠으면 scope는 **workspace**.
+- 어디에 둘지 모르겠으면 **이 프로젝트(워크스페이스)** 를 고르세요.
+- **앱 기본 제공** 영역에는 배포하지 마세요. 앱이 정리할 수 있습니다.
+- 어시스턴트 전용이면 deployer에 **어느 어시스턴트인지** 함께 알려 주세요.
 
 ---
 
-## 번들 스킬 카탈로그 (요약)
+## 앱에 들어 있는 스킬 (요약)
 
-앱 기본 포함 (`src-tauri/bundled_skills/` → `system_skills/`). `@skill:` 자동완성이 최신입니다.
+채팅 `@skill:` 자동완성이 가장 최신입니다. 자주 쓰는 이름만 모았습니다.
 
 ### 시작·환경
 
@@ -123,7 +105,7 @@ weekly-notes 를 workspace scope로 이 세션에 배포해줘.
 
 ### 멀티 에이전트 · 오케스트레이션
 
-서브 에이전트(자식 세션)란 무엇이고 어떤 스킬을 고를지는 **[서브 에이전트 · 오케스트레이션](sub-agents.md)** 에서 다룹니다.
+하위 에이전트를 나누는 법은 **[서브 에이전트 · 오케스트레이션](sub-agents.md)** 을 보세요.
 
 `delegate`, `teamwork`, `org`, `org-restructure`, `divide-conquer`, `hub-spoke`, `pipeline`, `consensus-delegation`, `gatekeeper`, `pair-programming`, `recruit`, `boost`
 
@@ -133,13 +115,13 @@ weekly-notes 를 workspace scope로 이 세션에 배포해줘.
 
 ### 세션 · 컨텍스트
 
-`context-recall` — 컴팩션 이전 transcript(`.libragent/pre_compaction_epoch_{N}.md`)에서 대화·결정 복구
+`context-recall` — 대화가 압축·요약된 뒤에도 이전 결정·내용을 다시 찾아 올 때
 
 ### 조사·문서
 
 `deep-research`, `science-search`, `knowledge-distiller`, `to-md`, `docx`, `pptx`, `visualize`, `workspace-indexer`, `repo-wiki`, `soul-awakening`
 
-`science-search` — 학술 논문(~2억 편) 의미/키워드 검색, DOI 조회, 유사 논문·인용 그래프. ScienceMadeReadable API(무료, 키 불필요).
+`science-search` — 학술 논문 검색·DOI·유사 논문·인용 연결 (무료, API 키 불필요)
 
 ### 개발·연동·제작
 
@@ -147,18 +129,18 @@ weekly-notes 를 workspace scope로 이 세션에 배포해줘.
 
 ### 자주 하는 조합
 
-| 하고 싶은 일                | 추천                                                  |
-| --------------------------- | ----------------------------------------------------- |
-| 런타임 설치                 | `@skill:setup-wizard` + App Wizard                    |
-| MCP 추천 설치               | [Extensions](extensions.md)                           |
-| MCP 커스텀/가져오기         | [커스텀 MCP](custom-mcp.md) · `@skill:tool-installer` |
-| 내 절차를 스킬로            | `skill-creator` → `skill-deployer`                    |
-| 자식 세션·팀 오케스트레이션 | [서브 에이전트 가이드](sub-agents.md)                 |
-| 컴팩션 이전 대화 복구       | `@skill:context-recall`                               |
-| 학술 논문·DOI 검색          | `@skill:science-search`                               |
-| 메일 (IMAP 실패 시 웹메일) | `@skill:email-integration` (sticky agent browser fallback) |
-| 어시스턴트 설정             | [Assistants](assistants.md)                           |
-| 반복 실행                   | [Playbooks](playbooks.md) · [자동화](automation.md)   |
+| 하고 싶은 일 | 추천 |
+| --- | --- |
+| 런타임 설치 | `@skill:setup-wizard` + App Wizard |
+| MCP 추천 설치 | [Extensions](extensions.md) |
+| MCP 커스텀/가져오기 | [커스텀 MCP](custom-mcp.md) · `@skill:tool-installer` |
+| 내 절차를 스킬로 | `skill-creator` → `skill-deployer` |
+| 자식 세션·팀 | [서브 에이전트 가이드](sub-agents.md) |
+| 압축 전 대화 복구 | `@skill:context-recall` |
+| 학술 논문·DOI | `@skill:science-search` |
+| 메일 | `@skill:email-integration` |
+| 어시스턴트 설정 | [Assistants](assistants.md) |
+| 반복 실행 | [Playbooks](playbooks.md) · [자동화](automation.md) |
 
 ---
 

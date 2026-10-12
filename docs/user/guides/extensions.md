@@ -5,7 +5,7 @@ description: "Extensions에서 추천 MCP 프리셋을 설치하고 어시스턴
 
 # Extensions로 MCP 설치하기
 
-> LibrAgent에서 외부 MCP 도구는 사이드바 **Extensions**(경로 `/mcp-servers`)에서 관리합니다.  
+> LibrAgent에서 외부 MCP 도구는 사이드바 **Extensions**에서 관리합니다.  
 > **Recommended Extensions**를 누르면 설정 대부분을 채운 뒤 저장만 하면 됩니다.
 
 Settings에 **「MCP Servers」** 탭은 없습니다. MCP/확장 기능은 **Extensions** 페이지입니다.
@@ -47,7 +47,7 @@ Tools 탭에서:
 
 ## 추천 확장 목록 (번들 프리셋)
 
-앱에 포함된 `mcp-server.json` 기준입니다. 버전마다 늘어날 수 있으니 UI의 **Recommended Extensions**가 최신입니다.
+앱에 번들로 들어 있는 추천 목록입니다. 버전마다 늘어날 수 있으니 UI의 **Recommended Extensions**가 최신입니다.
 
 ### search
 

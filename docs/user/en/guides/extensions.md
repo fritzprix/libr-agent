@@ -5,7 +5,7 @@ description: "Install recommended MCP presets from Extensions and enable tools o
 
 # Installing MCP Servers with Extensions
 
-> Manage external Model Context Protocol (MCP) tools from the **Extensions** page in the sidebar (route: `/mcp-servers`).  
+> Manage external Model Context Protocol (MCP) tools from the **Extensions** page in the sidebar.  
 > Use **Recommended Extensions** to install pre-configured presets with a single click.
 
 There is no "MCP Servers" tab in the Settings view. Manage all MCP extensions through the dedicated **Extensions** screen.
@@ -47,7 +47,7 @@ Some presets use **stdio** (local processes), while others use **HTTP/SSE** (rem
 
 ## Recommended Extensions Catalog
 
-The bundled presets match the defaults in `mcp-server.json`. Always check the **Recommended Extensions** UI for the latest items.
+These are the presets bundled with the app. Always check the **Recommended Extensions** UI for the latest items.
 
 ### Search
 

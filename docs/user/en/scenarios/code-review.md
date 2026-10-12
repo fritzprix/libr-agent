@@ -5,6 +5,8 @@ description: "Walk through a LibrAgent scenario: paste a PR URL and get code-rev
 
 # Scenario: Automated Pull Request Code Review
 
+> **Audience:** Developers (PR / Git workflows). For reviewing documents or reports instead of code, use the document-review prompts in [File Management](./file-management.md) or [Deep Research](./research.md).
+
 When you provide a Pull Request (PR) link, the agent reviews code changes automatically and provides structured feedback. The agent audits code quality, security vulnerabilities, naming conventions, and logic defects before merge.
 
 ---
@@ -120,7 +122,7 @@ https://github.com/your-org/your-repo/pull/42
 
 ### Define a Specialized Review Persona
 
-1. Open `/assistants` and select **New Assistant**.
+1. Open **Assistants** in the sidebar and select **New Assistant**.
 2. System prompt:
    ```
    You are a Senior Software Engineer and Code Review Specialist.

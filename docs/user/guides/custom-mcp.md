@@ -85,10 +85,12 @@ Cursor에 있는 MCP 설정을 읽어서 LibrAgent에 가져와줘.
 
 이 스킬이 하는 일:
 
-- 패키지·GitHub·JSON 설정으로 **직접 등록** (`tool__registerServer` 등)
+- 패키지·GitHub·JSON 설정으로 Extensions에 **직접 등록**
 - Cursor / VS Code / Windsurf / Claude Desktop 등 **설정 파일에서 가져와 비교·등록**
 
 자세한 절차는 번들 스킬 `tool-installer` 본문을 따릅니다. ([스킬 카탈로그](skills.md))
+
+일상적으로는 **방법 A(Add Extension UI)** 를 먼저 쓰세요. 에이전트 설치는 마이그레이션·일괄 등록에 유리합니다.
 
 ---
 

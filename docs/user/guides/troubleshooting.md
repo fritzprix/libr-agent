@@ -84,7 +84,7 @@ Settings 탭이 아니라:
 
 ### MCP / 외부 도구가 안 붙어요
 
-Settings에 **「MCP Servers」** 탭은 **없습니다.** 사이드바 **Extensions** (`/mcp-servers`)를 쓰세요.
+Settings에 **「MCP Servers」** 탭은 **없습니다.** 사이드바 **Extensions**를 쓰세요.
 
 1. **추천**: [Extensions → Recommended Extensions](extensions.md)
 2. **직접/다른 에디터에서 가져오기**: [커스텀 MCP 설치](custom-mcp.md) 또는 `@skill:tool-installer`
@@ -97,11 +97,11 @@ Settings에 **「MCP Servers」** 탭은 **없습니다.** 사이드바 **Extens
 
 ### 파일/워크스페이스 도구 실패
 
-세션 워크스페이스 경로·OS 권한을 확인합니다. **Settings → System** / **General**(스킬 디렉터리 등)도 점검합니다.
+세션 워크스페이스 경로·OS 권한을 확인합니다. 경로·스킬 디렉터리 등은 **Settings → General**에서 점검합니다.
 
 ### 하위 에이전트가 파일을 못 찾아요 / Org에 안 보여요
 
-- 자식은 부모 워크스페이스·로컬 스킬을 **자동 상속하지 않습니다.** [서브 에이전트 가이드](sub-agents.md)의 격리 규칙을 보세요. `@skill:delegate`로 핸드오프를 다시 적거나 공유 워크스페이스를 쓰세요.
+- 기본은 **별도 작업 폴더**입니다. 부모 폴더의 파일·로컬 스킬이 자동으로 따라가지 않습니다. 같은 결과물을 보려면 위임 때 **「지금 쓰는 작업 폴더를 그대로 쓰라」**고 하세요. [서브 에이전트 가이드](sub-agents.md)의 격리 규칙을 참고하고, `@skill:delegate`로 목표·경로를 다시 적으세요.
 - 사이드바 **Org**에는 **명시적 Org**만 나옵니다. 일반 위임 세션은 세션 히스토리의 하위 에이전트 표시를 확인하세요.
 
 ---

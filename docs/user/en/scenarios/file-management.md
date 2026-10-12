@@ -37,13 +37,13 @@ Find all PDF files in "./downloads/" and summarize each file in one sentence.
 
 **Access uploaded files:**
 
-Files uploaded through the chat attachment button are accessible via built-in `attachments__*` tools:
+Files uploaded through the chat attachment button are available to the agent immediately:
 
 ```
 Extract the key terms and deadlines from the attached contract document.
 ```
 
-*(The agent calls `attachments__readAttachment` or `attachments__searchAttachments` automatically.)*
+*(The agent reads the attachment automatically.)*
 
 ### Step 2: Instruct File Operations
 
@@ -167,14 +167,14 @@ Supported formats and typical operations:
 
 ### Create a File Specialist Assistant
 
-1. Open `/assistants` and select **New Assistant**.
+1. Open **Assistants** in the sidebar and select **New Assistant**.
 2. System prompt:
    ```
    You are a file management specialist.
    Analyze files quickly, summarize content, convert formats, and organize files.
    Present file structures clearly and output well-formatted results.
    ```
-3. Enable file system tools (`fs__*`) and attachment tools (`attachments__*`).
+3. Enable workspace and file-related tools.
 
 ### Handle Large Files
 
@@ -190,7 +190,7 @@ Divide the document by chapter and summarize each section step by step.
 
 To schedule regular file maintenance:
 
-1. Open `/scheduled-tasks` and select **New Task**.
+1. Open **Scheduled Tasks** in the sidebar and select **New Task**.
 2. Prompt: `"Every Monday, summarize new PDF files in the /reports/ folder."`
 3. Configure the schedule interval and select the target assistant.
 

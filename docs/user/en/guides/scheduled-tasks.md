@@ -5,13 +5,13 @@ description: "Schedule assistant sessions with cron or interval-based Scheduled 
 
 # Scheduled Tasks Reference
 
-Scheduled Tasks allow agents to automatically run recurring prompts and workflows in the background according to a defined schedule (Cron expressions).
+Scheduled Tasks allow agents to automatically run recurring prompts and workflows in the background according to a schedule you pick in the UI.
 
 ---
 
 ## 🌟 Key Capabilities
 
-- **Cron-Based Scheduling**: Supports precise intervals (e.g., daily at 09:00, weekly on Mondays).
+- **Schedule-Based Runs**: Set precise intervals with the schedule picker (e.g., daily at 09:00, weekly on Mondays). Advanced users can still enter Cron if needed.
 - **Execution Modes**:
   - `YOLO`: Auto-approves standard tool calls for unattended background execution.
   - `Unsafe`: Completely unattended Full Auto mode allowing shell commands and file operations without confirmation dialogs.
@@ -27,8 +27,8 @@ Deploy pre-configured tasks directly from the Scheduled Tasks view:
 
 | Template Name | Schedule | Execution Mode | Summary |
 | --- | --- | --- | --- |
-| **PC Health & Security Daily Audit** | Daily at Midnight (`0 0 * * *`) | `Unsafe` (Full Auto) | Inspects available disk space, long-running processes, uncommitted Git changes, and package vulnerabilities. |
-| **Website Changes & Headline Briefing** | Daily at 09:00 (`0 9 * * *`) | `YOLO` | Uses browser automation to visit tech sites and generate a 3-bullet summary briefing. |
+| **PC Health & Security Daily Audit** | Daily at midnight | `Unsafe` (Full Auto) | Inspects available disk space, long-running processes, uncommitted Git changes, and package vulnerabilities. |
+| **Website Changes & Headline Briefing** | Daily at 09:00 | `YOLO` | Uses browser automation to visit tech sites and generate a 3-bullet summary briefing. |
 
 ---
 
@@ -38,7 +38,7 @@ Deploy pre-configured tasks directly from the Scheduled Tasks view:
 2. Click **New task** or **Add Task**.
 3. Configure the task properties:
    - **Task Name**: Descriptive title (e.g., `Daily Backup Check`).
-   - **Cron Expression**: Recurrence schedule (e.g., `0 9 * * 1-5` for weekdays at 09:00).
+   - **Schedule**: Use the schedule picker for recurrence (e.g., weekdays at 09:00). Advanced users can enter a Cron expression if needed.
    - **Prompt Message**: Clear instructions sent to the agent.
    - **Assistant**: The assistant persona assigned to execute the prompt.
    - **Execution Mode**: Choose `YOLO`, `Unsafe`, or `Normal` based on required automation level.

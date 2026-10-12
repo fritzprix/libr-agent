@@ -169,14 +169,14 @@ A single concise paragraph summarizing core conclusions.
 
 ### Create a Research Specialist Assistant
 
-1. Open `/assistants` and select **New Assistant**.
+1. Open **Assistants** in the sidebar and select **New Assistant**.
 2. System prompt:
    ```
    You are an expert research analyst.
    Provide factual, evidence-backed conclusions and always cite primary sources.
    Mark unverified claims clearly as estimates or hypotheses.
    ```
-3. Enable web search and browser sidecar tools.
+3. Enable web search and browser tools.
 
 ### Maximize Source Credibility
 

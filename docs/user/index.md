@@ -32,7 +32,7 @@ LibrAgent를 최대한 활용하는 방법을 배우세요. 이 문서는 개발
 ## FAQ · 시나리오
 
 - [**FAQ**](faq/common-questions.md) · [**에러 코드**](faq/error-codes.md)
-- [코드 리뷰](scenarios/code-review.md) · [조사](scenarios/research.md) · [파일](scenarios/file-management.md) · [웹](scenarios/web-browsing.md)
+- [자동화](scenarios/automation.md) · [코드 리뷰](scenarios/code-review.md) · [조사](scenarios/research.md) · [파일](scenarios/file-management.md) · [웹](scenarios/web-browsing.md)
 
 ### 온보딩 한줄
 
@@ -40,8 +40,6 @@ LibrAgent를 최대한 활용하는 방법을 배우세요. 이 문서는 개발
 2. **Chat**에서 어시스턴트 카드로 세션 시작
 3. MCP는 **Extensions**
 4. 반복 작업은 **Playbooks** / **Scheduled Tasks**
-
-스크린샷 계획: [assets/screenshots](https://github.com/fritzprix/libr-agent/blob/main/docs/user/assets/screenshots/README.md) — P0 가이드에 UI 스키마틱(SVG)이 포함되어 있습니다.
 
 ---
 

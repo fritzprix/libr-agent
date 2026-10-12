@@ -1,11 +1,11 @@
 ---
 title: Playbooks Guide
-description: "Save successful work as Playbooks, re-run them, and use session pinning and slots in LibrAgent."
+description: "Save successful work as Playbooks and re-run them in LibrAgent."
 ---
 
 # Playbooks Guide
 
-> Access the **Playbooks** screen (`/playbooks`) from the sidebar.  
+> Open **Playbooks** from the sidebar.  
 > Playbooks capture successful executions of complex tasks so you can re-run them without re-typing prompts.
 
 ---

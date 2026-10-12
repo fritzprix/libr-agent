@@ -60,10 +60,22 @@ Paste the tool error back to the agent and ask it to diagnose. Check workspace p
 
 ### `Context window exceeded`
 
-Shorten history or lower **Max Input Context** under **Chat Interface**. Start a fresh session for a new topic.
+Start a fresh session and paste a short summary if you need continuity. Avoid attaching huge files or long logs in one session. You can also lower **Max Input Context** under **Chat Interface**.
+
+---
+
+## Files
+
+### `Permission denied` / `File not found`
+
+Check the session work-folder path and OS permissions. Child sessions use a **separate folder by default**. Ask them to reuse the current work folder when they must see the same deliverables — [Sub-agents](../guides/sub-agents.md).
 
 ---
 
 ## Related
 
-- [Troubleshooting](../guides/troubleshooting.md) · [FAQ](common-questions.md)
+- [Troubleshooting](../guides/troubleshooting.md)
+- [Connecting models](../getting-started/connecting-models.md)
+- [FAQ](./common-questions.md)
+
+Support: [Discussions](https://github.com/fritzprix/libr-agent/discussions) — **no API keys**.

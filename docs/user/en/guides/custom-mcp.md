@@ -85,10 +85,12 @@ Import MCP server configurations from Cursor into LibrAgent.
 
 The tool installer skill handles:
 
-- Direct registration from npm packages, GitHub repositories, or JSON configurations.
+- Direct registration into Extensions from npm packages, GitHub repositories, or JSON configurations.
 - Automatic configuration imports from Cursor, VS Code, Windsurf, and Claude Desktop.
 
 For detailed procedures, refer to the bundled skill documentation in the [Skills Guide](skills.md).
+
+Prefer **Method A (Add Extension UI)** for everyday installs. Use the agent skill when migrating or registering many servers at once.
 
 ---
 
