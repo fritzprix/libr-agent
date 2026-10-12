@@ -6,6 +6,29 @@ import type { Spotlight } from './types';
  */
 export const FEATURE_SPOTLIGHTS: readonly Spotlight[] = [
   {
+    id: 'regenerate-last-turn',
+    sinceVersion: '0.9.25',
+    titleKey: 'spotlight.items.regenerateLastTurn.title',
+    bodyKey: 'spotlight.items.regenerateLastTurn.body',
+    ctaLabelKey: 'spotlight.items.regenerateLastTurn.cta',
+    href: { type: 'route', path: '/agent' },
+    surfaces: ['release', 'hub'],
+    priority: 1,
+  },
+  {
+    id: 'knowledge-distill-schedule',
+    sinceVersion: '0.9.25',
+    titleKey: 'spotlight.items.knowledgeDistillSchedule.title',
+    bodyKey: 'spotlight.items.knowledgeDistillSchedule.body',
+    ctaLabelKey: 'spotlight.items.knowledgeDistillSchedule.cta',
+    href: {
+      type: 'action',
+      action: 'setup-knowledge-distill-schedule',
+    },
+    surfaces: ['release', 'hub', 'wait'],
+    priority: 2,
+  },
+  {
     id: 'everyday-chrome',
     sinceVersion: '0.9.23',
     titleKey: 'spotlight.items.everydayChrome.title',
@@ -13,7 +36,7 @@ export const FEATURE_SPOTLIGHTS: readonly Spotlight[] = [
     ctaLabelKey: 'spotlight.items.everydayChrome.cta',
     href: { type: 'settings', tab: 'system' },
     surfaces: ['release', 'hub', 'wait'],
-    priority: 1,
+    priority: 3,
   },
   {
     id: 'starter-tasks',
@@ -23,7 +46,7 @@ export const FEATURE_SPOTLIGHTS: readonly Spotlight[] = [
     ctaLabelKey: 'spotlight.items.starterTasks.cta',
     href: { type: 'route', path: '/scheduled-tasks' },
     surfaces: ['release', 'hub', 'wait'],
-    priority: 2,
+    priority: 4,
   },
   {
     id: 'visualize-csv',
@@ -33,7 +56,7 @@ export const FEATURE_SPOTLIGHTS: readonly Spotlight[] = [
     ctaLabelKey: 'spotlight.items.visualize.cta',
     href: { type: 'route', path: '/agent' },
     surfaces: ['release', 'hub'],
-    priority: 3,
+    priority: 5,
   },
   {
     id: 'thinking-effort',
@@ -43,7 +66,7 @@ export const FEATURE_SPOTLIGHTS: readonly Spotlight[] = [
     ctaLabelKey: 'spotlight.items.thinkingEffort.cta',
     href: { type: 'settings', tab: 'ai-models' },
     surfaces: ['release', 'hub', 'wait'],
-    priority: 4,
+    priority: 6,
   },
   {
     id: 'knowledge-graph',
@@ -53,7 +76,7 @@ export const FEATURE_SPOTLIGHTS: readonly Spotlight[] = [
     ctaLabelKey: 'spotlight.items.knowledgeGraph.cta',
     href: { type: 'route', path: '/knowledge' },
     surfaces: ['release', 'hub', 'wait'],
-    priority: 5,
+    priority: 7,
   },
   {
     id: 'themes',
@@ -63,6 +86,6 @@ export const FEATURE_SPOTLIGHTS: readonly Spotlight[] = [
     ctaLabelKey: 'spotlight.items.themes.cta',
     href: { type: 'settings', tab: 'general' },
     surfaces: ['hub'],
-    priority: 6,
+    priority: 8,
   },
 ];

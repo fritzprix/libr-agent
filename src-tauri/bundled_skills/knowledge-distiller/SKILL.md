@@ -48,14 +48,16 @@ Identify and structure the following components:
 
 ### 4. Structured Recording
 Use the `knowledge__recordKnowledge` tool to persist the findings:
-- **content**: The distilled summary.
-- **entities/relationships**: Structured data for the graph.
+- **content**: The distilled summary (~500–1000 characters per call).
+- **entities/relationships**: Explicit graph fields using `entity_type` / `source` / `target` / `relation_type` (see schema reference). Prefer a few high-value nodes with descriptions.
 - **source**: Reference the source `sessionId` or date for traceability.
-- **tags**: Include `["distilled", "auto-knowledge", "context-sync"]`.
+- **tags**: Include `["distilled", "auto-knowledge", "context-sync"]` plus domain tags. Tags are retrieval labels only — they do not become graph entities.
+- **auto_extract**: Leave false (default). Only set `true` when you intentionally want heuristic gap-fill.
 
 ## Safety & Efficiency
 - **De-duplication**: Before recording, use `knowledge__searchKnowledge` to check if similar knowledge already exists to avoid redundant entries.
 - **Relevance**: Skip sessions that are purely social or don't contain reusable technical/project context.
+- **Graph precision**: Do not promote section headers, ISO dates, or short acronyms as entities.
 
 ## References
 

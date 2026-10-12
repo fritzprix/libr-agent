@@ -1,5 +1,6 @@
 ---
 title: 솔루션 레시피 (Solution Recipes)
+description: "원클릭 Solution Recipes로 프리셋과 스케줄을 한꺼번에 적용하는 방법을 안내합니다."
 ---
 
 # 솔루션 레시피 (Solution Recipes)

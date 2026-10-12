@@ -40,7 +40,6 @@ import { useSettings } from '@/hooks/use-settings';
 import { listConfiguredProviderGroups } from '@/lib/ai-service/configured-providers';
 import {
   dismissSpotlight,
-  hrefToPath,
   HubHintCard,
   loadSpotlightState,
   markReleaseSeen,
@@ -48,6 +47,7 @@ import {
   pickReleaseSpotlights,
   ReleaseSpotlightCard,
   rotateHubHint,
+  runSpotlightCta,
   type Spotlight,
   type SpotlightState,
 } from '@/features/spotlight';
@@ -182,10 +182,28 @@ export default function AgentChatStartView() {
   }, [setupBlocking, showReleaseSpotlight, spotlightState, tipsEnabled]);
 
   const handleSpotlightCta = useCallback(
-    (tip: Spotlight) => {
-      navigate(hrefToPath(tip.href));
+    async (tip: Spotlight) => {
+      try {
+        const result = await runSpotlightCta(tip, { t });
+        if (result.successMessage) {
+          toast.success(result.successMessage);
+        }
+        const dismissId = result.dismissTipId;
+        if (dismissId) {
+          setSpotlightState((prev) => dismissSpotlight(prev, dismissId));
+        }
+        navigate(result.path);
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : t('scheduledTasks.setupKnowledgeDistill.failed', {
+                defaultValue: 'Could not create the scheduled task.',
+              });
+        toast.error(message);
+      }
     },
-    [navigate],
+    [navigate, t],
   );
 
   const handleDismissRelease = useCallback(() => {

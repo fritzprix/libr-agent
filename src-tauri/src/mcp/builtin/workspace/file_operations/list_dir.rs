@@ -1,4 +1,4 @@
-use super::super::workspace_server::path_validation_failure_guidance;
+use super::super::workspace_server::{path_operation_failure_guidance, with_harness_alias_hint};
 use super::super::WorkspaceServer;
 use super::list_dir_format::{build_listing_message, listing_item, sort_listing_items};
 use super::utils::{is_not_found_io_error, normalize_workspace_path_input};
@@ -59,8 +59,9 @@ impl WorkspaceServer {
                     format!("Path validation failed: {}", e),
                     ToolGroup::Workspace,
                 )
-                .guidance(path_validation_failure_guidance(
+                .guidance(path_operation_failure_guidance(
                     &e,
+                    &path_str,
                     vec![
                         "Verify the directory path is correct".to_string(),
                         "Use workspace__listDirectory to see available files".to_string(),
@@ -237,12 +238,15 @@ impl WorkspaceServer {
                         format!("Directory '{}' not found", path_str),
                         ToolGroup::Workspace,
                     )
-                    .guidance(vec![
-                        "Use workspace__listDirectory('.') to inspect the workspace root"
-                            .to_string(),
-                        "Verify the directory path is correct".to_string(),
-                        "Check whether the directory exists and is readable".to_string(),
-                    ])
+                    .guidance(with_harness_alias_hint(
+                        &path_str,
+                        vec![
+                            "Use workspace__listDirectory('.') to inspect the workspace root"
+                                .to_string(),
+                            "Verify the directory path is correct".to_string(),
+                            "Check whether the directory exists and is readable".to_string(),
+                        ],
+                    ))
                     .to_mcp_result())
                 } else {
                     Ok(guided_error(

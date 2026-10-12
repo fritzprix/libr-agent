@@ -1,5 +1,6 @@
 ---
 title: Scenario - File Management & Conversion Automation
+description: "Organize, convert, and batch-process files in the session workspace with LibrAgent."
 ---
 
 # Scenario: File Management & Conversion Automation

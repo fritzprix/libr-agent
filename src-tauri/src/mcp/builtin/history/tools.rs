@@ -163,7 +163,8 @@ fn read_session_tool() -> MCPTool {
             &["Session ID from history__listSessions or history__searchHistory."],
             &[
                 "Pass the exact sessionId.",
-                "Paginate messages with page and pageSize.",
+                "Default order is desc (newest first); use order=asc for chronological paging.",
+                "Paginate with page/pageSize; response includes totalPages.",
             ],
             &[],
         ),
@@ -180,6 +181,16 @@ fn read_session_tool() -> MCPTool {
                 (
                     "pageSize".to_string(),
                     integer_prop_with_default(Some(1), Some(100), 50, Some("Messages per page.")),
+                ),
+                (
+                    "order".to_string(),
+                    enum_prop(
+                        vec!["asc", "desc"],
+                        "desc",
+                        Some(
+                            "Message sort order. 'desc' (default) returns newest messages first; 'asc' is oldest-first chronological order.",
+                        ),
+                    ),
                 ),
             ],
             vec!["sessionId".to_string()],
@@ -200,7 +211,7 @@ fn read_message_tool() -> MCPTool {
             &["Message ID from history__readSession or history__searchHistory."],
             &[
                 "Pass the exact messageId.",
-                "Use offsetChars and maxChars to paginate long bodies.",
+                "Default maxChars returns up to 50000 characters in one call; paginate only for longer bodies.",
             ],
             &[],
         ),
@@ -222,9 +233,11 @@ fn read_message_tool() -> MCPTool {
                     "maxChars".to_string(),
                     integer_prop_with_default(
                         Some(1),
-                        Some(3000),
-                        3000,
-                        Some("Characters to return from the rendered message content."),
+                        Some(50000),
+                        50000,
+                        Some(
+                            "Characters to return from the rendered message content (max 50000). Omitting returns up to the full message when under the cap.",
+                        ),
                     ),
                 ),
             ],

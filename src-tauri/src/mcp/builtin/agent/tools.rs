@@ -167,7 +167,7 @@ fn prepare_teamwork_workspace_tool() -> MCPTool {
             ],
             &[
                 "Do not call agent__prepareTeamworkWorkspace again after success.",
-                "Scaffold next via the teamwork skill (prefer scripts/init_task_force.py with --output = response artifactPath) or write the full set under @teamwork/ including coordination/* and @teamwork/.libragent/teamwork.json.",
+                "Scaffold next with workspace__writeFile under @teamwork/ (agents.md, MISSION.md, ROLES.md, coordination/*, and @teamwork/.libragent/teamwork.json with executionSubstrate.mode=\"org\" and executionSubstrate.orgLineage.intended=true). Do not shell @system-skills/.../init_task_force.py inside Docker attach workspaces.",
                 "Only after the org scaffold is complete, call agent__createOrg, then agent__spawnSession for org members.",
             ],
         ),
@@ -183,12 +183,12 @@ fn spawn_session_tool() -> MCPTool {
         name: "spawnSession".to_string(),
         title: Some("Spawn New Agent Session".to_string()),
         description: tool_description(
-            "Spawn a brand-new isolated sub-agent session from an agent configuration template. Use this when no suitable existing session is available or when separate parallel capacity / isolated workspace is needed. To assign tasks to an existing session, reuse it via agent__messageToSession instead.",
+            "Spawn a brand-new sub-agent session from an agent configuration template. Use this when no suitable existing session is available or when separate parallel capacity / a distinct workspace binding is needed. To assign tasks to an existing session, reuse it via agent__messageToSession instead.",
             &["Agent configuration ID from agent__listAgents(type='configs')."],
             &[
                 "Pass configId (config template ID, NOT a sessionId), complexity (low|normal|high), and a clear task description.",
                 "Choose the minimum sufficient complexity so the child uses the cheapest suitable model.",
-                "Org children inherit org workspace by default unless workspaceOverride is set.",
+                "Plain children start in a clean isolated workspace and cannot see caller files. To review or edit caller deliverables, pass workspaceOverride=\"current\" (also \".\" or \"inherit\") or an absolute path. Org children inherit the org root workspace by default.",
                 "Set waitForResult=true to block until the child finishes (optional timeout, default 3600s).",
             ],
             &[],
@@ -203,7 +203,7 @@ fn spawn_session_tool() -> MCPTool {
                         crate::mcp::builtin::agent::utils::complexity_param_description(),
                     ),
                 ),
-                ("workspaceOverride".to_string(), string_prop(None, None, Some("Absolute workspace path for the child session. If omitted, a plain child uses its default isolated workspace; an org child inherits the explicit org root workspace by default."))),
+                ("workspaceOverride".to_string(), string_prop(None, None, Some("Child workspace binding. Omit for an isolated plain-child workspace (org children still inherit the org root). Use \"current\", \".\", or \"inherit\" to share this session's effective workspace root (see Agent Runtime Identity). Or pass an absolute path to another existing workspace."))),
                 ("waitForResult".to_string(), {
                     let mut schema = boolean_prop(Some("If true, block until the session reaches a terminal result and return that final answer. Uses timeout (default 3600s) as the maximum wait."));
                     schema.default = Some(json!(false));

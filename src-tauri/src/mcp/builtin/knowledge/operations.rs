@@ -98,7 +98,7 @@ pub async fn record_knowledge(
     let auto_extract = args
         .get("auto_extract")
         .and_then(|v| v.as_bool())
-        .unwrap_or(true);
+        .unwrap_or(false);
     let explicit_plan =
         match extraction::normalize_graph_plan(explicit_entities, explicit_relationships) {
             Ok(plan) => plan,
@@ -119,7 +119,7 @@ pub async fn record_knowledge(
     // 1. Generate embedding
     // In a real implementation, we might want to chunk large content first.
     // For now, we assume reasonable sized content or handled by fastembed.
-    let embedding = match embed::generate_embedding(content) {
+    let embedding = match embed::generate_embedding(content).await {
         Ok(e) => e,
         Err(e) => {
             return Ok(guided_error(
@@ -157,10 +157,12 @@ pub async fn record_knowledge(
         .await
     {
         Ok(chunk_id) => {
+            // Heuristic extraction is opt-in only. Tags stay on the chunk for
+            // retrieval and are never promoted to graph nodes here.
             let heuristic_plan = if auto_extract
                 && (explicit_plan.entities.is_empty() || explicit_plan.relationships.is_empty())
             {
-                extraction::extract_graph_from_content(content, tags.as_deref().unwrap_or(&[]))
+                extraction::extract_graph_from_content(content)
             } else {
                 extraction::ExtractionPlan::default()
             };
@@ -216,14 +218,16 @@ pub async fn record_knowledge(
                 details.push("Graph enrichment was skipped for this entry.".to_string());
             }
 
-            let mut next_steps =
-                vec!["Use knowledge__searchKnowledge to query this information".to_string()];
-            if !extraction_plan.entities.is_empty() {
-                next_steps.push(
+            // Steady-path success: no "search what you just saved" nudge (Rule 7).
+            // Only suggest exploreContext when graph entities were actually persisted.
+            let next_steps = if !extraction_plan.entities.is_empty() {
+                vec![
                     "Use knowledge__exploreContext with one of the extracted entities to inspect the relationship graph."
                         .to_string(),
-                );
-            }
+                ]
+            } else {
+                vec![]
+            };
 
             let hint = SuccessHint::new(details.join("\n"), next_steps);
             Ok(hint.to_mcp_result_with_data(Some(json!({
@@ -479,14 +483,13 @@ pub async fn prune_knowledge(
                 }
             }
 
+            // Steady-path success: no post-delete search nudge (Rule 7).
             Ok(SuccessHint::new(
                 format!(
                     "Deleted knowledge chunks: {}.",
                     format_chunk_id_list(&validated_ids)
                 ),
-                vec![
-                    "Use knowledge__searchKnowledge to confirm the remaining entries.".to_string(),
-                ],
+                vec![],
             )
             .to_mcp_result_with_data(Some(json!({
                 "action": action,

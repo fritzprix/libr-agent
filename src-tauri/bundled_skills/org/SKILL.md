@@ -20,7 +20,7 @@ Use `postmortem-improve` after missions or repeated failures to capture lessons 
    - If they want to resume when a process or ticket completes, stop and use `call-me-back`.
    - If the governing root session has not prepared the teamwork artifact directory yet, stop and use `teamwork` to call `agent__prepareTeamworkWorkspace()` first.
 2. Read `.libragent/teamwork.json` before acting.
-   - Confirm `executionSubstrate.mode` is `"org"` and `orgLineage.intended` is `true`.
+   - Confirm `executionSubstrate.mode` is `"org"` and `executionSubstrate.orgLineage.intended` is `true`.
    - If the manifest says a different substrate, reconcile before proceeding.
 3. Keep one shared workspace.
    - Treat the app-local teamwork artifact directory as the SSOT for orchestration files.
@@ -35,7 +35,7 @@ Use `postmortem-improve` after missions or repeated failures to capture lessons 
    - To keep a child out of Org view, spawn it from a session that is not part of an explicit org.
 6. Resume through the org root.
    - The org root session is the canonical entry point. Org view should resume the root, not whichever child was last active.
-   - If you need to identify the root, read `orgLineage.rootSessionId` from `.libragent/teamwork.json`.
+   - If you need to identify the root, read `executionSubstrate.orgLineage.rootSessionId` from `.libragent/teamwork.json`.
 7. Keep work anchored in the workspace constitution.
    - Read `agents.md`, `MISSION.md`, `ROLES.md`, and the coordination files before directing members.
    - Org context refines execution; it does not replace the shared workspace contract.

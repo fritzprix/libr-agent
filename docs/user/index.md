@@ -1,5 +1,6 @@
 ---
 title: LibrAgent 사용자 문서
+description: "LibrAgent 사용자 문서 홈. 설치, 모델 연결, 채팅, 스킬·자동화·MCP 가이드와 FAQ를 한곳에서 확인하세요."
 ---
 
 # LibrAgent 사용자 문서

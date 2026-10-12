@@ -1,5 +1,6 @@
 ---
 title: 예약 작업 (Scheduled Tasks)
+description: "Cron·간격 기반 Scheduled Tasks로 어시스턴트 세션을 예약 실행하는 방법을 설명합니다."
 ---
 
 # 예약 작업 (Scheduled Tasks)

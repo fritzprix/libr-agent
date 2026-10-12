@@ -1,5 +1,6 @@
 ---
 title: Solution Recipes
+description: "Apply one-click Solution Recipes that install presets and schedules together in LibrAgent."
 ---
 
 # Solution Recipes

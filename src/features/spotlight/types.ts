@@ -9,6 +9,10 @@ export const spotlightHrefSchema = z.discriminatedUnion('type', [
     type: z.literal('route'),
     path: z.string().min(1),
   }),
+  z.object({
+    type: z.literal('action'),
+    action: z.enum(['setup-knowledge-distill-schedule']),
+  }),
 ]);
 
 export type SpotlightHref = z.infer<typeof spotlightHrefSchema>;

@@ -1,5 +1,6 @@
 ---
 title: 내장 도구 안내 (Built-in Tools)
+description: "워크스페이스·브라우저·지식·에이전트 등 LibrAgent 내장 MCP 도구 레퍼런스입니다."
 ---
 
 # 내장 도구 안내 (Built-in Tools)

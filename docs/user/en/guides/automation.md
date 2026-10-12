@@ -1,5 +1,6 @@
 ---
 title: Automation (Scheduled Tasks)
+description: "Compare Scheduled Tasks, loop/schedule skills, and Org automation — and choose the right LibrAgent approach."
 ---
 
 # Automation — Scheduled Tasks
@@ -12,7 +13,7 @@ title: Automation (Scheduled Tasks)
 ## Create a New Task
 
 1. Open **Scheduled Tasks** and click **New task** (or **Create your first task**).
-2. For instant setup, select one of the provided **Starter Templates** (such as Daily Standup Summary or Code Review Digest) to pre-fill configuration fields.
+2. For instant setup, select one of the provided **Starter Templates** (such as Daily Standup Summary, Code Review Digest, or **Daily durable knowledge distillation**) to pre-fill configuration fields. You can also create the nightly knowledge-distill task in one click from the Chat Hub tip (**Create nightly distill task**).
 3. Configure the task fields in the **New Scheduled Task** dialog:
 
 | Field | Description |

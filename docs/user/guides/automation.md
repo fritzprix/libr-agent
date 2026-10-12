@@ -1,5 +1,6 @@
 ---
 title: 자동화 (Scheduled Tasks)
+description: "Scheduled Tasks, loop·schedule 스킬, Org 자동화의 차이와 언제 무엇을 쓸지 정리합니다."
 ---
 
 # 자동화 — Scheduled Tasks
@@ -12,7 +13,7 @@ title: 자동화 (Scheduled Tasks)
 ## 새 작업 만들기
 
 1. **Scheduled Tasks** → **New task** (또는 **Create your first task**)
-2. 처음 시작할 때는 화면에 제공되는 **Starter Templates**(데일리 스탠드업 요약, 코드 리뷰 다이제스트 등)를 클릭하여 기본 구성값과 스케줄을 즉시 채울 수 있습니다.
+2. 처음 시작할 때는 화면에 제공되는 **Starter Templates**(데일리 스탠드업 요약, 코드 리뷰 다이제스트, **오래 쓸 지식 일일 증류** 등)를 클릭하여 기본 구성값과 스케줄을 즉시 채울 수 있습니다. Chat Hub 팁의 **일일 증류 작업 만들기**로도 동일 작업을 한 번에 만들 수 있습니다.
 3. **New Scheduled Task**에서 필요한 항목을 조정합니다:
 
 | 필드          | 설명                                                                     |

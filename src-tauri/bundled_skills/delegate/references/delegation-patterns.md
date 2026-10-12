@@ -8,12 +8,12 @@ Use this file when you need concrete task wording or when a delegated child sess
 | --- | --- | --- |
 | Existing Idle child has the same assistant and compatible workspace | Prefer reuse | Inspect with `agent__listAgents(type="sessions")`, then use `agent__messageToSession`; add `reset=true` only for a fresh assignment |
 | Child runs a bounded task with its own workspace | Yes | Delegate normally |
-| Child sees parent workspace files automatically | No | Put required content in the task, or keep the work in the parent |
-| Child inherits parent workspace `agents.md` / `CLAUDE.md` | No | Copy critical rules into the handoff |
+| Child sees parent workspace files automatically | No (plain default) | Pass `workspaceOverride="current"` (or `"."` / `"inherit"`), or inline content |
+| Child inherits parent workspace `agents.md` / `CLAUDE.md` | Only if SHARED | Share with `workspaceOverride="current"`, or copy critical rules into the handoff |
 | Child uses assistant-scoped skills from chosen assistant | Yes | Pick the right `configId` |
-| Child uses parent workspace-local `skills/` | No | Use global or assistant skills instead, or inline the procedure |
+| Child uses parent workspace-local `skills/` | Only if SHARED | Share workspace, use global/assistant skills, or inline the procedure |
 | Child receives arbitrary parent files through a `contextFiles` parameter | No | Put critical context in the task text |
-| Child works in the same workspace as the parent | Yes | Start the child with `workspaceOverride` pointing to that shared workspace |
+| Child works in the same workspace as the parent | Yes | `workspaceOverride="current"` (preferred) or an absolute path to that root |
 
 ## Delegation Recipe: Isolated Research Child
 
@@ -117,12 +117,22 @@ Pattern: child generates; parent evaluates. Do not ask the child to grade its ow
 
 Likely cause:
 
-- different workspace
+- different workspace (`ISOLATED` Metadata)
 
 Response:
 
-- put the file content or required excerpts into the follow-up message
-- or stop delegating and do the work in the parent session
+- re-spawn or continue with `workspaceOverride="current"` so Metadata shows `SHARED with caller`
+- or put the file content / required excerpts into the follow-up message
+- if the user asked for another agent to review the deliverable, do **not** substitute a parent self-audit
+
+## Delegation Recipe: Deliverable Audit / Independent Review
+
+Use when the user asks another agent to audit, review, or critique existing workspace files.
+
+1. `agent__spawnSession(configId="...", complexity="normal", task="...", workspaceOverride="current", waitForResult=true)` (or reuse an Idle SHARED child via `agent__messageToSession`).
+2. Task text names relative paths under the shared root and the review criteria.
+3. Present the child's final text as the review result.
+4. On missing-file failure under isolation, fix the binding — never grade your own homework as the independent audit.
 
 ### Symptom: Child ignores a local `agents.md` rule the parent followed
 

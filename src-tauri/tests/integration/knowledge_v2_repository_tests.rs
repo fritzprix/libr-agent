@@ -1,6 +1,6 @@
 use crate::common;
 
-use sea_orm::{ConnectionTrait, EntityTrait, Statement};
+use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter, Statement};
 use tauri_mcp_agent_lib::entity::knowledge_chunk_entity;
 use tauri_mcp_agent_lib::entity::knowledge_chunk_v2;
 use tauri_mcp_agent_lib::entity::knowledge_entity;
@@ -247,6 +247,100 @@ async fn delete_chunk_global_prunes_orphan_graph_state() {
 }
 
 #[tokio::test]
+async fn delete_chunks_atomic_prunes_orphan_graph_state() {
+    let db = common::setup_test_db_with_migrations().await;
+    let repo = SqliteKnowledgeV2Repository::new(db.clone());
+    let assistant_id = "assistant-atomic-orphan";
+
+    let chunk_one_id = repo
+        .record_chunk(
+            assistant_id.to_string(),
+            "Chunk one".to_string(),
+            Some(r#"["shared","orphan"]"#.to_string()),
+            Some("test".to_string()),
+            vec![0.3; 384],
+        )
+        .await
+        .expect("record_chunk should succeed");
+    let chunk_two_id = repo
+        .record_chunk(
+            assistant_id.to_string(),
+            "Chunk two".to_string(),
+            Some(r#"["shared"]"#.to_string()),
+            Some("test".to_string()),
+            vec![0.31; 384],
+        )
+        .await
+        .expect("record_chunk should succeed");
+
+    let shared_entity_id = repo
+        .upsert_entity(
+            assistant_id.to_string(),
+            "Shared".to_string(),
+            Some("Concept".to_string()),
+            None,
+        )
+        .await
+        .expect("upsert_entity should succeed");
+    let orphan_entity_id = repo
+        .upsert_entity(
+            assistant_id.to_string(),
+            "Orphan".to_string(),
+            Some("Concept".to_string()),
+            None,
+        )
+        .await
+        .expect("upsert_entity should succeed");
+
+    repo.link_chunk_to_entity(chunk_one_id, shared_entity_id)
+        .await
+        .expect("link_chunk_to_entity should succeed");
+    repo.link_chunk_to_entity(chunk_one_id, orphan_entity_id)
+        .await
+        .expect("link_chunk_to_entity should succeed");
+    repo.link_chunk_to_entity(chunk_two_id, shared_entity_id)
+        .await
+        .expect("link_chunk_to_entity should succeed");
+    repo.create_relationship(
+        assistant_id.to_string(),
+        shared_entity_id,
+        orphan_entity_id,
+        "RELATES_TO".to_string(),
+    )
+    .await
+    .expect("create_relationship should succeed");
+
+    repo.delete_chunks_atomic(&[chunk_one_id], assistant_id)
+        .await
+        .expect("delete_chunks_atomic should succeed");
+
+    let remaining_chunks = knowledge_chunk_v2::Entity::find().all(&db).await.unwrap();
+    assert_eq!(remaining_chunks.len(), 1);
+    assert_eq!(remaining_chunks[0].id, chunk_two_id);
+
+    let remaining_entities = knowledge_entity::Entity::find().all(&db).await.unwrap();
+    assert_eq!(remaining_entities.len(), 1);
+    assert_eq!(remaining_entities[0].id, shared_entity_id);
+
+    let remaining_relationships = knowledge_relationship::Entity::find()
+        .all(&db)
+        .await
+        .unwrap();
+    assert!(
+        remaining_relationships.is_empty(),
+        "orphan entity relationships should be deleted by prune/atomic path"
+    );
+
+    let remaining_links = knowledge_chunk_entity::Entity::find()
+        .all(&db)
+        .await
+        .unwrap();
+    assert_eq!(remaining_links.len(), 1);
+    assert_eq!(remaining_links[0].chunk_id, chunk_two_id);
+    assert_eq!(remaining_links[0].entity_id, shared_entity_id);
+}
+
+#[tokio::test]
 async fn knowledge_v2_repository_lists_chunks_with_cursor_pagination() {
     let db = common::setup_test_db_with_migrations().await;
     let repo = SqliteKnowledgeV2Repository::new(db.clone());
@@ -454,4 +548,116 @@ async fn knowledge_v2_repository_get_global_graph_returns_entities_and_relations
         .expect("get_global_graph with 0 limit should succeed");
     assert!(empty_graph.entities.is_empty());
     assert!(empty_graph.relationships.is_empty());
+}
+
+/// #2060 P3 regression: other assistants must not starve semantic top-k.
+///
+/// Setup:
+///   - assistant-noise: 40 chunks nearer the query than any target chunk
+///   - assistant-target: 8 chunks farther from the query
+///   - search_hybrid("assistant-target", None, Some(query), 5)
+///
+/// Fixed contract: return exactly `limit` rows from assistant-target.
+#[tokio::test]
+async fn semantic_search_ignores_other_assistants_when_ranking() {
+    const DIM: usize = 384;
+    const NOISE_COUNT: usize = 40;
+    const TARGET_COUNT: usize = 8;
+    const LIMIT: u64 = 5;
+
+    let db = common::setup_test_db_with_migrations().await;
+    let repo = SqliteKnowledgeV2Repository::new(db.clone());
+
+    // Query vector: first component high, rest zero — Euclidean distance
+    // to noise (~0.014) is much smaller than to target (~0.894).
+    let mut query_embedding = vec![0.0; DIM];
+    query_embedding[0] = 1.0;
+
+    // ---- Insert noise chunks (assistant-noise) ----
+    let mut noise_ids = Vec::new();
+    for i in 0..NOISE_COUNT {
+        let mut emb = vec![0.001; DIM];
+        emb[0] = 0.99; // very close to query
+        let id = repo
+            .record_chunk(
+                "assistant-noise".to_string(),
+                format!("Noise chunk {}", i),
+                Some(r#"["noise"]"#.to_string()),
+                None,
+                emb,
+            )
+            .await
+            .expect("record noise chunk should succeed");
+        noise_ids.push(id);
+    }
+
+    // ---- Insert target chunks (assistant-target) ----
+    let mut target_ids = Vec::new();
+    for i in 0..TARGET_COUNT {
+        let mut emb = vec![0.01; DIM];
+        emb[0] = 0.1; // farther from query
+        let id = repo
+            .record_chunk(
+                "assistant-target".to_string(),
+                format!("Target chunk {}", i),
+                Some(r#"["target"]"#.to_string()),
+                None,
+                emb,
+            )
+            .await
+            .expect("record target chunk should succeed");
+        target_ids.push(id);
+    }
+
+    // ---- Verify setup invariants ----
+    // Count stored target chunks for this assistant
+    let target_chunk_count = knowledge_chunk_v2::Entity::find()
+        .filter(knowledge_chunk_v2::Column::AssistantId.eq("assistant-target"))
+        .count(&db)
+        .await
+        .expect("count target chunks should succeed");
+    assert!(
+        target_chunk_count >= LIMIT as u64,
+        "Setup invariant: assistant-target must have ≥ {} stored chunks, got {}",
+        LIMIT,
+        target_chunk_count
+    );
+    println!(
+        "SETUP: assistant-noise={} chunks, assistant-target={} stored chunks, query dim={}, LIMIT={}",
+        NOISE_COUNT, target_chunk_count, DIM, LIMIT
+    );
+
+    // ---- Run semantic-only search ----
+    let results = repo
+        .search_hybrid("assistant-target", None, Some(query_embedding), LIMIT)
+        .await
+        .expect("semantic search should succeed");
+    let result_count = results.len();
+
+    // Verify all returned chunks belong to assistant-target
+    for (chunk, score) in &results {
+        assert_eq!(
+            chunk.assistant_id, "assistant-target",
+            "All results must belong to assistant-target (score={})",
+            score
+        );
+    }
+
+    println!(
+        "RESULT: result_count={}, target_chunk_count={}",
+        result_count, target_chunk_count
+    );
+
+    assert_eq!(
+        result_count, LIMIT as usize,
+        "assistant-scoped semantic search must fill limit despite nearer noise vectors (#2060 P3): got {} (stored={})",
+        result_count,
+        target_chunk_count
+    );
+    assert!(
+        results
+            .iter()
+            .all(|(chunk, _)| chunk.assistant_id == "assistant-target"),
+        "semantic results must stay assistant-scoped"
+    );
 }

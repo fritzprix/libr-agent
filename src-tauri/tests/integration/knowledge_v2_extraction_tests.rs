@@ -1,3 +1,4 @@
+use serde_json::json;
 use tauri_mcp_agent_lib::mcp::builtin::knowledge::extraction::{
     extract_graph_from_content, merge_plans, normalize_graph_plan, ExtractedEntity,
     ExtractedRelationship,
@@ -7,10 +8,8 @@ use tauri_mcp_agent_lib::mcp::schema::JSONSchemaType;
 
 #[test]
 fn extraction_finds_entities_and_relationships_from_content() {
-    let plan = extract_graph_from_content(
-        "LibrAgent uses sqlite-vec and fastembed for local memory.",
-        &["knowledge".to_string()],
-    );
+    let plan =
+        extract_graph_from_content("LibrAgent uses sqlite-vec and fastembed for local memory.");
 
     let entity_names = plan
         .entities
@@ -20,7 +19,6 @@ fn extraction_finds_entities_and_relationships_from_content() {
     assert!(entity_names.contains(&"LibrAgent"));
     assert!(entity_names.contains(&"sqlite-vec"));
     assert!(entity_names.contains(&"fastembed"));
-    assert!(entity_names.contains(&"knowledge"));
 
     assert!(plan.relationships.iter().any(|relationship| {
         relationship.source == "LibrAgent"
@@ -32,6 +30,134 @@ fn extraction_finds_entities_and_relationships_from_content() {
             && relationship.target == "fastembed"
             && relationship.relation_type == "USES"
     }));
+}
+
+#[test]
+fn extraction_does_not_promote_tags_or_markdown_headings() {
+    let plan = extract_graph_from_content(
+        "# Key Facts\n\nLibrAgent uses SeaORM for persistence.\n\n## Appendix\n\nMore notes.",
+    );
+
+    let entity_names = plan
+        .entities
+        .iter()
+        .map(|entity| entity.name.as_str())
+        .collect::<Vec<_>>();
+    assert!(entity_names.contains(&"LibrAgent"));
+    assert!(entity_names.contains(&"SeaORM"));
+    assert!(!entity_names.contains(&"Key Facts"));
+    assert!(!entity_names.contains(&"Appendix"));
+    assert!(!entity_names.iter().any(|name| *name == "knowledge"));
+}
+
+#[test]
+fn extraction_keeps_hash_lines_that_are_not_markdown_headings() {
+    let plan = extract_graph_from_content(
+        "LibrAgent uses SeaORM.\n\n```c\n#include <stdio.h>\n# comment\n```\n",
+    );
+
+    let entity_names = plan
+        .entities
+        .iter()
+        .map(|entity| entity.name.as_str())
+        .collect::<Vec<_>>();
+    assert!(entity_names.contains(&"LibrAgent"));
+    assert!(entity_names.contains(&"SeaORM"));
+    // Non-heading `#` lines must not drop surrounding content / relationships.
+    assert!(plan.relationships.iter().any(|relationship| {
+        relationship.source == "LibrAgent"
+            && relationship.target == "SeaORM"
+            && relationship.relation_type == "USES"
+    }));
+}
+
+#[test]
+fn normalize_rejects_iso_dates_as_entity_names() {
+    let error = normalize_graph_plan(
+        vec![ExtractedEntity {
+            name: "2026-09-30".to_string(),
+            entity_type: Some("Tag".to_string()),
+            description: None,
+        }],
+        vec![],
+    )
+    .expect_err("ISO dates must not become entities");
+
+    assert!(error.contains("ISO dates"));
+}
+
+#[test]
+fn infer_entity_type_does_not_mark_short_acronyms_as_technology() {
+    let plan = normalize_graph_plan(
+        vec![
+            ExtractedEntity {
+                name: "ARR".to_string(),
+                entity_type: None,
+                description: None,
+            },
+            ExtractedEntity {
+                name: "sqlite-vec".to_string(),
+                entity_type: None,
+                description: None,
+            },
+        ],
+        vec![],
+    )
+    .expect("entities should normalize");
+
+    // Short acronyms stay Concept when type is filled by relationship-side inference;
+    // explicit entities with None type keep None through normalize_graph_plan.
+    let arr = plan
+        .entities
+        .iter()
+        .find(|entity| entity.name == "ARR")
+        .expect("ARR present");
+    assert!(arr.entity_type.is_none());
+
+    let with_rel = normalize_graph_plan(
+        vec![],
+        vec![ExtractedRelationship {
+            source: "ARR".to_string(),
+            target: "sqlite-vec".to_string(),
+            relation_type: "USES".to_string(),
+        }],
+    )
+    .expect("relationship should normalize");
+
+    let arr_inferred = with_rel
+        .entities
+        .iter()
+        .find(|entity| entity.name == "ARR")
+        .expect("ARR present");
+    assert_eq!(arr_inferred.entity_type.as_deref(), Some("Concept"));
+
+    let tech = with_rel
+        .entities
+        .iter()
+        .find(|entity| entity.name == "sqlite-vec")
+        .expect("sqlite-vec present");
+    assert_eq!(tech.entity_type.as_deref(), Some("Technology"));
+}
+
+#[test]
+fn serde_aliases_accept_legacy_type_from_to_fields() {
+    let entity: ExtractedEntity = serde_json::from_value(json!({
+        "name": "LibrAgent",
+        "type": "Project",
+        "description": "Desktop agent"
+    }))
+    .expect("entity alias should deserialize");
+    assert_eq!(entity.entity_type.as_deref(), Some("Project"));
+
+    let relationship: ExtractedRelationship = serde_json::from_value(json!({
+        "from": "LibrAgent",
+        "to": "SeaORM",
+        "type": "USES"
+    }))
+    .expect("relationship aliases should deserialize");
+    assert_eq!(relationship.source, "LibrAgent");
+    assert_eq!(relationship.target, "SeaORM");
+    assert_eq!(relationship.relation_type, "USES");
 }
 
 #[test]
@@ -111,7 +237,7 @@ fn merge_plans_prefers_explicit_graph_and_fills_missing_heuristics() {
         vec![],
     )
     .expect("explicit plan should normalize");
-    let fallback = extract_graph_from_content("LibrAgent uses sqlite-vec and fastembed.", &[]);
+    let fallback = extract_graph_from_content("LibrAgent uses sqlite-vec and fastembed.");
 
     let merged = merge_plans(&explicit, &fallback);
 
@@ -179,6 +305,15 @@ fn record_knowledge_tool_schema_exposes_structured_graph_inputs() {
     assert!(required.iter().any(|field| field == "content"));
     assert!(properties.contains_key("entities"));
     assert!(properties.contains_key("relationships"));
+
+    let auto_extract = properties
+        .get("auto_extract")
+        .expect("auto_extract schema should be present");
+    assert_eq!(
+        auto_extract.default.as_ref(),
+        Some(&serde_json::Value::Bool(false)),
+        "auto_extract must default to false"
+    );
 
     let entities_schema = properties
         .get("entities")

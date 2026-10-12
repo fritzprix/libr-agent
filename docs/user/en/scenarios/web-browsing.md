@@ -1,5 +1,6 @@
 ---
 title: Scenario - Web Browsing & Information Gathering
+description: "Automate web search, page interaction, and logged-in browsing sessions with LibrAgent."
 ---
 
 # Scenario: Web Browsing & Information Gathering

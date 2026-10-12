@@ -1,5 +1,6 @@
 ---
 title: Connecting models
+description: "Connect an LLM to LibrAgent by setting Provider API keys and the default model under Settings → AI & Models."
 ---
 
 # Connecting models

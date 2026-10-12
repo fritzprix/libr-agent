@@ -119,6 +119,7 @@ describe('AgentChatContext', () => {
       setError: mockSetError,
       addMessage: vi.fn(),
       resumeSession: vi.fn().mockResolvedValue(undefined),
+      regenerateLastTurn: vi.fn().mockResolvedValue(undefined),
     });
 
     // Setup backend messages mock
@@ -476,6 +477,7 @@ describe('AgentChatContext', () => {
         setError: mockSetError,
         addMessage: vi.fn(),
         resumeSession: mockResumeSession,
+        regenerateLastTurn: vi.fn().mockResolvedValue(undefined),
       });
 
       const pendingMessage: Message = {
@@ -790,6 +792,7 @@ describe('AgentChatContext', () => {
       (useAgentSessionActions as ReturnType<typeof vi.fn>).mockReturnValue({
         setError: mockSetError,
         resumeSession: mockResumeSession,
+        regenerateLastTurn: vi.fn().mockResolvedValue(undefined),
       });
 
       // Mock backend messages

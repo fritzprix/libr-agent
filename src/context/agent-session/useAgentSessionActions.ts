@@ -13,6 +13,18 @@ import {
 
 const logger = getLogger('AgentSessionActions');
 
+function extractDeletedMessageIds(response: AgentResponse): string[] {
+  const data = response.data;
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return [];
+  }
+  const deleted = (data as { deletedMessageIds?: unknown }).deletedMessageIds;
+  if (!Array.isArray(deleted)) {
+    return [];
+  }
+  return deleted.filter((id): id is string => typeof id === 'string');
+}
+
 export function useAgentSessionActionsLogic(
   sessionId: string,
   stateProps: ReturnType<typeof useAgentSessionState>,
@@ -150,6 +162,31 @@ export function useAgentSessionActionsLogic(
     }
   }, [externalActions, state.session]);
 
+  const regenerateLastTurn = useCallback(async () => {
+    if (!state.session) return;
+    try {
+      const response = await safeInvoke<AgentResponse>(
+        'agent_regenerate_last_turn',
+        {
+          sessionId: state.session.id,
+        },
+      );
+
+      const deletedIds = extractDeletedMessageIds(response);
+      if (deletedIds.length > 0) {
+        const deletedSet = new Set(deletedIds);
+        setters.setMessages((prev) =>
+          prev.filter((message) => !deletedSet.has(message.id)),
+        );
+      }
+
+      await externalActions.acknowledgeSessionAttention();
+    } catch (err) {
+      logger.error('Failed to regenerate last turn', err);
+      throw err;
+    }
+  }, [externalActions, setters, state.session]);
+
   const respondToToolApproval = useCallback(
     async (toolCallId: string, approved: boolean) => {
       if (!state.session) return;
@@ -280,6 +317,7 @@ export function useAgentSessionActionsLogic(
     stopSession,
     loadOlderMessages,
     resumeSession,
+    regenerateLastTurn,
     respondToToolApproval,
     setExecutionMode,
     updateSessionConfig,

@@ -6,14 +6,19 @@ use std::sync::OnceLock;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExtractedEntity {
     pub name: String,
+    #[serde(default, alias = "type")]
     pub entity_type: Option<String>,
+    #[serde(default)]
     pub description: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExtractedRelationship {
+    #[serde(alias = "from")]
     pub source: String,
+    #[serde(alias = "to")]
     pub target: String,
+    #[serde(alias = "type")]
     pub relation_type: String,
 }
 
@@ -43,40 +48,32 @@ const STOPWORDS: &[&str] = &[
 ];
 const MAX_ENTITY_NAME_WORDS: usize = 10;
 
-pub fn extract_graph_from_content(content: &str, tags: &[String]) -> ExtractionPlan {
+/// Heuristic graph extraction from free text.
+///
+/// Retrieval `tags` are intentionally not accepted here — tags stay on the
+/// chunk metadata and must not be promoted to graph entities.
+pub fn extract_graph_from_content(content: &str) -> ExtractionPlan {
+    let cleaned = strip_markdown_noise(content);
     let mut entities = BTreeMap::<String, ExtractedEntity>::new();
     let mut relationships = BTreeMap::<(String, String, String), ExtractedRelationship>::new();
 
-    for tag in tags {
-        if let Some(name) = normalize_entity_name(tag, true) {
-            insert_entity(
-                &mut entities,
-                ExtractedEntity {
-                    name,
-                    entity_type: Some("Tag".to_string()),
-                    description: None,
-                },
-            );
-        }
-    }
-
-    for candidate in extract_candidate_entities(content) {
+    for candidate in extract_candidate_entities(&cleaned) {
         insert_entity(
             &mut entities,
             ExtractedEntity {
-                entity_type: Some(infer_entity_type(&candidate, false).to_string()),
+                entity_type: Some(infer_entity_type(&candidate).to_string()),
                 name: candidate,
                 description: None,
             },
         );
     }
 
-    for sentence in content.split(['.', '!', '?', '\n']) {
+    for sentence in cleaned.split(['.', '!', '?', '\n']) {
         if let Some((source, relation_type, targets)) = extract_sentence_relationship(sentence) {
             insert_entity(
                 &mut entities,
                 ExtractedEntity {
-                    entity_type: Some(infer_entity_type(&source, false).to_string()),
+                    entity_type: Some(infer_entity_type(&source).to_string()),
                     name: source.clone(),
                     description: None,
                 },
@@ -86,7 +83,7 @@ pub fn extract_graph_from_content(content: &str, tags: &[String]) -> ExtractionP
                 insert_entity(
                     &mut entities,
                     ExtractedEntity {
-                        entity_type: Some(infer_entity_type(&target, false).to_string()),
+                        entity_type: Some(infer_entity_type(&target).to_string()),
                         name: target.clone(),
                         description: None,
                     },
@@ -157,7 +154,7 @@ pub fn normalize_graph_plan(
             &mut normalized_entities,
             ExtractedEntity {
                 name: source.clone(),
-                entity_type: Some(infer_entity_type(&source, false).to_string()),
+                entity_type: Some(infer_entity_type(&source).to_string()),
                 description: None,
             },
         );
@@ -165,7 +162,7 @@ pub fn normalize_graph_plan(
             &mut normalized_entities,
             ExtractedEntity {
                 name: target.clone(),
-                entity_type: Some(infer_entity_type(&target, false).to_string()),
+                entity_type: Some(infer_entity_type(&target).to_string()),
                 description: None,
             },
         );
@@ -232,14 +229,24 @@ fn insert_entity(store: &mut BTreeMap<String, ExtractedEntity>, entity: Extracte
     store
         .entry(key)
         .and_modify(|existing| {
-            if existing.entity_type.as_deref() != Some("Tag") {
-                existing.entity_type = entity.entity_type.clone().or(existing.entity_type.clone());
-            }
+            existing.entity_type = entity.entity_type.clone().or(existing.entity_type.clone());
             if existing.description.is_none() {
                 existing.description = entity.description.clone();
             }
         })
         .or_insert(entity);
+}
+
+/// Drop ATX markdown headings so section titles are not harvested as entities.
+///
+/// Only lines that match a markdown heading (`#{1,6}` + whitespace) are
+/// removed. Bare `#` comments / preprocessor lines inside code samples are kept.
+fn strip_markdown_noise(content: &str) -> String {
+    content
+        .lines()
+        .filter(|line| !atx_heading_regex().is_match(line.trim_start()))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn extract_candidate_entities(content: &str) -> Vec<String> {
@@ -363,6 +370,10 @@ fn normalize_entity_name_with_reason(
         return Err("entity names must be at least 2 characters long".to_string());
     }
 
+    if iso_date_regex().is_match(&collapsed) {
+        return Err("entity names cannot be ISO dates".to_string());
+    }
+
     let word_count = collapsed.split_whitespace().count();
     if word_count > MAX_ENTITY_NAME_WORDS {
         return Err(format!(
@@ -403,11 +414,7 @@ fn strip_leading_noise(input: &str) -> String {
     input.trim().to_string()
 }
 
-fn infer_entity_type(name: &str, from_tag: bool) -> &'static str {
-    if from_tag {
-        return "Tag";
-    }
-
+fn infer_entity_type(name: &str) -> &'static str {
     let lowercase = name.to_ascii_lowercase();
     if lowercase.contains("agent")
         || lowercase.contains("server")
@@ -419,6 +426,17 @@ fn infer_entity_type(name: &str, from_tag: bool) -> &'static str {
         return "Project";
     }
 
+    // Prefer keyword / hyphenated tech tokens. Do not classify short ALLCAPS
+    // acronyms (ARR, CTA, Q4) as Technology — those become Concept instead.
+    let alphabetic_len = name
+        .chars()
+        .filter(|character| character.is_alphabetic())
+        .count();
+    let looks_like_long_acronym = alphabetic_len >= 5
+        && name
+            .chars()
+            .all(|character| !character.is_alphabetic() || character.is_uppercase());
+
     if lowercase.contains("sqlite")
         || lowercase.contains("rust")
         || lowercase.contains("embed")
@@ -426,9 +444,8 @@ fn infer_entity_type(name: &str, from_tag: bool) -> &'static str {
         || lowercase.contains("onnx")
         || lowercase.contains("tauri")
         || name.contains('-')
-        || name
-            .chars()
-            .all(|character| !character.is_alphabetic() || character.is_uppercase())
+        || name.contains('_')
+        || looks_like_long_acronym
     {
         return "Technology";
     }
@@ -451,6 +468,16 @@ fn normalize_relation_type(raw: &str) -> Option<String> {
     }
 
     Some(normalized.to_ascii_uppercase())
+}
+
+fn atx_heading_regex() -> &'static Regex {
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    REGEX.get_or_init(|| Regex::new(r"^#{1,6}\s+\S").expect("atx heading regex should compile"))
+}
+
+fn iso_date_regex() -> &'static Regex {
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    REGEX.get_or_init(|| Regex::new(r"^\d{4}-\d{2}-\d{2}$").expect("iso date regex should compile"))
 }
 
 fn proper_noun_regex() -> &'static Regex {

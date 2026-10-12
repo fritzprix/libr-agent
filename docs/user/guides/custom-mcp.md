@@ -1,5 +1,6 @@
 ---
 title: 커스텀 MCP 설치
+description: "stdio·HTTP 커스텀 MCP 서버를 등록하고 헤더·환경 변수를 설정하는 방법을 안내합니다."
 ---
 
 # 커스텀 MCP 설치

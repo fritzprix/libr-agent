@@ -278,11 +278,65 @@ pub(crate) fn path_validation_failure_guidance(error: &str, fallback: Vec<String
     }
 }
 
+/// True when the path looks like a mistaken workspace-relative harness path
+/// (`.harness` / `harness/…`) instead of the virtual `@harness` alias.
+pub(crate) fn looks_like_confused_harness_path(path: &str) -> bool {
+    if crate::session::extract_harness_alias_relative_path(path).is_some() {
+        return false;
+    }
+
+    let trimmed = path.trim();
+    let stripped = trimmed
+        .strip_prefix("./")
+        .or_else(|| trimmed.strip_prefix(".\\"))
+        .unwrap_or(trimmed)
+        .replace('\\', "/");
+
+    stripped == "harness"
+        || stripped.starts_with("harness/")
+        || stripped == ".harness"
+        || stripped.starts_with(".harness/")
+}
+
+/// Hint when agents confuse `.harness` / `harness/` with the `@harness` alias.
+pub(crate) fn confused_harness_alias_hint(path: &str) -> Option<String> {
+    if looks_like_confused_harness_path(path) {
+        Some(
+            "Did you mean virtual alias '@harness'? Use workspace__listDirectory('@harness') or '@harness/LESSONS.active.md' (not '.harness' or 'harness/')."
+                .to_string(),
+        )
+    } else {
+        None
+    }
+}
+
+/// Path-operation recovery that also steers harness-path confusion to `@harness`.
+pub(crate) fn path_operation_failure_guidance(
+    error: &str,
+    requested_path: &str,
+    fallback: Vec<String>,
+) -> Vec<String> {
+    let mut guidance = path_validation_failure_guidance(error, fallback);
+    if let Some(hint) = confused_harness_alias_hint(requested_path) {
+        guidance.insert(0, hint);
+    }
+    guidance
+}
+
+/// Prepend harness-alias recovery onto an existing guidance list when applicable.
+pub(crate) fn with_harness_alias_hint(path: &str, mut guidance: Vec<String>) -> Vec<String> {
+    if let Some(hint) = confused_harness_alias_hint(path) {
+        guidance.insert(0, hint);
+    }
+    guidance
+}
+
 #[cfg(test)]
 mod guidance_tests {
     use super::{
-        path_validation_failure_guidance, skill_alias_write_rejected_error,
-        SKILL_ALIAS_WRITE_REJECTED_MARKER,
+        confused_harness_alias_hint, looks_like_confused_harness_path,
+        path_operation_failure_guidance, path_validation_failure_guidance,
+        skill_alias_write_rejected_error, SKILL_ALIAS_WRITE_REJECTED_MARKER,
     };
     use crate::services::skill_service::WORKSPACE_SKILLS_ALIAS_PREFIX;
     use crate::session_isolation::OUTSIDE_DOCKER_WORKDIR_FILE_TOOL_MARKER;
@@ -323,5 +377,26 @@ mod guidance_tests {
         let guidance =
             path_validation_failure_guidance("Security error: blocked", fallback.clone());
         assert_eq!(guidance, fallback);
+    }
+
+    #[test]
+    fn confused_harness_paths_get_alias_hint() {
+        assert!(looks_like_confused_harness_path(".harness"));
+        assert!(looks_like_confused_harness_path(
+            "harness/LESSONS.active.md"
+        ));
+        assert!(!looks_like_confused_harness_path("@harness"));
+        assert!(!looks_like_confused_harness_path(".libragent/harness"));
+        assert!(!looks_like_confused_harness_path("src/main.rs"));
+
+        let guidance = path_operation_failure_guidance(
+            "Security error: blocked",
+            ".harness",
+            vec!["Use workspace__listDirectory to see available paths".to_string()],
+        );
+        assert!(guidance[0].contains("@harness"));
+        assert!(confused_harness_alias_hint("harness/")
+            .expect("hint")
+            .contains("@harness"));
     }
 }

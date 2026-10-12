@@ -249,7 +249,10 @@ test('ScheduledTaskModal accepts a dropped directory as workspace override', asy
 });
 
 test('ScheduledTaskModal pre-populates form fields when initialTemplate is provided', async () => {
-  const template = STARTER_TASK_TEMPLATES[0]; // pc-health-audit (unsafe mode, resetPlanningState: true)
+  const template = STARTER_TASK_TEMPLATES.find((t) => t.id === 'pc-health-audit');
+  if (!template) {
+    throw new Error('missing pc-health-audit starter template');
+  }
   const onSave = vi.fn().mockResolvedValue(undefined);
   const assistants: Assistant[] = [
     {
@@ -328,7 +331,10 @@ test('ScheduledTaskModal pre-populates form fields when initialTemplate is provi
 });
 
 test('ScheduledTaskModal falls back to first assistant if preferredAssistantName is not matched', async () => {
-  const template = STARTER_TASK_TEMPLATES[0]; // pc-health-audit
+  const template = STARTER_TASK_TEMPLATES.find((t) => t.id === 'pc-health-audit');
+  if (!template) {
+    throw new Error('missing pc-health-audit starter template');
+  }
   const onSave = vi.fn().mockResolvedValue(undefined);
   const assistants: Assistant[] = [
     {
@@ -366,7 +372,12 @@ test('ScheduledTaskModal falls back to first assistant if preferredAssistantName
 });
 
 test('ScheduledTaskModal does not display unsafe notice for yolo execution mode', () => {
-  const template = STARTER_TASK_TEMPLATES[1]; // web-headline-summary (yolo)
+  const template = STARTER_TASK_TEMPLATES.find(
+    (t) => t.id === 'web-headline-summary',
+  );
+  if (!template) {
+    throw new Error('missing web-headline-summary starter template');
+  }
   const assistants: Assistant[] = [
     {
       id: 'ast-1',

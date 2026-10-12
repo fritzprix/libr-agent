@@ -1,5 +1,6 @@
 ---
 title: 네비게이션 가이드
+description: "Chat·History·Knowledge·Scheduled Tasks 등 LibrAgent UI 화면과 이동 경로를 정리합니다."
 ---
 
 # 화면 네비게이션 가이드

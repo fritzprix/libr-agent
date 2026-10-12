@@ -1,5 +1,6 @@
 ---
 title: Scenario - Deep Research & Report Generation
+description: "Use LibrAgent for research: gather sources, synthesize findings, and produce a written report."
 ---
 
 # Scenario: Deep Research & Report Generation

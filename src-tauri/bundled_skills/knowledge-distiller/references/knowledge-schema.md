@@ -8,7 +8,7 @@ Fields for `knowledge__recordKnowledge` distillation workflow.
 | --- | --- |
 | `content` | Human-readable summary; must stand alone without chat context |
 | `source` | Traceability: `sessionId`, date, or message ref |
-| `tags` | Always include `distilled`; add domain tags |
+| `tags` | Always include `distilled`; add domain tags. Tags are retrieval labels only — they do **not** create graph entities |
 
 ## Optional structured fields
 
@@ -16,13 +16,15 @@ Fields for `knowledge__recordKnowledge` distillation workflow.
 | --- | --- |
 | `entities` | Technologies, projects, people, tools mentioned |
 | `relationships` | `USES`, `DEPENDS_ON`, `REPLACES`, `CONFIGURED_WITH` |
+| `auto_extract` | Default **false**. Set `true` only when you intentionally want heuristic gap-fill for missing graph fields |
 
 ## Entity example
 
 ```json
 {
   "name": "LibrAgent",
-  "type": "project"
+  "entity_type": "Project",
+  "description": "Local-first agent desktop platform"
 }
 ```
 
@@ -30,11 +32,13 @@ Fields for `knowledge__recordKnowledge` distillation workflow.
 
 ```json
 {
-  "from": "LibrAgent",
-  "to": "SeaORM",
-  "type": "USES"
+  "source": "LibrAgent",
+  "target": "SeaORM",
+  "relation_type": "USES"
 }
 ```
+
+Field names must match the tool schema (`entity_type`, `source`, `target`, `relation_type`). Older aliases (`type`, `from`, `to`) are accepted for compatibility but prefer the canonical names.
 
 ## Tag conventions
 
@@ -52,3 +56,5 @@ Before recording, ask:
 1. Would a new agent understand this without reading the original chat?
 2. Is it actionable or referenceable later?
 3. Is it already in the knowledge base?
+4. Are entities few, named, and preferably described — not section headers, dates, or short acronyms?
+5. If you omit entities/relationships, leave `auto_extract` false unless heuristic fill is intentional

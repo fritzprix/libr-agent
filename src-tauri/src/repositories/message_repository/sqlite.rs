@@ -127,11 +127,12 @@ impl SqliteMessageRepository {
 
 #[async_trait]
 impl MessageRepository for SqliteMessageRepository {
-    async fn get_page(
+    async fn get_page_ordered(
         &self,
         session_id: &str,
         page: u64,
         page_size: u64,
+        newest_first: bool,
     ) -> Result<Page<Message>, DbError> {
         if page_size == 0 {
             return Err(DbError::InvalidInput("page_size must be > 0".into()));
@@ -143,16 +144,24 @@ impl MessageRepository for SqliteMessageRepository {
             .await?;
 
         let offset = page.saturating_sub(1).saturating_mul(page_size);
+        let order_clause = if newest_first {
+            "ORDER BY rowid DESC"
+        } else {
+            "ORDER BY rowid ASC"
+        };
 
         // Fetch paginated messages in persisted causal order. Using rowid avoids treating
         // cross-layer created_at skew as conversation truth.
+        let sql = format!(
+            "SELECT id, session_id, role, content, tool_calls, tool_call_id, is_streaming, thinking, thinking_signature, assistant_id, attachments, tool_use, created_at, updated_at, source, error, usage, prompt_tokens \
+             FROM messages \
+             WHERE session_id = ? \
+             {order_clause} \
+             LIMIT ? OFFSET ?"
+        );
         let models = self
             .query_message_models(
-                "SELECT id, session_id, role, content, tool_calls, tool_call_id, is_streaming, thinking, thinking_signature, assistant_id, attachments, tool_use, created_at, updated_at, source, error, usage, prompt_tokens \
-                 FROM messages \
-                 WHERE session_id = ? \
-                 ORDER BY rowid ASC \
-                 LIMIT ? OFFSET ?",
+                &sql,
                 vec![
                     session_id.into(),
                     (page_size as i64).into(),

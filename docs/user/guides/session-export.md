@@ -1,5 +1,6 @@
 ---
 title: 세션 내보내기 (Session Export)
+description: "대화를 Markdown·ATIF로 내보내거나 보이는 창을 복사하는 Session Export 방법을 안내합니다."
 ---
 
 # 세션 내보내기 (Session Export)

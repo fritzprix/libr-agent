@@ -1618,7 +1618,10 @@
         "exportCancelled": "Download cancelado",
         "exportError": "Falha ao exportar a mensagem",
         "exportPdfError": "Falha ao exportar o PDF",
-        "exportHtmlError": "Falha ao exportar o HTML"
+        "exportHtmlError": "Falha ao exportar o HTML",
+        "regenerateAria": "Regenerar",
+        "regenerateTooltip": "Regenerar resposta",
+        "regenerateError": "Falha ao regenerar a resposta"
       }
     },
     "start": {
@@ -1687,6 +1690,10 @@
       "title": "Modelos iniciais sugeridos",
       "subtitle": "Configure rapidamente tarefas automatizadas recorrentes com modelos pré-configurados",
       "useTemplate": "Usar este modelo",
+      "knowledgeDistillTitle": "Destilação diária de conhecimento durável",
+      "knowledgeDistillDesc": "Toda noite, destile decisões e correções duráveis das sessões recentes no Knowledge — não notícias do dia nem notas temporárias.",
+      "knowledgeDistillName": "Destilação diária de conhecimento durável",
+      "knowledgeDistillMessage": "Revise as sessões de hoje e recentes. Salve apenas conhecimento durável no Knowledge: decisões de arquitetura, correções confirmadas, regras/preferências do projeto e APIs ou configurações importantes. Ignore notícias diárias, snapshots pontuais e conversa casual. Siga a skill knowledge-distiller: pesquise primeiro no Knowledge para evitar duplicatas, registre resumos autônomos concisos com poucas entidades/relações de alto valor, marque com distilled e deixe auto_extract desligado. Não promova cabeçalhos de seção, datas ISO ou acrônimos curtos a entidades.",
       "pcAuditTitle": "Auditoria diária de integridade e segurança do PC",
       "pcAuditDesc": "Verifica espaço em disco, alterações do Git não confirmadas, processos suspeitos e vulnerabilidades de pacotes toda meia-noite.",
       "pcAuditName": "Auditoria diária de integridade e segurança do PC",
@@ -1791,6 +1798,12 @@
         "5": "Sexta-feira",
         "6": "Sábado"
       }
+    },
+    "setupKnowledgeDistill": {
+      "created": "Tarefa noturna de destilação criada.",
+      "updated": "Tarefa noturna de destilação atualizada.",
+      "failed": "Não foi possível criar a tarefa agendada.",
+      "noAssistant": "Crie um assistente primeiro e tente novamente."
     }
   },
   "mentions": {
@@ -1951,6 +1964,17 @@
         "body": "Em Configurações → AI & Models, ajuste Thinking Effort para respostas mais rápidas ou mais profundas.",
         "cta": "Abrir AI & Models"
       },
+      "regenerateLastTurn": {
+        "title": "Regenerar a última resposta",
+        "body": "Num chat concluído, abra as ações da última mensagem do assistente e escolha Regenerate para descartar esse turno e tentar de novo a partir da sua última mensagem.",
+        "cta": "Abrir chat"
+      },
+      "knowledgeDistillSchedule": {
+        "title": "Agende destilação de conhecimento durável",
+        "body": "Crie uma tarefa noturna que salve no Knowledge decisões e correções duráveis — não notícias do dia.",
+        "cta": "Criar tarefa de destilação noturna"
+      },
+
       "knowledgeGraph": {
         "title": "Explore o grafo de conhecimento",
         "body": "Em Knowledge, veja em rede os conceitos acumulados pelo agente.",

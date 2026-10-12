@@ -62,8 +62,18 @@ pub fn get_embedding_model() -> Result<&'static Mutex<TextEmbedding>> {
     })
 }
 
-/// Generate an embedding for a single text chunk.
-pub fn generate_embedding(text: &str) -> Result<Vec<f32>> {
+/// Generate an embedding for a single text chunk on a blocking thread pool.
+///
+/// ONNX / fastembed inference is CPU-bound and holds a sync mutex; run it off
+/// the Tokio worker so other async I/O in the session is not stalled.
+pub async fn generate_embedding(text: &str) -> Result<Vec<f32>> {
+    let text = text.to_owned();
+    tokio::task::spawn_blocking(move || generate_embedding_blocking(&text))
+        .await
+        .map_err(|error| anyhow!("Embedding task join error: {}", error))?
+}
+
+fn generate_embedding_blocking(text: &str) -> Result<Vec<f32>> {
     let model_mutex = get_embedding_model()?;
     let mut model = model_mutex
         .lock()

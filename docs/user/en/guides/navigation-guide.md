@@ -1,5 +1,6 @@
 ---
 title: Navigation Guide
+description: "Map LibrAgent UI areas — Chat, History, Knowledge, Scheduled Tasks — and how to move between them."
 ---
 
 # UI Navigation Guide

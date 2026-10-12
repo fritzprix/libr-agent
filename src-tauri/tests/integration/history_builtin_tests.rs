@@ -2,7 +2,7 @@ use crate::common;
 
 use sea_orm::{ConnectOptions, Database};
 use sea_orm_migration::MigratorTrait;
-use serde_json::json;
+use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri_mcp_agent_lib::agent::ExecutionMode;
@@ -349,6 +349,10 @@ fn history_tool_schemas_expose_runtime_defaults() {
     };
     assert_eq!(read_session_properties["page"].default, Some(json!(1)));
     assert_eq!(read_session_properties["pageSize"].default, Some(json!(50)));
+    assert_eq!(
+        read_session_properties["order"].default,
+        Some(json!("desc"))
+    );
 
     let read_message_properties = match &read_message_tool.input_schema.schema_type {
         JSONSchemaType::Object {
@@ -359,7 +363,7 @@ fn history_tool_schemas_expose_runtime_defaults() {
     };
     assert_eq!(
         read_message_properties["maxChars"].default,
-        Some(json!(3000))
+        Some(json!(50000))
     );
 
     let search_properties = match &search_tool.input_schema.schema_type {
@@ -417,6 +421,7 @@ async fn history_read_session_and_message_are_paginated() {
         .await
         .expect("server should initialize");
 
+    // Default order is desc (newest first).
     let read_session = server
         .call_tool(
             "readSession",
@@ -434,9 +439,46 @@ async fn history_read_session_and_message_are_paginated() {
         .structured_content
         .expect("structured content expected");
     assert_eq!(structured["session"]["sessionId"], "history-session-a");
+    assert_eq!(structured["order"], "desc");
     assert_eq!(structured["messages"]["items"].as_array().unwrap().len(), 2);
     assert_eq!(structured["messages"]["totalItems"], 4);
+    assert_eq!(structured["messages"]["totalPages"], 2);
+    assert_eq!(
+        structured["messages"]["items"][0]["messageId"],
+        "history-message-large"
+    );
+    assert_eq!(
+        structured["messages"]["items"][1]["messageId"],
+        "history-message-unicode"
+    );
 
+    let read_session_asc = server
+        .call_tool(
+            "readSession",
+            json!({
+                "sessionId": "history-session-a",
+                "page": 1,
+                "pageSize": 2,
+                "order": "asc"
+            }),
+            None,
+        )
+        .await
+        .expect("readSession asc should succeed");
+    let structured_asc = read_session_asc
+        .structured_content
+        .expect("structured content expected");
+    assert_eq!(structured_asc["order"], "asc");
+    assert_eq!(
+        structured_asc["messages"]["items"][0]["messageId"],
+        "history-message-a1"
+    );
+    assert_eq!(
+        structured_asc["messages"]["items"][1]["messageId"],
+        "history-message-a2"
+    );
+
+    // maxChars above content length returns the full body in one call.
     let read_message = server
         .call_tool(
             "readMessage",
@@ -453,13 +495,192 @@ async fn history_read_session_and_message_are_paginated() {
     let structured = read_message
         .structured_content
         .expect("structured content expected");
-    assert_eq!(structured["chunkLength"], 3000);
-    assert_eq!(structured["hasMore"], true);
-    assert_eq!(structured["nextOffset"], 3000);
+    assert_eq!(structured["chunkLength"], 3500);
+    assert_eq!(structured["hasMore"], false);
+    assert_eq!(structured["nextOffset"], Value::Null);
     assert_eq!(
         structured["contentChunk"].as_str().expect("chunk text"),
-        "L".repeat(3000)
+        "L".repeat(3500)
     );
+
+    // Explicit smaller maxChars still paginates.
+    let read_message_chunked = server
+        .call_tool(
+            "readMessage",
+            json!({
+                "messageId": "history-message-large",
+                "offsetChars": 0,
+                "maxChars": 3000
+            }),
+            None,
+        )
+        .await
+        .expect("chunked readMessage should succeed");
+    let structured_chunked = read_message_chunked
+        .structured_content
+        .expect("structured content expected");
+    assert_eq!(structured_chunked["chunkLength"], 3000);
+    assert_eq!(structured_chunked["hasMore"], true);
+    assert_eq!(structured_chunked["nextOffset"], 3000);
+}
+
+#[tokio::test]
+async fn history_read_session_order_is_case_insensitive_and_rejects_invalid() {
+    let _guard = TEST_GUARD.lock().await;
+    let db = seed_history_fixture().await;
+    let server = HistoryServer::new("history-session-a".to_string(), db)
+        .await
+        .expect("server should initialize");
+
+    let upper = server
+        .call_tool(
+            "readSession",
+            json!({
+                "sessionId": "history-session-a",
+                "page": 1,
+                "pageSize": 1,
+                "order": "DESC"
+            }),
+            None,
+        )
+        .await
+        .expect("uppercase DESC should succeed");
+    assert_eq!(upper.is_error, Some(false));
+    let structured = upper
+        .structured_content
+        .expect("structured content expected");
+    assert_eq!(structured["order"], "desc");
+    assert_eq!(
+        structured["messages"]["items"][0]["messageId"],
+        "history-message-large"
+    );
+
+    let invalid = server
+        .call_tool(
+            "readSession",
+            json!({
+                "sessionId": "history-session-a",
+                "order": "sideways"
+            }),
+            None,
+        )
+        .await
+        .expect("invalid order should return MCP error result");
+    assert_eq!(invalid.is_error, Some(true));
+    let text = extract_text_content(&invalid);
+    assert!(text.contains("Invalid order"));
+    assert!(text.contains("sideways"));
+}
+
+#[tokio::test]
+async fn history_read_message_clamps_max_chars_above_cap() {
+    let _guard = TEST_GUARD.lock().await;
+    let db = seed_history_fixture().await;
+    let session_repo = SqliteSessionRepository::new((*db).clone());
+    let message_repo = SqliteMessageRepository::new((*db).clone());
+
+    // Isolated session so shared fixture message counts stay stable.
+    session_repo
+        .upsert_session(&SessionMetadata {
+            id: "history-session-oversized".to_string(),
+            name: Some("Oversized Clamp Session".to_string()),
+            status: SessionStatus::Idle,
+            model: "gpt-4.1".to_string(),
+            provider: "openai".to_string(),
+            assistant_id: Some("agent-alpha".to_string()),
+            parent_session_id: None,
+            lineage_id: Some("lineage-oversized".to_string()),
+            depth: Some(0),
+            max_depth: None,
+            max_fanout: None,
+            org_id: None,
+            org_name: None,
+            org_root_session_id: None,
+            created_at: 1_700_002_000_000,
+            updated_at: 1_700_002_100_000,
+            last_viewed_at: None,
+            last_message_at: Some(1_700_002_120_000),
+            last_attention_at: None,
+            last_attention_reason: None,
+            is_bookmarked: false,
+            execution_mode: ExecutionMode::Normal,
+            workspace_override: None,
+            workspace_isolation:
+                tauri_mcp_agent_lib::models::workspace_isolation::WorkspaceIsolationMode::Host,
+            docker_config: None,
+            docker_container_name: None,
+            docker_host_workspace_path: None,
+        })
+        .await
+        .expect("oversized session should upsert");
+
+    let oversized = "X".repeat(51_000);
+    message_repo
+        .insert(&Message {
+            id: "history-message-oversized".to_string(),
+            session_id: "history-session-oversized".to_string(),
+            role: "assistant".to_string(),
+            content: vec![MCPContent::Text { text: oversized }],
+            tool_calls: None,
+            tool_call_id: None,
+            is_streaming: None,
+            thinking: None,
+            thinking_signature: None,
+            assistant_id: Some("agent-alpha".to_string()),
+            attachments: None,
+            tool_use: None,
+            usage: None,
+            prompt_tokens: None,
+            created_at: 1_700_002_120_000,
+            updated_at: 1_700_002_120_000,
+            source: None,
+            error: None,
+            metadata: None,
+        })
+        .await
+        .expect("oversized message should insert");
+
+    let server = HistoryServer::new("history-session-oversized".to_string(), db)
+        .await
+        .expect("server should initialize");
+
+    let result = server
+        .call_tool(
+            "readMessage",
+            json!({
+                "messageId": "history-message-oversized",
+                "offsetChars": 0,
+                "maxChars": 100_000
+            }),
+            None,
+        )
+        .await
+        .expect("readMessage should succeed");
+
+    let structured = result
+        .structured_content
+        .expect("structured content expected");
+    assert_eq!(structured["totalChars"], 51_000);
+    assert_eq!(structured["chunkLength"], 50_000);
+    assert_eq!(structured["hasMore"], true);
+    assert_eq!(structured["nextOffset"], 50_000);
+    assert_eq!(
+        structured["contentChunk"]
+            .as_str()
+            .expect("chunk text")
+            .chars()
+            .count(),
+        50_000
+    );
+
+    message_repo
+        .delete_by_id("history-message-oversized")
+        .await
+        .expect("cleanup oversized message");
+    session_repo
+        .delete_session("history-session-oversized")
+        .await
+        .expect("cleanup oversized session");
 }
 
 #[tokio::test]
@@ -637,7 +858,8 @@ async fn history_read_responses_keep_follow_up_ids_in_text() {
             json!({
                 "sessionId": "history-session-a",
                 "page": 1,
-                "pageSize": 2
+                "pageSize": 2,
+                "order": "asc"
             }),
             None,
         )
@@ -647,6 +869,7 @@ async fn history_read_responses_keep_follow_up_ids_in_text() {
     assert!(read_session_text.contains("history-session-a"));
     assert!(read_session_text.contains("history-message-a1"));
     assert!(read_session_text.contains("history-message-a2"));
+    assert!(read_session_text.contains("totalPages=2"));
     assert!(read_session_text.contains("Use history__readMessage(messageId=\"...\")"));
 
     let read_message = server

@@ -18,7 +18,28 @@ export interface StarterTaskTemplate {
   preferredAssistantName: string;
 }
 
+const KNOWLEDGE_DISTILL_MESSAGE =
+  "Review today's and recent sessions. Save only durable knowledge to Knowledge: architecture decisions, confirmed bug fixes, project rules/preferences, and important APIs or settings. Skip daily news, one-off snapshots, and chit-chat. Follow the knowledge-distiller skill: search Knowledge first to avoid duplicates, record concise stand-alone summaries with a few high-value entities/relationships, tag with distilled, and leave auto_extract off. Do not promote section headers, ISO dates, or short acronyms as entities.";
+
 export const STARTER_TASK_TEMPLATES: StarterTaskTemplate[] = [
+  {
+    id: 'knowledge-distill',
+    titleKey: 'scheduledTasks.starterTemplates.knowledgeDistillTitle',
+    defaultTitle: 'Daily durable knowledge distillation',
+    descKey: 'scheduledTasks.starterTemplates.knowledgeDistillDesc',
+    defaultDesc:
+      'Every evening, distill lasting decisions and fixes from recent sessions into Knowledge — not daily news or temporary notes.',
+    nameKey: 'scheduledTasks.starterTemplates.knowledgeDistillName',
+    defaultName: 'Daily durable knowledge distillation',
+    name: 'Daily durable knowledge distillation',
+    cronExpression: '0 21 * * *',
+    executionMode: 'yolo',
+    messageKey: 'scheduledTasks.starterTemplates.knowledgeDistillMessage',
+    defaultMessage: KNOWLEDGE_DISTILL_MESSAGE,
+    message: KNOWLEDGE_DISTILL_MESSAGE,
+    resetPlanningState: true,
+    preferredAssistantName: 'Libr Assistant',
+  },
   {
     id: 'pc-health-audit',
     titleKey: 'scheduledTasks.starterTemplates.pcAuditTitle',

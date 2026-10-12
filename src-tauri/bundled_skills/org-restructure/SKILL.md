@@ -23,7 +23,7 @@ Do not edit repo-root copies unless the user explicitly wants repo pollution.
 ## Workflow
 
 1. **Confirm this is restructure, not bootstrap.**
-   - `.libragent/teamwork.json` must exist with `executionSubstrate.mode: "org"` and `orgLineage.intended: true`.
+   - `.libragent/teamwork.json` must exist with `executionSubstrate.mode: "org"` and `executionSubstrate.orgLineage.intended: true`.
    - An `orgId` must already be set (from `agent__createOrg` or manifest).
    - If not, stop and use `teamwork` then `org`.
 2. **Run pre-flight audit** — see [impact-analysis.md](references/impact-analysis.md).
@@ -47,7 +47,7 @@ Do not edit repo-root copies unless the user explicitly wants repo pollution.
 1. **ROLES.md is the role contract; MISSION.md must stay in sync** when roles change. Update both in the same change set.
 2. **Record every structural change** in `@teamwork/coordination/DECISIONS.md` before or alongside file edits.
 3. **Reassign before you delete.** Move KANBAN owners and HANDOFF targets off a removed role before layoff or merge.
-4. **Prefer org root for coordination.** Resume or message the root (`orgLineage.rootSessionId`) to broadcast constitution refresh.
+4. **Prefer org root for coordination.** Resume or message the root (`executionSubstrate.orgLineage.rootSessionId`) to broadcast constitution refresh.
 5. **Do not call `agent__createOrg` again.** Restructure edits files and sessions; it does not recreate org identity.
 6. **Refresh semantics:** after `agents.md` / `ROLES.md` edits, tell active members the new rules apply on their next execution step.
 

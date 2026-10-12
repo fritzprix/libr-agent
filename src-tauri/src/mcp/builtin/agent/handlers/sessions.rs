@@ -11,7 +11,8 @@ use crate::mcp::builtin::error_guidance::{
 };
 use crate::mcp::types::MCPResult;
 use crate::models::chat::MessageSource;
-use crate::repositories::{AssistantRepository, SessionRepository, SessionStatus};
+use crate::models::workspace_isolation::{DockerWorkspaceConfig, WorkspaceIsolationMode};
+use crate::repositories::{AssistantRepository, SessionMetadata, SessionRepository, SessionStatus};
 
 use super::super::AgentServer;
 use super::check_session::check_session;
@@ -21,6 +22,60 @@ use super::enrichment::{
     resolve_check_session_enrichment, WorkspaceRelation,
 };
 use super::shared::caller_session_not_found_result;
+
+/// Inherit Docker *attach* isolation from an org root for org children.
+///
+/// Org children already share the org-root host workspace path. Harbor trials
+/// attach the root to the trial container (`attachContainer` + workdir `/app`);
+/// without inheriting that attach config, children write only to the host
+/// staging dir while the verifier reads the container filesystem.
+///
+/// Managed (image-based) Docker is per-session and is not inherited — a second
+/// container would not share the root's filesystem.
+pub fn org_child_inherited_docker_workspace(
+    org_root: &SessionMetadata,
+) -> Option<(WorkspaceIsolationMode, DockerWorkspaceConfig)> {
+    if org_root.workspace_isolation != WorkspaceIsolationMode::Docker {
+        return None;
+    }
+    let config = org_root.docker_config.as_ref()?;
+    if !config.is_attach() {
+        return None;
+    }
+    let mut inherited = config.clone();
+    // Never let a child stop/remove a Harbor (or other external) attach target.
+    inherited.manage_lifecycle = Some(false);
+    Some((WorkspaceIsolationMode::Docker, inherited))
+}
+
+/// Tokens that mean "use the caller's effective workspace root" (not a literal path).
+pub fn is_inherit_workspace_override(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "current" | "." | "inherit"
+    )
+}
+
+/// Resolve the child workspace path for `agent__spawnSession`.
+///
+/// - `workspaceOverride` of `current` / `.` / `inherit` → caller's workspace
+/// - any other override string → used as the workspace path (absolute expected)
+/// - no override + org root → org root workspace (existing behavior)
+/// - no override + plain session → `None` (isolated child workspace)
+pub fn resolve_spawn_workspace_binding(
+    requested_override: Option<&str>,
+    caller_workspace: &std::path::Path,
+    org_root_workspace: Option<&std::path::Path>,
+) -> Option<std::path::PathBuf> {
+    if let Some(raw) = requested_override {
+        let trimmed = raw.trim();
+        if is_inherit_workspace_override(trimmed) {
+            return Some(caller_workspace.to_path_buf());
+        }
+        return Some(std::path::PathBuf::from(trimmed));
+    }
+    org_root_workspace.map(std::path::Path::to_path_buf)
+}
 
 /// Resolve display path + SHARED/ISOLATED for a newly spawned child session.
 fn resolve_spawned_workspace_signal(
@@ -152,21 +207,17 @@ async fn spawn_session_impl(
         .map(str::to_string);
     let workspace_override_set = requested_workspace_override.is_some();
 
-    let effective_workspace_path = if let Some(workspace_override) = requested_workspace_override {
-        Some(workspace_override)
-    } else if explicit_org.is_some() {
-        let (_, _, org_root_session_id) = explicit_org
-            .as_ref()
-            .ok_or_else(|| "Explicit org metadata missing after org validation".to_string())?;
-        Some(
-            crate::session::get_session_manager()?
-                .get_session_workspace_dir_by_id(org_root_session_id)
-                .to_string_lossy()
-                .to_string(),
-        )
-    } else {
-        None
-    };
+    let session_manager = crate::session::get_session_manager()?;
+    let caller_workspace = session_manager.get_session_workspace_dir_by_id(caller_session_id);
+    let org_root_workspace = explicit_org.as_ref().map(|(_, _, org_root_session_id)| {
+        session_manager.get_session_workspace_dir_by_id(org_root_session_id)
+    });
+    let effective_workspace_path = resolve_spawn_workspace_binding(
+        requested_workspace_override.as_deref(),
+        &caller_workspace,
+        org_root_workspace.as_deref(),
+    )
+    .map(|path| path.to_string_lossy().into_owned());
 
     // When complexity mapping has no override, omit model/provider so the
     // existing parent-inheritance → preferredModel chain stays zero-breaking.
@@ -184,6 +235,25 @@ async fn spawn_session_impl(
     if let Some(resolved) = resolved_model.as_ref() {
         body_json["model"] = Value::String(resolved.model.clone());
         body_json["provider"] = Value::String(resolved.provider.clone());
+    }
+
+    // Org children share the org-root host workspace; also inherit Docker attach
+    // so Harbor attach trials write into the same container FS as the root.
+    if let Some((_, _, org_root_session_id)) = explicit_org.as_ref() {
+        let org_root_session = if caller_session.id == *org_root_session_id {
+            Some(caller_session.clone())
+        } else {
+            manager.get_session(org_root_session_id).await?
+        };
+        if let Some((mode, docker_config)) = org_root_session
+            .as_ref()
+            .and_then(org_child_inherited_docker_workspace)
+        {
+            body_json["workspaceIsolation"] = serde_json::to_value(mode)
+                .map_err(|e| format!("Failed to serialize inherited workspaceIsolation: {e}"))?;
+            body_json["dockerConfig"] = serde_json::to_value(docker_config)
+                .map_err(|e| format!("Failed to serialize inherited dockerConfig: {e}"))?;
+        }
     }
 
     let body: crate::agent::types::CreateSessionRequest = serde_json::from_value(body_json)

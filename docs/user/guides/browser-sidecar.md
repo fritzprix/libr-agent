@@ -1,5 +1,6 @@
 ---
 title: 브라우저 자동화 (Browser Sidecar)
+description: "에이전트 브라우저(Sidecar)와 일상 Chrome(userChrome) 설정·프로필·자동화 사용법을 안내합니다."
 ---
 
 # 브라우저 자동화 (Browser Sidecar)

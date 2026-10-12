@@ -78,6 +78,13 @@ pub enum AgentEvent {
         message: Box<Message>,
     },
 
+    /// Messages removed from session transcript (e.g. regenerate last turn)
+    #[serde(rename_all = "camelCase")]
+    MessagesRemoved {
+        session_id: String,
+        message_ids: Vec<String>,
+    },
+
     /// Tool execution started
     #[serde(rename_all = "camelCase")]
     ToolExecutionStarted {
@@ -230,6 +237,14 @@ pub(crate) fn summarize_agent_event(event: &AgentEvent) -> String {
                 media_items
             )
         }
+        AgentEvent::MessagesRemoved {
+            session_id,
+            message_ids,
+        } => format!(
+            "MessagesRemoved(session={}, count={})",
+            session_id,
+            message_ids.len()
+        ),
         AgentEvent::ToolExecutionStarted {
             session_id,
             tool_name,

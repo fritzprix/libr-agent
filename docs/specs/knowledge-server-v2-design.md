@@ -62,17 +62,17 @@ LibrAgent의 기존 DB 프레임워크인 `SeaORM`과 다음과 같이 연동합
 - `tags` (string[]): 카테고리 태그.
 - `entities` (object[]): 에이전트가 이미 추론한 엔티티 목록. 각 항목은 `name`(req), `entity_type`(opt), `description`(opt)를 가집니다.
 - `relationships` (object[]): 에이전트가 이미 추론한 관계 목록. 각 항목은 `source`(req), `target`(req), `relation_type`(req)를 가집니다.
-- `auto_extract` (boolean): `entities`/`relationships`가 비어 있거나 일부 누락되었을 때만 로컬 heuristic 추출을 수행할지 여부. 기본값은 `true`.
+- `auto_extract` (boolean): `entities`/`relationships`가 비어 있거나 일부 누락되었을 때 로컬 heuristic 추출을 수행할지 여부. 기본값은 `false` (명시적 opt-in).
+- `tags`는 청크 메타데이터(검색용)이며, heuristic이 켜져도 태그 문자열을 그래프 `Tag` 엔티티로 승격하지 않습니다.
 
 #### 설계 원칙: LLM-First, Heuristic-Fallback
 
 - `record_knowledge`의 **주 경로(primary path)** 는 에이전트가 직접 구조화한 `entities`와 `relationships`를 서버에 전달하는 방식입니다.
 - Knowledge 서버의 역할은 재추론이 아니라 **검증(validation), 정규화(normalization), 영속화(persistence)** 입니다.
-- 로컬 heuristic 추출은 다음 경우에만 **보조 경로(fallback)** 로 동작합니다:
-  - 구버전 클라이언트가 `content`만 전달하는 경우
-  - 에이전트가 구조화 필드를 생략한 경우
-  - 비-LLM 수집 경로(import/script/sync job)에서 최소한의 그래프 보강이 필요한 경우
-- 즉, heuristic은 품질의 중심이 아니라 **하위 호환성과 누락 복구 장치**입니다.
+- 로컬 heuristic 추출은 호출자가 `auto_extract=true`를 명시한 경우에만 **보조 경로(fallback)** 로 동작합니다:
+  - 에이전트가 구조화 필드를 의도적으로 생략하고 heuristic 보강을 원할 때
+  - 비-LLM 수집 경로(import/script/sync job)에서 최소한의 그래프 보강이 필요할 때
+- content-only / tags-only 기록은 기본적으로 그래프를 만들지 않습니다. heuristic은 품질의 중심이 아니라 **명시적 누락 복구 장치**입니다.
 
 ### 4.2. `search_knowledge` (하이브리드 검색)
 

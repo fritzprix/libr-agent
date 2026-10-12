@@ -55,21 +55,29 @@ async fn run_semantic_search(
     query_embedding: Vec<f32>,
     limit: u64,
 ) -> Result<Vec<sea_orm::QueryResult>, DbError> {
+    // Assistant-scoped brute-force KNN via vec_distance_L2.
+    //
+    // Do NOT use `v.embedding MATCH ? AND k = ?` joined with
+    // `c.assistant_id = ?`: sqlite-vec computes global top-k first, so other
+    // assistants' nearer vectors can starve the requested assistant (#2060 P3).
+    // Local desktop corpora are small enough that per-assistant L2 ranking is
+    // the correct, deterministic contract.
     let semantic_sql = r#"
         SELECT
             c.id, c.assistant_id, c.content, c.tags, c.source, c.created_at,
-            v.distance
+            vec_distance_L2(v.embedding, ?) AS distance
         FROM knowledge_chunks_v2 c
         JOIN knowledge_vectors v ON c.id = v.rowid
-        WHERE c.assistant_id = ? AND v.embedding MATCH ? AND k = ?
-        ORDER BY v.distance
+        WHERE c.assistant_id = ?
+        ORDER BY distance
+        LIMIT ?
     "#;
 
     let query_bytes = embedding_bytes(&query_embedding);
     db.query_all(Statement::from_sql_and_values(
         db.get_database_backend(),
         semantic_sql,
-        [assistant_id.into(), query_bytes.into(), limit.into()],
+        [query_bytes.into(), assistant_id.into(), limit.into()],
     ))
     .await
     .map_err(DbError::SeaOrmQueryFailed)

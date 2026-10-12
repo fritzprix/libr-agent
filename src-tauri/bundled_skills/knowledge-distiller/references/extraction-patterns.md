@@ -24,10 +24,11 @@ Before `knowledge__recordKnowledge`:
 
 ```markdown
 - **content**: Stand-alone paragraph (no "as discussed")
-- **entities**: [{ name, type }]
-- **relationships**: [{ from, to, type }]
+- **entities**: [{ name, entity_type, description? }]
+- **relationships**: [{ source, target, relation_type }]
 - **source**: sessionId + date
-- **tags**: distilled, <domain>
+- **tags**: distilled, <domain>  (retrieval only; not graph nodes)
+- **auto_extract**: false (default)
 ```
 
 ## Session scope shortcuts

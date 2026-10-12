@@ -1,5 +1,6 @@
 ---
 title: Scheduled Tasks Reference
+description: "Schedule assistant sessions with cron or interval-based Scheduled Tasks in LibrAgent."
 ---
 
 # Scheduled Tasks Reference

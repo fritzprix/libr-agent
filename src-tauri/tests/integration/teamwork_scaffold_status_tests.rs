@@ -91,6 +91,102 @@ fn inspect_teamwork_scaffold_accepts_complete_org_workspace() {
 }
 
 #[test]
+fn inspect_teamwork_scaffold_accepts_top_level_org_lineage_intended_alias() {
+    common::register_sqlite_vec();
+    let temp_dir = tempfile::tempdir().expect("temp dir should create");
+    let workspace = temp_dir.path();
+
+    write_file(&workspace.join("agents.md"), "# agents");
+    write_file(&workspace.join("MISSION.md"), "# mission");
+    write_file(&workspace.join("ROLES.md"), "# roles");
+    write_file(
+        &workspace.join("coordination").join("KANBAN.md"),
+        "# kanban",
+    );
+    write_file(
+        &workspace.join("coordination").join("HANDOFF.md"),
+        "# handoff",
+    );
+    write_file(
+        &workspace.join("coordination").join("DECISIONS.md"),
+        "# decisions",
+    );
+    write_file(&workspace.join("coordination").join("RISKS.md"), "# risks");
+    write_file(
+        &workspace.join("coordination").join("DISCUSSION.md"),
+        "# discussion",
+    );
+    // Skill/tool text often teaches sibling orgLineage; accept as alias.
+    write_file(
+        &workspace.join(".libragent").join("teamwork.json"),
+        &serde_json::to_string_pretty(&json!({
+            "executionSubstrate": {
+                "mode": "org"
+            },
+            "orgLineage": { "intended": true }
+        }))
+        .expect("manifest should serialize"),
+    );
+
+    let status = inspect_teamwork_scaffold(workspace);
+
+    assert!(status.missing_files.is_empty());
+    assert_eq!(status.execution_substrate_mode.as_deref(), Some("org"));
+    assert_eq!(status.org_lineage_intended, Some(true));
+    assert!(
+        status.is_ready_for_explicit_org(),
+        "top-level orgLineage.intended must satisfy createOrg preflight"
+    );
+}
+
+#[test]
+fn inspect_teamwork_scaffold_nested_org_lineage_intended_wins_over_top_level() {
+    common::register_sqlite_vec();
+    let temp_dir = tempfile::tempdir().expect("temp dir should create");
+    let workspace = temp_dir.path();
+
+    write_file(&workspace.join("agents.md"), "# agents");
+    write_file(&workspace.join("MISSION.md"), "# mission");
+    write_file(&workspace.join("ROLES.md"), "# roles");
+    write_file(
+        &workspace.join("coordination").join("KANBAN.md"),
+        "# kanban",
+    );
+    write_file(
+        &workspace.join("coordination").join("HANDOFF.md"),
+        "# handoff",
+    );
+    write_file(
+        &workspace.join("coordination").join("DECISIONS.md"),
+        "# decisions",
+    );
+    write_file(&workspace.join("coordination").join("RISKS.md"), "# risks");
+    write_file(
+        &workspace.join("coordination").join("DISCUSSION.md"),
+        "# discussion",
+    );
+    write_file(
+        &workspace.join(".libragent").join("teamwork.json"),
+        &serde_json::to_string_pretty(&json!({
+            "executionSubstrate": {
+                "mode": "org",
+                "orgLineage": { "intended": false }
+            },
+            "orgLineage": { "intended": true }
+        }))
+        .expect("manifest should serialize"),
+    );
+
+    let status = inspect_teamwork_scaffold(workspace);
+
+    assert_eq!(status.org_lineage_intended, Some(false));
+    assert!(
+        !status.is_ready_for_explicit_org(),
+        "nested executionSubstrate.orgLineage.intended is canonical when present"
+    );
+}
+
+#[test]
 fn inspect_teamwork_scaffold_flags_manifest_substrate_mismatch() {
     common::register_sqlite_vec();
     let temp_dir = tempfile::tempdir().expect("temp dir should create");

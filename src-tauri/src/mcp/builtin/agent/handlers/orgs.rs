@@ -5,6 +5,7 @@ use std::path::Path;
 use super::super::utils::{build_agent_tool_data, read_required_string};
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHint, ToolGroup};
 use crate::mcp::types::MCPResult;
+use crate::models::workspace_isolation::WorkspaceIsolationMode;
 use crate::repositories::{session_repository::SessionRepository, SessionMetadata};
 
 use super::super::AgentServer;
@@ -12,6 +13,29 @@ use super::shared::{
     caller_session_not_found_result, invalid_explicit_org_result, missing_explicit_org_result,
     read_optional_string,
 };
+
+/// Primary scaffold recipe: `workspace__writeFile` under `@teamwork/`.
+///
+/// Harbor docker-attach shells cannot see host skill paths such as
+/// `@system-skills/.../init_task_force.py`, so writeFile is the portable default.
+pub fn teamwork_scaffold_writefile_guidance() -> String {
+    "Scaffold or repair with workspace__writeFile under @teamwork/: agents.md, MISSION.md, ROLES.md, coordination/KANBAN.md, coordination/HANDOFF.md, coordination/DECISIONS.md, coordination/RISKS.md, coordination/DISCUSSION.md, and @teamwork/.libragent/teamwork.json with executionSubstrate.mode=\"org\" and executionSubstrate.orgLineage.intended=true. Do not call workspace__runShell on @system-skills/.../init_task_force.py — that skill path is not visible inside Docker attach workspaces."
+        .to_string()
+}
+
+/// Optional host-only script path. Omitted for Docker sessions (attach or managed)
+/// where `workspace__runShell` cannot reach host skill scripts.
+pub fn teamwork_scaffold_optional_host_script_guidance(
+    isolation: WorkspaceIsolationMode,
+) -> Option<String> {
+    if isolation != WorkspaceIsolationMode::Host {
+        return None;
+    }
+    Some(
+        "Optional on host sessions only: the teamwork skill script scripts/init_task_force.py can write the same set when invoked with --output set to the prepareTeamworkWorkspace artifactPath (host filesystem, not a container shell)."
+            .to_string(),
+    )
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct TeamworkScaffoldStatus {
@@ -87,6 +111,89 @@ impl TeamworkScaffoldStatus {
     }
 }
 
+/// Canonical: `executionSubstrate.orgLineage.intended`.
+/// Alias: top-level `orgLineage.intended` (common when skill/tool text omits nesting).
+fn read_org_lineage_intended(manifest: &Value) -> Option<bool> {
+    manifest
+        .get("executionSubstrate")
+        .and_then(|value| value.get("orgLineage"))
+        .and_then(|value| value.get("intended"))
+        .and_then(Value::as_bool)
+        .or_else(|| {
+            manifest
+                .get("orgLineage")
+                .and_then(|value| value.get("intended"))
+                .and_then(Value::as_bool)
+        })
+}
+
+fn insert_org_identity_fields(
+    org_obj: &mut serde_json::Map<String, Value>,
+    org_id: &str,
+    org_name: &str,
+    org_root_session_id: &str,
+) {
+    org_obj.insert("orgId".to_string(), Value::String(org_id.to_string()));
+    org_obj.insert("orgName".to_string(), Value::String(org_name.to_string()));
+    org_obj.insert(
+        "rootSessionId".to_string(),
+        Value::String(org_root_session_id.to_string()),
+    );
+    org_obj.insert(
+        "rootAction".to_string(),
+        Value::String("agent__createOrg".to_string()),
+    );
+}
+
+/// Stamp org identity into canonical `executionSubstrate.orgLineage`.
+///
+/// Sibling-alias manifests often omit the nested object; create it (preserving
+/// `intended` from the alias) so createOrg does not silently skip the write.
+/// When top-level `orgLineage` exists, mirror the same identity fields there.
+pub fn stamp_org_identity_into_manifest(
+    manifest: &mut Value,
+    org_id: &str,
+    org_name: &str,
+    org_root_session_id: &str,
+) -> bool {
+    let intended = read_org_lineage_intended(manifest).unwrap_or(true);
+
+    let stamped_nested = {
+        let Some(execution_substrate) = manifest.get_mut("executionSubstrate") else {
+            return false;
+        };
+        let Some(substrate_obj) = execution_substrate.as_object_mut() else {
+            return false;
+        };
+
+        let needs_seed = !substrate_obj
+            .get("orgLineage")
+            .and_then(Value::as_object)
+            .is_some();
+        if needs_seed {
+            substrate_obj.insert("orgLineage".to_string(), json!({ "intended": intended }));
+        }
+
+        let Some(org_obj) = substrate_obj
+            .get_mut("orgLineage")
+            .and_then(Value::as_object_mut)
+        else {
+            return false;
+        };
+        insert_org_identity_fields(org_obj, org_id, org_name, org_root_session_id);
+        true
+    };
+
+    if let Some(top_level) = manifest
+        .get_mut("orgLineage")
+        .and_then(Value::as_object_mut)
+    {
+        insert_org_identity_fields(top_level, org_id, org_name, org_root_session_id);
+    }
+
+    stamped_nested
+}
+
 pub fn inspect_teamwork_scaffold(workspace_path: &Path) -> TeamworkScaffoldStatus {
     const REQUIRED_FILES: &[&str] = &[
         "agents.md",
@@ -126,11 +233,7 @@ pub fn inspect_teamwork_scaffold(workspace_path: &Path) -> TeamworkScaffoldStatu
                         .and_then(|value| value.get("mode"))
                         .and_then(Value::as_str)
                         .map(str::to_string);
-                    org_lineage_intended = manifest
-                        .get("executionSubstrate")
-                        .and_then(|value| value.get("orgLineage"))
-                        .and_then(|value| value.get("intended"))
-                        .and_then(Value::as_bool);
+                    org_lineage_intended = read_org_lineage_intended(&manifest);
                 }
                 Err(error) => manifest_parse_error = Some(error.to_string()),
             },
@@ -174,10 +277,7 @@ pub fn create_org_scaffold_preflight(scaffold: &TeamworkScaffoldStatus) -> Resul
         "If @teamwork/ has not been prepared yet, call agent__prepareTeamworkWorkspace() from the root session first."
             .to_string(),
     );
-    guidance.push(
-        "Use the teamwork skill or init_task_force.py to create or repair the required scaffold artifacts under @teamwork/."
-            .to_string(),
-    );
+    guidance.push(teamwork_scaffold_writefile_guidance());
     guidance.push(
         "After the scaffold exists and @teamwork/.libragent/teamwork.json declares executionSubstrate.mode=\"org\" plus executionSubstrate.orgLineage.intended=true, call agent__createOrg(name=\"...\") again."
             .to_string(),
@@ -207,9 +307,8 @@ fn create_org_next_actions(org_id: &str, include_builder_guidance: bool) -> Vec<
 
     if include_builder_guidance {
         next_actions.push(json!({
-            "actionType": "skill",
-            "toolName": "teamwork",
-            "reason": "Scaffold or repair the teamwork artifact set for this org."
+            "toolName": "workspace__writeFile",
+            "reason": "Scaffold or repair missing @teamwork/ files (writeFile under @teamwork/, not shell+init_task_force.py)."
         }));
     }
 
@@ -221,10 +320,7 @@ fn create_org_hint_lines(scaffold: &TeamworkScaffoldStatus) -> Vec<String> {
 
     if !scaffold.is_ready_for_explicit_org() {
         lines.extend(scaffold.guidance_lines());
-        lines.push(
-            "Use the teamwork skill next to scaffold or repair the teamwork artifact set for this org."
-                .to_string(),
-        );
+        lines.push(teamwork_scaffold_writefile_guidance());
     }
 
     lines
@@ -334,31 +430,27 @@ pub async fn create_org(
     if manifest_path.exists() {
         if let Ok(content) = std::fs::read_to_string(&manifest_path) {
             if let Ok(mut manifest) = serde_json::from_str::<Value>(&content) {
-                if let Some(execution_substrate) = manifest.get_mut("executionSubstrate") {
-                    if let Some(org_lineage) = execution_substrate.get_mut("orgLineage") {
-                        if let Some(org_obj) = org_lineage.as_object_mut() {
-                            org_obj.insert("orgId".to_string(), Value::String(org_id.clone()));
-                            org_obj.insert("orgName".to_string(), Value::String(org_name.clone()));
-                            org_obj.insert(
-                                "rootSessionId".to_string(),
-                                Value::String(org_root_session_id.clone()),
-                            );
-                            org_obj.insert(
-                                "rootAction".to_string(),
-                                Value::String("agent__createOrg".to_string()),
+                if stamp_org_identity_into_manifest(
+                    &mut manifest,
+                    &org_id,
+                    &org_name,
+                    &org_root_session_id,
+                ) {
+                    if let Ok(pretty) = serde_json::to_string_pretty(&manifest) {
+                        if let Err(e) = std::fs::write(&manifest_path, pretty) {
+                            log::error!("Failed to write updated teamwork manifest: {}", e);
+                        } else {
+                            log::info!(
+                                "Successfully updated teamwork manifest at {}",
+                                manifest_path.display()
                             );
                         }
                     }
-                }
-                if let Ok(pretty) = serde_json::to_string_pretty(&manifest) {
-                    if let Err(e) = std::fs::write(&manifest_path, pretty) {
-                        log::error!("Failed to write updated teamwork manifest: {}", e);
-                    } else {
-                        log::info!(
-                            "Successfully updated teamwork manifest at {}",
-                            manifest_path.display()
-                        );
-                    }
+                } else {
+                    log::warn!(
+                        "Could not stamp org identity into teamwork manifest at {} (missing executionSubstrate object)",
+                        manifest_path.display()
+                    );
                 }
             }
         }

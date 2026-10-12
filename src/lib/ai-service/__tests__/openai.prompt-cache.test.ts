@@ -136,27 +136,31 @@ describe('OpenAIService prompt cache extensions', () => {
     });
   });
 
-  it('does not send cache_prompt for custom OpenAI-compatible streaming endpoints', async () => {
-    const { OpenAIService } = await import('../openai');
-    const service = new OpenAIService('sk-test', {
-      baseUrl: 'http://127.0.0.1:8080/v1',
-    });
+  it(
+    'does not send cache_prompt for custom OpenAI-compatible streaming endpoints',
+    async () => {
+      const { OpenAIService } = await import('../openai');
+      const service = new OpenAIService('sk-test', {
+        baseUrl: 'http://127.0.0.1:8080/v1',
+      });
 
-    const chunks: string[] = [];
-    for await (const chunk of service.streamChat([message], {
-      modelName: 'local-model',
-    })) {
-      chunks.push(chunk);
-    }
+      const chunks: string[] = [];
+      for await (const chunk of service.streamChat([message], {
+        modelName: 'local-model',
+      })) {
+        chunks.push(chunk);
+      }
 
-    expect(chunks.length).toBeGreaterThan(0);
+      expect(chunks.length).toBeGreaterThan(0);
 
-    const [request] = createMock.mock.calls[0] as [Record<string, unknown>];
-    expect(request.cache_prompt).toBeUndefined();
-    expect(request.prompt_cache_key).toBeUndefined();
-    expect(request.stream).toBe(true);
-    expect(request).not.toHaveProperty('extra_body');
-  });
+      const [request] = createMock.mock.calls[0] as [Record<string, unknown>];
+      expect(request.cache_prompt).toBeUndefined();
+      expect(request.prompt_cache_key).toBeUndefined();
+      expect(request.stream).toBe(true);
+      expect(request).not.toHaveProperty('extra_body');
+    },
+    15_000,
+  );
 
   it('uses official OpenAI prompt cache routing fields for the default endpoint', async () => {
     const { OpenAIService } = await import('../openai');

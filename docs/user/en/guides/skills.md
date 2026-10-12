@@ -1,5 +1,6 @@
 ---
 title: Skills Guide
+description: "Learn skill scopes, @skill invocation, the bundled skills catalog, and how to create and deploy custom skills."
 ---
 
 # Skills Guide
@@ -142,7 +143,9 @@ To learn about child sessions and multi-agent coordination patterns, refer to th
 
 ### Research and Documentation
 
-`deep-research`, `knowledge-distiller`, `to-md`, `docx`, `pptx`, `visualize`, `workspace-indexer`, `repo-wiki`, `soul-awakening`
+`deep-research`, `science-search`, `knowledge-distiller`, `to-md`, `docx`, `pptx`, `visualize`, `workspace-indexer`, `repo-wiki`, `soul-awakening`
+
+`science-search` — Search ~200 million scholarly papers (titles/abstracts), look up DOIs, find similar works, and walk citation graphs via the free ScienceMadeReadable API (no key).
 
 ### Development and Integrations
 
@@ -158,6 +161,7 @@ To learn about child sessions and multi-agent coordination patterns, refer to th
 | Turn procedures into skills | `@skill:skill-creator` → `@skill:skill-deployer` |
 | Orchestrate multi-agent teams | [Sub-Agents & Orchestration Guide](sub-agents.md) |
 | Recover lost session context | `@skill:context-recall` |
+| Find peer-reviewed papers / DOIs | `@skill:science-search` |
 | Email triage with browser fallback | `@skill:email-integration` |
 | Configure custom assistants | [Assistants Guide](assistants.md) |
 | Automate recurring tasks | [Playbooks Guide](playbooks.md) and [Automation Guide](automation.md) |
