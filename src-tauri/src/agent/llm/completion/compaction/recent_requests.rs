@@ -291,10 +291,7 @@ fn completion_criteria_bullets(
     }
 }
 
-fn active_request_bullets(
-    hints_active: &[String],
-    requests: &[RecentUserRequest],
-) -> Vec<String> {
+fn active_request_bullets(hints_active: &[String], requests: &[RecentUserRequest]) -> Vec<String> {
     if !hints_active.is_empty() {
         return hints_active.to_vec();
     }
@@ -339,11 +336,7 @@ pub fn ensure_must_and_intent_sections(
         body = strip_section(&body, TARGET_DELIVERABLE_HEADING);
         must_blocks.push(format_bullet_section(
             TARGET_DELIVERABLE_HEADING,
-            &target_deliverable_bullets(
-                &hints.active_request,
-                &requests,
-                hints.goal.as_deref(),
-            ),
+            &target_deliverable_bullets(&hints.active_request, &requests, hints.goal.as_deref()),
         ));
     }
 
@@ -356,11 +349,7 @@ pub fn ensure_must_and_intent_sections(
         body = strip_section(&body, COMPLETION_CRITERIA_HEADING);
         must_blocks.push(format_bullet_section(
             COMPLETION_CRITERIA_HEADING,
-            &completion_criteria_bullets(
-                &hints.active_request,
-                &requests,
-                hints.goal.as_deref(),
-            ),
+            &completion_criteria_bullets(&hints.active_request, &requests, hints.goal.as_deref()),
         ));
     }
 
@@ -471,7 +460,8 @@ mod tests {
     #[test]
     fn ensure_must_gap_fills_td_cc_and_preserves_non_empty_llm_td() {
         let messages = vec![external_user("u1", "Ship release notes")];
-        let summary = "### Target Deliverable\n- RELEASE.md published\n\n### Active Request\n- None";
+        let summary =
+            "### Target Deliverable\n- RELEASE.md published\n\n### Active Request\n- None";
         let planning = CompactionPlanningSeeds {
             goal: Some("Publish RELEASE.md".to_string()),
             todos: vec!["[ ] Draft notes".to_string()],

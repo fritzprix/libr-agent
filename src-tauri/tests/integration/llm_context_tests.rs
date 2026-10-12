@@ -9,7 +9,7 @@ use tauri_mcp_agent_lib::agent::llm::completion::{
     build_compact_summary_message_for_messages, build_compact_summary_text,
     build_compaction_preservation_hints, build_compaction_request_payload_for_testing,
     build_compaction_request_payload_with_planning_for_testing,
-    build_overflow_recovery_compaction_messages, CompactionPlanningSeeds,
+    build_overflow_recovery_compaction_messages,
     derive_tail_recompaction_recovery_plan_for_testing,
     estimate_post_compact_resume_tokens_for_testing,
     find_preflight_compactable_end_exclusive_for_testing, find_resume_fit_split_idx_for_testing,
@@ -17,7 +17,7 @@ use tauri_mcp_agent_lib::agent::llm::completion::{
     inspect_compaction_payload, merge_consecutive_user_messages, normalize_request_messages,
     preview_preflight_compaction_selection, resolve_context_management_settings,
     resolve_preserved_calibration_ratio, select_resume_fit_compaction_split_for_testing,
-    should_skip_same_tail_compaction, uses_compaction_strategy,
+    should_skip_same_tail_compaction, uses_compaction_strategy, CompactionPlanningSeeds,
 };
 use tauri_mcp_agent_lib::agent::llm::context_selector::*;
 use tauri_mcp_agent_lib::agent::llm::token_utils::*;
@@ -627,9 +627,7 @@ fn test_build_compaction_request_payload_renders_planning_seeds_and_path_safe_re
         "instruction should render the prepare-time todo snapshot"
     );
     assert!(
-        payload
-            .instruction_text
-            .contains("[ ] Draft release notes"),
+        payload.instruction_text.contains("[ ] Draft release notes"),
         "instruction should include todo bullets"
     );
     assert!(

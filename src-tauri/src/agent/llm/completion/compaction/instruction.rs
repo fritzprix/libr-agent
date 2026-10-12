@@ -128,7 +128,10 @@ fn build_compaction_hint_block(input: &CompactionInstructionTemplateInput<'_>) -
 
     let mut parts = Vec::new();
     if let Some(goal) = &hints.goal {
-        parts.push(format!("Goal seed (ground Target Deliverable / Completion Criteria):\n- {}", goal));
+        parts.push(format!(
+            "Goal seed (ground Target Deliverable / Completion Criteria):\n- {}",
+            goal
+        ));
     }
     if !hints.todos.is_empty() {
         parts.push(format!(

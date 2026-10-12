@@ -132,13 +132,12 @@ pub(super) fn build_compaction_request_payload(
             ));
             compact_messages.extend(messages[first_delta_message_idx..split_idx].iter().cloned());
 
-            let instruction = build_compaction_instruction(
-                build_compaction_instruction_template_input(
+            let instruction =
+                build_compaction_instruction(build_compaction_instruction_template_input(
                     messages,
                     &compact_messages,
                     planning_seeds,
-                ),
-            );
+                ));
             compact_messages.push(build_compaction_instruction_message(
                 session_id,
                 instruction,
