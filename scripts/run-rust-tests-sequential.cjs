@@ -47,6 +47,19 @@ function shouldSkipTarget(name) {
   return false;
 }
 
+function sleepMs(ms) {
+  spawnSync(process.execPath, ['-e', `Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ${ms})`], {
+    stdio: 'ignore',
+  });
+}
+
+/** Freshly linked ~30MB test exes are sometimes locked by Windows Defender (os error 5). */
+function isTransientWindowsExecFailure(output) {
+  return /never executed|os error 5|Access is denied|액세스가 거부/i.test(
+    output,
+  );
+}
+
 function runCargoTest(cargoArgs) {
   const env = { ...process.env };
   if (!env.CARGO_BUILD_JOBS) {
@@ -54,14 +67,47 @@ function runCargoTest(cargoArgs) {
   }
   const result = spawnSync(process.execPath, [RUNNER, 'test', ...cargoArgs], {
     cwd: ROOT,
-    stdio: 'inherit',
+    encoding: 'utf8',
+    stdio: ['inherit', 'pipe', 'pipe'],
     env,
   });
   if (result.error) {
     console.error(result.error.message);
-    return 1;
+    return { status: 1, output: result.error.message };
   }
-  return result.status ?? 1;
+  const stdout = result.stdout ?? '';
+  const stderr = result.stderr ?? '';
+  if (stdout) {
+    process.stdout.write(stdout);
+  }
+  if (stderr) {
+    process.stderr.write(stderr);
+  }
+  return {
+    status: result.status ?? 1,
+    output: `${stdout}${stderr}`,
+  };
+}
+
+function runCargoTestWithRetries(cargoArgs, targetLabel) {
+  const maxAttempts = process.platform === 'win32' ? 3 : 1;
+  let last = { status: 1, output: '' };
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    last = runCargoTest(cargoArgs);
+    if (last.status === 0) {
+      return 0;
+    }
+    const canRetry =
+      attempt < maxAttempts && isTransientWindowsExecFailure(last.output);
+    if (!canRetry) {
+      return last.status;
+    }
+    console.error(
+      `[rust-test-sequential] Transient Windows exec lock for ${targetLabel}; retry ${attempt}/${maxAttempts - 1} after 2s...`,
+    );
+    sleepMs(2000);
+  }
+  return last.status;
 }
 
 function main() {
@@ -71,7 +117,7 @@ function main() {
   if (
     hasFlag(passthrough, ['--test', '--bin', '--example', '--lib', '--doc'])
   ) {
-    process.exit(runCargoTest(passthrough));
+    process.exit(runCargoTestWithRetries(passthrough, passthrough.join(' ')));
   }
 
   const targets = listIntegrationTestTargets().filter(
@@ -87,15 +133,16 @@ function main() {
     `[rust-test-sequential] ${targets.length} targets — linking one binary at a time (avoids multi-target OOM)`,
   );
 
-  const failed = [];
   for (let i = 0; i < targets.length; i += 1) {
     const target = targets[i];
     console.error(
       `\n[rust-test-sequential] (${i + 1}/${targets.length}) --test ${target}`,
     );
-    const status = runCargoTest(['--test', target, ...passthrough]);
+    const status = runCargoTestWithRetries(
+      ['--test', target, ...passthrough],
+      target,
+    );
     if (status !== 0) {
-      failed.push(target);
       console.error(
         `[rust-test-sequential] FAILED: ${target} (exit ${status})`,
       );
