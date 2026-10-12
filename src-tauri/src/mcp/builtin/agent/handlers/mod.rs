@@ -38,7 +38,7 @@ pub use orgs::{
     TeamworkScaffoldStatus,
 };
 pub use sessions::{
-    compact_session_context, delete_session, message_to_session,
-    org_child_inherited_docker_workspace, parse_message_to_session_wait_config, spawn_session,
-    stop_session,
+    compact_session_context, delete_session, is_inherit_workspace_override, message_to_session,
+    org_child_inherited_docker_workspace, parse_message_to_session_wait_config,
+    resolve_spawn_workspace_binding, spawn_session, stop_session,
 };

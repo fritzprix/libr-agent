@@ -351,6 +351,18 @@ fn build_stable_prefix(
             display_session
         );
 
+        // Real sessions only — placeholder ids used by build_system_prompt tests stay path-free.
+        if !session_id.starts_with('(') {
+            if let Some(workspace) = get_session_workspace_dir(session_id) {
+                identity.push_str(&format!(
+                    "\n- Workspace root (absolute): {}\n\
+                    - Share this workspace with a child: agent__spawnSession(..., workspaceOverride=\"current\") \
+                    (also accepts \".\" or \"inherit\"). Plain children are isolated unless you set this.",
+                    workspace.display()
+                ));
+            }
+        }
+
         if let Some(ref parent_id) = agent_config.parent_session_id {
             // Show parent session id (same string agents use in tools).
             let display_parent = crate::utils::session_id::display_session_id(parent_id);
