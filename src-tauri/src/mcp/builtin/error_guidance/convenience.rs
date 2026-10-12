@@ -107,17 +107,45 @@ pub fn session_id_passed_as_agent_config_error(id: &str) -> MCPResult {
     .to_mcp_result()
 }
 
-/// Create a guided error for a missing delegated agent session.
-pub fn missing_agent_session_error(session_id: &str) -> MCPResult {
+/// Create a guided error when a delegated session id is missing or not accessible.
+///
+/// `accessible_count` is the number of sessions this caller can address
+/// (same set as `agent__listAgents(type="sessions")` — direct children).
+/// Prefer this over a bare "not found" so agents stop inventing session IDs.
+pub fn missing_agent_session_error(session_id: &str, accessible_count: usize) -> MCPResult {
+    if accessible_count == 0 {
+        return guided_error(
+            ErrorCategory::ResourceNotFound,
+            format!(
+                "No accessible delegated sessions. Session '{}' is not available to this caller.",
+                session_id
+            ),
+            ToolGroup::Agent,
+        )
+        .with_guidance(vec![
+            "Do NOT retry agent__checkSession / agent__messageToSession with guessed or stale session IDs"
+                .to_string(),
+            "Proceed with your assigned deliverable, or re-read @teamwork/coordination/HANDOFF.md for sibling status"
+                .to_string(),
+            "Only call agent__checkSession after agent__listAgents(type=\"sessions\") returns a concrete sessionId"
+                .to_string(),
+        ])
+        .to_mcp_result();
+    }
+
     guided_error(
         ErrorCategory::ResourceNotFound,
-        format!("Agent session '{}' not found", session_id),
+        format!(
+            "Session '{}' is not among the {} accessible delegated session(s) for this caller.",
+            session_id, accessible_count
+        ),
         ToolGroup::Agent,
     )
     .with_guidance(vec![
-        "Use agent__listAgents(type=\"sessions\") to see active delegated sessions".to_string(),
+        "Use agent__listAgents(type=\"sessions\") and copy an exact sessionId from the list"
+            .to_string(),
         format!(
-            "Verify sessionId '{}' matches one of the listed active session IDs",
+            "Do NOT retry with sessionId '{}'; it is not in your accessible set",
             session_id
         ),
         "The session may have already finished, been stopped, or expired".to_string(),

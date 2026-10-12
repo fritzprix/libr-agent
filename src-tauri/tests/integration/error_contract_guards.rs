@@ -86,15 +86,27 @@ fn missing_agent_config_error_suggests_listing_configs() {
 }
 
 #[test]
-fn missing_agent_session_error_suggests_listing_sessions() {
-    let r = missing_agent_session_error("sess_123");
+fn missing_agent_session_error_with_no_accessible_sessions_blocks_retry() {
+    let r = missing_agent_session_error("sess_123", 0);
     let text = extract_text(&r);
 
     assert_eq!(r.is_error, Some(true));
-    // top-level CallToolResult.isError is the SSOT
     assert!(text.contains("✗"));
-    assert!(text.contains("Agent session 'sess_123' not found"));
+    assert!(text.contains("No accessible delegated sessions"));
+    assert!(text.contains("Do NOT retry agent__checkSession"));
+    assert!(!text.contains("Agent session 'sess_123' not found"));
+}
+
+#[test]
+fn missing_agent_session_error_with_accessible_sessions_points_to_list() {
+    let r = missing_agent_session_error("sess_123", 2);
+    let text = extract_text(&r);
+
+    assert_eq!(r.is_error, Some(true));
+    assert!(text.contains("✗"));
+    assert!(text.contains("not among the 2 accessible delegated session(s)"));
     assert!(text.contains("agent__listAgents(type=\"sessions\")"));
+    assert!(text.contains("Do NOT retry with sessionId 'sess_123'"));
 }
 
 #[test]
