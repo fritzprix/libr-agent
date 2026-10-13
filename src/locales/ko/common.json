@@ -1370,6 +1370,11 @@
       "thinkingLoopRetry": "사고 루프가 감지되었습니다. 새 턴으로 다시 시도합니다…",
       "textLoopRetry": "반복 텍스트 루프가 감지되었습니다. 새 턴으로 다시 시도합니다…"
     },
+    "interactiveForm": {
+      "submitSuccess": "답변이 전달되었습니다. 에이전트가 작업을 이어갑니다.",
+      "submitNotReady": "세션이 아직 준비되지 않았습니다. 잠시 후 다시 제출해 주세요.",
+      "duplicateSubmit": "답변이 이미 제출 처리 중입니다."
+    },
     "statusBar": {
       "retryError": "메시지 재시도에 실패했습니다",
       "resumeError": "세션 재개에 실패했습니다",

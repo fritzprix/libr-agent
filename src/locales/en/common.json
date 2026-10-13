@@ -1374,6 +1374,11 @@
       "thinkingLoopRetry": "Detected a thinking loop. Retrying with a fresh turn…",
       "textLoopRetry": "Detected a repeated-text loop. Retrying with a fresh turn…"
     },
+    "interactiveForm": {
+      "submitSuccess": "Answer submitted — agent is continuing.",
+      "submitNotReady": "The session was not ready yet. Please submit again in a moment.",
+      "duplicateSubmit": "Your answer is already being submitted."
+    },
     "statusBar": {
       "retryError": "Failed to retry message",
       "resumeError": "Failed to resume session",

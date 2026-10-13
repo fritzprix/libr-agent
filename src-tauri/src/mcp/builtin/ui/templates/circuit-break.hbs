@@ -77,6 +77,34 @@
         outline: none;
         box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.3);
       }
+      .btn-resume:disabled {
+        opacity: 0.7;
+        cursor: not-allowed;
+      }
+      .resume-status {
+        display: none;
+        margin-top: 16px;
+        padding: 12px 14px;
+        border-radius: 6px;
+        font-size: 14px;
+        line-height: 1.45;
+        border: 1px solid #fcd34d;
+        background: color-mix(in oklab, #f59e0b 12%, var(--muted, #fffbeb));
+        color: var(--foreground, #78350f);
+      }
+      .resume-status.is-visible {
+        display: block;
+      }
+      .resume-status.is-success {
+        border-color: #86efac;
+        background: color-mix(in oklab, #16a34a 12%, var(--muted, #f0fdf4));
+        color: var(--foreground, #14532d);
+      }
+      .resume-status.is-error {
+        border-color: #fca5a5;
+        background: color-mix(in oklab, #dc2626 10%, var(--muted, #fef2f2));
+        color: var(--foreground, #7f1d1d);
+      }
     </style>
   </head>
   <body>
@@ -94,17 +122,47 @@
         <strong>Arguments:</strong> {{args}}
         {{/if}}
       </div>
-      <button class='btn-resume' onclick='handleResume()' autofocus>
+      <button id='resume-btn' class='btn-resume' type='button' autofocus>
         Resume Execution
       </button>
+      <div
+        id='resume-status'
+        class='resume-status'
+        role='status'
+        aria-live='polite'
+        aria-atomic='true'
+      ></div>
     </div>
     <script>
       const contextData = {{{contextJson}}};
+      const resumeBtn = document.getElementById('resume-btn');
+      const resumeStatus = document.getElementById('resume-status');
+      let resumeState = 'idle'; // idle | pending | success
+      let pendingRequestId = null;
+
+      function setResumeStatus(kind, text) {
+        resumeStatus.className = 'resume-status is-visible' + (kind ? ' is-' + kind : '');
+        resumeStatus.textContent = text;
+        if (typeof scheduleResizeReport === 'function') {
+          scheduleResizeReport();
+        }
+      }
 
       function handleResume() {
+        if (resumeState !== 'idle') {
+          return;
+        }
+        const requestId = 'ui-resume-' + Date.now().toString(36);
+        pendingRequestId = requestId;
+        resumeState = 'pending';
+        resumeBtn.disabled = true;
+        resumeBtn.textContent = 'Resuming…';
+        setResumeStatus('', 'Resume requested — waiting for the agent…');
+
         window.parent.postMessage(
           {
             type: 'tool',
+            messageId: requestId,
             payload: {
               toolName: 'resumeCircuitBreak',
               params: {
@@ -117,6 +175,60 @@
         );
       }
 
+      function unlockResume(detail) {
+        resumeState = 'idle';
+        pendingRequestId = null;
+        resumeBtn.disabled = false;
+        resumeBtn.textContent = 'Resume Execution';
+        setResumeStatus('error', detail || 'Could not resume. Please try again.');
+      }
+
+      window.addEventListener('message', function (event) {
+        if (resumeState !== 'pending') return;
+        const data = event.data;
+        if (!data || typeof data !== 'object') return;
+        if (
+          data.messageId != null &&
+          data.messageId !== '' &&
+          data.messageId !== pendingRequestId
+        ) {
+          return;
+        }
+        if (data.type === 'ui-message-received') {
+          setResumeStatus('', 'Host received resume — continuing…');
+          return;
+        }
+        if (data.type !== 'ui-message-response') return;
+        const payload = data.payload || {};
+        if (payload.error) {
+          unlockResume(
+            typeof payload.error === 'string'
+              ? payload.error
+              : (payload.error && payload.error.message) || 'Resume failed.',
+          );
+          return;
+        }
+        const response = payload.response;
+        const status =
+          response && typeof response === 'object' ? response.status : undefined;
+        if (status === 'ignored' || status === 'error' || status === 'tauri-error') {
+          unlockResume(
+            (response && response.message) ||
+              'Session was not ready. Please try Resume again.',
+          );
+          return;
+        }
+        resumeState = 'success';
+        pendingRequestId = null;
+        resumeBtn.disabled = true;
+        resumeBtn.textContent = 'Resumed';
+        setResumeStatus(
+          'success',
+          'Circuit breaker cleared — agent is continuing.',
+        );
+      });
+
+      resumeBtn.addEventListener('click', handleResume);
       document.addEventListener('keydown', function (e) {
         if (e.key === 'Enter') {
           handleResume();
