@@ -1,12 +1,17 @@
-//! Durable last-N external user requests for post-compaction intent tracking.
+//! Durable last-N external user requests + Must-section gap-fill for compact handoffs.
 //!
 //! Appended into the compact summary as a deterministic SSOT block so resume
 //! always sees recent user intent — not only the summarizer's Active Request.
+//! Must headings missing or empty after the LLM/hard-fallback are filled from
+//! seeds; non-empty LLM Must bodies are never clobbered (#2042 / #2084).
 
 use crate::agent::compaction_text::sanitize_compaction_semantic_text;
 use crate::mcp::types::MCPContent;
 use crate::models::chat::Message;
 
+use super::hints::{
+    build_compaction_preservation_hints, extract_summary_section_bullets, CompactionPlanningSeeds,
+};
 use super::instruction::truncate_instruction_text;
 
 /// How many distinct external user turns to keep in the ledger.
@@ -16,6 +21,18 @@ pub const RECENT_USER_REQUEST_TEXT_LIMIT: usize = 200;
 
 const RECENT_USER_REQUESTS_HEADING: &str = "Recent User Requests";
 const WORKING_INTENT_HEADING: &str = "Working Intent";
+const TARGET_DELIVERABLE_HEADING: &str = "Target Deliverable";
+const COMPLETION_CRITERIA_HEADING: &str = "Completion Criteria";
+const ACTIVE_REQUEST_HEADING: &str = "Active Request";
+const REQUIRED_REFERENCES_HEADING: &str = "Required References";
+
+const MUST_SECTION_HEADINGS: &[&str] = &[
+    TARGET_DELIVERABLE_HEADING,
+    WORKING_INTENT_HEADING,
+    COMPLETION_CRITERIA_HEADING,
+    ACTIVE_REQUEST_HEADING,
+    REQUIRED_REFERENCES_HEADING,
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecentUserRequest {
@@ -84,12 +101,24 @@ pub fn format_recent_user_requests_section(requests: &[RecentUserRequest]) -> St
     lines.join("\n")
 }
 
+fn format_bullet_section(heading: &str, bullets: &[String]) -> String {
+    let mut lines = vec![format!("### {}", heading)];
+    if bullets.is_empty() {
+        lines.push("- Needs context-recall".to_string());
+    } else {
+        for bullet in bullets {
+            lines.push(format!("- {}", bullet));
+        }
+    }
+    lines.join("\n")
+}
+
 fn format_working_intent_section(requests: &[RecentUserRequest]) -> String {
     let mut lines = vec![format!("### {}", WORKING_INTENT_HEADING)];
     if let Some(latest) = requests.last() {
         lines.push(format!("- {}", latest.text));
     } else {
-        lines.push("- None".to_string());
+        lines.push("- Needs context-recall".to_string());
     }
     lines.join("\n")
 }
@@ -168,6 +197,24 @@ fn has_section(summary: &str, section_heading: &str) -> bool {
         .any(|line| section_heading_line(line).is_some_and(|heading| heading == section_heading))
 }
 
+fn is_placeholder_bullet(bullet: &str) -> bool {
+    let normalized = bullet.trim().trim_start_matches(['[', ' ', 'x', 'X', ']']);
+    let normalized = normalized.trim();
+    normalized.is_empty()
+        || normalized.eq_ignore_ascii_case("none")
+        || normalized.eq_ignore_ascii_case("needs context-recall")
+        || normalized.eq_ignore_ascii_case("n/a")
+}
+
+/// True when the heading is absent or every bullet is an empty/placeholder value.
+fn section_needs_gap_fill(summary: &str, section_heading: &str) -> bool {
+    if !has_section(summary, section_heading) {
+        return true;
+    }
+    let bullets = extract_summary_section_bullets(summary, section_heading);
+    bullets.is_empty() || bullets.iter().all(|bullet| is_placeholder_bullet(bullet))
+}
+
 /// Returns `(split_before_divider_or_heading, index_of_###_Context_recovery)`.
 /// When a `---` divider precedes Context recovery, `split` is before that divider
 /// and the divider is re-emitted in canonical LF form.
@@ -204,25 +251,133 @@ fn insert_before_context_recovery(summary: &str, block: &str) -> String {
     }
 }
 
-/// Ensure compact summary includes deterministic Recent User Requests and a
-/// Working Intent section (LLM-authored if present; otherwise derived from last-N).
-pub fn ensure_intent_sections_in_summary(summary: &str, messages: &[Message]) -> String {
-    let requests = collect_recent_external_user_requests(messages, RECENT_USER_REQUEST_LIMIT);
-    let recent_block = format_recent_user_requests_section(&requests);
+fn primary_seed_text(
+    active_request: &[String],
+    requests: &[RecentUserRequest],
+    goal: Option<&str>,
+) -> Option<String> {
+    if let Some(goal) = goal.map(str::trim).filter(|text| !text.is_empty()) {
+        return Some(goal.to_string());
+    }
+    if let Some(request) = active_request
+        .iter()
+        .map(|text| text.trim())
+        .find(|text| !text.is_empty() && !is_placeholder_bullet(text))
+    {
+        return Some(request.to_string());
+    }
+    requests.last().map(|request| request.text.clone())
+}
 
-    let body = strip_section(summary, RECENT_USER_REQUESTS_HEADING);
+fn target_deliverable_bullets(
+    active_request: &[String],
+    requests: &[RecentUserRequest],
+    goal: Option<&str>,
+) -> Vec<String> {
+    match primary_seed_text(active_request, requests, goal) {
+        Some(seed) => vec![format!("Deliver: {}", seed)],
+        None => vec!["Needs context-recall".to_string()],
+    }
+}
 
-    let working_intent_block = if has_section(&body, WORKING_INTENT_HEADING) {
-        None
+fn completion_criteria_bullets(
+    active_request: &[String],
+    requests: &[RecentUserRequest],
+    goal: Option<&str>,
+) -> Vec<String> {
+    match primary_seed_text(active_request, requests, goal) {
+        Some(seed) => vec![format!("[ ] Satisfy active request: {}", seed)],
+        None => vec!["[ ] Needs context-recall".to_string()],
+    }
+}
+
+fn active_request_bullets(hints_active: &[String], requests: &[RecentUserRequest]) -> Vec<String> {
+    if !hints_active.is_empty() {
+        return hints_active.to_vec();
+    }
+    if let Some(latest) = requests.last() {
+        return vec![latest.text.clone()];
+    }
+    vec!["Needs context-recall".to_string()]
+}
+
+fn required_references_bullets(hints_references: &[String]) -> Vec<String> {
+    if hints_references.is_empty() {
+        vec!["Needs context-recall".to_string()]
     } else {
-        Some(format_working_intent_section(&requests))
-    };
+        hints_references.to_vec()
+    }
+}
 
-    let mut injected = recent_block;
-    if let Some(working_intent) = working_intent_block {
-        injected = format!("{}\n\n{}", working_intent, injected);
+/// Ensure compact summary includes Must sections (gap-fill only), deterministic
+/// Recent User Requests, and Working Intent when the LLM omitted it.
+pub fn ensure_intent_sections_in_summary(summary: &str, messages: &[Message]) -> String {
+    ensure_must_and_intent_sections(summary, messages, &CompactionPlanningSeeds::default())
+}
+
+/// Same as [`ensure_intent_sections_in_summary`], with optional planning seeds for
+/// Target Deliverable / Completion Criteria grounding (goal/todos from prepare).
+pub fn ensure_must_and_intent_sections(
+    summary: &str,
+    messages: &[Message],
+    planning: &CompactionPlanningSeeds,
+) -> String {
+    let requests = collect_recent_external_user_requests(messages, RECENT_USER_REQUEST_LIMIT);
+    let mut hints = build_compaction_preservation_hints(messages);
+    hints.merge_planning_seeds(planning);
+
+    let mut body = strip_section(summary, RECENT_USER_REQUESTS_HEADING);
+
+    // Gap-fill Must sections that are missing or placeholder-only. Never clobber
+    // non-empty LLM Must bodies (same preserve policy as #2042 Working Intent).
+    let mut must_blocks = Vec::new();
+
+    if section_needs_gap_fill(&body, TARGET_DELIVERABLE_HEADING) {
+        body = strip_section(&body, TARGET_DELIVERABLE_HEADING);
+        must_blocks.push(format_bullet_section(
+            TARGET_DELIVERABLE_HEADING,
+            &target_deliverable_bullets(&hints.active_request, &requests, hints.goal.as_deref()),
+        ));
     }
 
+    if section_needs_gap_fill(&body, WORKING_INTENT_HEADING) {
+        body = strip_section(&body, WORKING_INTENT_HEADING);
+        must_blocks.push(format_working_intent_section(&requests));
+    }
+
+    if section_needs_gap_fill(&body, COMPLETION_CRITERIA_HEADING) {
+        body = strip_section(&body, COMPLETION_CRITERIA_HEADING);
+        must_blocks.push(format_bullet_section(
+            COMPLETION_CRITERIA_HEADING,
+            &completion_criteria_bullets(&hints.active_request, &requests, hints.goal.as_deref()),
+        ));
+    }
+
+    if section_needs_gap_fill(&body, ACTIVE_REQUEST_HEADING) {
+        body = strip_section(&body, ACTIVE_REQUEST_HEADING);
+        must_blocks.push(format_bullet_section(
+            ACTIVE_REQUEST_HEADING,
+            &active_request_bullets(&hints.active_request, &requests),
+        ));
+    }
+
+    if section_needs_gap_fill(&body, REQUIRED_REFERENCES_HEADING) {
+        body = strip_section(&body, REQUIRED_REFERENCES_HEADING);
+        must_blocks.push(format_bullet_section(
+            REQUIRED_REFERENCES_HEADING,
+            &required_references_bullets(&hints.required_references),
+        ));
+    }
+
+    let recent_block = format_recent_user_requests_section(&requests);
+    let mut injected = must_blocks.join("\n\n");
+    if injected.is_empty() {
+        injected = recent_block;
+    } else {
+        injected = format!("{}\n\n{}", injected, recent_block);
+    }
+
+    let _ = MUST_SECTION_HEADINGS; // documented contract anchor for reviewers
     insert_before_context_recovery(&body, &injected)
 }
 
@@ -282,6 +437,9 @@ mod tests {
         assert!(ensured.contains("[`u2`] Also fix the changelog link"));
         assert!(!ensured.contains("- stale"));
         assert!(ensured.contains("### Active Request"));
+        assert!(ensured.contains("### Target Deliverable"));
+        assert!(ensured.contains("### Completion Criteria"));
+        assert!(ensured.contains("### Required References"));
     }
 
     #[test]
@@ -296,6 +454,28 @@ mod tests {
             ensured.matches("### Working Intent").count(),
             1,
             "must not duplicate Working Intent"
+        );
+    }
+
+    #[test]
+    fn ensure_must_gap_fills_td_cc_and_preserves_non_empty_llm_td() {
+        let messages = vec![external_user("u1", "Ship release notes")];
+        let summary =
+            "### Target Deliverable\n- RELEASE.md published\n\n### Active Request\n- None";
+        let planning = CompactionPlanningSeeds {
+            goal: Some("Publish RELEASE.md".to_string()),
+            todos: vec!["[ ] Draft notes".to_string()],
+        };
+
+        let ensured = ensure_must_and_intent_sections(summary, &messages, &planning);
+
+        assert!(ensured.contains("RELEASE.md published"));
+        assert_eq!(ensured.matches("### Target Deliverable").count(), 1);
+        assert!(ensured.contains("### Completion Criteria"));
+        assert!(ensured.contains("Satisfy active request"));
+        assert!(
+            !ensured.contains("Deliver: Publish RELEASE.md"),
+            "goal seed must not replace non-empty LLM Target Deliverable"
         );
     }
 
