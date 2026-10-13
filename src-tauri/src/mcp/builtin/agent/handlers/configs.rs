@@ -78,12 +78,74 @@ fn format_summary_list(values: &[String]) -> String {
     }
 }
 
+/// True when optional builtins and external MCP servers are both empty (core-only).
+fn config_needs_tool_configuration(config: &Value) -> bool {
+    let configured_builtins = extract_string_array(config, "allowedBuiltInServiceAliases");
+    let external_mcp_servers = extract_string_array(config, "mcpServerIds");
+    configured_builtins.is_empty() && external_mcp_servers.is_empty()
+}
+
+fn create_agent_follow_ups(id: &str, needs_tools: bool) -> Vec<String> {
+    if needs_tools {
+        vec![
+            "Call tool__listServers(availability=\"inventory\") to copy real MCP server IDs — do not invent names like 'exa'.".to_string(),
+            format!(
+                "Call agent__updateAgent(id=\"{id}\", builtinCapabilities=[\"browser\",\"knowledge\"] when research, externalMcpServers=[...ids from listServers])."
+            ),
+            "Only then call agent__spawnSession(configId=...) — spawning now leaves this member on core-only tools.".to_string(),
+        ]
+    } else {
+        vec![
+            "List agent configurations to review the new configuration".to_string(),
+            "Update the configuration if you want to refine its prompt or capabilities"
+                .to_string(),
+        ]
+    }
+}
+
+fn create_agent_next_actions(id: &str, needs_tools: bool) -> Vec<Value> {
+    if needs_tools {
+        vec![
+            json!({
+                "toolName": "tool__listServers",
+                "reason": "List inventory MCP server IDs before configuring externalMcpServers on this agent.",
+                "args": {
+                    "availability": "inventory"
+                }
+            }),
+            json!({
+                "toolName": "agent__updateAgent",
+                "reason": "Fill externalMcpServers with IDs from listServers; adjust builtinCapabilities to the role before spawnSession.",
+                "args": {
+                    "id": id,
+                    "builtinCapabilities": ["browser", "knowledge"],
+                    "externalMcpServers": []
+                }
+            }),
+        ]
+    } else {
+        vec![json!({
+            "toolName": "agent__listAgents",
+            "reason": "Review the available agent configurations after creating this one.",
+            "args": {
+                "type": "configs"
+            }
+        })]
+    }
+}
+
 fn build_agent_config_response_data(id: &str, name: &str, config: &Value) -> Value {
     let configured_builtin_capabilities =
         extract_string_array(config, "allowedBuiltInServiceAliases");
     let effective_builtin_capabilities =
         crate::agent::tools::runtime_allowed_builtin_service_aliases_from_value(config);
     let external_mcp_servers = extract_string_array(config, "mcpServerIds");
+    let needs_tool_configuration = config_needs_tool_configuration(config);
+    let tool_access = if needs_tool_configuration {
+        "core-only"
+    } else {
+        "configured"
+    };
 
     json!({
         "success": true,
@@ -96,6 +158,8 @@ fn build_agent_config_response_data(id: &str, name: &str, config: &Value) -> Val
         "effectiveBuiltinCapabilities": effective_builtin_capabilities,
         "externalMcpServers": external_mcp_servers.clone(),
         "mcpServerIds": external_mcp_servers,
+        "needsToolConfiguration": needs_tool_configuration,
+        "toolAccess": tool_access,
     })
 }
 
@@ -109,8 +173,7 @@ fn build_agent_config_echo_message(action: &str, name: &str, id: &str, config: &
         .get("description")
         .and_then(Value::as_str)
         .unwrap_or("none");
-
-    format!(
+    let mut message = format!(
         "Agent configuration '{}' {} (ID: {})\n\nDescription: {}\nConfigured builtin capabilities: {}\nEffective builtin capabilities: {}\nExternal MCP servers: {}",
         name,
         action,
@@ -119,7 +182,15 @@ fn build_agent_config_echo_message(action: &str, name: &str, id: &str, config: &
         format_summary_list(&configured_builtin_capabilities),
         format_summary_list(&effective_builtin_capabilities),
         format_summary_list(&external_mcp_servers),
-    )
+    );
+
+    if config_needs_tool_configuration(config) {
+        message.push_str(
+            "\nTool access: core-only — configure optional tools before spawnSession if this agent needs research/browse/MCP.",
+        );
+    }
+
+    message
 }
 
 fn merge_config_from_request(params: ConfigMergeParams<'_>) -> Value {
@@ -284,6 +355,7 @@ pub async fn create_agent(server: &AgentServer, args: Value) -> Result<MCPResult
         .await
     {
         Ok(_) => {
+            let needs_tools = config_needs_tool_configuration(&config);
             let hint = SuccessHint::new(
                 build_agent_config_echo_message(
                     "created successfully",
@@ -291,11 +363,7 @@ pub async fn create_agent(server: &AgentServer, args: Value) -> Result<MCPResult
                     &id,
                     &config,
                 ),
-                vec![
-                    "List agent configurations to review the new configuration".to_string(),
-                    "Update the configuration if you want to refine its prompt or capabilities"
-                        .to_string(),
-                ],
+                create_agent_follow_ups(&id, needs_tools),
             );
 
             crate::agent::tauri_events::emit_resource_updated(
@@ -311,13 +379,7 @@ pub async fn create_agent(server: &AgentServer, args: Value) -> Result<MCPResult
                     &config,
                 ))),
                 "agent__createAgent",
-                vec![json!({
-                    "toolName": "agent__listAgents",
-                    "reason": "Review the available agent configurations after creating this one.",
-                    "args": {
-                        "type": "configs"
-                    }
-                })],
+                create_agent_next_actions(&id, needs_tools),
             ))
         }
         Err(e) => Ok(guided_error(
@@ -833,4 +895,111 @@ async fn list_delegated_sessions(
     response_data.insert("sessions".to_string(), Value::Array(paged_results));
     response_data.insert("total".to_string(), json!(total));
     Ok(hint.to_mcp_result_with_data(Some(Value::Object(response_data))))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_config_needs_tool_configuration() {
+        assert!(config_needs_tool_configuration(&json!({})));
+        assert!(config_needs_tool_configuration(&json!({
+            "allowedBuiltInServiceAliases": [],
+            "mcpServerIds": []
+        })));
+    }
+
+    #[test]
+    fn builtins_or_mcp_clear_needs_tool_configuration() {
+        assert!(!config_needs_tool_configuration(&json!({
+            "allowedBuiltInServiceAliases": ["browser"]
+        })));
+        assert!(!config_needs_tool_configuration(&json!({
+            "mcpServerIds": ["server-1"]
+        })));
+        assert!(!config_needs_tool_configuration(&json!({
+            "allowedBuiltInServiceAliases": ["knowledge"],
+            "mcpServerIds": ["server-1"]
+        })));
+    }
+
+    #[test]
+    fn core_only_follow_ups_steer_to_list_servers_then_update() {
+        let id = "cfg-abc";
+        let follow_ups = create_agent_follow_ups(id, true);
+        assert_eq!(follow_ups.len(), 3);
+        assert!(follow_ups[0].contains("tool__listServers"));
+        assert!(follow_ups[1].contains("agent__updateAgent"));
+        assert!(follow_ups[1].contains(id));
+        assert!(follow_ups[2].contains("spawnSession"));
+
+        let soft = create_agent_follow_ups(id, false);
+        assert!(soft.iter().all(|line| !line.contains("tool__listServers")));
+        assert!(soft
+            .iter()
+            .any(|line| line.contains("List agent configurations")));
+    }
+
+    #[test]
+    fn core_only_next_actions_prioritize_list_servers_then_update_with_id() {
+        let id = "cfg-abc";
+        let actions = create_agent_next_actions(id, true);
+        assert_eq!(actions.len(), 2);
+        assert_eq!(actions[0]["toolName"], "tool__listServers");
+        assert_eq!(actions[0]["args"]["availability"], "inventory");
+        assert_eq!(actions[1]["toolName"], "agent__updateAgent");
+        assert_eq!(actions[1]["args"]["id"], id);
+        assert!(actions[1]["args"]["builtinCapabilities"].is_array());
+        assert!(actions[1]["args"]["externalMcpServers"].is_array());
+
+        let configured = create_agent_next_actions(id, false);
+        assert_eq!(configured.len(), 1);
+        assert_eq!(configured[0]["toolName"], "agent__listAgents");
+    }
+
+    #[test]
+    fn response_data_flags_core_only_vs_configured() {
+        let core_only = build_agent_config_response_data(
+            "id-1",
+            "Tour",
+            &json!({
+                "allowedBuiltInServiceAliases": [],
+                "description": "coord"
+            }),
+        );
+        assert_eq!(core_only["needsToolConfiguration"], true);
+        assert_eq!(core_only["toolAccess"], "core-only");
+
+        let configured = build_agent_config_response_data(
+            "id-2",
+            "Tour",
+            &json!({
+                "allowedBuiltInServiceAliases": ["browser"],
+                "mcpServerIds": ["srv"]
+            }),
+        );
+        assert_eq!(configured["needsToolConfiguration"], false);
+        assert_eq!(configured["toolAccess"], "configured");
+    }
+
+    #[test]
+    fn echo_message_mentions_core_only_tool_access_when_empty() {
+        let message = build_agent_config_echo_message(
+            "created successfully",
+            "Tour Coordinator",
+            "id-1",
+            &json!({ "allowedBuiltInServiceAliases": [] }),
+        );
+        assert!(message.contains("Tool access: core-only"));
+        assert!(message.contains("spawnSession"));
+
+        let configured = build_agent_config_echo_message(
+            "created successfully",
+            "Tour Coordinator",
+            "id-1",
+            &json!({ "allowedBuiltInServiceAliases": ["browser"] }),
+        );
+        assert!(!configured.contains("Tool access: core-only"));
+    }
 }

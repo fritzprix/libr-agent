@@ -40,8 +40,8 @@ fn create_tool() -> MCPTool {
             vec![
                 ("name".to_string(), string_prop_required("Unique name for the agent configuration.")),
                 ("description".to_string(), string_prop(None, None, Some("Short description of what this agent does. If omitted, the configuration is created without a description."))),
-                ("builtinCapabilities".to_string(), array_schema(string_prop(None, None, None), Some("List of optional builtin service aliases to add beyond the always-on core services (e.g. ['planning', 'browser', 'knowledge']). Core services remain enabled even when you pass a restricted list. If omitted (or []), only core services are enabled — list optional aliases explicitly when needed."))),
-                ("externalMcpServers".to_string(), array_schema(string_prop(None, None, None), Some("List of external MCP server IDs to allow for sessions started from this config (e.g. ['github', 'google-search']). If omitted, the configuration leaves external MCP server overrides unset."))),
+                ("builtinCapabilities".to_string(), array_schema(string_prop(None, None, None), Some("List of optional builtin service aliases to add beyond the always-on core services (e.g. ['planning', 'browser', 'knowledge']). Core services remain enabled even when you pass a restricted list. If omitted (or []), only core services are enabled — list optional aliases explicitly when needed. For org/research members that need browse or MCP access, set this at create time or immediately via agent__updateAgent before spawnSession."))),
+                ("externalMcpServers".to_string(), array_schema(string_prop(None, None, None), Some("List of external MCP server IDs to allow for sessions started from this config (e.g. ['github', 'google-search']). If omitted, the configuration leaves external MCP server overrides unset. Prefer IDs from tool__listServers — do not invent server names."))),
                 ("systemPrompt".to_string(), string_prop(None, None, Some("The core personality and instructions for the agent. If omitted, no custom system prompt is stored."))),
             ],
             vec!["name".to_string()],
