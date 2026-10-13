@@ -21,12 +21,33 @@ import { useTranslation } from 'react-i18next';
 
 const logger = getLogger('AgentMessageRenderer');
 
+/** In-flight interactive callback keys — blocks duplicate form submits. */
+const inFlightUiCallbacks = new Set<string>();
+
 function readStringParam(
   params: Record<string, unknown>,
   key: string,
 ): string | undefined {
   const value = params[key];
   return typeof value === 'string' ? value : undefined;
+}
+
+function isInteractiveUiCallback(toolName: string): boolean {
+  const base = toolName.includes('__')
+    ? toolName.slice(toolName.lastIndexOf('__') + 2)
+    : toolName;
+  return base === 'getUserAnswer' || base === 'resumeCircuitBreak';
+}
+
+function interactiveCallbackKey(
+  toolName: string,
+  params: Record<string, unknown>,
+): string {
+  const messageId = readStringParam(params, 'messageId');
+  if (messageId) {
+    return `${toolName}:${messageId}`;
+  }
+  return `${toolName}:${JSON.stringify(params)}`;
 }
 
 /**
@@ -159,11 +180,66 @@ export function useUIActionHandler(
                 },
               );
 
-              // Use type-safe wrapper to handle the tool call as an Assistant message
-              // This triggers the Rust backend to execute the tool and resume the workflow automatically
-              await handleUserToolCall(sessionId, finalToolName, params);
+              const interactive = isInteractiveUiCallback(finalToolName);
+              const callbackKey = interactive
+                ? interactiveCallbackKey(finalToolName, params)
+                : null;
 
-              return { status: 'tool-submitted', tool: finalToolName };
+              if (callbackKey && inFlightUiCallbacks.has(callbackKey)) {
+                logger.info('Ignoring duplicate interactive UI callback', {
+                  sessionId,
+                  toolName: finalToolName,
+                  callbackKey,
+                });
+                // Keep iframe locked: treat as accepted so the user does not unlock
+                // and re-submit into a circuit-breaker loop.
+                return {
+                  status: 'tool-submitted',
+                  tool: finalToolName,
+                  message: t('agent.interactiveForm.duplicateSubmit'),
+                };
+              }
+
+              if (callbackKey) {
+                inFlightUiCallbacks.add(callbackKey);
+              }
+
+              try {
+                // Use type-safe wrapper to handle the tool call as an Assistant message
+                // This triggers the Rust backend to execute the tool and resume the workflow automatically
+                await handleUserToolCall(sessionId, finalToolName, params);
+
+                if (interactive) {
+                  const { toast } = await import('sonner');
+                  toast.success(t('agent.interactiveForm.submitSuccess'));
+                  return {
+                    status: 'tool-submitted',
+                    tool: finalToolName,
+                    message: t('agent.interactiveForm.submitSuccess'),
+                  };
+                }
+
+                return { status: 'tool-submitted', tool: finalToolName };
+              } catch (error) {
+                const errorMessage =
+                  error instanceof Error ? error.message : String(error);
+
+                if (interactive && isWorkflowCancelledError(errorMessage)) {
+                  const { toast } = await import('sonner');
+                  toast.error(t('agent.interactiveForm.submitNotReady'));
+                  // Surface as error (not ignored) so the iframe unlocks for retry.
+                  return {
+                    status: 'error',
+                    message: t('agent.interactiveForm.submitNotReady'),
+                  };
+                }
+
+                throw error;
+              } finally {
+                if (callbackKey) {
+                  inFlightUiCallbacks.delete(callbackKey);
+                }
+              }
             }
           }
 
