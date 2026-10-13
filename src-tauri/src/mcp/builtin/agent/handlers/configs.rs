@@ -97,8 +97,7 @@ pub fn create_agent_follow_ups(id: &str, needs_tools: bool) -> Vec<String> {
     } else {
         vec![
             "List agent configurations to review the new configuration".to_string(),
-            "Update the configuration if you want to refine its prompt or capabilities"
-                .to_string(),
+            "Update the configuration if you want to refine its prompt or capabilities".to_string(),
         ]
     }
 }
