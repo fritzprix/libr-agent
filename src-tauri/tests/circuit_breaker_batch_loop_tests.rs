@@ -15,7 +15,9 @@ use tauri_mcp_agent_lib::agent::llm::circuit_breaker::{
     batch_fingerprint, evaluate_batch_circuit_breaker, find_intra_batch_duplicates,
     normalize_tool_arguments, CircuitBreakerAction,
 };
-use tauri_mcp_agent_lib::agent::llm::natural_recovery::LoopPreventionKind;
+use tauri_mcp_agent_lib::agent::llm::natural_recovery::{
+    build_loop_prevention_guidance, LoopPreventionKind, LoopPreventionShortCircuit,
+};
 use tauri_mcp_agent_lib::agent::llm::preprocess_assistant_tool_calls_for_testing;
 use tauri_mcp_agent_lib::agent::state::{
     AgentSession, CompactionRuntimeState, PendingEventManager,
@@ -431,6 +433,7 @@ fn intra_batch_duplicate_signatures_are_detected() {
         Some(&CircuitBreakerAction::DuplicateInBatch {
             tool_name: "workspace__readFile".to_string(),
             args: r#"{"path":"a.ts"}"#.to_string(),
+            duplicate_of_tool_call_id: "tc-1".to_string(),
         })
     );
 }
@@ -456,7 +459,82 @@ fn intra_batch_duplicate_ignores_json_key_order() {
         Some(&CircuitBreakerAction::DuplicateInBatch {
             tool_name: "workspace__readFile".to_string(),
             args: r#"{"offset":1,"path":"a.ts"}"#.to_string(),
+            duplicate_of_tool_call_id: "tc-1".to_string(),
         })
+    );
+}
+
+#[test]
+fn intra_batch_three_identical_calls_all_point_to_first() {
+    let args = r#"{"description":"same todo"}"#;
+    let tool_calls = vec![
+        test_tool_call("tc-1", "planning__addTodo", args),
+        test_tool_call("tc-2", "planning__addTodo", args),
+        test_tool_call("tc-3", "planning__addTodo", args),
+    ];
+
+    let duplicates = find_intra_batch_duplicates(&tool_calls);
+    assert!(!duplicates.contains_key("tc-1"));
+    assert_eq!(
+        duplicates.get("tc-2"),
+        Some(&CircuitBreakerAction::DuplicateInBatch {
+            tool_name: "planning__addTodo".to_string(),
+            args: args.to_string(),
+            duplicate_of_tool_call_id: "tc-1".to_string(),
+        })
+    );
+    assert_eq!(
+        duplicates.get("tc-3"),
+        Some(&CircuitBreakerAction::DuplicateInBatch {
+            tool_name: "planning__addTodo".to_string(),
+            args: args.to_string(),
+            duplicate_of_tool_call_id: "tc-1".to_string(),
+        }),
+        "third identical call must cite the first occurrence, not the second"
+    );
+}
+
+#[test]
+fn duplicate_in_batch_guidance_cites_origin_and_truncates_long_args() {
+    let with_id = build_loop_prevention_guidance(&LoopPreventionShortCircuit {
+        kind: LoopPreventionKind::DuplicateInBatch,
+        tool_name: "planning__addTodo".to_string(),
+        args: r#"{"description":"IMF PPP 추정"}"#.to_string(),
+        count: 2,
+        duplicate_of_tool_call_id: Some("earlier-call-id".to_string()),
+    });
+    assert!(with_id.contains("earlier tool_call_id 'earlier-call-id'"));
+    assert!(with_id.contains("IMF PPP 추정"));
+    assert!(with_id.contains("different arguments are not blocked"));
+
+    let without_id = build_loop_prevention_guidance(&LoopPreventionShortCircuit {
+        kind: LoopPreventionKind::DuplicateInBatch,
+        tool_name: "planning__addTodo".to_string(),
+        args: r#"{"description":"x"}"#.to_string(),
+        count: 2,
+        duplicate_of_tool_call_id: None,
+    });
+    assert!(without_id.contains("duplicate of an earlier call"));
+    assert!(!without_id.contains("tool_call_id 'an earlier call'"));
+
+    let long_args: String = format!(
+        "{{\"description\":\"{}\"}}",
+        "한".repeat(200)
+    );
+    let truncated = build_loop_prevention_guidance(&LoopPreventionShortCircuit {
+        kind: LoopPreventionKind::DuplicateInBatch,
+        tool_name: "planning__addTodo".to_string(),
+        args: long_args,
+        count: 2,
+        duplicate_of_tool_call_id: Some("tc-1".to_string()),
+    });
+    let matched_line = truncated
+        .lines()
+        .find(|line| line.starts_with("Matched arguments:"))
+        .expect("matched arguments line");
+    assert!(
+        matched_line.ends_with('…'),
+        "long args preview must truncate with ellipsis: {matched_line}"
     );
 }
 
@@ -596,4 +674,9 @@ async fn preprocess_only_short_circuits_intra_batch_duplicates() {
         .get("tc-3")
         .expect("duplicate signature is short-circuited");
     assert_eq!(dup.kind, LoopPreventionKind::DuplicateInBatch);
+    assert_eq!(
+        dup.duplicate_of_tool_call_id.as_deref(),
+        Some("tc-1"),
+        "guidance must cite the earlier identical call in the batch"
+    );
 }

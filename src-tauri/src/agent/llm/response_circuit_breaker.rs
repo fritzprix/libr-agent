@@ -222,6 +222,7 @@ pub(crate) async fn preprocess_assistant_tool_calls(
                                                 tool_name: tool_name.clone(),
                                                 count,
                                                 args: args.clone(),
+                                                duplicate_of_tool_call_id: None,
                                             },
                                         );
                                     }
@@ -246,6 +247,7 @@ pub(crate) async fn preprocess_assistant_tool_calls(
                                                 tool_name: tool_name.clone(),
                                                 count,
                                                 args: args.clone(),
+                                                duplicate_of_tool_call_id: None,
                                             },
                                         );
                                     }
@@ -263,6 +265,7 @@ pub(crate) async fn preprocess_assistant_tool_calls(
                             if let Some(circuit_breaker::CircuitBreakerAction::DuplicateInBatch {
                                 tool_name,
                                 args,
+                                duplicate_of_tool_call_id,
                             }) = intra_batch_duplicates.get(&tool_call.id)
                             {
                                 loop_prevention_short_circuits.insert(
@@ -272,6 +275,9 @@ pub(crate) async fn preprocess_assistant_tool_calls(
                                         tool_name: tool_name.clone(),
                                         count: 2,
                                         args: args.clone(),
+                                        duplicate_of_tool_call_id: Some(
+                                            duplicate_of_tool_call_id.clone(),
+                                        ),
                                     },
                                 );
                                 continue;
@@ -315,6 +321,7 @@ pub(crate) async fn preprocess_assistant_tool_calls(
                                             tool_name,
                                             count,
                                             args,
+                                            duplicate_of_tool_call_id: None,
                                         },
                                     );
                                 }
@@ -337,6 +344,7 @@ pub(crate) async fn preprocess_assistant_tool_calls(
                                             tool_name,
                                             count,
                                             args,
+                                            duplicate_of_tool_call_id: None,
                                         },
                                     );
                                 }
@@ -359,6 +367,7 @@ pub(crate) async fn preprocess_assistant_tool_calls(
                                             tool_name,
                                             count,
                                             args,
+                                            duplicate_of_tool_call_id: None,
                                         },
                                     );
                                 }

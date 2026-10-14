@@ -38,7 +38,12 @@ pub enum CircuitBreakerAction {
         args: String,
     },
     /// Same (name, args) already present earlier in the current tool_calls batch.
-    DuplicateInBatch { tool_name: String, args: String },
+    DuplicateInBatch {
+        tool_name: String,
+        args: String,
+        /// First tool_call_id in this batch that already used the same signature.
+        duplicate_of_tool_call_id: String,
+    },
     /// Entire assistant tool_calls batch fingerprint repeated across turns.
     RepeatedBatchSequence {
         count: usize,
@@ -570,23 +575,30 @@ pub fn count_consecutive_identical_batches(messages: &[Message], fingerprint: &s
 
 /// Collect later-in-batch duplicates of an earlier (name, args) signature.
 ///
-/// Signatures are computed once per call (O(n)), then checked with a set.
+/// Signatures are computed once per call (O(n)). The first occurrence of each
+/// signature is remembered by tool_call_id so guidance can name the original.
 pub fn find_intra_batch_duplicates(
     tool_calls: &[ToolCall],
 ) -> std::collections::HashMap<String, CircuitBreakerAction> {
-    let mut seen_signatures = std::collections::HashSet::new();
+    let mut first_id_by_signature = std::collections::HashMap::new();
     let mut duplicates = std::collections::HashMap::new();
 
     for tool_call in tool_calls {
         let signature = tool_call_signature(tool_call);
-        if !seen_signatures.insert(signature) {
-            duplicates.insert(
-                tool_call.id.clone(),
-                CircuitBreakerAction::DuplicateInBatch {
-                    tool_name: tool_call.function.name.clone(),
-                    args: tool_call.function.arguments.clone(),
-                },
-            );
+        match first_id_by_signature.entry(signature) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(tool_call.id.clone());
+            }
+            std::collections::hash_map::Entry::Occupied(entry) => {
+                duplicates.insert(
+                    tool_call.id.clone(),
+                    CircuitBreakerAction::DuplicateInBatch {
+                        tool_name: tool_call.function.name.clone(),
+                        args: tool_call.function.arguments.clone(),
+                        duplicate_of_tool_call_id: entry.get().clone(),
+                    },
+                );
+            }
         }
     }
 
