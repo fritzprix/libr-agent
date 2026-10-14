@@ -76,4 +76,8 @@ fn create_agent_schema_documents_core_only_default_when_capabilities_omitted() {
         !description.contains("all optional builtin services stay enabled"),
         "createAgent schema must not advertise the old all-optional default: {description}"
     );
+    assert!(
+        description.contains("updateAgent") || description.contains("spawnSession"),
+        "createAgent schema should steer org/research members to set tools before spawn: {description}"
+    );
 }
