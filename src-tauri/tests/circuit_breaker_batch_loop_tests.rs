@@ -517,10 +517,7 @@ fn duplicate_in_batch_guidance_cites_origin_and_truncates_long_args() {
     assert!(without_id.contains("duplicate of an earlier call"));
     assert!(!without_id.contains("tool_call_id 'an earlier call'"));
 
-    let long_args: String = format!(
-        "{{\"description\":\"{}\"}}",
-        "한".repeat(200)
-    );
+    let long_args: String = format!("{{\"description\":\"{}\"}}", "한".repeat(200));
     let truncated = build_loop_prevention_guidance(&LoopPreventionShortCircuit {
         kind: LoopPreventionKind::DuplicateInBatch,
         tool_name: "planning__addTodo".to_string(),
