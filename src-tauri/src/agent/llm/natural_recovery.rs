@@ -23,6 +23,29 @@ pub struct LoopPreventionShortCircuit {
     /// (when needed) parameterize the circuit breaker UI.
     pub args: String,
     pub count: usize,
+    /// When `kind == DuplicateInBatch`, the earlier tool_call_id in this batch
+    /// that already used the same (tool, arguments) signature.
+    pub duplicate_of_tool_call_id: Option<String>,
+}
+
+/// Soft-cap args shown in loop-prevention guidance so long payloads stay readable.
+const LOOP_PREVENTION_ARGS_PREVIEW_CHARS: usize = 160;
+
+fn format_args_preview(args: &str) -> String {
+    let trimmed = args.trim();
+    if trimmed.is_empty() {
+        return "(empty)".to_string();
+    }
+    let mut chars = trimmed.chars();
+    let preview: String = chars
+        .by_ref()
+        .take(LOOP_PREVENTION_ARGS_PREVIEW_CHARS)
+        .collect();
+    if chars.next().is_some() {
+        format!("{}…", preview)
+    } else {
+        preview
+    }
 }
 
 pub fn build_loop_prevention_guidance(short_circuit: &LoopPreventionShortCircuit) -> String {
@@ -52,12 +75,21 @@ pub fn build_loop_prevention_guidance(short_circuit: &LoopPreventionShortCircuit
             Otherwise use different parameters or a different tool.",
             short_circuit.tool_name, short_circuit.count
         ),
-        LoopPreventionKind::DuplicateInBatch => format!(
-            "Loop prevention: '{}' appears more than once in this tool-call batch with identical parameters.\n\n\
-            Duplicate calls in the same turn were blocked. Keep a single call per unique (tool, arguments) pair, \
-            then continue with a different tool or updated arguments.",
-            short_circuit.tool_name
-        ),
+        LoopPreventionKind::DuplicateInBatch => {
+            let origin_desc = match short_circuit.duplicate_of_tool_call_id.as_deref() {
+                Some(id) => format!("earlier tool_call_id '{}'", id),
+                None => "an earlier call".to_string(),
+            };
+            let args_preview = format_args_preview(&short_circuit.args);
+            format!(
+                "Loop prevention: '{}' is a duplicate of {} in this batch \
+                (identical parameters — other calls of this tool with different arguments are not blocked by this rule).\n\n\
+                Matched arguments: {}\n\n\
+                Duplicate calls in the same turn were blocked. Keep a single call per unique (tool, arguments) pair, \
+                then continue with a different tool or updated arguments.",
+                short_circuit.tool_name, origin_desc, args_preview
+            )
+        }
         LoopPreventionKind::RepeatedBatchSequence => format!(
             "Loop prevention: the same tool-call batch (including '{}') was repeated {} times across consecutive turns.\n\n\
             This call was blocked. Repeating the identical mixed batch will not change the outcome. \
@@ -101,6 +133,7 @@ mod tests {
             tool_name: "workspace__readFile".to_string(),
             args: "{}".to_string(),
             count: 3,
+            duplicate_of_tool_call_id: None,
         });
 
         assert!(guidance.contains("blocked"));
@@ -116,6 +149,7 @@ mod tests {
             tool_name: "workspace__readFile".to_string(),
             args: "{}".to_string(),
             count: 3,
+            duplicate_of_tool_call_id: None,
         });
 
         assert!(guidance.contains("blocked"));
@@ -131,6 +165,7 @@ mod tests {
             tool_name: "workspace__readFile".to_string(),
             args: r#"{"path":"a.ts"}"#.to_string(),
             count: 4,
+            duplicate_of_tool_call_id: None,
         });
 
         assert!(guidance.contains("blocked"));
@@ -145,10 +180,60 @@ mod tests {
             tool_name: "workspace__readFile".to_string(),
             args: "{}".to_string(),
             count: 3,
+            duplicate_of_tool_call_id: None,
         });
 
         assert!(guidance.contains("blocked"));
         assert!(!guidance.contains("planning__reflect"));
+    }
+
+    #[test]
+    fn duplicate_in_batch_guidance_cites_original_call_and_args() {
+        let guidance = build_loop_prevention_guidance(&LoopPreventionShortCircuit {
+            kind: LoopPreventionKind::DuplicateInBatch,
+            tool_name: "planning__addTodo".to_string(),
+            args: r#"{"description":"IMF PPP 추정"}"#.to_string(),
+            count: 2,
+            duplicate_of_tool_call_id: Some("earlier-call-id".to_string()),
+        });
+
+        assert!(guidance.contains("earlier tool_call_id 'earlier-call-id'"));
+        assert!(guidance.contains("IMF PPP 추정"));
+        assert!(guidance.contains("different arguments are not blocked"));
+        assert!(guidance.contains("Matched arguments:"));
+    }
+
+    #[test]
+    fn duplicate_in_batch_guidance_falls_back_without_original_id() {
+        let guidance = build_loop_prevention_guidance(&LoopPreventionShortCircuit {
+            kind: LoopPreventionKind::DuplicateInBatch,
+            tool_name: "planning__addTodo".to_string(),
+            args: r#"{"description":"x"}"#.to_string(),
+            count: 2,
+            duplicate_of_tool_call_id: None,
+        });
+
+        assert!(guidance.contains("duplicate of an earlier call"));
+        assert!(!guidance.contains("tool_call_id '<earlier call>'"));
+        assert!(!guidance.contains("tool_call_id 'an earlier call'"));
+    }
+
+    #[test]
+    fn format_args_preview_truncates_long_payloads_with_ellipsis() {
+        let long: String = "한".repeat(LOOP_PREVENTION_ARGS_PREVIEW_CHARS + 20);
+        let preview = format_args_preview(&long);
+        assert!(preview.ends_with('…'));
+        assert_eq!(
+            preview.chars().count(),
+            LOOP_PREVENTION_ARGS_PREVIEW_CHARS + 1,
+            "preview should be soft-cap chars plus ellipsis"
+        );
+    }
+
+    #[test]
+    fn format_args_preview_keeps_short_payloads_intact() {
+        assert_eq!(format_args_preview("  {\"a\":1}  "), "{\"a\":1}");
+        assert_eq!(format_args_preview("   "), "(empty)");
     }
 
     #[test]

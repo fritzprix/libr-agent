@@ -358,6 +358,7 @@ fn success_track_guidance_recommends_blocking_wait() {
         tool_name: "workspace__waitForProcess".to_string(),
         args: "{}".to_string(),
         count: 3,
+        duplicate_of_tool_call_id: None,
     });
 
     assert!(guidance.contains("blocked"));
