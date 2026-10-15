@@ -137,8 +137,7 @@ pub async fn export_org_bundle(
     emit_progress(&window, 5);
     validate_export_output_path(&output_path)?;
 
-    let (org_id, org_name, root_session_id, assistant_ids) =
-        resolve_org_sessions(&org_id).await?;
+    let (org_id, org_name, root_session_id, assistant_ids) = resolve_org_sessions(&org_id).await?;
     emit_progress(&window, 15);
 
     let db = get_database_connection();
@@ -182,10 +181,7 @@ pub async fn export_org_bundle(
 
     let temp_zip_path = if include_sensitive_data {
         let temp_dir = std::env::temp_dir();
-        temp_dir.join(format!(
-            "libragent-org-export-{}.zip",
-            uuid::Uuid::new_v4()
-        ))
+        temp_dir.join(format!("libragent-org-export-{}.zip", uuid::Uuid::new_v4()))
     } else {
         PathBuf::from(&output_path)
     };
@@ -279,9 +275,7 @@ pub async fn export_org_bundle(
     emit_progress(&window, 85);
 
     // Org-root workspace skills only (not the full workspaces/<root>/ tree).
-    if let Ok(workspace_skills_dir) =
-        get_workspace_skills_directory_for_session(&root_session_id)
-    {
+    if let Ok(workspace_skills_dir) = get_workspace_skills_directory_for_session(&root_session_id) {
         if workspace_skills_dir.exists() {
             let written = zip_directory_under_prefix(
                 &workspace_skills_dir,
@@ -307,9 +301,7 @@ pub async fn export_org_bundle(
         fs::remove_file(&temp_zip_path).ok();
         encrypted_bytes.len() as u64
     } else {
-        fs::metadata(&output_path)
-            .map_err(|e| e.to_string())?
-            .len()
+        fs::metadata(&output_path).map_err(|e| e.to_string())?.len()
     };
 
     emit_progress(&window, 100);
@@ -369,10 +361,7 @@ pub async fn inspect_org_bundle(
                     .get("exported_at")
                     .and_then(|x| x.as_str())
                     .map(str::to_string);
-                org_id = v
-                    .get("org_id")
-                    .and_then(|x| x.as_str())
-                    .map(str::to_string);
+                org_id = v.get("org_id").and_then(|x| x.as_str()).map(str::to_string);
                 org_name = v
                     .get("org_name")
                     .and_then(|x| x.as_str())
@@ -527,8 +516,7 @@ pub async fn import_org_bundle(
             manifest = Some(parsed);
         }
 
-        let manifest =
-            manifest.ok_or_else(|| "manifest.json을 읽을 수 없습니다.".to_string())?;
+        let manifest = manifest.ok_or_else(|| "manifest.json을 읽을 수 없습니다.".to_string())?;
 
         let mut mcp_data: Vec<McpServerRecord> = Vec::new();
         if let Ok(mut entry) = archive.by_name("mcp_servers.json") {
@@ -622,9 +610,7 @@ pub async fn import_org_bundle(
         .await
         .ok();
         backup_manager.restore_from_backup(&backup_file).ok();
-        return Err(
-            "Org 번들 가져오기 중 데이터베이스 오류가 발생해 원복했습니다.".to_string(),
-        );
+        return Err("Org 번들 가져오기 중 데이터베이스 오류가 발생해 원복했습니다.".to_string());
     }
 
     txn.commit().await.map_err(|e| e.to_string())?;
@@ -744,8 +730,7 @@ pub async fn import_org_bundle(
                 errors: ws_errors,
             },
         );
-        workspace_skills_import_path =
-            Some(ws_skills_path.to_string_lossy().into_owned());
+        workspace_skills_import_path = Some(ws_skills_path.to_string_lossy().into_owned());
     }
 
     emit_progress(&window, 100);

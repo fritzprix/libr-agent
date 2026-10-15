@@ -132,11 +132,9 @@ pub(crate) fn archive_has_file_prefix(
     zip_prefix: &str,
 ) -> bool {
     let prefix = format!("{}/", zip_prefix.trim_matches('/'));
-    archive.file_names().any(|name| {
-        name.starts_with(&prefix)
-            && !name.ends_with('/')
-            && name.len() > prefix.len()
-    })
+    archive
+        .file_names()
+        .any(|name| name.starts_with(&prefix) && !name.ends_with('/') && name.len() > prefix.len())
 }
 
 /// Resolve a writable export path under Downloads or an existing parent directory.
