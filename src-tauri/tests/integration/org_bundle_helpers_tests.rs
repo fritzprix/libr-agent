@@ -1,5 +1,5 @@
-//! Windows-safe unit tests for Org portable bundle helpers.
-//! (Pure helpers — no Tauri WebView link.)
+//! Org portable bundle helper coverage (via consolidated `integration_tests`).
+//! Runs on Linux/macOS only — the harness is `#![cfg(not(windows))]`.
 
 use tauri_mcp_agent_lib::commands::migration_commands::models::ORG_BUNDLE_KIND;
 use tauri_mcp_agent_lib::commands::migration_commands::{
