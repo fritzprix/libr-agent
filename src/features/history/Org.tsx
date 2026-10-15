@@ -1,7 +1,7 @@
 import { useDeferredValue, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import useSWR from 'swr';
-import { Building2, RefreshCw, Search, X } from 'lucide-react';
+import { Building2, RefreshCw, Search, Upload, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -14,6 +14,7 @@ import type { AgentSessionMetadata } from '@/models/agent-ipc';
 import { mapSessionMetadataToAgentSession } from '@/lib/session-metadata';
 import { selectOrgSummaries } from './org-sessions';
 import { OrgCard } from './OrgCard';
+import { useOrgBundle } from './useOrgBundle';
 
 const logger = getLogger('OrgHistory');
 
@@ -40,6 +41,7 @@ export default function Org() {
   const { t } = useTranslation('common');
   const [searchQuery, setSearchQuery] = useState('');
   const deferredSearchQuery = useDeferredValue(searchQuery);
+  const { busy: orgBundleBusy, exportOrg, importOrg } = useOrgBundle();
 
   const fetcher = async () => {
     const response = await safeInvoke<AgentSessionMetadata[]>(
@@ -82,6 +84,56 @@ export default function Org() {
     await mutate();
   }
 
+  async function handleExportOrg(orgId: string, orgName: string) {
+    try {
+      const result = await exportOrg(orgId, orgName);
+      if (!result) {
+        return;
+      }
+      toast.success(
+        t('orgHistory.toasts.exported', 'Organization bundle exported'),
+      );
+    } catch (error) {
+      logger.error('Org export failed', error);
+      toast.error(
+        t('orgHistory.toasts.exportFailed', 'Failed to export organization'),
+      );
+    }
+  }
+
+  async function handleImportOrg() {
+    try {
+      const result = await importOrg();
+      if (!result) {
+        return;
+      }
+      const skillsHint = result.workspace_skills_import_path
+        ? ` | workspace skills: ${result.workspace_skills_import_path}`
+        : '';
+      toast.success(
+        t(
+          'orgHistory.toasts.imported',
+          'Organization bundle imported. Teamwork files: {{path}}',
+          { path: `${result.teamwork_import_path}${skillsHint}` },
+        ),
+      );
+    } catch (error) {
+      logger.error('Org import failed', error);
+      const message = error instanceof Error ? error.message : String(error);
+      toast.error(
+        message.includes('PASSWORD_REQUIRED')
+          ? t(
+              'orgHistory.toasts.importPasswordRequired',
+              'This Org bundle is encrypted. Password-protected import is not available in this UI yet — use an unencrypted export or Migration tooling.',
+            )
+          : t(
+              'orgHistory.toasts.importFailed',
+              'Failed to import organization bundle',
+            ),
+      );
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background p-6">
@@ -120,18 +172,28 @@ export default function Org() {
               )}
             </p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleRefresh}
-            disabled={isValidating}
-            className="shrink-0"
-          >
-            <RefreshCw
-              className={cn('mr-2 h-4 w-4', isValidating && 'animate-spin')}
-            />
-            {t('history.refresh', 'Refresh')}
-          </Button>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleImportOrg}
+              disabled={orgBundleBusy || isValidating}
+            >
+              <Upload className="mr-2 h-4 w-4" />
+              {t('orgHistory.importBundle', 'Import Org')}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={isValidating}
+            >
+              <RefreshCw
+                className={cn('mr-2 h-4 w-4', isValidating && 'animate-spin')}
+              />
+              {t('history.refresh', 'Refresh')}
+            </Button>
+          </div>
         </div>
 
         {orgs.length > 0 ? (
@@ -197,6 +259,8 @@ export default function Org() {
                 <OrgCard
                   key={org.orgId}
                   org={org}
+                  exportBusy={orgBundleBusy}
+                  onExport={handleExportOrg}
                   onDeleted={async () => {
                     await mutate();
                   }}

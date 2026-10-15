@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Building2, Play, Trash2, Loader2 } from 'lucide-react';
+import { Building2, Download, Play, Trash2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -37,14 +37,22 @@ const logger = getLogger('OrgCard');
 interface OrgCardProps {
   org: OrgSummary;
   onDeleted: () => Promise<void>;
+  onExport?: (orgId: string, orgName: string) => Promise<void>;
+  exportBusy?: boolean;
 }
 
-export function OrgCard({ org, onDeleted }: OrgCardProps) {
+export function OrgCard({
+  org,
+  onDeleted,
+  onExport,
+  exportBusy = false,
+}: OrgCardProps) {
   const navigate = useNavigate();
   const { t } = useTranslation('common');
   const { deleteSession } = useAgentSessionListActions();
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   const ts = formatSessionTimestamp(org.updatedAt);
   const rootBadge = getStatusBadgeConfig(org.rootSession.status);
@@ -182,10 +190,33 @@ export function OrgCard({ org, onDeleted }: OrgCardProps) {
         />
       </CardContent>
 
-      <CardFooter className="border-t bg-muted/10">
+      <CardFooter className="flex flex-col gap-2 border-t bg-muted/10 sm:flex-row sm:justify-end">
+        {onExport ? (
+          <Button
+            size="sm"
+            variant="outline"
+            className="w-full sm:w-auto"
+            disabled={isExporting || exportBusy || isDeleting}
+            onClick={async () => {
+              setIsExporting(true);
+              try {
+                await onExport(org.orgId, org.orgName);
+              } finally {
+                setIsExporting(false);
+              }
+            }}
+          >
+            {isExporting ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="mr-2 h-4 w-4" />
+            )}
+            {t('orgHistory.exportBundle', 'Export Org')}
+          </Button>
+        ) : null}
         <Button
           size="sm"
-          className="ml-auto w-full sm:w-auto"
+          className="w-full sm:w-auto"
           onClick={() => navigate(`/agent/${org.orgRootSessionId}`)}
         >
           <Play className="mr-2 h-4 w-4" />

@@ -1,9 +1,8 @@
 use sea_orm::EntityTrait;
 use std::fs::{self, File};
-use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
+use std::io::Write;
+use std::path::PathBuf;
 use tauri::{command, Emitter};
-use walkdir::WalkDir;
 
 use crate::entity::{assistant, mcp_server, playbook, scheduled_task, settings};
 use crate::services::skill_service::get_user_skills_directory;
@@ -11,40 +10,10 @@ use crate::state::get_database_connection;
 
 use super::crypto::encrypt_data;
 use super::models::{
-    AssistantRecord, McpServerRecord, MigrationExportInfo, PlaybookRecord, ScheduledTaskRecord,
-    SettingsRecord, CURRENT_FORMAT_VERSION,
+    MigrationExportInfo, PlaybookRecord, ScheduledTaskRecord, SettingsRecord, CURRENT_FORMAT_VERSION,
 };
-
-fn mask_sensitive_json(val: &mut serde_json::Value) {
-    match val {
-        serde_json::Value::Object(map) => {
-            for (k, v) in map.iter_mut() {
-                let k_lower = k.to_lowercase();
-                if k_lower.contains("key")
-                    || k_lower.contains("token")
-                    || k_lower.contains("password")
-                    || k_lower.contains("secret")
-                    || k_lower.contains("auth")
-                    || k_lower.contains("credential")
-                {
-                    if let serde_json::Value::String(s) = v {
-                        *s = "REDACTED".to_string();
-                    } else {
-                        *v = serde_json::Value::Null;
-                    }
-                } else {
-                    mask_sensitive_json(v);
-                }
-            }
-        }
-        serde_json::Value::Array(arr) => {
-            for item in arr.iter_mut() {
-                mask_sensitive_json(item);
-            }
-        }
-        _ => {}
-    }
-}
+use super::sanitize::{clean_assistants, clean_mcp_servers, mask_sensitive_json};
+use super::zip_fs::{validate_export_output_path, zip_directory_under_prefix};
 
 fn clean_settings(records: &[settings::Model], include_sensitive: bool) -> Vec<SettingsRecord> {
     let mut cleaned = Vec::new();
@@ -74,108 +43,6 @@ fn clean_settings(records: &[settings::Model], include_sensitive: bool) -> Vec<S
     cleaned
 }
 
-fn clean_mcp_servers(
-    records: &[mcp_server::Model],
-    include_sensitive: bool,
-) -> Vec<McpServerRecord> {
-    let mut cleaned = Vec::new();
-    for r in records {
-        let mut config_str = r.config.clone();
-        if !include_sensitive {
-            if let Ok(mut val) = serde_json::from_str::<serde_json::Value>(&r.config) {
-                mask_sensitive_json(&mut val);
-                config_str = serde_json::to_string(&val).unwrap_or(r.config.clone());
-            }
-        }
-        cleaned.push(McpServerRecord {
-            id: r.id.clone(),
-            name: r.name.clone(),
-            config: config_str,
-            tool_count: r.tool_count,
-            cached_tools: r.cached_tools.clone(),
-            verification_status: r.verification_status.clone(),
-            last_verification_error: r.last_verification_error.clone(),
-            created_at: r.created_at,
-            updated_at: r.updated_at,
-        });
-    }
-    cleaned
-}
-
-fn clean_assistants(records: &[assistant::Model], include_sensitive: bool) -> Vec<AssistantRecord> {
-    let mut cleaned = Vec::new();
-    for r in records {
-        let mut config_str = r.config.clone();
-        if !include_sensitive {
-            if let Ok(mut val) = serde_json::from_str::<serde_json::Value>(&r.config) {
-                mask_sensitive_json(&mut val);
-                config_str = serde_json::to_string(&val).unwrap_or(r.config.clone());
-            }
-        }
-        cleaned.push(AssistantRecord {
-            id: r.id.clone(),
-            name: r.name.clone(),
-            config: config_str,
-            created_at: r.created_at,
-            updated_at: r.updated_at,
-        });
-    }
-    cleaned
-}
-
-fn zip_dir<W: Write + std::io::Seek>(
-    prefix: &Path,
-    writer: &mut zip::ZipWriter<W>,
-    options: zip::write::FileOptions,
-    window: &tauri::Window,
-    base_progress: u32,
-    progress_span: u32,
-) -> Result<(), String> {
-    let walk: Vec<_> = WalkDir::new(prefix)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .collect();
-    let total_files = walk.len();
-    let mut buffer = Vec::new();
-
-    for (i, entry) in walk.into_iter().enumerate() {
-        let path = entry.path();
-        let metadata = path.symlink_metadata().map_err(|e| e.to_string())?;
-        if metadata.file_type().is_symlink() {
-            continue; // Skip symlinks for security
-        }
-
-        let name = path.strip_prefix(prefix).map_err(|e| e.to_string())?;
-        let name_str = name.to_string_lossy().to_string();
-
-        if name_str.is_empty() {
-            continue;
-        }
-
-        let zip_path = format!("user_skills/{}", name_str.replace('\\', "/"));
-
-        if path.is_dir() {
-            writer
-                .add_directory(&zip_path, options)
-                .map_err(|e| e.to_string())?;
-        } else {
-            writer
-                .start_file(&zip_path, options)
-                .map_err(|e| e.to_string())?;
-            let mut f = File::open(path).map_err(|e| e.to_string())?;
-            f.read_to_end(&mut buffer).map_err(|e| e.to_string())?;
-            writer.write_all(&buffer).map_err(|e| e.to_string())?;
-            buffer.clear();
-        }
-
-        if let Some(div) = ((i + 1) as u32 * progress_span).checked_div(total_files as u32) {
-            let progress = base_progress + div;
-            window.emit("migration:progress", progress).ok();
-        }
-    }
-    Ok(())
-}
-
 #[command]
 pub async fn export_migration(
     window: tauri::Window,
@@ -190,22 +57,7 @@ pub async fn export_migration(
     window.emit("migration:progress", 5).ok();
     let db = get_database_connection();
 
-    // Verify output directory eligibility
-    let path = Path::new(&output_path);
-    let download_dir = dirs::download_dir().unwrap_or(PathBuf::from("."));
-    let mut allowed = false;
-
-    if path.starts_with(&download_dir) {
-        allowed = true;
-    } else if let Some(parent) = path.parent() {
-        if parent.exists() {
-            allowed = true; // Best effort checks
-        }
-    }
-
-    if !allowed {
-        return Err("선택한 경로에 쓸 권한이 없거나 유효하지 않은 경로입니다.".to_string());
-    }
+    validate_export_output_path(&output_path)?;
 
     // Fetch data
     let db_settings = settings::Entity::find()
@@ -368,7 +220,18 @@ pub async fn export_migration(
     let mut zipped_skills = false;
     if let Ok(skills_dir) = get_user_skills_directory() {
         if skills_dir.exists() {
-            zip_dir(&skills_dir, &mut zip, options, &window, 70, 25)?;
+            let window_ref = window.clone();
+            let mut progress_cb = move |pct: u32| {
+                let progress = 70 + (pct * 25 / 100);
+                window_ref.emit("migration:progress", progress).ok();
+            };
+            zip_directory_under_prefix(
+                &skills_dir,
+                "user_skills",
+                &mut zip,
+                options,
+                Some(&mut progress_cb),
+            )?;
             zipped_skills = true;
         }
     }
