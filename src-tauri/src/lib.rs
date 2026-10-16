@@ -199,8 +199,13 @@ pub fn run() {
 
     // Configure Tauri builder with error handling
     let result = std::panic::catch_unwind(|| {
-        tauri::Builder::default()
-            .plugin(tauri_plugin_mcp_bridge::init())
+        let builder = tauri::Builder::default();
+        // Dev-only MCP bridge; never ship it in release (default bind is 0.0.0.0).
+        #[cfg(debug_assertions)]
+        let builder = builder.plugin(tauri_plugin_mcp_bridge::init_with_config(
+            tauri_plugin_mcp_bridge::Config::localhost_only(),
+        ));
+        builder
             .plugin(tauri_plugin_http::init())
             .plugin(tauri_plugin_dialog::init())
             .plugin(tauri_plugin_opener::init())
