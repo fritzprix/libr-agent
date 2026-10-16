@@ -317,6 +317,8 @@
     "rootLabel": "루트 세션",
     "updatedLabel": "업데이트됨",
     "resumeRoot": "루트 세션 재개",
+    "exportBundle": "조직 내보내기",
+    "importBundle": "조직 가져오기",
     "delete": "조직 삭제",
     "deleteConfirm": {
       "title": "조직을 삭제하시겠습니까?",
@@ -324,7 +326,12 @@
     },
     "toasts": {
       "deleted": "조직이 삭제되었습니다",
-      "deleteFailed": "조직 삭제에 실패했습니다"
+      "deleteFailed": "조직 삭제에 실패했습니다",
+      "exported": "조직 번들을 내보냈습니다",
+      "exportFailed": "조직 내보내기에 실패했습니다",
+      "imported": "조직 번들을 가져왔습니다. Teamwork 경로: {{path}}",
+      "importFailed": "조직 번들 가져오기에 실패했습니다",
+      "importPasswordRequired": "이 조직 번들은 암호화되어 있습니다. 현재 UI에서는 암호 가져오기를 지원하지 않습니다. 암호 없는 내보내기를 사용하세요."
     },
     "emptyState": {
       "title": "아직 조직 리니지가 없습니다",

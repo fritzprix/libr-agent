@@ -317,6 +317,8 @@
     "rootLabel": "Root Session",
     "updatedLabel": "Updated",
     "resumeRoot": "Resume Root Session",
+    "exportBundle": "Export Org",
+    "importBundle": "Import Org",
     "delete": "Delete Organization",
     "deleteConfirm": {
       "title": "Delete Organization?",
@@ -324,7 +326,12 @@
     },
     "toasts": {
       "deleted": "Organization deleted",
-      "deleteFailed": "Failed to delete organization"
+      "deleteFailed": "Failed to delete organization",
+      "exported": "Organization bundle exported",
+      "exportFailed": "Failed to export organization",
+      "imported": "Organization bundle imported. Teamwork files: {{path}}",
+      "importFailed": "Failed to import organization bundle",
+      "importPasswordRequired": "This Org bundle is encrypted. Password-protected import is not available in this UI yet — use an unencrypted export or Migration tooling."
     },
     "emptyState": {
       "title": "No org lineages yet",

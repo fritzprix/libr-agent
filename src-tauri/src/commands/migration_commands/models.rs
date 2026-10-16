@@ -151,3 +151,60 @@ pub struct MigrationPreview {
     pub total_size_bytes: u64,
     pub file_path: String,
 }
+
+/// Manifest `kind` value for Org portable bundles (distinct from environment migration).
+pub const ORG_BUNDLE_KIND: &str = "org_bundle";
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct OrgBundleManifest {
+    pub kind: String,
+    pub format_version: u32,
+    pub app_version: String,
+    pub exported_at: String,
+    pub org_id: String,
+    pub org_name: String,
+    pub source_root_session_id: String,
+    pub assistant_ids: Vec<String>,
+    pub mcp_ids: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct OrgBundleExportInfo {
+    pub file_path: String,
+    pub file_size_bytes: u64,
+    pub org_id: String,
+    pub org_name: String,
+    pub sections: Vec<String>,
+    pub assistant_ids: Vec<String>,
+    pub mcp_ids: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct OrgBundleImportResult {
+    pub org_id: String,
+    pub org_name: String,
+    pub teamwork_import_path: String,
+    /// Staging path for org-root `@workspace-skills` (`.libragent/skills/`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_skills_import_path: Option<String>,
+    pub sections_imported: HashMap<String, MigrationSectionReport>,
+    pub total_imported: usize,
+    pub total_skipped: usize,
+    pub total_errors: usize,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct OrgBundlePreview {
+    pub format_version: u32,
+    pub app_version: Option<String>,
+    pub exported_at: Option<String>,
+    pub compatibility: CompatibilityStatus,
+    pub org_id: Option<String>,
+    pub org_name: Option<String>,
+    pub source_root_session_id: Option<String>,
+    pub assistant_ids: Vec<String>,
+    pub mcp_ids: Vec<String>,
+    pub sections: Vec<SectionPreview>,
+    pub total_size_bytes: u64,
+    pub file_path: String,
+}

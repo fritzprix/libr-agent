@@ -58,6 +58,7 @@ pub mod mcp_utils_tests;
 pub mod message_dedup_tests;
 pub mod message_source_tests;
 pub mod migration_compatibility_tests;
+pub mod org_bundle_helpers_tests;
 pub mod org_create_teamwork_workspace_guard_tests;
 pub mod org_session_metadata_tests;
 pub mod path_env_recovery_tests;

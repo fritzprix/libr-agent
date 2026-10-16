@@ -90,7 +90,8 @@ use commands::messages_commands::{
     messages_get_page, messages_search, messages_upsert, messages_upsert_many,
 };
 use commands::migration_commands::{
-    export_migration, import_migration, inspect_migration, reverify_mcp_servers,
+    export_migration, export_org_bundle, import_migration, import_org_bundle, inspect_migration,
+    inspect_org_bundle, reverify_mcp_servers,
 };
 use commands::playbook_commands::{
     create_playbook, delete_playbook, get_playbook, list_playbooks, toggle_playbook_bookmark,
@@ -387,6 +388,9 @@ pub fn run() {
                 import_migration,
                 inspect_migration,
                 reverify_mcp_servers,
+                export_org_bundle,
+                import_org_bundle,
+                inspect_org_bundle,
                 scan_skills_directory,
                 get_default_skills_directory,
                 open_skills_directory_in_explorer,
