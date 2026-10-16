@@ -14,36 +14,9 @@ vi.mock('@/features/agent/lib/pdf-export-preprocess', () => ({
 }));
 
 import {
-  composeReportResultMarkdown,
   exportMarkdownDocument,
   markdownExportBaseName,
 } from '../markdown-document-export';
-
-describe('composeReportResultMarkdown', () => {
-  it('returns result only when no title/criteria/proof', () => {
-    expect(
-      composeReportResultMarkdown({
-        result: 'Done.',
-      }),
-    ).toBe('Done.\n');
-  });
-
-  it('includes title, criteria, proof, and outcome sections', () => {
-    const md = composeReportResultMarkdown({
-      title: 'Ship report',
-      criteria: 'Tests pass',
-      proof: 'ci green',
-      result: 'Released v1',
-    });
-    expect(md).toContain('# Ship report');
-    expect(md).toContain('## Acceptance criteria');
-    expect(md).toContain('Tests pass');
-    expect(md).toContain('## Verification proof');
-    expect(md).toContain('ci green');
-    expect(md).toContain('## Outcome');
-    expect(md).toContain('Released v1');
-  });
-});
 
 describe('markdownExportBaseName', () => {
   it('sanitizes unsafe filename characters', () => {

@@ -2,7 +2,6 @@ import type { Message } from '@/models/chat';
 import type { MCPContent } from '@/lib/mcp';
 import { getToolStructuredContent } from '@/lib/tool-call-utils';
 import { parseReportResult } from '@/features/agent/components/tool-structured/types';
-import { composeReportResultMarkdown } from '@/features/agent/lib/markdown-document-export';
 
 export type MessageDocumentExportKind = 'markdown' | 'html';
 
@@ -45,12 +44,7 @@ function tryReportResultDocument(
     return null;
   }
   return {
-    content: composeReportResultMarkdown({
-      title: parsed.title,
-      criteria: parsed.criteria,
-      proof: parsed.proof,
-      result: parsed.result,
-    }),
+    content: parsed.result.trim() + '\n',
     fileBaseName: parsed.title?.trim() || 'result',
     exportKind: 'markdown',
     source: 'reportResult',
