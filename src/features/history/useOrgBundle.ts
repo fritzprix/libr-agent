@@ -52,7 +52,7 @@ export function useOrgBundle() {
         return null;
       }
 
-      const safeName = orgName.replace(/[^\w\-]+/g, '_').slice(0, 48) || 'org';
+      const safeName = orgName.replace(/[^\w-]+/g, '_').slice(0, 48) || 'org';
       const timestamp = new Date()
         .toISOString()
         .replace(/[:.]/g, '-')

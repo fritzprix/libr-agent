@@ -661,6 +661,14 @@ pub async fn import_org_bundle(
     let mut skills_errors = Vec::new();
 
     for assistant_id in &manifest.assistant_ids {
+        // The id comes from the bundle and is joined into a filesystem path.
+        if sanitize_org_id_for_path(assistant_id) != *assistant_id {
+            skills_errors.push(format!(
+                "Invalid assistant id in bundle: '{}'",
+                assistant_id
+            ));
+            continue;
+        }
         let zip_prefix = format!("assistant_skills/{}", assistant_id);
         if !archive_has_file_prefix(&archive, &zip_prefix) {
             continue;
