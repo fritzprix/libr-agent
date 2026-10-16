@@ -1,4 +1,5 @@
 use crate::agent::AgentSessionManager;
+use crate::server::access_guard::{access_guard, handle_rejection};
 use crate::server::handlers;
 use crate::server::mcp_handler;
 use std::sync::Arc;
@@ -8,6 +9,7 @@ pub fn get_routes(
     agent_manager: Arc<AgentSessionManager>,
     mcp_enabled: bool,
     app_control_enabled: bool,
+    expose: bool,
 ) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
     let agent_manager = warp::any().map(move || agent_manager.clone());
 
@@ -178,11 +180,6 @@ pub fn get_routes(
         .and(warp::body::json())
         .and_then(handlers::put_complexity_model_mapping);
 
-    let cors = warp::cors()
-        .allow_any_origin()
-        .allow_headers(vec!["content-type"])
-        .allow_methods(vec!["GET", "POST", "PUT", "DELETE"]);
-
     // POST /mcp/:session_id — MCP JSON-RPC endpoint (gated by mcp_enabled flag)
     let mcp_enabled_filter = warp::any().map(move || mcp_enabled);
     let app_control_enabled_filter = warp::any().map(move || app_control_enabled);
@@ -213,7 +210,7 @@ pub fn get_routes(
         .and(warp::body::json())
         .and_then(mcp_handler::mcp_rpc_auto);
 
-    create_session
+    let api = create_session
         .or(get_session)
         .or(get_compact_context)
         .or(get_messages)
@@ -233,6 +230,8 @@ pub fn get_routes(
         .or(put_complexity_mapping)
         .or(mcp_control_route)
         .or(mcp_auto_route)
-        .or(mcp_route)
-        .with(cors)
+        .or(mcp_route);
+
+    // No allow_any_origin CORS. CLI clients omit Origin; browsers with Origin are rejected.
+    access_guard(expose).and(api).recover(handle_rejection)
 }
