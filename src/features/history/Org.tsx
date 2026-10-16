@@ -136,8 +136,8 @@ export default function Org() {
 
   if (isLoading) {
     return (
-      <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background p-6">
-        <div className="mx-auto flex h-full min-h-0 w-full max-w-6xl flex-col">
+      <div className="flex min-h-full w-full flex-col bg-background p-6 text-foreground">
+        <div className="mx-auto w-full max-w-6xl">
           <div className="mb-6 flex items-center justify-between">
             <div>
               <Skeleton className="mb-2 h-8 w-40" />
@@ -145,12 +145,10 @@ export default function Org() {
             </div>
             <Skeleton className="h-9 w-24" />
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto no-scrollbar pr-2 pb-4">
-            <div className="grid gap-4 lg:grid-cols-2">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <OrgCardSkeleton key={i} />
-              ))}
-            </div>
+          <div className="grid gap-4 pb-4 lg:grid-cols-2">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <OrgCardSkeleton key={i} />
+            ))}
           </div>
         </div>
       </div>
@@ -158,8 +156,8 @@ export default function Org() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background p-6">
-      <div className="mx-auto flex h-full min-h-0 w-full max-w-6xl flex-col">
+    <div className="flex min-h-full w-full flex-col bg-background p-6 text-foreground">
+      <div className="mx-auto w-full max-w-6xl">
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="text-2xl font-semibold">
@@ -222,53 +220,51 @@ export default function Org() {
           </div>
         ) : null}
 
-        <div className="min-h-0 flex-1 overflow-y-auto no-scrollbar pr-2 pb-4">
-          {orgs.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border/70 bg-muted/10 py-20 text-center text-muted-foreground">
-              <Building2 className="h-10 w-10 opacity-50" />
-              <p className="text-base font-medium">
-                {t('orgHistory.emptyState.title', 'No org lineages yet')}
-              </p>
-              <p className="max-w-xl text-sm">
-                {t(
-                  'orgHistory.emptyState.subtitle',
-                  'Create an org explicitly, then spawn org members through the org-aware tools. Plain sub-agent lineage does not belong here.',
-                )}
-              </p>
-            </div>
-          ) : filteredOrgs.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border/70 bg-muted/10 py-16 text-center text-muted-foreground">
-              <p className="text-base font-medium">
-                {t(
-                  'orgHistory.noOrgsMatching',
-                  'No organizations match "{{query}}"',
-                  { query: searchQuery.trim() },
-                )}
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setSearchQuery('')}
-              >
-                {t('orgHistory.clearSearch', 'Clear search')}
-              </Button>
-            </div>
-          ) : (
-            <div className="grid gap-4 lg:grid-cols-2">
-              {filteredOrgs.map((org) => (
-                <OrgCard
-                  key={org.orgId}
-                  org={org}
-                  exportBusy={orgBundleBusy}
-                  onExport={handleExportOrg}
-                  onDeleted={async () => {
-                    await mutate();
-                  }}
-                />
-              ))}
-            </div>
-          )}
-        </div>
+        {orgs.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border/70 bg-muted/10 py-20 text-center text-muted-foreground">
+            <Building2 className="h-10 w-10 opacity-50" />
+            <p className="text-base font-medium">
+              {t('orgHistory.emptyState.title', 'No org lineages yet')}
+            </p>
+            <p className="max-w-xl text-sm">
+              {t(
+                'orgHistory.emptyState.subtitle',
+                'Create an org explicitly, then spawn org members through the org-aware tools. Plain sub-agent lineage does not belong here.',
+              )}
+            </p>
+          </div>
+        ) : filteredOrgs.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border/70 bg-muted/10 py-16 text-center text-muted-foreground">
+            <p className="text-base font-medium">
+              {t(
+                'orgHistory.noOrgsMatching',
+                'No organizations match "{{query}}"',
+                { query: searchQuery.trim() },
+              )}
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSearchQuery('')}
+            >
+              {t('orgHistory.clearSearch', 'Clear search')}
+            </Button>
+          </div>
+        ) : (
+          <div className="grid gap-4 pb-4 lg:grid-cols-2">
+            {filteredOrgs.map((org) => (
+              <OrgCard
+                key={org.orgId}
+                org={org}
+                exportBusy={orgBundleBusy}
+                onExport={handleExportOrg}
+                onDeleted={async () => {
+                  await mutate();
+                }}
+              />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
