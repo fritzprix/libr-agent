@@ -179,6 +179,18 @@ cargoToml = cargoToml.replace(
 fs.writeFileSync(cargoTomlPath, cargoToml);
 console.log(`Bumped Cargo.toml to ${newVersion}`);
 
+// Sync src-tauri/Cargo.lock to match the bumped version
+try {
+  const { execSync } = require('child_process');
+  execSync('cargo update -p libragent --offline', {
+    cwd: path.join(__dirname, '../src-tauri'),
+    stdio: 'ignore',
+  });
+  console.log(`Synced Cargo.lock to ${newVersion}`);
+} catch (err) {
+  console.warn('Warning: Failed to update Cargo.lock offline:', err.message);
+}
+
 // 4. Bump aur/PKGBUILD
 const pkgbuildPath = path.join(__dirname, '../aur/PKGBUILD');
 let pkgbuild = fs.readFileSync(pkgbuildPath, 'utf8');

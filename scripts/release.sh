@@ -37,6 +37,10 @@ echo ">>> Bumping version..."
 NEW_VERSION=$(node scripts/bump-version.cjs "$1" | tail -n 1)
 echo "New Version: $NEW_VERSION"
 
+echo ">>> Syncing and verifying Cargo.lock..."
+(cd src-tauri && cargo update -p libragent --offline)
+node scripts/check-cargo-lock-version.cjs
+
 echo ">>> Committing and Tagging..."
 # Include CHANGELOG.md if it was modified
 git add CHANGELOG.md README*.md src/README.md package.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json aur/PKGBUILD snap/snapcraft.yaml

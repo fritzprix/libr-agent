@@ -69,6 +69,16 @@ $newVersionOutput = node scripts/bump-version.cjs $VersionBump 2>&1
 $newVersion = $newVersionOutput | Select-Object -Last 1
 Write-Host "New Version: $newVersion"
 
+Write-Host ">>> Syncing and verifying Cargo.lock..."
+Push-Location src-tauri
+cargo update -p libragent --offline
+Pop-Location
+node scripts/check-cargo-lock-version.cjs
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Error: Cargo.lock version sync check failed"
+    exit 1
+}
+
 Write-Host ">>> Committing and Tagging..."
 git add CHANGELOG.md README*.md src/README.md package.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json aur/PKGBUILD snap/snapcraft.yaml
 if ($LASTEXITCODE -ne 0) {
