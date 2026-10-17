@@ -36,44 +36,59 @@ You can set **task difficulty** (low / normal / high) when delegating. Under **S
 
 ---
 
-## How it works at a glance
+## The principles
+
+More than one agent can work together. LibrAgent keeps the same principles in all cases.
+
+| Principle                             | Meaning                                                                                               |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| **On your computer, your choice**     | The work runs on your computer. The result stays as files. You choose the model and who does the work |
+| **Start with the smallest structure** | If one agent is enough, the app does not make a team. It makes the structure bigger only when it must |
+| **The parent is responsible**         | A child does only its own task. The parent decides if the result is used                              |
+| **Proof, not words**                  | The agent does not stop at "I am done". It checks the work                                            |
+| **The same flow everywhere**          | In every pattern, the order is the same: **hand off → check → merge → verify**                        |
+
+---
+
+## How it works
 
 ```text
-             ┌──────────────────── Parent session ────────────────────┐
-             │ ① split  ② hand off  ③ check progress  ④ merge  ⑤ verify │
-             └───────┬───────────────┬───────────────┬─────────────────┘
-                     ▼               ▼               ▼
-                Child A          Child B          Child C
-        (own assistant · work folder · complexity)   ← siblings never talk directly
+              ┌──────────────── Parent chat ────────────────┐
+              │ 1 split  2 hand off  3 check  4 merge  5 verify │
+              └──────┬─────────────┬─────────────┬────────┘
+                     ▼             ▼             ▼
+                 Child chat A  Child chat B  Child chat C
+          (each has its own assistant and work folder)
+                 Child chats do not talk to each other.
 ```
 
-The parent drives children through the **built-in tools** below. You do not call them yourself — attach a skill and the agent runs them in order.
+When you add a skill, the agent works in this order. You do not do these steps yourself.
 
-| What it does                        | Built-in tool                                                          | Good to know                                                                               |
-| ----------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| Look up assistants and sessions     | `agent__listAgents`                                                    | Checks for an **idle child with the same role** before spawning a new one                  |
-| Create a child                      | `agent__spawnSession`                                                  | `waitForResult=true` blocks until done; `false` lets the parent keep working               |
-| Assign new work / follow up         | `agent__messageToSession`                                              | `reset=true` clears conversation and plan but **keeps work-folder files**                  |
-| Check progress and results          | `agent__checkSession`                                                  | `wait=true` blocks until done. Metadata shows whether the folder is `SHARED` or `ISOLATED` |
-| Stop                                | `agent__stopSession`                                                   | Aborts a hung child                                                                        |
-| Compact / clean up                  | `agent__compactSessionContext`, `agent__deleteSession`                 | Shrinks long sessions or removes unused children                                           |
-| Create / edit specialist assistants | `agent__createAgent`, `agent__updateAgent`                             | Used by `recruit` and `boost`                                                              |
-| Prepare a team / create an Org      | `agent__prepareTeamworkWorkspace`, `agent__createOrg`, `agent__getOrg` | Used by `teamwork` and `org`                                                               |
+| Step      | What the agent does                                          | Good to know                                                                        |
+| --------- | ------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
+| Look      | Looks for a child that is **idle** and has the **same role** | If it finds one, it uses that child again. It does not make a new one               |
+| Hand off  | Writes the task for the child                                | The child cannot see the parent chat. The task must have all the needed facts       |
+| Wait      | Waits for the child, or does other work                      | For many tasks, the agent starts them all at the same time                          |
+| Check     | Looks at the child: working or done                          | The agent can stop a child that is stuck                                            |
+| Follow up | Asks the child to fix what is missing                        | For a new task, the agent can clear the old chat. The files in the work folder stay |
+| Merge     | Puts the results together                                    | At the end, the parent checks the result again                                      |
 
-### How children return results
+### How does the result come back?
 
-- The child's **final reply text** is the result. A child's scratchpad notes are **invisible** to the parent.
-- If a child only says "saved to a file" while `ISOLATED`, the parent cannot read it. Ask for the deliverable **in the final reply**, or share the folder.
-- The parent treats "done / tests pass" as a **hypothesis** and checks it (see [Quality checks](#quality-checks-before-you-trust-a-result)).
+- The **last answer** of the child is the result.
+- The parent **cannot see** the private notes of the child.
+- A child can say only "I saved it to a file". If the work folders are separate, the parent cannot read that file. In your request, write "Put the result in your answer". Or make the child use the same work folder.
+- A child can say "I am done". The parent does not accept this alone. The parent **checks** the work. For more information, read [Check the result before you accept it](#check-the-result-before-you-accept-it).
 
-### Choosing complexity
+### Choose how hard the task is
 
-Every handoff picks `low`, `normal`, or `high`. Under **Settings → AI & Models → Sub-Agent Model Routing** you can map each level to a model, so simple lookups use a light model and hard design work uses a strong one. Unmapped levels follow the parent/default model.
+When the agent gives a task to a child, it chooses **low**, **normal**, or **high**. Go to **Settings → AI & Models → Sub-Agent Model Routing**. There you can choose one model for each level. Then easy tasks use a light model, and hard tasks use a strong model. If you do not choose, the child uses the same model as the parent.
 
-### Concurrency and limits
+### How much work at one time?
 
-- By default **4** sessions can be active at once (and up to **8** suspended). Parallel patterns launch work in batches to fit.
-- A session lineage can carry **depth** and **fanout** (children per parent) limits. Exceeding them rejects the spawn with an error, which stops runaway chains of children creating children.
+- There is a **limit** to the number of chats that work at the same time. This keeps your computer fast.
+- If there is more work than the limit, the agent starts the work in groups. Because of this, parallel work can be slower than you expect.
+- There is also a **safety limit** that stops a child from making more children without end. If a task goes over the limit, the app does not make a new child. It tells you.
 
 ---
 
@@ -156,151 +171,173 @@ Create a research / implement / review task force and coordinate with hub-spoke.
 
 ## Patterns in detail
 
-Each pattern below summarizes the procedure the bundled skill actually follows. For more end-to-end prompts see [Orchestration examples](orchestration-examples.md).
+Each pattern below shows the steps that the bundled skill follows, in simple words. For more prompts that you can copy, read [Orchestration examples](orchestration-examples.md).
 
-### `delegate` — the basics
+### `delegate`: give a task to one agent
 
-1. Decide whether delegation fits (bounded scope, parallelizable, or needs a specialist)
-2. **Reuse** an idle child with the same role if one exists; otherwise create one
-3. Choose the child's **work folder** — isolated by default, or "share the current folder" when it must see the same files
-4. Write a **self-contained brief**: objective, scope, output format, required paths
-5. Check progress, re-steer if needed, then merge the result
+**Use it when**: the task has a clear limit, and you want another agent to do it and give you the result. It is also good when the task needs a specialist assistant.
 
-A well-formed request:
+**Steps**
+
+1. The agent decides if the task is good to give to another agent.
+2. If an idle child with the same role exists, the agent uses it again. If not, the agent makes a new child.
+3. The agent chooses **which folder** the child uses. By default, the child has its own folder. If the child must see the same files, choose "use the same folder".
+4. The agent writes the goal, the limits, the result format, and the file locations. It does not leave anything out.
+5. The agent checks progress and gives more instructions if needed. At the end, it merges the result.
+
+**Example request**
 
 ```text
 @skill:delegate
-Read only the auth module (src/auth/**) and look for vulnerability candidates.
-- Scope: no code changes, nothing outside src/auth
-- Output: a table "severity | file:line | description | suggestion" in your final reply
-- Share the current work folder
+Read proposal.md in this folder as an investor.
+- Use the same folder as this chat. Do not change the file.
+- In your answer, write: 3 good points, 3 weak points, 5 questions that I must ask.
 ```
 
-### `divide-conquer` — independent pieces in parallel
+### `divide-conquer`: split the work and do it at the same time
 
-Six stages: **decompose → assign → spawn → monitor → merge → verify**. If pieces need each other's output, use `pipeline` instead.
+**Use it when**: you have many tasks that do not depend on each other. Examples: translate 12 documents, or check each folder.
 
-- Pieces must **not overlap** (two children editing one file will collide).
-- In a shared folder, give each child **unique file names or subfolders**.
-- After merging, run build/tests as an **integration check** and re-run only the failed pieces.
+**Steps**: split → assign → start → watch → merge → check
+
+- The pieces must **not overlap**. If two children change the same file, one will overwrite the other.
+- If children use the same folder, give each child a **different file name**.
+- After the merge, check the whole result. Ask again only for the pieces that have a problem.
+- If a piece needs the result of an earlier piece, do not use this pattern. Use `pipeline`.
 
 ```text
 @skill:divide-conquer
-Translate the 12 Korean guides in docs/ into English: three parallel batches of four,
-follow docs/glossary.md as the common rule, and verify no links broke at the end.
+Translate the 12 Korean guides in the docs folder into English.
+Make 3 groups of 4 and work on the groups at the same time.
+Use glossary.md for the terms. At the end, check that no link is broken.
 ```
 
-### `hub-spoke` — central coordinator plus specialists
+### `hub-spoke`: one leader directs the specialists
 
-The hub owns planning, the task list, and merging. Spokes talk **only to the hub**. If B needs A's output, the hub passes a summary of A's artifacts to B.
+**Use it when**: the work has different jobs, such as research, analysis, and a first draft, and one agent must put them together.
 
-- Keep the hub's context small: request **summaries and file lists**, not full logs.
-- For code work share the hub's folder; for research or writing, take results in the final reply text.
+**How it works**: The leader (the hub) makes the plan and divides the work. The workers (the spokes) report **only to the leader**. The workers do not talk to each other. If worker B needs the result of worker A, the leader sends a summary to B.
+
+- Tell the leader to ask for **summaries and file lists**, not long chat records. If the records are too long, the leader cannot work.
 
 ```text
 @skill:hub-spoke
-Evaluate adopting a new payment module. You are the hub; spokes: ① market & pricing
-② integration difficulty ③ legal & security. Get a one-page summary from each and
-produce a final comparison table with a recommendation.
+Check if we should start to use a new payment service.
+You are the leader. The workers are: 1 price research, 2 how to use it and how hard it is to start, 3 law and security check.
+Get a one-page summary from each worker. Then make a comparison table and a recommendation.
 ```
 
-### `pipeline` — an assembly line
+### `pipeline`: do the work in steps
 
-For `research → draft → review → polish`, each stage's output feeds the next. All stages use the **same work folder**, and the next stage receives a **summary + file paths**, not the whole conversation. A failed stage is retried on its own.
+**Use it when**: the result of one step is the input of the next step. Example: research → first draft → review → final version.
+
+- All steps use the **same folder**.
+- The next step gets only a **summary and the file location**. It does not get the whole chat.
+- If one step fails, only that step runs again.
+- If the steps do not depend on each other, `divide-conquer` is faster.
 
 ```text
 @skill:pipeline
-Produce a blog post on "local agent adoption stories".
-Stage 1 research (5+ sources) → 2 outline & draft → 3 fact & tone review → 4 final Markdown.
-Save each stage's output under drafts/.
+Write a blog post with the title "Make a weekly report with a local agent".
+Step 1: research, with at least 5 sources. Step 2: first draft. Step 3: check the facts and the tone. Step 4: final version.
+Save the result of each step in the drafts folder.
 ```
 
-### `consensus-delegation` — one question, several viewpoints
+### `consensus-delegation`: one question, many points of view
 
-Two to four children review the **same scope with the same output template** independently (e.g. security, performance, maintainability). They never see each other; the parent compares results and follows up **only where they disagree**. There is no voting algorithm — the parent weighs the evidence.
+**Use it when**: you want to look at one decision from many sides. Examples: cost, risk, and ease of use.
 
-Template every child must fill:
+**How it works**: Two to four children each look at **the same question in the same format**. They work alone. They do not see the answers of the other children. The parent compares the answers. The parent asks again **only about the points where the answers are different**. There is no vote. The parent looks at the proof and decides.
+
+Each child answers in the same format.
 
 ```text
-Verdict: approve | approve-with-caveats | reject | inconclusive
+Result: agree | agree with conditions | disagree | cannot decide
 Confidence: high | medium | low
-Findings: - [finding]: [evidence: path, line, command output]
-Risks:    - [risk]: [why it matters]
+What I found: - [point]: [proof]
+Risks: - [point]: [why it is important]
 ```
 
-Tip: do not create a new assistant per viewpoint. Inject the lens in the brief ("You are reviewing as a security reviewer") and reuse existing assistants.
+Tip: do not make a new assistant for each point of view. In your request, write the role, for example "You are the cost reviewer". This is enough.
 
-### `gatekeeper` — a write ↔ review quality gate
+### `gatekeeper`: make, check, and repeat
 
-The creator submits; the reviewer **approves or rejects** against a rubric. A rejection returns the failed rules and what to fix, and the creator reworks. To avoid endless loops over style nits, the parent enforces a **maximum rework count (default 3)**.
+**Use it when**: the result must pass fixed rules.
+
+**How it works**: The writer makes the result. The reviewer checks it against the rules. The reviewer decides to **pass** or to **reject**. If the reviewer rejects it, the writer gets the list of problems, fixes them, and sends the result again. The loop stops after **3 rounds at most**. This stops the loop that never ends because of small differences.
 
 ```text
 @skill:gatekeeper
-Have the creator draft the release notes; the reviewer checks ① no factual errors
-② user impact first ③ two sentences per item. If it fails after 3 rounds,
-summarize what is still wrong.
+Let the writer make a first draft of this month's notice.
+The reviewer checks 3 rules: 1 no wrong facts, 2 the most important point is first, 3 each item has no more than two sentences.
+If the notice does not pass in 3 rounds, tell me what is still wrong.
 ```
 
-### `pair-programming` — driver and navigator
+### `pair-programming`: two agents take turns
 
-Two children work in the **same folder** in turns. The driver implements and leaves a change summary; the navigator reads files or `git diff`, flags structure and bugs, and gives the next instruction. The parent relays turns and **swaps roles** when moving to tests.
+**Use it when**: you want two agents to change the same file in turns and check each other. You can use it for code and for long documents.
+
+**How it works**: Two children work in the **same folder**. One child (the driver) makes the change and writes what it changed. The other child (the navigator) reads the change and shows the problems. The parent gives the turn to each child. When the work goes to the next stage, the children **change roles**.
 
 ```text
 @skill:pair-programming
-Fix the timezone bug in src/utils/date.ts. Driver implements, navigator reviews the diff.
-Swap roles for the test-writing step.
+Improve the setup section in user-guide.md together.
+One agent changes the text. The other agent reads the changes and finds what is wrong or not clear.
+When half of the work is done, change the roles.
 ```
 
 ---
 
-## Quality checks: before you trust a result
+## Check the result before you accept it
 
-For important work, add **`delegation-eval-loop`** after `delegate`. The **child generates; the parent decides acceptance**.
+For important work, add **`delegation-eval-loop`** after `delegate`. **The child makes the result. The parent decides if it is good.** A child that says "I am done" is not enough.
 
-1. **Contract first** — before delegating, fix the objective, allowed/forbidden paths, checkbox **acceptance criteria** (`- [ ] tests pass`), and where the result must appear.
-2. **Four layers** (fail fast on the earliest failure)
+**Steps**
 
-   | Layer                       | Checks                                                | How                                                  |
-   | --------------------------- | ----------------------------------------------------- | ---------------------------------------------------- |
-   | 1. Deterministic            | Build, types, tests, lint                             | Parent runs the same commands or inspects raw output |
-   | 2. Invariant                | Edits outside allowed paths                           | `git status` / `git diff --stat`                     |
-   | 3. Trajectory / reliability | Did it really run? cancelled, incomplete, no evidence | Compare result text with actions                     |
-   | 4. Semantic                 | User intent and edge cases                            | Parent judgment, only after 1–3 pass                 |
+1. **Write the pass rules first.** Write the goal, the places that the child can change, the places that the child must not change, a checklist (`- [ ] no spelling errors`), and where the result goes.
+2. **Check four things in order.** If a check fails, send the work back at once.
 
-3. **Reject precisely** — send the actual failure output, not "try again".
-4. **Bound the loop** — after 3–5 cycles, escalate to you with diagnostics.
+   | Order | What the parent checks | In simple words                                                                     |
+   | ----- | ---------------------- | ----------------------------------------------------------------------------------- |
+   | 1     | The fixed checks       | The parent runs the same checks again                                               |
+   | 2     | The limits             | The parent looks if the child changed a place that it must not change               |
+   | 3     | If the work is real    | The parent finds "done" with no proof, work that stopped, and work that did not run |
+   | 4     | If it is what you want | After checks 1 to 3 pass, the parent makes the last decision                        |
+
+3. **Be exact when you send work back.** Do not write "do it again". Send the exact problem.
+4. **Set a limit.** After 3 to 5 rounds, the agent stops. It tells you the reason.
 
 ```text
 @skill:delegate @skill:delegation-eval-loop
-Fix the rounding bug in payments/.
-- Allowed paths: src/payments/**, tests/payments/**  (no other edits)
-- Acceptance: - [ ] pnpm test payments passes  - [ ] at least one new regression test
-- Paste the commands you ran and their raw output in your final reply
+Change all dates in the customer notices to the format "March 5, 2026".
+- Places you can change: the notice folder. Do not change other places.
+- Pass rules: - [ ] all dates have the same format  - [ ] numbers that are not dates stay the same
+- In your answer, write the list of changed files and 3 examples of before and after.
 ```
 
 ---
 
-## Not the same as time- and event-based features
+## Features that look the same but are not
 
-Similar-sounding, but these are **not** delegation or Org.
+These features are **not** delegation and are **not** Org. Choose the one that you need.
 
-| Need                                                                              | Skill              | Notes                                                                 |
-| --------------------------------------------------------------------------------- | ------------------ | --------------------------------------------------------------------- |
-| "Remind me in 5 minutes", "check every morning" — time-based **inside this chat** | `loop`             | Wakes this session at set times                                       |
-| "Wake me when the build finishes", webhooks, ticket status                        | `call-me-back`     | Resumes this session on a **completion signal**, not the clock        |
-| Cron automation that runs even with the app closed                                | `schedule`         | App-wide, session-independent ([Scheduled Tasks](scheduled-tasks.md)) |
-| Long-lived multi-agent team                                                       | `teamwork` → `org` | Shown in the Org view; resumed from the root session                  |
+| What you need                                                  | Skill              | Description                                                                                        |
+| -------------------------------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------- |
+| "Remind me in 5 minutes", "check every morning" (in this chat) | `loop`             | The agent comes back to this chat at the set time                                                  |
+| "Tell me when the build is done", a webhook, a ticket status   | `call-me-back`     | The agent waits for a **done signal**, not for a time. Read the [guide](call-me-back.md)           |
+| Run on a plan, also when the app is closed                     | `schedule`         | It runs in the whole app and does not depend on a chat. Read [Scheduled Tasks](scheduled-tasks.md) |
+| A team that works for a long time                              | `teamwork` → `org` | The team shows in the **Org** view. You continue from the leader chat of the team                  |
 
 ---
 
-## Running a persistent team (Org)
+## Steps to run a long-term team (Org)
 
-1. **`teamwork`** — first decides whether the work is genuinely multi-track (one agent is preferred if it suffices). Defines the mission, roles, and coordination model, and prepares constitution files (`MISSION.md`, `ROLES.md`, `agents.md`, `coordination/`, …) in an app-local folder. The model is one of **Sequential**, **Hub-and-spoke**, or **Swarm** (open-ended exploration from a shared board).
-2. **`org`** — creates the Org once from the root session and spawns members **inside the Org**. Members inherit the team's work folder. Later you resume from the **Org root**; resuming an arbitrary child is not an Org resume.
-3. **`org-restructure`** — add, remove, or merge roles, edit rules, and reassign owners without dissolving the team.
-4. **`postmortem-improve`** — after a mission or repeated failures, capture lessons and route improvements to `org-restructure`, `boost`, or `recruit`.
+1. **`teamwork`**: First, the agent decides if the work really has many tracks. If one agent is enough, it does not make a team. Then it sets the goal, the roles, and the way of work. It puts the team rule files (`MISSION.md`, `ROLES.md`, and others) in a folder that only the app uses. The way of work is one of these: **in order (Sequential)**, **leader at the center (hub-and-spoke)**, or **free work from a shared board (Swarm)**.
+2. **`org`**: The agent makes the Org **one time** from the leader chat. It makes the team members as part of the Org. Later, you continue from the **leader chat of the Org**. If you open the chat of one member, this is not the same as opening the Org.
+3. **`org-restructure`**: The agent adds, removes, or joins roles, and changes rules. It does not remove the team.
+4. **`postmortem-improve`**: When the work is done, or the same failure happens again, the agent writes what it learned. Then it makes the team better.
 
-You can move an Org to another machine with [export / import](#where-it-shows-in-the-ui).
+You can move an Org to another computer. Read [export and import](#where-it-shows-in-the-ui).
 
 ---
 

@@ -39,14 +39,14 @@ If **Scheduled Task Minimum Interval** is configured under **Settings**, short s
 
 ## Comparison of Automation Mechanisms
 
-| Automation Type                   | Execution Context                                                    |
-| --------------------------------- | -------------------------------------------------------------------- |
-| **Scheduled Tasks** (This Screen) | App-wide, recurring background runs                                  |
-| **`@skill:loop`**                 | In-session clock loops, periodic reminders, and polling              |
-| **`@skill:call-me-back`**         | Resumes sessions upon external process or webhook completion signals |
-| **`@skill:schedule`**             | Procedural instructions guiding the agent to manage schedules        |
-| **Org / Teamwork**                | Explicit hierarchical teams shown in the sidebar **Org** view        |
-| **delegate / divide-conquer**     | Immediate child session delegation during active conversations       |
+| Automation Type                                      | Execution Context                                                    |
+| ---------------------------------------------------- | -------------------------------------------------------------------- |
+| **Scheduled Tasks** (This Screen)                    | App-wide, recurring background runs                                  |
+| **`@skill:loop`**                                    | In-session clock loops, periodic reminders, and polling              |
+| **`@skill:call-me-back`** ([guide](call-me-back.md)) | Resumes sessions upon external process or webhook completion signals |
+| **`@skill:schedule`**                                | Procedural instructions guiding the agent to manage schedules        |
+| **Org / Teamwork**                                   | Explicit hierarchical teams shown in the sidebar **Org** view        |
+| **delegate / divide-conquer**                        | Immediate child session delegation during active conversations       |
 
 For details on orchestrating multiple agents, refer to the [Sub-Agents & Orchestration Guide](sub-agents.md).
 
