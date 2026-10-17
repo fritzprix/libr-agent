@@ -1,13 +1,8 @@
+import type { SessionWorkflowStatus } from '@/models/agent-ipc';
 import type { Message } from '@/models/chat';
 
 /** Agent session / workflow statuses that mean "not actively running". */
-export type AgentWorkflowStatus =
-  | 'idle'
-  | 'busy'
-  | 'paused'
-  | 'error'
-  | 'queued'
-  | 'provisioning';
+export type AgentWorkflowStatus = SessionWorkflowStatus;
 
 /**
  * Statuses where ThinkingBubble / streaming placeholders must not remain active.

@@ -5,6 +5,7 @@ import { act } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentChatInput } from '../AgentChatInput';
 import { AGENT_ATTACHMENT_PICKER_ACCEPT } from '@/features/agent/lib/attachment-picker';
+import type { SessionWorkflowStatus } from '@/models/agent-ipc';
 import { toast } from 'sonner';
 
 const fileAttachmentProps = vi.hoisted(
@@ -32,7 +33,7 @@ const mocks = vi.hoisted(() => ({
   setInput: vi.fn(),
   onTokenInputChange: vi.fn(),
   handleSubmit: vi.fn((e?: Event) => e?.preventDefault?.()),
-  workflowStatus: 'idle' as 'idle' | 'busy' | 'paused' | 'queued' | 'error',
+  workflowStatus: 'idle' as SessionWorkflowStatus,
   isSubmitting: false,
   isSessionLoading: false,
   isProxyReady: true,
