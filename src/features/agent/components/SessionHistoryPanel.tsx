@@ -385,6 +385,10 @@ export function SessionHistoryPanel({
     onLoadMore();
   }, [hasMoreSessions, isLoadingMoreSessions, onLoadMore]);
 
+  const handleLineageSelect = useCallback((lineageId: string) => {
+    setSelectedLineageId((prev) => (prev === lineageId ? null : lineageId));
+  }, []);
+
   const renderSessionRow = useCallback(
     ({
       session,
@@ -434,11 +438,7 @@ export function SessionHistoryPanel({
               unloadedChildrenCount={unloadedChildrenCount}
               isLoadingChildren={loadingChildrenParentIds?.has(session.id)}
               onToggleExpand={handleToggleExpand}
-              onLineageSelect={(lineageId) =>
-                setSelectedLineageId((prev) =>
-                  prev === lineageId ? null : lineageId,
-                )
-              }
+              onLineageSelect={handleLineageSelect}
             />
           </div>
         </div>
@@ -446,6 +446,7 @@ export function SessionHistoryPanel({
     },
     [
       descendantCounts,
+      handleLineageSelect,
       handleToggleExpand,
       loadingChildrenParentIds,
       onDelete,

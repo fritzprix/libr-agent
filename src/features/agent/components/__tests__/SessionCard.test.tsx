@@ -117,4 +117,10 @@ describe('SessionCard', () => {
     fireEvent.click(screen.getByRole('button', { name: /Remove bookmark/i }));
     expect(onToggleBookmark).toHaveBeenCalledWith('session-123');
   });
+
+  it('is wrapped in React.memo to prevent unnecessary re-renders', () => {
+    expect((SessionCard as unknown as { $$typeof: symbol }).$$typeof).toBe(
+      Symbol.for('react.memo'),
+    );
+  });
 });
