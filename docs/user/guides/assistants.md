@@ -1,6 +1,6 @@
 ---
 title: Assistants
-description: "맞춤 어시스턴트 프로필을 만들고 General·Tools·Skills를 설정하는 방법을 설명합니다."
+description: '맞춤 어시스턴트 프로필을 만들고 General·Tools·Skills를 설정하는 방법을 설명합니다.'
 ---
 
 # Assistants

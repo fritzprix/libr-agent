@@ -317,6 +317,8 @@
     "rootLabel": "루트 세션",
     "updatedLabel": "업데이트됨",
     "resumeRoot": "루트 세션 재개",
+    "exportBundle": "조직 내보내기",
+    "importBundle": "조직 가져오기",
     "delete": "조직 삭제",
     "deleteConfirm": {
       "title": "조직을 삭제하시겠습니까?",
@@ -324,7 +326,12 @@
     },
     "toasts": {
       "deleted": "조직이 삭제되었습니다",
-      "deleteFailed": "조직 삭제에 실패했습니다"
+      "deleteFailed": "조직 삭제에 실패했습니다",
+      "exported": "조직 번들을 내보냈습니다",
+      "exportFailed": "조직 내보내기에 실패했습니다",
+      "imported": "조직 번들을 가져왔습니다. Teamwork 경로: {{path}}",
+      "importFailed": "조직 번들 가져오기에 실패했습니다",
+      "importPasswordRequired": "이 조직 번들은 암호화되어 있습니다. 현재 UI에서는 암호 가져오기를 지원하지 않습니다. 암호 없는 내보내기를 사용하세요."
     },
     "emptyState": {
       "title": "아직 조직 리니지가 없습니다",
@@ -1370,6 +1377,11 @@
       "thinkingLoopRetry": "사고 루프가 감지되었습니다. 새 턴으로 다시 시도합니다…",
       "textLoopRetry": "반복 텍스트 루프가 감지되었습니다. 새 턴으로 다시 시도합니다…"
     },
+    "interactiveForm": {
+      "submitSuccess": "답변이 전달되었습니다. 에이전트가 작업을 이어갑니다.",
+      "submitNotReady": "세션이 아직 준비되지 않았습니다. 잠시 후 다시 제출해 주세요.",
+      "duplicateSubmit": "답변이 이미 제출 처리 중입니다."
+    },
     "statusBar": {
       "retryError": "메시지 재시도에 실패했습니다",
       "resumeError": "세션 재개에 실패했습니다",
@@ -1985,6 +1997,11 @@
         "title": "일상 Chrome 그대로 쓰기",
         "body": "설정 → 시스템에서 Chrome 확장 프로그램을 연결하면, 이미 로그인된 실제 Chrome에서 에이전트가 작업할 수 있습니다.",
         "cta": "시스템 설정 열기"
+      },
+      "orgPortableBundle": {
+        "title": "조직 팀을 통째로 백업·이동해요",
+        "body": "Org 화면에서 어시스턴트, 예약 작업, 플레이북, 스킬이 담긴 .libragent-org 번들로 팀을 내보내고 다른 기기에서 가져올 수 있어요.",
+        "cta": "Org 열기"
       }
     }
   }

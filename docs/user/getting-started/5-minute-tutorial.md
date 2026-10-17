@@ -1,6 +1,6 @@
 ---
 title: 5분 시작 가이드
-description: "5분 안에 LibrAgent를 설치하고 AI 모델을 연결한 뒤 첫 에이전트 채팅을 시작하는 빠른 튜토리얼입니다."
+description: '5분 안에 LibrAgent를 설치하고 AI 모델을 연결한 뒤 첫 에이전트 채팅을 시작하는 빠른 튜토리얼입니다.'
 ---
 
 # 5분 시작 가이드
@@ -14,7 +14,7 @@ description: "5분 안에 LibrAgent를 설치하고 AI 모델을 연결한 뒤 �
 1. LibrAgent 실행
 2. Settings에서 API 키·기본 모델 설정
 3. **Chat**에서 어시스턴트를 골라 세션 시작
-4. **App Wizard**와 **setup-wizard**(별칭 `bootstrap`)로 환경 준비하기
+4. **App Wizard**로 PC 환경(Python·Node 등) 준비하기
 
 **소요 시간**: 약 5분  
 **필요**: LibrAgent 앱, 인터넷, 공급자(API) 키
@@ -35,7 +35,7 @@ description: "5분 안에 LibrAgent를 설치하고 AI 모델을 연결한 뒤 �
 
 에이전트와 대화하려면 API 키가 필요합니다. 자세한 필드는 [모델 연결하기](connecting-models.md)를 참고하세요.
 
-1. 사이드바에서 **Settings**를 엽니다. (`/settings` 전체 페이지)
+1. 사이드바에서 **Settings**를 엽니다.
 2. 탭 **AI & Models**를 선택합니다.
 3. **Provider API Keys**에서 사용할 공급자(Anthropic, OpenAI, Google Gemini 등) 카드를 찾습니다.
 4. **API Key**에 키를 붙여넣고 **Save Changes**를 누릅니다.
@@ -63,16 +63,11 @@ description: "5분 안에 LibrAgent를 설치하고 AI 모델을 연결한 뒤 �
 
 ---
 
-## 4단계: App Wizard와 setup-wizard 알아두기
+## 4단계: App Wizard로 환경 준비하기
 
-온보딩에 따로 뜨는 “설치 마법사 UI”는 없습니다. 대신 **내장 어시스턴트**와 **내장 도구**로 환경을 맞춥니다.
-
-### App Wizard (어시스턴트)
+별도 “설치 마법사 창”은 없습니다. **Chat**의 **App Wizard** 어시스턴트에게 말하면 됩니다.
 
 **Chat → Built-in Assistants → App Wizard**
-
-- 역할: 앱/에이전트/MCP·환경 설정 도우미
-- 설명(앱 문구): _Environment and configuration specialist for MCP setup, agent management, and system readiness._
 
 예:
 
@@ -80,17 +75,8 @@ description: "5분 안에 LibrAgent를 설치하고 AI 모델을 연결한 뒤 �
 Python이랑 Node가 이 PC에 깔려 있는지 확인해 주고, 없으면 설치 방법 알려줘.
 ```
 
-### setup-wizard (내장 도구, 별칭 bootstrap)
-
-- 서비스 이름: **setup-wizard** (Setup Wizard Server)
-- README 등에서 말하는 **`bootstrap`**은 같은 서비스의 **별칭**입니다.
-- App Wizard가 이 도구를 사용해 OS를 감지하고 Python / Node.js / uv 등 런타임 설치를 안내합니다.
-
-코딩·터미널·MCP를 쓰기 전에 **한 번 App Wizard와 대화**해 두면 이후 세션이 훨씬 수월합니다.
-
-같은 주제의 **스킬**도 있습니다: 입력에 `@skill:setup-wizard`를 넣으면 설치 절차 문서가 컨텍스트에 포함됩니다. 번들 스킬 전체는 [번들 스킬 가이드](../guides/skills.md)를 참고하세요.
-
-> Settings **Advanced**의 “Shell runtime bootstrap”(conda/nvm PATH)은 **다른 기능**입니다. 환경 설치 안내는 **App Wizard / setup-wizard**를 쓰세요.
+코딩·터미널·확장(MCP)을 쓰기 전에 **한 번 App Wizard와 대화**해 두면 이후가 수월합니다.  
+같은 주제를 `@skill:setup-wizard`로 불러올 수도 있습니다. → [스킬 가이드](../guides/skills.md)
 
 ---
 

@@ -50,6 +50,16 @@ pub fn inspect_response_admission(
     }
 
     if status == GuardSessionStatus::Busy {
+        // Interactive form callbacks (getUserAnswer / resumeCircuitBreak) arrive as
+        // new assistant messages while the session may still be Busy settling the
+        // turn that rendered the form. Their message ids never match the in-flight
+        // LLM expected_response_id — skip that check so the answer is not dropped.
+        if is_ui_tool && allow_idle_tool_entry {
+            return Ok(ResponseAdmissionDecision {
+                should_mark_busy: false,
+                skip_expected_response_id_check: true,
+            });
+        }
         return Ok(ResponseAdmissionDecision {
             should_mark_busy: false,
             skip_expected_response_id_check: false,
@@ -222,6 +232,31 @@ mod tests {
             .expect_err("cancelled non-ui response should be rejected");
 
         assert_eq!(error, WORKFLOW_CANCELLED_ERROR);
+    }
+
+    #[test]
+    fn admission_allows_busy_ui_tool_entry_without_expected_response_id() {
+        let busy_ui =
+            inspect_response_admission(GuardSessionStatus::Busy, false, false, true, true)
+                .expect("busy ui tool entry should be admitted while form settles");
+        assert_eq!(
+            busy_ui,
+            ResponseAdmissionDecision {
+                should_mark_busy: false,
+                skip_expected_response_id_check: true,
+            }
+        );
+
+        let busy_non_ui =
+            inspect_response_admission(GuardSessionStatus::Busy, false, false, true, false)
+                .expect("busy non-ui with tool calls still admits without skip");
+        assert_eq!(
+            busy_non_ui,
+            ResponseAdmissionDecision {
+                should_mark_busy: false,
+                skip_expected_response_id_check: false,
+            }
+        );
     }
 
     #[test]

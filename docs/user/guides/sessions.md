@@ -1,6 +1,6 @@
 ---
 title: 세션
-description: "세션 검색·북마크·삭제, Regenerate, 워크스페이스 재정의와 /reload 사용법을 설명합니다."
+description: '세션 검색·북마크·삭제, Regenerate, 워크스페이스 재정의와 /reload 사용법을 설명합니다.'
 ---
 
 # 세션 관리하기
@@ -32,8 +32,8 @@ description: "세션 검색·북마크·삭제, Regenerate, 워크스페이스 �
 
 - 자식(하위 에이전트)이 **없으면**: 확인 후 해당 세션만 삭제.
 - 자식이 **있으면**:
-  - **Delete all** (+N subagents) — 부모와 하위 함께 삭제
-  - **Delete only this** (Subagents kept) — 부모만 삭제, 자식은 유지
+  - **모두 삭제** / **Delete all** (+N subagents) — 부모와 하위 함께 삭제
+  - **이것만 삭제** / **Delete only this** (Subagents kept) — 부모만 삭제, 자식은 유지
 
 복구되지 않습니다. 하위 에이전트 개념: [서브 에이전트](sub-agents.md)
 
@@ -52,7 +52,7 @@ description: "세션 검색·북마크·삭제, Regenerate, 워크스페이스 �
 
 ### 채팅 리치 콘텐츠
 
-- **Mermaid**(`` ```mermaid ``)와 **LaTeX**(`$…$` / `$$…$$`)가 채팅 메시지, 결과 카드, 인터랙티브 마크다운 패널에서 렌더됩니다.
+- **Mermaid**(` ```mermaid `)와 **LaTeX**(`$…$` / `$$…$$`)가 채팅 메시지, 결과 카드, 인터랙티브 마크다운 패널에서 렌더됩니다.
 - 메시지 **복사** / **PDF 내보내기**도 다이어그램·수식을 유지합니다 (PDF는 Mermaid를 이미지로 넣고, 수식은 TeX 경로를 사용).
 
 ### 마지막 턴 다시 생성 (Regenerate)
@@ -65,9 +65,9 @@ description: "세션 검색·북마크·삭제, Regenerate, 워크스페이스 �
 
 채팅 헤더 또는 History 카드의 **Export** 메뉴로 저장된 대화를 파일로 저장합니다.
 
-- **Markdown (.md)** — 저장소의 전체 대화(thinking, tool call 포함). compaction/recovery 스캐폴딩은 제외합니다.
-- **ATIF trajectory (.json)** — 분석용 Harbor 정렬 ATIF-v1.7. 스크린샷 등 바이너리 미디어는 원문이 아니라 placeholder만 넣습니다.
-- **보이는 대화 복사** (활성 채팅만) — 메모리에 있는 창을 클립보드로 복사합니다. thinking은 빠지고 용량 제한이 있으며, Markdown 파일 내보내기와 같지 않습니다.
+- **Markdown (.md)** — 사람이 읽기 쉬운 대화 기록(생각 과정·도구 사용 요약 포함). 일상 공유·보관용으로 추천합니다.
+- **ATIF (.json)** — **선택·고급**. 개발자·분석용 궤적 포맷입니다. 스크린샷 등 큰 미디어는 원문 대신 자리 표시만 들어갑니다. 자세한 내용은 [세션 내보내기](session-export.md)를 보세요.
+- **보이는 대화 복사** (활성 채팅만) — 지금 화면에 보이는 대화를 클립보드로 복사합니다. 생각 과정은 빠지고 길이 제한이 있으며, Markdown 파일 내보내기와는 다릅니다.
 
 진행 중인 세션도 그 시점의 스냅샷으로 내보낼 수 있습니다. 아직 스트리밍 중인 행은 제외됩니다.
 

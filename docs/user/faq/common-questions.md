@@ -1,6 +1,6 @@
 ---
 title: 자주 묻는 질문
-description: "설치, 모델, MCP, 스킬, 자동화에 대한 LibrAgent 자주 묻는 질문과 짧은 답변입니다."
+description: '설치, 모델, MCP, 스킬, 자동화에 대한 LibrAgent 자주 묻는 질문과 짧은 답변입니다.'
 ---
 
 # 자주 묻는 질문 (FAQ)
@@ -68,7 +68,7 @@ Gemini/Groq 등 제공사 무료 티어, 또는 **Ollama** 등 로컬 엔드포�
 
 ### MCP가 무엇인가요?
 
-에이전트가 외부 도구와 붙는 프로토콜입니다. Settings에 **「MCP Servers」탭은 없습니다.** 사이드바 **Extensions** (`/mcp-servers`)에서 관리합니다.
+에이전트가 외부 도구와 붙는 프로토콜입니다. Settings에 **「MCP Servers」탭은 없습니다.** 사이드바 **Extensions**에서 관리합니다.
 
 - 추천 설치: [Extensions 가이드](../guides/extensions.md)
 - 직접 추가: [커스텀 MCP](../guides/custom-mcp.md)
@@ -100,6 +100,14 @@ Gemini/Groq 등 제공사 무료 티어, 또는 **Ollama** 등 로컬 엔드포�
 ### Org 메뉴는?
 
 **명시적으로 만든 Org 팀**만 보입니다. 일반 위임(sub-agent) 계보만으로는 안 뜹니다. → [서브 에이전트](../guides/sub-agents.md)
+
+---
+
+## 언어
+
+### 앱을 영어로 쓸 수 있나요?
+
+**Settings → General → Language**. 문서: [한국어](/) · [English](/en/).
 
 ---
 

@@ -436,7 +436,7 @@ async fn import_settings_data(
     })
 }
 
-async fn import_assistants_data(
+pub(crate) async fn import_assistants_data(
     txn: &sea_orm::DatabaseTransaction,
     records: Vec<AssistantRecord>,
     strategy: &str,
@@ -492,7 +492,7 @@ async fn import_assistants_data(
     })
 }
 
-async fn import_mcp_data(
+pub(crate) async fn import_mcp_data(
     txn: &sea_orm::DatabaseTransaction,
     records: Vec<McpServerRecord>,
     strategy: &str,

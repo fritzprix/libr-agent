@@ -11,6 +11,7 @@ const {
   openExternalUrlMock,
   exportMarkdownDocumentWithNotifyMock,
   toastErrorMock,
+  toastSuccessMock,
   loggerInfoMock,
   loggerWarnMock,
   loggerErrorMock,
@@ -22,6 +23,7 @@ const {
   openExternalUrlMock: vi.fn(),
   exportMarkdownDocumentWithNotifyMock: vi.fn(),
   toastErrorMock: vi.fn(),
+  toastSuccessMock: vi.fn(),
   loggerInfoMock: vi.fn(),
   loggerWarnMock: vi.fn(),
   loggerErrorMock: vi.fn(),
@@ -72,7 +74,7 @@ vi.mock('sonner', () => ({
   toast: {
     error: toastErrorMock,
     info: vi.fn(),
-    success: vi.fn(),
+    success: toastSuccessMock,
   },
 }));
 
@@ -109,6 +111,7 @@ describe('useUIActionHandler', () => {
     exportMarkdownDocumentWithNotifyMock.mockReset();
     exportMarkdownDocumentWithNotifyMock.mockResolvedValue(undefined);
     toastErrorMock.mockReset();
+    toastSuccessMock.mockReset();
     loggerInfoMock.mockReset();
     loggerWarnMock.mockReset();
     loggerErrorMock.mockReset();
@@ -305,7 +308,7 @@ describe('useUIActionHandler', () => {
     expect(submitMock).not.toHaveBeenCalled();
   });
 
-  it('ignores stale workflow-cancelled tool results without error logging', async () => {
+  it('surfaces orphaned getUserAnswer as a retryable error with toast feedback', async () => {
     handleUserToolCallMock.mockRejectedValue(
       new Error('UI tool result orphaned (workflow inactive)'),
     );
@@ -325,11 +328,41 @@ describe('useUIActionHandler', () => {
     };
 
     await expect(result.current(action)).resolves.toEqual({
-      status: 'ignored',
-      message: 'UI tool result orphaned (workflow inactive)',
+      status: 'error',
+      message: 'agent.interactiveForm.submitNotReady',
     });
 
+    expect(toastErrorMock).toHaveBeenCalledWith(
+      'agent.interactiveForm.submitNotReady',
+    );
     expect(loggerErrorMock).not.toHaveBeenCalled();
-    expect(loggerInfoMock).toHaveBeenCalled();
+  });
+
+  it('toasts success after getUserAnswer injection', async () => {
+    handleUserToolCallMock.mockResolvedValue(undefined);
+
+    const contentRef = {
+      current: [] as MCPContent[],
+    };
+
+    const { result } = renderHook(() => useUIActionHandler(contentRef));
+
+    const action: UIActionResult = {
+      type: 'tool',
+      payload: {
+        toolName: 'getUserAnswer',
+        params: { messageId: 'msg-2', answer: 'Option B' },
+      },
+    };
+
+    await expect(result.current(action)).resolves.toEqual({
+      status: 'tool-submitted',
+      tool: 'getUserAnswer',
+      message: 'agent.interactiveForm.submitSuccess',
+    });
+
+    expect(toastSuccessMock).toHaveBeenCalledWith(
+      'agent.interactiveForm.submitSuccess',
+    );
   });
 });

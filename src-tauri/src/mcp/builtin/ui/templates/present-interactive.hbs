@@ -126,15 +126,59 @@
         background: #3b82f6;
         color: #ffffff;
       }
-      .btn-primary:hover {
+      .btn-primary:hover:not(:disabled) {
         background: #2563eb;
       }
       .btn-secondary {
         background: var(--secondary, #e5e7eb);
         color: var(--secondary-foreground, #374151);
       }
-      .btn-secondary:hover {
+      .btn-secondary:hover:not(:disabled) {
         background: var(--muted, #d1d5db);
+      }
+      .btn:disabled {
+        opacity: 0.65;
+        cursor: not-allowed;
+      }
+      .interaction-status {
+        display: none;
+        margin-top: 12px;
+        padding: 12px 14px;
+        border-radius: 6px;
+        font-size: 14px;
+        line-height: 1.45;
+        border: 1px solid var(--border, #e5e7eb);
+      }
+      .interaction-status.is-visible {
+        display: block;
+      }
+      .interaction-status.is-pending {
+        background: color-mix(in oklab, #3b82f6 12%, var(--muted, #eff6ff));
+        border-color: #93c5fd;
+        color: var(--foreground, #1e3a8a);
+      }
+      .interaction-status.is-success {
+        background: color-mix(in oklab, #16a34a 12%, var(--muted, #f0fdf4));
+        border-color: #86efac;
+        color: var(--foreground, #14532d);
+      }
+      .interaction-status.is-error {
+        background: color-mix(in oklab, #dc2626 10%, var(--muted, #fef2f2));
+        border-color: #fca5a5;
+        color: var(--foreground, #7f1d1d);
+      }
+      .interaction-status .status-title {
+        font-weight: 600;
+        margin-bottom: 4px;
+      }
+      .interaction-status .status-detail {
+        opacity: 0.9;
+        word-break: break-word;
+      }
+      .interaction-form.is-locked .text-input,
+      .interaction-form.is-locked .option-item {
+        opacity: 0.7;
+        pointer-events: none;
       }
 
       /* Markdown rendered styles */
@@ -596,8 +640,18 @@
           {{/if}}
           
           <div class='interaction-actions'>
-            <button id='cancel-btn' class='btn btn-secondary'>Cancel</button>
-            <button id='submit-btn' class='btn btn-primary'>Submit</button>
+            <button id='cancel-btn' class='btn btn-secondary' type='button'>Cancel</button>
+            <button id='submit-btn' class='btn btn-primary' type='button'>Submit</button>
+          </div>
+          <div
+            id='interaction-status'
+            class='interaction-status'
+            role='status'
+            aria-live='polite'
+            aria-atomic='true'
+          >
+            <div class='status-title' id='interaction-status-title'></div>
+            <div class='status-detail' id='interaction-status-detail'></div>
           </div>
         </div>
       </div>
@@ -660,6 +714,162 @@
       const messageId = '{{messageId}}';
       const interactionType = '{{interaction.type}}';
       const options = {{{optionsJson}}};
+      const formEl = document.querySelector('.interaction-form');
+      const submitBtn = document.getElementById('submit-btn');
+      const cancelBtn = document.getElementById('cancel-btn');
+      const statusEl = document.getElementById('interaction-status');
+      const statusTitleEl = document.getElementById('interaction-status-title');
+      const statusDetailEl = document.getElementById('interaction-status-detail');
+      let submitState = 'idle'; // idle | pending | success
+      let pendingRequestId = null;
+
+      function setStatus(kind, title, detail) {
+        statusEl.className = 'interaction-status is-visible is-' + kind;
+        statusTitleEl.textContent = title;
+        statusDetailEl.textContent = detail || '';
+        if (typeof scheduleResizeReport === 'function') {
+          scheduleResizeReport();
+        }
+      }
+
+      function setControlsLocked(locked) {
+        submitBtn.disabled = locked;
+        cancelBtn.disabled = locked;
+        formEl.classList.toggle('is-locked', locked);
+        const textInput = document.getElementById('text-answer');
+        if (textInput) textInput.disabled = locked;
+        document.querySelectorAll('input[name="option"]').forEach(function (input) {
+          input.disabled = locked;
+        });
+      }
+
+      function formatAnswerPreview(answer) {
+        if (answer == null) return '(cancelled)';
+        if (Array.isArray(answer)) return answer.join(', ');
+        return String(answer);
+      }
+
+      function postAnswer(answer, cancelled) {
+        if (submitState !== 'idle') {
+          return;
+        }
+
+        const requestId =
+          'ui-answer-' + messageId + '-' + Date.now().toString(36);
+        pendingRequestId = requestId;
+        submitState = 'pending';
+        setControlsLocked(true);
+        submitBtn.textContent = cancelled ? 'Cancelling…' : 'Submitting…';
+        setStatus(
+          'pending',
+          cancelled ? 'Cancelling…' : 'Answer submitted',
+          cancelled
+            ? 'Sending cancel to the agent…'
+            : 'Waiting for the agent to resume…\n' + formatAnswerPreview(answer),
+        );
+
+        window.parent.postMessage({
+          type: 'tool',
+          messageId: requestId,
+          payload: {
+            toolName: 'getUserAnswer',
+            params: cancelled
+              ? { messageId, answer: null, cancelled: true }
+              : { messageId, answer },
+          },
+        }, '*');
+      }
+
+      function unlockForRetry(detail) {
+        submitState = 'idle';
+        pendingRequestId = null;
+        setControlsLocked(false);
+        submitBtn.textContent = 'Submit';
+        setStatus(
+          'error',
+          'Could not resume the session',
+          detail || 'Please submit again in a moment.',
+        );
+      }
+
+      function markSuccess(detail) {
+        submitState = 'success';
+        pendingRequestId = null;
+        setControlsLocked(true);
+        submitBtn.textContent = 'Submitted';
+        setStatus(
+          'success',
+          'Received — agent is continuing',
+          detail || 'Your answer was delivered. You do not need to submit again.',
+        );
+      }
+
+      function isMatchingResponse(data) {
+        if (!data || typeof data !== 'object') return false;
+        if (!pendingRequestId) return false;
+        // Prefer correlated ids; also accept uncorrelated host responses while pending.
+        if (data.messageId == null || data.messageId === '') return true;
+        return data.messageId === pendingRequestId;
+      }
+
+      function handleHostResponsePayload(payload) {
+        if (!payload || typeof payload !== 'object') {
+          unlockForRetry('No response from the host app.');
+          return;
+        }
+        if (payload.error) {
+          const errText =
+            typeof payload.error === 'string'
+              ? payload.error
+              : (payload.error && payload.error.message) || 'Host rejected the answer.';
+          unlockForRetry(errText);
+          return;
+        }
+        const response = payload.response;
+        const status =
+          response && typeof response === 'object' ? response.status : undefined;
+        if (
+          status === 'tool-submitted' ||
+          status === 'tauri-processed' ||
+          status === 'ok' ||
+          status === 'success'
+        ) {
+          markSuccess(
+            response && response.message
+              ? String(response.message)
+              : 'Your answer was delivered. You do not need to submit again.',
+          );
+          return;
+        }
+        if (status === 'ignored' || status === 'error' || status === 'tauri-error') {
+          unlockForRetry(
+            (response && response.message) ||
+              'The session was not ready yet. Please submit again.',
+          );
+          return;
+        }
+        // Unknown but non-throwing host ack — treat as accepted to avoid double submits.
+        markSuccess('Your answer was delivered. You do not need to submit again.');
+      }
+
+      window.addEventListener('message', function (event) {
+        if (submitState !== 'pending') return;
+        const data = event.data;
+        if (!data || typeof data !== 'object') return;
+        if (!isMatchingResponse(data)) return;
+
+        if (data.type === 'ui-message-received') {
+          setStatus(
+            'pending',
+            'Answer received by app',
+            'Resuming the agent session…',
+          );
+          return;
+        }
+        if (data.type === 'ui-message-response') {
+          handleHostResponsePayload(data.payload || {});
+        }
+      });
 
       function handleSubmit() {
         let answer;
@@ -684,23 +894,11 @@
             : options[selected[0]];
         }
 
-        window.parent.postMessage({
-          type: 'tool',
-          payload: {
-            toolName: 'getUserAnswer',
-            params: { messageId, answer },
-          },
-        }, '*');
+        postAnswer(answer, false);
       }
 
       function handleCancel() {
-        window.parent.postMessage({
-          type: 'tool',
-          payload: {
-            toolName: 'getUserAnswer',
-            params: { messageId, answer: null, cancelled: true },
-          },
-        }, '*');
+        postAnswer(null, true);
       }
 
       document.getElementById('submit-btn').addEventListener('click', handleSubmit);

@@ -116,9 +116,12 @@ async fn complete_compaction_with_hard_fallback(
         snapshot,
         failure_reason,
     );
-    summary = crate::agent::llm::completion::ensure_intent_sections_in_summary(
+    let planning_seeds =
+        crate::agent::llm::completion::load_compaction_planning_seeds(context.session_id).await;
+    summary = crate::agent::llm::completion::ensure_must_and_intent_sections(
         &summary,
         &compacted_messages,
+        &planning_seeds,
     );
 
     if let Ok((relative_path, _)) = &markdown_result {
@@ -312,9 +315,12 @@ pub async fn handle_compact_response(
     )
     .await;
 
-    let mut final_summary = crate::agent::llm::completion::ensure_intent_sections_in_summary(
+    let planning_seeds =
+        crate::agent::llm::completion::load_compaction_planning_seeds(session_id).await;
+    let mut final_summary = crate::agent::llm::completion::ensure_must_and_intent_sections(
         &clamped_summary.summary,
         &compacted_messages,
+        &planning_seeds,
     );
     if let Ok((relative_path, _)) = &markdown_result {
         final_summary.push_str(&md_export::format_transcript_recovery_suffix(relative_path));

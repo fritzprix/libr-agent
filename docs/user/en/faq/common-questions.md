@@ -1,6 +1,6 @@
 ---
 title: Common questions
-description: "Short answers to common LibrAgent questions about install, models, MCP, skills, and automation."
+description: 'Short answers to common LibrAgent questions about install, models, MCP, skills, and automation.'
 ---
 
 # Frequently asked questions
@@ -67,7 +67,7 @@ Provider free tiers (e.g. Gemini/Groq) or local endpoints such as **Ollama** via
 
 ### What is MCP?
 
-A protocol for external tools. There is **no Settings 「MCP Servers」 tab.** Use sidebar **Extensions** (`/mcp-servers`).
+A protocol for external tools. There is **no Settings 「MCP Servers」 tab.** Use sidebar **Extensions**.
 
 - Catalog: [Extensions](../guides/extensions.md)
 - Manual: [Custom MCP](../guides/custom-mcp.md)
@@ -78,11 +78,27 @@ Risky actions usually follow **approval** (or YOLO) policy. Destructive deletes 
 
 ### Does it use a browser?
 
-When the assistant has browser tools enabled, yes. Scope depends on the tool policy.
+When the assistant has browser tools enabled, yes. Check the assistant in **Assistants**.
 
 ### What are skills?
 
-Reusable procedures via `@skill:…`. See [Skills](../guides/skills.md).
+Reusable procedures via `@skill:…`. See [Skills](../guides/skills.md) and [Sub-agents & orchestration](../guides/sub-agents.md).
+
+---
+
+## Automation · Playbooks · Org
+
+### Scheduled tasks?
+
+Sidebar **Scheduled Tasks**. Different from one-off child-session delegation. → [Sub-agents](../guides/sub-agents.md)
+
+### Playbooks?
+
+Sidebar **Playbooks**. Save a successful job as a template and run it again.
+
+### Org menu?
+
+Shows **explicit Org teams** only — not every sub-agent lineage. → [Sub-agents](../guides/sub-agents.md)
 
 ---
 
@@ -94,6 +110,23 @@ Reusable procedures via `@skill:…`. See [Skills](../guides/skills.md).
 
 ---
 
-## Related
+## When something goes wrong
 
-- [Troubleshooting](../guides/troubleshooting.md) · [Error codes](error-codes.md)
+1. Read the on-screen message
+2. **Settings → AI & Models** — keys, Default LLM, **Save Changes**
+3. **Extensions** — MCP command / runtime
+4. [Troubleshooting](../guides/troubleshooting.md) · [Error codes](./error-codes.md)
+
+Support: [Discussions](https://github.com/fritzprix/libr-agent/discussions) — **no API keys**; include OS, app version, provider/model, and what you saw.
+
+---
+
+## Next steps
+
+| Topic                  | Link                                                                        |
+| ---------------------- | --------------------------------------------------------------------------- |
+| First chat             | [first-agent](../getting-started/first-agent.md)                            |
+| Assistants             | [assistants](../guides/assistants.md)                                       |
+| Playbooks / automation | [playbooks](../guides/playbooks.md) · [automation](../guides/automation.md) |
+| MCP                    | [extensions](../guides/extensions.md)                                       |
+| Multi-agent            | [sub-agents](../guides/sub-agents.md)                                       |

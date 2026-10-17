@@ -1989,6 +1989,11 @@
         "title": "Alltäglichen Chrome nutzen",
         "body": "Verbinden Sie die Chrome-Erweiterung unter Einstellungen → System, damit Agenten in Ihrem echten Browser mit bestehenden Anmeldungen arbeiten.",
         "cta": "Systemeinstellungen öffnen"
+      },
+      "orgPortableBundle": {
+        "title": "Organisationsteam sichern oder umziehen",
+        "body": "Exportieren Sie ein Team unter Org als .libragent-org-Paket – inklusive Assistenten, Zeitplänen, Playbooks und Skills – und importieren Sie es auf einem anderen Gerät.",
+        "cta": "Org öffnen"
       }
     }
   }

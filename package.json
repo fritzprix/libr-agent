@@ -1,8 +1,8 @@
 {
   "name": "libragent",
   "private": true,
-  "version": "0.9.25",
-  "description": "A desktop app for AI agents with built-in tools",
+  "version": "0.9.26",
+  "description": "A local agent operating environment — pick your model, install tools like apps, run coordination patterns; work stays on your machine",
   "author": "fritzprix",
   "license": "MIT",
   "repository": {
@@ -10,15 +10,18 @@
     "url": "https://github.com/fritzprix/libr-agent.git"
   },
   "keywords": [
-    "ai",
-    "agent",
-    "multi-agent",
-    "orchestration",
+    "ai-agents",
+    "local-first",
     "mcp",
     "model-context-protocol",
-    "react",
+    "multi-agent",
+    "orchestration",
+    "ollama",
+    "tauri",
     "desktop",
-    "shareable-config"
+    "rust",
+    "react",
+    "skills"
   ],
   "type": "module",
   "packageManager": "pnpm@12.8.1",

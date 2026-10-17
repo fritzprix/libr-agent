@@ -6,6 +6,7 @@ use super::super::AgentServer;
 use super::shared::caller_session_not_found_result;
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHint, ToolGroup};
 use crate::mcp::types::MCPResult;
+use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::SessionMetadata;
 
 pub fn is_delegated_descendant_session(
@@ -35,6 +36,33 @@ pub fn is_delegated_descendant_session(
     }
 
     false
+}
+
+/// Count sessions this caller can address via listAgents(type=sessions) / checkSession.
+/// Matches `list_delegated_sessions`: direct children only (not org siblings).
+pub(crate) async fn count_accessible_delegated_sessions(caller_session_id: &str) -> usize {
+    let session_repo = crate::state::get_session_repository();
+    match session_repo.get_child_session_ids(caller_session_id).await {
+        Ok(ids) => ids.len(),
+        Err(_) => {
+            let store = crate::services::agent_service::lineage_store().read().await;
+            store
+                .values()
+                .filter(|meta| meta.parent_session_id.as_deref() == Some(caller_session_id))
+                .count()
+        }
+    }
+}
+
+pub(crate) async fn missing_accessible_session_error(
+    caller_session_id: &str,
+    target_session_id: &str,
+) -> MCPResult {
+    let accessible_count = count_accessible_delegated_sessions(caller_session_id).await;
+    crate::mcp::builtin::error_guidance::missing_agent_session_error(
+        target_session_id,
+        accessible_count,
+    )
 }
 
 pub async fn load_accessible_delegated_session(
@@ -96,9 +124,7 @@ pub async fn load_accessible_delegated_session(
             .to_mcp_result())
         }
     }) else {
-        return Err(
-            crate::mcp::builtin::error_guidance::missing_agent_session_error(target_session_id),
-        );
+        return Err(missing_accessible_session_error(caller_session_id, target_session_id).await);
     };
 
     let mut next_parent = target_session.parent_session_id.clone();
@@ -168,9 +194,9 @@ async fn resolve_delegated_session_ref(
                 .await
             {
                 Ok(true) => Ok(target_ref.to_string()),
-                Ok(false) => Err(
-                    crate::mcp::builtin::error_guidance::missing_agent_session_error(target_ref),
-                ),
+                Ok(false) => {
+                    Err(missing_accessible_session_error(caller_session_id, target_ref).await)
+                }
                 Err(error) => Err(guided_error(
                     ErrorCategory::InternalError,
                     format!(
@@ -204,7 +230,7 @@ async fn resolve_delegated_session_ref(
     }
 
     if !crate::utils::session_id::should_try_legacy_session_resolve(target_ref) {
-        return Err(crate::mcp::builtin::error_guidance::missing_agent_session_error(target_ref));
+        return Err(missing_accessible_session_error(caller_session_id, target_ref).await);
     }
 
     // Legacy short-suffix / session- prefix: unique match among delegated descendants.
@@ -246,7 +272,7 @@ async fn resolve_delegated_session_ref(
     ) {
         crate::utils::session_id::SessionIdResolve::Unique(resolved) => Ok(resolved.to_string()),
         crate::utils::session_id::SessionIdResolve::Missing => {
-            Err(crate::mcp::builtin::error_guidance::missing_agent_session_error(target_ref))
+            Err(missing_accessible_session_error(caller_session_id, target_ref).await)
         }
         crate::utils::session_id::SessionIdResolve::Ambiguous(count) => {
             let caller_alias = crate::utils::session_id::display_session_id(caller_session_id);

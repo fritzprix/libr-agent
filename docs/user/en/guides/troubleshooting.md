@@ -1,6 +1,6 @@
 ---
 title: Troubleshooting Guide
-description: "Diagnose and fix common LibrAgent issues with models, tools, browser automation, and sessions."
+description: 'Diagnose and fix common LibrAgent issues with models, tools, browser automation, and sessions.'
 ---
 
 # Troubleshooting Guide
@@ -40,11 +40,11 @@ Wait a few minutes before retrying, or change **Default LLM** / session **Model*
 
 ### Slow Replies or High Token Costs
 
-| Strategy | Location in UI |
-| --- | --- |
+| Strategy                         | Location in UI                                            |
+| -------------------------------- | --------------------------------------------------------- |
 | Select a smaller or faster model | **Model** selector in Chat or **Default LLM** in Settings |
-| Reduce input context | **Settings → Chat Interface → Max Input Context** |
-| Run local offline models | Add a Custom OpenAI Provider pointing to Ollama |
+| Reduce input context             | **Settings → Chat Interface → Max Input Context**         |
+| Run local offline models         | Add a Custom OpenAI Provider pointing to Ollama           |
 
 ### Output is Too Random or Inconsistent
 
@@ -86,7 +86,7 @@ Do not look in the Settings menu:
 
 ### External MCP Tools Do Not Connect
 
-There is no "MCP Servers" tab in Settings. Use the sidebar **Extensions** screen (`/mcp-servers`).
+There is no "MCP Servers" tab in Settings. Use the sidebar **Extensions** screen.
 
 1. **Recommended**: Select from [Extensions → Recommended Extensions](extensions.md).
 2. **Custom / Imports**: Use [Installing Custom MCP Servers](custom-mcp.md) or invoke `@skill:tool-installer`.
@@ -103,7 +103,7 @@ Verify the workspace folder path and ensure proper OS file permissions. Review c
 
 ### Sub-Agent Cannot Find Files / Not Visible in Org
 
-- Child sessions do not inherit parent workspace folders or local skills automatically. Follow the isolation rules in the [Sub-Agents & Orchestration Guide](sub-agents.md). Write a self-contained handoff via `@skill:delegate` or use a shared workspace path.
+- By default the child uses a **separate work folder**. Parent-folder files and local skills do not follow automatically. When the child must see the same deliverables, tell the agent to **reuse the current work folder**. See isolation rules in the [Sub-Agents & Orchestration Guide](sub-agents.md), and rewrite the handoff with `@skill:delegate` (goal and paths).
 - The sidebar **Org** view displays only explicit organization hierarchies. For standard delegations, check sub-agent badges in the session conversation history.
 
 ---
@@ -126,14 +126,14 @@ Restart the application. If graphics glitches persist, check your OS display set
 
 ## 5. Common Error Messages
 
-| Message | Recommended Action |
-| --- | --- |
-| Invalid API key | Re-enter key in **Settings → AI & Models → Provider API Keys**. |
-| Rate limit exceeded | Wait briefly or switch to another provider model. |
-| Model not found | Update **Default LLM** or click **Refresh models** in Chat. |
+| Message                      | Recommended Action                                                   |
+| ---------------------------- | -------------------------------------------------------------------- |
+| Invalid API key              | Re-enter key in **Settings → AI & Models → Provider API Keys**.      |
+| Rate limit exceeded          | Wait briefly or switch to another provider model.                    |
+| Model not found              | Update **Default LLM** or click **Refresh models** in Chat.          |
 | Connection refused / Timeout | Check network connection, local model daemon, or MCP process health. |
-| Permission denied | Verify folder read/write permissions in your operating system. |
-| Session not found | Restart application and search in Session History. |
+| Permission denied            | Verify folder read/write permissions in your operating system.       |
+| Session not found            | Restart application and search in Session History.                   |
 
 ---
 

@@ -1,13 +1,22 @@
 ---
-title: LibrAgent user docs
-description: "LibrAgent user documentation home — install, connect models, chat, skills, automation, MCP guides, and FAQ."
+title: LibrAgent — Local AI Agent Operating Environment
+description: 'LibrAgent (libr-agent) is a local agent operating environment — pick your model, install MCP tools like apps, and run multi-agent coordination patterns.'
 ---
 
-# LibrAgent user docs
+# LibrAgent User Documentation
 
-Learn how to get the most out of LibrAgent. These pages are for **end users**, not developers building from source.
+> **A local agent operating environment. Select your model, install tools with one click, and choose a coordination pattern.**
+> _No vendor harness or manual JSON configuration required — completed work is saved as files on your machine._
 
-Language: [한국어](/) · **English**
+Language: [한국어](/) · **English** · [**Download Latest Release (Windows / macOS / Linux)**](https://github.com/fritzprix/libr-agent/releases/latest) · [GitHub Repository](https://github.com/fritzprix/libr-agent)
+
+---
+
+## Why LibrAgent?
+
+- **Direct desktop UI without manual setup**: Install one-click MCP presets in **Extensions** or import configurations from Cursor, VS Code, Claude Code, and Windsurf.
+- **Built-in multi-agent orchestration**: Run standard coordination patterns (`pipeline`, `hub-spoke`, `divide-conquer`, `consensus-delegation`, `teamwork`, `schedule`) as bundled skills without assembling framework code.
+- **Model and stack freedom (Local-First, MIT)**: Connect OpenAI, Anthropic, Gemini, Groq, or local **Ollama** models while keeping your workspace, shell, and browser sessions on your machine.
 
 ---
 
@@ -29,9 +38,10 @@ Language: [한국어](/) · **English**
 - [**Browser Automation (Sidecar)**](guides/browser-sidecar.md) · [**Built-in Tools**](guides/builtin-tools.md)
 - [**Navigation Guide**](guides/navigation-guide.md) · [**Troubleshooting**](guides/troubleshooting.md)
 
-## FAQ
+## FAQ · scenarios
 
 - [**Common questions**](faq/common-questions.md) · [**Error codes**](faq/error-codes.md)
+- [Automation](scenarios/automation.md) · [Code review](scenarios/code-review.md) · [Research](scenarios/research.md) · [Files](scenarios/file-management.md) · [Web](scenarios/web-browsing.md)
 
 ### Onboarding in one line
 
@@ -40,7 +50,7 @@ Language: [한국어](/) · **English**
 3. MCP lives under **Extensions**
 4. Repeat work with **Playbooks** / **Scheduled Tasks**
 
-Screenshots: [assets/screenshots](https://github.com/fritzprix/libr-agent/blob/main/docs/user/assets/screenshots/README.md). App UI language follows **Settings → General → Language**.
+App UI language follows **Settings → General → Language**.
 
 ---
 

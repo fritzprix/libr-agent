@@ -1,3 +1,24 @@
+## [0.9.26] - 2026-10-17
+
+### 🚀 Features & Capabilities
+
+- **Portable Org export & import**: Back up an entire Organization team—assistants, schedules, playbooks, custom skills, and teamwork notes—as a `.libragent-org` bundle from the Org view and import it on another device (#2093).
+- **Layman-friendly orchestration & Call Me Back guides**: Rewrote user guides and orchestration examples in plain language across Korean and English, including a dedicated Call Me Back automation guide (#2099).
+
+### 🐛 Fixes & Hardening
+
+- **HTTP Session API Origin / Host guard**: Reject browser cross-origin Session API calls and enforce strict `Host` header validation (#2094).
+- **Disable `mcp-bridge` in release builds**: Restrict the `tauri-plugin-mcp-bridge` debug socket to debug builds only (#2095).
+- **Compaction `Must` section seeds**: Require `Must` compaction sections with deterministic path/heading seeds and preserve colon `Must` headings (#2084, #2087).
+- **Agent tool & loop guidance**: Stop phantom `checkSession` loops on empty accessible sessions (#2085, #2086), guide tool setup after core-only `createAgent` (#2090), and cite the original call in `DuplicateInBatch` loop guidance (#2091).
+- **`reportResult` copy & export**: Copy and export only the `reportResult` outcome body without extra wrapper chrome (#2096).
+- **Interactive form submit feedback**: Give interactive UI forms immediate submission feedback and guard against duplicate submits (#2088, #2089).
+- **Org View scrolling**: Remove nested vertical scrollbar on the Org View (#2097).
+
+### 🔧 Internal & Documentation
+
+- **SEO & VitePress metadata**: Added VitePress sitemap generation, Open Graph / canonical tags, page descriptions, and product-core repository positioning (#2098).
+
 ## [0.9.25] - 2026-10-12
 
 ### 🚀 Features & Capabilities

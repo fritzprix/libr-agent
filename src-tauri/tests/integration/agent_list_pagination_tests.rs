@@ -245,6 +245,14 @@ async fn list_sessions_paginates_child_ids_before_rendering_current_page() {
     assert!(text.contains(
         "Showing 21 to 22 of 25 items. Call this tool again with offset: 22 to see more"
     ));
+    assert!(
+        text.contains("Use agent__checkSession(\""),
+        "non-empty list should suggest checkSession with a concrete sessionId: {text}"
+    );
+    assert!(
+        !text.contains("checkSession(sessionId) to get results"),
+        "must not use placeholder sessionId nudge: {text}"
+    );
 
     let structured = result
         .structured_content
@@ -261,6 +269,20 @@ async fn list_sessions_paginates_child_ids_before_rendering_current_page() {
         structured["sessions"][0]["assistantId"],
         "assistant-list-test"
     );
+    let next_actions = structured["nextActions"]
+        .as_array()
+        .expect("nextActions array expected");
+    assert_eq!(next_actions.len(), 1);
+    assert_eq!(next_actions[0]["toolName"], "agent__checkSession");
+    let first_session_id = structured["sessions"][0]["id"]
+        .as_str()
+        .expect("first session id");
+    assert_eq!(
+        next_actions[0]["args"]["sessionId"].as_str(),
+        Some(first_session_id),
+        "nextActions must carry the concrete listed sessionId"
+    );
+    assert_eq!(next_actions[0]["args"]["wait"], false);
 }
 
 #[tokio::test]
@@ -307,4 +329,51 @@ async fn list_sessions_empty_page_reports_no_results_without_invalid_range() {
     let text = extract_text(&result);
     assert!(text.contains("No results for this page (offset 5, limit 2). Try a smaller offset."));
     assert!(!text.contains("Showing 6 to 5"));
+    assert!(
+        !text.contains("Use agent__checkSession("),
+        "empty page must not nudge checkSession without a listed id: {text}"
+    );
+}
+
+#[tokio::test]
+async fn list_sessions_empty_total_does_not_nudge_check_session() {
+    let _guard = TEST_GUARD.lock().await;
+    let db = test_db().await;
+    let repo = SqliteSessionRepository::new(db);
+    let test_id = next_test_id();
+    let parent_id = format!("parent-zero-{test_id}");
+
+    repo.upsert_session(&build_session(
+        &parent_id,
+        "Parent Zero Children",
+        None,
+        SessionStatus::Idle,
+        1_700_300_000_000,
+    ))
+    .await
+    .expect("parent session should be created");
+
+    let result = list_delegated_sessions_for_test(&parent_id, &json!({}))
+        .await
+        .expect("list should succeed");
+
+    let text = extract_text(&result);
+    assert!(text.contains("Found 0 sub-agent sessions."));
+    assert!(
+        text.contains("do not call agent__checkSession without a listed sessionId"),
+        "empty list must block phantom checkSession: {text}"
+    );
+    assert!(
+        !text.contains("Use agent__checkSession("),
+        "empty list must not suggest checkSession: {text}"
+    );
+
+    let structured = result
+        .structured_content
+        .expect("structured content expected");
+    assert_eq!(structured["total"], 0);
+    assert!(
+        structured.get("nextActions").is_none(),
+        "empty list must omit checkSession nextActions: {structured}"
+    );
 }

@@ -1,9 +1,11 @@
 ---
 title: Scenario - Automated Pull Request Code Review
-description: "Walk through a LibrAgent scenario: paste a PR URL and get code-review feedback and suggestions."
+description: 'Walk through a LibrAgent scenario: paste a PR URL and get code-review feedback and suggestions.'
 ---
 
 # Scenario: Automated Pull Request Code Review
+
+> **Audience:** Developers (PR / Git workflows). For reviewing documents or reports instead of code, use the document-review prompts in [File Management](./file-management.md) or [Deep Research](./research.md).
 
 When you provide a Pull Request (PR) link, the agent reviews code changes automatically and provides structured feedback. The agent audits code quality, security vulnerabilities, naming conventions, and logic defects before merge.
 
@@ -106,13 +108,13 @@ https://github.com/your-org/your-repo/pull/42
 
 ## 💡 Example Prompt Collection
 
-| Purpose | Prompt |
-| --- | --- |
-| Basic review | `"Review the pull request code at https://github.com/.../pull/42."` |
-| Focused review | `"Review this PR with focus only on security and performance."` |
-| Diff summary | `"Provide a high-level summary of all architectural changes in this PR."` |
-| Code patch | `"Draft a patch file to resolve finding #1 in this review."` |
-| Comparative review | `"Compare architectural differences between PR #42 and PR #38."` |
+| Purpose            | Prompt                                                                    |
+| ------------------ | ------------------------------------------------------------------------- |
+| Basic review       | `"Review the pull request code at https://github.com/.../pull/42."`       |
+| Focused review     | `"Review this PR with focus only on security and performance."`           |
+| Diff summary       | `"Provide a high-level summary of all architectural changes in this PR."` |
+| Code patch         | `"Draft a patch file to resolve finding #1 in this review."`              |
+| Comparative review | `"Compare architectural differences between PR #42 and PR #38."`          |
 
 ---
 
@@ -120,7 +122,7 @@ https://github.com/your-org/your-repo/pull/42
 
 ### Define a Specialized Review Persona
 
-1. Open `/assistants` and select **New Assistant**.
+1. Open **Assistants** in the sidebar and select **New Assistant**.
 2. System prompt:
    ```
    You are a Senior Software Engineer and Code Review Specialist.
@@ -152,11 +154,11 @@ When reviewing pull requests in this repository:
 
 ## 🚀 Next Steps
 
-| Project | Description | Difficulty |
-| --- | --- | --- |
-| Review Assistant | Configure a dedicated code review persona | ⭐⭐ |
-| Review Playbook | Save your team's code review checklist as a playbook | ⭐⭐⭐ |
-| Automated Review Trigger | Run PR review workflows automatically on new commits | ⭐⭐⭐ |
-| Review Standards Doc | Formalize repository-specific review guidelines | ⭐⭐ |
-| PR Diff Analytics | Compare code churn across related pull requests | ⭐⭐ |
-| Refactoring Plan | Request a refactoring plan after code review approval | ⭐⭐⭐ |
+| Project                  | Description                                           | Difficulty |
+| ------------------------ | ----------------------------------------------------- | ---------- |
+| Review Assistant         | Configure a dedicated code review persona             | ⭐⭐       |
+| Review Playbook          | Save your team's code review checklist as a playbook  | ⭐⭐⭐     |
+| Automated Review Trigger | Run PR review workflows automatically on new commits  | ⭐⭐⭐     |
+| Review Standards Doc     | Formalize repository-specific review guidelines       | ⭐⭐       |
+| PR Diff Analytics        | Compare code churn across related pull requests       | ⭐⭐       |
+| Refactoring Plan         | Request a refactoring plan after code review approval | ⭐⭐⭐     |

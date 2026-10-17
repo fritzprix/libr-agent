@@ -20,9 +20,13 @@ mod selection;
 mod trigger;
 
 use crate::models::chat::Message;
-pub use hints::{build_compaction_preservation_hints, CompactionPreservationHints};
+pub use hints::{
+    build_compaction_preservation_hints, load_compaction_planning_seeds, CompactionPlanningSeeds,
+    CompactionPreservationHints,
+};
 pub use payload::{
     apply_compaction_retry_budget, build_compaction_request_payload_for_testing,
+    build_compaction_request_payload_with_planning_for_testing,
     build_overflow_recovery_compaction_messages, fit_compaction_request_messages_to_limit,
     inspect_compaction_payload, CompactionPayloadDiagnostics, CompactionPayloadMessageDiagnostic,
     CompactionRequestPayloadPreview,
@@ -30,7 +34,8 @@ pub use payload::{
 pub(crate) use preparation::{should_noop_empty_compaction_delta, EMPTY_DELTA_NOOP_ERROR};
 pub use recent_requests::{
     collect_recent_external_user_requests, ensure_intent_sections_in_summary,
-    format_recent_user_requests_section, RecentUserRequest, RECENT_USER_REQUEST_LIMIT,
+    ensure_must_and_intent_sections, format_recent_user_requests_section, RecentUserRequest,
+    RECENT_USER_REQUEST_LIMIT,
 };
 pub use trigger::{
     advance_compaction_overflow_recovery_step_for_testing,

@@ -1,12 +1,12 @@
 ---
 title: Automation (Scheduled Tasks)
-description: "Compare Scheduled Tasks, loop/schedule skills, and Org automation — and choose the right LibrAgent approach."
+description: 'Compare Scheduled Tasks, loop/schedule skills, and Org automation — and choose the right LibrAgent approach.'
 ---
 
 # Automation — Scheduled Tasks
 
-> Access the **Scheduled Tasks** screen (`/scheduled-tasks`) from the sidebar.  
-> Execute automated assistant sessions based on Cron expressions or fixed intervals.
+> Open **Scheduled Tasks** from the sidebar.  
+> Run assistant sessions automatically on a schedule (UI schedule picker or fixed intervals).
 
 ---
 
@@ -16,13 +16,13 @@ description: "Compare Scheduled Tasks, loop/schedule skills, and Org automation 
 2. For instant setup, select one of the provided **Starter Templates** (such as Daily Standup Summary, Code Review Digest, or **Daily durable knowledge distillation**) to pre-fill configuration fields. You can also create the nightly knowledge-distill task in one click from the Chat Hub tip (**Create nightly distill task**).
 3. Configure the task fields in the **New Scheduled Task** dialog:
 
-| Field | Description |
-| --- | --- |
-| **Task name** | Display name shown in the task list. |
-| **Assistant** | The assistant profile assigned to execute the task. |
-| **Schedule** | Recurrence rules and execution times (UI schedule picker or Cron). |
-| **Workspace** | Optional target folder. Click Browse or drag-and-drop a folder. |
-| **Message** | The prompt sent when the task runs. Supports `@playbook:`, `@skill:`, and `@file:` mentions. |
+| Field         | Description                                                                                  |
+| ------------- | -------------------------------------------------------------------------------------------- |
+| **Task name** | Display name shown in the task list.                                                         |
+| **Assistant** | The assistant profile assigned to execute the task.                                          |
+| **Schedule**  | Recurrence rules and execution times (UI schedule picker or Cron).                           |
+| **Workspace** | Optional target folder. Click Browse or drag-and-drop a folder.                              |
+| **Message**   | The prompt sent when the task runs. Supports `@playbook:`, `@skill:`, and `@file:` mentions. |
 
 4. Click **Save**. The task card displays the **Next run** timestamp.
 
@@ -39,14 +39,14 @@ If **Scheduled Task Minimum Interval** is configured under **Settings**, short s
 
 ## Comparison of Automation Mechanisms
 
-| Automation Type | Execution Context |
-| --- | --- |
-| **Scheduled Tasks** (This Screen) | App-wide, recurring, background cron jobs |
-| **`@skill:loop`** | In-session clock loops, periodic reminders, and polling |
-| **`@skill:call-me-back`** | Resumes sessions upon external process or webhook completion signals |
-| **`@skill:schedule`** | Procedural instructions guiding the agent to manage schedules |
-| **Org / Teamwork** | Explicit hierarchical teams shown in the sidebar **Org** view |
-| **delegate / divide-conquer** | Immediate child session delegation during active conversations |
+| Automation Type                                      | Execution Context                                                    |
+| ---------------------------------------------------- | -------------------------------------------------------------------- |
+| **Scheduled Tasks** (This Screen)                    | App-wide, recurring background runs                                  |
+| **`@skill:loop`**                                    | In-session clock loops, periodic reminders, and polling              |
+| **`@skill:call-me-back`** ([guide](call-me-back.md)) | Resumes sessions upon external process or webhook completion signals |
+| **`@skill:schedule`**                                | Procedural instructions guiding the agent to manage schedules        |
+| **Org / Teamwork**                                   | Explicit hierarchical teams shown in the sidebar **Org** view        |
+| **delegate / divide-conquer**                        | Immediate child session delegation during active conversations       |
 
 For details on orchestrating multiple agents, refer to the [Sub-Agents & Orchestration Guide](sub-agents.md).
 
@@ -57,7 +57,7 @@ For details on orchestrating multiple agents, refer to the [Sub-Agents & Orchest
 - Define explicit output formats and deliverables inside the task prompt.
 - When tasks require MCP tools, install them via [Extensions](extensions.md) and enable them in the target assistant's tool permissions.
 - Inspect execution logs in session **History** if a scheduled task fails.
-- Workspace overrides confine execution to specific folders. Background session callbacks do not clear a pinned chat session's workspace override when the scheduled task field is empty.
+- Set **Workspace** on a task to run in that folder. Leaving the task Workspace empty does not clear a work folder you already chose in an open chat.
 
 ---
 

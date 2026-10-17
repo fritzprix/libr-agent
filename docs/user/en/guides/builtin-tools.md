@@ -1,6 +1,6 @@
 ---
 title: Built-in Tools Guide
-description: "Reference for LibrAgent built-in MCP tools across workspace, browser, knowledge, and agent servers."
+description: 'Reference for LibrAgent built-in MCP tools across workspace, browser, knowledge, and agent servers.'
 ---
 
 # Built-in Tools Guide
@@ -50,12 +50,12 @@ Handles visual analysis and operating system interactions.
 - **Screen Capture**: Inspects error windows or UI layouts visually.
 - **Mouse & Keyboard Control**: Simulates clicks, typing, and shortcuts for GUI workflows. _(Always requires manual approval)_
 
-### 4. Planning & Scheduling (`planning`, `scheduled_task`)
+### 4. Planning & Scheduling
 
-Organizes complex goals into structured sub-tasks.
+Organizes complex multi-step work so it finishes reliably.
 
-- **Multi-step Goals**: Breaks down large instructions into a structured Todo list and reports progress.
-- **Scheduled Automations**: Registers recurring background tasks according to Cron expressions.
+- **Step-by-step plans**: Breaks a large request into smaller checklist items and shows progress in the chat. When one request finishes, the next one starts clean.
+- **Scheduled tasks**: Registers work to run automatically at set times (daily, weekly, and so on).
 
 ---
 
@@ -90,10 +90,11 @@ For power users and prompt engineering, below is the primary built-in tools inve
 |                      | `media__listenContent`                | Analyze **audio**/video soundtrack          | Optional                     |
 | **`planning`**       | `planning__createGoal`                | Create multi-step goals & todos             | Optional                     |
 |                      | `planning__updateGoal`                | Update goal & step progress                 | Optional                     |
-| **`scheduled_task`** | `scheduled_task__createScheduledTask` | Register recurring background Cron task     | Core (Default)               |
+| **`scheduled_task`** | `scheduled_task__createScheduledTask` | Register recurring background task          | Core (Default)               |
 |                      | `scheduled_task__listScheduledTasks`  | List registered scheduled tasks             | Core (Default)               |
 
-> On successful context compaction, planning **todos** are cleared and the **goal** is kept. Rebuild the checklist from the compact handoff with `planning__addTodo` if steps remain. A successful `ui__reportResult` clears **goal, todos, and scratchpad** so the next request starts clean.
+> [!NOTE]
+> These identifiers are for power users and debugging. For everyday use, turn tools on or off in the assistant **Tools** tab.
 
 ---
 

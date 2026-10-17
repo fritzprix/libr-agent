@@ -1,7 +1,7 @@
 import { useDeferredValue, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import useSWR from 'swr';
-import { Building2, RefreshCw, Search, X } from 'lucide-react';
+import { Building2, RefreshCw, Search, Upload, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -14,6 +14,7 @@ import type { AgentSessionMetadata } from '@/models/agent-ipc';
 import { mapSessionMetadataToAgentSession } from '@/lib/session-metadata';
 import { selectOrgSummaries } from './org-sessions';
 import { OrgCard } from './OrgCard';
+import { useOrgBundle } from './useOrgBundle';
 
 const logger = getLogger('OrgHistory');
 
@@ -40,6 +41,7 @@ export default function Org() {
   const { t } = useTranslation('common');
   const [searchQuery, setSearchQuery] = useState('');
   const deferredSearchQuery = useDeferredValue(searchQuery);
+  const { busy: orgBundleBusy, exportOrg, importOrg } = useOrgBundle();
 
   const fetcher = async () => {
     const response = await safeInvoke<AgentSessionMetadata[]>(
@@ -82,10 +84,60 @@ export default function Org() {
     await mutate();
   }
 
+  async function handleExportOrg(orgId: string, orgName: string) {
+    try {
+      const result = await exportOrg(orgId, orgName);
+      if (!result) {
+        return;
+      }
+      toast.success(
+        t('orgHistory.toasts.exported', 'Organization bundle exported'),
+      );
+    } catch (error) {
+      logger.error('Org export failed', error);
+      toast.error(
+        t('orgHistory.toasts.exportFailed', 'Failed to export organization'),
+      );
+    }
+  }
+
+  async function handleImportOrg() {
+    try {
+      const result = await importOrg();
+      if (!result) {
+        return;
+      }
+      const skillsHint = result.workspace_skills_import_path
+        ? ` | workspace skills: ${result.workspace_skills_import_path}`
+        : '';
+      toast.success(
+        t(
+          'orgHistory.toasts.imported',
+          'Organization bundle imported. Teamwork files: {{path}}',
+          { path: `${result.teamwork_import_path}${skillsHint}` },
+        ),
+      );
+    } catch (error) {
+      logger.error('Org import failed', error);
+      const message = error instanceof Error ? error.message : String(error);
+      toast.error(
+        message.includes('PASSWORD_REQUIRED')
+          ? t(
+              'orgHistory.toasts.importPasswordRequired',
+              'This Org bundle is encrypted. Password-protected import is not available in this UI yet — use an unencrypted export or Migration tooling.',
+            )
+          : t(
+              'orgHistory.toasts.importFailed',
+              'Failed to import organization bundle',
+            ),
+      );
+    }
+  }
+
   if (isLoading) {
     return (
-      <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background p-6">
-        <div className="mx-auto flex h-full min-h-0 w-full max-w-6xl flex-col">
+      <div className="flex min-h-full w-full flex-col bg-background p-6 text-foreground">
+        <div className="mx-auto w-full max-w-6xl">
           <div className="mb-6 flex items-center justify-between">
             <div>
               <Skeleton className="mb-2 h-8 w-40" />
@@ -93,12 +145,10 @@ export default function Org() {
             </div>
             <Skeleton className="h-9 w-24" />
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto no-scrollbar pr-2 pb-4">
-            <div className="grid gap-4 lg:grid-cols-2">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <OrgCardSkeleton key={i} />
-              ))}
-            </div>
+          <div className="grid gap-4 pb-4 lg:grid-cols-2">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <OrgCardSkeleton key={i} />
+            ))}
           </div>
         </div>
       </div>
@@ -106,8 +156,8 @@ export default function Org() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background p-6">
-      <div className="mx-auto flex h-full min-h-0 w-full max-w-6xl flex-col">
+    <div className="flex min-h-full w-full flex-col bg-background p-6 text-foreground">
+      <div className="mx-auto w-full max-w-6xl">
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="text-2xl font-semibold">
@@ -120,18 +170,28 @@ export default function Org() {
               )}
             </p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleRefresh}
-            disabled={isValidating}
-            className="shrink-0"
-          >
-            <RefreshCw
-              className={cn('mr-2 h-4 w-4', isValidating && 'animate-spin')}
-            />
-            {t('history.refresh', 'Refresh')}
-          </Button>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleImportOrg}
+              disabled={orgBundleBusy || isValidating}
+            >
+              <Upload className="mr-2 h-4 w-4" />
+              {t('orgHistory.importBundle', 'Import Org')}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={isValidating}
+            >
+              <RefreshCw
+                className={cn('mr-2 h-4 w-4', isValidating && 'animate-spin')}
+              />
+              {t('history.refresh', 'Refresh')}
+            </Button>
+          </div>
         </div>
 
         {orgs.length > 0 ? (
@@ -160,51 +220,51 @@ export default function Org() {
           </div>
         ) : null}
 
-        <div className="min-h-0 flex-1 overflow-y-auto no-scrollbar pr-2 pb-4">
-          {orgs.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border/70 bg-muted/10 py-20 text-center text-muted-foreground">
-              <Building2 className="h-10 w-10 opacity-50" />
-              <p className="text-base font-medium">
-                {t('orgHistory.emptyState.title', 'No org lineages yet')}
-              </p>
-              <p className="max-w-xl text-sm">
-                {t(
-                  'orgHistory.emptyState.subtitle',
-                  'Create an org explicitly, then spawn org members through the org-aware tools. Plain sub-agent lineage does not belong here.',
-                )}
-              </p>
-            </div>
-          ) : filteredOrgs.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border/70 bg-muted/10 py-16 text-center text-muted-foreground">
-              <p className="text-base font-medium">
-                {t(
-                  'orgHistory.noOrgsMatching',
-                  'No organizations match "{{query}}"',
-                  { query: searchQuery.trim() },
-                )}
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setSearchQuery('')}
-              >
-                {t('orgHistory.clearSearch', 'Clear search')}
-              </Button>
-            </div>
-          ) : (
-            <div className="grid gap-4 lg:grid-cols-2">
-              {filteredOrgs.map((org) => (
-                <OrgCard
-                  key={org.orgId}
-                  org={org}
-                  onDeleted={async () => {
-                    await mutate();
-                  }}
-                />
-              ))}
-            </div>
-          )}
-        </div>
+        {orgs.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border/70 bg-muted/10 py-20 text-center text-muted-foreground">
+            <Building2 className="h-10 w-10 opacity-50" />
+            <p className="text-base font-medium">
+              {t('orgHistory.emptyState.title', 'No org lineages yet')}
+            </p>
+            <p className="max-w-xl text-sm">
+              {t(
+                'orgHistory.emptyState.subtitle',
+                'Create an org explicitly, then spawn org members through the org-aware tools. Plain sub-agent lineage does not belong here.',
+              )}
+            </p>
+          </div>
+        ) : filteredOrgs.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border/70 bg-muted/10 py-16 text-center text-muted-foreground">
+            <p className="text-base font-medium">
+              {t(
+                'orgHistory.noOrgsMatching',
+                'No organizations match "{{query}}"',
+                { query: searchQuery.trim() },
+              )}
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSearchQuery('')}
+            >
+              {t('orgHistory.clearSearch', 'Clear search')}
+            </Button>
+          </div>
+        ) : (
+          <div className="grid gap-4 pb-4 lg:grid-cols-2">
+            {filteredOrgs.map((org) => (
+              <OrgCard
+                key={org.orgId}
+                org={org}
+                exportBusy={orgBundleBusy}
+                onExport={handleExportOrg}
+                onDeleted={async () => {
+                  await mutate();
+                }}
+              />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

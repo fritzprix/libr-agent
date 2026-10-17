@@ -1,6 +1,6 @@
 ---
 title: Scenario - Deep Research & Report Generation
-description: "Use LibrAgent for research: gather sources, synthesize findings, and produce a written report."
+description: 'Use LibrAgent for research: gather sources, synthesize findings, and produce a written report.'
 ---
 
 # Scenario: Deep Research & Report Generation
@@ -112,16 +112,16 @@ Save the finalized report as a Markdown document named:
 
 ## 💡 Example Prompt Collection
 
-| Purpose | Prompt |
-| --- | --- |
-| Broad research | `"Conduct an in-depth investigation on {topic}."` |
-| Market sizing | `"Research market size, CAGR growth rate, and key vendors for {market}."` |
-| Competitor analysis | `"Compare products from {Company A} and {Company B} in a structured matrix."` |
-| Tech evaluation | `"Investigate technology trends in {tech} over the past 6 months."` |
-| News synthesis | `"Summarize recent developments on {topic} with source links."` |
-| Formal report | `"Compile the research findings into an executive report with key takeaways."` |
-| Reference audit | `"List all references and URLs used in this report in alphabetical order."` |
-| Comparative table | `"Create a feature comparison matrix between {Item A} and {Item B}."` |
+| Purpose             | Prompt                                                                         |
+| ------------------- | ------------------------------------------------------------------------------ |
+| Broad research      | `"Conduct an in-depth investigation on {topic}."`                              |
+| Market sizing       | `"Research market size, CAGR growth rate, and key vendors for {market}."`      |
+| Competitor analysis | `"Compare products from {Company A} and {Company B} in a structured matrix."`  |
+| Tech evaluation     | `"Investigate technology trends in {tech} over the past 6 months."`            |
+| News synthesis      | `"Summarize recent developments on {topic} with source links."`                |
+| Formal report       | `"Compile the research findings into an executive report with key takeaways."` |
+| Reference audit     | `"List all references and URLs used in this report in alphabetical order."`    |
+| Comparative table   | `"Create a feature comparison matrix between {Item A} and {Item B}."`          |
 
 ---
 
@@ -169,14 +169,14 @@ A single concise paragraph summarizing core conclusions.
 
 ### Create a Research Specialist Assistant
 
-1. Open `/assistants` and select **New Assistant**.
+1. Open **Assistants** in the sidebar and select **New Assistant**.
 2. System prompt:
    ```
    You are an expert research analyst.
    Provide factual, evidence-backed conclusions and always cite primary sources.
    Mark unverified claims clearly as estimates or hypotheses.
    ```
-3. Enable web search and browser sidecar tools.
+3. Enable web search and browser tools.
 
 ### Maximize Source Credibility
 
@@ -195,11 +195,11 @@ A single concise paragraph summarizing core conclusions.
 
 ## 🚀 Next Steps
 
-| Project | Description | Difficulty |
-| --- | --- | --- |
-| Weekly Industry Digest | Generate recurring weekly research reports | ⭐⭐ |
-| Competitor Intelligence | Track changes in rival offerings continuously | ⭐⭐⭐ |
-| Academic Paper Summary | Extract methodology and results from academic papers | ⭐⭐⭐ |
-| Product Evaluation Matrix | Build comprehensive comparative feature matrices | ⭐⭐ |
-| Research Playbook | Turn your favorite research steps into a playbook | ⭐⭐ |
-| Automated Report Delivery | Save finished research documents to cloud directories | ⭐⭐ |
+| Project                   | Description                                           | Difficulty |
+| ------------------------- | ----------------------------------------------------- | ---------- |
+| Weekly Industry Digest    | Generate recurring weekly research reports            | ⭐⭐       |
+| Competitor Intelligence   | Track changes in rival offerings continuously         | ⭐⭐⭐     |
+| Academic Paper Summary    | Extract methodology and results from academic papers  | ⭐⭐⭐     |
+| Product Evaluation Matrix | Build comprehensive comparative feature matrices      | ⭐⭐       |
+| Research Playbook         | Turn your favorite research steps into a playbook     | ⭐⭐       |
+| Automated Report Delivery | Save finished research documents to cloud directories | ⭐⭐       |

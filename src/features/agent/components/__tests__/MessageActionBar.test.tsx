@@ -277,8 +277,7 @@ describe('MessageActionBar', () => {
       expect(mockCopyToClipboard).toHaveBeenCalled();
     });
     const copied = String(mockCopyToClipboard.mock.calls[0]?.[0] ?? '');
-    expect(copied).toContain('# Ship');
-    expect(copied).toContain('ok');
+    expect(copied).toBe('ok');
     expect(copied).not.toContain('STOP');
   });
 
@@ -344,9 +343,7 @@ describe('MessageActionBar', () => {
       expect(mockCopyToClipboard).toHaveBeenCalled();
     });
     const copied = String(mockCopyToClipboard.mock.calls[0]?.[0] ?? '');
-    expect(copied).toContain('# Deliverable');
-    expect(copied).toContain('REPORT BODY');
-    expect(copied).toContain('Must ship');
+    expect(copied).toBe('REPORT BODY');
     expect(copied).not.toContain('FIRST RESPONSE');
     expect(mockSerialize).not.toHaveBeenCalled();
   });

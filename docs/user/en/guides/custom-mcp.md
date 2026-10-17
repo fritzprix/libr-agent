@@ -1,6 +1,6 @@
 ---
 title: Installing Custom MCP Servers
-description: "Register custom stdio or HTTP MCP servers and configure headers and environment variables."
+description: 'Register custom stdio or HTTP MCP servers and configure headers and environment variables.'
 ---
 
 # Installing Custom MCP Servers
@@ -35,11 +35,11 @@ description: "Register custom stdio or HTTP MCP servers and configure headers an
 
 ### stdio Configuration (Local Process)
 
-| Field | Description | Example |
-| --- | --- | --- |
-| **Command** | Executable binary name | `npx`, `uvx`, `node`, `python` |
-| **Arguments** | Space-separated arguments | `-y @modelcontextprotocol/server-filesystem /tmp` |
-| **Environment Variables** | Key-value pairs passed to the process | API keys and configuration secrets |
+| Field                     | Description                           | Example                                           |
+| ------------------------- | ------------------------------------- | ------------------------------------------------- |
+| **Command**               | Executable binary name                | `npx`, `uvx`, `node`, `python`                    |
+| **Arguments**             | Space-separated arguments             | `-y @modelcontextprotocol/server-filesystem /tmp` |
+| **Environment Variables** | Key-value pairs passed to the process | API keys and configuration secrets                |
 
 **Example — Filesystem MCP:**
 
@@ -52,12 +52,12 @@ If `npx` or `uv` is missing, install the required runtimes using `@skill:setup-w
 
 ### HTTP Configuration (Remote Server)
 
-| Field | Description |
-| --- | --- |
-| **URL** | Complete URL for the MCP endpoint |
-| **API Key / Token** (Optional) | Automatically attached as `Authorization: Bearer <token>` |
-| **Custom Headers** (Advanced) | Additional HTTP headers in JSON format |
-| **Enable SSE** | Enables streaming for Server-Sent Events. Disable for stateless HTTP |
+| Field                          | Description                                                          |
+| ------------------------------ | -------------------------------------------------------------------- |
+| **URL**                        | Complete URL for the MCP endpoint                                    |
+| **API Key / Token** (Optional) | Automatically attached as `Authorization: Bearer <token>`            |
+| **Custom Headers** (Advanced)  | Additional HTTP headers in JSON format                               |
+| **Enable SSE**                 | Enables streaming for Server-Sent Events. Disable for stateless HTTP |
 
 ### Steps After Saving
 
@@ -85,10 +85,12 @@ Import MCP server configurations from Cursor into LibrAgent.
 
 The tool installer skill handles:
 
-- Direct registration from npm packages, GitHub repositories, or JSON configurations.
+- Direct registration into Extensions from npm packages, GitHub repositories, or JSON configurations.
 - Automatic configuration imports from Cursor, VS Code, Windsurf, and Claude Desktop.
 
 For detailed procedures, refer to the bundled skill documentation in the [Skills Guide](skills.md).
+
+Prefer **Method A (Add Extension UI)** for everyday installs. Use the agent skill when migrating or registering many servers at once.
 
 ---
 
@@ -104,13 +106,13 @@ Tools remain unavailable in chat until you enable them for your active assistant
 
 ## Troubleshooting
 
-| Symptom | Verification Steps |
-| --- | --- |
+| Symptom                               | Verification Steps                                                                         |
+| ------------------------------------- | ------------------------------------------------------------------------------------------ |
 | Server saved, but tools do not appear | Check if server is **Active**, permit tools in Assistant settings, and reload the session. |
-| `command not found` or npx failure | Run the App Wizard or prompt `@skill:setup-wizard` to install missing runtimes. |
-| Startup timeout error | Increase timeout in **Settings → Advanced → MCP Discovery Timeout**. |
-| Name registration rejected | The name conflicts with a built-in server. Choose a different name. |
-| Preset requires an API key | Enter required keys in the extension configuration form before starting. |
+| `command not found` or npx failure    | Run the App Wizard or prompt `@skill:setup-wizard` to install missing runtimes.            |
+| Startup timeout error                 | Increase timeout in **Settings → Advanced → MCP Discovery Timeout**.                       |
+| Name registration rejected            | The name conflicts with a built-in server. Choose a different name.                        |
+| Preset requires an API key            | Enter required keys in the extension configuration form before starting.                   |
 
 ---
 

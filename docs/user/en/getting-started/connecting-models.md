@@ -1,6 +1,6 @@
 ---
 title: Connecting models
-description: "Connect an LLM to LibrAgent by setting Provider API keys and the default model under Settings → AI & Models."
+description: 'Connect an LLM to LibrAgent by setting Provider API keys and the default model under Settings → AI & Models.'
 ---
 
 # Connecting models
@@ -21,7 +21,7 @@ description: "Connect an LLM to LibrAgent by setting Provider API keys and the d
 
 ## 1. Open Settings
 
-**Sidebar → Settings**. Full page `/settings` stays open until you close it.
+**Sidebar → Settings**. The Settings page stays open until you close it.
 
 Top actions: **Discard** · **Close** · **Save Changes**
 
@@ -29,14 +29,16 @@ Top actions: **Discard** · **Close** · **Save Changes**
 
 | Tab                | Purpose                                       |
 | ------------------ | --------------------------------------------- |
-| **General**        | Language, skills directory, …                 |
+| **General**        | Language and basic app settings               |
 | **AI & Models**    | API keys, default/fallback model, temperature |
 | **Chat Interface** | Chat UI / context options                     |
-| **System**         | System options                                |
-| **Advanced**       | Advanced (shell runtime PATH, …)              |
+| **System**         | System process and permission options         |
+| **Advanced**       | Advanced options                              |
 | **Experimental**   | Experimental features                         |
+| **Dev**            | Developer tools (debug builds)                |
 
-> Names that **do not** exist: 「LLM Provider」 section, standalone 「AI Models」, 「Preferred Model」, Settings only as a top-right gear.
+> Skills are managed under sidebar **Extensions**, not Settings.  
+> Names that **do not** exist: 「LLM Provider」 section, Settings only as a top-right gear.
 
 ![Settings → AI & Models](../../assets/screenshots/getting-started/settings-ai-models.png)
 
@@ -66,12 +68,12 @@ Keys are stored locally. Never paste keys into chat.
 
 Same **AI & Models** tab:
 
-| Field                    | Meaning                                                                |
-| ------------------------ | ---------------------------------------------------------------------- |
-| **Default LLM**          | Default provider/model for new sessions (with grouped provider picker) |
-| **Fallback LLM**         | Used when the default fails                                            |
-| **Thinking Effort**      | Model reasoning effort level (`None`, `Low`, `Medium`, `High`)         |
-| **Override temperature** | When on, set **Temperature** yourself                                  |
+| Field               | Meaning                                                                |
+| ------------------- | ---------------------------------------------------------------------- |
+| **Default LLM**     | Default provider/model for new sessions (with grouped provider picker) |
+| **Fallback LLM**    | Used when the default fails                                            |
+| **Thinking Effort** | Model reasoning effort (`None`, `Low`, `Medium`, `High`)               |
+| **Temperature**     | How creative vs precise replies feel (slider, typically 0.0–2.0)       |
 
 You can also change the **Model** and inline **Thinking Effort** in the Chat input bar for the **current session only**.
 

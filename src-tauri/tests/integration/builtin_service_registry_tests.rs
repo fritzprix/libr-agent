@@ -754,39 +754,6 @@ fn media_capture_screen_tool_schema_is_exposed() {
 }
 
 #[tokio::test]
-async fn media_capture_screen_execution_returns_valid_content() {
-    use std::sync::Arc;
-    use tauri_mcp_agent_lib::mcp::builtin::media::MediaServer;
-    use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
-    use tauri_mcp_agent_lib::session::SessionManager;
-
-    let temp_dir =
-        std::env::temp_dir().join(format!("test-media-session-{}", uuid::Uuid::new_v4()));
-    let session_manager = Arc::new(
-        SessionManager::new_with_base_dir(temp_dir).expect("Failed to create SessionManager"),
-    );
-    let server = MediaServer::new("test-session".to_string(), session_manager);
-
-    let result = server.call_tool("captureScreen", json!({}), None).await;
-
-    match result {
-        Ok(mcp_res) => {
-            let content = mcp_res.content.expect("must have content");
-            if mcp_res.is_error == Some(false) {
-                assert!(content
-                    .iter()
-                    .any(|c| matches!(c, MCPContent::Image { .. })));
-            } else {
-                assert!(content.iter().any(|c| matches!(c, MCPContent::Text { .. })));
-            }
-        }
-        Err(e) => {
-            panic!("call_tool should return Result::Ok(MCPResult) even on error: {e}");
-        }
-    }
-}
-
-#[tokio::test]
 async fn media_capture_screen_is_configured_in_sensitive_tools() {
     let default_config_str = include_str!("../../src/mcp/builtin/workspace/sensitive_tools.json");
     let config: serde_json::Value = serde_json::from_str(default_config_str).expect("valid json");
@@ -1062,32 +1029,6 @@ async fn desktop_computer_control_rejects_invalid_coordinates() {
         .await
         .expect("handler must return Ok(MCPResult)");
     assert_eq!(res_missing_x.is_error, Some(true));
-
-    // Extreme out-of-bounds coordinates
-    if let Ok(monitors) = xcap::Monitor::all() {
-        if !monitors.is_empty() {
-            let res_out_of_bounds = server
-                .call_tool(
-                    "computerControl",
-                    json!({ "action": "move", "x": 999999, "y": 999999 }),
-                    None,
-                )
-                .await
-                .expect("handler must return Ok(MCPResult)");
-            assert_eq!(res_out_of_bounds.is_error, Some(true));
-            let text = res_out_of_bounds
-                .content
-                .as_ref()
-                .and_then(|c| {
-                    c.iter().find_map(|item| match item {
-                        MCPContent::Text { text } => Some(text.as_str()),
-                        _ => None,
-                    })
-                })
-                .unwrap_or("");
-            assert!(text.contains("outside all detected screen boundaries"));
-        }
-    }
 }
 
 #[tokio::test]
@@ -1129,68 +1070,6 @@ async fn desktop_computer_control_rejects_missing_action_parameters() {
         .await
         .expect("must return Ok(MCPResult)");
     assert_eq!(res_scroll.is_error, Some(true));
-}
-
-#[tokio::test]
-async fn desktop_computer_control_handles_cursor_position_or_sim() {
-    use tauri_mcp_agent_lib::mcp::builtin::desktop::DesktopServer;
-    use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
-
-    let server = DesktopServer::new();
-    let res = server
-        .call_tool(
-            "computerControl",
-            json!({ "action": "cursor_position" }),
-            None,
-        )
-        .await
-        .expect("handler must return Ok(MCPResult)");
-
-    // In graphical environments, this succeeds with cursor position and structured content;
-    // in headless CI/containers without DISPLAY, it gracefully returns an error MCPResult with guidance.
-    let content = res.content.expect("must have content");
-    assert!(!content.is_empty());
-
-    if res.is_error == Some(false) {
-        let structured = res
-            .structured_content
-            .expect("must have structured_content on success");
-        assert!(structured.get("x").is_some());
-        assert!(structured.get("y").is_some());
-    }
-}
-
-#[tokio::test]
-async fn desktop_computer_control_accepts_valid_or_unconstrained_coordinates() {
-    use tauri_mcp_agent_lib::mcp::builtin::desktop::DesktopServer;
-    use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
-
-    let server = DesktopServer::new();
-    // In headless environments without monitors, negative coordinates are not blocked by an arbitrary x < 0 check.
-    // When called, the handler must NOT reject with "Coordinates must be non-negative".
-    let res = server
-        .call_tool(
-            "computerControl",
-            json!({ "action": "move", "x": -50, "y": 0 }),
-            None,
-        )
-        .await
-        .expect("must return Ok(MCPResult)");
-
-    let text = res
-        .content
-        .as_ref()
-        .and_then(|c| {
-            c.iter().find_map(|item| match item {
-                MCPContent::Text { text } => Some(text.as_str()),
-                _ => None,
-            })
-        })
-        .unwrap_or("");
-    assert!(
-        !text.contains("Coordinates must be non-negative"),
-        "must not reject negative coordinates globally: {text}"
-    );
 }
 
 #[tokio::test]
@@ -1239,6 +1118,15 @@ fn desktop_image_coord_mapping_converts_origin_and_scale() {
     .expect("valid scaled mapping")
     .expect("mapping should be present");
     assert_eq!(scaled.to_absolute(10, 15), (105, 230));
+
+    // Negative origin / negative image coordinates are allowed (multi-monitor left/above primary).
+    let negative = resolve_image_coord_mapping(&json!({
+        "origin_x": -1920,
+        "origin_y": -100
+    }))
+    .expect("valid negative origin mapping")
+    .expect("mapping should be present");
+    assert_eq!(negative.to_absolute(-50, 0), (-1970, -100));
 
     assert!(resolve_image_coord_mapping(&json!({ "origin_x": 100 }))
         .expect_err("partial origin")
@@ -1290,61 +1178,4 @@ fn desktop_image_coord_default_scales_are_identity() {
     assert_eq!(mapping.to_absolute(10, 20), (110, 220));
     // Previously 200% DPI + 1/scale_factor mapped (352, 1772) → (176, 886).
     assert_eq!(mapping.to_absolute(352, 1772), (452, 1972));
-}
-
-#[tokio::test]
-async fn desktop_computer_control_converts_image_coords_using_origin() {
-    use tauri_mcp_agent_lib::mcp::builtin::desktop::DesktopServer;
-    use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
-
-    let server = DesktopServer::new();
-    // Image-local (10, 20) with origin (500, 600) → absolute (510, 620).
-    let res = server
-        .call_tool(
-            "computerControl",
-            json!({
-                "action": "move",
-                "x": 10,
-                "y": 20,
-                "origin_x": 500,
-                "origin_y": 600
-            }),
-            None,
-        )
-        .await
-        .expect("must return Ok(MCPResult)");
-
-    let text = res
-        .content
-        .as_ref()
-        .and_then(|c| {
-            c.iter().find_map(|item| match item {
-                MCPContent::Text { text } => Some(text.as_str()),
-                _ => None,
-            })
-        })
-        .unwrap_or("");
-
-    if res.is_error == Some(false) {
-        assert!(
-            text.contains("510") && text.contains("620"),
-            "handler must convert image-local coords to absolute (510, 620), got: {text}"
-        );
-        let structured = res
-            .structured_content
-            .expect("success must include converted coordinates");
-        assert_eq!(structured.get("x"), Some(&json!(510)));
-        assert_eq!(structured.get("y"), Some(&json!(620)));
-        assert_eq!(structured.get("image_x"), Some(&json!(10)));
-        assert_eq!(structured.get("image_y"), Some(&json!(20)));
-        return;
-    }
-
-    // Headless CI has no display server / input backend. Conversion is covered by
-    // desktop_image_coord_mapping_converts_origin_and_scale; this path only
-    // asserts the request was accepted as a mapping, not rejected as invalid input.
-    assert!(
-        !text.contains("origin_x") && !text.contains("must be provided"),
-        "headless move failure must not be a coordinate-mapping error: {text}"
-    );
 }

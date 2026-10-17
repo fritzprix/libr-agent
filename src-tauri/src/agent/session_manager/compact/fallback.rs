@@ -205,15 +205,24 @@ pub(super) fn build_compaction_hard_fallback_summary(
         );
     }
 
+    let primary_seed = active_request
+        .first()
+        .cloned()
+        .unwrap_or_else(|| "Needs context-recall".to_string());
+    let target_deliverable = vec![format!("Deliver: {}", primary_seed)];
+    let completion_criteria = vec![format!("[ ] Satisfy active request: {}", primary_seed)];
+
     let mut lines = Vec::new();
+    push_bullet_section(&mut lines, "Target Deliverable", &target_deliverable);
+    push_bullet_section(&mut lines, "Completion Criteria", &completion_criteria);
     push_bullet_section(&mut lines, "Active Request", &active_request);
     push_bullet_section(&mut lines, "Required References", &required_references);
     push_bullet_section(&mut lines, "Current State", &current_state);
     push_bullet_section(&mut lines, "Recent Tool Results", &recent_tool_results);
     push_bullet_section(&mut lines, "Next Actions", &next_actions);
     push_bullet_section(&mut lines, "Fallback Note", &fallback_note);
-    // Working Intent + Recent User Requests are injected by
-    // `ensure_intent_sections_in_summary` after this builder returns.
+    // Working Intent + Recent User Requests (+ any remaining Must gap-fill) are
+    // injected by `ensure_must_and_intent_sections` after this builder returns.
     lines.join("\n").trim().to_string()
 }
 

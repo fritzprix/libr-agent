@@ -1989,6 +1989,11 @@
         "title": "Utiliser votre Chrome quotidien",
         "body": "Connectez l'extension Chrome dans Paramètres → Système pour que les agents travaillent dans votre vrai navigateur déjà connecté.",
         "cta": "Ouvrir les paramètres Système"
+      },
+      "orgPortableBundle": {
+        "title": "Sauvegarder ou déplacer une équipe Org",
+        "body": "Exportez une équipe depuis Org sous forme de pack .libragent-org (assistants, planifications, playbooks et skills) et importez-la sur un autre appareil.",
+        "cta": "Ouvrir Org"
       }
     }
   }

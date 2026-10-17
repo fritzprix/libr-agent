@@ -1,11 +1,11 @@
 ---
 title: Scenario - Scheduled Tasks & Automation Workflows
-description: "Schedule recurring LibrAgent work — daily digests, weekly reports, and cleanup — with Scheduled Tasks."
+description: 'Schedule recurring LibrAgent work — daily digests, weekly reports, and cleanup — with Scheduled Tasks.'
 ---
 
 # Scenario: Scheduled Tasks & Automation Workflows
 
-When you schedule recurring tasks, the agent executes them at the specified times or intervals. The agent handles daily news summaries, weekly reports, and regular file cleanup automatically.
+When you schedule recurring tasks, the agent executes them at the specified times or intervals. Start with everyday jobs like morning news summaries, weekly reports, and regular file cleanup.
 
 ---
 
@@ -13,7 +13,7 @@ When you schedule recurring tasks, the agent executes them at the specified time
 
 - Automate daily and weekly recurring tasks with a single setup.
 - Generate reports, summaries, and maintenance jobs without manual checks.
-- Build multi-agent automation workflows across distributed sessions.
+- Optionally build multi-agent automation workflows across sessions.
 
 ---
 
@@ -21,9 +21,9 @@ When you schedule recurring tasks, the agent executes them at the specified time
 
 ### Step 1: Define Tasks to Automate
 
-Identify your recurring tasks clearly. Set daily, weekly, or monthly intervals.
+Identify recurring work clearly. **Start with everyday examples**; treat Git and server checks as optional.
 
-**Daily task examples:**
+**Everyday — daily examples:**
 
 ```
 - Every day at 09:00: Summarize top 10 AI news articles.
@@ -31,25 +31,27 @@ Identify your recurring tasks clearly. Set daily, weekly, or monthly intervals.
 - Every day at 00:00: Clean up the downloads folder.
 ```
 
-**Weekly task examples:**
+**Everyday — weekly examples:**
 
 ```
 - Every Monday at 10:00: Generate the weekly project report.
 - Every Friday at 17:00: Summarize meeting notes from this week.
 ```
 
-**Monthly task examples:**
+**Everyday — monthly examples:**
 
 ```
 - On the 1st of every month: Generate the monthly sales report.
-- On the last Friday of every month: Organize the code review schedule.
+- On the last Friday of every month: Organize next month's to-do list.
 ```
 
-### Step 2: Instruct and Schedule the Agent
+**Optional (developers):** Git commit digests and server health pings appear later only if you need them.
 
-Provide the task details and the schedule frequency to the agent.
+### Step 2: Schedule the Work (Scheduled Tasks UI recommended)
 
-**Basic schedule request:**
+The easiest path is sidebar **Scheduled Tasks** → create a task with a schedule and message. You can also ask in chat.
+
+**Basic schedule request (everyday):**
 
 ```
 Schedule the following task every day at 09:00:
@@ -59,28 +61,25 @@ Schedule the following task every day at 09:00:
 - Save results to 'daily-reports/ai-news-{date}.md'.
 ```
 
-**Complex schedule request:**
+**Complex schedule request (everyday):**
 
 ```
-Run the following workflow every Monday at 10:00:
-1. Check Git commit logs from the previous week.
-2. Summarize key changes.
-3. Organize contributions by team member.
-4. Save the weekly report to 'weekly-reports/weekly-{date}.md'.
+Run the following workflow every Friday at 17:00:
+1. Find PDFs received this week in ./downloads/.
+2. Summarize each file in one line.
+3. Save the summary to 'weekly-reports/files-{date}.md'.
 ```
 
-**Multi-agent coordination:**
+**Optional (developers) — weekly Git summary:**
 
 ```
-Configure this multi-agent automation pipeline:
-- Daily at 08:00: Ask 'Research Agent' for an AI news report.
-- Daily at 09:00: Ask 'Translation Agent' to translate the report into Korean.
-- Daily at 10:00: Save the final report to 'reports/ko/'.
+Every Monday at 10:00, summarize last week's Git commits
+and save to 'weekly-reports/weekly-{date}.md'.
 ```
 
 ### Step 3: Inspect and Update Schedules
 
-You can view active tasks and modify them at any time.
+Review active tasks anytime in sidebar **Scheduled Tasks**, or ask in chat.
 
 **List active tasks:**
 
@@ -88,8 +87,6 @@ You can view active tasks and modify them at any time.
 Show all currently scheduled automation tasks.
 Summarize the execution time and content for each task.
 ```
-
-*(The agent calls `scheduled_task__list` automatically to inspect active jobs.)*
 
 **Modify a schedule:**
 
@@ -100,10 +97,8 @@ Change the execution time of the daily 09:00 AI news report to 14:00.
 **Pause or remove a schedule:**
 
 ```
-Pause the weekly Monday report schedule temporarily.
+Pause the weekly Friday file-summary schedule temporarily.
 ```
-
-*(To remove an existing task completely, the agent uses `scheduled_task__delete`.)*
 
 ### Step 4: Verify Task Execution
 
@@ -127,16 +122,16 @@ If a task failed, show the root cause and the recommended fix.
 
 ## 💡 Example Prompt Collection
 
-| Purpose | Prompt |
-| --- | --- |
-| Daily news summary | `"Summarize top 10 AI news articles daily at 09:00 with source links."` |
-| Weekly report | `"Generate a weekly Git commit analysis report every Monday at 10:00."` |
-| File cleanup | `"Find and remove duplicate files in ./downloads/ every Friday at 17:00."` |
-| Email summary | `"Summarize all incoming emails daily at 08:00."` |
-| Data backup | `"Create a backup of ./data/ into ./backups/ every midnight."` |
-| Review reminder | `"Send a reminder for pending code reviews every Wednesday at 15:00."` |
-| System monitoring | `"Check system resource usage hourly and notify if it exceeds 80%."` |
-| Learning report | `"Generate a summary report of topics learned this week every Sunday at 18:00."` |
+| Purpose                     | Prompt                                                                           |
+| --------------------------- | -------------------------------------------------------------------------------- |
+| Daily news summary          | `"Summarize top 10 AI news articles daily at 09:00 with source links."`          |
+| File cleanup                | `"Find and remove duplicate files in ./downloads/ every Friday at 17:00."`       |
+| Email summary               | `"Summarize all incoming emails daily at 08:00."`                                |
+| Data backup                 | `"Create a backup of ./data/ into ./backups/ every midnight."`                   |
+| Learning report             | `"Generate a summary report of topics learned this week every Sunday at 18:00."` |
+| Optional: weekly Git report | `"Generate a weekly Git commit analysis report every Monday at 10:00."`          |
+| Optional: review reminder   | `"Send a reminder for pending code reviews every Wednesday at 15:00."`           |
+| Optional: system monitoring | `"Check system resource usage hourly and notify if it exceeds 80%."`             |
 
 ---
 
@@ -153,7 +148,7 @@ If a task failed, show the root cause and the recommended fix.
 **Example prompt:**
 
 ```
-Execute the following task every day at 09:00 UTC:
+Execute the following task every day at 09:00:
 1. Search for 10 recent AI news articles.
 2. Provide a one-line summary for each article.
 3. Save results to daily-reports/{date}.md.
@@ -163,11 +158,20 @@ Execute the following task every day at 09:00 UTC:
 
 **Best suited for:**
 
-- Weekly status reports and Git commit analytics.
-- Meeting minutes consolidation.
-- Weekly metric and KPI dashboards.
+- Weekly status reports and meeting notes.
+- Folder cleanup.
+- Weekly metric summaries.
 
-**Example prompt:**
+**Everyday example:**
+
+```
+Run this task every Friday at 17:00:
+1. Clean ./downloads/.
+2. One-line summaries for new PDFs.
+3. Save to weekly-reports/.
+```
+
+**Optional (developers):**
 
 ```
 Run this task every Monday at 10:00:
@@ -181,27 +185,19 @@ Run this task every Monday at 10:00:
 **Best suited for:**
 
 - Monthly sales and performance reviews.
-- Code quality and technical debt assessments.
-- System audit checks.
+- To-do and calendar cleanup.
 
 **Example prompt:**
 
 ```
 Run this task on the 1st of every month at 10:00:
-1. Collect Git statistics from the past month.
+1. Scan last month's notes and report folders.
 2. Generate the monthly overview report.
-3. Include member contribution breakdown.
 ```
 
-### Interval Execution
+### Interval Execution — Optional
 
-**Best suited for:**
-
-- Continuous service monitoring.
-- Periodic error log inspection.
-- Database and cache synchronization.
-
-**Example prompt:**
+Infrastructure checks (server ping, error-log spikes) are optional.
 
 ```
 Check the following items every hour at minute 0:
@@ -218,7 +214,7 @@ Check the following items every hour at minute 0:
 
 Use a dedicated agent profile for automated tasks:
 
-1. Open `/assistants` and select **New Assistant**.
+1. Open **Assistants** in the sidebar and select **New Assistant**.
 2. Name: `"Automation Assistant"` or `"Scheduled Agent"`.
 3. System prompt:
    ```
@@ -226,7 +222,7 @@ Use a dedicated agent profile for automated tasks:
    Execute scheduled jobs accurately and quickly.
    Record results clearly and report root causes upon failure.
    ```
-4. Enable only the required tools to minimize cognitive overhead.
+4. Enable only the required tools.
 
 ### Configure Failure Policies
 
@@ -259,7 +255,7 @@ You can ask the agent to summarize all active automation jobs in a structured da
 ```
 Show all configured automation tasks in a dashboard table:
 - Task Name
-- Schedule Interval / Cron
+- Schedule Interval
 - Last Run Time
 - Recent Failure Status
 - Next Scheduled Run
@@ -277,13 +273,13 @@ Show all configured automation tasks in a dashboard table:
 
 ## 🚀 Next Steps
 
-| Project | Description | Difficulty |
-| --- | --- | --- |
-| Daily News Digest | Summarize AI news every morning | ⭐⭐ |
-| Weekly Git Report | Generate weekly commit analytics | ⭐⭐⭐ |
-| Automated Cleanup | Clean downloads directory on schedule | ⭐⭐ |
-| Email Summary | Summarize daily morning emails | ⭐⭐ |
-| Automated Backup | Configure periodic data directory backups | ⭐⭐ |
-| Multi-Agent Pipeline | Connect multiple agents into one pipeline | ⭐⭐⭐⭐ |
-| Failure Notifications | Receive instant alerts on job errors | ⭐⭐ |
-| Automation Monitor | Build a status dashboard for tasks | ⭐⭐⭐ |
+| Project                     | Description                               | Difficulty |
+| --------------------------- | ----------------------------------------- | ---------- |
+| Daily News Digest           | Summarize AI news every morning           | ⭐⭐       |
+| Automated Cleanup           | Clean downloads directory on schedule     | ⭐⭐       |
+| Email Summary               | Summarize daily morning emails            | ⭐⭐       |
+| Automated Backup            | Configure periodic data directory backups | ⭐⭐       |
+| Optional: Weekly Git Report | Generate weekly commit analytics          | ⭐⭐⭐     |
+| Multi-Agent Pipeline        | Connect multiple agents into one pipeline | ⭐⭐⭐⭐   |
+| Failure Notifications       | Receive instant alerts on job errors      | ⭐⭐       |
+| Automation Monitor          | Build a status dashboard for tasks        | ⭐⭐⭐     |

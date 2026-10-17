@@ -1,6 +1,6 @@
 ---
 title: Browser Automation
-description: "Configure the agent browser (Sidecar) and everyday Chrome (userChrome) for login-aware automation."
+description: 'Configure the dedicated agent browser and Personal Chrome for login-aware automation.'
 ---
 
 # Browser Automation (Browser Sidecar)
@@ -14,26 +14,24 @@ LibrAgent empowers agents to browse the web, search and extract live information
 Complex web pages or in-page script crashes will never compromise your desktop workspace:
 
 - **Isolated Sandbox Execution**: Browser automation operates in an isolated background process separate from the main LibrAgent desktop app. Heavy memory consumption or browser crashes cannot freeze or crash your main application.
-- **Sticky agent profile**: `browser__createSession` with `browser="sidecar"` (default) reuses a fixed LibrAgent agent browser profile on this device. Logins you make *inside* that browser survive later sessions until you clear them in Settings → System → **Agent browser** → Clear agent browser data. This is not your everyday Chrome. Concurrent agent chats share that same cookie jar while the browser sidecar is running.
+- **Sticky agent profile**: By default, the **Dedicated agent browser** reuses a fixed LibrAgent browser profile on this device. Logins you make _inside_ that browser survive later sessions until you clear them in **Settings → System → Agent browser → Clear agent browser data**. This is not your everyday Chrome. Concurrent agent chats share that same cookie jar while the dedicated agent browser is running.
 
 ---
 
----
+## Everyday Chrome Integration (Stay Logged In)
 
-## ✨ New Feature: Everyday Chrome Integration (Stay Logged In)
-
-Instead of opening a blank sandbox browser, agents can directly control tabs in **your personal everyday Chrome browser (`userChrome`)**.
+Instead of opening a blank sandbox browser, agents can directly control tabs in **your Personal Chrome**.
 
 ### 💡 Key Benefits for Everyday Users
 
 - **Preserve Logged-in Sessions**: Work directly with services where you are already signed in (Google, GitHub, internal dashboards). You do not need to re-enter passwords.
-- **Reliable Clicks on Protected Sites**: Input simulation bypasses strict Content Security Policies (CSP). Button clicks and keystrokes work reliably on complex websites.
-- **Save Raw Webpage HTML (`saveRawHtml`)**: Saves complete webpage source files to your session workspace for offline inspection and verification.
+- **Reliable Clicks on Protected Sites**: Input simulation works more reliably on sites with strict content security policies. Button clicks and keystrokes land as expected.
+- **Save Raw Webpage HTML**: Saves complete webpage source files to your session workspace for offline inspection and verification.
 
-| Execution Mode | Behavior | Best Suited For |
-| --- | --- | --- |
-| **`sidecar`** (Default) | Dedicated isolated agent browser | Public web search, documentation research, sandbox tasks |
-| **`userChrome`** (Extension Bridge) | Your personal Chrome browser | Tasks requiring personal logins, private intranets, shopping carts |
+| Execution Mode                         | Behavior                     | Best Suited For                                                    |
+| -------------------------------------- | ---------------------------- | ------------------------------------------------------------------ |
+| **Dedicated agent browser** (Default)  | Isolated LibrAgent browser   | Public web search, documentation research, sandbox tasks           |
+| **Personal Chrome** (Extension Bridge) | Your everyday Chrome browser | Tasks requiring personal logins, private intranets, shopping carts |
 
 ---
 
@@ -53,22 +51,23 @@ Instead of opening a blank sandbox browser, agents can directly control tabs in 
      ```
      Check the items in my shopping cart in my current Chrome window.
      ```
-   - The agent switches to `userChrome` mode and controls your active tab.
+   - The agent switches to Personal Chrome mode and controls your active tab.
 
 > [!NOTE]
+>
 > - After installation, the extension reconnects automatically when you restart LibrAgent.
-> - Each agent chat maintains exactly one active browser session (Single Source of Truth). Switching between `sidecar` and `userChrome` closes previous sessions cleanly.
+> - Each agent chat keeps exactly one active browser connection. Switching between the Dedicated agent browser and Personal Chrome closes the previous connection cleanly.
 
 ---
 
 ## 🌐 Key Capabilities
 
-| Capability                                                              | Description                                                       |
-| ----------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| **Page Navigation** (`browser__navigateToUrl`)                          | Visits specified URLs and detects page readiness to read content. |
-| **Screenshot Capture** (`browser__takeScreenshot`)                      | Captures viewport or full-page images for visual inspection.      |
-| **Console & Error Tracking**                                            | Monitors page JavaScript errors and network state.                |
-| **Interaction Support** (`browser__clickElement`, `browser__inputText`) | Supports clicking links, typing text, and scrolling pages.        |
+| Capability                   | Description                                                     |
+| ---------------------------- | --------------------------------------------------------------- |
+| **Page Navigation**          | Visits specified URLs and reads content once the page is ready. |
+| **Screenshot Capture**       | Captures viewport or full-page images for visual inspection.    |
+| **Console & Error Tracking** | Monitors page JavaScript errors and network state.              |
+| **Clicks & Typing**          | Supports clicking links, typing text, and scrolling pages.      |
 
 ---
 

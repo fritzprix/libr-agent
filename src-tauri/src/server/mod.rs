@@ -1,3 +1,4 @@
+pub mod access_guard;
 pub mod handlers;
 pub mod mcp_handler;
 pub mod routes;
@@ -101,7 +102,7 @@ pub async fn init(
         let _ = std::fs::write(dir.join("http_port"), bound_port.to_string());
     }
 
-    let routes = routes::get_routes(agent_manager, mcp_enabled, app_control_enabled);
+    let routes = routes::get_routes(agent_manager, mcp_enabled, app_control_enabled, expose);
 
     let server_future = warp::serve(routes).run((bind_addr.octets(), bound_port));
 

@@ -1,178 +1,154 @@
 ---
 title: Skills Guide
-description: "Learn skill scopes, @skill invocation, the bundled skills catalog, and how to create and deploy custom skills."
+description: 'Who a skill applies to, how to call @skill, create and deploy with skill-creator / skill-deployer, and a short bundled catalog.'
 ---
 
 # Skills Guide
 
-> Skills are reusable procedural workflows defined in a `SKILL.md` file. Invoke skills using `@skill:name` in chat, or let agents select them from `<available_skills>`.  
-> Built-in skills reside in `bundled_skills` (mirrored to `system_skills` at runtime). Custom skills are stored in distinct directories according to their **scope**.
+> A skill is a **reusable procedure** the agent follows. Call it with `@skill:name` in chat, or let the agent pick one when it fits.  
+> Some skills ship with the app. Others you create and attach to **this project**, **one assistant**, or **your whole account**.
 
 ---
 
 ## What is a Skill?
 
-| Item | Description |
-| --- | --- |
-| **What it is** | A folder containing `SKILL.md` and optional `scripts/`, `references/`, and `assets/`. It specifies standard operating procedures. |
-| **What it is not** | It is not a settings menu or an MCP server. It instructs models on how and when to use existing tools. |
-| **Who uses it** | Users invoke skills with `@skill:...`, or agents read them contextually to complete specialized tasks. |
+|                    | Description                                                                               |
+| ------------------ | ----------------------------------------------------------------------------------------- |
+| **What it is**     | Written steps for _when_ and _how_ to do a job (close to a playbook)                      |
+| **What it is not** | Not a Settings screen and not an MCP server. It teaches how to use tools you already have |
+| **Who uses it**    | You via `@skill:…`, or the agent when the task matches                                    |
 
-Built-in tools provide execution capabilities. Skills provide operational instructions and domain logic.  
-To install MCP tools, refer to [Extensions](extensions.md) and [Custom MCP](custom-mcp.md).
-
----
-
-## Skill Scope and Precedence
-
-When skills with identical names exist in multiple scopes, the scope with higher precedence takes priority (case-insensitive, first-wins matching).
-
-### Precedence Hierarchy (Highest to Lowest)
-
-`workspace` → `agent import` (IDE skills) → `assistant` → `custom` (`additionalSkillPaths`) → `global` (user) → `system` (bundled mirror)
-
-### Scope Overview
-
-**workspace** — Limited to the current session or project repository
-
-- Path: <code v-pre>{workspace}/.libragent/skills/{name}/</code>
-- Usage: Recommended for project-specific instructions and easy deletion.
-
-**assistant** — Assigned to a specific assistant profile
-
-- Path: <code v-pre>{dataDir}/assistants/{assistantId}/skills/{name}/</code>
-- Usage: Managed directly via the Skills tab in Assistant configuration.
-
-**global** (user) — Shared across all sessions for the current user
-
-- Path: <code v-pre>{dataDir}/user_skills/{name}/</code>
-- Usage: Standard location for permanent user-created skills.
-
-**system** (bundled) — Provided out of the box by LibrAgent
-
-- Path: <code v-pre>{dataDir}/system_skills/{name}/</code>
-- Usage: Runtime mirror of `bundled_skills`. Do not write custom files here because the app refreshes this folder on launch.
-
-**agent import** — Auto-discovered from existing IDE skills in workspace
-
-- Path: `.cursor/skills/`, `.agents/skills/`, etc.
-- Usage: Automatically indexed from supported coding assistants.
-
-> [!NOTE]
-> Typical `dataDir` locations:
-> - Linux: `~/.local/share/com.fritzprix.libragent/`
-> - macOS: `~/Library/Application Support/com.fritzprix.libragent/`
-> - Windows: `%APPDATA%\com.fritzprix.libragent\`
-
-### Common Misconceptions
-
-| Statement | Reality |
-| --- | --- |
-| "I want to install a global custom skill." | Place it in **user_skills (global)**, not **system_skills**. |
-| "I want to edit bundled skills directly." | Bundled skills update through source code in `src-tauri/bundled_skills/`. |
-| "I placed a skill at the workspace root (`my-skill/`)." | Scanners ignore it. Skills must reside in <code v-pre>.libragent/skills/{name}/</code>. |
-
-### Accessing Scopes in the UI
-
-| Goal | Location in UI |
-| --- | --- |
-| Manage local skills | Sidebar: **Extensions → Skills** |
-| Configure skills per assistant | **Assistants → Edit → Skills** tab |
-| Deploy via chat command | Use `@skill:skill-deployer` |
+Built-in and MCP tools **do the work**. Skills say **how to run the job**.  
+To install MCP tools, see [Extensions](extensions.md) and [Custom MCP](custom-mcp.md).
 
 ---
 
-## How to Use Skills (`@skill:`)
+## Who it applies to
 
-1. In the chat input, type `@` and select `@skill:`.
-2. Choose a skill name from the auto-complete menu and state your objective.
+When you place a skill (or ask deployer to place it), choose the **audience**.
+
+| Audience                        | Meaning                              | Use when                                       |
+| ------------------------------- | ------------------------------------ | ---------------------------------------------- |
+| **This project (workspace)**    | Only this work folder / session side | Default. Try-outs and project-only procedures  |
+| **This assistant**              | Only that assistant profile          | Different roles (coding vs research)           |
+| **Your whole account (global)** | Available in almost every session    | Personal procedures you want everywhere        |
+| **Built into the app**          | Skills LibrAgent ships               | You do not create these. See the catalog below |
+
+If the same name exists in more than one place, the **narrower** audience wins (project → assistant → account → app built-in).
+
+If the project already has IDE skills (for example Cursor), LibrAgent can discover those too.
+
+### Where to check in the UI
+
+| Goal                        | Where                                          |
+| --------------------------- | ---------------------------------------------- |
+| Browse and manage skills    | Sidebar **Extensions → Skills**                |
+| Skills tied to an assistant | **Assistants** → Edit → **Skills** tab         |
+| Create and install          | **Create and deploy** below (`skill-deployer`) |
+
+### Easy mix-ups
+
+| You might think                          | What to do                                                                                |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------- |
+| “Put it in the system”                   | Use **your whole account (global)**. Do not put custom skills in the app’s built-in area. |
+| “Edit the skills that came with the app” | The app may overwrite them. Make **your own** skill and deploy it.                        |
+| “I’ll just copy folders myself”          | Easy to pick the wrong place. Prefer **`skill-deployer`**.                                |
+
+---
+
+## How to use (`@skill:`)
+
+1. In Chat, type `@` and choose `@skill:`
+2. Pick a name, then say what you want done.
 
 ```
 @skill:deep-research
-Compare recent product releases from Vendor A and Vendor B into a Markdown report.
+Compare recent announcements from vendors A and B into a Markdown report.
 ```
 
-Reference files with `@file:path`. The available skill index updates on the subsequent turn.
+Attach files with `@file:path`. After a fresh deploy, the list often updates on the **next** message.
 
 ---
 
-## Create and Deploy Skills (Meta-Skills)
+## Create and deploy
 
-| Phase | Skill | Role |
-| --- | --- | --- |
-| 1. Author and Validate | `@skill:skill-creator` | Drafts frontmatter and runs `validate_skill.py --strict` |
-| 2. Deploy to Scope | `@skill:skill-deployer` | Copies validated skill folders to workspace, global, or assistant paths |
+You do not need to memorize disk paths. Use these two skills in order.
 
-**Example workflow:**
+| Step               | Call                    | What it does                                  |
+| ------------------ | ----------------------- | --------------------------------------------- |
+| 1. Draft and check | `@skill:skill-creator`  | Writes the procedure and validates the format |
+| 2. Install         | `@skill:skill-deployer` | Installs it for the **audience** you choose   |
 
 ```
 @skill:skill-creator
-Create a 'weekly-notes' skill and validate it with --strict.
+Create a weekly-notes skill and validate it strictly.
 ```
 
 ```
 @skill:skill-deployer
-Deploy the 'weekly-notes' skill into the workspace scope for this session.
+Deploy weekly-notes to this project (workspace).
 ```
 
-Never deploy custom skills to `system_skills` or `bundled_skills`. When uncertain, choose **workspace** scope.
+- Unsure where it should live? Choose **this project (workspace)**.
+- Do **not** deploy into the app’s built-in area — the app may clear it.
+- For an assistant-only skill, tell deployer **which assistant**.
 
 ---
 
-## Bundled Skills Catalog
+## Skills that ship with the app (summary)
 
-Bundled skills ship with the app (`bundled_skills` → `system_skills`). Auto-complete suggestions in chat reflect the latest available catalog.
+Chat `@skill:` autocomplete is the freshest list. Common names:
 
-### Setup and Environment
+### Setup and environment
 
 `setup-wizard`, `tool-installer`, `agent-init`, `computer-diagnosis`
 
-### Multi-Agent and Orchestration
+### Multi-agent and orchestration
 
-To learn about child sessions and multi-agent coordination patterns, refer to the [Sub-Agents & Orchestration Guide](sub-agents.md).
+How to split work across child sessions: [Sub-agents & orchestration](sub-agents.md).
 
 `delegate`, `teamwork`, `org`, `org-restructure`, `divide-conquer`, `hub-spoke`, `pipeline`, `consensus-delegation`, `gatekeeper`, `pair-programming`, `recruit`, `boost`
 
-### Scheduling and Timer Triggers
+### Scheduling and wake-ups
 
 `schedule`, `loop`, `call-me-back`
 
-### Context and History
+### Session and context
 
-`context-recall` — Recovers conversation history and architectural decisions from pre-compaction epochs (`.libragent/pre_compaction_epoch_{N}.md`).
+`context-recall` — Recover earlier decisions or details after the chat was compacted or summarized
 
-### Research and Documentation
+### Research and documents
 
 `deep-research`, `science-search`, `knowledge-distiller`, `to-md`, `docx`, `pptx`, `visualize`, `workspace-indexer`, `repo-wiki`, `soul-awakening`
 
-`science-search` — Search ~200 million scholarly papers (titles/abstracts), look up DOIs, find similar works, and walk citation graphs via the free ScienceMadeReadable API (no key).
+`science-search` — Search scholarly papers, look up DOIs, similar works, and citations (free, no API key)
 
-### Development and Integrations
+### Development and integrations
 
 `git-workflow`, `bench`, `fine-tune`, `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`, `ig-cli`, `skill-creator`, `skill-deployer`, `tool-creator`, `playbook-creator`
 
-### Common Workflows
+### Common combinations
 
-| Objective | Recommended Approach |
-| --- | --- |
-| Install runtimes (Python, Node) | `@skill:setup-wizard` or App Wizard |
-| Install recommended MCP servers | [Extensions Guide](extensions.md) |
-| Install custom MCP servers | [Custom MCP Guide](custom-mcp.md) or `@skill:tool-installer` |
-| Turn procedures into skills | `@skill:skill-creator` → `@skill:skill-deployer` |
-| Orchestrate multi-agent teams | [Sub-Agents & Orchestration Guide](sub-agents.md) |
-| Recover lost session context | `@skill:context-recall` |
-| Find peer-reviewed papers / DOIs | `@skill:science-search` |
-| Email triage with browser fallback | `@skill:email-integration` |
-| Configure custom assistants | [Assistants Guide](assistants.md) |
-| Automate recurring tasks | [Playbooks Guide](playbooks.md) and [Automation Guide](automation.md) |
+| Goal                           | Try                                                     |
+| ------------------------------ | ------------------------------------------------------- |
+| Install runtimes               | `@skill:setup-wizard` + App Wizard                      |
+| Recommended MCP                | [Extensions](extensions.md)                             |
+| Custom MCP                     | [Custom MCP](custom-mcp.md) · `@skill:tool-installer`   |
+| Turn a procedure into a skill  | `skill-creator` → `skill-deployer`                      |
+| Child sessions / teams         | [Sub-agents guide](sub-agents.md)                       |
+| Recover pre-compaction context | `@skill:context-recall`                                 |
+| Papers / DOIs                  | `@skill:science-search`                                 |
+| Email                          | `@skill:email-integration`                              |
+| Assistants                     | [Assistants](assistants.md)                             |
+| Recurring work                 | [Playbooks](playbooks.md) · [Automation](automation.md) |
 
 ---
 
-## Related Documentation
+## Related
 
-- [Sub-Agents & Orchestration Guide](sub-agents.md) — Multi-agent execution patterns
-- [Extensions Guide](extensions.md) — Pre-configured MCP presets
-- [Custom MCP Guide](custom-mcp.md) — Manual MCP server registration
-- [5-Minute Quickstart](../getting-started/5-minute-tutorial.md) — Core concepts
-- [First Agent Chat](../getting-started/first-agent.md) — Prompting basics
-- [Troubleshooting Guide](troubleshooting.md) — Common error resolution
+- [Sub-agents & orchestration](sub-agents.md)
+- [Extensions (MCP)](extensions.md)
+- [Custom MCP](custom-mcp.md)
+- [5-minute tutorial](../getting-started/5-minute-tutorial.md)
+- [First agent chat](../getting-started/first-agent.md)
+- [Troubleshooting](troubleshooting.md)

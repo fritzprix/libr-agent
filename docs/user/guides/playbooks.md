@@ -1,11 +1,11 @@
 ---
 title: Playbooks
-description: "성공한 작업을 Playbook으로 저장하고 다시 실행하는 방법과 세션 핀·슬롯 사용법을 다룹니다."
+description: '성공한 작업을 Playbook으로 저장하고 다시 실행하는 방법을 다룹니다.'
 ---
 
 # Playbooks
 
-> 사이드바 **Playbooks** (`/playbooks`).  
+> 사이드바 **Playbooks**에서 관리합니다.  
 > 에이전트가 잘 끝낸 **복잡한 요청을 기록**해 두고, 같은 작업을 프롬프트 없이 다시 돌릴 때 씁니다.
 
 ---

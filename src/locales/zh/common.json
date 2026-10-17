@@ -1989,6 +1989,11 @@
         "title": "使用日常 Chrome",
         "body": "在设置 → 系统中连接 Chrome 扩展后，代理可在已登录的真实 Chrome 中工作。",
         "cta": "打开系统设置"
+      },
+      "orgPortableBundle": {
+        "title": "备份或迁移组织团队",
+        "body": "在 Org 页面将团队导出为包含助手、定时任务、剧本和技能的 .libragent-org 归档包，并在另一台设备上导入。",
+        "cta": "打开 Org"
       }
     }
   }

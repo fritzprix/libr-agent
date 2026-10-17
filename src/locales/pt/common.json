@@ -1989,6 +1989,11 @@
         "title": "Usar o Chrome do dia a dia",
         "body": "Conecte a extensão do Chrome em Configurações → Sistema para os agentes trabalharem no seu navegador real já autenticado.",
         "cta": "Abrir configurações do Sistema"
+      },
+      "orgPortableBundle": {
+        "title": "Faça backup ou mova uma equipe Org",
+        "body": "Exporte uma equipe em Org como pacote .libragent-org — com assistentes, agendamentos, playbooks e skills — e importe em outro dispositivo.",
+        "cta": "Abrir Org"
       }
     }
   }

@@ -28,10 +28,10 @@ A clear and concise description of what actually happened.
 ## Environment
 
 - **OS**: [e.g. Windows 11, macOS 14.2, Ubuntu 22.04]
-- **LibrAgent Version**: [e.g. 0.6.4]
+- **LibrAgent Version**: [e.g. 0.9.25]
 - **Rust Version**: [output of `rustc --version`, if running from source]
 - **Node Version**: [output of `node --version`, if running from source]
-- **LLM Provider**: [e.g. Anthropic, OpenAI, Gemini]
+- **LLM Provider**: [e.g. Anthropic, OpenAI, Gemini, Ollama]
 
 ## Logs and Screenshots
 

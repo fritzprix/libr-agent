@@ -57,9 +57,7 @@ describe('message-document', () => {
 
     const doc = resolveMessageDocument(message);
     expect(doc?.source).toBe('reportResult');
-    expect(doc?.content).toContain('# Done');
-    expect(doc?.content).toContain('## Outcome');
-    expect(doc?.content).toContain('shipped');
+    expect(doc?.content).toBe('shipped\n');
   });
 
   it('resolves presentInteractive HTML resource body', () => {
@@ -94,8 +92,8 @@ describe('message-document', () => {
       },
     });
 
-    expect(serializeMessageForClipboard(message, { mode: 'text' })).toContain(
-      '# Done',
+    expect(serializeMessageForClipboard(message, { mode: 'text' })).toBe(
+      'body\n',
     );
     expect(serializeMessageForDownload(message)).toContain('body');
     expect(serializeMessageForDownload(message)).not.toContain('STOP');

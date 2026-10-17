@@ -76,6 +76,18 @@ async fn present_interactive_text_mode_includes_safe_default_options_array() {
         ),
         "submit button handler should still be present in the rendered template"
     );
+    assert!(
+        html.contains("Answer submitted"),
+        "submit flow should show immediate pending feedback copy"
+    );
+    assert!(
+        html.contains("ui-message-response"),
+        "submit flow should listen for host ack to unlock or confirm"
+    );
+    assert!(
+        html.contains("submitState !== 'idle'"),
+        "submit flow should guard against duplicate clicks"
+    );
 
     assert!(
         text.contains("Content:\n# Report\n\nPick a direction."),

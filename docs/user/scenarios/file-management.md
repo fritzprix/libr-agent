@@ -1,6 +1,6 @@
 ---
 title: 파일 관리 & 변환 자동화
-description: "파일 정리·변환·배치 처리를 워크스페이스 도구로 수행하는 LibrAgent 시나리오입니다."
+description: '파일 정리·변환·배치 처리를 워크스페이스 도구로 수행하는 LibrAgent 시나리오입니다.'
 ---
 
 # 시나리오: 파일 관리 & 변환 자동화
@@ -38,13 +38,13 @@ description: "파일 정리·변환·배치 처리를 워크스페이스 도구�
 
 **업로드된 파일 접근:**
 
-채팅 입력창의 첨부파일 버튼으로 업로드한 파일은 내장 `attachments__*` 도구를 통해 세션 메모리에 접근합니다:
+채팅 입력창의 첨부파일 버튼으로 올린 파일도 바로 다룰 수 있습니다:
 
 ```
 첨부한 계약서 파일에서 핵심 계약 조건과 마감일만 추출해줘.
 ```
 
-_(에이전트가 `attachments__readAttachment` 또는 `attachments__searchAttachments` 내장 도구를 자동으로 호출하여 처리합니다)_
+_(에이전트가 첨부 파일을 자동으로 읽어 처리합니다)_
 
 ### 단계 2: 작업 지시
 
@@ -78,7 +78,7 @@ _(에이전트가 `attachments__readAttachment` 또는 `attachments__searchAttac
 
 에이전트가 처리한 결과를 확인합니다.
 
-**典型 결과 형식:**
+**일반적인 결과 형식:**
 
 ```markdown
 ## 📄 파일 요약: annual-report-2025.pdf
@@ -167,14 +167,14 @@ _(에이전트가 `attachments__readAttachment` 또는 `attachments__searchAttac
 
 ### 파일 작업 전용 에이전트 만들기
 
-1. `/assistants`에서 새 에이전트 생성
+1. 사이드바 **Assistants**에서 새 에이전트 생성
 2. 시스템 프롬프트:
    ```
    당신은 파일 관리 전문가입니다.
    주어진 파일을 빠르게 분석하고 요약, 변환, 정리를 수행합니다.
    파일 구조를 명확하게 표시하고, 결과를 정리된 형식으로 제공합니다.
    ```
-3. 파일 접근 권한 있는 도구 활성화
+3. 워크스페이스·파일 관련 도구 활성화
 
 ### 대용량 파일 처리
 
@@ -190,7 +190,7 @@ _(에이전트가 `attachments__readAttachment` 또는 `attachments__searchAttac
 
 정기적인 파일 처리 작업을 예약하려면:
 
-1. `/scheduled-tasks`에서 새 작업 생성
+1. 사이드바 **Scheduled Tasks**에서 새 작업 생성
 2. "매주 월요일 /reports/ 폴더의 PDF 파일들을 요약해줘"
 3. 에이전트와 반복 주기 설정
 

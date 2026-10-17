@@ -126,34 +126,6 @@ export async function exportMarkdownDocumentWithNotify(options: {
   }
 }
 
-/**
- * Compose reportResult fields into one markdown document for copy/export.
- * Matches presentInteractive: one body of markdown source the user can share.
- */
-export function composeReportResultMarkdown(data: {
-  title?: string | null;
-  criteria?: string | null;
-  proof?: string | null;
-  result: string;
-}): string {
-  const parts: string[] = [];
-  if (data.title?.trim()) {
-    parts.push(`# ${data.title.trim()}`, '');
-  }
-  if (data.criteria?.trim()) {
-    parts.push('## Acceptance criteria', '', data.criteria.trim(), '');
-  }
-  if (data.proof?.trim()) {
-    parts.push('## Verification proof', '', data.proof.trim(), '');
-  }
-  if (data.title?.trim() || data.criteria?.trim() || data.proof?.trim()) {
-    parts.push('## Outcome', '', data.result.trim(), '');
-  } else {
-    parts.push(data.result.trim(), '');
-  }
-  return parts.join('\n').trimEnd() + '\n';
-}
-
 /** i18n labels shared by MessageActionBar / ReportResult / presentInteractive. */
 export function markdownExportLabelsFromT(
   t: (key: string) => string,
