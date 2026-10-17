@@ -286,6 +286,16 @@ docs/
 - **Review**: PRs for doc changes follow same process as code
 - **Update**: Keep docs current with code changes (update policy: update when changing user-facing behavior)
 
+### User Docs (`docs/user`, published VitePress site)
+
+`docs/user` is the public project site. Its readers are **non-developers (laypeople)**, not contributors. These rules are mandatory:
+
+- **No internals.** Do not put implementation details on the project site: tool or function names (`agent__*`), API routes and ports, `curl` or `git` commands, file or crate paths, data formats, limits taken from code constants. Put them in `docs/architecture`, `docs/api`, or `docs/guides` for developers.
+- **Explain with everyday words.** Use short sentences and plain terms. If a technical word is unavoidable, explain it in one line. English text follows ASD-STE100 (Simplified Technical English).
+- **Convey design philosophy, not mechanics.** Each page should make the product's consistent principles clear: work stays on your machine, you stay in control, start with the smallest structure, results are checked before they are trusted, and the same concepts behave the same way on every screen.
+- **Show tasks, not code.** Examples use everyday work (reports, documents, research, files). Do not use developer-only scenarios as the main example.
+- **Keep Korean and English pages equal in meaning.**
+
 ### Documentation Quality
 
 - Spell-check and verify links before merging

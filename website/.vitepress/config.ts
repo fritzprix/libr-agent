@@ -51,6 +51,10 @@ const koSidebar = [
       { text: 'Solution Recipes (레시피)', link: '/guides/recipes' },
       { text: '예약 작업 (Scheduled Tasks)', link: '/guides/scheduled-tasks' },
       { text: '자동화 개요', link: '/guides/automation' },
+      {
+        text: '끝나면 이어서 진행 (call-me-back)',
+        link: '/guides/call-me-back',
+      },
       { text: '브라우저 자동화 (Sidecar)', link: '/guides/browser-sidecar' },
       { text: 'Extensions (MCP 도구 설치)', link: '/guides/extensions' },
       { text: '내장 도구 레퍼런스', link: '/guides/builtin-tools' },
@@ -110,6 +114,10 @@ const enSidebar = [
       { text: 'Solution Recipes', link: '/en/guides/recipes' },
       { text: 'Scheduled Tasks', link: '/en/guides/scheduled-tasks' },
       { text: 'Automation Overview', link: '/en/guides/automation' },
+      {
+        text: 'Continue when done (call-me-back)',
+        link: '/en/guides/call-me-back',
+      },
       {
         text: 'Browser Automation (Sidecar)',
         link: '/en/guides/browser-sidecar',
