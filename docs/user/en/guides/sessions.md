@@ -1,6 +1,6 @@
 ---
 title: Sessions
-description: "Find, bookmark, and delete sessions; regenerate the last turn; manage workspace overrides and /reload."
+description: 'Find, bookmark, and delete sessions; regenerate the last turn; manage workspace overrides and /reload.'
 ---
 
 # Sessions
@@ -52,7 +52,7 @@ During a session, the Chat picker changes **Provider/Model for this session only
 
 ### Rich content in chat
 
-- **Mermaid** (`` ```mermaid ``) and **LaTeX** (`$…$` / `$$…$$`) render in chat messages, deliverable cards, and interactive markdown panels.
+- **Mermaid** (` ```mermaid `) and **LaTeX** (`$…$` / `$$…$$`) render in chat messages, deliverable cards, and interactive markdown panels.
 - Per-message **Copy** / **Export PDF** keep diagrams and equations (PDF embeds Mermaid as images; math uses the PDF TeX path).
 
 ### Regenerate last turn

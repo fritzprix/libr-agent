@@ -1,6 +1,6 @@
 ---
 title: Connecting models
-description: "Connect an LLM to LibrAgent by setting Provider API keys and the default model under Settings → AI & Models."
+description: 'Connect an LLM to LibrAgent by setting Provider API keys and the default model under Settings → AI & Models.'
 ---
 
 # Connecting models
@@ -68,12 +68,12 @@ Keys are stored locally. Never paste keys into chat.
 
 Same **AI & Models** tab:
 
-| Field                    | Meaning                                                                |
-| ------------------------ | ---------------------------------------------------------------------- |
-| **Default LLM**          | Default provider/model for new sessions (with grouped provider picker) |
-| **Fallback LLM**         | Used when the default fails                                            |
-| **Thinking Effort** | Model reasoning effort (`None`, `Low`, `Medium`, `High`) |
-| **Temperature**     | How creative vs precise replies feel (slider, typically 0.0–2.0) |
+| Field               | Meaning                                                                |
+| ------------------- | ---------------------------------------------------------------------- |
+| **Default LLM**     | Default provider/model for new sessions (with grouped provider picker) |
+| **Fallback LLM**    | Used when the default fails                                            |
+| **Thinking Effort** | Model reasoning effort (`None`, `Low`, `Medium`, `High`)               |
+| **Temperature**     | How creative vs precise replies feel (slider, typically 0.0–2.0)       |
 
 You can also change the **Model** and inline **Thinking Effort** in the Chat input bar for the **current session only**.
 

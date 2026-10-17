@@ -1,6 +1,6 @@
 ---
 title: 5-minute tutorial
-description: "Install LibrAgent, connect an AI model, and start your first agent chat in about five minutes."
+description: 'Install LibrAgent, connect an AI model, and start your first agent chat in about five minutes.'
 ---
 
 # 5-minute tutorial

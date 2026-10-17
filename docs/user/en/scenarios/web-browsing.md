@@ -1,6 +1,6 @@
 ---
 title: Scenario - Web Browsing & Information Gathering
-description: "Automate web search, page interaction, and logged-in browsing sessions with LibrAgent."
+description: 'Automate web search, page interaction, and logged-in browsing sessions with LibrAgent.'
 ---
 
 # Scenario: Web Browsing & Information Gathering
@@ -130,17 +130,17 @@ Save this research report to "./research/ai-platform-trends-2026.md".
 
 ## 💡 Example Prompt Collection
 
-| Purpose | Prompt |
-| --- | --- |
-| News search | `"Summarize top 10 news articles from the past week regarding {topic}."` |
-| Web page summary | `"Summarize the key takeaways from https://example.com."` |
-| Product comparison | `"Compare these two products: https://a.com/1 and https://b.com/2."` |
-| Trend investigation | `"Investigate trends in {technology} over the last 3 months."` |
-| Price comparison | `"Create a price comparison table from https://a.com, https://b.com, https://c.com."` |
-| Review aggregation | `"Collect user reviews for {product} from 3 sources and calculate positive/negative ratios."` |
-| Documentation lookup | `"Find all sections discussing {keyword} on https://docs.example.com."` |
-| Blog summary | `"Summarize the latest 5 blog posts from https://blog.example.com."` |
-| Live status check | `"Search for the current live status and updates regarding {event}."` |
+| Purpose              | Prompt                                                                                        |
+| -------------------- | --------------------------------------------------------------------------------------------- |
+| News search          | `"Summarize top 10 news articles from the past week regarding {topic}."`                      |
+| Web page summary     | `"Summarize the key takeaways from https://example.com."`                                     |
+| Product comparison   | `"Compare these two products: https://a.com/1 and https://b.com/2."`                          |
+| Trend investigation  | `"Investigate trends in {technology} over the last 3 months."`                                |
+| Price comparison     | `"Create a price comparison table from https://a.com, https://b.com, https://c.com."`         |
+| Review aggregation   | `"Collect user reviews for {product} from 3 sources and calculate positive/negative ratios."` |
+| Documentation lookup | `"Find all sections discussing {keyword} on https://docs.example.com."`                       |
+| Blog summary         | `"Summarize the latest 5 blog posts from https://blog.example.com."`                          |
+| Live status check    | `"Search for the current live status and updates regarding {event}."`                         |
 
 ---
 
@@ -196,11 +196,11 @@ Always provide clickable reference URLs for every factual claim.
 
 ## 🚀 Next Steps
 
-| Project | Description | Difficulty |
-| --- | --- | --- |
-| Real-time News Monitor | Receive alerts on specific breaking news topics | ⭐⭐⭐ |
-| Automated Price Tracker | Monitor product pricing adjustments across e-commerce sites | ⭐⭐⭐ |
-| Review Sentiment Analyzer | Gather customer reviews and evaluate sentiment | ⭐⭐ |
-| Competitor Tracker | Detect updates and new releases on competitor websites | ⭐⭐⭐ |
-| Web Archive Builder | Save curated web articles into markdown files | ⭐⭐ |
-| Web Research Assistant | Build a dedicated web research assistant persona | ⭐⭐ |
+| Project                   | Description                                                 | Difficulty |
+| ------------------------- | ----------------------------------------------------------- | ---------- |
+| Real-time News Monitor    | Receive alerts on specific breaking news topics             | ⭐⭐⭐     |
+| Automated Price Tracker   | Monitor product pricing adjustments across e-commerce sites | ⭐⭐⭐     |
+| Review Sentiment Analyzer | Gather customer reviews and evaluate sentiment              | ⭐⭐       |
+| Competitor Tracker        | Detect updates and new releases on competitor websites      | ⭐⭐⭐     |
+| Web Archive Builder       | Save curated web articles into markdown files               | ⭐⭐       |
+| Web Research Assistant    | Build a dedicated web research assistant persona            | ⭐⭐       |

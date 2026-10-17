@@ -1,6 +1,6 @@
 ---
 title: Playbooks
-description: "성공한 작업을 Playbook으로 저장하고 다시 실행하는 방법을 다룹니다."
+description: '성공한 작업을 Playbook으로 저장하고 다시 실행하는 방법을 다룹니다.'
 ---
 
 # Playbooks

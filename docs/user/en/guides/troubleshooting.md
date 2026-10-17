@@ -1,6 +1,6 @@
 ---
 title: Troubleshooting Guide
-description: "Diagnose and fix common LibrAgent issues with models, tools, browser automation, and sessions."
+description: 'Diagnose and fix common LibrAgent issues with models, tools, browser automation, and sessions.'
 ---
 
 # Troubleshooting Guide
@@ -40,11 +40,11 @@ Wait a few minutes before retrying, or change **Default LLM** / session **Model*
 
 ### Slow Replies or High Token Costs
 
-| Strategy | Location in UI |
-| --- | --- |
+| Strategy                         | Location in UI                                            |
+| -------------------------------- | --------------------------------------------------------- |
 | Select a smaller or faster model | **Model** selector in Chat or **Default LLM** in Settings |
-| Reduce input context | **Settings → Chat Interface → Max Input Context** |
-| Run local offline models | Add a Custom OpenAI Provider pointing to Ollama |
+| Reduce input context             | **Settings → Chat Interface → Max Input Context**         |
+| Run local offline models         | Add a Custom OpenAI Provider pointing to Ollama           |
 
 ### Output is Too Random or Inconsistent
 
@@ -126,14 +126,14 @@ Restart the application. If graphics glitches persist, check your OS display set
 
 ## 5. Common Error Messages
 
-| Message | Recommended Action |
-| --- | --- |
-| Invalid API key | Re-enter key in **Settings → AI & Models → Provider API Keys**. |
-| Rate limit exceeded | Wait briefly or switch to another provider model. |
-| Model not found | Update **Default LLM** or click **Refresh models** in Chat. |
+| Message                      | Recommended Action                                                   |
+| ---------------------------- | -------------------------------------------------------------------- |
+| Invalid API key              | Re-enter key in **Settings → AI & Models → Provider API Keys**.      |
+| Rate limit exceeded          | Wait briefly or switch to another provider model.                    |
+| Model not found              | Update **Default LLM** or click **Refresh models** in Chat.          |
 | Connection refused / Timeout | Check network connection, local model daemon, or MCP process health. |
-| Permission denied | Verify folder read/write permissions in your operating system. |
-| Session not found | Restart application and search in Session History. |
+| Permission denied            | Verify folder read/write permissions in your operating system.       |
+| Session not found            | Restart application and search in Session History.                   |
 
 ---
 

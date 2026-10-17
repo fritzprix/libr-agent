@@ -1,6 +1,6 @@
 ---
 title: Assistants Guide
-description: "Create custom assistant profiles and configure General, Tools, and Skills for your LibrAgent agents."
+description: 'Create custom assistant profiles and configure General, Tools, and Skills for your LibrAgent agents.'
 ---
 
 # Assistants Guide
@@ -26,11 +26,11 @@ The **Create New Assistant** and **Edit Assistant** views contain three tabs:
 
 ### 1. General Tab
 
-| Field | Description | Requirement |
-| --- | --- | --- |
-| **Assistant Name** | The display name shown on assistant cards | Required |
-| **Description** | A brief summary of the assistant's role | Optional |
-| **System Prompt** | Directives defining behavior, persona, and rules | Required |
+| Field              | Description                                      | Requirement |
+| ------------------ | ------------------------------------------------ | ----------- |
+| **Assistant Name** | The display name shown on assistant cards        | Required    |
+| **Description**    | A brief summary of the assistant's role          | Optional    |
+| **System Prompt**  | Directives defining behavior, persona, and rules | Required    |
 
 Click **Save** to apply changes.
 
@@ -47,12 +47,12 @@ Attach skills scoped specifically to this assistant. For details on skill direct
 
 ## Recommended Workflows
 
-| Objective | Recommended Method |
-| --- | --- |
-| Start an immediate chat | Open **Chat** and click a Built-in or Custom Assistant card. |
-| Create a specialized persona | Open **Assistants → Create New Assistant**, or invoke `@skill:recruit`. |
-| Optimize tool selection | Invoke `@skill:boost`, or adjust tool toggles in the Tools tab. |
-| Connect new MCP tools | Register via [Extensions](extensions.md), then permit access in the Assistant **Tools** tab. |
+| Objective                    | Recommended Method                                                                           |
+| ---------------------------- | -------------------------------------------------------------------------------------------- |
+| Start an immediate chat      | Open **Chat** and click a Built-in or Custom Assistant card.                                 |
+| Create a specialized persona | Open **Assistants → Create New Assistant**, or invoke `@skill:recruit`.                      |
+| Optimize tool selection      | Invoke `@skill:boost`, or adjust tool toggles in the Tools tab.                              |
+| Connect new MCP tools        | Register via [Extensions](extensions.md), then permit access in the Assistant **Tools** tab. |
 
 ---
 

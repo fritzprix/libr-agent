@@ -1,13 +1,22 @@
 ---
-title: LibrAgent 사용자 문서
-description: "LibrAgent 사용자 문서 홈. 설치, 모델 연결, 채팅, 스킬·자동화·MCP 가이드와 FAQ를 한곳에서 확인하세요."
+title: LibrAgent — 로컬 AI 에이전트 데스크톱 운영 환경
+description: '로컬 에이전트 운영 환경 LibrAgent (libr-agent) — 모델 선택, 앱처럼 MCP 도구 설치, 멀티 에이전트 협업 패턴 실행. 설치·모델 연결·채팅·자동화 가이드.'
 ---
 
 # LibrAgent 사용자 문서
 
-LibrAgent를 최대한 활용하는 방법을 배우세요. 이 문서는 개발자가 아닌 **일반 사용자**를 위해 작성되었습니다.
+> **모델을 선택하고, 앱처럼 도구를 설치하고, 협업 패턴을 실행하는 로컬 AI 에이전트 운영 환경.**
+> 복잡한 JSON 설정이나 특정 벤더 종속 없이 결과물이 내 머신의 파일로 완성됩니다.
 
-언어: **한국어** · [English](/en/)
+언어: **한국어** · [English](/en/) · [**최신 릴리스 다운로드 (Windows / macOS / Linux)**](https://github.com/fritzprix/libr-agent/releases/latest) · [GitHub 저장소](https://github.com/fritzprix/libr-agent)
+
+---
+
+## 왜 LibrAgent인가요?
+
+- **수동 설정 없는 직관적 UI**: JSON 편집이나 터미널 없이 **Extensions**에서 원클릭으로 MCP 프리셋(GitHub, Brave Search 등)을 설치하고 Cursor/VS Code 설정을 가져옵니다.
+- **내장된 멀티 에이전트 오케스트레이션**: `@skill:pipeline`, `hub-spoke`, `divide-conquer`, `consensus-delegation`, `teamwork` 등 검증된 협업 패턴을 채팅에서 바로 실행합니다.
+- **모델 및 스택 자유도 (Local-First, MIT)**: OpenAI, Anthropic, Gemini, Groq API 키는 물론 로컬 **Ollama** 모델을 동일한 데스크톱 환경에서 연결합니다.
 
 ---
 

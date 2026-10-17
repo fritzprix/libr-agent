@@ -1,6 +1,6 @@
 ---
 title: Navigation Guide
-description: "Map LibrAgent UI areas — Chat, History, Knowledge, Scheduled Tasks — and how to move between them."
+description: 'Map LibrAgent UI areas — Chat, History, Knowledge, Scheduled Tasks — and how to move between them.'
 ---
 
 # UI Navigation Guide
@@ -74,6 +74,7 @@ Access all core capabilities of LibrAgent from the primary left sidebar:
 ### Org
 
 - Inspect formal multi-agent task forces and member lineage initialized via `teamwork` or `org`.
+- **Export Org** / **Import Org** move a team as a `.libragent-org` bundle. See [Sub-agents & orchestration](sub-agents.md).
 
 ### Scheduled Tasks
 

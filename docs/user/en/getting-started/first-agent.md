@@ -1,6 +1,6 @@
 ---
 title: First agent chat
-description: "Pick an assistant, start a session, and learn how messages, tools, and skills work in your first LibrAgent chat."
+description: 'Pick an assistant, start a session, and learn how messages, tools, and skills work in your first LibrAgent chat.'
 ---
 
 # First agent chat
@@ -108,6 +108,17 @@ Catalog: [Skills](../guides/skills.md).
 - Recent sessions: Chat / sidebar list
 - Search: **History**
 - Bookmark / delete on the session card (delete is permanent)
+
+---
+
+## 6. Shortcuts (reference)
+
+Shortcuts may vary by app/OS and focus. They may not work while the input box has focus.
+
+| Action       | Common shortcut |
+| ------------ | --------------- |
+| Send message | `Enter`         |
+| New line     | `Shift+Enter`   |
 
 ---
 

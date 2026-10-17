@@ -1,6 +1,6 @@
 ---
 title: 코드 리뷰 자동화
-description: "PR URL로 코드 리뷰를 맡기고 피드백·수정 제안까지 받는 LibrAgent 시나리오입니다."
+description: 'PR URL로 코드 리뷰를 맡기고 피드백·수정 제안까지 받는 LibrAgent 시나리오입니다.'
 ---
 
 # 시나리오: PR 코드 리뷰 자동화
