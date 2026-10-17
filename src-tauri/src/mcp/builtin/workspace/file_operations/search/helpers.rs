@@ -4,6 +4,7 @@ use crate::mcp::types::MCPResult;
 use serde_json::Value;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
+use tokio::io::AsyncReadExt;
 
 pub(super) const BINARY_SNIFF_BYTES: usize = 8 * 1024;
 pub(super) const MAX_SEARCH_CONTENT_FILE_SIZE: usize = 5 * 1024 * 1024;
@@ -256,6 +257,48 @@ pub(super) fn effective_search_content_file_size_limit() -> usize {
 pub(super) fn is_probably_binary_slice(bytes: &[u8]) -> bool {
     let sniff_len = bytes.len().min(BINARY_SNIFF_BYTES);
     bytes[..sniff_len].contains(&0)
+}
+
+#[derive(Debug)]
+pub(super) enum ReadTextCandidateResult {
+    Text(String),
+    Binary,
+    InvalidUtf8,
+    IoError(std::io::Error),
+}
+
+/// Reads a candidate file with a single file handle.
+/// Sniffs the first `BINARY_SNIFF_BYTES` for null bytes; if binary, terminates early
+/// without reading the rest of large files (up to `max_size`).
+pub(super) async fn read_text_candidate(path: &Path, max_size: usize) -> ReadTextCandidateResult {
+    let mut file = match tokio::fs::File::open(path).await {
+        Ok(f) => f,
+        Err(e) => return ReadTextCandidateResult::IoError(e),
+    };
+
+    let sniff_target = BINARY_SNIFF_BYTES.min(max_size);
+    let mut buffer = Vec::with_capacity(sniff_target);
+    let mut take_sniff = (&mut file).take(sniff_target as u64);
+    if let Err(e) = take_sniff.read_to_end(&mut buffer).await {
+        return ReadTextCandidateResult::IoError(e);
+    }
+
+    if is_probably_binary_slice(&buffer) {
+        return ReadTextCandidateResult::Binary;
+    }
+
+    let remaining_limit = max_size.saturating_sub(buffer.len());
+    if remaining_limit > 0 {
+        let mut take_rest = file.take(remaining_limit as u64);
+        if let Err(e) = take_rest.read_to_end(&mut buffer).await {
+            return ReadTextCandidateResult::IoError(e);
+        }
+    }
+
+    match String::from_utf8(buffer) {
+        Ok(s) => ReadTextCandidateResult::Text(s),
+        Err(_) => ReadTextCandidateResult::InvalidUtf8,
+    }
 }
 
 fn add_gitignore_matcher(
@@ -585,5 +628,40 @@ mod brace_glob_tests {
 
         let binary_middle = b"Some data with\x00 embedded null byte";
         assert!(is_probably_binary_slice(binary_middle));
+    }
+
+    #[tokio::test]
+    async fn read_text_candidate_classifies_text_binary_and_invalid_utf8() {
+        use super::{read_text_candidate, ReadTextCandidateResult};
+        use std::io::Write;
+
+        let dir = tempfile::tempdir().unwrap();
+
+        // 1. Valid UTF-8 file
+        let text_path = dir.path().join("valid.txt");
+        let mut f = std::fs::File::create(&text_path).unwrap();
+        writeln!(f, "Hello world this is valid text").unwrap();
+        match read_text_candidate(&text_path, 1024 * 1024).await {
+            ReadTextCandidateResult::Text(s) => assert!(s.contains("Hello world")),
+            other => panic!("Expected Text, got {other:?}"),
+        }
+
+        // 2. Binary file with null byte in prefix
+        let bin_path = dir.path().join("binary.bin");
+        let mut f = std::fs::File::create(&bin_path).unwrap();
+        f.write_all(b"prefix\x00remainder of binary").unwrap();
+        match read_text_candidate(&bin_path, 1024 * 1024).await {
+            ReadTextCandidateResult::Binary => {}
+            other => panic!("Expected Binary, got {other:?}"),
+        }
+
+        // 3. Invalid UTF-8 file (e.g. Latin-1 / invalid bytes without null byte)
+        let non_utf8_path = dir.path().join("non_utf8.txt");
+        let mut f = std::fs::File::create(&non_utf8_path).unwrap();
+        f.write_all(b"\xff\xfe\xfd\xfc").unwrap();
+        match read_text_candidate(&non_utf8_path, 1024 * 1024).await {
+            ReadTextCandidateResult::InvalidUtf8 => {}
+            other => panic!("Expected InvalidUtf8, got {other:?}"),
+        }
     }
 }

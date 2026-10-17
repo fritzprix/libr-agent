@@ -287,37 +287,24 @@ pub(super) async fn search_content_in_file(
             .to_mcp_result());
         }
     }
-    let raw_bytes = match tokio::fs::read(file_path).await {
-        Ok(b) => b,
-        Err(e) => {
+    let content = match read_text_candidate(file_path, max_size).await {
+        ReadTextCandidateResult::Text(s) => s,
+        ReadTextCandidateResult::Binary => {
             return Ok(guided_error(
                 ErrorCategory::OperationFailed,
-                e.to_string(),
+                format!(
+                    "Failed to search file: `{}` appears to be binary data.",
+                    display_path
+                ),
                 ToolGroup::Workspace,
             )
+            .guidance(vec![
+                "Use workspace__runShell with `strings` or `grep -a` to inspect binary content"
+                    .to_string(),
+            ])
             .to_mcp_result());
         }
-    };
-
-    if is_probably_binary_slice(&raw_bytes) {
-        return Ok(guided_error(
-            ErrorCategory::OperationFailed,
-            format!(
-                "Failed to search file: `{}` appears to be binary data.",
-                display_path
-            ),
-            ToolGroup::Workspace,
-        )
-        .guidance(vec![
-            "Use workspace__runShell with `strings` or `grep -a` to inspect binary content"
-                .to_string(),
-        ])
-        .to_mcp_result());
-    }
-
-    let content = match String::from_utf8(raw_bytes) {
-        Ok(s) => s,
-        Err(_) => {
+        ReadTextCandidateResult::InvalidUtf8 => {
             return Ok(guided_error(
                 ErrorCategory::OperationFailed,
                 "Failed to read file: Content appears to be binary or contains invalid UTF-8 characters.",
@@ -327,6 +314,14 @@ pub(super) async fn search_content_in_file(
                 "Use workspace__runShell with `strings` or `grep -a` to inspect binary content"
                     .to_string(),
             ])
+            .to_mcp_result());
+        }
+        ReadTextCandidateResult::IoError(e) => {
+            return Ok(guided_error(
+                ErrorCategory::OperationFailed,
+                e.to_string(),
+                ToolGroup::Workspace,
+            )
             .to_mcp_result());
         }
     };
@@ -484,22 +479,13 @@ pub(super) async fn search_content_in_dir(
 
     for candidate in candidates {
         let path = candidate.path.as_path();
-        let raw_bytes = match tokio::fs::read(path).await {
-            Ok(b) => b,
-            Err(_) => continue, // skip unreadable
-        };
-
-        if is_probably_binary_slice(&raw_bytes) {
-            skipped_binary_files += 1;
-            continue;
-        }
-
-        let content = match String::from_utf8(raw_bytes) {
-            Ok(s) => s,
-            Err(_) => {
+        let content = match read_text_candidate(path, max_size).await {
+            ReadTextCandidateResult::Text(s) => s,
+            ReadTextCandidateResult::Binary | ReadTextCandidateResult::InvalidUtf8 => {
                 skipped_binary_files += 1;
                 continue;
             }
+            ReadTextCandidateResult::IoError(_) => continue, // skip unreadable
         };
         files_searched += 1;
 
