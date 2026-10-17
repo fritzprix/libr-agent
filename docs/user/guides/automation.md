@@ -1,6 +1,6 @@
 ---
 title: 자동화 (Scheduled Tasks)
-description: "Scheduled Tasks, loop·schedule 스킬, Org 자동화의 차이와 언제 무엇을 쓸지 정리합니다."
+description: 'Scheduled Tasks, loop·schedule 스킬, Org 자동화의 차이와 언제 무엇을 쓸지 정리합니다.'
 ---
 
 # 자동화 — Scheduled Tasks
@@ -39,14 +39,14 @@ Settings의 **Scheduled Task Minimum Interval**이 켜져 있으면 너무 짧�
 
 ## 다른 자동화와 구분
 
-| 수단                            | 언제                              |
-| ------------------------------- | --------------------------------- |
-| **Scheduled Tasks** (이 페이지) | 앱 전역·반복 백그라운드 실행      |
+| 수단                            | 언제                                          |
+| ------------------------------- | --------------------------------------------- |
+| **Scheduled Tasks** (이 페이지) | 앱 전역·반복 백그라운드 실행                  |
 | **`@skill:loop`**               | **지금 세션 안** 시계 기반 루프/리마인더/지연 |
-| **`@skill:call-me-back`**       | 프로세스·칸반·웹훅 **완료 신호**로 세션 재개 |
-| **`@skill:schedule`**           | 스케줄 운영 절차(에이전트용 스킬) |
-| **Org / teamwork**              | 명시적 팀 계보 — 사이드바 **Org** |
-| **delegate / divide-conquer**   | 당장 자식 세션 위임               |
+| **`@skill:call-me-back`**       | 프로세스·칸반·웹훅 **완료 신호**로 세션 재개  |
+| **`@skill:schedule`**           | 스케줄 운영 절차(에이전트용 스킬)             |
+| **Org / teamwork**              | 명시적 팀 계보 — 사이드바 **Org**             |
+| **delegate / divide-conquer**   | 당장 자식 세션 위임                           |
 
 자세한 멀티 에이전트: [서브 에이전트 · 오케스트레이션](sub-agents.md)
 

@@ -42,6 +42,10 @@ const koSidebar = [
     items: [
       { text: '스킬 (scope·배포)', link: '/guides/skills' },
       { text: '서브 에이전트 · 오케스트레이션', link: '/guides/sub-agents' },
+      {
+        text: '오케스트레이션 실전 예시',
+        link: '/guides/orchestration-examples',
+      },
       { text: 'Assistants', link: '/guides/assistants' },
       { text: 'Playbooks', link: '/guides/playbooks' },
       { text: 'Solution Recipes (레시피)', link: '/guides/recipes' },
@@ -97,6 +101,10 @@ const enSidebar = [
     items: [
       { text: 'Skills', link: '/en/guides/skills' },
       { text: 'Sub-agents & orchestration', link: '/en/guides/sub-agents' },
+      {
+        text: 'Orchestration examples',
+        link: '/en/guides/orchestration-examples',
+      },
       { text: 'Assistants', link: '/en/guides/assistants' },
       { text: 'Playbooks', link: '/en/guides/playbooks' },
       { text: 'Solution Recipes', link: '/en/guides/recipes' },
@@ -160,7 +168,7 @@ function alternateLocalePath(relativePath: string): string | null {
 export default defineConfig({
   title: 'LibrAgent',
   description:
-    'LibrAgent user documentation — install, chat, and connect models',
+    'A local agent operating environment — pick your model, install tools like apps, run coordination patterns; work stays on your machine.',
   // Project Pages: https://fritzprix.github.io/libr-agent/
   base: '/libr-agent/',
   srcDir: '../docs/user',
@@ -186,8 +194,33 @@ export default defineConfig({
     ['meta', { property: 'og:type', content: 'website' }],
     ['meta', { property: 'og:site_name', content: 'LibrAgent Docs' }],
     ['meta', { property: 'og:image', content: ogImage }],
+    ['meta', { property: 'og:image:width', content: '1200' }],
+    ['meta', { property: 'og:image:height', content: '630' }],
     ['meta', { name: 'twitter:card', content: 'summary_large_image' }],
     ['meta', { name: 'twitter:image', content: ogImage }],
+    [
+      'script',
+      { type: 'application/ld+json' },
+      JSON.stringify({
+        '@context': 'https://schema.org',
+        '@type': 'SoftwareApplication',
+        name: 'LibrAgent',
+        alternateName: 'libr-agent',
+        applicationCategory: 'DeveloperApplication',
+        operatingSystem: 'Windows, macOS, Linux',
+        license: 'https://opensource.org/licenses/MIT',
+        url: siteHostname,
+        downloadUrl: `${repo}/releases/latest`,
+        codeRepository: repo,
+        description:
+          'A local agent operating environment — pick your model, install tools like apps, run coordination patterns; work stays on your machine.',
+        offers: {
+          '@type': 'Offer',
+          price: '0',
+          priceCurrency: 'USD',
+        },
+      }),
+    ],
   ],
   transformPageData(pageData) {
     if (pageData.relativePath === '404.md') {
@@ -202,8 +235,8 @@ export default defineConfig({
     const description =
       pageData.description ||
       (isEn
-        ? 'LibrAgent user docs — install, chat, and connect models'
-        : 'LibrAgent 사용자 문서 — 설치, 채팅, 모델 연결');
+        ? 'A local agent operating environment — pick your model, install tools like apps, run coordination patterns; work stays on your machine.'
+        : '로컬 에이전트 운영 환경 — 모델 선택, 앱처럼 도구 설치, 협업 패턴 실행. 결과물은 내 머신에 파일로 남습니다.');
     const ogLocale = isEn ? 'en_US' : 'ko_KR';
 
     const head: HeadConfig[] = [
@@ -229,7 +262,7 @@ export default defineConfig({
           {
             rel: 'alternate',
             hreflang: 'x-default',
-            href: isEn ? altUrl : url,
+            href: isEn ? url : altUrl,
           },
         ],
       );
@@ -266,7 +299,8 @@ export default defineConfig({
       label: '한국어',
       lang: 'ko-KR',
       title: 'LibrAgent',
-      description: 'LibrAgent 사용자 문서 — 설치, 채팅, 모델 연결',
+      description:
+        '로컬 에이전트 운영 환경 — 모델 선택, 앱처럼 도구 설치, 협업 패턴 실행. 결과물은 내 머신에 파일로 남습니다.',
       themeConfig: {
         nav: koNav,
         sidebar: koSidebar,
@@ -293,7 +327,8 @@ export default defineConfig({
       lang: 'en-US',
       link: '/en/',
       title: 'LibrAgent',
-      description: 'LibrAgent user docs — install, chat, and connect models',
+      description:
+        'A local agent operating environment — pick your model, install tools like apps, run coordination patterns; work stays on your machine.',
       themeConfig: {
         nav: enNav,
         sidebar: enSidebar,

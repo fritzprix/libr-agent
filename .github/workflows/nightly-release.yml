@@ -101,3 +101,24 @@ jobs:
             See the assets below to download for your platform.
           releaseDraft: false
           prerelease: true
+
+  cleanup-old-nightlies:
+    needs: nightly-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Keep only the latest 2 nightly releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NIGHTLY_TAGS=$(gh release list --repo "${{ github.repository }}" --limit 50 --json tagName,isPrerelease --jq '.[] | select(.isPrerelease and (.tagName | startswith("nightly-"))) | .tagName')
+          COUNT=0
+          for TAG in $NIGHTLY_TAGS; do
+            COUNT=$((COUNT + 1))
+            if [ "$COUNT" -gt 2 ]; then
+              echo "Deleting old nightly release: $TAG"
+              gh release delete "$TAG" --repo "${{ github.repository }}" --cleanup-tag --yes || true
+            fi
+          done
+

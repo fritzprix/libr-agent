@@ -1,6 +1,6 @@
 ---
 title: Common questions
-description: "Short answers to common LibrAgent questions about install, models, MCP, skills, and automation."
+description: 'Short answers to common LibrAgent questions about install, models, MCP, skills, and automation.'
 ---
 
 # Frequently asked questions
@@ -123,10 +123,10 @@ Support: [Discussions](https://github.com/fritzprix/libr-agent/discussions) — 
 
 ## Next steps
 
-| Topic | Link |
-| --- | --- |
-| First chat | [first-agent](../getting-started/first-agent.md) |
-| Assistants | [assistants](../guides/assistants.md) |
+| Topic                  | Link                                                                        |
+| ---------------------- | --------------------------------------------------------------------------- |
+| First chat             | [first-agent](../getting-started/first-agent.md)                            |
+| Assistants             | [assistants](../guides/assistants.md)                                       |
 | Playbooks / automation | [playbooks](../guides/playbooks.md) · [automation](../guides/automation.md) |
-| MCP | [extensions](../guides/extensions.md) |
-| Multi-agent | [sub-agents](../guides/sub-agents.md) |
+| MCP                    | [extensions](../guides/extensions.md)                                       |
+| Multi-agent            | [sub-agents](../guides/sub-agents.md)                                       |

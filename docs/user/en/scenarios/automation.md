@@ -1,6 +1,6 @@
 ---
 title: Scenario - Scheduled Tasks & Automation Workflows
-description: "Schedule recurring LibrAgent work — daily digests, weekly reports, and cleanup — with Scheduled Tasks."
+description: 'Schedule recurring LibrAgent work — daily digests, weekly reports, and cleanup — with Scheduled Tasks.'
 ---
 
 # Scenario: Scheduled Tasks & Automation Workflows
@@ -122,16 +122,16 @@ If a task failed, show the root cause and the recommended fix.
 
 ## 💡 Example Prompt Collection
 
-| Purpose | Prompt |
-| --- | --- |
-| Daily news summary | `"Summarize top 10 AI news articles daily at 09:00 with source links."` |
-| File cleanup | `"Find and remove duplicate files in ./downloads/ every Friday at 17:00."` |
-| Email summary | `"Summarize all incoming emails daily at 08:00."` |
-| Data backup | `"Create a backup of ./data/ into ./backups/ every midnight."` |
-| Learning report | `"Generate a summary report of topics learned this week every Sunday at 18:00."` |
-| Optional: weekly Git report | `"Generate a weekly Git commit analysis report every Monday at 10:00."` |
-| Optional: review reminder | `"Send a reminder for pending code reviews every Wednesday at 15:00."` |
-| Optional: system monitoring | `"Check system resource usage hourly and notify if it exceeds 80%."` |
+| Purpose                     | Prompt                                                                           |
+| --------------------------- | -------------------------------------------------------------------------------- |
+| Daily news summary          | `"Summarize top 10 AI news articles daily at 09:00 with source links."`          |
+| File cleanup                | `"Find and remove duplicate files in ./downloads/ every Friday at 17:00."`       |
+| Email summary               | `"Summarize all incoming emails daily at 08:00."`                                |
+| Data backup                 | `"Create a backup of ./data/ into ./backups/ every midnight."`                   |
+| Learning report             | `"Generate a summary report of topics learned this week every Sunday at 18:00."` |
+| Optional: weekly Git report | `"Generate a weekly Git commit analysis report every Monday at 10:00."`          |
+| Optional: review reminder   | `"Send a reminder for pending code reviews every Wednesday at 15:00."`           |
+| Optional: system monitoring | `"Check system resource usage hourly and notify if it exceeds 80%."`             |
 
 ---
 
@@ -273,13 +273,13 @@ Show all configured automation tasks in a dashboard table:
 
 ## 🚀 Next Steps
 
-| Project | Description | Difficulty |
-| --- | --- | --- |
-| Daily News Digest | Summarize AI news every morning | ⭐⭐ |
-| Automated Cleanup | Clean downloads directory on schedule | ⭐⭐ |
-| Email Summary | Summarize daily morning emails | ⭐⭐ |
-| Automated Backup | Configure periodic data directory backups | ⭐⭐ |
-| Optional: Weekly Git Report | Generate weekly commit analytics | ⭐⭐⭐ |
-| Multi-Agent Pipeline | Connect multiple agents into one pipeline | ⭐⭐⭐⭐ |
-| Failure Notifications | Receive instant alerts on job errors | ⭐⭐ |
-| Automation Monitor | Build a status dashboard for tasks | ⭐⭐⭐ |
+| Project                     | Description                               | Difficulty |
+| --------------------------- | ----------------------------------------- | ---------- |
+| Daily News Digest           | Summarize AI news every morning           | ⭐⭐       |
+| Automated Cleanup           | Clean downloads directory on schedule     | ⭐⭐       |
+| Email Summary               | Summarize daily morning emails            | ⭐⭐       |
+| Automated Backup            | Configure periodic data directory backups | ⭐⭐       |
+| Optional: Weekly Git Report | Generate weekly commit analytics          | ⭐⭐⭐     |
+| Multi-Agent Pipeline        | Connect multiple agents into one pipeline | ⭐⭐⭐⭐   |
+| Failure Notifications       | Receive instant alerts on job errors      | ⭐⭐       |
+| Automation Monitor          | Build a status dashboard for tasks        | ⭐⭐⭐     |

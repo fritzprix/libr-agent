@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 💬 Questions & Discussions
+    url: https://github.com/fritzprix/libr-agent/discussions
+    about: Ask questions, share workflows, or discuss ideas with the community.
+  - name: 📖 User Documentation
+    url: https://fritzprix.github.io/libr-agent/
+    about: Guides for installation, connecting models, MCP extensions, and automation.

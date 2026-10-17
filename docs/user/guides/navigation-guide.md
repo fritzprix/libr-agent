@@ -1,6 +1,6 @@
 ---
 title: 네비게이션 가이드
-description: "Chat·History·Knowledge·Scheduled Tasks 등 LibrAgent UI 화면과 이동 경로를 정리합니다."
+description: 'Chat·History·Knowledge·Scheduled Tasks 등 LibrAgent UI 화면과 이동 경로를 정리합니다.'
 ---
 
 # 화면 네비게이션 가이드
@@ -75,6 +75,7 @@ LibrAgent의 주요 기능은 좌측 사이드바를 통해 원클릭으로 접�
 ### 조직 관리 (Org)
 
 - `teamwork`나 `org` 스킬로 구성된 정식 멀티 에이전트 팀과 구성원 계보를 시각적으로 확인합니다.
+- 각 Org를 `.libragent-org` 번들로 **내보내고(Export Org)**, 번들을 **가져올(Import Org)** 수 있습니다. 자세한 내용은 [서브 에이전트 · 오케스트레이션](sub-agents.md)을 참고하세요.
 
 ### 예약 작업 (Scheduled Tasks)
 

@@ -1,6 +1,6 @@
 ---
 title: Playbooks Guide
-description: "Save successful work as Playbooks and re-run them in LibrAgent."
+description: 'Save successful work as Playbooks and re-run them in LibrAgent.'
 ---
 
 # Playbooks Guide
@@ -42,11 +42,11 @@ You can also reference playbooks in chat using the `@playbook:` mention prefix (
 
 ## Comparison: Playbook vs. Skill
 
-| Aspect | Playbook | Skill (`@skill:`) |
-| --- | --- | --- |
-| **What it is** | A replay of a successful execution history | A `SKILL.md` procedural specification |
-| **How to create** | Request the agent to save a finished chat | Author via `skill-creator` and deploy |
-| **How to use** | Click **Start** or mention `@playbook:name` | Mention `@skill:name` in chat |
+| Aspect            | Playbook                                    | Skill (`@skill:`)                     |
+| ----------------- | ------------------------------------------- | ------------------------------------- |
+| **What it is**    | A replay of a successful execution history  | A `SKILL.md` procedural specification |
+| **How to create** | Request the agent to save a finished chat   | Author via `skill-creator` and deploy |
+| **How to use**    | Click **Start** or mention `@playbook:name` | Mention `@skill:name` in chat         |
 
 Use both capabilities together: choose Playbooks for one-click workflow replays, and choose Skills for consistent procedural rules and reasoning steps.
 

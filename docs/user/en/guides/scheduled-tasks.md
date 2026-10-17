@@ -1,6 +1,6 @@
 ---
 title: Scheduled Tasks Reference
-description: "Schedule assistant sessions with cron or interval-based Scheduled Tasks in LibrAgent."
+description: 'Schedule assistant sessions with cron or interval-based Scheduled Tasks in LibrAgent.'
 ---
 
 # Scheduled Tasks Reference
@@ -25,10 +25,10 @@ Scheduled Tasks allow agents to automatically run recurring prompts and workflow
 
 Deploy pre-configured tasks directly from the Scheduled Tasks view:
 
-| Template Name | Schedule | Execution Mode | Summary |
-| --- | --- | --- | --- |
-| **PC Health & Security Daily Audit** | Daily at midnight | `Unsafe` (Full Auto) | Inspects available disk space, long-running processes, uncommitted Git changes, and package vulnerabilities. |
-| **Website Changes & Headline Briefing** | Daily at 09:00 | `YOLO` | Uses browser automation to visit tech sites and generate a 3-bullet summary briefing. |
+| Template Name                           | Schedule          | Execution Mode       | Summary                                                                                                      |
+| --------------------------------------- | ----------------- | -------------------- | ------------------------------------------------------------------------------------------------------------ |
+| **PC Health & Security Daily Audit**    | Daily at midnight | `Unsafe` (Full Auto) | Inspects available disk space, long-running processes, uncommitted Git changes, and package vulnerabilities. |
+| **Website Changes & Headline Briefing** | Daily at 09:00    | `YOLO`               | Uses browser automation to visit tech sites and generate a 3-bullet summary briefing.                        |
 
 ---
 

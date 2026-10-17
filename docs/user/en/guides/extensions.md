@@ -1,6 +1,6 @@
 ---
 title: Installing MCP Servers with Extensions
-description: "Install recommended MCP presets from Extensions and enable tools on your LibrAgent assistants."
+description: 'Install recommended MCP presets from Extensions and enable tools on your LibrAgent assistants.'
 ---
 
 # Installing MCP Servers with Extensions

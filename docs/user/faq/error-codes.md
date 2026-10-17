@@ -1,6 +1,6 @@
 ---
 title: 에러 코드 · 해결
-description: "LibrAgent에 표시되는 주요 에러 코드 의미와 권장 대응을 정리한 FAQ입니다."
+description: 'LibrAgent에 표시되는 주요 에러 코드 의미와 권장 대응을 정리한 FAQ입니다.'
 ---
 
 # 에러 코드 및 해결 가이드

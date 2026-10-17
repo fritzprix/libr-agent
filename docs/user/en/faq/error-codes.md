@@ -1,6 +1,6 @@
 ---
 title: Error codes
-description: "Meanings and recommended fixes for common LibrAgent error codes shown in the app."
+description: 'Meanings and recommended fixes for common LibrAgent error codes shown in the app.'
 ---
 
 # Error codes and fixes

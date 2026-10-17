@@ -1,6 +1,6 @@
 ---
 title: Session Export
-description: "Export conversations as Markdown, or optionally as ATIF for analysis, from Session Export."
+description: 'Export conversations as Markdown, or optionally as ATIF for analysis, from Session Export.'
 ---
 
 # Session Export
