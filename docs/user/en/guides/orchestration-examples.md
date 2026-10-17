@@ -1,233 +1,227 @@
 ---
 title: Orchestration examples
-description: 'Copy-ready prompts, internals, and common pitfalls for delegate, divide-conquer, hub-spoke, pipeline, consensus, and Org — scenario by scenario.'
+description: 'Prompts that you can copy, for tasks from one helper to a long-term team. Each example uses everyday work and shows common mistakes.'
 ---
 
 # Orchestration examples
 
-> How to apply the patterns in [Sub-agents & orchestration](sub-agents.md) to real situations.  
-> Copy the prompts and swap in your values. Each example has **when / prompt / what happens inside / result / watch out**.
+> How to use the patterns in [Sub-agents & orchestration](sub-agents.md) for everyday work.  
+> Copy a request. Change the details.
 
-Start by choosing: if one agent is enough, **do not delegate**. Escalate structure only for parallel work, independent review, or a long-lived team.
+## First, use only what you need
 
-```text
-One agent is enough?               → just chat
-Hand one chunk to someone else     → delegate
-Several independent pieces         → divide-conquer
-Each step feeds the next           → pipeline
-Same question, several viewpoints  → consensus-delegation
-Central lead directs specialists   → hub-spoke
-Make → strict review, repeat       → gatekeeper
-Long-lived team + Org view         → teamwork → org
-```
+If one agent is enough, **do not hand off the work**. Make the structure bigger only when the work has many parts, when you need another point of view, or when the work continues for a long time. LibrAgent starts small. It checks a result before it uses it.
+
+| Situation                                            | Skill                  |
+| ---------------------------------------------------- | ---------------------- |
+| Give one block of work to another agent              | `delegate`             |
+| Many tasks that do not depend on each other          | `divide-conquer`       |
+| The result of one step is the input of the next step | `pipeline`             |
+| One question, many points of view                    | `consensus-delegation` |
+| One leader directs the specialists                   | `hub-spoke`            |
+| Make, check, and repeat                              | `gatekeeper`           |
+| A long-term team and the Org view                    | `teamwork` → `org`     |
 
 ---
 
-## Example 1. One independent reviewer (`delegate`)
+## Example 1. Get a review from a different point of view (`delegate`)
 
-**When**: you want your work reviewed by "someone other than me".
+**Use it when**: you want another agent to read your document.
 
 ```text
 @skill:delegate
-Review docs/proposal.md in the current work folder from an investor's point of view.
-- Share the current work folder so you can read the file directly
-- Do not edit; in your final reply give "3 strengths / 3 weaknesses / 5 must-ask questions"
+Read proposal.md in this folder as an investor.
+- Use the same folder as this chat. Do not change the file.
+- In your answer, write: 3 good points, 3 weak points, 5 questions that I must ask.
 ```
 
-**What happens inside**
+**What happens**: The agent finds a reviewer child, or makes a new one. The child reads the document and gives the result in its answer. The parent checks that the child stayed in the limits. Then the parent gives you the result.
 
-1. The parent checks for an idle reviewer child; if none, creates one (work folder **shared**)
-2. The child reads the file and returns its result as the final reply
-3. The parent confirms `workspace: SHARED` and the scope, then relays the result
-
-**Watch out**: if the child says "file not found", its folder was **isolated**. State the sharing explicitly or paste the content into the brief and retry. If you asked for an independent review and the parent graded itself instead, ask again.
+**Watch out**: The child can say "I cannot find the file". This means the child has its own folder. Write "Use the same folder as this chat". Or paste the text into your request and ask again. If you asked for a review by a different agent, and the parent judged the work itself, ask again.
 
 ---
 
-## Example 2. Parallel audit by module (`divide-conquer`)
+## Example 2. Do many parts at the same time (`divide-conquer`)
 
-**When**: front end, back end, and docs can be audited independently at the same time.
+**Use it when**: you have tasks that do not depend on each other.
 
 ```text
 @skill:divide-conquer
-Audit the repo in three parallel pieces:
-① src/ui/**  accessibility and rendering issues
-② src-tauri/** error handling and unsafe usage
-③ docs/**  broken links and stale explanations
-Save each to report/<piece>.md, then merge into one report/SUMMARY.md.
-Do not fix anything; report findings only.
+Write this quarter's report in three parts at the same time.
+1 Sales summary. 2 Customer feedback. 3 Plan for the next quarter.
+Save each part in the report folder. At the end, join them into one file named SUMMARY.md.
 ```
 
-**What happens inside**
+**What happens**: The agent splits the work into three parts that do not overlap. It gives each part a different file name. Three children work at the same time. The parent prepares the join. At the end, the parent joins the parts and asks again only for the weak parts.
 
-1. The parent splits the work into three non-overlapping pieces and assigns each a unique output file
-2. It launches three children **asynchronously** within the active-session limit (default 4) and prepares the merge template while they run
-3. It confirms each child with `agent__checkSession` and merges
-4. Only empty or weak pieces get a follow-up
-
-**Watch out**: if pieces share a folder, **separate file names** so they cannot overwrite each other. Ask for a final check that the summary does not contradict any individual report.
+**Watch out**: If the parts use the same folder, use **different file names**. Ask the agent to check that the summary agrees with each part.
 
 ---
 
-## Example 3. A post in stages (`pipeline`)
+## Example 3. Write a post in steps (`pipeline`)
 
-**When**: each stage's output is the next stage's input.
+**Use it when**: the result of one step is the input of the next step.
 
 ```text
 @skill:pipeline
-Produce a blog post: "Automating weekly reports with a local agent".
-1) Research: 5+ sources, summary and links in drafts/01-research.md
-2) Draft: outline and body based on 01, drafts/02-draft.md
-3) Review: fact and tone check with suggested edits, drafts/03-review.md
-4) Polish: final version applying the review, final.md
-Each stage receives only the previous stage's file path and summary.
+Write a blog post with the title "Make a weekly report with a local agent".
+1) Research: at least 5 sources. Save in drafts/01-research.md
+2) First draft: use the research. Save in drafts/02-draft.md
+3) Review: check facts and tone. Write the changes in drafts/03-review.md
+4) Final version: use the review. Save in final.md
 ```
 
-**What happens inside**: all stages share one folder, and the next stage gets **a summary + paths**, not the full conversation. If stage 3 finds problems, only stage 2 is re-run.
+**What happens**: All steps use the same folder. The next step gets only a summary and the file location, not the whole chat. If the review finds a problem, only the draft step runs again.
 
-**Watch out**: if the stages are independent, `divide-conquer` is faster than `pipeline`.
+**Watch out**: If the steps do not depend on each other, `divide-conquer` is faster than `pipeline`.
 
 ---
 
-## Example 4. A PR from several viewpoints (`consensus-delegation` + `delegation-eval-loop`)
+## Example 4. Look at one decision from many sides (`consensus-delegation`)
 
-**When**: before merging, you want security, performance, and maintainability compared, with disagreements reconciled.
+**Use it when**: you must make an important decision, for example to change to a new service. You want to look at cost, risk, and ease of use.
 
 ```text
 @skill:consensus-delegation
-Review PR #1234 (diff: git diff main...HEAD) independently from three viewpoints:
-- security / performance / maintainability
-- everyone answers in the same template (Verdict · Confidence · Findings · Risks)
-- no code changes, share the current work folder
-Ask follow-ups only on disputed items, then give a final recommendation
-(merge / conditional merge / reject).
+Check if we should change our team messenger to a new service.
+Look at three sides, each alone: cost, risk (security and the work to move), ease of use.
+Each side answers in the same format: result, confidence, what it found, risks.
+Ask again only about the points where the answers are different.
+Then give a final advice: change, change with conditions, or keep.
 ```
 
 **Example result**
 
-| Viewpoint       | Verdict              | Key evidence                                      |
-| --------------- | -------------------- | ------------------------------------------------- |
-| Security        | approve-with-caveats | one missing input validation (`api/upload.ts:42`) |
-| Performance     | approve              | new query confirmed to use an index               |
-| Maintainability | reject               | 300-line function, no tests                       |
+| Side        | Result                | Main proof                                             |
+| ----------- | --------------------- | ------------------------------------------------------ |
+| Cost        | Agree with conditions | The yearly cost is lower, but the move costs much work |
+| Risk        | Agree with conditions | A security check is needed when you move the data      |
+| Ease of use | Disagree              | Half of the team does not know the new screens         |
 
-The parent asks only the conflicting children about the clash (maintainability vs performance) and ties each point of the final recommendation to its evidence.
+The parent asks again **only about the points that conflict**. Here, the conflict is good cost against bad ease of use. The final advice has the proof for each point.
 
-**Watch out**: inject viewpoints through the **brief**; you do not need a new assistant per lens. Two to four panelists is plenty.
+**Watch out**: Write the role in your request. You do not need to make a new assistant. Two to four sides is enough.
 
 ---
 
-## Example 5. A coordinator directing specialists (`hub-spoke`)
+## Example 5. A leader directs the specialists (`hub-spoke`)
 
-**When**: research, analysis, and drafting are different jobs that one lead must integrate.
+**Use it when**: the work has different jobs, such as research, analysis, and a summary, and one agent must put them together.
 
 ```text
 @skill:hub-spoke
-Write a comparison report on three competing products (A, B, C).
-Hub: you. Spokes: ① features ② pricing and licensing ③ community and release history
-Each spoke reports only to the hub with a one-page summary and source links in its final reply.
-The hub receives summaries only, then writes the comparison table and "3 things we should copy".
+Make a comparison report for three competing services (A, B, C).
+You are the leader. The workers are: 1 compare the functions, 2 compare the prices, 3 collect what users say.
+Each worker gives only the leader a one-page summary and the source links.
+The leader gets only the summaries. Then the leader writes a comparison table and "3 things that we can learn".
 ```
 
-**What happens inside**: the hub builds a task list with dependencies; spokes work in parallel. If ③ needs ②'s output, the hub **relays** a summary (spokes never talk directly).
+**What happens**: The leader makes a task list. The workers work at the same time. If worker 3 needs the result of worker 2, the leader sends a summary. The workers do not talk to each other.
 
-**Watch out**: letting the hub read every spoke's full log overflows its context. Put "summaries and file lists only" in the brief.
+**Watch out**: If the leader reads the long chat records of all workers, it cannot work. Write "Get only summaries and file lists".
 
 ---
 
-## Example 6. A fix with strict acceptance (`delegate` + `delegation-eval-loop`)
+## Example 6. Make, check, and make again (`gatekeeper`)
 
-**When**: a code change where you need **evidence**, not "it's done".
+**Use it when**: a notice must follow fixed rules.
+
+```text
+@skill:gatekeeper
+Let the writer make this month's customer notice.
+The reviewer checks 3 rules: 1 no wrong facts, 2 the most important point is first, 3 each item has no more than two sentences.
+If the notice does not pass in 3 rounds, tell me what is still wrong.
+```
+
+**What happens**: The reviewer uses the rules to pass or reject the notice. If the reviewer rejects it, the writer gets the list of problems. The loop runs 3 times at most. If the notice still does not pass, the agent tells you the reason.
+
+**Watch out**: Make the rules **exact**. A rule such as "write it well" gives a loop that does not end.
+
+---
+
+## Example 7. Check the result before you accept it (`delegate` + `delegation-eval-loop`)
+
+**Use it when**: you need a **checked result**, not only the words "I am done".
 
 ```text
 @skill:delegate @skill:delegation-eval-loop
-Fix the checkout rounding bug.
-- Allowed paths: src/checkout/**, tests/checkout/**  (no other edits)
-- Acceptance
-  - [ ] pnpm test checkout passes
-  - [ ] a regression test that reproduces the bug is added
-  - [ ] no unrelated files changed
-- Paste the commands you ran and their raw output in your final reply
+Change all dates in the customer notices to the format "March 5, 2026".
+- Places you can change: the notice folder. Do not change other places.
+- Pass rules: - [ ] all dates have the same format  - [ ] numbers that are not dates stay the same
+- In your answer, write the list of changed files and 3 examples of before and after.
 ```
 
-**What happens inside**
+**What happens**: When the child is done, the parent checks the pass rules itself. The parent also looks if the child changed a place that it must not change. If there is a problem, the parent sends the work back with the exact problem. After 3 to 5 rounds, the agent stops and tells you the reason.
 
-1. The parent puts the contract (objective, allowed paths, checklist) in the brief
-2. After the child finishes, the parent **runs the tests itself** and checks scope with `git diff --stat`
-3. On failure it re-steers with the raw error output (3–5 cycles max); only a pass is reported to you
-
-**Watch out**: the child's "tests passed" is not evidence. Cancelled runs, or "done" without evidence, are treated as failures.
+**Watch out**: "No problem" from the child is not proof. A run that stopped, or "done" with no proof, is a failure.
 
 ---
 
-## Example 7. A long-lived team (`teamwork` → `org`)
+## Example 8. Make a long-term team (`teamwork` → `org`)
 
-**When**: the same team continues over weeks and you want one place to see its state.
+**Use it when**: the same team works for many weeks, and you want to see its state in one place.
 
 ```text
 @skill:teamwork
-Create a "monthly market trends report" task force.
-Roles: researcher, data analyst, editor. Coordination: hub-and-spoke.
-Deliverable: reports/YYYY-MM.md each month, final approval by the editor.
+Make a team for a "monthly market report".
+The roles are: research, data analysis, and editor. A leader should direct the work.
+Save the result as a file for each month in the reports folder. The editor gives the last approval.
 ```
 
-Once it is prepared:
+When the team is ready, write:
 
 ```text
 @skill:org
-Create the Org from the team you just prepared and start with the researcher.
+Make the Org from the team that you just prepared. Start with the research role.
 ```
 
-**What happens inside**
+**What happens**: The agent writes the goal, the roles, and the work rules, and saves them as the team rules. Then it makes the Org and adds the team members. The team shows in the **Org** view in the sidebar. Next month, you continue from the **leader chat of the Org**.
 
-1. `teamwork` writes the mission, roles, and coordination rules to an app-local folder
-2. `org` creates the Org once from the root session and spawns members inside it
-3. The team appears in the sidebar **Org** view; next month you continue from the **Org root**
-
-Refine it later:
+To change the team later:
 
 ```text
 @skill:org-restructure
-Merge the data analyst into the researcher and add the editor's approval criteria to ROLES.md.
+Join the data analysis role with the research role. Add the approval rules of the editor to the role description.
 ```
 
-**Watch out**: one-off delegations do not appear in Org. For recurring runs use [Scheduled Tasks](scheduled-tasks.md), not Org. To move a team to another machine, use **Export Org / Import Org** in the Org view.
+**Watch out**: A task that you hand off one time does not show in Org. For work that repeats at set times, use [Scheduled Tasks](scheduled-tasks.md), not Org. To move a team to another computer, use **Export Org** and **Import Org** in the Org view.
 
 ---
 
-## Example 8. Waiting for something (`call-me-back` / `loop`)
+## Example 9. Wait for something to finish (`call-me-back` / `loop`)
 
-When you need to be **woken up**, not to delegate.
+Here you do not hand off work. You need the agent to **wait**.
 
 ```text
 @skill:call-me-back
-Run the full build in the background and wake this session when it finishes, then summarize the failing tests.
+Start the job that converts all pictures in this folder. Run it in the background.
+When it is done, continue in this chat and tell me if some files failed.
 ```
 
 ```text
 @skill:loop
-Check this PR's CI status again in 30 minutes.
+Check again in 30 minutes if this job is done.
 ```
 
-- Waiting for a process or webhook to **finish** → `call-me-back`
-- Looking again after some **time** → `loop` (inside this chat); use `schedule` if it must run with the app closed
+- Wait until a job is **done**: `call-me-back` ([guide](call-me-back.md))
+- Look again after some **time**: `loop` (in this chat). Use `schedule` if the work must run when the app is closed.
 
 ---
 
 ## Common mistakes and fixes
 
-| Symptom                                   | Cause                            | Fix                                                                       |
-| ----------------------------------------- | -------------------------------- | ------------------------------------------------------------------------- |
-| Child cannot find files, rules, or skills | Work folder is isolated          | State "share the current work folder" or include the content in the brief |
-| Parent cannot read the child's result     | Child only saved to a file       | Require the deliverable **in the final reply**                            |
-| Parallel children overwrite each other    | Shared paths                     | Separate file names or subfolders per child                               |
-| New children keep appearing               | Idle children not reused         | Ask to reuse an idle same-role child with `reset`                         |
-| "Spawn rejected (depth / fanout)"         | Lineage limit exceeded           | Reduce nested delegation or flatten the structure                         |
-| Parallel work is slow                     | Active-session limit (default 4) | Use smaller batches or split into stages                                  |
-| Endless review loop                       | Vague criteria                   | Give checkbox criteria and a max rework count (default 3)                 |
-| One-off delegation not in Org             | Expected behavior                | Use `teamwork` → `org` if you need Org                                    |
+| Problem                                           | Reason                                                              | Fix                                                                           |
+| ------------------------------------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| The child cannot find a file                      | The child has its own work folder                                   | Write "Use the same folder as this chat", or paste the text into your request |
+| The parent cannot read the result of the child    | The child only saved a file                                         | Write "Put the result in your answer"                                         |
+| Children overwrite the files of each other        | They use the same file name                                         | Give each child a different file name or subfolder                            |
+| New children keep appearing                       | The agent does not use idle children again                          | Write "Use an idle child with the same role again"                            |
+| A message says the app cannot make a new child    | The safety limit is reached                                         | Do not let children make more children. Make the structure simpler            |
+| Parallel work is slow                             | There is a limit for the number of chats that work at the same time | Use smaller groups, or split the work into steps                              |
+| The check never ends                              | The pass rules are not exact                                        | Write a checklist and a maximum number of rounds                              |
+| A task that you handed off one time is not in Org | This is correct                                                     | Use `teamwork` → `org` if you need an Org                                     |
 
-For more diagnostics see [Troubleshooting](troubleshooting.md).
+For more help, read [Troubleshooting](troubleshooting.md).
 
 ---
 
