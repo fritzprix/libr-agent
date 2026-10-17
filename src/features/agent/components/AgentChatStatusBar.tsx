@@ -11,6 +11,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import {
+  shouldShowWorkflowBanner,
   StatusBarExecutionMode,
   StatusBarModelControls,
   StatusBarTokenMetrics,
@@ -66,16 +67,19 @@ export function AgentChatStatusBar() {
     }
   };
 
-  const showWorkflowBanner =
-    Boolean(error || llmError) ||
-    awaitingCompact ||
-    compacting ||
-    pendingApprovals.length > 0 ||
-    workflowStatus !== 'idle';
+  const showWorkflowBanner = shouldShowWorkflowBanner({
+    error,
+    llmError,
+    awaitingCompact,
+    compacting,
+    hasPendingApprovals: pendingApprovals.length > 0,
+    workflowStatus,
+  });
 
   return (
     <>
       <StatusBarWorkflowBanner
+        visible={showWorkflowBanner}
         workflowStatus={workflowStatus}
         error={error}
         llmError={llmError}

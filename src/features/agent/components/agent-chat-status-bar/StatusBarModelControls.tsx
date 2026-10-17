@@ -16,25 +16,23 @@ export function StatusBarModelControls() {
     confirmBatchUpdate,
   } = useStatusBarModelConfig();
 
-  if (!session) {
-    return null;
-  }
-
   return (
     <>
       <div className="min-w-0 w-full sm:w-auto">
-        <AgentModelPicker
-          currentModel={session.model}
-          currentProvider={session.provider}
-          className="w-full sm:w-auto"
-          disabled={!canUpdateSessionConfig}
-          onConfigUpdate={handleConfigUpdate}
-          showThinkingEffort
-          thinkingEffort={thinkingEffort}
-          onThinkingEffortChange={(effort) => {
-            void handleThinkingEffortChange(effort);
-          }}
-        />
+        {session && (
+          <AgentModelPicker
+            currentModel={session.model}
+            currentProvider={session.provider}
+            className="w-full sm:w-auto"
+            disabled={!canUpdateSessionConfig}
+            onConfigUpdate={handleConfigUpdate}
+            showThinkingEffort
+            thinkingEffort={thinkingEffort}
+            onThinkingEffortChange={(effort) => {
+              void handleThinkingEffortChange(effort);
+            }}
+          />
+        )}
       </div>
 
       {showBatchDialog && pendingModelConfig && (

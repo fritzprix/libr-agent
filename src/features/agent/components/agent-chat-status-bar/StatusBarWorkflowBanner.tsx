@@ -1,3 +1,4 @@
+import type { useAgentChatState } from '@/context/AgentChatContext';
 import { Button } from '@/components/ui/button';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import type { MessageError } from '@/models/chat';
@@ -14,14 +15,32 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+export function shouldShowWorkflowBanner({
+  error,
+  llmError,
+  awaitingCompact,
+  compacting,
+  hasPendingApprovals,
+  workflowStatus,
+}: {
+  error: MessageError | null;
+  llmError: MessageError | null;
+  awaitingCompact: boolean;
+  compacting: boolean;
+  hasPendingApprovals: boolean;
+  workflowStatus: ReturnType<typeof useAgentChatState>['workflowStatus'];
+}): boolean {
+  return (
+    Boolean(error || llmError) ||
+    awaitingCompact ||
+    compacting ||
+    hasPendingApprovals ||
+    workflowStatus !== 'idle'
+  );
+}
+
 export interface StatusBarWorkflowBannerProps {
-  workflowStatus:
-    | 'idle'
-    | 'busy'
-    | 'paused'
-    | 'error'
-    | 'queued'
-    | 'provisioning';
+  workflowStatus: ReturnType<typeof useAgentChatState>['workflowStatus'];
   error: MessageError | null;
   llmError: MessageError | null;
   awaitingCompact: boolean;
@@ -31,6 +50,7 @@ export interface StatusBarWorkflowBannerProps {
   isResuming: boolean;
   onRetry: () => void;
   onResume: () => void;
+  visible?: boolean;
 }
 
 export function StatusBarWorkflowBanner({
@@ -44,6 +64,7 @@ export function StatusBarWorkflowBanner({
   isResuming,
   onRetry,
   onResume,
+  visible,
 }: StatusBarWorkflowBannerProps) {
   const { t } = useTranslation();
 
@@ -154,14 +175,19 @@ export function StatusBarWorkflowBanner({
     }
   };
 
-  const showWorkflowBanner =
-    Boolean(error || llmError) ||
-    awaitingCompact ||
-    compacting ||
-    hasPendingApprovals ||
-    workflowStatus !== 'idle';
+  const isVisible =
+    visible !== undefined
+      ? visible
+      : shouldShowWorkflowBanner({
+          error,
+          llmError,
+          awaitingCompact,
+          compacting,
+          hasPendingApprovals,
+          workflowStatus,
+        });
 
-  if (!showWorkflowBanner) {
+  if (!isVisible) {
     return null;
   }
 

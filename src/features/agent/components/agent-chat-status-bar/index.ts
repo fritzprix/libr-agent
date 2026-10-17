@@ -1,4 +1,7 @@
-export { StatusBarWorkflowBanner } from './StatusBarWorkflowBanner';
+export {
+  StatusBarWorkflowBanner,
+  shouldShowWorkflowBanner,
+} from './StatusBarWorkflowBanner';
 export type { StatusBarWorkflowBannerProps } from './StatusBarWorkflowBanner';
 export { StatusBarExecutionMode } from './StatusBarExecutionMode';
 export type { StatusBarExecutionModeProps } from './StatusBarExecutionMode';
