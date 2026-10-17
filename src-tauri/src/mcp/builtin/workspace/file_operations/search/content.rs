@@ -287,7 +287,19 @@ pub(super) async fn search_content_in_file(
             .to_mcp_result());
         }
     }
-    if is_probably_binary_file(file_path).await {
+    let raw_bytes = match tokio::fs::read(file_path).await {
+        Ok(b) => b,
+        Err(e) => {
+            return Ok(guided_error(
+                ErrorCategory::OperationFailed,
+                e.to_string(),
+                ToolGroup::Workspace,
+            )
+            .to_mcp_result());
+        }
+    };
+
+    if is_probably_binary_slice(&raw_bytes) {
         return Ok(guided_error(
             ErrorCategory::OperationFailed,
             format!(
@@ -303,27 +315,19 @@ pub(super) async fn search_content_in_file(
         .to_mcp_result());
     }
 
-    let content = match tokio::fs::read_to_string(file_path).await {
+    let content = match String::from_utf8(raw_bytes) {
         Ok(s) => s,
-        Err(e) => {
-            let is_invalid_data = e.kind() == std::io::ErrorKind::InvalidData;
-            let error_msg = if is_invalid_data {
-                "Failed to read file: Content appears to be binary or contains invalid UTF-8 characters.".to_string()
-            } else {
-                e.to_string()
-            };
-            let mut builder = guided_error(
+        Err(_) => {
+            return Ok(guided_error(
                 ErrorCategory::OperationFailed,
-                &error_msg,
+                "Failed to read file: Content appears to be binary or contains invalid UTF-8 characters.",
                 ToolGroup::Workspace,
-            );
-            if is_invalid_data {
-                builder = builder.guidance(vec![
-                    "Use workspace__runShell with `strings` or `grep -a` to inspect binary content"
-                        .to_string(),
-                ]);
-            }
-            return Ok(builder.to_mcp_result());
+            )
+            .guidance(vec![
+                "Use workspace__runShell with `strings` or `grep -a` to inspect binary content"
+                    .to_string(),
+            ])
+            .to_mcp_result());
         }
     };
 
@@ -480,14 +484,22 @@ pub(super) async fn search_content_in_dir(
 
     for candidate in candidates {
         let path = candidate.path.as_path();
-        if is_probably_binary_file(path).await {
+        let raw_bytes = match tokio::fs::read(path).await {
+            Ok(b) => b,
+            Err(_) => continue, // skip unreadable
+        };
+
+        if is_probably_binary_slice(&raw_bytes) {
             skipped_binary_files += 1;
             continue;
         }
 
-        let content = match tokio::fs::read_to_string(path).await {
+        let content = match String::from_utf8(raw_bytes) {
             Ok(s) => s,
-            Err(_) => continue, // skip unreadable
+            Err(_) => {
+                skipped_binary_files += 1;
+                continue;
+            }
         };
         files_searched += 1;
 

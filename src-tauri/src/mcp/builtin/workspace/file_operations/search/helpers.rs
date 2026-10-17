@@ -4,7 +4,6 @@ use crate::mcp::types::MCPResult;
 use serde_json::Value;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
-use tokio::io::AsyncReadExt;
 
 pub(super) const BINARY_SNIFF_BYTES: usize = 8 * 1024;
 pub(super) const MAX_SEARCH_CONTENT_FILE_SIZE: usize = 5 * 1024 * 1024;
@@ -254,18 +253,9 @@ pub(super) fn effective_search_content_file_size_limit() -> usize {
     crate::config::max_file_size().min(MAX_SEARCH_CONTENT_FILE_SIZE)
 }
 
-pub(super) async fn is_probably_binary_file(path: &Path) -> bool {
-    let mut file = match tokio::fs::File::open(path).await {
-        Ok(file) => file,
-        Err(_) => return false,
-    };
-    let mut buffer = [0u8; BINARY_SNIFF_BYTES];
-    let bytes_read = match file.read(&mut buffer).await {
-        Ok(bytes_read) => bytes_read,
-        Err(_) => return false,
-    };
-
-    buffer[..bytes_read].contains(&0)
+pub(super) fn is_probably_binary_slice(bytes: &[u8]) -> bool {
+    let sniff_len = bytes.len().min(BINARY_SNIFF_BYTES);
+    bytes[..sniff_len].contains(&0)
 }
 
 fn add_gitignore_matcher(
@@ -578,5 +568,22 @@ mod brace_glob_tests {
             Path::new("src/main.py"),
             Some("main.py")
         ));
+    }
+
+    #[test]
+    fn detects_binary_and_text_slices() {
+        use super::is_probably_binary_slice;
+
+        let text = b"Hello, this is regular UTF-8 text content without any nulls.";
+        assert!(!is_probably_binary_slice(text));
+
+        let empty = b"";
+        assert!(!is_probably_binary_slice(empty));
+
+        let binary_start = b"\x00ELFbinaryexecutable";
+        assert!(is_probably_binary_slice(binary_start));
+
+        let binary_middle = b"Some data with\x00 embedded null byte";
+        assert!(is_probably_binary_slice(binary_middle));
     }
 }
