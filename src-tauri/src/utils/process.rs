@@ -318,6 +318,7 @@ mod tests {
     use std::thread;
     use std::time::Duration;
 
+    // /proc-only; macOS tracked in #2120
     #[test]
     #[cfg(target_os = "linux")]
     fn collect_descendant_pids_finds_child_process() {

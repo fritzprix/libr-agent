@@ -134,11 +134,17 @@ function main() {
     `[rust-test-sequential] ${totalSteps} targets (1 lib + ${targets.length} integration) — linking one binary at a time (avoids multi-target OOM)`,
   );
 
-  console.error(`\n[rust-test-sequential] (1/${totalSteps}) --lib`);
-  const libStatus = runCargoTestWithRetries(['--lib', ...passthrough], 'lib');
-  if (libStatus !== 0) {
-    console.error(`[rust-test-sequential] FAILED: lib (exit ${libStatus})`);
-    process.exit(libStatus);
+  if (process.platform !== 'win32') {
+    console.error(`\n[rust-test-sequential] (1/${totalSteps}) --lib`);
+    const libStatus = runCargoTestWithRetries(['--lib', ...passthrough], 'lib');
+    if (libStatus !== 0) {
+      console.error(`[rust-test-sequential] FAILED: lib (exit ${libStatus})`);
+      process.exit(libStatus);
+    }
+  } else {
+    console.error(
+      `\n[rust-test-sequential] (1/${totalSteps}) skipping --lib on Windows (cdylib linkage limitation; see Cargo.toml:21)`,
+    );
   }
 
   for (let i = 0; i < targets.length; i += 1) {
