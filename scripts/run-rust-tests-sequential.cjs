@@ -142,8 +142,9 @@ function main() {
       process.exit(libStatus);
     }
   } else {
+    // Remove this win32 skip branch once #2122 is fixed.
     console.error(
-      `\n[rust-test-sequential] (1/${totalSteps}) skipping --lib on Windows (cdylib linkage limitation; see Cargo.toml:21)`,
+      `\n[rust-test-sequential] (1/${totalSteps}) skipping --lib on Windows (cdylib linkage limitation; see #2122)`,
     );
   }
 
