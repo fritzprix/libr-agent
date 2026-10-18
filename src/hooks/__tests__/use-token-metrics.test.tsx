@@ -24,8 +24,7 @@ describe('useTokenMetrics', () => {
   it('returns null metrics when streaming message has no usage data', () => {
     vi.mocked(useStreamingMessage).mockReturnValue({
       id: 'msg-1',
-      content: 'Thinking...',
-    } as unknown as Partial<Message>);
+    } as Partial<Message>);
 
     const { result } = renderHook(() => useTokenMetrics('session-1'));
 
@@ -39,12 +38,12 @@ describe('useTokenMetrics', () => {
       totalTokens: 120,
     };
 
-    // First render with initial content
+    // First render with initial content in valid MCPTextContent shape
     vi.mocked(useStreamingMessage).mockReturnValue({
       id: 'msg-1',
-      content: 'Hello',
+      content: [{ type: 'text', text: 'Hello' }],
       usage,
-    } as unknown as Partial<Message>);
+    } as Partial<Message>);
 
     const { result, rerender } = renderHook(() => useTokenMetrics('session-1'));
 
@@ -54,9 +53,9 @@ describe('useTokenMetrics', () => {
     // Second render with new token appended to content, but same usage reference
     vi.mocked(useStreamingMessage).mockReturnValue({
       id: 'msg-1',
-      content: 'Hello world',
+      content: [{ type: 'text', text: 'Hello world' }],
       usage,
-    } as unknown as Partial<Message>);
+    } as Partial<Message>);
 
     rerender();
 
@@ -66,13 +65,13 @@ describe('useTokenMetrics', () => {
     // Third render with newly allocated usage object having identical values (structural equality)
     vi.mocked(useStreamingMessage).mockReturnValue({
       id: 'msg-1',
-      content: 'Hello world!',
+      content: [{ type: 'text', text: 'Hello world!' }],
       usage: {
         promptTokens: 100,
         completionTokens: 20,
         totalTokens: 120,
       },
-    } as unknown as Partial<Message>);
+    } as Partial<Message>);
 
     rerender();
 
@@ -89,9 +88,8 @@ describe('useTokenMetrics', () => {
 
     vi.mocked(useStreamingMessage).mockReturnValue({
       id: 'msg-1',
-      content: 'Hello',
       usage: initialUsage,
-    } as unknown as Partial<Message>);
+    } as Partial<Message>);
 
     const { result, rerender } = renderHook(() => useTokenMetrics('session-1'));
 
@@ -106,9 +104,8 @@ describe('useTokenMetrics', () => {
 
     vi.mocked(useStreamingMessage).mockReturnValue({
       id: 'msg-1',
-      content: 'Hello world',
       usage: updatedUsage,
-    } as unknown as Partial<Message>);
+    } as Partial<Message>);
 
     rerender();
 
@@ -128,9 +125,8 @@ describe('useTokenMetrics', () => {
 
     vi.mocked(useStreamingMessage).mockReturnValue({
       id: 'msg-1',
-      content: 'Hello',
       usage: initialUsage,
-    } as unknown as Partial<Message>);
+    } as Partial<Message>);
 
     const { result, rerender } = renderHook(() => useTokenMetrics('session-1'));
 
@@ -149,9 +145,8 @@ describe('useTokenMetrics', () => {
 
     vi.mocked(useStreamingMessage).mockReturnValue({
       id: 'msg-1',
-      content: 'Hello',
       usage: updatedUsage,
-    } as unknown as Partial<Message>);
+    } as Partial<Message>);
 
     rerender();
 
@@ -172,9 +167,8 @@ describe('useTokenMetrics', () => {
     const currentResult = result.current;
     vi.mocked(useStreamingMessage).mockReturnValue({
       id: 'msg-1',
-      content: 'Hello',
       usage: sameDetailsNewObject,
-    } as unknown as Partial<Message>);
+    } as Partial<Message>);
 
     rerender();
 
