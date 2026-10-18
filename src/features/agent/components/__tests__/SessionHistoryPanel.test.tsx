@@ -1,8 +1,13 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import { memo } from 'react';
 import { SessionHistoryPanel } from '../SessionHistoryPanel';
 import type { AgentSession } from '@/models/agent';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom';
+
+const { sessionCardRenderSpy } = vi.hoisted(() => ({
+  sessionCardRenderSpy: vi.fn(),
+}));
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -31,45 +36,52 @@ vi.mock('../use-known-direct-child-counts', () => ({
   useKnownDirectChildCounts: () => new Map(),
 }));
 
-vi.mock('../SessionCard', () => ({
-  SessionCard: ({
-    session,
-    descendantCount,
-    hasExpandableChildren,
-    isExpanded,
-    hiddenChildrenCount,
-    unloadedChildrenCount,
-    onToggleExpand,
-  }: {
-    session: AgentSession;
-    descendantCount: number;
-    hasExpandableChildren?: boolean;
-    isExpanded?: boolean;
-    hiddenChildrenCount?: number;
-    unloadedChildrenCount?: number;
-    onToggleExpand?: (sessionId: string) => void;
-  }) => (
-    <div data-testid={`session-card-${session.id}`}>
-      <span>{session.name}</span>
-      <span data-testid={`descendants-${session.id}`}>{descendantCount}</span>
-      {hiddenChildrenCount ? (
-        <span data-testid={`hidden-children-${session.id}`}>
-          {hiddenChildrenCount}
-        </span>
-      ) : null}
-      {unloadedChildrenCount ? (
-        <span data-testid={`unloaded-children-${session.id}`}>
-          {unloadedChildrenCount}
-        </span>
-      ) : null}
-      {hasExpandableChildren && (
-        <button type="button" onClick={() => onToggleExpand?.(session.id)}>
-          {isExpanded ? 'Collapse' : 'Expand'}
-        </button>
-      )}
-    </div>
-  ),
-}));
+vi.mock('../SessionCard', () => {
+  const MockSessionCard = memo(
+    ({
+      session,
+      descendantCount,
+      hasExpandableChildren,
+      isExpanded,
+      hiddenChildrenCount,
+      unloadedChildrenCount,
+      onToggleExpand,
+    }: {
+      session: AgentSession;
+      descendantCount: number;
+      hasExpandableChildren?: boolean;
+      isExpanded?: boolean;
+      hiddenChildrenCount?: number;
+      unloadedChildrenCount?: number;
+      onToggleExpand?: (sessionId: string) => void;
+    }) => {
+      sessionCardRenderSpy(session.id);
+      return (
+        <div data-testid={`session-card-${session.id}`}>
+          <span>{session.name}</span>
+          <span data-testid={`descendants-${session.id}`}>{descendantCount}</span>
+          {hiddenChildrenCount ? (
+            <span data-testid={`hidden-children-${session.id}`}>
+              {hiddenChildrenCount}
+            </span>
+          ) : null}
+          {unloadedChildrenCount ? (
+            <span data-testid={`unloaded-children-${session.id}`}>
+              {unloadedChildrenCount}
+            </span>
+          ) : null}
+          {hasExpandableChildren && (
+            <button type="button" onClick={() => onToggleExpand?.(session.id)}>
+              {isExpanded ? 'Collapse' : 'Expand'}
+            </button>
+          )}
+        </div>
+      );
+    },
+  );
+  MockSessionCard.displayName = 'MockSessionCard';
+  return { SessionCard: MockSessionCard };
+});
 
 global.ResizeObserver = class ResizeObserver {
   observe() {}
@@ -168,6 +180,7 @@ function getRenderedSessionIds(): string[] {
 
 describe('SessionHistoryPanel', () => {
   beforeEach(() => {
+    sessionCardRenderSpy.mockClear();
     animationFrameQueue = [];
   });
 
@@ -761,5 +774,107 @@ describe('SessionHistoryPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Bookmarked (1)' }));
 
     expect(onShowBookmarkedOnlyChange).toHaveBeenCalledWith(true);
+  });
+
+  it('does not re-render unaffected SessionCards when panel re-renders with stable card props', () => {
+    const sessions: AgentSession[] = [
+      createSession('s1', 'Session 1'),
+      createSession('s2', 'Session 2'),
+    ];
+
+    const { rerender } = render(
+      <SessionHistoryPanel
+        sessions={sessions}
+        isLoading={false}
+        {...defaultProps}
+        activeStatusFilter="all"
+        searchQuery=""
+        showBookmarkedOnly={false}
+      />,
+    );
+
+    // Initial render: each card rendered once
+    const s1InitialCount = sessionCardRenderSpy.mock.calls.filter(
+      ([id]) => id === 's1',
+    ).length;
+    const s2InitialCount = sessionCardRenderSpy.mock.calls.filter(
+      ([id]) => id === 's2',
+    ).length;
+    expect(s1InitialCount).toBe(1);
+    expect(s2InitialCount).toBe(1);
+
+    // Re-render the panel with the same sessions and a non-affecting search query prop update
+    rerender(
+      <SessionHistoryPanel
+        sessions={sessions}
+        isLoading={false}
+        {...defaultProps}
+        activeStatusFilter="all"
+        searchQuery="non-matching-prefix"
+        showBookmarkedOnly={false}
+      />,
+    );
+
+    // Unaffected cards must NOT re-render because SessionCard is memoized and
+    // callbacks like onToggleExpand and onLineageSelect have stable references
+    const s1AfterCount = sessionCardRenderSpy.mock.calls.filter(
+      ([id]) => id === 's1',
+    ).length;
+    const s2AfterCount = sessionCardRenderSpy.mock.calls.filter(
+      ([id]) => id === 's2',
+    ).length;
+
+    expect(s1AfterCount).toBe(s1InitialCount);
+    expect(s2AfterCount).toBe(s2InitialCount);
+  });
+
+  it('does not re-render unaffected SessionCards when sessions array reference changes but items are identical', () => {
+    const sessions: AgentSession[] = [
+      createSession('s1', 'Session 1'),
+      createSession('s2', 'Session 2'),
+    ];
+
+    const { rerender } = render(
+      <SessionHistoryPanel
+        sessions={sessions}
+        isLoading={false}
+        {...defaultProps}
+        activeStatusFilter="all"
+        searchQuery=""
+        showBookmarkedOnly={false}
+      />,
+    );
+
+    const s1InitialCount = sessionCardRenderSpy.mock.calls.filter(
+      ([id]) => id === 's1',
+    ).length;
+    const s2InitialCount = sessionCardRenderSpy.mock.calls.filter(
+      ([id]) => id === 's2',
+    ).length;
+    expect(s1InitialCount).toBe(1);
+    expect(s2InitialCount).toBe(1);
+
+    // Re-render with new array reference containing identical session objects
+    rerender(
+      <SessionHistoryPanel
+        sessions={[...sessions]}
+        isLoading={false}
+        {...defaultProps}
+        activeStatusFilter="all"
+        searchQuery=""
+        showBookmarkedOnly={false}
+      />,
+    );
+
+    // descendantStatusCounts structural sharing preserves object identity across unchanged sessions
+    const s1AfterCount = sessionCardRenderSpy.mock.calls.filter(
+      ([id]) => id === 's1',
+    ).length;
+    const s2AfterCount = sessionCardRenderSpy.mock.calls.filter(
+      ([id]) => id === 's2',
+    ).length;
+
+    expect(s1AfterCount).toBe(s1InitialCount);
+    expect(s2AfterCount).toBe(s2InitialCount);
   });
 });

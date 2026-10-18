@@ -102,8 +102,23 @@ export function buildDescendantCounts<T extends AgentSession>(
   return counts;
 }
 
+export function areStatusCountsEqual(
+  a: SessionStatusCounts,
+  b: SessionStatusCounts,
+): boolean {
+  return (
+    a.idle === b.idle &&
+    a.busy === b.busy &&
+    a.paused === b.paused &&
+    a.error === b.error &&
+    a.queued === b.queued &&
+    a.provisioning === b.provisioning
+  );
+}
+
 export function buildDescendantStatusCounts<T extends AgentSession>(
   sessions: T[],
+  previousCounts?: Map<string, SessionStatusCounts>,
 ): Map<string, SessionStatusCounts> {
   const counts = new Map<string, SessionStatusCounts>();
   const childrenMap = buildChildrenMap(sessions);
@@ -126,8 +141,12 @@ export function buildDescendantStatusCounts<T extends AgentSession>(
       }
     }
 
-    counts.set(sessionId, total);
-    return total;
+    const previous = previousCounts?.get(sessionId);
+    const resolved =
+      previous && areStatusCountsEqual(previous, total) ? previous : total;
+
+    counts.set(sessionId, resolved);
+    return resolved;
   };
 
   sessions.forEach((session) => {

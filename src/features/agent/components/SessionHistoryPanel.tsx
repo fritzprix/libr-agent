@@ -31,6 +31,7 @@ import {
   buildDescendantCounts,
   buildDescendantStatusCounts,
   type SessionStatus,
+  type SessionStatusCounts,
 } from '@/lib/session-utils';
 import { sortSessionsByLatestActivity } from '@/lib/session-metadata';
 import type { AgentSession } from '@/models/agent';
@@ -233,10 +234,18 @@ export function SessionHistoryPanel({
     [sessions],
   );
 
-  const descendantStatusCounts = useMemo(
-    () => buildDescendantStatusCounts(sessions),
-    [sessions],
-  );
+  const previousDescendantStatusCountsRef = useRef<
+    Map<string, SessionStatusCounts>
+  >(new Map());
+
+  const descendantStatusCounts = useMemo(() => {
+    const nextCounts = buildDescendantStatusCounts(
+      sessions,
+      previousDescendantStatusCountsRef.current,
+    );
+    previousDescendantStatusCountsRef.current = nextCounts;
+    return nextCounts;
+  }, [sessions]);
 
   const {
     autoExpandedAncestorIds,
@@ -286,48 +295,60 @@ export function SessionHistoryPanel({
     displayRowsLength: displayRows.length,
   });
 
-  const handleToggleExpand = useCallback(
-    (sessionId: string) => {
-      const isAutoExpanded = autoExpandedAncestorIds.has(sessionId);
-      const isExpanded =
-        manuallyExpandedSessionIds.has(sessionId) ||
-        (isAutoExpanded && !collapsedAutoExpandedSessionIds.has(sessionId));
+  const expandStateRef = useRef({
+    autoExpandedAncestorIds,
+    manuallyExpandedSessionIds,
+    collapsedAutoExpandedSessionIds,
+    onEnsureChildrenLoaded,
+  });
+  expandStateRef.current = {
+    autoExpandedAncestorIds,
+    manuallyExpandedSessionIds,
+    collapsedAutoExpandedSessionIds,
+    onEnsureChildrenLoaded,
+  };
 
-      const willExpand = !isExpanded;
+  const handleToggleExpand = useCallback((sessionId: string) => {
+    const {
+      autoExpandedAncestorIds: autoExpanded,
+      manuallyExpandedSessionIds: manuallyExpanded,
+      collapsedAutoExpandedSessionIds: collapsedAuto,
+      onEnsureChildrenLoaded: ensureChildrenLoaded,
+    } = expandStateRef.current;
 
-      setManuallyExpandedSessionIds((prev) => {
+    const isAutoExpanded = autoExpanded.has(sessionId);
+    const isExpanded =
+      manuallyExpanded.has(sessionId) ||
+      (isAutoExpanded && !collapsedAuto.has(sessionId));
+
+    const willExpand = !isExpanded;
+
+    setManuallyExpandedSessionIds((prev) => {
+      const next = new Set(prev);
+      if (isExpanded) {
+        next.delete(sessionId);
+      } else if (!isAutoExpanded) {
+        next.add(sessionId);
+      }
+      return next;
+    });
+
+    if (isAutoExpanded) {
+      setCollapsedAutoExpandedSessionIds((prev) => {
         const next = new Set(prev);
         if (isExpanded) {
-          next.delete(sessionId);
-        } else if (!isAutoExpanded) {
           next.add(sessionId);
+        } else {
+          next.delete(sessionId);
         }
         return next;
       });
+    }
 
-      if (isAutoExpanded) {
-        setCollapsedAutoExpandedSessionIds((prev) => {
-          const next = new Set(prev);
-          if (isExpanded) {
-            next.add(sessionId);
-          } else {
-            next.delete(sessionId);
-          }
-          return next;
-        });
-      }
-
-      if (willExpand) {
-        void Promise.resolve(onEnsureChildrenLoaded?.(sessionId));
-      }
-    },
-    [
-      autoExpandedAncestorIds,
-      collapsedAutoExpandedSessionIds,
-      manuallyExpandedSessionIds,
-      onEnsureChildrenLoaded,
-    ],
-  );
+    if (willExpand) {
+      void Promise.resolve(ensureChildrenLoaded?.(sessionId));
+    }
+  }, []);
 
   // Search/filter can auto-expand ancestors of matched rows. Those parents may
   // still lack children in the paginated list, so prefetch direct children for
@@ -385,6 +406,10 @@ export function SessionHistoryPanel({
     onLoadMore();
   }, [hasMoreSessions, isLoadingMoreSessions, onLoadMore]);
 
+  const handleLineageSelect = useCallback((lineageId: string) => {
+    setSelectedLineageId((prev) => (prev === lineageId ? null : lineageId));
+  }, []);
+
   const renderSessionRow = useCallback(
     ({
       session,
@@ -434,11 +459,7 @@ export function SessionHistoryPanel({
               unloadedChildrenCount={unloadedChildrenCount}
               isLoadingChildren={loadingChildrenParentIds?.has(session.id)}
               onToggleExpand={handleToggleExpand}
-              onLineageSelect={(lineageId) =>
-                setSelectedLineageId((prev) =>
-                  prev === lineageId ? null : lineageId,
-                )
-              }
+              onLineageSelect={handleLineageSelect}
             />
           </div>
         </div>
@@ -446,6 +467,7 @@ export function SessionHistoryPanel({
     },
     [
       descendantCounts,
+      handleLineageSelect,
       handleToggleExpand,
       loadingChildrenParentIds,
       onDelete,
