@@ -7,7 +7,6 @@ pub struct Migration;
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         // list_sessions filters on status and orders by (updated_at DESC, id DESC).
-        // count_descendants_by_status filters on status.
         manager
             .create_index(
                 Index::create()
