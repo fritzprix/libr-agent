@@ -287,43 +287,42 @@ pub(super) async fn search_content_in_file(
             .to_mcp_result());
         }
     }
-    if is_probably_binary_file(file_path).await {
-        return Ok(guided_error(
-            ErrorCategory::OperationFailed,
-            format!(
-                "Failed to search file: `{}` appears to be binary data.",
-                display_path
-            ),
-            ToolGroup::Workspace,
-        )
-        .guidance(vec![
-            "Use workspace__runShell with `strings` or `grep -a` to inspect binary content"
-                .to_string(),
-        ])
-        .to_mcp_result());
-    }
-
-    let content = match tokio::fs::read_to_string(file_path).await {
-        Ok(s) => s,
-        Err(e) => {
-            let is_invalid_data = e.kind() == std::io::ErrorKind::InvalidData;
-            let error_msg = if is_invalid_data {
-                "Failed to read file: Content appears to be binary or contains invalid UTF-8 characters.".to_string()
-            } else {
-                e.to_string()
-            };
-            let mut builder = guided_error(
+    let content = match read_text_candidate(file_path, max_size).await {
+        ReadTextCandidateResult::Text(s) => s,
+        ReadTextCandidateResult::Binary => {
+            return Ok(guided_error(
                 ErrorCategory::OperationFailed,
-                &error_msg,
+                format!(
+                    "Failed to search file: `{}` appears to be binary data.",
+                    display_path
+                ),
                 ToolGroup::Workspace,
-            );
-            if is_invalid_data {
-                builder = builder.guidance(vec![
-                    "Use workspace__runShell with `strings` or `grep -a` to inspect binary content"
-                        .to_string(),
-                ]);
-            }
-            return Ok(builder.to_mcp_result());
+            )
+            .guidance(vec![
+                "Use workspace__runShell with `strings` or `grep -a` to inspect binary content"
+                    .to_string(),
+            ])
+            .to_mcp_result());
+        }
+        ReadTextCandidateResult::InvalidUtf8 => {
+            return Ok(guided_error(
+                ErrorCategory::OperationFailed,
+                "Failed to read file: Content appears to be binary or contains invalid UTF-8 characters.",
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                "Use workspace__runShell with `strings` or `grep -a` to inspect binary content"
+                    .to_string(),
+            ])
+            .to_mcp_result());
+        }
+        ReadTextCandidateResult::IoError(e) => {
+            return Ok(guided_error(
+                ErrorCategory::OperationFailed,
+                e.to_string(),
+                ToolGroup::Workspace,
+            )
+            .to_mcp_result());
         }
     };
 
@@ -480,14 +479,13 @@ pub(super) async fn search_content_in_dir(
 
     for candidate in candidates {
         let path = candidate.path.as_path();
-        if is_probably_binary_file(path).await {
-            skipped_binary_files += 1;
-            continue;
-        }
-
-        let content = match tokio::fs::read_to_string(path).await {
-            Ok(s) => s,
-            Err(_) => continue, // skip unreadable
+        let content = match read_text_candidate(path, max_size).await {
+            ReadTextCandidateResult::Text(s) => s,
+            ReadTextCandidateResult::Binary | ReadTextCandidateResult::InvalidUtf8 => {
+                skipped_binary_files += 1;
+                continue;
+            }
+            ReadTextCandidateResult::IoError(_) => continue, // skip unreadable
         };
         files_searched += 1;
 
