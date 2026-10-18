@@ -19,10 +19,19 @@ pub struct MCPServerDto {
 
 impl From<crate::entity::mcp_server::Model> for MCPServerDto {
     fn from(model: crate::entity::mcp_server::Model) -> Self {
+        let config = serde_json::from_str(&model.config).unwrap_or_else(|err| {
+            tracing::warn!(
+                server_id = %model.id,
+                server_name = %model.name,
+                error = %err,
+                "Failed to parse MCP server config JSON; falling back to Value::Null"
+            );
+            Value::Null
+        });
         Self {
-            id: model.id.clone(), // Use actual database ID (cuid2)
+            id: model.id,
             name: model.name,
-            config: serde_json::from_str(&model.config).unwrap_or(Value::Null),
+            config,
             tool_count: model.tool_count, // Include cached tool count
             verification_status: model.verification_status,
             last_verification_error: model.last_verification_error,
@@ -70,4 +79,50 @@ pub async fn list_mcp_server_configs() -> Result<Vec<MCPServerDto>, String> {
 pub async fn list_mcp_server_presets() -> Result<Vec<crate::mcp::presets::MCPServerPreset>, String>
 {
     Ok(crate::mcp::presets::get_recommended_servers())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mcp_server_dto_from_valid_json() {
+        let model = crate::entity::mcp_server::Model {
+            id: "mcp-1".to_string(),
+            name: "test-server".to_string(),
+            config: r#"{"command":"node","args":["server.js"]}"#.to_string(),
+            tool_count: Some(5),
+            cached_tools: None,
+            verification_status: Some("success".to_string()),
+            last_verification_error: None,
+            created_at: 1000,
+            updated_at: 2000,
+        };
+
+        let dto: MCPServerDto = model.into();
+        assert_eq!(dto.id, "mcp-1");
+        assert_eq!(dto.name, "test-server");
+        assert_eq!(dto.config["command"], "node");
+        assert_eq!(dto.tool_count, Some(5));
+    }
+
+    #[test]
+    fn test_mcp_server_dto_from_malformed_json_falls_back_gracefully() {
+        let model = crate::entity::mcp_server::Model {
+            id: "mcp-2".to_string(),
+            name: "corrupted-server".to_string(),
+            config: "{invalid json".to_string(),
+            tool_count: None,
+            cached_tools: None,
+            verification_status: Some("error".to_string()),
+            last_verification_error: Some("Parse error".to_string()),
+            created_at: 1000,
+            updated_at: 2000,
+        };
+
+        let dto: MCPServerDto = model.into();
+        assert_eq!(dto.id, "mcp-2");
+        assert_eq!(dto.name, "corrupted-server");
+        assert_eq!(dto.config, Value::Null);
+    }
 }
