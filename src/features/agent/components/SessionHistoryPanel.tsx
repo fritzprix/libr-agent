@@ -31,6 +31,7 @@ import {
   buildDescendantCounts,
   buildDescendantStatusCounts,
   type SessionStatus,
+  type SessionStatusCounts,
 } from '@/lib/session-utils';
 import { sortSessionsByLatestActivity } from '@/lib/session-metadata';
 import type { AgentSession } from '@/models/agent';
@@ -233,10 +234,18 @@ export function SessionHistoryPanel({
     [sessions],
   );
 
-  const descendantStatusCounts = useMemo(
-    () => buildDescendantStatusCounts(sessions),
-    [sessions],
-  );
+  const previousDescendantStatusCountsRef = useRef<
+    Map<string, SessionStatusCounts>
+  >(new Map());
+
+  const descendantStatusCounts = useMemo(() => {
+    const nextCounts = buildDescendantStatusCounts(
+      sessions,
+      previousDescendantStatusCountsRef.current,
+    );
+    previousDescendantStatusCountsRef.current = nextCounts;
+    return nextCounts;
+  }, [sessions]);
 
   const {
     autoExpandedAncestorIds,

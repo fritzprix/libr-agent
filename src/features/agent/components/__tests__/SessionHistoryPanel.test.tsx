@@ -827,4 +827,54 @@ describe('SessionHistoryPanel', () => {
     expect(s1AfterCount).toBe(s1InitialCount);
     expect(s2AfterCount).toBe(s2InitialCount);
   });
+
+  it('does not re-render unaffected SessionCards when sessions array reference changes but items are identical', () => {
+    const sessions: AgentSession[] = [
+      createSession('s1', 'Session 1'),
+      createSession('s2', 'Session 2'),
+    ];
+
+    const { rerender } = render(
+      <SessionHistoryPanel
+        sessions={sessions}
+        isLoading={false}
+        {...defaultProps}
+        activeStatusFilter="all"
+        searchQuery=""
+        showBookmarkedOnly={false}
+      />,
+    );
+
+    const s1InitialCount = sessionCardRenderSpy.mock.calls.filter(
+      ([id]) => id === 's1',
+    ).length;
+    const s2InitialCount = sessionCardRenderSpy.mock.calls.filter(
+      ([id]) => id === 's2',
+    ).length;
+    expect(s1InitialCount).toBe(1);
+    expect(s2InitialCount).toBe(1);
+
+    // Re-render with new array reference containing identical session objects
+    rerender(
+      <SessionHistoryPanel
+        sessions={[...sessions]}
+        isLoading={false}
+        {...defaultProps}
+        activeStatusFilter="all"
+        searchQuery=""
+        showBookmarkedOnly={false}
+      />,
+    );
+
+    // descendantStatusCounts structural sharing preserves object identity across unchanged sessions
+    const s1AfterCount = sessionCardRenderSpy.mock.calls.filter(
+      ([id]) => id === 's1',
+    ).length;
+    const s2AfterCount = sessionCardRenderSpy.mock.calls.filter(
+      ([id]) => id === 's2',
+    ).length;
+
+    expect(s1AfterCount).toBe(s1InitialCount);
+    expect(s2AfterCount).toBe(s2InitialCount);
+  });
 });
