@@ -282,12 +282,15 @@ async fn docker_path_mapper_for_session(
     let Some(session_repo) = crate::state::try_get_session_repository() else {
         return Ok(None);
     };
-    let Some(session) = session_repo
-        .get_session(session_id)
-        .await
-        .map_err(|e| format!("Failed to load session isolation metadata: {e}"))?
-    else {
-        return Ok(None);
+    let session = match session_repo.get_session(session_id).await {
+        Ok(Some(session)) => session,
+        Ok(None) => return Ok(None),
+        Err(e) => {
+            log::warn!(
+                "Failed to load session isolation metadata for {session_id}: {e}; defaulting to non-isolated"
+            );
+            return Ok(None);
+        }
     };
 
     if session.workspace_isolation != WorkspaceIsolationMode::Docker {

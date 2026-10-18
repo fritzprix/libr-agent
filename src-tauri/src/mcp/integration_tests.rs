@@ -31,6 +31,7 @@ mod tests {
             provider: Set("openai".to_string()),
             execution_mode: Set("normal".to_string()),
             is_bookmarked: Set(false),
+            workspace_isolation: Set("host".to_string()),
             created_at: Set(0),
             updated_at: Set(0),
             ..Default::default()

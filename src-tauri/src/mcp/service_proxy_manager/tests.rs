@@ -887,7 +887,24 @@ async fn test_wait_errors_if_timed_out_without_proxy() {
     let manager = &harness.manager;
     let session_id = "readiness-timeout-no-proxy";
 
+    insert_test_session(&manager, session_id).await;
+    manager
+        .create_proxy(
+            session_id.to_string(),
+            vec!["playbook".to_string()],
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+
     let _tx = manager.inject_pending_readiness_for_test(session_id).await;
+
+    let mgr_bg = manager.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        mgr_bg.destroy_proxy(session_id).await;
+    });
 
     let result = manager.wait_until_proxy_ready(session_id, 1).await;
 
