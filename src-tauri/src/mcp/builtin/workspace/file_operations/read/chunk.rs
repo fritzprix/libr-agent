@@ -61,7 +61,10 @@ pub(super) async fn read_file_lines_range(
     show_line_anchors: bool,
     visible_content_limit_bytes: usize,
 ) -> Result<ReadFileChunk, String> {
-    let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    let file_size = tokio::fs::metadata(path)
+        .await
+        .map(|m| m.len())
+        .unwrap_or(0);
     let path_buf = path.to_path_buf();
 
     // Large files: stream with BufReader (two-pass for accurate total_lines / negative offsets)
