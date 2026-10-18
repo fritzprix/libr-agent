@@ -1,9 +1,9 @@
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use tokio::fs;
 use tokio::io::AsyncReadExt;
+use tokio::sync::Mutex;
 
 /// Service for handling files dropped onto the application window.
 ///
@@ -70,10 +70,7 @@ impl DroppedFileService {
             }
         }
 
-        let mut guard = self
-            .allowlist
-            .lock()
-            .map_err(|_| "Dropped file allowlist lock poisoned".to_string())?;
+        let mut guard = self.allowlist.lock().await;
 
         if guard.len() >= MAX_DROPPED_FILE_ALLOWLIST_SIZE {
             guard.clear();
@@ -130,10 +127,7 @@ impl DroppedFileService {
         let is_dir = resolved_path.is_dir();
 
         {
-            let mut guard = self
-                .allowlist
-                .lock()
-                .map_err(|_| "Dropped file allowlist lock poisoned".to_string())?;
+            let mut guard = self.allowlist.lock().await;
 
             if is_dir {
                 // Consume directory immediately as it won't be read later
@@ -195,10 +189,7 @@ impl DroppedFileService {
 
         let resolved_path_str = resolved_path.to_string_lossy().to_string();
         {
-            let mut guard = self
-                .allowlist
-                .lock()
-                .map_err(|_| "Dropped file allowlist lock poisoned".to_string())?;
+            let mut guard = self.allowlist.lock().await;
 
             if !guard.remove(&resolved_path_str) {
                 return Err(
@@ -456,7 +447,7 @@ mod tests {
             .await
             .expect("register_dropped_files should succeed");
 
-        let guard = service.allowlist.lock().unwrap();
+        let guard = service.allowlist.lock().await;
         assert!(
             guard.len() <= 256,
             "allowlist size must never exceed max capacity"
@@ -486,7 +477,7 @@ mod tests {
             .to_string_lossy()
             .to_string();
 
-        let guard = service.allowlist.lock().unwrap();
+        let guard = service.allowlist.lock().await;
         assert!(
             !guard.contains(&resolved_target),
             "symlink registration must not add canonical target to allowlist"
