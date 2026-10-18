@@ -20,11 +20,11 @@ pub struct MCPServerDto {
 impl From<crate::entity::mcp_server::Model> for MCPServerDto {
     fn from(model: crate::entity::mcp_server::Model) -> Self {
         let config = serde_json::from_str(&model.config).unwrap_or_else(|err| {
-            tracing::warn!(
-                server_id = %model.id,
-                server_name = %model.name,
-                error = %err,
-                "Failed to parse MCP server config JSON; falling back to Value::Null"
+            log::warn!(
+                "Failed to parse MCP server config JSON for server id='{}' name='{}': {}",
+                model.id,
+                model.name,
+                err
             );
             Value::Null
         });
