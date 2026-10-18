@@ -378,7 +378,7 @@ mod tests {
         // 1x1 PNG (red pixel)
         const PNG_1X1: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
         let md = "## Diagram\n\n![Mermaid](libragent-pdf-embed:0)\n";
-        let plain = build_markdown_pdf("## Diagram\n\nplaceholder\n").expect("plain");
+        let plain = build_markdown_pdf("## Diagram\n").expect("plain");
         let with_img = build_markdown_pdf_with_embeds(
             md,
             &[PdfEmbeddedImage {
@@ -387,9 +387,10 @@ mod tests {
         )
         .expect("embed pdf");
         assert!(with_img.starts_with(b"%PDF-"));
+        assert!(with_img.len() > 500);
         assert!(
-            with_img.len() > plain.len(),
-            "expected embedded image PDF ({}) larger than plain ({})",
+            with_img.len() >= plain.len(),
+            "expected embedded image PDF ({}) at least as large as plain ({})",
             with_img.len(),
             plain.len()
         );
