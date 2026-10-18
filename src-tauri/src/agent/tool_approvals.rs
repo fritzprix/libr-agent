@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs;
 use std::path::PathBuf;
 use tokio::sync::OnceCell;
 
@@ -169,7 +168,7 @@ async fn load_tool_approvals_config_uncached() -> ToolApprovalsConfig {
     // fallback: default sensitive tools list
     let default_config_str = include_str!("../mcp/builtin/workspace/sensitive_tools.json");
 
-    let config: ToolApprovalsConfig = match fs::read_to_string(&config_path) {
+    let config: ToolApprovalsConfig = match tokio::fs::read_to_string(&config_path).await {
         Ok(content) => match serde_json::from_str(&content) {
             Ok(config) => config,
             Err(error) => {
