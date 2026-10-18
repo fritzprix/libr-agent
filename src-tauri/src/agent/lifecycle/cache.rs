@@ -11,8 +11,20 @@ pub async fn init_session_with_messages(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     session_id: &str,
 ) -> Result<(), String> {
-    let message_repo = crate::state::get_message_repository();
+    let repo_holder = crate::state::try_get_message_repository()
+        .map(|r| Arc::new((*r).clone()) as Arc<dyn MessageRepositoryTrait>);
+    let Some(message_repo) = repo_holder else {
+        return Err("Message repository not initialized".to_string());
+    };
+    init_session_with_messages_with_repo(active_sessions, message_repo.as_ref(), session_id).await
+}
 
+/// Load messages from DB into in-memory cache with an explicit repository (for DI and isolated testing)
+pub async fn init_session_with_messages_with_repo(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    message_repo: &dyn MessageRepositoryTrait,
+    session_id: &str,
+) -> Result<(), String> {
     // Load the most recent causal window from DB (one-time operation).
     let recent_slice = message_repo
         .get_recent_slice(session_id, MAX_CACHED_MESSAGES as u64)

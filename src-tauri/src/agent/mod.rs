@@ -15,6 +15,7 @@ pub mod pending_queue;
 pub mod planning_reset;
 pub mod poll_tracker;
 pub mod references;
+pub mod repositories;
 pub mod runtime_state;
 pub mod session_bus;
 pub mod session_manager;
@@ -31,4 +32,5 @@ pub use config_resolve::{
     extract_assistant_id_from_session, resolve_agent_config, resolve_session_mcp_bindings,
     stable_prompt_source_key,
 };
+pub use repositories::AgentRepositories;
 pub use session_manager::AgentSessionManager;

@@ -231,12 +231,26 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     use crate::state::get_mcp_service_proxy_manager;
     let proxy_manager_arc = get_mcp_service_proxy_manager();
 
-    // Get session repository as Arc<dyn SessionRepository> for dependency injection
+    // Get repositories as Arc<dyn Trait> for dependency injection
     let session_repo_arc: Arc<dyn repositories::SessionRepository> =
-        Arc::new(state::get_session_repository().clone());
+        Arc::new((*state::get_session_repository()).clone());
+    let message_repo_arc: Arc<dyn repositories::message_repository::MessageRepository> =
+        Arc::new((*state::get_message_repository()).clone());
+    let pending_queue_repo_arc: Arc<dyn repositories::PendingQueueRepository> =
+        Arc::new((*state::get_pending_queue_repository()).clone());
+    let compact_context_repo_arc: Arc<dyn repositories::CompactContextRepository> =
+        Arc::new((*state::get_compact_context_repository()).clone());
 
-    let agent_session_manager =
-        agent::AgentSessionManager::new(app.handle().clone(), proxy_manager_arc, session_repo_arc);
+    let repositories = agent::AgentRepositories::new(session_repo_arc)
+        .with_message(message_repo_arc)
+        .with_pending_queue(pending_queue_repo_arc)
+        .with_compact_context(compact_context_repo_arc);
+
+    let agent_session_manager = agent::AgentSessionManager::new_with_repositories(
+        app.handle().clone(),
+        proxy_manager_arc,
+        repositories,
+    );
 
     // SP6: Expose the shared sessions map globally so builtin MCP tools can read
     //      per-session cancellation tokens without Tauri managed-state access.

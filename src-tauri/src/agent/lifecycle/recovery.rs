@@ -19,8 +19,21 @@ use super::management::update_session_status_with_dispatcher;
 async fn close_orphaned_tool_calls(
     session_id: &str,
     dispatcher: &dyn AgentEventDispatcher,
+    message_repo: Option<&Arc<dyn MessageRepositoryTrait>>,
 ) -> Result<(), String> {
-    let message_repo = crate::state::get_message_repository();
+    let repo_holder: Option<Arc<dyn MessageRepositoryTrait>> = match message_repo {
+        Some(repo) => Some(repo.clone()),
+        None => crate::state::try_get_message_repository()
+            .map(|r| Arc::new((*r).clone()) as Arc<dyn MessageRepositoryTrait>),
+    };
+
+    let Some(message_repo) = repo_holder else {
+        log::warn!(
+            "Message repository not initialized; skipping orphaned tool call recovery for session '{}'",
+            session_id
+        );
+        return Ok(());
+    };
 
     // Only the most recent causal window matters for unresolved tool-call recovery.
     let recent_slice = message_repo
@@ -141,6 +154,24 @@ pub async fn recover_sessions_with_dispatcher(
     dispatcher: &dyn AgentEventDispatcher,
     context_registry: Arc<ContextRegistry>,
 ) -> Result<(), String> {
+    recover_sessions_with_dispatcher_and_message_repo(
+        session_repo,
+        active_sessions,
+        dispatcher,
+        context_registry,
+        None,
+    )
+    .await
+}
+
+/// Recover BUSY sessions with optional injected message repository for isolated testing.
+pub async fn recover_sessions_with_dispatcher_and_message_repo(
+    session_repo: &Arc<dyn SessionRepository>,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    dispatcher: &dyn AgentEventDispatcher,
+    context_registry: Arc<ContextRegistry>,
+    message_repo: Option<&Arc<dyn MessageRepositoryTrait>>,
+) -> Result<(), String> {
     log::info!("Starting session recovery process...");
 
     let all_sessions = session_repo
@@ -201,7 +232,9 @@ pub async fn recover_sessions_with_dispatcher(
 
             if matches!(session.status, SessionStatus::Busy) {
                 // Close any orphaned tool calls that never got a result (crash tombstones)
-                if let Err(e) = close_orphaned_tool_calls(&session.id, dispatcher).await {
+                if let Err(e) =
+                    close_orphaned_tool_calls(&session.id, dispatcher, message_repo).await
+                {
                     log::warn!(
                         "Failed to close orphaned tool calls for session '{}': {}",
                         session.id,
