@@ -318,6 +318,22 @@ impl SessionRepository for InMemorySessionRepository {
         Ok(children)
     }
 
+    async fn get_sessions_by_org_id(&self, org_id: &str) -> Result<Vec<SessionMetadata>, DbError> {
+        let sessions = self.sessions.read().await;
+        let mut results: Vec<SessionMetadata> = sessions
+            .values()
+            .filter(|s| s.org_id.as_deref() == Some(org_id))
+            .cloned()
+            .collect();
+        results.sort_by(|left, right| {
+            right
+                .updated_at
+                .cmp(&left.updated_at)
+                .then_with(|| right.id.cmp(&left.id))
+        });
+        Ok(results)
+    }
+
     /// Delete a session from memory
     ///
     /// Idempotent - succeeds even if session doesn't exist.

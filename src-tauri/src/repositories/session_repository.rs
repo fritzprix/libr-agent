@@ -323,6 +323,9 @@ pub trait SessionRepository: Send + Sync {
         parent_session_id: &str,
     ) -> Result<Vec<SessionMetadata>, DbError>;
 
+    /// Get sessions belonging to a specific org ID, sorted by updated_at descending
+    async fn get_sessions_by_org_id(&self, org_id: &str) -> Result<Vec<SessionMetadata>, DbError>;
+
     /// Delete a session
     async fn delete_session(&self, session_id: &str) -> Result<(), DbError>;
 
@@ -673,6 +676,19 @@ impl SessionRepository for SqliteSessionRepository {
 
         let models = Session::find()
             .filter(session::Column::ParentSessionId.eq(parent_session_id))
+            .order_by_desc(session::Column::UpdatedAt)
+            .order_by_desc(session::Column::Id)
+            .all(&self.db)
+            .await?;
+
+        models.into_iter().map(SessionMetadata::try_from).collect()
+    }
+
+    async fn get_sessions_by_org_id(&self, org_id: &str) -> Result<Vec<SessionMetadata>, DbError> {
+        use sea_orm::{ColumnTrait, QueryFilter, QueryOrder};
+
+        let models = Session::find()
+            .filter(session::Column::OrgId.eq(org_id))
             .order_by_desc(session::Column::UpdatedAt)
             .order_by_desc(session::Column::Id)
             .all(&self.db)

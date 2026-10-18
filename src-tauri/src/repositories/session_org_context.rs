@@ -22,17 +22,17 @@ pub async fn build_explicit_org_layer_context(
         return Ok(None);
     };
 
-    let all_sessions = repo.get_all_sessions().await?;
     let depth = session.depth.unwrap_or(0);
-    let parent = session
-        .parent_session_id
-        .as_ref()
-        .and_then(|parent_id| find_session(&all_sessions, parent_id));
+    let parent = match session.parent_session_id.as_deref() {
+        Some(parent_id) => repo.get_session(parent_id).await?,
+        None => None,
+    };
 
-    let mut siblings: Vec<&SessionMetadata> = all_sessions
+    let org_sessions = repo.get_sessions_by_org_id(&org_id).await?;
+
+    let mut siblings: Vec<&SessionMetadata> = org_sessions
         .iter()
         .filter(|candidate| candidate.id != session.id)
-        .filter(|candidate| candidate.org_id.as_deref() == Some(org_id.as_str()))
         .filter(|candidate| {
             candidate.org_root_session_id.as_deref() == Some(org_root_session_id.as_str())
         })
@@ -94,7 +94,7 @@ pub async fn build_explicit_org_layer_context(
         );
     }
 
-    if let Some(parent_session) = parent {
+    if let Some(parent_session) = parent.as_ref() {
         parts.push(format!(
             "- Parent: {}",
             format_session_label_with_status(parent_session)
@@ -109,11 +109,4 @@ pub async fn build_explicit_org_layer_context(
     }
 
     Ok(Some(parts.join("\n")))
-}
-
-fn find_session<'a>(
-    sessions: &'a [SessionMetadata],
-    session_id: &str,
-) -> Option<&'a SessionMetadata> {
-    sessions.iter().find(|session| session.id == session_id)
 }
