@@ -101,22 +101,15 @@ fn build_children_by_ppid() -> std::collections::HashMap<u32, Vec<u32>> {
     children_by_ppid
 }
 
-/// Collect child processes keyed by parent process ID.
+/// Parse the output of `ps -A -o pid=,ppid=` into a map of parent PID to child PIDs.
 ///
-/// On macOS and other non-Linux Unix platforms lacking `/proc`, this queries `ps -A -o pid=,ppid=`.
-#[cfg(all(unix, not(target_os = "linux")))]
-fn build_children_by_ppid() -> std::collections::HashMap<u32, Vec<u32>> {
+/// Ignores blank lines, lines with non-numeric entries, and processes with PID <= 1 (launchd / init).
+#[cfg(unix)]
+#[cfg_attr(target_os = "linux", allow(dead_code))]
+fn parse_ps_pid_ppid(stdout: &str) -> std::collections::HashMap<u32, Vec<u32>> {
     use std::collections::HashMap;
 
     let mut children_by_ppid: HashMap<u32, Vec<u32>> = HashMap::new();
-    let Ok(output) = Command::new("ps").args(["-A", "-o", "pid=,ppid="]).output() else {
-        return children_by_ppid;
-    };
-    if !output.status.success() {
-        return children_by_ppid;
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
     for line in stdout.lines() {
         let mut parts = line.split_whitespace();
         let (Some(pid_str), Some(ppid_str)) = (parts.next(), parts.next()) else {
@@ -129,6 +122,22 @@ fn build_children_by_ppid() -> std::collections::HashMap<u32, Vec<u32>> {
         }
     }
     children_by_ppid
+}
+
+/// Collect child processes keyed by parent process ID.
+///
+/// On macOS and other non-Linux Unix platforms lacking `/proc`, this queries `ps -A -o pid=,ppid=`.
+#[cfg(all(unix, not(target_os = "linux")))]
+fn build_children_by_ppid() -> std::collections::HashMap<u32, Vec<u32>> {
+    let Ok(output) = Command::new("ps").args(["-A", "-o", "pid=,ppid="]).output() else {
+        return std::collections::HashMap::new();
+    };
+    if !output.status.success() {
+        return std::collections::HashMap::new();
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    parse_ps_pid_ppid(&stdout)
 }
 
 /// Collect every descendant of `root` by walking parent-child process relationships.
@@ -362,5 +371,29 @@ mod tests {
             !process_is_alive(child_pid).unwrap_or(true),
             "child {child_pid} should be gone after wait()"
         );
+    }
+
+    #[test]
+    fn parse_ps_pid_ppid_handles_spaces_blanks_and_excludes_init() {
+        let sample = "
+           1       0
+           2       0
+         100       1
+         200     100
+         201     100
+         invalid line
+         999
+        ";
+        let map = parse_ps_pid_ppid(sample);
+        // PID 1 should be excluded
+        assert!(!map.values().any(|children| children.contains(&1)));
+        // PID 2 has ppid 0
+        assert_eq!(map.get(&0), Some(&vec![2]));
+        // PID 100 has ppid 1
+        assert_eq!(map.get(&1), Some(&vec![100]));
+        // PID 200, 201 have ppid 100
+        assert_eq!(map.get(&100), Some(&vec![200, 201]));
+        // Invalid lines ignored
+        assert_eq!(map.get(&999), None);
     }
 }
