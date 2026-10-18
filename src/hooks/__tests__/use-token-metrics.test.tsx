@@ -25,7 +25,7 @@ describe('useTokenMetrics', () => {
     vi.mocked(useStreamingMessage).mockReturnValue({
       id: 'msg-1',
       content: 'Thinking...',
-    } as Partial<Message>);
+    } as unknown as Partial<Message>);
 
     const { result } = renderHook(() => useTokenMetrics('session-1'));
 
@@ -44,7 +44,7 @@ describe('useTokenMetrics', () => {
       id: 'msg-1',
       content: 'Hello',
       usage,
-    } as Partial<Message>);
+    } as unknown as Partial<Message>);
 
     const { result, rerender } = renderHook(() => useTokenMetrics('session-1'));
 
@@ -56,7 +56,7 @@ describe('useTokenMetrics', () => {
       id: 'msg-1',
       content: 'Hello world',
       usage,
-    } as Partial<Message>);
+    } as unknown as Partial<Message>);
 
     rerender();
 
@@ -72,7 +72,7 @@ describe('useTokenMetrics', () => {
         completionTokens: 20,
         totalTokens: 120,
       },
-    } as Partial<Message>);
+    } as unknown as Partial<Message>);
 
     rerender();
 
@@ -91,7 +91,7 @@ describe('useTokenMetrics', () => {
       id: 'msg-1',
       content: 'Hello',
       usage: initialUsage,
-    } as Partial<Message>);
+    } as unknown as Partial<Message>);
 
     const { result, rerender } = renderHook(() => useTokenMetrics('session-1'));
 
@@ -108,11 +108,78 @@ describe('useTokenMetrics', () => {
       id: 'msg-1',
       content: 'Hello world',
       usage: updatedUsage,
-    } as Partial<Message>);
+    } as unknown as Partial<Message>);
 
     rerender();
 
     expect(result.current).not.toBe(initialResult);
     expect(result.current.metrics).toBe(updatedUsage);
   });
+
+  it('updates metrics when token counts are identical but details change (e.g. timeToFirstToken)', () => {
+    const initialUsage = {
+      promptTokens: 100,
+      completionTokens: 20,
+      totalTokens: 120,
+      details: {
+        timeToFirstToken: 0,
+      },
+    };
+
+    vi.mocked(useStreamingMessage).mockReturnValue({
+      id: 'msg-1',
+      content: 'Hello',
+      usage: initialUsage,
+    } as unknown as Partial<Message>);
+
+    const { result, rerender } = renderHook(() => useTokenMetrics('session-1'));
+
+    const initialResult = result.current;
+    expect(initialResult.metrics).toBe(initialUsage);
+
+    // Identical counts, but timeToFirstToken updated from 0 to 120
+    const updatedUsage = {
+      promptTokens: 100,
+      completionTokens: 20,
+      totalTokens: 120,
+      details: {
+        timeToFirstToken: 120,
+      },
+    };
+
+    vi.mocked(useStreamingMessage).mockReturnValue({
+      id: 'msg-1',
+      content: 'Hello',
+      usage: updatedUsage,
+    } as unknown as Partial<Message>);
+
+    rerender();
+
+    expect(result.current).not.toBe(initialResult);
+    expect(result.current.metrics).toBe(updatedUsage);
+    expect(result.current.metrics?.details?.timeToFirstToken).toBe(120);
+
+    // And verify structural equality when details have the same keys and values in a new object
+    const sameDetailsNewObject = {
+      promptTokens: 100,
+      completionTokens: 20,
+      totalTokens: 120,
+      details: {
+        timeToFirstToken: 120,
+      },
+    };
+
+    const currentResult = result.current;
+    vi.mocked(useStreamingMessage).mockReturnValue({
+      id: 'msg-1',
+      content: 'Hello',
+      usage: sameDetailsNewObject,
+    } as unknown as Partial<Message>);
+
+    rerender();
+
+    expect(result.current).toBe(currentResult);
+    expect(result.current.metrics).toBe(currentResult.metrics);
+  });
 });
+
