@@ -318,9 +318,8 @@ mod tests {
     use std::thread;
     use std::time::Duration;
 
-    // /proc-only; macOS tracked in #2120
     #[test]
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     fn collect_descendant_pids_finds_child_process() {
         let mut child = Command::new("sleep")
             .arg("30")
