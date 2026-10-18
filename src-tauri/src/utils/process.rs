@@ -319,6 +319,7 @@ mod tests {
     use std::time::Duration;
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn collect_descendant_pids_finds_child_process() {
         let mut child = Command::new("sleep")
             .arg("30")
