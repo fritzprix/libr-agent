@@ -188,14 +188,12 @@ impl SessionRepository for InMemorySessionRepository {
 
     async fn get_all_session_ids(&self) -> Result<Vec<String>, DbError> {
         let sessions = self.sessions.read().await;
-        let mut list: Vec<_> = sessions.values().cloned().collect();
-        list.sort_by(|left, right| {
-            right
-                .updated_at
-                .cmp(&left.updated_at)
-                .then_with(|| right.id.cmp(&left.id))
-        });
-        Ok(list.into_iter().map(|s| s.id).collect())
+        let mut list: Vec<(i64, String)> = sessions
+            .values()
+            .map(|s| (s.updated_at, s.id.clone()))
+            .collect();
+        list.sort_by(|left, right| right.0.cmp(&left.0).then_with(|| right.1.cmp(&left.1)));
+        Ok(list.into_iter().map(|(_, id)| id).collect())
     }
 
     async fn list_sessions(
