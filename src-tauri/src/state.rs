@@ -269,6 +269,12 @@ pub fn get_pending_queue_repository() -> &'static SqlitePendingQueueRepository {
     )
 }
 
+/// Try to get a reference to the global pending queue repository if initialized.
+#[cfg(test)]
+pub fn try_get_pending_queue_repository() -> Option<&'static SqlitePendingQueueRepository> {
+    PENDING_QUEUE_REPOSITORY.get()
+}
+
 /// Sets the global attachments repository instance.
 ///
 /// # Panics
@@ -637,6 +643,7 @@ pub fn reset_state() {
         reset_lock(&SQLITE_DB_URL);
         reset_lock(&DATABASE_CONNECTION);
         reset_lock(&MESSAGE_REPOSITORY);
+        reset_lock(&PENDING_QUEUE_REPOSITORY);
         reset_lock(&ATTACHMENTS_REPOSITORY);
         reset_lock(&SESSION_REPOSITORY);
         reset_lock(&SETTINGS_REPOSITORY);
@@ -665,4 +672,29 @@ pub static TEST_GLOBAL_STATE_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex:
 #[cfg(test)]
 pub async fn lock_test_global_state() -> tokio::sync::MutexGuard<'static, ()> {
     TEST_GLOBAL_STATE_MUTEX.lock().await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sea_orm::Database;
+
+    #[tokio::test]
+    async fn test_pending_queue_repository_reset_state() {
+        let _guard = lock_test_global_state().await;
+
+        reset_state();
+        assert!(try_get_pending_queue_repository().is_none());
+
+        let db = Database::connect("sqlite::memory:")
+            .await
+            .expect("Failed to connect memory db");
+        let repo = SqlitePendingQueueRepository::new(db);
+        set_pending_queue_repository(repo);
+
+        assert!(try_get_pending_queue_repository().is_some());
+
+        reset_state();
+        assert!(try_get_pending_queue_repository().is_none());
+    }
 }

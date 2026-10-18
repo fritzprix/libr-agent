@@ -25,10 +25,12 @@ use tauri_mcp_agent_lib::repositories::compact_context_repository::CompactContex
 use tauri_mcp_agent_lib::repositories::{
     CompactContextRecord, InMemorySessionRepository, MessageRepository as _, SessionMetadata,
     SessionRepository, SessionStatus, SqliteCompactContextRepository, SqliteMessageRepository,
+    SqlitePendingQueueRepository,
 };
 use tauri_mcp_agent_lib::{
     get_compact_context_repository, get_message_repository, init_concurrency_gate,
     init_session_bus, set_compact_context_repository, set_message_repository,
+    set_pending_queue_repository,
 };
 use tauri_mcp_agent_lib::{migration::Migrator, utils::sqlite::format_sqlite_url};
 use tokio::sync::{Mutex, OnceCell, RwLock};
@@ -98,14 +100,17 @@ async fn ensure_test_runtime_state() {
             Migrator::up(&db, None)
                 .await
                 .expect("migrations should run");
-            set_message_repository(SqliteMessageRepository::new(db.clone()));
-            set_compact_context_repository(SqliteCompactContextRepository::new(db.clone()));
             TestRuntimeContext {
                 _temp_dir: temp_dir,
                 db,
             }
         })
         .await;
+
+    let db = test_db().await;
+    set_message_repository(SqliteMessageRepository::new(db.clone()));
+    set_compact_context_repository(SqliteCompactContextRepository::new(db.clone()));
+    set_pending_queue_repository(SqlitePendingQueueRepository::new(db));
 
     init_session_bus(SessionBus::new());
     init_concurrency_gate(ConcurrencyGate::new(
