@@ -803,17 +803,21 @@ describe('SessionHistoryPanel', () => {
     expect(s1InitialCount).toBe(1);
     expect(s2InitialCount).toBe(1);
 
-    // Re-render the panel with the same sessions and a non-affecting search query prop update
+    // Re-render the panel with the same sessions and a non-affecting search query prop update that still matches both cards
     rerender(
       <SessionHistoryPanel
         sessions={sessions}
         isLoading={false}
         {...defaultProps}
         activeStatusFilter="all"
-        searchQuery="non-matching-prefix"
+        searchQuery="Session"
         showBookmarkedOnly={false}
       />,
     );
+
+    // Cards must remain mounted and visible in the document
+    expect(screen.getByTestId('session-card-s1')).toBeInTheDocument();
+    expect(screen.getByTestId('session-card-s2')).toBeInTheDocument();
 
     // Unaffected cards must NOT re-render because SessionCard is memoized and
     // callbacks like onToggleExpand and onLineageSelect have stable references
