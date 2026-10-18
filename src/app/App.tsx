@@ -117,7 +117,7 @@ function App() {
   }, [settings.display.colorTheme]);
 
   return (
-    <div className="h-screen w-full">
+    <div className="h-screen w-full overflow-hidden">
       <UpdateProvider>
         <GlobalEventProvider>
           <SkillsProvider>
@@ -131,12 +131,12 @@ function App() {
                         <DnDContextProvider>
                           <AppSidebar />
                           {/* Main Content Area (children of AppSidebar) */}
-                          <div className="flex flex-1 flex-col min-w-0">
+                          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                             <AppHeader>
                               <SessionNotificationsBell />
                               <ThemeToggle />
                             </AppHeader>
-                            <div className="flex-1 w-full min-h-0 overflow-y-auto no-scrollbar">
+                            <div className="min-h-0 w-full flex-1 overflow-y-auto overscroll-y-contain no-scrollbar">
                               <Suspense
                                 fallback={
                                   <div className="flex items-center justify-center h-full">
