@@ -387,12 +387,14 @@ mod tests {
         )
         .expect("embed pdf");
         assert!(with_img.starts_with(b"%PDF-"));
-        assert!(with_img.len() > 500);
+        let has = |b: &[u8], n: &[u8]| b.windows(n.len()).any(|w| w == n);
         assert!(
-            with_img.len() >= plain.len(),
-            "expected embedded image PDF ({}) at least as large as plain ({})",
-            with_img.len(),
-            plain.len()
+            has(&with_img, b"/XObject") && has(&with_img, b"/Image"),
+            "embedded PNG must produce an image XObject"
+        );
+        assert!(
+            !has(&plain, b"/Image"),
+            "plain PDF must not contain an image XObject"
         );
     }
 
