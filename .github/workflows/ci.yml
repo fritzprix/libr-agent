@@ -48,6 +48,9 @@ jobs:
       - name: Lint check
         run: pnpm lint
 
+      - name: Check Cargo.lock version sync
+        run: pnpm rust:lock:check
+
       - name: Check obsolete builtin tool names
         run: pnpm tool-names:check
 
