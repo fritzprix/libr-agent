@@ -61,19 +61,17 @@ fn process_group_id(pid: u32) -> Option<u32> {
     String::from_utf8_lossy(&output.stdout).trim().parse().ok()
 }
 
-/// Collect every descendant of `root` by walking `/proc/*/status` PPID links.
+/// Collect child processes keyed by parent process ID.
 ///
-/// Chromium sandbox helpers often call `setpgid`/`setsid`, so killing only the
-/// sidecar process group leaves orphaned browser processes that keep holding
-/// the automation session open. PPID ancestry still reaches those children.
-#[cfg(unix)]
-fn collect_descendant_pids(root: u32) -> Vec<u32> {
-    use std::collections::{HashMap, HashSet, VecDeque};
+/// On Linux, this inspects `/proc/*/status` for zero-process-spawn performance.
+#[cfg(target_os = "linux")]
+fn build_children_by_ppid() -> std::collections::HashMap<u32, Vec<u32>> {
+    use std::collections::HashMap;
     use std::fs;
 
     let mut children_by_ppid: HashMap<u32, Vec<u32>> = HashMap::new();
     let Ok(entries) = fs::read_dir("/proc") else {
-        return Vec::new();
+        return children_by_ppid;
     };
 
     for entry in entries.flatten() {
@@ -100,7 +98,49 @@ fn collect_descendant_pids(root: u32) -> Vec<u32> {
         };
         children_by_ppid.entry(ppid).or_default().push(pid);
     }
+    children_by_ppid
+}
 
+/// Collect child processes keyed by parent process ID.
+///
+/// On macOS and other non-Linux Unix platforms lacking `/proc`, this queries `ps -A -o pid=,ppid=`.
+#[cfg(all(unix, not(target_os = "linux")))]
+fn build_children_by_ppid() -> std::collections::HashMap<u32, Vec<u32>> {
+    use std::collections::HashMap;
+
+    let mut children_by_ppid: HashMap<u32, Vec<u32>> = HashMap::new();
+    let Ok(output) = Command::new("ps").args(["-A", "-o", "pid=,ppid="]).output() else {
+        return children_by_ppid;
+    };
+    if !output.status.success() {
+        return children_by_ppid;
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        let mut parts = line.split_whitespace();
+        let (Some(pid_str), Some(ppid_str)) = (parts.next(), parts.next()) else {
+            continue;
+        };
+        if let (Ok(pid), Ok(ppid)) = (pid_str.parse::<u32>(), ppid_str.parse::<u32>()) {
+            if pid > 1 {
+                children_by_ppid.entry(ppid).or_default().push(pid);
+            }
+        }
+    }
+    children_by_ppid
+}
+
+/// Collect every descendant of `root` by walking parent-child process relationships.
+///
+/// Chromium sandbox helpers often call `setpgid`/`setsid`, so killing only the
+/// sidecar process group leaves orphaned browser processes that keep holding
+/// the automation session open. PPID ancestry still reaches those children.
+#[cfg(unix)]
+fn collect_descendant_pids(root: u32) -> Vec<u32> {
+    use std::collections::{HashSet, VecDeque};
+
+    let children_by_ppid = build_children_by_ppid();
     let mut ordered = Vec::new();
     let mut seen = HashSet::from([root]);
     let mut queue = VecDeque::from([root]);
