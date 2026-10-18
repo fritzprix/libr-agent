@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import type { TokenUsage } from '@/lib/ai-service/types';
 import type { PreflightTokenMetrics } from '@/models/agent-ipc';
 import { calculateTokensPerSecond } from '@/lib/ai-service/utils';
@@ -14,7 +15,7 @@ interface TokenMetricsBadgeProps {
   compact?: boolean;
 }
 
-export function TokenMetricsBadge({
+export const TokenMetricsBadge = memo(function TokenMetricsBadge({
   usage,
   preflight = null,
   showSpeed: showSpeedProp,
@@ -171,4 +172,4 @@ export function TokenMetricsBadge({
       </div>
     </div>
   );
-}
+});
