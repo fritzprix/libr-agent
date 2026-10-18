@@ -108,14 +108,16 @@ impl PendingQueueRepository for SqlitePendingQueueRepository {
         message_id: &str,
         created_at: i64,
     ) -> Result<PendingQueueEntry, DbError> {
-        let queue_seq = Self::next_queue_seq(&self.db).await?;
+        let txn = self.db.begin().await?;
+        let queue_seq = Self::next_queue_seq(&txn).await?;
         let model = pending_queue::ActiveModel {
             message_id: Set(message_id.to_string()),
             session_id: Set(session_id.to_string()),
             created_at: Set(created_at),
             queue_seq: Set(queue_seq),
         };
-        let inserted = model.insert(&self.db).await?;
+        let inserted = model.insert(&txn).await?;
+        txn.commit().await?;
         Ok(Self::model_to_entry(inserted))
     }
 
@@ -157,13 +159,20 @@ impl PendingQueueRepository for SqlitePendingQueueRepository {
         &self,
         message_id: &str,
     ) -> Result<Option<PendingQueueEntry>, DbError> {
-        let entry = self.get(message_id).await?;
-        if entry.is_some() {
-            pending_queue::Entity::delete_by_id(message_id.to_string())
-                .exec(&self.db)
-                .await?;
-        }
-        Ok(entry)
+        let txn = self.db.begin().await?;
+        let row = pending_queue::Entity::find_by_id(message_id.to_string())
+            .one(&txn)
+            .await?;
+        let Some(model) = row else {
+            txn.commit().await?;
+            return Ok(None);
+        };
+        let entry = Self::model_to_entry(model);
+        pending_queue::Entity::delete_by_id(message_id.to_string())
+            .exec(&txn)
+            .await?;
+        txn.commit().await?;
+        Ok(Some(entry))
     }
 
     async fn remove(&self, message_id: &str) -> Result<(), DbError> {
