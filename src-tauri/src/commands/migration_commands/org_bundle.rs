@@ -770,7 +770,7 @@ mod tests {
     #[test]
     fn sanitizes_org_id_path_segment() {
         assert_eq!(sanitize_org_id_for_path("org-abc_123"), "org-abc_123");
-        assert_eq!(sanitize_org_id_for_path("org/../evil"), "org___evil");
+        assert_eq!(sanitize_org_id_for_path("org/../evil"), "org____evil");
         assert_eq!(sanitize_org_id_for_path(""), "unknown-org");
     }
 }

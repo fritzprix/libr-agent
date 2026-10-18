@@ -18,8 +18,8 @@ keywords = ["ai", "agent", "multi-agent", "orchestration", "mcp", "model-context
 name = "tauri_mcp_agent_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 test = false
-# NOTE: lib unit tests are disabled due to cdylib linkage requirements.
-# All tests live in tests/ and are run with: cargo test --tests
+# NOTE: lib unit tests run via scripts/run-rust-tests-sequential.cjs --lib on non-Windows;
+# Windows blocked by cdylib linkage (#2122). Keep test = false so bare cargo test does not build lib automatically.
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

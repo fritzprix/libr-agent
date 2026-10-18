@@ -23,7 +23,7 @@ fn build_agent_session_tool_data_emits_display_and_storage_ids() {
 
     assert_eq!(
         data.get("sessionId").and_then(|v| v.as_str()),
-        Some("6789012345")
+        Some("session-1735123456789012345")
     );
     assert_eq!(
         data.get("storageSessionId").and_then(|v| v.as_str()),
@@ -31,7 +31,7 @@ fn build_agent_session_tool_data_emits_display_and_storage_ids() {
     );
     assert_eq!(
         data.get("resourceId").and_then(|v| v.as_str()),
-        Some("6789012345")
+        Some("session-1735123456789012345")
     );
 }
 

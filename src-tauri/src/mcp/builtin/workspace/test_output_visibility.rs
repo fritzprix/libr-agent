@@ -27,6 +27,10 @@ mod tests {
         db.execute(db.get_database_backend().build(&stmt))
             .await
             .expect("Failed to create settings table");
+        let session_stmt = schema.create_table_from_entity(crate::entity::session::Entity);
+        db.execute(db.get_database_backend().build(&session_stmt))
+            .await
+            .expect("Failed to create sessions table");
         crate::lifecycle::repositories::init_repositories(&db).await;
         crate::state::init_session_bus(crate::agent::session_bus::SessionBus::new());
         crate::state::init_concurrency_gate(crate::agent::concurrency::ConcurrencyGate::new(
