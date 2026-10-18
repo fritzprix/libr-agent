@@ -119,6 +119,31 @@ async fn get_all_sessions_returns_descending_updated_at_order() {
     );
 }
 
+#[tokio::test]
+async fn get_all_session_ids_returns_descending_updated_at_order() {
+    let repo = setup_repo().await;
+
+    for (id, updated_at) in [
+        ("test-session-1", 1_000),
+        ("test-session-2", 2_000),
+        ("test-session-3", 3_000),
+    ] {
+        repo.upsert_session(&build_session(id, updated_at))
+            .await
+            .expect("session should insert");
+    }
+
+    let session_ids = repo
+        .get_all_session_ids()
+        .await
+        .expect("all session ids should load");
+
+    assert_eq!(
+        session_ids,
+        vec!["test-session-3", "test-session-2", "test-session-1"]
+    );
+}
+
 #[test]
 fn session_status_serialization_round_trips() {
     assert_eq!(SessionStatus::Idle.as_str(), "idle");
