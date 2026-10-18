@@ -13,6 +13,7 @@ use tauri_mcp_agent_lib::agent::context::registry::ContextRegistry;
 use tauri_mcp_agent_lib::agent::events::{AgentEvent, AgentEventDispatcher};
 use tauri_mcp_agent_lib::agent::lifecycle::{
     init_session_with_messages, recover_sessions_with_dispatcher,
+    recover_sessions_with_dispatcher_and_message_repo,
 };
 use tauri_mcp_agent_lib::agent::session_bus::SessionBus;
 use tauri_mcp_agent_lib::agent::state::{AgentSession, MAX_CACHED_MESSAGES};
@@ -471,4 +472,60 @@ async fn recover_sessions_closes_recent_orphaned_tool_calls_outside_oldest_page(
         Some(true),
         "emitted MessageAdded tombstone must include toolError metadata"
     );
+}
+
+#[tokio::test]
+async fn recover_sessions_with_dispatcher_tolerates_uninitialized_message_repository() {
+    let _guard = TEST_GUARD.lock().await;
+    tauri_mcp_agent_lib::reset_state();
+    init_session_bus(SessionBus::new());
+    init_concurrency_gate(ConcurrencyGate::new(
+        DEFAULT_MAX_ACTIVE_AGENTS,
+        DEFAULT_MAX_SUSPENDED_AGENTS,
+        DEFAULT_MAX_ACTIVE_PROCESSES,
+        DEFAULT_MAX_SUSPENDED_PROCESSES,
+    ));
+    assert!(
+        tauri_mcp_agent_lib::try_get_message_repository().is_none(),
+        "global message repository must be uninitialized for isolation test"
+    );
+
+    let session_id = format!("recovery-no-db-{}", uuid::Uuid::new_v4());
+    let repo = Arc::new(InMemorySessionRepository::new());
+    let session_repo: Arc<dyn SessionRepository> = repo.clone();
+    let active_sessions: Arc<RwLock<HashMap<String, AgentSession>>> =
+        Arc::new(RwLock::new(HashMap::new()));
+    let dispatcher = RecordingDispatcher::default();
+
+    repo.upsert_session(&build_session_metadata(&session_id, SessionStatus::Busy))
+        .await
+        .expect("session upsert should succeed");
+
+    // Must NOT panic even if message repository is None (isolated in-memory test)
+    recover_sessions_with_dispatcher_and_message_repo(
+        &session_repo,
+        &active_sessions,
+        &dispatcher,
+        Arc::new(ContextRegistry::new()),
+        None,
+    )
+    .await
+    .expect("recovery should succeed gracefully without message repo");
+
+    let persisted = repo
+        .get_session(&session_id)
+        .await
+        .expect("session lookup should succeed")
+        .expect("session should still exist");
+    assert_eq!(persisted.status, SessionStatus::Paused);
+
+    let active = active_sessions.read().await;
+    let recovered = active
+        .get(&session_id)
+        .expect("recovered session should be loaded in memory");
+    assert_eq!(recovered.metadata.status, SessionStatus::Paused);
+    assert!(!recovered.is_running);
+
+    // Restore runtime state for subsequent tests
+    ensure_test_runtime_state().await;
 }

@@ -65,7 +65,7 @@ pub trait PendingQueueRepository: Send + Sync {
     async fn delete_orphans_for_session(&self, session_id: &str) -> Result<u64, DbError>;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SqlitePendingQueueRepository {
     db: DatabaseConnection,
 }

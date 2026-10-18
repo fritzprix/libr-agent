@@ -255,6 +255,11 @@ pub fn get_message_repository() -> &'static SqliteMessageRepository {
         .expect("Message repository not initialized. Call set_message_repository() first.")
 }
 
+/// Gets a reference to the global message repository if it has been initialized.
+pub fn try_get_message_repository() -> Option<&'static SqliteMessageRepository> {
+    MESSAGE_REPOSITORY.get()
+}
+
 /// Sets the global pending queue repository instance.
 pub fn set_pending_queue_repository(repo: SqlitePendingQueueRepository) {
     unsafe {
@@ -270,7 +275,6 @@ pub fn get_pending_queue_repository() -> &'static SqlitePendingQueueRepository {
 }
 
 /// Try to get a reference to the global pending queue repository if initialized.
-#[cfg(test)]
 pub fn try_get_pending_queue_repository() -> Option<&'static SqlitePendingQueueRepository> {
     PENDING_QUEUE_REPOSITORY.get()
 }
@@ -528,6 +532,11 @@ pub fn get_compact_context_repository() -> &'static SqliteCompactContextReposito
     COMPACT_CONTEXT_REPOSITORY.get().expect(
         "Compact context repository not initialized. Call set_compact_context_repository() first.",
     )
+}
+
+/// Gets a reference to the global compact context repository if it has been initialized.
+pub fn try_get_compact_context_repository() -> Option<&'static SqliteCompactContextRepository> {
+    COMPACT_CONTEXT_REPOSITORY.get()
 }
 
 // ── SP1: SessionBus ───────────────────────────────────────────────────────────
