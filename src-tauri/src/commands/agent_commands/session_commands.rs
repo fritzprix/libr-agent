@@ -38,11 +38,10 @@ async fn resolve_tauri_session_ref(session_ref: &str) -> Result<String, String> 
         return Err(format!("Session not found: {}", session_ref));
     }
 
-    let sessions = repo
-        .get_all_sessions()
+    let candidates = repo
+        .get_all_session_ids()
         .await
         .map_err(|e| format!("Failed to list sessions: {}", e))?;
-    let candidates: Vec<String> = sessions.into_iter().map(|session| session.id).collect();
     let candidate_refs: Vec<&str> = candidates.iter().map(|id| id.as_str()).collect();
 
     match resolve_session_id_among(candidate_refs, session_ref) {

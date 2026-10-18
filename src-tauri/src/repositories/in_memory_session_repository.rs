@@ -186,6 +186,16 @@ impl SessionRepository for InMemorySessionRepository {
         Ok(result)
     }
 
+    async fn get_all_session_ids(&self) -> Result<Vec<String>, DbError> {
+        let sessions = self.sessions.read().await;
+        let mut list: Vec<(i64, String)> = sessions
+            .values()
+            .map(|s| (s.updated_at, s.id.clone()))
+            .collect();
+        list.sort_by(|left, right| right.0.cmp(&left.0).then_with(|| right.1.cmp(&left.1)));
+        Ok(list.into_iter().map(|(_, id)| id).collect())
+    }
+
     async fn list_sessions(
         &self,
         cursor: Option<SessionListCursor>,
@@ -508,6 +518,25 @@ mod tests {
 
         let all = repo.get_all_sessions().await.unwrap();
         assert_eq!(all.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_get_all_session_ids() {
+        let repo = InMemorySessionRepository::new();
+
+        for i in 0..3 {
+            let session = SessionMetadata {
+                id: format!("session-{i}"),
+                name: Some(format!("Session {i}")),
+                created_at: 100,
+                updated_at: 100 + i as i64 * 10,
+                ..SessionMetadata::test_fixture(format!("session-{i}"))
+            };
+            repo.upsert_session(&session).await.unwrap();
+        }
+
+        let ids = repo.get_all_session_ids().await.unwrap();
+        assert_eq!(ids, vec!["session-2", "session-1", "session-0"]);
     }
 
     #[tokio::test]

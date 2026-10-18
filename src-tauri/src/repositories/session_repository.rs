@@ -294,6 +294,9 @@ pub trait SessionRepository: Send + Sync {
     /// Get all sessions
     async fn get_all_sessions(&self) -> Result<Vec<SessionMetadata>, DbError>;
 
+    /// Get all session IDs ordered by most recent activity
+    async fn get_all_session_ids(&self) -> Result<Vec<String>, DbError>;
+
     /// List sessions ordered by most recent activity with cursor pagination.
     ///
     /// When `search` is non-empty (after trim), results are restricted to sessions
@@ -550,6 +553,19 @@ impl SessionRepository for SqliteSessionRepository {
         sessions
     }
 
+    async fn get_all_session_ids(&self) -> Result<Vec<String>, DbError> {
+        let ids: Vec<String> = Session::find()
+            .select_only()
+            .column(session::Column::Id)
+            .order_by_desc(session::Column::UpdatedAt)
+            .order_by_desc(session::Column::Id)
+            .into_tuple()
+            .all(&self.db)
+            .await?;
+
+        Ok(ids)
+    }
+
     async fn list_sessions(
         &self,
         cursor: Option<SessionListCursor>,
@@ -636,14 +652,17 @@ impl SessionRepository for SqliteSessionRepository {
     async fn get_child_session_ids(&self, parent_session_id: &str) -> Result<Vec<String>, DbError> {
         use sea_orm::{ColumnTrait, QueryFilter, QueryOrder};
 
-        let models = Session::find()
+        let ids: Vec<String> = Session::find()
+            .select_only()
+            .column(session::Column::Id)
             .filter(session::Column::ParentSessionId.eq(parent_session_id))
             .order_by_desc(session::Column::CreatedAt)
             .order_by_desc(session::Column::Id)
+            .into_tuple()
             .all(&self.db)
             .await?;
 
-        Ok(models.into_iter().map(|m| m.id).collect())
+        Ok(ids)
     }
 
     async fn get_child_sessions(

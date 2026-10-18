@@ -105,11 +105,8 @@ fn spawn_startup_maintenance_tasks(
 
     tauri::async_runtime::spawn(async move {
         let session_repo = crate::state::get_session_repository();
-        let active_session_ids = match session_repo.get_all_sessions().await {
-            Ok(sessions) => sessions
-                .into_iter()
-                .map(|session| session.id)
-                .collect::<HashSet<_>>(),
+        let active_session_ids = match session_repo.get_all_session_ids().await {
+            Ok(ids) => ids.into_iter().collect::<HashSet<_>>(),
             Err(error) => {
                 log::warn!(
                     "Failed to load sessions for Docker stale container sweep: {}",
