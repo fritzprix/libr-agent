@@ -270,7 +270,7 @@ pub fn get_pending_queue_repository() -> &'static SqlitePendingQueueRepository {
 }
 
 /// Try to get a reference to the global pending queue repository if initialized.
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn try_get_pending_queue_repository() -> Option<&'static SqlitePendingQueueRepository> {
     PENDING_QUEUE_REPOSITORY.get()
 }
