@@ -326,3 +326,49 @@ async fn get_session_reads_execution_mode_column() {
 
     assert_eq!(retrieved.execution_mode, ExecutionMode::Unsafe);
 }
+
+#[tokio::test]
+async fn get_sessions_by_org_id_returns_sorted_org_sessions() {
+    let repo = setup_repo().await;
+
+    let mut session1 = build_session("org-session-1", 1_000);
+    session1.org_id = Some("org-alpha".to_string());
+    repo.upsert_session(&session1)
+        .await
+        .expect("insert session1");
+
+    let mut session2 = build_session("org-session-2", 3_000);
+    session2.org_id = Some("org-alpha".to_string());
+    repo.upsert_session(&session2)
+        .await
+        .expect("insert session2");
+
+    let mut session_other = build_session("org-session-other", 2_000);
+    session_other.org_id = Some("org-beta".to_string());
+    repo.upsert_session(&session_other)
+        .await
+        .expect("insert session_other");
+
+    let alpha_sessions = repo
+        .get_sessions_by_org_id("org-alpha")
+        .await
+        .expect("query org-alpha sessions");
+
+    assert_eq!(alpha_sessions.len(), 2);
+    // Ordered by updated_at DESC
+    assert_eq!(alpha_sessions[0].id, "org-session-2");
+    assert_eq!(alpha_sessions[1].id, "org-session-1");
+
+    let beta_sessions = repo
+        .get_sessions_by_org_id("org-beta")
+        .await
+        .expect("query org-beta sessions");
+    assert_eq!(beta_sessions.len(), 1);
+    assert_eq!(beta_sessions[0].id, "org-session-other");
+
+    let none_sessions = repo
+        .get_sessions_by_org_id("non-existent-org")
+        .await
+        .expect("query non-existent org");
+    assert!(none_sessions.is_empty());
+}
