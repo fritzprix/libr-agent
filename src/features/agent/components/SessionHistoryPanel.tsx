@@ -286,48 +286,60 @@ export function SessionHistoryPanel({
     displayRowsLength: displayRows.length,
   });
 
-  const handleToggleExpand = useCallback(
-    (sessionId: string) => {
-      const isAutoExpanded = autoExpandedAncestorIds.has(sessionId);
-      const isExpanded =
-        manuallyExpandedSessionIds.has(sessionId) ||
-        (isAutoExpanded && !collapsedAutoExpandedSessionIds.has(sessionId));
+  const expandStateRef = useRef({
+    autoExpandedAncestorIds,
+    manuallyExpandedSessionIds,
+    collapsedAutoExpandedSessionIds,
+    onEnsureChildrenLoaded,
+  });
+  expandStateRef.current = {
+    autoExpandedAncestorIds,
+    manuallyExpandedSessionIds,
+    collapsedAutoExpandedSessionIds,
+    onEnsureChildrenLoaded,
+  };
 
-      const willExpand = !isExpanded;
+  const handleToggleExpand = useCallback((sessionId: string) => {
+    const {
+      autoExpandedAncestorIds: autoExpanded,
+      manuallyExpandedSessionIds: manuallyExpanded,
+      collapsedAutoExpandedSessionIds: collapsedAuto,
+      onEnsureChildrenLoaded: ensureChildrenLoaded,
+    } = expandStateRef.current;
 
-      setManuallyExpandedSessionIds((prev) => {
+    const isAutoExpanded = autoExpanded.has(sessionId);
+    const isExpanded =
+      manuallyExpanded.has(sessionId) ||
+      (isAutoExpanded && !collapsedAuto.has(sessionId));
+
+    const willExpand = !isExpanded;
+
+    setManuallyExpandedSessionIds((prev) => {
+      const next = new Set(prev);
+      if (isExpanded) {
+        next.delete(sessionId);
+      } else if (!isAutoExpanded) {
+        next.add(sessionId);
+      }
+      return next;
+    });
+
+    if (isAutoExpanded) {
+      setCollapsedAutoExpandedSessionIds((prev) => {
         const next = new Set(prev);
         if (isExpanded) {
-          next.delete(sessionId);
-        } else if (!isAutoExpanded) {
           next.add(sessionId);
+        } else {
+          next.delete(sessionId);
         }
         return next;
       });
+    }
 
-      if (isAutoExpanded) {
-        setCollapsedAutoExpandedSessionIds((prev) => {
-          const next = new Set(prev);
-          if (isExpanded) {
-            next.add(sessionId);
-          } else {
-            next.delete(sessionId);
-          }
-          return next;
-        });
-      }
-
-      if (willExpand) {
-        void Promise.resolve(onEnsureChildrenLoaded?.(sessionId));
-      }
-    },
-    [
-      autoExpandedAncestorIds,
-      collapsedAutoExpandedSessionIds,
-      manuallyExpandedSessionIds,
-      onEnsureChildrenLoaded,
-    ],
-  );
+    if (willExpand) {
+      void Promise.resolve(ensureChildrenLoaded?.(sessionId));
+    }
+  }, []);
 
   // Search/filter can auto-expand ancestors of matched rows. Those parents may
   // still lack children in the paginated list, so prefetch direct children for
