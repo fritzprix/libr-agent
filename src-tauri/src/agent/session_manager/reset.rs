@@ -58,25 +58,21 @@ pub(crate) async fn reset_session(
     settle_idle(manager, session_id, is_active).await?;
 
     // 1. Delete messages from DB
-    if let Some(repo) = manager.message_repo() {
-        repo.delete_by_session(session_id)
-            .await
-            .map_err(|e| format!("Failed to delete messages from DB: {}", e))?;
-    } else {
-        log::warn!("Message repository not initialized; skipping message deletion during reset");
-    }
+    let message_repo = manager
+        .message_repo()
+        .ok_or_else(|| "Message repository not initialized; cannot reset session".to_string())?;
+    message_repo
+        .delete_by_session(session_id)
+        .await
+        .map_err(|e| format!("Failed to delete messages from DB: {}", e))?;
 
     // 2. Clear planning data (goal, todo, scratchpad)
-    if let Some(planning_repo) = crate::state::try_get_planning_repository() {
-        planning_repo
-            .clear_session(session_id)
-            .await
-            .map_err(|e| format!("Failed to clear planning data during reset: {}", e))?;
-    } else {
-        log::warn!(
-            "Planning repository not initialized; skipping planning data clear during reset"
-        );
-    }
+    let planning_repo = crate::state::try_get_planning_repository()
+        .ok_or_else(|| "Planning repository not initialized; cannot reset session".to_string())?;
+    planning_repo
+        .clear_session(session_id)
+        .await
+        .map_err(|e| format!("Failed to clear planning data during reset: {}", e))?;
 
     // 3. Delete compact context
     if let Some(compact_repo) = manager.compact_context_repo() {

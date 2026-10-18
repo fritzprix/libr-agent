@@ -476,6 +476,20 @@ async fn recover_sessions_closes_recent_orphaned_tool_calls_outside_oldest_page(
 
 #[tokio::test]
 async fn recover_sessions_with_dispatcher_tolerates_uninitialized_message_repository() {
+    let _guard = TEST_GUARD.lock().await;
+    tauri_mcp_agent_lib::reset_state();
+    init_session_bus(SessionBus::new());
+    init_concurrency_gate(ConcurrencyGate::new(
+        DEFAULT_MAX_ACTIVE_AGENTS,
+        DEFAULT_MAX_SUSPENDED_AGENTS,
+        DEFAULT_MAX_ACTIVE_PROCESSES,
+        DEFAULT_MAX_SUSPENDED_PROCESSES,
+    ));
+    assert!(
+        tauri_mcp_agent_lib::try_get_message_repository().is_none(),
+        "global message repository must be uninitialized for isolation test"
+    );
+
     let session_id = format!("recovery-no-db-{}", uuid::Uuid::new_v4());
     let repo = Arc::new(InMemorySessionRepository::new());
     let session_repo: Arc<dyn SessionRepository> = repo.clone();
@@ -511,4 +525,7 @@ async fn recover_sessions_with_dispatcher_tolerates_uninitialized_message_reposi
         .expect("recovered session should be loaded in memory");
     assert_eq!(recovered.metadata.status, SessionStatus::Paused);
     assert!(!recovered.is_running);
+
+    // Restore runtime state for subsequent tests
+    ensure_test_runtime_state().await;
 }
