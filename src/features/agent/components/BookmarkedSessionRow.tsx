@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { StarOff, Clock3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -20,7 +21,7 @@ export interface BookmarkedSessionTileProps {
   t: SessionHistoryTranslate;
 }
 
-export function BookmarkedSessionRow({
+export const BookmarkedSessionRow = memo(function BookmarkedSessionRow({
   session,
   onResume,
   onToggleBookmark,
@@ -92,4 +93,4 @@ export function BookmarkedSessionRow({
       </Tooltip>
     </div>
   );
-}
+});
