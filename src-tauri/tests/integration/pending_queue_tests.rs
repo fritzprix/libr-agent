@@ -1512,3 +1512,173 @@ async fn non_busy_session_flushes_stale_deferred_history_instead_of_parking() {
 
     tauri_mcp_agent_lib::reset_state();
 }
+
+async fn setup_file_based_test_db(
+    temp_dir: &tempfile::TempDir,
+    pool_size: u32,
+) -> sea_orm::DatabaseConnection {
+    use sea_orm::{ConnectOptions, ConnectionTrait, Database, DatabaseBackend, Statement};
+    use sea_orm_migration::MigratorTrait;
+    use tauri_mcp_agent_lib::migration::Migrator;
+    use tauri_mcp_agent_lib::utils::sqlite::format_sqlite_url;
+
+    crate::common::register_sqlite_vec();
+    let db_path = temp_dir.path().join("concurrency_test.sqlite");
+    let database_url = format!("{}?mode=rwc", format_sqlite_url(&db_path.to_string_lossy()));
+
+    // Run migrations on single connection first
+    {
+        let mut mig_opt = ConnectOptions::new(database_url.clone());
+        mig_opt
+            .max_connections(1)
+            .min_connections(1)
+            .sqlx_logging(false);
+        let mig_db = Database::connect(mig_opt)
+            .await
+            .expect("Failed to create migration database connection");
+        Migrator::up(&mig_db, None)
+            .await
+            .expect("Migrations should run");
+    }
+
+    let mut opt = ConnectOptions::new(database_url);
+    opt.max_connections(pool_size)
+        .min_connections(1)
+        .acquire_timeout(std::time::Duration::from_secs(5))
+        .sqlx_logging(false);
+
+    let db = Database::connect(opt)
+        .await
+        .expect("Failed to create file-based database");
+
+    db.execute(Statement::from_string(
+        DatabaseBackend::Sqlite,
+        "PRAGMA journal_mode = WAL;".to_string(),
+    ))
+    .await
+    .expect("Failed to set WAL journal mode");
+
+    db.execute(Statement::from_string(
+        DatabaseBackend::Sqlite,
+        "PRAGMA busy_timeout = 5000;".to_string(),
+    ))
+    .await
+    .expect("Failed to set busy timeout");
+
+    db.execute(Statement::from_string(
+        DatabaseBackend::Sqlite,
+        "PRAGMA foreign_keys = ON;".to_string(),
+    ))
+    .await
+    .expect("Failed to set foreign keys");
+
+    db
+}
+
+#[tokio::test]
+async fn enqueue_concurrent_calls_allocate_unique_and_contiguous_seqs() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let db = setup_file_based_test_db(&temp_dir, 5).await;
+    let session_repo = SqliteSessionRepository::new(db.clone());
+    let message_repo = SqliteMessageRepository::new(db.clone());
+    let repo = Arc::new(SqlitePendingQueueRepository::new(db));
+
+    let session_id = "session-concurrent-enqueue";
+    session_repo
+        .upsert_session(&build_session_metadata(session_id))
+        .await
+        .expect("session should be created");
+
+    let n = 20;
+
+    // Seed messages to satisfy fk-pending_queue-message_id
+    for i in 0..n {
+        let msg_id = format!("msg-concurrent-{i}");
+        let msg = build_user_message(session_id, &msg_id, 1000 + i as i64);
+        message_repo
+            .insert(&msg)
+            .await
+            .expect("message should be inserted");
+    }
+
+    let mut handles = Vec::new();
+    for i in 0..n {
+        let r = repo.clone();
+        let sid = session_id.to_string();
+        let msg_id = format!("msg-concurrent-{i}");
+        handles.push(tokio::spawn(async move {
+            r.enqueue(&sid, &msg_id, 1000 + i as i64).await
+        }));
+    }
+
+    let results = futures::future::join_all(handles).await;
+    let mut seqs = Vec::new();
+    for res in results {
+        let entry = res
+            .expect("task join failed")
+            .expect("enqueue should succeed");
+        seqs.push(entry.queue_seq);
+    }
+
+    seqs.sort_unstable();
+    assert_eq!(seqs.len(), n);
+    for (idx, seq) in seqs.iter().enumerate() {
+        assert_eq!(
+            *seq,
+            (idx + 1) as i64,
+            "queue_seq must be 1-indexed and contiguous"
+        );
+    }
+}
+
+#[tokio::test]
+async fn remove_returning_concurrent_calls_guarantee_single_winner() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let db = setup_file_based_test_db(&temp_dir, 5).await;
+    let session_repo = SqliteSessionRepository::new(db.clone());
+    let message_repo = SqliteMessageRepository::new(db.clone());
+    let repo = Arc::new(SqlitePendingQueueRepository::new(db));
+
+    let session_id = "session-concurrent-remove";
+    session_repo
+        .upsert_session(&build_session_metadata(session_id))
+        .await
+        .expect("session should be created");
+
+    let target_msg_id = "msg-single-claim";
+    let msg = build_user_message(session_id, target_msg_id, 1000);
+    message_repo
+        .insert(&msg)
+        .await
+        .expect("message should be inserted");
+
+    repo.enqueue(session_id, target_msg_id, 1000)
+        .await
+        .expect("initial enqueue should succeed");
+
+    let n = 10;
+    let mut handles = Vec::new();
+    for _ in 0..n {
+        let r = repo.clone();
+        let mid = target_msg_id.to_string();
+        handles.push(tokio::spawn(async move { r.remove_returning(&mid).await }));
+    }
+
+    let results = futures::future::join_all(handles).await;
+    let mut some_count = 0;
+    let mut none_count = 0;
+
+    for res in results {
+        let opt = res
+            .expect("task join failed")
+            .expect("remove_returning should not error");
+        if opt.is_some() {
+            some_count += 1;
+        } else {
+            none_count += 1;
+        }
+    }
+
+    assert_eq!(some_count, 1, "exactly one caller must receive Some(entry)");
+    assert_eq!(none_count, n - 1, "all other callers must receive None");
+}
