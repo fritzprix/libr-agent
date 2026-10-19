@@ -119,6 +119,31 @@ async fn get_all_sessions_returns_descending_updated_at_order() {
     );
 }
 
+#[tokio::test]
+async fn get_all_session_ids_returns_descending_updated_at_order() {
+    let repo = setup_repo().await;
+
+    for (id, updated_at) in [
+        ("test-session-1", 1_000),
+        ("test-session-2", 2_000),
+        ("test-session-3", 3_000),
+    ] {
+        repo.upsert_session(&build_session(id, updated_at))
+            .await
+            .expect("session should insert");
+    }
+
+    let session_ids = repo
+        .get_all_session_ids()
+        .await
+        .expect("all session ids should load");
+
+    assert_eq!(
+        session_ids,
+        vec!["test-session-3", "test-session-2", "test-session-1"]
+    );
+}
+
 #[test]
 fn session_status_serialization_round_trips() {
     assert_eq!(SessionStatus::Idle.as_str(), "idle");
@@ -300,4 +325,50 @@ async fn get_session_reads_execution_mode_column() {
         .expect("session should exist");
 
     assert_eq!(retrieved.execution_mode, ExecutionMode::Unsafe);
+}
+
+#[tokio::test]
+async fn get_sessions_by_org_id_returns_sorted_org_sessions() {
+    let repo = setup_repo().await;
+
+    let mut session1 = build_session("org-session-1", 1_000);
+    session1.org_id = Some("org-alpha".to_string());
+    repo.upsert_session(&session1)
+        .await
+        .expect("insert session1");
+
+    let mut session2 = build_session("org-session-2", 3_000);
+    session2.org_id = Some("org-alpha".to_string());
+    repo.upsert_session(&session2)
+        .await
+        .expect("insert session2");
+
+    let mut session_other = build_session("org-session-other", 2_000);
+    session_other.org_id = Some("org-beta".to_string());
+    repo.upsert_session(&session_other)
+        .await
+        .expect("insert session_other");
+
+    let alpha_sessions = repo
+        .get_sessions_by_org_id("org-alpha")
+        .await
+        .expect("query org-alpha sessions");
+
+    assert_eq!(alpha_sessions.len(), 2);
+    // Ordered by updated_at DESC
+    assert_eq!(alpha_sessions[0].id, "org-session-2");
+    assert_eq!(alpha_sessions[1].id, "org-session-1");
+
+    let beta_sessions = repo
+        .get_sessions_by_org_id("org-beta")
+        .await
+        .expect("query org-beta sessions");
+    assert_eq!(beta_sessions.len(), 1);
+    assert_eq!(beta_sessions[0].id, "org-session-other");
+
+    let none_sessions = repo
+        .get_sessions_by_org_id("non-existent-org")
+        .await
+        .expect("query non-existent org");
+    assert!(none_sessions.is_empty());
 }

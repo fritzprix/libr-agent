@@ -588,7 +588,9 @@ mod tests {
         // Slack user oauth must contain user_scope with comma-separated scopes
         assert!(url.contains("user_scope=channels%3Aread%2Cchat%3Awrite"));
         // Slack user oauth must NOT contain standard scope parameter
-        assert!(!url.contains("scope="));
+        let parsed = url::Url::parse(&url).expect("valid authorization url");
+        assert!(parsed.query_pairs().any(|(k, _)| k == "user_scope"));
+        assert!(!parsed.query_pairs().any(|(k, _)| k == "scope"));
     }
 
     #[test]

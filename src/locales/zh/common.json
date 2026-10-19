@@ -642,34 +642,36 @@
         "clearError": "无法清除浏览器数据。请关闭打开的浏览器窗口并重试。"
       },
       "extensionBridge": {
-        "description": "可选。连接一次后，AI 智能体即可使用日常 Chrome 中的登录状态。重启 LibrAgent 后会自动重连。",
-        "connectedHint": "智能体现在可以使用日常 Chrome 的登录状态。独立的内置浏览器仍可继续使用。",
-        "waitingHint": "安装扩展并保持启用。连接之前，智能体仅使用独立的内置浏览器。",
-        "fallbackNote": "未连接：智能体将使用独立的内置浏览器。",
-        "title": "日常使用的 Chrome",
+        "description": "按需安装即可。安装一次后，智能体就能使用你已在 Chrome 中登录的网站。重启 LibrAgent 后会自动重新连接。",
+        "connectedHint": "智能体可以使用你在 Chrome 中已登录的账号。内置的智能体浏览器仍可使用。连接断开后，LibrAgent 会自动重连。",
+        "waitingHint": "安装一次扩展并保持启用。连接完成前，智能体只使用内置浏览器。",
+        "fallbackNote": "尚未连接。当前仅使用内置智能体浏览器。",
+        "title": "日常 Chrome",
         "statusLabel": "状态",
         "connected": "已连接",
         "connectedHeadline": "已连接到日常 Chrome",
         "disconnected": "未连接",
-        "waitingHeadline": "等待 Chrome 扩展程序",
-        "installStep1": "Chrome → chrome://extensions → 开启开发者模式",
-        "installStep2": "加载已解压的扩展程序 → 选择上方复制的安装路径",
-        "installStep3": "保持扩展程序启用。后续可通过扩展图标查看连接状态。",
+        "waitingHeadline": "正在等待 Chrome 扩展",
+        "installStep1": "点击上方按钮，从 Chrome 应用商店安装 LibrAgent Browser Bridge。",
+        "installStep2": "打开扩展图标，等到状态显示为「已连接」。",
+        "installStep3": "保持扩展启用即可。每次重启 LibrAgent 时不必再打开此页面。",
         "checking": "正在检查…",
         "portLabel": "端口",
         "tokenLabel": "令牌",
-        "modeLabel": "后端",
-        "pathLabel": "安装路径",
+        "modeLabel": "连接方式",
+        "pathLabel": "本地文件夹",
         "refresh": "刷新状态",
-        "copyPath": "复制安装路径",
-        "pathCopied": "已复制安装路径",
-        "pathCopyFailed": "复制到剪贴板失败",
+        "copyPath": "复制本地文件夹路径",
+        "pathCopied": "已复制安装文件夹路径",
+        "pathCopyFailed": "无法复制路径",
         "showAdvanced": "显示高级选项",
         "hideAdvanced": "隐藏高级选项",
-        "advancedNote": "端口与令牌用于支持和本地覆盖。日常使用只需安装一次扩展并运行 LibrAgent 即可。",
-        "statusErrorTitle": "无法获取桥接状态",
-        "statusError": "无法读取扩展程序桥接状态。",
-        "pathError": "未找到安装路径。"
+        "advancedNote": "端口和令牌仅供支持或本地覆盖。大多数用户只需从商店安装并运行 LibrAgent。",
+        "statusErrorTitle": "无法获取 Chrome 连接状态",
+        "statusError": "无法读取 Chrome 连接状态。",
+        "pathError": "找不到本地安装文件夹。",
+        "openStore": "从 Chrome 应用商店安装",
+        "altInstallNote": "开发者也可从本地文件夹加载扩展，而不使用应用商店。复制下方路径，在 Chrome 打开 chrome://extensions，开启开发者模式，然后选择「加载已解压的扩展程序」。"
       }
     },
     "about": {
@@ -1974,7 +1976,6 @@
         "body": "创建夜间任务，将长期有用的决策与修复写入 Knowledge，而不是每日新闻。",
         "cta": "创建夜间蒸馏任务"
       },
-
       "knowledgeGraph": {
         "title": "查看知识图谱",
         "body": "在 Knowledge 中以网络图查看智能体积累的概念关系。",
@@ -1987,7 +1988,7 @@
       },
       "everydayChrome": {
         "title": "使用日常 Chrome",
-        "body": "在设置 → 系统中连接 Chrome 扩展后，代理可在已登录的真实 Chrome 中工作。",
+        "body": "需要已登录的网站时，在「设置 → 系统」通过 Chrome 应用商店安装 LibrAgent Browser Bridge。",
         "cta": "打开系统设置"
       },
       "orgPortableBundle": {

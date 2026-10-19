@@ -78,9 +78,7 @@ async fn promote_pending_message_id(
             let mut cache = session.messages.write().await;
             if !cache.iter().any(|m| m.id == message.id) {
                 cache.push(message.clone());
-                if cache.len() > crate::agent::state::MAX_CACHED_MESSAGES {
-                    cache.remove(0);
-                }
+                crate::agent::state::enforce_cached_message_limit(&mut cache);
             }
         }
     }

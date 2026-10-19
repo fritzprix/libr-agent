@@ -34,18 +34,12 @@ pub async fn resolve_http_session_ref(input_ref: &str) -> Result<String, (Status
         ));
     }
 
-    let candidates = repo
-        .get_all_sessions()
-        .await
-        .map_err(|error| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to list sessions: {error}"),
-            )
-        })?
-        .into_iter()
-        .map(|session| session.id)
-        .collect::<Vec<_>>();
+    let candidates = repo.get_all_session_ids().await.map_err(|error| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to list sessions: {error}"),
+        )
+    })?;
     let candidate_refs: Vec<&str> = candidates.iter().map(|id| id.as_str()).collect();
 
     match resolve_session_id_among(candidate_refs, input_ref) {

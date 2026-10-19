@@ -575,7 +575,7 @@ mod tests {
 
     #[test]
     fn compact_value_truncates_multibyte_without_panic() {
-        let long = "가".repeat(80);
+        let long = "가".repeat(150);
         let rendered = compact_value(&json!(long));
         assert!(rendered.ends_with('…'));
         assert!(rendered.chars().count() <= 121);

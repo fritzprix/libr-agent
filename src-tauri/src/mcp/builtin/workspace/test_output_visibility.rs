@@ -7,7 +7,6 @@ mod tests {
     use serde_json::json;
     use std::sync::Arc;
     use tempfile::tempdir;
-    use tokio::time::{sleep, Duration};
 
     struct WorkspaceTestHarness {
         _guard: tokio::sync::MutexGuard<'static, ()>,
@@ -27,6 +26,10 @@ mod tests {
         db.execute(db.get_database_backend().build(&stmt))
             .await
             .expect("Failed to create settings table");
+        let session_stmt = schema.create_table_from_entity(crate::entity::session::Entity);
+        db.execute(db.get_database_backend().build(&session_stmt))
+            .await
+            .expect("Failed to create sessions table");
         crate::lifecycle::repositories::init_repositories(&db).await;
         crate::state::init_session_bus(crate::agent::session_bus::SessionBus::new());
         crate::state::init_concurrency_gate(crate::agent::concurrency::ConcurrencyGate::new(
@@ -64,27 +67,25 @@ mod tests {
             .expect("data has no process_id")
             .to_string();
 
-        let mut finished = false;
-        for _ in 0..20 {
-            let poll_args = json!({ "processId": process_id, "timeout": 0 });
-            let poll_res = server
-                .call_tool(
-                    "waitForProcess",
-                    poll_args,
-                    Some("test-session".to_string()),
-                )
-                .await
-                .expect("Poll failed");
-            let poll_data = poll_res.structured_content.as_ref().unwrap();
-            let status = poll_data["status"].as_str().unwrap();
-
-            if status == "finished" || status == "failed" {
-                finished = true;
-                break;
-            }
-            sleep(Duration::from_millis(200)).await;
-        }
-        assert!(finished, "Process did not finish in time");
+        let wait_args = json!({ "processId": process_id, "timeout": 15 });
+        let wait_res = server
+            .call_tool(
+                "waitForProcess",
+                wait_args,
+                Some("test-session".to_string()),
+            )
+            .await
+            .expect("Wait failed");
+        let wait_data = wait_res
+            .structured_content
+            .as_ref()
+            .expect("No structured_content");
+        let status = wait_data["status"].as_str().unwrap();
+        assert!(
+            status == "finished" || status == "failed",
+            "Process did not finish: status={}",
+            status
+        );
 
         let read_args = json!({
             "processId": process_id,
@@ -115,9 +116,12 @@ mod tests {
         let harness = create_server().await;
         let server = &harness.server;
 
-        // Use handle_spawn_process directly
+        #[cfg(windows)]
+        let command = "powershell -NoProfile -Command \"Write-Output 'Tail line 1'; Write-Output 'Tail line 2'\"";
+        #[cfg(not(windows))]
+        let command = "echo \"Tail line 1\\nTail line 2\"";
         let exec_args = json!({
-            "command": "echo \"Tail line 1\\nTail line 2\"",
+            "command": command,
         });
 
         let result = server
@@ -129,26 +133,26 @@ mod tests {
             .unwrap()
             .to_string();
 
-        // Wait for finish
-        let mut finished = false;
-        for _ in 0..20 {
-            let poll_args = json!({ "processId": process_id, "timeout": 0 });
-            let poll_res = server
-                .call_tool(
-                    "waitForProcess",
-                    poll_args,
-                    Some("test-session".to_string()),
-                )
-                .await
-                .expect("Poll failed");
-            let poll_data = poll_res.structured_content.as_ref().unwrap();
-            if poll_data["status"] == "finished" {
-                finished = true;
-                break;
-            }
-            sleep(Duration::from_millis(200)).await;
-        }
-        assert!(finished, "Process did not finish in time");
+        // Wait for process to finish
+        let wait_args = json!({ "processId": process_id, "timeout": 15 });
+        let wait_res = server
+            .call_tool(
+                "waitForProcess",
+                wait_args,
+                Some("test-session".to_string()),
+            )
+            .await
+            .expect("Wait failed");
+        let wait_data = wait_res
+            .structured_content
+            .as_ref()
+            .expect("No structured_content");
+        let status = wait_data["status"].as_str().unwrap();
+        assert!(
+            status == "finished" || status == "failed",
+            "Process did not finish: status={}",
+            status
+        );
 
         let read_args = json!({
             "processId": process_id,

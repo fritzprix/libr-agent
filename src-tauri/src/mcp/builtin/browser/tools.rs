@@ -15,7 +15,7 @@ pub fn create_session_tool() -> MCPTool {
                 "One agent has one active browser session. Other browser tools use that session only.",
                 "If a session already exists, browser__createSession closes it and starts a fresh one. This also applies when you switch browser=\"sidecar\" and browser=\"userChrome\".",
                 "Do not keep userChrome and sidecar open at the same time.",
-                "If url is omitted, the session opens https://www.google.com.",
+                "If url is omitted, the session opens about:blank.",
                 "Set browser to \"sidecar\" (default) or \"userChrome\". There is no silent fallback between them.",
                 "browser=\"sidecar\": sticky agent Chromium profile. Logins inside that browser survive later createSession until cleared in Settings. Shares one cookie jar across concurrent agent chats. Not everyday Chrome.",
                 "browser=\"userChrome\": everyday Chrome via the Browser Bridge extension. Errors if not Connected. Does NOT open sidecar instead.",

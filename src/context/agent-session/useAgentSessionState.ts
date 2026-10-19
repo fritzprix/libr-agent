@@ -6,6 +6,7 @@ import type {
   MessageCursor,
   PreflightTokenMetrics,
   SessionRuntimeState,
+  SessionWorkflowStatus,
 } from '@/models/agent-ipc';
 import { applyViewedAtToSession } from '@/lib/session-utils';
 import type {
@@ -39,9 +40,8 @@ export function useAgentSessionState() {
     useState<MessageCursor | null>(null);
   const [error, setErrorState] = useState<MessageError | null>(null);
   const [llmError, setLlmError] = useState<MessageError | null>(null);
-  const [workflowStatus, setWorkflowStatus] = useState<
-    'idle' | 'busy' | 'paused' | 'error' | 'queued' | 'provisioning'
-  >('idle');
+  const [workflowStatus, setWorkflowStatus] =
+    useState<SessionWorkflowStatus>('idle');
   const [workflowPhase, setWorkflowPhase] = useState<WorkflowPhase>('idle');
   const [runtimeState, setRuntimeState] = useState<SessionRuntimeState>(
     DEFAULT_RUNTIME_STATE,

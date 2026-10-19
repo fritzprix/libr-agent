@@ -110,6 +110,9 @@ benchmarks/harbor/bench_config.json
 *bench_config*.json
 !bench_config.example.json
 
+# Local research scratch (personal notes; not for public repo)
+.research/
+
 # LibrAgent internal marketing & research docs (not for public repo)
 docs/marketing/
 docs/research/

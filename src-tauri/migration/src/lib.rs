@@ -46,6 +46,8 @@ mod m20260716_000041_add_reset_planning_state_to_scheduled_tasks;
 mod m20260725_000042_create_pending_queue;
 mod m20260918_000043_add_default_target_session_to_playbooks;
 mod m20261005_000044_add_missing_persistence_indexes;
+mod m20261018_000045_add_knowledge_performance_indexes;
+mod m20261018_000046_add_sessions_status_index;
 
 pub struct Migrator;
 
@@ -97,6 +99,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20260725_000042_create_pending_queue::Migration),
             Box::new(m20260918_000043_add_default_target_session_to_playbooks::Migration),
             Box::new(m20261005_000044_add_missing_persistence_indexes::Migration),
+            Box::new(m20261018_000045_add_knowledge_performance_indexes::Migration),
+            Box::new(m20261018_000046_add_sessions_status_index::Migration),
         ]
     }
 }

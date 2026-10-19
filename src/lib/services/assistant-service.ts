@@ -123,12 +123,7 @@ export class RemoteAssistantService implements IAssistantService {
   }
 
   async saveAll(assistants: Assistant[]): Promise<Assistant[]> {
-    // Remote API doesn't support bulk save yet, so we do sequential
-    const saved: Assistant[] = [];
-    for (const assistant of assistants) {
-      saved.push(await this.save(assistant));
-    }
-    return saved;
+    return Promise.all(assistants.map((assistant) => this.save(assistant)));
   }
 
   async delete(id: string): Promise<void> {

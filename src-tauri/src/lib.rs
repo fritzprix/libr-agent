@@ -139,7 +139,8 @@ pub use state::{
     set_mcp_service_proxy_manager, set_message_repository, set_pending_queue_repository,
     set_planning_repository, set_playbook_repository, set_scheduled_task_repository,
     set_session_repository, set_settings_repository, set_sqlite_db_url, try_get_active_sessions,
-    try_get_settings_repository,
+    try_get_compact_context_repository, try_get_message_repository,
+    try_get_pending_queue_repository, try_get_session_repository, try_get_settings_repository,
 };
 
 /// A synchronous wrapper to initialize and run the application with SQLite support.
@@ -428,8 +429,11 @@ pub fn run() {
                             WindowEvent::Focused(true) | WindowEvent::ScaleFactorChanged { .. }
                         );
                     if should_ensure {
-                        lifecycle::windows_taskbar::ensure_main_window_taskbar_button(
+                        // Style-only: re-applying the icon here flickers the
+                        // taskbar button on cold-start Focused(true).
+                        lifecycle::windows_taskbar::ensure_main_window_taskbar_button_with_mode(
                             window.app_handle(),
+                            lifecycle::windows_taskbar::TaskbarEnsureMode::StyleOnly,
                         );
                     }
                 }

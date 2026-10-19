@@ -1,144 +1,25 @@
-import type { AgentResponse, PreflightTokenMetrics } from '@/models/agent-ipc';
 import {
   useAgentChatActions,
-  useAgentChatMessages,
   useAgentChatState,
 } from '@/context/AgentChatContext';
 import { useAgentSession } from '@/context/AgentSessionContext';
-import { useAgentSessionListState } from '@/context/AgentSessionListContext';
-import { BatchModelUpdateDialog } from './BatchModelUpdateDialog';
-import { Button } from '@/components/ui/button';
-import {
-  AlertCircle,
-  Info,
-  Loader2,
-  Pause,
-  Play,
-  RefreshCw,
-  Shield,
-  Wrench,
-  AlertTriangle,
-  Zap,
-  DatabaseZap,
-  Clock,
-} from 'lucide-react';
-import { AgentModelPicker } from '@/features/agent/components/AgentModelPicker';
-import { useSessionAgentTools } from '@/features/agent/hooks/useSessionAgentTools';
 import { useLLMService } from '@/context/LLMServiceContext';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { getLogger } from '@/lib/logger';
-import LoadingSpinner from '@/components/ui/LoadingSpinner';
-import AgentToolsModal from './AgentToolsModal';
-import { useTokenMetrics } from '@/hooks/use-token-metrics';
-import { TokenMetricsBadge } from './TokenMetricsBadge';
-import { TokenUsage } from '@/lib/ai-service/types';
-import type { Message } from '@/models/chat';
-import { toast } from 'sonner';
-import { isBuiltinTool } from '@/lib/tool-call-utils';
-import { useTranslation } from 'react-i18next';
-import { mergeDisplayTokenUsage } from './token-metrics';
-import { cn } from '@/lib/utils';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { useSettings } from '@/hooks/use-settings';
-import type { ThinkingEffort } from '@/lib/ai-service/thinking-effort-mapping';
+import { getLogger } from '@/lib/logger';
+import { cn } from '@/lib/utils';
+import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
+import {
+  shouldShowWorkflowBanner,
+  StatusBarExecutionMode,
+  StatusBarModelControls,
+  StatusBarTokenMetrics,
+  StatusBarToolsControl,
+  StatusBarWorkflowBanner,
+} from './agent-chat-status-bar';
 
 const logger = getLogger('AgentChatStatusBar');
-
-function hasTokenUsageData(
-  usage: TokenUsage | null | undefined,
-): usage is TokenUsage {
-  if (!usage) {
-    return false;
-  }
-
-  return (
-    usage.promptTokens > 0 ||
-    usage.completionTokens > 0 ||
-    usage.totalTokens > 0 ||
-    (usage.cachedPromptTokens ?? 0) > 0
-  );
-}
-
-function mergePersistedTokenUsage(
-  previousUsage: TokenUsage | null,
-  nextUsage: TokenUsage,
-): TokenUsage {
-  if (!previousUsage) {
-    return nextUsage;
-  }
-
-  return {
-    ...previousUsage,
-    ...nextUsage,
-    details: {
-      ...previousUsage.details,
-      ...nextUsage.details,
-      evalDuration:
-        nextUsage.details?.evalDuration ?? previousUsage.details?.evalDuration,
-      timeToFirstToken:
-        nextUsage.details?.timeToFirstToken ??
-        previousUsage.details?.timeToFirstToken,
-      promptEvalDuration:
-        nextUsage.details?.promptEvalDuration ??
-        previousUsage.details?.promptEvalDuration,
-      loadDuration:
-        nextUsage.details?.loadDuration ?? previousUsage.details?.loadDuration,
-    },
-  };
-}
-
-function findLatestAssistantUsage(messages: Message[]): TokenUsage | null {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-
-    if (message?.role === 'assistant' && hasTokenUsageData(message.usage)) {
-      return message.usage;
-    }
-  }
-
-  return null;
-}
-
-/** Isolates high-churn message subscription from the rest of the status bar. */
-function StatusBarTokenMetrics({
-  sessionPersistedUsage,
-  liveMetrics,
-  preflight,
-  compact,
-}: {
-  sessionPersistedUsage: TokenUsage | null;
-  liveMetrics: TokenUsage | null | undefined;
-  preflight: PreflightTokenMetrics | null | undefined;
-  compact: boolean;
-}) {
-  const { messages } = useAgentChatMessages();
-  const latestAssistantUsage = useMemo(
-    () => findLatestAssistantUsage(messages),
-    [messages],
-  );
-  const displayMetrics = useMemo(
-    () =>
-      mergeDisplayTokenUsage(
-        mergeDisplayTokenUsage(sessionPersistedUsage, latestAssistantUsage),
-        liveMetrics ?? null,
-      ),
-    [latestAssistantUsage, liveMetrics, sessionPersistedUsage],
-  );
-
-  if (!displayMetrics) {
-    return null;
-  }
-
-  return (
-    <TokenMetricsBadge
-      usage={displayMetrics}
-      preflight={preflight}
-      className="shrink-0"
-      compact={compact}
-    />
-  );
-}
 
 export function AgentChatStatusBar() {
   const { t } = useTranslation();
@@ -147,207 +28,18 @@ export function AgentChatStatusBar() {
     session,
     executionMode,
     setExecutionMode,
-    updateSessionConfig,
     preflightTokenMetrics,
     pendingApprovals,
   } = useAgentSession();
-  const { sessions } = useAgentSessionListState();
-  const [showBatchDialog, setShowBatchDialog] = useState(false);
-  const [pendingModelConfig, setPendingModelConfig] = useState<{
-    model: string;
-    provider: string;
-  } | null>(null);
-  const [descendantCount, setDescendantCount] = useState(0);
   const { workflowStatus, error, llmError } = useAgentChatState();
   const { retryMessage, resume } = useAgentChatActions();
   const { isCompacting, isAwaitingCompact } = useLLMService();
-  const [showToolsModal, setShowToolsModal] = useState(false);
-  const { value: settings, update: updateSettings } = useSettings();
-
-  const handleThinkingEffortChange = useCallback(
-    async (effort: ThinkingEffort) => {
-      await updateSettings({
-        advanced: {
-          ...settings.advanced,
-          thinkingEffort: effort,
-        },
-      });
-    },
-    [settings.advanced, updateSettings],
-  );
-
-  // ✅ Fetch real-time token metrics
-  const sessionId = session?.id;
-  const { metrics } = useTokenMetrics(sessionId);
-
-  // Persist last metrics to show after streaming ends.
-  const [persistedMetrics, setPersistedMetrics] = useState<{
-    sessionId?: string;
-    usage: TokenUsage | null;
-  }>({
-    sessionId,
-    usage: null,
-  });
-  const [persistedStablePreflight, setPersistedStablePreflight] = useState<{
-    sessionId?: string;
-    metrics: typeof preflightTokenMetrics;
-  }>({
-    sessionId,
-    metrics: null,
-  });
-  const lastObservedMetricsRef = useRef<{
-    sessionId?: string;
-    usage: TokenUsage | null;
-  }>({
-    sessionId,
-    usage: null,
-  });
-
-  const persistMetrics = useCallback(
-    (usage: TokenUsage) => {
-      if (!sessionId) {
-        return;
-      }
-
-      setPersistedMetrics((previous) => ({
-        sessionId,
-        usage: mergePersistedTokenUsage(
-          previous.sessionId === sessionId ? previous.usage : null,
-          usage,
-        ),
-      }));
-    },
-    [sessionId],
-  );
-
-  useEffect(() => {
-    if (!sessionId) {
-      lastObservedMetricsRef.current = {
-        sessionId: undefined,
-        usage: null,
-      };
-      return;
-    }
-
-    const previousObserved = lastObservedMetricsRef.current;
-
-    if (previousObserved.sessionId !== sessionId) {
-      lastObservedMetricsRef.current = {
-        sessionId,
-        usage: metrics,
-      };
-
-      if (hasTokenUsageData(metrics)) {
-        persistMetrics(metrics);
-      }
-
-      return;
-    }
-
-    if (hasTokenUsageData(metrics)) {
-      persistMetrics(metrics);
-    } else if (!metrics && hasTokenUsageData(previousObserved.usage)) {
-      persistMetrics(previousObserved.usage);
-    }
-
-    lastObservedMetricsRef.current = {
-      sessionId,
-      usage: metrics,
-    };
-  }, [metrics, persistMetrics, sessionId]);
-
-  const compacting = session?.id ? isCompacting(session.id) : false;
-  const awaitingCompact = session?.id ? isAwaitingCompact(session.id) : false;
-
-  useEffect(() => {
-    if (!sessionId) {
-      setPersistedStablePreflight({
-        sessionId: undefined,
-        metrics: null,
-      });
-      return;
-    }
-
-    if (awaitingCompact || compacting || !preflightTokenMetrics) {
-      return;
-    }
-
-    setPersistedStablePreflight({
-      sessionId,
-      metrics: preflightTokenMetrics,
-    });
-  }, [compacting, awaitingCompact, preflightTokenMetrics, sessionId]);
-
-  const sessionPersistedUsage =
-    persistedMetrics.sessionId === sessionId ? persistedMetrics.usage : null;
-  const sessionPersistedStablePreflight =
-    persistedStablePreflight.sessionId === sessionId
-      ? persistedStablePreflight.metrics
-      : null;
-  const badgePreflightMetrics =
-    awaitingCompact || compacting
-      ? (sessionPersistedStablePreflight ?? preflightTokenMetrics)
-      : preflightTokenMetrics;
-
-  // ✅ Single Source of Truth: Fetch filtered tools from Rust backend
-  // Session hook invalidates SWR when MCP discovery catches up (slow stdio).
-  const {
-    availableTools,
-    isLoading: toolsLoading,
-    error: toolsError,
-  } = useSessionAgentTools();
-
-  // Categorize tools by type
-  const { builtinTools, externalTools } = useMemo(() => {
-    const builtin = availableTools.filter((t) => isBuiltinTool(t.name));
-    const external = availableTools.filter((t) => !isBuiltinTool(t.name));
-    return { builtinTools: builtin, externalTools: external };
-  }, [availableTools]);
 
   const [isRetrying, setIsRetrying] = useState(false);
   const [isResuming, setIsResuming] = useState(false);
-  const canUpdateSessionConfig =
-    workflowStatus === 'idle' ||
-    workflowStatus === 'paused' ||
-    workflowStatus === 'error';
-  const executionModeOptions = useMemo(
-    () => [
-      {
-        mode: 'normal' as const,
-        label: 'Normal',
-        icon: Shield,
-        title: t(
-          'agent.statusBar.executionModeNormalTitle',
-          'Normal mode. Policy blocks and approval rules are enforced.',
-        ),
-        activeClass: 'bg-secondary text-foreground',
-        iconClass: 'text-foreground',
-      },
-      {
-        mode: 'yolo' as const,
-        label: 'YOLO',
-        icon: Zap,
-        title: t(
-          'agent.statusBar.executionModeYoloTitle',
-          'YOLO mode. Standard approvals are auto-approved, but hard approvals still require manual approval.',
-        ),
-        activeClass: 'bg-primary/10 text-primary',
-        iconClass: 'fill-primary text-primary',
-      },
-      {
-        mode: 'unsafe' as const,
-        label: 'Full Auto',
-        icon: DatabaseZap,
-        title: t(
-          'agent.statusBar.executionModeUnsafeTitle',
-          'Full Auto mode. All tool executions are automatically approved for uninterrupted workflow.',
-        ),
-        activeClass: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400',
-        iconClass: 'fill-indigo-500 text-indigo-600 dark:text-indigo-400',
-      },
-    ],
-    [t],
-  );
+
+  const compacting = session?.id ? isCompacting(session.id) : false;
+  const awaitingCompact = session?.id ? isAwaitingCompact(session.id) : false;
 
   const handleRetry = async () => {
     if (isRetrying) return;
@@ -375,285 +67,35 @@ export function AgentChatStatusBar() {
     }
   };
 
-  const performConfigUpdate = useCallback(
-    async (model: string, provider: string, recursive: boolean) => {
-      if (!session?.id || !session.assistant) return;
-      try {
-        const { safeInvoke } = await import('@/lib/backend/core');
-
-        await safeInvoke<AgentResponse>('agent_update_session_config', {
-          request: {
-            sessionId: session.id,
-            model,
-            provider,
-            assistantId: session.assistant.id,
-            recursive,
-          },
-        });
-
-        updateSessionConfig(model, provider);
-        if (workflowStatus === 'error') {
-          toast.success(
-            t(
-              'agent.statusBar.configUpdatedRecoveryHint',
-              'Model updated. Retry to recover the session.',
-            ),
-          );
-        }
-      } catch (e) {
-        logger.error('Failed to update session config', e);
-        toast.error(
-          t(
-            'agent.statusBar.configUpdateError',
-            'Failed to update the model configuration.',
-          ),
-        );
-      }
-    },
-    [session, t, updateSessionConfig, workflowStatus],
-  );
-
-  const handleConfigUpdate = useCallback(
-    async (model: string, provider: string) => {
-      if (!session?.id || !session.assistant || !canUpdateSessionConfig) {
-        return;
-      }
-
-      logger.info(`Updating session config to ${provider}/${model}`);
-
-      try {
-        const { safeInvoke } = await import('@/lib/backend/core');
-        const descendantIds = await safeInvoke<string[]>(
-          'agent_get_descendant_session_ids',
-          {
-            sessionId: session.id,
-          },
-        );
-
-        if (descendantIds && descendantIds.length > 0) {
-          setDescendantCount(descendantIds.length);
-          setPendingModelConfig({ model, provider });
-          setShowBatchDialog(true);
-        } else {
-          await performConfigUpdate(model, provider, false);
-        }
-      } catch (err) {
-        logger.error('Failed to query descendant session ids', err);
-        // Fallback to local sessions array in case of IPC error
-        const subSessions = sessions.filter(
-          (s) => s.parentSessionId === session.id,
-        );
-        if (subSessions.length > 0) {
-          setDescendantCount(subSessions.length);
-          setPendingModelConfig({ model, provider });
-          setShowBatchDialog(true);
-        } else {
-          await performConfigUpdate(model, provider, false);
-        }
-      }
-    },
-    [canUpdateSessionConfig, performConfigUpdate, session, sessions],
-  );
-
-  const getToolsDisplayText = () => {
-    if (toolsLoading) return t('agent.statusBar.loadingTools');
-    if (toolsError) return t('agent.statusBar.toolsError');
-
-    const totalCount = availableTools.length;
-    const mcpCount = externalTools.length;
-    const builtinCount = builtinTools.length;
-
-    return t('agent.statusBar.toolsCount', {
-      totalCount,
-      mcpCount,
-      builtinCount,
-    });
-  };
-
-  const getToolsColor = () => {
-    if (toolsLoading) return 'text-warning';
-    if (toolsError) return 'text-destructive';
-    return availableTools.length > 0 ? 'text-success' : 'text-muted-foreground';
-  };
-
-  const getToolsIcon = () => {
-    if (toolsLoading) return <LoadingSpinner className="w-3 h-3" />;
-    if (toolsError) return <AlertTriangle className="w-3.5 h-3.5" />;
-    return <Wrench size={14} />;
-  };
-
-  const getStatusConfig = () => {
-    if (error || llmError) {
-      const activeError = error ?? llmError;
-      return {
-        icon: <AlertCircle className="w-4 h-4" />,
-        text: t('agent.statusBar.statusError', {
-          error: activeError?.displayMessage ?? '',
-        }),
-        className: 'bg-destructive/10 border-destructive/20 text-destructive',
-        showRetry: true,
-        showResume: false,
-      };
-    }
-
-    // Compact-specific states take priority over generic 'busy'
-    if (awaitingCompact) {
-      return {
-        icon: <Loader2 className="w-4 h-4 animate-spin" />,
-        text: t('agent.statusBar.statusAwaitingCompact'),
-        className:
-          'bg-blue-500/10 border-blue-500/20 text-blue-700 dark:text-blue-400',
-        showRetry: false,
-        showResume: false,
-      };
-    }
-
-    if (compacting) {
-      return {
-        icon: (
-          <DatabaseZap className="w-4 h-4 animate-pulse text-muted-foreground" />
-        ),
-        text: t('agent.statusBar.statusCompacting'),
-        className: 'bg-secondary/50 border-border text-muted-foreground',
-        showRetry: false,
-        showResume: false,
-      };
-    }
-
-    if (pendingApprovals.length > 0) {
-      return {
-        icon: <Shield className="w-4 h-4" />,
-        text: t(
-          'agent.statusBar.statusAwaitingApproval',
-          'Awaiting approval — review pending tool actions.',
-        ),
-        className:
-          'bg-amber-500/10 border-amber-500/20 text-amber-800 dark:text-amber-300',
-        showRetry: false,
-        showResume: false,
-      };
-    }
-
-    switch (workflowStatus) {
-      case 'idle':
-        return {
-          icon: <Info className="w-4 h-4" />,
-          text: t('agent.statusBar.statusIdle'),
-          className: 'bg-secondary/50 border-border text-foreground',
-          showRetry: false,
-          showResume: false,
-        };
-      case 'busy':
-        return {
-          icon: <Loader2 className="w-4 h-4 animate-spin" />,
-          text: t('agent.statusBar.statusBusy'),
-          className: 'bg-warning/10 border-warning/20 text-warning-foreground',
-          showRetry: false,
-          showResume: false,
-        };
-      case 'queued':
-        return {
-          icon: <Clock className="w-4 h-4 text-warning animate-pulse" />,
-          text: t(
-            'agent.statusBar.statusQueued',
-            'Queued (Waiting for available agent slot...)',
-          ),
-          className: 'bg-warning/10 border-warning/20 text-warning-foreground',
-          showRetry: false,
-          showResume: false,
-        };
-      case 'paused':
-        return {
-          icon: <Pause className="w-4 h-4" />,
-          text: t('agent.statusBar.statusPaused'),
-          className: 'bg-secondary/50 border-border text-foreground',
-          showRetry: false,
-          showResume: true,
-        };
-      case 'error':
-        return {
-          icon: <AlertCircle className="w-4 h-4" />,
-          text: t('agent.statusBar.statusWorkflowError'),
-          className: 'bg-destructive/10 border-destructive/20 text-destructive',
-          showRetry: true,
-          showResume: false,
-        };
-      default:
-        return {
-          icon: <Info className="w-4 h-4" />,
-          text: t('agent.statusBar.statusUnknown', { status: workflowStatus }),
-          className: 'bg-muted/50 border-border text-muted-foreground',
-          showRetry: false,
-          showResume: false,
-        };
-    }
-  };
-
-  const config = getStatusConfig();
-  // Idle "waiting for input" banner adds chrome without action — hide it.
-  // Keep the strip for busy/error/approval/compact/queued/paused.
-  const showWorkflowBanner =
-    Boolean(error || llmError) ||
-    awaitingCompact ||
-    compacting ||
-    pendingApprovals.length > 0 ||
-    workflowStatus !== 'idle';
+  const showWorkflowBanner = shouldShowWorkflowBanner({
+    error,
+    llmError,
+    awaitingCompact,
+    compacting,
+    hasPendingApprovals: pendingApprovals.length > 0,
+    workflowStatus,
+  });
 
   return (
     <>
-      {showWorkflowBanner ? (
-        <div
-          data-testid="agent-workflow-status"
-          className={`flex items-center justify-between px-4 py-1.5 ${config.className}`}
-        >
-          <div className="flex items-center gap-2">
-            {config.icon}
-            <span className="text-sm">{config.text}</span>
-          </div>
-          {config.showRetry ? (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleRetry}
-              className="h-7"
-              disabled={isRetrying}
-            >
-              {isRetrying ? (
-                <LoadingSpinner size="sm" className="mr-1" />
-              ) : (
-                <RefreshCw className="w-3 h-3 mr-1" />
-              )}
-              {isRetrying
-                ? t('agent.statusBar.retrying')
-                : t('agent.statusBar.retry')}
-            </Button>
-          ) : null}
-          {config.showResume ? (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleResume}
-              className="h-7"
-              disabled={isResuming}
-            >
-              {isResuming ? (
-                <LoadingSpinner size="sm" className="mr-1" />
-              ) : (
-                <Play className="w-3 h-3 mr-1" />
-              )}
-              {isResuming
-                ? t('agent.statusBar.resuming')
-                : t('agent.statusBar.continue')}
-            </Button>
-          ) : null}
-        </div>
-      ) : null}
+      <StatusBarWorkflowBanner
+        visible={showWorkflowBanner}
+        workflowStatus={workflowStatus}
+        error={error}
+        llmError={llmError}
+        awaitingCompact={awaitingCompact}
+        compacting={compacting}
+        hasPendingApprovals={pendingApprovals.length > 0}
+        isRetrying={isRetrying}
+        isResuming={isResuming}
+        onRetry={() => {
+          void handleRetry();
+        }}
+        onResume={() => {
+          void handleResume();
+        }}
+      />
 
-      {/*
-        Single border-b under the config strip separates chrome from messages.
-        When a workflow banner is above, add border-t so banner/config stay
-        distinct without stacking against the session header border-b.
-      */}
       <div
         className={cn(
           'border-b px-4 py-1.5',
@@ -661,128 +103,26 @@ export function AgentChatStatusBar() {
         )}
       >
         <div className="flex flex-wrap items-center gap-2 md:gap-3">
-          <div className="min-w-0 w-full sm:w-auto">
-            {session && (
-              <AgentModelPicker
-                currentModel={session.model}
-                currentProvider={session.provider}
-                className="w-full sm:w-auto"
-                disabled={!canUpdateSessionConfig}
-                onConfigUpdate={handleConfigUpdate}
-                showThinkingEffort
-                thinkingEffort={settings.advanced.thinkingEffort}
-                onThinkingEffortChange={(effort) => {
-                  void handleThinkingEffortChange(effort);
-                }}
-              />
-            )}
-          </div>
+          <StatusBarModelControls />
 
           <div className="flex min-w-0 flex-wrap items-center gap-2 md:ml-auto md:justify-end">
-            <div
-              className="flex flex-wrap items-center gap-1.5 sm:gap-2"
-              data-testid="execution-mode-control"
-            >
-              <span className="shrink-0 text-[11px] text-muted-foreground sm:text-xs">
-                Execution
-              </span>
-              <div className="inline-flex shrink-0 items-center rounded-md border border-border/70 bg-background/60 p-0.5">
-                {executionModeOptions.map((option) => {
-                  const Icon = option.icon;
-                  const isActive = executionMode === option.mode;
-
-                  return (
-                    <Button
-                      key={option.mode}
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => void setExecutionMode(option.mode)}
-                      className={cn(
-                        'flex h-6 items-center gap-1 rounded-sm px-1.5 text-[11px] sm:px-2 sm:text-xs',
-                        isActive
-                          ? option.activeClass
-                          : 'text-muted-foreground hover:bg-muted',
-                      )}
-                      title={option.title}
-                    >
-                      <Icon
-                        size={14}
-                        className={isActive ? option.iconClass : 'text-current'}
-                      />
-                      {option.label}
-                    </Button>
-                  );
-                })}
-              </div>
-            </div>
+            <StatusBarExecutionMode
+              executionMode={executionMode}
+              onExecutionModeChange={(mode) => void setExecutionMode(mode)}
+            />
 
             <StatusBarTokenMetrics
-              sessionPersistedUsage={sessionPersistedUsage}
-              liveMetrics={metrics}
-              preflight={badgePreflightMetrics}
+              sessionId={session?.id}
+              preflightTokenMetrics={preflightTokenMetrics}
+              compacting={compacting}
+              awaitingCompact={awaitingCompact}
               compact={isCompactStatusBar}
             />
 
-            <div className="flex items-center gap-2">
-              <span className="text-xs">{t('agent.statusBar.toolsLabel')}</span>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span
-                    className={cn(
-                      'inline-block',
-                      toolsLoading && 'cursor-not-allowed',
-                    )}
-                  >
-                    <button
-                      onClick={() => setShowToolsModal(true)}
-                      className={cn(
-                        'text-xs flex items-center gap-1 cursor-pointer rounded-sm transition-colors hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
-                        getToolsColor(),
-                        toolsLoading && 'opacity-50',
-                      )}
-                      disabled={toolsLoading}
-                    >
-                      {getToolsIcon()} {getToolsDisplayText()}
-                    </button>
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {toolsError
-                    ? toolsError
-                    : t('agent.statusBar.viewToolsTitle')}
-                </TooltipContent>
-              </Tooltip>
-            </div>
+            <StatusBarToolsControl />
           </div>
         </div>
       </div>
-
-      {/* Tools Modal */}
-      <AgentToolsModal
-        isOpen={showToolsModal}
-        onClose={() => setShowToolsModal(false)}
-      />
-
-      {showBatchDialog && pendingModelConfig && (
-        <BatchModelUpdateDialog
-          isOpen={showBatchDialog}
-          onClose={() => {
-            setShowBatchDialog(false);
-            setPendingModelConfig(null);
-          }}
-          parentSessionName={session?.name || session?.id?.slice(0, 8) || ''}
-          subSessionCount={descendantCount}
-          newModel={pendingModelConfig.model}
-          newProvider={pendingModelConfig.provider}
-          onConfirm={(recursive) => {
-            void performConfigUpdate(
-              pendingModelConfig.model,
-              pendingModelConfig.provider,
-              recursive,
-            );
-          }}
-        />
-      )}
     </>
   );
 }

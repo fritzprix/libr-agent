@@ -642,34 +642,36 @@
         "clearError": "ブラウザデータを消去できませんでした。開いているブラウザウィンドウを閉じて再試行してください。"
       },
       "extensionBridge": {
-        "description": "任意。一度接続すると、AIエージェントが普段お使いのChromeのログイン情報を共有して使用できます。LibrAgentを再起動しても自動で再接続されます。",
-        "connectedHint": "エージェントが普段のChromeのログイン情報を使用できるようになりました。専用ブラウザも引き続き利用可能です。",
-        "waitingHint": "拡張機能を一度インストールして有効にしてください。接続されるまでは、エージェント専用ブラウザのみを使用します。",
-        "fallbackNote": "未接続：エージェント専用の独立ブラウザを使用します。",
+        "description": "必要なときだけ導入してください。一度つなぐと、すでにChromeでログイン済みのサイトをエージェントが使えます。LibrAgentを再起動しても自動でつながります。",
+        "connectedHint": "エージェントはChromeでログイン済みのアカウントを使えます。エージェント専用ブラウザもそのまま使えます。切断されてもLibrAgentが自動で再接続します。",
+        "waitingHint": "拡張機能を一度インストールして有効のままにしてください。接続まではエージェント専用ブラウザのみ使います。",
+        "fallbackNote": "まだ接続されていません。いまはエージェント専用ブラウザのみ使います。",
         "title": "普段のChrome",
         "statusLabel": "状態",
         "connected": "接続済み",
         "connectedHeadline": "普段のChromeに接続済み",
         "disconnected": "未接続",
         "waitingHeadline": "Chrome拡張機能を待機中",
-        "installStep1": "Chrome → chrome://extensions → デベロッパーモードを有効化",
-        "installStep2": "パッケージ化されていない拡張機能を読み込む → コピーしたパスを選択",
-        "installStep3": "拡張機能を有効にしたままにしてください。接続状態は拡張アイコンで確認できます。",
+        "installStep1": "上のボタンから Chrome ウェブストアで LibrAgent Browser Bridge をインストールします。",
+        "installStep2": "拡張機能のアイコンを開き、状態が「接続済み」になるまで待ちます。",
+        "installStep3": "拡張機能は有効のままにしてください。LibrAgentを再起動するたびにこの画面を開く必要はありません。",
         "checking": "確認中…",
         "portLabel": "ポート",
         "tokenLabel": "トークン",
-        "modeLabel": "バックエンド",
-        "pathLabel": "インストールパス",
+        "modeLabel": "接続方式",
+        "pathLabel": "ローカルフォルダ",
         "refresh": "状態を更新",
-        "copyPath": "インストールパスをコピー",
-        "pathCopied": "インストールパスをコピーしました",
-        "pathCopyFailed": "クリップボードへのコピーに失敗しました",
+        "copyPath": "ローカルフォルダのパスをコピー",
+        "pathCopied": "インストールフォルダのパスをコピーしました",
+        "pathCopyFailed": "パスをコピーできませんでした",
         "showAdvanced": "詳細設定を表示",
         "hideAdvanced": "詳細設定を隠す",
-        "advancedNote": "ポートとトークンはサポート用の設定です。通常は拡張機能を一度インストールするだけで利用できます。",
-        "statusErrorTitle": "状態取得エラー",
-        "statusError": "拡張機能ブリッジの状態を取得できませんでした。",
-        "pathError": "インストールパスが見つかりませんでした。"
+        "advancedNote": "ポートとトークンはサポートやローカル調整用です。多くの場合はストアからのインストールとLibrAgentの起動だけで足ります。",
+        "statusErrorTitle": "Chrome接続状態を取得できません",
+        "statusError": "Chromeの接続状態を読み取れませんでした。",
+        "pathError": "ローカルのインストールフォルダが見つかりませんでした。",
+        "openStore": "Chrome ウェブストアからインストール",
+        "altInstallNote": "開発者はストアの代わりにローカルフォルダから読み込めます。下のパスをコピーし、Chromeで chrome://extensions を開き、デベロッパーモードをオンにして「パッケージ化されていない拡張機能を読み込む」を選びます。"
       }
     },
     "about": {
@@ -1974,7 +1976,6 @@
         "body": "日次ニュースではなく、決定や修正など長く使える内容だけを Knowledge に残す夜間タスクを作成できます。",
         "cta": "夜間の蒸留タスクを作成"
       },
-
       "knowledgeGraph": {
         "title": "ナレッジグラフを見てみましょう",
         "body": "Knowledge で、エージェントが蓄えた概念のつながりをネットワークとして確認できます。",
@@ -1986,8 +1987,8 @@
         "cta": "General 設定を開く"
       },
       "everydayChrome": {
-        "title": "普段の Chrome を使う",
-        "body": "設定 → システムで Chrome 拡張機能を接続すると、ログイン済みの普段のブラウザでエージェントが作業できます。",
+        "title": "普段のChromeを使う",
+        "body": "ログイン済みのサイトが必要なときは、設定 → システムから Chrome ウェブストアで LibrAgent Browser Bridge を入れてください。",
         "cta": "システム設定を開く"
       },
       "orgPortableBundle": {

@@ -57,6 +57,34 @@ fn sync_bundled_assistants_into_profile_output() -> io::Result<()> {
     bundled_skills::mirror_bundled_assistants(&source_dir, &deployed_dir)
 }
 
+fn windows_msvc_target() -> bool {
+    env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows")
+        && env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc")
+}
+
+/// Bind Common-Controls v6 for every MSVC-linked executable, including the
+/// `cargo test --lib` harness.
+///
+/// tauri-build embeds the same dependency into the app binary via winres, but
+/// the lib unit-test harness is not a `bin`/`tests/*.rs` target, so it gets no
+/// RT_MANIFEST. Without v6, the loader binds System32 comctl32 5.82 and dies
+/// on `TaskDialogIndirect` with `STATUS_ENTRYPOINT_NOT_FOUND` (0xC0000139).
+///
+/// `cargo:rustc-link-arg-tests` only covers integration-test binaries; the
+/// catch-all `rustc-link-arg` is what reaches the lib harness. The linker
+/// merges this with tauri-build's existing app manifest (same dependency).
+/// See #2122 / tauri-apps/tauri#13419.
+fn embed_windows_comctl_v6_manifest_dependency() {
+    if !windows_msvc_target() {
+        return;
+    }
+    println!(
+        "cargo:rustc-link-arg=/MANIFESTDEPENDENCY:type='win32' \
+         name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
+         processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'"
+    );
+}
+
 fn main() {
     println!("cargo:rerun-if-changed=bundled_skills");
     println!("cargo:rerun-if-changed=bundled_assistants");
@@ -75,5 +103,6 @@ fn main() {
         );
     }
 
+    embed_windows_comctl_v6_manifest_dependency();
     tauri_build::build()
 }

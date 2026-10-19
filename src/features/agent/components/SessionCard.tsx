@@ -19,7 +19,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { SessionExportMenu } from './SessionExportMenu';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getLogger } from '@/lib/logger';
 import { formatRelativeTime } from '@/lib/date-utils';
@@ -64,7 +64,7 @@ interface SessionCardProps {
  * Displays agent session metadata with action buttons.
  * Used in AgentChatStartView's session history panel.
  */
-export function SessionCard({
+export const SessionCard = memo(function SessionCard({
   session,
   onResume,
   onDelete,
@@ -686,4 +686,6 @@ export function SessionCard({
       )}
     </article>
   );
-}
+});
+
+SessionCard.displayName = 'SessionCard';

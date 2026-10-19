@@ -12,15 +12,15 @@ description: 'Prompts that you can copy, for tasks from one helper to a long-ter
 
 If one agent is enough, **do not hand off the work**. Make the structure bigger only when the work has many parts, when you need another point of view, or when the work continues for a long time. LibrAgent starts small. It checks a result before it uses it.
 
-| Situation                                            | Skill                  |
-| ---------------------------------------------------- | ---------------------- |
-| Give one block of work to another agent              | `delegate`             |
-| Many tasks that do not depend on each other          | `divide-conquer`       |
-| The result of one step is the input of the next step | `pipeline`             |
-| One question, many points of view                    | `consensus-delegation` |
-| One leader directs the specialists                   | `hub-spoke`            |
-| Make, check, and repeat                              | `gatekeeper`           |
-| A long-term team and the Org view                    | `teamwork` → `org`     |
+| Situation                                            | Skill                                |
+| ---------------------------------------------------- | ------------------------------------ |
+| Give one block of work to another agent              | `delegate`                           |
+| Many tasks that do not depend on each other          | `divide-conquer`                     |
+| The result of one step is the input of the next step | `pipeline`                           |
+| One question, many points of view                    | `consensus-delegation`               |
+| One leader directs the specialists                   | `hub-spoke`                          |
+| Make, check, and repeat                              | `gatekeeper` ([loop guide](loop.md)) |
+| A long-term team and the Org view                    | `teamwork` → `org`                   |
 
 ---
 
@@ -135,7 +135,8 @@ If the notice does not pass in 3 rounds, tell me what is still wrong.
 
 **What happens**: The reviewer uses the rules to pass or reject the notice. If the reviewer rejects it, the writer gets the list of problems. The loop runs 3 times at most. If the notice still does not pass, the agent tells you the reason.
 
-**Watch out**: Make the rules **exact**. A rule such as "write it well" gives a loop that does not end.
+**Watch out**: Make the rules **exact**. A rule such as "write it well" gives a loop that does not end.  
+For clock wakes that run writer and reviewer on a task list, see [Session loops (loop)](loop.md).
 
 ---
 
@@ -204,7 +205,7 @@ Check again in 30 minutes if this job is done.
 ```
 
 - Wait until a job is **done**: `call-me-back` ([guide](call-me-back.md))
-- Look again after some **time**: `loop` (in this chat). Use `schedule` if the work must run when the app is closed.
+- Look again after some **time**: `loop` ([Session loops](loop.md)). Use `schedule` if the work must run when the app is closed.
 
 ---
 

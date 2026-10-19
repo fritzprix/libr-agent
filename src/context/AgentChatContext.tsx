@@ -23,6 +23,7 @@ import type {
   AgentResponse,
   CancelWorkflowResult,
   InjectMessagesRequest,
+  SessionWorkflowStatus,
 } from '@/models/agent-ipc';
 import type { Message, MessageError, RustMessage } from '@/models/chat';
 import { rustMessageToMessage } from '@/models/chat';
@@ -52,6 +53,7 @@ const findLastPersistedAssistantMessage = (
 };
 
 export { isAssistantStreamingMessageSuperseded } from '@/lib/message-streaming-supersession';
+export type { SessionWorkflowStatus } from '@/models/agent-ipc';
 
 // --- STATE CONTEXT (low churn: excludes streaming messages) ---
 interface AgentChatStateContextValue {
@@ -61,13 +63,7 @@ interface AgentChatStateContextValue {
   pendingQueue: Message[];
   error: MessageError | null;
   llmError: MessageError | null;
-  workflowStatus:
-    | 'idle'
-    | 'busy'
-    | 'paused'
-    | 'error'
-    | 'queued'
-    | 'provisioning';
+  workflowStatus: SessionWorkflowStatus;
   serviceContexts: Record<string, ServiceContext>;
 }
 

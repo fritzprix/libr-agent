@@ -642,34 +642,36 @@
         "clearError": "Konnte Browserdaten nicht löschen. Schließen Sie offene Browserfenster und versuchen Sie es erneut."
       },
       "extensionBridge": {
-        "description": "Optional. Einmal verbinden, damit die KI Ihre Anmeldungen aus dem normalen Chrome nutzen kann. Verbindet sich nach Neustart automatisch wieder.",
-        "connectedHint": "Der Agent kann nun Ihre Anmeldungen aus Chrome nutzen. Der separate integrierte Browser bleibt weiterhin verfügbar.",
-        "waitingHint": "Installieren Sie die Erweiterung und lassen Sie sie aktiviert. Bis zur Verbindung nutzt der Agent nur den separaten Browser.",
-        "fallbackNote": "Nicht verbunden: Der Agent verwendet den separaten integrierten Browser.",
-        "title": "Normales Chrome",
+        "description": "Optional. Einmal installieren, damit der Agent Websites nutzen kann, bei denen Sie in Chrome bereits angemeldet sind. Nach einem Neustart verbindet LibrAgent sich automatisch erneut.",
+        "connectedHint": "Der Agent kann Konten nutzen, bei denen Sie in Chrome bereits angemeldet sind. Der integrierte Agenten-Browser bleibt verfügbar. Bei Verbindungsabbruch stellt LibrAgent die Verbindung selbst wieder her.",
+        "waitingHint": "Installieren Sie die Erweiterung einmal und lassen Sie sie aktiviert. Bis zur Verbindung nutzt der Agent nur den integrierten Agenten-Browser.",
+        "fallbackNote": "Noch nicht verbunden. Der Agent nutzt nur den integrierten Agenten-Browser.",
+        "title": "Ihr Chrome",
         "statusLabel": "Status",
         "connected": "Verbunden",
-        "connectedHeadline": "Mit normalem Chrome verbunden",
+        "connectedHeadline": "Mit Ihrem Chrome verbunden",
         "disconnected": "Getrennt",
-        "waitingHeadline": "Warte auf Chrome-Erweiterung",
-        "installStep1": "Chrome → chrome://extensions → Entwicklermodus aktivieren",
-        "installStep2": "Entpackte Erweiterung laden → kopierten Pfad auswählen",
-        "installStep3": "Erweiterung aktiviert lassen. Verbindungsstatus später über das Erweiterungssymbol prüfen.",
+        "waitingHeadline": "Warte auf die Chrome-Erweiterung",
+        "installStep1": "Installieren Sie LibrAgent Browser Bridge über den Chrome Web Store (Schaltfläche oben).",
+        "installStep2": "Öffnen Sie das Erweiterungssymbol und warten Sie, bis der Status „Verbunden“ anzeigt.",
+        "installStep3": "Lassen Sie die Erweiterung aktiviert. Sie müssen diese Seite nicht bei jedem Neustart von LibrAgent öffnen.",
         "checking": "Prüfe…",
         "portLabel": "Port",
         "tokenLabel": "Token",
-        "modeLabel": "Backend",
-        "pathLabel": "Installationspfad",
+        "modeLabel": "Verbindungsmodus",
+        "pathLabel": "Lokaler Ordner",
         "refresh": "Status aktualisieren",
-        "copyPath": "Installationspfad kopieren",
-        "pathCopied": "Installationspfad kopiert",
-        "pathCopyFailed": "Kopieren in Zwischenablage fehlgeschlagen",
+        "copyPath": "Lokalen Ordnerpfad kopieren",
+        "pathCopied": "Installationsordnerpfad kopiert",
+        "pathCopyFailed": "Pfad konnte nicht kopiert werden",
         "showAdvanced": "Erweiterte Optionen anzeigen",
         "hideAdvanced": "Erweiterte Optionen ausblenden",
-        "advancedNote": "Port und Token dienen dem Support. Für den Alltag reicht die einmalige Installation.",
-        "statusErrorTitle": "Status nicht verfügbar",
-        "statusError": "Bridge-Status konnte nicht gelesen werden.",
-        "pathError": "Installationspfad nicht gefunden."
+        "advancedNote": "Port und Token dienen dem Support oder lokalen Anpassungen. Für die meisten Nutzer reichen die Store-Installation und eine laufende LibrAgent-App.",
+        "statusErrorTitle": "Chrome-Verbindung nicht verfügbar",
+        "statusError": "Chrome-Verbindungsstatus konnte nicht gelesen werden.",
+        "pathError": "Lokaler Installationsordner nicht gefunden.",
+        "openStore": "Aus dem Chrome Web Store installieren",
+        "altInstallNote": "Entwickler können die Erweiterung aus einem lokalen Ordner laden statt aus dem Store. Kopieren Sie den Pfad unten, öffnen Sie in Chrome chrome://extensions, aktivieren Sie den Entwicklermodus und wählen Sie „Entpackte Erweiterung laden“."
       }
     },
     "about": {
@@ -1974,7 +1976,6 @@
         "body": "Erstellen Sie eine nächtliche Aufgabe, die bleibende Entscheidungen und Fixes — nicht Tagesnews — in Knowledge speichert.",
         "cta": "Nächtliche Destillationsaufgabe erstellen"
       },
-
       "knowledgeGraph": {
         "title": "Wissensgraph erkunden",
         "body": "Unter Knowledge sehen Sie, wie vom Agenten gelernte Konzepte vernetzt sind.",
@@ -1986,8 +1987,8 @@
         "cta": "General öffnen"
       },
       "everydayChrome": {
-        "title": "Alltäglichen Chrome nutzen",
-        "body": "Verbinden Sie die Chrome-Erweiterung unter Einstellungen → System, damit Agenten in Ihrem echten Browser mit bestehenden Anmeldungen arbeiten.",
+        "title": "Ihr alltägliches Chrome nutzen",
+        "body": "Installieren Sie LibrAgent Browser Bridge im Chrome Web Store unter Einstellungen → System, wenn der Agent bereits angemeldete Websites braucht.",
         "cta": "Systemeinstellungen öffnen"
       },
       "orgPortableBundle": {

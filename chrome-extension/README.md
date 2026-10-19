@@ -7,8 +7,8 @@ WebSocket to the LibrAgent desktop app.
 
 | Path | When to use |
 | --- | --- |
-| **Load unpacked** (below) | Development, contributors, pre-Store builds |
-| **Chrome Web Store** | End users (unlisted/public once published) — see `STORE.md` |
+| **[Chrome Web Store](https://chromewebstore.google.com/detail/libragent-browser-bridge/eponcjengahlpkgbaolhemhmckopmfbe)** | End users (recommended) |
+| **Load unpacked** (below) | Development, contributors, local builds |
 
 Privacy policy: [`PRIVACY.md`](./PRIVACY.md). Store listing kit: [`STORE.md`](./STORE.md).
 

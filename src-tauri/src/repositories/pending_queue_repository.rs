@@ -65,7 +65,7 @@ pub trait PendingQueueRepository: Send + Sync {
     async fn delete_orphans_for_session(&self, session_id: &str) -> Result<u64, DbError>;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SqlitePendingQueueRepository {
     db: DatabaseConnection,
 }
@@ -73,21 +73,6 @@ pub struct SqlitePendingQueueRepository {
 impl SqlitePendingQueueRepository {
     pub fn new(db: DatabaseConnection) -> Self {
         Self { db }
-    }
-
-    async fn next_queue_seq(db: &impl ConnectionTrait) -> Result<i64, DbError> {
-        let result = db
-            .query_one(Statement::from_string(
-                db.get_database_backend(),
-                "SELECT COALESCE(MAX(queue_seq), 0) AS max_seq FROM pending_queue".to_string(),
-            ))
-            .await?;
-
-        let max_seq = match result {
-            Some(row) => row.try_get::<i64>("", "max_seq").unwrap_or(0),
-            None => 0,
-        };
-        Ok(max_seq + 1)
     }
 
     fn model_to_entry(model: pending_queue::Model) -> PendingQueueEntry {
@@ -108,15 +93,25 @@ impl PendingQueueRepository for SqlitePendingQueueRepository {
         message_id: &str,
         created_at: i64,
     ) -> Result<PendingQueueEntry, DbError> {
-        let queue_seq = Self::next_queue_seq(&self.db).await?;
-        let model = pending_queue::ActiveModel {
-            message_id: Set(message_id.to_string()),
-            session_id: Set(session_id.to_string()),
-            created_at: Set(created_at),
-            queue_seq: Set(queue_seq),
-        };
-        let inserted = model.insert(&self.db).await?;
-        Ok(Self::model_to_entry(inserted))
+        let stmt = Statement::from_sql_and_values(
+            self.db.get_database_backend(),
+            r#"
+            INSERT INTO pending_queue (message_id, session_id, created_at, queue_seq)
+            VALUES (?, ?, ?, (SELECT COALESCE(MAX(queue_seq), 0) + 1 FROM pending_queue))
+            RETURNING message_id, session_id, created_at, queue_seq
+            "#,
+            [message_id.into(), session_id.into(), created_at.into()],
+        );
+        let model = pending_queue::Entity::find()
+            .from_raw_sql(stmt)
+            .one(&self.db)
+            .await?
+            .ok_or_else(|| {
+                DbError::SeaOrmQueryFailed(sea_orm::DbErr::Custom(
+                    "Failed to insert pending queue entry".to_string(),
+                ))
+            })?;
+        Ok(Self::model_to_entry(model))
     }
 
     async fn enqueue_with_seq(
@@ -157,13 +152,20 @@ impl PendingQueueRepository for SqlitePendingQueueRepository {
         &self,
         message_id: &str,
     ) -> Result<Option<PendingQueueEntry>, DbError> {
-        let entry = self.get(message_id).await?;
-        if entry.is_some() {
-            pending_queue::Entity::delete_by_id(message_id.to_string())
-                .exec(&self.db)
-                .await?;
-        }
-        Ok(entry)
+        let stmt = Statement::from_sql_and_values(
+            self.db.get_database_backend(),
+            r#"
+            DELETE FROM pending_queue
+            WHERE message_id = ?
+            RETURNING message_id, session_id, created_at, queue_seq
+            "#,
+            [message_id.into()],
+        );
+        let row = pending_queue::Entity::find()
+            .from_raw_sql(stmt)
+            .one(&self.db)
+            .await?;
+        Ok(row.map(Self::model_to_entry))
     }
 
     async fn remove(&self, message_id: &str) -> Result<(), DbError> {
@@ -178,22 +180,28 @@ impl PendingQueueRepository for SqlitePendingQueueRepository {
         message_id: &str,
     ) -> Result<Option<PendingQueueEntry>, DbError> {
         let txn = self.db.begin().await?;
-        let row = pending_queue::Entity::find_by_id(message_id.to_string())
+        let stmt = Statement::from_sql_and_values(
+            txn.get_database_backend(),
+            r#"
+            DELETE FROM pending_queue
+            WHERE message_id = ?
+            RETURNING message_id, session_id, created_at, queue_seq
+            "#,
+            [message_id.into()],
+        );
+        let row = pending_queue::Entity::find()
+            .from_raw_sql(stmt)
             .one(&txn)
             .await?;
         let Some(model) = row else {
             txn.commit().await?;
             return Ok(None);
         };
-        let entry = Self::model_to_entry(model);
-        pending_queue::Entity::delete_by_id(message_id.to_string())
-            .exec(&txn)
-            .await?;
         crate::entity::message::Entity::delete_by_id(message_id.to_string())
             .exec(&txn)
             .await?;
         txn.commit().await?;
-        Ok(Some(entry))
+        Ok(Some(Self::model_to_entry(model)))
     }
 
     async fn commit_merged_claim(

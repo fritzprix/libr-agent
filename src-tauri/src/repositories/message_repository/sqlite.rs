@@ -18,7 +18,7 @@ use super::types::{
 };
 
 /// SQLite implementation of MessageRepository using SeaORM
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SqliteMessageRepository {
     pub(crate) db: DatabaseConnection,
 }

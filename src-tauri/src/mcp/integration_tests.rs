@@ -31,6 +31,7 @@ mod tests {
             provider: Set("openai".to_string()),
             execution_mode: Set("normal".to_string()),
             is_bookmarked: Set(false),
+            workspace_isolation: Set("host".to_string()),
             created_at: Set(0),
             updated_at: Set(0),
             ..Default::default()
@@ -44,9 +45,13 @@ mod tests {
         }
 
         // Initialize DB with a file to debug persistence issues
-        // We use /tmp/libragent_test.db
-        let mut opt =
-            sea_orm::ConnectOptions::new("sqlite:///tmp/libragent_test.db?mode=rwc".to_owned());
+        let temp_dir = std::env::temp_dir();
+        let db_path = temp_dir.join("libragent_test.db");
+        let db_url = format!(
+            "sqlite://{}?mode=rwc",
+            db_path.to_string_lossy().replace('\\', "/")
+        );
+        let mut opt = sea_orm::ConnectOptions::new(db_url);
         opt.max_connections(1);
         let db = Database::connect(opt)
             .await
@@ -706,13 +711,21 @@ mod tests {
             .await
             .expect("Failed to create proxy");
 
-        // Execute 'pwd' command via runInPersistentShell
+        // Execute command via persistent shell (PowerShell on Windows host, sh on Unix host)
+        #[cfg(windows)]
+        let (shell_tool, command) = (
+            "workspace__runInPersistentPowerShell",
+            "(Get-Location).Path",
+        );
+        #[cfg(not(windows))]
+        let (shell_tool, command) = ("workspace__runInPersistentShell", "pwd");
+
         let response = proxy_manager
             .call_tool(
                 &session_id,
-                "workspace__runInPersistentShell",
+                shell_tool,
                 json!({
-                    "command": "pwd",
+                    "command": command,
                     "runMode": "sync"
                 }),
             )
@@ -725,7 +738,9 @@ mod tests {
         };
 
         // Parse persistent shell output (JSON structured data)
-        let structured_content = result.structured_content.expect("No structured content");
+        let structured_content = result.structured_content.as_ref().unwrap_or_else(|| {
+            panic!("No structured content, result is: {:?}", result);
+        });
         let stdout = structured_content["stdout"].as_str().expect("No stdout");
 
         // Verify the path contains the session ID, confirming it's in the correct isolated workspace

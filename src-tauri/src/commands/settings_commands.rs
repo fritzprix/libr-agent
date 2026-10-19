@@ -16,9 +16,17 @@ pub struct SettingDto {
 
 impl From<crate::entity::settings::Model> for SettingDto {
     fn from(model: crate::entity::settings::Model) -> Self {
+        let value = serde_json::from_str(&model.value).unwrap_or_else(|e| {
+            log::warn!(
+                "Failed to deserialize setting JSON for key '{}': {}; falling back to Value::Null",
+                model.key,
+                e
+            );
+            Value::Null
+        });
         Self {
             key: model.key,
-            value: serde_json::from_str(&model.value).unwrap_or(Value::Null),
+            value,
             created_at: model.created_at,
             updated_at: model.updated_at,
         }

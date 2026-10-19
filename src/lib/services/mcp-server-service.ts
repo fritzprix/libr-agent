@@ -153,12 +153,7 @@ export class RemoteMcpServerService implements IMcpServerService {
   }
 
   async saveAll(servers: MCPServerEntity[]): Promise<MCPServerEntity[]> {
-    // Remote API doesn't support bulk save yet, so we do sequential
-    const saved: MCPServerEntity[] = [];
-    for (const server of servers) {
-      saved.push(await this.save(server));
-    }
-    return saved;
+    return Promise.all(servers.map((server) => this.save(server)));
   }
 
   async delete(id: string): Promise<void> {

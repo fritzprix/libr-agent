@@ -163,15 +163,19 @@ pub async fn export_migration(
     });
     zip.start_file("manifest.json", options)
         .map_err(|e| e.to_string())?;
-    zip.write_all(serde_json::to_string_pretty(&manifest).unwrap().as_bytes())
-        .map_err(|e| e.to_string())?;
+    zip.write_all(
+        serde_json::to_string_pretty(&manifest)
+            .map_err(|e| format!("Failed to serialize manifest: {e}"))?
+            .as_bytes(),
+    )
+    .map_err(|e| e.to_string())?;
 
     // Write tables
     zip.start_file("settings.json", options)
         .map_err(|e| e.to_string())?;
     zip.write_all(
         serde_json::to_string_pretty(&cleaned_settings)
-            .unwrap()
+            .map_err(|e| format!("Failed to serialize settings: {e}"))?
             .as_bytes(),
     )
     .map_err(|e| e.to_string())?;
@@ -181,7 +185,7 @@ pub async fn export_migration(
         .map_err(|e| e.to_string())?;
     zip.write_all(
         serde_json::to_string_pretty(&cleaned_assistants)
-            .unwrap()
+            .map_err(|e| format!("Failed to serialize assistants: {e}"))?
             .as_bytes(),
     )
     .map_err(|e| e.to_string())?;
@@ -191,7 +195,7 @@ pub async fn export_migration(
         .map_err(|e| e.to_string())?;
     zip.write_all(
         serde_json::to_string_pretty(&cleaned_mcp)
-            .unwrap()
+            .map_err(|e| format!("Failed to serialize mcp servers: {e}"))?
             .as_bytes(),
     )
     .map_err(|e| e.to_string())?;
@@ -201,7 +205,7 @@ pub async fn export_migration(
         .map_err(|e| e.to_string())?;
     zip.write_all(
         serde_json::to_string_pretty(&playbooks_records)
-            .unwrap()
+            .map_err(|e| format!("Failed to serialize playbooks: {e}"))?
             .as_bytes(),
     )
     .map_err(|e| e.to_string())?;
@@ -211,7 +215,7 @@ pub async fn export_migration(
         .map_err(|e| e.to_string())?;
     zip.write_all(
         serde_json::to_string_pretty(&task_records)
-            .unwrap()
+            .map_err(|e| format!("Failed to serialize scheduled tasks: {e}"))?
             .as_bytes(),
     )
     .map_err(|e| e.to_string())?;

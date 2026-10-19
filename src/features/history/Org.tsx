@@ -1,4 +1,4 @@
-import { useDeferredValue, useMemo, useState } from 'react';
+import { useCallback, useDeferredValue, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import useSWR from 'swr';
 import { Building2, RefreshCw, Search, Upload, X } from 'lucide-react';
@@ -80,28 +80,31 @@ export default function Org() {
     );
   }, [deferredSearchQuery, orgs]);
 
-  async function handleRefresh() {
+  const handleRefresh = useCallback(async () => {
     await mutate();
-  }
+  }, [mutate]);
 
-  async function handleExportOrg(orgId: string, orgName: string) {
-    try {
-      const result = await exportOrg(orgId, orgName);
-      if (!result) {
-        return;
+  const handleExportOrg = useCallback(
+    async (orgId: string, orgName: string) => {
+      try {
+        const result = await exportOrg(orgId, orgName);
+        if (!result) {
+          return;
+        }
+        toast.success(
+          t('orgHistory.toasts.exported', 'Organization bundle exported'),
+        );
+      } catch (error) {
+        logger.error('Org export failed', error);
+        toast.error(
+          t('orgHistory.toasts.exportFailed', 'Failed to export organization'),
+        );
       }
-      toast.success(
-        t('orgHistory.toasts.exported', 'Organization bundle exported'),
-      );
-    } catch (error) {
-      logger.error('Org export failed', error);
-      toast.error(
-        t('orgHistory.toasts.exportFailed', 'Failed to export organization'),
-      );
-    }
-  }
+    },
+    [exportOrg, t],
+  );
 
-  async function handleImportOrg() {
+  const handleImportOrg = useCallback(async () => {
     try {
       const result = await importOrg();
       if (!result) {
@@ -132,7 +135,11 @@ export default function Org() {
             ),
       );
     }
-  }
+  }, [importOrg, t]);
+
+  const handleOrgDeleted = useCallback(async () => {
+    await mutate();
+  }, [mutate]);
 
   if (isLoading) {
     return (
@@ -258,9 +265,7 @@ export default function Org() {
                 org={org}
                 exportBusy={orgBundleBusy}
                 onExport={handleExportOrg}
-                onDeleted={async () => {
-                  await mutate();
-                }}
+                onDeleted={handleOrgDeleted}
               />
             ))}
           </div>

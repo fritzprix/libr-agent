@@ -36,6 +36,11 @@ pub use compact::validate_compact_summary_for_testing;
 pub use compact::CompactContextView;
 pub use compact::CompactSummaryClampResult;
 
+use crate::agent::repositories::AgentRepositories;
+use crate::repositories::compact_context_repository::CompactContextRepository;
+use crate::repositories::message_repository::MessageRepository as MessageRepositoryTrait;
+use crate::repositories::pending_queue_repository::PendingQueueRepository;
+
 /// Manages agent sessions and their workflows.
 ///
 /// Public facade for session runtime. Domain logic lives in focused modules:
@@ -50,6 +55,7 @@ pub struct AgentSessionManager {
     app_handle: AppHandle,
     proxy_manager: Arc<MCPServiceProxyManager>,
     session_repo: Arc<dyn SessionRepository>,
+    repositories: AgentRepositories,
     context_registry: Arc<ContextRegistry>,
 }
 
@@ -61,6 +67,7 @@ impl std::fmt::Debug for AgentSessionManager {
             .field("app_handle", &"<AppHandle>")
             .field("proxy_manager", &"<Arc<MCPServiceProxyManager>>")
             .field("session_repo", &"<Arc<dyn SessionRepository>>")
+            .field("repositories", &self.repositories)
             .field("context_registry", &"<Arc<ContextRegistry>>")
             .finish()
     }
@@ -73,6 +80,19 @@ impl AgentSessionManager {
         proxy_manager: Arc<MCPServiceProxyManager>,
         session_repo: Arc<dyn SessionRepository>,
     ) -> Self {
+        Self::new_with_repositories(
+            app_handle,
+            proxy_manager,
+            AgentRepositories::new(session_repo),
+        )
+    }
+
+    /// Create a new AgentSessionManager with an explicit AgentRepositories bundle
+    pub fn new_with_repositories(
+        app_handle: AppHandle,
+        proxy_manager: Arc<MCPServiceProxyManager>,
+        repositories: AgentRepositories,
+    ) -> Self {
         // Initialize context registry with providers
         let mut registry = ContextRegistry::new();
 
@@ -84,13 +104,36 @@ impl AgentSessionManager {
             registry.provider_count()
         );
 
+        let session_repo = repositories.session.clone();
+
         Self {
             active_sessions: Arc::new(RwLock::new(HashMap::new())),
             app_handle,
             proxy_manager,
             session_repo,
+            repositories,
             context_registry: Arc::new(registry),
         }
+    }
+
+    /// Access the injected repository bundle.
+    pub fn repositories(&self) -> &AgentRepositories {
+        &self.repositories
+    }
+
+    /// Resolve message repository: returns injected repository or falls back to global state.
+    pub fn message_repo(&self) -> Option<Arc<dyn MessageRepositoryTrait>> {
+        self.repositories.message_repo()
+    }
+
+    /// Resolve pending queue repository: returns injected repository or falls back to global state.
+    pub fn pending_queue_repo(&self) -> Option<Arc<dyn PendingQueueRepository>> {
+        self.repositories.pending_queue_repo()
+    }
+
+    /// Resolve compact context repository: returns injected repository or falls back to global state.
+    pub fn compact_context_repo(&self) -> Option<Arc<dyn CompactContextRepository>> {
+        self.repositories.compact_context_repo()
     }
 
     /// Return an owned clone of the `Arc` wrapping the active sessions map.
@@ -126,6 +169,7 @@ impl AgentSessionManager {
             app_handle: self.app_handle.clone(),
             proxy_manager: self.proxy_manager.clone(),
             session_repo: self.session_repo.clone(),
+            repositories: self.repositories.clone(),
             context_registry: self.context_registry.clone(),
         }
     }
@@ -305,11 +349,14 @@ impl AgentSessionManager {
 
     /// Recover sessions stuck in BUSY state after app crash/restart
     pub async fn recover_sessions(&self) -> Result<(), String> {
-        crate::agent::lifecycle::recover_sessions(
+        let dispatcher = TauriEventDispatcher::new(self.app_handle.clone());
+        let message_repo = self.message_repo();
+        crate::agent::lifecycle::recover_sessions_with_dispatcher_and_message_repo(
             &self.session_repo,
             &self.active_sessions,
-            &self.app_handle,
+            &dispatcher,
             self.context_registry.clone(),
+            message_repo.as_ref(),
         )
         .await?;
 
@@ -366,7 +413,17 @@ impl AgentSessionManager {
 
     /// Load messages from DB into in-memory cache
     pub async fn init_session_with_messages(&self, session_id: &str) -> Result<(), String> {
-        crate::agent::lifecycle::init_session_with_messages(&self.active_sessions, session_id).await
+        if let Some(repo) = self.message_repo() {
+            crate::agent::lifecycle::init_session_with_messages_with_repo(
+                &self.active_sessions,
+                repo.as_ref(),
+                session_id,
+            )
+            .await
+        } else {
+            crate::agent::lifecycle::init_session_with_messages(&self.active_sessions, session_id)
+                .await
+        }
     }
 
     /// Terminate a running workflow

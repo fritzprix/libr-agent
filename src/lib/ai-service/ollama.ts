@@ -16,6 +16,7 @@ import { getContextWindow } from './model-capabilities';
 import {
   convertMCPToolsToOllamaTools,
   convertToOllamaMessages,
+  createOllamaCoreLogger,
   createThinkTagStreamState,
   flushThinkTagStream,
   processChunk,
@@ -38,14 +39,7 @@ import { mapThinkingEffort } from './thinking-effort-mapping';
 const logger = getLogger('OllamaService');
 
 // Adapter to convert Tauri logger to core Logger interface
-const coreLogger: Logger = {
-  debug: (message: string, ...args: unknown[]) =>
-    logger.debug(message, ...args),
-  info: (message: string, ...args: unknown[]) => logger.info(message, ...args),
-  warn: (message: string, ...args: unknown[]) => logger.warn(message, ...args),
-  error: (message: string, ...args: unknown[]) =>
-    logger.error(message, ...args),
-};
+const coreLogger: Logger = createOllamaCoreLogger('OllamaService');
 
 // Constants
 const DEFAULT_MODEL = 'llama3.1';

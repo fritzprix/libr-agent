@@ -235,6 +235,7 @@ mod tests {
         let path_default = session_manager.get_session_workspace_dir_by_id("default");
         assert!(path_default
             .to_string_lossy()
+            .replace('\\', "/")
             .contains("workspaces/default"));
         assert!(path_default.exists());
     }

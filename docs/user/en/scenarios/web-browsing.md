@@ -146,6 +146,11 @@ Save this research report to "./research/ai-platform-trends-2026.md".
 
 ## 🌐 Browser Configuration
 
+### Your Chrome (when you need signed-in sites)
+
+Public research works with the **built-in agent browser**.  
+When the agent must use sites where you are already signed in, install **[LibrAgent Browser Bridge](https://chromewebstore.google.com/detail/libragent-browser-bridge/eponcjengahlpkgbaolhemhmckopmfbe)**. See [Browser automation](../guides/browser-sidecar.md) for setup and capabilities.
+
 ### Enable Browser Tools
 
 To allow the agent to navigate the web, enable browser tools in your assistant profile.
@@ -189,6 +194,7 @@ Always provide clickable reference URLs for every factual claim.
 
 ## 🔗 Related Documentation
 
+- [Browser automation](../guides/browser-sidecar.md) — Built-in browser and your Chrome extension
 - [Deep Research Scenario](./research.md) — Synthesize web discoveries into formal reports
 - [File Management Scenario](./file-management.md) — Save and organize collected data on disk
 

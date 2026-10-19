@@ -27,9 +27,9 @@ describe('Message Management Service', () => {
 
   describe('getMessagesPageForSession', () => {
     it('should throw if sessionId is missing', async () => {
-      await expect(
-        getMessagesPageForSession('', 'thread-1', 1, 10),
-      ).rejects.toThrow('sessionId and threadId are required');
+      await expect(getMessagesPageForSession('', 1, 10)).rejects.toThrow(
+        'sessionId is required',
+      );
     });
 
     describe('getMessagesBeforeCursor', () => {
@@ -71,12 +71,6 @@ describe('Message Management Service', () => {
           }),
         );
       });
-    });
-
-    it('should throw if threadId is missing', async () => {
-      await expect(
-        getMessagesPageForSession('session-1', '', 1, 10),
-      ).rejects.toThrow('sessionId and threadId are required');
     });
 
     it('should fetch and deserialize messages successfully', async () => {
@@ -135,16 +129,10 @@ describe('Message Management Service', () => {
 
       vi.mocked(safeInvoke).mockResolvedValueOnce(mockRustResponse);
 
-      const result = await getMessagesPageForSession(
-        'session-1',
-        'thread-1',
-        1,
-        10,
-      );
+      const result = await getMessagesPageForSession('session-1', 1, 10);
 
       expect(safeInvoke).toHaveBeenCalledWith('messages_get_page', {
         sessionId: 'session-1',
-        threadId: 'thread-1',
         page: 1,
         pageSize: 10,
       });
@@ -231,12 +219,7 @@ describe('Message Management Service', () => {
 
       vi.mocked(safeInvoke).mockResolvedValueOnce(mockRustResponse);
 
-      const result = await getMessagesPageForSession(
-        'session-1',
-        'thread-1',
-        1,
-        10,
-      );
+      const result = await getMessagesPageForSession('session-1', 1, 10);
       expect(result.items[0].tool_calls?.[0].type).toBe('function');
     });
 
@@ -278,12 +261,7 @@ describe('Message Management Service', () => {
 
       vi.mocked(safeInvoke).mockResolvedValueOnce(mockRustResponse);
 
-      const result = await getMessagesPageForSession(
-        'session-1',
-        'thread-1',
-        1,
-        10,
-      );
+      const result = await getMessagesPageForSession('session-1', 1, 10);
 
       expect(result.items[0]).toEqual(
         expect.objectContaining({
@@ -318,12 +296,7 @@ describe('Message Management Service', () => {
 
       vi.mocked(safeInvoke).mockResolvedValueOnce(mockRustResponse);
 
-      const result = await getMessagesPageForSession(
-        'session-1',
-        'thread-1',
-        1,
-        10,
-      );
+      const result = await getMessagesPageForSession('session-1', 1, 10);
 
       expect(result.items[0]?.source).toBe('scheduled_task');
     });
@@ -353,12 +326,7 @@ describe('Message Management Service', () => {
 
       vi.mocked(safeInvoke).mockResolvedValueOnce(mockRustResponse);
 
-      const result = await getMessagesPageForSession(
-        'session-1',
-        'thread-1',
-        1,
-        10,
-      );
+      const result = await getMessagesPageForSession('session-1', 1, 10);
 
       expect(result.items[0]?.source).toBeUndefined();
     });

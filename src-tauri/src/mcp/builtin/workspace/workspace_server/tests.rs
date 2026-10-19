@@ -117,6 +117,9 @@ async fn kill_session_processes_marks_only_owned_processes_and_retains_output() 
 
 #[tokio::test]
 async fn force_kills_persistent_shell_without_leaving_manager_entry() {
+    let _guard = crate::state::lock_test_global_state().await;
+    crate::state::reset_state();
+
     let temp_dir = tempfile::tempdir().expect("temp dir");
     let workspace_path = temp_dir.path().join("workspace");
     std::fs::create_dir_all(&workspace_path).expect("workspace directory");

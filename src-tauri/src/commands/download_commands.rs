@@ -30,37 +30,41 @@ pub(crate) async fn save_bytes_via_dialog(
     file_name: String,
     bytes: Vec<u8>,
 ) -> Result<String, String> {
-    let (tx, rx) = tokio::sync::oneshot::channel::<Result<String, String>>();
+    let (tx, rx) = tokio::sync::oneshot::channel::<Result<Option<std::path::PathBuf>, String>>();
 
     app_handle
         .dialog()
         .file()
         .set_file_name(&file_name)
         .save_file(move |file_path_opt| {
-            let save_result = if let Some(save_path) = file_path_opt {
-                match save_path.into_path() {
-                    Ok(path_buf) => match std::fs::write(&path_buf, &bytes) {
-                        Ok(_) => {
-                            log::info!("File downloaded successfully to: {path_buf:?}");
-                            Ok(path_buf.to_string_lossy().into_owned())
-                        }
-                        Err(e) => Err(format!("Failed to save file: {e}")),
-                    },
-                    Err(e) => Err(format!("Failed to convert file path: {e}")),
-                }
-            } else {
-                Ok("Download cancelled by user".to_string())
+            let path_result = match file_path_opt {
+                Some(save_path) => save_path
+                    .into_path()
+                    .map(Some)
+                    .map_err(|e| format!("Failed to convert file path: {e}")),
+                None => Ok(None),
             };
 
-            let _ = tx.send(save_result);
+            let _ = tx.send(path_result);
         });
 
     // Save dialogs are user-paced; allow several minutes before timing out.
-    match tokio::time::timeout(std::time::Duration::from_secs(300), rx).await {
-        Ok(Ok(result)) => result,
-        Ok(Err(_)) => Err("Internal communication error".to_string()),
-        Err(_) => Err("Dialog timeout - please try again".to_string()),
-    }
+    let path_opt = match tokio::time::timeout(std::time::Duration::from_secs(300), rx).await {
+        Ok(Ok(result)) => result?,
+        Ok(Err(_)) => return Err("Internal communication error".to_string()),
+        Err(_) => return Err("Dialog timeout - please try again".to_string()),
+    };
+
+    let Some(path_buf) = path_opt else {
+        return Ok("Download cancelled by user".to_string());
+    };
+
+    tokio::fs::write(&path_buf, &bytes)
+        .await
+        .map_err(|e| format!("Failed to save file: {e}"))?;
+
+    log::info!("File downloaded successfully to: {path_buf:?}");
+    Ok(path_buf.to_string_lossy().into_owned())
 }
 
 /// Downloads a single file from the current session's workspace.

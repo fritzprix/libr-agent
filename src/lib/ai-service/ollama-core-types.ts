@@ -1,3 +1,4 @@
+import { getLogger } from '../logger';
 import type { TokenUsage } from './types';
 
 export interface Logger {
@@ -14,16 +15,21 @@ export const noopLogger: Logger = {
   error: () => {},
 };
 
-export const consoleLogger: Logger = {
-  debug: (message: string, ...args: unknown[]) =>
-    console.log('[DEBUG]', message, ...args),
-  info: (message: string, ...args: unknown[]) =>
-    console.log('[INFO]', message, ...args),
-  warn: (message: string, ...args: unknown[]) =>
-    console.warn('[WARN]', message, ...args),
-  error: (message: string, ...args: unknown[]) =>
-    console.error('[ERROR]', message, ...args),
-};
+export function createOllamaCoreLogger(contextName = 'OllamaCore'): Logger {
+  const logger = getLogger(contextName);
+  return {
+    debug: (message: string, ...args: unknown[]) =>
+      logger.debug(message, ...args),
+    info: (message: string, ...args: unknown[]) =>
+      logger.info(message, ...args),
+    warn: (message: string, ...args: unknown[]) =>
+      logger.warn(message, ...args),
+    error: (message: string, ...args: unknown[]) =>
+      logger.error(message, ...args),
+  };
+}
+
+export const consoleLogger: Logger = createOllamaCoreLogger('OllamaCore');
 
 export interface SimpleOllamaMessage {
   role: 'user' | 'assistant' | 'system' | 'tool';

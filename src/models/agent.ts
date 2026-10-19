@@ -1,6 +1,7 @@
 import { Assistant } from './chat';
 import type {
   SessionAttentionReason,
+  SessionWorkflowStatus,
   WorkspaceIsolationMode,
   DockerWorkspaceConfig,
 } from './agent-ipc';
@@ -13,7 +14,7 @@ import type { ExecutionMode } from '@/lib/generated/execution-mode';
 export interface AgentSession {
   id: string;
   name?: string;
-  status: 'idle' | 'busy' | 'paused' | 'error' | 'queued' | 'provisioning';
+  status: SessionWorkflowStatus;
   model: string;
   provider: string;
   createdAt: Date;

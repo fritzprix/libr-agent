@@ -378,7 +378,7 @@ mod tests {
         // 1x1 PNG (red pixel)
         const PNG_1X1: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
         let md = "## Diagram\n\n![Mermaid](libragent-pdf-embed:0)\n";
-        let plain = build_markdown_pdf("## Diagram\n\nplaceholder\n").expect("plain");
+        let plain = build_markdown_pdf("## Diagram\n").expect("plain");
         let with_img = build_markdown_pdf_with_embeds(
             md,
             &[PdfEmbeddedImage {
@@ -387,11 +387,14 @@ mod tests {
         )
         .expect("embed pdf");
         assert!(with_img.starts_with(b"%PDF-"));
+        let has = |b: &[u8], n: &[u8]| b.windows(n.len()).any(|w| w == n);
         assert!(
-            with_img.len() > plain.len(),
-            "expected embedded image PDF ({}) larger than plain ({})",
-            with_img.len(),
-            plain.len()
+            has(&with_img, b"/XObject") && has(&with_img, b"/Image"),
+            "embedded PNG must produce an image XObject"
+        );
+        assert!(
+            !has(&plain, b"/Image"),
+            "plain PDF must not contain an image XObject"
         );
     }
 

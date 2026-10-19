@@ -64,13 +64,13 @@ fn copy_dir_contents(&self, src: &Path, dst: &Path) -> Result<(), String> {
 
 ## Rust Test Architecture — CRITICAL
 
-CI / `pnpm rust:test` runs **integration tests under `src-tauri/tests/`**, NOT `cargo test --lib`. This means:
+CI / `pnpm rust:test` runs **`--lib` first**, then each **integration test** under `src-tauri/tests/` one binary at a time. This means:
 
-- `#[cfg(test)]` blocks inside `src/` **are never executed in CI**
-- Only tests in the `tests/` directory (integration tests) run in CI
-- On Windows, `cargo test --lib` also crashes with `STATUS_ENTRYPOINT_NOT_FOUND`
+- `#[cfg(test)]` blocks inside `src/` **are executed** via the sequential `--lib` step
+- Integration coverage still lives primarily in `tests/` (especially Windows-safe root crates)
+- Windows `--lib` needs the ComCtl32 v6 linker dependency from `build.rs` (#2122); do not skip it
 
-**Rule: All Rust tests MUST be written as integration tests in `src-tauri/tests/`.**
+**Prefer new tests under `src-tauri/tests/`** for anything that needs the full Tauri/DB harness; keep `#[cfg(test)]` for focused unit logic.
 
 ### Resource limits (32GB machines still OOM)
 
@@ -112,7 +112,7 @@ async fn setup_db() -> sea_orm::DatabaseConnection {
 }
 ```
 
-Do **not** add `#[cfg(test)]` blocks to lib source files — they give a false sense of test coverage.
+Prefer `src-tauri/tests/` for harness-heavy coverage. Focused `#[cfg(test)]` unit tests in `src/` are fine — they run via `pnpm rust:test`'s `--lib` step (#2122).
 
 ## Design Principles
 

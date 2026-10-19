@@ -642,34 +642,36 @@
         "clearError": "Impossible d'effacer les données. Fermez les fenêtres de navigateur ouvertes et réessayez."
       },
       "extensionBridge": {
-        "description": "Facultatif. Connectez une fois pour permettre à l'IA d'utiliser vos connexions de Chrome. Reconnexion automatique après redémarrage.",
-        "connectedHint": "L'agent peut désormais utiliser vos connexions de Chrome. Le navigateur intégré reste également disponible.",
-        "waitingHint": "Installez l'extension et laissez-la activée. Avant la connexion, l'agent utilise uniquement le navigateur intégré.",
-        "fallbackNote": "Non connecté : l'agent utilise le navigateur intégré séparé.",
-        "title": "Chrome habituel",
+        "description": "Facultatif. Installez une fois pour que l’agent utilise les sites où vous êtes déjà connecté dans Chrome. LibrAgent se reconnecte après un redémarrage.",
+        "connectedHint": "L’agent peut utiliser les comptes déjà ouverts dans Chrome. Le navigateur intégré de l’agent reste disponible. En cas de coupure, LibrAgent se reconnecte tout seul.",
+        "waitingHint": "Installez l’extension une fois et laissez-la activée. En attendant, l’agent n’utilise que le navigateur intégré.",
+        "fallbackNote": "Pas encore connecté. L’agent utilise uniquement le navigateur intégré.",
+        "title": "Votre Chrome",
         "statusLabel": "État",
         "connected": "Connecté",
-        "connectedHeadline": "Connecté à votre Chrome habituel",
+        "connectedHeadline": "Connecté à votre Chrome",
         "disconnected": "Déconnecté",
-        "waitingHeadline": "En attente de l'extension Chrome",
-        "installStep1": "Chrome → chrome://extensions → Activer le mode développeur",
-        "installStep2": "Charger l'extension non empaquetée → sélectionner le chemin copié",
-        "installStep3": "Laissez l'extension activée. Vérifiez ensuite l'état via son icône.",
+        "waitingHeadline": "En attente de l’extension Chrome",
+        "installStep1": "Installez LibrAgent Browser Bridge depuis le Chrome Web Store (bouton ci-dessus).",
+        "installStep2": "Ouvrez l’icône de l’extension et attendez que l’état affiche Connecté.",
+        "installStep3": "Laissez l’extension activée. Vous n’avez pas besoin d’ouvrir cette page à chaque redémarrage de LibrAgent.",
         "checking": "Vérification…",
         "portLabel": "Port",
         "tokenLabel": "Jeton",
-        "modeLabel": "Backend",
-        "pathLabel": "Chemin d'installation",
-        "refresh": "Actualiser l'état",
-        "copyPath": "Copier le chemin",
-        "pathCopied": "Chemin d'installation copié",
-        "pathCopyFailed": "Échec de la copie dans le presse-papiers",
+        "modeLabel": "Mode de connexion",
+        "pathLabel": "Dossier local",
+        "refresh": "Actualiser l’état",
+        "copyPath": "Copier le chemin du dossier local",
+        "pathCopied": "Chemin du dossier d’installation copié",
+        "pathCopyFailed": "Impossible de copier le chemin",
         "showAdvanced": "Afficher les options avancées",
         "hideAdvanced": "Masquer les options avancées",
-        "advancedNote": "Port et jeton sont destinés au support. L'utilisation normale ne nécessite qu'une seule installation.",
-        "statusErrorTitle": "État non disponible",
-        "statusError": "Impossible de lire l'état du pont.",
-        "pathError": "Chemin d'installation introuvable."
+        "advancedNote": "Le port et le jeton servent au support ou aux réglages locaux. Pour la plupart des utilisateurs, l’installation via le Store et LibrAgent en cours d’exécution suffisent.",
+        "statusErrorTitle": "Connexion Chrome indisponible",
+        "statusError": "Impossible de lire l’état de la connexion Chrome.",
+        "pathError": "Dossier d’installation local introuvable.",
+        "openStore": "Installer depuis le Chrome Web Store",
+        "altInstallNote": "Les développeurs peuvent charger l’extension depuis un dossier local au lieu du Store. Copiez le chemin ci-dessous, ouvrez chrome://extensions dans Chrome, activez le mode développeur, puis choisissez Charger l’extension non empaquetée."
       }
     },
     "about": {
@@ -1974,7 +1976,6 @@
         "body": "Créez une tâche nocturne qui enregistre dans Knowledge les décisions et correctifs durables — pas les news du jour.",
         "cta": "Créer la tâche de distillation"
       },
-
       "knowledgeGraph": {
         "title": "Explorer le graphe de connaissances",
         "body": "Dans Knowledge, visualisez en réseau les concepts accumulés par l’agent.",
@@ -1986,8 +1987,8 @@
         "cta": "Ouvrir General"
       },
       "everydayChrome": {
-        "title": "Utiliser votre Chrome quotidien",
-        "body": "Connectez l'extension Chrome dans Paramètres → Système pour que les agents travaillent dans votre vrai navigateur déjà connecté.",
+        "title": "Utiliser votre Chrome habituel",
+        "body": "Installez LibrAgent Browser Bridge depuis le Chrome Web Store dans Paramètres → Système lorsque l’agent a besoin de sites où vous êtes déjà connecté.",
         "cta": "Ouvrir les paramètres Système"
       },
       "orgPortableBundle": {

@@ -280,6 +280,14 @@ export interface ToolExecutionResult {
   };
 }
 
+export type SessionWorkflowStatus =
+  | 'idle'
+  | 'busy'
+  | 'paused'
+  | 'error'
+  | 'queued'
+  | 'provisioning';
+
 /**
  * Session metadata returned by `agent_get_session`.
  * Mirrors `SessionMetadata` in `src-tauri/src/repositories/mod.rs` (implied).
@@ -287,7 +295,7 @@ export interface ToolExecutionResult {
 export interface AgentSessionMetadata {
   id: string;
   name?: string;
-  status: 'idle' | 'busy' | 'paused' | 'error' | 'queued' | 'provisioning';
+  status: SessionWorkflowStatus;
   model: string;
   provider: string;
   /** FK to assistants table; authoritative assistant binding for the session */

@@ -222,5 +222,54 @@ describe('session-utils', () => {
         provisioning: 1,
       });
     });
+
+    it('preserves object references via structural sharing when counts are identical', () => {
+      const sessions: AgentSession[] = [
+        makeSession({ id: 'root', status: 'idle' }),
+        makeSession({
+          id: 'child',
+          status: 'busy',
+          parentSessionId: 'root',
+        }),
+      ];
+
+      const initialCounts = buildDescendantStatusCounts(sessions);
+      const rootInitial = initialCounts.get('root');
+
+      // Subsequent call passing previous counts
+      const nextCounts = buildDescendantStatusCounts(sessions, initialCounts);
+      const rootNext = nextCounts.get('root');
+
+      expect(rootNext).toBe(rootInitial);
+    });
+
+    it('allocates new count object when descendant status changes', () => {
+      const sessionsV1: AgentSession[] = [
+        makeSession({ id: 'root', status: 'idle' }),
+        makeSession({
+          id: 'child',
+          status: 'busy',
+          parentSessionId: 'root',
+        }),
+      ];
+      const initialCounts = buildDescendantStatusCounts(sessionsV1);
+      const rootInitial = initialCounts.get('root');
+
+      // Child status changes from busy to error
+      const sessionsV2: AgentSession[] = [
+        makeSession({ id: 'root', status: 'idle' }),
+        makeSession({
+          id: 'child',
+          status: 'error',
+          parentSessionId: 'root',
+        }),
+      ];
+      const nextCounts = buildDescendantStatusCounts(sessionsV2, initialCounts);
+      const rootNext = nextCounts.get('root');
+
+      expect(rootNext).not.toBe(rootInitial);
+      expect(rootNext?.error).toBe(1);
+      expect(rootNext?.busy).toBe(0);
+    });
   });
 });

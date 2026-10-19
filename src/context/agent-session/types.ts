@@ -6,6 +6,7 @@ import type {
   PendingApprovalSnapshot,
   PreflightTokenMetrics,
   SessionRuntimeState,
+  SessionWorkflowStatus,
   WorkflowCompletionReason,
 } from '@/models/agent-ipc';
 
@@ -20,7 +21,7 @@ export type AgentEventPayload =
   | {
       type: 'statusChanged';
       sessionId: string;
-      status: 'idle' | 'busy' | 'paused' | 'error' | 'queued' | 'provisioning';
+      status: SessionWorkflowStatus;
     }
   | { type: 'messageAdded'; sessionId: string; message: RustMessage }
   | { type: 'messagesRemoved'; sessionId: string; messageIds: string[] }
@@ -143,13 +144,7 @@ export interface AgentSessionStateContextValue {
   hasOlderMessages: boolean;
   error: MessageError | null;
   llmError: MessageError | null;
-  workflowStatus:
-    | 'idle'
-    | 'busy'
-    | 'paused'
-    | 'error'
-    | 'queued'
-    | 'provisioning';
+  workflowStatus: SessionWorkflowStatus;
   workflowPhase: WorkflowPhase;
   runtimeState: SessionRuntimeState;
   preflightTokenMetrics: PreflightTokenMetrics | null;

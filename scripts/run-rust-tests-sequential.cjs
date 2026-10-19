@@ -129,14 +129,22 @@ function main() {
     process.exit(1);
   }
 
+  const totalSteps = targets.length + 1;
   console.error(
-    `[rust-test-sequential] ${targets.length} targets — linking one binary at a time (avoids multi-target OOM)`,
+    `[rust-test-sequential] ${totalSteps} targets (1 lib + ${targets.length} integration) — linking one binary at a time (avoids multi-target OOM)`,
   );
+
+  console.error(`\n[rust-test-sequential] (1/${totalSteps}) --lib`);
+  const libStatus = runCargoTestWithRetries(['--lib', ...passthrough], 'lib');
+  if (libStatus !== 0) {
+    console.error(`[rust-test-sequential] FAILED: lib (exit ${libStatus})`);
+    process.exit(libStatus);
+  }
 
   for (let i = 0; i < targets.length; i += 1) {
     const target = targets[i];
     console.error(
-      `\n[rust-test-sequential] (${i + 1}/${targets.length}) --test ${target}`,
+      `\n[rust-test-sequential] (${i + 2}/${totalSteps}) --test ${target}`,
     );
     const status = runCargoTestWithRetries(
       ['--test', target, ...passthrough],
@@ -147,14 +155,14 @@ function main() {
         `[rust-test-sequential] FAILED: ${target} (exit ${status})`,
       );
       console.error(
-        `[rust-test-sequential] Stopping after first failure. Passed ${i}/${targets.length} before fail.`,
+        `[rust-test-sequential] Stopping after first failure. Passed ${i + 1}/${totalSteps} before fail.`,
       );
       process.exit(status);
     }
   }
 
   console.error(
-    `\n[rust-test-sequential] All ${targets.length} targets passed.`,
+    `\n[rust-test-sequential] All ${totalSteps} targets passed.`,
   );
   process.exit(0);
 }

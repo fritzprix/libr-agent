@@ -79,24 +79,26 @@ export function useClipboardImage({
           navigator.clipboard
             .read()
             .then(async (clipboardItems) => {
-              const extractedFiles: File[] = [];
-              for (const item of clipboardItems) {
-                const imageTypes = item.types.filter((t) =>
-                  t.startsWith('image/'),
-                );
-                for (const type of imageTypes) {
-                  try {
-                    const blob = await item.getType(type);
-                    const file = new File([blob], '', { type });
-                    extractedFiles.push(file);
-                  } catch (err) {
-                    logger.error(
-                      'Failed to get blob from clipboard item:',
-                      err,
-                    );
-                  }
-                }
-              }
+              const itemPromises = clipboardItems.flatMap((item) =>
+                item.types
+                  .filter((t) => t.startsWith('image/'))
+                  .map(async (type) => {
+                    try {
+                      const blob = await item.getType(type);
+                      return new File([blob], '', { type });
+                    } catch (err) {
+                      logger.error(
+                        'Failed to get blob from clipboard item:',
+                        err,
+                      );
+                      return null;
+                    }
+                  }),
+              );
+              const files = await Promise.all(itemPromises);
+              const extractedFiles = files.filter(
+                (file): file is File => file !== null,
+              );
               if (extractedFiles.length > 0) {
                 void attachFiles(extractedFiles);
               }

@@ -166,10 +166,10 @@ pub fn stamp_org_identity_into_manifest(
             return false;
         };
 
-        let needs_seed = !substrate_obj
+        let needs_seed = substrate_obj
             .get("orgLineage")
             .and_then(Value::as_object)
-            .is_some();
+            .is_none();
         if needs_seed {
             substrate_obj.insert("orgLineage".to_string(), json!({ "intended": intended }));
         }

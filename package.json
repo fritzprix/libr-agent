@@ -1,7 +1,7 @@
 {
   "name": "libragent",
   "private": true,
-  "version": "0.9.26",
+  "version": "0.9.27",
   "description": "A local agent operating environment — pick your model, install tools like apps, run coordination patterns; work stays on your machine",
   "author": "fritzprix",
   "license": "MIT",
@@ -59,6 +59,7 @@
     "dead-code:init": "unimported --init",
     "rust:fmt": "cd src-tauri && cargo fmt",
     "rust:fmt:check": "cd src-tauri && cargo fmt --check",
+    "rust:lock:check": "node scripts/check-cargo-lock-version.cjs",
     "rust:clippy": "node scripts/run-rust-command.cjs clippy -- -D warnings",
     "rust:clippy:all": "node scripts/run-rust-command.cjs clippy --all-features -- -D warnings",
     "rust:check": "node scripts/run-rust-command.cjs check",

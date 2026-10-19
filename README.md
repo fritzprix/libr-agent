@@ -110,7 +110,7 @@ Additional default skills: `setup-wizard`, `tool-installer`, `playbook-creator`,
 | ------------- | ---------------------------------------------------------------------------------------------------- |
 | **Workspace** | Line-precise editing, multi-file operations, and `@file` / `@skill` / `@playbook` context            |
 | **Shell**     | Isolated and persistent terminal sessions with asynchronous process monitoring                       |
-| **Browser**   | Isolated browser sidecar and persistent agent profile support                                        |
+| **Browser**   | Built-in agent browser by default. Optional [Chrome extension](https://chromewebstore.google.com/detail/libragent-browser-bridge/eponcjengahlpkgbaolhemhmckopmfbe) when the agent needs sites where you are already signed in ([guide](docs/user/guides/browser-sidecar.md)) |
 | **Knowledge** | Graph-based knowledge store and BM25 search                                                          |
 | **Export**    | Markdown reports and ATIF trajectory exports ([session export](docs/user/guides/session-export.md))  |
 
@@ -162,10 +162,10 @@ Long-running sessions maintain stability through context compaction, loop preven
 Download the latest installer from the **[Releases page](https://github.com/fritzprix/libr-agent/releases/latest)**.
 
 <!-- RELEASE_DOWNLOADS_START -->
-- **Windows:** [`LibrAgent_0.9.26_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.26/LibrAgent_0.9.26_x64-setup.exe) · [`LibrAgent_0.9.26_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.26/LibrAgent_0.9.26_x64_en-US.msi)
-- **macOS (Apple Silicon):** [`LibrAgent_0.9.26_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.26/LibrAgent_0.9.26_aarch64.dmg)
-- **Linux:** [`LibrAgent_0.9.26_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.26/LibrAgent_0.9.26_amd64.AppImage) · [`LibrAgent_0.9.26_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.26/LibrAgent_0.9.26_amd64.deb) · [`LibrAgent-0.9.26-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.26/LibrAgent-0.9.26-1.x86_64.rpm)
-- **All release assets:** [Releases page](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.26)
+- **Windows:** [`LibrAgent_0.9.27_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent_0.9.27_x64-setup.exe) · [`LibrAgent_0.9.27_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent_0.9.27_x64_en-US.msi)
+- **macOS (Apple Silicon):** [`LibrAgent_0.9.27_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent_0.9.27_aarch64.dmg)
+- **Linux:** [`LibrAgent_0.9.27_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent_0.9.27_amd64.AppImage) · [`LibrAgent_0.9.27_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent_0.9.27_amd64.deb) · [`LibrAgent-0.9.27-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent-0.9.27-1.x86_64.rpm)
+- **All release assets:** [Releases page](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.27)
 <!-- RELEASE_DOWNLOADS_END -->
 
 ### The 5-minute onboarding path

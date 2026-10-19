@@ -81,8 +81,8 @@ async fn canonicalize_pin_session_id(session_ref: &str) -> Result<String, MCPRes
         ));
     }
 
-    let sessions = match repo.get_all_sessions().await {
-        Ok(sessions) => sessions,
+    let session_ids = match repo.get_all_session_ids().await {
+        Ok(ids) => ids,
         Err(e) => {
             return Err(operation_failed_error(
                 "resolvePinnedSession",
@@ -93,7 +93,7 @@ async fn canonicalize_pin_session_id(session_ref: &str) -> Result<String, MCPRes
         }
     };
 
-    let candidate_ids: Vec<&str> = sessions.iter().map(|s| s.id.as_str()).collect();
+    let candidate_ids: Vec<&str> = session_ids.iter().map(|s| s.as_str()).collect();
     match resolve_session_id_among(candidate_ids, session_ref) {
         SessionIdResolve::Unique(resolved) => Ok(resolved.to_string()),
         SessionIdResolve::Missing => Err(invalid_input_error(

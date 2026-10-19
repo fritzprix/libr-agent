@@ -11,6 +11,45 @@
       console.log('[BOOT] LibrAgent initializing at', new Date().toISOString());
       window.__BOOT_START = Date.now();
 
+      // Anti-FOUC: match next-themes (attribute=class, defaultTheme=dark)
+      // before React mounts so WebView2 does not flash a white/light surface.
+      // Use a removable <style> (not inline element styles) so ThemeToggle can
+      // flip .dark without leaving a sticky backgroundColor on html/body.
+      (function () {
+        try {
+          var stored = localStorage.getItem('theme');
+          var isDark;
+          if (stored === 'light') {
+            isDark = false;
+          } else if (stored === 'system') {
+            isDark = window.matchMedia(
+              '(prefers-color-scheme: dark)',
+            ).matches;
+          } else {
+            // null / 'dark' / unknown → defaultTheme dark
+            isDark = true;
+          }
+          var root = document.documentElement;
+          if (isDark) {
+            root.classList.add('dark');
+          } else {
+            root.classList.remove('dark');
+          }
+          var style = document.createElement('style');
+          style.id = 'anti-fouc';
+          style.textContent =
+            'html,body{margin:0;background-color:#ffffff}' +
+            'html.dark,html.dark body{background-color:#1a1a1a}';
+          document.head.appendChild(style);
+          window.addEventListener('load', function () {
+            var el = document.getElementById('anti-fouc');
+            if (el) el.remove();
+          });
+        } catch (e) {
+          document.documentElement.classList.add('dark');
+        }
+      })();
+
       // Capture all errors during bootstrap phase
       window.addEventListener('error', function (e) {
         console.error('[BOOT-ERROR]', {
