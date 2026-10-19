@@ -31,20 +31,27 @@ export function useWorkspaceDropZone(
           return;
         }
 
-        for (const filePath of paths) {
+        const inspectPromises = paths.map(async (filePath) => {
           try {
             const pathType = await checkDroppedPathType(filePath);
-            if (pathType === 'directory') {
-              onWorkspaceSelected(filePath);
-              return;
-            }
+            return { filePath, pathType };
           } catch (error: unknown) {
             logger.error(
               'Failed to inspect dropped workspace path',
               { filePath },
               error,
             );
+            return { filePath, pathType: null };
           }
+        });
+
+        const inspected = await Promise.all(inspectPromises);
+        const firstDir = inspected.find(
+          (item) => item.pathType === 'directory',
+        );
+        if (firstDir) {
+          onWorkspaceSelected(firstDir.filePath);
+          return;
         }
 
         toast.error(t('scheduledTasks.modal.workspaceDropFolderError'));

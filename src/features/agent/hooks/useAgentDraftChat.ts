@@ -166,8 +166,7 @@ export function useAgentDraftChat() {
             toast.error(t('agent.draft.failedToRegisterDroppedFiles'));
             return;
           }
-          const files: File[] = [];
-          for (const filePath of paths) {
+          const filePromises = paths.map(async (filePath) => {
             try {
               const pathType = await checkDroppedPathType(filePath);
 
@@ -177,13 +176,13 @@ export function useAgentDraftChat() {
                 } else {
                   toast.error(t('agent.draft.dropFilesInChatInput'));
                 }
-                continue;
+                return null;
               }
 
               if (target === 'form') {
                 if (pathType === 'directory') {
                   toast.error(t('agent.workspace.dropDirToastError'));
-                  continue;
+                  return null;
                 }
                 const fileData = await rustBackend.readDroppedFile(filePath);
                 const filename =
@@ -191,12 +190,11 @@ export function useAgentDraftChat() {
                   filePath.split('\\').pop() ??
                   'unknown';
                 const mimeType = getMimeType(filename);
-                files.push(
-                  new File([new Uint8Array(fileData)], filename, {
-                    type: mimeType,
-                  }),
-                );
+                return new File([new Uint8Array(fileData)], filename, {
+                  type: mimeType,
+                });
               }
+              return null;
             } catch (err) {
               logger.error('Failed to process dropped path', { filePath, err });
               toast.error(
@@ -204,8 +202,13 @@ export function useAgentDraftChat() {
                   file: filePath.split(/[\\/]/).pop(),
                 }),
               );
+              return null;
             }
-          }
+          });
+          const processedFiles = await Promise.all(filePromises);
+          const files = processedFiles.filter(
+            (file): file is File => file !== null,
+          );
           if (files.length > 0) {
             addFiles(files);
           }
@@ -477,10 +480,9 @@ export function useAgentDraftChat() {
           },
         });
 
-        const attachments: AttachmentReference[] = [];
-        for (const file of filesToAttach) {
+        const attachmentPromises = filesToAttach.map(async (file) => {
           try {
-            const result = await addAgentAttachment({
+            return await addAgentAttachment({
               sessionId: newSessionId,
               url: '',
               mimeType: file.type || getMimeType(file.name),
@@ -489,7 +491,6 @@ export function useAgentDraftChat() {
               inlineAudio:
                 settings?.experimental?.inlineAudioAttachment !== false,
             });
-            attachments.push(result);
           } catch (err) {
             logger.error(
               'Failed to attach draft file, falling back to workspace-only',
@@ -500,21 +501,26 @@ export function useAgentDraftChat() {
             );
             toast.error(t('agent.draft.failedToAttach', { file: file.name }));
             try {
-              const fallback = toWorkspaceOnlyAttachment(
+              return toWorkspaceOnlyAttachment(
                 newSessionId,
                 file.name,
                 file.type || getMimeType(file.name),
                 file.size,
               );
-              attachments.push(fallback);
             } catch (fallbackErr) {
               logger.error(
                 'Failed to create fallback workspace-only attachment',
                 fallbackErr,
               );
+              return null;
             }
           }
-        }
+        });
+
+        const attachmentResults = await Promise.all(attachmentPromises);
+        const attachments: AttachmentReference[] = attachmentResults.filter(
+          (a): a is AttachmentReference => a !== null,
+        );
 
         // Filter out valid inline attachments that successfully materialized base64 data to be sent inside message.content
         const validInlineRefs = attachments.filter(
