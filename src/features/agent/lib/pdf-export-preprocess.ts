@@ -52,29 +52,48 @@ export async function prepareMarkdownForPdfExport(
     return { content: markdown, embeddedImages };
   }
 
+  // Render and rasterize all independent mermaid blocks in parallel.
+  const renderedBlocks = await Promise.all(
+    matches.map(async (match) => {
+      const full = match[0];
+      const code = String(match[1] ?? '').replace(/\n$/, '');
+      const index = match.index ?? 0;
+
+      try {
+        const svg = await renderMermaidSvg(code, isDark);
+        const dataBase64 = await rasterizeSvg(svg);
+        return {
+          full,
+          index,
+          success: true as const,
+          dataBase64,
+        };
+      } catch (error) {
+        logger.warn('Mermaid PDF preprocess failed; keeping source fence', error);
+        return {
+          full,
+          index,
+          success: false as const,
+        };
+      }
+    }),
+  );
+
   let out = '';
   let lastIndex = 0;
 
-  for (const match of matches) {
-    const full = match[0];
-    // Match CodeBlock: drop a single trailing newline before trim-in-loader.
-    const code = String(match[1] ?? '').replace(/\n$/, '');
-    const index = match.index ?? 0;
-    out += markdown.slice(lastIndex, index);
+  for (const block of renderedBlocks) {
+    out += markdown.slice(lastIndex, block.index);
 
-    try {
-      // Same theme path as MermaidBlock / chat messages.
-      const svg = await renderMermaidSvg(code, isDark);
-      const dataBase64 = await rasterizeSvg(svg);
+    if (block.success) {
       const embedIndex = embeddedImages.length;
-      embeddedImages.push({ dataBase64 });
+      embeddedImages.push({ dataBase64: block.dataBase64 });
       out += `![Mermaid diagram](${PDF_EMBED_MARKER_PREFIX}${embedIndex})\n`;
-    } catch (error) {
-      logger.warn('Mermaid PDF preprocess failed; keeping source fence', error);
-      out += full;
+    } else {
+      out += block.full;
     }
 
-    lastIndex = index + full.length;
+    lastIndex = block.index + block.full.length;
   }
 
   out += markdown.slice(lastIndex);

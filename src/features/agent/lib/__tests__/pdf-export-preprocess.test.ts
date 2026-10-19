@@ -87,6 +87,40 @@ describe('prepareMarkdownForPdfExport', () => {
     expect(result.content).toBe(md);
     expect(mockRasterizeSvg).not.toHaveBeenCalled();
   });
+
+  it('renders and rasterizes multiple mermaid blocks in parallel and preserves document order', async () => {
+    const md = [
+      '# Document',
+      '',
+      '```mermaid',
+      'flowchart TD\n  A --> B',
+      '```',
+      '',
+      'Middle content',
+      '',
+      '```mermaid',
+      'flowchart LR\n  C --> D',
+      '```',
+      '',
+      'End',
+    ].join('\n');
+
+    const result = await prepareMarkdownForPdfExport(md, {
+      rasterizeSvg: mockRasterizeSvg,
+    });
+
+    expect(mockRenderMermaidSvg).toHaveBeenCalledTimes(2);
+    expect(mockRasterizeSvg).toHaveBeenCalledTimes(2);
+    expect(result.embeddedImages).toHaveLength(2);
+    expect(result.content).toContain(
+      `![Mermaid diagram](${PDF_EMBED_MARKER_PREFIX}0)`,
+    );
+    expect(result.content).toContain(
+      `![Mermaid diagram](${PDF_EMBED_MARKER_PREFIX}1)`,
+    );
+    expect(result.content).toContain('Middle content');
+    expect(result.content).toContain('End');
+  });
 });
 
 describe('normalizeSvgForRaster', () => {
