@@ -143,23 +143,20 @@ describe('ComposerBusyTipStrip', () => {
     );
 
     const tip = screen.getByTestId('composer-busy-tip');
-    expect(tip).toHaveTextContent(
-      'Tip · Schedule durable knowledge distillation',
-    );
+    expect(tip).toHaveTextContent('Tip · Use your everyday Chrome');
 
     await act(async () => {
       fireEvent.click(screen.getByTestId('composer-busy-tip'));
     });
-    expect(mockNavigate).toHaveBeenCalledWith('/scheduled-tasks');
+    expect(mockNavigate).toHaveBeenCalledWith('/settings?tab=system');
 
     act(() => {
       vi.advanceTimersByTime(WAIT_TIP_ROTATE_MS);
     });
 
-    // knowledge-distill tip was dismissed by the CTA; rotation continues
-    // with the remaining wait pool (index already advanced past 0).
+    // Settings CTA does not dismiss; rotation advances to the next wait tip.
     expect(screen.getByTestId('composer-busy-tip')).toHaveTextContent(
-      'Tip · Try starter tasks',
+      'Tip · Schedule durable knowledge distillation',
     );
 
     const stored = JSON.parse(
