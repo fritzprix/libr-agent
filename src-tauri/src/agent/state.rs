@@ -33,9 +33,7 @@ pub fn enforce_cached_message_limit(messages: &mut Vec<Message>) {
     let last_evicted_id = messages.get(excess - 1).map(|m| m.id.clone());
     messages.drain(..excess);
     if let Some(id) = last_evicted_id {
-        log::debug!(
-            "Sliding window drained {excess} message(s); last evicted id={id}"
-        );
+        log::debug!("Sliding window drained {excess} message(s); last evicted id={id}");
     }
 }
 
@@ -711,17 +709,22 @@ mod tests {
     #[test]
     fn enforce_cached_message_limit_drains_to_hard_max_preserving_newest() {
         let total = MESSAGE_CACHE_SOFT_LIMIT + 10;
-        let mut messages: Vec<Message> = (0..total)
-            .map(|i| stub_message(&format!("m{i}")))
-            .collect();
+        let mut messages: Vec<Message> =
+            (0..total).map(|i| stub_message(&format!("m{i}"))).collect();
 
         enforce_cached_message_limit(&mut messages);
 
         assert_eq!(messages.len(), MAX_CACHED_MESSAGES);
         let expected_first = format!("m{}", total - MAX_CACHED_MESSAGES);
         let expected_last = format!("m{}", total - 1);
-        assert_eq!(messages.first().map(|m| m.id.as_str()), Some(expected_first.as_str()));
-        assert_eq!(messages.last().map(|m| m.id.as_str()), Some(expected_last.as_str()));
+        assert_eq!(
+            messages.first().map(|m| m.id.as_str()),
+            Some(expected_first.as_str())
+        );
+        assert_eq!(
+            messages.last().map(|m| m.id.as_str()),
+            Some(expected_last.as_str())
+        );
     }
 
     #[test]
