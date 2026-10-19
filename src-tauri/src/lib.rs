@@ -429,8 +429,11 @@ pub fn run() {
                             WindowEvent::Focused(true) | WindowEvent::ScaleFactorChanged { .. }
                         );
                     if should_ensure {
-                        lifecycle::windows_taskbar::ensure_main_window_taskbar_button(
+                        // Style-only: re-applying the icon here flickers the
+                        // taskbar button on cold-start Focused(true).
+                        lifecycle::windows_taskbar::ensure_main_window_taskbar_button_with_mode(
                             window.app_handle(),
+                            lifecycle::windows_taskbar::TaskbarEnsureMode::StyleOnly,
                         );
                     }
                 }

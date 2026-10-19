@@ -70,7 +70,9 @@ pub async fn close_session(server: &BrowserServer, _args: Value) -> Result<MCPRe
 pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPResult, String> {
     let service = server.get_browser_service()?;
     let url_param = args.get("url").and_then(|v| v.as_str());
-    let url = url_param.unwrap_or("https://www.google.com");
+    // Neutral blank page — avoids flashing a third-party homepage (e.g. Google)
+    // when agents omit url, and matches the sidecar's about:blank bootstrap.
+    let url = url_param.unwrap_or("about:blank");
     let browser_raw = args
         .get("browser")
         .and_then(|v| v.as_str())
