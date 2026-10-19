@@ -31,7 +31,7 @@ description: '로컬 에이전트 운영 환경 LibrAgent (libr-agent) — 모�
 - [**Assistants**](guides/assistants.md) — 맞춤 에이전트 (General / Tools / Skills)
 - [**Playbooks**](guides/playbooks.md) — 성공한 작업을 다시 실행
 - [**Solution Recipes**](guides/recipes.md) — 원클릭 솔루션 레시피 (프리셋+스케줄)
-- [**예약 작업 (Scheduled Tasks)**](guides/scheduled-tasks.md) · [**자동화 개요**](guides/automation.md)
+- [**예약 작업 (Scheduled Tasks)**](guides/scheduled-tasks.md) · [**자동화 개요**](guides/automation.md) · [**세션 루프 (loop)**](guides/loop.md) · [**끝나면 이어서 (call-me-back)**](guides/call-me-back.md)
 - [**세션 관리**](guides/sessions.md) · [**세션 내보내기**](guides/session-export.md)
 - [**스킬**](guides/skills.md) · [**서브 에이전트**](guides/sub-agents.md)
 - [**Extensions (MCP 도구)**](guides/extensions.md) · [**커스텀 MCP**](guides/custom-mcp.md)

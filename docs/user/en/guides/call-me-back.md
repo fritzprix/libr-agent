@@ -24,14 +24,15 @@ You do not need to watch these jobs. Tell the agent what to wait for. When the j
 
 ## Which skill do I use?
 
-| You want to...                                            | Use            | Example                              |
-| --------------------------------------------------------- | -------------- | ------------------------------------ |
-| Wait for a job to be **done**                             | `call-me-back` | "Tell me when the build is done."    |
-| Come back at a **time**, in this chat                     | `loop`         | "Check again in 30 minutes."         |
-| Run a task on a **schedule**, even when the app is closed | `schedule`     | "Run a report every Monday at 9."    |
-| Give work to a **second agent** now                       | `delegate`     | "Ask a reviewer to check this file." |
+| You want to...                                            | Use                       | Example                              |
+| --------------------------------------------------------- | ------------------------- | ------------------------------------ |
+| Wait for a job to be **done**                             | `call-me-back`            | "Tell me when the build is done."    |
+| Come back at a **time**, in this chat                     | `loop` ([guide](loop.md)) | "Check again in 30 minutes."         |
+| Run a task on a **schedule**, even when the app is closed | `schedule`                | "Run a report every Monday at 9."    |
+| Give work to a **second agent** now                       | `delegate`                | "Ask a reviewer to check this file." |
 
-Rule: if you name a **job, a command, or a tool**, use `call-me-back`. If you name only a **time**, use `loop`.
+Rule: if you name a **job, a command, or a tool**, use `call-me-back`. If you name only a **time**, use `loop`.  
+For a timed writer/reviewer pass over a task list, see [Session loops (loop)](loop.md).
 
 ---
 

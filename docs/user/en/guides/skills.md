@@ -111,7 +111,7 @@ How to split work across child sessions: [Sub-agents & orchestration](sub-agents
 
 ### Scheduling and wake-ups
 
-`schedule`, `loop`, `call-me-back`
+`schedule`, `loop` ([Session loops](loop.md)), `call-me-back` ([Continue when done](call-me-back.md))
 
 ### Session and context
 
