@@ -1,4 +1,4 @@
-use crate::agent::state::{AgentSession, MAX_CACHED_MESSAGES};
+use crate::agent::state::{enforce_cached_message_limit, AgentSession};
 use crate::agent::types::ToolCall;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
@@ -65,11 +65,7 @@ async fn cache_assistant_message(
     if let Some(session) = sessions.get(session_id) {
         let mut messages = session.messages.write().await;
         messages.push(assistant_message.clone());
-
-        if messages.len() > MAX_CACHED_MESSAGES {
-            let removed = messages.remove(0);
-            log::debug!("Sliding window: evicted message {}", removed.id);
-        }
+        enforce_cached_message_limit(&mut messages);
 
         log::info!(
             "🤖 Message stack after assistant message: session={}, count={}, latest_message={}",

@@ -55,26 +55,25 @@ function deserializeMessage(rustMsg: RustMessage): Message {
 }
 
 /**
- * Retrieves a paginated list of messages for a specific thread in a session.
+ * Retrieves a paginated list of messages for a session.
+ * Messages are partitioned by `sessionId` only on the backend (`messages_get_page`);
+ * there is no thread dimension in the IPC contract.
  * @param sessionId The ID of the session
- * @param threadId The ID of the thread (defaults to sessionId for top thread)
  * @param page The page number to retrieve (1-indexed)
  * @param pageSize The number of messages per page
  * @returns A promise that resolves to a Page of messages
  */
 export async function getMessagesPageForSession(
   sessionId: string,
-  threadId: string,
   page: number,
   pageSize: number,
 ): Promise<Page<Message>> {
-  if (!sessionId || !threadId) {
-    throw new Error('sessionId and threadId are required');
+  if (!sessionId) {
+    throw new Error('sessionId is required');
   }
 
   const result = await safeInvoke<Page<RustMessage>>('messages_get_page', {
     sessionId,
-    threadId,
     page,
     pageSize,
   });

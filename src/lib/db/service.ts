@@ -158,18 +158,8 @@ export const dbUtils = {
     return [];
   },
   getAllMessagesForSession: async (sessionId: string): Promise<Message[]> => {
-    // Get session to find threadId? Or assume defaults.
-    // Legacy didn't need threadId.
-    // Try to get session
-    // const session = await sessionsBackend.getSession(sessionId);
-    // ^ unused if we just use sessionId as threadId constant
-
-    const threadId = sessionId; // Fallback to sessionId as threadId
-
-    // Pagination simulation
     const page = await messagesBackend.getMessagesPageForSession(
       sessionId,
-      threadId,
       1,
       10000,
     );
@@ -185,14 +175,7 @@ export const dbUtils = {
     page: number,
     pageSize: number,
   ): Promise<Page<Message>> => {
-    const threadId = sessionId; // Fallback or assume top thread
-
-    return messagesBackend.getMessagesPageForSession(
-      sessionId,
-      threadId,
-      page,
-      pageSize,
-    );
+    return messagesBackend.getMessagesPageForSession(sessionId, page, pageSize);
   },
   deleteAllMessagesForSession: async (sessionId: string): Promise<number> => {
     // ⚡ Bolt: Utilize existing O(1) bulk backend delete instead of flooding IPC with O(N) concurrent deletes.

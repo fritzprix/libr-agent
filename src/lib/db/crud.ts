@@ -226,12 +226,12 @@ export const messagesCRUD: CRUD<Message> = {
     pageSize: number,
     filter?: { sessionId?: string; threadId?: string },
   ): Promise<Page<Message>> => {
-    // If filter is provided, use specialized backend call
-    if (filter?.sessionId && filter?.threadId) {
+    // Session-scoped page fetch (threadId on the filter is ignored; backend
+    // partitions messages by sessionId only).
+    if (filter?.sessionId) {
       const { page: p, pageSize: ps } = validatePagination(page, pageSize);
       return (await messagesBackend.getMessagesPageForSession(
         filter.sessionId,
-        filter.threadId,
         p,
         ps,
       )) as Page<Message>;
