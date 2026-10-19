@@ -174,7 +174,7 @@ export default function AppSidebar() {
   });
 
   return (
-    <Sidebar className="backdrop-blur-sm border-r shadow-xl" collapsible="icon">
+    <Sidebar className="border-r bg-sidebar" collapsible="icon">
       <SidebarHeader className="h-16 border-b shrink-0 p-0 flex flex-row items-center">
         <div
           className={cn(

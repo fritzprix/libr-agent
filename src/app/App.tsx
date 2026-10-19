@@ -117,7 +117,7 @@ function App() {
   }, [settings.display.colorTheme]);
 
   return (
-    <div className="h-screen w-full overflow-hidden">
+    <div className="flex h-full w-full flex-col overflow-hidden">
       <UpdateProvider>
         <GlobalEventProvider>
           <SkillsProvider>
@@ -127,19 +127,27 @@ function App() {
                   <MCPServerProvider>
                     <AgentSessionListProvider>
                       <AppControlBridge />
-                      <SidebarProvider className="h-full overflow-hidden">
+                      {/* min-h-0 overrides SidebarProvider default `min-h-svh`
+                          (twMerge same-group). Without it the shell grows past
+                          the WebView and the document paints a window-edge bar. */}
+                      <SidebarProvider className="flex h-full min-h-0 w-full overflow-hidden">
                         <DnDContextProvider>
                           <AppSidebar />
-                          {/* Main Content Area (children of AppSidebar) */}
-                          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                          {/* Main column: never scrolls — only the child root does. */}
+                          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
                             <AppHeader>
                               <SessionNotificationsBell />
                               <ThemeToggle />
                             </AppHeader>
-                            <div className="min-h-0 w-full flex-1 overflow-y-auto overscroll-y-contain no-scrollbar">
+                            {/* Sole app Y-scroller. `.no-scrollbar` hides the thumb;
+                                document/html must stay overflow:hidden (globals.css). */}
+                            <div
+                              data-app-scroll-root
+                              className="min-h-0 w-full flex-1 overflow-y-auto overscroll-y-contain no-scrollbar"
+                            >
                               <Suspense
                                 fallback={
-                                  <div className="flex items-center justify-center h-full">
+                                  <div className="flex h-full items-center justify-center">
                                     Loading...
                                   </div>
                                 }

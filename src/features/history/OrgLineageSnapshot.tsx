@@ -28,7 +28,7 @@ function SessionNode({ member, isRoot = false }: SessionNodeProps) {
   return (
     <div
       className={cn(
-        'min-w-[10rem] max-w-[13rem] rounded-2xl border px-4 py-3 shadow-sm shadow-black/5 transition-colors',
+        'min-w-[10rem] max-w-[13rem] rounded-2xl border px-4 py-3',
         isRoot
           ? 'border-primary/25 bg-primary/5'
           : getStatusNodeClass(member.status),
