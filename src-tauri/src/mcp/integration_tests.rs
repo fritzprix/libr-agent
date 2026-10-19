@@ -711,13 +711,21 @@ mod tests {
             .await
             .expect("Failed to create proxy");
 
-        // Execute 'pwd' command via runInPersistentShell
+        // Execute command via persistent shell (PowerShell on Windows host, sh on Unix host)
+        #[cfg(windows)]
+        let (shell_tool, command) = (
+            "workspace__runInPersistentPowerShell",
+            "(Get-Location).Path",
+        );
+        #[cfg(not(windows))]
+        let (shell_tool, command) = ("workspace__runInPersistentShell", "pwd");
+
         let response = proxy_manager
             .call_tool(
                 &session_id,
-                "workspace__runInPersistentShell",
+                shell_tool,
                 json!({
-                    "command": "pwd",
+                    "command": command,
                     "runMode": "sync"
                 }),
             )
@@ -730,7 +738,9 @@ mod tests {
         };
 
         // Parse persistent shell output (JSON structured data)
-        let structured_content = result.structured_content.expect("No structured content");
+        let structured_content = result.structured_content.as_ref().unwrap_or_else(|| {
+            panic!("No structured content, result is: {:?}", result);
+        });
         let stdout = structured_content["stdout"].as_str().expect("No stdout");
 
         // Verify the path contains the session ID, confirming it's in the correct isolated workspace

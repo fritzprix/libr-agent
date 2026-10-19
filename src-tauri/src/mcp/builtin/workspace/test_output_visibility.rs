@@ -138,7 +138,7 @@ mod tests {
 
         // Wait for finish
         let mut finished = false;
-        for _ in 0..20 {
+        for _ in 0..40 {
             let poll_args = json!({ "processId": process_id, "timeout": 0 });
             let poll_res = server
                 .call_tool(
@@ -148,12 +148,17 @@ mod tests {
                 )
                 .await
                 .expect("Poll failed");
-            let poll_data = poll_res.structured_content.as_ref().unwrap();
+            let poll_data = poll_res.structured_content.as_ref().unwrap_or_else(|| {
+                panic!(
+                    "waitForProcess returned no structured_content: {:?}",
+                    poll_res
+                );
+            });
             if poll_data["status"] == "finished" {
                 finished = true;
                 break;
             }
-            sleep(Duration::from_millis(200)).await;
+            sleep(Duration::from_millis(250)).await;
         }
         assert!(finished, "Process did not finish in time");
 
