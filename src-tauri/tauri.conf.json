@@ -21,7 +21,8 @@
         "decorations": true,
         "alwaysOnTop": false,
         "skipTaskbar": false,
-        "theme": "Light"
+        "theme": "Dark",
+        "backgroundColor": "#1a1a1a"
       }
     ],
     "security": {

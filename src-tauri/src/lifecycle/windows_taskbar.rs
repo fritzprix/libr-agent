@@ -9,11 +9,28 @@
 
 use tauri::{AppHandle, Runtime};
 
+/// How aggressively to re-apply taskbar membership.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TaskbarEnsureMode {
+    /// Startup path: also re-apply the window icon once.
+    Startup,
+    /// Focus / minimize recovery: style flags only (avoid icon flicker).
+    StyleOnly,
+}
+
 /// Ensure the main window stays listed on the Windows taskbar.
 pub fn ensure_main_window_taskbar_button<R: Runtime>(app: &AppHandle<R>) {
+    ensure_main_window_taskbar_button_with_mode(app, TaskbarEnsureMode::Startup);
+}
+
+/// Ensure the main window stays listed on the Windows taskbar.
+pub fn ensure_main_window_taskbar_button_with_mode<R: Runtime>(
+    app: &AppHandle<R>,
+    mode: TaskbarEnsureMode,
+) {
     #[cfg(not(windows))]
     {
-        let _ = app;
+        let _ = (app, mode);
     }
 
     #[cfg(windows)]
@@ -32,9 +49,14 @@ pub fn ensure_main_window_taskbar_button<R: Runtime>(app: &AppHandle<R>) {
             warn!("Failed to clear skip_taskbar on main window: {error}");
         }
 
-        if let Some(icon) = app.default_window_icon().cloned() {
-            if let Err(error) = window.set_icon(icon) {
-                warn!("Failed to re-apply main window icon: {error}");
+        // Re-applying the icon on every Focused(true) redraws the taskbar
+        // button and causes visible flicker on cold start. Only do it once
+        // during startup setup.
+        if mode == TaskbarEnsureMode::Startup {
+            if let Some(icon) = app.default_window_icon().cloned() {
+                if let Err(error) = window.set_icon(icon) {
+                    warn!("Failed to re-apply main window icon: {error}");
+                }
             }
         }
 
