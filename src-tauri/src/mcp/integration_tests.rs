@@ -45,9 +45,13 @@ mod tests {
         }
 
         // Initialize DB with a file to debug persistence issues
-        // We use /tmp/libragent_test.db
-        let mut opt =
-            sea_orm::ConnectOptions::new("sqlite:///tmp/libragent_test.db?mode=rwc".to_owned());
+        let temp_dir = std::env::temp_dir();
+        let db_path = temp_dir.join("libragent_test.db");
+        let db_url = format!(
+            "sqlite://{}?mode=rwc",
+            db_path.to_string_lossy().replace('\\', "/")
+        );
+        let mut opt = sea_orm::ConnectOptions::new(db_url);
         opt.max_connections(1);
         let db = Database::connect(opt)
             .await

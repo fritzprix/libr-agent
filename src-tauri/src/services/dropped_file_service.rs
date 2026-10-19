@@ -254,6 +254,17 @@ impl DroppedFileService {
             if let Ok(stripped) = path.strip_prefix(trusted_root) {
                 return Cow::Borrowed(stripped);
             }
+            #[cfg(windows)]
+            {
+                let path_str = path.to_string_lossy();
+                let trusted_str = trusted_root.to_string_lossy();
+                let clean_path = path_str.strip_prefix(r"\\?\").unwrap_or(&path_str);
+                let clean_trusted = trusted_str.strip_prefix(r"\\?\").unwrap_or(&trusted_str);
+                if let Some(stripped) = clean_path.strip_prefix(clean_trusted) {
+                    let stripped = stripped.trim_start_matches(['\\', '/']);
+                    return Cow::Owned(PathBuf::from(stripped));
+                }
+            }
         }
 
         Cow::Borrowed(path)

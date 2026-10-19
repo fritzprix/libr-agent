@@ -404,6 +404,7 @@ mod tests {
         }
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn test_merge_path_values_deduplicates_and_preserves_order() {
         let merged = merge_path_values(
@@ -417,6 +418,22 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(parts, vec!["/opt/custom/bin", "/usr/bin", "/bin"]);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_merge_path_values_deduplicates_and_preserves_order() {
+        let merged = merge_path_values(
+            OsStr::new(r"C:\opt\custom\bin;C:\usr\bin"),
+            OsStr::new(r"C:\usr\bin;C:\bin"),
+        )
+        .expect("merged path");
+
+        let parts = std::env::split_paths(&merged)
+            .map(|path| path.to_string_lossy().to_string())
+            .collect::<Vec<_>>();
+
+        assert_eq!(parts, vec![r"C:\opt\custom\bin", r"C:\usr\bin", r"C:\bin"]);
     }
 
     #[cfg(windows)]

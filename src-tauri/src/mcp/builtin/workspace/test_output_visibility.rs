@@ -119,9 +119,12 @@ mod tests {
         let harness = create_server().await;
         let server = &harness.server;
 
-        // Use handle_spawn_process directly
+        #[cfg(windows)]
+        let command = "powershell -NoProfile -Command \"Write-Output 'Tail line 1'; Write-Output 'Tail line 2'\"";
+        #[cfg(not(windows))]
+        let command = "echo \"Tail line 1\\nTail line 2\"";
         let exec_args = json!({
-            "command": "echo \"Tail line 1\\nTail line 2\"",
+            "command": command,
         });
 
         let result = server
