@@ -35,7 +35,7 @@ description: '로컬 에이전트 운영 환경 LibrAgent (libr-agent) — 모�
 - [**세션 관리**](guides/sessions.md) · [**세션 내보내기**](guides/session-export.md)
 - [**스킬**](guides/skills.md) · [**서브 에이전트**](guides/sub-agents.md)
 - [**Extensions (MCP 도구)**](guides/extensions.md) · [**커스텀 MCP**](guides/custom-mcp.md)
-- [**브라우저 자동화 (Sidecar)**](guides/browser-sidecar.md) · [**내장 도구**](guides/builtin-tools.md)
+- [**브라우저 자동화**](guides/browser-sidecar.md) (전용 브라우저 · [일상 Chrome 확장](https://chromewebstore.google.com/detail/libragent-browser-bridge/eponcjengahlpkgbaolhemhmckopmfbe)) · [**내장 도구**](guides/builtin-tools.md)
 - [**네비게이션 가이드**](guides/navigation-guide.md) · [**문제 해결**](guides/troubleshooting.md)
 
 ## FAQ · 시나리오

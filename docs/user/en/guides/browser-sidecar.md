@@ -1,87 +1,84 @@
 ---
-title: Browser Automation
-description: 'Configure the dedicated agent browser and Personal Chrome for login-aware automation.'
+title: Browser automation
+description: 'When to use the built-in agent browser versus your everyday Chrome.'
 ---
 
-# Browser Automation (Browser Sidecar)
+# Browser automation
 
-LibrAgent empowers agents to browse the web, search and extract live information, and analyze webpage screenshots autonomously.
-
----
-
-## 🛡️ Process Isolation & Stability
-
-Complex web pages or in-page script crashes will never compromise your desktop workspace:
-
-- **Isolated Sandbox Execution**: Browser automation operates in an isolated background process separate from the main LibrAgent desktop app. Heavy memory consumption or browser crashes cannot freeze or crash your main application.
-- **Sticky agent profile**: By default, the **Dedicated agent browser** reuses a fixed LibrAgent browser profile on this device. Logins you make _inside_ that browser survive later sessions until you clear them in **Settings → System → Agent browser → Clear agent browser data**. This is not your everyday Chrome. Concurrent agent chats share that same cookie jar while the dedicated agent browser is running.
+LibrAgent agents can open web pages, read content, and capture screenshots.
 
 ---
 
-## Everyday Chrome Integration (Stay Logged In)
+## Built-in agent browser (default)
 
-Instead of opening a blank sandbox browser, agents can directly control tabs in **your Personal Chrome**.
+By default, LibrAgent opens a **dedicated agent browser**.
 
-### 💡 Key Benefits for Everyday Users
+- It runs in a separate process, so a heavy or broken page does not freeze the main app.
+- Logins you make *inside* that browser stay on this device until you clear them under **Settings → System → Agent browser → Clear agent browser data**.
+- This profile is not your everyday Chrome.
 
-- **Preserve Logged-in Sessions**: Work directly with services where you are already signed in (Google, GitHub, internal dashboards). You do not need to re-enter passwords.
-- **Reliable Clicks on Protected Sites**: Input simulation works more reliably on sites with strict content security policies. Button clicks and keystrokes land as expected.
-- **Save Raw Webpage HTML**: Saves complete webpage source files to your session workspace for offline inspection and verification.
-
-| Execution Mode                         | Behavior                     | Best Suited For                                                    |
-| -------------------------------------- | ---------------------------- | ------------------------------------------------------------------ |
-| **Dedicated agent browser** (Default)  | Isolated LibrAgent browser   | Public web search, documentation research, sandbox tasks           |
-| **Personal Chrome** (Extension Bridge) | Your everyday Chrome browser | Tasks requiring personal logins, private intranets, shopping carts |
+Use it for public search, docs, and sandbox work.
 
 ---
 
-## 🚀 1-Minute Quick Setup
+## Your Chrome (only when you need it)
 
-> [!TIP]
-> **Chrome Web Store Release Pending (TBD)**  
-> The extension is currently under review for the Chrome Web Store. Until the public store link is published, you can install it locally via the 1-minute `Load unpacked` method below.
+Install the Chrome extension when the agent must use sites where **you are already signed in** — carts, mail, intranet, personal dashboards.
 
-1. **Locate Extension Path**: Open **Settings → System → Agent browser** and copy the Chrome extension folder path.
-2. **Install Extension in Chrome**:
-   - Open `chrome://extensions` in your Chrome browser.
-   - Enable **Developer mode** in the top right corner.
-   - Click **Load unpacked** and select the extension folder path.
-3. **Instruct the Agent**:
-   - Prompt the agent naturally in chat:
-     ```
-     Check the items in my shopping cart in my current Chrome window.
-     ```
-   - The agent switches to Personal Chrome mode and controls your active tab.
+| | Built-in agent browser | Your Chrome |
+| - | ---------------------- | ----------- |
+| Logins | LibrAgent-only profile | Your normal Chrome cookies |
+| Best for | Public research | Personal or work sites with your session |
+| Setup | None | One Chrome extension install |
+
+### Install from the Chrome Web Store
+
+1. Start the LibrAgent desktop app.
+2. In Chrome, install **[LibrAgent Browser Bridge](https://chromewebstore.google.com/detail/libragent-browser-bridge/eponcjengahlpkgbaolhemhmckopmfbe)**.
+3. Open the toolbar icon and wait until the status shows **Connected**.  
+   If you see “LibrAgent not running”, start the app and wait a few seconds.
+4. Ask in chat, for example:
+   ```
+   Check my shopping cart in the Chrome window I’m using.
+   ```
+
+**Settings → System → Your Chrome** also has an Install from Chrome Web Store button.
+
+### Load from a local folder (developers)
+
+Copy the path from Settings, then in Chrome open `chrome://extensions`, turn on Developer mode, and choose **Load unpacked**.
 
 > [!NOTE]
 >
-> - After installation, the extension reconnects automatically when you restart LibrAgent.
-> - Each agent chat keeps exactly one active browser connection. Switching between the Dedicated agent browser and Personal Chrome closes the previous connection cleanly.
+> - After install, the extension reconnects when you restart LibrAgent.
+> - Each chat keeps one active browser. Switching modes closes the previous link.
+> - The extension only links LibrAgent and Chrome **on this computer**. It does not upload your browsing data to a LibrAgent cloud by itself.
 
 ---
 
-## 🌐 Key Capabilities
+## What you can do
 
-| Capability                   | Description                                                     |
-| ---------------------------- | --------------------------------------------------------------- |
-| **Page Navigation**          | Visits specified URLs and reads content once the page is ready. |
-| **Screenshot Capture**       | Captures viewport or full-page images for visual inspection.    |
-| **Console & Error Tracking** | Monitors page JavaScript errors and network state.              |
-| **Clicks & Typing**          | Supports clicking links, typing text, and scrolling pages.      |
+| Capability | Built-in | Your Chrome |
+| ---------- | -------- | ----------- |
+| Open and move between pages | ✅ | ✅ |
+| Read page content | ✅ | ✅ |
+| Click, type, scroll | ✅ | ✅ (works on many strict-security sites) |
+| Screenshot | ✅ (visible area or full page) | ✅ (visible area only) |
+| Console logs | ✅ | ❌ (not yet) |
+| Use your Chrome logins | ❌ | ✅ |
 
----
-
-## 🎯 Practical Use Cases
-
-1. **Research Live Documentation**:
-   - Gathers live release notes, API updates, or competitive news from real web pages.
-2. **Web UI Verification**:
-   - Visits local development servers (`http://localhost:3000`) and captures screenshots to visually verify UI layouts.
-3. **Automated Daily Briefings**:
-   - Pairs with Scheduled Tasks to visit specified news sites or dashboards every morning and generate summaries.
+Typical “Your Chrome” tasks: check logged-in shopping, mail, or GitHub; open intranet dashboards; capture the visible tab; click and type in forms.
 
 ---
 
-## 💡 Notes
+## Example uses
 
-- Initial browser launch may take a few seconds while the headless runtime prepares.
+1. **Live docs and news** — Open public pages and summarize them.
+2. **Local UI checks** — Open `http://localhost:3000` and capture the screen.
+3. **Scheduled briefings** — Pair with Scheduled Tasks to visit the same sites each day.
+
+---
+
+## Note
+
+- The first launch of the built-in browser may take a few seconds while the runtime starts.

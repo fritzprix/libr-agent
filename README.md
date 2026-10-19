@@ -110,7 +110,7 @@ Additional default skills: `setup-wizard`, `tool-installer`, `playbook-creator`,
 | ------------- | ---------------------------------------------------------------------------------------------------- |
 | **Workspace** | Line-precise editing, multi-file operations, and `@file` / `@skill` / `@playbook` context            |
 | **Shell**     | Isolated and persistent terminal sessions with asynchronous process monitoring                       |
-| **Browser**   | Isolated browser sidecar and persistent agent profile support                                        |
+| **Browser**   | Built-in agent browser by default. Optional [Chrome extension](https://chromewebstore.google.com/detail/libragent-browser-bridge/eponcjengahlpkgbaolhemhmckopmfbe) when the agent needs sites where you are already signed in ([guide](docs/user/guides/browser-sidecar.md)) |
 | **Knowledge** | Graph-based knowledge store and BM25 search                                                          |
 | **Export**    | Markdown reports and ATIF trajectory exports ([session export](docs/user/guides/session-export.md))  |
 

@@ -147,6 +147,11 @@ A사와 B사의 제품을 표로 비교해줘. 가격, 기능, 지원 모델을 
 
 ## 🌐 브라우징 기능 설정
 
+### 일상 Chrome (로그인이 필요할 때)
+
+공개 웹 조사는 **에이전트 전용 브라우저**만으로 됩니다.  
+이미 로그인한 사이트가 필요하면 **[LibrAgent Browser Bridge](https://chromewebstore.google.com/detail/libragent-browser-bridge/eponcjengahlpkgbaolhemhmckopmfbe)** 를 설치하세요. 설치 방법과 할 수 있는 일은 [브라우저 자동화](../guides/browser-sidecar.md)에 정리되어 있습니다.
+
 ### 브라우징 활성화
 
 에이전트가 웹을 브라우징하려면 브라우저 도구가 활성화되어 있어야 합니다.
@@ -193,6 +198,7 @@ A사와 B사의 제품을 표로 비교해줘. 가격, 기능, 지원 모델을 
 
 ## 🔗 관련 문서
 
+- [브라우저 자동화](../guides/browser-sidecar.md) — 에이전트 전용 / Personal Chrome 확장
 - [심층 리서치 시나리오](./research.md) — 웹 조사 결과를 리포트로 종합
 - [파일 관리 시나리오](./file-management.md) — 수집 결과를 파일로 저장 및 정리
 

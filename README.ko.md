@@ -111,7 +111,7 @@ LibrAgent는 이러한 작업을 간소화한 **완성형 데스크톱 제품**�
 | --------- | --------- |
 | **Workspace** | 라인 단위 정밀 코드 편집, 다중 파일 일괄 작업, `@file` / `@skill` / `@playbook` 컨텍스트 주입 |
 | **Shell** | 격리된 영구 셸 환경 및 백그라운드 프로세스 비동기 모니터링 |
-| **Browser** | 격리된 브라우저 사이드카 및 일상 Chrome 세션을 연동하는 브리지 지원 |
+| **Browser** | 기본은 에이전트 전용 브라우저. 이미 로그인한 사이트가 필요할 때만 [Chrome 확장](https://chromewebstore.google.com/detail/libragent-browser-bridge/eponcjengahlpkgbaolhemhmckopmfbe)을 설치합니다 ([가이드](docs/user/guides/browser-sidecar.md)) |
 | **Knowledge** | 지식 그래프 저장소 및 고속 BM25 하이브리드 검색 |
 | **Export** | Markdown 보고서 출력 및 표준 ATIF 세션 궤적 내보내기 지원 ([세션 내보내기](docs/user/guides/session-export.md)) |
 
