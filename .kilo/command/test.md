@@ -5,6 +5,6 @@ description: Run all tests (frontend + Rust integration)
 Run the complete test suite for LibrAgent.
 
 1. Frontend tests: `pnpm test:run:validate` (Vitest)
-2. Rust integration tests: `pnpm rust:test` (cargo test --tests)
+2. Rust tests: `pnpm rust:test` (`--lib` then each `tests/*.rs` target, sequentially)
 
-Note: CI runs `cargo test --tests`, not `cargo test --lib`. Unit tests inside `src/` are disabled by `test = false` in Cargo.toml. All Rust tests must be integration tests in `src-tauri/tests/`.
+Note: `test = false` in Cargo.toml only blocks bare `cargo test` auto-selecting the lib harness; the sequential runner passes `--lib` explicitly (#2122). Prefer `src-tauri/tests/` for harness-heavy coverage.
