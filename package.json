@@ -1,7 +1,7 @@
 {
   "name": "libragent",
   "private": true,
-  "version": "0.9.26",
+  "version": "0.9.27",
   "description": "A local agent operating environment — pick your model, install tools like apps, run coordination patterns; work stays on your machine",
   "author": "fritzprix",
   "license": "MIT",
