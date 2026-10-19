@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Building2, Download, Play, Trash2, Loader2 } from 'lucide-react';
@@ -41,7 +41,7 @@ interface OrgCardProps {
   exportBusy?: boolean;
 }
 
-export function OrgCard({
+export const OrgCard = memo(function OrgCard({
   org,
   onDeleted,
   onExport,
@@ -86,7 +86,7 @@ export function OrgCard({
   }
 
   return (
-    <Card className="overflow-hidden border-border/70 bg-card shadow-sm shadow-black/5 transition-shadow hover:shadow-md">
+    <Card className="overflow-hidden border-border/70 bg-card shadow-none">
       <CardHeader className="flex-row items-start justify-between gap-4 overflow-hidden border-b bg-muted/20 pb-4">
         <div className="min-w-0 flex-1 space-y-3">
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
@@ -225,4 +225,4 @@ export function OrgCard({
       </CardFooter>
     </Card>
   );
-}
+});
