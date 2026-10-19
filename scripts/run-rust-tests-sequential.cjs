@@ -134,18 +134,11 @@ function main() {
     `[rust-test-sequential] ${totalSteps} targets (1 lib + ${targets.length} integration) — linking one binary at a time (avoids multi-target OOM)`,
   );
 
-  if (process.platform !== 'win32') {
-    console.error(`\n[rust-test-sequential] (1/${totalSteps}) --lib`);
-    const libStatus = runCargoTestWithRetries(['--lib', ...passthrough], 'lib');
-    if (libStatus !== 0) {
-      console.error(`[rust-test-sequential] FAILED: lib (exit ${libStatus})`);
-      process.exit(libStatus);
-    }
-  } else {
-    // Remove this win32 skip branch once #2122 is fixed.
-    console.error(
-      `\n[rust-test-sequential] (1/${totalSteps}) skipping --lib on Windows (cdylib linkage limitation; see #2122)`,
-    );
+  console.error(`\n[rust-test-sequential] (1/${totalSteps}) --lib`);
+  const libStatus = runCargoTestWithRetries(['--lib', ...passthrough], 'lib');
+  if (libStatus !== 0) {
+    console.error(`[rust-test-sequential] FAILED: lib (exit ${libStatus})`);
+    process.exit(libStatus);
   }
 
   for (let i = 0; i < targets.length; i += 1) {

@@ -9,12 +9,12 @@ Scaffold integration tests for LibrAgent following the project's strict testing 
 
 ## Critical Rule
 
-**CI runs `cargo test --tests`, NOT `cargo test --lib`.**
+**CI / `pnpm rust:test` runs `--lib` first, then each `tests/*.rs` target one at a time.**
 
-- `#[cfg(test)]` blocks inside `src/` are NEVER executed in CI
-- Only tests in `tests/` directory (integration tests) run in CI
-- On Windows, `cargo test --lib` crashes with `STATUS_ENTRYPOINT_NOT_FOUND` due to DLL shadowing
-- `test = false` is set in `Cargo.toml` for library crates
+- `#[cfg(test)]` blocks inside `src/` **do run** via the sequential `--lib` step
+- Prefer `tests/` for full Tauri/DB harness coverage (especially Windows-safe root crates)
+- Windows `--lib` needs the ComCtl32 v6 linker dependency from `build.rs` (#2122)
+- `test = false` in `Cargo.toml` keeps bare `cargo test` from auto-building the lib harness; the runner passes `--lib` explicitly
 
 ## Template
 

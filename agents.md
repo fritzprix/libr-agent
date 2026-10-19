@@ -197,11 +197,10 @@ src-tauri/src/
 ### Testing
 
 - Frontend: Vitest for unit/component tests (`pnpm test:run`)
-- Backend: **Integration tests only** in `src-tauri/tests/`
-  - CI / full suite: `pnpm rust:test` → `run-rust-tests-sequential.cjs` (one `--test` binary at a time; never bare `cargo test --tests`)
-  - Iterate: `pnpm rust:test --test <target>`
+- Backend: `pnpm rust:test` → `run-rust-tests-sequential.cjs` runs **`--lib` first**, then each `src-tauri/tests/*.rs` target one binary at a time (never bare `cargo test --tests`)
+  - Iterate: `pnpm rust:test --test <target>` or `pnpm rust:test --lib`
   - Prefer new modules under `tests/integration/` (Linux/macOS `integration_tests`). Root-level `tests/*.rs` remain for Windows-safe coverage (`integration_tests` is `#![cfg(not(windows))]`)
-- Rust `#[cfg(test)]` blocks in `src/` are never executed in CI
+- Rust `#[cfg(test)]` in `src/` **does run in CI** via the sequential `--lib` step (Windows needs ComCtl32 v6 link arg in `build.rs` — #2122). Prefer `tests/` for full Tauri/DB harness coverage.
 - Test Tauri commands with mock data
 - Verify cross-platform compatibility
 
@@ -324,6 +323,6 @@ docs/
 ## Additional Notes
 
 - **CSP Warning**: Do NOT add Content Security Policy to `tauri.conf.json` for desktop apps — causes blank screens in release builds. Use Tauri's native security features instead.
-- **Rust Tests**: Write integration tests in `src-tauri/tests/` only; `#[cfg(test)]` in `src/` is not run in CI.
+- **Rust Tests**: Prefer integration tests in `src-tauri/tests/` for harness-heavy coverage; `#[cfg(test)]` in `src/` runs via `pnpm rust:test`'s `--lib` step (#2122).
 - **Agent Sessions**: Each session has isolated workspace at `<data_dir>/workspaces/<session_id>/` — `agents.md` placed there is auto-loaded into system prompt.
 - **Validation Command**: `pnpm refactor:validate` is the single command to run before any PR.

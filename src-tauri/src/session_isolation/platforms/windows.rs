@@ -14,9 +14,10 @@ static SCRIPT_COUNTER: AtomicU64 = AtomicU64::new(0);
 /// in the Windows registry. However, since the external tools (like node/pnpm) cannot
 /// handle UNC paths anyway, this is a necessary trade-off for compatibility.
 fn simplify_path(path: &std::path::Path) -> std::path::PathBuf {
-    if let Ok(stripped) = path.strip_prefix(r"\\?\") {
-        if !stripped.starts_with(r"UNC\") {
-            return stripped.to_path_buf();
+    let path_str = path.to_string_lossy();
+    if let Some(rest) = path_str.strip_prefix(r"\\?\") {
+        if !rest.starts_with(r"UNC\") {
+            return std::path::PathBuf::from(rest);
         }
     }
     path.to_path_buf()
