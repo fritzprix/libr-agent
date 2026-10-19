@@ -37,7 +37,7 @@ impl DocumentParser {
 
     /// Parse DOCX files using docx-rs
     async fn parse_docx(file_path: &Path) -> ParseResult {
-        match std::fs::read(file_path) {
+        match fs::read(file_path).await {
             Ok(data) => {
                 match docx_rs::read_docx(&data) {
                     Ok(docx) => {
