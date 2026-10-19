@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
+  consoleLogger,
+  createOllamaCoreLogger,
   createThinkTagStreamState,
   processChunk,
   noopLogger,
@@ -107,5 +109,27 @@ describe('ollama-core processChunk', () => {
     const result = processChunk(chunk, noopLogger);
 
     expect(result?.usage).toBeUndefined();
+  });
+
+  it('should export consoleLogger and createOllamaCoreLogger delegating to centralized logger', () => {
+    expect(consoleLogger).toBeDefined();
+    expect(typeof consoleLogger.debug).toBe('function');
+    expect(typeof consoleLogger.info).toBe('function');
+    expect(typeof consoleLogger.warn).toBe('function');
+    expect(typeof consoleLogger.error).toBe('function');
+
+    // Does not throw when invoking logging methods
+    expect(() => {
+      consoleLogger.debug('test debug');
+      consoleLogger.info('test info');
+      consoleLogger.warn('test warn');
+      consoleLogger.error('test error');
+    }).not.toThrow();
+
+    const customLogger = createOllamaCoreLogger('CustomContext');
+    expect(typeof customLogger.debug).toBe('function');
+    expect(() => {
+      customLogger.info('test custom info');
+    }).not.toThrow();
   });
 });

@@ -73,7 +73,9 @@ async function ensureStartupBackup(
   if (
     !config.enableFileLogging ||
     !config.autoBackupOnStartup ||
-    hasBackedUpOnStartup
+    hasBackedUpOnStartup ||
+    typeof window === 'undefined' ||
+    !('__TAURI_INTERNALS__' in window || '__TAURI__' in window)
   ) {
     return hasBackedUpOnStartup;
   }

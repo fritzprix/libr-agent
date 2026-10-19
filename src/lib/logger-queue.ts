@@ -8,6 +8,13 @@ interface LogEntry {
   timestamp: number;
 }
 
+function isTauriEnvironment(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    ('__TAURI_INTERNALS__' in window || '__TAURI__' in window)
+  );
+}
+
 class LogQueue {
   private queue: LogEntry[] = [];
   private readonly batchSize = 50;
@@ -15,6 +22,24 @@ class LogQueue {
   private timer: NodeJS.Timeout | null = null;
 
   enqueue(level: LogLevel, message: string): void {
+    if (!isTauriEnvironment()) {
+      switch (level) {
+        case LogLevel.Error:
+          console.error(message);
+          break;
+        case LogLevel.Warn:
+          console.warn(message);
+          break;
+        case LogLevel.Info:
+          console.info(message);
+          break;
+        default:
+          console.debug(message);
+          break;
+      }
+      return;
+    }
+
     this.queue.push({
       level,
       message,
@@ -31,7 +56,7 @@ class LogQueue {
   }
 
   async flush(): Promise<void> {
-    if (this.queue.length === 0) {
+    if (this.queue.length === 0 || !isTauriEnvironment()) {
       return;
     }
 

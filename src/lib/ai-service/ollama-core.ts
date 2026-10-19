@@ -8,6 +8,7 @@
 
 export {
   consoleLogger,
+  createOllamaCoreLogger,
   noopLogger,
   type Logger,
   type OllamaToolCallAccumulator,
