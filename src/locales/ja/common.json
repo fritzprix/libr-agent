@@ -1988,7 +1988,7 @@
       },
       "everydayChrome": {
         "title": "普段のChromeを使う",
-        "body": "すでにログイン済みのサイトが必要なときだけ、設定 → システムからChrome拡張機能を入れてください。",
+        "body": "ログイン済みのサイトが必要なときは、設定 → システムから Chrome ウェブストアで LibrAgent Browser Bridge を入れてください。",
         "cta": "システム設定を開く"
       },
       "orgPortableBundle": {

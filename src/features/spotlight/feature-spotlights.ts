@@ -6,6 +6,16 @@ import type { Spotlight } from './types';
  */
 export const FEATURE_SPOTLIGHTS: readonly Spotlight[] = [
   {
+    id: 'everyday-chrome',
+    sinceVersion: '0.9.27',
+    titleKey: 'spotlight.items.everydayChrome.title',
+    bodyKey: 'spotlight.items.everydayChrome.body',
+    ctaLabelKey: 'spotlight.items.everydayChrome.cta',
+    href: { type: 'settings', tab: 'system' },
+    surfaces: ['release', 'hub', 'wait'],
+    priority: 1,
+  },
+  {
     id: 'org-portable-bundle',
     sinceVersion: '0.9.26',
     titleKey: 'spotlight.items.orgPortableBundle.title',
@@ -13,7 +23,7 @@ export const FEATURE_SPOTLIGHTS: readonly Spotlight[] = [
     ctaLabelKey: 'spotlight.items.orgPortableBundle.cta',
     href: { type: 'route', path: '/org' },
     surfaces: ['release', 'hub'],
-    priority: 1,
+    priority: 2,
   },
   {
     id: 'regenerate-last-turn',
@@ -23,7 +33,7 @@ export const FEATURE_SPOTLIGHTS: readonly Spotlight[] = [
     ctaLabelKey: 'spotlight.items.regenerateLastTurn.cta',
     href: { type: 'route', path: '/agent' },
     surfaces: ['release', 'hub'],
-    priority: 2,
+    priority: 3,
   },
   {
     id: 'knowledge-distill-schedule',
@@ -35,16 +45,6 @@ export const FEATURE_SPOTLIGHTS: readonly Spotlight[] = [
       type: 'action',
       action: 'setup-knowledge-distill-schedule',
     },
-    surfaces: ['release', 'hub', 'wait'],
-    priority: 3,
-  },
-  {
-    id: 'everyday-chrome',
-    sinceVersion: '0.9.23',
-    titleKey: 'spotlight.items.everydayChrome.title',
-    bodyKey: 'spotlight.items.everydayChrome.body',
-    ctaLabelKey: 'spotlight.items.everydayChrome.cta',
-    href: { type: 'settings', tab: 'system' },
     surfaces: ['release', 'hub', 'wait'],
     priority: 4,
   },

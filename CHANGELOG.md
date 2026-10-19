@@ -1,3 +1,21 @@
+## [0.9.27] - 2026-10-20
+
+### 🚀 Features & Capabilities
+
+- **Chrome Web Store for everyday Chrome**: Install **LibrAgent Browser Bridge** from the Chrome Web Store (Settings → System). Load unpacked stays under Advanced for developers (#2174).
+- **Session loop guide**: New VitePress guide (KO/EN) for clock-based session wakes with writer/reviewer backlog cycles, clear boundaries vs Call Me Back, and copy-paste recipes (#2175).
+
+### 🐛 Fixes & Hardening
+
+- **Windows cold start**: Reduce taskbar/icon flicker and avoid a brief blank browser flash on startup (#2172).
+- **Org View & app shell scroll**: Remove the window-edge double scrollbar and smooth Org list scrolling (#2173).
+
+### 🔧 Performance & Internal
+
+- Frontend async waterfalls, attachment/download non-blocking I/O, agent message-cache batching, and related backend/database performance hardening (#2148–#2155, #2150, and related).
+- CI: sequential Rust lib unit tests; ComCtl32 v6 on Windows cargo test hosts (#2115, #2145).
+- Dependency bumps (`markdown2pdf`, `uuid`, `tokio`, `serde_json`, and others).
+
 ## [0.9.26] - 2026-10-17
 
 ### 🚀 Features & Capabilities

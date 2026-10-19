@@ -2000,7 +2000,7 @@
       },
       "everydayChrome": {
         "title": "Use your everyday Chrome",
-        "body": "Install the Chrome extension from Settings → System when the agent needs sites where you are already signed in.",
+        "body": "Install LibrAgent Browser Bridge from the Chrome Web Store in Settings → System when the agent needs sites where you are already signed in.",
         "cta": "Open System settings"
       },
       "orgPortableBundle": {

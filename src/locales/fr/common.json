@@ -1988,7 +1988,7 @@
       },
       "everydayChrome": {
         "title": "Utiliser votre Chrome habituel",
-        "body": "Installez l’extension Chrome dans Paramètres → Système seulement si l’agent a besoin de sites où vous êtes déjà connecté.",
+        "body": "Installez LibrAgent Browser Bridge depuis le Chrome Web Store dans Paramètres → Système lorsque l’agent a besoin de sites où vous êtes déjà connecté.",
         "cta": "Ouvrir les paramètres Système"
       },
       "orgPortableBundle": {

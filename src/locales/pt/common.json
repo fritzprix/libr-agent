@@ -1988,7 +1988,7 @@
       },
       "everydayChrome": {
         "title": "Usar seu Chrome do dia a dia",
-        "body": "Instale a extensão do Chrome em Configurações → Sistema só quando o agente precisar de sites em que você já está conectado.",
+        "body": "Instale o LibrAgent Browser Bridge na Chrome Web Store em Configurações → Sistema quando o agente precisar de sites em que você já está conectado.",
         "cta": "Abrir configurações do Sistema"
       },
       "orgPortableBundle": {

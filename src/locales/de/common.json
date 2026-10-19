@@ -1988,7 +1988,7 @@
       },
       "everydayChrome": {
         "title": "Ihr alltägliches Chrome nutzen",
-        "body": "Installieren Sie die Chrome-Erweiterung unter Einstellungen → System nur, wenn der Agent bereits angemeldete Websites braucht.",
+        "body": "Installieren Sie LibrAgent Browser Bridge im Chrome Web Store unter Einstellungen → System, wenn der Agent bereits angemeldete Websites braucht.",
         "cta": "Systemeinstellungen öffnen"
       },
       "orgPortableBundle": {

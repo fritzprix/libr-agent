@@ -1988,7 +1988,7 @@
       },
       "everydayChrome": {
         "title": "使用日常 Chrome",
-        "body": "只有在需要已登录网站时，才在「设置 → 系统」中安装 Chrome 扩展。",
+        "body": "需要已登录的网站时，在「设置 → 系统」通过 Chrome 应用商店安装 LibrAgent Browser Bridge。",
         "cta": "打开系统设置"
       },
       "orgPortableBundle": {

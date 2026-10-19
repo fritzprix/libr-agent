@@ -1988,7 +1988,7 @@
       },
       "everydayChrome": {
         "title": "Usar su Chrome habitual",
-        "body": "Instale la extensión de Chrome en Ajustes → Sistema solo cuando el agente necesite sitios en los que ya inició sesión.",
+        "body": "Instale LibrAgent Browser Bridge desde Chrome Web Store en Ajustes → Sistema cuando el agente necesite sitios en los que ya inició sesión.",
         "cta": "Abrir ajustes del Sistema"
       },
       "orgPortableBundle": {
