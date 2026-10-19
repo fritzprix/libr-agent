@@ -3,6 +3,9 @@
 Companion notes for publishing **LibrAgent Browser Bridge**. Package with
 `pnpm chrome-extension:pack` (or `./scripts/package-store-zip.sh`).
 
+**Live listing:**
+[LibrAgent Browser Bridge](https://chromewebstore.google.com/detail/libragent-browser-bridge/eponcjengahlpkgbaolhemhmckopmfbe)
+
 ## Recommended first publish
 
 Use **Unlisted** distribution until review feedback is stable. Broad

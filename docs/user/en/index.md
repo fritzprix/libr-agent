@@ -35,7 +35,7 @@ Language: [한국어](/) · **English** · [**Download Latest Release (Windows /
 - [**Sessions**](guides/sessions.md) · [**Session Export**](guides/session-export.md)
 - [**Skills**](guides/skills.md) · [**Sub-agents**](guides/sub-agents.md)
 - [**Extensions (MCP Tools)**](guides/extensions.md) · [**Custom MCP**](guides/custom-mcp.md)
-- [**Browser Automation (Sidecar)**](guides/browser-sidecar.md) · [**Built-in Tools**](guides/builtin-tools.md)
+- [**Browser automation**](guides/browser-sidecar.md) (built-in browser · [your Chrome extension](https://chromewebstore.google.com/detail/libragent-browser-bridge/eponcjengahlpkgbaolhemhmckopmfbe)) · [**Built-in tools**](guides/builtin-tools.md)
 - [**Navigation Guide**](guides/navigation-guide.md) · [**Troubleshooting**](guides/troubleshooting.md)
 
 ## FAQ · scenarios

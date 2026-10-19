@@ -55,7 +55,10 @@ const koSidebar = [
         text: '끝나면 이어서 진행 (call-me-back)',
         link: '/guides/call-me-back',
       },
-      { text: '브라우저 자동화 (Sidecar)', link: '/guides/browser-sidecar' },
+      {
+        text: '브라우저 자동화 (일상 Chrome)',
+        link: '/guides/browser-sidecar',
+      },
       { text: 'Extensions (MCP 도구 설치)', link: '/guides/extensions' },
       { text: '내장 도구 레퍼런스', link: '/guides/builtin-tools' },
       { text: '커스텀 MCP', link: '/guides/custom-mcp' },
@@ -119,7 +122,7 @@ const enSidebar = [
         link: '/en/guides/call-me-back',
       },
       {
-        text: 'Browser Automation (Sidecar)',
+        text: 'Browser automation (your Chrome)',
         link: '/en/guides/browser-sidecar',
       },
       { text: 'Extensions (MCP Tools)', link: '/en/guides/extensions' },

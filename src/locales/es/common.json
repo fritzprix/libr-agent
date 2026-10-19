@@ -642,34 +642,36 @@
         "clearError": "No se pudieron borrar los datos. Cierre las ventanas del navegador y vuelva a intentarlo."
       },
       "extensionBridge": {
-        "description": "Opcional. Conéctelo una vez para que el agente use sus sesiones activas de Chrome. Se reconecta automáticamente al reiniciar.",
-        "connectedHint": "El agente ya puede usar las sesiones de su Chrome habitual. El navegador integrado independiente sigue disponible.",
-        "waitingHint": "Instale la extensión y déjela habilitada. Hasta conectarse, el agente usará solo el navegador integrado.",
-        "fallbackNote": "No conectado: el agente usará el navegador integrado independiente.",
-        "title": "Chrome habitual",
+        "description": "Opcional. Instálela una vez para que el agente use sitios en los que ya inició sesión en Chrome. LibrAgent se vuelve a conectar tras reiniciar.",
+        "connectedHint": "El agente puede usar las cuentas en las que ya inició sesión en Chrome. El navegador integrado del agente sigue disponible. Si se corta el enlace, LibrAgent se reconecta solo.",
+        "waitingHint": "Instale la extensión una vez y déjela activada. Hasta conectarse, el agente solo usa el navegador integrado.",
+        "fallbackNote": "Aún no está conectado. El agente solo usa el navegador integrado.",
+        "title": "Su Chrome",
         "statusLabel": "Estado",
         "connected": "Conectado",
-        "connectedHeadline": "Conectado a su Chrome habitual",
+        "connectedHeadline": "Conectado a su Chrome",
         "disconnected": "Desconectado",
-        "waitingHeadline": "Esperando extensión de Chrome",
-        "installStep1": "Chrome → chrome://extensions → Activar modo de desarrollador",
-        "installStep2": "Cargar extensión descomprimida → seleccionar la ruta copiada",
-        "installStep3": "Deje la extensión habilitada. Compruebe el estado desde el icono de la extensión.",
+        "waitingHeadline": "Esperando la extensión de Chrome",
+        "installStep1": "Instale LibrAgent Browser Bridge desde Chrome Web Store (botón de arriba).",
+        "installStep2": "Abra el icono de la extensión y espere a que el estado muestre Conectado.",
+        "installStep3": "Deje la extensión activada. No necesita abrir esta página cada vez que reinicie LibrAgent.",
         "checking": "Comprobando…",
         "portLabel": "Puerto",
         "tokenLabel": "Token",
-        "modeLabel": "Backend",
-        "pathLabel": "Ruta de instalación",
+        "modeLabel": "Modo de conexión",
+        "pathLabel": "Carpeta local",
         "refresh": "Actualizar estado",
-        "copyPath": "Copiar ruta",
-        "pathCopied": "Ruta de instalación copiada",
-        "pathCopyFailed": "No se pudo copiar al portapapeles",
+        "copyPath": "Copiar ruta de la carpeta local",
+        "pathCopied": "Ruta de la carpeta de instalación copiada",
+        "pathCopyFailed": "No se pudo copiar la ruta",
         "showAdvanced": "Mostrar opciones avanzadas",
         "hideAdvanced": "Ocultar opciones avanzadas",
-        "advancedNote": "El puerto y el token son para soporte. Para el uso habitual basta con instalar la extensión una vez.",
-        "statusErrorTitle": "Estado no disponible",
-        "statusError": "No se pudo leer el estado del puente.",
-        "pathError": "Ruta de instalación no encontrada."
+        "advancedNote": "El puerto y el token son para soporte o ajustes locales. La mayoría solo necesita la instalación desde la Tienda y LibrAgent en ejecución.",
+        "statusErrorTitle": "Conexión de Chrome no disponible",
+        "statusError": "No se pudo leer el estado de la conexión de Chrome.",
+        "pathError": "No se encontró la carpeta de instalación local.",
+        "openStore": "Instalar desde Chrome Web Store",
+        "altInstallNote": "Los desarrolladores pueden cargar la extensión desde una carpeta local en lugar de la Tienda. Copie la ruta de abajo, abra chrome://extensions en Chrome, active el modo de desarrollador y elija Cargar extensión descomprimida."
       }
     },
     "about": {
@@ -1974,7 +1976,6 @@
         "body": "Cree una tarea nocturna que guarde en Knowledge decisiones y correcciones duraderas, no noticias diarias.",
         "cta": "Crear tarea de destilación nocturna"
       },
-
       "knowledgeGraph": {
         "title": "Explora el grafo de conocimiento",
         "body": "En Knowledge verás como red los conceptos que ha acumulado el agente.",
@@ -1986,9 +1987,9 @@
         "cta": "Abrir General"
       },
       "everydayChrome": {
-        "title": "Usar tu Chrome de siempre",
-        "body": "Conecta la extensión de Chrome en Ajustes → Sistema para que los agentes usen tu navegador real con las sesiones ya abiertas.",
-        "cta": "Abrir ajustes de Sistema"
+        "title": "Usar su Chrome habitual",
+        "body": "Instale la extensión de Chrome en Ajustes → Sistema solo cuando el agente necesite sitios en los que ya inició sesión.",
+        "cta": "Abrir ajustes del Sistema"
       },
       "orgPortableBundle": {
         "title": "Respalda o traslada un equipo de Org",
