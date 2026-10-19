@@ -87,7 +87,7 @@ pnpm dead-code     # 미사용 코드를 찾습니다 (unimported)
 | **Frontend** | `src/`             | `pnpm test:run` (Vitest)                                                  |
 | **Backend**  | `src-tauri/tests/` | `pnpm rust:test` (순차 안전 실행) 또는 `pnpm rust:test --test <target>` |
 
-> **🚫 주의 (OOM 방지)**: `cargo test` / `cargo test --tests` 직접 실행은 Tauri 바이너리 다중 병렬 링크로 인해 심각한 OOM을 유발하므로 절대 금지됩니다. 반드시 순차 링크 래퍼인 `pnpm rust:test`를 사용하십시오. 또한 Rust의 `#[cfg(test)]` 블록은 CI에서 실행되지 않으므로, 테스트는 반드시 `src-tauri/tests/`에 통합 테스트로 작성하세요.
+> **🚫 주의 (OOM 방지)**: `cargo test` / `cargo test --tests` 직접 실행은 Tauri 바이너리 다중 병렬 링크로 인해 심각한 OOM을 유발하므로 절대 금지됩니다. 반드시 순차 링크 래퍼인 `pnpm rust:test`를 사용하십시오 (`--lib` 후 integration 타깃을 하나씩 실행). 풀 Tauri/DB 하네스가 필요한 테스트는 `src-tauri/tests/`에 두고, 좁은 단위 로직은 `#[cfg(test)]`로도 CI `--lib` 단계에서 실행됩니다 (#2122).
 
 ---
 
