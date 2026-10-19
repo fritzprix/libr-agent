@@ -346,12 +346,7 @@ impl MessageService {
             }
 
             messages.push(user_message.clone());
-
-            // Apply sliding window policy
-            if messages.len() > crate::agent::state::MAX_CACHED_MESSAGES {
-                let removed = messages.remove(0);
-                log::debug!("Sliding window evicted: {}", removed.id);
-            }
+            crate::agent::state::enforce_cached_message_limit(&mut messages);
 
             log::info!(
                 "📥 Message stack after user message: session={}, count={}, latest_message={}",
@@ -560,12 +555,9 @@ impl MessageService {
                     }
 
                     session_messages.push(msg.clone());
-
-                    if session_messages.len() > crate::agent::state::MAX_CACHED_MESSAGES {
-                        let removed = session_messages.remove(0);
-                        log::debug!("Evicted from sliding window cache: {}", removed.id);
-                    }
                 }
+
+                crate::agent::state::enforce_cached_message_limit(&mut session_messages);
             }
         } // active_sessions + session.messages locks released
 
