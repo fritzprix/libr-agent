@@ -51,6 +51,7 @@ const koSidebar = [
       { text: 'Solution Recipes (레시피)', link: '/guides/recipes' },
       { text: '예약 작업 (Scheduled Tasks)', link: '/guides/scheduled-tasks' },
       { text: '자동화 개요', link: '/guides/automation' },
+      { text: '세션 루프 (loop)', link: '/guides/loop' },
       {
         text: '끝나면 이어서 진행 (call-me-back)',
         link: '/guides/call-me-back',
@@ -114,6 +115,7 @@ const enSidebar = [
       { text: 'Solution Recipes', link: '/en/guides/recipes' },
       { text: 'Scheduled Tasks', link: '/en/guides/scheduled-tasks' },
       { text: 'Automation Overview', link: '/en/guides/automation' },
+      { text: 'Session loops (loop)', link: '/en/guides/loop' },
       {
         text: 'Continue when done (call-me-back)',
         link: '/en/guides/call-me-back',

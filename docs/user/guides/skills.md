@@ -111,7 +111,7 @@ weekly-notes 를 이 프로젝트(워크스페이스)에 배포해줘.
 
 ### 일정 · 웨이크
 
-`schedule`, `loop`, `call-me-back`
+`schedule`, `loop` ([세션 루프 안내](loop.md)), `call-me-back` ([끝나면 이어서](call-me-back.md))
 
 ### 세션 · 컨텍스트
 

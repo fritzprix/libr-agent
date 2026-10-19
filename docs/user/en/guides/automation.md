@@ -42,7 +42,7 @@ If **Scheduled Task Minimum Interval** is configured under **Settings**, short s
 | Automation Type                                      | Execution Context                                                    |
 | ---------------------------------------------------- | -------------------------------------------------------------------- |
 | **Scheduled Tasks** (This Screen)                    | App-wide, recurring background runs                                  |
-| **`@skill:loop`**                                    | In-session clock loops, periodic reminders, and polling              |
+| **`@skill:loop`** ([guide](loop.md))                 | In-session clock wakes, reminders, and timed task-list cycles        |
 | **`@skill:call-me-back`** ([guide](call-me-back.md)) | Resumes sessions upon external process or webhook completion signals |
 | **`@skill:schedule`**                                | Procedural instructions guiding the agent to manage schedules        |
 | **Org / Teamwork**                                   | Explicit hierarchical teams shown in the sidebar **Org** view        |

@@ -31,7 +31,7 @@ Language: [한국어](/) · **English** · [**Download Latest Release (Windows /
 - [**Assistants**](guides/assistants.md) — Custom agents (General / Tools / Skills)
 - [**Playbooks**](guides/playbooks.md) — Re-run successful workflows
 - [**Solution Recipes**](guides/recipes.md) — One-click workflow bundles
-- [**Scheduled Tasks**](guides/scheduled-tasks.md) · [**Automation Overview**](guides/automation.md)
+- [**Scheduled Tasks**](guides/scheduled-tasks.md) · [**Automation Overview**](guides/automation.md) · [**Session loops (loop)**](guides/loop.md) · [**Continue when done (call-me-back)**](guides/call-me-back.md)
 - [**Sessions**](guides/sessions.md) · [**Session Export**](guides/session-export.md)
 - [**Skills**](guides/skills.md) · [**Sub-agents**](guides/sub-agents.md)
 - [**Extensions (MCP Tools)**](guides/extensions.md) · [**Custom MCP**](guides/custom-mcp.md)
