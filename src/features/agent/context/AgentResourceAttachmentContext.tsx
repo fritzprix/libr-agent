@@ -227,20 +227,28 @@ export function AgentResourceAttachmentProvider({
     const results: AttachmentReference[] = [];
 
     try {
-      for (const file of pendingFiles) {
-        try {
-          const result = await addFileInternal(
-            file.originalUrl || file.preview,
-            file.mimeType,
-            file.filename,
-            file.file,
-          );
-          results.push(result);
-        } catch (error) {
-          logger.error('Failed to commit pending file', {
-            filename: file.filename,
-            error: error instanceof Error ? error.message : String(error),
-          });
+      const settled = await Promise.allSettled(
+        pendingFiles.map(async (file) => {
+          try {
+            return await addFileInternal(
+              file.originalUrl || file.preview,
+              file.mimeType,
+              file.filename,
+              file.file,
+            );
+          } catch (error) {
+            logger.error('Failed to commit pending file', {
+              filename: file.filename,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            throw error;
+          }
+        }),
+      );
+
+      for (const res of settled) {
+        if (res.status === 'fulfilled') {
+          results.push(res.value);
         }
       }
 

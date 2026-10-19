@@ -103,9 +103,7 @@ export const mcpServersCRUD: CRUD<MCPServerEntity> = {
     await mcpBackent.upsertMCPServer(server);
   },
   upsertMany: async (servers: MCPServerEntity[]) => {
-    for (const s of servers) {
-      await mcpBackent.upsertMCPServer(s);
-    }
+    await Promise.all(servers.map((s) => mcpBackent.upsertMCPServer(s)));
   },
   read: async (id: string) => {
     return mcpBackent.getMCPServer(id);
@@ -179,9 +177,7 @@ export const sessionsCRUD: CRUD<Session> = {
     await sessionsBackend.upsertSession(session);
   },
   upsertMany: async (sessions: Session[]) => {
-    for (const s of sessions) {
-      await sessionsBackend.upsertSession(s);
-    }
+    await Promise.all(sessions.map((s) => sessionsBackend.upsertSession(s)));
   },
   read: async (id: string) => {
     return sessionsBackend.getSession(id);
@@ -268,9 +264,9 @@ export const playbooksCRUD: CRUD<PlaybookRecord> & {
     await playbooksBackend.upsertPlaybook(playbook);
   },
   upsertMany: async (playbooksArr: PlaybookRecord[]) => {
-    for (const p of playbooksArr) {
-      await playbooksBackend.upsertPlaybook(p);
-    }
+    await Promise.all(
+      playbooksArr.map((p) => playbooksBackend.upsertPlaybook(p)),
+    );
   },
   read: async (id: string, agentId?: string) => {
     if (!agentId) throw new Error('agentId required to read playbook');

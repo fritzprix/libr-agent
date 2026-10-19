@@ -257,7 +257,10 @@ export function AgentSessionListProvider({
       promise === latestSessionListPromiseRef.current;
 
     try {
-      const initialData = await promise;
+      const [initialData, assistants] = await Promise.all([
+        promise,
+        listAssistants(),
+      ]);
 
       if (!isCurrentLoad()) {
         return;
@@ -274,7 +277,7 @@ export function AgentSessionListProvider({
       );
 
       const assistantsById = new Map(
-        (await listAssistants()).map((assistant) => [assistant.id, assistant]),
+        assistants.map((assistant) => [assistant.id, assistant]),
       );
 
       const recentSessions = mapSessionMetadataList(
@@ -341,20 +344,20 @@ export function AgentSessionListProvider({
 
     setIsLoadingMoreSessions(true);
     try {
-      const response = await safeInvoke<AgentSessionListResponse>(
-        'agent_list_sessions',
-        {
+      const [response, assistants] = await Promise.all([
+        safeInvoke<AgentSessionListResponse>('agent_list_sessions', {
           request: {
             cursor,
             limit: SESSION_LIST_PAGE_SIZE,
           },
-        },
-      );
+        }),
+        listAssistants(),
+      ]);
 
       const normalizedResponse = normalizeSessionListResponse(response);
 
       const assistantsById = new Map(
-        (await listAssistants()).map((assistant) => [assistant.id, assistant]),
+        assistants.map((assistant) => [assistant.id, assistant]),
       );
 
       setSessions((previousSessions) => {
