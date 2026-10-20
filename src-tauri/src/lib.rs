@@ -61,7 +61,7 @@ use commands::browser_commands::*;
 use commands::dataset_commands::export_dataset;
 use commands::download_commands::{
     download_binary_file, download_media_file, download_text_file, download_text_pdf,
-    download_workspace_file, export_and_download_zip,
+    download_workspace_file, export_and_download_zip, write_temp_media_file,
 };
 use commands::file_commands::{
     check_dropped_path_type, read_dropped_file, register_dropped_files, workspace_write_file,
@@ -224,6 +224,7 @@ pub fn run() {
                 list_builtin_servers_with_metadata,
                 list_available_builtin_server_definitions,
                 // Download commands
+                write_temp_media_file,
                 download_media_file,
                 download_text_file,
                 download_binary_file,

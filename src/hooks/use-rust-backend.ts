@@ -72,6 +72,11 @@ export interface RustBackendAPI {
     filePath: string,
     sessionId: string,
   ) => Promise<string>;
+  writeTempMediaFile: (args: {
+    sessionId?: string;
+    dataBase64: string;
+    extension: string;
+  }) => Promise<string>;
   downloadMediaFile: (args: {
     sessionId?: string;
     fileName?: string;
@@ -154,6 +159,7 @@ const backendAPI: RustBackendAPI = {
   openPathWithDefaultApp: client.openPathWithDefaultApp,
 
   // File Download Operations
+  writeTempMediaFile: client.writeTempMediaFile,
   downloadMediaFile: client.downloadMediaFile,
   downloadTextFile: client.downloadTextFile,
   downloadBinaryFile: client.downloadBinaryFile,
