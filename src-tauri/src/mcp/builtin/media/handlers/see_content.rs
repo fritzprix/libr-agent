@@ -174,7 +174,7 @@ pub async fn handle_see_content(
             super::extension_from_mime(&mime_type),
         )
         .map_err(|e| {
-            log::error!("Failed to persist loaded image to temp file: {}", e);
+            log::warn!("Failed to persist loaded image to temp file: {e}");
             e
         })
         .ok()

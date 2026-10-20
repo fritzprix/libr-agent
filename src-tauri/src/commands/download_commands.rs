@@ -158,9 +158,6 @@ pub async fn download_media_file(
 }
 
 /// Saves arbitrary binary bytes via the native Save File dialog.
-///
-/// **Note:** This command accepts base64 over IPC. For large payloads from Rust tools,
-/// prefer having the tool persist to a temp file and return a `file://` URL instead.
 #[tauri::command]
 pub async fn download_binary_file(
     app_handle: tauri::AppHandle,

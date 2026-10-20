@@ -85,16 +85,26 @@ async function resolveImageBlob(
   return new Blob([await blob.arrayBuffer()], { type: mimeType });
 }
 
+const UUID_MEDIA_FILENAME =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z0-9]+$/i;
+const SHA_MEDIA_FILENAME = /^[0-9a-f]{64}\.[a-z0-9]+$/i;
+
 function getImageDownloadName(
   uri: string | undefined,
   mimeType: string,
 ): string {
+  const extension = mimeType.split('/')[1]?.split('+')[0] || 'png';
   const uriSegment = uri?.split(/[?#]/u, 1)[0]?.split('/').pop();
-  if (uriSegment && uriSegment.includes('.')) {
+  // Prefer friendly Save-dialog names over opaque UUID/sha tool-result filenames.
+  if (
+    uriSegment &&
+    uriSegment.includes('.') &&
+    !UUID_MEDIA_FILENAME.test(uriSegment) &&
+    !SHA_MEDIA_FILENAME.test(uriSegment)
+  ) {
     return uriSegment;
   }
 
-  const extension = mimeType.split('/')[1]?.split('+')[0] || 'png';
   return `image-${Date.now()}.${extension}`;
 }
 
@@ -182,30 +192,17 @@ export function ImageContentRenderer({
 
   const handleDownload = async () => {
     const fileName = getImageDownloadName(uri, mimeType);
+    const extractBase64 = (): string | undefined => {
+      if (rawData && !rawData.startsWith('data:')) {
+        return rawData;
+      }
+      if (imageSrc.startsWith('data:')) {
+        return imageSrc.slice(imageSrc.indexOf(',') + 1);
+      }
+      return undefined;
+    };
 
-    // Prefer file:// URI from Rust tools (avoids re-sending base64 over IPC)
-    // Otherwise extract base64 from rawData or imageSrc
-    let dataBase64: string | undefined;
-    let fileUrl: string | undefined;
-
-    if (uri?.startsWith('file://')) {
-      // Media from Rust tools (screenshots, captures) - use file path directly
-      fileUrl = uri;
-    } else if (rawData && !rawData.startsWith('data:')) {
-      dataBase64 = rawData;
-    } else if (imageSrc.startsWith('data:')) {
-      dataBase64 = imageSrc.slice(imageSrc.indexOf(',') + 1);
-    }
-
-    try {
-      const result = await downloadMediaFile({
-        sessionId,
-        fileName,
-        mimeType,
-        dataBase64,
-        fileUrl,
-      });
-
+    const finishDownload = (result: string) => {
       if (result === DOWNLOAD_CANCELLED) {
         toast.info(t('agent.mediaRenderer.downloadCancelled'));
         return;
@@ -217,6 +214,50 @@ export function ImageContentRenderer({
         openLabel: t('agent.mediaRenderer.openFile'),
         openErrorLabel: t('agent.mediaRenderer.openFileError'),
       });
+    };
+
+    try {
+      // Prefer file:// (no base64 over IPC). Fall back to inline data if the path is stale.
+      if (uri?.startsWith('file://')) {
+        try {
+          const result = await downloadMediaFile({
+            sessionId,
+            fileName,
+            mimeType,
+            dataBase64: undefined,
+            fileUrl: uri,
+          });
+          finishDownload(result);
+          return;
+        } catch (fileUrlError) {
+          const dataBase64 = extractBase64();
+          if (!dataBase64) {
+            throw fileUrlError;
+          }
+          logger.warn(
+            'fileUrl media download failed; retrying with base64 fallback',
+            fileUrlError,
+          );
+          const result = await downloadMediaFile({
+            sessionId,
+            fileName,
+            mimeType,
+            dataBase64,
+            fileUrl: undefined,
+          });
+          finishDownload(result);
+          return;
+        }
+      }
+
+      const result = await downloadMediaFile({
+        sessionId,
+        fileName,
+        mimeType,
+        dataBase64: extractBase64(),
+        fileUrl: undefined,
+      });
+      finishDownload(result);
     } catch (error) {
       logger.error('Failed to download image', error);
       toast.error(t('agent.mediaRenderer.downloadError'));

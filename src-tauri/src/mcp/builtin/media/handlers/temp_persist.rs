@@ -1,30 +1,43 @@
-//! Temporary file persistence for media content.
+//! Workspace-scoped media persistence for tool results.
 //!
-//! This module provides utilities to persist media bytes to workspace-scoped temp files
-//! and return file:// URIs, avoiding large base64 payloads over Tauri IPC.
+//! Builtin tools write bytes once under `.libragent/tool-results/media/` and return a
+//! `file://` URI. `externalize_media_content_for_storage` reuses that URI when valid,
+//! so download never re-ships base64 and we avoid a second on-disk copy.
 
 use url::Url;
 use uuid::Uuid;
 
-/// Writes media bytes to a workspace-scoped temporary file and returns a file:// URI.
+/// Same directory used by `agent::tools::media` for externalized tool-result media.
+const TOOL_RESULT_MEDIA_DIR: &str = ".libragent/tool-results/media";
+
+/// Writes media bytes to a workspace-scoped file and returns a `file://` URI.
 ///
-/// Files are created under `<workspace>/.libr-media/` to pass workspace scope validation.
-/// Cleanup happens when the session workspace directory is deleted.
+/// Filenames use a UUID only (no raw `session_id`) to avoid path separators in names.
+/// Cleanup follows session workspace / `.libragent` removal.
 pub fn persist_media_to_temp_file(
     workspace_dir: &std::path::Path,
-    session_id: &str,
+    _session_id: &str,
     bytes: &[u8],
     extension: &str,
 ) -> Result<String, String> {
-    let media_dir = workspace_dir.join(".libr-media");
+    let media_dir = workspace_dir.join(TOOL_RESULT_MEDIA_DIR);
+    let extension = sanitize_extension(extension);
 
-    // Create .libr-media directory if it doesn't exist
     std::fs::create_dir_all(&media_dir)
         .map_err(|e| format!("Failed to create media directory: {e}"))?;
 
-    // Use UUID to avoid timestamp collisions
-    let uuid = Uuid::new_v4();
-    let file_name = format!("{}-{}.{}", session_id, uuid, extension);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&media_dir)
+            .map_err(|e| format!("Failed to read media directory metadata: {e}"))?
+            .permissions();
+        perms.set_mode(0o700);
+        std::fs::set_permissions(&media_dir, perms)
+            .map_err(|e| format!("Failed to set media directory permissions: {e}"))?;
+    }
+
+    let file_name = format!("{}.{}", Uuid::new_v4(), extension);
     let temp_path = media_dir.join(file_name);
 
     // Write with owner-only permissions on Unix
@@ -32,7 +45,7 @@ pub fn persist_media_to_temp_file(
     {
         use std::os::unix::fs::OpenOptionsExt;
         std::fs::OpenOptions::new()
-            .create(true)
+            .create_new(true)
             .write(true)
             .mode(0o600)
             .open(&temp_path)
@@ -42,7 +55,11 @@ pub fn persist_media_to_temp_file(
 
     #[cfg(not(unix))]
     {
-        std::fs::write(&temp_path, bytes)
+        std::fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&temp_path)
+            .and_then(|mut f| std::io::Write::write_all(&mut f, bytes))
             .map_err(|e| format!("Failed to write temp media file: {e}"))?;
     }
 
@@ -54,12 +71,20 @@ pub fn persist_media_to_temp_file(
     })?;
 
     log::info!(
-        "Persisted media to workspace temp file: {} ({} bytes)",
+        "Persisted media to workspace file: {} ({} bytes)",
         temp_path.display(),
         bytes.len()
     );
 
     Ok(file_url.to_string())
+}
+
+fn sanitize_extension(extension: &str) -> &str {
+    if !extension.is_empty() && extension.chars().all(|c| c.is_ascii_alphanumeric()) {
+        extension
+    } else {
+        "bin"
+    }
 }
 
 /// Extracts the file extension from a MIME type.
@@ -71,13 +96,12 @@ pub fn extension_from_mime(mime_type: &str) -> &str {
         "image/gif" => "gif",
         "image/bmp" => "bmp",
         "image/svg+xml" => "svg",
-        "image/tiff" => "tiff",
         "audio/wav" | "audio/x-wav" => "wav",
         "audio/mpeg" | "audio/mp3" => "mp3",
         "audio/ogg" => "ogg",
         "audio/webm" => "webm",
-        "video/mp4" => "mp4",
-        "video/webm" => "webm",
+        "audio/aac" => "aac",
+        "audio/flac" => "flac",
         _ => "bin",
     }
 }
@@ -111,7 +135,13 @@ mod tests {
     }
 
     #[test]
-    fn test_persist_media_creates_file_in_workspace() {
+    fn test_sanitize_extension_rejects_path_separators() {
+        assert_eq!(sanitize_extension("../x"), "bin");
+        assert_eq!(sanitize_extension("png"), "png");
+    }
+
+    #[test]
+    fn test_persist_media_creates_file_in_tool_results_dir() {
         let temp_workspace = tempfile::tempdir().unwrap();
         let workspace_path = temp_workspace.path();
         let test_data = b"test image data";
@@ -122,12 +152,13 @@ mod tests {
         let file_url = result.unwrap();
         assert!(file_url.starts_with("file://"), "Should return file:// URL");
 
-        // Verify file was created in .libr-media subdirectory
-        let media_dir = workspace_path.join(".libr-media");
-        assert!(media_dir.exists(), "Should create .libr-media directory");
-        assert!(media_dir.is_dir(), ".libr-media should be a directory");
+        let media_dir = workspace_path.join(TOOL_RESULT_MEDIA_DIR);
+        assert!(
+            media_dir.exists(),
+            "Should create tool-results media directory"
+        );
+        assert!(media_dir.is_dir(), "media dir should be a directory");
 
-        // Verify file exists and has correct content
         let files: Vec<_> = std::fs::read_dir(&media_dir)
             .unwrap()
             .filter_map(|e| e.ok())
@@ -140,13 +171,12 @@ mod tests {
         let content = std::fs::read(&file_path).unwrap();
         assert_eq!(content, test_data, "File content should match");
 
-        // Verify filename format
         let file_name = file_path.file_name().unwrap().to_str().unwrap();
-        assert!(
-            file_name.starts_with("test-session-"),
-            "Should include session ID"
-        );
         assert!(file_name.ends_with(".png"), "Should have correct extension");
+        assert!(
+            !file_name.contains("test-session"),
+            "Filename should not embed session id"
+        );
     }
 
     #[test]
@@ -155,22 +185,19 @@ mod tests {
         let workspace_path = temp_workspace.path();
         let test_data = b"test";
 
-        // Create two files quickly in succession
         let result1 = persist_media_to_temp_file(workspace_path, "s1", test_data, "png");
         let result2 = persist_media_to_temp_file(workspace_path, "s1", test_data, "png");
 
         assert!(result1.is_ok());
         assert!(result2.is_ok());
 
-        // Both should succeed with different paths (UUID prevents collision)
         assert_ne!(
             result1.unwrap(),
             result2.unwrap(),
             "Should generate unique filenames"
         );
 
-        // Verify both files exist
-        let media_dir = workspace_path.join(".libr-media");
+        let media_dir = workspace_path.join(TOOL_RESULT_MEDIA_DIR);
         let file_count = std::fs::read_dir(&media_dir).unwrap().count();
         assert_eq!(file_count, 2, "Should create two distinct files");
     }
@@ -187,8 +214,10 @@ mod tests {
         let result = persist_media_to_temp_file(workspace_path, "s1", test_data, "png");
         assert!(result.is_ok());
 
-        // Find the created file
-        let media_dir = workspace_path.join(".libr-media");
+        let media_dir = workspace_path.join(TOOL_RESULT_MEDIA_DIR);
+        let dir_mode = std::fs::metadata(&media_dir).unwrap().permissions().mode();
+        assert_eq!(dir_mode & 0o777, 0o700, "Directory should be 0700");
+
         let file_path = std::fs::read_dir(&media_dir)
             .unwrap()
             .next()
@@ -196,10 +225,7 @@ mod tests {
             .unwrap()
             .path();
 
-        let metadata = std::fs::metadata(&file_path).unwrap();
-        let mode = metadata.permissions().mode();
-
-        // Check that file has 0o600 permissions (owner read+write only)
+        let mode = std::fs::metadata(&file_path).unwrap().permissions().mode();
         assert_eq!(
             mode & 0o777,
             0o600,
@@ -220,7 +246,6 @@ mod tests {
         let file_url_parsed = Url::parse(&file_url).unwrap();
         let file_path = file_url_parsed.to_file_path().unwrap();
 
-        // Verify the file path is within the workspace
         let canonical_workspace = std::fs::canonicalize(workspace_path).unwrap();
         let canonical_file = std::fs::canonicalize(&file_path).unwrap();
 

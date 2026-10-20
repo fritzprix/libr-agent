@@ -351,6 +351,44 @@ describe('AgentMessageRenderer', () => {
     });
   });
 
+  it('falls back to base64 when fileUrl download fails but inline data is available', async () => {
+    downloadMediaFileMock
+      .mockRejectedValueOnce(new Error('file missing'))
+      .mockResolvedValueOnce('/tmp/recovered.png');
+    const content: MCPContent[] = [
+      {
+        type: 'image',
+        data: 'dG9vbC1pbWFnZQ==',
+        uri: 'file:///tmp/stale-tool-output.png',
+        mimeType: 'image/png',
+      },
+    ];
+
+    render(
+      <AgentMessageRenderer content={content} message={buildImageMessage(content)} />,
+    );
+
+    fireEvent.click(await screen.findByLabelText('agent.mediaRenderer.downloadAria'));
+
+    await waitFor(() => {
+      expect(downloadMediaFileMock).toHaveBeenNthCalledWith(1, {
+        sessionId: 'test-session',
+        fileName: 'stale-tool-output.png',
+        mimeType: 'image/png',
+        dataBase64: undefined,
+        fileUrl: 'file:///tmp/stale-tool-output.png',
+      });
+      expect(downloadMediaFileMock).toHaveBeenNthCalledWith(2, {
+        sessionId: 'test-session',
+        fileName: 'stale-tool-output.png',
+        mimeType: 'image/png',
+        dataBase64: 'dG9vbC1pbWFnZQ==',
+        fileUrl: undefined,
+      });
+    });
+    expect(vi.mocked(toast.success)).toHaveBeenCalled();
+  });
+
   it('blocks unsafe URLs in resource-link click handler', async () => {
     const content: MCPContent[] = [
       {

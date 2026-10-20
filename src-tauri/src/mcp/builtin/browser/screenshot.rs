@@ -89,31 +89,35 @@ pub async fn take_screenshot(server: &BrowserServer, args: Value) -> Result<MCPR
         "Screenshot captured successfully ({capture_scope}, {base64_character_count} Base64 characters, image/png)."
     );
 
-    // Persist to temp file for efficient download (avoids re-sending base64 over IPC)
+    // Persist once for download/externalize reuse (best-effort; never fail the capture).
     let file_uri = {
         use base64::{engine::general_purpose as b64, Engine as _};
-        let png_bytes = b64::STANDARD.decode(&image_data);
-        match png_bytes {
-            Ok(bytes) => {
-                let session_manager =
-                    crate::session::get_session_manager().map_err(|e| e.to_string())?;
-                let workspace_dir =
-                    session_manager.get_session_workspace_dir_by_id(&server.agent_session_id);
-
-                crate::mcp::builtin::media::persist_media_to_temp_file(
-                    &workspace_dir,
-                    &server.agent_session_id,
-                    &bytes,
-                    "png",
-                )
-                .map_err(|e| {
-                    log::error!("Failed to persist browser screenshot to temp file: {}", e);
-                    e
-                })
-                .ok()
-            }
+        match b64::STANDARD.decode(&image_data) {
+            Ok(bytes) => match crate::session::get_session_manager() {
+                Ok(session_manager) => {
+                    let workspace_dir =
+                        session_manager.get_session_workspace_dir_by_id(&server.agent_session_id);
+                    crate::mcp::builtin::media::persist_media_to_temp_file(
+                        &workspace_dir,
+                        &server.agent_session_id,
+                        &bytes,
+                        "png",
+                    )
+                    .map_err(|e| {
+                        log::warn!("Failed to persist browser screenshot to temp file: {e}");
+                        e
+                    })
+                    .ok()
+                }
+                Err(e) => {
+                    log::warn!(
+                        "Skipping screenshot temp persist; session manager unavailable: {e}"
+                    );
+                    None
+                }
+            },
             Err(e) => {
-                log::error!("Failed to decode base64 screenshot data: {}", e);
+                log::warn!("Failed to decode base64 screenshot data for temp persist: {e}");
                 None
             }
         }

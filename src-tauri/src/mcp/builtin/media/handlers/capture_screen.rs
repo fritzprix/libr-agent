@@ -317,7 +317,7 @@ pub async fn handle_capture_screen(
                 "png",
             )
             .map_err(|e| {
-                log::error!("Failed to persist screen capture to temp file: {}", e);
+                log::warn!("Failed to persist screen capture to temp file: {e}");
                 e
             })
             .ok();
