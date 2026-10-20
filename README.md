@@ -16,7 +16,7 @@
 [![React](https://img.shields.io/badge/React-18.3-61DAFB?logo=react)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?logo=typescript)](https://www.typescriptlang.org)
 
-![Hero demo — Install tools like apps. Keep your model. Keep the file.](./assets/hero-demo-60s.gif)
+![Demo — Install tools like apps. Keep your model. Keep the file.](./assets/hero-demo-60s.gif)
 
 [HD WebM](./assets/hero-demo-60s.webm) · _Install tools like apps. Keep your model. Keep the file._
 
@@ -34,7 +34,7 @@ LibrAgent provides a **desktop product** for these tasks:
 | Assemble multi-agent systems from code | **Standard coordination patterns** as bundled skills (`pipeline`, `hub-spoke`, `divide-conquer`, `consensus-delegation`) |
 | Restricted to one provider model and toolset | **Choose your LLM** (API keys or local [Ollama](https://ollama.com)) and your tool stack with MIT, local-first architecture |
 
-[Download the latest release](https://github.com/fritzprix/libr-agent/releases/latest) · [5-minute onboarding](#the-5-minute-onboarding-path) · [Hero demo spec](docs/contributing/hero-demo-spec.md)
+[Download the latest release](https://github.com/fritzprix/libr-agent/releases/latest) · [5-minute onboarding](#the-5-minute-onboarding-path)
 
 ---
 
@@ -63,16 +63,6 @@ LibrAgent provides a **desktop product** for these tasks:
 
 - Cloud: Paste an API key for OpenAI, Anthropic, Gemini, or Groq.
 - Local: Run `ollama pull qwen3:14b` and select Ollama in settings to use the same desktop environment locally.
-
----
-
-## Three product promises
-
-1. **Direct user interface without manual configuration** — Graphical interface, one-click extensions, automated recipes, and in-app approvals. You do not need to edit configuration files or open a terminal.
-2. **Orchestration as a built-in feature** — Select Sequential, Hub-and-spoke, or Swarm workflows through skills. Expand to `teamwork` and `schedule` when you need persistent teams or scheduled tasks.
-3. **Model and stack freedom** — Connect to any supported LLM, use MCP as open infrastructure, and import IDE configurations. Workspaces and browser sessions remain local by default under an MIT license.
-
-**Target users:** Operators who require agent capabilities without manual configuration; developers who avoid vendor lock-in; researchers who need browser, knowledge, and scheduled execution in one application.
 
 ---
 
@@ -149,8 +139,6 @@ Long-running sessions maintain stability through context compaction, loop preven
 ## Documentation
 
 - **[User Guide](docs/user/README.md)** — Installation, initial setup, models, and skills ([documentation website](https://fritzprix.github.io/libr-agent/))
-- **[Hero Demo Spec](docs/contributing/hero-demo-spec.md)** — Canonical product demonstration specification (EN/KO/ZH subtitles)
-- **[Product Messaging Guide](docs/contributing/product-messaging-guide.md)** — Product positioning and documentation style
 - **[Recipes](docs/user/guides/recipes.md)** · **[Scheduled Tasks](docs/user/guides/scheduled-tasks.md)** · **[Sub-agents](docs/user/guides/sub-agents.md)** · **[Skills](docs/user/guides/skills.md)**
 - **[HTTP API](docs/api/http_api.md)** — Remote control interface and programmatic approvals
 - **[Architecture](docs/architecture/agent-workflow-architecture.md)** — Session isolation and Think-Act-Observe cycle
@@ -207,18 +195,6 @@ cd libr-agent
 pnpm install
 pnpm tauri dev
 ```
-
----
-
-## Where LibrAgent Fits Best
-
-| If you want... | LibrAgent is suitable because... |
-| -------------- | -------------------------------- |
-| **Comprehensive capabilities without manual setup** | Extensions presets, recipes, `@skill:` patterns, and UI approvals replace JSON-first configuration |
-| **Orchestration without framework assembly** | Standard patterns (`pipeline`, `hub-spoke`, `divide-conquer`, `consensus-delegation`, `teamwork`, `schedule`) are built into the product |
-| **Independence from proprietary agent stacks** | Use your choice of model and MCP tools under an MIT, local-first architecture |
-| **Dedicated execution substrate** | Local workspace, shell, browser, knowledge store, playbooks, and session safety guards |
-| **Native MCP desktop environment** | Direct presets, configuration import, and 15+ built-in servers |
 
 ---
 

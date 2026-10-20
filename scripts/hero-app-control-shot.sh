@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Thin wrapper → bundled demo-play skill hero chrome beat.
+# Thin wrapper → bundled demo-play skill demo chrome beat.
 # Prefer: @skill:demo-play / src-tauri/bundled_skills/demo-play/
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

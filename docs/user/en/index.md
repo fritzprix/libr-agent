@@ -6,7 +6,7 @@ description: 'LibrAgent (libr-agent) is a local agent operating environment — 
 # LibrAgent User Documentation
 
 > **A local agent operating environment. Select your model, install tools with one click, and choose a coordination pattern.**
-> _No vendor harness or manual JSON configuration required — completed work is saved as files on your machine._
+> _You do not need a vendor harness or manual JSON configuration. The software saves completed work as files on your machine._
 
 Language: [한국어](/) · **English** · [**Download Latest Release (Windows / macOS / Linux)**](https://github.com/fritzprix/libr-agent/releases/latest) · [GitHub Repository](https://github.com/fritzprix/libr-agent)
 

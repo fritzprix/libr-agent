@@ -264,7 +264,6 @@ docs/
 │   └── libragent-comparative-analysis.md
 ├── contributing/
 │   ├── coding-standards.md
-│   ├── product-messaging-guide.md
 │   ├── open-source-launch-finale.md
 │   └── github-release-notes-template.md
 └── sprints/

@@ -17,7 +17,7 @@
 [![React](https://img.shields.io/badge/React-18.3-61DAFB?logo=react)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?logo=typescript)](https://www.typescriptlang.org)
 
-![히어로 데모 — 앱처럼 도구를 설치하고, 원하는 모델을 선택하며, 결과물을 파일로 보관합니다.](./assets/hero-demo-60s.gif)
+![데모 — 앱처럼 도구를 설치하고, 원하는 모델을 선택하며, 결과물을 파일로 보관합니다.](./assets/hero-demo-60s.gif)
 
 [HD WebM 영상 보기](./assets/hero-demo-60s.webm) · _앱처럼 도구를 설치하고, 원하는 모델을 선택하며, 결과물을 파일로 보관합니다._
 
@@ -35,7 +35,7 @@ LibrAgent는 이러한 작업을 간소화한 **완성형 데스크톱 제품**�
 | 코드로 직접 구현해야 하는 멀티 에이전트 | **검증된 협업 패턴 내장** — `pipeline`, `hub-spoke`, `divide-conquer`, `consensus-delegation` 등 기본 제공 스킬 |
 | 특정 업체의 모델 및 도구에 종속 | **자유로운 스택 선택** — 상용 LLM API부터 로컬 [Ollama](https://ollama.com)까지 자유롭게 연동하는 MIT 라이선스 로컬 우선 앱 |
 
-[최신 릴리스 다운로드](https://github.com/fritzprix/libr-agent/releases/latest) · [5분 온보딩 가이드](#5분-온보딩-경로) · [데모 사양서](docs/contributing/hero-demo-spec.md)
+[최신 릴리스 다운로드](https://github.com/fritzprix/libr-agent/releases/latest) · [5분 온보딩 가이드](#5분-온보딩-경로)
 
 ---
 
@@ -64,16 +64,6 @@ LibrAgent는 이러한 작업을 간소화한 **완성형 데스크톱 제품**�
 
 - **클라우드 모델**: OpenAI, Anthropic, Gemini, Groq 등의 API 키를 입력하여 즉시 사용합니다.
 - **로컬 모델**: `ollama pull qwen3:14b` 실행 후 설정에서 Ollama를 선택하면 외부 통신 없이 완전한 로컬 환경으로 구동됩니다.
-
----
-
-## 제품의 세 가지 핵심 가치
-
-1. **설정 과정 없는 완성형 UI** — 직관적인 GUI, 원클릭 도구 설치, 자동화 레시피, 인앱 실행 승인 시스템을 통해 터미널이나 설정 파일 없이 즉시 사용 가능합니다.
-2. **별도 프레임워크가 필요 없는 오케스트레이션** — 순차 처리(Sequential), 허브 앤 스포크(Hub-and-spoke), 스웜(Swarm) 패턴을 스킬로 선택하고, 장기 프로젝트를 위한 `teamwork` 및 정기 실행 `schedule`로 손쉽게 확장합니다.
-3. **완전한 모델 및 데이터 독립성** — 오픈 표준인 MCP(Model Context Protocol)를 기반으로 동작하며, 모든 작업 공간과 브라우저 세션 데이터는 기본적으로 사용자의 로컬 환경에만 보관됩니다.
-
-**추천 대상:** 복잡한 설정 없이 강력한 에이전트를 데스크톱에서 사용하려는 실무자, 단일 벤더 종속을 피하려는 개발자, 브라우저 자동화와 지식 베이스 및 예약 실행 기능이 모두 필요한 연구자.
 
 ---
 
@@ -150,8 +140,6 @@ LibrAgent는 이러한 작업을 간소화한 **완성형 데스크톱 제품**�
 ## 공식 문서 안내
 
 - **[사용자 가이드 (User Guide)](docs/user/README.md)** — 설치, 첫 대화, 모델 설정, 스킬 활용법 ([웹사이트 보기](https://fritzprix.github.io/libr-agent/))
-- **[데모 영상 사양서 (Hero Demo Spec)](docs/contributing/hero-demo-spec.md)** — 공식 제품 데모 사양 (한국어/영어/중국어 자막)
-- **[제품 메시징 가이드](docs/contributing/product-messaging-guide.md)** — 제품 포지셔닝 및 설명 가이드라인
 - **[레시피 가이드](docs/user/guides/recipes.md)** · **[스케줄 작업](docs/user/guides/scheduled-tasks.md)** · **[서브에이전트](docs/user/guides/sub-agents.md)** · **[스킬 가이드](docs/user/guides/skills.md)**
 - **[HTTP API 명세](docs/api/http_api.md)** — 원격 제어 및 프로그램 방식의 승인 인터페이스
 - **[아키텍처 문서](docs/architecture/agent-workflow-architecture.md)** — 세션 격리 및 Think-Act-Observe 실행 루프

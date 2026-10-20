@@ -1,11 +1,6 @@
-# Hero shot list (condensed)
+# Demo shot list
 
-Canonical full spec: repo `docs/contributing/hero-demo-spec.md`.
-
-## Positioning (must appear on film)
-
-- EN: **Install tools like apps. Keep your model. Keep the file.**
-- KO: **툴은 앱처럼 설치하고, 모델은 내가 고르고, 결과는 파일로 남깁니다.**
+Practical timing for recording the README demo GIF/WebM with `@skill:demo-play`.
 
 ## Primary beat (~70s)
 
@@ -34,7 +29,7 @@ You are helping me ship. In this workspace:
 Do not ask clarifying questions — make reasonable assumptions and finish.
 ```
 
-## Secondary clips (separate; never replace hero)
+## Optional secondary clips
 
 1. `@skill:pipeline` (or hub-spoke / divide-conquer) → one merged report
 2. Morning Briefing recipe Install → Run now

@@ -136,7 +136,7 @@ fn handle_control_initialize(id: Option<serde_json::Value>) -> MCPResponse {
                 version: env!("CARGO_PKG_VERSION").to_string(),
             }),
             instructions: Some(
-                "Sessionless UI chrome control. Generic primitives only: app__navigate, app__highlight, app__install_preset, app__focus_session, app__wait_ui. Compose hero/demo sequences in your client or scripts — not as composite tools here.".to_string(),
+                "Sessionless UI chrome control. Generic primitives only: app__navigate, app__highlight, app__install_preset, app__focus_session, app__wait_ui. Compose demo sequences in your client or scripts — not as composite tools here.".to_string(),
             ),
         },
     )

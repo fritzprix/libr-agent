@@ -1,10 +1,10 @@
 ---
 name: demo-play
 description: >
-  Drive LibrAgent desktop chrome for product/hero demos via App Control MCP
+  Drive LibrAgent desktop chrome for demos via App Control MCP
   (POST /mcp/control) and optional session HTTP APIs. Use when filming README
-  hero clips, pacing Extensions install → chat → deliverable, remote UI
-  automation for demos, or when asked to demo-play / run hero shot list /
+  demo clips, pacing Extensions install → chat → deliverable, remote UI
+  automation for demos, or when asked to demo-play / run demo shot list /
   app-control demo. Not for registering MCP servers into an agent session
   (use tool-installer) and not for window screenshots (use app-screenshot).
 ---
@@ -12,7 +12,7 @@ description: >
 # Demo Play
 
 Compose **generic** App Control primitives into timed demo beats. There is no
-`demo__run_hero` server tool — sequences live in this skill / scripts.
+composite scenario server tool — sequences live in this skill / scripts.
 
 ## Preconditions
 
@@ -34,9 +34,9 @@ with the flags above. Details: [references/app-control.md](references/app-contro
 
 | Intent | Action |
 | ------ | ------ |
-| Primary hero (Extensions → install → chat) | Run [scripts/play_hero_chrome.sh](scripts/play_hero_chrome.sh) or call primitives below |
+| Primary demo (Extensions → install → chat) | Run [scripts/play_hero_chrome.sh](scripts/play_hero_chrome.sh) or call primitives below |
 | Custom path / highlight only | Call primitives via [scripts/app_control.sh](scripts/app_control.sh) |
-| Full product story + prompts | Read [references/hero-shot-list.md](references/hero-shot-list.md) |
+| Full shot list + prompts | Read [references/hero-shot-list.md](references/hero-shot-list.md) |
 
 ### 2. Drive chrome (primitives)
 
@@ -51,7 +51,7 @@ bash "<skill-base-dir>/scripts/app_control.sh" app__install_preset '{"name":"hn"
 **Quiet zero-config presets only** (no extra browser/dashboard):
 `hn`, `arxiv`, `ddg-search`, `docx`, `yahoo-finance`.
 
-**Do not use for hero chrome:** `serena` (opens a local web dashboard in the
+**Do not use for demo chrome:** `serena` (opens a local web dashboard in the
 browser and steals focus), key/OAuth presets (`github`, `exa`, …), or anything
 that launches a separate GUI.
 
@@ -74,7 +74,6 @@ Operator records the window. For stills/pixel capture, hand off to
 
 - Compose sequences in the client/scripts — do not invent composite MCP tools.
 - Prefer one chrome path: Extensions → agent chat. Avoid Settings tours.
-- Keep positioning: *Install tools like apps. Keep your model. Keep the file.*
 - Idempotent install is OK (already installed → no-op); for filming Install,
   **uninstall a quiet preset first** (or use a clean demo profile). Never switch
   to `serena` just because it was free — its dashboard browser ruins the take.
