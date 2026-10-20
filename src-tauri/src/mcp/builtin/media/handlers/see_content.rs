@@ -159,6 +159,13 @@ pub async fn handle_see_content(
     let remaining = MAX_SEE_CONTENT_SUCCESSES_PER_SESSION
         .saturating_sub(see_content_successes.load(Ordering::SeqCst));
 
+    // Persist to temp file for efficient download (avoids re-sending base64 over IPC)
+    let file_uri = super::persist_media_to_temp_file(
+        &session_id,
+        &bytes,
+        super::extension_from_mime(&mime_type),
+    ).ok();
+
     slot.commit();
 
     Ok(MCPResult {
@@ -173,7 +180,7 @@ pub async fn handle_see_content(
             },
             MCPContent::Image {
                 data: Some(data),
-                uri: None,
+                uri: file_uri,
                 mime_type,
             },
         ]),

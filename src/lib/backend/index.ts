@@ -111,7 +111,6 @@ export {
   listLogFiles,
   openExternalUrl,
   openPathWithDefaultApp,
-  writeTempMediaFile,
   downloadMediaFile,
   downloadTextFile,
   downloadBinaryFile,

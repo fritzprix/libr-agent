@@ -11,11 +11,13 @@ mod listen_content;
 mod mime;
 mod see_content;
 mod source;
+mod temp_persist;
 
 pub use assist_plugin::{handle_assist_plugin_status, handle_deploy_assist_plugin};
 pub use capture_screen::handle_capture_screen;
 pub use listen_content::handle_listen_content;
 pub use see_content::{handle_see_content, MAX_SEE_CONTENT_SUCCESSES_PER_SESSION};
+pub use temp_persist::{extension_from_mime, persist_media_to_temp_file};
 
 #[cfg(test)]
 mod tool_description_tests {

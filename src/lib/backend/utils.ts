@@ -91,23 +91,6 @@ export async function downloadWorkspaceFile(
   });
 }
 
-export interface WriteTempMediaFileArgs {
-  sessionId?: string;
-  dataBase64: string;
-  extension: string;
-}
-
-/**
- * Writes base64-encoded media data to a temporary file and returns a file:// URL.
- * Use this for large media (>2MB) already in memory to avoid shipping multi-MB
- * base64 strings through IPC.
- */
-export async function writeTempMediaFile(
-  args: WriteTempMediaFileArgs,
-): Promise<string> {
-  return safeInvoke<string>('write_temp_media_file', { ...args });
-}
-
 export interface DownloadMediaFileArgs {
   sessionId?: string;
   fileName?: string;

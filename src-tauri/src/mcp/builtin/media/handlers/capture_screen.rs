@@ -304,6 +304,14 @@ pub async fn handle_capture_screen(args: Value) -> Result<MCPResult, String> {
             let byte_len = payload.png_data.len();
             let size_kb = byte_len / 1024;
             let base64_data = general_purpose::STANDARD.encode(&payload.png_data);
+            
+            // Persist to temp file for efficient download (avoids re-sending base64 over IPC)
+            let file_uri = super::persist_media_to_temp_file(
+                "screen-capture",
+                &payload.png_data,
+                "png",
+            ).ok(); // Log error but don't fail if temp persist fails
+            
             let ScreenCapturePayload {
                 png_data: _,
                 width,
@@ -334,7 +342,7 @@ pub async fn handle_capture_screen(args: Value) -> Result<MCPResult, String> {
                     },
                     MCPContent::Image {
                         data: Some(base64_data),
-                        uri: None,
+                        uri: file_uri,
                         mime_type: "image/png".to_string(),
                     },
                 ]),

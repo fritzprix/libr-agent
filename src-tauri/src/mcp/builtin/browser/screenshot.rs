@@ -89,12 +89,26 @@ pub async fn take_screenshot(server: &BrowserServer, args: Value) -> Result<MCPR
         "Screenshot captured successfully ({capture_scope}, {base64_character_count} Base64 characters, image/png)."
     );
 
+    // Persist to temp file for efficient download (avoids re-sending base64 over IPC)
+    let file_uri = {
+        use base64::{engine::general_purpose as b64, Engine as _};
+        let png_bytes = b64::STANDARD.decode(&image_data).ok();
+        png_bytes.and_then(|bytes| {
+            let temp_dir = std::env::temp_dir();
+            let timestamp = chrono::Utc::now().timestamp_millis();
+            let file_name = format!("libragent-browser-screenshot-{}.png", timestamp);
+            let temp_path = temp_dir.join(file_name);
+            std::fs::write(&temp_path, &bytes).ok()?;
+            url::Url::from_file_path(&temp_path).ok().map(|u| u.to_string())
+        })
+    };
+
     Ok(MCPResult {
         content: Some(vec![
             MCPContent::Text { text: result_text },
             MCPContent::Image {
                 data: Some(image_data),
-                uri: None,
+                uri: file_uri,
                 mime_type: "image/png".to_string(),
             },
         ]),

@@ -11,13 +11,6 @@ import {
 } from '@/lib/notify-file-download';
 import { useResolvedMediaSource } from '../hooks/useResolvedMediaSource';
 
-/**
- * Size threshold (in bytes) for using temp file approach instead of inline base64 IPC.
- * Media over 2MB should be written to a temp file first to avoid memory pressure during
- * Tauri IPC deserialization.
- */
-const LARGE_MEDIA_THRESHOLD_BYTES = 2 * 1024 * 1024; // 2MB
-
 const logger = getLogger('AgentMessageRenderer');
 
 export interface MediaRendererProps {
@@ -105,22 +98,6 @@ function getImageDownloadName(
   return `image-${Date.now()}.${extension}`;
 }
 
-/**
- * Estimates the decoded byte size of a base64 string.
- * Base64 encoding increases size by ~33%, so decoded size is roughly 3/4 of encoded length.
- */
-function estimateBase64DecodedSize(base64: string): number {
-  // Remove data URL prefix if present
-  const base64Only = base64.includes(',')
-    ? base64.slice(base64.indexOf(',') + 1)
-    : base64;
-
-  // Remove whitespace and calculate decoded size
-  const cleanBase64 = base64Only.replace(/\s+/g, '');
-  const padding = (cleanBase64.match(/=/g) || []).length;
-  return Math.floor((cleanBase64.length * 3) / 4) - padding;
-}
-
 function canWriteImagesToClipboard(): boolean {
   return (
     typeof navigator !== 'undefined' &&
@@ -162,7 +139,7 @@ export function ImageContentRenderer({
   sessionId,
 }: MediaRendererProps) {
   const { t } = useTranslation();
-  const { downloadMediaFile, writeTempMediaFile } = useRustBackend();
+  const { downloadMediaFile } = useRustBackend();
   const { resolvedSrc: imageSrc, loadError } = useResolvedMediaSource(
     rawData,
     uri,
@@ -205,39 +182,22 @@ export function ImageContentRenderer({
 
   const handleDownload = async () => {
     const fileName = getImageDownloadName(uri, mimeType);
+
+    // Prefer file:// URI from Rust tools (avoids re-sending base64 over IPC)
+    // Otherwise extract base64 from rawData or imageSrc
     let dataBase64: string | undefined;
     let fileUrl: string | undefined;
 
-    // Extract base64 from rawData or imageSrc
-    if (rawData && !rawData.startsWith('data:')) {
+    if (uri?.startsWith('file://')) {
+      // Media from Rust tools (screenshots, captures) - use file path directly
+      fileUrl = uri;
+    } else if (rawData && !rawData.startsWith('data:')) {
       dataBase64 = rawData;
     } else if (imageSrc.startsWith('data:')) {
       dataBase64 = imageSrc.slice(imageSrc.indexOf(',') + 1);
-    } else if (!rawData && uri?.startsWith('file://')) {
-      fileUrl = uri;
     }
 
     try {
-      // For large media already in memory, write to temp file first to avoid
-      // shipping multi-MB base64 through IPC (see issue #2144)
-      if (
-        dataBase64 &&
-        estimateBase64DecodedSize(dataBase64) > LARGE_MEDIA_THRESHOLD_BYTES
-      ) {
-        logger.info('Large media detected, using temp file approach', {
-          estimatedSize: estimateBase64DecodedSize(dataBase64),
-          threshold: LARGE_MEDIA_THRESHOLD_BYTES,
-        });
-
-        const extension = mimeType.split('/')[1]?.split('+')[0] || 'png';
-        fileUrl = await writeTempMediaFile({
-          sessionId,
-          dataBase64,
-          extension,
-        });
-        dataBase64 = undefined; // Use file URL instead
-      }
-
       const result = await downloadMediaFile({
         sessionId,
         fileName,

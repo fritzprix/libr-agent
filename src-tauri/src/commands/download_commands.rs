@@ -11,7 +11,6 @@ use crate::session::get_session_manager;
 use base64::{engine::general_purpose, Engine as _};
 use std::path::Path;
 use tauri_plugin_dialog::DialogExt;
-use url::Url;
 
 fn infer_extension_from_mime_type(mime_type: &str) -> &str {
     match mime_type {
@@ -92,54 +91,13 @@ pub async fn export_and_download_zip(
     save_bytes_via_dialog(app_handle, exported_file.filename, exported_file.content).await
 }
 
-/// Writes base64-encoded media data to a temporary file and returns a file:// URL.
-///
-/// This command is designed to avoid shipping large media payloads over Tauri IPC.
-/// The frontend should use this for media already in memory (e.g., from data URLs)
-/// that exceeds a reasonable threshold (e.g., 2MB).
-///
-/// The temp file is created in the system temp directory with a unique name.
-/// The caller is responsible for eventual cleanup, though temp files are typically
-/// cleared on app restart or system cleanup.
-#[tauri::command]
-pub async fn write_temp_media_file(
-    session_id: Option<String>,
-    data_base64: String,
-    extension: String,
-) -> Result<String, String> {
-    let bytes = general_purpose::STANDARD
-        .decode(&data_base64)
-        .map_err(|e| format!("Invalid base64 payload: {e}"))?;
-
-    let temp_dir = std::env::temp_dir();
-    let timestamp = chrono::Utc::now().timestamp_millis();
-    let file_name = if let Some(sid) = session_id {
-        format!("libragent-media-{}-{}.{}", sid, timestamp, extension)
-    } else {
-        format!("libragent-media-{}.{}", timestamp, extension)
-    };
-
-    let temp_path = temp_dir.join(file_name);
-
-    tokio::fs::write(&temp_path, &bytes)
-        .await
-        .map_err(|e| format!("Failed to write temp file: {e}"))?;
-
-    let file_url = Url::from_file_path(&temp_path)
-        .map_err(|_| format!("Failed to convert path to file URL: {}", temp_path.display()))?;
-
-    log::info!("Wrote temp media file: {}", temp_path.display());
-    Ok(file_url.to_string())
-}
-
 /// Downloads media via native Save File dialog.
 ///
 /// **Recommended usage to avoid large IPC payloads:**
-/// - For large media (>2MB) already in memory: use `write_temp_media_file` first to get
-///   a file:// URL, then pass that as `fileUrl`. This avoids shipping multi-MB base64
-///   strings through IPC.
-/// - For small payloads (<2MB) or media not yet on disk: use `dataBase64` directly.
-/// - For media already on disk (workspace files): use `fileUrl` directly.
+/// - For media from Rust tools (screenshots, screen captures): these now include a `fileUrl`
+///   pointing to a temp file. Pass the `fileUrl` to avoid re-shipping base64 over IPC.
+/// - For small user uploads or clipboard images: use `dataBase64` directly.
+/// - For workspace files: use `fileUrl` directly.
 #[tauri::command]
 pub async fn download_media_file(
     app_handle: tauri::AppHandle,
