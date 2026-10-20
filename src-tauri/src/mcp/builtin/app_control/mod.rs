@@ -1,8 +1,8 @@
-//! Process-global app chrome control for remote automation (hero demos, CI, Cursor).
+//! Process-global app chrome control for remote automation (demos, CI, Cursor).
 //!
 //! Not registered on per-session `MCPServiceProxy` — served only via `POST /mcp/control`.
 //! Tools are **generic UI primitives** (navigate, highlight, install preset, focus session, wait).
-//! Scenario scripts (hero shot lists, etc.) live in docs / external agents — not as composite tools.
+//! Scenario scripts (demo shot lists, etc.) live in docs / external agents — not as composite tools.
 
 pub mod handlers;
 pub mod tools;

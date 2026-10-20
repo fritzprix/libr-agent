@@ -17,7 +17,7 @@
 [![React](https://img.shields.io/badge/React-18.3-61DAFB?logo=react)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?logo=typescript)](https://www.typescriptlang.org)
 
-![Hero-Demo — Werkzeuge wie Apps installieren, Modelle frei wählen, Ergebnisse lokal behalten.](./assets/hero-demo-60s.gif)
+![Demo — Werkzeuge wie Apps installieren, Modelle frei wählen, Ergebnisse lokal behalten.](./assets/hero-demo-60s.gif)
 
 [HD-WebM-Video ansehen](./assets/hero-demo-60s.webm) · _Werkzeuge wie Apps installieren, Modelle frei wählen, Ergebnisse lokal behalten._
 
@@ -35,7 +35,7 @@ LibrAgent löst diese Herausforderungen als **vollwertige, gebrauchsfertige Desk
 | Aufwendiges Selbstprogrammieren von Multi-Agenten | **Integrierte Koordinationsmuster** — Erprobte Standard-Skills wie `pipeline`, `hub-spoke`, `divide-conquer` und `consensus-delegation` |
 | Feste Bindung an proprietäre Modelle und Tools | **Volle Technologiefreiheit** — Beliebige Cloud-APIs oder lokale Modelle ([Ollama](https://ollama.com)) unter einer quelloffenen MIT-Lizenz nutzen |
 
-[Neueste Version herunterladen](https://github.com/fritzprix/libr-agent/releases/latest) · [5-Minuten-Schnellstart](#5-minuten-schnellstart) · [Demo-Spezifikation](docs/contributing/hero-demo-spec.md)
+[Neueste Version herunterladen](https://github.com/fritzprix/libr-agent/releases/latest) · [5-Minuten-Schnellstart](#5-minuten-schnellstart)
 
 ---
 
@@ -64,16 +64,6 @@ LibrAgent löst diese Herausforderungen als **vollwertige, gebrauchsfertige Desk
 
 - **Cloud-Modelle**: Fügen Sie einfach API-Schlüssel für OpenAI, Anthropic, Gemini oder Groq ein.
 - **Lokale Modelle**: Führen Sie `ollama pull qwen3:14b` aus und wählen Sie Ollama in den Einstellungen für einen rein lokalen Betrieb.
-
----
-
-## Drei zentrale Produktversprechen
-
-1. **Gebrauchsfertige Benutzeroberfläche ohne Einrichtungsaufwand** — Grafische Oberfläche, Ein-Klick-Erweiterungen, automatisierte Rezepte und integrierte Freigabeprozesse machen Terminalarbeit und Konfigurationsdateien überflüssig.
-2. **Orchestrierung als integrierte Funktion** — Nutzen Sie sequentielle Abläufe, Hub-and-Spoke- oder Swarm-Strukturen über intuitive Skills und erweitern Sie diese bei Bedarf für dauerhafte Teams (`teamwork`) oder zeitgesteuerte Cron-Jobs (`schedule`).
-3. **Vollständige Modell- und Datenautonomie** — Basiert auf dem offenen Standard MCP (Model Context Protocol). Sämtliche Arbeitsbereiche, Sitzungsverläufe und Browserdaten verbleiben standardmäßig lokal auf Ihrem Rechner.
-
-**Zielgruppen:** Praktiker, die leistungsfähige Agenten ohne Konfigurationshürden einsetzen möchten; Entwickler, die Anbieter-Lock-in vermeiden wollen; Forscher, die Browser-Automatisierung, Wissensgraphen und Aufgabenplanung in einer integrierten Lösung benötigen.
 
 ---
 
@@ -150,8 +140,6 @@ Automatische Kontextkomprimierung, Schleifenerkennung, Schutzschalter und Antwor
 ## Dokumentation
 
 - **[Benutzerhandbuch (User Guide)](docs/user/README.md)** — Installation, erste Schritte, Modelle und Skills ([Dokumentations-Website](https://fritzprix.github.io/libr-agent/))
-- **[Hero-Demo-Spezifikation](docs/contributing/hero-demo-spec.md)** — Produktdemo-Spezifikation (Untertitel in EN/KO/ZH)
-- **[Leitfaden zur Produktkommunikation](docs/contributing/product-messaging-guide.md)** — Positionierung und Terminologie
 - **[Rezepte](docs/user/guides/recipes.md)** · **[Geplante Aufgaben](docs/user/guides/scheduled-tasks.md)** · **[Sub-Agenten](docs/user/guides/sub-agents.md)** · **[Skills](docs/user/guides/skills.md)**
 - **[HTTP-API](docs/api/http_api.md)** — Fernsteuerung und programmatische Freigaben
 - **[Architektur](docs/architecture/agent-workflow-architecture.md)** — Sitzungsisolation und Think-Act-Observe-Schleife

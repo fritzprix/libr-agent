@@ -17,7 +17,7 @@
 [![React](https://img.shields.io/badge/React-18.3-61DAFB?logo=react)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?logo=typescript)](https://www.typescriptlang.org)
 
-![ヒーローデモ — アプリ感覚でツールを導入し、モデルを自在に選択。成果物は手元のファイルに。](./assets/hero-demo-60s.gif)
+![デモ — アプリ感覚でツールを導入し、モデルを自在に選択。成果物は手元のファイルに。](./assets/hero-demo-60s.gif)
 
 [HD WebM](./assets/hero-demo-60s.webm) · _アプリ感覚でツールを導入し、モデルを自在に選択。成果物は手元のファイルに。_
 
@@ -35,7 +35,7 @@ LibrAgent は、これらの作業を直感的に解決する **完成された�
 | コードでの組み立てが必要なマルチエージェント | **標準協調パターンを内蔵** — `pipeline`、`hub-spoke`、`divide-conquer`、`consensus-delegation` などのバンドルスキル |
 | 特定ベンダーのモデル・ツールへの束縛 | **自由なスタック選択** — クラウド API からローカル [Ollama](https://ollama.com) まで自由に接続できる MIT ライセンス・ローカル優先設計 |
 
-[最新リリースをダウンロード](https://github.com/fritzprix/libr-agent/releases/latest) · [5分オンボーディング](#5分オンボーディングの手順) · [デモ仕様書](docs/contributing/hero-demo-spec.md)
+[最新リリースをダウンロード](https://github.com/fritzprix/libr-agent/releases/latest) · [5分オンボーディング](#5分オンボーディングの手順)
 
 ---
 
@@ -64,16 +64,6 @@ LibrAgent は、これらの作業を直感的に解決する **完成された�
 
 - **クラウドモデル**: OpenAI、Anthropic、Gemini、Groq などの API キーを入力して即座に利用。
 - **ローカルモデル**: `ollama pull qwen3:14b` を実行後、設定で Ollama を選択することで完全ローカル環境で動作。
-
----
-
-## 製品の 3 つのコアバリュー
-
-1. **セットアップ不要の洗練された UI** — GUI、ワンクリック拡張、自動化レシピ、アプリ内承認システムにより、設定ファイルの編集やターミナル操作なしで即座に利用可能。
-2. **組み立て不要の内蔵オーケストレーション** — スキルを通じて Sequential、Hub-and-spoke、Swarm などのワークフローを選択し、長期的なチーム運用（`teamwork`）や定期実行（`schedule`）へスムーズに拡張。
-3. **完全なモデルとデータの独立性** — オープン標準である MCP（Model Context Protocol）を基盤とし、ワークスペースやブラウザセッションのデータはすべて手元のローカル環境に保持。
-
-**推奨ユーザー:** 設定に時間をかけず強力なエージェントを活用したい実務者、単一ベンダーロックインを回避したい開発者、ブラウザ自動化・ナレッジベース・定期タスクを統合環境で扱いたい研究者。
 
 ---
 
@@ -150,8 +140,6 @@ LibrAgent は、これらの作業を直感的に解決する **完成された�
 ## ドキュメント
 
 - **[ユーザーガイド](docs/user/README.md)** — インストール、チャット、モデル、スキル（[ドキュメントサイト](https://fritzprix.github.io/libr-agent/)）
-- **[ヒーローデモ仕様](docs/contributing/hero-demo-spec.md)** — 製品デモ仕様書（EN/KO/ZH 字幕対応）
-- **[製品メッセージングガイド](docs/contributing/product-messaging-guide.md)** — ポジショニングとコピーライティング
 - **[レシピ](docs/user/guides/recipes.md)** · **[スケジュールタスク](docs/user/guides/scheduled-tasks.md)** · **[サブエージェント](docs/user/guides/sub-agents.md)** · **[スキル](docs/user/guides/skills.md)**
 - **[HTTP API](docs/api/http_api.md)** — リモート制御とプログラマティック承認
 - **[アーキテクチャ](docs/architecture/agent-workflow-architecture.md)** — セッション分離と Think-Act-Observe ループ

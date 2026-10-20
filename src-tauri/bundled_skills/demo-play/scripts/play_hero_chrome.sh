@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Primary hero chrome beat: highlight → wait → one-click install → wait.
+# Primary demo chrome beat: highlight → wait → one-click install → wait.
 # Requires LibrAgent with --mcp --app-control. Desktop UI must be open.
 set -euo pipefail
 
@@ -9,13 +9,13 @@ CALL="${SCRIPT_DIR}/app_control.sh"
 
 case "$PRESET" in
   serena|comfyui)
-    echo "Refusing noisy preset '${PRESET}' for hero chrome (opens external UI/browser)." >&2
+    echo "Refusing noisy preset '${PRESET}' for demo chrome (opens external UI/browser)." >&2
     echo "Use: hn | arxiv | ddg-search | docx | yahoo-finance" >&2
     exit 2
     ;;
 esac
 
-echo "Hero chrome beat (preset=${PRESET})"
+echo "Demo chrome beat (preset=${PRESET})"
 bash "$CALL" app__highlight "{\"target\":\"preset\",\"name\":\"${PRESET}\",\"ms\":2500}"
 bash "$CALL" app__wait_ui '{"ms":800}'
 bash "$CALL" app__install_preset "{\"name\":\"${PRESET}\"}"

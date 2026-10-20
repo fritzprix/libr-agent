@@ -17,7 +17,7 @@
 [![React](https://img.shields.io/badge/React-18.3-61DAFB?logo=react)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?logo=typescript)](https://www.typescriptlang.org)
 
-![Hero 演示 — 像安装应用一样配置工具，自主选择模型，结果沉淀为本地文件。](./assets/hero-demo-60s.gif)
+![演示 — 像安装应用一样配置工具，自主选择模型，结果沉淀为本地文件。](./assets/hero-demo-60s.gif)
 
 [查看高清 WebM 演示](./assets/hero-demo-60s.webm) · _像安装应用一样配置工具，自主选择模型，结果沉淀为本地文件。_
 
@@ -35,7 +35,7 @@ LibrAgent 为解决上述问题提供了 **开箱即用的完整桌面端产品*
 | 必须用代码自行组装多智能体系统 | **内置成熟协同模式** — 开箱即用的 `pipeline`、`hub-spoke`、`divide-conquer`、`consensus-delegation` 等原生技能 |
 | 被特定云厂商的模型和工具绑定 | **自由的技术栈选择** — 支持接入主流云端 API 或本地部署的 [Ollama](https://ollama.com)，基于 MIT 协议保障本地优先与隐私安全 |
 
-[下载最新发行版](https://github.com/fritzprix/libr-agent/releases/latest) · [5 分钟上手路径](#5-分钟上手路径) · [演示规格文档](docs/contributing/hero-demo-spec.md)
+[下载最新发行版](https://github.com/fritzprix/libr-agent/releases/latest) · [5 分钟上手路径](#5-分钟上手路径)
 
 ---
 
@@ -64,16 +64,6 @@ LibrAgent 为解决上述问题提供了 **开箱即用的完整桌面端产品*
 
 - **云端模型**: 填入 OpenAI、Anthropic、Gemini、Groq 等主流 API 密钥即可立即使用。
 - **本地模型**: 运行 `ollama pull qwen3:14b`，在设置中选择 Ollama，即可实现完全无外网依赖的本地离线运行。
-
----
-
-## 产品三大核心承诺
-
-1. **零配置门槛的现代化 UI** — 提供可视化图形界面、一键工具安装、预设工作流配方和应用内操作审批，彻底告别命令行与配置文件编辑。
-2. **产品化的智能体编排系统** — 通过技能自由选用顺序执行（Sequential）、中心辐射（Hub-and-spoke）、分布式（Swarm）工作流，并可随时平滑扩展至长期团队运作（`teamwork`）与定时调度（`schedule`）。
-3. **模型与数据的完全掌控权** — 基于开放的标准协议 MCP（Model Context Protocol）构建，所有工作区代码、会话历史与浏览器状态默认均妥善保留在用户本地机器中。
-
-**适用人群:** 追求强大智能体能力但不想编写配置文件的业务人员；拒绝单一厂商技术锁定的专业开发者；需要浏览器自动化、知识库与定时调度一体化产品的技术研究人员。
 
 ---
 
@@ -150,8 +140,6 @@ LibrAgent 为解决上述问题提供了 **开箱即用的完整桌面端产品*
 ## 官方文档指南
 
 - **[用户使用指南 (User Guide)](docs/user/README.md)** — 安装流程、初次使用、模型配置与技能玩法（[访问在线文档站点](https://fritzprix.github.io/libr-agent/)）
-- **[演示视频规格 (Hero Demo Spec)](docs/contributing/hero-demo-spec.md)** — 官方产品演示视频规范（支持中/英/韩三语字幕）
-- **[产品定位与文案指南](docs/contributing/product-messaging-guide.md)** — 产品定位、设计原则与文档编写标准
 - **[配方指南](docs/user/guides/recipes.md)** · **[定时任务](docs/user/guides/scheduled-tasks.md)** · **[子智能体](docs/user/guides/sub-agents.md)** · **[技能指引](docs/user/guides/skills.md)**
 - **[HTTP API 规范](docs/api/http_api.md)** — 远程调用与程序化操作审批接口
 - **[系统架构解析](docs/architecture/agent-workflow-architecture.md)** — 会话隔离与 Think-Act-Observe 状态循环机制

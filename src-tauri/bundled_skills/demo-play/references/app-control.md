@@ -34,11 +34,11 @@ curl -sS -X POST "http://127.0.0.1:${PORT}/mcp/control" \
 Emit is fire-and-forget from Rust; install validation runs in the UI bridge.
 Errors for bad presets appear in LibrAgent webview logs, while MCP often returns OK after emit.
 
-## Quiet presets (hero-safe)
+## Quiet presets (demo-safe)
 
 Use for one-click Install on film: `hn`, `arxiv`, `ddg-search`, `docx`, `yahoo-finance`.
 
-**Avoid on hero takes**
+**Avoid on demo takes**
 
 | Preset | Why |
 | ------ | --- |

@@ -37,8 +37,6 @@ LLM provider setup: [llm-services/provider-setup.md](./llm-services/provider-set
 - **[Soul Lounge Recovery Loop (Experimental)](./architecture/soul-lounge-recovery-loop.md)**: Server-driven loop detection, recovery pacing, re-entry anchors, and one-time override policy.
 - **[Open Source Launch Manifesto](./architecture/open-source-launch-manifesto.md)**: Public-facing engineering ethos, quality bar, and collaboration contract for contributors.
 - **[Contributing](./contributing/coding-standards.md)**: Guidelines for contributing to the project, including coding standards, testing, and the release process.
-- **[Product Messaging Guide](./contributing/product-messaging-guide.md)**: PR, launch, and positioning guidance for describing LibrAgent clearly and persuasively.
-- **[Hero Demo Spec](./contributing/hero-demo-spec.md)**: Canonical 60s product story, shot list, and filming script (README/release/Show HN).
 - **[Launch Finale Playbook](./contributing/open-source-launch-finale.md)**: Final pre-release and launch-day execution runbook.
 - **[GitHub Release Notes Template](./contributing/github-release-notes-template.md)**: Copy-ready release note structure for public releases.
 

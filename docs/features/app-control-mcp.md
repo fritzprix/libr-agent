@@ -17,7 +17,7 @@ export LIBRAGENT_APP_CONTROL=1
 libragent --mcp --app-control
 ```
 
-For hero filming, prefer **demo profile** (clean DB under
+For demo filming, prefer **demo profile** (clean DB under
 `…/com.fritzprix.libragent-demo`, LLM seeded from `.env.demo`):
 
 ```bash
@@ -41,7 +41,7 @@ Port: Settings HTTP port, or `~/.libragent/http_port`.
 | `app__focus_session` | `sessionId` | Navigate to `/agent/{sessionId}` |
 | `app__wait_ui` | optional `ms` (default 500), optional `ready.path` hint | Sleep for pacing between steps |
 
-There is **no** `demo__run_hero` / composite scenario tool. Hero shot lists live in [hero-demo-spec.md](../contributing/hero-demo-spec.md) and operator scripts that call these primitives.
+There is **no** composite scenario tool. Demo shot lists live in the bundled [demo-play shot list](../../src-tauri/bundled_skills/demo-play/references/hero-shot-list.md) and operator scripts that call these primitives.
 
 ## Cursor MCP config example
 
@@ -68,11 +68,11 @@ curl -sS -X POST "http://127.0.0.1:${PORT}/mcp/control" \
 
 Quiet zero-config presets for one-click install: `hn`, `arxiv`, `ddg-search`, `docx`, …  
 Presets with keys/OAuth (e.g. `github`) are rejected by the UI bridge.  
-**Hero filming:** do not use `serena` — it spawns a browser dashboard and steals focus.
+**Demo filming:** do not use `serena` — it spawns a browser dashboard and steals focus.
 
-## Hero demo composition (script, not a tool)
+## Demo composition (script, not a tool)
 
-Use primitives in order — see [hero-demo-spec.md](../contributing/hero-demo-spec.md) shot list:
+Use primitives in order — see [demo-play shot list](../../src-tauri/bundled_skills/demo-play/references/hero-shot-list.md):
 
 1. `app__navigate` → `/mcp-servers` (or `app__highlight` a zero-config preset)
 2. `app__wait_ui` `{ "ms": 800 }`
