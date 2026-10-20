@@ -100,7 +100,7 @@ pub async fn take_screenshot(server: &BrowserServer, args: Value) -> Result<MCPR
                 let workspace_dir =
                     session_manager.get_session_workspace_dir_by_id(&server.agent_session_id);
 
-                crate::mcp::builtin::media::handlers::persist_media_to_temp_file(
+                crate::mcp::builtin::media::persist_media_to_temp_file(
                     &workspace_dir,
                     &server.agent_session_id,
                     &bytes,

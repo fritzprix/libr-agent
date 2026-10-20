@@ -94,8 +94,8 @@ pub async fn export_and_download_zip(
 /// Downloads media via native Save File dialog.
 ///
 /// **Recommended usage to avoid large IPC payloads:**
-/// - For media from Rust tools (screenshots, screen captures): these now include a `fileUrl`
-///   pointing to a temp file. Pass the `fileUrl` to avoid re-shipping base64 over IPC.
+/// - For media from Rust tools (screenshots, screen captures): tool results include an
+///   MCP `uri` (`file://…`). Pass that as `fileUrl` to avoid re-shipping base64 over IPC.
 /// - For small user uploads or clipboard images: use `dataBase64` directly.
 /// - For workspace files: use `fileUrl` directly.
 #[tauri::command]

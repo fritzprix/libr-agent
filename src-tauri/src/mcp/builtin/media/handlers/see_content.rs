@@ -96,7 +96,9 @@ pub async fn handle_see_content(
         Err(_) => return Ok(see_content_cap_exceeded_result()),
     };
 
-    let (bytes, content_type_header) = {
+    // Local workspace files keep their resolved path for download (no `.libr-media/` copy).
+    // HTTP loads are persisted once so download can use `file://` instead of re-sending base64.
+    let (bytes, content_type_header, local_file_uri) = {
         let source = match parse_source(&url_str) {
             Ok(s) => s,
             Err(e) => {
@@ -110,7 +112,7 @@ pub async fn handle_see_content(
         };
         match source {
             ContentSource::Http(url) => match fetch_http_bytes(&url).await {
-                Ok(pair) => pair,
+                Ok((bytes, content_type)) => (bytes, content_type, None),
                 Err(e) => {
                     return Ok(guided_error(
                         ErrorCategory::OperationFailed,
@@ -122,7 +124,12 @@ pub async fn handle_see_content(
             },
             ContentSource::LocalFile(raw_path) => {
                 match read_workspace_media_bytes(&raw_path, &workspace_dir, &session_id).await {
-                    Ok(data) => (data, None),
+                    Ok((data, resolved_path)) => {
+                        let uri = url::Url::from_file_path(&resolved_path)
+                            .ok()
+                            .map(|u| u.to_string());
+                        (data, None, uri)
+                    }
                     Err(result) => return Ok(result),
                 }
             }
@@ -159,18 +166,19 @@ pub async fn handle_see_content(
     let remaining = MAX_SEE_CONTENT_SUCCESSES_PER_SESSION
         .saturating_sub(see_content_successes.load(Ordering::SeqCst));
 
-    // Persist to temp file for efficient download (avoids re-sending base64 over IPC)
-    let file_uri = super::persist_media_to_temp_file(
-        &workspace_dir,
-        &session_id,
-        &bytes,
-        super::extension_from_mime(&mime_type),
-    )
-    .map_err(|e| {
-        log::error!("Failed to persist loaded image to temp file: {}", e);
-        e
-    })
-    .ok();
+    let file_uri = local_file_uri.or_else(|| {
+        super::persist_media_to_temp_file(
+            &workspace_dir,
+            &session_id,
+            &bytes,
+            super::extension_from_mime(&mime_type),
+        )
+        .map_err(|e| {
+            log::error!("Failed to persist loaded image to temp file: {}", e);
+            e
+        })
+        .ok()
+    });
 
     slot.commit();
 

@@ -3,14 +3,13 @@
 //! This module provides utilities to persist media bytes to workspace-scoped temp files
 //! and return file:// URIs, avoiding large base64 payloads over Tauri IPC.
 
-use std::path::PathBuf;
 use url::Url;
 use uuid::Uuid;
 
 /// Writes media bytes to a workspace-scoped temporary file and returns a file:// URI.
 ///
 /// Files are created under `<workspace>/.libr-media/` to pass workspace scope validation.
-/// Cleanup happens when the session directory is deleted or via TTL policy.
+/// Cleanup happens when the session workspace directory is deleted.
 pub fn persist_media_to_temp_file(
     workspace_dir: &std::path::Path,
     session_id: &str,
@@ -86,7 +85,6 @@ pub fn extension_from_mime(mime_type: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
 
     #[test]
     fn test_extension_from_mime_images() {
