@@ -85,16 +85,26 @@ async function resolveImageBlob(
   return new Blob([await blob.arrayBuffer()], { type: mimeType });
 }
 
+const UUID_MEDIA_FILENAME =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z0-9]+$/i;
+const SHA_MEDIA_FILENAME = /^[0-9a-f]{64}\.[a-z0-9]+$/i;
+
 function getImageDownloadName(
   uri: string | undefined,
   mimeType: string,
 ): string {
+  const extension = mimeType.split('/')[1]?.split('+')[0] || 'png';
   const uriSegment = uri?.split(/[?#]/u, 1)[0]?.split('/').pop();
-  if (uriSegment && uriSegment.includes('.')) {
+  // Prefer friendly Save-dialog names over opaque UUID/sha tool-result filenames.
+  if (
+    uriSegment &&
+    uriSegment.includes('.') &&
+    !UUID_MEDIA_FILENAME.test(uriSegment) &&
+    !SHA_MEDIA_FILENAME.test(uriSegment)
+  ) {
     return uriSegment;
   }
 
-  const extension = mimeType.split('/')[1]?.split('+')[0] || 'png';
   return `image-${Date.now()}.${extension}`;
 }
 
@@ -182,26 +192,17 @@ export function ImageContentRenderer({
 
   const handleDownload = async () => {
     const fileName = getImageDownloadName(uri, mimeType);
-    const dataBase64 =
-      rawData && !rawData.startsWith('data:')
-        ? rawData
-        : imageSrc.startsWith('data:')
-          ? imageSrc.slice(imageSrc.indexOf(',') + 1)
-          : undefined;
-    const fileUrl =
-      dataBase64 === undefined && !rawData && uri?.startsWith('file://')
-        ? uri
-        : undefined;
+    const extractBase64 = (): string | undefined => {
+      if (rawData && !rawData.startsWith('data:')) {
+        return rawData;
+      }
+      if (imageSrc.startsWith('data:')) {
+        return imageSrc.slice(imageSrc.indexOf(',') + 1);
+      }
+      return undefined;
+    };
 
-    try {
-      const result = await downloadMediaFile({
-        sessionId,
-        fileName,
-        mimeType,
-        dataBase64,
-        fileUrl,
-      });
-
+    const finishDownload = (result: string) => {
       if (result === DOWNLOAD_CANCELLED) {
         toast.info(t('agent.mediaRenderer.downloadCancelled'));
         return;
@@ -213,6 +214,50 @@ export function ImageContentRenderer({
         openLabel: t('agent.mediaRenderer.openFile'),
         openErrorLabel: t('agent.mediaRenderer.openFileError'),
       });
+    };
+
+    try {
+      // Prefer file:// (no base64 over IPC). Fall back to inline data if the path is stale.
+      if (uri?.startsWith('file://')) {
+        try {
+          const result = await downloadMediaFile({
+            sessionId,
+            fileName,
+            mimeType,
+            dataBase64: undefined,
+            fileUrl: uri,
+          });
+          finishDownload(result);
+          return;
+        } catch (fileUrlError) {
+          const dataBase64 = extractBase64();
+          if (!dataBase64) {
+            throw fileUrlError;
+          }
+          logger.warn(
+            'fileUrl media download failed; retrying with base64 fallback',
+            fileUrlError,
+          );
+          const result = await downloadMediaFile({
+            sessionId,
+            fileName,
+            mimeType,
+            dataBase64,
+            fileUrl: undefined,
+          });
+          finishDownload(result);
+          return;
+        }
+      }
+
+      const result = await downloadMediaFile({
+        sessionId,
+        fileName,
+        mimeType,
+        dataBase64: extractBase64(),
+        fileUrl: undefined,
+      });
+      finishDownload(result);
     } catch (error) {
       logger.error('Failed to download image', error);
       toast.error(t('agent.mediaRenderer.downloadError'));

@@ -89,12 +89,46 @@ pub async fn take_screenshot(server: &BrowserServer, args: Value) -> Result<MCPR
         "Screenshot captured successfully ({capture_scope}, {base64_character_count} Base64 characters, image/png)."
     );
 
+    // Persist once for download/externalize reuse (best-effort; never fail the capture).
+    let file_uri = {
+        use base64::{engine::general_purpose as b64, Engine as _};
+        match b64::STANDARD.decode(&image_data) {
+            Ok(bytes) => match crate::session::get_session_manager() {
+                Ok(session_manager) => {
+                    let workspace_dir =
+                        session_manager.get_session_workspace_dir_by_id(&server.agent_session_id);
+                    crate::mcp::builtin::media::persist_media_to_temp_file(
+                        &workspace_dir,
+                        &server.agent_session_id,
+                        &bytes,
+                        "png",
+                    )
+                    .map_err(|e| {
+                        log::warn!("Failed to persist browser screenshot to temp file: {e}");
+                        e
+                    })
+                    .ok()
+                }
+                Err(e) => {
+                    log::warn!(
+                        "Skipping screenshot temp persist; session manager unavailable: {e}"
+                    );
+                    None
+                }
+            },
+            Err(e) => {
+                log::warn!("Failed to decode base64 screenshot data for temp persist: {e}");
+                None
+            }
+        }
+    };
+
     Ok(MCPResult {
         content: Some(vec![
             MCPContent::Text { text: result_text },
             MCPContent::Image {
                 data: Some(image_data),
-                uri: None,
+                uri: file_uri,
                 mime_type: "image/png".to_string(),
             },
         ]),

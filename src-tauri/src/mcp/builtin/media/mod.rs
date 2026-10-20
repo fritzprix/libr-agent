@@ -1,6 +1,10 @@
 mod handlers;
 mod tools;
 
+// Re-export for browser screenshot and other crates that need temp media persistence
+// without reaching into the private `handlers` module.
+pub(crate) use handlers::persist_media_to_temp_file;
+
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{BuiltinServerMetadata, MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
@@ -101,7 +105,9 @@ impl BuiltinMCPServer for MediaServer {
             "listenContent" => {
                 handlers::handle_listen_content(args, workspace_dir, session_id).await
             }
-            "captureScreen" => handlers::handle_capture_screen(args).await,
+            "captureScreen" => {
+                handlers::handle_capture_screen(args, workspace_dir, session_id).await
+            }
             "assistPluginStatus" => {
                 handlers::handle_assist_plugin_status(
                     self.session_manager.get_base_data_dir(),
