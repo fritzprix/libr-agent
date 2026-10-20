@@ -161,10 +161,16 @@ pub async fn handle_see_content(
 
     // Persist to temp file for efficient download (avoids re-sending base64 over IPC)
     let file_uri = super::persist_media_to_temp_file(
+        &workspace_dir,
         &session_id,
         &bytes,
         super::extension_from_mime(&mime_type),
-    ).ok();
+    )
+    .map_err(|e| {
+        log::error!("Failed to persist loaded image to temp file: {}", e);
+        e
+    })
+    .ok();
 
     slot.commit();
 

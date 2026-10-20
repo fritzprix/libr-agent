@@ -303,12 +303,13 @@ describe('AgentMessageRenderer', () => {
     fireEvent.click(await screen.findByLabelText('agent.mediaRenderer.downloadAria'));
 
     await waitFor(() => {
+      // New behavior: prefers file:// URI when available (no base64 over IPC)
       expect(downloadMediaFileMock).toHaveBeenCalledWith({
         sessionId: 'test-session',
         fileName: 'tool-output.png',
         mimeType: 'image/png',
-        dataBase64: 'dG9vbC1pbWFnZQ==',
-        fileUrl: undefined,
+        dataBase64: undefined,
+        fileUrl: 'file:///tmp/tool-output.png',
       });
     });
     expect(vi.mocked(toast.success)).toHaveBeenCalledWith(
@@ -322,7 +323,7 @@ describe('AgentMessageRenderer', () => {
     );
   });
 
-  it('downloads inline data-url images through the native media download command', async () => {
+  it('downloads inline data-url images through the native media download command (base64 fallback)', async () => {
     downloadMediaFileMock.mockResolvedValue('/tmp/image.png');
     const content: MCPContent[] = [
       {
@@ -339,6 +340,7 @@ describe('AgentMessageRenderer', () => {
     fireEvent.click(await screen.findByLabelText('agent.mediaRenderer.downloadAria'));
 
     await waitFor(() => {
+      // Fallback path: uses base64 when no file:// URI available
       expect(downloadMediaFileMock).toHaveBeenCalledWith({
         sessionId: 'test-session',
         fileName: expect.stringMatching(/^image-\d+\.png$/),

@@ -92,15 +92,31 @@ pub async fn take_screenshot(server: &BrowserServer, args: Value) -> Result<MCPR
     // Persist to temp file for efficient download (avoids re-sending base64 over IPC)
     let file_uri = {
         use base64::{engine::general_purpose as b64, Engine as _};
-        let png_bytes = b64::STANDARD.decode(&image_data).ok();
-        png_bytes.and_then(|bytes| {
-            let temp_dir = std::env::temp_dir();
-            let timestamp = chrono::Utc::now().timestamp_millis();
-            let file_name = format!("libragent-browser-screenshot-{}.png", timestamp);
-            let temp_path = temp_dir.join(file_name);
-            std::fs::write(&temp_path, &bytes).ok()?;
-            url::Url::from_file_path(&temp_path).ok().map(|u| u.to_string())
-        })
+        let png_bytes = b64::STANDARD.decode(&image_data);
+        match png_bytes {
+            Ok(bytes) => {
+                let session_manager =
+                    crate::session::get_session_manager().map_err(|e| e.to_string())?;
+                let workspace_dir =
+                    session_manager.get_session_workspace_dir_by_id(&server.agent_session_id);
+
+                crate::mcp::builtin::media::handlers::persist_media_to_temp_file(
+                    &workspace_dir,
+                    &server.agent_session_id,
+                    &bytes,
+                    "png",
+                )
+                .map_err(|e| {
+                    log::error!("Failed to persist browser screenshot to temp file: {}", e);
+                    e
+                })
+                .ok()
+            }
+            Err(e) => {
+                log::error!("Failed to decode base64 screenshot data: {}", e);
+                None
+            }
+        }
     };
 
     Ok(MCPResult {

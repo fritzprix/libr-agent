@@ -42,7 +42,11 @@ type ScreenCaptureError = (ErrorCategory, String);
 type ScreenCaptureTaskResult = Result<ScreenCapturePayload, ScreenCaptureError>;
 
 /// Handle the `captureScreen` tool.
-pub async fn handle_capture_screen(args: Value) -> Result<MCPResult, String> {
+pub async fn handle_capture_screen(
+    args: Value,
+    workspace_dir: std::path::PathBuf,
+    session_id: String,
+) -> Result<MCPResult, String> {
     // 1. Validate display_index
     let display_index = if let Some(val) = args.get("display_index") {
         if let Some(i) = val.as_i64() {
@@ -304,14 +308,20 @@ pub async fn handle_capture_screen(args: Value) -> Result<MCPResult, String> {
             let byte_len = payload.png_data.len();
             let size_kb = byte_len / 1024;
             let base64_data = general_purpose::STANDARD.encode(&payload.png_data);
-            
+
             // Persist to temp file for efficient download (avoids re-sending base64 over IPC)
             let file_uri = super::persist_media_to_temp_file(
-                "screen-capture",
+                &workspace_dir,
+                &session_id,
                 &payload.png_data,
                 "png",
-            ).ok(); // Log error but don't fail if temp persist fails
-            
+            )
+            .map_err(|e| {
+                log::error!("Failed to persist screen capture to temp file: {}", e);
+                e
+            })
+            .ok();
+
             let ScreenCapturePayload {
                 png_data: _,
                 width,

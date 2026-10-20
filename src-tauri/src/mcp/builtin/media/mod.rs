@@ -101,7 +101,9 @@ impl BuiltinMCPServer for MediaServer {
             "listenContent" => {
                 handlers::handle_listen_content(args, workspace_dir, session_id).await
             }
-            "captureScreen" => handlers::handle_capture_screen(args).await,
+            "captureScreen" => {
+                handlers::handle_capture_screen(args, workspace_dir, session_id).await
+            }
             "assistPluginStatus" => {
                 handlers::handle_assist_plugin_status(
                     self.session_manager.get_base_data_dir(),
