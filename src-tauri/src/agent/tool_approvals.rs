@@ -133,11 +133,16 @@ pub async fn evaluate_tool_execution_policy(
         };
     }
 
+    if let Some(message) = invalid_mcp_server_transport(tool_name, args) {
+        return ToolExecutionPolicyDecision::Block(BlockedToolExecution { message });
+    }
+
     if requires_hard_approval {
         let arguments = args.to_string();
+        let preview_source = mcp_server_transport_summary(tool_name, args).unwrap_or(arguments);
         return ToolExecutionPolicyDecision::RequireHardApproval(ToolApprovalRequest {
-            description: build_channel_permission_description(tool_name, &arguments),
-            input_preview: build_channel_permission_input_preview(&arguments),
+            description: build_channel_permission_description(tool_name, &preview_source),
+            input_preview: build_channel_permission_input_preview(&preview_source),
         });
     }
 
@@ -213,6 +218,102 @@ fn pattern_list_matches(patterns: &[String], tool_name: &str) -> bool {
         }
     }
     false
+}
+
+fn is_mcp_server_mutation(tool_name: &str) -> bool {
+    tool_name == "tool__registerServer" || tool_name == "tool__updateServer"
+}
+
+/// Rejects malformed transports before the user is asked to approve a call
+/// that would fail anyway.
+fn invalid_mcp_server_transport(tool_name: &str, args: &serde_json::Value) -> Option<String> {
+    if !is_mcp_server_mutation(tool_name) {
+        return None;
+    }
+
+    const EXPECTED: &str = "Expected stdio: {\"type\":\"stdio\",\"command\":\"npx\",\"args\":[\"-y\",\"<package>\"]} or http: {\"type\":\"http\",\"url\":\"https://...\"}. Fix the transport and call again; the user has not been asked to approve yet.";
+
+    let transport = match args.get("transport") {
+        Some(value) => value,
+        None => return Some(format!("Missing 'transport'. {EXPECTED}")),
+    };
+
+    match serde_json::from_value::<crate::mcp::types::TransportConfig>(transport.clone()) {
+        Ok(crate::mcp::types::TransportConfig::Stdio { command, .. })
+            if command.trim().is_empty() =>
+        {
+            Some(format!(
+                "stdio transport has an empty 'command'. {EXPECTED}"
+            ))
+        }
+        Ok(crate::mcp::types::TransportConfig::Http { url, .. }) if url.trim().is_empty() => {
+            Some(format!("http transport has an empty 'url'. {EXPECTED}"))
+        }
+        Ok(_) => None,
+        Err(error) => Some(format!("Invalid transport: {error}. {EXPECTED}")),
+    }
+}
+
+/// Leads with the launch command or URL so truncated relay previews still show
+/// what will run. Env and header values are omitted because previews can be
+/// forwarded to external channels.
+fn mcp_server_transport_summary(tool_name: &str, args: &serde_json::Value) -> Option<String> {
+    if !is_mcp_server_mutation(tool_name) {
+        return None;
+    }
+
+    let name = args.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+    let transport = args.get("transport")?;
+    let transport_type = transport
+        .get("type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("stdio");
+
+    let object_keys = |field: &str| -> Option<String> {
+        let keys = transport
+            .get(field)?
+            .as_object()?
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        (!keys.is_empty()).then(|| keys.join(","))
+    };
+
+    let summary = if transport_type == "stdio" {
+        let command = transport
+            .get("command")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let args_line = transport
+            .get("args")
+            .and_then(|v| v.as_array())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            })
+            .unwrap_or_default();
+        let mut line = format!("[{name}] stdio: {command}");
+        if !args_line.is_empty() {
+            line.push(' ');
+            line.push_str(&args_line);
+        }
+        if let Some(env_keys) = object_keys("env") {
+            line.push_str(&format!(" | env keys: {env_keys}"));
+        }
+        line
+    } else {
+        let url = transport.get("url").and_then(|v| v.as_str()).unwrap_or("");
+        let mut line = format!("[{name}] {transport_type}: {url}");
+        if let Some(header_keys) = object_keys("headers") {
+            line.push_str(&format!(" | header keys: {header_keys}"));
+        }
+        line
+    };
+
+    Some(summary)
 }
 
 pub fn generate_channel_permission_request_id() -> String {
@@ -370,6 +471,108 @@ mod tests {
             decision,
             ToolExecutionPolicyDecision::RequireApproval(_)
         ));
+    }
+
+    #[tokio::test]
+    async fn mcp_server_mutations_require_hard_approval() {
+        for tool_name in ["tool__registerServer", "tool__updateServer"] {
+            assert!(
+                is_hard_approval_required(tool_name).await,
+                "{tool_name} should require hard approval"
+            );
+        }
+
+        for tool_name in [
+            "tool__listServers",
+            "tool__verifyServer",
+            "tool__deleteServer",
+        ] {
+            assert!(
+                !is_hard_approval_required(tool_name).await,
+                "{tool_name} should not require hard approval"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn register_server_preview_leads_with_command_and_hides_env_values() {
+        let decision = evaluate_tool_execution_policy(
+            "tool__registerServer",
+            &serde_json::json!({
+                "name": "stocks",
+                "description": "x".repeat(400),
+                "transport": {
+                    "type": "stdio",
+                    "command": "npx",
+                    "args": ["-y", "@fre4x/stocks@latest"],
+                    "env": { "API_KEY": "super-secret-value" }
+                }
+            }),
+        )
+        .await;
+
+        let ToolExecutionPolicyDecision::RequireHardApproval(request) = decision else {
+            panic!("expected hard approval, got {decision:?}");
+        };
+        assert!(request
+            .input_preview
+            .starts_with("[stocks] stdio: npx -y @fre4x/stocks@latest"));
+        assert!(request.input_preview.contains("env keys: API_KEY"));
+        assert!(!request.input_preview.contains("super-secret-value"));
+    }
+
+    #[tokio::test]
+    async fn register_server_with_malformed_transport_is_blocked_before_approval() {
+        let missing_command = serde_json::json!({
+            "name": "everything",
+            "description": "test",
+            "transport": {
+                "type": "stdio",
+                "args": ["-y", "@modelcontextprotocol/server-everything"],
+                "env": {},
+                "url": "",
+                "enableSSE": false
+            }
+        });
+        let empty_url = serde_json::json!({
+            "name": "remote",
+            "transport": { "type": "http", "url": " " }
+        });
+
+        for (tool_name, args) in [
+            ("tool__registerServer", missing_command),
+            ("tool__updateServer", empty_url),
+        ] {
+            let decision = evaluate_tool_execution_policy(tool_name, &args).await;
+            let ToolExecutionPolicyDecision::Block(blocked) = decision else {
+                panic!("{tool_name}: expected block, got {decision:?}");
+            };
+            assert!(blocked.message.contains("not been asked to approve"));
+        }
+    }
+
+    #[tokio::test]
+    async fn update_server_http_preview_shows_url_and_header_keys() {
+        let decision = evaluate_tool_execution_policy(
+            "tool__updateServer",
+            &serde_json::json!({
+                "name": "remote",
+                "transport": {
+                    "type": "http",
+                    "url": "https://mcp.example.com/mcp",
+                    "headers": { "Authorization": "Bearer token" }
+                }
+            }),
+        )
+        .await;
+
+        let ToolExecutionPolicyDecision::RequireHardApproval(request) = decision else {
+            panic!("expected hard approval, got {decision:?}");
+        };
+        assert_eq!(
+            request.input_preview,
+            "[remote] http: https://mcp.example.com/mcp | header keys: Authorization"
+        );
     }
 
     #[test]

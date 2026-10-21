@@ -40,6 +40,7 @@ except ImportError:
         return Path(path).read_text(encoding='utf-8')
 
 ALLOWED_PROPERTIES = frozenset({"name", "description", "license", "allowed-tools", "metadata"})
+# Keep in sync with STRIPPED_SKILL_ROOT_FILES_LOWER in skill-deployer/scripts/github_fetch.py
 FORBIDDEN_SKILL_FILES = frozenset(
     {
         ".bundled_manifest.json",
@@ -268,6 +269,9 @@ def check_deployment_path(report: ValidationReport, skill_path: Path) -> None:
     if "user_skills" in parts:
         return
 
+    if len(parts) >= 3 and parts[-3] == ".libragent" and parts[-2] == "skills":
+        return
+
     if "workspaces" in parts:
         try:
             workspace_index = parts.index("workspaces")
@@ -296,16 +300,17 @@ def check_deployment_path(report: ValidationReport, skill_path: Path) -> None:
                     "Use .../.libragent/skills/ for new workspace skills.",
                 )
 
-    resolved_str = str(resolved)
-    if ("\\skills\\" in resolved_str or "/skills/" in resolved_str) and "user_skills" not in parts:
-        if "system_skills" not in parts and "assistants" not in parts:
-            if "libragent" in resolved_str.lower() or "com.fritzprix.libragent" in parts:
-                report.add_warning(
-                    "SKILL-PATH-LEGACY-GLOBAL",
-                    "Location: legacy AppData skills/ directory.",
-                    "Global user skills belong in user_skills/, not skills/. "
-                    "Deploy with: deploy_skill.py <skill> --scope global",
-                )
+    if (
+        len(parts) >= 3
+        and parts[-2] == "skills"
+        and parts[-3] in {"com.fritzprix.libragent", "libragent"}
+    ):
+        report.add_warning(
+            "SKILL-PATH-LEGACY-GLOBAL",
+            "Location: legacy AppData skills/ directory.",
+            "Global user skills belong in user_skills/, not skills/. "
+            "Deploy with: deploy_skill.py <skill> --scope global",
+        )
 
     if parent.joinpath(".bundled_manifest.json").is_file() and "system_skills" not in parts:
         report.add_warning(

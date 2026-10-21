@@ -1,6 +1,6 @@
 ---
 name: setup-wizard
-description: Use when the user needs to diagnose and install runtime environment dependencies (Python, Node.js, uv) for running LibrAgent or MCP servers. Use on new machines, MCP "command not found" errors, or missing Python/Node runtime failures. LibrAgent 실행에 필요한 Python, Node.js 등의 환경을 자동으로 진단하고 설치하도록 안내하는 마법사입니다.
+description: 'Use when the user needs to diagnose and install runtime environment dependencies (Python, Node.js, uv) for running LibrAgent or MCP servers. Use on first run or a new machine ("I just installed LibrAgent, what do I need to set up?"), MCP "command not found" or spawn errors, or missing Python/Node runtime failures. Triggers: 처음 깔았는데 뭐 설정해야 돼, 초기 설정, 환경 설정, command not found, node 없음, python 없음. LibrAgent 실행에 필요한 Python, Node.js 등의 환경을 자동으로 진단하고 설치하도록 안내하는 마법사입니다.'
 license: Complete terms in LICENSE.txt
 ---
 
