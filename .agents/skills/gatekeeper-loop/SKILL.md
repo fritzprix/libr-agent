@@ -61,7 +61,16 @@ git diff <reviewedHead>..origin/<head>           # round ≥ 2: incremental diff
 git show origin/<head>:<path>                    # surrounding code
 ```
 
-If `reviewedHead` no longer exists (force-push), do a full review. Apply [references/review-rubric.md](references/review-rubric.md). Prefer CI results over local builds; do not run `pnpm refactor:validate`. If a claim truly needs a local run, use a detached worktree under `.libragent/work/gatekeeper-loop/wt-<N>` and remove it afterwards.
+If `reviewedHead` no longer exists (force-push), do a full review. Apply [references/review-rubric.md](references/review-rubric.md). Prefer CI results over local builds; do not run `pnpm refactor:validate`. If a claim truly needs a local run, use the gatekeeper's own persistent worktree, never the user's checkout or the worker's:
+
+```bash
+MAIN=$(git rev-parse --show-toplevel)
+WT="$MAIN/../$(basename "$MAIN").worktrees/gatekeeper"
+[ -d "$WT" ] || git -C "$MAIN" worktree add --detach "$WT" "origin/<head>"
+git -C "$WT" checkout --detach --force "origin/<head>" && git -C "$WT" clean -fd
+```
+
+Keep it between ticks so build caches stay warm; run `pnpm install --frozen-lockfile` there only when the lockfile changed. Local runs never lead to commits.
 
 On round ≥ 2, read the worker response first and settle every previous `G` item: fixed (verify in the diff), decline accepted, or disputed (restate once; a second dispute on the same item → escalate).
 
