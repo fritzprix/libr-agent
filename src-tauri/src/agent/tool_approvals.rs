@@ -135,9 +135,10 @@ pub async fn evaluate_tool_execution_policy(
 
     if requires_hard_approval {
         let arguments = args.to_string();
+        let preview_source = mcp_server_transport_summary(tool_name, args).unwrap_or(arguments);
         return ToolExecutionPolicyDecision::RequireHardApproval(ToolApprovalRequest {
-            description: build_channel_permission_description(tool_name, &arguments),
-            input_preview: build_channel_permission_input_preview(&arguments),
+            description: build_channel_permission_description(tool_name, &preview_source),
+            input_preview: build_channel_permission_input_preview(&preview_source),
         });
     }
 
@@ -213,6 +214,68 @@ fn pattern_list_matches(patterns: &[String], tool_name: &str) -> bool {
         }
     }
     false
+}
+
+/// Leads with the launch command or URL so truncated relay previews still show
+/// what will run. Env and header values are omitted because previews can be
+/// forwarded to external channels.
+fn mcp_server_transport_summary(tool_name: &str, args: &serde_json::Value) -> Option<String> {
+    if tool_name != "tool__registerServer" && tool_name != "tool__updateServer" {
+        return None;
+    }
+
+    let name = args.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+    let transport = args.get("transport")?;
+    let transport_type = transport
+        .get("type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("stdio");
+
+    let object_keys = |field: &str| -> Option<String> {
+        let keys = transport
+            .get(field)?
+            .as_object()?
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        (!keys.is_empty()).then(|| keys.join(","))
+    };
+
+    let summary = if transport_type == "stdio" {
+        let command = transport
+            .get("command")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let args_line = transport
+            .get("args")
+            .and_then(|v| v.as_array())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            })
+            .unwrap_or_default();
+        let mut line = format!("[{name}] stdio: {command}");
+        if !args_line.is_empty() {
+            line.push(' ');
+            line.push_str(&args_line);
+        }
+        if let Some(env_keys) = object_keys("env") {
+            line.push_str(&format!(" | env keys: {env_keys}"));
+        }
+        line
+    } else {
+        let url = transport.get("url").and_then(|v| v.as_str()).unwrap_or("");
+        let mut line = format!("[{name}] {transport_type}: {url}");
+        if let Some(header_keys) = object_keys("headers") {
+            line.push_str(&format!(" | header keys: {header_keys}"));
+        }
+        line
+    };
+
+    Some(summary)
 }
 
 pub fn generate_channel_permission_request_id() -> String {
@@ -370,6 +433,78 @@ mod tests {
             decision,
             ToolExecutionPolicyDecision::RequireApproval(_)
         ));
+    }
+
+    #[tokio::test]
+    async fn mcp_server_mutations_require_hard_approval() {
+        for tool_name in ["tool__registerServer", "tool__updateServer"] {
+            assert!(
+                is_hard_approval_required(tool_name).await,
+                "{tool_name} should require hard approval"
+            );
+        }
+
+        for tool_name in [
+            "tool__listServers",
+            "tool__verifyServer",
+            "tool__deleteServer",
+        ] {
+            assert!(
+                !is_hard_approval_required(tool_name).await,
+                "{tool_name} should not require hard approval"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn register_server_preview_leads_with_command_and_hides_env_values() {
+        let decision = evaluate_tool_execution_policy(
+            "tool__registerServer",
+            &serde_json::json!({
+                "name": "stocks",
+                "description": "x".repeat(400),
+                "transport": {
+                    "type": "stdio",
+                    "command": "npx",
+                    "args": ["-y", "@fre4x/stocks@latest"],
+                    "env": { "API_KEY": "super-secret-value" }
+                }
+            }),
+        )
+        .await;
+
+        let ToolExecutionPolicyDecision::RequireHardApproval(request) = decision else {
+            panic!("expected hard approval, got {decision:?}");
+        };
+        assert!(request
+            .input_preview
+            .starts_with("[stocks] stdio: npx -y @fre4x/stocks@latest"));
+        assert!(request.input_preview.contains("env keys: API_KEY"));
+        assert!(!request.input_preview.contains("super-secret-value"));
+    }
+
+    #[tokio::test]
+    async fn update_server_http_preview_shows_url_and_header_keys() {
+        let decision = evaluate_tool_execution_policy(
+            "tool__updateServer",
+            &serde_json::json!({
+                "name": "remote",
+                "transport": {
+                    "type": "http",
+                    "url": "https://mcp.example.com/mcp",
+                    "headers": { "Authorization": "Bearer token" }
+                }
+            }),
+        )
+        .await;
+
+        let ToolExecutionPolicyDecision::RequireHardApproval(request) = decision else {
+            panic!("expected hard approval, got {decision:?}");
+        };
+        assert_eq!(
+            request.input_preview,
+            "[remote] http: https://mcp.example.com/mcp | header keys: Authorization"
+        );
     }
 
     #[test]

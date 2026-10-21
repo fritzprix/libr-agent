@@ -44,10 +44,10 @@ Do **not** dump long operating doctrine into every assistant `systemPrompt`. Pre
 ## Cold-start routing
 
 - Empty / new workspace and the task needs durable project rules → offer or run **agent-init** (do not invent a fat default `agents.md` silently unless the user wants guidelines).
-- Need OS/Python/Node for MCP → **setup-wizard**.
+- First run on a new machine, missing OS/Python/Node/uv, or MCP `command not found` → **setup-wizard**.
 - Need sub-agent handoff rules → **delegate** (and `references/session-isolation.md` here for the matrix).
 - Need generator–evaluator / proof-before-done on a child → **delegation-eval-loop** (after `delegate` mechanics).
-- Need MCP server or skill install/update/remove (including GitHub skill URLs) → **tool-installer** / **skill-deployer**.
+- Install/update/remove request → GitHub repo or subpath with `SKILL.md` → **skill-deployer**; npm/PyPI MCP package, MCP server repo, server URL, or MCP config JSON → **tool-installer**; GitHub URL you cannot classify → inspect the repo first. MCP registration always pauses for user approval; finish with `tool__verifyServer`.
 
 ## Hard runtime rules (always true)
 

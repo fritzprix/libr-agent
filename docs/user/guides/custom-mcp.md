@@ -87,6 +87,11 @@ Cursor에 있는 MCP 설정을 읽어서 LibrAgent에 가져와줘.
 
 - 패키지·GitHub·JSON 설정으로 Extensions에 **직접 등록**
 - Cursor / VS Code / Windsurf / Claude Desktop 등 **설정 파일에서 가져와 비교·등록**
+- 등록 후 `tool__verifyServer`로 **실제 연결을 확인**하고, 실패하면 원인(런타임 없음, API 키 누락 등)을 알려 줌
+
+에이전트가 MCP 서버를 등록하거나 수정할 때마다 앱이 실행할 명령(또는 URL)을 보여 주고 **승인을 받습니다.** YOLO 모드에서도 이 승인은 건너뛰지 않습니다. MCP 서버는 내 컴퓨터에서 임의 명령을 실행하기 때문입니다.
+
+GitHub 주소를 주면 에이전트가 먼저 내용을 확인합니다. `SKILL.md`가 있으면 스킬이므로 `skill-deployer`로, MCP 서버 패키지면 이 스킬로 설치합니다.
 
 자세한 절차는 번들 스킬 `tool-installer` 본문을 따릅니다. ([스킬 카탈로그](skills.md))
 

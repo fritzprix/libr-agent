@@ -1,6 +1,6 @@
 ---
 name: skill-deployer
-description: "Deploy, install, update, or remove a validated custom skill in user_skills/ (global), .libragent/skills/ (workspace), or assistant scope from a local folder or a GitHub URL. Use when installing a skill from a GitHub URL, deploying a validated local skill after skill-creator, updating an installed skill from its recorded source, or removing an installed skill. NOT for system_skills or app-bundled skills. Triggers: deploy skill, install skill, install this skill, GitHub skill URL, update skill, remove skill, uninstall skill, global skill, workspace skill, user_skills."
+description: "Deploy, install, update, or remove a validated custom skill in user_skills/ (global), .libragent/skills/ (workspace), or assistant scope from a local folder or a GitHub URL. Use when installing a skill from a GitHub URL, deploying a validated local skill after skill-creator, updating an installed skill from its recorded source, or removing an installed skill. NOT for system_skills or app-bundled skills. GitHub URL rule: a repo or subpath that contains SKILL.md is a skill and uses this skill; an MCP server package or MCP config uses tool-installer instead; if unsure, inspect the repo before installing. Triggers: deploy skill, install skill, install this skill, GitHub skill URL, update skill, remove skill, uninstall skill, global skill, workspace skill, user_skills, 스킬 깔아줘, 스킬 설치해줘, 이거 깔아줘, 스킬 업데이트, 스킬 삭제."
 ---
 
 # Skill Deployer
@@ -137,6 +137,7 @@ python "<skill-deployer-base-dir>/scripts/deploy_skill.py" "<github-url>" --insp
 
 - **Multiple `SKILL.md` folders**: `deploy_skill.py` lists each discovered skill (`name`, `subpath`, `description`, validation status, and scripts). Present the list to the user, let them pick one, and pass `--skill <name>` in the next step.
 - **Single `SKILL.md` folder**: `deploy_skill.py` prints the `=== Skill Review ===` summary (name, description, pinned commit SHA, and any scripts or executables).
+- **No `SKILL.md` (`[DEPLOY-GITHUB-003]`)**: the repo is not a skill. If it is an MCP server (npm/PyPI package, `@modelcontextprotocol/sdk` or `mcp` dependency, README with an MCP config block), switch to **tool-installer**. Otherwise tell the user what the repo is and ask what they want.
 
 ### Step 2 — Review and Obtain User Approval (Mandatory for Scripts)
 
