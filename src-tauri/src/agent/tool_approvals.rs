@@ -133,6 +133,10 @@ pub async fn evaluate_tool_execution_policy(
         };
     }
 
+    if let Some(message) = invalid_mcp_server_transport(tool_name, args) {
+        return ToolExecutionPolicyDecision::Block(BlockedToolExecution { message });
+    }
+
     if requires_hard_approval {
         let arguments = args.to_string();
         let preview_source = mcp_server_transport_summary(tool_name, args).unwrap_or(arguments);
@@ -216,11 +220,45 @@ fn pattern_list_matches(patterns: &[String], tool_name: &str) -> bool {
     false
 }
 
+fn is_mcp_server_mutation(tool_name: &str) -> bool {
+    tool_name == "tool__registerServer" || tool_name == "tool__updateServer"
+}
+
+/// Rejects malformed transports before the user is asked to approve a call
+/// that would fail anyway.
+fn invalid_mcp_server_transport(tool_name: &str, args: &serde_json::Value) -> Option<String> {
+    if !is_mcp_server_mutation(tool_name) {
+        return None;
+    }
+
+    const EXPECTED: &str = "Expected stdio: {\"type\":\"stdio\",\"command\":\"npx\",\"args\":[\"-y\",\"<package>\"]} or http: {\"type\":\"http\",\"url\":\"https://...\"}. Fix the transport and call again; the user has not been asked to approve yet.";
+
+    let transport = match args.get("transport") {
+        Some(value) => value,
+        None => return Some(format!("Missing 'transport'. {EXPECTED}")),
+    };
+
+    match serde_json::from_value::<crate::mcp::types::TransportConfig>(transport.clone()) {
+        Ok(crate::mcp::types::TransportConfig::Stdio { command, .. })
+            if command.trim().is_empty() =>
+        {
+            Some(format!(
+                "stdio transport has an empty 'command'. {EXPECTED}"
+            ))
+        }
+        Ok(crate::mcp::types::TransportConfig::Http { url, .. }) if url.trim().is_empty() => {
+            Some(format!("http transport has an empty 'url'. {EXPECTED}"))
+        }
+        Ok(_) => None,
+        Err(error) => Some(format!("Invalid transport: {error}. {EXPECTED}")),
+    }
+}
+
 /// Leads with the launch command or URL so truncated relay previews still show
 /// what will run. Env and header values are omitted because previews can be
 /// forwarded to external channels.
 fn mcp_server_transport_summary(tool_name: &str, args: &serde_json::Value) -> Option<String> {
-    if tool_name != "tool__registerServer" && tool_name != "tool__updateServer" {
+    if !is_mcp_server_mutation(tool_name) {
         return None;
     }
 
@@ -481,6 +519,36 @@ mod tests {
             .starts_with("[stocks] stdio: npx -y @fre4x/stocks@latest"));
         assert!(request.input_preview.contains("env keys: API_KEY"));
         assert!(!request.input_preview.contains("super-secret-value"));
+    }
+
+    #[tokio::test]
+    async fn register_server_with_malformed_transport_is_blocked_before_approval() {
+        let missing_command = serde_json::json!({
+            "name": "everything",
+            "description": "test",
+            "transport": {
+                "type": "stdio",
+                "args": ["-y", "@modelcontextprotocol/server-everything"],
+                "env": {},
+                "url": "",
+                "enableSSE": false
+            }
+        });
+        let empty_url = serde_json::json!({
+            "name": "remote",
+            "transport": { "type": "http", "url": " " }
+        });
+
+        for (tool_name, args) in [
+            ("tool__registerServer", missing_command),
+            ("tool__updateServer", empty_url),
+        ] {
+            let decision = evaluate_tool_execution_policy(tool_name, &args).await;
+            let ToolExecutionPolicyDecision::Block(blocked) = decision else {
+                panic!("{tool_name}: expected block, got {decision:?}");
+            };
+            assert!(blocked.message.contains("not been asked to approve"));
+        }
     }
 
     #[tokio::test]
