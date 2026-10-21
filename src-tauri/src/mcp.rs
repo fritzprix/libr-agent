@@ -11,6 +11,7 @@ pub use session_isolation_config::SessionIsolationConfig;
 
 pub mod builtin;
 pub mod error_normalization;
+pub mod fre4x_npx_args;
 pub mod keychain;
 pub mod oauth;
 pub mod presets;

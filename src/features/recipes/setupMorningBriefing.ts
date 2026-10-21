@@ -29,7 +29,7 @@ export const FALLBACK_PRESETS: Record<string, MCPServerPreset> = {
       'Read Hacker News — top, new, best, Ask HN, Show HN, and job stories.',
     transportType: 'stdio',
     command: 'npx',
-    args: ['-y', '@fre4x/hn'],
+    args: ['-y', '@fre4x/hn@latest'],
   },
   'yahoo-finance': {
     name: 'yahoo-finance',
@@ -38,7 +38,7 @@ export const FALLBACK_PRESETS: Record<string, MCPServerPreset> = {
       'Get real-time stock prices, financials, options chains, and insider data. No API key required.',
     transportType: 'stdio',
     command: 'npx',
-    args: ['-y', '@fre4x/yahoo-finance'],
+    args: ['-y', '@fre4x/yahoo-finance@latest'],
   },
 };
 

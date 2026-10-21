@@ -179,7 +179,7 @@ describe('MorningBriefingWalkthroughDialog', () => {
         description: 'Read Hacker News',
         transportType: 'stdio',
         command: 'npx',
-        args: ['-y', '@fre4x/hn'],
+        args: ['-y', '@fre4x/hn@latest'],
       },
       {
         name: 'yahoo-finance',
@@ -187,7 +187,7 @@ describe('MorningBriefingWalkthroughDialog', () => {
         description: 'Get real-time stock prices',
         transportType: 'stdio',
         command: 'npx',
-        args: ['-y', '@fre4x/yahoo-finance'],
+        args: ['-y', '@fre4x/yahoo-finance@latest'],
       },
     ]);
   });
