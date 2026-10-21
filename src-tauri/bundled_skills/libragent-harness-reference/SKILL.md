@@ -47,7 +47,7 @@ Do **not** dump long operating doctrine into every assistant `systemPrompt`. Pre
 - Need OS/Python/Node for MCP → **setup-wizard**.
 - Need sub-agent handoff rules → **delegate** (and `references/session-isolation.md` here for the matrix).
 - Need generator–evaluator / proof-before-done on a child → **delegation-eval-loop** (after `delegate` mechanics).
-- Need tool/server install → **tool-installer** / **skill-deployer**.
+- Need MCP server or skill install/update/remove (including GitHub skill URLs) → **tool-installer** / **skill-deployer**.
 
 ## Hard runtime rules (always true)
 
