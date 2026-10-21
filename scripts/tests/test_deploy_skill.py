@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import http.client
 import io
 import json
 import sys
@@ -420,6 +421,36 @@ class DeploySkillUnitTests(unittest.TestCase):
             )
             self.assertEqual(code, 0, err)
             self.assertFalse(alpha_target.exists())
+
+    def test_truncated_zip_download_falls_back_to_git_fetch(self) -> None:
+        spec = github_fetch.ResolvedGitHubSpec(
+            requested_url="https://github.com/acme/alpha-skill",
+            owner="acme",
+            repo="alpha-skill",
+            ref="main",
+            commit="a" * 40,
+            subpath=None,
+        )
+
+        def fake_git_fetch(_spec: github_fetch.ResolvedGitHubSpec, repo_dest: Path) -> None:
+            repo_dest.mkdir(parents=True, exist_ok=True)
+            (repo_dest / "SKILL.md").write_text(VALID_PROMPT_SKILL_MD, encoding="utf-8")
+
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            mock.patch.object(
+                github_fetch,
+                "_download_commit_zip",
+                side_effect=http.client.IncompleteRead(b"partial"),
+            ),
+            mock.patch.object(
+                github_fetch, "_git_fetch_commit_fallback", side_effect=fake_git_fetch
+            ) as git_fallback,
+        ):
+            repo_root = github_fetch.fetch_github_repo_at_commit(spec, Path(tmp))
+
+            git_fallback.assert_called_once()
+            self.assertTrue((repo_root / "SKILL.md").is_file())
 
 
 if __name__ == "__main__":

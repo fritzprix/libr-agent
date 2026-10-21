@@ -4,6 +4,7 @@ GitHub skill fetch, selection, script/executable review, and provenance helpers 
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import re
@@ -735,7 +736,13 @@ def fetch_github_repo_at_commit(spec: ResolvedGitHubSpec, temp_dir: Path) -> Pat
         shutil.move(str(source_root), str(repo_dest))
     except GitHubDeployError:
         raise
-    except (OSError, urllib.error.URLError, zipfile.BadZipFile, ValueError):
+    except (
+        OSError,
+        urllib.error.URLError,
+        http.client.HTTPException,
+        zipfile.BadZipFile,
+        ValueError,
+    ):
         if repo_dest.exists():
             shutil.rmtree(repo_dest)
         _git_fetch_commit_fallback(spec, repo_dest)
