@@ -10,10 +10,12 @@ pub fn is_npx_command(command: &str) -> bool {
         return false;
     }
 
-    let file_name = std::path::Path::new(trimmed)
+    // Normalize Windows separators so `C:\...\npx.cmd` resolves on Unix hosts too.
+    let normalized = trimmed.replace('\\', "/");
+    let file_name = std::path::Path::new(&normalized)
         .file_name()
         .and_then(|s| s.to_str())
-        .unwrap_or(trimmed);
+        .unwrap_or(normalized.as_str());
 
     file_name.eq_ignore_ascii_case("npx") || file_name.eq_ignore_ascii_case("npx.cmd")
 }
