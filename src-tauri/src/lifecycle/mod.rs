@@ -1,4 +1,5 @@
 pub mod alias_migration;
+pub mod fre4x_npx_migration;
 pub mod app_setup;
 pub mod database;
 pub mod database_backup;

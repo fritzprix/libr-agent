@@ -13,7 +13,7 @@ describe('presetNeedsUserConfig', () => {
       category: 'search',
       transportType: 'stdio',
       command: 'npx',
-      args: ['-y', '@fre4x/hn'],
+      args: ['-y', '@fre4x/hn@latest'],
     };
     expect(presetNeedsUserConfig(preset)).toBe(false);
   });
