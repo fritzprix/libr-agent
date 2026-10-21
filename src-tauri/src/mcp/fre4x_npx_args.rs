@@ -122,10 +122,7 @@ mod tests {
 
     #[test]
     fn rewrite_skips_non_npx_command() {
-        let mut args = vec![
-            json!("-y"),
-            json!("@fre4x/hn"),
-        ];
+        let mut args = vec![json!("-y"), json!("@fre4x/hn")];
         assert!(!rewrite_fre4x_npx_args_if_npx("uvx", &mut args));
         assert_eq!(args[1], json!("@fre4x/hn"));
     }

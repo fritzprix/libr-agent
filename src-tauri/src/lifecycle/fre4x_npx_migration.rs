@@ -40,7 +40,10 @@ async fn migrate_mcp_servers(db: &DatabaseConnection) -> Result<(), String> {
         let mut active_model = model.into_active_model();
         active_model.config = Set(new_config_str);
         if let Err(e) = active_model.update(db).await {
-            warn!("fre4x_npx_migration: failed to update MCP server {}: {}", id, e);
+            warn!(
+                "fre4x_npx_migration: failed to update MCP server {}: {}",
+                id, e
+            );
             continue;
         }
 

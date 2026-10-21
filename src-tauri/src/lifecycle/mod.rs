@@ -1,9 +1,9 @@
 pub mod alias_migration;
-pub mod fre4x_npx_migration;
 pub mod app_setup;
 pub mod database;
 pub mod database_backup;
 pub mod database_error;
+pub mod fre4x_npx_migration;
 pub mod frontend_ready;
 pub mod llm_env_seed;
 pub mod migration_verifier;
