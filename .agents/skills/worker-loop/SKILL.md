@@ -59,9 +59,10 @@ python3 .agents/skills/worker-loop/scripts/pr_status.py          # all open PRs 
 python3 .agents/skills/worker-loop/scripts/pr_status.py --pr 2197 # one PR
 ```
 
-Each PR has `nextAction`: `resolve-conflict` > `triage-comments` > `fix-ci` > `wait-ci` > `none`. Act on the **first** PR whose action is one of the first three; `wait-ci` and `none` mean nothing to do for that PR.
+Each PR has `nextAction`: `resolve-conflict` > `address-gatekeeper` > `triage-comments` > `fix-ci` > `wait-ci` > `none`. Act on the **first** PR whose action is one of the first four; `wait-ci` and `none` mean nothing to do for that PR.
 
 - **resolve-conflict**: check out the head branch, merge `origin/<base>`, resolve only mechanical conflicts. If intent is ambiguous, record `needsUser` and stop.
+- **address-gatekeeper**: a `gatekeeper-loop` verdict requested changes at the current head (protocol: `.agents/skills/gatekeeper-loop/references/comment-format.md`). Read the full comment (`gh pr view N --comments`). Answer **every** `G` item as fixed (commit) or declined (reason grounded in code, issue scope, or project rules — not convenience). Push, then post the `worker-loop: response` comment with the same `round` and the new head SHA. Suggestions (`S`) are optional. If a finding needs a user decision, record `needsUser` and still post the response for the rest.
 - **triage-comments**: evaluate each unresolved thread / new comment against the code with the `review-pr-comments` skill. Fix valid ones; reply with reasoning to ones you reject. Resolve a thread only after its fix is pushed.
 - **fix-ci**: `gh run view <id> --log-failed`, find the root cause, reproduce narrowly, fix. A flaky/infra failure gets one `gh run rerun <id> --failed`, recorded in history; a second identical failure is treated as real.
 - Verify narrowly (see Verification), commit with a semantic message, push once per tick (no force-push).
@@ -109,7 +110,8 @@ End every tick with 1–3 sentences, outcome first: what was done (with PR/issue
 ## Hard rules
 
 - One unit of work per tick; one push per tick.
-- Never merge, enable auto-merge, force-push, delete remote branches, or close issues.
+- Never merge, enable auto-merge, force-push, delete remote branches, or close issues — not even after a gatekeeper `approve`; merging is the user's call.
+- Never post `gatekeeper-loop` markers or edit `gatekeeper:*` labels.
 - Never modify files unrelated to the selected PR or issue. Arming the loop is permission to edit tracked files only for that PR or issue.
 - Protected paths (`src/`, `src-tauri/`, `docs/`, `.github/`, READMEs) may be changed only as required by the selected PR or issue; changes to `.github/workflows` or release config always go to `needsUser`.
 - When in doubt, record `needsUser` and move on rather than guess.

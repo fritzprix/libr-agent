@@ -3,15 +3,19 @@
 
 Prints JSON: one entry per open PR authored by @me with merge state, failing
 and pending checks, unresolved review threads, and PR comments from others
-that arrived after the latest commit. Bodies are truncated; fetch the full
-text only for items you act on.
+that arrived after the latest commit, plus the latest gatekeeper-loop verdict
+(own marker comments only). Bodies are truncated; fetch the full text only for
+items you act on.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
+
+MARKER = re.compile(r"<!--\s*(gatekeeper-loop|worker-loop):\s*(.*?)\s*-->")
 
 THREADS_QUERY = """
 query($owner: String!, $name: String!, $number: Int!) {
@@ -48,14 +52,39 @@ def check_state(check: dict) -> str:
     return (check.get("conclusion") or check.get("state") or check.get("status") or "").upper()
 
 
+def gatekeeper_state(comments: list[dict], me: str, head_sha: str) -> dict | None:
+    """Latest gatekeeper verdict (own comments only) and whether it awaits the worker."""
+    verdict, responded_rounds = None, set()
+    for c in comments:
+        if (c.get("author") or {}).get("login") != me:
+            continue
+        match = MARKER.search(c.get("body") or "")
+        if not match:
+            continue
+        fields = dict(kv.split("=", 1) for kv in match.group(2).split() if "=" in kv)
+        if match.group(1) == "gatekeeper-loop":
+            verdict = {**fields, "url": c.get("url"), "createdAt": c["createdAt"]}
+        elif verdict and c["createdAt"] > verdict["createdAt"]:
+            responded_rounds.add(fields.get("round"))
+    if verdict is None:
+        return None
+    verdict["awaitingWorker"] = (
+        verdict.get("verdict") == "changes-requested"
+        and verdict.get("head") == head_sha
+        and verdict.get("round") not in responded_rounds
+    )
+    return verdict
+
+
 def summarize(number: int, owner: str, name: str, me: str) -> dict:
     pr = json.loads(
         gh(
             "pr", "view", str(number), "--json",
-            "number,title,url,headRefName,baseRefName,isDraft,mergeable,mergeStateStatus,"
-            "reviewDecision,statusCheckRollup,commits,comments",
+            "number,title,url,headRefName,headRefOid,baseRefName,isDraft,mergeable,"
+            "mergeStateStatus,reviewDecision,statusCheckRollup,commits,comments",
         )
     )
+    gatekeeper = gatekeeper_state(pr.get("comments") or [], me, pr["headRefOid"])
     checks = pr.get("statusCheckRollup") or []
     failing = [c.get("name") or c.get("context") for c in checks if check_state(c) in FAILED]
     pending = [c.get("name") or c.get("context") for c in checks if check_state(c) in PENDING]
@@ -95,6 +124,8 @@ def summarize(number: int, owner: str, name: str, me: str) -> dict:
 
     if pr.get("mergeable") == "CONFLICTING":
         next_action = "resolve-conflict"
+    elif gatekeeper and gatekeeper["awaitingWorker"]:
+        next_action = "address-gatekeeper"
     elif threads or new_comments:
         next_action = "triage-comments"
     elif failing:
@@ -118,6 +149,7 @@ def summarize(number: int, owner: str, name: str, me: str) -> dict:
         "pendingChecks": pending,
         "unresolvedThreads": threads,
         "newComments": new_comments,
+        "gatekeeper": gatekeeper,
         "nextAction": next_action,
     }
 
