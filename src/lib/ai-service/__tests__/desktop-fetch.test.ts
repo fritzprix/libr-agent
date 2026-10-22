@@ -108,7 +108,9 @@ describe('desktop-fetch', () => {
   });
 
   it('createLlmFetch forwards URL and Request inputs to plugin-http', async () => {
-    vi.mocked(tauriPluginFetch).mockResolvedValue(new Response('ok'));
+    vi.mocked(tauriPluginFetch).mockImplementation(
+      async () => new Response('ok'),
+    );
     const llmFetch = createLlmFetch({ isTauri: true });
 
     const url = new URL('https://example.com/v1/models');
@@ -242,6 +244,72 @@ describe('desktop-fetch', () => {
     ).toBe('native');
 
     vi.useRealTimers();
+  });
+
+  it('propagates upstream abort to plugin-http after headers arrive', async () => {
+    let nativeSignal: AbortSignal | undefined;
+    vi.mocked(tauriPluginFetch).mockImplementation(async (_input, init) => {
+      nativeSignal = init?.signal ?? undefined;
+      // Body never finishes on its own, like a long generation.
+      return new Response(new ReadableStream<Uint8Array>());
+    });
+
+    const upstream = new AbortController();
+    const llmFetch = createLlmFetch({ isTauri: true });
+    const response = await llmFetch('http://127.0.0.1:8080/v1/chat/completions', {
+      method: 'POST',
+      body: '{}',
+      signal: upstream.signal,
+    });
+
+    expect(nativeSignal?.aborted).toBe(false);
+    upstream.abort();
+    expect(nativeSignal?.aborted).toBe(true);
+    await response.body?.cancel();
+  });
+
+  it('detaches the upstream abort listener once the body completes', async () => {
+    let nativeSignal: AbortSignal | undefined;
+    vi.mocked(tauriPluginFetch).mockImplementation(async (_input, init) => {
+      nativeSignal = init?.signal ?? undefined;
+      return new Response('done');
+    });
+
+    const upstream = new AbortController();
+    const removeSpy = vi.spyOn(upstream.signal, 'removeEventListener');
+    const llmFetch = createLlmFetch({ isTauri: true });
+    const response = await llmFetch('http://127.0.0.1:8080/v1/chat/completions', {
+      method: 'POST',
+      body: '{}',
+      signal: upstream.signal,
+    });
+
+    expect(removeSpy).not.toHaveBeenCalled();
+    expect(await response.text()).toBe('done');
+    expect(removeSpy).toHaveBeenCalledWith('abort', expect.any(Function));
+
+    upstream.abort();
+    expect(nativeSignal?.aborted).toBe(false);
+  });
+
+  it('cancels the native body and detaches when the consumer cancels', async () => {
+    const nativeCancel = vi.fn();
+    vi.mocked(tauriPluginFetch).mockResolvedValue(
+      new Response(new ReadableStream<Uint8Array>({ cancel: nativeCancel })),
+    );
+
+    const upstream = new AbortController();
+    const removeSpy = vi.spyOn(upstream.signal, 'removeEventListener');
+    const llmFetch = createLlmFetch({ isTauri: true });
+    const response = await llmFetch('http://127.0.0.1:8080/v1/chat/completions', {
+      method: 'POST',
+      body: '{}',
+      signal: upstream.signal,
+    });
+
+    await response.body?.cancel('user stop');
+    expect(nativeCancel).toHaveBeenCalledWith('user stop');
+    expect(removeSpy).toHaveBeenCalledWith('abort', expect.any(Function));
   });
 
   it('uses sticky browser transport on subsequent requests', async () => {
