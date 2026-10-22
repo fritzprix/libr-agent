@@ -5,11 +5,22 @@
 //! lazily per session, kept only in memory, and revoked when the session is
 //! terminated or deleted, so callbacks from orphaned processes (or after an app
 //! restart) are rejected. Tokens must never be logged or shown to the model:
-//! shells receive the full URL through [`WAKE_URL_ENV`] instead.
+//! shells receive the full URL through [`WAKE_URL_ENV`] instead, and tool
+//! results are passed through [`redact_wake_tokens`] before they reach the
+//! model, the UI or stored history.
+//!
+//! The token is a routing credential for the callback, not the Session API's
+//! security boundary. `POST /api/sessions/<id>/messages` intentionally stays
+//! token-less: the UI and external clients use it, and the local access guard
+//! (localhost + Host/Origin checks) protects the whole Session API. Revisit
+//! this when the Session API gets its own authentication (#2235).
 
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
+use regex::Regex;
 use serde::Deserialize;
+use serde_json::Value;
+use std::borrow::Cow;
 
 /// Environment variable carrying this session's wake URL into shell processes.
 pub const WAKE_URL_ENV: &str = "LIBRAGENT_WAKE_URL";
@@ -18,6 +29,12 @@ const MAX_SUMMARY_CHARS: usize = 2_000;
 const MAX_LOG_PATH_CHARS: usize = 1_024;
 
 static WAKE_TOKENS: Lazy<DashMap<String, String>> = Lazy::new(DashMap::new);
+
+const REDACTED_TOKEN: &str = "[redacted]";
+
+/// Any wake URL path, including tokens of other or revoked sessions.
+static WAKE_PATH_TOKEN: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"/wake/[0-9a-f]{64}").expect("valid wake token regex"));
 
 fn mint_token() -> String {
     format!(
@@ -65,6 +82,36 @@ pub fn verify_wake_token(session_id: &str, token: &str) -> bool {
         .zip(given)
         .fold(0u8, |acc, (a, b)| acc | (a ^ b))
         == 0
+}
+
+/// Replaces wake tokens in `text`: every `/wake/<token>` path, plus the
+/// session's current token wherever it appears on its own.
+pub fn redact_wake_tokens<'a>(session_id: &str, text: &'a str) -> Cow<'a, str> {
+    let redacted = WAKE_PATH_TOKEN.replace_all(text, "/wake/[redacted]");
+    match WAKE_TOKENS.get(session_id) {
+        Some(token) if redacted.contains(token.as_str()) => {
+            Cow::Owned(redacted.replace(token.as_str(), REDACTED_TOKEN))
+        }
+        _ => redacted,
+    }
+}
+
+/// [`redact_wake_tokens`] applied to every string inside a JSON value.
+pub fn redact_wake_tokens_in_value(session_id: &str, value: &mut Value) {
+    match value {
+        Value::String(text) => {
+            if let Cow::Owned(redacted) = redact_wake_tokens(session_id, text) {
+                *text = redacted;
+            }
+        }
+        Value::Array(items) => items
+            .iter_mut()
+            .for_each(|item| redact_wake_tokens_in_value(session_id, item)),
+        Value::Object(map) => map
+            .values_mut()
+            .for_each(|item| redact_wake_tokens_in_value(session_id, item)),
+        _ => {}
+    }
 }
 
 /// Callback body. Every field is optional so `curl -X POST "$LIBRAGENT_WAKE_URL"`
@@ -154,6 +201,36 @@ mod tests {
         assert!(!verify_wake_token("wake-test-a", &a[..63]));
         revoke_wake_token("wake-test-a");
         revoke_wake_token("wake-test-b");
+    }
+
+    #[test]
+    fn redacts_wake_url_and_bare_token() {
+        let id = "wake-test-redact";
+        let token = wake_token_for(id);
+        let other = wake_token_for("wake-test-redact-other");
+        let text = format!(
+            "LIBRAGENT_WAKE_URL=http://127.0.0.1:3030/api/sessions/{id}/wake/{token}\n\
+             tail={token}\nother=/wake/{other}"
+        );
+
+        let redacted = redact_wake_tokens(id, &text);
+        assert!(!redacted.contains(&token));
+        assert!(!redacted.contains(&other));
+        assert!(redacted.contains(&format!("/api/sessions/{id}/wake/[redacted]")));
+        assert!(redacted.contains("tail=[redacted]"));
+
+        assert!(matches!(
+            redact_wake_tokens(id, "no secrets here"),
+            Cow::Borrowed(_)
+        ));
+
+        let mut value = serde_json::json!({ "stdout": [text], "exitCode": 0 });
+        redact_wake_tokens_in_value(id, &mut value);
+        assert!(!value.to_string().contains(&token));
+        assert_eq!(value["exitCode"], 0);
+
+        revoke_wake_token(id);
+        revoke_wake_token("wake-test-redact-other");
     }
 
     #[test]

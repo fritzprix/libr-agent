@@ -1,6 +1,41 @@
 use crate::commands::agent_commands::ToolCancellation;
 use crate::mcp::types::MCPContent;
 use crate::models::chat::{Message, MessageSource};
+use crate::server::wake::{redact_wake_tokens, redact_wake_tokens_in_value};
+
+/// Tool output can echo `$LIBRAGENT_WAKE_URL`; strip the token before the
+/// message reaches the model, the UI or stored history.
+fn redact_tool_content(session_id: &str, content: Vec<MCPContent>) -> Vec<MCPContent> {
+    content
+        .into_iter()
+        .map(|item| match item {
+            MCPContent::Text { text } => MCPContent::Text {
+                text: redact_wake_tokens(session_id, &text).into_owned(),
+            },
+            MCPContent::Resource {
+                mut resource,
+                service_info,
+            } => {
+                redact_wake_tokens_in_value(session_id, &mut resource);
+                MCPContent::Resource {
+                    resource,
+                    service_info,
+                }
+            }
+            other => other,
+        })
+        .collect()
+}
+
+fn redact_structured_content(
+    session_id: &str,
+    structured_content: Option<serde_json::Value>,
+) -> Option<serde_json::Value> {
+    structured_content.map(|mut value| {
+        redact_wake_tokens_in_value(session_id, &mut value);
+        value
+    })
+}
 
 /// Convert MCP response result to agent MCPContent
 pub fn convert_mcp_response_content(
@@ -107,7 +142,8 @@ pub fn create_tool_result_message(
     structured_content: Option<serde_json::Value>,
 ) -> Message {
     let now = chrono::Utc::now().timestamp_millis();
-    let content_array = vec![MCPContent::Text { text: content }];
+    let content_array = redact_tool_content(session_id, vec![MCPContent::Text { text: content }]);
+    let structured_content = redact_structured_content(session_id, structured_content);
 
     Message {
         id: uuid::Uuid::new_v4().to_string(),
@@ -144,9 +180,13 @@ pub fn create_error_tool_result(
     structured_content: Option<serde_json::Value>,
 ) -> Message {
     let now = chrono::Utc::now().timestamp_millis();
-    let content_array = vec![MCPContent::Text {
-        text: format!("Error: {}", error_message),
-    }];
+    let content_array = redact_tool_content(
+        session_id,
+        vec![MCPContent::Text {
+            text: format!("Error: {}", error_message),
+        }],
+    );
+    let structured_content = redact_structured_content(session_id, structured_content);
 
     Message {
         id: uuid::Uuid::new_v4().to_string(),
@@ -182,6 +222,8 @@ pub fn create_tool_result_message_with_content(
     tool_error: bool,
 ) -> Message {
     let now = chrono::Utc::now().timestamp_millis();
+    let content = redact_tool_content(session_id, content);
+    let structured_content = redact_structured_content(session_id, structured_content);
 
     Message {
         id: uuid::Uuid::new_v4().to_string(),
@@ -271,6 +313,38 @@ mod tests {
                 .and_then(|v| v.as_bool()),
             Some(true)
         );
+    }
+
+    #[test]
+    fn tool_results_redact_the_session_wake_token() {
+        let session_id = "messages-wake-redact";
+        let url = crate::server::wake::wake_url_for(session_id);
+        let token = crate::server::wake::wake_token_for(session_id);
+        let leak = format!("LIBRAGENT_WAKE_URL={url}");
+
+        let messages = [
+            create_tool_result_message(
+                session_id,
+                "tc1",
+                leak.clone(),
+                Some(serde_json::json!({ "stdout": leak })),
+            ),
+            create_error_tool_result(session_id, "tc2", &leak, None),
+            create_tool_result_message_with_content(
+                session_id,
+                "tc3",
+                vec![MCPContent::Text { text: leak.clone() }],
+                Some(serde_json::json!({ "env": [leak.clone()] })),
+                false,
+            ),
+        ];
+
+        for message in &messages {
+            let serialized = serde_json::to_string(message).expect("serialize message");
+            assert!(!serialized.contains(&token), "{serialized}");
+            assert!(serialized.contains("/wake/[redacted]"), "{serialized}");
+        }
+        crate::server::wake::revoke_wake_token(session_id);
     }
 
     #[test]
