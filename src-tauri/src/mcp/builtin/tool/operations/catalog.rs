@@ -116,18 +116,23 @@ fn preset_transport(preset: &MCPServerPreset) -> Value {
     transport
 }
 
-/// Variable keys the preset lets a caller fill for a given target
-/// (`env` for stdio env, `header` / `bearer-token` for HTTP headers).
-fn variable_keys_for(preset: &MCPServerPreset, targets: &[&str]) -> HashSet<String> {
+const BEARER_HEADER: &str = "Authorization";
+
+/// Keys whose value the caller may choose freely for a given target
+/// (`env` for stdio env, `header` / `bearer-token` for HTTP headers): only
+/// `password` variables (API keys / tokens). Their value does not change where
+/// data goes or what code runs. Every other key must keep the preset's value.
+fn secret_keys_for(preset: &MCPServerPreset, targets: &[&str]) -> HashSet<String> {
     let Some(Value::Object(definitions)) = preset.variable_definitions.as_ref() else {
         return HashSet::new();
     };
     definitions
         .iter()
+        .filter(|(_, def)| def.get("type").and_then(Value::as_str) == Some("password"))
         .filter_map(|(key, def)| {
             let target = def.get("target").and_then(Value::as_str).unwrap_or("env");
             match (targets.contains(&target), target) {
-                (true, "bearer-token") => Some("Authorization".to_string()),
+                (true, "bearer-token") => Some(BEARER_HEADER.to_string()),
                 (true, _) => Some(key.clone()),
                 (false, _) => None,
             }
@@ -135,13 +140,18 @@ fn variable_keys_for(preset: &MCPServerPreset, targets: &[&str]) -> HashSet<Stri
         .collect()
 }
 
-fn keys_allowed<'a>(
-    keys: impl IntoIterator<Item = &'a String>,
+fn values_allowed(
+    values: &HashMap<String, String>,
     canonical: &HashMap<String, String>,
-    variables: &HashSet<String>,
+    secret_keys: &HashSet<String>,
 ) -> bool {
-    keys.into_iter()
-        .all(|key| canonical.contains_key(key) || variables.contains(key))
+    values.iter().all(|(key, value)| {
+        if secret_keys.contains(key) {
+            key != BEARER_HEADER || value.starts_with("Bearer ")
+        } else {
+            canonical.get(key) == Some(value)
+        }
+    })
 }
 
 fn preset_matches_transport(preset: &MCPServerPreset, transport: &TransportConfig) -> bool {
@@ -159,11 +169,7 @@ fn preset_matches_transport(preset: &MCPServerPreset, transport: &TransportConfi
         ) => {
             command.trim() == preset_command
                 && *args == preset_args
-                && keys_allowed(
-                    env.keys(),
-                    &preset_env,
-                    &variable_keys_for(preset, &["env"]),
-                )
+                && values_allowed(env, &preset_env, &secret_keys_for(preset, &["env"]))
         }
         (
             TransportConfig::Http {
@@ -179,13 +185,14 @@ fn preset_matches_transport(preset: &MCPServerPreset, transport: &TransportConfi
                 ..
             },
         ) => {
+            let no_headers = HashMap::new();
             url.trim() == preset_url
                 && session_id.is_none()
                 && security.is_none()
-                && keys_allowed(
-                    headers.iter().flat_map(HashMap::keys),
+                && values_allowed(
+                    headers.as_ref().unwrap_or(&no_headers),
                     &preset_headers.unwrap_or_default(),
-                    &variable_keys_for(preset, &["header", "bearer-token"]),
+                    &secret_keys_for(preset, &["header", "bearer-token"]),
                 )
         }
         _ => false,
@@ -193,7 +200,9 @@ fn preset_matches_transport(preset: &MCPServerPreset, transport: &TransportConfi
 }
 
 /// Name of the curated preset whose exact transport (command + args, or URL)
-/// this is, allowing only the preset's own env / header keys to be filled.
+/// this is. Secret variables may hold any value; every other env / header
+/// value must equal the preset's. Unpinned (`@latest`) presets still run new
+/// upstream code without approval, an accepted risk under #2180.
 pub(crate) fn matching_catalog_preset(transport: &Value) -> Option<String> {
     let transport = serde_json::from_value::<TransportConfig>(transport.clone()).ok()?;
     get_recommended_servers()
@@ -444,6 +453,56 @@ mod tests {
         for transport in [other_package, extra_env, other_command] {
             assert_eq!(matching_catalog_preset(&transport), None, "{transport}");
         }
+    }
+
+    #[test]
+    fn overriding_a_non_secret_value_is_not_a_catalog_preset() {
+        let base = json!({
+            "type": "stdio",
+            "command": "npx",
+            "args": ["-y", "@fre4x/comfyui@latest"],
+            "env": { "COMFYUI_SERVER_URL": "http://localhost:8188" }
+        });
+        assert_eq!(matching_catalog_preset(&base).as_deref(), Some("comfyui"));
+
+        let mut redirected = base.clone();
+        redirected["env"]["COMFYUI_SERVER_URL"] = json!("https://evil.example");
+        assert_eq!(matching_catalog_preset(&redirected), None);
+    }
+
+    #[test]
+    fn secret_value_is_free_while_non_secret_sibling_is_pinned() {
+        let base = json!({
+            "type": "stdio",
+            "command": "npx",
+            "args": ["-y", "@fre4x/huggingface@latest"],
+            "env": {
+                "HF_TOKEN": "hf_any_user_token",
+                "HF_ALLOW_REMOTE_MODELS": "true"
+            }
+        });
+        assert_eq!(
+            matching_catalog_preset(&base).as_deref(),
+            Some("huggingface")
+        );
+
+        let mut changed_sibling = base.clone();
+        changed_sibling["env"]["HF_ALLOW_REMOTE_MODELS"] = json!("false");
+        assert_eq!(matching_catalog_preset(&changed_sibling), None);
+    }
+
+    #[test]
+    fn bearer_token_header_must_stay_a_bearer_token() {
+        let exact = json!({
+            "type": "http",
+            "url": "https://api.githubcopilot.com/mcp/",
+            "headers": { "Authorization": "Bearer ghp_user" }
+        });
+        assert_eq!(matching_catalog_preset(&exact).as_deref(), Some("github"));
+
+        let mut basic = exact.clone();
+        basic["headers"]["Authorization"] = json!("Basic dXNlcjpwYXNz");
+        assert_eq!(matching_catalog_preset(&basic), None);
     }
 
     #[test]
