@@ -17,8 +17,12 @@ system skill and tool. The suite covers 19 P0 cases (T01–T19) from
 
 Each task is judged only by its skill's critical path, as defined in
 [`layman_intent_critical_path.py`](./layman_intent_critical_path.py). A task
-passes when the trajectory has every critical-path tool call and the last call
-matching each step succeeded. Success comes from the `tool_error` flag the
+passes when the trajectory has every critical-path tool call in order (a step
+must not happen only before the previous one) and the last call matching each
+step succeeded. Shell steps (skill-deployer, setup-wizard, skill-creator) count
+only when the `runShell` command or script executes the script, either as the
+program or through an interpreter; `cat deploy_skill.py` does not count.
+Success comes from the `tool_error` flag the
 adapter writes into each ATIF observation's `extra`. N tasks pass when no
 forbidden tool was called. Deeper analysis is left to an agent-based eval loop.
 

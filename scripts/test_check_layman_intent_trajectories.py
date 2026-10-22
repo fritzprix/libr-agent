@@ -98,6 +98,41 @@ class CriticalPathTests(unittest.TestCase):
         )
         self.assertEqual(_grade("T08", unrelated, deploy), [])
 
+    def test_reading_a_script_is_not_running_it(self) -> None:
+        for command in ("cat scripts/deploy_skill.py", "grep -n url deploy_skill.py"):
+            self.assertEqual(
+                _grade(
+                    "T08",
+                    _step(("a", "workspace__runShell", {"command": command}, False)),
+                ),
+                ["missing __runShell (deploy_skill.py)"],
+                command,
+            )
+        self.assertEqual(
+            _grade(
+                "T11",
+                _step(
+                    (
+                        "a",
+                        "workspace__runShell",
+                        {"script": 'cd /tmp\nbash "/s/scripts/verify_setup.sh"'},
+                        False,
+                    )
+                ),
+            ),
+            [],
+        )
+
+    def test_steps_must_follow_the_critical_path_order(self) -> None:
+        self.assertEqual(
+            _grade(
+                "T04",
+                _step(("a", "workspace__waitForProcess", {}, False)),
+                _step(("b", "workspace__spawnProcess", {}, False)),
+            ),
+            ["__waitForProcess only before __spawnProcess"],
+        )
+
     def test_n_task_only_checks_forbidden_calls(self) -> None:
         self.assertEqual(_grade("T15"), [])
         self.assertEqual(

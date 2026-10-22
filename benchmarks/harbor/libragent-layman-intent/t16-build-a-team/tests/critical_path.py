@@ -1,8 +1,8 @@
 """Critical-path grading for the layman-intent suite (#2183).
 
 A task passes when the trajectory contains each step of its skill's critical
-path and the last call matching each step succeeded. N tasks pass when none of
-their forbidden tools were called. Nothing else is judged here; deeper analysis
+path in order and the last call matching each step succeeded. N tasks pass
+when none of their forbidden tools were called. Nothing else is judged here; deeper analysis
 belongs to an agent-based eval loop.
 
 This file is the source of truth. Each task's ``tests/critical_path.py`` is a
@@ -13,19 +13,58 @@ byte-for-byte copy so the container verifier can grade
 from __future__ import annotations
 
 import json
+import re
+import shlex
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePath
+
+SCRIPT_LAUNCHERS = frozenset(
+    {"python", "python3", "uv", "bash", "sh", "zsh", "node", "pwsh", "powershell", "&"}
+)
+COMMAND_SEPARATORS = re.compile(r"&&|\|\||[;|\n]")
+
+
+def runs_script(command: str, scripts: tuple[str, ...]) -> bool:
+    """True when a command segment executes one of ``scripts``.
+
+    The script must be the program itself or an argument of an interpreter, so
+    ``cat deploy_skill.py`` or ``grep x verify_setup.sh`` does not count.
+    """
+    for segment in COMMAND_SEPARATORS.split(command):
+        segment = segment.replace("\\", "/")  # Windows paths; shlex eats backslashes
+        try:
+            tokens = shlex.split(segment)
+        except ValueError:
+            tokens = segment.split()
+        while tokens and "=" in tokens[0] and not tokens[0].startswith("-"):
+            tokens = tokens[1:]
+        if not tokens:
+            continue
+        names = [PurePath(token).name for token in tokens]
+        if names[0] in scripts:
+            return True
+        if names[0] in SCRIPT_LAUNCHERS and any(name in scripts for name in names):
+            return True
+    return False
 
 
 @dataclass(frozen=True)
 class Step:
     tool: str  # matched as a suffix of the namespaced tool name
     args_contain: str | None = None  # substring of the serialized arguments
+    scripts: tuple[str, ...] = ()  # shell steps: one of these must be executed
+
+    @property
+    def label(self) -> str:
+        detail = self.args_contain or " | ".join(self.scripts)
+        return f"{self.tool} ({detail})" if detail else self.tool
 
     def matches(self, call: Call) -> bool:
         if not call.name.endswith(self.tool):
             return False
-        return self.args_contain is None or self.args_contain in call.arguments
+        if self.args_contain is not None and self.args_contain not in call.arguments:
+            return False
+        return not self.scripts or runs_script(call.shell_text, self.scripts)
 
 
 @dataclass(frozen=True)
@@ -47,6 +86,21 @@ class Call:
     name: str
     arguments: str
     succeeded: bool | None  # None: no result recorded
+
+    @property
+    def shell_text(self) -> str:
+        """``command`` or ``script`` argument of a shell call."""
+        try:
+            parsed = json.loads(self.arguments)
+        except json.JSONDecodeError:
+            return ""
+        if not isinstance(parsed, dict):
+            return ""
+        return "\n".join(
+            value
+            for key in ("command", "script")
+            if isinstance(value := parsed.get(key), str)
+        )
 
 
 SCHEDULE_CALLBACK = (Step("__scheduleCallback"),)
@@ -79,7 +133,7 @@ TASKS: dict[str, TaskSpec] = {
             "t08-install-github-skill",
             "P",
             "skill-deployer",
-            (Step("__runShell", "deploy_skill.py"),),
+            (Step("__runShell", scripts=("deploy_skill.py",)),),
         ),
         TaskSpec("T09", "t09-install-github-mcp", "P", "mcp-installer", INSTALL_MCP),
         TaskSpec("T10", "t10-install-that", "P", "mcp-installer", INSTALL_MCP),
@@ -88,14 +142,14 @@ TASKS: dict[str, TaskSpec] = {
             "t11-command-not-found",
             "P",
             "setup-wizard",
-            (Step("__runShell", "verify_setup"),),
+            (Step("__runShell", scripts=("verify_setup.sh", "verify_setup.ps1")),),
         ),
         TaskSpec(
             "T12",
             "t12-save-organizing-routine",
             "P",
             "skill-creator",
-            (Step("__runShell", "validate_skill.py"),),
+            (Step("__runShell", scripts=("validate_skill.py",)),),
         ),
         TaskSpec(
             "T13",
@@ -211,14 +265,19 @@ def load_calls(trajectory: object) -> list[Call]:
 def grade_calls(spec: TaskSpec, calls: list[Call]) -> list[str]:
     """Return failure reasons; an empty list means PASS."""
     failures: list[str] = []
+    previous: tuple[str, int] | None = None  # label and first index of prior step
     for step in spec.critical_path:
-        matching = [call for call in calls if step.matches(call)]
-        label = step.tool + (f" ({step.args_contain})" if step.args_contain else "")
-        if not matching:
-            failures.append(f"missing {label}")
-        elif matching[-1].succeeded is not True:
-            state = "failed" if matching[-1].succeeded is False else "has no result"
-            failures.append(f"last {label} {state}")
+        indexes = [i for i, call in enumerate(calls) if step.matches(call)]
+        if not indexes:
+            failures.append(f"missing {step.label}")
+            continue
+        last = calls[indexes[-1]]
+        if previous is not None and indexes[-1] < previous[1]:
+            failures.append(f"{step.label} only before {previous[0]}")
+        elif last.succeeded is not True:
+            state = "failed" if last.succeeded is False else "has no result"
+            failures.append(f"last {step.label} {state}")
+        previous = (step.label, indexes[0])
     for tool in spec.forbidden:
         if any(call.name.endswith(tool) for call in calls):
             failures.append(f"forbidden {tool}")
