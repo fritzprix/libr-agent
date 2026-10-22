@@ -139,7 +139,7 @@ pub async fn evaluate_tool_execution_policy(
         return ToolExecutionPolicyDecision::Block(BlockedToolExecution { message });
     }
 
-    if requires_hard_approval {
+    if requires_hard_approval && !is_catalog_preset_install(tool_name, args) {
         let arguments = args.to_string();
         let preview_source = mcp_server_transport_summary(tool_name, args).unwrap_or(arguments);
         return ToolExecutionPolicyDecision::RequireHardApproval(ToolApprovalRequest {
@@ -224,6 +224,18 @@ fn pattern_list_matches(patterns: &[String], tool_name: &str) -> bool {
 
 fn is_mcp_server_mutation(tool_name: &str) -> bool {
     tool_name == "tool__registerServer" || tool_name == "tool__updateServer"
+}
+
+/// Owner policy (#2180): registering a curated catalog preset with its exact
+/// transport needs no hard approval; any other source still does. Must agree
+/// with `install_provenance` so the stored provenance matches the gate taken.
+fn is_catalog_preset_install(tool_name: &str, args: &serde_json::Value) -> bool {
+    tool_name == "tool__registerServer"
+        && args.get("authentication").is_none()
+        && args
+            .get("transport")
+            .and_then(crate::mcp::builtin::tool::matching_catalog_preset)
+            .is_some()
 }
 
 /// Rejects malformed transports before the user is asked to approve a call
@@ -541,6 +553,48 @@ mod tests {
             .starts_with("[stocks] stdio: npx -y @fre4x/stocks@latest"));
         assert!(request.input_preview.contains("env keys: API_KEY"));
         assert!(!request.input_preview.contains("super-secret-value"));
+    }
+
+    #[tokio::test]
+    async fn register_server_skips_hard_approval_only_for_exact_catalog_preset() {
+        let catalog = serde_json::json!({
+            "name": "jules",
+            "transport": {
+                "type": "stdio",
+                "command": "npx",
+                "args": ["-y", "@fre4x/jules@latest"],
+                "env": { "JULES_API_KEY": "user-key" }
+            }
+        });
+        let decision = evaluate_tool_execution_policy("tool__registerServer", &catalog).await;
+        assert!(
+            !matches!(
+                decision,
+                ToolExecutionPolicyDecision::RequireHardApproval(_)
+            ),
+            "catalog preset should not need hard approval, got {decision:?}"
+        );
+
+        let mut arbitrary = catalog.clone();
+        arbitrary["transport"]["args"] = serde_json::json!(["-y", "some-random-package"]);
+        let mut with_auth = catalog.clone();
+        with_auth["authentication"] = serde_json::json!({ "type": "oauth2.1" });
+        for args in [arbitrary, with_auth] {
+            let decision = evaluate_tool_execution_policy("tool__registerServer", &args).await;
+            assert!(
+                matches!(
+                    decision,
+                    ToolExecutionPolicyDecision::RequireHardApproval(_)
+                ),
+                "non-catalog install must need hard approval, got {decision:?}"
+            );
+        }
+
+        let decision = evaluate_tool_execution_policy("tool__updateServer", &catalog).await;
+        assert!(matches!(
+            decision,
+            ToolExecutionPolicyDecision::RequireHardApproval(_)
+        ));
     }
 
     #[tokio::test]

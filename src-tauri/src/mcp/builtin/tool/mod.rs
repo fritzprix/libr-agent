@@ -7,6 +7,7 @@ use crate::mcp::types::{ContextVolatility, MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
 
 mod operations;
+pub(crate) use operations::matching_catalog_preset;
 mod queries;
 pub mod tools;
 

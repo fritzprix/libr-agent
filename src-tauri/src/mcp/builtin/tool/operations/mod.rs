@@ -8,6 +8,7 @@ mod mutations;
 mod persistence;
 mod verify;
 
+pub(crate) use catalog::matching_catalog_preset;
 pub use list::list_tools;
 pub use mutations::{delete_server, register_server, update_server};
 pub use verify::verify_server;
