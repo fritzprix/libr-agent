@@ -60,6 +60,19 @@ impl WorkspaceServer {
         None
     }
 
+    async fn validate_bash_syntax(&self, raw_command: &str) -> Option<MCPResult> {
+        let error = validation::check_bash_syntax(raw_command).await?;
+        Some(
+            guided_error(
+                ErrorCategory::InvalidInput,
+                error.summary(),
+                ToolGroup::Workspace,
+            )
+            .guidance(error.guidance())
+            .to_mcp_result(),
+        )
+    }
+
     fn sync_timeout_exceeded_result(&self, timeout_secs: u64, max_timeout: u64) -> MCPResult {
         let primary_shell = match self.code_tools_profile() {
             super::super::super::tools::CodeToolsProfile::HostWindows => "runPowerShell",
@@ -108,6 +121,9 @@ impl WorkspaceServer {
         };
 
         if let Some(result) = self.validate_windows_shell_syntax(raw_command) {
+            return Ok(result);
+        }
+        if let Some(result) = self.validate_bash_syntax(raw_command).await {
             return Ok(result);
         }
 
@@ -174,6 +190,9 @@ impl WorkspaceServer {
         };
 
         if let Some(result) = self.validate_windows_shell_syntax(raw_command) {
+            return Ok(result);
+        }
+        if let Some(result) = self.validate_bash_syntax(raw_command).await {
             return Ok(result);
         }
 

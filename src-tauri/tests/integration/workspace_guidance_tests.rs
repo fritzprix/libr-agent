@@ -228,6 +228,42 @@ async fn run_shell_quote_parse_failure_points_to_write_file() {
     );
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn run_shell_rejects_unbalanced_quotes_before_execution() {
+    ensure_settings_repository().await;
+
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "run-shell-syntax-precheck";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+    let marker = temp_dir.path().join("precheck-marker");
+
+    let result = server
+        .handle_run_shell(
+            json!({
+                "command": format!(
+                    "touch '{}'; for pr in 1 2; do echo \"x ($(echo $pr | wc -l) lines); done",
+                    marker.display()
+                )
+            }),
+            session_id,
+            tauri_mcp_agent_lib::mcp::builtin::workspace::RUN_SHELL_TOOL,
+        )
+        .await
+        .expect("runShell should return a guided MCP result");
+
+    assert_eq!(result.is_error, Some(true));
+    let text = extract_text_content(&result);
+    assert!(text.contains("not executed"), "{text}");
+    assert!(text.contains("line 1"), "{text}");
+    assert!(text.contains("double quote"), "{text}");
+    assert!(text.contains("writeFile"), "{text}");
+    assert!(
+        !marker.exists(),
+        "a command with a syntax error must not run any part of it"
+    );
+}
+
 #[tokio::test]
 async fn persistent_shell_at_workspace_root_does_not_suggest_file_tools() {
     ensure_settings_repository().await;

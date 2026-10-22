@@ -38,7 +38,7 @@ pub fn looks_like_shell_quote_parse_error(stdout: &str, stderr: &str) -> bool {
         .any(|signal| combined.contains(signal))
 }
 
-fn write_file_then_shell_guidance() -> Vec<String> {
+pub(super) fn write_file_then_shell_guidance() -> Vec<String> {
     use crate::mcp::builtin::workspace::types::RUN_SHELL_TOOL;
 
     vec![

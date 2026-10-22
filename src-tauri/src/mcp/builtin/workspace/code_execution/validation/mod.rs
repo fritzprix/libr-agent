@@ -5,6 +5,7 @@
 mod diagnostics;
 mod guidance;
 mod interactive;
+mod syntax;
 
 pub use diagnostics::{
     exit_zero_pipeline_failure_warning, exit_zero_stderr_warning, has_shell_pipeline,
@@ -18,6 +19,7 @@ pub use guidance::{
 pub use interactive::{
     detect_privilege_escalation, is_likely_interactive_command, resolve_stdin_delivery,
 };
+pub use syntax::{check_bash_syntax, BashSyntaxError};
 
 #[cfg(windows)]
 pub use interactive::contains_unquoted_andand;
