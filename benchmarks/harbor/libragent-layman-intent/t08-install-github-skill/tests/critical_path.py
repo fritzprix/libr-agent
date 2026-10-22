@@ -13,36 +13,98 @@ byte-for-byte copy so the container verifier can grade
 from __future__ import annotations
 
 import json
-import re
 import shlex
 from dataclasses import dataclass
 from pathlib import Path, PurePath
 
 SCRIPT_LAUNCHERS = frozenset(
-    {"python", "python3", "uv", "bash", "sh", "zsh", "node", "pwsh", "powershell", "&"}
+    {"python", "python3", "uv", "bash", "sh", "zsh", "node", "pwsh", "powershell"}
 )
-COMMAND_SEPARATORS = re.compile(r"&&|\|\||[;|\n]")
+SHELLS = frozenset({"bash", "sh", "zsh"})
+# Prefixes that run the next command: (name, options that take a value, positional args)
+WRAPPERS: dict[str, tuple[frozenset[str], int]] = {
+    "timeout": (frozenset({"-s", "--signal", "-k", "--kill-after"}), 1),
+    "sudo": (frozenset({"-u", "-g", "-C", "-D"}), 0),
+    "nohup": (frozenset(), 0),
+    "time": (frozenset(), 0),
+    "env": (frozenset({"-u", "-C"}), 0),
+    "exec": (frozenset({"-a"}), 0),
+    "command": (frozenset(), 0),
+}
+OPERATOR_CHARS = ";&|"
+MAX_SHELL_NESTING = 3
 
 
-def runs_script(command: str, scripts: tuple[str, ...]) -> bool:
+def _strip_prefixes(tokens: list[str]) -> list[str]:
+    """Drop ``VAR=value`` assignments and wrapper commands such as ``timeout 60``."""
+    while tokens:
+        head = tokens[0]
+        if "=" in head and not head.startswith("-"):
+            tokens = tokens[1:]
+            continue
+        wrapper = WRAPPERS.get(PurePath(head).name)
+        if wrapper is None:
+            return tokens
+        valued_options, positional = wrapper
+        tokens = tokens[1:]
+        while tokens and tokens[0].startswith("-"):
+            option = tokens.pop(0)
+            if option in valued_options and tokens:
+                tokens.pop(0)
+        tokens = tokens[positional:]
+    return tokens
+
+
+def _shell_payload(tokens: list[str]) -> str | None:
+    """Command string of ``bash -c '<cmd>'`` (also ``-lc``), else None."""
+    for index, token in enumerate(tokens[1:], start=1):
+        if token.startswith("-") and not token.startswith("--") and "c" in token[1:]:
+            return tokens[index + 1] if index + 1 < len(tokens) else None
+    return None
+
+
+def _segments(command: str) -> list[list[str]]:
+    """Split a shell command into simple commands, respecting quotes."""
+    segments: list[list[str]] = []
+    for line in command.replace("\\", "/").splitlines():  # shlex eats backslashes
+        lexer = shlex.shlex(line, posix=True, punctuation_chars=OPERATOR_CHARS)
+        lexer.whitespace_split = True
+        try:
+            tokens = list(lexer)
+        except ValueError:
+            tokens = line.split()
+        current: list[str] = []
+        for token in tokens:
+            if token and set(token) <= set(OPERATOR_CHARS):
+                segments.append(current)
+                current = []
+            else:
+                current.append(token)
+        segments.append(current)
+    return segments
+
+
+def runs_script(command: str, scripts: tuple[str, ...], _depth: int = 0) -> bool:
     """True when a command segment executes one of ``scripts``.
 
-    The script must be the program itself or an argument of an interpreter, so
-    ``cat deploy_skill.py`` or ``grep x verify_setup.sh`` does not count.
+    The script must be the program itself or an argument of an interpreter,
+    after wrappers like ``timeout``/``nohup``/``sudo``; ``bash -c '<cmd>'`` is
+    checked recursively. ``cat deploy_skill.py`` or ``grep x verify_setup.sh``
+    does not count.
     """
-    for segment in COMMAND_SEPARATORS.split(command):
-        segment = segment.replace("\\", "/")  # Windows paths; shlex eats backslashes
-        try:
-            tokens = shlex.split(segment)
-        except ValueError:
-            tokens = segment.split()
-        while tokens and "=" in tokens[0] and not tokens[0].startswith("-"):
-            tokens = tokens[1:]
+    for tokens in _segments(command):
+        tokens = _strip_prefixes(tokens)
         if not tokens:
             continue
         names = [PurePath(token).name for token in tokens]
         if names[0] in scripts:
             return True
+        if names[0] in SHELLS and _depth < MAX_SHELL_NESTING:
+            payload = _shell_payload(tokens)
+            if payload is not None:
+                if runs_script(payload, scripts, _depth + 1):
+                    return True
+                continue
         if names[0] in SCRIPT_LAUNCHERS and any(name in scripts for name in names):
             return True
     return False

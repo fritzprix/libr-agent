@@ -21,7 +21,8 @@ passes when the trajectory has every critical-path tool call in order (a step
 must not happen only before the previous one) and the last call matching each
 step succeeded. Shell steps (skill-deployer, setup-wizard, skill-creator) count
 only when the `runShell` command or script executes the script, either as the
-program or through an interpreter; `cat deploy_skill.py` does not count.
+program or through an interpreter (after wrappers such as `timeout`, `nohup`,
+`sudo`, and inside `bash -c` payloads); `cat deploy_skill.py` does not count.
 Success comes from the `tool_error` flag the
 adapter writes into each ATIF observation's `extra`. N tasks pass when no
 forbidden tool was called. Deeper analysis is left to an agent-based eval loop.

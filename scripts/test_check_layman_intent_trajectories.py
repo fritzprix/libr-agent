@@ -25,7 +25,7 @@ checker = importlib.util.module_from_spec(_SPEC)
 sys.modules[_SPEC.name] = checker
 _SPEC.loader.exec_module(checker)
 
-from layman_intent_critical_path import TASKS, grade_calls, load_calls
+from layman_intent_critical_path import TASKS, grade_calls, load_calls, runs_script
 
 
 def _step(*calls: tuple[str, str, object, bool | None]) -> dict[str, object]:
@@ -122,6 +122,23 @@ class CriticalPathTests(unittest.TestCase):
             ),
             [],
         )
+
+    def test_wrapped_and_nested_script_runs_count(self) -> None:
+        scripts = ("deploy_skill.py",)
+        for command in (
+            "timeout 120 python deploy_skill.py u",
+            "nohup python deploy_skill.py u &",
+            "sudo -u me python3 deploy_skill.py u",
+            "bash -c 'python deploy_skill.py u'",
+            "bash -lc 'cd /x && timeout -s KILL 60 python3 deploy_skill.py u'",
+            "python3 /x/deploy_skill.py u 2>&1 | tail -5",
+        ):
+            self.assertTrue(runs_script(command, scripts), command)
+        for command in (
+            "bash -c 'cat deploy_skill.py'",
+            "timeout 5 cat deploy_skill.py",
+        ):
+            self.assertFalse(runs_script(command, scripts), command)
 
     def test_steps_must_follow_the_critical_path_order(self) -> None:
         self.assertEqual(
