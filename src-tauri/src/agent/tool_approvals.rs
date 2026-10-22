@@ -91,9 +91,11 @@ pub async fn evaluate_tool_execution_policy(
     let requires_approval = is_approval_required(tool_name).await;
 
     if is_shell_tool_name(tool_name) {
+        // runShell accepts `script` as an alternative to `command`; evaluate whichever was sent.
         let command = args
             .get("command")
             .and_then(|value| value.as_str())
+            .or_else(|| args.get("script").and_then(|value| value.as_str()))
             .unwrap_or_default();
         let environment = args
             .get("env")
@@ -426,6 +428,26 @@ mod tests {
         .await;
 
         assert!(matches!(decision, ToolExecutionPolicyDecision::Allow));
+    }
+
+    #[tokio::test]
+    async fn run_shell_script_is_evaluated_by_shell_policy() {
+        let decision = evaluate_tool_execution_policy(
+            "workspace__runShell",
+            &serde_json::json!({ "script": "echo start\neval \"$PAYLOAD\"\n" }),
+        )
+        .await;
+
+        match decision {
+            ToolExecutionPolicyDecision::RequireHardApproval(request) => {
+                assert!(
+                    request.input_preview.contains("eval"),
+                    "preview should show the script: {}",
+                    request.input_preview
+                );
+            }
+            _ => panic!("script with eval must require hard approval"),
+        }
     }
 
     #[tokio::test]
