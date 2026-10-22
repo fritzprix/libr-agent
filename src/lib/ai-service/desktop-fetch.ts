@@ -251,6 +251,64 @@ function mergeAbortSignals(upstream: AbortSignal | undefined): {
   };
 }
 
+/**
+ * Keep the upstream→native abort link alive while the body streams.
+ *
+ * plugin-http only cancels the Rust request/body when the signal it received
+ * aborts, so detaching the upstream listener once headers arrive would leave
+ * the server generating after the user cancels. `release` runs once the body
+ * finishes, errors, or is cancelled.
+ */
+export function releaseOnBodySettled(
+  response: Response,
+  release: () => void,
+): Response {
+  const body = response.body;
+  if (!body) {
+    release();
+    return response;
+  }
+
+  let released = false;
+  const releaseOnce = () => {
+    if (!released) {
+      released = true;
+      release();
+    }
+  };
+
+  const reader = body.getReader();
+  const tracked = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read();
+        if (done) {
+          releaseOnce();
+          controller.close();
+          return;
+        }
+        controller.enqueue(value);
+      } catch (error) {
+        releaseOnce();
+        controller.error(error);
+      }
+    },
+    async cancel(reason) {
+      releaseOnce();
+      await reader.cancel(reason);
+    },
+  });
+
+  const wrapped = new Response(tracked, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+  // `Response.url` cannot be set via the constructor.
+  Object.defineProperty(wrapped, 'url', { value: response.url });
+  return wrapped;
+}
+
 async function fetchWithNativeFallback(
   input: RequestInfo | URL,
   init: RequestInit | undefined,
@@ -276,8 +334,9 @@ async function fetchWithNativeFallback(
       ? await nativePromise
       : await raceWithTimeout(nativePromise, nativeProbeTimeoutMs);
     transportByOrigin.set(origin, 'native');
-    return response;
+    return releaseOnBodySettled(response, cleanup);
   } catch (nativeError) {
+    cleanup();
     // Always cancel native work before opening a second connection.
     if (!signal.aborted) {
       abort();
@@ -311,8 +370,6 @@ async function fetchWithNativeFallback(
       }
       throw browserError;
     }
-  } finally {
-    cleanup();
   }
 }
 
