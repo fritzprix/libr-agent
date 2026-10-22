@@ -293,6 +293,7 @@ pub fn list_tools_tool() -> MCPTool {
             &[],
             &[
                 "Choose scope (all, internal, external) and availability (inventory vs session).",
+                "For a capability request without a package or URL, use scope=catalog first to find a curated preset.",
                 "Use query to filter by tool name, description, or server name.",
                 "Leave forceVerify=false (default) for fast cached external metadata; set true only when you need live re-verification.",
             ],
@@ -316,10 +317,10 @@ pub fn list_tools_tool() -> MCPTool {
                 (
                     "scope".to_string(),
                     enum_prop(
-                        vec!["all", "internal", "external"],
+                        vec!["all", "internal", "external", "catalog"],
                         "all",
                         Some(
-                            "Result scope: all, builtin only, or external only. If omitted, default: all.",
+                            "Result scope: all, builtin only, external only, or catalog (curated MCP presets with registerServer-ready transport and required inputs; already registered presets are marked). If omitted, default: all.",
                         ),
                     ),
                 ),
