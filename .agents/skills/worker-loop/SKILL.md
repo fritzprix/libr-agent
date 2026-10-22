@@ -118,7 +118,17 @@ If implementation fails twice or the scope proves larger than expected, push not
 
 ### 3. Report
 
-End every tick with 1–3 sentences, outcome first: what was done (with PR/issue links), what is waiting on CI, and any `needsUser` questions. A tick is idle only when no PR needs action **and** every issue candidate was skipped; then list the skip reasons in one line.
+End every tick with 1–3 sentences, outcome first: what was done (with PR/issue links), what is waiting on CI, and any `needsUser` questions.
+
+A tick is idle only when no PR needs action **and** every issue candidate was skipped or is in `needsUser`. An idle report leads with the idle reason, not with the PRs waiting on CI, so it does not read as "the loop waits for PRs":
+
+- First sentence: "Idle: no actionable PR; every issue candidate is blocked." Then each blocked issue number with its one-line reason from `skipped` / `needsUser`.
+- For each `needsUser` item, state the decision that would unblock it (e.g. "answer X on #2210 and the next tick implements it").
+- Mention PRs waiting on CI or review last, as one line.
+
+### Challenges to the loop's behavior
+
+When the user says the loop did something wrong (e.g. "it is only waiting for PRs"), check `state.json` `history`, `skipped`, and `needsUser` before answering. If the records contradict the claim, do not agree: explain what the loop actually did, citing the records. Say "I will change X" only when behavior actually changes (a skill edit or a state change); never present the existing behavior as a fix.
 
 ## Verification
 
