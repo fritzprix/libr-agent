@@ -36,6 +36,10 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
     let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0);
     let offset = offset.min(usize::MAX as u64) as usize;
 
+    if scope == "catalog" {
+        return super::catalog::list_catalog(&query, limit, offset).await;
+    }
+
     let include_internal = matches!(scope, "internal" | "all");
     let include_external = matches!(scope, "external" | "all");
     let session_view = availability == "session";

@@ -17,7 +17,16 @@ This skill registers MCP servers into the current LibrAgent session or the user'
 | npm/PyPI package, MCP server GitHub repo, server URL, or pasted JSON config | **Direct install** → below |
 | GitHub URL whose repo or subpath contains `SKILL.md` | Not an MCP server → use **skill-deployer** |
 | GitHub URL and you cannot tell | Inspect it first (README, `package.json`/`pyproject.toml`, `SKILL.md`), then pick the path. Ask the user only if it is still unclear. |
-| "Install it" with no package, URL, or config | Ask what to install. Do not guess a package. |
+| A capability with no package, URL, or config ("I want stock data", "connect Slack") | **Catalog** → below |
+| "Install it" with no package, URL, config, or capability | Ask what to install. Do not guess a package. |
+
+### Catalog Workflow
+
+1. **Search the curated catalog** — Call `tool__listServers({"scope":"catalog","query":"<keyword>"})` with a short keyword from the request (e.g. `stock`, `slack`, `search`). Omit `query` to see every preset.
+2. **Pick a preset** — If one matches, use it as is: it comes from LibrAgent's official list. If it is marked `registered`, it is already installed; do not register it again (use `tool__updateServer` to change it).
+3. **Collect required inputs** — For each entry in `requiredVariables`, ask the user for the value and replace the matching placeholder (e.g. `YOUR_GITHUB_PAT`) in the preset's `transport`.
+4. **Register and verify** — Call `tool__registerServer` with the preset `name`, `description`, `transport` (and `authentication` when present), then run Step 3 of the direct install workflow.
+5. **No match** — Only then search the web or npm for a package. Tell the user the source is not curated by LibrAgent before you register it.
 
 ### Import Workflow
 

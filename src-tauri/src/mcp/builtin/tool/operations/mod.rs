@@ -2,6 +2,7 @@
 //!
 //! Public API is re-exported here so `tool/mod.rs` can keep calling `operations::*`.
 
+mod catalog;
 mod list;
 mod mutations;
 mod persistence;
