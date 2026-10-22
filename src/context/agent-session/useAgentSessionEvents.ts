@@ -1,7 +1,8 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { listen } from '@tauri-apps/api/event';
 import { openAgentSession } from '@/lib/backend/agent-commands';
+import { isSessionNotFoundError } from '@/lib/backend/session-errors';
 import { getAssistant } from '@/lib/backend/assistants';
 import { getLogger } from '@/lib/logger';
 import { mapSessionMetadataToAgentSession } from '@/lib/session-metadata';
@@ -10,7 +11,11 @@ import {
   type Assistant,
   type Message,
 } from '@/models/chat';
-import type { AgentEventPayload, PendingApproval } from './types';
+import type {
+  AgentEventPayload,
+  PendingApproval,
+  SessionGoneReason,
+} from './types';
 import { buildMessageError, syncSessionMetadataFromBackend } from './utils';
 import type { useAgentSessionState } from './useAgentSessionState';
 import type {
@@ -153,9 +158,17 @@ export function useAgentSessionEvents(
      * the session viewed on window focus / visibility changes.
      */
     isActive?: boolean;
+    /** The session no longer exists; the host must stop re-opening it. */
+    onSessionGone?: (sessionId: string, reason: SessionGoneReason) => void;
   },
 ) {
   const navigate = useNavigate();
+  // react-router's navigate changes identity on every pathname change; keep it
+  // out of the open effect deps so switching routes does not re-open sessions.
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
+  const onSessionGoneRef = useRef(actions.onSessionGone);
+  onSessionGoneRef.current = actions.onSessionGone;
   const { setters, refs } = stateProps;
   const isActive = actions.isActive ?? true;
   const clearStreamingOnInactive = () =>
@@ -419,6 +432,15 @@ export function useAgentSessionEvents(
                   break;
                 }
 
+                if (payload.action === 'delete') {
+                  invalidateOpenSessionView(sessionId);
+                  logger.info('Session deleted via resourceUpdated event', {
+                    sessionId,
+                  });
+                  onSessionGoneRef.current?.(sessionId, 'deleted');
+                  break;
+                }
+
                 if (payload.action === 'clear') {
                   liveMutationEpoch += 1;
                   setters.clearSessionHistory();
@@ -478,7 +500,9 @@ export function useAgentSessionEvents(
             ...response,
             runtimeState: response.runtimeState ?? HYDRATING_RUNTIME_STATE,
           });
-          navigate(`/agent/${resolvedSessionId}`, { replace: true });
+          navigateRef.current(`/agent/${resolvedSessionId}`, {
+            replace: true,
+          });
           return;
         }
 
@@ -524,6 +548,9 @@ export function useAgentSessionEvents(
         setters.setLlmError(null);
         setters.setRuntimeState(createRuntimeFailureState(errorMessage));
         setters.setError(errorMessage);
+        if (isSessionNotFoundError(err)) {
+          onSessionGoneRef.current?.(sessionId, 'not_found');
+        }
       }
     };
 
@@ -533,12 +560,7 @@ export function useAgentSessionEvents(
       isMounted = false;
       if (unlisten) unlisten();
     };
-  }, [
-    sessionId,
-    navigate,
-    actions.persistViewedAt,
-    actions.clearStreamingMessage,
-  ]);
+  }, [sessionId, actions.persistViewedAt, actions.clearStreamingMessage]);
 
   useEffect(() => {
     if (!isActive) {

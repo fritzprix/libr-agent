@@ -8,6 +8,7 @@ import { useLLMService } from './LLMServiceContext';
 import type {
   AgentSessionStateContextValue,
   AgentSessionActionsContextValue,
+  SessionGoneReason,
 } from './agent-session/types';
 
 // Re-export types so we don't break existing imports
@@ -28,12 +29,15 @@ interface AgentSessionProviderProps {
    * user-visible side effects (toasts, viewed-at on focus, compacted refresh).
    */
   isActive?: boolean;
+  /** Called once the session is known to be deleted / missing. */
+  onSessionGone?: (sessionId: string, reason: SessionGoneReason) => void;
 }
 
 export function AgentSessionProvider({
   children,
   sessionId,
   isActive = true,
+  onSessionGone,
 }: AgentSessionProviderProps) {
   const { markSessionViewed, clearPendingApproval, renameSession } =
     useAgentSessionListActions();
@@ -66,6 +70,7 @@ export function AgentSessionProvider({
     persistViewedAt,
     clearStreamingMessage,
     isActive,
+    onSessionGone,
   });
 
   useMcpServerFailureToasts(sessionId, stateProps.state.runtimeState, isActive);
@@ -74,6 +79,7 @@ export function AgentSessionProvider({
     acknowledgeSessionAttention,
     clearPendingApproval,
     renameSessionInList: renameSession,
+    onSessionGone,
   });
 
   const stateValue: AgentSessionStateContextValue = useMemo(

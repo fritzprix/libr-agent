@@ -1,4 +1,4 @@
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -13,13 +13,13 @@ describe('useRetainedSessionIds', () => {
       { initialProps: { activeId: 's1' } },
     );
 
-    expect(result.current).toEqual(['s1']);
+    expect(result.current.retainedIds).toEqual(['s1']);
 
     rerender({ activeId: 's2' });
-    expect(result.current).toEqual(['s2', 's1']);
+    expect(result.current.retainedIds).toEqual(['s2', 's1']);
 
     rerender({ activeId: 's3' });
-    expect(result.current).toEqual(['s3', 's2', 's1']);
+    expect(result.current.retainedIds).toEqual(['s3', 's2', 's1']);
   });
 
   it('evicts the oldest session past the retention limit', () => {
@@ -31,8 +31,8 @@ describe('useRetainedSessionIds', () => {
     rerender({ activeId: 's2' });
     rerender({ activeId: 's3' });
 
-    expect(result.current).toEqual(['s3', 's2']);
-    expect(result.current).not.toContain('s1');
+    expect(result.current.retainedIds).toEqual(['s3', 's2']);
+    expect(result.current.retainedIds).not.toContain('s1');
   });
 
   it('moves a retained session to the front without duplicating it', () => {
@@ -45,7 +45,27 @@ describe('useRetainedSessionIds', () => {
     rerender({ activeId: 's3' });
     rerender({ activeId: 's1' });
 
-    expect(result.current).toEqual(['s1', 's3', 's2']);
+    expect(result.current.retainedIds).toEqual(['s1', 's3', 's2']);
+  });
+
+  it('evicts a non-active session but never the active one', () => {
+    const { result, rerender } = renderHook(
+      ({ activeId }) => useRetainedSessionIds(activeId),
+      { initialProps: { activeId: 's1' } },
+    );
+
+    rerender({ activeId: 's2' });
+    rerender({ activeId: 's3' });
+
+    act(() => {
+      result.current.evictSessionId('s2');
+    });
+    expect(result.current.retainedIds).toEqual(['s3', 's1']);
+
+    act(() => {
+      result.current.evictSessionId('s3');
+    });
+    expect(result.current.retainedIds).toEqual(['s3', 's1']);
   });
 
   it('defaults to MAX_RETAINED_AGENT_SESSIONS', () => {
@@ -60,7 +80,7 @@ describe('useRetainedSessionIds', () => {
     rerender({ activeId: 'c' });
     rerender({ activeId: 'd' });
 
-    expect(result.current).toHaveLength(MAX_RETAINED_AGENT_SESSIONS);
-    expect(result.current).toEqual(['d', 'c', 'b']);
+    expect(result.current.retainedIds).toHaveLength(MAX_RETAINED_AGENT_SESSIONS);
+    expect(result.current.retainedIds).toEqual(['d', 'c', 'b']);
   });
 });
