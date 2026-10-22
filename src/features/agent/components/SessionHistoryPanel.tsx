@@ -8,25 +8,8 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import {
-  RefreshCw,
-  Search,
-  History,
-  X,
-  BookmarkCheck,
-  ChevronDown,
-  ChevronUp,
-} from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import {
   buildDescendantCounts,
   buildDescendantStatusCounts,
@@ -44,17 +27,17 @@ import {
   BOOKMARK_PREVIEW_LIMIT,
   TREE_INDENT_PX,
   MAX_TREE_INDENT_LEVEL,
-  sessionSortValues,
-  statusFilterValues,
-  isSessionSortKey,
-  isSessionStatusFilterValue,
   type SessionSortKey,
   type SessionSortDirection,
 } from './session-history-utils';
 import { computeSessionTree, type SessionHistoryRow } from './session-tree';
 import { useInfiniteScroll } from './use-session-scroll';
 import { useKnownDirectChildCounts } from './use-known-direct-child-counts';
-import { BookmarkedSessionRow } from './BookmarkedSessionRow';
+import { BookmarkedSessionsSection } from './session-history-panel/BookmarkedSessionsSection';
+import { SessionHistoryControls } from './session-history-panel/SessionHistoryControls';
+import { SessionHistoryEmptyState } from './session-history-panel/SessionHistoryEmptyState';
+import { SessionHistoryFocusBar } from './session-history-panel/SessionHistoryFocusBar';
+import { SessionHistoryHeader } from './session-history-panel/SessionHistoryHeader';
 
 interface SessionHistoryPanelProps {
   sessions: AgentSession[];
@@ -370,20 +353,6 @@ export function SessionHistoryPanel({
     onEnsureChildrenLoaded,
   ]);
 
-  const statusFilterLabelByValue: Record<'all' | SessionStatus, string> = {
-    all: t('sessionHistory.statusFilter.all', 'All statuses'),
-    busy: `${t('sessionHistory.tabs.busy', 'Busy')} (${statusCounts.busy})`,
-    idle: `${t('sessionHistory.tabs.idle', 'Idle')} (${statusCounts.idle})`,
-    paused: `${t('sessionHistory.tabs.paused', 'Paused')} (${statusCounts.paused})`,
-    error: `${t('sessionHistory.tabs.error', 'Error')} (${statusCounts.error})`,
-    queued: `${t('sessionHistory.tabs.queued', 'Queued')} (${statusCounts.queued})`,
-    provisioning: `${t('sessionHistory.tabs.provisioning', 'Setting up')} (${statusCounts.provisioning})`,
-  };
-  const sortLabelByValue: Record<SessionSortKey, string> = {
-    updatedAt: t('sessionHistory.sort.updatedAt', 'Recent activity'),
-    createdAt: t('sessionHistory.sort.createdAt', 'Created'),
-    name: t('sessionHistory.sort.name', 'Name'),
-  };
   const handleBrowseBookmarkedHistory = useCallback(() => {
     setShowBookmarkedOnly(true);
     window.requestAnimationFrame(() => {
@@ -393,10 +362,6 @@ export function SessionHistoryPanel({
       });
     });
   }, []);
-  const sortDirectionToggleLabel =
-    activeSortDirection === 'asc'
-      ? t('sessionHistory.sort.descending', 'Sort descending')
-      : t('sessionHistory.sort.ascending', 'Sort ascending');
 
   const handleEndReached = useCallback(() => {
     if (!hasMoreSessions || isLoadingMoreSessions) {
@@ -480,144 +445,30 @@ export function SessionHistoryPanel({
 
   return (
     <div ref={rootRef} className="flex min-h-full flex-col bg-background p-6">
-      <div
-        className={cn(
-          HISTORY_CONTENT_RAIL_CLASS,
-          'mb-8 flex items-center justify-between gap-3',
-        )}
-      >
-        <div className="flex items-center gap-4">
-          <div className="rounded-xl bg-primary/10 p-2.5 text-primary">
-            <History size={28} />
-          </div>
-          <div>
-            <h1
-              className="text-2xl font-semibold tracking-tight text-foreground"
-              id="session-heading"
-            >
-              {defaultHeading}
-            </h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              {defaultDescription} (
-              {showBookmarkedOnly
-                ? t(
-                    'sessionHistory.bookmarkedCountSummary',
-                    '{{count}} bookmarked sessions',
-                    {
-                      count: baseSessions.length,
-                    },
-                  )
-                : t(
-                    'sessionHistory.loadedCountSummary',
-                    '{{count}} loaded sessions',
-                    {
-                      count: baseSessions.length,
-                    },
-                  )}
-              {displayRows.length !== baseSessions.length
-                ? `, ${t(
-                    'sessionHistory.visibleCountSummary',
-                    '{{count}} visible in tree',
-                    {
-                      count: displayRows.length,
-                    },
-                  )}`
-                : ''}
-              {hasMoreSessions
-                ? `, ${t('sessionHistory.moreAvailable', 'more available')}`
-                : ''}
-              {filtersActive
-                ? `, ${t(
-                    'sessionHistory.matchCountSummary',
-                    '{{count}} matching filters',
-                    { count: matchedSessionCount },
-                  )}`
-                : ''}
-              )
-            </p>
-          </div>
-        </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onRefresh}
-          disabled={isLoading}
-          aria-label={t('sessionHistory.refreshAria', 'Refresh sessions')}
-          className="h-9 w-9"
-        >
-          <RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} />
-        </Button>
-      </div>
+      <SessionHistoryHeader
+        heading={defaultHeading}
+        description={defaultDescription}
+        showBookmarkedOnly={showBookmarkedOnly}
+        baseSessionCount={baseSessions.length}
+        visibleRowCount={displayRows.length}
+        hasMoreSessions={hasMoreSessions}
+        filtersActive={filtersActive}
+        matchedSessionCount={matchedSessionCount}
+        isLoading={isLoading}
+        onRefresh={onRefresh}
+      />
 
       {!selectedLineageId &&
         !showBookmarkedOnly &&
         bookmarkedSessions.length > 0 && (
-          <section
-            id="bookmarked-sessions"
-            className={cn(
-              HISTORY_CONTENT_RAIL_CLASS,
-              HISTORY_SECTION_CLASS,
-              'mb-4',
-            )}
-          >
-            <div className="flex flex-wrap items-end justify-between gap-3">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <BookmarkCheck className="h-4 w-4 text-warning" />
-                  <h2 className="text-sm font-semibold text-foreground">
-                    {t(
-                      'sessionHistory.bookmarkedSection.heading',
-                      'Bookmarked Sessions',
-                    )}
-                  </h2>
-                  <Badge variant="secondary">{bookmarkedSessions.length}</Badge>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {t(
-                    'sessionHistory.bookmarkedSection.description',
-                    'Pinned sessions stay here for quick access while the full history remains below.',
-                  )}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                {remainingBookmarkedCount > 0 && (
-                  <Badge variant="outline" className="h-6 px-2">
-                    {t(
-                      'sessionHistory.bookmarkedSection.more',
-                      '+{{count}} more bookmarked sessions',
-                      { count: remainingBookmarkedCount },
-                    )}
-                  </Badge>
-                )}
-                {remainingBookmarkedCount > 0 && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={handleBrowseBookmarkedHistory}
-                  >
-                    {t(
-                      'sessionHistory.bookmarkedSection.browseAll',
-                      'Browse all bookmarked sessions',
-                    )}
-                  </Button>
-                )}
-              </div>
-            </div>
-
-            <div className="mt-3 flex flex-col gap-2" role="list">
-              {featuredBookmarkedSessions.map((session) => (
-                <div key={session.id} role="listitem">
-                  <BookmarkedSessionRow
-                    session={session}
-                    onResume={onResume}
-                    onToggleBookmark={onToggleBookmark}
-                    t={t}
-                  />
-                </div>
-              ))}
-            </div>
-          </section>
+          <BookmarkedSessionsSection
+            totalCount={bookmarkedSessions.length}
+            featuredSessions={featuredBookmarkedSessions}
+            remainingCount={remainingBookmarkedCount}
+            onBrowseAll={handleBrowseBookmarkedHistory}
+            onResume={onResume}
+            onToggleBookmark={onToggleBookmark}
+          />
         )}
 
       <div
@@ -628,163 +479,36 @@ export function SessionHistoryPanel({
           'mb-4 flex flex-col gap-3',
         )}
       >
-        <div className="flex flex-col gap-3 md:flex-row md:items-center">
-          <div className="relative min-w-0 flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transform text-muted-foreground" />
-            <Input
-              type="text"
-              placeholder={defaultSearchPlaceholder}
-              value={searchQuery}
-              onChange={(event) => onSearchQueryChange(event.target.value)}
-              className="pl-10 pr-10"
-              aria-label={t('sessionHistory.searchAria', 'Search sessions')}
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => onSearchQueryChange('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 transform rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                aria-label={t('sessionHistory.clearSearchAria', 'Clear search')}
-              >
-                <X className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 md:justify-end">
-            <Button
-              type="button"
-              size="sm"
-              variant={showBookmarkedOnly ? 'secondary' : 'outline'}
-              className="shrink-0"
-              aria-pressed={showBookmarkedOnly}
-              onClick={() =>
-                setShowBookmarkedOnly((previousState) => !previousState)
-              }
-            >
-              <BookmarkCheck className="mr-2 h-4 w-4" />
-              {t('sessionHistory.tabs.bookmarked', 'Bookmarked')} (
-              {bookmarkedSessions.length})
-            </Button>
-          </div>
-
-          <div className="flex items-center gap-2 md:w-64 md:shrink-0">
-            <Select
-              value={activeSortKey}
-              onValueChange={(value) => {
-                if (isSessionSortKey(value)) {
-                  setActiveSortKey(value);
-                }
-              }}
-            >
-              <SelectTrigger
-                size="sm"
-                className="w-full"
-                aria-label={t('sessionHistory.sort.label', 'Sort sessions')}
-              >
-                <SelectValue>{sortLabelByValue[activeSortKey]}</SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {sessionSortValues.map((value) => (
-                  <SelectItem key={value} value={value}>
-                    {sortLabelByValue[value]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              className="h-8 w-8 shrink-0"
-              onClick={() =>
-                setActiveSortDirection((previousState) =>
-                  previousState === 'asc' ? 'desc' : 'asc',
-                )
-              }
-              aria-label={sortDirectionToggleLabel}
-            >
-              {activeSortDirection === 'asc' ? (
-                <ChevronUp className="h-4 w-4" />
-              ) : (
-                <ChevronDown className="h-4 w-4" />
-              )}
-            </Button>
-          </div>
-
-          <div className="md:w-56 md:shrink-0">
-            <Select
-              value={activeStatusFilter}
-              onValueChange={(value) => {
-                if (isSessionStatusFilterValue(value)) {
-                  onActiveStatusFilterChange(value);
-                }
-              }}
-            >
-              <SelectTrigger
-                size="sm"
-                className="w-full"
-                aria-label={t('sessionHistory.statusFilter.label', 'Status')}
-              >
-                <SelectValue>
-                  {statusFilterLabelByValue[activeStatusFilter]}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {statusFilterValues.map((value) => (
-                  <SelectItem key={value} value={value}>
-                    {statusFilterLabelByValue[value]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
+        <SessionHistoryControls
+          searchPlaceholder={defaultSearchPlaceholder}
+          searchQuery={searchQuery}
+          onSearchQueryChange={onSearchQueryChange}
+          showBookmarkedOnly={showBookmarkedOnly}
+          onToggleShowBookmarkedOnly={() =>
+            setShowBookmarkedOnly((previousState) => !previousState)
+          }
+          bookmarkedCount={bookmarkedSessions.length}
+          activeSortKey={activeSortKey}
+          onActiveSortKeyChange={setActiveSortKey}
+          activeSortDirection={activeSortDirection}
+          onToggleSortDirection={() =>
+            setActiveSortDirection((previousState) =>
+              previousState === 'asc' ? 'desc' : 'asc',
+            )
+          }
+          activeStatusFilter={activeStatusFilter}
+          onActiveStatusFilterChange={onActiveStatusFilterChange}
+          statusCounts={statusCounts}
+        />
       </div>
 
       {(selectedLineageId || showBookmarkedOnly) && (
-        <div
-          className={cn(
-            HISTORY_CONTENT_RAIL_CLASS,
-            'mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground',
-          )}
-        >
-          {selectedLineageId && (
-            <>
-              <span>
-                {t('sessionHistory.focusedLineage', 'Focused lineage: {{id}}', {
-                  id: selectedLineageId.slice(0, 8),
-                })}
-              </span>
-              <Button
-                variant="link"
-                size="sm"
-                className="h-auto p-0"
-                onClick={() => setSelectedLineageId(null)}
-              >
-                {t('sessionHistory.showAllLineages', 'Show all lineages')}
-              </Button>
-            </>
-          )}
-          {showBookmarkedOnly && (
-            <>
-              <span>
-                {t(
-                  'sessionHistory.bookmarkFilter.focused',
-                  'Showing bookmarked sessions',
-                )}
-              </span>
-              <Button
-                variant="link"
-                size="sm"
-                className="h-auto p-0"
-                onClick={() => setShowBookmarkedOnly(false)}
-              >
-                {t('sessionHistory.bookmarkFilter.clear', 'Show all sessions')}
-              </Button>
-            </>
-          )}
-        </div>
+        <SessionHistoryFocusBar
+          selectedLineageId={selectedLineageId}
+          showBookmarkedOnly={showBookmarkedOnly}
+          onClearLineage={() => setSelectedLineageId(null)}
+          onClearBookmarkFilter={() => setShowBookmarkedOnly(false)}
+        />
       )}
 
       <div
@@ -810,75 +534,16 @@ export function SessionHistoryPanel({
             </div>
           </div>
         ) : displayRows.length === 0 ? (
-          <div className="flex h-full items-center justify-center">
-            <div className="text-center text-muted-foreground">
-              {selectedLineageId ? (
-                <>
-                  <p className="text-sm">
-                    {t(
-                      'sessionHistory.noSessionsInLineage',
-                      'No sessions visible in lineage {{id}}',
-                      { id: selectedLineageId.slice(0, 8) },
-                    )}
-                  </p>
-                  <Button
-                    variant="link"
-                    size="sm"
-                    onClick={() => setSelectedLineageId(null)}
-                    className="mt-2"
-                  >
-                    {t(
-                      'sessionHistory.clearLineageFocus',
-                      'Clear lineage focus',
-                    )}
-                  </Button>
-                </>
-              ) : searchQuery.trim() ? (
-                <>
-                  <p className="text-sm">
-                    {t(
-                      'sessionHistory.noSessionsMatching',
-                      'No sessions found matching "{{query}}"',
-                      { query: searchQuery },
-                    )}
-                  </p>
-                  <Button
-                    variant="link"
-                    size="sm"
-                    onClick={() => onSearchQueryChange('')}
-                    className="mt-2"
-                  >
-                    {t('sessionHistory.clearSearch', 'Clear search')}
-                  </Button>
-                </>
-              ) : showBookmarkedOnly ? (
-                <>
-                  <p className="text-sm">
-                    {t(
-                      'sessionHistory.bookmarkFilter.empty',
-                      'No bookmarked sessions yet',
-                    )}
-                  </p>
-                  <Button
-                    variant="link"
-                    size="sm"
-                    onClick={() => setShowBookmarkedOnly(false)}
-                    className="mt-2"
-                  >
-                    {t(
-                      'sessionHistory.bookmarkFilter.clear',
-                      'Show all sessions',
-                    )}
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <p className="text-sm">{defaultEmptyTitle}</p>
-                  <p className="mt-2 text-xs">{defaultEmptySubtitle}</p>
-                </>
-              )}
-            </div>
-          </div>
+          <SessionHistoryEmptyState
+            selectedLineageId={selectedLineageId}
+            searchQuery={searchQuery}
+            showBookmarkedOnly={showBookmarkedOnly}
+            emptyTitle={defaultEmptyTitle}
+            emptySubtitle={defaultEmptySubtitle}
+            onClearLineage={() => setSelectedLineageId(null)}
+            onClearSearch={() => onSearchQueryChange('')}
+            onClearBookmarkFilter={() => setShowBookmarkedOnly(false)}
+          />
         ) : (
           <div
             className="w-full pb-4"
