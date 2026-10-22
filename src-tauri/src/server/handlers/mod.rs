@@ -7,6 +7,7 @@ mod messages;
 mod sessions;
 mod settings;
 mod types;
+mod wake;
 
 // Re-export endpoints so existing routes.rs does not break
 pub use assistants::{get_assistant, get_assistants};
@@ -23,3 +24,4 @@ pub use sessions::{
 pub use settings::{
     get_complexity_model_mapping, get_preferred_model, put_complexity_model_mapping,
 };
+pub use wake::wake_session;

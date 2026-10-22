@@ -32,7 +32,7 @@ impl WorkspaceServer {
         let workspace_path = self
             .session_manager
             .get_session_workspace_dir_by_id(&session_id);
-        let env_vars = _args
+        let mut env_vars = _args
             .get("env")
             .and_then(|v| v.as_object())
             .map(|obj| {
@@ -85,6 +85,7 @@ impl WorkspaceServer {
         ) {
             return Ok(result);
         }
+        utils::add_wake_url_env(&session_id, &mut env_vars).await;
 
         let reported_cwd = working_directory
             .as_ref()

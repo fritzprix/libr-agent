@@ -10,7 +10,7 @@ use crate::mcp::types::MCPResult;
 use crate::session_isolation::{IsolatedProcessConfig, IsolationLevel};
 
 use super::super::super::{
-    terminal_manager, workspace_server, WorkspaceServer, PERSISTENT_SHELL_TOOL,
+    terminal_manager, utils, workspace_server, WorkspaceServer, PERSISTENT_SHELL_TOOL,
 };
 use super::super::{normalization, process, validation};
 use super::{format_command_io_message, format_duration_ms, truncate_sync_shell_stream};
@@ -25,7 +25,7 @@ impl WorkspaceServer {
         isolation_level: IsolationLevel,
         timeout_secs: u64,
         session_id: &str,
-        env_vars: HashMap<String, String>,
+        mut env_vars: HashMap<String, String>,
         working_directory: Option<std::path::PathBuf>,
     ) -> Result<MCPResult, String> {
         let session_id = session_id.to_string();
@@ -43,6 +43,7 @@ impl WorkspaceServer {
         ) {
             return Ok(result);
         }
+        utils::add_wake_url_env(&session_id, &mut env_vars).await;
 
         // Preserve for response JSON before moving into IsolatedProcessConfig.
         let reported_cwd = working_directory
