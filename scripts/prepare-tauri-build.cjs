@@ -34,6 +34,16 @@ function sha256File(filePath) {
   return hash.digest('hex');
 }
 
+/** `fs.rmSync({ force: true })` silently skips dangling symlinks on Node 24. */
+function removeLink(filePath) {
+  try {
+    fs.lstatSync(filePath);
+  } catch {
+    return;
+  }
+  fs.unlinkSync(filePath);
+}
+
 function stageOnnxRuntime() {
   if (process.platform !== 'linux' || process.arch !== 'x64') {
     return;
@@ -82,8 +92,8 @@ function stageOnnxRuntime() {
   fs.rmSync(tarball, { force: true });
   // cp follows the archive's symlinks into absolute paths under the extract
   // directory, which is then removed. Recreate relative SONAME links.
-  fs.rmSync(linkerName, { force: true });
-  fs.rmSync(soname, { force: true });
+  removeLink(linkerName);
+  removeLink(soname);
   fs.symlinkSync(`libonnxruntime.so.${ORT_VERSION}`, soname);
   fs.symlinkSync('libonnxruntime.so.1', linkerName);
 

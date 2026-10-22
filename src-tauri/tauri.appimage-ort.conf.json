@@ -13,8 +13,8 @@
       },
       "deb": {
         "files": {
-          "usr/lib/x86_64-linux-gnu/libonnxruntime.so.1": "onnxruntime-linux/lib/libonnxruntime.so.1",
-          "usr/lib/x86_64-linux-gnu/libonnxruntime_providers_shared.so": "onnxruntime-linux/lib/libonnxruntime_providers_shared.so"
+          "usr/lib/libragent/libonnxruntime.so.1": "onnxruntime-linux/lib/libonnxruntime.so.1",
+          "usr/lib/libragent/libonnxruntime_providers_shared.so": "onnxruntime-linux/lib/libonnxruntime_providers_shared.so"
         }
       },
       "rpm": {
