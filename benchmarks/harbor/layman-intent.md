@@ -67,13 +67,12 @@ Each task directory has a `README.md` with the prompt and the expected behavior.
 With LibrAgent running (see [README](./README.md)):
 
 ```sh
-export PYTHONPATH="$(pwd)"
-harbor run -p benchmarks/harbor/libragent-layman-intent \
-  -a benchmarks.harbor.libragent_agent:LibrAgentHarborAdapter \
-  --ak api_url=http://localhost:3030/api \
-  --jobs-dir jobs/layman-intent
-python3 scripts/check-layman-intent-trajectories.py --jobs-dir jobs/layman-intent --job <job-id>
+pnpm bench:layman:n1   # one task, smoke run
+pnpm bench:layman      # all tasks
+python3 scripts/check-layman-intent-trajectories.py   # checks the latest job in jobs/
 ```
+
+Pass `--job <job-id>` to the checker to check an older job.
 
 ## Limits
 
