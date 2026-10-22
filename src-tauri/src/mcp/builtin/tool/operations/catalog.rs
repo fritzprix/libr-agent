@@ -471,6 +471,27 @@ mod tests {
     }
 
     #[test]
+    fn secret_value_is_free_while_non_secret_sibling_is_pinned() {
+        let base = json!({
+            "type": "stdio",
+            "command": "npx",
+            "args": ["-y", "@fre4x/huggingface@latest"],
+            "env": {
+                "HF_TOKEN": "hf_any_user_token",
+                "HF_ALLOW_REMOTE_MODELS": "true"
+            }
+        });
+        assert_eq!(
+            matching_catalog_preset(&base).as_deref(),
+            Some("huggingface")
+        );
+
+        let mut changed_sibling = base.clone();
+        changed_sibling["env"]["HF_ALLOW_REMOTE_MODELS"] = json!("false");
+        assert_eq!(matching_catalog_preset(&changed_sibling), None);
+    }
+
+    #[test]
     fn bearer_token_header_must_stay_a_bearer_token() {
         let exact = json!({
             "type": "http",
