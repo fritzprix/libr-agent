@@ -38,13 +38,17 @@ pub fn looks_like_shell_quote_parse_error(stdout: &str, stderr: &str) -> bool {
         .any(|signal| combined.contains(signal))
 }
 
-pub(super) fn write_file_then_shell_guidance() -> Vec<String> {
+pub fn write_file_then_shell_guidance() -> Vec<String> {
     use crate::mcp::builtin::workspace::types::RUN_SHELL_TOOL;
 
     vec![
         "Shell could not parse nested quotes or a heredoc in this one-liner.".to_string(),
         format!(
             "Use workspace__writeFile to save the script, then {} with a short command (e.g. `bash script.sh` or `python3 script.py`).",
+            RUN_SHELL_TOOL
+        ),
+        format!(
+            "On bash shells, {} also accepts a script field that runs multi-line code verbatim.",
             RUN_SHELL_TOOL
         ),
         "Do not embed multi-line scripts with nested quotes inside a single shell call.".to_string(),

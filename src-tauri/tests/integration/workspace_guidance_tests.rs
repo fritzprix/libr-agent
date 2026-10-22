@@ -264,6 +264,81 @@ async fn run_shell_rejects_unbalanced_quotes_before_execution() {
     );
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn run_shell_script_runs_multiline_code_verbatim() {
+    ensure_settings_repository().await;
+
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "run-shell-script-mode";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+
+    let result = server
+        .handle_run_shell(
+            json!({
+                "script": "for pr in 1 2; do\n  echo \"pr-$pr ($(echo $pr | wc -l | tr -d ' ') lines)\"\ndone\necho 'it\"s \"\" literal'\ncat\necho done-after-cat\n"
+            }),
+            session_id,
+            tauri_mcp_agent_lib::mcp::builtin::workspace::RUN_SHELL_TOOL,
+        )
+        .await
+        .expect("runShell script should return an MCP result");
+
+    let text = extract_text_content(&result);
+    assert_ne!(result.is_error, Some(true), "{text}");
+    assert!(text.contains("pr-1 (1 lines)"), "{text}");
+    assert!(text.contains("pr-2 (1 lines)"), "{text}");
+    assert!(text.contains("it\"s \"\" literal"), "{text}");
+    assert!(
+        text.contains("done-after-cat"),
+        "cat must not consume the remaining script lines: {text}"
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn run_shell_script_applies_shell_policy_to_script_body() {
+    ensure_settings_repository().await;
+
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "run-shell-script-policy";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+
+    let result = server
+        .handle_run_shell(
+            json!({ "script": "echo start\ncat ~/.ssh/id_rsa\n" }),
+            session_id,
+            tauri_mcp_agent_lib::mcp::builtin::workspace::RUN_SHELL_TOOL,
+        )
+        .await
+        .expect("runShell script should return an MCP result");
+
+    let text = extract_text_content(&result);
+    assert!(text.contains("Shell command blocked by policy"), "{text}");
+}
+
+#[tokio::test]
+async fn run_shell_rejects_command_and_script_together() {
+    ensure_settings_repository().await;
+
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "run-shell-script-exclusive";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+
+    let result = server
+        .handle_run_shell(
+            json!({ "command": "echo a", "script": "echo b" }),
+            session_id,
+            tauri_mcp_agent_lib::mcp::builtin::workspace::RUN_SHELL_TOOL,
+        )
+        .await
+        .expect("runShell should return a guided MCP result");
+
+    assert_eq!(result.is_error, Some(true));
+    let text = extract_text_content(&result);
+    assert!(text.contains("either command or script"), "{text}");
+}
+
 #[tokio::test]
 async fn persistent_shell_at_workspace_root_does_not_suggest_file_tools() {
     ensure_settings_repository().await;

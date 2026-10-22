@@ -12,7 +12,8 @@ use crate::session_isolation::{IsolatedProcessConfig, IsolationLevel};
 use super::super::super::{
     terminal_manager, workspace_server, WorkspaceServer, PERSISTENT_SHELL_TOOL,
 };
-use super::super::{normalization, process, validation};
+use super::super::{process, validation};
+use super::input::ShellInput;
 use super::{format_command_io_message, format_duration_ms, truncate_sync_shell_stream};
 
 impl WorkspaceServer {
@@ -20,7 +21,7 @@ impl WorkspaceServer {
     #[allow(clippy::too_many_arguments)] // isolation/timeout/env/cwd are call-site knobs, not worth a wrapper yet
     pub(crate) async fn execute_shell_with_isolation(
         &self,
-        command: &str,
+        input: ShellInput<'_>,
         tool_name: &str,
         isolation_level: IsolationLevel,
         timeout_secs: u64,
@@ -28,6 +29,7 @@ impl WorkspaceServer {
         env_vars: HashMap<String, String>,
         working_directory: Option<std::path::PathBuf>,
     ) -> Result<MCPResult, String> {
+        let command = input.text();
         let session_id = session_id.to_string();
 
         let workspace_path = self
@@ -49,8 +51,7 @@ impl WorkspaceServer {
             .as_ref()
             .map(|path| path.display().to_string());
 
-        // Normalize shell command
-        let normalized_command = normalization::normalize_shell_command(command);
+        let normalized_command = input.executable();
 
         // Track execution time
         let execution_start = std::time::Instant::now();

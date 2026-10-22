@@ -10,6 +10,7 @@ use crate::session_isolation::PathMappingLayer;
 
 use super::super::super::{utils, WorkspaceServer, PERSISTENT_SHELL_TOOL};
 use super::super::normalization;
+use super::input::ShellInput;
 use super::{format_command_io_message, format_duration_ms, truncate_sync_shell_stream};
 
 impl WorkspaceServer {
@@ -234,7 +235,7 @@ impl WorkspaceServer {
                 // Fallback to one-shot execution
                 let isolation_level = utils::get_shell_isolation_level().await;
                 self.execute_shell_with_isolation(
-                    command,
+                    ShellInput::Command(command),
                     tool_name,
                     isolation_level,
                     timeout_secs,

@@ -8,6 +8,7 @@ use crate::mcp::types::MCPResult;
 
 use super::super::super::{utils, WorkspaceServer, PERSISTENT_SHELL_TOOL};
 use super::super::validation;
+use super::input::ShellInput;
 use super::policy::{evaluate_shell_policy, ShellPolicyAction, ShellPolicyContext};
 
 impl WorkspaceServer {
@@ -58,6 +59,58 @@ impl WorkspaceServer {
     #[cfg(not(windows))]
     fn validate_windows_shell_syntax(&self, _raw_command: &str) -> Option<MCPResult> {
         None
+    }
+
+    /// Read exactly one of `command` / `script`; `script` is bash-only.
+    fn parse_run_shell_input<'a>(
+        &self,
+        args: &'a Value,
+        tool_name: &str,
+    ) -> Result<ShellInput<'a>, MCPResult> {
+        let command = args.get("command").and_then(|v| v.as_str());
+        let script = args.get("script").and_then(|v| v.as_str());
+        match (command, script) {
+            (Some(command), None) => Ok(ShellInput::Command(command)),
+            (None, Some(script)) => {
+                let is_powershell = tool_name == "runPowerShell"
+                    || self.code_tools_profile()
+                        == super::super::super::tools::CodeToolsProfile::HostWindows;
+                if is_powershell {
+                    return Err(guided_error(
+                        ErrorCategory::InvalidInput,
+                        "script is only supported for bash shells",
+                        ToolGroup::Workspace,
+                    )
+                    .guidance(validation::write_file_then_shell_guidance())
+                    .to_mcp_result());
+                }
+                if script.trim().is_empty() {
+                    return Err(missing_param_error("script", ToolGroup::Workspace));
+                }
+                let max_chars = super::super::super::tools::code_tools::RUN_SHELL_SCRIPT_MAX_CHARS;
+                if script.chars().count() > max_chars as usize {
+                    return Err(guided_error(
+                        ErrorCategory::InvalidInput,
+                        format!("script exceeds {max_chars} characters"),
+                        ToolGroup::Workspace,
+                    )
+                    .guidance(validation::write_file_then_shell_guidance())
+                    .to_mcp_result());
+                }
+                Ok(ShellInput::Script(script))
+            }
+            (Some(_), Some(_)) => Err(guided_error(
+                ErrorCategory::InvalidInput,
+                "Provide either command or script, not both",
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                "Use command for a one-line shell command.".to_string(),
+                "Use script for multi-line logic, loops, or nested quotes.".to_string(),
+            ])
+            .to_mcp_result()),
+            (None, None) => Err(missing_param_error("command", ToolGroup::Workspace)),
+        }
     }
 
     async fn validate_bash_syntax(&self, raw_command: &str) -> Option<MCPResult> {
@@ -182,15 +235,16 @@ impl WorkspaceServer {
         session_id: &str,
         tool_name: &str,
     ) -> Result<MCPResult, String> {
-        let raw_command = match args.get("command").and_then(|v| v.as_str()) {
-            Some(cmd) => cmd,
-            None => {
-                return Ok(missing_param_error("command", ToolGroup::Workspace));
-            }
+        let input = match self.parse_run_shell_input(&args, tool_name) {
+            Ok(input) => input,
+            Err(result) => return Ok(result),
         };
+        let raw_command = input.text();
 
-        if let Some(result) = self.validate_windows_shell_syntax(raw_command) {
-            return Ok(result);
+        if matches!(input, ShellInput::Command(_)) {
+            if let Some(result) = self.validate_windows_shell_syntax(raw_command) {
+                return Ok(result);
+            }
         }
         if let Some(result) = self.validate_bash_syntax(raw_command).await {
             return Ok(result);
@@ -280,7 +334,7 @@ impl WorkspaceServer {
         // Execute with configured isolation level (workspace root unless cwd is set)
         let isolation_level = utils::get_shell_isolation_level().await;
         self.execute_shell_with_isolation(
-            raw_command,
+            input,
             tool_name,
             isolation_level,
             timeout_secs,
