@@ -112,7 +112,7 @@ Then:
 2. Base = `python3 .agents/skills/create-pr/scripts/resolve_dev_base.py` (latest `dev/<version>`). In `$WT`: `git switch -c <type>/<short-slug>-<N> origin/<base>`.
 3. Set `current` in state, then implement following `agents.md` conventions (KISS/YAGNI, no `as any`, match surrounding code).
 4. Verify narrowly, commit (`<type>(<scope>): <summary>`), push.
-5. Open the PR per the `create-pr` skill: base `dev/<version>`, semantic title, body with `Fixes #N`, summary, and test plan. Clear `current`.
+5. Open the PR per the `create-pr` skill: base `dev/<version>`, semantic title, body with `Fixes #N` (merging into `dev/*` closes #N via the `close-linked-issues` workflow; use `Refs #N` for partial work), summary, and test plan. Clear `current`.
 
 If implementation fails twice or the scope proves larger than expected, push nothing half-done: delete the local branch in `$WT`, record `skipped` with what was learned, and comment on the issue only if the finding is useful to humans.
 

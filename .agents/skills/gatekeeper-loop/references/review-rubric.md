@@ -17,7 +17,7 @@ Classify every finding. Only **blocker** and **major** become required `G` items
 4. **Conventions** — `agents.md`/`CLAUDE.md`: KISS/YAGNI, no unsafe casts, comment density matches surroundings, Rust via `pnpm rust:*`.
 5. **Security** — Tool approval/policy, filesystem/shell access, secrets in logs or previews, untrusted input handling.
 6. **User-facing** — UI text follows i18n standards (ko/en), docs updated when behavior changes, bundled skill `.force_update` bumped when a bundled `SKILL.md` changes.
-7. **PR hygiene** — Semantic title, base is the latest `dev/<version>`, body has `Fixes #N` and a test plan that matches what was run.
+7. **PR hygiene** — Semantic title, base is the latest `dev/<version>`, body has `Fixes #N` (closes on merge into `dev/*` too; partial work must use `Refs #N`) and a test plan that matches what was run.
 8. **CI** — All checks green at the reviewed head before approve.
 
 ## Re-review discipline
