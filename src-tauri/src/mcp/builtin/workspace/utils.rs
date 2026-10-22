@@ -231,6 +231,23 @@ pub async fn is_session_docker_isolated(session_id: &str) -> bool {
     session_docker_root(session_id).await.0
 }
 
+/// Adds this session's wake URL to a host shell environment.
+///
+/// Skipped for Docker sessions: `docker exec -e` would expose the token in the
+/// host process list, and the container cannot reach the host loopback anyway.
+pub async fn add_wake_url_env(
+    session_id: &str,
+    env_vars: &mut std::collections::HashMap<String, String>,
+) {
+    if is_session_docker_isolated(session_id).await {
+        return;
+    }
+    env_vars.insert(
+        crate::server::wake::WAKE_URL_ENV.to_string(),
+        crate::server::wake::wake_url_for(session_id),
+    );
+}
+
 /// Single DB read for Docker isolation + configured workdir (`/workspace` or attach `/app`).
 pub async fn session_docker_root(session_id: &str) -> (bool, String) {
     use crate::models::workspace_isolation::WorkspaceIsolationMode;

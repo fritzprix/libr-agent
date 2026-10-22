@@ -63,6 +63,19 @@ pub fn get_routes(
         .and(warp::body::json())
         .and_then(handlers::send_message);
 
+    // POST /api/sessions/:id/wake/:token — process-completion callback (per-session token)
+    let wake_session = warp::post()
+        .and(warp::path("api"))
+        .and(warp::path("sessions"))
+        .and(warp::path::param())
+        .and(warp::path("wake"))
+        .and(warp::path::param())
+        .and(warp::path::end())
+        .and(agent_manager.clone())
+        .and(warp::body::content_length_limit(16 * 1024))
+        .and(warp::body::bytes())
+        .and_then(handlers::wake_session);
+
     // POST /api/sessions/:id/channel
     let inject_channel_message = warp::post()
         .and(warp::path("api"))
@@ -215,6 +228,7 @@ pub fn get_routes(
         .or(get_compact_context)
         .or(get_messages)
         .or(send_message)
+        .or(wake_session)
         .or(inject_channel_message_auto)
         .or(inject_channel_message)
         .or(respond_channel_permission)

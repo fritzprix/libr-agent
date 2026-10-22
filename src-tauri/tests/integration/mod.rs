@@ -123,6 +123,7 @@ pub mod tool_result_spillover_tests;
 pub mod tool_schema_property_order_tests;
 pub mod ui_interaction_template_tests;
 pub mod wait_session_complete_status_tests;
+pub mod wake_url_env_tests;
 pub mod workflow_finish_pending_tests;
 pub mod workflow_restart_state_tests;
 pub mod workflow_settlement_durability_tests;

@@ -57,6 +57,29 @@ use this skill. If they only name a **clock time**, use `loop`.
 
 Prefer one `waitForProcess` over repeated short waits or clock callbacks.
 
+### A2. Long local job — end the turn, get woken
+
+For jobs that run many minutes (long builds, training), do not hold the turn in
+`waitForProcess`. `runShell` / `spawnProcess` on host workspaces export
+`$LIBRAGENT_WAKE_URL`, a tokenized wake URL for **this** session only.
+
+1. Start the job with an unconditional callback (fires on success **and** failure):
+   `long_cmd > job.log 2>&1; curl -s -X POST "$LIBRAGENT_WAKE_URL" -H 'Content-Type: application/json' -d "{\"exitCode\":$?,\"logPath\":\"job.log\"}"`
+   via `workspace__spawnProcess`.
+2. Tell the user it is running, then **end the turn**.
+3. You are woken by a `[wake callback]` message (`status`, `exitCode`, `logPath`,
+   optional `summary`). Read the log and continue. If the session is busy, the
+   callback is queued, not dropped.
+
+Payload fields (all optional): `status` (`success`/`failure`, else derived from
+`exitCode`), `exitCode`, `summary`, `logPath`.
+
+- Never `echo` / print `$LIBRAGENT_WAKE_URL` or paste its value into files or replies.
+- Not set in Docker-isolated sessions; use `waitForProcess` there.
+- The token is revoked when the session is terminated or deleted, and does not
+  survive an app restart; late callbacks get `401`. If no callback came, check
+  `job.log` yourself.
+
 ### B. External systems (hooks / webhooks / watchers)
 
 **Success** = a message lands in **this** LibrAgent session and the workflow resumes.
