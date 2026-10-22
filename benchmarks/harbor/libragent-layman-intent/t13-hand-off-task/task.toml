@@ -3,7 +3,7 @@ artifacts = []
 
 [task]
 name = "fritzprix/layman-t13-hand-off-task-v1"
-description = "Layman intent T13 (P): spawnSession for the task, then checkSession"
+description = "Layman intent T13 (P): __spawnSession → __checkSession (last call succeeds)"
 keywords = ["libragent", "layman-intent", "skill-routing", "delegate"]
 [[task.authors]]
 name = "fritzprix"

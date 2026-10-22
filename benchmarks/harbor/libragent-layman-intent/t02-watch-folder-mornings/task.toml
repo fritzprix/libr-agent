@@ -3,7 +3,7 @@ artifacts = []
 
 [task]
 name = "fritzprix/layman-t02-watch-folder-mornings-v1"
-description = "Layman intent T02 (P): scheduleCallback with a daily cronExpression on this session"
+description = "Layman intent T02 (P): __scheduleCallback (last call succeeds)"
 keywords = ["libragent", "layman-intent", "skill-routing", "loop"]
 [[task.authors]]
 name = "fritzprix"

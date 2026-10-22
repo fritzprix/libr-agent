@@ -756,6 +756,7 @@ def _attach_tool_observation(
     result = ObservationResult(
         source_call_id=source_call_id,
         content=_tool_observation_content(message),
+        extra={"tool_error": not _tool_result_succeeded(message)},
     )
     if source_call_id:
         matched = _find_agent_step_for_tool_call(steps, source_call_id)

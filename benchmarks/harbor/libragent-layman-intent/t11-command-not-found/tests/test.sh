@@ -1,6 +1,6 @@
 #!/bin/bash
-# Container verifier. Routing (skill + tool calls) is graded on the host by
-# scripts/check-layman-intent-trajectories.py; see the dataset README.
+# Container verifier. Grades /logs/agent/trajectory.json by the skill's
+# critical path (tests/critical_path.py); see the dataset README.
 mkdir -p /logs/verifier
 pytest --ctrf /logs/verifier/ctrf.json /tests/test_outputs.py -rA
 if [ $? -eq 0 ]; then

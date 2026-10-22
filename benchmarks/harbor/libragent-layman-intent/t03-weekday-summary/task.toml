@@ -3,7 +3,7 @@ artifacts = []
 
 [task]
 name = "fritzprix/layman-t03-weekday-summary-v1"
-description = "Layman intent T03 (P): createScheduledTask (global, survives app restarts), not scheduleCallback"
+description = "Layman intent T03 (P): __createScheduledTask (last call succeeds)"
 keywords = ["libragent", "layman-intent", "skill-routing", "schedule"]
 [[task.authors]]
 name = "fritzprix"

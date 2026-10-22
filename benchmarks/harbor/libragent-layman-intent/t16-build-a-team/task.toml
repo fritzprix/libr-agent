@@ -3,7 +3,7 @@ artifacts = []
 
 [task]
 name = "fritzprix/layman-t16-build-a-team-v1"
-description = "Layman intent T16 (P): prepareTeamworkWorkspace for the project"
+description = "Layman intent T16 (P): __prepareTeamworkWorkspace (last call succeeds)"
 keywords = ["libragent", "layman-intent", "skill-routing", "teamwork"]
 [[task.authors]]
 name = "fritzprix"

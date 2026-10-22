@@ -3,7 +3,7 @@ artifacts = []
 
 [task]
 name = "fritzprix/layman-t12-save-organizing-routine-v1"
-description = "Layman intent T12 (P): write a SKILL.md for the routine and run validate_skill.py --strict"
+description = "Layman intent T12 (P): __runShell with validate_skill.py (last call succeeds)"
 keywords = ["libragent", "layman-intent", "skill-routing", "skill-creator"]
 [[task.authors]]
 name = "fritzprix"

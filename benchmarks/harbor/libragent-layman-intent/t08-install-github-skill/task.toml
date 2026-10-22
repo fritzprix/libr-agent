@@ -3,7 +3,7 @@ artifacts = []
 
 [task]
 name = "fritzprix/layman-t08-install-github-skill-v1"
-description = "Layman intent T08 (P): deploy_skill.py <url> with a provenance file; not registerServer"
+description = "Layman intent T08 (P): __runShell with deploy_skill.py (last call succeeds)"
 keywords = ["libragent", "layman-intent", "skill-routing", "skill-deployer"]
 [[task.authors]]
 name = "fritzprix"

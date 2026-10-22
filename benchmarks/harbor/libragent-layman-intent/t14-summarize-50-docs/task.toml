@@ -3,7 +3,7 @@ artifacts = []
 
 [task]
 name = "fritzprix/layman-t14-summarize-50-docs-v1"
-description = "Layman intent T14 (P): at least two spawnSession calls and one merged /app/summary.md"
+description = "Layman intent T14 (P): __spawnSession (last call succeeds)"
 keywords = ["libragent", "layman-intent", "skill-routing", "divide-conquer"]
 [[task.authors]]
 name = "fritzprix"

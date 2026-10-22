@@ -3,7 +3,7 @@ artifacts = []
 
 [task]
 name = "fritzprix/layman-t19-remember-today-v1"
-description = "Layman intent T19 (P): recordKnowledge for the durable points from /app/worklog.md"
+description = "Layman intent T19 (P): __recordKnowledge (last call succeeds)"
 keywords = ["libragent", "layman-intent", "skill-routing", "knowledge-distiller"]
 [[task.authors]]
 name = "fritzprix"
