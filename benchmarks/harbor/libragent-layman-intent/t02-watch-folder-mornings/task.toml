@@ -1,0 +1,33 @@
+schema_version = "1.3"
+artifacts = []
+
+[task]
+name = "fritzprix/layman-t02-watch-folder-mornings-v1"
+description = "Layman intent T02 (P): scheduleCallback with a daily cronExpression on this session"
+keywords = ["libragent", "layman-intent", "skill-routing", "loop"]
+[[task.authors]]
+name = "fritzprix"
+
+[metadata]
+difficulty = "easy"
+category = "agent-routing"
+tags = ["layman-intent", "t02", "category-p", "skill-loop"]
+
+[verifier]
+timeout_sec = 300.0
+collect = []
+
+[verifier.env]
+
+[agent]
+timeout_sec = 900.0
+
+[environment]
+network_mode = "no-network"
+build_timeout_sec = 600.0
+os = "linux"
+mcp_servers = []
+
+[environment.env]
+
+[solution.env]

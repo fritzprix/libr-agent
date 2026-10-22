@@ -1,0 +1,33 @@
+schema_version = "1.3"
+artifacts = []
+
+[task]
+name = "fritzprix/layman-t12-save-organizing-routine-v1"
+description = "Layman intent T12 (P): write a SKILL.md for the routine and run validate_skill.py --strict"
+keywords = ["libragent", "layman-intent", "skill-routing", "skill-creator"]
+[[task.authors]]
+name = "fritzprix"
+
+[metadata]
+difficulty = "easy"
+category = "agent-routing"
+tags = ["layman-intent", "t12", "category-p", "skill-skill-creator"]
+
+[verifier]
+timeout_sec = 300.0
+collect = []
+
+[verifier.env]
+
+[agent]
+timeout_sec = 900.0
+
+[environment]
+network_mode = "no-network"
+build_timeout_sec = 600.0
+os = "linux"
+mcp_servers = []
+
+[environment.env]
+
+[solution.env]

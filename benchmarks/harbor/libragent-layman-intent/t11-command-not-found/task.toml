@@ -1,0 +1,33 @@
+schema_version = "1.3"
+artifacts = []
+
+[task]
+name = "fritzprix/layman-t11-command-not-found-v1"
+description = "Layman intent T11 (P): diagnose node/python/uv first; no blind reinstall of the server"
+keywords = ["libragent", "layman-intent", "skill-routing", "setup-wizard"]
+[[task.authors]]
+name = "fritzprix"
+
+[metadata]
+difficulty = "easy"
+category = "agent-routing"
+tags = ["layman-intent", "t11", "category-p", "skill-setup-wizard"]
+
+[verifier]
+timeout_sec = 300.0
+collect = []
+
+[verifier.env]
+
+[agent]
+timeout_sec = 900.0
+
+[environment]
+network_mode = "public"
+build_timeout_sec = 600.0
+os = "linux"
+mcp_servers = []
+
+[environment.env]
+
+[solution.env]
