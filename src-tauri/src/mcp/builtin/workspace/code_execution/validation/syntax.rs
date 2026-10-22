@@ -95,9 +95,13 @@ pub(super) fn parse_bash_syntax_error(command: &str, stderr: &str) -> BashSyntax
             break;
         }
         if detail.is_none() {
-            line = Some(number);
+            // bash 3.2 (macOS) reports `line 0` for `-c` input.
+            line = (number > 0).then_some(number);
             detail = Some(rest.to_string());
         }
+    }
+    if line.is_none() && detail.is_some() && command.lines().count() == 1 {
+        line = Some(1);
     }
 
     let detail = detail.unwrap_or_else(|| {
@@ -182,6 +186,19 @@ mod tests {
         assert_eq!(err.snippet.as_deref(), Some(ISSUE_EXAMPLE));
         assert!(err.summary().contains("at line 1"));
         assert!(err.guidance()[0].contains("double quote"));
+    }
+
+    #[test]
+    fn treats_bash32_line_zero_as_unknown() {
+        let stderr = "bash: -c: line 0: unexpected EOF while looking for matching `\"'\n";
+        let single = parse_bash_syntax_error(ISSUE_EXAMPLE, stderr);
+        assert_eq!(single.line, Some(1));
+        assert_eq!(single.snippet.as_deref(), Some(ISSUE_EXAMPLE));
+
+        let multi = parse_bash_syntax_error("echo ok\nls \"a", stderr);
+        assert_eq!(multi.line, None);
+        assert_eq!(multi.snippet, None);
+        assert!(!multi.summary().contains("line 0"));
     }
 
     #[test]
