@@ -1,6 +1,10 @@
 # Issue linking keywords
 
-GitHub closes linked issues when the PR merges into the **default** branch of the repo, or when the closing reference is recognized for the PR's base (behavior can vary by repo settings). Prefer explicit keywords in the PR description.
+GitHub itself closes linked issues only when the PR merges into the **default** branch (`main`). In this repo most PRs merge into `dev/*`, so `.github/workflows/close-linked-issues.yml` closes them instead: on merge into **any** branch it closes every same-repo issue referenced by a closing keyword in the PR title/body, comments `Closed by #<PR>`, and sets reason `completed`.
+
+- Use `Fixes #N` for dev-branch PRs too; it closes #N on merge.
+- `closingIssuesReferences` / the issue sidebar stay empty for non-default bases; that is expected.
+- Ignored: references inside backticks or code fences, `Refs #N` / plain `#N`, and other repos (`owner/repo#N`).
 
 ## Closing keywords (auto-close on merge)
 
@@ -11,7 +15,7 @@ Use any of these followed by an issue number:
 - `Resolves #123`
 - Same with `Fixed` / `Closed` / `Resolved` (past tense also works)
 
-Full form also works: `Fixes https://github.com/owner/repo/issues/123`
+Full form also works for this repo: `Fixes https://github.com/fritzprix/libr-agent/issues/123`
 
 ## Non-closing references
 

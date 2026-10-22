@@ -102,7 +102,7 @@ Always attach issues the PR actually resolves or substantially addresses.
 gh pr edit <number> --body "$(…updated body with Fixes #N…)"
 ```
 
-3. Verify link: `gh pr view <number> --json body,closingIssuesReferences` (or check the issue sidebar on GitHub).
+3. Verify link: `gh pr view <number> --json body,closingIssuesReferences` (or check the issue sidebar on GitHub). For `dev/*` bases these stay empty; the `close-linked-issues` workflow still closes `Fixes #N` issues on merge.
 
 Keyword details and multi-issue examples: [references/issue-linking.md](references/issue-linking.md).
 
