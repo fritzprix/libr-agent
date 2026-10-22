@@ -5,7 +5,7 @@ description: 'Register custom stdio or HTTP MCP servers and configure headers an
 
 # Installing Custom MCP Servers
 
-> Install Model Context Protocol (MCP) servers not included in the recommended list. Register them via the **Add Extension** UI or delegate the setup to `@skill:tool-installer`.  
+> Install Model Context Protocol (MCP) servers not included in the recommended list. Register them via the **Add Extension** UI or delegate the setup to `@skill:mcp-installer`.  
 > To use pre-configured presets, refer to [Installing MCP with Extensions](extensions.md).
 
 ---
@@ -69,17 +69,17 @@ To modify or remove an extension, click **Edit** or **Delete** on the extension 
 
 ---
 
-## Method B — Agent Setup: `@skill:tool-installer`
+## Method B — Agent Setup: `@skill:mcp-installer`
 
 Instruct the agent in chat:
 
 ```
-@skill:tool-installer
+@skill:mcp-installer
 Register @modelcontextprotocol/server-everything in LibrAgent using npx.
 ```
 
 ```
-@skill:tool-installer
+@skill:mcp-installer
 Import MCP server configurations from Cursor into LibrAgent.
 ```
 

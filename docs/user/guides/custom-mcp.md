@@ -5,7 +5,7 @@ description: 'stdio·HTTP 커스텀 MCP 서버를 등록하고 헤더·환경 �
 
 # 커스텀 MCP 설치
 
-> 추천 목록에 없는 MCP를 **Add Extension**으로 직접 등록하거나, 에이전트에게 `@skill:tool-installer`로 맡기는 방법입니다.  
+> 추천 목록에 없는 MCP를 **Add Extension**으로 직접 등록하거나, 에이전트에게 `@skill:mcp-installer`로 맡기는 방법입니다.  
 > 추천 프리셋만 쓰려면 [Extensions로 MCP 설치하기](extensions.md)를 보세요.
 
 ---
@@ -69,17 +69,17 @@ description: 'stdio·HTTP 커스텀 MCP 서버를 등록하고 헤더·환경 �
 
 ---
 
-## 방법 B — 에이전트: `@skill:tool-installer`
+## 방법 B — 에이전트: `@skill:mcp-installer`
 
 채팅에서:
 
 ```
-@skill:tool-installer
+@skill:mcp-installer
 npx로 @modelcontextprotocol/server-everything 를 LibrAgent에 등록해줘.
 ```
 
 ```
-@skill:tool-installer
+@skill:mcp-installer
 Cursor에 있는 MCP 설정을 읽어서 LibrAgent에 가져와줘.
 ```
 
@@ -93,7 +93,7 @@ Cursor에 있는 MCP 설정을 읽어서 LibrAgent에 가져와줘.
 
 GitHub 주소를 주면 에이전트가 먼저 내용을 확인합니다. `SKILL.md`가 있으면 스킬이므로 `skill-deployer`로, MCP 서버 패키지면 이 스킬로 설치합니다.
 
-자세한 절차는 번들 스킬 `tool-installer` 본문을 따릅니다. ([스킬 카탈로그](skills.md))
+자세한 절차는 번들 스킬 `mcp-installer` 본문을 따릅니다. ([스킬 카탈로그](skills.md))
 
 일상적으로는 **방법 A(Add Extension UI)** 를 먼저 쓰세요. 에이전트 설치는 마이그레이션·일괄 등록에 유리합니다.
 

@@ -84,7 +84,7 @@ Sélectionnez le modèle adapté à la structure de votre tâche directement dep
 
 Guide de sélection : [Sélection de framework](src-tauri/bundled_skills/teamwork/references/framework-selection.md) · Guide complet : [Sous-agents](docs/user/guides/sub-agents.md)
 
-Autres compétences prêtes à l'emploi : `setup-wizard`, `tool-installer`, `playbook-creator` et plus — voir **[Compétences intégrées](docs/user/guides/skills.md)**
+Autres compétences prêtes à l'emploi : `setup-wizard`, `mcp-installer`, `playbook-creator` et plus — voir **[Compétences intégrées](docs/user/guides/skills.md)**
 
 ---
 
@@ -92,7 +92,7 @@ Autres compétences prêtes à l'emploi : `setup-wizard`, `tool-installer`, `pla
 
 - **Prise en charge complète des protocoles** : stdio, HTTP, SSE et OAuth 2.1
 - **Plus de 15 serveurs intégrés** : Workspace, Shell, Browser, Knowledge, Planning, Scheduled Tasks, etc.
-- **Préréglages et installation interactive** : Déploiement guidé par agent avec `tool-installer`
+- **Préréglages et installation interactive** : Déploiement guidé par agent avec `mcp-installer`
 - **Isolation et sécurité strictes** : Isolation des outils par session, restrictions d'accès aux fichiers et commandes, modes d'automatisation sécurisés
 
 ### Capacités centrales d'exécution

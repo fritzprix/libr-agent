@@ -1,5 +1,5 @@
 ---
-name: tool-installer
+name: mcp-installer
 description: "Registers, verifies, or imports MCP (Model Context Protocol) servers in LibrAgent or Claude Desktop. Use when users share MCP connection info (npm/npx/PyPI package, MCP server GitHub repo, config JSON, server URL), want a capability that needs a new MCP server (\"I want stock data\"), or want to import/sync settings from Cursor, VS Code, Windsurf, and similar editors. GitHub URL rule: a repo or subpath that contains SKILL.md is a skill — use skill-deployer instead; an MCP server package or MCP config uses this skill; if unsure, inspect the repo before installing. Triggers: install MCP, add MCP server, connect this, 연결해줘, 깔아줘, 설치해줘, MCP 추가, 서버 등록."
 ---
 
@@ -77,11 +77,17 @@ Use the `tool__registerServer` tool to add the MCP server. Never hand-edit LibrA
 Installation is not done until the server is verified.
 
 1. Call `tool__verifyServer` with the server name.
-2. On success, report the tools it exposes. Tell the user the server is saved and that its tools become callable after it is attached to an assistant (`agent__updateAgent`) and a new session starts.
+2. On success, report the tools it exposes, then go to Step 3a. Saving a server does not make it callable in any session yet.
 3. On failure, report the real error and the next step:
    - `command not found` / missing `node`, `npx`, `uv`, `python` → run **setup-wizard**, then verify again.
    - Missing or wrong API key / env variable → ask the user for the value, then `tool__updateServer`.
    - Package not found or crashes on start → show the error output; do not report success.
+
+#### 3a. Offer to attach (required after a successful verify)
+
+1. Ask: "Attach `<server>` to this assistant so it can use these tools?" Use the agent id from `## Agent Runtime Identity`.
+2. **Yes** → read the assistant's current `externalMcpServers` with `agent__listAgents(type: "configs")`, then call `agent__updateAgent(id: "<agent id>", externalMcpServers: [...current ids, "<server id>"])`. The list is replaced, not merged, so always include the existing ids. Then tell the user: "Start a new session to use the `<server>` tools. The current session cannot load them."
+3. **No** → tell the user the server is saved but not attached, and that they can attach it later to any assistant (by name) in Settings or by asking you.
 
 #### 4. Claude Desktop (Optional)
 

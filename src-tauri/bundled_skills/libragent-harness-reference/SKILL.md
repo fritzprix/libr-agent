@@ -47,7 +47,7 @@ Do **not** dump long operating doctrine into every assistant `systemPrompt`. Pre
 - First run on a new machine, missing OS/Python/Node/uv, or MCP `command not found` → **setup-wizard**.
 - Need sub-agent handoff rules → **delegate** (and `references/session-isolation.md` here for the matrix).
 - Need generator–evaluator / proof-before-done on a child → **delegation-eval-loop** (after `delegate` mechanics).
-- Install/update/remove request → GitHub repo or subpath with `SKILL.md` → **skill-deployer**; npm/PyPI MCP package, MCP server repo, server URL, or MCP config JSON → **tool-installer**; GitHub URL you cannot classify → inspect the repo first. MCP registration always pauses for user approval; finish with `tool__verifyServer`.
+- Install/update/remove request → GitHub repo or subpath with `SKILL.md` → **skill-deployer**; npm/PyPI MCP package, MCP server repo, server URL, or MCP config JSON → **mcp-installer**; GitHub URL you cannot classify → inspect the repo first. MCP registration always pauses for user approval; finish with `tool__verifyServer`.
 
 ## Hard runtime rules (always true)
 

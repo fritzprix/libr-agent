@@ -83,7 +83,7 @@ Select a pattern that matches the structure of your task, then execute it from t
 
 Selection heuristics: [framework-selection](src-tauri/bundled_skills/teamwork/references/framework-selection.md) · Full guide: [Sub-agents](docs/user/guides/sub-agents.md).
 
-Additional default skills: `setup-wizard`, `tool-installer`, `playbook-creator`, and more — **[Bundled Skills](docs/user/guides/skills.md)**.
+Additional default skills: `setup-wizard`, `mcp-installer`, `playbook-creator`, and more — **[Bundled Skills](docs/user/guides/skills.md)**.
 
 ---
 
@@ -91,7 +91,7 @@ Additional default skills: `setup-wizard`, `tool-installer`, `playbook-creator`,
 
 - Transports: stdio, HTTP, SSE, OAuth 2.1
 - 15+ built-in servers (Workspace, Shell, Browser, Knowledge, Planning, Scheduled Tasks, and others)
-- One-click presets and agent-assisted installation (`tool-installer`)
+- One-click presets and agent-assisted installation (`mcp-installer`)
 - Tool isolation per session, file path guards, command guards, and optional automated execution modes
 
 ### Execution substrate

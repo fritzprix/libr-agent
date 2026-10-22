@@ -104,6 +104,6 @@ Tools 탭에서:
 
 ## 관련 문서
 
-- [커스텀 MCP 설치](custom-mcp.md) — Add Extension, stdio/HTTP, `@skill:tool-installer`
+- [커스텀 MCP 설치](custom-mcp.md) — Add Extension, stdio/HTTP, `@skill:mcp-installer`
 - [스킬](skills.md)
 - [문제 해결](troubleshooting.md)

@@ -84,7 +84,7 @@ LibrAgent는 이러한 작업을 간소화한 **완성형 데스크톱 제품**�
 
 상세 가이드: [패턴 선택 가이드](src-tauri/bundled_skills/teamwork/references/framework-selection.md) · [서브에이전트 가이드](docs/user/guides/sub-agents.md)
 
-기타 기본 제공 스킬: `setup-wizard`, `tool-installer`, `playbook-creator` 등 — **[번들 스킬 목록](docs/user/guides/skills.md)**.
+기타 기본 제공 스킬: `setup-wizard`, `mcp-installer`, `playbook-creator` 등 — **[번들 스킬 목록](docs/user/guides/skills.md)**.
 
 ---
 
@@ -92,7 +92,7 @@ LibrAgent는 이러한 작업을 간소화한 **완성형 데스크톱 제품**�
 
 - **다양한 전송 프로토콜**: stdio, HTTP, SSE, OAuth 2.1 지원
 - **15개 이상의 내장 서버**: Workspace, Shell, Browser, Knowledge, Planning, Scheduled Tasks 등 완비
-- **원클릭 프리셋 및 자동 설치 지원**: `tool-installer`를 통한 대화형 도구 설치
+- **원클릭 프리셋 및 자동 설치 지원**: `mcp-installer`를 통한 대화형 도구 설치
 - **안전한 격리 환경**: 세션별 도구 격리, 파일 경로 및 셸 명령어 실행 제한 가드, 자동화 전용 안전 실행 모드 지원
 
 ### 핵심 실행 인프라
