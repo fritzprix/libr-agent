@@ -1,8 +1,8 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHint, ToolGroup};
 use crate::mcp::presets::{get_recommended_servers, MCPServerPreset};
-use crate::mcp::types::MCPResult;
+use crate::mcp::types::{MCPResult, TransportConfig};
 use crate::repositories::mcp_server_repository::MCPServerRepository;
 use crate::state::get_mcp_server_repository;
 use serde_json::{json, Map, Value};
@@ -114,6 +114,92 @@ fn preset_transport(preset: &MCPServerPreset) -> Value {
         transport["env"] = Value::Object(env);
     }
     transport
+}
+
+/// Variable keys the preset lets a caller fill for a given target
+/// (`env` for stdio env, `header` / `bearer-token` for HTTP headers).
+fn variable_keys_for(preset: &MCPServerPreset, targets: &[&str]) -> HashSet<String> {
+    let Some(Value::Object(definitions)) = preset.variable_definitions.as_ref() else {
+        return HashSet::new();
+    };
+    definitions
+        .iter()
+        .filter_map(|(key, def)| {
+            let target = def.get("target").and_then(Value::as_str).unwrap_or("env");
+            match (targets.contains(&target), target) {
+                (true, "bearer-token") => Some("Authorization".to_string()),
+                (true, _) => Some(key.clone()),
+                (false, _) => None,
+            }
+        })
+        .collect()
+}
+
+fn keys_allowed<'a>(
+    keys: impl IntoIterator<Item = &'a String>,
+    canonical: &HashMap<String, String>,
+    variables: &HashSet<String>,
+) -> bool {
+    keys.into_iter()
+        .all(|key| canonical.contains_key(key) || variables.contains(key))
+}
+
+fn preset_matches_transport(preset: &MCPServerPreset, transport: &TransportConfig) -> bool {
+    let Ok(canonical) = serde_json::from_value::<TransportConfig>(preset_transport(preset)) else {
+        return false;
+    };
+    match (transport, canonical) {
+        (
+            TransportConfig::Stdio { command, args, env },
+            TransportConfig::Stdio {
+                command: preset_command,
+                args: preset_args,
+                env: preset_env,
+            },
+        ) => {
+            command.trim() == preset_command
+                && *args == preset_args
+                && keys_allowed(
+                    env.keys(),
+                    &preset_env,
+                    &variable_keys_for(preset, &["env"]),
+                )
+        }
+        (
+            TransportConfig::Http {
+                url,
+                headers,
+                session_id,
+                security,
+                ..
+            },
+            TransportConfig::Http {
+                url: preset_url,
+                headers: preset_headers,
+                ..
+            },
+        ) => {
+            url.trim() == preset_url
+                && session_id.is_none()
+                && security.is_none()
+                && keys_allowed(
+                    headers.iter().flat_map(HashMap::keys),
+                    &preset_headers.unwrap_or_default(),
+                    &variable_keys_for(preset, &["header", "bearer-token"]),
+                )
+        }
+        _ => false,
+    }
+}
+
+/// Name of the curated preset whose exact transport (command + args, or URL)
+/// this is, allowing only the preset's own env / header keys to be filled.
+pub(crate) fn matching_catalog_preset(transport: &Value) -> Option<String> {
+    let transport = serde_json::from_value::<TransportConfig>(transport.clone()).ok()?;
+    get_recommended_servers()
+        .into_iter()
+        .find(|preset| preset_matches_transport(preset, &transport))
+        .map(|preset| preset.name)
 }
 
 fn required_variables(preset: &MCPServerPreset) -> Vec<RequiredVariable> {
@@ -325,5 +411,56 @@ mod tests {
         assert_eq!(presets[0]["name"], "github");
         assert_eq!(presets[0]["registered"], true);
         assert_eq!(presets[0]["requiredVariables"][0]["key"], "GITHUB_PAT");
+    }
+
+    #[test]
+    fn exact_stdio_preset_with_its_env_key_matches_catalog() {
+        let transport = json!({
+            "type": "stdio",
+            "command": "npx",
+            "args": ["-y", "@fre4x/jules@latest"],
+            "env": { "JULES_API_KEY": "user-key" }
+        });
+        assert_eq!(
+            matching_catalog_preset(&transport).as_deref(),
+            Some("jules")
+        );
+    }
+
+    #[test]
+    fn altered_stdio_transport_is_not_a_catalog_preset() {
+        let base = json!({
+            "type": "stdio",
+            "command": "npx",
+            "args": ["-y", "@fre4x/jules@latest"]
+        });
+        let mut other_package = base.clone();
+        other_package["args"] = json!(["-y", "@evil/jules@latest"]);
+        let mut extra_env = base.clone();
+        extra_env["env"] = json!({ "JULES_API_KEY": "k", "NODE_OPTIONS": "--require /tmp/x.js" });
+        let mut other_command = base.clone();
+        other_command["command"] = json!("bash");
+
+        for transport in [other_package, extra_env, other_command] {
+            assert_eq!(matching_catalog_preset(&transport), None, "{transport}");
+        }
+    }
+
+    #[test]
+    fn http_preset_matches_only_its_url_and_header_keys() {
+        let exact = json!({
+            "type": "http",
+            "url": "https://mcp.context7.com/mcp",
+            "headers": { "CONTEXT7_API_KEY": "user-key" }
+        });
+        assert_eq!(matching_catalog_preset(&exact).as_deref(), Some("context7"));
+
+        let mut other_url = exact.clone();
+        other_url["url"] = json!("https://mcp.context7.com.evil.example/mcp");
+        let mut extra_header = exact.clone();
+        extra_header["headers"]["X-Forward-To"] = json!("https://evil.example");
+        for transport in [other_url, extra_header] {
+            assert_eq!(matching_catalog_preset(&transport), None, "{transport}");
+        }
     }
 }

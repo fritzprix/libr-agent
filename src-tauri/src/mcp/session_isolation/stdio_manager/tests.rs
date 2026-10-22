@@ -38,6 +38,7 @@ fn create_test_manager() -> SessionMCPManager {
             },
             authentication: None,
             metadata: None,
+            provenance: None,
         },
     );
 
@@ -106,6 +107,7 @@ fn create_integration_manager_with_workspace(
             },
             authentication: None,
             metadata: None,
+            provenance: None,
         },
     );
 
@@ -313,6 +315,7 @@ fn test_env_vars_extraction() {
         },
         authentication: None,
         metadata: None,
+        provenance: None,
     };
 
     match &config.transport {
@@ -395,6 +398,7 @@ fn test_command_args_structure() {
             },
             authentication: None,
             metadata: None,
+            provenance: None,
         },
     );
 

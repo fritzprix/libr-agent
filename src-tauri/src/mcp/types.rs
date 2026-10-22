@@ -107,6 +107,28 @@ pub struct ServerMetadata {
     pub version: Option<String>,
 }
 
+/// Where an agent-installed MCP server came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ServerProvenanceSource {
+    /// Exact transport of a curated `mcp-server.json` preset (installed without approval).
+    Catalog,
+    /// Any other command or URL (installed through the hard-approval gate).
+    External,
+}
+
+/// Install provenance stored with agent-registered servers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerProvenance {
+    pub source: ServerProvenanceSource,
+    /// Catalog preset name when `source` is `catalog`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preset: Option<String>,
+    /// Unix epoch milliseconds.
+    pub recorded_at: i64,
+}
+
 /// MCP Server Configuration (MCP 2025-06-18 Spec Compliant)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MCPServerConfig {
@@ -118,6 +140,9 @@ pub struct MCPServerConfig {
     pub authentication: Option<OAuthConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<ServerMetadata>,
+    /// `None` for servers saved before provenance existed or from the settings UI.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<ServerProvenance>,
 }
 
 /// Represents metadata annotations for an `MCPTool`.
@@ -668,6 +693,7 @@ mod tests {
             },
             authentication: None,
             metadata: None,
+            provenance: None,
         };
 
         let json = serde_json::to_string_pretty(&config).unwrap();
@@ -696,6 +722,7 @@ mod tests {
             },
             authentication: None,
             metadata: None,
+            provenance: None,
         };
 
         let json = serde_json::to_string_pretty(&config).unwrap();
@@ -748,6 +775,7 @@ mod tests {
                 vendor: Some("Example Corp".to_string()),
                 version: Some("1.0.0".to_string()),
             }),
+            provenance: None,
         };
 
         let json = serde_json::to_string_pretty(&config).unwrap();

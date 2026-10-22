@@ -43,6 +43,7 @@ fn create_manager(
             },
             authentication: None,
             metadata: None,
+            provenance: None,
         },
     );
 

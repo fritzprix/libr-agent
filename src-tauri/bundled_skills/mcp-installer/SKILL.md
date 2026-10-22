@@ -25,7 +25,7 @@ This skill registers MCP servers into the current LibrAgent session or the user'
 1. **Search the curated catalog** — Call `tool__listServers({"scope":"catalog","query":"<keyword>"})` with a short keyword from the request (e.g. `stock`, `slack`, `search`). Omit `query` to see every preset.
 2. **Pick a preset** — If one matches, use it as is: it comes from LibrAgent's official list. If it is marked `registered`, it is already installed; do not register it again (use `tool__updateServer` to change it).
 3. **Collect required inputs** — For each entry in `requiredVariables`, ask the user for the value and replace the matching placeholder (e.g. `YOUR_GITHUB_PAT`) in the preset's `transport`.
-4. **Register and verify** — Call `tool__registerServer` with the preset `name`, `description`, `transport` (and `authentication` when present), then run Step 3 of the direct install workflow.
+4. **Register and verify** — Call `tool__registerServer` with the preset `name`, `description`, `transport` (and `authentication` when present), then run Step 3 of the direct install workflow. If you change only the placeholder values, the install needs no user approval. Changing the command, args, URL, or adding env/header keys, or passing `authentication`, makes it a normal approval-gated install.
 5. **No match** — Only then search the web or npm for a package. Tell the user the source is not curated by LibrAgent before you register it.
 
 ### Import Workflow
@@ -54,7 +54,7 @@ Identify the source and transport details.
 
 Use the `tool__registerServer` tool to add the MCP server. Never hand-edit LibrAgent config files or the database.
 
-`tool__registerServer` and `tool__updateServer` always pause for the user's approval, even in YOLO mode, because a stdio server runs an arbitrary command. Before you call it, tell the user in one line what will run (command and args, or URL) and which env variables it needs. If the user rejects it, stop and ask what to change; do not retry the same call.
+`tool__registerServer` (except an unchanged catalog preset) and `tool__updateServer` always pause for the user's approval, even in YOLO mode, because a stdio server runs an arbitrary command. The saved server records its source (`catalog` preset or `external`); the success message shows it. Before you call it, tell the user in one line what will run (command and args, or URL) and which env variables it needs. If the user rejects it, stop and ask what to change; do not retry the same call.
 
 **Example Task:**
 "Register the 'everything' MCP server using npx."
