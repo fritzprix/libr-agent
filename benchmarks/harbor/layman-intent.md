@@ -7,26 +7,36 @@ system skill and tool. The suite covers 19 P0 cases (T01–T19) from
 
 ## Case categories
 
-- **P** (proactive): the agent must pick the expected skill and tool without help.
-- **Q** (question): the request is ambiguous. The agent must ask a clarifying
-  question and must not act.
+- **P** (proceed): the agent must pick the expected skill and finish with its
+  critical-path tool, stating any assumption instead of asking. No task expects
+  a clarifying question as the answer.
 - **N** (negative): a simple task. The agent must do it directly and must not
   over-orchestrate (for example, it must not call `__spawnSession`).
 
 ## Grading
 
-Most cases are about routing, not about a file the agent leaves behind. Those
-tasks have a placeholder verifier that always gives reward `1`. Do not read
-Harbor's reward as the score for them.
+Each task is judged only by its skill's critical path, as defined in
+[`layman_intent_critical_path.py`](./layman_intent_critical_path.py). A task
+passes when the trajectory has every critical-path tool call in order (a step
+must not happen only before the previous one) and the last call matching each
+step succeeded. Shell steps (skill-deployer, setup-wizard, skill-creator) count
+only when the `runShell` command or script executes the script, either as the
+program or through an interpreter (after wrappers such as `timeout`, `nohup`,
+`sudo`, and inside `bash -c` payloads); `cat deploy_skill.py` does not count.
+Success comes from the `tool_error` flag the
+adapter writes into each ATIF observation's `extra`. N tasks pass when no
+forbidden tool was called. Deeper analysis is left to an agent-based eval loop.
 
-The score comes from the trajectory checker
-`scripts/check-layman-intent-trajectories.py` (from #2227). It reads each trial's
-ATIF trajectory and checks the skill read, the required and forbidden tool
-calls, and the key arguments.
+Two graders use the same rules:
 
-T04, T14 and T15 also have real artifact verifiers (build log, summary that
-covers all 50 docs, README typo fix). For those, Harbor's reward is meaningful
-as well.
+- **Harbor reward.** Each task's `tests/test_outputs.py` grades
+  `/logs/agent/trajectory.json`, which Harbor mounts from the trial's `agent/`
+  directory. `tests/critical_path.py` is a copy of the shared module; a unit test
+  keeps the copies in sync. T04, T14 and T15 also check their artifact (build
+  log, summary of all 50 docs, README typo fix).
+- **Host report.** `scripts/check-layman-intent-trajectories.py` grades a whole
+  job and prints per-task, per-skill and overall routing accuracy. It matches
+  trials to tasks by the `task_name` in each trial's `result.json`.
 
 | #   | Task                          | Category | Expected skill      | Network    |
 | --- | ----------------------------- | -------- | ------------------- | ---------- |
@@ -34,12 +44,12 @@ as well.
 | T02 | `t02-watch-folder-mornings`   | P        | loop                | no-network |
 | T03 | `t03-weekday-summary`         | P        | schedule            | no-network |
 | T04 | `t04-build-done-notify`       | P        | call-me-back        | no-network |
-| T05 | `t05-tell-me-later`           | Q        | —                   | no-network |
+| T05 | `t05-tell-me-later`           | P        | loop                | no-network |
 | T06 | `t06-stock-data`              | P        | mcp-installer       | public     |
 | T07 | `t07-connect-npx-package`     | P        | mcp-installer       | public     |
 | T08 | `t08-install-github-skill`    | P        | skill-deployer      | public     |
 | T09 | `t09-install-github-mcp`      | P        | mcp-installer       | public     |
-| T10 | `t10-install-that`            | Q        | —                   | no-network |
+| T10 | `t10-install-that`            | P        | mcp-installer       | public     |
 | T11 | `t11-command-not-found`       | P        | setup-wizard        | public     |
 | T12 | `t12-save-organizing-routine` | P        | skill-creator       | no-network |
 | T13 | `t13-hand-off-task`           | P        | delegate            | no-network |
@@ -62,14 +72,13 @@ harbor run -p benchmarks/harbor/libragent-layman-intent \
   -a benchmarks.harbor.libragent_agent:LibrAgentHarborAdapter \
   --ak api_url=http://localhost:3030/api \
   --jobs-dir jobs/layman-intent
-python3 scripts/check-layman-intent-trajectories.py jobs/layman-intent/<job-id>
+python3 scripts/check-layman-intent-trajectories.py --jobs-dir jobs/layman-intent --job <job-id>
 ```
 
 ## Limits
 
-- T18 needs a host-side compacted session fixture so there is history to recall.
-  The task has no such fixture yet, so a T18 failure can come from the
-  environment, not the routing.
+- T18 seeds `/app/.libragent/pre_compaction_epoch_{1,2}.md`. In host workspace
+  mode the seed must be copied into the host workspace first.
 - There is no `dataset.toml`. Harbor computes its task digests only on
   `harbor add` / `harbor publish`. Add it when the suite is published to the Hub.
 - This PR adds only the task definitions. Running the bench and any host

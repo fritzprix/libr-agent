@@ -1,6 +1,6 @@
-# T10 — Q task
+# T10 — mcp-installer
 
-- Category: **Q**
-- Prompt: 그거 깔아줘.
-- Expected: ask what to install; install nothing
-- Network: `no-network`
+- Category: **P**
+- Prompt: 이거 깔아줘: https://www.npmjs.com/package/@modelcontextprotocol/server-memory
+- Expected: `__registerServer` → `__verifyServer` (last call succeeds)
+- Network: `public`

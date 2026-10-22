@@ -3,7 +3,7 @@ artifacts = []
 
 [task]
 name = "fritzprix/layman-t01-water-reminder-v1"
-description = "Layman intent T01 (P): scheduleCallback with delaySeconds≈600, not createScheduledTask"
+description = "Layman intent T01 (P): __scheduleCallback (last call succeeds)"
 keywords = ["libragent", "layman-intent", "skill-routing", "loop"]
 [[task.authors]]
 name = "fritzprix"

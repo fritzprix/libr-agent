@@ -1,9 +1,13 @@
-"""Container verifier for T17.
+"""T17: graded from the agent trajectory by the skill's critical path."""
 
-This task leaves no container artifact. Pass/fail comes from the host checker
-(scripts/check-layman-intent-trajectories.py), which reads trajectory.json.
-"""
+from pathlib import Path
+
+from critical_path import grade_trajectory
+
+TRAJECTORY = Path("/logs/agent/trajectory.json")
 
 
-def test_routing_is_graded_on_host():
-    assert True
+def test_critical_path():
+    """`__createAgent` (last call succeeds)"""
+    failures = grade_trajectory("T17", TRAJECTORY)
+    assert not failures, failures

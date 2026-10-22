@@ -3,7 +3,7 @@ artifacts = []
 
 [task]
 name = "fritzprix/layman-t07-connect-npx-package-v1"
-description = "Layman intent T07 (P): registerServer then listServers to verify"
+description = "Layman intent T07 (P): __registerServer → __verifyServer (last call succeeds)"
 keywords = ["libragent", "layman-intent", "skill-routing", "mcp-installer"]
 [[task.authors]]
 name = "fritzprix"

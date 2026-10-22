@@ -1,1 +1,1 @@
-그거 깔아줘.
+이거 깔아줘: https://www.npmjs.com/package/@modelcontextprotocol/server-memory

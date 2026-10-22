@@ -3,7 +3,7 @@ artifacts = []
 
 [task]
 name = "fritzprix/layman-t18-recall-deploy-time-v1"
-description = "Layman intent T18 (P): read the compacted transcript; do not invent an answer"
+description = "Layman intent T18 (P): __globFiles with pre_compaction_epoch_ → __readFile with pre_compaction_epoch_ (last call succeeds)"
 keywords = ["libragent", "layman-intent", "skill-routing", "context-recall"]
 [[task.authors]]
 name = "fritzprix"

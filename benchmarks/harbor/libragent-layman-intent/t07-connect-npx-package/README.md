@@ -2,5 +2,5 @@
 
 - Category: **P**
 - Prompt: 이거 연결해줘: npx -y @modelcontextprotocol/server-sequential-thinking
-- Expected: registerServer then listServers to verify
+- Expected: `__registerServer` → `__verifyServer` (last call succeeds)
 - Network: `public`

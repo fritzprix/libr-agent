@@ -3,7 +3,7 @@ artifacts = []
 
 [task]
 name = "fritzprix/layman-t09-install-github-mcp-v1"
-description = "Layman intent T09 (P): registerServer for the MCP server; not skill-deployer"
+description = "Layman intent T09 (P): __registerServer → __verifyServer (last call succeeds)"
 keywords = ["libragent", "layman-intent", "skill-routing", "mcp-installer"]
 [[task.authors]]
 name = "fritzprix"

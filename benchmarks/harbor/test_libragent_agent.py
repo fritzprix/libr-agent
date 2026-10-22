@@ -554,6 +554,7 @@ def test_build_atif_trajectory_maps_assistant_tools_and_observations() -> None:
     assert trajectory.steps[1].observation is not None
     assert trajectory.steps[1].observation.results[0].source_call_id == "call_1"
     assert "extract.js" in str(trajectory.steps[1].observation.results[0].content)
+    assert trajectory.steps[1].observation.results[0].extra == {"tool_error": False}
     assert trajectory.steps[1].metrics is not None
     assert trajectory.steps[1].metrics.prompt_tokens == 100
     assert trajectory.final_metrics is not None

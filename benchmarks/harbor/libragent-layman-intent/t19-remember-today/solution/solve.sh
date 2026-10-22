@@ -1,4 +1,4 @@
 #!/bin/bash
 # Oracle: the expected behavior is a routing decision inside LibrAgent
-# (recordKnowledge for the durable points from /app/worklog.md); there is no container artifact to produce.
-echo "host-graded task; nothing to write"
+# (`__recordKnowledge` (last call succeeds)); there is no container artifact to produce.
+echo "graded from the agent trajectory; nothing to write"

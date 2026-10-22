@@ -3,7 +3,7 @@ artifacts = []
 
 [task]
 name = "fritzprix/layman-t11-command-not-found-v1"
-description = "Layman intent T11 (P): diagnose node/python/uv first; no blind reinstall of the server"
+description = "Layman intent T11 (P): __runShell with verify_setup (last call succeeds)"
 keywords = ["libragent", "layman-intent", "skill-routing", "setup-wizard"]
 [[task.authors]]
 name = "fritzprix"

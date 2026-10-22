@@ -3,15 +3,15 @@ artifacts = []
 
 [task]
 name = "fritzprix/layman-t05-tell-me-later-v1"
-description = "Layman intent T05 (Q): ask whether it is time-based or event-based; schedule nothing"
-keywords = ["libragent", "layman-intent", "skill-routing", "q"]
+description = "Layman intent T05 (P): __scheduleCallback (last call succeeds)"
+keywords = ["libragent", "layman-intent", "skill-routing", "loop"]
 [[task.authors]]
 name = "fritzprix"
 
 [metadata]
 difficulty = "easy"
 category = "agent-routing"
-tags = ["layman-intent", "t05", "category-q", "skill-q"]
+tags = ["layman-intent", "t05", "category-p", "skill-loop"]
 
 [verifier]
 timeout_sec = 300.0

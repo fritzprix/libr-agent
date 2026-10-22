@@ -1,6 +1,6 @@
-# T05 — Q task
+# T05 — loop
 
-- Category: **Q**
-- Prompt: 나중에 알려줘.
-- Expected: ask whether it is time-based or event-based; schedule nothing
+- Category: **P**
+- Prompt: 1시간쯤 뒤에 이 대화 다시 알려줘.
+- Expected: `__scheduleCallback` (last call succeeds)
 - Network: `no-network`

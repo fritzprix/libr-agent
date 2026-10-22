@@ -3,7 +3,7 @@ artifacts = []
 
 [task]
 name = "fritzprix/layman-t06-stock-data-v1"
-description = "Layman intent T06 (P): registerServer (catalog preset preferred), no hand-edited config"
+description = "Layman intent T06 (P): __registerServer → __verifyServer (last call succeeds)"
 keywords = ["libragent", "layman-intent", "skill-routing", "mcp-installer"]
 [[task.authors]]
 name = "fritzprix"

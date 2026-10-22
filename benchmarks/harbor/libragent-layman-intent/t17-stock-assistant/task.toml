@@ -3,7 +3,7 @@ artifacts = []
 
 [task]
 name = "fritzprix/layman-t17-stock-assistant-v1"
-description = "Layman intent T17 (P): createAgent for a stock-focused assistant"
+description = "Layman intent T17 (P): __createAgent (last call succeeds)"
 keywords = ["libragent", "layman-intent", "skill-routing", "recruit"]
 [[task.authors]]
 name = "fritzprix"
