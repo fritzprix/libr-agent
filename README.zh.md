@@ -84,7 +84,7 @@ LibrAgent 为解决上述问题提供了 **开箱即用的完整桌面端产品*
 
 模式选型参考: [框架选型指南](src-tauri/bundled_skills/teamwork/references/framework-selection.md) · 详细指引: [子智能体与编排](docs/user/guides/sub-agents.md)
 
-其他常用内置技能: `setup-wizard`、`tool-installer`、`playbook-creator` 等 — 详见 **[内置技能列表](docs/user/guides/skills.md)**
+其他常用内置技能: `setup-wizard`、`mcp-installer`、`playbook-creator` 等 — 详见 **[内置技能列表](docs/user/guides/skills.md)**
 
 ---
 
@@ -92,7 +92,7 @@ LibrAgent 为解决上述问题提供了 **开箱即用的完整桌面端产品*
 
 - **全协议通信支持**: 支持 stdio、HTTP、SSE 与 OAuth 2.1
 - **15+ 内置工具服务端**: 预装 Workspace、Shell、Browser、Knowledge、Planning、Scheduled Tasks 等
-- **一键预设与智能引导安装**: 借助 `tool-installer` 体验交互式智能工具配置
+- **一键预设与智能引导安装**: 借助 `mcp-installer` 体验交互式智能工具配置
 - **完备的隔离保护**: 具备会话级工具隔离、敏感文件路径拦截、危险命令拦截与无人值守自动化安全模式
 
 ### 核心运行能力

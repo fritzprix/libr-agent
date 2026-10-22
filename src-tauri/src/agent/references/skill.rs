@@ -19,6 +19,20 @@ impl SkillReferenceResolver {
     }
 }
 
+/// Retired bundled skill names and their replacements, so old `@skill:` references keep working.
+const RENAMED_SKILLS: &[(&str, &str)] = &[("tool-installer", "mcp-installer")];
+
+fn renamed_skill_target(name: &str) -> Option<&'static str> {
+    RENAMED_SKILLS
+        .iter()
+        .find(|(old, _)| old.eq_ignore_ascii_case(name))
+        .map(|(_, new)| *new)
+}
+
+fn renamed_skill_notice(old: &str, new: &str) -> String {
+    format!("**Note:** `@skill:{old}` was renamed to `{new}`. Use `@skill:{new}` from now on.\n\n")
+}
+
 fn display_base_directory(path: &str) -> String {
     let path = PathBuf::from(path);
     path.parent().unwrap_or(&path).display().to_string()
@@ -95,21 +109,51 @@ impl ReferenceResolver for SkillReferenceResolver {
                 .await
                 .ok()?;
 
-        let skill = skills
-            .into_iter()
-            .find(|s| s.name.eq_ignore_ascii_case(arg))?;
+        let find = |name: &str| {
+            skills
+                .iter()
+                .find(|s| s.name.eq_ignore_ascii_case(name))
+                .filter(|s| PathBuf::from(&s.path).is_file())
+        };
 
-        if !PathBuf::from(&skill.path).is_file() {
-            return None;
+        if let Some(skill) = find(arg) {
+            return Some(format_skill_reference_block(skill));
         }
 
-        Some(format_skill_reference_block(&skill))
+        let new_name = renamed_skill_target(arg)?;
+        let skill = find(new_name)?;
+        Some(format!(
+            "{}{}",
+            renamed_skill_notice(arg, new_name),
+            format_skill_reference_block(skill)
+        ))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retired_tool_installer_maps_to_mcp_installer() {
+        assert_eq!(
+            renamed_skill_target("tool-installer"),
+            Some("mcp-installer")
+        );
+        assert_eq!(
+            renamed_skill_target("Tool-Installer"),
+            Some("mcp-installer")
+        );
+        assert_eq!(renamed_skill_target("mcp-installer"), None);
+        assert_eq!(renamed_skill_target("delegate"), None);
+    }
+
+    #[test]
+    fn renamed_skill_notice_names_both_skills() {
+        let notice = renamed_skill_notice("tool-installer", "mcp-installer");
+        assert!(notice.contains("`@skill:tool-installer` was renamed to `mcp-installer`"));
+        assert!(notice.contains("`@skill:mcp-installer`"));
+    }
 
     #[test]
     fn format_skill_reference_block_includes_metadata_and_read_guidance() {

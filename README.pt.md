@@ -84,7 +84,7 @@ Selecione o padrão adequado para a estrutura da sua tarefa diretamente no paine
 
 Critérios de seleção: [Seleção de framework](src-tauri/bundled_skills/teamwork/references/framework-selection.md) · Guia completo: [Subagentes](docs/user/guides/sub-agents.md)
 
-Outras habilidades prontas para uso: `setup-wizard`, `tool-installer`, `playbook-creator` e mais — consulte **[Habilidades integradas](docs/user/guides/skills.md)**
+Outras habilidades prontas para uso: `setup-wizard`, `mcp-installer`, `playbook-creator` e mais — consulte **[Habilidades integradas](docs/user/guides/skills.md)**
 
 ---
 
@@ -92,7 +92,7 @@ Outras habilidades prontas para uso: `setup-wizard`, `tool-installer`, `playbook
 
 - **Suporte amplo a protocolos**: stdio, HTTP, SSE e OAuth 2.1
 - **Mais de 15 servidores integrados**: Workspace, Shell, Browser, Knowledge, Planning, Scheduled Tasks, entre outros
-- **Predefinições com um clique e instalação guiada**: Configuração interativa de ferramentas assistida por agente via `tool-installer`
+- **Predefinições com um clique e instalação guiada**: Configuração interativa de ferramentas assistida por agente via `mcp-installer`
 - **Ambiente seguro e isolado**: Isolamento de ferramentas por sessão, restrições de caminhos de arquivos e comandos, além de modos seguros para automação
 
 ### Capacidades centrais de execução

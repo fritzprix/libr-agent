@@ -84,7 +84,7 @@ Wählen Sie das passende Muster basierend auf Ihrer Aufgabenstellung direkt im C
 
 Auswahlhilfe: [Framework-Auswahl](src-tauri/bundled_skills/teamwork/references/framework-selection.md) · Vollständiger Leitfaden: [Sub-Agenten](docs/user/guides/sub-agents.md)
 
-Weitere Standard-Skills: `setup-wizard`, `tool-installer`, `playbook-creator` und mehr — siehe **[Gebündelte Skills](docs/user/guides/skills.md)**
+Weitere Standard-Skills: `setup-wizard`, `mcp-installer`, `playbook-creator` und mehr — siehe **[Gebündelte Skills](docs/user/guides/skills.md)**
 
 ---
 
@@ -92,7 +92,7 @@ Weitere Standard-Skills: `setup-wizard`, `tool-installer`, `playbook-creator` un
 
 - **Umfassende Protokollunterstützung**: stdio, HTTP, SSE und OAuth 2.1
 - **Über 15 integrierte Server**: Workspace, Shell, Browser, Knowledge, Planning, Scheduled Tasks u. v. m.
-- **Ein-Klick-Presets und geführte Installation**: Interaktive Tool-Konfiguration mit `tool-installer`
+- **Ein-Klick-Presets und geführte Installation**: Interaktive Tool-Konfiguration mit `mcp-installer`
 - **Sichere Ausführungsumgebung**: Werkzeugisolation pro Sitzung, Pfad- und Befehlsbeschränkungen sowie sichere Automatisierungsmodi
 
 ### Kern-Laufzeitinfrastruktur

@@ -1,6 +1,6 @@
 ---
 name: skill-deployer
-description: "Deploy, install, update, or remove a validated custom skill in user_skills/ (global), .libragent/skills/ (workspace), or assistant scope from a local folder or a GitHub URL. Use when installing a skill from a GitHub URL, deploying a validated local skill after skill-creator, updating an installed skill from its recorded source, or removing an installed skill. NOT for system_skills or app-bundled skills. GitHub URL rule: a repo or subpath that contains SKILL.md is a skill and uses this skill; an MCP server package or MCP config uses tool-installer instead; if unsure, inspect the repo before installing. Triggers: deploy skill, install skill, install this skill, GitHub skill URL, update skill, remove skill, uninstall skill, global skill, workspace skill, user_skills, 스킬 깔아줘, 스킬 설치해줘, 이거 깔아줘, 스킬 업데이트, 스킬 삭제."
+description: "Deploy, install, update, or remove a validated custom skill in user_skills/ (global), .libragent/skills/ (workspace), or assistant scope from a local folder or a GitHub URL. Use when installing a skill from a GitHub URL, deploying a validated local skill after skill-creator, updating an installed skill from its recorded source, or removing an installed skill. NOT for system_skills or app-bundled skills. GitHub URL rule: a repo or subpath that contains SKILL.md is a skill and uses this skill; an MCP server package or MCP config uses mcp-installer instead; if unsure, inspect the repo before installing. Triggers: deploy skill, install skill, install this skill, GitHub skill URL, update skill, remove skill, uninstall skill, global skill, workspace skill, user_skills, 스킬 깔아줘, 스킬 설치해줘, 이거 깔아줘, 스킬 업데이트, 스킬 삭제."
 ---
 
 # Skill Deployer
@@ -24,7 +24,7 @@ Default to **workspace** when unsure — safest and easiest to remove. Read `Wor
 ## GitHub URL Routing
 
 - The repo or subpath contains `SKILL.md` → it is a skill; continue with this skill.
-- It is an MCP server package or MCP config (npm/PyPI package, `@modelcontextprotocol/sdk` or `mcp` dependency, README with an MCP config block) → use **tool-installer**.
+- It is an MCP server package or MCP config (npm/PyPI package, `@modelcontextprotocol/sdk` or `mcp` dependency, README with an MCP config block) → use **mcp-installer**.
 - Unsure → run `--inspect` first; never guess.
 
 Always use **`deploy_skill.py`** — never improvise with `git clone` or manual shell copies. URL formats and every flag: [references/github-install.md](references/github-install.md).
@@ -41,7 +41,7 @@ python "<skill-deployer-base-dir>/scripts/deploy_skill.py" "<github-url>" --insp
 
 - **Multiple skills**: present the listed skills (`name`, `subpath`, `description`, validation, scripts); the user picks one; pass `--skill <name>` next.
 - **Single skill**: read the `=== Skill Review ===` summary.
-- **No `SKILL.md` (`[DEPLOY-GITHUB-003]`)**: not a skill. Switch to **tool-installer** if it is an MCP server; otherwise tell the user what the repo is and ask.
+- **No `SKILL.md` (`[DEPLOY-GITHUB-003]`)**: not a skill. Switch to **mcp-installer** if it is an MCP server; otherwise tell the user what the repo is and ask.
 
 ### Step 2 — Review and Approve
 

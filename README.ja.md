@@ -84,7 +84,7 @@ LibrAgent は、これらの作業を直感的に解決する **完成された�
 
 選定ガイドライン: [フレームワーク選定基準](src-tauri/bundled_skills/teamwork/references/framework-selection.md) · 詳細ガイド: [サブエージェント](docs/user/guides/sub-agents.md)
 
-その他の初期スキル: `setup-wizard`、`tool-installer`、`playbook-creator` など — **[バンドルスキル一覧](docs/user/guides/skills.md)**
+その他の初期スキル: `setup-wizard`、`mcp-installer`、`playbook-creator` など — **[バンドルスキル一覧](docs/user/guides/skills.md)**
 
 ---
 
@@ -92,7 +92,7 @@ LibrAgent は、これらの作業を直感的に解決する **完成された�
 
 - **多彩なトランスポート**: stdio、HTTP、SSE、OAuth 2.1 をサポート
 - **15 以上の内蔵サーバー**: Workspace、Shell、Browser、Knowledge、Planning、Scheduled Tasks などを標準装備
-- **ワンクリックプリセットと対話型導入**: `tool-installer` によるエージェント支援型セットアップ
+- **ワンクリックプリセットと対話型導入**: `mcp-installer` によるエージェント支援型セットアップ
 - **強固なセッション分離**: セッションごとのツール分離、パスおよびコマンド実行ガード、安全な自動化モード
 
 ### コア実行インフラ

@@ -14,7 +14,7 @@ Instead of just blindly adding missing tools, **boost** operates as an **Optimiz
 | Skill | Use for |
 | --- | --- |
 | **recruit** | Create a **new** specialist when none exists |
-| **tool-installer** | Register or import MCP servers that are not in inventory yet |
+| **mcp-installer** | Register or import MCP servers that are not in inventory yet |
 | **skill-deployer** | Install or manage bundled skills (`docx`, `deep-research`, etc.) |
 | **agent-init** | Generate workspace `agents.md` |
 | **libragent-harness-reference** | LibrAgent prompt layers / session isolation facts |

@@ -16,7 +16,7 @@ Instead of passively asking the user what domain they want or waiting for exact 
 | **agent-init** | Generate `agents.md` / workspace guidelines |
 | **teamwork** / **org** | Persistent multi-agent task forces |
 | **delegate** | Spawn a child session with an existing assistant |
-| **tool-installer** | Register external MCP servers |
+| **mcp-installer** | Register external MCP servers |
 | **boost** | Analyze and optimize **existing** assistants (audit, prune, or augment) |
 
 ## Three Layers (Do Not Mix)

@@ -101,7 +101,7 @@ Chat `@skill:` autocomplete is the freshest list. Common names:
 
 ### Setup and environment
 
-`setup-wizard`, `tool-installer`, `agent-init`, `computer-diagnosis`
+`setup-wizard`, `mcp-installer`, `agent-init`, `computer-diagnosis`
 
 ### Multi-agent and orchestration
 
@@ -133,7 +133,7 @@ How to split work across child sessions: [Sub-agents & orchestration](sub-agents
 | ------------------------------ | ------------------------------------------------------- |
 | Install runtimes               | `@skill:setup-wizard` + App Wizard                      |
 | Recommended MCP                | [Extensions](extensions.md)                             |
-| Custom MCP                     | [Custom MCP](custom-mcp.md) · `@skill:tool-installer`   |
+| Custom MCP                     | [Custom MCP](custom-mcp.md) · `@skill:mcp-installer`    |
 | Turn a procedure into a skill  | `skill-creator` → `skill-deployer`                      |
 | Child sessions / teams         | [Sub-agents guide](sub-agents.md)                       |
 | Recover pre-compaction context | `@skill:context-recall`                                 |

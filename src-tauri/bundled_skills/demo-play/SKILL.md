@@ -6,7 +6,7 @@ description: >
   demo clips, pacing Extensions install → chat → deliverable, remote UI
   automation for demos, or when asked to demo-play / run demo shot list /
   app-control demo. Not for registering MCP servers into an agent session
-  (use tool-installer) and not for window screenshots (use app-screenshot).
+  (use mcp-installer) and not for window screenshots (use app-screenshot).
 ---
 
 # Demo Play
