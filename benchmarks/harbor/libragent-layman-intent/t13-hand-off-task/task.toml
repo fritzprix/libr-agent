@@ -1,0 +1,33 @@
+schema_version = "1.3"
+artifacts = []
+
+[task]
+name = "fritzprix/layman-t13-hand-off-task-v1"
+description = "Layman intent T13 (P): spawnSession for the task, then checkSession"
+keywords = ["libragent", "layman-intent", "skill-routing", "delegate"]
+[[task.authors]]
+name = "fritzprix"
+
+[metadata]
+difficulty = "easy"
+category = "agent-routing"
+tags = ["layman-intent", "t13", "category-p", "skill-delegate"]
+
+[verifier]
+timeout_sec = 300.0
+collect = []
+
+[verifier.env]
+
+[agent]
+timeout_sec = 900.0
+
+[environment]
+network_mode = "no-network"
+build_timeout_sec = 600.0
+os = "linux"
+mcp_servers = []
+
+[environment.env]
+
+[solution.env]

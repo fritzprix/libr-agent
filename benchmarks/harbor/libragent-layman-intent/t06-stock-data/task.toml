@@ -1,0 +1,33 @@
+schema_version = "1.3"
+artifacts = []
+
+[task]
+name = "fritzprix/layman-t06-stock-data-v1"
+description = "Layman intent T06 (P): registerServer (catalog preset preferred), no hand-edited config"
+keywords = ["libragent", "layman-intent", "skill-routing", "mcp-installer"]
+[[task.authors]]
+name = "fritzprix"
+
+[metadata]
+difficulty = "easy"
+category = "agent-routing"
+tags = ["layman-intent", "t06", "category-p", "skill-mcp-installer"]
+
+[verifier]
+timeout_sec = 300.0
+collect = []
+
+[verifier.env]
+
+[agent]
+timeout_sec = 900.0
+
+[environment]
+network_mode = "public"
+build_timeout_sec = 600.0
+os = "linux"
+mcp_servers = []
+
+[environment.env]
+
+[solution.env]
