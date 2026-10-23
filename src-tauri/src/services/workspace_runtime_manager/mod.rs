@@ -46,7 +46,7 @@ const DOCKER_RUNTIME_CACHE_TTL_SECS: u64 = 30;
 
 pub type DockerStepReporter = Arc<dyn Fn(&str) + Send + Sync>;
 
-use container::ensure_bash_image_contract;
+use container::{ensure_bash_image_contract, stage_missing_skill_roots};
 use docker_cli::{
     apply_docker_cli_env, docker_container_architecture, docker_container_exists,
     docker_container_label, docker_output_slice, run_docker_status, verify_container_label,
@@ -375,6 +375,7 @@ async fn prepare_docker_runtime(
         reporter.as_ref(),
     )
     .await?;
+    stage_missing_skill_roots(&container_name).await;
 
     let arch = match docker_container_architecture(&container_name).await {
         Ok(arch) => arch,

@@ -98,6 +98,24 @@ pub fn looks_like_docker_chdir_workdir_failure(stdout: &str, stderr: &str) -> bo
         || lower.contains("no such file or directory")
 }
 
+/// Skill aliases are resolved by file tools only; a shell sees them as literal relative paths.
+fn command_uses_skill_alias(command: &str) -> bool {
+    ["@system-skills/", "@user-skills/", "@skills/"]
+        .iter()
+        .any(|alias| command.contains(alias))
+}
+
+fn skill_alias_in_shell_guidance() -> Vec<String> {
+    vec![
+        "Skill aliases (@system-skills/…, @user-skills/…) are file-tool paths; the shell does not resolve them.".to_string(),
+        format!(
+            "Use the skill's base directory from the skill reference instead. In Docker sessions that is {}/… or {}/….",
+            crate::session_isolation::CONTAINER_SYSTEM_SKILLS_DIR,
+            crate::session_isolation::CONTAINER_USER_SKILLS_DIR
+        ),
+    ]
+}
+
 fn docker_chdir_workdir_failure_guidance() -> Vec<String> {
     vec![
         "Container shell could not start: the configured working directory is missing (Docker chdir failed) — this is not a missing binary."
@@ -156,6 +174,9 @@ pub fn shell_command_failure_guidance(
     }
     if looks_like_windows_store_alias_stub(exit_code, stdout, stderr, command) {
         return windows_store_alias_stub_guidance();
+    }
+    if command_uses_skill_alias(command) {
+        return skill_alias_in_shell_guidance();
     }
 
     match exit_code {
@@ -240,6 +261,24 @@ pub fn shell_signal_interrupt_guidance(exit_code: i32) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn failed_command_with_skill_alias_points_at_container_skill_dirs() {
+        let guidance = shell_command_failure_guidance(
+            Some(2),
+            "",
+            "python3: can't open file '/app/@system-skills/skill-deployer/scripts/deploy_skill.py'",
+            "python3 @system-skills/skill-deployer/scripts/deploy_skill.py --help",
+        );
+        assert!(guidance
+            .iter()
+            .any(|line| line.contains("/opt/libragent/skills/system")));
+
+        let unrelated = shell_command_failure_guidance(Some(2), "", "error", "python3 run.py");
+        assert!(unrelated
+            .iter()
+            .all(|line| !line.contains("/opt/libragent/skills")));
+    }
 
     #[test]
     fn test_looks_like_shell_quote_parse_error_detects_bash_eof_quote() {
