@@ -95,7 +95,8 @@ pub(super) async fn ensure_bash_image_contract(
             None
         };
 
-        let mut volume_args = build_docker_volume_args(host_workspace, tw_dir_arg)?;
+        let workdir = session_docker_workdir(session);
+        let mut volume_args = build_docker_volume_args(host_workspace, &workdir, tw_dir_arg)?;
         let (system_skills_dir, user_skills_dir) = host_skill_dirs();
         if let Some(dir) = &user_skills_dir {
             let _ = tokio::fs::create_dir_all(dir).await;
@@ -105,7 +106,6 @@ pub(super) async fn ensure_bash_image_contract(
             user_skills_dir.as_deref().filter(|dir| dir.is_dir()),
         )?);
         let label = format!("com.libragent.session_id={session_id}");
-        let workdir = session_docker_workdir(session);
         let mut cmd = AsyncCommand::new("docker");
         apply_docker_cli_env(&mut cmd);
         cmd.args(["run", "-d", "--name", container_name, "--label", &label]);
@@ -118,6 +118,9 @@ pub(super) async fn ensure_bash_image_contract(
 
         if let Some(user) = current_uid_gid().await {
             cmd.args(["--user", &user]);
+            if !image_home_is_writable(image_ref, &user).await {
+                cmd.args(["-e", &format!("HOME={FALLBACK_CONTAINER_HOME}")]);
+            }
         }
 
         if let Some(reporter) = reporter {
@@ -133,6 +136,26 @@ pub(super) async fn ensure_bash_image_contract(
         reporter("Verifying shell");
     }
     ensure_supported_shell(session_id, container_name).await
+}
+
+const FALLBACK_CONTAINER_HOME: &str = "/tmp";
+
+/// Running as the host uid leaves `HOME=/` when the image has no passwd entry for
+/// it, and tools that write under `~` (pip, npm caches) then fail.
+async fn image_home_is_writable(image_ref: &str, user: &str) -> bool {
+    run_docker_status([
+        "run",
+        "--rm",
+        "--user",
+        user,
+        "--entrypoint",
+        "sh",
+        image_ref,
+        "-c",
+        r#"[ "$HOME" != / ] && [ -w "$HOME" ]"#,
+    ])
+    .await
+    .is_ok()
 }
 
 fn host_skill_dirs() -> (Option<PathBuf>, Option<PathBuf>) {

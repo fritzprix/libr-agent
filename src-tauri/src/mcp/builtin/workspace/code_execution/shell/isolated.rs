@@ -449,6 +449,7 @@ impl WorkspaceServer {
                         &stdout,
                         &stderr,
                         command,
+                        utils::is_session_docker_isolated(&session_id).await,
                     );
 
                     return Ok(guided_error(
