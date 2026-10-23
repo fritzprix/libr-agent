@@ -6,15 +6,13 @@ use crate::mcp::types::{
     MCPResult, MCPServerConfig, OAuthConfig, ServerProvenance, ServerProvenanceSource,
     TransportConfig,
 };
-use crate::repositories::mcp_server_repository::MCPServerRepository;
 use crate::repositories::AssistantRepository;
-use crate::state::get_mcp_server_repository;
 use serde_json::{json, Value};
 
-use super::super::queries::get_server_config;
+use super::super::queries::{find_server_model, get_server_config};
 use super::super::ToolServer;
 use super::catalog::matching_catalog_preset;
-use super::persistence::{delete_server_config_db, save_server_config};
+use super::persistence::{delete_server_config_db, save_server_config, SavedServer};
 
 /// Catalog only for an exact preset transport without custom OAuth; the same
 /// rule lets `tool__registerServer` skip hard approval.
@@ -171,8 +169,8 @@ pub async fn register_server(_server: &ToolServer, args: Value) -> Result<MCPRes
         provenance: Some(provenance),
     };
 
-    let id = match save_server_config(&config).await {
-        Ok(id) => id,
+    let SavedServer { id, name } = match save_server_config(&config).await {
+        Ok(saved) => saved,
         Err(e) => {
             return Ok(guided_error(
                 ErrorCategory::DatabaseError,
@@ -228,14 +226,7 @@ pub async fn delete_server(_server: &ToolServer, args: Value) -> Result<MCPResul
         Option::None => return Ok(missing_param_error("name", ToolGroup::Tool)),
     };
 
-    // Get server repository and fetch server details to get both name and id
-    let repo = get_mcp_server_repository();
-    let mut server = repo.get(&name).await.map_err(|e| e.to_string())?;
-    if server.is_none() {
-        server = repo.get_by_name(&name).await.map_err(|e| e.to_string())?;
-    }
-
-    let server = match server {
+    let server = match find_server_model(&name).await? {
         Some(s) => s,
         None => return Ok(not_found_error("Server", &name, ToolGroup::Tool)),
     };
@@ -410,8 +401,8 @@ pub async fn update_server(_server: &ToolServer, args: Value) -> Result<MCPResul
     };
 
     // Update config and get ID
-    let id = match save_server_config(&config).await {
-        Ok(id) => id,
+    let SavedServer { id, name } = match save_server_config(&config).await {
+        Ok(saved) => saved,
         Err(e) => {
             return Ok(guided_error(
                 ErrorCategory::DatabaseError,
