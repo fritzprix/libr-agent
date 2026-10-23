@@ -31,6 +31,7 @@ from benchmarks.harbor.libragent_agent import (
     resolve_execution_mode,
     resolve_max_input_context,
     resolve_poll_timeout_sec,
+    resolve_trial_instance_reset,
     sanitize_docker_compose_project_name,
     split_harbor_model_name,
     summarize_completion_telemetry,
@@ -1079,3 +1080,30 @@ def test_empty_agent_work_error_is_runtime_error() -> None:
     assert isinstance(err, RuntimeError)
     assert "no tools" in str(err)
 
+
+
+def test_trial_instance_reset_disabled_without_app_bin() -> None:
+    assert resolve_trial_instance_reset({}) is None
+
+
+def test_trial_instance_reset_resolves_layout(tmp_path: Path) -> None:
+    reset = resolve_trial_instance_reset(
+        {
+            "LIBRAGENT_BENCH_INSTANCE_APP_BIN": "/opt/libragent",
+            "LIBRAGENT_BENCH_INSTANCE_ROOT": str(tmp_path),
+            "LIBRAGENT_HARBOR_CONCURRENT": "1",
+        }
+    )
+    assert reset is not None
+    assert reset.app_bin == Path("/opt/libragent")
+    assert reset.layout.root == tmp_path
+
+
+def test_trial_instance_reset_refuses_concurrent_trials() -> None:
+    with pytest.raises(RuntimeError, match="--concurrent 1"):
+        resolve_trial_instance_reset(
+            {
+                "LIBRAGENT_BENCH_INSTANCE_APP_BIN": "/opt/libragent",
+                "LIBRAGENT_HARBOR_CONCURRENT": "4",
+            }
+        )
