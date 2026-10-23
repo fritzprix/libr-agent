@@ -4,7 +4,13 @@ use crate::repositories::mcp_server_repository::MCPServerRepository;
 use crate::services::McpServerService;
 use crate::state::get_mcp_server_repository;
 
-pub(super) async fn save_server_config(config: &MCPServerConfig) -> Result<String, String> {
+pub(super) struct SavedServer {
+    pub id: String,
+    /// Name the row is stored under; tool calls must use this, not the requested name.
+    pub name: String,
+}
+
+pub(super) async fn save_server_config(config: &MCPServerConfig) -> Result<SavedServer, String> {
     let repo = get_mcp_server_repository();
     let raw_name = config
         .name
@@ -25,7 +31,7 @@ pub(super) async fn save_server_config(config: &MCPServerConfig) -> Result<Strin
         Err(e) => return Err(format!("DB query error while saving server config: {}", e)),
     };
 
-    let (id, needs_probe) = match existing {
+    let (id, stored_name, needs_probe) = match existing {
         Some(existing) => {
             // Keep legacy display names (including whitespace) intact.
             let mut config = config.clone();
@@ -46,7 +52,7 @@ pub(super) async fn save_server_config(config: &MCPServerConfig) -> Result<Strin
             )
             .await?;
 
-            (updated.id, requires_reverification)
+            (updated.id, existing.name, requires_reverification)
         }
         None => {
             let mut config = config.clone();
@@ -54,7 +60,7 @@ pub(super) async fn save_server_config(config: &MCPServerConfig) -> Result<Strin
             let config_value = serde_json::to_value(&config).map_err(|e| e.to_string())?;
             let created =
                 McpServerService::create_server_config(repo, sanitized_name, config_value).await?;
-            (created.id, true)
+            (created.id, created.name, true)
         }
     };
 
@@ -62,7 +68,10 @@ pub(super) async fn save_server_config(config: &MCPServerConfig) -> Result<Strin
         McpServerService::schedule_background_probe(id.clone());
     }
 
-    Ok(id)
+    Ok(SavedServer {
+        id,
+        name: stored_name,
+    })
 }
 
 pub(super) async fn delete_server_config_db(id_or_name: String) -> Result<(), String> {

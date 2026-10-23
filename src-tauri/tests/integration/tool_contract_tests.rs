@@ -133,6 +133,38 @@ async fn register_rejects_duplicate_server_names_without_mutating_existing_confi
 }
 
 #[tokio::test]
+async fn hyphenated_server_name_resolves_to_its_stored_name() {
+    let _repo = repo().await;
+    let server = ToolServer::new();
+    let register_args = json!({
+        "name": "hyphen-name-check",
+        "transport": { "type": "http", "url": "https://127.0.0.1:1/unreachable" }
+    });
+
+    let registered = server
+        .call_tool("registerServer", register_args.clone(), None)
+        .await
+        .expect("register should return an MCP result");
+    let text = extract_text(&registered);
+    assert_ne!(registered.is_error, Some(true), "{text}");
+    assert!(text.contains("Server Name: hyphen_name_check"), "{text}");
+
+    let verified = server
+        .call_tool("verifyServer", json!({ "name": "hyphen-name-check" }), None)
+        .await
+        .expect("verify should return an MCP result");
+    let text = extract_text(&verified);
+    assert!(!text.contains("not found"), "{text}");
+
+    let duplicate = server
+        .call_tool("registerServer", register_args, None)
+        .await
+        .expect("register should return an MCP result");
+    assert_eq!(duplicate.is_error, Some(true));
+    assert!(extract_text(&duplicate).contains("already exists"));
+}
+
+#[tokio::test]
 async fn register_aborts_when_existing_server_config_cannot_be_loaded() {
     let repo = repo().await;
     let db = db().await;
