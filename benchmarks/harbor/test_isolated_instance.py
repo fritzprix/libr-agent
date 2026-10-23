@@ -14,6 +14,7 @@ from benchmarks.harbor.isolated_instance import (
     instance_pids,
     instance_env,
     reset_run_dir,
+    sandbox_command,
 )
 
 ASSISTANT_ID = "bench-assistant"
@@ -122,6 +123,42 @@ def test_instance_env_isolates_data_and_xdg_dirs(tmp_path: Path) -> None:
     assert env["XDG_DATA_HOME"].endswith("run/xdg-data")
     assert env["HOME"] == "/home/u"
     assert env["DOCKER_HOST"] == "unix:///x"
+    assert "DOCKER_CONFIG" not in env
+
+
+def test_instance_env_sandboxes_home_but_keeps_docker_config(tmp_path: Path) -> None:
+    layout = InstanceLayout(tmp_path / "bench")
+    env = instance_env(
+        layout, base={"HOME": "/home/u", "LIBRAGENT_BENCH_INSTANCE_SANDBOX": "1"}
+    )
+    assert env["HOME"] == str(layout.home_dir.resolve())
+    assert env["DOCKER_CONFIG"] == "/home/u/.docker"
+
+    explicit = instance_env(
+        layout,
+        base={
+            "HOME": "/home/u",
+            "DOCKER_CONFIG": "/etc/docker-cfg",
+            "LIBRAGENT_BENCH_INSTANCE_SANDBOX": "1",
+        },
+    )
+    assert explicit["DOCKER_CONFIG"] == "/etc/docker-cfg"
+
+
+def test_sandbox_command_keeps_only_run_dir_writable(tmp_path: Path) -> None:
+    layout = InstanceLayout(tmp_path / "bench")
+    run_dir = str(layout.run_dir.resolve())
+    command = sandbox_command(layout, Path("/opt/libragent"), {"XDG_RUNTIME_DIR": "/run/user/1000"})
+
+    assert command[:3] == ["bwrap", "--ro-bind", "/"]
+    assert command[-2:] == ["--", "/opt/libragent"]
+    pairs = list(zip(command, command[1:], command[2:]))
+    assert ("--bind", run_dir, run_dir) in pairs
+    assert ("--bind", str(layout.tmp_dir.resolve()), "/tmp") in pairs
+    assert ("--bind", str(layout.app_dir.resolve()), "/app") in pairs
+    assert ("--bind-try", "/run/user/1000", "/run/user/1000") in pairs
+    writable = [dest for flag, _, dest in pairs if flag in {"--bind", "--bind-try"}]
+    assert writable == [run_dir, "/tmp", "/app", "/run/user/1000"]
 
 
 def test_instance_pids_matches_inherited_data_dir(tmp_path: Path) -> None:
