@@ -287,8 +287,12 @@ pub(crate) fn path_validation_failure_guidance(error: &str, fallback: Vec<String
     } else if error.contains(crate::session_isolation::HOST_DATA_DIR_NOT_IN_CONTAINER_MARKER) {
         vec![
             "Read skill files via the @system-skills/… or @user-skills/… alias (workspace__readFile / workspace__listDirectory).".to_string(),
-            "To execute a skill script in the container, workspace__importFiles it (plus any sibling modules it imports) into the workdir, then run it there.".to_string(),
-            "Do not search the container with find/ls for this path — it does not exist there.".to_string(),
+            format!(
+                "Run skill scripts in workspace__runShell from {}/… or {}/… (the skill tree is available there).",
+                crate::session_isolation::CONTAINER_SYSTEM_SKILLS_DIR,
+                crate::session_isolation::CONTAINER_USER_SKILLS_DIR
+            ),
+            "Do not search the container with find/ls for this host path — it does not exist there.".to_string(),
         ]
     } else if error.contains(SKILL_ALIAS_WRITE_REJECTED_MARKER) {
         vec![
@@ -380,7 +384,7 @@ mod guidance_tests {
     }
 
     #[test]
-    fn host_data_dir_guidance_prefers_import_over_shell() {
+    fn host_data_dir_guidance_points_at_container_skill_paths() {
         let err = format!(
             "'/x' {} (data/skills directory).",
             crate::session_isolation::HOST_DATA_DIR_NOT_IN_CONTAINER_MARKER
@@ -391,10 +395,10 @@ mod guidance_tests {
         );
         assert!(guidance
             .iter()
-            .any(|line| line.contains("workspace__importFiles")));
+            .any(|line| line.contains(crate::session_isolation::CONTAINER_SYSTEM_SKILLS_DIR)));
         assert!(guidance
             .iter()
-            .all(|line| !line.contains("workspace__runShell")));
+            .all(|line| !line.contains("workspace__importFiles")));
     }
 
     #[test]

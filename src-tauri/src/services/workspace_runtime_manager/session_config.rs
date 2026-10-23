@@ -2,7 +2,9 @@ use std::path::{Path, PathBuf};
 
 use crate::models::workspace_isolation::DEFAULT_DOCKER_WORKDIR;
 use crate::repositories::SessionMetadata;
-use crate::session_isolation::PathMappingLayer;
+use crate::session_isolation::{
+    PathMappingLayer, CONTAINER_SYSTEM_SKILLS_DIR, CONTAINER_USER_SKILLS_DIR,
+};
 
 use super::error::{RuntimeResult, WorkspaceRuntimeError};
 
@@ -79,9 +81,53 @@ pub fn build_docker_volume_args(
     Ok(args)
 }
 
+/// Bind mounts that expose the host skill roots at the container skill paths
+/// shown in skill references. System skills are read-only; user skills stay
+/// writable so a global deploy from the container lands on the host.
+pub fn build_skill_volume_args(
+    system_dir: Option<&Path>,
+    user_dir: Option<&Path>,
+) -> RuntimeResult<Vec<String>> {
+    let mut args = Vec::new();
+    if let Some(dir) = system_dir {
+        args.push("-v".to_string());
+        args.push(format!(
+            "{}:{CONTAINER_SYSTEM_SKILLS_DIR}:ro",
+            docker_mount_path(dir)?
+        ));
+    }
+    if let Some(dir) = user_dir {
+        args.push("-v".to_string());
+        args.push(format!(
+            "{}:{CONTAINER_USER_SKILLS_DIR}",
+            docker_mount_path(dir)?
+        ));
+    }
+    Ok(args)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn skill_volume_args_mount_system_read_only_and_user_writable() {
+        let args = build_skill_volume_args(
+            Some(Path::new("/data/system_skills")),
+            Some(Path::new("/data/user_skills")),
+        )
+        .unwrap();
+        assert_eq!(
+            args,
+            vec![
+                "-v",
+                "/data/system_skills:/opt/libragent/skills/system:ro",
+                "-v",
+                "/data/user_skills:/opt/libragent/skills/user",
+            ]
+        );
+        assert!(build_skill_volume_args(None, None).unwrap().is_empty());
+    }
 
     #[test]
     fn test_build_docker_volume_args() {

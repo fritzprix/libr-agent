@@ -11,7 +11,8 @@ pub mod runtime;
 pub mod types;
 
 pub use docker_file_path::{
-    map_docker_container_file_tool_path, HOST_DATA_DIR_NOT_IN_CONTAINER_MARKER,
+    container_path_for_skill_alias, map_docker_container_file_tool_path,
+    CONTAINER_SYSTEM_SKILLS_DIR, CONTAINER_USER_SKILLS_DIR, HOST_DATA_DIR_NOT_IN_CONTAINER_MARKER,
     OUTSIDE_DOCKER_WORKDIR_FILE_TOOL_MARKER,
 };
 pub use path_mapper::PathMappingLayer;

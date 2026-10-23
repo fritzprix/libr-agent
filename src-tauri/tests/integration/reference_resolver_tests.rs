@@ -184,7 +184,7 @@ fn test_format_skill_reference_block_prefers_alias_when_available() {
         origin: Some("system".to_string()),
     };
 
-    let result = format_skill_reference_block(&skill);
+    let result = format_skill_reference_block(&skill, false);
 
     assert!(result.contains("**Instructions file alias:** `@system-skills/teamwork/SKILL.md`"));
     assert!(result.contains("**Instructions file:** `/tmp/system/teamwork/SKILL.md`"));
