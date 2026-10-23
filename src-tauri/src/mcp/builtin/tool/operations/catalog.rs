@@ -238,6 +238,13 @@ fn required_variables(preset: &MCPServerPreset) -> Vec<RequiredVariable> {
         .collect()
 }
 
+fn preset_authentication(preset: &MCPServerPreset) -> Option<Value> {
+    preset
+        .authentication
+        .as_ref()
+        .and_then(|auth| serde_json::to_value(auth).ok())
+}
+
 fn escape_cell(value: &str) -> String {
     value.replace('|', "\\|").replace('\n', " ")
 }
@@ -295,6 +302,17 @@ pub(super) fn render_catalog(
             escape_cell(entry.preset.description.as_deref().unwrap_or("")),
         ));
     }
+    body.push_str("\nPass to tool__registerServer as-is (name, transport, authentication):\n");
+    for entry in &page {
+        body.push_str(&format!(
+            "- {}: transport `{}`",
+            entry.preset.name, entry.transport
+        ));
+        if let Some(auth) = preset_authentication(&entry.preset) {
+            body.push_str(&format!(", authentication `{auth}`"));
+        }
+        body.push('\n');
+    }
     if offset.saturating_add(limit) < total {
         body.push_str(&format!(
             "\n*(Showing {} to {} of {}. Call again with offset: {} to see more)*",
@@ -321,10 +339,8 @@ pub(super) fn render_catalog(
                 })).collect::<Vec<_>>(),
                 "registered": entry.registered,
             });
-            if let Some(auth) = entry.preset.authentication.as_ref() {
-                if let Ok(auth) = serde_json::to_value(auth) {
-                    item["authentication"] = auth;
-                }
+            if let Some(auth) = preset_authentication(&entry.preset) {
+                item["authentication"] = auth;
             }
             item
         })
@@ -333,7 +349,7 @@ pub(super) fn render_catalog(
     SuccessHint::new(
         body,
         vec![
-            "Install a preset with tool__registerServer using its name and the transport from data.presets[] (and authentication when present).".to_string(),
+            "Install a preset with tool__registerServer using the name, transport, and authentication listed above; do not change the command, args, or URL.".to_string(),
             "Ask the user for each required input and replace placeholder values such as YOUR_* before registering.".to_string(),
             "Presets marked registered already exist: use tool__updateServer instead of registering a duplicate.".to_string(),
         ],
@@ -420,6 +436,34 @@ mod tests {
         assert_eq!(presets[0]["name"], "github");
         assert_eq!(presets[0]["registered"], true);
         assert_eq!(presets[0]["requiredVariables"][0]["key"], "GITHUB_PAT");
+    }
+
+    #[test]
+    fn render_text_carries_the_registerable_transport() {
+        let names = HashSet::new();
+        let entries = build_catalog_entries(get_recommended_servers(), &names, "stock");
+        let yahoo = entries
+            .iter()
+            .find(|e| e.preset.name == "yahoo-finance")
+            .expect("yahoo-finance preset");
+        let result = render_catalog(&entries, "stock", 20, 0);
+        let text: String = result
+            .content
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|item| match item {
+                crate::mcp::types::MCPContent::Text { text } => Some(text),
+                _ => None,
+            })
+            .collect();
+
+        let shown = format!("- yahoo-finance: transport `{}`", yahoo.transport);
+        assert!(text.contains(&shown), "{text}");
+        assert!(!text.contains("data.presets"));
+        assert_eq!(
+            matching_catalog_preset(&yahoo.transport).as_deref(),
+            Some("yahoo-finance")
+        );
     }
 
     #[test]
