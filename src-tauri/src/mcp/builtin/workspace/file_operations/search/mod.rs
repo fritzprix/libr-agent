@@ -3,7 +3,7 @@ mod files;
 mod helpers;
 
 use super::super::edit_mode::LINE_ANCHORS_ENABLED;
-use super::super::workspace_server::path_validation_failure_guidance;
+use super::super::workspace_server::{path_validation_failure_guidance, with_harness_alias_hint};
 use super::super::WorkspaceServer;
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, ErrorCategory, ToolGroup,
@@ -254,6 +254,22 @@ impl WorkspaceServer {
                 .to_mcp_result());
             }
         };
+
+        if tokio::fs::metadata(&safe_path).await.is_err() {
+            return Err(guided_error(
+                ErrorCategory::ResourceNotFound,
+                format!("Search path '{search_path}' not found"),
+                ToolGroup::Workspace,
+            )
+            .guidance(with_harness_alias_hint(
+                search_path,
+                vec![
+                    "Use workspace__listDirectory('.') to inspect the workspace root".to_string(),
+                    "Verify the search path is correct before retrying".to_string(),
+                ],
+            ))
+            .to_mcp_result());
+        }
 
         if safe_path.is_file() && is_internal_workspace_artifact_path(&workspace_root, &safe_path) {
             return Err(guided_error(

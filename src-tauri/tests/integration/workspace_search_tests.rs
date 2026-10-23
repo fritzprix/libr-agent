@@ -1785,3 +1785,32 @@ async fn grep_files_hard_cuts_long_matching_lines() {
         dir_text.len()
     );
 }
+
+#[tokio::test]
+async fn glob_and_grep_report_missing_search_root() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "missing-root-test";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+
+    let glob = server
+        .handle_glob_files(
+            json!({ "path": ".appragent", "filePattern": "*.rs" }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("glob_files should return a result");
+    let glob_text = extract_text_content(&glob);
+    assert!(
+        glob_text.contains("not found") && !glob_text.contains("No matches found"),
+        "Expected missing-root error: {glob_text}"
+    );
+
+    let grep = server
+        .handle_grep_files(
+            json!({ "path": ".appragent", "query": "x" }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("grep_files should return a result");
+    assert!(extract_text_content(&grep).contains("not found"));
+}
