@@ -11,7 +11,8 @@ pub mod runtime;
 pub mod types;
 
 pub use docker_file_path::{
-    map_docker_container_file_tool_path, OUTSIDE_DOCKER_WORKDIR_FILE_TOOL_MARKER,
+    map_docker_container_file_tool_path, HOST_DATA_DIR_NOT_IN_CONTAINER_MARKER,
+    OUTSIDE_DOCKER_WORKDIR_FILE_TOOL_MARKER,
 };
 pub use path_mapper::PathMappingLayer;
 pub use runtime::{ShellDialect, SpawnedShell};
