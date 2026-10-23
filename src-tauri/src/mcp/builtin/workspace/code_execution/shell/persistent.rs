@@ -206,6 +206,7 @@ impl WorkspaceServer {
                         &stdout,
                         &stderr,
                         command,
+                        docker_path_mapper.is_some(),
                     ))
                     .to_mcp_result())
                 }

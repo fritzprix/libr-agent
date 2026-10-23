@@ -46,6 +46,23 @@ fn docker_workspace_config_rejects_empty_image() {
 }
 
 #[test]
+fn managed_docker_workdir_must_be_a_mountable_absolute_path() {
+    let managed = |workdir: &str| DockerWorkspaceConfig {
+        image: Some("ubuntu:24.04".to_string()),
+        attach_container: None,
+        workdir: Some(workdir.to_string()),
+        manage_lifecycle: None,
+        env: Default::default(),
+        port_bindings: Vec::new(),
+    };
+
+    managed("/app").validate().expect("absolute workdir");
+    assert!(managed("app").validate().is_err());
+    assert!(managed("/").validate().is_err());
+    assert!(managed("/a:b").validate().is_err());
+}
+
+#[test]
 fn docker_workspace_config_accepts_loopback_port_bindings() {
     let config: DockerWorkspaceConfig = serde_json::from_value(serde_json::json!({
         "image": "ubuntu:24.04",
