@@ -414,7 +414,7 @@ impl WorkspaceServer {
             ),
             vec![
                 format!(
-                    "Use workspace__waitForProcess(\"{}\", 0) to check status and completion",
+                    "Use workspace__waitForProcess(\"{}\", <seconds>) to block until the process exits; use timeout 0 for a status check only",
                     process_id
                 ),
                 format!(
