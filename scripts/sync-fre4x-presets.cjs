@@ -10,6 +10,9 @@
  *   so a release that only bumps version numbers changes nothing
  * - a curated `logo` is kept when upstream does not ship one
  * - an upstream name that collides with a non-fre4x preset is skipped
+ * - upstream entries are validated (launcher must be `npx -y @fre4x/<pkg>[@version]`,
+ *   known fields and shapes only); an invalid entry is rejected, reported, and the
+ *   existing local entry is kept
  * - the file is rewritten only when the result differs (idempotent, so no PR)
  *
  * Usage: node scripts/sync-fre4x-presets.cjs --input presets.json
@@ -55,6 +58,98 @@ function orderFields(entry) {
   return ordered;
 }
 
+const NAME_RE = /^[a-z0-9][a-z0-9-]*$/;
+const PACKAGE_ARG_RE = /^@fre4x\/[a-z0-9][a-z0-9-]*(?:@[A-Za-z0-9._+-]+)?$/;
+const ENV_KEY_RE = /^[A-Z][A-Z0-9_]*$/;
+const ALLOWED_FIELDS = new Set(FIELD_ORDER);
+const ALLOWED_VARIABLE_FIELDS = new Set([
+  'required',
+  'label',
+  'description',
+  'type',
+  'target',
+]);
+const VARIABLE_TYPES = new Set(['text', 'password']);
+const VARIABLE_TARGETS = new Set([
+  'env',
+  'header',
+  'bearer-token',
+  'url-param',
+]);
+
+const isPlainObject = (value) =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+
+/**
+ * Upstream data becomes a preset users install and run, so nothing is trusted:
+ * the launcher must be `npx -y @fre4x/<pkg>[@version]` and every other field must
+ * have the expected shape. Returns the reason an entry is rejected, or null.
+ */
+function validateUpstreamEntry(name, entry) {
+  if (!NAME_RE.test(name)) return 'unexpected preset name';
+  if (!isPlainObject(entry)) return 'entry is not an object';
+  const unknown = Object.keys(entry).filter((key) => !ALLOWED_FIELDS.has(key));
+  if (unknown.length) return `unexpected field(s): ${unknown.join(', ')}`;
+  if (entry.command !== 'npx') return 'command must be "npx"';
+  const args = entry.args;
+  if (
+    !Array.isArray(args) ||
+    args.length !== 2 ||
+    args[0] !== '-y' ||
+    typeof args[1] !== 'string' ||
+    !PACKAGE_ARG_RE.test(args[1])
+  ) {
+    return 'args must be exactly ["-y", "@fre4x/<pkg>[@version]"]';
+  }
+  for (const field of ['category', 'description', 'logo']) {
+    if (entry[field] !== undefined && typeof entry[field] !== 'string') {
+      return `${field} must be a string`;
+    }
+  }
+  if (typeof entry.category !== 'string' || !entry.category) {
+    return 'category is required';
+  }
+  if (entry.logo !== undefined && !/^https:\/\//.test(entry.logo)) {
+    return 'logo must be an https URL';
+  }
+  if (entry.env !== undefined) {
+    if (
+      !isPlainObject(entry.env) ||
+      !Object.entries(entry.env).every(
+        ([key, value]) => ENV_KEY_RE.test(key) && typeof value === 'string',
+      )
+    ) {
+      return 'env must map NAME to string values';
+    }
+  }
+  if (entry.variableDefinitions !== undefined) {
+    const definitions = entry.variableDefinitions;
+    if (!isPlainObject(definitions))
+      return 'variableDefinitions must be an object';
+    for (const [key, definition] of Object.entries(definitions)) {
+      if (!ENV_KEY_RE.test(key) || !isPlainObject(definition)) {
+        return 'variableDefinitions entries must be objects keyed by NAME';
+      }
+      if (
+        !Object.keys(definition).every((f) => ALLOWED_VARIABLE_FIELDS.has(f))
+      ) {
+        return `unexpected field in variableDefinitions.${key}`;
+      }
+      const { required, label, description, type, target } = definition;
+      if (
+        (required !== undefined && typeof required !== 'boolean') ||
+        (label !== undefined && typeof label !== 'string') ||
+        (description !== undefined && typeof description !== 'string') ||
+        (type !== undefined && !VARIABLE_TYPES.has(type)) ||
+        (target !== undefined && !VARIABLE_TARGETS.has(target))
+      ) {
+        return `invalid variableDefinitions.${key}`;
+      }
+    }
+  }
+  return null;
+}
+
 function fromUpstream(upstreamEntry, existing) {
   const entry = { ...upstreamEntry, args: upstreamEntry.args.map(toLatest) };
   if (entry.logo === undefined && existing?.logo !== undefined) {
@@ -81,33 +176,49 @@ const same = (a, b) =>
 
 /**
  * @returns {{ next: object, added: string[], changed: string[], removed: string[],
- *             skipped: string[], version: string | null }}
+ *             skipped: string[], rejected: {name: string, reason: string}[],
+ *             commandChanged: string[], version: string | null }}
  */
 function syncFre4xPresets(current, upstream) {
   const currentServers = current.mcpServers ?? {};
-  const upstreamFre4x = Object.entries(upstream.mcpServers ?? {}).filter(
+  // Every upstream entry that names an @fre4x package is a candidate; invalid ones
+  // are rejected (and never remove an existing local entry of the same name).
+  const candidates = Object.entries(upstream.mcpServers ?? {}).filter(
     ([, entry]) => isFre4x(entry),
   );
-  const upstreamNames = new Set(upstreamFre4x.map(([name]) => name));
+  const candidateNames = new Set(candidates.map(([name]) => name));
+  const rejected = [];
+  const valid = [];
+  for (const [name, entry] of candidates) {
+    const reason = validateUpstreamEntry(name, entry);
+    if (reason) rejected.push({ name, reason });
+    else valid.push([name, entry]);
+  }
+  const validNames = new Set(valid.map(([name]) => name));
 
   const added = [];
   const changed = [];
   const removed = [];
   const skipped = [];
+  const commandChanged = [];
   const nextServers = {};
+  const launch = (entry) => JSON.stringify([entry.command, entry.args]);
 
   for (const [name, entry] of Object.entries(currentServers)) {
     if (!isFre4x(entry)) {
       nextServers[name] = entry;
-    } else if (!upstreamNames.has(name)) {
+    } else if (!candidateNames.has(name)) {
       removed.push(name);
+    } else if (!validNames.has(name)) {
+      nextServers[name] = entry; // rejected upstream entry: keep what we have
     } else {
       const updated = fromUpstream(upstream.mcpServers[name], entry);
       if (!same(updated, entry)) changed.push(name);
+      if (launch(updated) !== launch(entry)) commandChanged.push(name);
       nextServers[name] = updated;
     }
   }
-  for (const [name, entry] of upstreamFre4x) {
+  for (const [name, entry] of valid) {
     if (name in currentServers && !isFre4x(currentServers[name])) {
       skipped.push(name); // collides with a hand-maintained non-fre4x preset
       continue;
@@ -123,6 +234,8 @@ function syncFre4xPresets(current, upstream) {
     changed,
     removed,
     skipped,
+    rejected,
+    commandChanged,
     version: typeof upstream.version === 'string' ? upstream.version : null,
   };
 }
@@ -132,6 +245,16 @@ function summaryMarkdown(result) {
     names.length
       ? `- **${title}**: ${names.map((n) => `\`${n}\``).join(', ')}\n`
       : '';
+  const launchLines = result.added
+    .concat(result.changed)
+    .filter((name, index, all) => all.indexOf(name) === index)
+    .map((name) => {
+      const entry = result.next.mcpServers[name];
+      const flag = result.commandChanged.includes(name)
+        ? ' **(launch command changed)**'
+        : '';
+      return `- \`${name}\`: \`${entry.command} ${entry.args.join(' ')}\`${flag}`;
+    });
   return (
     `Syncs the \`@fre4x/*\` presets in \`mcp-server.json\` from b1te${
       result.version ? ` v${result.version}` : ''
@@ -140,6 +263,14 @@ function summaryMarkdown(result) {
     list('Updated', result.changed) +
     list('Removed', result.removed) +
     list('Skipped (name used by a non-fre4x preset)', result.skipped) +
+    (result.rejected.length
+      ? `- **Rejected (failed validation, left as is)**: ${result.rejected
+          .map(({ name, reason }) => `\`${name}\` (${reason})`)
+          .join(', ')}\n`
+      : '') +
+    (launchLines.length
+      ? `\n**Launch commands to review**\n\n${launchLines.join('\n')}\n`
+      : '') +
     '\nCommands use `@fre4x/<pkg>@latest`; non-fre4x presets are untouched. ' +
     'Generated by `scripts/sync-fre4x-presets.cjs`; never auto-merged.\n'
   );
@@ -176,6 +307,9 @@ function main(argv) {
   }
   for (const name of result.skipped) {
     console.warn(`skipped ${name}: name is used by a non-fre4x preset`);
+  }
+  for (const { name, reason } of result.rejected) {
+    console.warn(`rejected ${name}: ${reason}`);
   }
   console.log(`changed=${changed}`);
   return changed;

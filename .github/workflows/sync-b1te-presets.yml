@@ -7,9 +7,12 @@ name: 🔄 Sync b1te presets
 #   `b1te-presets-released`, client_payload.tag / client_payload.repo); this needs a
 #   LIBRAGENT_DISPATCH_TOKEN secret on the b1te side.
 # - A daily schedule is the fallback when a dispatch is missed.
-# - If anything changed, one PR against the latest dev/* branch is opened or updated.
-#   It is never merged automatically. Pull requests created with GITHUB_TOKEN do not
-#   start other workflows; push an empty commit or re-run checks before merging.
+# - If anything changed, one PR against the latest dev/* branch is opened or updated;
+#   if nothing differs from dev any more, a stale open sync PR is closed.
+#   It is never merged automatically.
+# - Repository settings needed: Actions > General > "Allow GitHub Actions to create and
+#   approve pull requests". Pull requests created with GITHUB_TOKEN do not start other
+#   workflows; push an empty commit or re-run checks before merging.
 on:
   repository_dispatch:
     types: [b1te-presets-released]
@@ -19,6 +22,9 @@ on:
     inputs:
       tag:
         description: 'b1te release tag (default: latest release)'
+        required: false
+      repo:
+        description: 'Source repo (default: fre4x/b1te; maintainers only)'
         required: false
 
 permissions:
@@ -42,7 +48,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_TAG: ${{ github.event.client_payload.tag || github.event.inputs.tag }}
-          EVENT_REPO: ${{ github.event.client_payload.repo }}
+          # Only a maintainer-run workflow_dispatch may change the source repo; a
+          # repository_dispatch payload is always pulled from fre4x/b1te.
+          EVENT_REPO: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.repo || '' }}
         run: |
           set -euo pipefail
           # Dispatch payloads are data: validate before use.
@@ -125,4 +133,16 @@ jobs:
             gh pr edit "${existing}" --title "${title}" --body-file "${RUNNER_TEMP}/body.md"
           else
             gh pr create --base "${DEV_BRANCH}" --head "${SYNC_BRANCH}" --title "${title}" --body-file "${RUNNER_TEMP}/body.md"
+          fi
+
+      - name: Close a stale sync PR
+        if: steps.sync.outputs.changed == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEV_BRANCH: ${{ steps.inputs.outputs.dev_branch }}
+        run: |
+          set -euo pipefail
+          existing="$(gh pr list --head "${SYNC_BRANCH}" --base "${DEV_BRANCH}" --state open --json number -q '.[0].number // empty')"
+          if [[ -n "${existing}" ]]; then
+            gh pr close "${existing}" --comment "${DEV_BRANCH} already matches the latest b1te presets, so this sync PR is no longer needed."
           fi

