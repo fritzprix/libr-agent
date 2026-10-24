@@ -242,6 +242,13 @@ State lives under `.libragent/work/bench-instance/` (`seed/`, `run/`, `instance.
 instance sets `LIBRAGENT_DATA_DIR`, `LIBRAGENT_DB_PATH`, and `XDG_{DATA,CACHE,CONFIG}_HOME` under
 `run/`, so WebView storage is isolated too. Rebuild the seed after changing the assistant.
 
+> **Secrets:** the seed is copied from your primary profile's DB. It keeps the `settings` table,
+> the assistant row, and the MCP server rows the assistant references, so it retains your active
+> settings and credentials (for example API keys, provider tokens, and MCP server env/headers).
+> `.libragent/work/bench-instance/` (`seed/`, `run/`, `instance.log`) therefore contains
+> sensitive user secrets. Do not commit it, attach it to issues or PRs, or share it, and delete
+> it when you no longer need the seed.
+
 ## Timeouts (important)
 
 Official submissions use Harbor’s default task/agent timeouts (do **not** pass
