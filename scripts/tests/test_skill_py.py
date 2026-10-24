@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import os
 import sys
 import tempfile
 import unittest
@@ -15,6 +16,7 @@ if str(CREATOR_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(CREATOR_SCRIPTS_DIR))
 
 import skill
+from unittest import mock
 
 
 class SkillPyTest(unittest.TestCase):
@@ -63,6 +65,45 @@ class SkillPyTest(unittest.TestCase):
         (path / "scripts" / "run.py").write_text("print(2)\n")
         self.assertEqual(self.run_skill("deploy", str(path))[0], 0)
         self.assertEqual((target / "scripts" / "run.py").read_text(), "print(2)\n")
+
+    def test_data_dir_follows_the_app_resolution_order(self):
+        env = {"LIBRAGENT_DATA_DIR": "/tmp/instance-a"}
+        with mock.patch.dict(os.environ, env):
+            self.assertEqual(skill.default_data_dir(), Path("/tmp/instance-a"))
+        clean = {k: v for k, v in os.environ.items() if k not in ("LIBRAGENT_DATA_DIR", "LIBRAGENT_PROFILE")}
+        with mock.patch.dict(os.environ, clean, clear=True), mock.patch("platform.system", return_value="Linux"):
+            os.environ["XDG_DATA_HOME"] = "/tmp/xdg"
+            self.assertEqual(skill.default_data_dir(), Path("/tmp/xdg/com.fritzprix.libragent"))
+            os.environ["LIBRAGENT_PROFILE"] = "demo"
+            self.assertEqual(skill.default_data_dir(), Path("/tmp/xdg/com.fritzprix.libragent-demo"))
+
+    def test_env_data_dir_redirects_deploy(self):
+        path = self.new_skill()
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.dict(os.environ, {"LIBRAGENT_DATA_DIR": str(self.data_dir)}), redirect_stdout(out), redirect_stderr(err):
+            self.assertEqual(skill.main(["deploy", str(path)]), 0)
+        self.assertTrue((self.data_dir / "user_skills" / "demo-skill" / "SKILL.md").is_file())
+
+    def test_symlinks_are_not_copied_on_deploy_or_clone(self):
+        outside = Path(self._tmp.name) / "secret.txt"
+        outside.write_text("secret")
+        path = self.new_skill()
+        os.symlink(outside, path / "link.txt")
+        self.assertEqual(self.run_skill("deploy", str(path))[0], 0)
+        target = self.data_dir / "user_skills" / "demo-skill"
+        self.assertFalse((target / "link.txt").exists() or (target / "link.txt").is_symlink())
+        os.symlink(outside, target / "link2.txt")
+        dest = self.work / "cl"
+        dest.mkdir()
+        self.assertEqual(self.run_skill("clone", "demo-skill", "--to", str(dest))[0], 0)
+        self.assertFalse((dest / "demo-skill" / "link2.txt").is_symlink())
+
+    def test_failed_deploy_leaves_no_staging_dirs(self):
+        path = self.new_skill()
+        self.run_skill("deploy", str(path))
+        (path / "SKILL.md").write_text("no frontmatter")
+        self.run_skill("deploy", str(path))
+        self.assertEqual([p.name for p in (self.data_dir / "user_skills").iterdir()], ["demo-skill"])
 
     def test_deploy_refuses_invalid_skill_and_keeps_existing(self):
         path = self.new_skill()

@@ -17,6 +17,7 @@ data directory.
 from __future__ import annotations
 
 import argparse
+import os
 import platform
 import re
 import shutil
@@ -46,16 +47,23 @@ Imperative instructions go here. Keep this file short; move detail into referenc
 
 
 def default_data_dir() -> Path:
+    """Mirror the app's resolution (src-tauri/src/profile.rs): LIBRAGENT_DATA_DIR,
+    else the platform data dir (XDG_DATA_HOME on Linux) with a -demo suffix for
+    LIBRAGENT_PROFILE=demo."""
+    override = os.environ.get("LIBRAGENT_DATA_DIR")
+    if override:
+        return Path(override)
     home = Path.home()
     system = platform.system()
     if system == "Windows":
-        import os
-
-        appdata = Path(os.environ.get("APPDATA", str(home / "AppData" / "Roaming")))
-        return appdata / "com.fritzprix.libragent"
-    if system == "Darwin":
-        return home / "Library" / "Application Support" / "com.fritzprix.libragent"
-    return home / ".local" / "share" / "com.fritzprix.libragent"
+        base = Path(os.environ.get("APPDATA", str(home / "AppData" / "Roaming")))
+    elif system == "Darwin":
+        base = home / "Library" / "Application Support"
+    else:
+        xdg = os.environ.get("XDG_DATA_HOME")
+        base = Path(xdg) if xdg and Path(xdg).is_absolute() else home / ".local" / "share"
+    demo = os.environ.get("LIBRAGENT_PROFILE", "").strip().lower() == "demo"
+    return base / ("com.fritzprix.libragent-demo" if demo else "com.fritzprix.libragent")
 
 
 def fail(message: str) -> int:
@@ -63,8 +71,16 @@ def fail(message: str) -> int:
     return 1
 
 
-def ignore_junk(_directory: str, names: list[str]) -> set[str]:
-    return {n for n in names if n in IGNORED_NAMES or n.lower().endswith(IGNORED_SUFFIXES)}
+def ignore_junk(directory: str, names: list[str]) -> set[str]:
+    """Skip caches and symlinks (a link would copy files from outside the skill)."""
+    ignored = set()
+    for name in names:
+        if os.path.islink(os.path.join(directory, name)):
+            print(f"Skipped symlink: {os.path.join(directory, name)}", file=sys.stderr)
+            ignored.add(name)
+        elif name in IGNORED_NAMES or name.lower().endswith(IGNORED_SUFFIXES):
+            ignored.add(name)
+    return ignored
 
 
 def validate(skill_dir: Path, title: str = "Validate") -> bool:
@@ -121,23 +137,28 @@ def cmd_deploy(skill_dir: Path, data_dir: Path) -> int:
         return fail("The skill is already in the user skills folder; edit a workspace copy (skill.py clone).")
 
     user_skills.mkdir(exist_ok=True)
-    backup = None
-    with tempfile.TemporaryDirectory(prefix="skill-backup-") as backup_root:
-        if target.exists():
-            backup = Path(backup_root) / name
-            shutil.copytree(target, backup)
-            shutil.rmtree(target)
+    # Stage next to the target (same filesystem), validate there, then swap by rename.
+    staging_root = Path(tempfile.mkdtemp(prefix=".staging-", dir=user_skills))
+    staged = staging_root / name
+    backup = staging_root / "previous"
+    try:
         try:
-            shutil.copytree(skill_dir, target, ignore=ignore_junk)
-            ok = validate(target, "Post-deploy validation")
+            shutil.copytree(skill_dir, staged, ignore=ignore_junk)
         except OSError as error:
-            print(f"Copy failed: {error}", file=sys.stderr)
-            ok = False
-        if not ok:
-            shutil.rmtree(target, ignore_errors=True)
-            if backup is not None:
-                shutil.copytree(backup, target)
-            return fail("Deploy failed; previous state restored.")
+            return fail(f"Copy failed: {error}")
+        if not validate(staged, "Post-copy validation"):
+            return fail("Deploy failed; the existing skill was not touched.")
+        had_previous = target.exists()
+        if had_previous:
+            os.replace(target, backup)
+        try:
+            os.replace(staged, target)
+        except OSError as error:
+            if had_previous:
+                os.replace(backup, target)
+            return fail(f"Deploy failed: {error}; previous state restored.")
+    finally:
+        shutil.rmtree(staging_root, ignore_errors=True)
     print(f"Deployed {name} to {target}. It becomes active on the next agent turn.")
     return 0
 
