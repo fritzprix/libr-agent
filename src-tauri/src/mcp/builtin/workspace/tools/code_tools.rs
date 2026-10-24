@@ -193,7 +193,7 @@ pub fn create_spawn_process_tool() -> MCPTool {
         description: "Start a command as a non-blocking background process. Returns the background process ID immediately.\n\
                        Optional name is a label only; workspace__waitForProcess, workspace__stopProcess, and workspace__readProcessOutput still require processId.\n\
                        Stateless — starts from workspace root (or optional cwd) each call. No interactive input.\n\
-                       Use workspace__waitForProcess(processId) to wait for completion, workspace__readProcessOutput(processId) to get output."
+                       Use workspace__waitForProcess(processId, timeout) to block until the process exits or the timeout elapses (timeout 0 returns the current status without waiting), workspace__readProcessOutput(processId) to get output."
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),
         output_schema: None,
@@ -379,7 +379,7 @@ pub fn create_spawn_process_tool() -> MCPTool {
         description: "Start a command as a non-blocking background process. Returns the background process ID immediately.\n\
                        Optional name is a label only; workspace__waitForProcess, workspace__stopProcess, and workspace__readProcessOutput still require processId.\n\
                        Stateless — starts from workspace root (or optional cwd) each call. No interactive input.\n\
-                       Use workspace__waitForProcess(processId) to wait for completion, workspace__readProcessOutput(processId) to get output."
+                       Use workspace__waitForProcess(processId, timeout) to block until the process exits or the timeout elapses (timeout 0 returns the current status without waiting), workspace__readProcessOutput(processId) to get output."
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),
         output_schema: None,

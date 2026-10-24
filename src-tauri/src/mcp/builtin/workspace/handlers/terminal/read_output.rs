@@ -171,9 +171,7 @@ fn build_read_error(process_id: &str, stream_label: &str, error: &str) -> MCPRes
                 format!("No {stream_label} output file found"),
                 vec![
                     "The process may not have started yet".to_string(),
-                    format!(
-                    "Use workspace__waitForProcess(\"{process_id}\", 0) to verify process status"
-                ),
+                    crate::mcp::builtin::error_guidance::wait_for_process_hint(Some(process_id)),
                     "Wait a moment and try again - the process may not have generated output"
                         .to_string(),
                     "Check if the process ran with output redirected elsewhere".to_string(),
@@ -478,10 +476,7 @@ impl WorkspaceServer {
         // Finished reads already include the captured output — no patronizing follow-ups.
         let next_actions = if is_process_running {
             vec![
-                format!(
-                    "Use workspace__waitForProcess('{}', 0) to check whether it has finished",
-                    process_id
-                ),
+                crate::mcp::builtin::error_guidance::wait_for_process_hint(Some(process_id)),
                 format!(
                     "Use workspace__stopProcess('{}') only if the running process is stuck",
                     process_id

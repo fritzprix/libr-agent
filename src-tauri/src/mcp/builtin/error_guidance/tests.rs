@@ -174,3 +174,42 @@ fn test_guided_error_builder_allows_override_guidance() {
     // Should contain the override guidance, and should not need to match UI defaults.
     assert!(text.contains("1. Use ui__presentInteractive with type='text'"));
 }
+
+#[test]
+fn wait_for_process_hint_states_both_behaviors_without_scenarios() {
+    for hint in [
+        wait_for_process_hint(Some("proc-1")),
+        wait_for_process_hint(None),
+    ] {
+        assert!(hint.contains("block until the process exits"), "{hint}");
+        assert!(
+            hint.contains("timeout 0 returns the current status"),
+            "{hint}"
+        );
+        // Tool contract only: no user scenario and no steering away from other tools.
+        for forbidden in [
+            "notify",
+            "tell",
+            "report",
+            "done",
+            "scheduleCallback",
+            "runShell",
+            "instead",
+        ] {
+            assert!(!hint.contains(forbidden), "{forbidden} in {hint}");
+        }
+    }
+    assert!(wait_for_process_hint(Some("proc-1")).contains("\"proc-1\""));
+    assert!(wait_for_process_hint(None).contains("(processId,"));
+}
+
+#[test]
+fn static_process_hints_use_the_shared_wait_contract() {
+    for tool in ["spawnProcess", "readProcessOutput"] {
+        let hints = SuccessHint::for_tool(tool, ToolGroup::Workspace);
+        assert!(
+            hints.contains(&wait_for_process_hint(None)),
+            "{tool}: {hints:?}"
+        );
+    }
+}

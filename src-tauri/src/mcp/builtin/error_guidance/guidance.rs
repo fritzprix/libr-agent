@@ -1,6 +1,16 @@
 use super::categories::{ErrorCategory, ToolGroup};
 use crate::mcp::types::MCPResult;
 
+/// Neutral `waitForProcess` contract shared by every follow-up hint: with a timeout it
+/// returns when the process exits (or the timeout elapses), with `0` it returns the
+/// current status immediately. Hints describe the tool, never a user scenario.
+pub fn wait_for_process_hint(process_id: Option<&str>) -> String {
+    format!(
+        "Use workspace__waitForProcess({}, <seconds>) to block until the process exits or the timeout elapses; timeout 0 returns the current status without waiting",
+        process_id.map_or_else(|| "processId".to_string(), |id| format!("\"{id}\""))
+    )
+}
+
 /// Shared section headers for agent-facing hints (success, failure recovery, static tool docs).
 pub mod hint_headers {
     pub const SUCCESS_FOLLOW_UPS: &str = "💡 Suggested Follow-ups:";
@@ -456,7 +466,7 @@ impl SuccessHint {
                 "workspace__readFile and workspace__listDirectory still use workspace root, not the shell CWD".to_string(),
             ],
             ("spawnProcess", ToolGroup::Workspace) => vec![
-                "Use workspace__waitForProcess with timeout=0 to check if it's still running".to_string(),
+                wait_for_process_hint(None),
                 "Use workspace__readProcessOutput to see standard output and error".to_string(),
             ],
             ("waitForProcess" | "pollProcess", ToolGroup::Workspace) => vec![
@@ -464,7 +474,7 @@ impl SuccessHint {
             ],
             ("readProcessOutput", ToolGroup::Workspace) => vec![
                 "Works while the process is still running; finishing is not required".to_string(),
-                "Use workspace__waitForProcess(processId, 0) only to check status, not to unlock reading".to_string(),
+                wait_for_process_hint(None),
                 "If processId is missing from the registry, use workspace__listProcesses() — do not assume it is still starting".to_string(),
             ],
             // Steady-path success catalogs stay empty; handlers add outcome-conditioned follow-ups.

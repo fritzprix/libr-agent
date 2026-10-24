@@ -83,7 +83,7 @@ pub fn create_wait_for_process_tool() -> MCPTool {
     MCPTool {
         name: "waitForProcess".to_string(),
         title: Some("Wait For Process".to_string()),
-        description: "Block until a background process finishes or times out. Requires a processId from workspace__spawnProcess, a sync-timeout handoff, or workspace__listProcesses — not for completed sync workspace__runShell/workspace__runPowerShell results (those have no processId)."
+        description: "Block until a background process finishes or times out; timeout 0 returns the current status without waiting. Requires a processId from workspace__spawnProcess, a sync-timeout handoff, or workspace__listProcesses — not for completed sync workspace__runShell/workspace__runPowerShell results (those have no processId)."
             .to_string(),
         input_schema: object_schema(props, vec!["processId".to_string()]),
         output_schema: None,
