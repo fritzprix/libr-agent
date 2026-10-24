@@ -85,6 +85,23 @@ impl WorkspaceServer {
                 allowed_roots.push(harness_root);
 
                 if !Self::path_is_within_any_root(&candidate_path, &allowed_roots) {
+                    let data_dir = self.session_manager.get_base_data_dir().clone();
+                    if Self::path_is_within_any_root(&candidate_path, &[data_dir]) {
+                        let aliases = self
+                            .get_skill_alias_roots(&target_session_id)
+                            .await
+                            .map(|roots| {
+                                roots
+                                    .iter()
+                                    .map(|root| format!("{}/", root.prefix))
+                                    .collect::<Vec<_>>()
+                            })
+                            .unwrap_or_default();
+                        return Err(format!(
+                            "Security error: {original_error}. This path is inside the LibrAgent data directory, which is not accessible. Only skill roots are reachable: {} (or their absolute host paths).",
+                            aliases.join(", ")
+                        ));
+                    }
                     return Err(format!("Security error: {original_error}"));
                 }
 
