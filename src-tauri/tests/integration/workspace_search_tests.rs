@@ -1814,3 +1814,33 @@ async fn glob_and_grep_report_missing_search_root() {
         .expect("grep_files should return a result");
     assert!(extract_text_content(&grep).contains("not found"));
 }
+
+#[tokio::test]
+async fn search_rejection_for_data_dir_paths_names_skill_roots() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "data-dir-rejection-test";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+
+    let data_dir_result = server
+        .handle_glob_files(
+            json!({ "path": temp_dir.path().to_string_lossy(), "filePattern": "*.db" }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("glob_files should return a result");
+    let text = extract_text_content(&data_dir_result);
+    assert!(
+        text.contains("data directory") && text.contains("@system-skills/"),
+        "Expected data-dir rejection naming skill roots: {text}"
+    );
+
+    let elsewhere = tempdir().expect("other dir");
+    let other_result = server
+        .handle_glob_files(
+            json!({ "path": elsewhere.path().to_string_lossy(), "filePattern": "*.db" }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("glob_files should return a result");
+    assert!(!extract_text_content(&other_result).contains("data directory"));
+}

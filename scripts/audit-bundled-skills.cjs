@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const YAML = require('yaml');
 
 const BUNDLED_SKILLS_DIR = path.join(__dirname, '../src-tauri/bundled_skills');
 const repoRoot = path.join(__dirname, '..');
@@ -64,6 +65,15 @@ function auditSkill(skillName) {
     result.score -= 20;
   } else {
     const fmText = frontmatterMatch[1];
+    try {
+      YAML.parse(fmText);
+    } catch (err) {
+      result.warnings.push(
+        `Frontmatter is not valid YAML: ${err.message.split('\n')[0]}`,
+      );
+      result.frontmatterValid = false;
+      result.score -= 20;
+    }
     const keys = [];
     fmText.split('\n').forEach((line) => {
       const match = line.match(/^([a-zA-Z0-9_-]+)\s*:/);

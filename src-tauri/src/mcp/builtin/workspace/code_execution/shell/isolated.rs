@@ -531,7 +531,7 @@ impl WorkspaceServer {
 
                 let mut next_actions = vec![
                     format!(
-                        "Use workspace__waitForProcess(\"{}\", 0) to check current status",
+                        "Use workspace__waitForProcess(\"{}\", <seconds>) to block until the process exits; use timeout 0 for a status check only",
                         process_id
                     ),
                     format!(
