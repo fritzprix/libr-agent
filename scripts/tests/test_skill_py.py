@@ -19,6 +19,14 @@ import skill
 from unittest import mock
 
 
+SKILL_MD_ALPHA = """---
+name: alpha
+description: "Use when testing container skill roots."
+---
+# Alpha
+"""
+
+
 class SkillPyTest(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -104,6 +112,49 @@ class SkillPyTest(unittest.TestCase):
         (path / "SKILL.md").write_text("no frontmatter")
         self.run_skill("deploy", str(path))
         self.assertEqual([p.name for p in (self.data_dir / "user_skills").iterdir()], ["demo-skill"])
+
+    def container_mode(self):
+        """Pretend to be inside a Docker session: no host data dir, container mount present."""
+        mount = Path(self._tmp.name) / "container-user-skills"
+        mount.mkdir()
+        patcher = mock.patch.object(skill, "CONTAINER_USER_SKILLS_DIR", mount)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return mount
+
+    def test_docker_deploy_stages_in_the_workspace_outbox(self):
+        self.container_mode()
+        path = self.new_skill()
+        (path / "scripts").mkdir()
+        (path / "scripts" / "run.py").write_text("print(1)\n")
+        missing = self.data_dir / "missing"
+        outbox = self.work / ".libragent" / "skill-outbox"
+        outbox.mkdir(parents=True)
+        (outbox / "demo-skill.status").write_text("rejected: old")
+        code, out, _ = self.run_skill("--data-dir", str(missing), "deploy", str(path), "--workspace", str(self.work))
+        self.assertEqual(code, 0)
+        self.assertIn("demo-skill.status", out)
+        self.assertTrue((outbox / "demo-skill" / "scripts" / "run.py").is_file())
+        self.assertFalse((outbox / "demo-skill.status").exists())
+        self.assertFalse(missing.exists())
+
+    def test_docker_deploy_still_validates_first(self):
+        self.container_mode()
+        path = self.new_skill()
+        (path / "SKILL.md").write_text("no frontmatter")
+        code, _, _ = self.run_skill("--data-dir", str(self.data_dir / "missing"), "deploy", str(path), "--workspace", str(self.work))
+        self.assertEqual(code, 1)
+        self.assertFalse((self.work / ".libragent").exists())
+
+    def test_docker_clone_reads_container_skill_roots(self):
+        mount = self.container_mode()
+        (mount / "alpha").mkdir()
+        (mount / "alpha" / "SKILL.md").write_text(SKILL_MD_ALPHA)
+        dest = self.work / "cl"
+        dest.mkdir()
+        code, _, _ = self.run_skill("--data-dir", str(self.data_dir / "missing"), "clone", "alpha", "--to", str(dest))
+        self.assertEqual(code, 0)
+        self.assertTrue((dest / "alpha" / "SKILL.md").is_file())
 
     def test_deploy_refuses_invalid_skill_and_keeps_existing(self):
         path = self.new_skill()
