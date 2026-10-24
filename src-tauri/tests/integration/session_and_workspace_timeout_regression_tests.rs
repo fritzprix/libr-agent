@@ -372,6 +372,12 @@ async fn wait_for_process_respects_timeout_budget() {
         .expect("spawnProcess should return process_id")
         .to_string();
 
+    let spawn_text = extract_text_content(&spawn_result);
+    assert!(
+        spawn_text.contains("block until the process exits") && spawn_text.contains("timeout 0"),
+        "spawnProcess should present waitForProcess as wait-for-exit and timeout 0 as status: {spawn_text}"
+    );
+
     let started = Instant::now();
     let wait_result = server
         .call_tool(
