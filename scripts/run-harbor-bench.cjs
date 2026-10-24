@@ -130,7 +130,12 @@ function runStatus(command, args) {
 
 const ISOLATED_FLAG = '--isolated';
 const INSTANCE_MODULE = 'benchmarks.harbor.isolated_instance';
-const INSTANCE_ROOT = path.join(repoRoot, '.libragent', 'work', 'bench-instance');
+const INSTANCE_ROOT = path.join(
+  repoRoot,
+  '.libragent',
+  'work',
+  'bench-instance',
+);
 const SEED_INFO_PATH = path.join(INSTANCE_ROOT, 'seed', 'seed.json');
 const RELEASE_APP_BIN = path.join(
   repoRoot,
@@ -200,8 +205,6 @@ function runIsolated(benchCommand, benchArgs) {
   // The Harbor adapter relaunches the instance from the seed before each trial.
   process.env.LIBRAGENT_BENCH_INSTANCE_APP_BIN = RELEASE_APP_BIN;
   process.env.LIBRAGENT_BENCH_INSTANCE_ROOT = INSTANCE_ROOT;
-  // Keep the runner alive on Ctrl+C so the instance is always stopped.
-  process.on('SIGINT', () => {});
   try {
     return runStatus(benchCommand[0], [...benchCommand.slice(1), ...args]);
   } finally {
@@ -209,13 +212,72 @@ function runIsolated(benchCommand, benchArgs) {
   }
 }
 
+const WORKSPACE_MODE_FLAG = '--workspace-mode';
+const WORKSPACE_MODES = ['attach', 'managed', 'host'];
+
 const rawArgv = process.argv.slice(2);
 const isolated = rawArgv.includes(ISOLATED_FLAG);
 const argv = rawArgv.filter((arg) => arg !== ISOLATED_FLAG);
 
+/**
+ * @param {string} mode
+ */
+function applyWorkspaceMode(mode) {
+  process.env.LIBRAGENT_HARBOR_WORKSPACE_MODE = mode;
+  // Read by the bench instance launcher and the Harbor adapter.
+  if (mode === 'host') {
+    process.env.LIBRAGENT_BENCH_INSTANCE_SANDBOX = '1';
+  } else {
+    delete process.env.LIBRAGENT_BENCH_INSTANCE_SANDBOX;
+  }
+}
+
+/** @type {string[]} */
+let workspaceModes = [];
+const workspaceModeIndex = argv.indexOf(WORKSPACE_MODE_FLAG);
+if (workspaceModeIndex !== -1) {
+  const [, mode] = argv.splice(workspaceModeIndex, 2);
+  if (mode !== 'all' && !WORKSPACE_MODES.includes(mode)) {
+    const got = mode === undefined ? 'no value' : `'${mode}'`;
+    console.error(
+      `${WORKSPACE_MODE_FLAG} must be one of ${[...WORKSPACE_MODES, 'all'].join(', ')} (got ${got}).`,
+    );
+    process.exit(1);
+  }
+  if ((mode === 'host' || mode === 'all') && !isolated) {
+    console.error(
+      `${WORKSPACE_MODE_FLAG} ${mode} runs task commands on this machine and requires ${ISOLATED_FLAG}.`,
+    );
+    process.exit(1);
+  }
+  workspaceModes = mode === 'all' ? WORKSPACE_MODES : [mode];
+  if (!isolated) {
+    applyWorkspaceMode(mode);
+  }
+}
+
 if (isolated) {
   const sh = path.join(repoRoot, 'scripts', 'run-harbor-bench.sh');
-  process.exit(runIsolated(['bash', sh], argv));
+  let interrupted = false;
+  // Keep the runner alive on Ctrl+C so the instance is always stopped.
+  process.on('SIGINT', () => {
+    interrupted = true;
+  });
+  let exitStatus = 0;
+  for (const mode of workspaceModes.length > 0 ? workspaceModes : [null]) {
+    if (mode !== null) {
+      applyWorkspaceMode(mode);
+      console.log(`==> Workspace mode: ${mode}`);
+    }
+    const status = runIsolated(['bash', sh], argv);
+    if (status !== 0) {
+      exitStatus = status;
+    }
+    if (interrupted) {
+      break;
+    }
+  }
+  process.exit(exitStatus);
 } else if (isWindows) {
   const ps1 = path.join(repoRoot, 'scripts', 'run-harbor-bench.ps1');
   const psArgs = toPowerShellArgs(argv);

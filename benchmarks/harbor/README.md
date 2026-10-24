@@ -36,6 +36,26 @@ host-sync path: pull the container workdir to a host trial workspace, run a host
 session, then push changes back. On that path, prefer relative paths under the
 synced workspace rather than absolute container paths.
 
+Attach is a bench-only path. To grade the session types users actually run, pass
+`--workspace-mode` to `run-harbor-bench.cjs` (sets `LIBRAGENT_HARBOR_WORKSPACE_MODE`):
+
+| Mode               | Session                                                                              | Workspace |
+| ------------------ | ------------------------------------------------------------------------------------ | --------- |
+| `attach` (default) | Docker, attached to Harbor's container                                               | in place  |
+| `managed`          | Docker, LibrAgent-managed container from the task image, mounted at the task workdir | host-sync |
+| `host`             | Host workspace session                                                               | host-sync |
+
+`host` runs task commands on this machine, so it requires `--isolated` and runs the
+bench instance under bubblewrap: `/` is read-only, only the instance `run/` dir is
+writable, `HOME` (`run/home`) and `/tmp` (`run/tmp`) are throwaway, and `run/app` is
+mounted at `/app`, which becomes the session workspace. `DOCKER_CONFIG` keeps pointing
+at your real `~/.docker`. The sandbox stops stray writes to your files; it is not a
+security boundary: the network, `/dev`, and the sockets in `$XDG_RUNTIME_DIR` (D-Bus,
+SSH agent, rootless Docker) stay reachable. Requirements: `bwrap`, an existing `/app` mount point, and on
+Ubuntu an AppArmor profile that lets `/usr/bin/bwrap` create user namespaces. Only
+tasks whose workdir is `/app` run in `host` mode, and the task image's tools are not
+available. Shortcuts: `pnpm bench:layman:managed`, `pnpm bench:layman:host`.
+
 ## Prerequisites
 
 1. `pnpm tauri dev` (HTTP API on `http://localhost:3030/api`)

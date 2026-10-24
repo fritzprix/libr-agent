@@ -43,6 +43,11 @@ DEFAULT_ROOT = Path(".libragent/work/bench-instance")
 # instance from the seed before every trial when the app binary is given.
 INSTANCE_APP_BIN_ENV = "LIBRAGENT_BENCH_INSTANCE_APP_BIN"
 INSTANCE_ROOT_ENV = "LIBRAGENT_BENCH_INSTANCE_ROOT"
+# "1" runs the instance in a bubblewrap sandbox for host-workspace sessions: the
+# filesystem is read-only except the run dir, HOME and /tmp are throwaway, and
+# the run dir's app/ is mounted at /app (the workdir host-mode tasks refer to).
+INSTANCE_SANDBOX_ENV = "LIBRAGENT_BENCH_INSTANCE_SANDBOX"
+SANDBOX_WORKDIR = "/app"
 DEFAULT_LAUNCH_TIMEOUT_SEC = 120.0
 
 
@@ -96,6 +101,19 @@ class InstanceLayout:
     @property
     def xdg_data(self) -> Path:
         return self.run_dir / "xdg-data"
+
+    @property
+    def home_dir(self) -> Path:
+        return self.run_dir / "home"
+
+    @property
+    def tmp_dir(self) -> Path:
+        return self.run_dir / "tmp"
+
+    @property
+    def app_dir(self) -> Path:
+        """Host side of the sandbox's ``/app`` workspace."""
+        return self.run_dir / "app"
 
     @property
     def data_dir(self) -> Path:
@@ -224,11 +242,60 @@ def reset_run_dir(layout: InstanceLayout) -> None:
     if layout.run_dir.exists():
         shutil.rmtree(layout.run_dir)
     layout.data_dir.mkdir(parents=True)
+    for directory in (layout.home_dir, layout.tmp_dir, layout.app_dir):
+        directory.mkdir()
     shutil.copy2(layout.seed_db, layout.db_path)
+
+
+def sandbox_enabled(env: dict[str, str]) -> bool:
+    return env.get(INSTANCE_SANDBOX_ENV, "").strip() == "1"
+
+
+def sandbox_command(layout: InstanceLayout, app_bin: Path, env: dict[str, str]) -> list[str]:
+    """bubblewrap argv that runs ``app_bin`` with only the run dir writable."""
+    run_dir = str(layout.run_dir.resolve())
+    command = [
+        "bwrap",
+        "--ro-bind", "/", "/",
+        "--dev-bind", "/dev", "/dev",
+        "--bind", run_dir, run_dir,
+        "--bind", str(layout.tmp_dir.resolve()), "/tmp",
+        "--ro-bind-try", "/tmp/.X11-unix", "/tmp/.X11-unix",
+        "--bind", str(layout.app_dir.resolve()), SANDBOX_WORKDIR,
+    ]  # fmt: skip
+    runtime_dir = env.get("XDG_RUNTIME_DIR")
+    if runtime_dir:
+        # Wayland, D-Bus and WebKit sockets live here.
+        command += ["--bind-try", runtime_dir, runtime_dir]
+    return [*command, "--", str(app_bin.resolve())]
+
+
+def _check_sandbox_available() -> None:
+    if shutil.which("bwrap") is None:
+        raise InstanceError("Host-mode sandbox needs bubblewrap (bwrap) on PATH.")
+    if not Path(SANDBOX_WORKDIR).is_dir():
+        raise InstanceError(
+            f"Host-mode sandbox mounts its workspace over {SANDBOX_WORKDIR}, which must exist "
+            f"(sudo mkdir {SANDBOX_WORKDIR})."
+        )
+    probe = subprocess.run(
+        ["bwrap", "--ro-bind", "/", "/", "--", "true"], capture_output=True, text=True, check=False
+    )
+    if probe.returncode != 0:
+        raise InstanceError(
+            "bwrap cannot create a sandbox here "
+            f"({probe.stderr.strip() or probe.returncode}). On Ubuntu, unprivileged user "
+            "namespaces need an AppArmor profile for /usr/bin/bwrap."
+        )
 
 
 def instance_env(layout: InstanceLayout, base: dict[str, str] | None = None) -> dict[str, str]:
     env = dict(os.environ if base is None else base)
+    if sandbox_enabled(env):
+        real_home = env.get("HOME") or str(Path.home())
+        # Docker CLI resolves credentials and contexts from $HOME/.docker.
+        env.setdefault("DOCKER_CONFIG", str(Path(real_home) / ".docker"))
+        env["HOME"] = str(layout.home_dir.resolve())
     env.update(
         {
             "LIBRAGENT_DATA_DIR": str(layout.data_dir.resolve()),
@@ -290,12 +357,16 @@ def launch(layout: InstanceLayout, app_bin: Path, *, timeout_sec: float) -> int:
         raise InstanceError(f"Port {port} is already in use; the bench instance would fall back to another port.")
     if not app_bin.is_file():
         raise InstanceError(f"App binary not found: {app_bin}")
+    env = instance_env(layout)
+    if sandbox_enabled(env):
+        _check_sandbox_available()
 
     reset_run_dir(layout)
+    command = sandbox_command(layout, app_bin, env) if sandbox_enabled(env) else [str(app_bin.resolve())]
     log = layout.log_file.open("wb")
     process = subprocess.Popen(
-        [str(app_bin.resolve())],
-        env=instance_env(layout),
+        command,
+        env=env,
         stdout=log,
         stderr=subprocess.STDOUT,
         start_new_session=True,

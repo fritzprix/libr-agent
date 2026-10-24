@@ -21,6 +21,7 @@ import contextlib
 import json
 import os
 import re
+import shutil
 import subprocess
 from collections.abc import Awaitable
 from dataclasses import dataclass
@@ -57,6 +58,8 @@ from benchmarks.harbor.isolated_instance import (
     DEFAULT_ROOT as BENCH_INSTANCE_DEFAULT_ROOT,
     INSTANCE_APP_BIN_ENV,
     INSTANCE_ROOT_ENV,
+    INSTANCE_SANDBOX_ENV,
+    SANDBOX_WORKDIR,
     InstanceLayout,
     relaunch,
 )
@@ -310,9 +313,31 @@ def extract_version_from_health_payload(payload: Any) -> str | None:
     return _string_field(payload, "version")
 
 
-def workspace_mode_name(use_attach: bool) -> str:
+WORKSPACE_MODE_ENV = "LIBRAGENT_HARBOR_WORKSPACE_MODE"
+# attach: LibrAgent attaches to the Harbor container (bench-only path).
+# managed: LibrAgent creates its own Docker session from the task image (product path).
+# host: LibrAgent runs on the host workspace (product path; needs a sandboxed HOME).
+WORKSPACE_MODES = ("attach", "managed", "host")
+
+
+def resolve_workspace_mode(env_map: dict[str, str]) -> str:
+    mode = env_map.get(WORKSPACE_MODE_ENV, "").strip().lower() or "attach"
+    if mode not in WORKSPACE_MODES:
+        raise RuntimeError(
+            f"{WORKSPACE_MODE_ENV} must be one of {', '.join(WORKSPACE_MODES)} (got {mode!r})."
+        )
+    if mode == "host" and env_map.get(INSTANCE_SANDBOX_ENV, "").strip() != "1":
+        raise RuntimeError(
+            f"{WORKSPACE_MODE_ENV}=host runs task commands on this machine; "
+            "use `run-harbor-bench.cjs --isolated --workspace-mode host` so the bench "
+            "instance runs in a filesystem sandbox."
+        )
+    return mode
+
+
+def workspace_mode_name(mode: str) -> str:
     """Harbor-facing workspace mode label matching completed-trial metadata."""
-    return "attach" if use_attach else "host-sync"
+    return "host-sync" if mode == "host" else mode
 
 
 def _environment_value(name: str) -> str | None:
@@ -1101,15 +1126,15 @@ _WORKDIR_EXISTENCE_FALLBACKS: tuple[str, ...] = (
 )
 
 
-def docker_inspect_workdir(container_id: str) -> str | None:
-    """Read the container's configured WorkingDir (image WORKDIR), if any."""
+def _docker_inspect_config(container_id: str, field: str) -> str | None:
+    """Read ``{{.Config.<field>}}`` of a container, or None when unavailable."""
     try:
         result = subprocess.run(
             [
                 "docker",
                 "inspect",
                 "-f",
-                "{{.Config.WorkingDir}}",
+                f"{{{{.Config.{field}}}}}",
                 container_id,
             ],
             check=False,
@@ -1119,21 +1144,31 @@ def docker_inspect_workdir(container_id: str) -> str | None:
         )
     except (OSError, subprocess.SubprocessError) as exc:
         print(
-            f"[LibrAgent] Warning: docker inspect workdir failed for "
+            f"[LibrAgent] Warning: docker inspect {field} failed for "
             f"{container_id!r}: {exc}"
         )
         return None
     if result.returncode != 0:
         stderr = (result.stderr or "").strip()
         print(
-            f"[LibrAgent] Warning: docker inspect workdir failed for "
+            f"[LibrAgent] Warning: docker inspect {field} failed for "
             f"{container_id!r}: {stderr or result.returncode}"
         )
         return None
-    workdir = (result.stdout or "").strip()
-    if not workdir or workdir == "/":
+    return (result.stdout or "").strip() or None
+
+
+def docker_inspect_workdir(container_id: str) -> str | None:
+    """Read the container's configured WorkingDir (image WORKDIR), if any."""
+    workdir = _docker_inspect_config(container_id, "WorkingDir")
+    if workdir == "/":
         return None
     return workdir
+
+
+def docker_inspect_image(container_id: str) -> str | None:
+    """Image reference the Harbor container was started from."""
+    return _docker_inspect_config(container_id, "Image")
 
 
 def docker_exec_pwd(container_id: str) -> str | None:
@@ -1527,10 +1562,39 @@ class LibrAgentHarborAdapter(BaseAgent):
         container_id = resolve_harbor_main_container_id(environment)
         container_workdir = resolve_container_workdir(environment, container_id)
         attach_container_id = container_id
-        use_attach = attach_container_id is not None
+        requested_mode = resolve_workspace_mode(dict(os.environ))
+        managed_image: str | None = None
+        if requested_mode == "managed":
+            managed_image = (
+                docker_inspect_image(container_id) if container_id is not None else None
+            )
+            if managed_image is None:
+                raise RuntimeError(
+                    "Managed workspace mode needs the Harbor container image; "
+                    f"could not resolve it from container {container_id!r}."
+                )
+        if requested_mode == "attach" and attach_container_id is None:
+            workspace_mode = "host"
+        else:
+            workspace_mode = requested_mode
+        use_attach = workspace_mode == "attach"
 
         local_workspace: Path | None = None
         local_workspace_str: str | None = None
+        # Host side of the bench sandbox's /app when host mode was requested.
+        sandbox_app_dir: Path | None = None
+        if requested_mode == "host":
+            trial_reset = resolve_trial_instance_reset(dict(os.environ))
+            if trial_reset is None:
+                raise RuntimeError(
+                    "Host workspace mode needs the isolated bench instance (--isolated)."
+                )
+            if container_workdir.rstrip("/") != SANDBOX_WORKDIR:
+                raise RuntimeError(
+                    f"Host workspace mode mounts the task workspace at {SANDBOX_WORKDIR}; "
+                    f"this task uses {container_workdir}."
+                )
+            sandbox_app_dir = trial_reset.layout.app_dir
 
         if use_attach:
             print(
@@ -1538,13 +1602,21 @@ class LibrAgentHarborAdapter(BaseAgent):
                 f"container {attach_container_id} (workdir={container_workdir})..."
             )
         else:
-            local_workspace = self._resolve_local_workspace(environment, context)
+            local_workspace = sandbox_app_dir or self._resolve_local_workspace(
+                environment, context
+            )
             local_workspace_str = str(local_workspace.resolve().absolute())
             os.makedirs(local_workspace_str, exist_ok=True)
-            print(
-                f"[{self.name()}] Harbor container id not resolved; falling back to "
-                f"host workspace sync ({local_workspace_str})."
-            )
+            if workspace_mode == requested_mode:
+                print(
+                    f"[{self.name()}] Workspace mode {workspace_mode}: staging "
+                    f"{container_workdir} into {local_workspace_str}."
+                )
+            else:
+                print(
+                    f"[{self.name()}] Harbor container id not resolved; falling back to "
+                    f"host workspace sync ({local_workspace_str})."
+                )
             await self._download_container_workdir(
                 environment,
                 container_id=attach_container_id,
@@ -1583,16 +1655,27 @@ class LibrAgentHarborAdapter(BaseAgent):
                 "workdir": container_workdir,
                 "manageLifecycle": False,
             }
-        else:
+        elif managed_image is not None:
             payload["workspacePath"] = local_workspace_str
+            payload["workspaceIsolation"] = "docker"
+            payload["dockerConfig"] = {
+                "image": managed_image,
+                "workdir": container_workdir,
+                "manageLifecycle": True,
+            }
+        else:
+            payload["workspacePath"] = (
+                SANDBOX_WORKDIR if sandbox_app_dir is not None else local_workspace_str
+            )
             payload["workspaceIsolation"] = "host"
 
         async with httpx.AsyncClient(timeout=600.0) as client:
-            mode_desc = (
-                f"attach:{attach_container_id}"
-                if use_attach
-                else f"host:{local_workspace_str}"
-            )
+            if use_attach:
+                mode_desc = f"attach:{attach_container_id}"
+            elif managed_image is not None:
+                mode_desc = f"managed:{managed_image}:{local_workspace_str}"
+            else:
+                mode_desc = f"host:{local_workspace_str}"
             session_started_at = asyncio.get_running_loop().time()
             session_started_at_utc = datetime.now(timezone.utc).isoformat()
             print(f"[{self.name()}] Creating session ({mode_desc})...")
@@ -1648,7 +1731,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                 session_id=session_id,
                 container_id=attach_container_id,
                 container_workdir=container_workdir,
-                workspace_mode=workspace_mode_name(use_attach),
+                workspace_mode=workspace_mode_name(workspace_mode),
                 started_at=session_started_at_utc,
                 session_info=last_session_info,
                 max_input_context=max_input_context,
@@ -1691,7 +1774,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                                     extra={
                                         "poll_timeout_sec": self.poll_timeout_sec,
                                     },
-                                    workspace_mode=workspace_mode_name(use_attach),
+                                    workspace_mode=workspace_mode_name(workspace_mode),
                                     context=context,
                                     started_monotonic=session_started_at,
                                 )
@@ -1768,7 +1851,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                             seen_non_idle=seen_non_idle,
                             reason="harbor_cancelled",
                             last_session_info=last_session_info,
-                            workspace_mode=workspace_mode_name(use_attach),
+                            workspace_mode=workspace_mode_name(workspace_mode),
                             context=context,
                             started_monotonic=session_started_at,
                         )
@@ -1796,6 +1879,15 @@ class LibrAgentHarborAdapter(BaseAgent):
                         container_workdir,
                     )
                     print(f"[{self.name()}] Successfully pushed workspace files.")
+                    if sandbox_app_dir is not None:
+                        # The next relaunch wipes the sandbox; keep the trial artifact.
+                        await asyncio.to_thread(
+                            shutil.copytree,
+                            sandbox_app_dir,
+                            self._resolve_local_workspace(environment, context),
+                            symlinks=True,
+                            dirs_exist_ok=True,
+                        )
                 except Exception as e:
                     await self._delete_session(session_id)
                     raise RuntimeError(
@@ -1882,7 +1974,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                         completed=True,
                         extra={
                             "assistant_id": self.assistant_id,
-                            "workspaceMode": workspace_mode_name(use_attach),
+                            "workspaceMode": workspace_mode_name(workspace_mode),
                         },
                         completion=summarize_completion_telemetry(messages),
                         elapsed_wall_clock_sec=(
@@ -1919,7 +2011,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                 "finalStatus": last_status,
                 "completed": True,
                 "attachContainer": attach_container_id,
-                "workspaceMode": workspace_mode_name(use_attach),
+                "workspaceMode": workspace_mode_name(workspace_mode),
                 "assistant_id": self.assistant_id,
                 "n_turns": telemetry.n_turns,
                 "tool_calls_count": telemetry.tool_calls_count,

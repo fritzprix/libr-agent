@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,8 @@ from benchmarks.harbor.libragent_agent import (
     build_compaction_telemetry_document,
     build_diagnostic_meta,
     copy_telemetry_to_context,
+    docker_inspect_image,
+    docker_inspect_workdir,
     extract_model_name_from_assistant_payload,
     extract_model_name_from_session_payload,
     extract_trajectory_error,
@@ -32,6 +35,7 @@ from benchmarks.harbor.libragent_agent import (
     resolve_max_input_context,
     resolve_poll_timeout_sec,
     resolve_trial_instance_reset,
+    resolve_workspace_mode,
     sanitize_docker_compose_project_name,
     split_harbor_model_name,
     summarize_completion_telemetry,
@@ -946,8 +950,53 @@ def test_extract_version_from_health_payload() -> None:
 
 
 def test_workspace_mode_name() -> None:
-    assert workspace_mode_name(True) == "attach"
-    assert workspace_mode_name(False) == "host-sync"
+    assert workspace_mode_name("attach") == "attach"
+    assert workspace_mode_name("managed") == "managed"
+    assert workspace_mode_name("host") == "host-sync"
+
+
+def test_docker_inspect_helpers_read_container_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[list[str]] = []
+    outputs = {
+        "{{.Config.Image}}": "hb__t08:latest\n",
+        "{{.Config.WorkingDir}}": "/\n",
+    }
+
+    def fake_run(args: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, stdout=outputs[args[3]], stderr="")
+
+    monkeypatch.setattr("benchmarks.harbor.libragent_agent.subprocess.run", fake_run)
+
+    assert docker_inspect_image("c1") == "hb__t08:latest"
+    assert docker_inspect_workdir("c1") is None
+    assert calls[0] == ["docker", "inspect", "-f", "{{.Config.Image}}", "c1"]
+
+
+def test_resolve_workspace_mode_defaults_to_attach() -> None:
+    assert resolve_workspace_mode({}) == "attach"
+    assert resolve_workspace_mode({"LIBRAGENT_HARBOR_WORKSPACE_MODE": " Managed "}) == "managed"
+
+
+def test_resolve_workspace_mode_rejects_unknown_mode() -> None:
+    with pytest.raises(RuntimeError, match="must be one of"):
+        resolve_workspace_mode({"LIBRAGENT_HARBOR_WORKSPACE_MODE": "docker"})
+
+
+def test_host_workspace_mode_requires_sandboxed_home() -> None:
+    with pytest.raises(RuntimeError, match="filesystem sandbox"):
+        resolve_workspace_mode({"LIBRAGENT_HARBOR_WORKSPACE_MODE": "host"})
+    assert (
+        resolve_workspace_mode(
+            {
+                "LIBRAGENT_HARBOR_WORKSPACE_MODE": "host",
+                "LIBRAGENT_BENCH_INSTANCE_SANDBOX": "1",
+            }
+        )
+        == "host"
+    )
 
 
 def test_copy_telemetry_to_context() -> None:
