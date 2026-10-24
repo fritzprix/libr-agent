@@ -8,6 +8,6 @@ TRAJECTORY = Path("/logs/agent/trajectory.json")
 
 
 def test_critical_path():
-    """`__runShell` with `verify_setup` (last call succeeds)"""
+    """`__runShell` with `verify_setup` or `install_node` (last call succeeds)"""
     failures = grade_trajectory("T11", TRAJECTORY)
     assert not failures, failures

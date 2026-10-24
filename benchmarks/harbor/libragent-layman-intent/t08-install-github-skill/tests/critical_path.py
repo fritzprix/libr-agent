@@ -115,13 +115,22 @@ class Step:
     tool: str  # matched as a suffix of the namespaced tool name
     args_contain: str | None = None  # substring of the serialized arguments
     scripts: tuple[str, ...] = ()  # shell steps: one of these must be executed
+    min_count: int = 1  # matching calls required (the last one must succeed)
+    alternatives: tuple[Step, ...] = ()  # any of these also satisfies the step
 
     @property
     def label(self) -> str:
-        detail = self.args_contain or " | ".join(self.scripts)
-        return f"{self.tool} ({detail})" if detail else self.tool
+        detail = " ".join(
+            part for part in (" | ".join(self.scripts), self.args_contain) if part
+        )
+        own = f"{self.tool} ({detail})" if detail else self.tool
+        if self.min_count > 1:
+            own = f"{own} x{self.min_count}"
+        return " or ".join([own, *(alt.label for alt in self.alternatives)])
 
     def matches(self, call: Call) -> bool:
+        if any(alt.matches(call) for alt in self.alternatives):
+            return True
         if not call.name.endswith(self.tool):
             return False
         if self.args_contain is not None and self.args_contain not in call.arguments:
@@ -167,6 +176,8 @@ class Call:
 
 SCHEDULE_CALLBACK = (Step("__scheduleCallback"),)
 INSTALL_MCP = (Step("__registerServer"), Step("__verifyServer"))
+# Catalog installs look the preset up first; direct npm installs (T07, T10) do not.
+INSTALL_MCP_FROM_CATALOG = (Step("__listServers", "catalog"), *INSTALL_MCP)
 
 TASKS: dict[str, TaskSpec] = {
     spec.task_id: spec
@@ -188,7 +199,9 @@ TASKS: dict[str, TaskSpec] = {
             (Step("__spawnProcess"), Step("__waitForProcess")),
         ),
         TaskSpec("T05", "t05-tell-me-later", "P", "loop", SCHEDULE_CALLBACK),
-        TaskSpec("T06", "t06-stock-data", "P", "mcp-installer", INSTALL_MCP),
+        TaskSpec(
+            "T06", "t06-stock-data", "P", "mcp-installer", INSTALL_MCP_FROM_CATALOG
+        ),
         TaskSpec("T07", "t07-connect-npx-package", "P", "mcp-installer", INSTALL_MCP),
         TaskSpec(
             "T08",
@@ -197,21 +210,45 @@ TASKS: dict[str, TaskSpec] = {
             "skill-deployer",
             (Step("__runShell", scripts=("deploy_skill.py",)),),
         ),
-        TaskSpec("T09", "t09-install-github-mcp", "P", "mcp-installer", INSTALL_MCP),
+        TaskSpec(
+            "T09", "t09-install-github-mcp", "P", "mcp-installer", INSTALL_MCP_FROM_CATALOG
+        ),
         TaskSpec("T10", "t10-install-that", "P", "mcp-installer", INSTALL_MCP),
         TaskSpec(
             "T11",
             "t11-command-not-found",
             "P",
             "setup-wizard",
-            (Step("__runShell", scripts=("verify_setup.sh", "verify_setup.ps1")),),
+            (
+                Step(
+                    "__runShell",
+                    scripts=(
+                        "verify_setup.sh",
+                        "verify_setup.ps1",
+                        "install_node.sh",
+                        "install_node.ps1",
+                    ),
+                ),
+            ),
         ),
         TaskSpec(
             "T12",
             "t12-save-organizing-routine",
             "P",
             "skill-creator",
-            (Step("__runShell", scripts=("validate_skill.py",)),),
+            (
+                Step("__writeFile", "SKILL.md"),
+                Step(
+                    "__runShell",
+                    "--strict",
+                    scripts=("validate_skill.py",),
+                    # skill.py validate is always strict; deploy validates first.
+                    alternatives=(
+                        Step("__runShell", "validate", scripts=("skill.py",)),
+                        Step("__runShell", "deploy", scripts=("skill.py",)),
+                    ),
+                ),
+            ),
         ),
         TaskSpec(
             "T13",
@@ -225,7 +262,7 @@ TASKS: dict[str, TaskSpec] = {
             "t14-summarize-50-docs",
             "P",
             "divide-conquer",
-            (Step("__spawnSession"),),
+            (Step("__spawnSession", min_count=2),),
         ),
         TaskSpec(
             "T15",
@@ -255,7 +292,8 @@ TASKS: dict[str, TaskSpec] = {
             "context-recall",
             (
                 Step("__globFiles", "pre_compaction_epoch_"),
-                Step("__readFile", "pre_compaction_epoch_"),
+                # The seed has epochs 1 and 2; the answer is in the highest one.
+                Step("__readFile", "pre_compaction_epoch_2"),
             ),
         ),
         TaskSpec(
@@ -332,6 +370,9 @@ def grade_calls(spec: TaskSpec, calls: list[Call]) -> list[str]:
         indexes = [i for i, call in enumerate(calls) if step.matches(call)]
         if not indexes:
             failures.append(f"missing {step.label}")
+            continue
+        if len(indexes) < step.min_count:
+            failures.append(f"{step.label}: {len(indexes)} call(s)")
             continue
         last = calls[indexes[-1]]
         if previous is not None and indexes[-1] < previous[1]:

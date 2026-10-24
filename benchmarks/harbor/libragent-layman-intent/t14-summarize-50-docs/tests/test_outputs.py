@@ -16,6 +16,6 @@ def test_summary_covers_all_docs():
 
 
 def test_critical_path():
-    """`__spawnSession` (last call succeeds)"""
+    """at least 2 × `__spawnSession` (last call succeeds)"""
     failures = grade_trajectory("T14", TRAJECTORY)
     assert not failures, failures
