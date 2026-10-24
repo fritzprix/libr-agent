@@ -30,7 +30,7 @@ In the LibrAgent repo (authoring bundled skills):
 python src-tauri/bundled_skills/skill-creator/scripts/validate_skill.py src-tauri/bundled_skills/<skill-name>
 ```
 
-Requires PyYAML: `pip install pyyaml`
+Uses PyYAML when installed; otherwise a built-in parser handles standard SKILL.md frontmatter (no `pip install` needed).
 
 ## What It Checks
 
