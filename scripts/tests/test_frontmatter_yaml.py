@@ -40,6 +40,14 @@ class FallbackParserTests(unittest.TestCase):
         )
         self.assertEqual(load("name: a\nallowed-tools:\n  - Read\n  - Bash"), {"name": "a", "allowed-tools": ["Read", "Bash"]})
 
+    def test_quoted_commas_and_trailing_comments(self) -> None:
+        self.assertEqual(
+            load("name: a\ntags: [\"a, b\", 'c']\ndescription: \"val\" # note\nlicense: 'x' # y"),
+            {"name": "a", "tags": ["a, b", "c"], "description": "val", "license": "x"},
+        )
+        with self.assertRaises(Error):
+            load('name: "a" trailing')
+
     def test_plain_scalar_with_colon_is_rejected(self) -> None:
         with self.assertRaises(Error):
             load("name: a\ndescription: Triggers on: 'science search'")

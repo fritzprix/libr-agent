@@ -35,18 +35,56 @@ def _strip_comment(text: str) -> str:
 
 
 def _unquote(text: str) -> str:
+    """Parse one quoted scalar; only whitespace or a ` # comment` may follow it."""
+    value, rest = _read_quoted(text)
+    if rest.strip() and not re.match(r"\s+#", rest):
+        raise FallbackYAMLError(f"Unexpected text after quoted string: {text}")
+    return value
+
+
+def _read_quoted(text: str) -> tuple[str, str]:
     quote = text[0]
-    if len(text) < 2 or text[-1] != quote:
-        raise FallbackYAMLError(f"Unterminated quoted string: {text}")
-    body = text[1:-1]
-    if quote == "'":
-        if re.search(r"(?<!')'(?!')", body):
-            raise FallbackYAMLError(f"Unescaped quote in single-quoted string: {text}")
-        return body.replace("''", "'")
-    if re.search(r'(?<!\\)"', body):
-        raise FallbackYAMLError(f"Unescaped quote in double-quoted string: {text}")
     escapes = {"n": "\n", "t": "\t", '"': '"', "\\": "\\", "/": "/"}
-    return re.sub(r"\\(.)", lambda m: escapes.get(m.group(1), m.group(0)), body)
+    out: list[str] = []
+    i = 1
+    while i < len(text):
+        ch = text[i]
+        if quote == "'" and ch == "'":
+            if text[i + 1 : i + 2] == "'":
+                out.append("'")
+                i += 2
+                continue
+            return "".join(out), text[i + 1 :]
+        if quote == '"' and ch == "\\" and i + 1 < len(text):
+            out.append(escapes.get(text[i + 1], text[i : i + 2]))
+            i += 2
+            continue
+        if quote == '"' and ch == '"':
+            return "".join(out), text[i + 1 :]
+        out.append(ch)
+        i += 1
+    raise FallbackYAMLError(f"Unterminated quoted string: {text}")
+
+
+def _split_flow_items(inner: str) -> list[str]:
+    items: list[str] = []
+    current: list[str] = []
+    quote = ""
+    for ch in inner:
+        if quote:
+            current.append(ch)
+            if ch == quote:
+                quote = ""
+        elif ch in ('"', "'"):
+            quote = ch
+            current.append(ch)
+        elif ch == ",":
+            items.append("".join(current))
+            current = []
+        else:
+            current.append(ch)
+    items.append("".join(current))
+    return items
 
 
 def _resolve_plain(text: str) -> Any:
@@ -68,10 +106,11 @@ def _scalar(text: str) -> Any:
     if text[:1] in ('"', "'"):
         return _unquote(text)
     if text.startswith("["):
+        text = _strip_comment(text)
         if not text.endswith("]"):
             raise FallbackYAMLError(f"Unterminated flow list: {text}")
         inner = text[1:-1].strip()
-        return [_scalar(part) for part in inner.split(",")] if inner else []
+        return [_scalar(part) for part in _split_flow_items(inner)] if inner else []
     if text[:1] in PLAIN_FORBIDDEN_START:
         raise FallbackYAMLError(f"Unsupported or invalid value: {text}")
     if ": " in text or text.endswith(":"):
