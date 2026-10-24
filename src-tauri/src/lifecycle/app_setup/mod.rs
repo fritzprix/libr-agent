@@ -103,42 +103,55 @@ fn spawn_startup_maintenance_tasks(
         }
     });
 
-    tauri::async_runtime::spawn(async move {
-        let session_repo = crate::state::get_session_repository();
-        let active_session_ids = match session_repo.get_all_session_ids().await {
-            Ok(ids) => ids.into_iter().collect::<HashSet<_>>(),
-            Err(error) => {
-                log::warn!(
-                    "Failed to load sessions for Docker stale container sweep: {}",
-                    error
-                );
-                return;
-            }
-        };
+    // The sweep removes every labelled container absent from this instance's DB, so an
+    // instance with an overridden data dir (e.g. an isolated bench instance) must not run it
+    // against the Docker daemon it shares with the primary instance.
+    if should_sweep_stale_containers(std::env::var_os("LIBRAGENT_DATA_DIR").as_deref()) {
+        tauri::async_runtime::spawn(async move {
+            let session_repo = crate::state::get_session_repository();
+            let active_session_ids = match session_repo.get_all_session_ids().await {
+                Ok(ids) => ids.into_iter().collect::<HashSet<_>>(),
+                Err(error) => {
+                    log::warn!(
+                        "Failed to load sessions for Docker stale container sweep: {}",
+                        error
+                    );
+                    return;
+                }
+            };
 
-        match crate::services::WorkspaceRuntimeManager::sweep_stale_containers(&active_session_ids)
+            match crate::services::WorkspaceRuntimeManager::sweep_stale_containers(
+                &active_session_ids,
+            )
             .await
-        {
-            Ok(removed) if removed.is_empty() => {
-                info!("🧹 Docker stale container sweep completed: no stale containers");
+            {
+                Ok(removed) if removed.is_empty() => {
+                    info!("🧹 Docker stale container sweep completed: no stale containers");
+                }
+                Ok(removed) => {
+                    info!(
+                        "🧹 Docker stale container sweep removed {} container(s): {}",
+                        removed.len(),
+                        removed.join(", ")
+                    );
+                }
+                Err(error) => {
+                    log::warn!("Docker stale container sweep skipped or failed: {}", error);
+                }
             }
-            Ok(removed) => {
-                info!(
-                    "🧹 Docker stale container sweep removed {} container(s): {}",
-                    removed.len(),
-                    removed.join(", ")
-                );
-            }
-            Err(error) => {
-                log::warn!("Docker stale container sweep skipped or failed: {}", error);
-            }
-        }
-    });
+        });
+    } else {
+        info!("🧹 Docker stale container sweep skipped: LIBRAGENT_DATA_DIR override in effect");
+    }
 
     let _indexing_worker = crate::search::IndexingWorker::new(std::time::Duration::from_secs(
         search_index_frequency_minutes * 60,
     ));
     info!("✅ Background message indexing worker started");
+}
+
+fn should_sweep_stale_containers(data_dir_override: Option<&std::ffi::OsStr>) -> bool {
+    data_dir_override.is_none_or(|value| value.is_empty())
 }
 
 pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
@@ -391,4 +404,19 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
     info!("✅ LibrAgent setup completed successfully");
     Ok(())
+}
+
+#[cfg(test)]
+mod sweep_rule_tests {
+    use super::should_sweep_stale_containers;
+    use std::ffi::OsStr;
+
+    #[test]
+    fn sweeps_only_without_data_dir_override() {
+        assert!(should_sweep_stale_containers(None));
+        assert!(should_sweep_stale_containers(Some(OsStr::new(""))));
+        assert!(!should_sweep_stale_containers(Some(OsStr::new(
+            "/tmp/bench-instance"
+        ))));
+    }
 }
