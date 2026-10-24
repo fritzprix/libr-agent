@@ -4,7 +4,8 @@
 Prints JSON: one entry per open PR authored by @me with merge state, failing
 and pending checks, unresolved review threads, and PR comments from others
 that arrived after the latest commit, plus the latest gatekeeper-loop verdict
-(own marker comments only). Bodies are truncated; fetch the full text only for
+(own marker comments only). `duplicateCommits` lists head commits whose patch-id is
+already in the base (needs a prior `git fetch origin`); they yield `restack`. Bodies are truncated; fetch the full text only for
 items you act on.
 """
 from __future__ import annotations
@@ -50,6 +51,22 @@ def short(text: str | None, limit: int = 240) -> str:
 
 def check_state(check: dict) -> str:
     return (check.get("conclusion") or check.get("state") or check.get("status") or "").upper()
+
+
+def duplicate_commits(base: str, head: str, cwd: str | None = None) -> list[str]:
+    """Head commits whose patch-id also exists in base (`git cherry` marks them `-`).
+
+    These appear when the base was rebased or the commits were cherry-picked into it:
+    the PR still carries the old copies and needs a restack. Returns [] when either
+    ref is missing locally.
+    """
+    result = subprocess.run(
+        ["git", "cherry", f"origin/{base}", f"origin/{head}"],
+        capture_output=True, text=True, encoding="utf-8", cwd=cwd,
+    )
+    if result.returncode != 0:
+        return []
+    return [line[2:] for line in result.stdout.splitlines() if line.startswith("- ")]
 
 
 def gatekeeper_state(comments: list[dict], me: str, head_sha: str) -> dict | None:
@@ -122,8 +139,12 @@ def summarize(number: int, owner: str, name: str, me: str) -> dict:
         if c.get("author", {}).get("login") != me and c.get("createdAt", "") > last_commit_at
     ]
 
+    duplicates = duplicate_commits(pr["baseRefName"], pr["headRefName"])
+
     if pr.get("mergeable") == "CONFLICTING":
         next_action = "resolve-conflict"
+    elif duplicates:
+        next_action = "restack"
     elif gatekeeper and gatekeeper["awaitingWorker"]:
         next_action = "address-gatekeeper"
     elif threads or new_comments:
@@ -150,6 +171,7 @@ def summarize(number: int, owner: str, name: str, me: str) -> dict:
         "unresolvedThreads": threads,
         "newComments": new_comments,
         "gatekeeper": gatekeeper,
+        "duplicateCommits": duplicates,
         "nextAction": next_action,
     }
 
