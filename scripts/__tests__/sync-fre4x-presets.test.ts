@@ -19,6 +19,7 @@ const { syncFre4xPresets, summaryMarkdown, toLatest } = require(scriptPath) as {
     skipped: string[];
     rejected: { name: string; reason: string }[];
     commandChanged: string[];
+    previousFre4xCount: number;
   };
   summaryMarkdown: (result: unknown) => string;
   toLatest: (arg: string) => string;
@@ -177,6 +178,84 @@ describe('sync-fre4x-presets', () => {
     // a rejected upstream entry never removes or rewrites the local one
     expect(result.next.mcpServers.shell).toEqual(current.mcpServers.shell);
     expect(result.removed).toEqual([]);
+  });
+
+  it('rejects env that changes how the launcher runs, or that is not declared', () => {
+    const declared = (key: string) => ({
+      env: { [key]: 'x' },
+      variableDefinitions: { [key]: { type: 'text' } },
+    });
+    const hostile: Record<string, Entry> = {
+      registry: fre4x('registry', declared('NPM_CONFIG_REGISTRY')),
+      nodeopts: fre4x('nodeopts', declared('NODE_OPTIONS')),
+      path: fre4x('path', declared('PATH')),
+      preload: fre4x('preload', declared('LD_PRELOAD')),
+      dyld: fre4x('dyld', declared('DYLD_INSERT_LIBRARIES')),
+      proxy: fre4x('proxy', declared('HTTPS_PROXY')),
+      ca: fre4x('ca', declared('NODE_EXTRA_CA_CERTS')),
+      cert: fre4x('cert', declared('SSL_CERT_FILE')),
+      undeclared: fre4x('undeclared', { env: { SOME_KEY: 'x' } }),
+      partial: fre4x('partial', {
+        env: { A_KEY: '', B_KEY: '' },
+        variableDefinitions: { A_KEY: { type: 'text' } },
+      }),
+      defOnly: fre4x('defOnly', {
+        variableDefinitions: { NODE_OPTIONS: { type: 'text' } },
+      }),
+    };
+    const result = syncFre4xPresets(local(), { mcpServers: hostile });
+    expect(result.rejected.map((r) => r.name).sort()).toEqual(
+      Object.keys(hostile).sort(),
+    );
+    expect(result.added).toEqual([]);
+
+    // declared, ordinary variables are fine
+    const ok = syncFre4xPresets(local(), {
+      mcpServers: { fred: fre4x('fred', declared('FRED_API_KEY')) },
+    });
+    expect(ok.added).toEqual(['fred']);
+    expect(ok.rejected).toEqual([]);
+  });
+
+  it('shows env of added or changed presets and warns about mass removal', () => {
+    const upstream = {
+      mcpServers: {
+        fred: fre4x('fred', {
+          env: { FRED_API_KEY: '' },
+          variableDefinitions: { FRED_API_KEY: { type: 'password' } },
+        }),
+      },
+    };
+    const current = local();
+    for (const name of ['a', 'b', 'c']) {
+      current.mcpServers[name] = fre4x(name, {}, 'latest');
+    }
+    const result = syncFre4xPresets(current, upstream);
+    const text = summaryMarkdown(result);
+    expect(text).toContain('env: `FRED_API_KEY=`');
+    expect(result.removed.sort()).toEqual(['a', 'b', 'c', 'hn']);
+    expect(text).toContain('Review carefully');
+    expect(text).toContain('4 of 4');
+
+    const quiet = summaryMarkdown(
+      syncFre4xPresets(local(), { mcpServers: { hn: fre4x('hn') } }),
+    );
+    expect(quiet).not.toContain('Review carefully');
+  });
+
+  it('keeps upstream-controlled text out of the PR markup', () => {
+    const upstream = {
+      version: '1.0.0`](https://evil.test)\n# injected',
+      mcpServers: {
+        'x`](https://evil.test)': fre4x('x', { command: 'bash' }),
+        weird: { ...fre4x('weird'), ['ev`il\nfield']: 1 },
+      },
+    };
+    const text = summaryMarkdown(syncFre4xPresets(local(), upstream));
+    expect(text).not.toContain('https://evil.test');
+    expect(text).not.toContain('evil.test)');
+    expect(text).not.toContain('](');
+    expect(text).not.toMatch(/\n# injected/);
   });
 
   it('lists launch commands and rejections in the PR summary', () => {

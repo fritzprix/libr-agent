@@ -61,6 +61,10 @@ function orderFields(entry) {
 const NAME_RE = /^[a-z0-9][a-z0-9-]*$/;
 const PACKAGE_ARG_RE = /^@fre4x\/[a-z0-9][a-z0-9-]*(?:@[A-Za-z0-9._+-]+)?$/;
 const ENV_KEY_RE = /^[A-Z][A-Z0-9_]*$/;
+// Variables that change how the launcher itself runs (registry, proxy, preload,
+// trust store, search path): never accepted from upstream, declared or not.
+const PROCESS_ENV_RE =
+  /^(NODE_OPTIONS|NODE_EXTRA_CA_CERTS|NODE_PATH|PATH|HOME|SHELL|NPM_CONFIG_.*|LD_.*|DYLD_.*|.*_PROXY|SSL_CERT_.*)$/i;
 const ALLOWED_FIELDS = new Set(FIELD_ORDER);
 const ALLOWED_VARIABLE_FIELDS = new Set([
   'required',
@@ -121,6 +125,15 @@ function validateUpstreamEntry(name, entry) {
     ) {
       return 'env must map NAME to string values';
     }
+    for (const key of Object.keys(entry.env)) {
+      if (PROCESS_ENV_RE.test(key)) return `env ${key} affects the launcher`;
+      if (
+        !isPlainObject(entry.variableDefinitions) ||
+        !(key in entry.variableDefinitions)
+      ) {
+        return `env ${key} is not declared in variableDefinitions`;
+      }
+    }
   }
   if (entry.variableDefinitions !== undefined) {
     const definitions = entry.variableDefinitions;
@@ -129,6 +142,9 @@ function validateUpstreamEntry(name, entry) {
     for (const [key, definition] of Object.entries(definitions)) {
       if (!ENV_KEY_RE.test(key) || !isPlainObject(definition)) {
         return 'variableDefinitions entries must be objects keyed by NAME';
+      }
+      if (PROCESS_ENV_RE.test(key)) {
+        return `variableDefinitions ${key} affects the launcher`;
       }
       if (
         !Object.keys(definition).every((f) => ALLOWED_VARIABLE_FIELDS.has(f))
@@ -177,7 +193,7 @@ const same = (a, b) =>
 /**
  * @returns {{ next: object, added: string[], changed: string[], removed: string[],
  *             skipped: string[], rejected: {name: string, reason: string}[],
- *             commandChanged: string[], version: string | null }}
+ *             commandChanged: string[], previousFre4xCount: number, version: string | null }}
  */
 function syncFre4xPresets(current, upstream) {
   const currentServers = current.mcpServers ?? {};
@@ -236,14 +252,25 @@ function syncFre4xPresets(current, upstream) {
     skipped,
     rejected,
     commandChanged,
+    previousFre4xCount: Object.values(currentServers).filter(isFre4x).length,
     version: typeof upstream.version === 'string' ? upstream.version : null,
   };
+}
+
+/** Upstream-controlled text in the PR body: no backticks, newlines or markup, bounded. */
+function plain(value, max = 80) {
+  const text = String(value)
+    .replace(/\b[a-z][a-z0-9+.-]*:\/\//gi, '') // no autolinked URLs
+    .replace(/[\u0000-\u001f\u007f`<>[\]()|*~]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
 function summaryMarkdown(result) {
   const list = (title, names) =>
     names.length
-      ? `- **${title}**: ${names.map((n) => `\`${n}\``).join(', ')}\n`
+      ? `- **${title}**: ${names.map((n) => `\`${plain(n)}\``).join(', ')}\n`
       : '';
   const launchLines = result.added
     .concat(result.changed)
@@ -253,23 +280,37 @@ function summaryMarkdown(result) {
       const flag = result.commandChanged.includes(name)
         ? ' **(launch command changed)**'
         : '';
-      return `- \`${name}\`: \`${entry.command} ${entry.args.join(' ')}\`${flag}`;
+      const env = Object.entries(entry.env ?? {})
+        .map(([key, value]) => `${key}=${plain(value, 40)}`)
+        .join(' ');
+      return (
+        `- \`${plain(name)}\`: \`${entry.command} ${entry.args.join(' ')}\`${flag}` +
+        (env ? ` env: \`${env}\`` : '')
+      );
     });
+  // Many removals at once usually mean upstream changed shape, not that modules went away.
+  const manyRemoved =
+    result.removed.length >= 3 ||
+    (result.removed.length > 0 &&
+      result.removed.length * 2 > result.previousFre4xCount);
   return (
     `Syncs the \`@fre4x/*\` presets in \`mcp-server.json\` from b1te${
-      result.version ? ` v${result.version}` : ''
+      result.version ? ` v${plain(result.version, 24)}` : ''
     } (\`presets.json\`).\n\n` +
+    (manyRemoved
+      ? `> **Review carefully:** ${result.removed.length} of ${result.previousFre4xCount} existing @fre4x presets are removed by this sync.\n\n`
+      : '') +
     list('Added', result.added) +
     list('Updated', result.changed) +
     list('Removed', result.removed) +
     list('Skipped (name used by a non-fre4x preset)', result.skipped) +
     (result.rejected.length
       ? `- **Rejected (failed validation, left as is)**: ${result.rejected
-          .map(({ name, reason }) => `\`${name}\` (${reason})`)
+          .map(({ name, reason }) => `\`${plain(name)}\` (${plain(reason)})`)
           .join(', ')}\n`
       : '') +
     (launchLines.length
-      ? `\n**Launch commands to review**\n\n${launchLines.join('\n')}\n`
+      ? `\n**Launch commands and env to review**\n\n${launchLines.join('\n')}\n`
       : '') +
     '\nCommands use `@fre4x/<pkg>@latest`; non-fre4x presets are untouched. ' +
     'Generated by `scripts/sync-fre4x-presets.cjs`; never auto-merged.\n'
