@@ -8,6 +8,6 @@ TRAJECTORY = Path("/logs/agent/trajectory.json")
 
 
 def test_critical_path():
-    """`__registerServer` → `__verifyServer` (last call succeeds)"""
+    """`__listServers` with `catalog` → `__registerServer` → `__verifyServer` (last call succeeds)"""
     failures = grade_trajectory("T09", TRAJECTORY)
     assert not failures, failures

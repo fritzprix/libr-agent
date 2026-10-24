@@ -57,7 +57,7 @@ class CriticalPathTests(unittest.TestCase):
     def test_pass_needs_every_step_with_last_call_succeeding(self) -> None:
         self.assertEqual(
             _grade(
-                "T06",
+                "T07",
                 _step(("a", "tool__registerServer", {}, True)),
                 _step(("b", "tool__registerServer", {}, False)),
                 _step(("c", "tool__verifyServer", {}, False)),
@@ -67,7 +67,7 @@ class CriticalPathTests(unittest.TestCase):
 
     def test_missing_step_and_failed_last_call(self) -> None:
         failures = _grade(
-            "T06",
+            "T07",
             _step(("a", "tool__registerServer", {}, False)),
             _step(("b", "tool__registerServer", {}, True)),
         )
@@ -148,6 +148,88 @@ class CriticalPathTests(unittest.TestCase):
                 _step(("b", "workspace__spawnProcess", {}, False)),
             ),
             ["__waitForProcess only before __spawnProcess"],
+        )
+
+    def test_catalog_installs_need_the_catalog_lookup_first(self) -> None:
+        register = _step(("b", "tool__registerServer", {}, False))
+        verify = _step(("c", "tool__verifyServer", {}, False))
+        listing = _step(("a", "tool__listServers", {"scope": "catalog"}, False))
+        for task in ("T06", "T09"):
+            self.assertEqual(_grade(task, listing, register, verify), [], task)
+            self.assertEqual(
+                _grade(task, register, verify),
+                ["missing __listServers (catalog)"],
+                task,
+            )
+            self.assertEqual(
+                _grade(task, register, verify, listing),
+                ["__registerServer only before __listServers (catalog)"],
+                task,
+            )
+        wrong_scope = _step(("a", "tool__listServers", {"scope": "session"}, False))
+        self.assertEqual(
+            _grade("T06", wrong_scope, register, verify),
+            ["missing __listServers (catalog)"],
+        )
+        # direct npm installs stay register -> verify
+        self.assertEqual(_grade("T07", register, verify), [])
+
+    def test_setup_wizard_accepts_verify_or_install(self) -> None:
+        for script in ("verify_setup.sh", "install_node.sh", "install_node.ps1"):
+            call = _step(("a", "workspace__runShell", {"command": f"bash {script}"}, False))
+            self.assertEqual(_grade("T11", call), [], script)
+        other = _step(("a", "workspace__runShell", {"command": "bash install_uv.sh"}, False))
+        self.assertNotEqual(_grade("T11", other), [])
+
+    def test_skill_creator_needs_the_file_and_a_strict_validation(self) -> None:
+        write = _step(("a", "workspace__writeFile", {"path": "x/SKILL.md"}, False))
+        other_write = _step(("a", "workspace__writeFile", {"path": "x/notes.md"}, False))
+        lenient = _step(
+            ("b", "workspace__runShell", {"command": "python validate_skill.py x"}, False)
+        )
+        strict = _step(
+            (
+                "b",
+                "workspace__runShell",
+                {"command": "python validate_skill.py x --strict"},
+                False,
+            )
+        )
+        self.assertEqual(_grade("T12", write, strict), [])
+        self.assertNotEqual(_grade("T12", write, lenient), [])
+        self.assertNotEqual(_grade("T12", other_write, strict), [])
+        self.assertNotEqual(_grade("T12", strict), [])
+        self.assertNotEqual(_grade("T12", strict, write), [])
+        for command in ("python3 scripts/skill.py validate x", "python3 scripts/skill.py deploy x"):
+            via_skill_py = _step(("b", "workspace__runShell", {"command": command}, False))
+            self.assertEqual(_grade("T12", write, via_skill_py), [], command)
+        only_new = _step(
+            ("b", "workspace__runShell", {"command": "python3 scripts/skill.py new x"}, False)
+        )
+        self.assertNotEqual(_grade("T12", write, only_new), [])
+
+    def test_divide_conquer_needs_two_spawns(self) -> None:
+        spawn = lambda call_id: _step((call_id, "agent__spawnSession", {}, False))  # noqa: E731
+        self.assertEqual(_grade("T14", spawn("a")), ["__spawnSession x2: 1 call(s)"])
+        self.assertEqual(_grade("T14", spawn("a"), spawn("b")), [])
+        failed_last = _step(("c", "agent__spawnSession", {}, True))
+        self.assertEqual(
+            _grade("T14", spawn("a"), failed_last),
+            ["last __spawnSession x2 failed"],
+        )
+
+    def test_context_recall_must_read_the_highest_epoch(self) -> None:
+        glob = _step(("a", "workspace__globFiles", {"pattern": "pre_compaction_epoch_*.md"}, False))
+
+        def read(name: str):
+            return _step(
+                ("b", "workspace__readFile", {"path": f".libragent/{name}"}, False)
+            )
+
+        self.assertEqual(_grade("T18", glob, read("pre_compaction_epoch_2.md")), [])
+        self.assertEqual(
+            _grade("T18", glob, read("pre_compaction_epoch_1.md")),
+            ["missing __readFile (pre_compaction_epoch_2)"],
         )
 
     def test_n_task_only_checks_forbidden_calls(self) -> None:

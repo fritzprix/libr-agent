@@ -8,6 +8,6 @@ TRAJECTORY = Path("/logs/agent/trajectory.json")
 
 
 def test_critical_path():
-    """`__runShell` with `validate_skill.py` (last call succeeds)"""
+    """`__writeFile` with `SKILL.md` → `__runShell` with `validate_skill.py --strict`, `skill.py validate` or `skill.py deploy` (last call succeeds)"""
     failures = grade_trajectory("T12", TRAJECTORY)
     assert not failures, failures
