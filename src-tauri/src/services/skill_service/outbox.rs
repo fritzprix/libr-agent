@@ -51,8 +51,21 @@ fn same_file(_: &fs::Metadata, _: &fs::Metadata) -> bool {
     true
 }
 
+/// Opens without following a final link and without blocking on a FIFO that
+/// replaced the file after it was listed.
+fn open_no_follow(path: &Path) -> std::io::Result<fs::File> {
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    }
+    options.open(path)
+}
+
 fn copy_file_no_follow(src: &Path, dst: &Path, listed: &fs::Metadata) -> Result<u64, String> {
-    let mut input = fs::File::open(src).map_err(|e| e.to_string())?;
+    let mut input = open_no_follow(src).map_err(|e| e.to_string())?;
     let opened = input.metadata().map_err(|e| e.to_string())?;
     if !opened.is_file() || !same_file(listed, &opened) {
         return Err("a file changed while it was being copied".to_string());
@@ -136,11 +149,13 @@ fn is_real_dir(path: &Path) -> bool {
     fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_dir())
 }
 
-/// Writes `<name>.status` without following a link the container may have planted.
+fn status_path(outbox: &Path, name: &str) -> PathBuf {
+    outbox.join(format!("{name}.status"))
+}
+
+/// Writes `<name>.status` with `create_new`, which never follows a planted link.
 fn write_status(outbox: &Path, name: &str, status: &str) {
-    let path = outbox.join(format!("{name}.status"));
-    let _ = fs::remove_file(&path);
-    if let Ok(mut file) = fs::File::create_new(&path) {
+    if let Ok(mut file) = fs::File::create_new(status_path(outbox, name)) {
         let _ = std::io::Write::write_all(&mut file, status.as_bytes());
     }
 }
@@ -150,6 +165,9 @@ fn write_status(outbox: &Path, name: &str, status: &str) {
 ///
 /// `.libragent` and the outbox must be real directories: the workspace is
 /// writable from the container, and a link there would point at host paths.
+/// The host never deletes anything in the outbox (the path is container
+/// controlled): an entry is processed once, marked by its `<name>.status`, and
+/// `skill.py deploy` clears both before restaging.
 pub fn install_outbox_into(
     workspace: &Path,
     user_skills: &Path,
@@ -165,6 +183,10 @@ pub fn install_outbox_into(
     for entry in entries
         .filter_map(Result::ok)
         .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+        .filter(|e| {
+            let name = e.file_name().to_string_lossy().to_string();
+            fs::symlink_metadata(status_path(&outbox, &name)).is_err()
+        })
         .take(MAX_OUTBOX_ENTRIES)
     {
         let path = entry.path();
@@ -179,7 +201,6 @@ pub fn install_outbox_into(
             Err(reason) => format!("rejected: {reason}"),
         };
         write_status(&outbox, &name, &status);
-        let _ = fs::remove_dir_all(&path);
         outcomes.push((name, outcome));
     }
     outcomes
@@ -234,8 +255,13 @@ mod tests {
         assert!(outcomes[0].1.is_ok());
         assert!(skills.join("demo/scripts/run.py").is_file());
         assert!(!skills.join("demo/old.txt").exists());
-        assert!(!staged.exists());
+        assert!(staged.exists(), "the host never deletes outbox entries");
         assert_eq!(status(&ws, "demo"), "installed");
+
+        // processed once: a second pickup is a no-op until the status is cleared
+        assert!(install_outbox_into(&ws, &skills).is_empty());
+        fs::remove_file(ws.join(SKILL_OUTBOX_RELATIVE_DIR).join("demo.status")).unwrap();
+        assert_eq!(install_outbox_into(&ws, &skills).len(), 1);
         assert_eq!(
             fs::read_dir(&skills).unwrap().count(),
             1,
@@ -315,9 +341,10 @@ mod tests {
             ws.join(SKILL_OUTBOX_RELATIVE_DIR).join("demo.status"),
         )
         .unwrap();
-        install_outbox_into(&ws, &skills);
+        // a planted status marks the entry as processed; the link target is untouched
+        assert!(install_outbox_into(&ws, &skills).is_empty());
         assert_eq!(fs::read_to_string(&victim).unwrap(), "keep");
-        assert_eq!(status(&ws, "demo"), "installed");
+        assert!(!skills.join("demo").exists());
 
         let staged2 = stage(&ws, "linked", &GOOD.replace("demo", "linked"));
         std::os::unix::fs::symlink(&secret, staged2.join("link.txt")).unwrap();
