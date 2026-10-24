@@ -5,8 +5,8 @@ Prints JSON: one entry per open PR authored by @me with merge state, failing
 and pending checks, unresolved review threads, and PR comments from others
 that arrived after the latest commit, plus the latest gatekeeper-loop verdict
 (own marker comments only). `duplicateCommits` lists head commits whose patch-id is
-already in the base (needs a prior `git fetch origin`); they yield `restack`. Bodies are truncated; fetch the full text only for
-items you act on.
+already in the base (needs a prior `git fetch origin`); they yield `restack`.
+Bodies are truncated; fetch the full text only for items you act on.
 """
 from __future__ import annotations
 
@@ -93,6 +93,30 @@ def gatekeeper_state(comments: list[dict], me: str, head_sha: str) -> dict | Non
     return verdict
 
 
+def select_next_action(
+    *,
+    conflicting: bool,
+    duplicates: list[str],
+    gatekeeper: dict | None,
+    has_comments: bool,
+    failing: list[str],
+    pending: list[str],
+) -> str:
+    if conflicting:
+        return "resolve-conflict"
+    if duplicates:
+        return "restack"
+    if gatekeeper and gatekeeper["awaitingWorker"]:
+        return "address-gatekeeper"
+    if has_comments:
+        return "triage-comments"
+    if failing:
+        return "fix-ci"
+    if pending:
+        return "wait-ci"
+    return "none"
+
+
 def summarize(number: int, owner: str, name: str, me: str) -> dict:
     pr = json.loads(
         gh(
@@ -141,20 +165,14 @@ def summarize(number: int, owner: str, name: str, me: str) -> dict:
 
     duplicates = duplicate_commits(pr["baseRefName"], pr["headRefName"])
 
-    if pr.get("mergeable") == "CONFLICTING":
-        next_action = "resolve-conflict"
-    elif duplicates:
-        next_action = "restack"
-    elif gatekeeper and gatekeeper["awaitingWorker"]:
-        next_action = "address-gatekeeper"
-    elif threads or new_comments:
-        next_action = "triage-comments"
-    elif failing:
-        next_action = "fix-ci"
-    elif pending:
-        next_action = "wait-ci"
-    else:
-        next_action = "none"
+    next_action = select_next_action(
+        conflicting=pr.get("mergeable") == "CONFLICTING",
+        duplicates=duplicates,
+        gatekeeper=gatekeeper,
+        has_comments=bool(threads or new_comments),
+        failing=failing,
+        pending=pending,
+    )
 
     return {
         "number": pr["number"],

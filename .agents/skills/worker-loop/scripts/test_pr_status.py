@@ -72,5 +72,33 @@ class DuplicateCommitsTest(unittest.TestCase):
         self.assertEqual(pr_status.duplicate_commits("nope", "also-nope", self.repo), [])
 
 
+class SelectNextActionTest(unittest.TestCase):
+    base = dict(
+        conflicting=False, duplicates=[], gatekeeper=None,
+        has_comments=False, failing=[], pending=[],
+    )
+
+    def action(self, **overrides):
+        return pr_status.select_next_action(**{**self.base, **overrides})
+
+    def test_priority_order(self):
+        everything = dict(
+            conflicting=True, duplicates=["abc"], gatekeeper={"awaitingWorker": True},
+            has_comments=True, failing=["ci"], pending=["ci"],
+        )
+        expected = [
+            ("conflicting", "resolve-conflict"),
+            ("duplicates", "restack"),
+            ("gatekeeper", "address-gatekeeper"),
+            ("has_comments", "triage-comments"),
+            ("failing", "fix-ci"),
+            ("pending", "wait-ci"),
+        ]
+        for key, action in expected:
+            self.assertEqual(self.action(**everything), action)
+            everything[key] = self.base[key]
+        self.assertEqual(self.action(**everything), "none")
+
+
 if __name__ == "__main__":
     unittest.main()
