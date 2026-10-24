@@ -1,6 +1,6 @@
 ---
 name: science-search
-description: Search ~200 million scientific papers (OpenAlex titles and abstracts) by meaning or exact words, look up papers by DOI / OpenAlex ID / PMCID, find similar papers, and walk citation graphs through the free ScienceMadeReadable search API (no key). Use when a task requires scientific literature, finding evidence for claims, conducting literature reviews, citing peer-reviewed studies, or resolving DOIs. Triggers on: 'science search', '논문 검색', '과학 논문', '학술 자료', 'research paper', 'scientific study', 'find paper', 'DOI 검색', '의학 논문', '선행 연구'.
+description: "Search ~200 million scientific papers (OpenAlex titles and abstracts) by meaning or exact words, look up papers by DOI / OpenAlex ID / PMCID, find similar papers, and walk citation graphs through the free ScienceMadeReadable search API (no key). Use when a task requires scientific literature, finding evidence for claims, conducting literature reviews, citing peer-reviewed studies, or resolving DOIs. Triggers on: 'science search', '논문 검색', '과학 논문', '학술 자료', 'research paper', 'scientific study', 'find paper', 'DOI 검색', '의학 논문', '선행 연구'."
 ---
 
 # Science Search (ScienceMadeReadable)
