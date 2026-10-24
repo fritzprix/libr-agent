@@ -492,6 +492,12 @@ async fn read_file_allows_skill_aliases_across_all_managed_scopes() {
             "{} token should be readable through alias path: {text}",
             scope.label
         );
+        assert!(
+            text.contains("Base directory: `")
+                && text.contains(&scope.directory.display().to_string()),
+            "{} alias read of SKILL.md should name the host base directory: {text}",
+            scope.label
+        );
     }
 }
 
