@@ -442,6 +442,12 @@ async fn run_shell_blocks_symlinked_protected_target() {
     );
 }
 
+/// Single-quotes a path the way a real shell command would carry it, so a data dir
+/// with a space (macOS `Application Support`) stays one argument.
+fn sh_quote(path: &std::path::Path) -> String {
+    format!("'{}'", path.display().to_string().replace('\'', "'\\''"))
+}
+
 fn default_app_data_dir() -> std::path::PathBuf {
     dirs::data_dir()
         .expect("data dir")
@@ -465,15 +471,16 @@ fn decide(
 
 #[test]
 fn shell_policy_blocks_app_database_access_by_any_route() {
-    let db = default_app_data_dir().join("libragent_v2.db");
-    let db = db.display();
+    let db_path = default_app_data_dir().join("libragent_v2.db");
+    let db = sh_quote(&db_path);
+    let wal = sh_quote(&default_app_data_dir().join("libragent_v2.db-wal"));
     for command in [
         format!("sqlite3 {db} 'UPDATE mcp_servers SET name=1'"),
         format!("cp {db} /tmp/copy.db"),
         format!("ln {db} /tmp/hardlink.db"),
         format!("rm {db} && cp /tmp/x.db {db}"),
         format!("dd if=/tmp/x.db of={db}"),
-        format!("cat {db}-wal"),
+        format!("cat {wal}"),
     ] {
         let decision = decide(&command);
         assert_eq!(decision.action, ShellPolicyAction::Block, "{command}");
@@ -490,10 +497,9 @@ fn shell_policy_blocks_app_database_access_by_any_route() {
 #[test]
 fn shell_policy_allows_skill_scripts_under_the_data_dir() {
     let data_dir = default_app_data_dir();
-    let command = format!(
-        "python3 {0}/system_skills/demo/scripts/run.py && ls {0}/user_skills",
-        data_dir.display()
-    );
+    let script = sh_quote(&data_dir.join("system_skills/demo/scripts/run.py"));
+    let skills = sh_quote(&data_dir.join("user_skills"));
+    let command = format!("python3 {script} && ls {skills}");
 
     assert_eq!(decide(&command).action, ShellPolicyAction::Allow);
 }

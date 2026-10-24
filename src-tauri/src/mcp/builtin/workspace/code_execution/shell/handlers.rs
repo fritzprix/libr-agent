@@ -602,7 +602,11 @@ mod tests {
 
         let result = server.apply_shell_policy_block(
             "runShell",
-            &format!("sqlite3 {} 'select 1'", db.display()),
+            // Quoted like a real shell command: macOS data dirs contain a space.
+            &format!(
+                "sqlite3 '{}' 'select 1'",
+                db.display().to_string().replace('\'', "'\\''")
+            ),
             &workspace_path,
             None,
             None,
