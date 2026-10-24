@@ -12,5 +12,5 @@ pub use paths::{
 };
 pub use resource_response::create_resource_response;
 pub use security::{SecurityError, SecurityValidator};
-pub use sensitive_path_policy::matches_sensitive_path_policy;
+pub use sensitive_path_policy::{matches_app_database_path, matches_sensitive_path_policy};
 pub use session_access::{load_session_tool_access, SessionToolAccess};
