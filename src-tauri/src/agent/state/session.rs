@@ -70,6 +70,11 @@ pub struct AgentSession {
     /// repeated-thinking / text-loop counters. No prompt nudge is injected.
     pub reasoning_budget_retry_count: Arc<RwLock<u32>>,
 
+    /// Counts recovery retries after a final turn that was only text-formatted
+    /// tool-call markup (`<function=NAME>…</function>`) with no structured call.
+    /// Reset to 0 when a turn completes normally.
+    pub malformed_tool_markup_retry_count: Arc<RwLock<u32>>,
+
     /// Pending events (messages, approvals, etc.) waiting for workflow processing
     pub pending_events: Arc<RwLock<PendingEventManager>>,
 
@@ -158,6 +163,7 @@ impl AgentSession {
             bad_tool_args_retry_count: Arc::new(RwLock::new(0)),
             bad_tool_args_incident_count: Arc::new(RwLock::new(0)),
             reasoning_budget_retry_count: Arc::new(RwLock::new(0)),
+            malformed_tool_markup_retry_count: Arc::new(RwLock::new(0)),
             pending_events: Arc::new(RwLock::new(PendingEventManager::new())),
             pending_approvals: Arc::new(RwLock::new(HashMap::new())),
             context_registry,
@@ -255,6 +261,7 @@ mod tests {
             bad_tool_args_retry_count: Arc::new(RwLock::new(0)),
             bad_tool_args_incident_count: Arc::new(RwLock::new(0)),
             reasoning_budget_retry_count: Arc::new(RwLock::new(0)),
+            malformed_tool_markup_retry_count: Arc::new(RwLock::new(0)),
             pending_events: Arc::new(RwLock::new(PendingEventManager::new())),
             pending_approvals: Arc::new(RwLock::new(HashMap::new())),
             context_registry: Arc::new(ContextRegistry::new()),
