@@ -7,8 +7,7 @@ import re
 import sys
 from pathlib import Path
 
-import yaml
-
+from frontmatter_yaml import YAMLError, safe_load
 from io_utils import configure_stdio, read_text
 
 
@@ -35,10 +34,10 @@ def validate_skill(skill_path):
 
     # Parse YAML frontmatter
     try:
-        frontmatter = yaml.safe_load(frontmatter_text)
+        frontmatter = safe_load(frontmatter_text)
         if not isinstance(frontmatter, dict):
             return False, "Frontmatter must be a YAML dictionary"
-    except yaml.YAMLError as e:
+    except YAMLError as e:
         return False, f"Invalid YAML in frontmatter: {e}"
 
     # Define allowed properties

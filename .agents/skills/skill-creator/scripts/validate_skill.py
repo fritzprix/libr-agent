@@ -23,11 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
-try:
-    import yaml
-except ImportError:
-    print("ERROR: PyYAML is required. Install with: pip install pyyaml", file=sys.stderr)
-    sys.exit(2)
+from frontmatter_yaml import YAMLError, safe_load
 
 
 try:
@@ -129,8 +125,8 @@ def check_frontmatter_text(report: ValidationReport, frontmatter_text: str) -> d
         )
 
     try:
-        frontmatter = yaml.safe_load(frontmatter_text)
-    except yaml.YAMLError as exc:
+        frontmatter = safe_load(frontmatter_text)
+    except YAMLError as exc:
         report.add_error(
             "SKILL-YAML-PARSE",
             f"Invalid YAML in frontmatter: {exc}",
