@@ -13,7 +13,7 @@ pub(super) fn skill_base_directory_note(
     docker_session: bool,
 ) -> Option<String> {
     let (prefix, relative) = extract_skill_alias_relative_path(path_str)?;
-    let mut parts = relative.split('/');
+    let mut parts = relative.split(['/', '\\']);
     let (skill_dir, file) = (parts.next()?, parts.next()?);
     if file != "SKILL.md" || parts.next().is_some() || skill_dir.is_empty() || skill_dir == "." {
         return None;
@@ -81,6 +81,19 @@ mod tests {
         .expect("note");
 
         assert!(note.contains("Base directory: `/host/data/assistants/a/skills/helper`"));
+    }
+
+    #[test]
+    fn windows_backslash_alias_paths_get_the_note() {
+        let note = skill_base_directory_note(
+            "@system-skills\\skill-deployer\\SKILL.md",
+            Path::new("C:/data/system_skills/skill-deployer/SKILL.md"),
+            true,
+        )
+        .expect("note");
+
+        assert!(note
+            .contains("Base directory (container): `/opt/libragent/skills/system/skill-deployer`"));
     }
 
     #[test]
