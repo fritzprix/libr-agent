@@ -1,4 +1,5 @@
 import { createId } from '@paralleldrive/cuid2';
+import mcpServerConfig from '../../../mcp-server.json';
 import { buildServerEntityFromPreset } from '@/features/mcp-servers/utils/preset-utils';
 import { humanizeVerificationError } from '@/features/mcp-servers/utils/verification-feedback';
 import {
@@ -21,26 +22,31 @@ import { MORNING_BRIEFING_RECIPE } from './builtin-recipes';
 
 const logger = getLogger('setupMorningBriefing');
 
-export const FALLBACK_PRESETS: Record<string, MCPServerPreset> = {
-  hn: {
-    name: 'hn',
-    category: 'search',
-    description:
-      'Read Hacker News — top, new, best, Ask HN, Show HN, and job stories.',
-    transportType: 'stdio',
-    command: 'npx',
-    args: ['-y', '@fre4x/hn@latest'],
-  },
-  'yahoo-finance': {
-    name: 'yahoo-finance',
-    category: 'data',
-    description:
-      'Get real-time stock prices, financials, options chains, and insider data. No API key required.',
-    transportType: 'stdio',
-    command: 'npx',
-    args: ['-y', '@fre4x/yahoo-finance@latest'],
-  },
-};
+/**
+ * Offline fallback when the backend preset list is unavailable. Entries come from the
+ * bundled mcp-server.json (kept in sync with b1te by the presets sync workflow), so
+ * no `@fre4x` command is hardcoded here.
+ */
+const FALLBACK_PRESET_NAMES = ['hn', 'yahoo-finance'] as const;
+
+type BundledPreset = Omit<MCPServerPreset, 'name' | 'transportType'>;
+
+function buildFallbackPresets(): Record<string, MCPServerPreset> {
+  const bundled = (
+    mcpServerConfig as { mcpServers: Record<string, BundledPreset> }
+  ).mcpServers;
+  const presets: Record<string, MCPServerPreset> = {};
+  for (const name of FALLBACK_PRESET_NAMES) {
+    const entry = bundled[name];
+    if (entry) {
+      presets[name] = { ...entry, name, transportType: 'stdio' };
+    }
+  }
+  return presets;
+}
+
+export const FALLBACK_PRESETS: Record<string, MCPServerPreset> =
+  buildFallbackPresets();
 
 export type MorningBriefingTranslate = (
   key: string,
