@@ -15,6 +15,7 @@ Scope: <one line — what the PR claims and whether the diff matches it>
 ### Required
 - **G2.1** `src-tauri/src/agent/tool_approvals.rs:212` — <problem>. Expected: <concrete fix or acceptance check>.
 - **G2.2** <missing test> — Expected: a unit test covering <case>.
+- **G2.3** `CI failure (<job-name>)` — <diagnosed root cause from CI logs>. Expected: <concrete fix>.
 
 ### Suggestions (non-blocking)
 - **S2.1** <optional improvement>
@@ -30,7 +31,14 @@ Approve:
 ## Gatekeeper · round 3 · ✅ Approve
 
 <2–3 lines: what was verified (diff, tests, CI green at <short-sha>), residual risks, suggestions left open>
+
+### Checked
+- `<acceptance criterion 1 from linked issue>` — verified in `<file>:<line>` (<brief explanation>).
+- `<acceptance criterion 2 from linked issue>` — verified in `<file>:<line>` (<brief explanation>).
 ```
+
+> [!IMPORTANT]
+> The `### Checked` section is **mandatory**. Every acceptance criterion from the linked issue must be listed with concrete verification evidence (`file:line`). If this section is missing or empty, an `approve` verdict cannot be issued.
 
 Escalate (round limit or unresolved disagreement):
 
