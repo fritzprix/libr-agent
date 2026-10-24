@@ -69,6 +69,19 @@ def run_cli(args: list[str]) -> tuple[int, str, str]:
     return code, out_buf.getvalue(), err_buf.getvalue()
 
 
+class DeployGlobalScopeGuardTests(unittest.TestCase):
+    def test_install_to_global_scope_points_at_skill_py(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            for source in (tmp, "https://github.com/acme/my-skills"):
+                code, _, err = run_cli([source, "--scope", "global"])
+                self.assertEqual(code, 2, source)
+                self.assertIn("skill.py deploy", err)
+
+    def test_inspect_does_not_need_a_write_scope(self) -> None:
+        code, _, err = run_cli(["@alias", "--scope", "global", "--inspect"])
+        self.assertNotIn("DEPLOY-GLOBAL-001", err)
+
+
 class DeploySkillUnitTests(unittest.TestCase):
     def test_stripped_root_files_cover_validator_forbidden_files(self) -> None:
         forbidden_lower = {name.lower() for name in validate_skill.FORBIDDEN_SKILL_FILES}

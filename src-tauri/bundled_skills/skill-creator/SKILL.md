@@ -14,8 +14,8 @@ Guidance for building lean, effective agent skills and validating them before de
 1. **Understand** — gather concrete usage examples (see [creation-process.md](references/creation-process.md) Step 1)
 2. **Plan** — identify scripts, references, and assets to bundle
 3. **Implement** — write SKILL.md and bundled resources
-4. **Validate** — `python scripts/validate_skill.py <skill-folder>` (see [validation.md](references/validation.md))
-5. **Deploy** — hand off to **skill-deployer** when the skill should become available to agents
+4. **Validate** — `python3 scripts/skill.py validate <skill-folder>` (see [validation.md](references/validation.md))
+5. **Deploy** — `python3 scripts/skill.py deploy <skill-folder>` for a global user skill; **skill-deployer** handles GitHub URLs, workspace/assistant scope, update and remove
 6. **Iterate** — refine after real usage, re-validate after edits
 
 ## Write flow: `skill.py`
