@@ -2,6 +2,7 @@ pub mod access_guard;
 pub mod handlers;
 pub mod mcp_handler;
 pub mod routes;
+pub mod skill_install;
 pub mod wake;
 
 use log::info;

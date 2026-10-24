@@ -76,6 +76,22 @@ pub fn get_routes(
         .and(warp::body::bytes())
         .and_then(handlers::wake_session);
 
+    // POST /api/sessions/:id/skills/install/:token — install one user skill (per-session token)
+    let install_skill = warp::post()
+        .and(warp::path("api"))
+        .and(warp::path("sessions"))
+        .and(warp::path::param())
+        .and(warp::path("skills"))
+        .and(warp::path("install"))
+        .and(warp::path::param())
+        .and(warp::path::end())
+        .and(agent_manager.clone())
+        .and(warp::body::content_length_limit(
+            super::skill_install::MAX_BODY_BYTES,
+        ))
+        .and(warp::body::bytes())
+        .and_then(handlers::install_skill);
+
     // POST /api/sessions/:id/channel
     let inject_channel_message = warp::post()
         .and(warp::path("api"))
@@ -229,6 +245,7 @@ pub fn get_routes(
         .or(get_messages)
         .or(send_message)
         .or(wake_session)
+        .or(install_skill)
         .or(inject_channel_message_auto)
         .or(inject_channel_message)
         .or(respond_channel_permission)

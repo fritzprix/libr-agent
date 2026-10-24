@@ -6,6 +6,7 @@ pub(crate) mod helpers;
 mod messages;
 mod sessions;
 mod settings;
+mod skill_install;
 mod types;
 mod wake;
 
@@ -24,4 +25,5 @@ pub use sessions::{
 pub use settings::{
     get_complexity_model_mapping, get_preferred_model, put_complexity_model_mapping,
 };
+pub use skill_install::install_skill;
 pub use wake::wake_session;

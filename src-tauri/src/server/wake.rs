@@ -25,6 +25,9 @@ use std::borrow::Cow;
 /// Environment variable carrying this session's wake URL into shell processes.
 pub const WAKE_URL_ENV: &str = "LIBRAGENT_WAKE_URL";
 
+/// Environment variable carrying this session's skill install URL (host shells only).
+pub const SKILL_INSTALL_URL_ENV: &str = "LIBRAGENT_SKILL_INSTALL_URL";
+
 const MAX_SUMMARY_CHARS: usize = 2_000;
 const MAX_LOG_PATH_CHARS: usize = 1_024;
 
@@ -32,9 +35,11 @@ static WAKE_TOKENS: Lazy<DashMap<String, String>> = Lazy::new(DashMap::new);
 
 const REDACTED_TOKEN: &str = "[redacted]";
 
-/// Any wake URL path, including tokens of other or revoked sessions.
-static WAKE_PATH_TOKEN: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"/wake/[0-9a-f]{64}").expect("valid wake token regex"));
+/// Any token-bearing URL path (wake or skill install), including tokens of other
+/// or revoked sessions.
+static WAKE_PATH_TOKEN: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"/(wake|skills/install)/[0-9a-f]{64}").expect("valid wake token regex")
+});
 
 fn mint_token() -> String {
     format!(
@@ -56,6 +61,17 @@ pub fn wake_token_for(session_id: &str) -> String {
 pub fn wake_url_for(session_id: &str) -> String {
     format!(
         "http://127.0.0.1:{}/api/sessions/{}/wake/{}",
+        super::active_http_port(),
+        session_id,
+        wake_token_for(session_id)
+    )
+}
+
+/// Skill install URL for a session. It shares the session's token, so it is
+/// redacted and revoked together with the wake URL.
+pub fn skill_install_url_for(session_id: &str) -> String {
+    format!(
+        "http://127.0.0.1:{}/api/sessions/{}/skills/install/{}",
         super::active_http_port(),
         session_id,
         wake_token_for(session_id)
@@ -87,7 +103,7 @@ pub fn verify_wake_token(session_id: &str, token: &str) -> bool {
 /// Replaces wake tokens in `text`: every `/wake/<token>` path, plus the
 /// session's current token wherever it appears on its own.
 pub fn redact_wake_tokens<'a>(session_id: &str, text: &'a str) -> Cow<'a, str> {
-    let redacted = WAKE_PATH_TOKEN.replace_all(text, "/wake/[redacted]");
+    let redacted = WAKE_PATH_TOKEN.replace_all(text, "/$1/[redacted]");
     match WAKE_TOKENS.get(session_id) {
         Some(token) if redacted.contains(token.as_str()) => {
             Cow::Owned(redacted.replace(token.as_str(), REDACTED_TOKEN))
@@ -210,13 +226,15 @@ mod tests {
         let other = wake_token_for("wake-test-redact-other");
         let text = format!(
             "LIBRAGENT_WAKE_URL=http://127.0.0.1:3030/api/sessions/{id}/wake/{token}\n\
-             tail={token}\nother=/wake/{other}"
+             install=http://127.0.0.1:3030/api/sessions/{id}/skills/install/{token}\n\
+             tail={token}\nother=/wake/{other}\nother_install=/skills/install/{other}"
         );
 
         let redacted = redact_wake_tokens(id, &text);
         assert!(!redacted.contains(&token));
         assert!(!redacted.contains(&other));
         assert!(redacted.contains(&format!("/api/sessions/{id}/wake/[redacted]")));
+        assert!(redacted.contains(&format!("/api/sessions/{id}/skills/install/[redacted]")));
         assert!(redacted.contains("tail=[redacted]"));
 
         assert!(matches!(

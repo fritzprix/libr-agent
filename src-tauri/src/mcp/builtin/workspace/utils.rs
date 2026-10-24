@@ -246,6 +246,10 @@ pub async fn add_wake_url_env(
         crate::server::wake::WAKE_URL_ENV.to_string(),
         crate::server::wake::wake_url_for(session_id),
     );
+    env_vars.insert(
+        crate::server::wake::SKILL_INSTALL_URL_ENV.to_string(),
+        crate::server::wake::skill_install_url_for(session_id),
+    );
 }
 
 /// Single DB read for Docker isolation + configured workdir (`/workspace` or attach `/app`).
