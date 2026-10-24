@@ -29,7 +29,7 @@ pub fn matches_app_database_path(candidate_path: &Path) -> bool {
         .unwrap_or_else(|_| parent.to_path_buf());
     app_data_dirs().iter().any(|dir| {
         let dir = dir.canonicalize().unwrap_or_else(|_| dir.clone());
-        parent == dir
+        super::paths::workspace_paths_equivalent(&parent, &dir)
     })
 }
 

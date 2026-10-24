@@ -423,8 +423,15 @@ fn split_shell_words(segment: &str) -> Vec<String> {
                 in_double = !in_double;
             }
             '\\' if !in_single => {
-                if let Some(next) = chars.next() {
-                    current.push(next);
+                #[cfg(windows)]
+                {
+                    current.push(ch);
+                }
+                #[cfg(not(windows))]
+                {
+                    if let Some(next) = chars.next() {
+                        current.push(next);
+                    }
                 }
             }
             '<' | '>' if !in_single && !in_double => {
