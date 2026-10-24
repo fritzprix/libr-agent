@@ -346,15 +346,27 @@ def _terminate(pids: list[int], grace_sec: float) -> None:
                 os.kill(pid, signal.SIGKILL)
 
 
+def _owns_pid(layout: InstanceLayout, pid: int, proc_root: Path = Path("/proc")) -> bool:
+    """False when pid.pid is stale and its PID now belongs to an unrelated process.
+
+    Without /proc (macOS) ownership cannot be checked, so the recorded PID is trusted.
+    """
+    if not proc_root.is_dir():
+        return True
+    return pid in instance_pids(layout, proc_root=proc_root)
+
+
 def stop(layout: InstanceLayout, *, grace_sec: float = 10.0) -> None:
     pid = _read_pid(layout)
-    if pid is not None and _pid_alive(pid):
-        os.killpg(pid, signal.SIGTERM)
+    if pid is not None and _pid_alive(pid) and _owns_pid(layout, pid):
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(pid, signal.SIGTERM)
         deadline = time.monotonic() + grace_sec
         while time.monotonic() < deadline and _pid_alive(pid):
             time.sleep(0.5)
         if _pid_alive(pid):
-            os.killpg(pid, signal.SIGKILL)
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(pid, signal.SIGKILL)
         print(f"Stopped bench instance (pid {pid}).")
     else:
         print("No running bench instance.")

@@ -9,6 +9,7 @@ import pytest
 from benchmarks.harbor.isolated_instance import (
     InstanceError,
     InstanceLayout,
+    _owns_pid,
     build_seed,
     instance_pids,
     instance_env,
@@ -137,3 +138,21 @@ def test_instance_pids_matches_inherited_data_dir(tmp_path: Path) -> None:
     (proc / "self").mkdir()
 
     assert instance_pids(layout, proc_root=proc) == [101]
+
+
+def test_owns_pid_rejects_reused_pid(tmp_path: Path) -> None:
+    layout = InstanceLayout(tmp_path / "bench")
+    proc = tmp_path / "proc"
+    marker = f"LIBRAGENT_DATA_DIR={layout.data_dir.resolve()}"
+    for pid, environ in {"201": f"{marker}\0", "202": "PATH=/bin\0"}.items():
+        (proc / pid).mkdir(parents=True)
+        (proc / pid / "environ").write_bytes(environ.encode())
+
+    assert _owns_pid(layout, 201, proc_root=proc)
+    assert not _owns_pid(layout, 202, proc_root=proc)
+
+
+def test_owns_pid_trusts_pid_file_without_proc(tmp_path: Path) -> None:
+    layout = InstanceLayout(tmp_path / "bench")
+
+    assert _owns_pid(layout, 1, proc_root=tmp_path / "missing-proc")
