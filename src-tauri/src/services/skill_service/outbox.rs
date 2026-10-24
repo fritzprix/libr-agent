@@ -11,7 +11,7 @@
 use super::cache::invalidate_skill_scan_cache;
 use super::contracts::SKILL_FILE_NAME;
 use super::directories::get_user_skills_directory;
-use super::scanning::{copy_dir_recursive, parse_skill_metadata};
+use super::scanning::parse_skill_metadata;
 use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
@@ -28,31 +28,92 @@ fn valid_skill_dir_name(name: &str) -> bool {
         })
 }
 
-fn install_one(entry: &Path, name: &str, user_skills: &Path) -> Result<(), String> {
-    if WalkDir::new(entry)
-        .into_iter()
-        .filter_map(Result::ok)
-        .any(|e| e.path_is_symlink())
-    {
-        return Err("symlinks are not allowed in a skill".to_string());
-    }
-    let skill_file = entry.join(SKILL_FILE_NAME);
-    if !skill_file.is_file() {
-        return Err(format!("{SKILL_FILE_NAME} is missing"));
-    }
-    let metadata = parse_skill_metadata(&skill_file)?;
-    if metadata.name != name {
-        return Err(format!(
-            "frontmatter name '{}' does not match folder '{name}'",
-            metadata.name
-        ));
-    }
+const MAX_OUTBOX_ENTRIES: usize = 32;
+const MAX_SKILL_FILES: usize = 1_000;
+const MAX_SKILL_BYTES: u64 = 16 * 1024 * 1024;
 
+/// The container controls everything under the outbox. Nothing is followed: a
+/// symlink, a swapped-in file or a special file fails the copy.
+#[derive(Default)]
+struct CopyBudget {
+    files: usize,
+    bytes: u64,
+}
+
+#[cfg(unix)]
+fn same_file(a: &fs::Metadata, b: &fs::Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    a.dev() == b.dev() && a.ino() == b.ino()
+}
+
+#[cfg(not(unix))]
+fn same_file(_: &fs::Metadata, _: &fs::Metadata) -> bool {
+    true
+}
+
+fn copy_file_no_follow(src: &Path, dst: &Path, listed: &fs::Metadata) -> Result<u64, String> {
+    let mut input = fs::File::open(src).map_err(|e| e.to_string())?;
+    let opened = input.metadata().map_err(|e| e.to_string())?;
+    if !opened.is_file() || !same_file(listed, &opened) {
+        return Err("a file changed while it was being copied".to_string());
+    }
+    let mut output = fs::File::create_new(dst).map_err(|e| e.to_string())?;
+    std::io::copy(&mut input, &mut output).map_err(|e| e.to_string())
+}
+
+fn copy_tree_no_follow(src: &Path, dst: &Path, budget: &mut CopyBudget) -> Result<(), String> {
+    fs::create_dir_all(dst).map_err(|e| e.to_string())?;
+    for entry in fs::read_dir(src).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        let listed = fs::symlink_metadata(&path).map_err(|e| e.to_string())?;
+        let target = dst.join(entry.file_name());
+        let file_type = listed.file_type();
+        if file_type.is_symlink() {
+            return Err("symlinks are not allowed in a skill".to_string());
+        } else if file_type.is_dir() {
+            copy_tree_no_follow(&path, &target, budget)?;
+        } else if file_type.is_file() {
+            budget.files += 1;
+            if budget.files > MAX_SKILL_FILES {
+                return Err("too many files in the skill".to_string());
+            }
+            budget.bytes += copy_file_no_follow(&path, &target, &listed)?;
+            if budget.bytes > MAX_SKILL_BYTES {
+                return Err("skill is too large".to_string());
+            }
+        } else {
+            return Err("special files are not allowed in a skill".to_string());
+        }
+    }
+    Ok(())
+}
+
+fn install_one(entry: &Path, name: &str, user_skills: &Path) -> Result<(), String> {
     fs::create_dir_all(user_skills).map_err(|e| e.to_string())?;
     let staging = user_skills.join(format!(".staging-{}", uuid::Uuid::new_v4().simple()));
     let result = (|| {
         let staged = staging.join(name);
-        copy_dir_recursive(entry, &staged)?;
+        copy_tree_no_follow(entry, &staged, &mut CopyBudget::default())?;
+        // The copy is the only thing that gets validated and installed.
+        if WalkDir::new(&staged)
+            .into_iter()
+            .filter_map(Result::ok)
+            .any(|e| e.path_is_symlink())
+        {
+            return Err("symlinks are not allowed in a skill".to_string());
+        }
+        let skill_file = staged.join(SKILL_FILE_NAME);
+        if !skill_file.is_file() {
+            return Err(format!("{SKILL_FILE_NAME} is missing"));
+        }
+        let metadata = parse_skill_metadata(&skill_file)?;
+        if metadata.name != name {
+            return Err(format!(
+                "frontmatter name '{}' does not match folder '{name}'",
+                metadata.name
+            ));
+        }
         let target = user_skills.join(name);
         let previous = staging.join("previous");
         let had_previous = target.exists();
@@ -71,25 +132,42 @@ fn install_one(entry: &Path, name: &str, user_skills: &Path) -> Result<(), Strin
     result
 }
 
+fn is_real_dir(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_dir())
+}
+
+/// Writes `<name>.status` without following a link the container may have planted.
+fn write_status(outbox: &Path, name: &str, status: &str) {
+    let path = outbox.join(format!("{name}.status"));
+    let _ = fs::remove_file(&path);
+    if let Ok(mut file) = fs::File::create_new(&path) {
+        let _ = std::io::Write::write_all(&mut file, status.as_bytes());
+    }
+}
+
 /// Installs every staged skill under `<workspace>/.libragent/skill-outbox`
 /// into `user_skills`. Returns `(name, outcome)` per entry.
+///
+/// `.libragent` and the outbox must be real directories: the workspace is
+/// writable from the container, and a link there would point at host paths.
 pub fn install_outbox_into(
     workspace: &Path,
     user_skills: &Path,
 ) -> Vec<(String, Result<(), String>)> {
     let outbox: PathBuf = workspace.join(SKILL_OUTBOX_RELATIVE_DIR);
+    if !is_real_dir(&workspace.join(".libragent")) || !is_real_dir(&outbox) {
+        return Vec::new();
+    }
     let Ok(entries) = fs::read_dir(&outbox) else {
         return Vec::new();
     };
     let mut outcomes = Vec::new();
-    for entry in entries.filter_map(Result::ok) {
+    for entry in entries
+        .filter_map(Result::ok)
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+        .take(MAX_OUTBOX_ENTRIES)
+    {
         let path = entry.path();
-        let Ok(file_type) = entry.file_type() else {
-            continue;
-        };
-        if !file_type.is_dir() {
-            continue;
-        }
         let name = entry.file_name().to_string_lossy().to_string();
         let outcome = if valid_skill_dir_name(&name) {
             install_one(&path, &name, user_skills)
@@ -100,7 +178,7 @@ pub fn install_outbox_into(
             Ok(()) => "installed".to_string(),
             Err(reason) => format!("rejected: {reason}"),
         };
-        let _ = fs::write(outbox.join(format!("{name}.status")), status);
+        write_status(&outbox, &name, &status);
         let _ = fs::remove_dir_all(&path);
         outcomes.push((name, outcome));
     }
@@ -186,6 +264,85 @@ mod tests {
         assert!(status(&ws, "linked").contains("symlink"));
         assert!(!skills.join("other").exists());
         assert!(!skills.join("Bad_Name").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_outbox_or_libragent_dir_is_ignored_and_nothing_is_deleted() {
+        let root = tempfile::tempdir().unwrap();
+        let skills = root.path().join("user_skills");
+        let host_dir = root.path().join("host-projects");
+        fs::create_dir_all(host_dir.join("proj")).unwrap();
+        fs::write(
+            host_dir.join("proj").join(SKILL_FILE_NAME),
+            GOOD.replace("demo", "proj"),
+        )
+        .unwrap();
+
+        // outbox -> host dir
+        let ws = root.path().join("ws");
+        fs::create_dir_all(ws.join(".libragent")).unwrap();
+        std::os::unix::fs::symlink(&host_dir, ws.join(SKILL_OUTBOX_RELATIVE_DIR)).unwrap();
+        assert!(install_outbox_into(&ws, &skills).is_empty());
+
+        // .libragent -> dir containing skill-outbox/proj
+        let ws2 = root.path().join("ws2");
+        fs::create_dir_all(&ws2).unwrap();
+        let libragent = root.path().join("fake-libragent");
+        fs::create_dir_all(libragent.join("skill-outbox/proj")).unwrap();
+        std::os::unix::fs::symlink(&libragent, ws2.join(".libragent")).unwrap();
+        assert!(install_outbox_into(&ws2, &skills).is_empty());
+
+        assert!(host_dir.join("proj").join(SKILL_FILE_NAME).is_file());
+        assert!(libragent.join("skill-outbox/proj").is_dir());
+        assert!(!host_dir.join("proj.status").exists());
+        assert!(!skills.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn planted_status_link_is_not_followed_and_file_links_are_not_copied() {
+        let root = tempfile::tempdir().unwrap();
+        let (ws, skills) = (root.path().join("ws"), root.path().join("user_skills"));
+        let victim = root.path().join("victim.txt");
+        fs::write(&victim, "keep").unwrap();
+        let secret = root.path().join("secret.txt");
+        fs::write(&secret, "secret").unwrap();
+
+        let staged = stage(&ws, "demo", GOOD);
+        std::os::unix::fs::symlink(
+            &victim,
+            ws.join(SKILL_OUTBOX_RELATIVE_DIR).join("demo.status"),
+        )
+        .unwrap();
+        install_outbox_into(&ws, &skills);
+        assert_eq!(fs::read_to_string(&victim).unwrap(), "keep");
+        assert_eq!(status(&ws, "demo"), "installed");
+
+        let staged2 = stage(&ws, "linked", &GOOD.replace("demo", "linked"));
+        std::os::unix::fs::symlink(&secret, staged2.join("link.txt")).unwrap();
+        install_outbox_into(&ws, &skills);
+        assert!(status(&ws, "linked").contains("symlink"));
+        assert!(!skills.join("linked").exists());
+        let _ = staged;
+    }
+
+    #[test]
+    fn oversized_skills_and_extra_entries_are_bounded() {
+        let root = tempfile::tempdir().unwrap();
+        let (ws, skills) = (root.path().join("ws"), root.path().join("user_skills"));
+        let staged = stage(&ws, "demo", GOOD);
+        for i in 0..=MAX_SKILL_FILES {
+            fs::write(staged.join(format!("f{i}.txt")), "x").unwrap();
+        }
+        install_outbox_into(&ws, &skills);
+        assert!(status(&ws, "demo").contains("too many files"));
+        assert!(!skills.join("demo").exists());
+
+        for i in 0..(MAX_OUTBOX_ENTRIES + 5) {
+            stage(&ws, &format!("s{i}"), "bad");
+        }
+        assert_eq!(install_outbox_into(&ws, &skills).len(), MAX_OUTBOX_ENTRIES);
     }
 
     #[test]
