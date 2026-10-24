@@ -41,11 +41,24 @@ fn is_app_database_file_name(file_name: &str) -> bool {
             .any(|suffix| lower.ends_with(suffix))
 }
 
+fn default_data_home(home: &Path) -> PathBuf {
+    if cfg!(target_os = "macos") {
+        home.join("Library").join("Application Support")
+    } else if cfg!(target_os = "windows") {
+        home.join("AppData").join("Roaming")
+    } else {
+        home.join(".local").join("share")
+    }
+}
+
 fn app_data_dirs() -> Vec<PathBuf> {
     use crate::profile::{data_dir, resolve_profile};
 
     let mut dirs = vec![data_dir(resolve_profile())];
-    if let Some(home_data) = dirs::data_dir() {
+    // `dirs::data_dir()` follows XDG_DATA_HOME, which isolated instances override; the
+    // per-OS default under $HOME still holds the user's real database.
+    let home_defaults = dirs::home_dir().map(|home| default_data_home(&home));
+    for home_data in [dirs::data_dir(), home_defaults].into_iter().flatten() {
         dirs.push(home_data.join("com.fritzprix.libragent"));
         dirs.push(home_data.join("com.fritzprix.libragent-demo"));
     }
@@ -301,4 +314,48 @@ fn join_normal_component_slice(components: &[Component<'_>]) -> String {
         })
         .collect::<Vec<_>>()
         .join("/")
+}
+
+#[cfg(test)]
+mod app_database_tests {
+    use super::*;
+
+    #[test]
+    fn app_data_dirs_include_home_default_regardless_of_xdg_data_home() {
+        let home = dirs::home_dir().expect("home dir");
+        let expected = default_data_home(&home).join("com.fritzprix.libragent");
+
+        assert!(app_data_dirs().contains(&expected));
+        assert!(matches_app_database_path(
+            &expected.join("libragent_v2.db-wal")
+        ));
+    }
+
+    #[test]
+    fn default_data_home_is_derived_from_home_only() {
+        let home = Path::new("/home/someone");
+        let dir = default_data_home(home);
+
+        assert!(dir.starts_with(home));
+    }
+
+    // Isolated bench instances point XDG_DATA_HOME away from the real data dir.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn real_home_database_stays_matched_when_xdg_data_home_is_overridden() {
+        let previous = std::env::var_os("XDG_DATA_HOME");
+        let isolated = tempfile::tempdir().expect("temp dir");
+        std::env::set_var("XDG_DATA_HOME", isolated.path());
+
+        let real_db = dirs::home_dir()
+            .expect("home dir")
+            .join(".local/share/com.fritzprix.libragent/libragent_v2.db");
+        let matched = matches_app_database_path(&real_db);
+
+        match previous {
+            Some(value) => std::env::set_var("XDG_DATA_HOME", value),
+            None => std::env::remove_var("XDG_DATA_HOME"),
+        }
+        assert!(matched, "{} must stay protected", real_db.display());
+    }
 }
