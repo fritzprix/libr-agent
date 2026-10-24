@@ -36,6 +36,8 @@ pub struct ToolApprovalRequest {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlockedToolExecution {
     pub message: String,
+    /// Block that Unsafe mode does not bypass.
+    pub enforced_in_unsafe: bool,
 }
 
 pub fn approval_request_for_runtime(
@@ -58,12 +60,12 @@ pub fn blocked_execution_for_runtime(
     decision: &ToolExecutionPolicyDecision,
     unsafe_enabled: bool,
 ) -> Option<&BlockedToolExecution> {
-    if unsafe_enabled {
-        return None;
-    }
-
     match decision {
-        ToolExecutionPolicyDecision::Block(blocked) => Some(blocked),
+        ToolExecutionPolicyDecision::Block(blocked)
+            if !unsafe_enabled || blocked.enforced_in_unsafe =>
+        {
+            Some(blocked)
+        }
         _ => None,
     }
 }
@@ -131,12 +133,16 @@ pub async fn evaluate_tool_execution_policy(
             }
             ShellPolicyAction::Block => ToolExecutionPolicyDecision::Block(BlockedToolExecution {
                 message: decision.reason,
+                enforced_in_unsafe: decision.enforced_in_unsafe,
             }),
         };
     }
 
     if let Some(message) = invalid_mcp_server_transport(tool_name, args) {
-        return ToolExecutionPolicyDecision::Block(BlockedToolExecution { message });
+        return ToolExecutionPolicyDecision::Block(BlockedToolExecution {
+            message,
+            enforced_in_unsafe: false,
+        });
     }
 
     if requires_hard_approval && !is_catalog_preset_install(tool_name, args) {
@@ -692,5 +698,21 @@ mod tests {
             }
         }
         assert!(!requires);
+    }
+
+    #[test]
+    fn unsafe_mode_skips_blocks_except_enforced_ones() {
+        let bypassable = ToolExecutionPolicyDecision::Block(BlockedToolExecution {
+            message: "blocked".to_string(),
+            enforced_in_unsafe: false,
+        });
+        let enforced = ToolExecutionPolicyDecision::Block(BlockedToolExecution {
+            message: "blocked".to_string(),
+            enforced_in_unsafe: true,
+        });
+
+        assert!(blocked_execution_for_runtime(&bypassable, false).is_some());
+        assert!(blocked_execution_for_runtime(&bypassable, true).is_none());
+        assert!(blocked_execution_for_runtime(&enforced, true).is_some());
     }
 }

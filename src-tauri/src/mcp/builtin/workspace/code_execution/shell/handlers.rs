@@ -422,8 +422,23 @@ impl WorkspaceServer {
             return None;
         }
 
-        if self.unsafe_mode_bypasses_shell_policy() {
+        if !decision.enforced_in_unsafe && self.unsafe_mode_bypasses_shell_policy() {
             return None;
+        }
+
+        if decision.enforced_in_unsafe {
+            return Some(
+                guided_error(
+                    ErrorCategory::PermissionDenied,
+                    format!("Shell command blocked by policy: {}", decision.reason),
+                    ToolGroup::Workspace,
+                )
+                .guidance(vec![
+                    "Do not retry with another command, copy, link, or sudo: every route to this file is blocked, including in Unsafe mode".to_string(),
+                    "Use tool__* tools for MCP servers and agent__* tools for agents; skills go through the skill tools".to_string(),
+                ])
+                .to_mcp_result(),
+            );
         }
 
         Some(
@@ -566,5 +581,37 @@ mod tests {
             result.is_none(),
             "unsafe mode should bypass shell policy blocks"
         );
+    }
+
+    #[tokio::test]
+    async fn unsafe_mode_still_blocks_app_database_access() {
+        let temp_dir = tempdir().expect("temp dir");
+        let session_id = "workspace-shell-unsafe-app-db";
+        register_unsafe_active_session(session_id).await;
+
+        let session_manager = Arc::new(
+            SessionManager::new_with_base_dir(temp_dir.path().to_path_buf())
+                .expect("session manager"),
+        );
+        let server = WorkspaceServer::new(session_id.to_string(), session_manager);
+        let workspace_path = temp_dir.path().join(session_id);
+        let db = dirs::data_dir()
+            .expect("data dir")
+            .join("com.fritzprix.libragent")
+            .join("libragent_v2.db");
+
+        let result = server.apply_shell_policy_block(
+            "runShell",
+            &format!("sqlite3 {} 'select 1'", db.display()),
+            &workspace_path,
+            None,
+            None,
+        );
+
+        let text = format!(
+            "{:?}",
+            result.expect("app database stays blocked in unsafe mode")
+        );
+        assert!(text.contains("LibrAgent's own database"), "{text}");
     }
 }

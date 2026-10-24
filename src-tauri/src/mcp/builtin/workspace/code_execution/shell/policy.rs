@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use glob::glob;
 
-use crate::mcp::builtin::utils::matches_sensitive_path_policy;
+use crate::mcp::builtin::utils::{matches_app_database_path, matches_sensitive_path_policy};
 
 use super::super::validation;
 
@@ -20,6 +20,8 @@ pub enum ShellPolicyAction {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShellPolicyDecision {
     pub action: ShellPolicyAction,
+    /// Block that Unsafe mode does not bypass (LibrAgent's own database).
+    pub enforced_in_unsafe: bool,
     pub reason: String,
     pub description: String,
     pub input_preview: String,
@@ -54,6 +56,7 @@ pub fn evaluate_shell_policy(context: ShellPolicyContext<'_>) -> ShellPolicyDeci
     if let Some(reason) = detect_dynamic_shell_evaluation(context.command) {
         return ShellPolicyDecision {
             action: ShellPolicyAction::RequireHardApproval,
+            enforced_in_unsafe: false,
             description: format!(
                 "Claude requested hard approval to run tool {}. Risk summary: {}.",
                 context.tool_name, reason
@@ -73,6 +76,7 @@ pub fn evaluate_shell_policy(context: ShellPolicyContext<'_>) -> ShellPolicyDeci
     if let Some(reason) = path_inspection.blocked_reason {
         return ShellPolicyDecision {
             action: ShellPolicyAction::Block,
+            enforced_in_unsafe: path_inspection.blocked_is_app_database,
             description: format!(
                 "Blocked {} because it targets a protected location",
                 context.tool_name
@@ -85,6 +89,7 @@ pub fn evaluate_shell_policy(context: ShellPolicyContext<'_>) -> ShellPolicyDeci
     if let Some(reason) = detect_destructive_command(context.command) {
         return ShellPolicyDecision {
             action: ShellPolicyAction::Block,
+            enforced_in_unsafe: false,
             description: format!(
                 "Blocked {} because it matches a hard shell safety rule",
                 context.tool_name
@@ -98,6 +103,7 @@ pub fn evaluate_shell_policy(context: ShellPolicyContext<'_>) -> ShellPolicyDeci
         let reason = path_inspection.hard_approval_reasons.join("; ");
         return ShellPolicyDecision {
             action: ShellPolicyAction::RequireHardApproval,
+            enforced_in_unsafe: false,
             description: format!(
                 "Claude requested hard approval to run tool {}. Risk summary: {}.",
                 context.tool_name, reason
@@ -121,6 +127,7 @@ pub fn evaluate_shell_policy(context: ShellPolicyContext<'_>) -> ShellPolicyDeci
     if reasons.is_empty() {
         ShellPolicyDecision {
             action: ShellPolicyAction::Allow,
+            enforced_in_unsafe: false,
             description: format!("Allow {}", context.tool_name),
             input_preview: preview,
             reason: "shell command allowed".to_string(),
@@ -129,6 +136,7 @@ pub fn evaluate_shell_policy(context: ShellPolicyContext<'_>) -> ShellPolicyDeci
         let reason = reasons.join("; ");
         ShellPolicyDecision {
             action: ShellPolicyAction::RequireApproval,
+            enforced_in_unsafe: false,
             description: format!(
                 "Claude requested approval to run tool {}. Risk summary: {}.",
                 context.tool_name, reason
@@ -141,6 +149,7 @@ pub fn evaluate_shell_policy(context: ShellPolicyContext<'_>) -> ShellPolicyDeci
 
 struct ShellPathInspection {
     blocked_reason: Option<String>,
+    blocked_is_app_database: bool,
     hard_approval_reasons: Vec<String>,
     approval_reasons: Vec<String>,
 }
@@ -162,6 +171,7 @@ fn inspect_command_paths(
 
     if candidate_targets_sensitive_path(&cwd, &mut sensitive_path_cache) {
         return ShellPathInspection {
+            blocked_is_app_database: false,
             blocked_reason: Some(format!(
                 "current shell directory '{}' is protected",
                 cwd.display()
@@ -192,6 +202,7 @@ fn inspect_command_paths(
             cwd = next_cwd;
             if candidate_targets_sensitive_path(&cwd, &mut sensitive_path_cache) {
                 return ShellPathInspection {
+                    blocked_is_app_database: false,
                     blocked_reason: Some(format!(
                         "command changes into protected directory '{}'",
                         cwd.display()
@@ -204,6 +215,15 @@ fn inspect_command_paths(
         }
 
         for word in executable_words {
+            if let Some(matched) = detect_app_database_reference(&word, &cwd, &shell_variables) {
+                return ShellPathInspection {
+                    blocked_is_app_database: true,
+                    blocked_reason: Some(app_database_block_reason(&matched)),
+                    hard_approval_reasons,
+                    approval_reasons,
+                };
+            }
+
             if let Some(reason) = detect_sensitive_glob_match(
                 &word,
                 &cwd,
@@ -211,6 +231,7 @@ fn inspect_command_paths(
                 &mut sensitive_path_cache,
             ) {
                 return ShellPathInspection {
+                    blocked_is_app_database: false,
                     blocked_reason: Some(reason),
                     hard_approval_reasons,
                     approval_reasons,
@@ -227,6 +248,7 @@ fn inspect_command_paths(
             if let Some(candidate_path) = resolve_candidate_path(&word, &cwd, &shell_variables) {
                 if candidate_targets_sensitive_path(&candidate_path, &mut sensitive_path_cache) {
                     return ShellPathInspection {
+                        blocked_is_app_database: false,
                         blocked_reason: Some(format!(
                             "command references protected path '{}' (resolved to '{}')",
                             word,
@@ -241,6 +263,7 @@ fn inspect_command_paths(
     }
 
     ShellPathInspection {
+        blocked_is_app_database: false,
         blocked_reason: None,
         hard_approval_reasons,
         approval_reasons,
@@ -654,6 +677,38 @@ fn token_uses_unresolved_path_variable(
     }
 
     false
+}
+
+fn app_database_block_reason(path: &Path) -> String {
+    format!(
+        "LibrAgent's own database ('{}') is protected: shell access to it (read, copy, link, replace) is not allowed by any method. Change MCP servers, agents, skills, and settings with the tool__* / agent__* tools instead",
+        path.display()
+    )
+}
+
+/// First path (direct or glob match) in `token` that is one of LibrAgent's database files.
+fn detect_app_database_reference(
+    token: &str,
+    cwd: &Path,
+    shell_variables: &HashMap<String, String>,
+) -> Option<PathBuf> {
+    // `dd of=<path>`, `--output=<path>`: the path follows the last '='.
+    if let Some((_, value)) = token.rsplit_once('=') {
+        if let Some(found) = detect_app_database_reference(value, cwd, shell_variables) {
+            return Some(found);
+        }
+    }
+
+    if token_contains_glob(token) {
+        let expanded = expand_path_token_string(token, cwd, shell_variables)?;
+        let matches = glob(&expanded.to_string_lossy()).ok()?;
+        return matches
+            .flatten()
+            .find(|matched| matches_app_database_path(matched));
+    }
+
+    resolve_candidate_path(token, cwd, shell_variables)
+        .filter(|candidate| matches_app_database_path(candidate))
 }
 
 fn detect_sensitive_glob_match(
