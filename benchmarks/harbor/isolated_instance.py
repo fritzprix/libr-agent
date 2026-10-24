@@ -1,0 +1,427 @@
+"""Isolated LibrAgent instance for Harbor benchmark runs.
+
+Benchmarks that install MCP servers or skills mutate the LibrAgent host. Running
+them against the primary profile leaks state across runs (an "install X" task
+passes or fails depending on what earlier runs or the user left behind) and can
+touch the user's real configuration.
+
+This module builds a pruned *seed* database from the primary profile once, then
+launches the app binary against a fresh copy of that seed for every job:
+
+    python -m benchmarks.harbor.isolated_instance seed \
+        --assistant-id <uuid> --port 3031
+    python -m benchmarks.harbor.isolated_instance launch --app-bin src-tauri/target/release/libragent
+    pnpm bench:layman --api-url http://localhost:3031/api --assistant-id <uuid>
+    python -m benchmarks.harbor.isolated_instance stop
+
+The source database is only ever opened read-only.
+"""
+
+from __future__ import annotations
+
+import argparse
+import contextlib
+import json
+import os
+import shutil
+import signal
+import socket
+import sqlite3
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
+from pathlib import Path
+
+APP_IDENTIFIER = "com.fritzprix.libragent"
+DB_FILE_NAME = "libragent_v2.db"
+DEFAULT_PORT = 3031
+DEFAULT_ROOT = Path(".libragent/work/bench-instance")
+# Set by `run-harbor-bench.cjs --isolated`; the Harbor adapter relaunches the
+# instance from the seed before every trial when the app binary is given.
+INSTANCE_APP_BIN_ENV = "LIBRAGENT_BENCH_INSTANCE_APP_BIN"
+INSTANCE_ROOT_ENV = "LIBRAGENT_BENCH_INSTANCE_ROOT"
+DEFAULT_LAUNCH_TIMEOUT_SEC = 120.0
+
+
+class InstanceError(RuntimeError):
+    """Bench instance cannot be seeded, launched, or stopped."""
+
+# Child tables before parents so deletes never depend on FK cascade settings.
+RUNTIME_STATE_TABLES: tuple[str, ...] = (
+    "pending_queue",
+    "compact_contexts",
+    "messages",
+    "message_index_meta",
+    "planning_todos",
+    "planning_goals",
+    "planning_scratchpad",
+    "sessions",
+    "chunks",
+    "contents",
+    "stores",
+    "scheduled_tasks",
+    "knowledge_chunk_entities",
+    "knowledge_relationships",
+    "knowledge_entities",
+    "knowledge_chunks_v2",
+    "knowledge",
+)
+
+# External-content FTS5 indexes rebuilt after their base tables are emptied.
+# `knowledge_vectors` (vec0) cannot be edited without the sqlite-vec extension;
+# orphaned vectors are harmless because search inner-joins chunks to vectors and
+# chunk ids are AUTOINCREMENT (never reused).
+FTS_INDEXES: tuple[str, ...] = ("knowledge_fts", "knowledge_chunks_fts")
+
+
+@dataclass(frozen=True)
+class InstanceLayout:
+    root: Path
+
+    @property
+    def seed_db(self) -> Path:
+        return self.root / "seed" / DB_FILE_NAME
+
+    @property
+    def seed_meta(self) -> Path:
+        return self.root / "seed" / "seed.json"
+
+    @property
+    def run_dir(self) -> Path:
+        return self.root / "run"
+
+    @property
+    def xdg_data(self) -> Path:
+        return self.run_dir / "xdg-data"
+
+    @property
+    def data_dir(self) -> Path:
+        return self.xdg_data / APP_IDENTIFIER
+
+    @property
+    def db_path(self) -> Path:
+        return self.data_dir / DB_FILE_NAME
+
+    @property
+    def pid_file(self) -> Path:
+        return self.root / "instance.pid"
+
+    @property
+    def log_file(self) -> Path:
+        return self.root / "instance.log"
+
+
+def default_source_db() -> Path:
+    data_home = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
+    return Path(data_home) / APP_IDENTIFIER / DB_FILE_NAME
+
+
+def _existing_tables(conn: sqlite3.Connection) -> set[str]:
+    rows = conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
+    return {row[0] for row in rows}
+
+
+def referenced_mcp_server_ids(conn: sqlite3.Connection, assistant_id: str) -> list[str]:
+    row = conn.execute("SELECT config FROM assistants WHERE id = ?", (assistant_id,)).fetchone()
+    if row is None:
+        raise InstanceError(f"Assistant '{assistant_id}' not found in source database")
+    config = json.loads(row[0] or "{}")
+    ids = config.get("mcpServerIds") or []
+    return [server_id for server_id in ids if isinstance(server_id, str)]
+
+
+def prune_seed(conn: sqlite3.Connection, *, assistant_id: str, port: int) -> dict[str, object]:
+    """Strip runtime/user state from a seed copy. Returns a summary for seed.json."""
+    tables = _existing_tables(conn)
+    kept_servers = referenced_mcp_server_ids(conn, assistant_id)
+
+    cleared: dict[str, int] = {}
+    for table in RUNTIME_STATE_TABLES:
+        if table in tables:
+            cleared[table] = conn.execute(f'DELETE FROM "{table}"').rowcount
+
+    placeholders = ",".join("?" for _ in kept_servers)
+    if kept_servers:
+        removed = conn.execute(
+            f"DELETE FROM mcp_servers WHERE id NOT IN ({placeholders})", kept_servers
+        ).rowcount
+    else:
+        removed = conn.execute("DELETE FROM mcp_servers").rowcount
+    cleared["mcp_servers"] = removed
+
+    for index in FTS_INDEXES:
+        if index in tables:
+            conn.execute(f"INSERT INTO \"{index}\"(\"{index}\") VALUES('rebuild')")
+
+    row = conn.execute("SELECT value FROM settings WHERE key = 'systemSettings'").fetchone()
+    system_settings = json.loads(row[0]) if row and row[0] else {}
+    system_settings["httpServerPort"] = port
+    system_settings["httpServerExpose"] = False
+    system_settings["preventSleepDuringAgentWork"] = False
+    now_ms = int(time.time() * 1000)
+    if row:
+        conn.execute(
+            "UPDATE settings SET value = ?, updated_at = ? WHERE key = 'systemSettings'",
+            (json.dumps(system_settings), now_ms),
+        )
+    else:
+        conn.execute(
+            "INSERT INTO settings(key, value, created_at, updated_at) VALUES ('systemSettings', ?, ?, ?)",
+            (json.dumps(system_settings), now_ms, now_ms),
+        )
+    conn.commit()
+
+    return {
+        "assistant_id": assistant_id,
+        "port": port,
+        "kept_mcp_server_ids": kept_servers,
+        "cleared_rows": cleared,
+    }
+
+
+def build_seed(source_db: Path, layout: InstanceLayout, *, assistant_id: str, port: int) -> dict[str, object]:
+    if not source_db.is_file():
+        raise InstanceError(f"Source database not found: {source_db}")
+    layout.seed_db.parent.mkdir(parents=True, exist_ok=True)
+    if layout.seed_db.exists():
+        layout.seed_db.unlink()
+
+    source = sqlite3.connect(f"file:{source_db}?mode=ro", uri=True)
+    try:
+        dest = sqlite3.connect(layout.seed_db)
+        try:
+            source.backup(dest)
+            summary = prune_seed(dest, assistant_id=assistant_id, port=port)
+            dest.execute("VACUUM")
+        finally:
+            dest.close()
+    finally:
+        source.close()
+
+    summary["source_db"] = str(source_db)
+    summary["created_at_ms"] = int(time.time() * 1000)
+    layout.seed_meta.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+    return summary
+
+
+def _read_seed_port(layout: InstanceLayout) -> int:
+    if not layout.seed_meta.is_file():
+        raise InstanceError(f"No seed at {layout.seed_db}. Run the 'seed' command first.")
+    return int(json.loads(layout.seed_meta.read_text(encoding="utf-8"))["port"])
+
+
+def _ensure_not_primary_profile(layout: InstanceLayout) -> None:
+    primary = default_source_db().parent.resolve()
+    if layout.data_dir.resolve() == primary:
+        raise InstanceError(f"Refusing to use the primary data dir as a bench instance: {primary}")
+
+
+def reset_run_dir(layout: InstanceLayout) -> None:
+    _ensure_not_primary_profile(layout)
+    if layout.run_dir.exists():
+        shutil.rmtree(layout.run_dir)
+    layout.data_dir.mkdir(parents=True)
+    shutil.copy2(layout.seed_db, layout.db_path)
+
+
+def instance_env(layout: InstanceLayout, base: dict[str, str] | None = None) -> dict[str, str]:
+    env = dict(os.environ if base is None else base)
+    env.update(
+        {
+            "LIBRAGENT_DATA_DIR": str(layout.data_dir.resolve()),
+            "LIBRAGENT_DB_PATH": str(layout.db_path.resolve()),
+            "LIBRAGENT_PROFILE": "prod",
+            # Isolates WebView storage and any XDG-scoped app state as well.
+            "XDG_DATA_HOME": str(layout.xdg_data.resolve()),
+            "XDG_CACHE_HOME": str((layout.run_dir / "xdg-cache").resolve()),
+            "XDG_CONFIG_HOME": str((layout.run_dir / "xdg-config").resolve()),
+        }
+    )
+    return env
+
+
+def _port_in_use(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        return sock.connect_ex(("127.0.0.1", port)) == 0
+
+
+def _wait_healthy(port: int, timeout_sec: float, process: subprocess.Popen[bytes]) -> bool:
+    deadline = time.monotonic() + timeout_sec
+    url = f"http://127.0.0.1:{port}/api/health"
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            return False
+        try:
+            with urllib.request.urlopen(url, timeout=2) as response:
+                if response.status == 200:
+                    return True
+        except (urllib.error.URLError, OSError):
+            pass
+        time.sleep(1)
+    return False
+
+
+def _read_pid(layout: InstanceLayout) -> int | None:
+    try:
+        return int(layout.pid_file.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def launch(layout: InstanceLayout, app_bin: Path, *, timeout_sec: float) -> int:
+    port = _read_seed_port(layout)
+    existing = _read_pid(layout)
+    if existing is not None and _pid_alive(existing):
+        raise InstanceError(f"Bench instance already running (pid {existing}). Run 'stop' first.")
+    if _port_in_use(port):
+        raise InstanceError(f"Port {port} is already in use; the bench instance would fall back to another port.")
+    if not app_bin.is_file():
+        raise InstanceError(f"App binary not found: {app_bin}")
+
+    reset_run_dir(layout)
+    log = layout.log_file.open("wb")
+    process = subprocess.Popen(
+        [str(app_bin.resolve())],
+        env=instance_env(layout),
+        stdout=log,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+    layout.pid_file.write_text(str(process.pid), encoding="utf-8")
+
+    if not _wait_healthy(port, timeout_sec, process):
+        stop(layout)
+        raise InstanceError(f"Bench instance did not become healthy on port {port}; see {layout.log_file}")
+    print(f"Bench instance ready: pid={process.pid} api_url=http://localhost:{port}/api")
+    print(f"Data dir: {layout.data_dir.resolve()}")
+    return process.pid
+
+
+def instance_pids(layout: InstanceLayout, proc_root: Path = Path("/proc")) -> list[int]:
+    """PIDs that inherited this instance's data dir, including detached sidecars.
+
+    The browser sidecar runs in its own process group, so killing the app's group
+    leaves it (and its Chromium) writing into the run dir.
+    """
+    marker = f"LIBRAGENT_DATA_DIR={layout.data_dir.resolve()}".encode()
+    pids: list[int] = []
+    if not proc_root.is_dir():
+        return pids
+    own_pid = str(os.getpid())
+    for entry in proc_root.iterdir():
+        if not entry.name.isdigit() or entry.name == own_pid:
+            continue
+        try:
+            environ = (entry / "environ").read_bytes()
+        except OSError:
+            continue
+        if marker in environ.split(b"\0"):
+            pids.append(int(entry.name))
+    return pids
+
+
+def _terminate(pids: list[int], grace_sec: float) -> None:
+    for pid in pids:
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(pid, signal.SIGTERM)
+    deadline = time.monotonic() + grace_sec
+    while time.monotonic() < deadline and any(_pid_alive(pid) for pid in pids):
+        time.sleep(0.2)
+    for pid in pids:
+        if _pid_alive(pid):
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(pid, signal.SIGKILL)
+
+
+def _owns_pid(layout: InstanceLayout, pid: int, proc_root: Path = Path("/proc")) -> bool:
+    """False when pid.pid is stale and its PID now belongs to an unrelated process.
+
+    Without /proc (macOS) ownership cannot be checked, so the recorded PID is trusted.
+    """
+    if not proc_root.is_dir():
+        return True
+    return pid in instance_pids(layout, proc_root=proc_root)
+
+
+def stop(layout: InstanceLayout, *, grace_sec: float = 10.0) -> None:
+    pid = _read_pid(layout)
+    if pid is not None and _pid_alive(pid) and _owns_pid(layout, pid):
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(pid, signal.SIGTERM)
+        deadline = time.monotonic() + grace_sec
+        while time.monotonic() < deadline and _pid_alive(pid):
+            time.sleep(0.5)
+        if _pid_alive(pid):
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(pid, signal.SIGKILL)
+        print(f"Stopped bench instance (pid {pid}).")
+    else:
+        print("No running bench instance.")
+    layout.pid_file.unlink(missing_ok=True)
+
+    strays = instance_pids(layout)
+    if strays:
+        _terminate(strays, grace_sec)
+        print(f"Stopped {len(strays)} detached bench process(es): {strays}")
+
+
+def relaunch(layout: InstanceLayout, app_bin: Path, *, timeout_sec: float = DEFAULT_LAUNCH_TIMEOUT_SEC) -> int:
+    """Stop any running instance and start a new one on a fresh copy of the seed."""
+    stop(layout)
+    port = _read_seed_port(layout)
+    deadline = time.monotonic() + 10.0
+    while _port_in_use(port) and time.monotonic() < deadline:
+        time.sleep(0.2)
+    return launch(layout, app_bin, timeout_sec=timeout_sec)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--root", type=Path, default=DEFAULT_ROOT, help="Bench instance root directory")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    seed_cmd = sub.add_parser("seed", help="Build a pruned seed DB from the primary profile (read-only)")
+    seed_cmd.add_argument("--assistant-id", required=True)
+    seed_cmd.add_argument("--port", type=int, default=DEFAULT_PORT)
+    seed_cmd.add_argument("--source-db", type=Path, default=None)
+
+    launch_cmd = sub.add_parser("launch", help="Start the app on a fresh copy of the seed")
+    launch_cmd.add_argument("--app-bin", type=Path, required=True)
+    launch_cmd.add_argument("--timeout", type=float, default=DEFAULT_LAUNCH_TIMEOUT_SEC)
+
+    sub.add_parser("stop", help="Stop the running bench instance")
+
+    args = parser.parse_args(argv)
+    layout = InstanceLayout(args.root)
+
+    try:
+        if args.command == "seed":
+            summary = build_seed(
+                args.source_db or default_source_db(), layout, assistant_id=args.assistant_id, port=args.port
+            )
+            print(json.dumps(summary, indent=2))
+        elif args.command == "launch":
+            launch(layout, args.app_bin, timeout_sec=args.timeout)
+        elif args.command == "stop":
+            stop(layout)
+    except InstanceError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

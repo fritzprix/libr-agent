@@ -284,6 +284,12 @@ pub(crate) fn path_validation_failure_guidance(error: &str, fallback: Vec<String
             "Use workspace__runShell for this container path (ls/cat to inspect; mkdir -p + redirect or cp to write).".to_string(),
             "Do not retry as a workspace-relative path — that targets a different location under the workdir.".to_string(),
         ]
+    } else if error.contains(crate::session_isolation::HOST_DATA_DIR_NOT_IN_CONTAINER_MARKER) {
+        vec![
+            "Read skill files via the @system-skills/… or @user-skills/… alias (workspace__readFile / workspace__listDirectory).".to_string(),
+            "To execute a skill script in the container, workspace__importFiles it (plus any sibling modules it imports) into the workdir, then run it there.".to_string(),
+            "Do not search the container with find/ls for this path — it does not exist there.".to_string(),
+        ]
     } else if error.contains(SKILL_ALIAS_WRITE_REJECTED_MARKER) {
         vec![
             "Write the skill to `.libragent/skills/<skill-name>/SKILL.md` (workspace) or use skill-deployer for `user_skills/` / `.libragent/skills/`.".to_string(),
@@ -371,6 +377,24 @@ mod guidance_tests {
         assert!(guidance
             .iter()
             .all(|line| !line.contains("workspace__listDirectory")));
+    }
+
+    #[test]
+    fn host_data_dir_guidance_prefers_import_over_shell() {
+        let err = format!(
+            "'/x' {} (data/skills directory).",
+            crate::session_isolation::HOST_DATA_DIR_NOT_IN_CONTAINER_MARKER
+        );
+        let guidance = path_validation_failure_guidance(
+            &err,
+            vec!["Use workspace__listDirectory to see available paths".to_string()],
+        );
+        assert!(guidance
+            .iter()
+            .any(|line| line.contains("workspace__importFiles")));
+        assert!(guidance
+            .iter()
+            .all(|line| !line.contains("workspace__runShell")));
     }
 
     #[test]

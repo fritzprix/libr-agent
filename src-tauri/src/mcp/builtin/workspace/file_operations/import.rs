@@ -100,6 +100,16 @@ impl WorkspaceServer {
             );
             match fs::copy(src_path_str, &dest_abs_path).await {
                 Ok(_) => {
+                    if let Err(sync_error) = self
+                        .sync_attach_after_host_write(&dest_abs_path, Some(&target_session_id))
+                        .await
+                    {
+                        error_messages.push(format!(
+                            "Copied '{}' to staging but failed to sync into the attached container: {}",
+                            src_path_str, sync_error
+                        ));
+                        continue;
+                    }
                     success_messages
                         .push(format!("Imported: {} -> {}", src_path_str, dest_rel_path));
                 }

@@ -5,9 +5,14 @@
  *
  * Usage (same flags as the bash runner):
  *   node scripts/run-harbor-bench.cjs --preset terminal-bench --n-tasks 1
+ *
+ * --isolated: launch the seeded bench instance (benchmarks/harbor/isolated_instance.py),
+ * default --api-url/--assistant-id from its seed, relaunch it from the seed before every
+ * trial (requires --concurrent 1), and stop it when the run ends.
  */
 'use strict';
 
+const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
@@ -105,8 +110,9 @@ function toPowerShellArgs(argv) {
 /**
  * @param {string} command
  * @param {string[]} args
+ * @returns {number}
  */
-function run(command, args) {
+function runStatus(command, args) {
   const result = spawnSync(command, args, {
     cwd: repoRoot,
     stdio: 'inherit',
@@ -116,26 +122,114 @@ function run(command, args) {
 
   if (result.error) {
     console.error(result.error.message);
-    process.exit(1);
+    return 1;
   }
 
-  process.exit(result.status ?? 1);
+  return result.status ?? 1;
 }
 
-const argv = process.argv.slice(2);
+const ISOLATED_FLAG = '--isolated';
+const INSTANCE_MODULE = 'benchmarks.harbor.isolated_instance';
+const INSTANCE_ROOT = path.join(repoRoot, '.libragent', 'work', 'bench-instance');
+const SEED_INFO_PATH = path.join(INSTANCE_ROOT, 'seed', 'seed.json');
+const RELEASE_APP_BIN = path.join(
+  repoRoot,
+  'src-tauri',
+  'target',
+  'release',
+  'libragent',
+);
 
-if (isWindows) {
+/**
+ * @returns {{ assistantId: string, port: number }}
+ */
+function readSeedInfo() {
+  if (!fs.existsSync(SEED_INFO_PATH)) {
+    console.error(
+      `No bench seed at ${SEED_INFO_PATH}.\n` +
+        'Create it once: pnpm bench:instance:seed --assistant-id <uuid>',
+    );
+    process.exit(1);
+  }
+  const info = JSON.parse(fs.readFileSync(SEED_INFO_PATH, 'utf8'));
+  if (typeof info.assistant_id !== 'string' || typeof info.port !== 'number') {
+    console.error(`Invalid seed info: ${SEED_INFO_PATH}`);
+    process.exit(1);
+  }
+  return { assistantId: info.assistant_id, port: info.port };
+}
+
+/**
+ * @param {string[]} benchCommand
+ * @param {string[]} benchArgs
+ * @returns {number}
+ */
+function runIsolated(benchCommand, benchArgs) {
+  if (process.platform !== 'linux') {
+    // Stopping detached sidecars relies on /proc/<pid>/environ.
+    console.error(`${ISOLATED_FLAG} is only supported on Linux.`);
+    return 1;
+  }
+  const concurrentIndex = benchArgs.indexOf('--concurrent');
+  if (concurrentIndex !== -1 && benchArgs[concurrentIndex + 1] !== '1') {
+    console.error(
+      `${ISOLATED_FLAG} restarts the bench instance before every trial and requires --concurrent 1.`,
+    );
+    return 1;
+  }
+  const { assistantId, port } = readSeedInfo();
+  const args = [...benchArgs];
+  if (!args.includes('--api-url')) {
+    args.push('--api-url', `http://localhost:${port}/api`);
+  }
+  if (!args.includes('--assistant-id')) {
+    args.push('--assistant-id', assistantId);
+  }
+
+  const launchStatus = runStatus('python', [
+    '-m',
+    INSTANCE_MODULE,
+    'launch',
+    '--app-bin',
+    RELEASE_APP_BIN,
+  ]);
+  if (launchStatus !== 0) {
+    return launchStatus;
+  }
+
+  // The Harbor adapter relaunches the instance from the seed before each trial.
+  process.env.LIBRAGENT_BENCH_INSTANCE_APP_BIN = RELEASE_APP_BIN;
+  process.env.LIBRAGENT_BENCH_INSTANCE_ROOT = INSTANCE_ROOT;
+  // Keep the runner alive on Ctrl+C so the instance is always stopped.
+  process.on('SIGINT', () => {});
+  try {
+    return runStatus(benchCommand[0], [...benchCommand.slice(1), ...args]);
+  } finally {
+    runStatus('python', ['-m', INSTANCE_MODULE, 'stop']);
+  }
+}
+
+const rawArgv = process.argv.slice(2);
+const isolated = rawArgv.includes(ISOLATED_FLAG);
+const argv = rawArgv.filter((arg) => arg !== ISOLATED_FLAG);
+
+if (isolated) {
+  const sh = path.join(repoRoot, 'scripts', 'run-harbor-bench.sh');
+  process.exit(runIsolated(['bash', sh], argv));
+} else if (isWindows) {
   const ps1 = path.join(repoRoot, 'scripts', 'run-harbor-bench.ps1');
   const psArgs = toPowerShellArgs(argv);
-  run('powershell', [
-    '-NoProfile',
-    '-ExecutionPolicy',
-    'Bypass',
-    '-File',
-    ps1,
-    ...psArgs,
-  ]);
+  process.exit(
+    runStatus('powershell', [
+      '-NoProfile',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-File',
+      ps1,
+      ...psArgs,
+    ]),
+  );
 } else {
   const sh = path.join(repoRoot, 'scripts', 'run-harbor-bench.sh');
-  run('bash', [sh, ...argv]);
+  process.exit(runStatus('bash', [sh, ...argv]));
 }

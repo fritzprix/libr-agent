@@ -216,6 +216,39 @@ Environment overrides:
   omits these flags unless you set the env vars or pass CLI options.
 - `LIBRAGENT_POLL_TIMEOUT_SEC` — optional adapter wall-clock poll budget; omit to wait until Harbor cancels
 
+## Isolated bench instance (clean state per job)
+
+Tasks that install MCP servers, deploy skills, or write knowledge mutate the app profile, so a
+second run against your everyday instance is graded on a dirty host. `isolated_instance.py` runs a
+separate LibrAgent process on its own data dir and port; your real profile is never modified.
+Linux only: `stop` finds detached sidecar processes through `/proc/<pid>/environ`.
+
+```bash
+# 1. Build a pruned seed once (read-only backup of your DB; keeps assistants + settings,
+#    drops sessions/messages/knowledge/schedules and MCP servers the assistant does not reference)
+pnpm bench:instance:seed --assistant-id <uuid>
+
+# 2. Before each job: reset run/ from the seed and start the instance (waits for /api/health)
+pnpm bench:instance:launch
+
+# 3. Run the benchmark against it
+pnpm bench:layman --api-url http://localhost:3031/api --assistant-id <uuid>
+
+# 4. Stop it
+pnpm bench:instance:stop
+```
+
+State lives under `.libragent/work/bench-instance/` (`seed/`, `run/`, `instance.log`). The
+instance sets `LIBRAGENT_DATA_DIR`, `LIBRAGENT_DB_PATH`, and `XDG_{DATA,CACHE,CONFIG}_HOME` under
+`run/`, so WebView storage is isolated too. Rebuild the seed after changing the assistant.
+
+> **Secrets:** the seed is copied from your primary profile's DB. It keeps the `settings` table,
+> the assistant row, and the MCP server rows the assistant references, so it retains your active
+> settings and credentials (for example API keys, provider tokens, and MCP server env/headers).
+> `.libragent/work/bench-instance/` (`seed/`, `run/`, `instance.log`) therefore contains
+> sensitive user secrets. Do not commit it, attach it to issues or PRs, or share it, and delete
+> it when you no longer need the seed.
+
 ## Timeouts (important)
 
 Official submissions use Harbor’s default task/agent timeouts (do **not** pass

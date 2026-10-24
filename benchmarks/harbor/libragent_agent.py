@@ -53,6 +53,14 @@ try:
 except ImportError:  # pragma: no cover
     httpx = None  # type: ignore[assignment]
 
+from benchmarks.harbor.isolated_instance import (
+    DEFAULT_ROOT as BENCH_INSTANCE_DEFAULT_ROOT,
+    INSTANCE_APP_BIN_ENV,
+    INSTANCE_ROOT_ENV,
+    InstanceLayout,
+    relaunch,
+)
+
 EXECUTION_MODE_VALUES = ("normal", "yolo", "unsafe")
 DEFAULT_EXECUTION_MODE = "unsafe"
 # Idle/error end the workflow. Paused means approval wait — not done for benchmarks.
@@ -1315,6 +1323,32 @@ def resolve_harbor_main_container_id(environment: BaseEnvironment) -> str | None
     return None
 
 
+@dataclass(frozen=True)
+class TrialInstanceReset:
+    layout: InstanceLayout
+    app_bin: Path
+
+
+def resolve_trial_instance_reset(env_map: dict[str, str]) -> TrialInstanceReset | None:
+    """Per-trial bench instance relaunch, enabled by ``run-harbor-bench.cjs --isolated``.
+
+    A relaunch kills in-flight sessions, so it is refused unless trials run one at a time.
+    """
+    app_bin = env_map.get(INSTANCE_APP_BIN_ENV, "").strip()
+    if not app_bin:
+        return None
+    concurrency = env_map.get("LIBRAGENT_HARBOR_CONCURRENT", "1").strip() or "1"
+    if concurrency != "1":
+        raise RuntimeError(
+            f"{INSTANCE_APP_BIN_ENV} requires --concurrent 1 (got {concurrency}): "
+            "relaunching the shared bench instance would kill other running trials."
+        )
+    root = Path(env_map.get(INSTANCE_ROOT_ENV, "").strip() or BENCH_INSTANCE_DEFAULT_ROOT)
+    if not root.is_absolute():
+        root = PACKAGE_JSON_PATH.parent / root
+    return TrialInstanceReset(layout=InstanceLayout(root), app_bin=Path(app_bin))
+
+
 class LibrAgentHarborAdapter(BaseAgent):
     """
     Harbor Framework Adapter for LibrAgent.
@@ -1395,12 +1429,16 @@ class LibrAgentHarborAdapter(BaseAgent):
         return True
 
     async def setup(self, environment: BaseEnvironment) -> None:
-        """Validates connection and resolves Harbor model_info from the assistant."""
+        """Resets the bench instance when isolated, validates connection, resolves model_info."""
         _ = environment  # Harbor requires the arg; health/model lookup is API-only.
         if httpx is None:
             raise RuntimeError(
                 "Python library 'httpx' is missing. Please run: pip install httpx"
             )
+
+        trial_reset = resolve_trial_instance_reset(dict(os.environ))
+        if trial_reset is not None:
+            await asyncio.to_thread(relaunch, trial_reset.layout, trial_reset.app_bin)
 
         async with httpx.AsyncClient() as client:
             try:
