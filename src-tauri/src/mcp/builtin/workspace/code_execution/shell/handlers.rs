@@ -333,16 +333,21 @@ impl WorkspaceServer {
 
         // Execute with configured isolation level (workspace root unless cwd is set)
         let isolation_level = utils::get_shell_isolation_level().await;
-        self.execute_shell_with_isolation(
-            input,
-            tool_name,
-            isolation_level,
-            timeout_secs,
-            session_id,
-            env_vars,
-            working_directory,
-        )
-        .await
+        let result = self
+            .execute_shell_with_isolation(
+                input,
+                tool_name,
+                isolation_level,
+                timeout_secs,
+                session_id,
+                env_vars,
+                working_directory,
+            )
+            .await;
+        if utils::is_session_docker_isolated(session_id).await {
+            install_skill_outbox(workspace_path).await;
+        }
+        result
     }
 
     /// Handle async shell execution (separate tool)
@@ -440,6 +445,21 @@ impl WorkspaceServer {
             ])
             .to_mcp_result(),
         )
+    }
+}
+
+/// Installs skills that `skill.py deploy` staged in the workspace outbox (Docker sessions).
+async fn install_skill_outbox(workspace_path: std::path::PathBuf) {
+    let outcomes = tokio::task::spawn_blocking(move || {
+        crate::services::skill_service::install_outbox(&workspace_path)
+    })
+    .await
+    .unwrap_or_default();
+    for (name, outcome) in outcomes {
+        match outcome {
+            Ok(()) => tracing::info!("Installed staged user skill '{name}' from the Docker outbox"),
+            Err(reason) => tracing::warn!("Rejected staged user skill '{name}': {reason}"),
+        }
     }
 }
 

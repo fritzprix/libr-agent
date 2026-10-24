@@ -118,6 +118,10 @@ tauri-plugin-mcp-bridge = "0.13.0"
 sqlite-vec = "0.1.9"
 fastembed = "5.15.0"
 
+[target.'cfg(unix)'.dependencies]
+# O_NOFOLLOW | O_NONBLOCK when copying container-staged skill files
+libc = "0.2"
+
 [target.'cfg(windows)'.dependencies]
 # Read HKCU/HKLM Path so GUI-launched isolation recovers user tool dirs (cargo, uv, npm, …)
 winreg = "0.56"
