@@ -2,6 +2,7 @@ mod lifecycle;
 mod path_validation;
 mod service_context;
 mod teamwork_paths;
+mod user_skills_guard;
 
 pub(crate) use path_validation::{
     looks_like_confused_harness_path, path_operation_failure_guidance,

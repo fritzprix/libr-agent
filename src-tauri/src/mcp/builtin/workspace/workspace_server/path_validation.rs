@@ -1,3 +1,4 @@
+use super::user_skills_guard::{refuse_user_skills_write, USER_SKILLS_WRITE_REJECTED_MARKER};
 use super::WorkspaceServer;
 use crate::SecureFileManager;
 use std::path::PathBuf;
@@ -155,6 +156,9 @@ impl WorkspaceServer {
         if let Some((alias_prefix, _)) =
             crate::services::skill_service::extract_skill_alias_relative_path(path_str)
         {
+            if alias_prefix == crate::services::skill_service::USER_SKILLS_ALIAS_PREFIX {
+                return Err(super::user_skills_guard::user_skills_write_rejected_error());
+            }
             return Err(skill_alias_write_rejected_error(alias_prefix));
         }
 
@@ -201,7 +205,10 @@ impl WorkspaceServer {
             }
         }
 
-        self.validate_path_with_error_for_write(effective_path, Some(target_session_id))
+        let validated =
+            self.validate_path_with_error_for_write(effective_path, Some(target_session_id))?;
+        refuse_user_skills_write(&validated)?;
+        Ok(validated)
     }
 
     async fn map_docker_container_file_tool_path(
@@ -294,6 +301,10 @@ pub(crate) fn path_validation_failure_guidance(error: &str, fallback: Vec<String
             ),
             "Do not search the container with find/ls for this host path — it does not exist there.".to_string(),
         ]
+    } else if error.contains(USER_SKILLS_WRITE_REJECTED_MARKER) {
+        vec![
+            "Run `skill.py new <name>` or `skill.py clone <name>` in the workspace, edit that copy, then `skill.py validate <dir>` and `skill.py deploy <dir>` via workspace__runShell.".to_string(),
+        ]
     } else if error.contains(SKILL_ALIAS_WRITE_REJECTED_MARKER) {
         vec![
             "Write the skill to `.libragent/skills/<skill-name>/SKILL.md` (workspace) or use skill-deployer for `user_skills/` / `.libragent/skills/`.".to_string(),
@@ -367,6 +378,18 @@ mod guidance_tests {
     };
     use crate::services::skill_service::WORKSPACE_SKILLS_ALIAS_PREFIX;
     use crate::session_isolation::OUTSIDE_DOCKER_WORKDIR_FILE_TOOL_MARKER;
+
+    #[test]
+    fn user_skills_refusal_guidance_names_deploy_and_other_errors_do_not() {
+        use super::super::user_skills_guard::user_skills_write_rejected_error;
+        let guidance =
+            path_validation_failure_guidance(&user_skills_write_rejected_error(), vec![]);
+        assert!(guidance.iter().any(|line| line.contains("skill.py deploy")));
+
+        let fallback = vec!["listDirectory".to_string()];
+        let other = path_validation_failure_guidance("Security error: blocked", fallback.clone());
+        assert_eq!(other, fallback);
+    }
 
     #[test]
     fn outside_workdir_guidance_prefers_run_shell() {
