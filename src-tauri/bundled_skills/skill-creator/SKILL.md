@@ -60,3 +60,7 @@ description: "What it does + specific triggers/contexts for when to use it."
 ```
 
 Only `name` and `description` are required. The description is the primary trigger mechanism.
+
+## Install via the host
+
+In a host session, `python3 <skill_base>/scripts/skill.py validate <dir>` runs the strict checks and `python3 <skill_base>/scripts/skill.py deploy <dir>` sends the skill to the LibrAgent host (`LIBRAGENT_SKILL_INSTALL_URL`), which validates again and installs it. The script never writes to the user skills folder itself.
