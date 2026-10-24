@@ -5,12 +5,15 @@ Usage:
     python3 skill.py new <name> [--to <dir>]
     python3 skill.py clone <name> [--to <dir>]
     python3 skill.py validate <dir>
-    python3 skill.py deploy <dir>
+    python3 skill.py deploy <dir> [--workspace <dir>]
 
 User skills are read-only to the agent except through `deploy`, which writes
 only to <user skills>/<name>/ and only after strict validation. `new` and
 `clone` work in the workspace (default: the current directory) and never modify
-the source skill. Standard library only. Pass --data-dir to override the app
+the source skill. In a Docker session the user skills mount is read-only: `deploy`
+then stages the validated skill in <workspace>/.libragent/skill-outbox/<name>/
+and the host installs it when the shell command finishes (read <name>.status in
+the outbox afterwards). Standard library only. Pass --data-dir to override the app
 data directory.
 """
 
@@ -34,6 +37,9 @@ from validate_skill import format_detailed_report, validate_skill_path
 NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 IGNORED_NAMES = {"__pycache__", ".git", ".hg", ".svn", "node_modules", ".DS_Store", "Thumbs.db"}
 IGNORED_SUFFIXES = (".pyc", ".pyo")
+CONTAINER_USER_SKILLS_DIR = Path("/opt/libragent/skills/user")
+CONTAINER_SYSTEM_SKILLS_DIR = Path("/opt/libragent/skills/system")
+OUTBOX_RELATIVE_DIR = Path(".libragent") / "skill-outbox"
 
 TEMPLATE = """---
 name: {name}
@@ -106,10 +112,13 @@ def cmd_new(name: str, dest_root: Path) -> int:
 def cmd_clone(name: str, dest_root: Path, data_dir: Path) -> int:
     if not NAME_RE.match(name):
         return fail(f"Invalid skill name {name!r}.")
-    source = next(
-        (p for p in (data_dir / "user_skills" / name, data_dir / "system_skills" / name) if (p / "SKILL.md").is_file()),
-        None,
+    candidates = (
+        data_dir / "user_skills" / name,
+        data_dir / "system_skills" / name,
+        CONTAINER_USER_SKILLS_DIR / name,
+        CONTAINER_SYSTEM_SKILLS_DIR / name,
     )
+    source = next((p for p in candidates if (p / "SKILL.md").is_file()), None)
     if source is None:
         return fail(f"Skill {name!r} not found in user_skills or system_skills under {data_dir}.")
     target = dest_root / name
@@ -120,12 +129,35 @@ def cmd_clone(name: str, dest_root: Path, data_dir: Path) -> int:
     return 0
 
 
-def cmd_deploy(skill_dir: Path, data_dir: Path) -> int:
+def cmd_deploy_to_outbox(skill_dir: Path, workspace: Path) -> int:
+    """Docker sessions: stage for the host, which owns the read-only user skills folder."""
+    name = skill_dir.name
+    outbox = workspace / OUTBOX_RELATIVE_DIR
+    staged = outbox / name
+    if skill_dir.resolve() == staged.resolve():
+        return fail("The skill is already in the outbox; deploy the workspace copy instead.")
+    (outbox / f"{name}.status").unlink(missing_ok=True)
+    if staged.exists():
+        shutil.rmtree(staged)
+    try:
+        shutil.copytree(skill_dir, staged, ignore=ignore_junk)
+    except OSError as error:
+        return fail(f"Copy failed: {error}")
+    print(
+        f"Staged {name} in {staged}. The host installs it when this command finishes; "
+        f"read {outbox / (name + '.status')} afterwards (installed / rejected: reason)."
+    )
+    return 0
+
+
+def cmd_deploy(skill_dir: Path, data_dir: Path, workspace: Path) -> int:
     if not validate(skill_dir, "Pre-deploy validation"):
         return 1
     name = skill_dir.name
     if not NAME_RE.match(name):
         return fail(f"Invalid skill folder name {name!r}.")
+    if not data_dir.is_dir() and CONTAINER_USER_SKILLS_DIR.is_dir():
+        return cmd_deploy_to_outbox(skill_dir, workspace)
     if not data_dir.is_dir():
         return fail(f"App data directory not found: {data_dir}. Start LibrAgent once or pass --data-dir.")
 
@@ -172,7 +204,10 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("name")
         p.add_argument("--to", type=Path, default=Path.cwd())
     for command in ("validate", "deploy"):
-        sub.add_parser(command).add_argument("directory", type=Path)
+        p = sub.add_parser(command)
+        p.add_argument("directory", type=Path)
+        if command == "deploy":
+            p.add_argument("--workspace", type=Path, default=Path.cwd())
     args = parser.parse_args(argv)
     data_dir = (args.data_dir or default_data_dir()).resolve()
 
@@ -183,7 +218,7 @@ def main(argv: list[str] | None = None) -> int:
     skill_dir = args.directory.resolve()
     if args.command == "validate":
         return 0 if validate(skill_dir) else 1
-    return cmd_deploy(skill_dir, data_dir)
+    return cmd_deploy(skill_dir, data_dir, args.workspace.resolve())
 
 
 if __name__ == "__main__":

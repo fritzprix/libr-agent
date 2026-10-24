@@ -29,6 +29,8 @@ python3 <skill_base>/scripts/skill.py validate <dir>              # strict check
 python3 <skill_base>/scripts/skill.py deploy <dir>                # validate, then copy to <user skills>/<name>/
 ```
 
+In a Docker session the user skills mount is read-only: `deploy` stages the skill in `.libragent/skill-outbox/<name>/` and the host installs it when the command finishes. Read `.libragent/skill-outbox/<name>.status` afterwards (`installed` or `rejected: <reason>`).
+
 Edit the workspace copy between `new`/`clone` and `validate`. `deploy` refuses invalid skills, overwrites an existing skill of the same name, and restores it if the deployed copy fails validation.
 
 ## Validation (required before deploy)
