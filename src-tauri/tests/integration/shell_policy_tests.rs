@@ -441,3 +441,73 @@ async fn run_shell_blocks_symlinked_protected_target() {
         "expected policy block message, got: {text}"
     );
 }
+
+/// Single-quotes a path the way a real shell command would carry it, so a data dir
+/// with a space (macOS `Application Support`) stays one argument.
+fn sh_quote(path: &std::path::Path) -> String {
+    format!("'{}'", path.display().to_string().replace('\'', "'\\''"))
+}
+
+fn default_app_data_dir() -> std::path::PathBuf {
+    dirs::data_dir()
+        .expect("data dir")
+        .join("com.fritzprix.libragent")
+}
+
+fn decide(
+    command: &str,
+) -> tauri_mcp_agent_lib::mcp::builtin::workspace::code_execution::shell::policy::ShellPolicyDecision
+{
+    let workspace = tempdir().expect("temp dir");
+    evaluate_shell_policy(ShellPolicyContext {
+        tool_name: "runShell",
+        command,
+        workspace_dir: Some(workspace.path()),
+        current_dir: None,
+        environment: None,
+        force_approval: false,
+    })
+}
+
+#[test]
+fn shell_policy_blocks_app_database_access_by_any_route() {
+    let db_path = default_app_data_dir().join("libragent_v2.db");
+    let db = sh_quote(&db_path);
+    let wal = sh_quote(&default_app_data_dir().join("libragent_v2.db-wal"));
+    for command in [
+        format!("sqlite3 {db} 'UPDATE mcp_servers SET name=1'"),
+        format!("cp {db} /tmp/copy.db"),
+        format!("ln {db} /tmp/hardlink.db"),
+        format!("rm {db} && cp /tmp/x.db {db}"),
+        format!("dd if=/tmp/x.db of={db}"),
+        format!("cat {wal}"),
+    ] {
+        let decision = decide(&command);
+        assert_eq!(decision.action, ShellPolicyAction::Block, "{command}");
+        assert!(decision.enforced_in_unsafe, "{command}");
+        assert!(
+            decision.reason.contains("LibrAgent's own database")
+                && decision.reason.contains("tool__*"),
+            "reason should explain the policy and the sanctioned path: {}",
+            decision.reason
+        );
+    }
+}
+
+#[test]
+fn shell_policy_allows_skill_scripts_under_the_data_dir() {
+    let data_dir = default_app_data_dir();
+    let script = sh_quote(&data_dir.join("system_skills/demo/scripts/run.py"));
+    let skills = sh_quote(&data_dir.join("user_skills"));
+    let command = format!("python3 {script} && ls {skills}");
+
+    assert_eq!(decide(&command).action, ShellPolicyAction::Allow);
+}
+
+#[test]
+fn other_protected_path_blocks_stay_bypassable_in_unsafe_mode() {
+    let decision = decide("cat ~/.ssh/id_rsa");
+
+    assert_eq!(decision.action, ShellPolicyAction::Block);
+    assert!(!decision.enforced_in_unsafe);
+}

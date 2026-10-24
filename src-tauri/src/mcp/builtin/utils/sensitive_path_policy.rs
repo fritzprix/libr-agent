@@ -3,12 +3,59 @@ use glob::Pattern;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::Deserialize;
-use std::path::{Component, Path};
+use std::path::{Component, Path, PathBuf};
 
 static SENSITIVE_PATH_POLICY: Lazy<SensitivePathPolicy> = Lazy::new(load_sensitive_path_policy);
 
 pub fn matches_sensitive_path_policy(candidate_path: &Path) -> bool {
     SENSITIVE_PATH_POLICY.matches(candidate_path)
+}
+
+/// True for LibrAgent's own SQLite files (`libragent*.db` plus `-wal`/`-shm`/`-journal`) in any
+/// app data dir: the active one, the per-OS defaults for every profile, or an explicit
+/// `LIBRAGENT_DB_PATH`. Skill scripts and workspaces under the data dir are not matched.
+pub fn matches_app_database_path(candidate_path: &Path) -> bool {
+    let Some(file_name) = candidate_path.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    if !is_app_database_file_name(file_name) {
+        return false;
+    }
+    let Some(parent) = candidate_path.parent() else {
+        return false;
+    };
+    let parent = parent
+        .canonicalize()
+        .unwrap_or_else(|_| parent.to_path_buf());
+    app_data_dirs().iter().any(|dir| {
+        let dir = dir.canonicalize().unwrap_or_else(|_| dir.clone());
+        super::paths::workspace_paths_equivalent(&parent, &dir)
+    })
+}
+
+fn is_app_database_file_name(file_name: &str) -> bool {
+    let lower = file_name.to_ascii_lowercase();
+    lower.starts_with("libragent")
+        && [".db", ".db-wal", ".db-shm", ".db-journal"]
+            .iter()
+            .any(|suffix| lower.ends_with(suffix))
+}
+
+fn app_data_dirs() -> Vec<PathBuf> {
+    use crate::profile::{data_dir, resolve_profile};
+
+    let mut dirs = vec![data_dir(resolve_profile())];
+    if let Some(home_data) = dirs::data_dir() {
+        dirs.push(home_data.join("com.fritzprix.libragent"));
+        dirs.push(home_data.join("com.fritzprix.libragent-demo"));
+    }
+    if let Some(db_parent) = std::env::var_os("LIBRAGENT_DB_PATH")
+        .map(PathBuf::from)
+        .and_then(|path| path.parent().map(Path::to_path_buf))
+    {
+        dirs.push(db_parent);
+    }
+    dirs
 }
 
 #[derive(Debug, Deserialize)]
