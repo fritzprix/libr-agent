@@ -4,7 +4,13 @@ Run validation **before** handing off to `skill-deployer`. The Rust scanner sile
 
 ## Command
 
-From the deployed skill-creator Base Directory:
+From the deployed skill-creator Base Directory, `skill.py validate` runs the strict checks (the same ones `skill.py deploy` runs first):
+
+```bash
+python3 scripts/skill.py validate <path/to/skill-folder>
+```
+
+`validate_skill.py` remains for the lenient mode and extra flags:
 
 ```bash
 python scripts/validate_skill.py <path/to/skill-folder>

@@ -910,6 +910,15 @@ def main() -> int:
         parser.error("Provide <skill_source>.")
     raw_source = args.skill_source.strip()
 
+    if args.scope == "global" and not args.inspect:
+        print(
+            "[DEPLOY-GLOBAL-001] ERROR: User skills are written only by skill-creator's skill.py.\n"
+            "  Fix: Install into a workspace first (--scope workspace --workspace <root>), then run\n"
+            "       python3 <skill-creator-base-dir>/scripts/skill.py deploy <workspace>/.libragent/skills/<name>",
+            file=sys.stderr,
+        )
+        return 2
+
     if raw_source.startswith("@"):
         print(
             f"[DEPLOY-SOURCE-001] ERROR: Skill source '{raw_source}' looks like a tag or alias.\n"

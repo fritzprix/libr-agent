@@ -14,9 +14,24 @@ Guidance for building lean, effective agent skills and validating them before de
 1. **Understand** — gather concrete usage examples (see [creation-process.md](references/creation-process.md) Step 1)
 2. **Plan** — identify scripts, references, and assets to bundle
 3. **Implement** — write SKILL.md and bundled resources
-4. **Validate** — `python scripts/validate_skill.py <skill-folder>` (see [validation.md](references/validation.md))
-5. **Deploy** — hand off to **skill-deployer** when the skill should become available to agents
+4. **Validate** — `python3 scripts/skill.py validate <skill-folder>` (see [validation.md](references/validation.md))
+5. **Deploy** — `python3 scripts/skill.py deploy <skill-folder>` for a global user skill; **skill-deployer** handles GitHub URLs, workspace/assistant scope, update and remove
 6. **Iterate** — refine after real usage, re-validate after edits
+
+## Write flow: `skill.py`
+
+User skills are **read-only to the agent**. Write them only with `skill.py deploy`; never `cp`, `tee`, `sed -i`, or file-tool writes into the user skills folder.
+
+```bash
+python3 <skill_base>/scripts/skill.py new <name> [--to <dir>]     # template in the workspace
+python3 <skill_base>/scripts/skill.py clone <name> [--to <dir>]   # copy a user/system skill into the workspace
+python3 <skill_base>/scripts/skill.py validate <dir>              # strict checks, stdlib only
+python3 <skill_base>/scripts/skill.py deploy <dir>                # validate, then copy to <user skills>/<name>/
+```
+
+In a Docker session the user skills mount is read-only: `deploy` stages the skill in `.libragent/skill-outbox/<name>/` and the host installs it when the command finishes. Read `.libragent/skill-outbox/<name>.status` afterwards (`installed` or `rejected: <reason>`).
+
+Edit the workspace copy between `new`/`clone` and `validate`. `deploy` refuses invalid skills, overwrites an existing skill of the same name, and restores it if the deployed copy fails validation.
 
 ## Validation (required before deploy)
 

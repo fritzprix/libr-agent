@@ -58,8 +58,12 @@ python "<skill-deployer-base-dir>/scripts/deploy_skill.py" "<github-url>" --scop
 # Skill with scripts (ONLY after user approval)
 python "<skill-deployer-base-dir>/scripts/deploy_skill.py" "<github-url>" --scope workspace --workspace "<workspace-root>" --skill "<skill-name>" --approve-scripts
 
-# Global scope
-python "<skill-deployer-base-dir>/scripts/deploy_skill.py" "<github-url>" --scope global --skill "<skill-name>"
+```
+
+For **global** scope, install into the workspace first, then publish with skill-creator's `skill.py deploy` (user skills are written only that way):
+
+```bash
+python3 "<skill-creator-base-dir>/scripts/skill.py" deploy "<workspace-root>/.libragent/skills/<skill-name>"
 ```
 
 The script records `.skill-provenance.json` (source URL, ref, pinned commit, scripts, timestamps) and rolls back automatically if post-deploy validation fails.
@@ -68,9 +72,10 @@ The script records `.skill-provenance.json` (source URL, ref, pinned commit, scr
 
 ```bash
 python "<skill-deployer-base-dir>/scripts/deploy_skill.py" "<skill-source-dir>" --scope workspace --workspace "<workspace-root>"
-python "<skill-deployer-base-dir>/scripts/deploy_skill.py" "<skill-source-dir>" --scope global
 python "<skill-deployer-base-dir>/scripts/deploy_skill.py" "<skill-source-dir>" --scope assistant --assistant-id "<id>"
 ```
+
+For **global** scope use `python3 "<skill-creator-base-dir>/scripts/skill.py" deploy "<skill-source-dir>"`; `deploy_skill.py --scope global` refuses new installs.
 
 Add `--dry-run` to validate and print the target without copying, or `--overwrite` to replace an existing install.
 
