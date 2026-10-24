@@ -206,7 +206,7 @@ pub async fn pull_container_file_to_host(
     }
 }
 
-fn is_missing_container_path_error(err: &str) -> bool {
+pub(crate) fn is_missing_container_path_error(err: &str) -> bool {
     // Spawn failures look like "Failed to run docker cp …: No such file or directory
     // (os error 2)" when the docker binary is absent (macOS CI). That is not a
     // missing path inside the container; treating it as soft-ok lets stale staging
