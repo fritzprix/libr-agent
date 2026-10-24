@@ -19,6 +19,7 @@ use tracing::{error, info};
 mod args;
 mod chunk;
 mod range;
+mod skill_base;
 mod types;
 
 pub use types::ReadMode;
@@ -319,6 +320,18 @@ impl WorkspaceServer {
                         "📄 **`{}`** — {} — {}{}\n\n```{}\n{}\n```",
                         path_str, size_str, chunk_summary, summary_suffix, language, chunk.content
                     )
+                };
+
+                let text_message = match skill_base::skill_base_directory_note(
+                    path_str,
+                    &safe_path,
+                    crate::mcp::builtin::workspace::utils::is_session_docker_isolated(
+                        session_id.as_deref().unwrap_or(&self.session_id),
+                    )
+                    .await,
+                ) {
+                    Some(note) => format!("{text_message}\n\n{note}"),
+                    None => text_message,
                 };
 
                 // Omit edit-promotion next-action hints on successful reads.

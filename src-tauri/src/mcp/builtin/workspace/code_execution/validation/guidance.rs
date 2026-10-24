@@ -98,6 +98,37 @@ pub fn looks_like_docker_chdir_workdir_failure(stdout: &str, stderr: &str) -> bo
         || lower.contains("no such file or directory")
 }
 
+/// Skill aliases are resolved by file tools only; a shell sees them as literal relative paths.
+fn command_uses_skill_alias(command: &str) -> bool {
+    ["@system-skills/", "@user-skills/", "@skills/"]
+        .iter()
+        .any(|alias| command.contains(alias))
+}
+
+fn skill_alias_in_shell_guidance(docker_session: bool) -> Vec<String> {
+    let roots = if docker_session {
+        Some((
+            crate::session_isolation::CONTAINER_SYSTEM_SKILLS_DIR.to_string(),
+            crate::session_isolation::CONTAINER_USER_SKILLS_DIR.to_string(),
+        ))
+    } else {
+        crate::services::skill_service::get_system_skills_directory()
+            .ok()
+            .zip(crate::services::skill_service::get_user_skills_directory().ok())
+            .map(|(system, user)| (system.display().to_string(), user.display().to_string()))
+    };
+    let location = match roots {
+        Some((system, user)) => format!(
+            "In this session use {system}/… for @system-skills/… and {user}/… for @user-skills/…."
+        ),
+        None => "Use the skill's base directory from the skill reference instead.".to_string(),
+    };
+    vec![
+        "Skill aliases (@system-skills/…, @user-skills/…) are file-tool paths; the shell does not resolve them.".to_string(),
+        location,
+    ]
+}
+
 fn docker_chdir_workdir_failure_guidance() -> Vec<String> {
     vec![
         "Container shell could not start: the configured working directory is missing (Docker chdir failed) — this is not a missing binary."
@@ -147,6 +178,7 @@ pub fn shell_command_failure_guidance(
     stdout: &str,
     stderr: &str,
     command: &str,
+    docker_session: bool,
 ) -> Vec<String> {
     if looks_like_shell_quote_parse_error(stdout, stderr) {
         return write_file_then_shell_guidance();
@@ -156,6 +188,9 @@ pub fn shell_command_failure_guidance(
     }
     if looks_like_windows_store_alias_stub(exit_code, stdout, stderr, command) {
         return windows_store_alias_stub_guidance();
+    }
+    if command_uses_skill_alias(command) {
+        return skill_alias_in_shell_guidance(docker_session);
     }
 
     match exit_code {
@@ -242,6 +277,32 @@ mod tests {
     use super::*;
 
     #[test]
+    fn failed_command_with_skill_alias_points_at_session_skill_dirs() {
+        let stderr =
+            "python3: can't open file '/app/@system-skills/skill-deployer/scripts/deploy_skill.py'";
+        let command = "python3 @system-skills/skill-deployer/scripts/deploy_skill.py --help";
+
+        let docker = shell_command_failure_guidance(Some(2), "", stderr, command, true);
+        assert!(docker
+            .iter()
+            .any(|line| line.contains("/opt/libragent/skills/system/…")));
+
+        let host = shell_command_failure_guidance(Some(2), "", stderr, command, false);
+        assert!(host
+            .iter()
+            .any(|line| line.contains("shell does not resolve")));
+        assert!(host
+            .iter()
+            .all(|line| !line.contains("/opt/libragent/skills")));
+
+        let unrelated =
+            shell_command_failure_guidance(Some(2), "", "error", "python3 run.py", true);
+        assert!(unrelated
+            .iter()
+            .all(|line| !line.contains("/opt/libragent/skills")));
+    }
+
+    #[test]
     fn test_looks_like_shell_quote_parse_error_detects_bash_eof_quote() {
         assert!(looks_like_shell_quote_parse_error(
             "",
@@ -277,6 +338,7 @@ mod tests {
             "",
             "bash: -c: line 20: unexpected EOF while looking for matching `''",
             "python3 /tmp/script.py",
+            false,
         );
         let joined = guidance.join("\n");
         assert!(
@@ -299,7 +361,8 @@ mod tests {
 
     #[test]
     fn test_shell_command_failure_guidance_exit_2_without_quote_signal() {
-        let guidance = shell_command_failure_guidance(Some(2), "", "usage: foo [-a]", "foo -x");
+        let guidance =
+            shell_command_failure_guidance(Some(2), "", "usage: foo [-a]", "foo -x", false);
         let joined = guidance.join("\n");
         assert!(joined.contains("Misuse of shell command"));
         assert!(
@@ -319,6 +382,7 @@ mod tests {
             "",
             "AssertionError: expected != actual",
             "cd /workspace && python3 repro.py",
+            false,
         );
         let joined = guidance.join("\n");
         assert!(
@@ -334,6 +398,7 @@ mod tests {
             "",
             "bash: line 1: somebin: command not found",
             "somebin --help",
+            false,
         );
         let joined = guidance.join("\n");
         assert!(joined.contains("Command not found"));
@@ -376,7 +441,8 @@ mod tests {
             ),
             "generic Windows 9009 must not be treated as a Store python stub"
         );
-        let guidance = shell_command_failure_guidance(Some(9009), "", stderr, "python3 --version");
+        let guidance =
+            shell_command_failure_guidance(Some(9009), "", stderr, "python3 --version", false);
         let joined = guidance.join("\n");
         assert!(
             joined.contains("execution-alias stub") || joined.contains("NOT installed"),
@@ -396,6 +462,7 @@ mod tests {
             "",
             stderr,
             "which google-chrome || which chromium",
+            false,
         );
         let joined = guidance.join("\n");
         assert!(
@@ -436,7 +503,7 @@ mod tests {
 
     #[test]
     fn test_shell_command_failure_guidance_routes_sigint() {
-        let guidance = shell_command_failure_guidance(Some(130), "", "", "python app.py");
+        let guidance = shell_command_failure_guidance(Some(130), "", "", "python app.py", false);
         assert!(guidance.iter().any(|step| step.contains("SIGINT")));
     }
 }

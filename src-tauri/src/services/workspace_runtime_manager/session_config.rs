@@ -2,7 +2,9 @@ use std::path::{Path, PathBuf};
 
 use crate::models::workspace_isolation::DEFAULT_DOCKER_WORKDIR;
 use crate::repositories::SessionMetadata;
-use crate::session_isolation::PathMappingLayer;
+use crate::session_isolation::{
+    PathMappingLayer, CONTAINER_SYSTEM_SKILLS_DIR, CONTAINER_USER_SKILLS_DIR,
+};
 
 use super::error::{RuntimeResult, WorkspaceRuntimeError};
 
@@ -58,18 +60,22 @@ pub(super) fn docker_mount_path(path: &Path) -> RuntimeResult<String> {
         .ok_or_else(|| WorkspaceRuntimeError::InvalidWorkspacePath(path.display().to_string()))
 }
 
+/// The host workspace is mounted at the session workdir, which is also the root
+/// that file tools map to the host workspace.
 pub fn build_docker_volume_args(
     host_workspace: &Path,
+    workdir: &str,
     teamwork_dir: Option<&Path>,
 ) -> RuntimeResult<Vec<String>> {
+    let workdir = workdir.trim_end_matches('/');
     let mut args = Vec::new();
-    let main_mount = format!("{}:/workspace", docker_mount_path(host_workspace)?);
+    let main_mount = format!("{}:{workdir}", docker_mount_path(host_workspace)?);
     args.push("-v".to_string());
     args.push(main_mount);
 
     if let Some(tw_dir) = teamwork_dir {
         let tw_mount = format!(
-            "{}:/workspace/.libragent/teamwork",
+            "{}:{workdir}/.libragent/teamwork",
             docker_mount_path(tw_dir)?
         );
         args.push("-v".to_string());
@@ -79,16 +85,60 @@ pub fn build_docker_volume_args(
     Ok(args)
 }
 
+/// Bind mounts that expose the host skill roots at the container skill paths
+/// shown in skill references. System skills are read-only; user skills stay
+/// writable so a global deploy from the container lands on the host.
+pub fn build_skill_volume_args(
+    system_dir: Option<&Path>,
+    user_dir: Option<&Path>,
+) -> RuntimeResult<Vec<String>> {
+    let mut args = Vec::new();
+    if let Some(dir) = system_dir {
+        args.push("-v".to_string());
+        args.push(format!(
+            "{}:{CONTAINER_SYSTEM_SKILLS_DIR}:ro",
+            docker_mount_path(dir)?
+        ));
+    }
+    if let Some(dir) = user_dir {
+        args.push("-v".to_string());
+        args.push(format!(
+            "{}:{CONTAINER_USER_SKILLS_DIR}",
+            docker_mount_path(dir)?
+        ));
+    }
+    Ok(args)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn skill_volume_args_mount_system_read_only_and_user_writable() {
+        let args = build_skill_volume_args(
+            Some(Path::new("/data/system_skills")),
+            Some(Path::new("/data/user_skills")),
+        )
+        .unwrap();
+        assert_eq!(
+            args,
+            vec![
+                "-v",
+                "/data/system_skills:/opt/libragent/skills/system:ro",
+                "-v",
+                "/data/user_skills:/opt/libragent/skills/user",
+            ]
+        );
+        assert!(build_skill_volume_args(None, None).unwrap().is_empty());
+    }
 
     #[test]
     fn test_build_docker_volume_args() {
         let host_workspace = Path::new("/home/user/workspace");
 
         // Test case 1: No teamwork directory
-        let args = build_docker_volume_args(host_workspace, None).unwrap();
+        let args = build_docker_volume_args(host_workspace, "/workspace", None).unwrap();
         assert!(args.contains(&"-v".to_string()));
         assert!(args
             .iter()
@@ -96,7 +146,8 @@ mod tests {
 
         // Test case 2: With teamwork directory
         let teamwork_dir = Path::new("/home/user/.libragent/teamwork-artifacts/123");
-        let args = build_docker_volume_args(host_workspace, Some(teamwork_dir)).unwrap();
+        let args =
+            build_docker_volume_args(host_workspace, "/workspace", Some(teamwork_dir)).unwrap();
         assert_eq!(args.len(), 4);
         assert_eq!(args[0], "-v");
         assert!(args[1].contains("/home/user/workspace:/workspace"));
@@ -104,5 +155,21 @@ mod tests {
         assert!(args[3].contains(
             "/home/user/.libragent/teamwork-artifacts/123:/workspace/.libragent/teamwork"
         ));
+    }
+
+    #[test]
+    fn custom_workdir_is_the_workspace_mount_point() {
+        let teamwork_dir = Path::new("/tw/123");
+        let args =
+            build_docker_volume_args(Path::new("/host/ws"), "/app/", Some(teamwork_dir)).unwrap();
+        assert_eq!(
+            args,
+            vec![
+                "-v",
+                "/host/ws:/app",
+                "-v",
+                "/tw/123:/app/.libragent/teamwork"
+            ]
+        );
     }
 }

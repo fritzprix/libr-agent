@@ -1,8 +1,9 @@
 use std::net::TcpListener;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::repositories::{SessionMetadata, SessionRepository};
-use crate::session_isolation::ShellType;
+use crate::services::skill_service;
+use crate::session_isolation::{ShellType, CONTAINER_SYSTEM_SKILLS_DIR, CONTAINER_USER_SKILLS_DIR};
 use tokio::process::Command as AsyncCommand;
 
 use super::docker_cli::{
@@ -10,7 +11,10 @@ use super::docker_cli::{
     run_docker_status, run_status_command, verify_container_label,
 };
 use super::error::{RuntimeResult, WorkspaceRuntimeError};
-use super::session_config::{build_docker_volume_args, session_docker_workdir, session_is_attach};
+use super::session_config::{
+    build_docker_volume_args, build_skill_volume_args, docker_mount_path, session_docker_workdir,
+    session_is_attach,
+};
 use super::DockerStepReporter;
 
 pub(super) async fn ensure_bash_image_contract(
@@ -91,9 +95,17 @@ pub(super) async fn ensure_bash_image_contract(
             None
         };
 
-        let volume_args = build_docker_volume_args(host_workspace, tw_dir_arg)?;
-        let label = format!("com.libragent.session_id={session_id}");
         let workdir = session_docker_workdir(session);
+        let mut volume_args = build_docker_volume_args(host_workspace, &workdir, tw_dir_arg)?;
+        let (system_skills_dir, user_skills_dir) = host_skill_dirs();
+        if let Some(dir) = &user_skills_dir {
+            let _ = tokio::fs::create_dir_all(dir).await;
+        }
+        volume_args.extend(build_skill_volume_args(
+            system_skills_dir.as_deref().filter(|dir| dir.is_dir()),
+            user_skills_dir.as_deref().filter(|dir| dir.is_dir()),
+        )?);
+        let label = format!("com.libragent.session_id={session_id}");
         let mut cmd = AsyncCommand::new("docker");
         apply_docker_cli_env(&mut cmd);
         cmd.args(["run", "-d", "--name", container_name, "--label", &label]);
@@ -106,6 +118,9 @@ pub(super) async fn ensure_bash_image_contract(
 
         if let Some(user) = current_uid_gid().await {
             cmd.args(["--user", &user]);
+            if !image_home_is_writable(image_ref, &user).await {
+                cmd.args(["-e", &format!("HOME={FALLBACK_CONTAINER_HOME}")]);
+            }
         }
 
         if let Some(reporter) = reporter {
@@ -121,6 +136,75 @@ pub(super) async fn ensure_bash_image_contract(
         reporter("Verifying shell");
     }
     ensure_supported_shell(session_id, container_name).await
+}
+
+const FALLBACK_CONTAINER_HOME: &str = "/tmp";
+
+/// Running as the host uid leaves `HOME=/` when the image has no passwd entry for
+/// it, and tools that write under `~` (pip, npm caches) then fail.
+async fn image_home_is_writable(image_ref: &str, user: &str) -> bool {
+    run_docker_status([
+        "run",
+        "--rm",
+        "--user",
+        user,
+        "--entrypoint",
+        "sh",
+        image_ref,
+        "-c",
+        r#"[ "$HOME" != / ] && [ -w "$HOME" ]"#,
+    ])
+    .await
+    .is_ok()
+}
+
+fn host_skill_dirs() -> (Option<PathBuf>, Option<PathBuf>) {
+    (
+        skill_service::get_system_skills_directory().ok(),
+        skill_service::get_user_skills_directory().ok(),
+    )
+}
+
+/// Copies host skill roots into containers that lack them: attach containers
+/// (mounts cannot be added) and managed containers created before skill mounts.
+/// Best effort — a missing skill tree must not block the session.
+pub(super) async fn stage_missing_skill_roots(container_name: &str) {
+    let (system_dir, user_dir) = host_skill_dirs();
+    for (host_dir, container_dir) in [
+        (system_dir, CONTAINER_SYSTEM_SKILLS_DIR),
+        (user_dir, CONTAINER_USER_SKILLS_DIR),
+    ] {
+        let Some(host_dir) = host_dir.filter(|dir| dir.is_dir()) else {
+            continue;
+        };
+        if run_docker_status(["exec", container_name, "test", "-d", container_dir])
+            .await
+            .is_ok()
+        {
+            continue;
+        }
+        if let Err(error) = copy_skill_root(container_name, &host_dir, container_dir).await {
+            tracing::warn!(
+                "Failed to copy skills '{}' into container {container_name}:{container_dir}: {error}",
+                host_dir.display()
+            );
+        }
+    }
+}
+
+async fn copy_skill_root(
+    container_name: &str,
+    host_dir: &Path,
+    container_dir: &str,
+) -> RuntimeResult<()> {
+    let parent = Path::new(container_dir)
+        .parent()
+        .and_then(Path::to_str)
+        .unwrap_or("/");
+    run_docker_status(["exec", "-u", "0", container_name, "mkdir", "-p", parent]).await?;
+    let source = format!("{}/.", docker_mount_path(host_dir)?);
+    let destination = format!("{container_name}:{container_dir}");
+    run_docker_status(["cp", &source, &destination]).await
 }
 
 pub(super) async fn append_port_binding_args(

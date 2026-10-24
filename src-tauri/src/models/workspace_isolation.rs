@@ -114,16 +114,20 @@ impl DockerWorkspaceConfig {
             );
         }
 
-        if has_attach {
-            let workdir = self.workdir();
-            if !workdir.starts_with('/') {
-                return Err(format!(
-                    "Docker workdir must be an absolute Unix path, got '{workdir}'"
-                ));
-            }
-            if workdir.contains('\0') {
-                return Err("Docker workdir must not contain NUL bytes".to_string());
-            }
+        let workdir = self.workdir();
+        if !workdir.starts_with('/') {
+            return Err(format!(
+                "Docker workdir must be an absolute Unix path, got '{workdir}'"
+            ));
+        }
+        if workdir.contains('\0') {
+            return Err("Docker workdir must not contain NUL bytes".to_string());
+        }
+        // Managed sessions bind-mount the host workspace at the workdir.
+        if !has_attach && (workdir.trim_end_matches('/').is_empty() || workdir.contains(':')) {
+            return Err(format!(
+                "Managed Docker workdir must be a non-root path without ':', got '{workdir}'"
+            ));
         }
 
         for (key, value) in &self.env {
