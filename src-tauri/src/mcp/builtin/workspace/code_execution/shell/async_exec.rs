@@ -413,10 +413,7 @@ impl WorkspaceServer {
                 cwd
             ),
             vec![
-                format!(
-                    "Use workspace__waitForProcess(\"{}\", <seconds>) to block until the process exits; use timeout 0 for a status check only",
-                    process_id
-                ),
+                crate::mcp::builtin::error_guidance::wait_for_process_hint(Some(&process_id)),
                 format!(
                     "Use workspace__readProcessOutput(\"{}\", \"both\") to inspect stdout and stderr",
                     process_id
