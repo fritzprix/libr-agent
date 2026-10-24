@@ -1,0 +1,12 @@
+#!/bin/bash
+cd /home/fritzprix/my_works/libr-agent
+
+echo "=== PR #2218 compilation check ==="
+git fetch origin 2>/dev/null
+git checkout -b pr-2218-check origin/fix/mcp-transport-oneof-2198 2>/dev/null
+pnpm rust:check 2>&1 | tail -10
+echo "=== PR #2218 rust result: $? ==="
+pnpm lint 2>&1 | tail -10
+echo "=== PR #2218 lint result: $? ==="
+git checkout - 2>/dev/null
+git branch -D pr-2218-check 2>/dev/null

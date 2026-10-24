@@ -13,29 +13,29 @@ One sentence explaining the decision.
 
 ## Eval contract
 
-| Field | Value |
-| --- | --- |
-| Git revision | |
-| Session id / title | |
-| ATIF path(s) | |
-| Export provenance | UI export / provided file / other |
-| User goal (from first user step) | |
-| In-scope tools | |
-| Comparable to prior cycle? | yes / no / n/a |
+| Field                            | Value                             |
+| -------------------------------- | --------------------------------- |
+| Git revision                     |                                   |
+| Session id / title               |                                   |
+| ATIF path(s)                     |                                   |
+| Export provenance                | UI export / provided file / other |
+| User goal (from first user step) |                                   |
+| In-scope tools                   |                                   |
+| Comparable to prior cycle?       | yes / no / n/a                    |
 
 ## Trajectory summary
 
 Report counts, not bare percentages without denominators.
 
-| Metric | Value |
-| --- | ---: |
-| Steps / agent steps | |
-| Tool calls | |
-| Distinct tools | |
-| Adjacent repeated calls | |
-| Heuristic error observations | |
-| Oversized observations (≥N chars) | |
-| Prompt / completion / cached tokens | |
+| Metric                              | Value |
+| ----------------------------------- | ----: |
+| Steps / agent steps                 |       |
+| Tool calls                          |       |
+| Distinct tools                      |       |
+| Adjacent repeated calls             |       |
+| Heuristic error observations        |       |
+| Oversized observations (≥N chars)   |       |
+| Prompt / completion / cached tokens |       |
 
 Top tools by frequency: …
 
@@ -55,8 +55,8 @@ Top tools by frequency: …
 ## Root-cause hypotheses
 
 | Priority | Hypothesis | Owning layer | Evidence | Breadth | Risk | Confidence |
-| --- | --- | --- | --- | --- | --- | --- |
-| | | | | | | |
+| -------- | ---------- | ------------ | -------- | ------- | ---- | ---------- |
+|          |            |              |          |         |      |            |
 
 ## Intervention (if acting)
 

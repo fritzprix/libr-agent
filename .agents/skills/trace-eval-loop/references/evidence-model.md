@@ -2,13 +2,13 @@
 
 ## Evidence levels
 
-| Level | Meaning | Allowed conclusion |
-| --- | --- | --- |
-| E0 | Aggregate tool/token correlation only | Observation; no root-cause claim |
-| E1 | One trajectory shows a plausible failure sequence | Low-confidence hypothesis |
-| E2 | Repeated trajectories (or same session segments) show the same divergence, or a schema/handler/export contract is deterministically wrong | Medium-confidence root cause |
-| E3 | Controlled re-export after a single intervention changes the predicted metric without material regressions | High-confidence causal support |
-| E4 | Repeated re-runs / held-out sessions confirm the effect | Adoptable general improvement |
+| Level | Meaning                                                                                                                                   | Allowed conclusion               |
+| ----- | ----------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| E0    | Aggregate tool/token correlation only                                                                                                     | Observation; no root-cause claim |
+| E1    | One trajectory shows a plausible failure sequence                                                                                         | Low-confidence hypothesis        |
+| E2    | Repeated trajectories (or same session segments) show the same divergence, or a schema/handler/export contract is deterministically wrong | Medium-confidence root cause     |
+| E3    | Controlled re-export after a single intervention changes the predicted metric without material regressions                                | High-confidence causal support   |
+| E4    | Repeated re-runs / held-out sessions confirm the effect                                                                                   | Adoptable general improvement    |
 
 `reasoning_content` is supporting context, not ground truth. Prefer tool calls,
 observations, workspace outcomes, and source contracts.

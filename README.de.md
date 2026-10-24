@@ -29,11 +29,11 @@ Viele Agenten-Frameworks setzen voraus, dass Benutzer komplexe Terminalbefehle b
 
 LibrAgent löst diese Herausforderungen als **vollwertige, gebrauchsfertige Desktop-Anwendung**:
 
-| Herkömmlicher Ansatz | Mit LibrAgent |
-| -------------------- | ------------- |
-| Manuelle Pflege komplexer MCP-JSON-Konfigurationen | **Ein-Klick-Erweiterungen** — Vorgefertigte Presets (GitHub, Brave Search, Dateisystem) und nahtloser Import aus Cursor, VS Code und Claude Code |
-| Aufwendiges Selbstprogrammieren von Multi-Agenten | **Integrierte Koordinationsmuster** — Erprobte Standard-Skills wie `pipeline`, `hub-spoke`, `divide-conquer` und `consensus-delegation` |
-| Feste Bindung an proprietäre Modelle und Tools | **Volle Technologiefreiheit** — Beliebige Cloud-APIs oder lokale Modelle ([Ollama](https://ollama.com)) unter einer quelloffenen MIT-Lizenz nutzen |
+| Herkömmlicher Ansatz                               | Mit LibrAgent                                                                                                                                      |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Manuelle Pflege komplexer MCP-JSON-Konfigurationen | **Ein-Klick-Erweiterungen** — Vorgefertigte Presets (GitHub, Brave Search, Dateisystem) und nahtloser Import aus Cursor, VS Code und Claude Code   |
+| Aufwendiges Selbstprogrammieren von Multi-Agenten  | **Integrierte Koordinationsmuster** — Erprobte Standard-Skills wie `pipeline`, `hub-spoke`, `divide-conquer` und `consensus-delegation`            |
+| Feste Bindung an proprietäre Modelle und Tools     | **Volle Technologiefreiheit** — Beliebige Cloud-APIs oder lokale Modelle ([Ollama](https://ollama.com)) unter einer quelloffenen MIT-Lizenz nutzen |
 
 [Neueste Version herunterladen](https://github.com/fritzprix/libr-agent/releases/latest) · [5-Minuten-Schnellstart](#5-minuten-schnellstart)
 
@@ -71,16 +71,16 @@ LibrAgent löst diese Herausforderungen als **vollwertige, gebrauchsfertige Desk
 
 Wählen Sie das passende Muster basierend auf Ihrer Aufgabenstellung direkt im Chat:
 
-| Skill-Name | Koordinationsmuster | Empfohlener Einsatzbereich |
-| ---------- | ------------------- | -------------------------- |
-| `pipeline` | Sequentielle Phasen | Die Ausgabe einer Phase dient als Eingabe der nächsten (Recherche → Entwurf → Prüfung) |
-| `hub-spoke` | Hub-and-Spoke | Ein zentraler Koordinator steuert und integriert mehrere spezialisierte Agenten |
-| `divide-conquer` | Parallele Teilung | Unabhängige Teilaufgaben parallel bearbeiten und anschließend zusammenführen |
-| `consensus-delegation` | Multiperspektivisch | Dieselbe Fragestellung an mehrere Expertenagenten richten und abgleichen |
-| `gatekeeper` / `pair-programming` | Prüfschleifen | Strikte Code-Reviews oder kollaboratives Programmieren zweier Agenten |
-| `delegate` | Gezielte Delegation | Aufgaben an eine dedizierte Untersitzung mit lückenloser Verlaufskontrolle delegieren |
-| `teamwork` → `org` | Dauerhafte Teams | Feste Multi-Agenten-Teams mit gemeinsamen Arbeitsrichtlinien und Organisationsübersicht |
-| `schedule` / `loop` / `call-me-back` | Zeit- & Ereignissteuerung | Cron-Zeitpläne, Verzögerungen in Sitzungen oder Wiederaufnahme bei Prozessereignissen |
+| Skill-Name                           | Koordinationsmuster       | Empfohlener Einsatzbereich                                                              |
+| ------------------------------------ | ------------------------- | --------------------------------------------------------------------------------------- |
+| `pipeline`                           | Sequentielle Phasen       | Die Ausgabe einer Phase dient als Eingabe der nächsten (Recherche → Entwurf → Prüfung)  |
+| `hub-spoke`                          | Hub-and-Spoke             | Ein zentraler Koordinator steuert und integriert mehrere spezialisierte Agenten         |
+| `divide-conquer`                     | Parallele Teilung         | Unabhängige Teilaufgaben parallel bearbeiten und anschließend zusammenführen            |
+| `consensus-delegation`               | Multiperspektivisch       | Dieselbe Fragestellung an mehrere Expertenagenten richten und abgleichen                |
+| `gatekeeper` / `pair-programming`    | Prüfschleifen             | Strikte Code-Reviews oder kollaboratives Programmieren zweier Agenten                   |
+| `delegate`                           | Gezielte Delegation       | Aufgaben an eine dedizierte Untersitzung mit lückenloser Verlaufskontrolle delegieren   |
+| `teamwork` → `org`                   | Dauerhafte Teams          | Feste Multi-Agenten-Teams mit gemeinsamen Arbeitsrichtlinien und Organisationsübersicht |
+| `schedule` / `loop` / `call-me-back` | Zeit- & Ereignissteuerung | Cron-Zeitpläne, Verzögerungen in Sitzungen oder Wiederaufnahme bei Prozessereignissen   |
 
 Auswahlhilfe: [Framework-Auswahl](src-tauri/bundled_skills/teamwork/references/framework-selection.md) · Vollständiger Leitfaden: [Sub-Agenten](docs/user/guides/sub-agents.md)
 
@@ -97,13 +97,13 @@ Weitere Standard-Skills: `setup-wizard`, `mcp-installer`, `playbook-creator` und
 
 ### Kern-Laufzeitinfrastruktur
 
-| Ausführungsbereich | Funktionsumfang |
-| ------------------ | --------------- |
-| **Workspace** | Zeilengenaue Codebearbeitung, dateiübergreifende Operationen, Kontextinjektion über `@file` / `@skill` / `@playbook` |
-| **Shell** | Isolierte und persistente Terminalumgebungen mit asynchroner Prozessüberwachung |
-| **Browser** | Isolierte Browser-Sidecars sowie Bridge-Unterstützung für reguläre Chrome-Sitzungen |
-| **Knowledge** | Wissensgraphen und performante BM25-Hybridsuche |
-| **Export** | Strukturierte Markdown-Berichte und standardisierter ATIF-Sitzungsexport ([Sitzungsexport](docs/user/guides/session-export.md)) |
+| Ausführungsbereich | Funktionsumfang                                                                                                                 |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| **Workspace**      | Zeilengenaue Codebearbeitung, dateiübergreifende Operationen, Kontextinjektion über `@file` / `@skill` / `@playbook`            |
+| **Shell**          | Isolierte und persistente Terminalumgebungen mit asynchroner Prozessüberwachung                                                 |
+| **Browser**        | Isolierte Browser-Sidecars sowie Bridge-Unterstützung für reguläre Chrome-Sitzungen                                             |
+| **Knowledge**      | Wissensgraphen und performante BM25-Hybridsuche                                                                                 |
+| **Export**         | Strukturierte Markdown-Berichte und standardisierter ATIF-Sitzungsexport ([Sitzungsexport](docs/user/guides/session-export.md)) |
 
 Automatische Kontextkomprimierung, Schleifenerkennung, Schutzschalter und Antwortvalidierung gewährleisten auch bei langen Sitzungen einen zuverlässigen und stabilen Betrieb.
 
@@ -151,6 +151,7 @@ Automatische Kontextkomprimierung, Schleifenerkennung, Schutzschalter und Antwor
 Laden Sie das neueste Installationsprogramm von der **[Releases-Seite](https://github.com/fritzprix/libr-agent/releases/latest)** herunter.
 
 <!-- RELEASE_DOWNLOADS_START -->
+
 - **Windows:** [`LibrAgent_0.9.27_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent_0.9.27_x64-setup.exe) · [`LibrAgent_0.9.27_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent_0.9.27_x64_en-US.msi)
 - **macOS (Apple Silicon):** [`LibrAgent_0.9.27_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent_0.9.27_aarch64.dmg)
 - **Linux:** [`LibrAgent_0.9.27_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent_0.9.27_amd64.AppImage) · [`LibrAgent_0.9.27_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent_0.9.27_amd64.deb) · [`LibrAgent-0.9.27-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent-0.9.27-1.x86_64.rpm)

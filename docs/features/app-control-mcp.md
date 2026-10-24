@@ -33,13 +33,13 @@ Port: Settings HTTP port, or `~/.libragent/http_port`.
 
 ## Tools (v1)
 
-| Tool | Args | Effect |
-| ---- | ---- | ------ |
-| `app__navigate` | `path` (e.g. `/mcp-servers`) | React-router navigate |
-| `app__highlight` | `target: "preset"`, `name`, optional `ms` | Open Extensions + highlight recommended preset card |
-| `app__install_preset` | `name` (e.g. `ddg-search`) | One-click install zero-config preset (fails if keys/OAuth required) |
-| `app__focus_session` | `sessionId` | Navigate to `/agent/{sessionId}` |
-| `app__wait_ui` | optional `ms` (default 500), optional `ready.path` hint | Sleep for pacing between steps |
+| Tool                  | Args                                                    | Effect                                                              |
+| --------------------- | ------------------------------------------------------- | ------------------------------------------------------------------- |
+| `app__navigate`       | `path` (e.g. `/mcp-servers`)                            | React-router navigate                                               |
+| `app__highlight`      | `target: "preset"`, `name`, optional `ms`               | Open Extensions + highlight recommended preset card                 |
+| `app__install_preset` | `name` (e.g. `ddg-search`)                              | One-click install zero-config preset (fails if keys/OAuth required) |
+| `app__focus_session`  | `sessionId`                                             | Navigate to `/agent/{sessionId}`                                    |
+| `app__wait_ui`        | optional `ms` (default 500), optional `ready.path` hint | Sleep for pacing between steps                                      |
 
 There is **no** composite scenario tool. Demo shot lists live in the bundled [demo-play shot list](../../src-tauri/bundled_skills/demo-play/references/hero-shot-list.md) and operator scripts that call these primitives.
 

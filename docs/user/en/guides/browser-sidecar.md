@@ -14,7 +14,7 @@ LibrAgent agents can open web pages, read content, and capture screenshots.
 By default, LibrAgent opens a **dedicated agent browser**.
 
 - It runs in a separate process, so a heavy or broken page does not freeze the main app.
-- Logins you make *inside* that browser stay on this device until you clear them under **Settings → System → Agent browser → Clear agent browser data**.
+- Logins you make _inside_ that browser stay on this device until you clear them under **Settings → System → Agent browser → Clear agent browser data**.
 - This profile is not your everyday Chrome.
 
 Use it for public search, docs, and sandbox work.
@@ -25,11 +25,11 @@ Use it for public search, docs, and sandbox work.
 
 Install the Chrome extension when the agent must use sites where **you are already signed in** — carts, mail, intranet, personal dashboards.
 
-| | Built-in agent browser | Your Chrome |
-| - | ---------------------- | ----------- |
-| Logins | LibrAgent-only profile | Your normal Chrome cookies |
-| Best for | Public research | Personal or work sites with your session |
-| Setup | None | One Chrome extension install |
+|          | Built-in agent browser | Your Chrome                              |
+| -------- | ---------------------- | ---------------------------------------- |
+| Logins   | LibrAgent-only profile | Your normal Chrome cookies               |
+| Best for | Public research        | Personal or work sites with your session |
+| Setup    | None                   | One Chrome extension install             |
 
 ### Install from the Chrome Web Store
 
@@ -58,14 +58,14 @@ Copy the path from Settings, then in Chrome open `chrome://extensions`, turn on 
 
 ## What you can do
 
-| Capability | Built-in | Your Chrome |
-| ---------- | -------- | ----------- |
-| Open and move between pages | ✅ | ✅ |
-| Read page content | ✅ | ✅ |
-| Click, type, scroll | ✅ | ✅ (works on many strict-security sites) |
-| Screenshot | ✅ (visible area or full page) | ✅ (visible area only) |
-| Console logs | ✅ | ❌ (not yet) |
-| Use your Chrome logins | ❌ | ✅ |
+| Capability                  | Built-in                       | Your Chrome                              |
+| --------------------------- | ------------------------------ | ---------------------------------------- |
+| Open and move between pages | ✅                             | ✅                                       |
+| Read page content           | ✅                             | ✅                                       |
+| Click, type, scroll         | ✅                             | ✅ (works on many strict-security sites) |
+| Screenshot                  | ✅ (visible area or full page) | ✅ (visible area only)                   |
+| Console logs                | ✅                             | ❌ (not yet)                             |
+| Use your Chrome logins      | ❌                             | ✅                                       |
 
 Typical “Your Chrome” tasks: check logged-in shopping, mail, or GitHub; open intranet dashboards; capture the visible tab; click and type in forms.
 

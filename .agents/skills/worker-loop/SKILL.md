@@ -9,12 +9,12 @@ One **tick** = one unit of work: service one PR, or — when no PR needs action 
 
 ## Invocation
 
-| Command | Behavior |
-| --- | --- |
-| `/worker-loop` | Run one tick now. |
-| `/worker-loop 10m` | Arm a recurring loop (interval `Ns`/`Nm`/`Nh`), then run one tick now. |
-| `/worker-loop stop` | Kill the loop process and report. |
-| `/worker-loop status` | Print the state file summary; do no work. |
+| Command               | Behavior                                                               |
+| --------------------- | ---------------------------------------------------------------------- |
+| `/worker-loop`        | Run one tick now.                                                      |
+| `/worker-loop 10m`    | Arm a recurring loop (interval `Ns`/`Nm`/`Nh`), then run one tick now. |
+| `/worker-loop stop`   | Kill the loop process and report.                                      |
+| `/worker-loop status` | Print the state file summary; do no work.                              |
 
 ### Arming the loop (Cursor local session)
 
@@ -35,10 +35,24 @@ Follow the Cursor `loop` skill mechanics:
 ```json
 {
   "loopPid": 12345,
-  "current": { "issue": 2199, "branch": "feat/mcp-preset-catalog-2199", "pr": null, "phase": "implementing" },
-  "needsUser": [{ "ref": "PR #2197", "question": "...", "since": "2026-10-22T10:00:00Z" }],
+  "current": {
+    "issue": 2199,
+    "branch": "feat/mcp-preset-catalog-2199",
+    "pr": null,
+    "phase": "implementing"
+  },
+  "needsUser": [
+    { "ref": "PR #2197", "question": "...", "since": "2026-10-22T10:00:00Z" }
+  ],
   "skipped": { "2179": "waits on fre4x/b1te#584" },
-  "history": [{ "at": "...", "action": "fix-ci", "ref": "PR #2197", "result": "pushed 1a2b3c" }]
+  "history": [
+    {
+      "at": "...",
+      "action": "fix-ci",
+      "ref": "PR #2197",
+      "result": "pushed 1a2b3c"
+    }
+  ]
 }
 ```
 

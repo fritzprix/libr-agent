@@ -121,4 +121,3 @@ jobs:
               gh release delete "$TAG" --repo "${{ github.repository }}" --cleanup-tag --yes || true
             fi
           done
-

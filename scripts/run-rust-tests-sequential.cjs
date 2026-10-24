@@ -48,9 +48,16 @@ function shouldSkipTarget(name) {
 }
 
 function sleepMs(ms) {
-  spawnSync(process.execPath, ['-e', `Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ${ms})`], {
-    stdio: 'ignore',
-  });
+  spawnSync(
+    process.execPath,
+    [
+      '-e',
+      `Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ${ms})`,
+    ],
+    {
+      stdio: 'ignore',
+    },
+  );
 }
 
 /** Freshly linked ~30MB test exes are sometimes locked by Windows Defender (os error 5). */
@@ -161,9 +168,7 @@ function main() {
     }
   }
 
-  console.error(
-    `\n[rust-test-sequential] All ${totalSteps} targets passed.`,
-  );
+  console.error(`\n[rust-test-sequential] All ${totalSteps} targets passed.`);
   process.exit(0);
 }
 

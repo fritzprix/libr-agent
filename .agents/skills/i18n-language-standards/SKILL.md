@@ -39,6 +39,7 @@ node .agents/skills/i18n-language-standards/scripts/validate_i18n_standards.cjs
 ```
 
 The script verifies:
+
 - Absence of forbidden internal identifiers in `src/locales/` and `src/features/settings/`.
 - Absence of flagged engineering jargon.
 - JSON syntax validity and key parity against `en/common.json`.

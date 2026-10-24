@@ -29,11 +29,11 @@
 
 LibrAgent 为解决上述问题提供了 **开箱即用的完整桌面端产品**：
 
-| 传统方式 | LibrAgent 解决方案 |
-| -------- | ------------------ |
-| 手动编写复杂的 MCP JSON 配置文件 | **一键式扩展工具** — 预置 GitHub、Brave Search、本地文件系统等常用工具，支持一键导入 Cursor、VS Code、Claude Code 配置 |
-| 必须用代码自行组装多智能体系统 | **内置成熟协同模式** — 开箱即用的 `pipeline`、`hub-spoke`、`divide-conquer`、`consensus-delegation` 等原生技能 |
-| 被特定云厂商的模型和工具绑定 | **自由的技术栈选择** — 支持接入主流云端 API 或本地部署的 [Ollama](https://ollama.com)，基于 MIT 协议保障本地优先与隐私安全 |
+| 传统方式                         | LibrAgent 解决方案                                                                                                         |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| 手动编写复杂的 MCP JSON 配置文件 | **一键式扩展工具** — 预置 GitHub、Brave Search、本地文件系统等常用工具，支持一键导入 Cursor、VS Code、Claude Code 配置     |
+| 必须用代码自行组装多智能体系统   | **内置成熟协同模式** — 开箱即用的 `pipeline`、`hub-spoke`、`divide-conquer`、`consensus-delegation` 等原生技能             |
+| 被特定云厂商的模型和工具绑定     | **自由的技术栈选择** — 支持接入主流云端 API 或本地部署的 [Ollama](https://ollama.com)，基于 MIT 协议保障本地优先与隐私安全 |
 
 [下载最新发行版](https://github.com/fritzprix/libr-agent/releases/latest) · [5 分钟上手路径](#5-分钟上手路径)
 
@@ -71,16 +71,16 @@ LibrAgent 为解决上述问题提供了 **开箱即用的完整桌面端产品*
 
 根据实际工作任务的结构，选择合适的模式并在对话框中直接调用：
 
-| 技能名称 | 协同模式 | 适用场景 |
-| -------- | -------- | -------- |
-| `pipeline` | 顺序流转流水线 | 前一阶段的产出作为下一阶段的输入（调研 → 起草 → 复核） |
-| `hub-spoke` | 核心辐射协调 | 由一个主协调智能体统筹调度多个专业工作智能体 |
-| `divide-conquer` | 任务并行分治 | 将任务拆解为相互独立的子模块并行执行，最后汇总结算 |
-| `consensus-delegation` | 多角度综合研判 | 就同一议题向多个专业智能体征询意见并调和差异 |
-| `gatekeeper` / `pair-programming` | 审查与配对回路 | 实施严格的代码审查机制，或开展两智能体结对协作 |
-| `delegate` | 轻量单项委托 | 分派单次子会话处理具体任务并追踪完整执行链条 |
-| `teamwork` → `org` | 长期持久化团队 | 建立具有共同守则与组织架构 UI 的专业协作团队 |
-| `schedule` / `loop` / `call-me-back` | 时间与事件驱动 | 实现 Cron 周期定时、会话内延时触发或基于外部事件唤醒 |
+| 技能名称                             | 协同模式       | 适用场景                                               |
+| ------------------------------------ | -------------- | ------------------------------------------------------ |
+| `pipeline`                           | 顺序流转流水线 | 前一阶段的产出作为下一阶段的输入（调研 → 起草 → 复核） |
+| `hub-spoke`                          | 核心辐射协调   | 由一个主协调智能体统筹调度多个专业工作智能体           |
+| `divide-conquer`                     | 任务并行分治   | 将任务拆解为相互独立的子模块并行执行，最后汇总结算     |
+| `consensus-delegation`               | 多角度综合研判 | 就同一议题向多个专业智能体征询意见并调和差异           |
+| `gatekeeper` / `pair-programming`    | 审查与配对回路 | 实施严格的代码审查机制，或开展两智能体结对协作         |
+| `delegate`                           | 轻量单项委托   | 分派单次子会话处理具体任务并追踪完整执行链条           |
+| `teamwork` → `org`                   | 长期持久化团队 | 建立具有共同守则与组织架构 UI 的专业协作团队           |
+| `schedule` / `loop` / `call-me-back` | 时间与事件驱动 | 实现 Cron 周期定时、会话内延时触发或基于外部事件唤醒   |
 
 模式选型参考: [框架选型指南](src-tauri/bundled_skills/teamwork/references/framework-selection.md) · 详细指引: [子智能体与编排](docs/user/guides/sub-agents.md)
 
@@ -97,13 +97,13 @@ LibrAgent 为解决上述问题提供了 **开箱即用的完整桌面端产品*
 
 ### 核心运行能力
 
-| 核心领域 | 功能特性 |
-| -------- | -------- |
-| **Workspace** | 行级精准代码编辑、多文件批处理操作、支持注入 `@file` / `@skill` / `@playbook` 上下文 |
-| **Shell** | 隔离持久化的终端环境与异步后台进程监控 |
-| **Browser** | 独立的浏览器沙箱环境，支持通过专用扩展桥接日常 Chrome 会话 |
-| **Knowledge** | 知识图谱结构存储与高性能 BM25 混合检索 |
-| **Export** | 结构化 Markdown 报告导出与标准化 ATIF 执行轨迹输出（[会话导出指南](docs/user/guides/session-export.md)） |
+| 核心领域      | 功能特性                                                                                                 |
+| ------------- | -------------------------------------------------------------------------------------------------------- |
+| **Workspace** | 行级精准代码编辑、多文件批处理操作、支持注入 `@file` / `@skill` / `@playbook` 上下文                     |
+| **Shell**     | 隔离持久化的终端环境与异步后台进程监控                                                                   |
+| **Browser**   | 独立的浏览器沙箱环境，支持通过专用扩展桥接日常 Chrome 会话                                               |
+| **Knowledge** | 知识图谱结构存储与高性能 BM25 混合检索                                                                   |
+| **Export**    | 结构化 Markdown 报告导出与标准化 ATIF 执行轨迹输出（[会话导出指南](docs/user/guides/session-export.md)） |
 
 通过内置的上下文智能压缩、死循环熔断器、故障阻断保护与响应时效校验，确保长周期会话持续高效稳定运行。
 
@@ -151,6 +151,7 @@ LibrAgent 为解决上述问题提供了 **开箱即用的完整桌面端产品*
 从 **[Releases 页面](https://github.com/fritzprix/libr-agent/releases/latest)** 下载最新安装包。
 
 <!-- RELEASE_DOWNLOADS_START -->
+
 - **Windows：** [`LibrAgent_0.9.27_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent_0.9.27_x64-setup.exe) · [`LibrAgent_0.9.27_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent_0.9.27_x64_en-US.msi)
 - **macOS（Apple Silicon）：** [`LibrAgent_0.9.27_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent_0.9.27_aarch64.dmg)
 - **Linux：** [`LibrAgent_0.9.27_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent_0.9.27_amd64.AppImage) · [`LibrAgent_0.9.27_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent_0.9.27_amd64.deb) · [`LibrAgent-0.9.27-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent-0.9.27-1.x86_64.rpm)

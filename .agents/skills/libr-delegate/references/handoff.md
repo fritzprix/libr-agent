@@ -4,14 +4,14 @@ Load when writing the LibrAgent task text or debugging missing context.
 
 ## Quick matrix
 
-| Need | Works by default? | What to do |
-| --- | --- | --- |
-| Child sees Cursor chat/history | No | Restate everything in `request` / message |
-| Child uses Cursor CWD files | No | Pass absolute `workspacePath` to that repo |
-| Child inherits repo `agents.md` / `CLAUDE.md` | Only if those files live in the **session** workspace | Set `workspacePath` to that folder, or copy critical rules into the task |
-| Child uses LibrAgent assistant-scoped skills | Yes | Pick the right `assistantId` |
-| Child uses Cursor-only / workspace-local skills outside that path | No | Inline the procedure or use an assistant that already has it |
-| Lineage under an existing LibrAgent session | Yes | Set `parentSessionId` to that exact id |
+| Need                                                              | Works by default?                                     | What to do                                                               |
+| ----------------------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------ |
+| Child sees Cursor chat/history                                    | No                                                    | Restate everything in `request` / message                                |
+| Child uses Cursor CWD files                                       | No                                                    | Pass absolute `workspacePath` to that repo                               |
+| Child inherits repo `agents.md` / `CLAUDE.md`                     | Only if those files live in the **session** workspace | Set `workspacePath` to that folder, or copy critical rules into the task |
+| Child uses LibrAgent assistant-scoped skills                      | Yes                                                   | Pick the right `assistantId`                                             |
+| Child uses Cursor-only / workspace-local skills outside that path | No                                                    | Inline the procedure or use an assistant that already has it             |
+| Lineage under an existing LibrAgent session                       | Yes                                                   | Set `parentSessionId` to that exact id                                   |
 
 ## Task template
 

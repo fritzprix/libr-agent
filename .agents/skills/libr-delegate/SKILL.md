@@ -22,9 +22,9 @@ LibrAgent `bundled_skills`.
 
 ## vs in-app `delegate`
 
-| Caller | Mechanism |
-| --- | --- |
-| Cursor / scripts / Harbor | **This skill** → HTTP `/api/sessions` |
+| Caller                        | Mechanism                                |
+| ----------------------------- | ---------------------------------------- |
+| Cursor / scripts / Harbor     | **This skill** → HTTP `/api/sessions`    |
 | Inside a LibrAgent agent turn | In-app **`delegate`** → `agent__*` tools |
 
 ## Base URL
@@ -106,12 +106,12 @@ final assistant text) then terminate+delete so sessions do not accumulate.
 **Wire `status` is always lowercase** (`serde(rename_all = "lowercase")`):
 `idle` | `busy` | `paused` | `error` | `queued` | `provisioning`.
 
-| Status (wire) | Action |
-| --- | --- |
-| `busy` / `queued` / `provisioning` | Wait with backoff; do not spam |
-| `idle` (after work) | Read messages; treat latest assistant text as result |
-| `paused` | `POST …/resume` once, then poll |
-| `error` | Fail the handoff; do not claim success from partial prose |
+| Status (wire)                      | Action                                                    |
+| ---------------------------------- | --------------------------------------------------------- |
+| `busy` / `queued` / `provisioning` | Wait with backoff; do not spam                            |
+| `idle` (after work)                | Read messages; treat latest assistant text as result      |
+| `paused`                           | `POST …/resume` once, then poll                           |
+| `error`                            | Fail the handoff; do not claim success from partial prose |
 
 Preferred poll (normalizes case; exits on terminal):
 

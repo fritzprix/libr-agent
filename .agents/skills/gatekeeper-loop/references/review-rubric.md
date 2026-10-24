@@ -2,12 +2,12 @@
 
 Classify every finding. Code review and `changes-requested` verdicts proceed immediately regardless of CI status. Only **blocker** and **major** become required `G` items; **minor** and **nit** become `S` suggestions and never block approval.
 
-| Severity | Examples |
-| --- | --- |
-| blocker | Wrong behavior, data loss, security/privacy leak, broken build, failing or deleted tests, migration without rollback path, diagnosed CI failure caused by the PR |
-| major | Linked issue's acceptance criteria / checklist not met; new logic without tests; unhandled error path that users will hit; cross-platform path bug; violates `agents.md` hard rules (`as any`, raw `cargo`, protected-path edits outside scope); unrelated changes bundled in |
-| minor | Naming, small duplication, missing doc/i18n string for a non-critical path, comment noise |
-| nit | Style preferences the formatter/linter does not enforce |
+| Severity | Examples                                                                                                                                                                                                                                                                      |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| blocker  | Wrong behavior, data loss, security/privacy leak, broken build, failing or deleted tests, migration without rollback path, diagnosed CI failure caused by the PR                                                                                                              |
+| major    | Linked issue's acceptance criteria / checklist not met; new logic without tests; unhandled error path that users will hit; cross-platform path bug; violates `agents.md` hard rules (`as any`, raw `cargo`, protected-path edits outside scope); unrelated changes bundled in |
+| minor    | Naming, small duplication, missing doc/i18n string for a non-critical path, comment noise                                                                                                                                                                                     |
+| nit      | Style preferences the formatter/linter does not enforce                                                                                                                                                                                                                       |
 
 ## Checklist
 

@@ -5,10 +5,10 @@ WebSocket to the LibrAgent desktop app.
 
 ## Install options
 
-| Path | When to use |
-| --- | --- |
-| **[Chrome Web Store](https://chromewebstore.google.com/detail/libragent-browser-bridge/eponcjengahlpkgbaolhemhmckopmfbe)** | End users (recommended) |
-| **Load unpacked** (below) | Development, contributors, local builds |
+| Path                                                                                                                       | When to use                             |
+| -------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| **[Chrome Web Store](https://chromewebstore.google.com/detail/libragent-browser-bridge/eponcjengahlpkgbaolhemhmckopmfbe)** | End users (recommended)                 |
+| **Load unpacked** (below)                                                                                                  | Development, contributors, local builds |
 
 Privacy policy: [`PRIVACY.md`](./PRIVACY.md). Store listing kit: [`STORE.md`](./STORE.md).
 
@@ -43,22 +43,22 @@ Follow `STORE.md` for listing copy, privacy answers, and reviewer test steps.
 
 ## Permissions
 
-| Permission | Why |
-| --- | --- |
-| `tabs` | Create / navigate / close agent tabs; history; visible screenshot |
-| `scripting` | `evaluate` / page content / click / input (MAIN world) |
-| `storage` / `alarms` | Options + keep the service worker / WebSocket alive |
-| `<all_urls>` host access | Inject scripts and capture screenshots on sites the agent opens |
+| Permission               | Why                                                               |
+| ------------------------ | ----------------------------------------------------------------- |
+| `tabs`                   | Create / navigate / close agent tabs; history; visible screenshot |
+| `scripting`              | `evaluate` / page content / click / input (MAIN world)            |
+| `storage` / `alarms`     | Options + keep the service worker / WebSocket alive               |
+| `<all_urls>` host access | Inject scripts and capture screenshots on sites the agent opens   |
 
 Granting `<all_urls>` lets LibrAgent control tabs the extension creates for the
 agent. Only install from a source you trust.
 
 ## Defaults
 
-| Setting | Default | Override |
-| --- | --- | --- |
-| Port | `3847` | Extension Options, or `LIBRAGENT_EXTENSION_BRIDGE_PORT` in the app |
-| Token | `libragent-dev` | Extension Options, or `LIBRAGENT_EXTENSION_BRIDGE_TOKEN` in the app |
+| Setting | Default         | Override                                                            |
+| ------- | --------------- | ------------------------------------------------------------------- |
+| Port    | `3847`          | Extension Options, or `LIBRAGENT_EXTENSION_BRIDGE_PORT` in the app  |
+| Token   | `libragent-dev` | Extension Options, or `LIBRAGENT_EXTENSION_BRIDGE_TOKEN` in the app |
 
 When the app env token is unset, LibrAgent uses the fixed development token
 `libragent-dev`. A rotating production token is a follow-up for Store hardening.
@@ -67,10 +67,10 @@ When the app env token is unset, LibrAgent uses the fixed development token
 
 `browser__createSession` takes an explicit `browser` argument:
 
-| `browser` | Behavior |
-| --- | --- |
-| `sidecar` (default) | Sticky agent Chromium CDP sidecar |
-| `userChrome` | Everyday Chrome via this extension — **errors if not Connected**; never falls back to sidecar |
+| `browser`           | Behavior                                                                                      |
+| ------------------- | --------------------------------------------------------------------------------------------- |
+| `sidecar` (default) | Sticky agent Chromium CDP sidecar                                                             |
+| `userChrome`        | Everyday Chrome via this extension — **errors if not Connected**; never falls back to sidecar |
 
 `LIBRAGENT_BROWSER_BACKEND` remains for diagnostics/status only; it does not silently reroute createSession.
 

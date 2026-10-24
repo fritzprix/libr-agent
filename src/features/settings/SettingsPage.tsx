@@ -176,9 +176,7 @@ const SettingsPage: FC = function SettingsPage() {
                 providerEntries={PROVIDER_ENTRIES}
                 localPreferredModel={formState.preferredModel}
                 localFallbackModel={formState.fallbackModel}
-                complexityModelMapping={
-                  formState.complexityModelMapping ?? {}
-                }
+                complexityModelMapping={formState.complexityModelMapping ?? {}}
                 temperatureOverrideEnabled={
                   formState.temperatureOverrideEnabled
                 }

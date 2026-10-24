@@ -19,12 +19,12 @@ Worker and gatekeeper share one GitHub account, so GitHub's Approve / Request ch
 
 ## Invocation
 
-| Command | Behavior |
-| --- | --- |
-| `/gatekeeper-loop` | Run one tick now. |
-| `/gatekeeper-loop 10m` | Arm a recurring loop, then run one tick now. |
-| `/gatekeeper-loop 10m --pr 2202` | Review only one PR. |
-| `/gatekeeper-loop stop` | Kill the loop process. |
+| Command                          | Behavior                                     |
+| -------------------------------- | -------------------------------------------- |
+| `/gatekeeper-loop`               | Run one tick now.                            |
+| `/gatekeeper-loop 10m`           | Arm a recurring loop, then run one tick now. |
+| `/gatekeeper-loop 10m --pr 2202` | Review only one PR.                          |
+| `/gatekeeper-loop stop`          | Kill the loop process.                       |
 
 Arm exactly like `worker-loop` (Cursor `loop` skill mechanics): check `pgrep -af AGENT_LOOP_TICK_gatekeeper_loop` first, then a background shell `while true; do sleep 600; echo 'AGENT_LOOP_TICK_gatekeeper_loop {"prompt":"/gatekeeper-loop"}'; done` with `notify_on_output` pattern `^AGENT_LOOP_TICK_gatekeeper_loop`. Record the PID in state.
 
@@ -43,13 +43,15 @@ python3 .agents/skills/gatekeeper-loop/scripts/review_queue.py [--pr N]
 ```
 
 The script output is already sorted: priority 0 first (worker response, new head, rebase, owner comment, base change, CI failure after approve), then never-reviewed PRs, oldest first. Process **every** `status: review` PR in that order, at most **5 per tick**; leftovers carry over and keep their priority.
+
 - **Never empty or skip a tick due to pending CI**: select PRs that actually have reviewable work in this tick.
 - PRs in `status: await-ci` have a `verdict=clean` marker for the current head and are only waiting for CI; do not re-review them.
 - `human-only` PRs (they change this skill) are never reviewed or labelled; leave them to the human.
 - Use each entry's `reviewMode`: `full` (first review), `incremental` (`git diff reviewedHead..head`), `range-diff` (rebased; see step 2).
-- Stacked PRs (whose `base` is not `dev/*` or `main`) do not run GitHub Actions CI: ignore `ciPending` and review normally. When approving, add the condition: *"CI는 retarget 후 확인 필요"*.
+- Stacked PRs (whose `base` is not `dev/*` or `main`) do not run GitHub Actions CI: ignore `ciPending` and review normally. When approving, add the condition: _"CI는 retarget 후 확인 필요"_.
 
 Other statuses:
+
 - `await-ci` — a `verdict=clean` marker exists for this head; waiting only for CI completion. If CI turned green, post `approve`; if failed, diagnose failure and post `changes-requested`.
 - `wait-worker` — worker's turn (changes requested at current head without response, or merge conflicts).
 - `approved` — nothing to do; make sure the label is `gatekeeper:approved`. For any PR with `staleApprovedLabel: true` (status no longer `approved`), swap the label right away (`gatekeeper:changes-requested` if CI is failing, otherwise remove `gatekeeper:approved`) before reviewing, so a stale approve is never visible. The script already turns an approve back into `review` when the head changed (a push after an approve **always requires re-review**), CI fails, the base changed (e.g. stacked PR retargeted), or the owner commented.
@@ -95,7 +97,7 @@ Decide:
 - **approve** — no open required findings **and** `ciPending`/`ciFailing` are empty **and** the PR is mergeable.
   - **Required `Checked` section**: must include a non-empty `### Checked` section in the comment mapping every linked issue acceptance criterion **and** every previous-round finding and owner concern to concrete code evidence (`file:line`). An approve verdict without this section is invalid and must not be posted.
   - **Per-OS CI evidence**: when the diff adds or changes tests or code touching paths, shell, processes or other OS behavior, `### Checked` must name the result of each OS job (ubuntu / windows / macos) for the reviewed head. A skipped or cancelled job is not green. Do not approve on one OS's green.
-  - **Stacked PRs**: if the PR targets a non-dev branch, CI does not run; approve directly with the explicit note *"CI는 retarget 후 확인 필요"*.
+  - **Stacked PRs**: if the PR targets a non-dev branch, CI does not run; approve directly with the explicit note _"CI는 retarget 후 확인 필요"_.
 - **clean, await CI** — code review completed with zero open required findings, but CI checks are still running (`ciPending` not empty on dev-targeted PR). Post a `verdict=clean head=<sha>` marker comment (no label change, does not count as a round), optionally mirror it in state, and move on to the next PR. On a later tick the script reports `await-ci`; once CI completes it reports `review` again: do not re-review the diff, just post `approve` if green or diagnose the failure.
 - **escalate** — round limit (5) reached, a repeated dispute, or the right answer is a product/security/data decision for the user.
 

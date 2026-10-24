@@ -8,8 +8,8 @@ This reference outlines the core principles of ASD-STE100 applied to desktop and
    - Limit sentences to 20 words or fewer.
    - Use active voice. Never use passive voice where active is possible.
    - Example:
-     - ❌ *Settings are saved automatically after they are changed.*
-     - ✅ *LibrAgent saves changes automatically.*
+     - ❌ _Settings are saved automatically after they are changed._
+     - ✅ _LibrAgent saves changes automatically._
 
 2. **One Word, One Meaning**:
    - Standardize terminology across all screens.

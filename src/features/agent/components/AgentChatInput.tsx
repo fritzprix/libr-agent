@@ -61,7 +61,8 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     pendingInteractiveShellPrompt,
   } = useAgentSessionState();
   const { clearSessionHistory, applyExecutionMode } = useAgentSessionActions();
-  const { isSessionLoading, workflowStatus, pendingQueue } = useAgentChatState();
+  const { isSessionLoading, workflowStatus, pendingQueue } =
+    useAgentChatState();
   const { submit, cancel, resume, cancelPendingPrompt } = useAgentChatActions();
   const { isCompacting } = useLLMService();
   const [pendingCancel, setPendingCancel] = useState(false);

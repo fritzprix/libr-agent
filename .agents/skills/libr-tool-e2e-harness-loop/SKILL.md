@@ -27,11 +27,11 @@ Optimize tool contracts (schema, handler, hints, bridge/backend), not model choi
 
 ## Dependencies
 
-| Need | Skill / precondition |
-| --- | --- |
-| Spawn/poll/cleanup session | `libr-delegate` (read + follow it) |
+| Need                                     | Skill / precondition                                        |
+| ---------------------------------------- | ----------------------------------------------------------- |
+| Spawn/poll/cleanup session               | `libr-delegate` (read + follow it)                          |
 | Builtin design critique after root-cause | `critique-builtin-tool` / `refactor-builtin-tool` as needed |
-| Harbor job ATIF analysis | **Not this skill** → `harbor-harness-improvement-loop` |
+| Harbor job ATIF analysis                 | **Not this skill** → `harbor-harness-improvement-loop`      |
 
 LibrAgent must be up (`GET /api/health`). Prefer `executionMode: yolo` for unattended E2E.
 
@@ -93,15 +93,15 @@ Rebuild `intent → tool call → observation → next tool` from messages (not 
 
 Classify each failure:
 
-| Class | Meaning |
-| --- | --- |
-| `precondition` | Env not ready (extension offline, app old build) |
-| `contract_lie` | Success/status disagrees with observed state |
-| `capability_gap` | Documented unsupported path |
-| `schema_guidance` | Agent mis-called due to description/schema |
-| `handler_bug` | Wrong backend behavior |
-| `contamination` | Wrong backend/session identity |
-| `harness` | Bad brief / flake / timeout |
+| Class             | Meaning                                          |
+| ----------------- | ------------------------------------------------ |
+| `precondition`    | Env not ready (extension offline, app old build) |
+| `contract_lie`    | Success/status disagrees with observed state     |
+| `capability_gap`  | Documented unsupported path                      |
+| `schema_guidance` | Agent mis-called due to description/schema       |
+| `handler_bug`     | Wrong backend behavior                           |
+| `contamination`   | Wrong backend/session identity                   |
+| `harness`         | Bad brief / flake / timeout                      |
 
 Map owning layer (narrowest): schema → description/hints → MCP handler → service/bridge → extension/SW → docs/settings.
 

@@ -7,11 +7,11 @@ issue tests**. Published on Harbor Hub as
 `swe-bench/swe-bench-verified`. Manifest:
 [`libragent-swe-diverse-8/dataset.toml`](./libragent-swe-diverse-8/dataset.toml).
 
-| Script | Tasks | Intent |
-| --- | --- | --- |
-| `pnpm bench:swe` | Hub dataset `@v0.1` (8 tasks) | ~1h warm-cache iteration |
-| `pnpm bench:swe:n1` | first task only | smoke / plumbing |
-| `pnpm bench:swe:all` | `swe-bench/swe-bench-verified` (500) | rare full sweep |
+| Script               | Tasks                                | Intent                   |
+| -------------------- | ------------------------------------ | ------------------------ |
+| `pnpm bench:swe`     | Hub dataset `@v0.1` (8 tasks)        | ~1h warm-cache iteration |
+| `pnpm bench:swe:n1`  | first task only                      | smoke / plumbing         |
+| `pnpm bench:swe:all` | `swe-bench/swe-bench-verified` (500) | rare full sweep          |
 
 ## Selection rules
 
@@ -26,16 +26,16 @@ plumbing + coding-loop probe for repeated improve → rerun cycles.
 
 ## Tasks
 
-| # | `instance_id` | Repo | Notes |
-| --- | --- | --- | --- |
-| 1 | `pallets__flask-5014` | pallets/flask | Tiny validation fix; good smoke |
-| 2 | `pytest-dev__pytest-5809` | pytest-dev/pytest | Small pastebin test |
-| 3 | `psf__requests-1142` | psf/requests | Compact HTTP client fix |
-| 4 | `pylint-dev__pylint-6903` | pylint-dev/pylint | Runner edge case |
-| 5 | `sphinx-doc__sphinx-9711` | sphinx-doc/sphinx | Extension metadata |
-| 6 | `django__django-12419` | django/django | Middleware / project template |
-| 7 | `sympy__sympy-20916` | sympy/sympy | Small math API fix |
-| 8 | `scikit-learn__scikit-learn-14141` | scikit-learn/scikit-learn | `show_versions` deps |
+| #   | `instance_id`                      | Repo                      | Notes                           |
+| --- | ---------------------------------- | ------------------------- | ------------------------------- |
+| 1   | `pallets__flask-5014`              | pallets/flask             | Tiny validation fix; good smoke |
+| 2   | `pytest-dev__pytest-5809`          | pytest-dev/pytest         | Small pastebin test             |
+| 3   | `psf__requests-1142`               | psf/requests              | Compact HTTP client fix         |
+| 4   | `pylint-dev__pylint-6903`          | pylint-dev/pylint         | Runner edge case                |
+| 5   | `sphinx-doc__sphinx-9711`          | sphinx-doc/sphinx         | Extension metadata              |
+| 6   | `django__django-12419`             | django/django             | Middleware / project template   |
+| 7   | `sympy__sympy-20916`               | sympy/sympy               | Small math API fix              |
+| 8   | `scikit-learn__scikit-learn-14141` | scikit-learn/scikit-learn | `show_versions` deps            |
 
 ## Runtime expectations
 

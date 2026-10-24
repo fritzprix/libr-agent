@@ -68,6 +68,7 @@ ATIF standardizes agent trajectory data across different LLM benchmarks. The Lib
 File naming convention: `{sanitized_session_name}.md`
 
 Markdown export produces a clean, readable log:
+
 - User messages rendered as clear section headings (`## User`).
 - Agent reasoning/thinking rendered in expandable or blockquoted sections.
 - Tool invocations and responses formatted in syntax-highlighted code blocks.
@@ -82,15 +83,15 @@ These synthetic messages are essential for runtime stability but should **not** 
 
 The export pipeline filters messages through `is_excluded_from_session_analysis_export()`:
 
-| Filtered Message Type | Reason for Exclusion |
-|---|---|
-| `is_streaming == Some(true)` | Incomplete, transient streaming chunks |
-| `is_compact_summary()` | Internal LLM summary generated during context compaction |
-| `is_compaction_instruction()` | System prompt instructions guiding compaction |
-| `is_recovery_message()` | Host recovery scaffolds generated during connection retries |
-| `is_internal_synthetic_user_message()` | Synthetic prompts injected by harness or subagent coordinator |
-| `is_request_layout_scaffolding_message()` | UI layout hint messages |
-| `is_compaction_overlay_message()` | Temporary UI overlays |
+| Filtered Message Type                     | Reason for Exclusion                                          |
+| ----------------------------------------- | ------------------------------------------------------------- |
+| `is_streaming == Some(true)`              | Incomplete, transient streaming chunks                        |
+| `is_compact_summary()`                    | Internal LLM summary generated during context compaction      |
+| `is_compaction_instruction()`             | System prompt instructions guiding compaction                 |
+| `is_recovery_message()`                   | Host recovery scaffolds generated during connection retries   |
+| `is_internal_synthetic_user_message()`    | Synthetic prompts injected by harness or subagent coordinator |
+| `is_request_layout_scaffolding_message()` | UI layout hint messages                                       |
+| `is_compaction_overlay_message()`         | Temporary UI overlays                                         |
 
 ---
 
@@ -109,6 +110,7 @@ To support long-running agent workflows (sessions with thousands of messages), t
 ## 5. Filename & Stem Sanitization
 
 Exported filenames are derived from the session title or session ID, passed through `sanitize_export_stem()`:
+
 - Illegal path characters (`/`, `\`, `:`, `<daemon>`, `"`, `|`, `?`, `*`, control characters) are replaced with underscores (`_`).
 - Leading/trailing whitespace and periods are stripped.
 - Reserved Windows device names (`CON`, `PRN`, `AUX`, `NUL`, `COM1`–`COM9`, `LPT1`–`LPT9`) are automatically prefixed (e.g., `_CON`).

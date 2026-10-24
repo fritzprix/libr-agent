@@ -33,6 +33,7 @@ The MediaAssist plugin directory is located at a fixed relative path within the 
 ### Discovery Logic
 
 The host checks for plugin installation via `media_assist::load_status(base_data_dir)`:
+
 1. Verifies that `manifest.json` exists and parses valid JSON.
 2. Checks that `interfaceVersion` equals `1` (`pub const INTERFACE_VERSION: u32 = 1`).
 3. Verifies that the platform entrypoint exists:
@@ -56,12 +57,12 @@ The manifest defines plugin capabilities and execution limits:
 
 ### Fields
 
-| Field | Type | Description |
-|---|---|---|
-| `interfaceVersion` | `u32` | Must be `1`. Other versions result in an unsupported version error. |
-| `name` | `string` | Human-readable name of the plugin. |
-| `timeoutMs` | `u64` | Maximum execution time in milliseconds (default: 120,000 ms, clamped to 1,000–300,000 ms). |
-| `modalities` | `string[]` | Supported media modalities: `"audio"`, `"image"`, `"video"`. |
+| Field              | Type       | Description                                                                                |
+| ------------------ | ---------- | ------------------------------------------------------------------------------------------ |
+| `interfaceVersion` | `u32`      | Must be `1`. Other versions result in an unsupported version error.                        |
+| `name`             | `string`   | Human-readable name of the plugin.                                                         |
+| `timeoutMs`        | `u64`      | Maximum execution time in milliseconds (default: 120,000 ms, clamped to 1,000–300,000 ms). |
+| `modalities`       | `string[]` | Supported media modalities: `"audio"`, `"image"`, `"video"`.                               |
 
 ---
 
@@ -139,5 +140,6 @@ Exposed in `src-tauri/src/commands/media_assist_commands.rs` and registered in `
 ### 2. Builtin Media MCP Server
 
 The builtin Media server handler (`src-tauri/src/mcp/builtin/media/handlers/assist_plugin.rs`) exposes tools for agents to query plugin status or deploy runtime plugin scripts directly:
+
 - Agents can query `media_assist_status` to determine if local transcription or vision capabilities are available.
 - Agents can deploy scripts via `media_assist_deploy` during setup or benchmark harness execution.

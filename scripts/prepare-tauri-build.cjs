@@ -79,7 +79,9 @@ function stageOnnxRuntime() {
   const extractDir = path.join(stageRoot, 'extract');
   fs.rmSync(extractDir, { recursive: true, force: true });
   fs.mkdirSync(extractDir, { recursive: true });
-  execFileSync('tar', ['-xzf', tarball, '-C', extractDir], { stdio: 'inherit' });
+  execFileSync('tar', ['-xzf', tarball, '-C', extractDir], {
+    stdio: 'inherit',
+  });
 
   const extractedLib = path.join(
     extractDir,

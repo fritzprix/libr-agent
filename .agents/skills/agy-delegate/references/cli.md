@@ -49,6 +49,7 @@ Scope: ...
 ```
 
 Or use the bundled wrapper:
+
 ```powershell
 & .agents/skills/agy-delegate/scripts/run.ps1 -Dir "C:\path\to\workspace" -Task "$TASK"
 ```
@@ -84,13 +85,13 @@ agy -p "$TASK" \
 
 Useful fields:
 
-| Field | Meaning |
-| --- | --- |
-| `status` | Expect `SUCCESS` |
-| `response` | Final assistant text |
-| `conversation_id` | Resume with `--conversation` |
-| `duration_seconds` | Wall time |
-| `num_turns` | Turns in this run |
+| Field              | Meaning                      |
+| ------------------ | ---------------------------- |
+| `status`           | Expect `SUCCESS`             |
+| `response`         | Final assistant text         |
+| `conversation_id`  | Resume with `--conversation` |
+| `duration_seconds` | Wall time                    |
+| `num_turns`        | Turns in this run            |
 
 Example success shape:
 
@@ -120,18 +121,18 @@ agy -p "$FOLLOW_UP" --continue --model gemini-3.8-flash-high \
 
 ## Useful flags
 
-| Flag | Use |
-| --- | --- |
-| `--model <id>` | Use skill default `gemini-3.8-flash-high` unless the user names another id |
-| `--add-dir <path>` | Extra workspace root (repeatable) |
-| `--dangerously-skip-permissions` | Unattended tool approval |
-| `--print-timeout <dur>` | e.g. `60s`, `300s`; `0` = wait forever |
-| `--output-format text\|json\|stream-json` | Default `text` |
-| `--effort low\|medium\|high\|max` | Reasoning effort when supported |
-| `--mode accept-edits\|plan` | Execution mode |
-| `--sandbox` | Restrict terminal |
-| `--disable-slash-commands` | No slash/skill expansion in print mode |
-| `--agent <name>` | Named agent profile if configured |
+| Flag                                      | Use                                                                        |
+| ----------------------------------------- | -------------------------------------------------------------------------- |
+| `--model <id>`                            | Use skill default `gemini-3.8-flash-high` unless the user names another id |
+| `--add-dir <path>`                        | Extra workspace root (repeatable)                                          |
+| `--dangerously-skip-permissions`          | Unattended tool approval                                                   |
+| `--print-timeout <dur>`                   | e.g. `60s`, `300s`; `0` = wait forever                                     |
+| `--output-format text\|json\|stream-json` | Default `text`                                                             |
+| `--effort low\|medium\|high\|max`         | Reasoning effort when supported                                            |
+| `--mode accept-edits\|plan`               | Execution mode                                                             |
+| `--sandbox`                               | Restrict terminal                                                          |
+| `--disable-slash-commands`                | No slash/skill expansion in print mode                                     |
+| `--agent <name>`                          | Named agent profile if configured                                          |
 
 ## Multiturn stdin (advanced)
 

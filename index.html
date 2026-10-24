@@ -22,9 +22,7 @@
           if (stored === 'light') {
             isDark = false;
           } else if (stored === 'system') {
-            isDark = window.matchMedia(
-              '(prefers-color-scheme: dark)',
-            ).matches;
+            isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
           } else {
             // null / 'dark' / unknown → defaultTheme dark
             isDark = true;

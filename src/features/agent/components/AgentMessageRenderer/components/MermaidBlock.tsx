@@ -51,8 +51,7 @@ export const MermaidBlock = memo(
           })
           .catch((err: unknown) => {
             if (!cancelled) {
-              const message =
-                err instanceof Error ? err.message : String(err);
+              const message = err instanceof Error ? err.message : String(err);
               setError(message);
               setSvg(null);
             }

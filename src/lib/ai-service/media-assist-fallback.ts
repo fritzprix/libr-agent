@@ -405,7 +405,10 @@ export async function prepareMessagesForMediaAssistRetry(
   const nextMessages: Message[] = [];
 
   for (const message of messages) {
-    if (!contentHasMultimodalParts(message.content) || !Array.isArray(message.content)) {
+    if (
+      !contentHasMultimodalParts(message.content) ||
+      !Array.isArray(message.content)
+    ) {
       nextMessages.push(message);
       continue;
     }

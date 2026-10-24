@@ -42,8 +42,7 @@ export async function prepareMarkdownForPdfExport(
 ): Promise<PreparedPdfMarkdown> {
   const isDark = Boolean(options.isDark);
   const rasterizeSvg =
-    options.rasterizeSvg ??
-    ((svg: string) => svgToPngBase64(svg, { isDark }));
+    options.rasterizeSvg ?? ((svg: string) => svgToPngBase64(svg, { isDark }));
   const embeddedImages: PdfEmbeddedImagePayload[] = [];
   // Clone so the module-level `/g` regex lastIndex cannot leak across calls.
   const fenceRe = new RegExp(MERMAID_FENCE_RE.source, MERMAID_FENCE_RE.flags);
@@ -113,7 +112,13 @@ export async function svgToPngBase64(
       'SVG Image raster failed; trying DOM measurement fallback',
       imageError,
     );
-    return await rasterSvgViaDom(prepared.svg, prepared.width, prepared.height, scale, background);
+    return await rasterSvgViaDom(
+      prepared.svg,
+      prepared.width,
+      prepared.height,
+      scale,
+      background,
+    );
   }
 }
 
@@ -189,7 +194,13 @@ async function rasterSvgViaImage(
   // data: URLs are more reliable than blob: for SVG+XML across Chromium/WebView.
   const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(prepared.svg)}`;
   const image = await loadImage(dataUrl);
-  return drawImageToPngBase64(image, prepared.width, prepared.height, scale, background);
+  return drawImageToPngBase64(
+    image,
+    prepared.width,
+    prepared.height,
+    scale,
+    background,
+  );
 }
 
 async function rasterSvgViaDom(

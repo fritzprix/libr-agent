@@ -1,0 +1,1431 @@
+diff --git a/src/context/__tests__/AgentChatContext-actions.test.tsx b/src/context/__tests__/AgentChatContext-actions.test.tsx
+new file mode 100644
+index 000000000..569ae978b
+--- /dev/null
++++ b/src/context/__tests__/AgentChatContext-actions.test.tsx
+@@ -0,0 +1,208 @@
++import {
++  mockSetError,
++  setupAgentChatMocks,
++  TestWrapper,
++} from './agent-chat-test-utils';
++import { renderHook, waitFor, act } from '@testing-library/react';
++import { describe, it, expect, vi, beforeEach } from 'vitest';
++import {
++  useAgentChatActions,
++  useAgentChat,
++} from '../AgentChatContext';
++import { safeInvoke } from '@/lib/backend/core';
++import { useAgentSessionState, useAgentSessionActions } from '../AgentSessionContext';
++import type { Message } from '@/models/chat';
++import { getMessagesPageForSession } from '@/lib/backend/messages';
++
++describe('AgentChatContext', () => {
++  beforeEach(() => {
++    setupAgentChatMocks();
++  });
++
++  describe('Cancel Action', () => {
++    it('should cancel workflow', async () => {
++      const { result } = renderHook(() => useAgentChat(), {
++        wrapper: TestWrapper,
++      });
++
++      await act(async () => {
++        await result.current.cancel();
++      });
++
++      expect(safeInvoke).toHaveBeenCalledWith('agent_cancel_workflow', {
++        sessionId: 'test-session',
++      });
++      expect(result.current.isSessionLoading).toBe(false);
++      expect(result.current.workflowStatus).toBe('idle');
++    });
++
++    it('should handle cancel errors', async () => {
++      (safeInvoke as ReturnType<typeof vi.fn>).mockRejectedValue(
++        new Error('Cancel failed'),
++      );
++
++      const { result } = renderHook(() => useAgentChat(), {
++        wrapper: TestWrapper,
++      });
++
++      await act(async () => {
++        await result.current.cancel();
++      });
++
++      expect(mockSetError).toHaveBeenCalledWith('Cancel failed');
++    });
++  });
++
++  describe('Retry Action', () => {
++    it('should retry last user message', async () => {
++      const mockResumeSession = vi.fn().mockResolvedValue(undefined);
++
++      const messagesWithError: Message[] = [
++        {
++          id: 'msg1',
++          sessionId: 'test-session',
++          threadId: 'test-session',
++          role: 'user',
++          content: [{ type: 'text', text: 'Hello' }],
++          createdAt: new Date(),
++        },
++        {
++          id: 'msg2',
++          sessionId: 'test-session',
++          threadId: 'test-session',
++          role: 'assistant',
++          content: [{ type: 'text', text: 'Error response' }],
++          createdAt: new Date(),
++          error: {
++            displayMessage: 'Failed',
++            type: 'AI_SERVICE_ERROR',
++            recoverable: true,
++          },
++        },
++      ];
++
++      // Update AgentSessionContext mock to return messagesWithError
++      (useAgentSessionState as ReturnType<typeof vi.fn>).mockReturnValue({
++        session: { id: 'test-session', name: 'Test Session' },
++        messages: messagesWithError,
++        isSessionLoading: false,
++        error: null,
++        llmError: null,
++        workflowStatus: 'idle',
++      });
++
++      // Update AgentSessionActions mock with resumeSession
++      (useAgentSessionActions as ReturnType<typeof vi.fn>).mockReturnValue({
++        setError: mockSetError,
++        resumeSession: mockResumeSession,
++        regenerateLastTurn: vi.fn().mockResolvedValue(undefined),
++      });
++
++      // Mock backend messages
++      (getMessagesPageForSession as ReturnType<typeof vi.fn>).mockResolvedValue({
++        items: messagesWithError,
++        total: 2,
++        page: 1,
++        pageSize: 1000,
++        totalPages: 1,
++      });
++
++      const { result } = renderHook(() => useAgentChat(), {
++        wrapper: TestWrapper,
++      });
++
++      // Wait for messages to load
++      await waitFor(() => {
++        expect(result.current.messages).toEqual(messagesWithError);
++      });
++
++      await act(async () => {
++        await result.current.retryMessage();
++      });
++
++      // Should call resumeSession
++      expect(mockResumeSession).toHaveBeenCalled();
++    });
++
++    it('should handle retry with no user message', async () => {
++      // Mock backend messages
++      // Mock backend messages (not used directly but kept for consistency)
++      (getMessagesPageForSession as ReturnType<typeof vi.fn>).mockResolvedValue({
++        items: [],
++        total: 0,
++        page: 1,
++        pageSize: 1000,
++        totalPages: 0,
++      });
++
++      // Mock session state with no messages
++      (useAgentSessionState as ReturnType<typeof vi.fn>).mockReturnValue({
++        session: { id: 'test-session', name: 'Test Session' },
++        messages: [],
++        isSessionLoading: false,
++        error: null,
++        llmError: null,
++        workflowStatus: 'idle',
++      });
++
++      const { result } = renderHook(() => useAgentChat(), {
++        wrapper: TestWrapper,
++      });
++
++      await act(async () => {
++        await result.current.retryMessage();
++      });
++
++      // Should call list_settings (from SettingsProvider initialization)
++      // and agent_get_service_contexts (from useEffect initialization)
++      // retryMessage should not trigger any additional calls
++      expect(safeInvoke).toHaveBeenCalledWith('agent_get_service_contexts', {
++        sessionId: 'test-session',
++      });
++    });
++
++    it('should invoke agent_append_tool_messages when appendToolMessages is called', async () => {
++      (safeInvoke as ReturnType<typeof vi.fn>).mockResolvedValue({
++        success: true,
++      });
++
++      const { result } = renderHook(() => useAgentChatActions(), {
++        wrapper: TestWrapper,
++      });
++
++      const toolCallMsg: Message = {
++        id: 'tc-1',
++        sessionId: 'test-session',
++        threadId: 'test-session',
++        role: 'assistant',
++        content: [],
++        source: 'ui',
++        createdAt: new Date(),
++      };
++
++      const toolResultMsg: Message = {
++        id: 'tr-1',
++        sessionId: 'test-session',
++        threadId: 'test-session',
++        role: 'tool',
++        content: [{ type: 'text', text: 'Success' }],
++        source: 'ui',
++        createdAt: new Date(),
++      };
++
++      await act(async () => {
++        await result.current.appendToolMessages([toolCallMsg, toolResultMsg]);
++      });
++
++      expect(safeInvoke).toHaveBeenCalledWith('agent_append_tool_messages', {
++        request: expect.objectContaining({
++          sessionId: 'test-session',
++          messages: expect.arrayContaining([
++            expect.objectContaining({ id: 'tc-1' }),
++            expect.objectContaining({ id: 'tr-1' }),
++          ]),
++        }),
++      });
++    });
++  });
++});
+diff --git a/src/context/__tests__/AgentChatContext-submit.test.tsx b/src/context/__tests__/AgentChatContext-submit.test.tsx
+new file mode 100644
+index 000000000..7484f1adc
+--- /dev/null
++++ b/src/context/__tests__/AgentChatContext-submit.test.tsx
+@@ -0,0 +1,358 @@
++import {
++  createDeferred,
++  mockMessages,
++  mockSetError,
++  mockUnlisten,
++  setupAgentChatMocks,
++  TestWrapper,
++} from './agent-chat-test-utils';
++import { renderHook, waitFor, act } from '@testing-library/react';
++import { describe, it, expect, vi, beforeEach } from 'vitest';
++import {
++  useAgentChat,
++} from '../AgentChatContext';
++import { listen } from '@tauri-apps/api/event';
++import { safeInvoke } from '@/lib/backend/core';
++import { useAgentSessionState, useAgentSessionActions } from '../AgentSessionContext';
++import type { Message } from '@/models/chat';
++
++describe('AgentChatContext', () => {
++  beforeEach(() => {
++    setupAgentChatMocks();
++  });
++
++  describe('Submit Action', () => {
++    it('should submit message to backend', async () => {
++      const { result } = renderHook(() => useAgentChat(), {
++        wrapper: TestWrapper,
++      });
++
++      const createdAt = new Date();
++      const newMessage: Message = {
++        id: 'msg2',
++        sessionId: 'test-session',
++        threadId: 'test-session',
++        role: 'user',
++        content: [{ type: 'text', text: 'New message' }],
++        createdAt,
++      };
++
++      await act(async () => {
++        await result.current.submit(newMessage);
++      });
++
++      expect(safeInvoke).toHaveBeenCalledWith('agent_inject_messages', {
++        request: expect.objectContaining({
++          sessionId: 'test-session',
++          messages: [
++            expect.objectContaining({
++              ...newMessage,
++              createdAt: createdAt.getTime(),
++              updatedAt: createdAt.getTime(),
++            }),
++          ],
++        }),
++      });
++    });
++
++    it('should not optimistically append submitted messages to the chat list', async () => {
++      const deferred = createDeferred<{ success: boolean }>();
++      (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation(
++        (command: string) => {
++          if (command === 'agent_inject_messages') {
++            return deferred.promise;
++          }
++          return Promise.resolve({ success: true, data: [] });
++        },
++      );
++
++      const { result } = renderHook(() => useAgentChat(), {
++        wrapper: TestWrapper,
++      });
++
++      const newMessage: Message = {
++        id: 'msg-pending',
++        sessionId: 'test-session',
++        threadId: 'test-session',
++        role: 'user',
++        content: [{ type: 'text', text: 'Pending message' }],
++        createdAt: new Date(),
++      };
++
++      let submitPromise: Promise<void> | undefined;
++
++      await act(async () => {
++        submitPromise = result.current.submit(newMessage);
++      });
++
++      await waitFor(() => {
++        expect(safeInvoke).toHaveBeenCalledWith(
++          'agent_inject_messages',
++          expect.anything(),
++        );
++      });
++
++      expect(result.current.messages).toEqual(mockMessages);
++      expect(result.current.pendingQueue).toEqual([]);
++
++      deferred.resolve({ success: true });
++      await act(async () => {
++        await submitPromise;
++      });
++    });
++
++    it('should inject through the backend while busy without frontend resume logic', async () => {
++      const deferred = createDeferred<{ success: boolean }>();
++      (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation(
++        (command: string) => {
++          if (command === 'agent_inject_messages') {
++            return deferred.promise;
++          }
++          return Promise.resolve({ success: true, data: [] });
++        },
++      );
++
++      const mockResumeSession = vi.fn().mockResolvedValue(undefined);
++      (useAgentSessionActions as ReturnType<typeof vi.fn>).mockReturnValue({
++        setError: mockSetError,
++        addMessage: vi.fn(),
++        resumeSession: mockResumeSession,
++        regenerateLastTurn: vi.fn().mockResolvedValue(undefined),
++      });
++
++      const pendingMessage: Message = {
++        id: 'msg-pending-idle',
++        sessionId: 'test-session',
++        threadId: 'test-session',
++        role: 'user',
++        content: [{ type: 'text', text: 'Process me after idle' }],
++        createdAt: new Date(),
++      };
++
++      const { result } = renderHook(() => useAgentChat(), {
++        wrapper: TestWrapper,
++      });
++
++      await act(async () => {
++        void result.current.submit(pendingMessage);
++      });
++
++      await waitFor(() => {
++        expect(safeInvoke).toHaveBeenCalledWith('agent_inject_messages', {
++          request: expect.objectContaining({
++            sessionId: 'test-session',
++            messages: [
++              expect.objectContaining({
++                id: pendingMessage.id,
++              }),
++            ],
++          }),
++        });
++      });
++
++      expect(result.current.pendingQueue).toEqual([]);
++      expect(mockResumeSession).not.toHaveBeenCalled();
++
++      deferred.resolve({ success: true });
++      await act(async () => {
++        await deferred.promise;
++      });
++    });
++
++    it('updates pending queue from backend events and clears on session change', async () => {
++      const eventHandlers: Array<
++        (event: { payload: Record<string, unknown> }) => void
++      > = [];
++      (listen as ReturnType<typeof vi.fn>).mockImplementation(
++        (
++          _event: string,
++          handler: (event: { payload: Record<string, unknown> }) => void,
++        ) => {
++          eventHandlers.push(handler);
++          return Promise.resolve(mockUnlisten);
++        },
++      );
++
++      let sessionState = {
++        session: { id: 'test-session', name: 'Test Session' },
++        messages: mockMessages,
++        isSessionLoading: false,
++        error: null,
++        llmError: null,
++        workflowStatus: 'idle' as const,
++      };
++
++      (useAgentSessionState as ReturnType<typeof vi.fn>).mockImplementation(
++        () => sessionState,
++      );
++      (safeInvoke as ReturnType<typeof vi.fn>).mockResolvedValue({
++        success: true,
++        data: [],
++      });
++
++      const queuedRustMessage = {
++        id: 'msg-pending-switch',
++        sessionId: 'test-session',
++        role: 'user' as const,
++        content: [{ type: 'text', text: 'Carry me only in this session' }],
++        createdAt: Date.now(),
++        updatedAt: Date.now(),
++      };
++
++      const { result, rerender } = renderHook(() => useAgentChat(), {
++        wrapper: TestWrapper,
++      });
++
++      await waitFor(() => {
++        expect(eventHandlers.length).toBeGreaterThan(0);
++      });
++
++      await act(async () => {
++        for (const handler of eventHandlers) {
++          handler({
++            payload: {
++              type: 'pendingQueueUpdated',
++              sessionId: 'test-session',
++              messages: [queuedRustMessage],
++            },
++          });
++        }
++      });
++
++      await waitFor(() => {
++        expect(result.current.pendingQueue).toHaveLength(1);
++        expect(result.current.pendingQueue[0]?.id).toBe('msg-pending-switch');
++      });
++
++      sessionState = {
++        ...sessionState,
++        session: { id: 'next-session', name: 'Next Session' },
++        messages: [],
++      };
++      rerender();
++
++      await waitFor(() => {
++        expect(result.current.pendingQueue).toEqual([]);
++      });
++    });
++
++    it('should cancel a single pending prompt via IPC', async () => {
++      (safeInvoke as ReturnType<typeof vi.fn>).mockResolvedValue({
++        success: true,
++        data: { removed: true },
++      });
++
++      const { result } = renderHook(() => useAgentChat(), {
++        wrapper: TestWrapper,
++      });
++
++      await act(async () => {
++        await result.current.cancelPendingPrompt('msg-queued');
++      });
++
++      expect(safeInvoke).toHaveBeenCalledWith('agent_cancel_pending_prompt', {
++        sessionId: 'test-session',
++        messageId: 'msg-queued',
++      });
++    });
++
++    it('should reject submit while session is loading', async () => {
++      (useAgentSessionState as ReturnType<typeof vi.fn>).mockReturnValue({
++        session: { id: 'test-session', name: 'Test Session' },
++        messages: mockMessages,
++        isSessionLoading: true,
++        error: null,
++        llmError: null,
++        workflowStatus: 'idle',
++      });
++
++      const { result } = renderHook(() => useAgentChat(), {
++        wrapper: TestWrapper,
++      });
++
++      const newMessage: Message = {
++        id: 'msg-loading',
++        sessionId: 'test-session',
++        threadId: 'test-session',
++        role: 'user',
++        content: [{ type: 'text', text: 'Wait for init' }],
++        createdAt: new Date(),
++      };
++
++      await act(async () => {
++        await expect(result.current.submit(newMessage)).rejects.toThrow(
++          'Cannot submit while session is still loading',
++        );
++      });
++
++      expect(mockSetError).toHaveBeenCalledWith(
++        'Cannot submit while session is still loading',
++      );
++      expect(safeInvoke).not.toHaveBeenCalledWith(
++        'agent_inject_messages',
++        expect.anything(),
++      );
++    });
++
++    it('should handle submit errors', async () => {
++      (safeInvoke as ReturnType<typeof vi.fn>).mockRejectedValue(
++        new Error('Submit failed'),
++      );
++
++      const { result } = renderHook(() => useAgentChat(), {
++        wrapper: TestWrapper,
++      });
++
++      const newMessage: Message = {
++        id: 'msg2',
++        sessionId: 'test-session',
++        threadId: 'test-session',
++        role: 'user',
++        content: [{ type: 'text', text: 'New message' }],
++        createdAt: new Date(),
++      };
++
++      await act(async () => {
++        await expect(result.current.submit(newMessage)).rejects.toThrow('Submit failed');
++      });
++
++      expect(mockSetError).toHaveBeenCalledWith('Submit failed');
++      expect(result.current.messages).toEqual(mockMessages);
++    });
++
++    it('should not submit without active session', async () => {
++      (useAgentSessionState as ReturnType<typeof vi.fn>).mockReturnValue({
++        session: null,
++        messages: [],
++        isSessionLoading: false,
++        error: null,
++        llmError: null,
++        workflowStatus: 'idle',
++      });
++      console.error = vi.fn(); // Suppress error logs
++      const { result } = renderHook(() => useAgentChat(), {
++        wrapper: TestWrapper,
++      });
++
++      const newMessage: Message = {
++        id: 'msg2',
++        sessionId: 'test-session',
++        threadId: 'test-session',
++        role: 'user',
++        content: [{ type: 'text', text: 'New message' }],
++        createdAt: new Date(),
++      };
++
++      await act(async () => {
++        await result.current.submit(newMessage);
++      });
++
++      // SettingsProvider calls list_settings on initialization
++      // But submit should not call any agent-related commands
++      expect(safeInvoke).not.toHaveBeenCalledWith(
++        expect.stringMatching(/^agent_/),
++        expect.anything(),
++      );
++    });
++  });
++});
+diff --git a/src/context/__tests__/AgentChatContext.test.tsx b/src/context/__tests__/AgentChatContext.test.tsx
+index 8e2ceedc8..3751920ad 100644
+--- a/src/context/__tests__/AgentChatContext.test.tsx
++++ b/src/context/__tests__/AgentChatContext.test.tsx
+@@ -1,7 +1,12 @@
++import {
++  mockMessages,
++  mockStreamChat,
++  setupAgentChatMocks,
++  TestWrapper,
++} from './agent-chat-test-utils';
+ import { renderHook, waitFor, act } from '@testing-library/react';
+ import { describe, it, expect, vi, beforeEach } from 'vitest';
+ import {
+-  AgentChatProvider,
+   useAgentChatMessages,
+   useAgentChatMessageTail,
+   useAgentChatState,
+@@ -10,150 +15,12 @@ import {
+   isAssistantStreamingMessageSuperseded,
+ } from '../AgentChatContext';
+ import { useLLMService } from '../LLMServiceContext';
+-import { listen } from '@tauri-apps/api/event';
+-import { safeInvoke } from '@/lib/backend/core';
+-import { useAgentSessionState, useAgentSessionActions } from '../AgentSessionContext';
+-import { AIServiceFactory } from '@/lib/ai-service/factory';
++import { useAgentSessionState } from '../AgentSessionContext';
+ import type { Message } from '@/models/chat';
+-import { getMessagesPageForSession } from '@/lib/backend/messages';
+-import { LLMServiceProvider } from '../LLMServiceContext';
+-import { SettingsProvider } from '../SettingsContext';
+-import type { ReactNode } from 'react';
+-
+-function createDeferred<T>() {
+-  let resolve!: (value: T | PromiseLike<T>) => void;
+-  let reject!: (reason?: unknown) => void;
+-
+-  const promise = new Promise<T>((res, rej) => {
+-    resolve = res;
+-    reject = rej;
+-  });
+-
+-  return { promise, resolve, reject };
+-}
+-
+-// Mock Tauri APIs
+-vi.mock('@tauri-apps/api/event', () => ({
+-  listen: vi.fn(),
+-}));
+-
+-vi.mock('@/lib/backend/core', () => ({
+-  safeInvoke: vi.fn(),
+-}));
+-
+-// Mock AgentSessionContext
+-vi.mock('../AgentSessionContext', () => ({
+-  useAgentSessionState: vi.fn(),
+-  useAgentSessionActions: vi.fn(),
+-}));
+-
+-// Mock backend messages API
+-vi.mock('@/lib/backend/messages', () => ({
+-  getMessagesPageForSession: vi.fn(),
+-  deleteMessage: vi.fn(),
+-}));
+-
+-vi.mock('@/lib/ai-service/factory', () => ({
+-  AIServiceFactory: {
+-    getService: vi.fn(),
+-  },
+-}));
+-
+-// Mock logger
+-vi.mock('@/lib/logger', () => ({
+-  getLogger: () => ({
+-    info: vi.fn(),
+-    debug: vi.fn(),
+-    warn: vi.fn(),
+-    error: vi.fn(),
+-  }),
+-}));
+-
+-// Test wrapper with required providers
+-function TestWrapper({ children }: { children: ReactNode }) {
+-  return (
+-    <SettingsProvider>
+-      <LLMServiceProvider>
+-        <AgentChatProvider>{children}</AgentChatProvider>
+-      </LLMServiceProvider>
+-    </SettingsProvider>
+-  );
+-}
+ 
+ describe('AgentChatContext', () => {
+-  const mockUnlisten = vi.fn();
+-  const mockSetError = vi.fn(); // Added mock
+-  const mockStreamChat = vi.fn();
+-  const mockListModels = vi.fn();
+-  const mockDispose = vi.fn();
+-
+-  const mockMessages: Message[] = [
+-    {
+-      id: 'msg1',
+-      sessionId: 'test-session',
+-      threadId: 'test-session',
+-      role: 'user',
+-      content: [{ type: 'text', text: 'Hello' }],
+-      createdAt: new Date(),
+-    },
+-  ];
+-
+   beforeEach(() => {
+-    vi.clearAllMocks();
+-
+-    // Setup listen mock
+-    (listen as ReturnType<typeof vi.fn>).mockResolvedValue(mockUnlisten);
+-
+-    // Setup AgentSessionContext mock
+-    (useAgentSessionState as ReturnType<typeof vi.fn>).mockReturnValue({
+-      session: { id: 'test-session', name: 'Test Session' },
+-      messages: mockMessages,
+-      isSessionLoading: false,
+-      error: null,
+-      llmError: null,
+-      workflowStatus: 'idle',
+-    });
+-
+-    // Setup AgentSessionActions mock
+-    (useAgentSessionActions as ReturnType<typeof vi.fn>).mockReturnValue({
+-      setError: mockSetError,
+-      addMessage: vi.fn(),
+-      resumeSession: vi.fn().mockResolvedValue(undefined),
+-      regenerateLastTurn: vi.fn().mockResolvedValue(undefined),
+-    });
+-
+-    // Setup backend messages mock
+-    (getMessagesPageForSession as ReturnType<typeof vi.fn>).mockResolvedValue({
+-      items: mockMessages,
+-      total: 1,
+-      page: 1,
+-      pageSize: 1000,
+-      totalPages: 1,
+-    });
+-
+-    // Setup invoke mock
+-    (safeInvoke as ReturnType<typeof vi.fn>).mockResolvedValue({
+-      success: true,
+-    });
+-
+-    (AIServiceFactory.getService as ReturnType<typeof vi.fn>).mockReturnValue({
+-      streamChat: mockStreamChat,
+-      listModels: mockListModels,
+-      dispose: mockDispose,
+-      sanitizeMessages: vi.fn((messages: Message[]) => messages),
+-    });
+-
+-    mockListModels.mockResolvedValue([
+-      {
+-        name: 'test-model',
+-        contextWindow: 4096,
+-        supportReasoning: false,
+-        supportTools: true,
+-        supportStreaming: true,
+-        cost: { input: 0.001, output: 0.002 },
+-        description: 'Test model for unit tests',
+-      },
+-    ]);
++    setupAgentChatMocks();
+   });
+ 
+   describe('Provider Setup', () => {
+@@ -380,526 +247,4 @@ describe('AgentChatContext', () => {
+       });
+     });
+   });
+-
+-  describe('Submit Action', () => {
+-    it('should submit message to backend', async () => {
+-      const { result } = renderHook(() => useAgentChat(), {
+-        wrapper: TestWrapper,
+-      });
+-
+-      const createdAt = new Date();
+-      const newMessage: Message = {
+-        id: 'msg2',
+-        sessionId: 'test-session',
+-        threadId: 'test-session',
+-        role: 'user',
+-        content: [{ type: 'text', text: 'New message' }],
+-        createdAt,
+-      };
+-
+-      await act(async () => {
+-        await result.current.submit(newMessage);
+-      });
+-
+-      expect(safeInvoke).toHaveBeenCalledWith('agent_inject_messages', {
+-        request: expect.objectContaining({
+-          sessionId: 'test-session',
+-          messages: [
+-            expect.objectContaining({
+-              ...newMessage,
+-              createdAt: createdAt.getTime(),
+-              updatedAt: createdAt.getTime(),
+-            }),
+-          ],
+-        }),
+-      });
+-    });
+-
+-    it('should not optimistically append submitted messages to the chat list', async () => {
+-      const deferred = createDeferred<{ success: boolean }>();
+-      (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation(
+-        (command: string) => {
+-          if (command === 'agent_inject_messages') {
+-            return deferred.promise;
+-          }
+-          return Promise.resolve({ success: true, data: [] });
+-        },
+-      );
+-
+-      const { result } = renderHook(() => useAgentChat(), {
+-        wrapper: TestWrapper,
+-      });
+-
+-      const newMessage: Message = {
+-        id: 'msg-pending',
+-        sessionId: 'test-session',
+-        threadId: 'test-session',
+-        role: 'user',
+-        content: [{ type: 'text', text: 'Pending message' }],
+-        createdAt: new Date(),
+-      };
+-
+-      let submitPromise: Promise<void> | undefined;
+-
+-      await act(async () => {
+-        submitPromise = result.current.submit(newMessage);
+-      });
+-
+-      await waitFor(() => {
+-        expect(safeInvoke).toHaveBeenCalledWith(
+-          'agent_inject_messages',
+-          expect.anything(),
+-        );
+-      });
+-
+-      expect(result.current.messages).toEqual(mockMessages);
+-      expect(result.current.pendingQueue).toEqual([]);
+-
+-      deferred.resolve({ success: true });
+-      await act(async () => {
+-        await submitPromise;
+-      });
+-    });
+-
+-    it('should inject through the backend while busy without frontend resume logic', async () => {
+-      const deferred = createDeferred<{ success: boolean }>();
+-      (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation(
+-        (command: string) => {
+-          if (command === 'agent_inject_messages') {
+-            return deferred.promise;
+-          }
+-          return Promise.resolve({ success: true, data: [] });
+-        },
+-      );
+-
+-      const mockResumeSession = vi.fn().mockResolvedValue(undefined);
+-      (useAgentSessionActions as ReturnType<typeof vi.fn>).mockReturnValue({
+-        setError: mockSetError,
+-        addMessage: vi.fn(),
+-        resumeSession: mockResumeSession,
+-        regenerateLastTurn: vi.fn().mockResolvedValue(undefined),
+-      });
+-
+-      const pendingMessage: Message = {
+-        id: 'msg-pending-idle',
+-        sessionId: 'test-session',
+-        threadId: 'test-session',
+-        role: 'user',
+-        content: [{ type: 'text', text: 'Process me after idle' }],
+-        createdAt: new Date(),
+-      };
+-
+-      const { result } = renderHook(() => useAgentChat(), {
+-        wrapper: TestWrapper,
+-      });
+-
+-      await act(async () => {
+-        void result.current.submit(pendingMessage);
+-      });
+-
+-      await waitFor(() => {
+-        expect(safeInvoke).toHaveBeenCalledWith('agent_inject_messages', {
+-          request: expect.objectContaining({
+-            sessionId: 'test-session',
+-            messages: [
+-              expect.objectContaining({
+-                id: pendingMessage.id,
+-              }),
+-            ],
+-          }),
+-        });
+-      });
+-
+-      expect(result.current.pendingQueue).toEqual([]);
+-      expect(mockResumeSession).not.toHaveBeenCalled();
+-
+-      deferred.resolve({ success: true });
+-      await act(async () => {
+-        await deferred.promise;
+-      });
+-    });
+-
+-    it('updates pending queue from backend events and clears on session change', async () => {
+-      const eventHandlers: Array<
+-        (event: { payload: Record<string, unknown> }) => void
+-      > = [];
+-      (listen as ReturnType<typeof vi.fn>).mockImplementation(
+-        (
+-          _event: string,
+-          handler: (event: { payload: Record<string, unknown> }) => void,
+-        ) => {
+-          eventHandlers.push(handler);
+-          return Promise.resolve(mockUnlisten);
+-        },
+-      );
+-
+-      let sessionState = {
+-        session: { id: 'test-session', name: 'Test Session' },
+-        messages: mockMessages,
+-        isSessionLoading: false,
+-        error: null,
+-        llmError: null,
+-        workflowStatus: 'idle' as const,
+-      };
+-
+-      (useAgentSessionState as ReturnType<typeof vi.fn>).mockImplementation(
+-        () => sessionState,
+-      );
+-      (safeInvoke as ReturnType<typeof vi.fn>).mockResolvedValue({
+-        success: true,
+-        data: [],
+-      });
+-
+-      const queuedRustMessage = {
+-        id: 'msg-pending-switch',
+-        sessionId: 'test-session',
+-        role: 'user' as const,
+-        content: [{ type: 'text', text: 'Carry me only in this session' }],
+-        createdAt: Date.now(),
+-        updatedAt: Date.now(),
+-      };
+-
+-      const { result, rerender } = renderHook(() => useAgentChat(), {
+-        wrapper: TestWrapper,
+-      });
+-
+-      await waitFor(() => {
+-        expect(eventHandlers.length).toBeGreaterThan(0);
+-      });
+-
+-      await act(async () => {
+-        for (const handler of eventHandlers) {
+-          handler({
+-            payload: {
+-              type: 'pendingQueueUpdated',
+-              sessionId: 'test-session',
+-              messages: [queuedRustMessage],
+-            },
+-          });
+-        }
+-      });
+-
+-      await waitFor(() => {
+-        expect(result.current.pendingQueue).toHaveLength(1);
+-        expect(result.current.pendingQueue[0]?.id).toBe('msg-pending-switch');
+-      });
+-
+-      sessionState = {
+-        ...sessionState,
+-        session: { id: 'next-session', name: 'Next Session' },
+-        messages: [],
+-      };
+-      rerender();
+-
+-      await waitFor(() => {
+-        expect(result.current.pendingQueue).toEqual([]);
+-      });
+-    });
+-
+-    it('should cancel a single pending prompt via IPC', async () => {
+-      (safeInvoke as ReturnType<typeof vi.fn>).mockResolvedValue({
+-        success: true,
+-        data: { removed: true },
+-      });
+-
+-      const { result } = renderHook(() => useAgentChat(), {
+-        wrapper: TestWrapper,
+-      });
+-
+-      await act(async () => {
+-        await result.current.cancelPendingPrompt('msg-queued');
+-      });
+-
+-      expect(safeInvoke).toHaveBeenCalledWith('agent_cancel_pending_prompt', {
+-        sessionId: 'test-session',
+-        messageId: 'msg-queued',
+-      });
+-    });
+-
+-    it('should reject submit while session is loading', async () => {
+-      (useAgentSessionState as ReturnType<typeof vi.fn>).mockReturnValue({
+-        session: { id: 'test-session', name: 'Test Session' },
+-        messages: mockMessages,
+-        isSessionLoading: true,
+-        error: null,
+-        llmError: null,
+-        workflowStatus: 'idle',
+-      });
+-
+-      const { result } = renderHook(() => useAgentChat(), {
+-        wrapper: TestWrapper,
+-      });
+-
+-      const newMessage: Message = {
+-        id: 'msg-loading',
+-        sessionId: 'test-session',
+-        threadId: 'test-session',
+-        role: 'user',
+-        content: [{ type: 'text', text: 'Wait for init' }],
+-        createdAt: new Date(),
+-      };
+-
+-      await act(async () => {
+-        await expect(result.current.submit(newMessage)).rejects.toThrow(
+-          'Cannot submit while session is still loading',
+-        );
+-      });
+-
+-      expect(mockSetError).toHaveBeenCalledWith(
+-        'Cannot submit while session is still loading',
+-      );
+-      expect(safeInvoke).not.toHaveBeenCalledWith(
+-        'agent_inject_messages',
+-        expect.anything(),
+-      );
+-    });
+-
+-    it('should handle submit errors', async () => {
+-      (safeInvoke as ReturnType<typeof vi.fn>).mockRejectedValue(
+-        new Error('Submit failed'),
+-      );
+-
+-      const { result } = renderHook(() => useAgentChat(), {
+-        wrapper: TestWrapper,
+-      });
+-
+-      const newMessage: Message = {
+-        id: 'msg2',
+-        sessionId: 'test-session',
+-        threadId: 'test-session',
+-        role: 'user',
+-        content: [{ type: 'text', text: 'New message' }],
+-        createdAt: new Date(),
+-      };
+-
+-      await act(async () => {
+-        await expect(result.current.submit(newMessage)).rejects.toThrow('Submit failed');
+-      });
+-
+-      expect(mockSetError).toHaveBeenCalledWith('Submit failed');
+-      expect(result.current.messages).toEqual(mockMessages);
+-    });
+-
+-    it('should not submit without active session', async () => {
+-      (useAgentSessionState as ReturnType<typeof vi.fn>).mockReturnValue({
+-        session: null,
+-        messages: [],
+-        isSessionLoading: false,
+-        error: null,
+-        llmError: null,
+-        workflowStatus: 'idle',
+-      });
+-      console.error = vi.fn(); // Suppress error logs
+-      const { result } = renderHook(() => useAgentChat(), {
+-        wrapper: TestWrapper,
+-      });
+-
+-      const newMessage: Message = {
+-        id: 'msg2',
+-        sessionId: 'test-session',
+-        threadId: 'test-session',
+-        role: 'user',
+-        content: [{ type: 'text', text: 'New message' }],
+-        createdAt: new Date(),
+-      };
+-
+-      await act(async () => {
+-        await result.current.submit(newMessage);
+-      });
+-
+-      // SettingsProvider calls list_settings on initialization
+-      // But submit should not call any agent-related commands
+-      expect(safeInvoke).not.toHaveBeenCalledWith(
+-        expect.stringMatching(/^agent_/),
+-        expect.anything(),
+-      );
+-    });
+-  });
+-
+-  describe('Cancel Action', () => {
+-    it('should cancel workflow', async () => {
+-      const { result } = renderHook(() => useAgentChat(), {
+-        wrapper: TestWrapper,
+-      });
+-
+-      await act(async () => {
+-        await result.current.cancel();
+-      });
+-
+-      expect(safeInvoke).toHaveBeenCalledWith('agent_cancel_workflow', {
+-        sessionId: 'test-session',
+-      });
+-      expect(result.current.isSessionLoading).toBe(false);
+-      expect(result.current.workflowStatus).toBe('idle');
+-    });
+-
+-    it('should handle cancel errors', async () => {
+-      (safeInvoke as ReturnType<typeof vi.fn>).mockRejectedValue(
+-        new Error('Cancel failed'),
+-      );
+-
+-      const { result } = renderHook(() => useAgentChat(), {
+-        wrapper: TestWrapper,
+-      });
+-
+-      await act(async () => {
+-        await result.current.cancel();
+-      });
+-
+-      expect(mockSetError).toHaveBeenCalledWith('Cancel failed');
+-    });
+-  });
+-
+-  describe('Retry Action', () => {
+-    it('should retry last user message', async () => {
+-      const mockResumeSession = vi.fn().mockResolvedValue(undefined);
+-
+-      const messagesWithError: Message[] = [
+-        {
+-          id: 'msg1',
+-          sessionId: 'test-session',
+-          threadId: 'test-session',
+-          role: 'user',
+-          content: [{ type: 'text', text: 'Hello' }],
+-          createdAt: new Date(),
+-        },
+-        {
+-          id: 'msg2',
+-          sessionId: 'test-session',
+-          threadId: 'test-session',
+-          role: 'assistant',
+-          content: [{ type: 'text', text: 'Error response' }],
+-          createdAt: new Date(),
+-          error: {
+-            displayMessage: 'Failed',
+-            type: 'AI_SERVICE_ERROR',
+-            recoverable: true,
+-          },
+-        },
+-      ];
+-
+-      // Update AgentSessionContext mock to return messagesWithError
+-      (useAgentSessionState as ReturnType<typeof vi.fn>).mockReturnValue({
+-        session: { id: 'test-session', name: 'Test Session' },
+-        messages: messagesWithError,
+-        isSessionLoading: false,
+-        error: null,
+-        llmError: null,
+-        workflowStatus: 'idle',
+-      });
+-
+-      // Update AgentSessionActions mock with resumeSession
+-      (useAgentSessionActions as ReturnType<typeof vi.fn>).mockReturnValue({
+-        setError: mockSetError,
+-        resumeSession: mockResumeSession,
+-        regenerateLastTurn: vi.fn().mockResolvedValue(undefined),
+-      });
+-
+-      // Mock backend messages
+-      (getMessagesPageForSession as ReturnType<typeof vi.fn>).mockResolvedValue({
+-        items: messagesWithError,
+-        total: 2,
+-        page: 1,
+-        pageSize: 1000,
+-        totalPages: 1,
+-      });
+-
+-      const { result } = renderHook(() => useAgentChat(), {
+-        wrapper: TestWrapper,
+-      });
+-
+-      // Wait for messages to load
+-      await waitFor(() => {
+-        expect(result.current.messages).toEqual(messagesWithError);
+-      });
+-
+-      await act(async () => {
+-        await result.current.retryMessage();
+-      });
+-
+-      // Should call resumeSession
+-      expect(mockResumeSession).toHaveBeenCalled();
+-    });
+-
+-    it('should handle retry with no user message', async () => {
+-      // Mock backend messages
+-      // Mock backend messages (not used directly but kept for consistency)
+-      (getMessagesPageForSession as ReturnType<typeof vi.fn>).mockResolvedValue({
+-        items: [],
+-        total: 0,
+-        page: 1,
+-        pageSize: 1000,
+-        totalPages: 0,
+-      });
+-
+-      // Mock session state with no messages
+-      (useAgentSessionState as ReturnType<typeof vi.fn>).mockReturnValue({
+-        session: { id: 'test-session', name: 'Test Session' },
+-        messages: [],
+-        isSessionLoading: false,
+-        error: null,
+-        llmError: null,
+-        workflowStatus: 'idle',
+-      });
+-
+-      const { result } = renderHook(() => useAgentChat(), {
+-        wrapper: TestWrapper,
+-      });
+-
+-      await act(async () => {
+-        await result.current.retryMessage();
+-      });
+-
+-      // Should call list_settings (from SettingsProvider initialization)
+-      // and agent_get_service_contexts (from useEffect initialization)
+-      // retryMessage should not trigger any additional calls
+-      expect(safeInvoke).toHaveBeenCalledWith('agent_get_service_contexts', {
+-        sessionId: 'test-session',
+-      });
+-    });
+-
+-    it('should invoke agent_append_tool_messages when appendToolMessages is called', async () => {
+-      (safeInvoke as ReturnType<typeof vi.fn>).mockResolvedValue({
+-        success: true,
+-      });
+-
+-      const { result } = renderHook(() => useAgentChatActions(), {
+-        wrapper: TestWrapper,
+-      });
+-
+-      const toolCallMsg: Message = {
+-        id: 'tc-1',
+-        sessionId: 'test-session',
+-        threadId: 'test-session',
+-        role: 'assistant',
+-        content: [],
+-        source: 'ui',
+-        createdAt: new Date(),
+-      };
+-
+-      const toolResultMsg: Message = {
+-        id: 'tr-1',
+-        sessionId: 'test-session',
+-        threadId: 'test-session',
+-        role: 'tool',
+-        content: [{ type: 'text', text: 'Success' }],
+-        source: 'ui',
+-        createdAt: new Date(),
+-      };
+-
+-      await act(async () => {
+-        await result.current.appendToolMessages([toolCallMsg, toolResultMsg]);
+-      });
+-
+-      expect(safeInvoke).toHaveBeenCalledWith('agent_append_tool_messages', {
+-        request: expect.objectContaining({
+-          sessionId: 'test-session',
+-          messages: expect.arrayContaining([
+-            expect.objectContaining({ id: 'tc-1' }),
+-            expect.objectContaining({ id: 'tr-1' }),
+-          ]),
+-        }),
+-      });
+-    });
+-  });
+ });
+diff --git a/src/context/__tests__/agent-chat-test-utils.tsx b/src/context/__tests__/agent-chat-test-utils.tsx
+new file mode 100644
+index 000000000..08c3ee95e
+--- /dev/null
++++ b/src/context/__tests__/agent-chat-test-utils.tsx
+@@ -0,0 +1,149 @@
++import { vi } from 'vitest';
++import type { ReactNode } from 'react';
++import { AgentChatProvider } from '../AgentChatContext';
++import { listen } from '@tauri-apps/api/event';
++import { safeInvoke } from '@/lib/backend/core';
++import {
++  useAgentSessionState,
++  useAgentSessionActions,
++} from '../AgentSessionContext';
++import { AIServiceFactory } from '@/lib/ai-service/factory';
++import type { Message } from '@/models/chat';
++import { getMessagesPageForSession } from '@/lib/backend/messages';
++import { LLMServiceProvider } from '../LLMServiceContext';
++import { SettingsProvider } from '../SettingsContext';
++
++export function createDeferred<T>() {
++  let resolve!: (value: T | PromiseLike<T>) => void;
++  let reject!: (reason?: unknown) => void;
++
++  const promise = new Promise<T>((res, rej) => {
++    resolve = res;
++    reject = rej;
++  });
++
++  return { promise, resolve, reject };
++}
++
++// Mock Tauri APIs
++vi.mock('@tauri-apps/api/event', () => ({
++  listen: vi.fn(),
++}));
++
++vi.mock('@/lib/backend/core', () => ({
++  safeInvoke: vi.fn(),
++}));
++
++// Mock AgentSessionContext
++vi.mock('../AgentSessionContext', () => ({
++  useAgentSessionState: vi.fn(),
++  useAgentSessionActions: vi.fn(),
++}));
++
++// Mock backend messages API
++vi.mock('@/lib/backend/messages', () => ({
++  getMessagesPageForSession: vi.fn(),
++  deleteMessage: vi.fn(),
++}));
++
++vi.mock('@/lib/ai-service/factory', () => ({
++  AIServiceFactory: {
++    getService: vi.fn(),
++  },
++}));
++
++// Mock logger
++vi.mock('@/lib/logger', () => ({
++  getLogger: () => ({
++    info: vi.fn(),
++    debug: vi.fn(),
++    warn: vi.fn(),
++    error: vi.fn(),
++  }),
++}));
++
++// Test wrapper with required providers
++export function TestWrapper({ children }: { children: ReactNode }) {
++  return (
++    <SettingsProvider>
++      <LLMServiceProvider>
++        <AgentChatProvider>{children}</AgentChatProvider>
++      </LLMServiceProvider>
++    </SettingsProvider>
++  );
++}
++
++export const mockUnlisten = vi.fn();
++export const mockSetError = vi.fn();
++export const mockStreamChat = vi.fn();
++export const mockListModels = vi.fn();
++export const mockDispose = vi.fn();
++
++export const mockMessages: Message[] = [
++  {
++    id: 'msg1',
++    sessionId: 'test-session',
++    threadId: 'test-session',
++    role: 'user',
++    content: [{ type: 'text', text: 'Hello' }],
++    createdAt: new Date(),
++  },
++];
++
++export function setupAgentChatMocks() {
++  vi.clearAllMocks();
++
++  // Setup listen mock
++  (listen as ReturnType<typeof vi.fn>).mockResolvedValue(mockUnlisten);
++
++  // Setup AgentSessionContext mock
++  (useAgentSessionState as ReturnType<typeof vi.fn>).mockReturnValue({
++    session: { id: 'test-session', name: 'Test Session' },
++    messages: mockMessages,
++    isSessionLoading: false,
++    error: null,
++    llmError: null,
++    workflowStatus: 'idle',
++  });
++
++  // Setup AgentSessionActions mock
++  (useAgentSessionActions as ReturnType<typeof vi.fn>).mockReturnValue({
++    setError: mockSetError,
++    addMessage: vi.fn(),
++    resumeSession: vi.fn().mockResolvedValue(undefined),
++    regenerateLastTurn: vi.fn().mockResolvedValue(undefined),
++  });
++
++  // Setup backend messages mock
++  (getMessagesPageForSession as ReturnType<typeof vi.fn>).mockResolvedValue({
++    items: mockMessages,
++    total: 1,
++    page: 1,
++    pageSize: 1000,
++    totalPages: 1,
++  });
++
++  // Setup invoke mock
++  (safeInvoke as ReturnType<typeof vi.fn>).mockResolvedValue({
++    success: true,
++  });
++
++  (AIServiceFactory.getService as ReturnType<typeof vi.fn>).mockReturnValue({
++    streamChat: mockStreamChat,
++    listModels: mockListModels,
++    dispose: mockDispose,
++    sanitizeMessages: vi.fn((messages: Message[]) => messages),
++  });
++
++  mockListModels.mockResolvedValue([
++    {
++      name: 'test-model',
++      contextWindow: 4096,
++      supportReasoning: false,
++      supportTools: true,
++      supportStreaming: true,
++      cost: { input: 0.001, output: 0.002 },
++      description: 'Test model for unit tests',
++    },
++  ]);
++}

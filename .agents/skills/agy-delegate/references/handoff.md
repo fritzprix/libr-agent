@@ -4,13 +4,13 @@ Load when writing the agy `-p` prompt or debugging missing context.
 
 ## Quick matrix
 
-| Need | Works by default? | What to do |
-| --- | --- | --- |
-| Child sees Cursor chat/history | No | Restate everything in `-p` |
-| Child uses Cursor CWD files | Only if you `cd` there or `--add-dir` | Pass absolute `--add-dir` (repeatable) |
+| Need                                     | Works by default?                           | What to do                                     |
+| ---------------------------------------- | ------------------------------------------- | ---------------------------------------------- |
+| Child sees Cursor chat/history           | No                                          | Restate everything in `-p`                     |
+| Child uses Cursor CWD files              | Only if you `cd` there or `--add-dir`       | Pass absolute `--add-dir` (repeatable)         |
 | Child inherits repo `agents.md` / skills | Only if those files are in added dirs / cwd | `--add-dir` the repo, or inline critical rules |
-| Lineage / follow-up | Partial | `--conversation <id>` or `--continue` |
-| Unattended tool use | No | `--dangerously-skip-permissions` |
+| Lineage / follow-up                      | Partial                                     | `--conversation <id>` or `--continue`          |
+| Unattended tool use                      | No                                          | `--dangerously-skip-permissions`               |
 
 ## Task template
 
