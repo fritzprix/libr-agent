@@ -86,8 +86,9 @@ pub fn build_docker_volume_args(
 }
 
 /// Bind mounts that expose the host skill roots at the container skill paths
-/// shown in skill references. System skills are read-only; user skills stay
-/// writable so a global deploy from the container lands on the host.
+/// shown in skill references. Both are read-only: user skills are written only
+/// by `skill.py deploy`, which hands the skill to the host through the workspace
+/// skill outbox (see `skill_service::install_outbox`).
 pub fn build_skill_volume_args(
     system_dir: Option<&Path>,
     user_dir: Option<&Path>,
@@ -103,7 +104,7 @@ pub fn build_skill_volume_args(
     if let Some(dir) = user_dir {
         args.push("-v".to_string());
         args.push(format!(
-            "{}:{CONTAINER_USER_SKILLS_DIR}",
+            "{}:{CONTAINER_USER_SKILLS_DIR}:ro",
             docker_mount_path(dir)?
         ));
     }
@@ -115,7 +116,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn skill_volume_args_mount_system_read_only_and_user_writable() {
+    fn skill_volume_args_mount_system_and_user_read_only() {
         let args = build_skill_volume_args(
             Some(Path::new("/data/system_skills")),
             Some(Path::new("/data/user_skills")),
@@ -127,7 +128,7 @@ mod tests {
                 "-v",
                 "/data/system_skills:/opt/libragent/skills/system:ro",
                 "-v",
-                "/data/user_skills:/opt/libragent/skills/user",
+                "/data/user_skills:/opt/libragent/skills/user:ro",
             ]
         );
         assert!(build_skill_volume_args(None, None).unwrap().is_empty());
