@@ -10,7 +10,24 @@ SCRIPTS_DIR = Path(__file__).resolve().parent
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-from review_queue import determine_status, is_dev_base
+from review_queue import (
+    classify,
+    determine_status,
+    is_dev_base,
+    is_rebased,
+    owner_comments_after,
+    parse_markers,
+)
+
+
+def base_args(**over):
+    args = dict(
+        mergeable="MERGEABLE", head="head1", base="dev/0.9.x", last_verdict=None,
+        worker_response=None, total_verdicts=0, state_reviewed_head=None,
+        state_pending_ci=False, has_open_findings=False, pending_checks=[], failing_checks=[],
+    )
+    args.update(over)
+    return args
 
 
 class DetermineStatusTests(unittest.TestCase):
@@ -218,6 +235,95 @@ class DetermineStatusTests(unittest.TestCase):
         self.assertTrue(is_dev_base("master"))
         self.assertFalse(is_dev_base("fix/2242-docker-skill-roots"))
         self.assertFalse(is_dev_base("feat/something"))
+
+
+class GapTests(unittest.TestCase):
+    approve = {"head": "head1", "verdict": "approve", "base": "dev/0.9.x"}
+
+    def test_approved_with_ci_failure_is_review(self) -> None:
+        status, reason, _ = classify(**base_args(
+            last_verdict=self.approve, total_verdicts=1, failing_checks=["Test"]))
+        self.assertEqual(status, "review")
+        self.assertIn("CI failing", reason)
+
+    def test_approved_stacked_ignores_ci(self) -> None:
+        verdict = {**self.approve, "base": "feat/x"}
+        status = determine_status(**base_args(
+            base="feat/x", last_verdict=verdict, total_verdicts=1, failing_checks=["Test"]))
+        self.assertEqual(status, "approved")
+
+    def test_base_change_after_approve_is_review(self) -> None:
+        verdict = {**self.approve, "base": "feat/x"}
+        status, reason, _ = classify(**base_args(
+            base="dev/0.9.x", last_verdict=verdict, total_verdicts=1, reviewed_base="feat/x"))
+        self.assertEqual(status, "review")
+        self.assertIn("base changed", reason)
+
+    def test_missing_state_with_clean_marker_is_await_ci(self) -> None:
+        status = determine_status(**base_args(
+            clean_head="head1", state_reviewed_head=None, pending_checks=["Test"]))
+        self.assertEqual(status, "await-ci")
+
+    def test_clean_marker_for_old_head_is_review(self) -> None:
+        status = determine_status(**base_args(clean_head="head0", pending_checks=["Test"]))
+        self.assertEqual(status, "review")
+
+    def test_clean_marker_with_green_ci_is_review(self) -> None:
+        status = determine_status(**base_args(clean_head="head1"))
+        self.assertEqual(status, "review")
+
+    def test_rebased_head_is_review(self) -> None:
+        last = {"head": "old", "verdict": "changes-requested"}
+        status, reason, _ = classify(**base_args(
+            last_verdict=last, total_verdicts=1, worker_response={"head": "head1"}, rebased=True))
+        self.assertEqual(status, "review")
+        self.assertIn("rebased", reason)
+
+    def test_is_rebased(self) -> None:
+        self.assertFalse(is_rebased(None, "h", lambda a, b: True))
+        self.assertFalse(is_rebased("h", "h", lambda a, b: False))
+        self.assertFalse(is_rebased("old", "new", lambda a, b: True))
+        self.assertTrue(is_rebased("old", "new", lambda a, b: False))
+
+    def test_owner_comment_after_verdict_is_review(self) -> None:
+        last = {"head": "head1", "verdict": "changes-requested"}
+        status, _, priority = classify(**base_args(
+            last_verdict=last, total_verdicts=1, owner_comment=True))
+        self.assertEqual(status, "review")
+        self.assertEqual(priority, 0)
+
+    def test_owner_comment_beats_approved(self) -> None:
+        status = determine_status(**base_args(
+            last_verdict=self.approve, total_verdicts=1, owner_comment=True))
+        self.assertEqual(status, "review")
+
+    def test_owner_comments_after_filters(self) -> None:
+        comments = [
+            {"author": {"login": "me"}, "body": "<!-- gatekeeper-loop: round=1 verdict=clean head=a -->",
+             "createdAt": "2026-01-01T00:00:00Z"},
+            {"author": {"login": "me"}, "body": "README에 secret 언급 추가", "createdAt": "2026-01-02T00:00:00Z"},
+            {"author": {"login": "bot[bot]"}, "body": "ci", "createdAt": "2026-01-02T00:00:00Z"},
+            {"author": {"login": "rando"}, "body": "hi", "createdAt": "2026-01-02T00:00:00Z",
+             "authorAssociation": "NONE"},
+            {"author": {"login": "me"}, "body": "old note", "createdAt": "2025-12-31T00:00:00Z"},
+        ]
+        found = owner_comments_after(comments, "me", "2026-01-01T00:00:00Z")
+        self.assertEqual([c["body"] for c in found], ["README에 secret 언급 추가"])
+
+    def test_clean_marker_parsed(self) -> None:
+        comments = [{"author": {"login": "me"}, "createdAt": "t",
+                     "body": "<!-- gatekeeper-loop: verdict=clean head=abc -->"}]
+        verdicts, _ = parse_markers(comments, "me")
+        self.assertEqual(verdicts[0]["verdict"], "clean")
+        self.assertEqual(verdicts[0]["head"], "abc")
+
+    def test_every_status_has_reason(self) -> None:
+        for kwargs in (
+            base_args(mergeable="CONFLICTING"),
+            base_args(),
+            base_args(total_verdicts=5, last_verdict={"head": "x", "verdict": "changes-requested"}),
+        ):
+            self.assertTrue(classify(**kwargs)[1])
 
 
 if __name__ == "__main__":
