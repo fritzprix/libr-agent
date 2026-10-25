@@ -612,7 +612,8 @@ def main(argv: list[str] | None = None) -> int:
     launch_cmd.add_argument("--app-bin", type=Path, required=True)
     launch_cmd.add_argument("--timeout", type=float, default=DEFAULT_LAUNCH_TIMEOUT_SEC)
 
-    sub.add_parser("stop", help="Stop the running bench instance")
+    stop_cmd = sub.add_parser("stop", help="Stop the running bench instance")
+    stop_cmd.add_argument("--force", action="store_true", help="SIGKILL immediately instead of waiting for a graceful exit")
 
     args = parser.parse_args(argv)
     layout = InstanceLayout(args.root)
@@ -626,7 +627,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "launch":
             launch(layout, args.app_bin, timeout_sec=args.timeout)
         elif args.command == "stop":
-            stop(layout)
+            stop(layout, grace_sec=0.0 if args.force else 10.0)
     except InstanceError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
