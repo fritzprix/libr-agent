@@ -30,6 +30,7 @@ pub mod compact_context_repository_tests;
 pub mod compact_error_recovery_tests;
 pub mod compaction_pending_queue_tests;
 pub mod compaction_phase_state_tests;
+pub mod compaction_raw_dump_tests;
 pub mod compaction_summary_validation_tests;
 pub mod concurrency_gate_guards_tests;
 pub mod database_quarantine_recovery_tests;

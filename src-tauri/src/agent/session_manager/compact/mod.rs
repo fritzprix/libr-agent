@@ -98,6 +98,37 @@ async fn dump_raw_compaction_output(dump: RawCompactionOutputDump<'_>) -> Option
     }
 }
 
+/// Dumps the raw output when it was clamped or failed validation; a clean,
+/// unclamped summary writes nothing.
+pub async fn dump_raw_compaction_output_if_needed(
+    session_id: &str,
+    to_id: &str,
+    raw_output: &str,
+    clamp: &CompactSummaryClampResult,
+    validation: &Result<(), String>,
+    retry_count: u32,
+    model: &str,
+) -> Option<String> {
+    let reason = match (validation, clamp.was_clamped) {
+        (Err(error), true) => format!("clamped to hard limit; validation failed: {error}"),
+        (Err(error), false) => format!("validation failed: {error}"),
+        (Ok(()), true) => "clamped to hard limit".to_string(),
+        (Ok(()), false) => return None,
+    };
+    dump_raw_compaction_output(RawCompactionOutputDump {
+        session_id,
+        to_id,
+        reason: &reason,
+        raw_output,
+        raw_estimated_tokens: clamp.original_estimated_tokens,
+        clamped_estimated_tokens: clamp.estimated_tokens,
+        hard_limit_tokens: clamp.hard_limit_tokens,
+        retry_count,
+        model,
+    })
+    .await
+}
+
 async fn complete_compaction_with_hard_fallback(
     context: CompactSummaryPersistenceContext<'_>,
     failure_reason: &str,
@@ -299,32 +330,27 @@ pub async fn handle_compact_response(
     }
     let validation_result =
         validate_compact_summary(&clamped_summary.summary, compacted_delta_count);
-    let raw_dump_reason = match (&validation_result, clamped_summary.was_clamped) {
-        (Err(error), true) => Some(format!("clamped to hard limit; validation failed: {error}")),
-        (Err(error), false) => Some(format!("validation failed: {error}")),
-        (Ok(()), true) => Some("clamped to hard limit".to_string()),
-        (Ok(()), false) => None,
+    let retry_count = match &compaction {
+        Some(compaction) => compaction.summary_retry_count().await,
+        None => 0,
     };
-    let raw_output_path = match raw_dump_reason {
-        Some(reason) => {
-            let retry_count = match &compaction {
-                Some(compaction) => compaction.summary_retry_count().await,
-                None => 0,
-            };
-            dump_raw_compaction_output(RawCompactionOutputDump {
-                session_id,
-                to_id: &to_id,
-                reason: &reason,
-                raw_output: &summary,
-                raw_estimated_tokens: clamped_summary.original_estimated_tokens,
-                clamped_estimated_tokens: clamped_summary.estimated_tokens,
-                hard_limit_tokens: clamped_summary.hard_limit_tokens,
-                retry_count,
-            })
-            .await
-        }
-        None => None,
+    let model = {
+        let active = active_sessions.read().await;
+        active
+            .get(session_id)
+            .map(|session| session.metadata.model.clone())
+            .unwrap_or_else(|| "unknown".to_string())
     };
+    let raw_output_path = dump_raw_compaction_output_if_needed(
+        session_id,
+        &to_id,
+        &summary,
+        &clamped_summary,
+        &validation_result,
+        retry_count,
+        &model,
+    )
+    .await;
     if let Err(validation_error) = validation_result {
         if let Some(outcome) = retry_invalid_compact_summary_if_possible(
             active_sessions,

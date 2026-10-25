@@ -105,10 +105,12 @@ pub(super) struct RawCompactionOutputDump<'a> {
     pub clamped_estimated_tokens: usize,
     pub hard_limit_tokens: usize,
     pub retry_count: u32,
+    pub model: &'a str,
 }
 
-/// Header + verbatim raw LLM output. `finish_reason`, usage and model are not
-/// known to the backend yet, so they are recorded as unknown.
+/// Header + verbatim raw LLM output. `finish_reason` and usage are not
+/// known to the backend yet, so they are recorded as unknown; the model comes
+/// from the session metadata.
 pub(super) fn build_compaction_raw_output_artifact(dump: &RawCompactionOutputDump<'_>) -> String {
     format!(
         "# Compaction raw output\n\n\
@@ -117,7 +119,7 @@ pub(super) fn build_compaction_raw_output_artifact(dump: &RawCompactionOutputDum
          - Reason: {}\n\
          - finish_reason: unknown\n\
          - usage: unknown\n\
-         - model: unknown\n\
+         - model: {}\n\
          - Raw estimated tokens: {}\n\
          - Clamped estimated tokens: {}\n\
          - Hard limit tokens: {}\n\
@@ -126,6 +128,7 @@ pub(super) fn build_compaction_raw_output_artifact(dump: &RawCompactionOutputDum
         dump.session_id,
         dump.to_id,
         truncate_for_fallback(dump.reason, COMPACTION_FALLBACK_MESSAGE_TEXT_LIMIT),
+        dump.model,
         dump.raw_estimated_tokens,
         dump.clamped_estimated_tokens,
         dump.hard_limit_tokens,
@@ -421,8 +424,10 @@ mod raw_output_tests {
             clamped_estimated_tokens: 100,
             hard_limit_tokens: 100,
             retry_count: 2,
+            model: "gpt-4.1",
         });
         assert!(artifact.contains("- Reason: clamped to hard limit"));
+        assert!(artifact.contains("- model: gpt-4.1"));
         assert!(artifact.contains("- Raw estimated tokens: 900"));
         assert!(artifact.contains("- Summary retries used: 2"));
         assert!(artifact.ends_with("## Raw output\n\nline one\n\n  indented <tool_call>\n"));
