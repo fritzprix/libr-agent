@@ -436,7 +436,10 @@ mod raw_output_tests {
             hard_limit_tokens: None,
             retry_count: 2,
             model: "gpt-4.1",
+            stream_meta: None,
         });
+        assert!(artifact.contains("- finish_reason: unknown"));
+        assert!(artifact.contains("- usage: unknown"));
         assert!(artifact.contains("- Reason: clamped to hard limit"));
         assert!(artifact.contains("- model: gpt-4.1"));
         assert!(artifact.contains("- Raw estimated tokens: 900"));
