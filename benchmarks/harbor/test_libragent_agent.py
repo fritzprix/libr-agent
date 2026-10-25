@@ -1156,3 +1156,54 @@ def test_trial_instance_reset_refuses_concurrent_trials() -> None:
                 "LIBRAGENT_HARBOR_CONCURRENT": "4",
             }
         )
+
+
+def test_run_keeps_trial_instance_log_even_when_the_trial_fails(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+
+    from benchmarks.harbor.isolated_instance import (
+        INSTANCE_APP_BIN_ENV,
+        INSTANCE_ROOT_ENV,
+        InstanceLayout,
+    )
+
+    layout = InstanceLayout(tmp_path / "bench-instance")
+    layout.root.mkdir(parents=True)
+    layout.log_file.write_text("crash trace of this trial\n", encoding="utf-8")
+    monkeypatch.setenv(INSTANCE_APP_BIN_ENV, str(tmp_path / "libragent"))
+    monkeypatch.setenv(INSTANCE_ROOT_ENV, str(layout.root))
+    monkeypatch.setenv("LIBRAGENT_HARBOR_CONCURRENT", "1")
+    adapter = _make_adapter(tmp_path / "trial" / "agent")
+
+    async def failing_trial(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("trial blew up")
+
+    monkeypatch.setattr(adapter, "_run_trial", failing_trial)
+
+    with pytest.raises(RuntimeError, match="trial blew up"):
+        asyncio.run(adapter.run("instruction", None, None))  # type: ignore[arg-type]
+
+    assert (tmp_path / "trial" / "agent" / "instance.log").read_text(
+        encoding="utf-8"
+    ) == "crash trace of this trial\n"
+
+
+def test_run_without_isolated_instance_writes_no_instance_log(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+
+    from benchmarks.harbor.isolated_instance import INSTANCE_APP_BIN_ENV
+
+    monkeypatch.delenv(INSTANCE_APP_BIN_ENV, raising=False)
+    adapter = _make_adapter(tmp_path / "agent")
+
+    async def ok_trial(*_args: object, **_kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr(adapter, "_run_trial", ok_trial)
+    asyncio.run(adapter.run("instruction", None, None))  # type: ignore[arg-type]
+
+    assert not (tmp_path / "agent" / "instance.log").exists()
