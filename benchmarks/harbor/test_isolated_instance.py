@@ -10,6 +10,7 @@ from benchmarks.harbor.isolated_instance import (
     InstanceError,
     InstanceLayout,
     _owns_pid,
+    apply_prod_llm_settings,
     build_seed,
     instance_pids,
     instance_env,
@@ -193,3 +194,78 @@ def test_owns_pid_trusts_pid_file_without_proc(tmp_path: Path) -> None:
     layout = InstanceLayout(tmp_path / "bench")
 
     assert _owns_pid(layout, 1, proc_root=tmp_path / "missing-proc")
+
+
+def _set_setting(db: Path, key: str, value: object) -> None:
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO settings VALUES (?, ?, 0, 0) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (key, json.dumps(value)),
+    )
+    conn.commit()
+    conn.close()
+
+
+def _llm_rows(db: Path) -> dict[str, object]:
+    conn = sqlite3.connect(db)
+    rows = {k: json.loads(v) for k, v in conn.execute("SELECT key, value FROM settings")}
+    conn.close()
+    return rows
+
+
+def test_launch_llm_settings_follow_current_prod_and_replace_seed_values(seeded) -> None:
+    source, layout, _ = seeded
+    # Seed time: one model, plus a mapping that the prod app later drops.
+    _set_setting(source, "preferredModel", {"provider": "openai", "model": "old"})
+    _set_setting(source, "complexityModelMapping", {"high": {"provider": "gemini", "model": "flash"}})
+    build_seed(source, layout, assistant_id=ASSISTANT_ID, port=3131)
+
+    # Prod changes afterwards.
+    _set_setting(source, "preferredModel", {"provider": "openai", "model": "qwen"})
+    _set_setting(source, "serviceConfigs", {"openai": {"apiKey": "sk-secret", "baseUrl": "http://x/v1"}})
+    conn = sqlite3.connect(source)
+    conn.execute("DELETE FROM settings WHERE key = 'complexityModelMapping'")
+    conn.commit()
+    conn.close()
+
+    reset_run_dir(layout)
+    summary = apply_prod_llm_settings(layout)
+
+    rows = _llm_rows(layout.db_path)
+    assert rows["preferredModel"] == {"provider": "openai", "model": "qwen"}
+    assert "complexityModelMapping" not in rows
+    assert rows["serviceConfigs"]["openai"]["apiKey"] == "sk-secret"
+    assert rows["systemSettings"]["httpServerPort"] == 3131  # isolation untouched
+    assert summary["models_in_effect"] == ["openai/qwen"]
+    assert summary["mixed_models"] is False
+
+
+def test_llm_settings_record_flags_mixed_models_and_hides_api_keys(seeded) -> None:
+    source, layout, _ = seeded
+    _set_setting(source, "preferredModel", {"provider": "openai", "model": "qwen"})
+    _set_setting(source, "complexityModelMapping", {"high": {"provider": "gemini", "model": "flash"}})
+    _set_setting(source, "serviceConfigs", {"openai": {"apiKey": "sk-secret", "baseUrl": "http://x/v1"}})
+    _set_setting(source, "customProviders", [{"id": "c1", "name": "vllm", "baseUrl": "http://v/v1", "apiKey": "tok-secret"}])
+    reset_run_dir(layout)
+
+    summary = apply_prod_llm_settings(layout)
+
+    assert summary["mixed_models"] is True
+    assert summary["models_in_effect"] == ["gemini/flash", "openai/qwen"]
+    assert summary["service_configs"] == {"openai": {"base_url": "http://x/v1", "has_api_key": True}}
+    recorded = layout.llm_settings_file.read_text(encoding="utf-8")
+    assert "sk-secret" not in recorded and "tok-secret" not in recorded
+    assert json.loads(recorded)["custom_providers"][0]["has_api_key"] is True
+
+
+def test_llm_settings_sync_never_mutates_source_and_requires_it(seeded, tmp_path: Path) -> None:
+    source, layout, _ = seeded
+    _set_setting(source, "preferredModel", {"provider": "openai", "model": "qwen"})
+    before = _llm_rows(source)
+    reset_run_dir(layout)
+    apply_prod_llm_settings(layout)
+    assert _llm_rows(source) == before
+
+    source.unlink()
+    with pytest.raises(InstanceError):
+        apply_prod_llm_settings(layout)

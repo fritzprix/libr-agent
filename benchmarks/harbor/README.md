@@ -262,6 +262,13 @@ State lives under `.libragent/work/bench-instance/` (`seed/`, `run/`, `instance.
 instance sets `LIBRAGENT_DATA_DIR`, `LIBRAGENT_DB_PATH`, and `XDG_{DATA,CACHE,CONFIG}_HOME` under
 `run/`, so WebView storage is isolated too. Rebuild the seed after changing the assistant.
 
+LLM settings are not frozen in the seed: every launch re-copies provider configs, `preferredModel`,
+`fallbackModel`, `complexityModelMapping` and the temperature override from the primary profile
+(opened read-only) into `run/`, so changing the model in the prod app reaches the next trial. The
+effective models are printed at launch and written, without API keys, to
+`.libragent/work/bench-instance/llm_settings.json` and each trial's `llm_settings.json`
+(`mixed_models: true` flags a run that calls more than one model).
+
 > **Secrets:** the seed is copied from your primary profile's DB. It keeps the `settings` table,
 > the assistant row, and the MCP server rows the assistant references, so it retains your active
 > settings and credentials (for example API keys, provider tokens, and MCP server env/headers).

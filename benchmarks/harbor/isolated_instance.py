@@ -131,6 +131,11 @@ class InstanceLayout:
     def log_file(self) -> Path:
         return self.root / "instance.log"
 
+    @property
+    def llm_settings_file(self) -> Path:
+        """Secret-free record of the LLM settings the last launch ran with."""
+        return self.root / "llm_settings.json"
+
 
 def default_source_db() -> Path:
     data_home = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
@@ -222,6 +227,135 @@ def build_seed(source_db: Path, layout: InstanceLayout, *, assistant_id: str, po
     summary["source_db"] = str(source_db)
     summary["created_at_ms"] = int(time.time() * 1000)
     layout.seed_meta.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+    return summary
+
+
+# Settings rows that decide which model or endpoint a session calls. They follow the
+# primary profile on every launch instead of staying frozen at seed time.
+LLM_SETTING_KEYS = (
+    "serviceConfigs",
+    "customProviders",
+    "preferredModel",
+    "fallbackModel",
+    "complexityModelMapping",
+    "temperatureOverrideEnabled",
+    "temperature",
+)
+
+
+def _json_or_none(raw: object) -> object:
+    if not isinstance(raw, str):
+        return None
+    try:
+        return json.loads(raw)
+    except ValueError:
+        return None
+
+
+def sync_llm_settings(source_db: Path, run_db: Path) -> dict[str, object]:
+    """Copy LLM settings rows from the primary DB (read-only) into the run copy.
+
+    Rows the primary profile does not have are removed from the run copy, so the seed's
+    old values never survive. Returns the effective settings with API keys reduced to
+    ``has_api_key`` flags.
+    """
+    source = sqlite3.connect(f"file:{source_db}?mode=ro", uri=True)
+    try:
+        rows = {
+            key: value
+            for key, value in source.execute(
+                f"SELECT key, value FROM settings WHERE key IN ({','.join('?' for _ in LLM_SETTING_KEYS)})",
+                LLM_SETTING_KEYS,
+            )
+        }
+    finally:
+        source.close()
+
+    now_ms = int(time.time() * 1000)
+    dest = sqlite3.connect(run_db)
+    try:
+        for key in LLM_SETTING_KEYS:
+            if key in rows:
+                dest.execute(
+                    "INSERT INTO settings(key, value, created_at, updated_at) VALUES (?, ?, ?, ?) "
+                    "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+                    (key, rows[key], now_ms, now_ms),
+                )
+            else:
+                dest.execute("DELETE FROM settings WHERE key = ?", (key,))
+        dest.commit()
+    finally:
+        dest.close()
+
+    return describe_llm_settings({key: _json_or_none(rows.get(key)) for key in LLM_SETTING_KEYS})
+
+
+def describe_llm_settings(values: dict[str, object]) -> dict[str, object]:
+    """Summarize LLM settings for run output. Never includes API keys."""
+
+    def choice(value: object) -> str | None:
+        if isinstance(value, dict) and value.get("provider") and value.get("model"):
+            return f"{value['provider']}/{value['model']}"
+        return None
+
+    mapping = values.get("complexityModelMapping")
+    complexity = {
+        level: choice(mapping.get(level)) if isinstance(mapping, dict) else None
+        for level in ("low", "normal", "high")
+    }
+    services = values.get("serviceConfigs")
+    configured_services = {
+        name: {"base_url": cfg.get("baseUrl") or None, "has_api_key": bool(cfg.get("apiKey"))}
+        for name, cfg in (services.items() if isinstance(services, dict) else [])
+        if isinstance(cfg, dict) and (cfg.get("apiKey") or cfg.get("baseUrl"))
+    }
+    custom = values.get("customProviders")
+    custom_providers = [
+        {
+            "id": item.get("id"),
+            "name": item.get("name"),
+            "base_url": item.get("baseUrl"),
+            "has_api_key": bool(item.get("apiKey")),
+        }
+        for item in (custom if isinstance(custom, list) else [])
+        if isinstance(item, dict)
+    ]
+    preferred = choice(values.get("preferredModel"))
+    fallback = choice(values.get("fallbackModel"))
+    in_effect = sorted({m for m in [preferred, fallback, *complexity.values()] if m})
+    return {
+        "preferred_model": preferred,
+        "fallback_model": fallback,
+        "complexity_model_mapping": complexity,
+        "models_in_effect": in_effect,
+        "mixed_models": len(in_effect) > 1,
+        "service_configs": configured_services,
+        "custom_providers": custom_providers,
+        "temperature_override_enabled": values.get("temperatureOverrideEnabled"),
+        "temperature": values.get("temperature"),
+    }
+
+
+def _llm_source_db(layout: InstanceLayout) -> Path:
+    """Primary DB the LLM settings follow: the seed's recorded source, else the default."""
+    if layout.seed_meta.is_file():
+        recorded = _json_or_none(layout.seed_meta.read_text(encoding="utf-8"))
+        if isinstance(recorded, dict) and recorded.get("source_db"):
+            return Path(str(recorded["source_db"]))
+    return default_source_db()
+
+
+def apply_prod_llm_settings(layout: InstanceLayout) -> dict[str, object]:
+    """Refresh the run copy's LLM settings from the primary profile and record them."""
+    source_db = _llm_source_db(layout)
+    if not source_db.is_file():
+        raise InstanceError(
+            f"Primary database not found: {source_db}. LLM settings must follow the prod app; "
+            "pass --source-db to 'seed' or start the prod app once."
+        )
+    summary = sync_llm_settings(source_db, layout.db_path)
+    summary["source_db"] = str(source_db)
+    layout.llm_settings_file.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     return summary
 
 
@@ -362,6 +496,7 @@ def launch(layout: InstanceLayout, app_bin: Path, *, timeout_sec: float) -> int:
         _check_sandbox_available()
 
     reset_run_dir(layout)
+    llm = apply_prod_llm_settings(layout)
     command = sandbox_command(layout, app_bin, env) if sandbox_enabled(env) else [str(app_bin.resolve())]
     log = layout.log_file.open("wb")
     process = subprocess.Popen(
@@ -378,6 +513,10 @@ def launch(layout: InstanceLayout, app_bin: Path, *, timeout_sec: float) -> int:
         raise InstanceError(f"Bench instance did not become healthy on port {port}; see {layout.log_file}")
     print(f"Bench instance ready: pid={process.pid} api_url=http://localhost:{port}/api")
     print(f"Data dir: {layout.data_dir.resolve()}")
+    print(
+        f"LLM settings from {llm['source_db']}: models={', '.join(llm['models_in_effect']) or 'none'}"  # type: ignore[arg-type]
+        + (" (MIXED)" if llm["mixed_models"] else "")
+    )
     return process.pid
 
 
