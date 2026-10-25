@@ -62,7 +62,7 @@ fn list_tool() -> MCPTool {
             &[],
             &[
                 "Set type='configs' for assistant definitions or type='sessions' for delegated sessions.",
-                "Use query to filter configs by name or description.",
+                "Find configs with query (name, id or description keyword) instead of paging through offset; the default output is a short summary (name, id, description).",
             ],
             &[],
         ),
@@ -76,9 +76,9 @@ fn list_tool() -> MCPTool {
                         Some("Whether to list agent configurations or delegated sessions."),
                     ),
                 ),
-                ("query".to_string(), string_prop(None, None, Some("Search term to filter agent configurations by name or description. If omitted, no text filtering is applied."))),
+                ("query".to_string(), string_prop(None, None, Some("Search term to filter agent configurations by name, id or description. Prefer this over paging with offset. If omitted, no text filtering is applied."))),
                 ("verbose".to_string(), {
-                    let mut schema = boolean_prop(Some("If true, show full descriptions instead of truncating them in the text table."));
+                    let mut schema = boolean_prop(Some("If true, include capabilities, servers and full descriptions (use with query=<id> to inspect one config). Default is a short summary."));
                     schema.default = Some(json!(false));
                     schema
                 }),

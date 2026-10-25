@@ -57,7 +57,15 @@ fn extract_pagination_args(args: &Value) -> (usize, usize) {
     (limit, offset)
 }
 
-fn build_pagination_note(offset: usize, page_len: usize, total: usize, limit: usize) -> String {
+const SUMMARY_DESCRIPTION_MAX_CHARS: usize = 60;
+
+fn build_pagination_note(
+    offset: usize,
+    page_len: usize,
+    total: usize,
+    limit: usize,
+    narrow_with_query: bool,
+) -> String {
     if page_len == 0 {
         return String::new();
     }
@@ -65,7 +73,15 @@ fn build_pagination_note(offset: usize, page_len: usize, total: usize, limit: us
     let start = offset + 1;
     let end = offset + page_len;
 
-    if end < total {
+    if end < total && narrow_with_query {
+        format!(
+            "*(Showing {} to {} of {} items. Narrow the list with query (preferred): agent__listAgents(query=\"<keyword>\"). Only if you must page, call again with offset: {})*\n",
+            start,
+            end,
+            total,
+            offset + limit
+        )
+    } else if end < total {
         format!(
             "*(Showing {} to {} of {} items. Call this tool again with offset: {} to see more)*\n",
             start,
@@ -100,8 +116,11 @@ async fn list_agent_configs_from_db(
 
     if let Some(query) = args.get("query").and_then(|v| v.as_str()) {
         let q = query.to_lowercase();
-        agents
-            .retain(|a| a.name.to_lowercase().contains(&q) || a.config.to_lowercase().contains(&q));
+        agents.retain(|a| {
+            a.id.to_lowercase().contains(&q)
+                || a.name.to_lowercase().contains(&q)
+                || a.config.to_lowercase().contains(&q)
+        });
     }
 
     let (limit, offset) = extract_pagination_args(args);
@@ -118,10 +137,14 @@ async fn list_agent_configs_from_db(
 
     let mut results = Vec::new();
     let mut text_summary = format!("Found {} agent configurations.\n\n", total);
-    let mut any_truncated = false;
     if !paged_agents.is_empty() {
-        text_summary.push_str("| Name | ID | Capabilities | Servers | Description |\n");
-        text_summary.push_str("|---|---|---|---|---|\n");
+        if verbose {
+            text_summary.push_str("| Name | ID | Capabilities | Servers | Description |\n");
+            text_summary.push_str("|---|---|---|---|---|\n");
+        } else {
+            text_summary.push_str("| Name | ID | Description |\n");
+            text_summary.push_str("|---|---|---|\n");
+        }
     } else if total > 0 {
         text_summary.push_str(&format!(
             "No results for this page (offset {}, limit {}). Try a smaller offset.\n",
@@ -141,9 +164,12 @@ async fn list_agent_configs_from_db(
             .unwrap_or("")
             .to_string();
 
-        if !verbose && desc.chars().count() > 80 {
-            desc = desc.chars().take(77).collect::<String>() + "...";
-            any_truncated = true;
+        if !verbose && desc.chars().count() > SUMMARY_DESCRIPTION_MAX_CHARS {
+            desc = desc
+                .chars()
+                .take(SUMMARY_DESCRIPTION_MAX_CHARS - 3)
+                .collect::<String>()
+                + "...";
         }
 
         let name_clean = agent.name.replace('|', "\\|");
@@ -153,33 +179,45 @@ async fn list_agent_configs_from_db(
             .replace('|', "\\|");
         let desc_clean = desc.replace('|', "\\|").replace('\n', " ");
 
-        text_summary.push_str(&format!(
-            "| {} | `{}` | {} | {} | {} |\n",
-            name_clean, id_clean, cap_clean, server_clean, desc_clean
-        ));
+        if verbose {
+            text_summary.push_str(&format!(
+                "| {} | `{}` | {} | {} | {} |\n",
+                name_clean, id_clean, cap_clean, server_clean, desc_clean
+            ));
 
-        let res_capabilities =
-            resolve_external_server_labels(&external_mcp_servers, &server_name_lookup);
+            let res_capabilities =
+                resolve_external_server_labels(&external_mcp_servers, &server_name_lookup);
 
-        results.push(json!({
-            "id": agent.id,
-            "name": agent.name,
-            "description": parsed_config.get("description").and_then(Value::as_str),
-            "systemPrompt": parsed_config.get("systemPrompt").and_then(Value::as_str),
-            "builtinCapabilities": effective_builtin_capabilities,
-            "externalMcpServers": res_capabilities,
-        }));
+            results.push(json!({
+                "id": agent.id,
+                "name": agent.name,
+                "description": parsed_config.get("description").and_then(Value::as_str),
+                "systemPrompt": parsed_config.get("systemPrompt").and_then(Value::as_str),
+                "builtinCapabilities": effective_builtin_capabilities,
+                "externalMcpServers": res_capabilities,
+            }));
+        } else {
+            text_summary.push_str(&format!(
+                "| {} | `{}` | {} |\n",
+                name_clean, id_clean, desc_clean
+            ));
+            results.push(json!({
+                "id": agent.id,
+                "name": agent.name,
+                "description": desc,
+            }));
+        }
     }
 
-    let pagination_note = build_pagination_note(offset, results.len(), total, limit);
+    let pagination_note = build_pagination_note(offset, results.len(), total, limit, true);
     if !pagination_note.is_empty() {
         text_summary.push('\n');
         text_summary.push_str(&pagination_note);
     }
 
-    if any_truncated {
+    if !verbose && !results.is_empty() {
         text_summary.push_str(
-            "\n*(Some descriptions were truncated. Use verbose=true to see full descriptions)*\n",
+            "\n*(Summary view. For capabilities, servers and full descriptions of one config, call agent__listAgents(query=\"<id>\", verbose=true))*\n",
         );
     }
 
@@ -294,7 +332,7 @@ async fn list_delegated_sessions(
         ));
     }
 
-    let pagination_note = build_pagination_note(offset, paged_results.len(), total, limit);
+    let pagination_note = build_pagination_note(offset, paged_results.len(), total, limit, false);
     if !pagination_note.is_empty() {
         message.push('\n');
         message.push_str(&pagination_note);
