@@ -321,11 +321,109 @@ pub fn resolve_isolated_shell_cwd(
     Ok(Some(canonical_cwd))
 }
 
+/// Resolve optional `cwd` for Docker-isolated `runShell` / `spawnProcess`.
+///
+/// Container paths do not exist on the host, so this is purely lexical: relative paths
+/// are anchored at `docker_root`, absolute paths must already be under it, and `..`
+/// may not climb out of it. Returns `None` when `cwd` is omitted/blank.
+pub fn resolve_docker_shell_cwd(
+    docker_root: &str,
+    cwd: Option<&str>,
+) -> Result<Option<std::path::PathBuf>, String> {
+    let Some(raw) = cwd.map(str::trim).filter(|s| !s.is_empty()) else {
+        return Ok(None);
+    };
+
+    let split = |value: &str| -> Vec<String> {
+        value
+            .split('/')
+            .filter(|part| !part.is_empty() && *part != ".")
+            .map(str::to_string)
+            .collect()
+    };
+    let root = split(docker_root);
+
+    let mut resolved = if raw.starts_with('/') {
+        Vec::new()
+    } else {
+        root.clone()
+    };
+    for part in raw
+        .split('/')
+        .filter(|part| !part.is_empty() && *part != ".")
+    {
+        if part == ".." {
+            if resolved.pop().is_none() {
+                return Err(format!(
+                    "cwd '{raw}' escapes the container workspace '{docker_root}'"
+                ));
+            }
+        } else {
+            resolved.push(part.to_string());
+        }
+    }
+
+    if !resolved.starts_with(&root) {
+        return Err(format!(
+            "cwd '{raw}' escapes the container workspace '{docker_root}'"
+        ));
+    }
+
+    Ok(Some(std::path::PathBuf::from(format!(
+        "/{}",
+        resolved.join("/")
+    ))))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::path::PathBuf;
     use tempfile::tempdir;
+
+    #[test]
+    fn docker_cwd_accepts_root_relative_and_absolute_under_root() {
+        let root = "/testbed";
+        let p = |cwd| resolve_docker_shell_cwd(root, Some(cwd)).unwrap();
+
+        assert_eq!(resolve_docker_shell_cwd(root, None).unwrap(), None);
+        assert_eq!(resolve_docker_shell_cwd(root, Some("  ")).unwrap(), None);
+        assert_eq!(p("/testbed"), Some(PathBuf::from("/testbed")));
+        assert_eq!(p("."), Some(PathBuf::from("/testbed")));
+        assert_eq!(p("src/pkg"), Some(PathBuf::from("/testbed/src/pkg")));
+        assert_eq!(p("./src/../tests"), Some(PathBuf::from("/testbed/tests")));
+        assert_eq!(p("/testbed/src/"), Some(PathBuf::from("/testbed/src")));
+    }
+
+    #[test]
+    fn docker_cwd_rejects_paths_outside_the_container_root() {
+        let root = "/testbed";
+        for cwd in [
+            "..",
+            "../etc",
+            "src/../../etc",
+            "/etc",
+            "/testbed/../etc",
+            "/testbedx",
+        ] {
+            assert!(
+                resolve_docker_shell_cwd(root, Some(cwd)).is_err(),
+                "{cwd} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn docker_cwd_handles_trailing_slash_and_root_slash() {
+        assert_eq!(
+            resolve_docker_shell_cwd("/workspace/", Some("a")).unwrap(),
+            Some(PathBuf::from("/workspace/a"))
+        );
+        assert_eq!(
+            resolve_docker_shell_cwd("/", Some("/usr")).unwrap(),
+            Some(PathBuf::from("/usr"))
+        );
+    }
 
     #[test]
     fn test_sanitize_sudo_s_flag() {

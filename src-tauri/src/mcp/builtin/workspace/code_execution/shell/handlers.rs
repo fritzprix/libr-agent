@@ -285,47 +285,36 @@ impl WorkspaceServer {
         };
 
         let requested_cwd = args.get("cwd").and_then(|v| v.as_str());
-        if requested_cwd.is_some() && utils::is_session_docker_isolated(session_id).await {
-            return Ok(guided_error(
-                ErrorCategory::InvalidInput,
-                "cwd is not supported for Docker-isolated sessions",
-                ToolGroup::Workspace,
-            )
-            .guidance(vec![
-                "Chain directory changes in one command (e.g. 'cd subdir && command').".to_string(),
-                format!(
-                    "Or use {} for a sticky shell working directory.",
-                    PERSISTENT_SHELL_TOOL
-                ),
-            ])
-            .to_mcp_result());
-        }
-
-        let working_directory =
-            match utils::resolve_isolated_shell_cwd(&workspace_path, requested_cwd) {
-                Ok(cwd) => cwd,
-                Err(message) => {
-                    return Ok(guided_error(
-                        ErrorCategory::InvalidInput,
-                        message,
-                        ToolGroup::Workspace,
-                    )
-                    .guidance(vec![
-                        "Pass cwd as a path under the session workspace (relative or absolute)."
-                            .to_string(),
-                        "Create the directory first with workspace__createDirectory if needed."
-                            .to_string(),
-                    ])
-                    .to_mcp_result());
-                }
-            };
+        let (is_docker, docker_root) = utils::session_docker_root(session_id).await;
+        let cwd_result = if is_docker {
+            utils::resolve_docker_shell_cwd(&docker_root, requested_cwd)
+        } else {
+            utils::resolve_isolated_shell_cwd(&workspace_path, requested_cwd)
+        };
+        let working_directory = match cwd_result {
+            Ok(cwd) => cwd,
+            Err(message) => {
+                return Ok(guided_error(
+                    ErrorCategory::InvalidInput,
+                    message,
+                    ToolGroup::Workspace,
+                )
+                .guidance(vec![
+                    "Pass cwd as a path under the session workspace (relative or absolute)."
+                        .to_string(),
+                    "Create the directory first with workspace__createDirectory if needed."
+                        .to_string(),
+                ])
+                .to_mcp_result());
+            }
+        };
 
         // Policy after cwd resolve so relative path checks use the real working dir.
         if let Some(result) = self.apply_shell_policy_block(
             tool_name,
             raw_command,
             &workspace_path,
-            working_directory.as_deref(),
+            working_directory.as_deref().filter(|_| !is_docker),
             Some(&env_vars),
         ) {
             return Ok(result);

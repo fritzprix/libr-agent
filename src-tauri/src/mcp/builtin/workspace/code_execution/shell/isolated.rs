@@ -36,11 +36,13 @@ impl WorkspaceServer {
             .session_manager
             .get_session_workspace_dir_by_id(&session_id);
 
+        // A Docker cwd is a container path; host policy path checks must not see it.
+        let is_docker = utils::is_session_docker_isolated(&session_id).await;
         if let Some(result) = self.apply_shell_policy_block(
             tool_name,
             command,
             &workspace_path,
-            working_directory.as_deref(),
+            working_directory.as_deref().filter(|_| !is_docker),
             Some(&env_vars),
         ) {
             return Ok(result);
