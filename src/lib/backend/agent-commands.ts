@@ -207,10 +207,12 @@ export async function handleCompactResponse(
 export async function handleCompactError(
   sessionId: string,
   error: AgentRuntimeError,
+  partialOutput?: string,
 ): Promise<void> {
   await safeInvoke<AgentResponse>('agent_handle_compact_error', {
     sessionId,
     error,
+    partialOutput,
   });
 }
 

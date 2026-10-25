@@ -7,6 +7,7 @@ import {
   AIServiceFactory,
   resolveProviderRuntimeConfig,
 } from '@/lib/ai-service';
+import { getCompactionPartialOutput } from '@/lib/ai-service/base-service-compaction';
 import { summarizeCompactionRequestSizes } from '@/lib/ai-service/request-ingredients';
 import type { AIContextCompactionService } from '@/lib/ai-service/types';
 import { normalizeRustMessage } from '@/lib/ai-service/utils';
@@ -184,7 +185,11 @@ export async function setupCompactRequestListener({
             maxTokens: runtimeConfig.maxTokens,
           },
         );
-        await handleCompactError(sessionId, compactRuntimeError);
+        await handleCompactError(
+          sessionId,
+          compactRuntimeError,
+          getCompactionPartialOutput(error),
+        );
       }
     },
   );

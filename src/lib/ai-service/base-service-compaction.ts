@@ -13,6 +13,19 @@ const COMPACTION_TOOL_MARKUP_PATTERNS = [
   /"tool_call_starts"\s*:/i,
 ] as const;
 
+const partialOutputByError = new WeakMap<object, string>();
+
+/**
+ * Text received before a compaction stream failed or was aborted, so the
+ * backend can save it verbatim for tuning the compaction prompt.
+ */
+export function getCompactionPartialOutput(error: unknown): string | undefined {
+  if (typeof error !== 'object' || error === null) {
+    return undefined;
+  }
+  return partialOutputByError.get(error);
+}
+
 interface CompactionContext {
   options?: CompactOptions;
   streamChat: (
@@ -161,6 +174,11 @@ export async function compactMessages(
         summaryText = nextSummaryText;
       }
     }
+  } catch (error) {
+    if (summaryText && typeof error === 'object' && error !== null) {
+      partialOutputByError.set(error, summaryText);
+    }
+    throw error;
   } finally {
     upstreamAbortSignal?.removeEventListener('abort', abortFromUpstream);
   }

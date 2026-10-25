@@ -39,9 +39,10 @@ pub async fn agent_handle_compact_error(
     manager: State<'_, AgentSessionManager>,
     session_id: String,
     error: crate::agent::llm::types::AgentRuntimeError,
+    partial_output: Option<String>,
 ) -> Result<AgentResponse, String> {
     manager
-        .handle_compact_error(session_id.clone(), error)
+        .handle_compact_error(session_id.clone(), error, partial_output)
         .await?;
 
     Ok(AgentResponse {

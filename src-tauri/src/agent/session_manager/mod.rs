@@ -820,6 +820,7 @@ impl AgentSessionManager {
         &self,
         session_id: String,
         error: crate::agent::llm::types::AgentRuntimeError,
+        partial_output: Option<String>,
     ) -> Result<(), String> {
         let dispatcher = TauriEventDispatcher::new(self.app_handle.clone());
         handle_compact_error_with_dispatcher(
@@ -830,6 +831,7 @@ impl AgentSessionManager {
             &dispatcher,
             session_id,
             error,
+            partial_output,
         )
         .await
     }

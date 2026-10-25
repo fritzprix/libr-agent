@@ -77,7 +77,7 @@ async fn dump_raw_compaction_output(dump: RawCompactionOutputDump<'_>) -> Option
     {
         Ok(()) => {
             log::warn!(
-                "📝 Saved raw compaction output for session {} at '{}': raw_estimated_tokens={}, clamped_estimated_tokens={}, hard_limit_tokens={}",
+                "📝 Saved raw compaction output for session {} at '{}': raw_estimated_tokens={}, clamped_estimated_tokens={:?}, hard_limit_tokens={:?}",
                 dump.session_id,
                 relative_path,
                 dump.raw_estimated_tokens,
@@ -121,8 +121,8 @@ pub async fn dump_raw_compaction_output_if_needed(
         reason: &reason,
         raw_output,
         raw_estimated_tokens: clamp.original_estimated_tokens,
-        clamped_estimated_tokens: clamp.estimated_tokens,
-        hard_limit_tokens: clamp.hard_limit_tokens,
+        clamped_estimated_tokens: Some(clamp.estimated_tokens),
+        hard_limit_tokens: Some(clamp.hard_limit_tokens),
         retry_count,
         model,
     })
