@@ -1,6 +1,5 @@
-use super::fallback::RawCompactionOutputDump;
 use super::persistence::{spawn_resume_completion, CompactSummaryPersistenceContext};
-use super::{complete_compaction_with_hard_fallback, dump_raw_compaction_output};
+use super::{complete_compaction_with_hard_fallback, dump_partial_compaction_output_if_any};
 use crate::agent::compact_recovery::handle_compact_error_state_with_raw_output;
 use crate::agent::events::AgentEventDispatcher;
 use crate::agent::llm::types::{
@@ -93,25 +92,20 @@ pub async fn handle_compact_error_with_dispatcher(
     };
 
     let raw_output_path = match (&compaction, partial_output.as_deref()) {
-        (Some(compaction), Some(partial)) if !partial.trim().is_empty() => {
-            match compaction.current_request().await {
-                Some(request) => {
-                    dump_raw_compaction_output(RawCompactionOutputDump {
-                        session_id: &session_id,
-                        to_id: &request.to_id,
-                        reason: &format!("stream error or abort: {}", error.display_message),
-                        raw_output: partial,
-                        raw_estimated_tokens: crate::agent::llm::estimate_text_tokens(partial),
-                        clamped_estimated_tokens: None,
-                        hard_limit_tokens: None,
-                        retry_count: compaction.summary_retry_count().await,
-                        model: &model,
-                    })
-                    .await
-                }
-                None => None,
+        (Some(compaction), Some(partial)) => match compaction.current_request().await {
+            Some(request) => {
+                dump_partial_compaction_output_if_any(
+                    &session_id,
+                    &request.to_id,
+                    partial,
+                    &error.display_message,
+                    compaction.summary_retry_count().await,
+                    &model,
+                )
+                .await
             }
-        }
+            None => None,
+        },
         _ => None,
     };
 

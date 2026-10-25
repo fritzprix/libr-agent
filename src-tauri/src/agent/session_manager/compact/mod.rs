@@ -129,6 +129,33 @@ pub async fn dump_raw_compaction_output_if_needed(
     .await
 }
 
+/// Dumps text received before a compaction stream failed or aborted; empty
+/// partial output writes nothing.
+pub async fn dump_partial_compaction_output_if_any(
+    session_id: &str,
+    to_id: &str,
+    partial_output: &str,
+    error_message: &str,
+    retry_count: u32,
+    model: &str,
+) -> Option<String> {
+    if partial_output.trim().is_empty() {
+        return None;
+    }
+    dump_raw_compaction_output(RawCompactionOutputDump {
+        session_id,
+        to_id,
+        reason: &format!("stream error or abort: {error_message}"),
+        raw_output: partial_output,
+        raw_estimated_tokens: crate::agent::llm::estimate_text_tokens(partial_output),
+        clamped_estimated_tokens: None,
+        hard_limit_tokens: None,
+        retry_count,
+        model,
+    })
+    .await
+}
+
 async fn complete_compaction_with_hard_fallback(
     context: CompactSummaryPersistenceContext<'_>,
     failure_reason: &str,

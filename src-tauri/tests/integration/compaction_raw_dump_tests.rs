@@ -4,7 +4,8 @@ use migration::MigratorTrait;
 use sea_orm::sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use std::str::FromStr;
 use tauri_mcp_agent_lib::agent::session_manager::{
-    dump_raw_compaction_output_if_needed, CompactSummaryClampResult,
+    dump_partial_compaction_output_if_any, dump_raw_compaction_output_if_needed,
+    CompactSummaryClampResult,
 };
 use tauri_mcp_agent_lib::agent::ExecutionMode;
 use tauri_mcp_agent_lib::repositories::{
@@ -199,6 +200,47 @@ async fn clean_unclamped_summary_writes_nothing() {
         "gpt-4.1",
     )
     .await;
+
+    assert!(path.is_none());
+    assert!(raw_files(&workspace).is_empty());
+}
+
+#[tokio::test]
+async fn partial_stream_output_writes_raw_file_with_na_limits() {
+    let _guard = test_guard().await;
+    let session_id = "raw-dump-partial-session";
+    let workspace = session_with_workspace(session_id).await;
+
+    let path = dump_partial_compaction_output_if_any(
+        session_id,
+        "msg-5",
+        "half a sum",
+        "stream dropped",
+        1,
+        "gpt-4.1",
+    )
+    .await
+    .expect("partial output should be dumped");
+
+    assert!(path.contains("/raw-"));
+    let files = raw_files(&workspace);
+    assert_eq!(files.len(), 1);
+    let content = std::fs::read_to_string(&files[0]).unwrap();
+    assert!(content.contains("- Reason: stream error or abort: stream dropped"));
+    assert!(content.contains("- Clamped estimated tokens: n/a"));
+    assert!(content.contains("- Hard limit tokens: n/a"));
+    assert!(content.ends_with("half a sum\n"));
+}
+
+#[tokio::test]
+async fn empty_partial_stream_output_writes_nothing() {
+    let _guard = test_guard().await;
+    let session_id = "raw-dump-empty-partial-session";
+    let workspace = session_with_workspace(session_id).await;
+
+    let path =
+        dump_partial_compaction_output_if_any(session_id, "msg-6", "  \n", "boom", 0, "gpt-4.1")
+            .await;
 
     assert!(path.is_none());
     assert!(raw_files(&workspace).is_empty());
