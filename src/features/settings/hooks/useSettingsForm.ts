@@ -105,6 +105,23 @@ function getExperimentalComparableState(settings: SettingsFormState) {
   };
 }
 
+/**
+ * `display.uiScale` applies and persists immediately (it never waits for Save), so a
+ * draft always follows the live global value instead of buffering its own copy.
+ */
+function withLiveUiScale(
+  draft: SettingsFormState,
+  globalSettings: SettingsFormState,
+): SettingsFormState {
+  if (draft.display.uiScale === globalSettings.display.uiScale) {
+    return draft;
+  }
+  return {
+    ...draft,
+    display: { ...draft.display, uiScale: globalSettings.display.uiScale },
+  };
+}
+
 export function getSettingsDirtyState(
   formState: SettingsFormState,
   globalSettings: SettingsFormState,
@@ -147,17 +164,24 @@ export function useSettingsForm() {
   // Sync draftState during render using Adjusting State pattern
   if (globalSettings !== prevGlobal) {
     setPrevGlobal(globalSettings);
-    if (!draftState || equal(draftState, globalSettings)) {
+    if (
+      !draftState ||
+      equal(withLiveUiScale(draftState, globalSettings), globalSettings)
+    ) {
       setDraftState(null);
     }
   }
 
-  const activeFormState = draftState ? draftState : globalSettings;
+  const activeFormState = useMemo(
+    () =>
+      draftState ? withLiveUiScale(draftState, globalSettings) : globalSettings,
+    [draftState, globalSettings],
+  );
   const activeDirtyState = useMemo(() => {
     return draftState
-      ? getSettingsDirtyState(draftState, globalSettings)
+      ? getSettingsDirtyState(activeFormState, globalSettings)
       : getEmptyDirtyState();
-  }, [draftState, globalSettings]);
+  }, [draftState, activeFormState, globalSettings]);
 
   const isDirty = useMemo(() => {
     return Object.values(activeDirtyState).some(Boolean);
@@ -166,7 +190,9 @@ export function useSettingsForm() {
   const updateFormStore = useCallback(
     (updater: (previous: SettingsFormState) => SettingsFormState) => {
       setDraftState((prevDraft) => {
-        const previous = prevDraft ? prevDraft : globalSettings;
+        const previous = prevDraft
+          ? withLiveUiScale(prevDraft, globalSettings)
+          : globalSettings;
         const newState = updater(previous);
         return equal(newState, globalSettings) ? null : newState;
       });
@@ -275,17 +301,16 @@ export function useSettingsForm() {
 
   const save = useCallback(async () => {
     if (!draftState) return;
+    const live = withLiveUiScale(draftState, globalSettings);
     const sanitized: SettingsFormState = {
-      ...draftState,
-      customProviders: normalizeCustomOpenAIProviders(
-        draftState.customProviders,
-      ),
+      ...live,
+      customProviders: normalizeCustomOpenAIProviders(live.customProviders),
     };
     // Keep a canonical draft visible until persisted globals catch up.
     // Normalization ensures equality clears dirty once reload finishes.
     setDraftState(sanitized);
     await updateGlobal(sanitized);
-  }, [draftState, updateGlobal]);
+  }, [draftState, globalSettings, updateGlobal]);
 
   return {
     formState: activeFormState,

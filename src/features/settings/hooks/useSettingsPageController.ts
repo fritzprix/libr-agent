@@ -71,12 +71,11 @@ export function useSettingsPageController() {
   const handleUiScaleChange = useCallback(
     (uiScale: number) => {
       void applyUiScale(uiScale);
-      updateDisplay('uiScale', uiScale);
       void updateGlobalSettings({
         display: { ...globalSettings.display, uiScale },
       });
     },
-    [globalSettings.display, updateDisplay, updateGlobalSettings],
+    [globalSettings.display, updateGlobalSettings],
   );
 
   const [isDeleting, setIsDeleting] = useState(false);

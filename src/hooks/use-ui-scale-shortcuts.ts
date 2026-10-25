@@ -22,11 +22,13 @@ export function useUiScaleShortcuts(
         return;
       }
       event.preventDefault();
-      onChangeRef.current(
+      const next =
         action === 'reset'
           ? RESET_UI_SCALE
-          : stepUiScale(scaleRef.current, action === 'up' ? 1 : -1),
-      );
+          : stepUiScale(scaleRef.current, action === 'up' ? 1 : -1);
+      if (next !== scaleRef.current) {
+        onChangeRef.current(next);
+      }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
