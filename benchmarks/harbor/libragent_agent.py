@@ -1474,6 +1474,10 @@ class LibrAgentHarborAdapter(BaseAgent):
         trial_reset = resolve_trial_instance_reset(dict(os.environ))
         if trial_reset is not None:
             await asyncio.to_thread(relaunch, trial_reset.layout, trial_reset.app_bin)
+            try:
+                shutil.copy2(trial_reset.layout.llm_settings_file, self.logs_dir / "llm_settings.json")
+            except OSError:
+                pass  # the record is diagnostic; a missing copy must not fail the trial
 
         async with httpx.AsyncClient() as client:
             try:
