@@ -54,6 +54,10 @@ impl SessionIsolationManager {
                             &session,
                             &config.command,
                             &config.env_vars,
+                            config
+                                .working_directory
+                                .as_ref()
+                                .and_then(|path| path.to_str()),
                         )
                         .await
                         .map_err(|error| error.to_string());

@@ -141,11 +141,14 @@ impl WorkspaceRuntimeManager {
         session: &SessionMetadata,
         command: &str,
         env_vars: &std::collections::HashMap<String, String>,
+        cwd_override: Option<&str>,
     ) -> RuntimeResult<AsyncCommand> {
         let shell = prepare_docker_runtime(session, true, true, None).await?;
 
         let container_name = docker_container_name(session)?;
-        let workdir = session_docker_workdir(session);
+        let workdir = cwd_override
+            .map(str::to_string)
+            .unwrap_or_else(|| session_docker_workdir(session));
         let mut cmd = AsyncCommand::new("docker");
         apply_docker_cli_env(&mut cmd);
         cmd.args(["exec", "-i", "-w", &workdir]);
