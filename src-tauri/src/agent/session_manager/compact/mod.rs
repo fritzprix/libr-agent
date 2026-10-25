@@ -77,7 +77,7 @@ async fn dump_raw_compaction_output(dump: RawCompactionOutputDump<'_>) -> Option
     {
         Ok(()) => {
             log::warn!(
-                "📝 Saved raw compaction output for session {} at '{}': raw_estimated_tokens={}, clamped_estimated_tokens={}, hard_limit_tokens={}",
+                "📝 Saved raw compaction output for session {} at '{}': raw_estimated_tokens={}, clamped_estimated_tokens={:?}, hard_limit_tokens={:?}",
                 dump.session_id,
                 relative_path,
                 dump.raw_estimated_tokens,
@@ -121,8 +121,35 @@ pub async fn dump_raw_compaction_output_if_needed(
         reason: &reason,
         raw_output,
         raw_estimated_tokens: clamp.original_estimated_tokens,
-        clamped_estimated_tokens: clamp.estimated_tokens,
-        hard_limit_tokens: clamp.hard_limit_tokens,
+        clamped_estimated_tokens: Some(clamp.estimated_tokens),
+        hard_limit_tokens: Some(clamp.hard_limit_tokens),
+        retry_count,
+        model,
+    })
+    .await
+}
+
+/// Dumps text received before a compaction stream failed or aborted; empty
+/// partial output writes nothing.
+pub async fn dump_partial_compaction_output_if_any(
+    session_id: &str,
+    to_id: &str,
+    partial_output: &str,
+    error_message: &str,
+    retry_count: u32,
+    model: &str,
+) -> Option<String> {
+    if partial_output.trim().is_empty() {
+        return None;
+    }
+    dump_raw_compaction_output(RawCompactionOutputDump {
+        session_id,
+        to_id,
+        reason: &format!("stream error or abort: {error_message}"),
+        raw_output: partial_output,
+        raw_estimated_tokens: crate::agent::llm::estimate_text_tokens(partial_output),
+        clamped_estimated_tokens: None,
+        hard_limit_tokens: None,
         retry_count,
         model,
     })

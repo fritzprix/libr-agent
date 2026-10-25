@@ -102,10 +102,14 @@ pub(super) struct RawCompactionOutputDump<'a> {
     pub reason: &'a str,
     pub raw_output: &'a str,
     pub raw_estimated_tokens: usize,
-    pub clamped_estimated_tokens: usize,
-    pub hard_limit_tokens: usize,
+    pub clamped_estimated_tokens: Option<usize>,
+    pub hard_limit_tokens: Option<usize>,
     pub retry_count: u32,
     pub model: &'a str,
+}
+
+fn format_optional_tokens(tokens: Option<usize>) -> String {
+    tokens.map_or_else(|| "n/a".to_string(), |tokens| tokens.to_string())
 }
 
 /// Header + verbatim raw LLM output. `finish_reason` and usage are not
@@ -130,8 +134,8 @@ pub(super) fn build_compaction_raw_output_artifact(dump: &RawCompactionOutputDum
         truncate_for_fallback(dump.reason, COMPACTION_FALLBACK_MESSAGE_TEXT_LIMIT),
         dump.model,
         dump.raw_estimated_tokens,
-        dump.clamped_estimated_tokens,
-        dump.hard_limit_tokens,
+        format_optional_tokens(dump.clamped_estimated_tokens),
+        format_optional_tokens(dump.hard_limit_tokens),
         dump.retry_count,
         dump.raw_output
     )
@@ -421,14 +425,15 @@ mod raw_output_tests {
             reason: "clamped to hard limit",
             raw_output: "line one\n\n  indented <tool_call>",
             raw_estimated_tokens: 900,
-            clamped_estimated_tokens: 100,
-            hard_limit_tokens: 100,
+            clamped_estimated_tokens: Some(100),
+            hard_limit_tokens: None,
             retry_count: 2,
             model: "gpt-4.1",
         });
         assert!(artifact.contains("- Reason: clamped to hard limit"));
         assert!(artifact.contains("- model: gpt-4.1"));
         assert!(artifact.contains("- Raw estimated tokens: 900"));
+        assert!(artifact.contains("- Hard limit tokens: n/a"));
         assert!(artifact.contains("- Summary retries used: 2"));
         assert!(artifact.ends_with("## Raw output\n\nline one\n\n  indented <tool_call>\n"));
     }

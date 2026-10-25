@@ -1,6 +1,6 @@
-use super::complete_compaction_with_hard_fallback;
 use super::persistence::{spawn_resume_completion, CompactSummaryPersistenceContext};
-use crate::agent::compact_recovery::handle_compact_error_state;
+use super::{complete_compaction_with_hard_fallback, dump_partial_compaction_output_if_any};
+use crate::agent::compact_recovery::handle_compact_error_state_with_raw_output;
 use crate::agent::events::AgentEventDispatcher;
 use crate::agent::llm::types::{
     AgentRuntimeError, AgentRuntimeErrorType, CompactStateEvent, CompactStatePhase,
@@ -57,6 +57,7 @@ pub fn should_retry_budget_related_blocking_compaction(
         || normalized_message.contains("empty response from streamchat")
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn handle_compact_error_with_dispatcher(
     session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
@@ -65,8 +66,9 @@ pub async fn handle_compact_error_with_dispatcher(
     dispatcher: &dyn AgentEventDispatcher,
     session_id: String,
     error: AgentRuntimeError,
+    partial_output: Option<String>,
 ) -> Result<(), String> {
-    let (compaction, snapshot, session_name) = {
+    let (compaction, snapshot, session_name, model) = {
         let active = active_sessions.read().await;
         if let Some(session) = active.get(&session_id) {
             (
@@ -77,10 +79,34 @@ pub async fn handle_compact_error_with_dispatcher(
                     .name
                     .clone()
                     .unwrap_or_else(|| session_id.chars().take(8).collect::<String>()),
+                session.metadata.model.clone(),
             )
         } else {
-            (None, None, session_id.chars().take(8).collect::<String>())
+            (
+                None,
+                None,
+                session_id.chars().take(8).collect::<String>(),
+                "unknown".to_string(),
+            )
         }
+    };
+
+    let raw_output_path = match (&compaction, partial_output.as_deref()) {
+        (Some(compaction), Some(partial)) => match compaction.current_request().await {
+            Some(request) => {
+                dump_partial_compaction_output_if_any(
+                    &session_id,
+                    &request.to_id,
+                    partial,
+                    &error.display_message,
+                    compaction.summary_retry_count().await,
+                    &model,
+                )
+                .await
+            }
+            None => None,
+        },
+        _ => None,
     };
 
     if let (Some(compaction), Some(snapshot)) = (compaction, snapshot) {
@@ -142,7 +168,7 @@ pub async fn handle_compact_error_with_dispatcher(
                         telemetry_phase: crate::agent::compaction_telemetry::CompactionTelemetryPhase::HardFallback,
                         epoch_path: None,
                         fallback_path: None,
-                        raw_output_path: None,
+                        raw_output_path: raw_output_path.clone(),
                     },
                     &error.display_message,
                     Some(&snapshot),
@@ -155,5 +181,13 @@ pub async fn handle_compact_error_with_dispatcher(
         compaction.reset_recovery_progress().await;
     }
 
-    handle_compact_error_state(session_repo, active_sessions, dispatcher, session_id, error).await
+    handle_compact_error_state_with_raw_output(
+        session_repo,
+        active_sessions,
+        dispatcher,
+        session_id,
+        error,
+        raw_output_path,
+    )
+    .await
 }
