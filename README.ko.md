@@ -29,11 +29,11 @@
 
 LibrAgent는 이러한 작업을 간소화한 **완성형 데스크톱 제품**입니다:
 
-| 기존 방식 | LibrAgent 방식 |
-| --------- | -------------- |
-| 수동으로 복잡한 MCP JSON 설정 작성 | **원클릭 확장 도구** — GitHub, Brave Search, 파일시스템 등의 프리셋 지원 및 Cursor / VS Code / Claude Code 설정 자동 가져오기 |
-| 코드로 직접 구현해야 하는 멀티 에이전트 | **검증된 협업 패턴 내장** — `pipeline`, `hub-spoke`, `divide-conquer`, `consensus-delegation` 등 기본 제공 스킬 |
-| 특정 업체의 모델 및 도구에 종속 | **자유로운 스택 선택** — 상용 LLM API부터 로컬 [Ollama](https://ollama.com)까지 자유롭게 연동하는 MIT 라이선스 로컬 우선 앱 |
+| 기존 방식                               | LibrAgent 방식                                                                                                                |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| 수동으로 복잡한 MCP JSON 설정 작성      | **원클릭 확장 도구** — GitHub, Brave Search, 파일시스템 등의 프리셋 지원 및 Cursor / VS Code / Claude Code 설정 자동 가져오기 |
+| 코드로 직접 구현해야 하는 멀티 에이전트 | **검증된 협업 패턴 내장** — `pipeline`, `hub-spoke`, `divide-conquer`, `consensus-delegation` 등 기본 제공 스킬               |
+| 특정 업체의 모델 및 도구에 종속         | **자유로운 스택 선택** — 상용 LLM API부터 로컬 [Ollama](https://ollama.com)까지 자유롭게 연동하는 MIT 라이선스 로컬 우선 앱   |
 
 [최신 릴리스 다운로드](https://github.com/fritzprix/libr-agent/releases/latest) · [5분 온보딩 가이드](#5분-온보딩-경로)
 
@@ -71,20 +71,20 @@ LibrAgent는 이러한 작업을 간소화한 **완성형 데스크톱 제품**�
 
 작업의 특성에 맞는 협업 패턴을 선택하여 채팅창에서 바로 호출할 수 있습니다:
 
-| 스킬명 | 협업 패턴 | 권장 작업 유형 |
-| ------ | --------- | -------------- |
-| `pipeline` | 순차 단계별 처리 | 이전 단계의 결과물을 다음 단계로 전달 (조사 → 초안 작성 → 최종 검토) |
-| `hub-spoke` | 허브 앤 스포크 | 하나의 조율자 에이전트가 여러 전문 작업 에이전트를 총괄 관리 |
-| `divide-conquer` | 병렬 분할 처리 | 독립적인 하위 작업들로 쪼개어 병렬 수행 후 결과 종합 |
-| `consensus-delegation` | 다관점 비교 분석 | 동일한 질문을 여러 전문 에이전트에 질의한 뒤 의견 수렴 및 조율 |
-| `gatekeeper` / `pair-programming` | 코드 검토 루프 | 엄격한 품질 검토 또는 두 에이전트 간의 페어 프로그래밍 |
-| `delegate` | 단순 작업 위임 | 독립된 하위 세션에 특정 작업을 위임하고 진행 상태 추적 |
-| `teamwork` → `org` | 영구 프로젝트 팀 | 공유 헌장과 조직도(Org UI)를 기반으로 협력하는 팀 구성 |
-| `schedule` / `loop` / `call-me-back` | 시간 및 이벤트 기반 | 정기 크론(Cron) 예약, 세션 내 지연 실행, 외부 이벤트 기반 재개 |
+| 스킬명                               | 협업 패턴           | 권장 작업 유형                                                       |
+| ------------------------------------ | ------------------- | -------------------------------------------------------------------- |
+| `pipeline`                           | 순차 단계별 처리    | 이전 단계의 결과물을 다음 단계로 전달 (조사 → 초안 작성 → 최종 검토) |
+| `hub-spoke`                          | 허브 앤 스포크      | 하나의 조율자 에이전트가 여러 전문 작업 에이전트를 총괄 관리         |
+| `divide-conquer`                     | 병렬 분할 처리      | 독립적인 하위 작업들로 쪼개어 병렬 수행 후 결과 종합                 |
+| `consensus-delegation`               | 다관점 비교 분석    | 동일한 질문을 여러 전문 에이전트에 질의한 뒤 의견 수렴 및 조율       |
+| `gatekeeper` / `pair-programming`    | 코드 검토 루프      | 엄격한 품질 검토 또는 두 에이전트 간의 페어 프로그래밍               |
+| `delegate`                           | 단순 작업 위임      | 독립된 하위 세션에 특정 작업을 위임하고 진행 상태 추적               |
+| `teamwork` → `org`                   | 영구 프로젝트 팀    | 공유 헌장과 조직도(Org UI)를 기반으로 협력하는 팀 구성               |
+| `schedule` / `loop` / `call-me-back` | 시간 및 이벤트 기반 | 정기 크론(Cron) 예약, 세션 내 지연 실행, 외부 이벤트 기반 재개       |
 
 상세 가이드: [패턴 선택 가이드](src-tauri/bundled_skills/teamwork/references/framework-selection.md) · [서브에이전트 가이드](docs/user/guides/sub-agents.md)
 
-기타 기본 제공 스킬: `setup-wizard`, `tool-installer`, `playbook-creator` 등 — **[번들 스킬 목록](docs/user/guides/skills.md)**.
+기타 기본 제공 스킬: `setup-wizard`, `mcp-installer`, `playbook-creator` 등 — **[번들 스킬 목록](docs/user/guides/skills.md)**.
 
 ---
 
@@ -92,18 +92,18 @@ LibrAgent는 이러한 작업을 간소화한 **완성형 데스크톱 제품**�
 
 - **다양한 전송 프로토콜**: stdio, HTTP, SSE, OAuth 2.1 지원
 - **15개 이상의 내장 서버**: Workspace, Shell, Browser, Knowledge, Planning, Scheduled Tasks 등 완비
-- **원클릭 프리셋 및 자동 설치 지원**: `tool-installer`를 통한 대화형 도구 설치
+- **원클릭 프리셋 및 자동 설치 지원**: `mcp-installer`를 통한 대화형 도구 설치
 - **안전한 격리 환경**: 세션별 도구 격리, 파일 경로 및 셸 명령어 실행 제한 가드, 자동화 전용 안전 실행 모드 지원
 
 ### 핵심 실행 인프라
 
-| 실행 영역 | 세부 기능 |
-| --------- | --------- |
-| **Workspace** | 라인 단위 정밀 코드 편집, 다중 파일 일괄 작업, `@file` / `@skill` / `@playbook` 컨텍스트 주입 |
-| **Shell** | 격리된 영구 셸 환경 및 백그라운드 프로세스 비동기 모니터링 |
-| **Browser** | 기본은 에이전트 전용 브라우저. 이미 로그인한 사이트가 필요할 때만 [Chrome 확장](https://chromewebstore.google.com/detail/libragent-browser-bridge/eponcjengahlpkgbaolhemhmckopmfbe)을 설치합니다 ([가이드](docs/user/guides/browser-sidecar.md)) |
-| **Knowledge** | 지식 그래프 저장소 및 고속 BM25 하이브리드 검색 |
-| **Export** | Markdown 보고서 출력 및 표준 ATIF 세션 궤적 내보내기 지원 ([세션 내보내기](docs/user/guides/session-export.md)) |
+| 실행 영역     | 세부 기능                                                                                                                                                                                                                                        |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Workspace** | 라인 단위 정밀 코드 편집, 다중 파일 일괄 작업, `@file` / `@skill` / `@playbook` 컨텍스트 주입                                                                                                                                                    |
+| **Shell**     | 격리된 영구 셸 환경 및 백그라운드 프로세스 비동기 모니터링                                                                                                                                                                                       |
+| **Browser**   | 기본은 에이전트 전용 브라우저. 이미 로그인한 사이트가 필요할 때만 [Chrome 확장](https://chromewebstore.google.com/detail/libragent-browser-bridge/eponcjengahlpkgbaolhemhmckopmfbe)을 설치합니다 ([가이드](docs/user/guides/browser-sidecar.md)) |
+| **Knowledge** | 지식 그래프 저장소 및 고속 BM25 하이브리드 검색                                                                                                                                                                                                  |
+| **Export**    | Markdown 보고서 출력 및 표준 ATIF 세션 궤적 내보내기 지원 ([세션 내보내기](docs/user/guides/session-export.md))                                                                                                                                  |
 
 컨텍스트 자동 압축, 무한 루프 감지기, 서킷 브레이커, 응답 유효성 검증 가드를 내장하여 장시간 실행되는 세션도 성능 저하 없이 안정적으로 유지됩니다.
 
@@ -151,10 +151,10 @@ LibrAgent는 이러한 작업을 간소화한 **완성형 데스크톱 제품**�
 **[Releases 페이지](https://github.com/fritzprix/libr-agent/releases/latest)**에서 최신 설치 파일을 다운로드하십시오.
 
 <!-- RELEASE_DOWNLOADS_START -->
-- **Windows:** [`LibrAgent_0.9.27_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent_0.9.27_x64-setup.exe) · [`LibrAgent_0.9.27_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent_0.9.27_x64_en-US.msi)
-- **macOS (Apple Silicon):** [`LibrAgent_0.9.27_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent_0.9.27_aarch64.dmg)
-- **Linux:** [`LibrAgent_0.9.27_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent_0.9.27_amd64.AppImage) · [`LibrAgent_0.9.27_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent_0.9.27_amd64.deb) · [`LibrAgent-0.9.27-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent-0.9.27-1.x86_64.rpm)
-- **전체 릴리스 자산:** [릴리스 페이지](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.27)
+- **Windows:** [`LibrAgent_0.9.28_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.28/LibrAgent_0.9.28_x64-setup.exe) · [`LibrAgent_0.9.28_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.28/LibrAgent_0.9.28_x64_en-US.msi)
+- **macOS (Apple Silicon):** [`LibrAgent_0.9.28_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.28/LibrAgent_0.9.28_aarch64.dmg)
+- **Linux:** [`LibrAgent_0.9.28_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.28/LibrAgent_0.9.28_amd64.AppImage) · [`LibrAgent_0.9.28_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.28/LibrAgent_0.9.28_amd64.deb) · [`LibrAgent-0.9.28-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.28/LibrAgent-0.9.28-1.x86_64.rpm)
+- **전체 릴리스 자산:** [릴리스 페이지](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.28)
 <!-- RELEASE_DOWNLOADS_END -->
 
 ### 5분 온보딩 경로

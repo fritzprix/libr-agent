@@ -15,13 +15,13 @@ Use **Unlisted** distribution until review feedback is stable. Broad
 
 ### Store listing
 
-| Field | Suggested value |
-| --- | --- |
-| Name | LibrAgent Browser Bridge |
+| Field           | Suggested value                                                       |
+| --------------- | --------------------------------------------------------------------- |
+| Name            | LibrAgent Browser Bridge                                              |
 | Summary (short) | Connect LibrAgent to everyday Chrome for local agent browser control. |
-| Description | See **Detailed description** below |
-| Category | Productivity |
-| Language | English (add Korean later if needed) |
+| Description     | See **Detailed description** below                                    |
+| Category        | Productivity                                                          |
+| Language        | English (add Korean later if needed)                                  |
 
 **Detailed description (draft):**
 
@@ -43,12 +43,12 @@ This extension does not send your browsing data to a LibrAgent cloud by itself.
 
 ### Privacy tab
 
-| Field | Suggested value |
-| --- | --- |
-| Single purpose | Bridge the local LibrAgent desktop app to Chrome so agents can control tabs on this machine. |
-| Remote code | No |
-| User data | See `PRIVACY.md`. Hosted URL after merge: `https://github.com/fritzprix/libr-agent/blob/dev/0.9.x/chrome-extension/PRIVACY.md` (update branch/tag for the release you ship). |
-| Certifications | Not sold; not used for unrelated purposes; disclosed permissions match behavior |
+| Field          | Suggested value                                                                                                                                                              |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Single purpose | Bridge the local LibrAgent desktop app to Chrome so agents can control tabs on this machine.                                                                                 |
+| Remote code    | No                                                                                                                                                                           |
+| User data      | See `PRIVACY.md`. Hosted URL after merge: `https://github.com/fritzprix/libr-agent/blob/dev/0.9.x/chrome-extension/PRIVACY.md` (update branch/tag for the release you ship). |
+| Certifications | Not sold; not used for unrelated purposes; disclosed permissions match behavior                                                                                              |
 
 ### Distribution
 
@@ -78,13 +78,13 @@ the GitHub issue tracker for a build or screen recording.
 
 ## Asset checklist (Dashboard uploads)
 
-| Asset | Status |
-| --- | --- |
-| Extension icons 16/48/128 in package | Provided (`icons/icon-*.png`) |
-| Store icon 128×128 | Same as `icons/icon-128.png` |
-| Small promo tile 440×280 | TODO — design before public listing |
+| Asset                                 | Status                                 |
+| ------------------------------------- | -------------------------------------- |
+| Extension icons 16/48/128 in package  | Provided (`icons/icon-*.png`)          |
+| Store icon 128×128                    | Same as `icons/icon-128.png`           |
+| Small promo tile 440×280              | TODO — design before public listing    |
 | Screenshots (1280×800 or 640×400), ≥1 | TODO — popup Connected + Settings card |
-| Marquee (optional) | Skip for unlisted |
+| Marquee (optional)                    | Skip for unlisted                      |
 
 ## Package & upload steps
 

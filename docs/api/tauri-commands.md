@@ -11,23 +11,23 @@ import { invoke } from '@tauri-apps/api/core';
 
 ## 1. Master Command Directory by Domain
 
-| Domain | Count | Key Commands Included |
-|---|---|---|
-| [1. Agent Session & Workflow](#1-agent-session--workflow-commands) | 50 | `agent_create_session`, `agent_send_message`, `agent_call_builtin_tool`, `agent_respond_tool_approval`, `agent_get_child_sessions`, `agent_terminate_workflow`, etc. |
-| [2. Messages & Conversation History](#2-messages--conversation-history) | 7 | `messages_get_page`, `messages_get_messages_before`, `messages_upsert_many`, `messages_search`, etc. |
-| [3. Assistant Configuration](#3-assistant-configuration) | 8 | `create_assistant`, `update_assistant`, `get_assistant`, `list_assistant_summaries`, `search_assistants`, etc. |
-| [4. MCP Servers & Tools](#4-mcp-servers--tools) | 9 | `probe_mcp_server`, `validate_tool_schema`, `list_builtin_servers`, `list_mcp_server_presets`, `create_mcp_server_config`, etc. |
-| [5. Skills Management](#5-skills-management) | 18 | `scan_skills_directory`, `get_managed_skills_overview`, `import_user_skills`, `install_github_skills`, `copy_global_to_assistant`, etc. |
-| [6. Interactive Browser & Extension Bridge](#6-interactive-browser--extension-bridge) | 10 | `create_browser_session`, `navigate_to_url`, `execute_script`, `get_extension_bridge_status`, `clear_agent_browser_data`, etc. |
-| [7. Scheduled Tasks & Automation](#7-scheduled-tasks--automation) | 9 | `create_scheduled_task`, `list_scheduled_tasks`, `toggle_scheduled_task`, `list_session_scheduled_tasks`, etc. |
-| [8. Playbooks & Templates](#8-playbooks--templates) | 6 | `create_playbook`, `update_playbook`, `get_playbook`, `list_playbooks`, `toggle_playbook_bookmark`, etc. |
-| [9. Downloads & Session Export](#9-downloads--session-export) | 6 | `download_media_file`, `download_text_pdf`, `export_session_file`, `export_and_download_zip`, etc. |
-| [10. Knowledge Base](#10-knowledge-base) | 4 | `list_global_knowledge`, `get_global_knowledge_detail`, `get_global_knowledge_graph`, `delete_global_knowledge` |
-| [11. Workspace & Filesystem](#11-workspace--filesystem) | 16 | `list_workspace_files`, `workspace_write_file`, `open_workspace_in_terminal`, `set_workspace_override`, `submit_interactive_shell_input`, etc. |
-| [12. OAuth 2.1 Authentication](#12-oauth-21-authentication) | 4 | `start_oauth_flow`, `get_oauth_token`, `has_oauth_token`, `revoke_oauth_token` |
-| [13. System Settings & Migration](#13-system-settings--migration) | 9 | `get_setting`, `set_setting`, `export_migration`, `import_migration`, `inspect_migration`, `reverify_mcp_servers`, etc. |
-| [14. Diagnostics, Logs & Media Assist](#14-diagnostics-logs--media-assist) | 18 | `media_assist_plugin_status`, `media_assist_run_plugin`, `probe_runtime_binaries`, `check_docker_health`, `log_batch`, `restart_app`, etc. |
-| **Total Registered Commands** | **186** | |
+| Domain                                                                                | Count   | Key Commands Included                                                                                                                                                |
+| ------------------------------------------------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [1. Agent Session & Workflow](#1-agent-session--workflow-commands)                    | 50      | `agent_create_session`, `agent_send_message`, `agent_call_builtin_tool`, `agent_respond_tool_approval`, `agent_get_child_sessions`, `agent_terminate_workflow`, etc. |
+| [2. Messages & Conversation History](#2-messages--conversation-history)               | 7       | `messages_get_page`, `messages_get_messages_before`, `messages_upsert_many`, `messages_search`, etc.                                                                 |
+| [3. Assistant Configuration](#3-assistant-configuration)                              | 8       | `create_assistant`, `update_assistant`, `get_assistant`, `list_assistant_summaries`, `search_assistants`, etc.                                                       |
+| [4. MCP Servers & Tools](#4-mcp-servers--tools)                                       | 9       | `probe_mcp_server`, `validate_tool_schema`, `list_builtin_servers`, `list_mcp_server_presets`, `create_mcp_server_config`, etc.                                      |
+| [5. Skills Management](#5-skills-management)                                          | 18      | `scan_skills_directory`, `get_managed_skills_overview`, `import_user_skills`, `install_github_skills`, `copy_global_to_assistant`, etc.                              |
+| [6. Interactive Browser & Extension Bridge](#6-interactive-browser--extension-bridge) | 10      | `create_browser_session`, `navigate_to_url`, `execute_script`, `get_extension_bridge_status`, `clear_agent_browser_data`, etc.                                       |
+| [7. Scheduled Tasks & Automation](#7-scheduled-tasks--automation)                     | 9       | `create_scheduled_task`, `list_scheduled_tasks`, `toggle_scheduled_task`, `list_session_scheduled_tasks`, etc.                                                       |
+| [8. Playbooks & Templates](#8-playbooks--templates)                                   | 6       | `create_playbook`, `update_playbook`, `get_playbook`, `list_playbooks`, `toggle_playbook_bookmark`, etc.                                                             |
+| [9. Downloads & Session Export](#9-downloads--session-export)                         | 6       | `download_media_file`, `download_text_pdf`, `export_session_file`, `export_and_download_zip`, etc.                                                                   |
+| [10. Knowledge Base](#10-knowledge-base)                                              | 4       | `list_global_knowledge`, `get_global_knowledge_detail`, `get_global_knowledge_graph`, `delete_global_knowledge`                                                      |
+| [11. Workspace & Filesystem](#11-workspace--filesystem)                               | 16      | `list_workspace_files`, `workspace_write_file`, `open_workspace_in_terminal`, `set_workspace_override`, `submit_interactive_shell_input`, etc.                       |
+| [12. OAuth 2.1 Authentication](#12-oauth-21-authentication)                           | 4       | `start_oauth_flow`, `get_oauth_token`, `has_oauth_token`, `revoke_oauth_token`                                                                                       |
+| [13. System Settings & Migration](#13-system-settings--migration)                     | 9       | `get_setting`, `set_setting`, `export_migration`, `import_migration`, `inspect_migration`, `reverify_mcp_servers`, etc.                                              |
+| [14. Diagnostics, Logs & Media Assist](#14-diagnostics-logs--media-assist)            | 18      | `media_assist_plugin_status`, `media_assist_run_plugin`, `probe_runtime_binaries`, `check_docker_health`, `log_batch`, `restart_app`, etc.                           |
+| **Total Registered Commands**                                                         | **186** |                                                                                                                                                                      |
 
 ---
 
@@ -38,6 +38,7 @@ import { invoke } from '@tauri-apps/api/core';
 Implements the core agent runtime loop, session branching, LLM streaming callbacks, and human-in-the-loop approvals. Located in `src-tauri/src/commands/agent_commands/`.
 
 #### Catalog
+
 - **Session Lifecycle**: `agent_create_session`, `agent_create_session_with_initial_message`, `agent_resume_session`, `agent_open_session`, `agent_init_session_with_messages`, `agent_get_session`, `agent_get_all_sessions`, `agent_list_sessions`, `agent_list_attention_sessions`, `agent_delete_session`, `agent_delete_session_only`, `remove_session`, `agent_clear_all_sessions`, `agent_factory_reset`.
 - **Workflow Execution**: `agent_send_message`, `agent_execute_command`, `agent_pause_workflow`, `agent_resume_workflow`, `agent_regenerate_last_turn`, `agent_terminate_workflow`, `agent_cancel_workflow`, `agent_set_execution_mode`.
 - **LLM & Tool Handling**: `agent_handle_llm_response`, `agent_handle_llm_error`, `agent_report_llm_streaming_issue`, `agent_handle_tool_result`, `agent_call_builtin_tool`, `agent_respond_tool_approval`.
@@ -49,6 +50,7 @@ Implements the core agent runtime loop, session branching, LLM streaming callbac
 #### Key Signatures
 
 ##### `agent_create_session`
+
 Creates a new conversation session with assistant binding, optional ephemeral mode, and custom workspace.
 
 ```typescript
@@ -66,6 +68,7 @@ const session = await invoke('agent_create_session', {
 ```
 
 ##### `agent_send_message`
+
 Submits a user message and triggers the background agent loop (LLM turn + tool iterations).
 
 ```typescript
@@ -82,6 +85,7 @@ await invoke('agent_send_message', {
 ```
 
 ##### `agent_respond_tool_approval`
+
 Submits user approval or rejection for a tool execution requiring confirmation (YOLO mode gate).
 
 ```typescript

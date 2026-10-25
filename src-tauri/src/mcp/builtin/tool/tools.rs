@@ -63,35 +63,48 @@ fn oauth_config_schema(description: Option<&str>) -> crate::mcp::schema::JSONSch
     )
 }
 
-fn transport_config_schema(description: Option<&str>) -> crate::mcp::schema::JSONSchema {
+fn stdio_transport_schema() -> crate::mcp::schema::JSONSchema {
     object_prop(
         vec![
             (
                 "type".to_string(),
-                enum_prop_required(vec!["stdio", "http", "http-sse"], "Transport type"),
+                string_const_prop("stdio", Some("Transport type (always 'stdio')")),
             ),
             (
                 "command".to_string(),
                 string_prop(
+                    Some(1),
                     None,
-                    None,
-                    Some("Executable to launch for stdio transport."),
+                    Some("Executable to launch (e.g., 'npx', 'uvx', 'node'). Required."),
                 ),
             ),
             (
                 "args".to_string(),
                 array_schema(
                     string_prop(None, None, None),
-                    Some("Arguments for the stdio executable."),
+                    Some("Arguments for the executable."),
                 ),
             ),
             (
                 "env".to_string(),
-                object_map_prop(Some("Environment variables for stdio transport.")),
+                object_map_prop(Some("Environment variables for the process.")),
+            ),
+        ],
+        vec!["type".to_string(), "command".to_string()],
+        Some("stdio transport: launch a local process."),
+    )
+}
+
+fn http_transport_schema() -> crate::mcp::schema::JSONSchema {
+    object_prop(
+        vec![
+            (
+                "type".to_string(),
+                enum_prop_required(vec!["http", "http-sse"], "Transport type"),
             ),
             (
                 "url".to_string(),
-                string_prop(None, None, Some("Server URL for HTTP transport.")),
+                string_prop(Some(1), None, Some("Server URL. Required.")),
             ),
             (
                 "protocolVersion".to_string(),
@@ -124,7 +137,14 @@ fn transport_config_schema(description: Option<&str>) -> crate::mcp::schema::JSO
                 )),
             ),
         ],
-        vec!["type".to_string()],
+        vec!["type".to_string(), "url".to_string()],
+        Some("HTTP transport: connect to a remote server URL."),
+    )
+}
+
+fn transport_config_schema(description: Option<&str>) -> crate::mcp::schema::JSONSchema {
+    one_of_object_schema(
+        vec![stdio_transport_schema(), http_transport_schema()],
         description,
     )
 }
@@ -293,6 +313,7 @@ pub fn list_tools_tool() -> MCPTool {
             &[],
             &[
                 "Choose scope (all, internal, external) and availability (inventory vs session).",
+                "For a capability request without a package or URL, use scope=catalog first to find a curated preset.",
                 "Use query to filter by tool name, description, or server name.",
                 "Leave forceVerify=false (default) for fast cached external metadata; set true only when you need live re-verification.",
             ],
@@ -316,10 +337,10 @@ pub fn list_tools_tool() -> MCPTool {
                 (
                     "scope".to_string(),
                     enum_prop(
-                        vec!["all", "internal", "external"],
+                        vec!["all", "internal", "external", "catalog"],
                         "all",
                         Some(
-                            "Result scope: all, builtin only, or external only. If omitted, default: all.",
+                            "Result scope: all, builtin only, external only, or catalog (curated MCP presets with registerServer-ready transport and required inputs; already registered presets are marked). If omitted, default: all.",
                         ),
                     ),
                 ),

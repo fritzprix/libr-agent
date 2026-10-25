@@ -43,12 +43,12 @@ Extension’s network traffic (which stays on localhost).
 
 ## Permissions
 
-| Permission | Why |
-| --- | --- |
-| `tabs` | Create, navigate, close, and inspect agent-driven tabs |
-| `scripting` | Read page content and perform clicks/typing when the agent requests it |
-| `storage` | Save bridge port/token and UI connection status |
-| `alarms` | Keep the local bridge connection reliable while LibrAgent is running |
+| Permission                 | Why                                                                                    |
+| -------------------------- | -------------------------------------------------------------------------------------- |
+| `tabs`                     | Create, navigate, close, and inspect agent-driven tabs                                 |
+| `scripting`                | Read page content and perform clicks/typing when the agent requests it                 |
+| `storage`                  | Save bridge port/token and UI connection status                                        |
+| `alarms`                   | Keep the local bridge connection reliable while LibrAgent is running                   |
 | Host access (`<all_urls>`) | Agents may open arbitrary URLs the user asks for; the Extension must reach those pages |
 
 ## Authentication

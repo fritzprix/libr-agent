@@ -501,6 +501,9 @@
       "uiVisualsTitle": "Visuais da interface",
       "fontFamily": "Família da fonte",
       "fontFamilyDescription": "Altera a família de fonte padrão da interface.",
+      "uiSize": "Tamanho da interface",
+      "uiSizeDescription": "Dimensiona toda a interface. Aplica-se imediatamente. Atalhos: Ctrl/Cmd +, -, 0.",
+      "uiSizeReset": "Redefinir para 100%",
       "messageLayout": "Layout das mensagens",
       "messageLayoutDocument": "Documento (largura total para código)",
       "messageLayoutBubble": "Balões (chat clássico)",
@@ -1995,6 +1998,11 @@
         "title": "Faça backup ou mova uma equipe Org",
         "body": "Exporte uma equipe em Org como pacote .libragent-org — com assistentes, agendamentos, playbooks e skills — e importe em outro dispositivo.",
         "cta": "Abrir Org"
+      },
+      "uiSize": {
+        "title": "Ajustar o tamanho da interface",
+        "body": "Redimensione toda a interface em Configurações → General ou use os atalhos Ctrl/Cmd +, - e 0 a qualquer momento.",
+        "cta": "Abrir General"
       }
     }
   }

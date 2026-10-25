@@ -3,7 +3,7 @@ mod files;
 mod helpers;
 
 use super::super::edit_mode::LINE_ANCHORS_ENABLED;
-use super::super::workspace_server::path_validation_failure_guidance;
+use super::super::workspace_server::{path_validation_failure_guidance, with_harness_alias_hint};
 use super::super::WorkspaceServer;
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, ErrorCategory, ToolGroup,
@@ -31,6 +31,32 @@ struct GrepSearchParams<'a> {
     show_line_anchors: bool,
     limit: usize,
     offset: usize,
+}
+
+/// What the attached container says about a search root that is missing from host staging.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ContainerProbe {
+    /// Not an attach session, or the path is outside staging: the host answer is final.
+    HostOnly,
+    Exists,
+    Missing,
+    /// The container could not be queried (docker failure); the answer is unknown.
+    Failed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MissingRootVerdict {
+    NotFound,
+    ExistsInContainerOnly,
+    Unknown,
+}
+
+fn classify_missing_root(probe: ContainerProbe) -> MissingRootVerdict {
+    match probe {
+        ContainerProbe::HostOnly | ContainerProbe::Missing => MissingRootVerdict::NotFound,
+        ContainerProbe::Exists => MissingRootVerdict::ExistsInContainerOnly,
+        ContainerProbe::Failed => MissingRootVerdict::Unknown,
+    }
 }
 
 impl WorkspaceServer {
@@ -225,6 +251,20 @@ impl WorkspaceServer {
         .to_mcp_result())
     }
 
+    async fn probe_attach_container(&self, session_id: &str, host_path: &Path) -> ContainerProbe {
+        use crate::services::container_attach_fs as attach_fs;
+
+        let Some(session) = attach_fs::load_session(session_id).await.ok().flatten() else {
+            return ContainerProbe::HostOnly;
+        };
+        match attach_fs::list_container_directory(&session, host_path).await {
+            Ok(None) => ContainerProbe::HostOnly,
+            Ok(Some(_)) => ContainerProbe::Exists,
+            Err(err) if attach_fs::is_missing_container_path_error(&err) => ContainerProbe::Missing,
+            Err(_) => ContainerProbe::Failed,
+        }
+    }
+
     async fn resolve_search_target(
         &self,
         search_path: &str,
@@ -234,7 +274,7 @@ impl WorkspaceServer {
         let workspace_root = self.get_workspace_dir(&target_session_id);
 
         let safe_path = match self
-            .validate_read_path_with_skill_access(search_path, Some(target_session_id))
+            .validate_read_path_with_skill_access(search_path, Some(target_session_id.clone()))
             .await
         {
             Ok(path) => path,
@@ -254,6 +294,45 @@ impl WorkspaceServer {
                 .to_mcp_result());
             }
         };
+
+        if tokio::fs::metadata(&safe_path).await.is_err() {
+            let probe = self
+                .probe_attach_container(&target_session_id, &safe_path)
+                .await;
+            match classify_missing_root(probe) {
+                MissingRootVerdict::NotFound => {
+                    return Err(guided_error(
+                        ErrorCategory::ResourceNotFound,
+                        format!("Search path '{search_path}' not found"),
+                        ToolGroup::Workspace,
+                    )
+                    .guidance(with_harness_alias_hint(
+                        search_path,
+                        vec![
+                            "Use workspace__listDirectory('.') to inspect the workspace root"
+                                .to_string(),
+                            "Verify the search path is correct before retrying".to_string(),
+                        ],
+                    ))
+                    .to_mcp_result());
+                }
+                MissingRootVerdict::ExistsInContainerOnly => {
+                    return Err(guided_error(
+                        ErrorCategory::InvalidInput,
+                        format!(
+                            "Search path '{search_path}' exists in the attached container but is not staged on the host, so globFiles/grepFiles cannot search it"
+                        ),
+                        ToolGroup::Workspace,
+                    )
+                    .guidance(vec![
+                        "Use workspace__runShell with `find` or `grep -r` to search inside the container".to_string(),
+                        "Use workspace__listDirectory to inspect the container directory".to_string(),
+                    ])
+                    .to_mcp_result());
+                }
+                MissingRootVerdict::Unknown => {}
+            }
+        }
 
         if safe_path.is_file() && is_internal_workspace_artifact_path(&workspace_root, &safe_path) {
             return Err(guided_error(
@@ -360,5 +439,30 @@ impl WorkspaceServer {
             )
             .await
         }
+    }
+}
+
+#[cfg(test)]
+mod missing_root_tests {
+    use super::{classify_missing_root, ContainerProbe, MissingRootVerdict};
+
+    #[test]
+    fn missing_root_is_not_found_unless_the_container_has_it_or_is_unreachable() {
+        assert_eq!(
+            classify_missing_root(ContainerProbe::HostOnly),
+            MissingRootVerdict::NotFound
+        );
+        assert_eq!(
+            classify_missing_root(ContainerProbe::Missing),
+            MissingRootVerdict::NotFound
+        );
+        assert_eq!(
+            classify_missing_root(ContainerProbe::Exists),
+            MissingRootVerdict::ExistsInContainerOnly
+        );
+        assert_eq!(
+            classify_missing_root(ContainerProbe::Failed),
+            MissingRootVerdict::Unknown
+        );
     }
 }

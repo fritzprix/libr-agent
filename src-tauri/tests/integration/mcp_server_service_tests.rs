@@ -71,7 +71,7 @@ async fn test_update_server_config_marks_pending_for_unreachable_transport_chang
                 "transport": {
                     "type": "stdio",
                     "command": "npx",
-                    "args": ["-y", "@fre4x/yahoo-finance"]
+                    "args": ["-y", "@fre4x/yahoo-finance@latest"]
                 }
             }),
         )
@@ -176,4 +176,39 @@ async fn test_create_rejects_reserved_builtin_name() {
         "unexpected error message: {error}"
     );
     assert!(repo.list().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn test_fre4x_npx_migration_rewrites_stored_config_and_is_idempotent() {
+    let db = common::setup_test_db_with_migrations().await;
+    let repo = SqliteMCPServerRepository::new(db.clone());
+
+    repo.create(
+        "hn",
+        serde_json::json!({
+            "transport": {
+                "type": "stdio",
+                "command": "npx",
+                "args": ["-y", "@fre4x/hn"],
+                "env": { "NO_LOG": "secret-value" }
+            }
+        }),
+    )
+    .await
+    .unwrap();
+
+    tauri_mcp_agent_lib::lifecycle::fre4x_npx_migration::run_fre4x_npx_migrations(&db).await;
+
+    let after_first = repo.list().await.unwrap();
+    let config: serde_json::Value = serde_json::from_str(&after_first[0].config).unwrap();
+    assert_eq!(
+        config["transport"]["args"],
+        serde_json::json!(["-y", "@fre4x/hn@latest"])
+    );
+    assert_eq!(config["transport"]["env"]["NO_LOG"], "secret-value");
+
+    tauri_mcp_agent_lib::lifecycle::fre4x_npx_migration::run_fre4x_npx_migrations(&db).await;
+
+    let after_second = repo.list().await.unwrap();
+    assert_eq!(after_second[0].config, after_first[0].config);
 }

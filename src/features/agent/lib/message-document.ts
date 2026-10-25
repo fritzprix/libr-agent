@@ -54,9 +54,7 @@ function tryReportResultDocument(
 /**
  * Pull presentInteractive source from the embedded `#raw-data` JSON blob.
  */
-export function extractPresentInteractiveRawData(
-  html: string,
-): string | null {
+export function extractPresentInteractiveRawData(html: string): string | null {
   const match = html.match(
     /<script[^>]*\bid=["']raw-data["'][^>]*>([\s\S]*?)<\/script>/i,
   );
@@ -202,9 +200,7 @@ export function resolveMessageDocument(
     toolResultsMap?: Map<string, Message>;
   } = {},
 ): ResolvedMessageDocument | null {
-  const fromSelf = tryReportResultDocument(
-    getToolStructuredContent(message),
-  );
+  const fromSelf = tryReportResultDocument(getToolStructuredContent(message));
   if (fromSelf) {
     return fromSelf;
   }

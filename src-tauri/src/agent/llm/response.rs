@@ -138,6 +138,59 @@ async fn persist_prompt_token_checkpoint(
     }
 }
 
+/// A final turn that is only text-formatted tool-call markup for a registered
+/// tool, with nothing else queued: the message is discarded (it was not cached
+/// or persisted yet) and a corrective retry is started. Returns `true` when a
+/// retry was started; `false` leaves the turn to end as it does today.
+async fn recover_malformed_tool_markup(
+    session_repo: &Arc<dyn SessionRepository>,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    proxy_manager: &Arc<MCPServiceProxyManager>,
+    app_handle: &AppHandle,
+    session_id: &str,
+    assistant_message: &Message,
+) -> Result<bool, String> {
+    let text = assistant_message
+        .content
+        .iter()
+        .filter_map(|content| match content {
+            crate::mcp::types::MCPContent::Text { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let Some(tool_name) =
+        crate::agent::llm::malformed_tool_markup::malformed_tool_markup_name(&text)
+    else {
+        return Ok(false);
+    };
+    if crate::agent::workflow::session_has_pending_events(active_sessions, session_id).await {
+        return Ok(false);
+    }
+    let registered = crate::agent::tools::collect_available_tools(session_id, proxy_manager)
+        .await
+        .map(|tools| tools.iter().any(|tool| tool.name == tool_name))
+        .unwrap_or(false);
+    if !registered {
+        return Ok(false);
+    }
+
+    let outcome = crate::agent::llm::stream_recovery::handle_malformed_tool_markup_completion(
+        session_repo,
+        active_sessions,
+        proxy_manager,
+        app_handle,
+        session_id.to_string(),
+        assistant_message.id.clone(),
+        tool_name,
+    )
+    .await?;
+    Ok(matches!(
+        outcome,
+        crate::agent::llm::stream_recovery::StreamingIssueOutcome::Retried { .. }
+    ))
+}
+
 async fn reset_streaming_recovery_retry_counts(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     session_id: &str,
@@ -147,6 +200,7 @@ async fn reset_streaming_recovery_retry_counts(
         *session.repeated_thinking_retry_count.write().await = 0;
         *session.repeated_text_loop_retry_count.write().await = 0;
         *session.reasoning_budget_retry_count.write().await = 0;
+        *session.malformed_tool_markup_retry_count.write().await = 0;
         // bad_tool_args_* counters are intentionally NOT reset here — they only
         // clear on workflow start or when a fully valid tool-call batch is admitted
         // (see reset_bad_tool_args_recovery_counts).
@@ -399,6 +453,19 @@ pub async fn handle_llm_response(
             )
             .await
             .map(|_| ());
+        }
+
+        if recover_malformed_tool_markup(
+            session_repo,
+            active_sessions,
+            proxy_manager,
+            app_handle,
+            &session_id,
+            &assistant_message,
+        )
+        .await?
+        {
+            return Ok(());
         }
     }
 

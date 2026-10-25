@@ -268,10 +268,7 @@ export function ExtensionBridgeSettingsSection() {
           {unpackedPath ? (
             <p className="break-all">
               <span className="font-medium text-foreground">
-                {t(
-                  'settings.system.extensionBridge.pathLabel',
-                  'Local folder',
-                )}
+                {t('settings.system.extensionBridge.pathLabel', 'Local folder')}
                 :{' '}
               </span>
               {unpackedPath}

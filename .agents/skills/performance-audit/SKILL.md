@@ -45,17 +45,21 @@ Detailed checklist: see [references/checklist-fullstack.md](references/checklist
 ```
 
 ### 1. Identify Target Scope
+
 - Clarify or identify the target module, feature, or flow under investigation (e.g., chat stream rendering, session transcript loading, tool execution pipeline, history search).
 - Examine relevant source files directly without guessing.
 
 ### 2. Systematic Code Inspection
+
 Cross-examine the target against the [Full-Stack Checklist](references/checklist-fullstack.md):
+
 - Check Tokio task safety: Are there `std::fs` calls or sync loops in async functions?
 - Check lock granularity: Is a `Mutex` locked across an `.await` or around long iterations?
 - Check React render trees: Is parent state triggering re-renders of heavy children without memoization?
 - Check SQLite access: Are queries executed in loops? Are `WHERE`/`ORDER BY` columns indexed?
 
 ### 3. Priority Classification
+
 Classify all identified bottlenecks strictly by impact:
 
 - **P0 (Critical)**:
@@ -71,13 +75,16 @@ Classify all identified bottlenecks strictly by impact:
   - Opportunities to use `Vec::with_capacity` or pass references instead of owned values
 
 ### 4. Provide Concrete Before/After Solutions
+
 For each finding:
+
 - Specify exact code location: `relative/path/to/file.ext:line`.
 - Explain the precise root cause (why it degrades performance).
 - Provide minimal, idiomatic **Before** and **After** code snippets.
 - Verify that the fix does not introduce architectural bloat (KISS/YAGNI).
 
 ### 5. Generate Action Plan Report
+
 Write the final audit to `.libragent/work/perf_audit_<target>_<YYYYMMDD>.md` (or present directly to user) following [references/reporting-template.md](references/reporting-template.md).
 
 ---

@@ -501,6 +501,9 @@
       "uiVisualsTitle": "UI 表示",
       "fontFamily": "フォントファミリー",
       "fontFamilyDescription": "UI のデフォルトフォントファミリーを変更します。",
+      "uiSize": "UI サイズ",
+      "uiSizeDescription": "インターフェース全体を拡大・縮小します。すぐに反映されます。ショートカット: Ctrl/Cmd +、-、0。",
+      "uiSizeReset": "100% にリセット",
       "messageLayout": "メッセージレイアウト",
       "messageLayoutDocument": "ドキュメント（全幅コーディングレイアウト）",
       "messageLayoutBubble": "吹き出し（クラシックチャット）",
@@ -1995,6 +1998,11 @@
         "title": "組織チームを丸ごとバックアップ・移行",
         "body": "Org 画面からアシスタント、予約タスク、プレイブック、スキルを含む .libragent-org バンドルとしてチームを書き出し、別の端末に読み込めます。",
         "cta": "Org を開く"
+      },
+      "uiSize": {
+        "title": "UI の表示サイズを調整できます",
+        "body": "設定 → General またはショートカット Ctrl/Cmd +、-、0 でインターフェース全体をすぐに拡大・縮小できます。",
+        "cta": "General 設定を開く"
       }
     }
   }

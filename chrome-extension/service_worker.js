@@ -104,10 +104,7 @@ function waitForTabComplete(tabId, timeoutMs = TAB_LOAD_TIMEOUT_MS) {
     };
 
     const timer = setTimeout(() => {
-      void chrome.tabs
-        .get(tabId)
-        .then(finish)
-        .catch(fail);
+      void chrome.tabs.get(tabId).then(finish).catch(fail);
     }, timeoutMs);
 
     chrome.tabs.onUpdated.addListener(onUpdated);
@@ -144,7 +141,8 @@ function urlsMatch(a, b) {
   const norm = (u) => {
     try {
       const parsed = new URL(u);
-      const path = parsed.pathname === '/' ? '' : parsed.pathname.replace(/\/$/, '');
+      const path =
+        parsed.pathname === '/' ? '' : parsed.pathname.replace(/\/$/, '');
       return `${parsed.protocol}//${parsed.host}${path}${parsed.search}${parsed.hash}`;
     } catch {
       return String(u || '').replace(/\/$/, '');
@@ -190,7 +188,10 @@ function waitForHistoryUrlChange(tabId, beforeUrl, timeoutMs) {
       if (id !== tabId) {
         return;
       }
-      if (typeof changeInfo.url === 'string' && !urlsMatch(changeInfo.url, beforeUrl)) {
+      if (
+        typeof changeInfo.url === 'string' &&
+        !urlsMatch(changeInfo.url, beforeUrl)
+      ) {
         finish();
         return;
       }
@@ -267,7 +268,9 @@ async function navigateHistory(tabId, direction) {
       tabId,
       navigationStatus: 'noHistoryEntry',
       navigationMessage: `No ${label} history entry (${String(
-        triggerError && triggerError.message ? triggerError.message : triggerError,
+        triggerError && triggerError.message
+          ? triggerError.message
+          : triggerError,
       )})`,
     };
   }
@@ -670,7 +673,11 @@ function scheduleReconnect() {
 }
 
 async function connect() {
-  if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+  if (
+    socket &&
+    (socket.readyState === WebSocket.OPEN ||
+      socket.readyState === WebSocket.CONNECTING)
+  ) {
     return;
   }
   if (connectInFlight) {
@@ -683,23 +690,28 @@ async function connect() {
 }
 
 async function openBridgeSocket() {
-  if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+  if (
+    socket &&
+    (socket.readyState === WebSocket.OPEN ||
+      socket.readyState === WebSocket.CONNECTING)
+  ) {
     return;
   }
 
   const { bridgePort, bridgeToken } = await loadConfig();
   // Re-check after await — another caller may have opened meanwhile.
-  if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+  if (
+    socket &&
+    (socket.readyState === WebSocket.OPEN ||
+      socket.readyState === WebSocket.CONNECTING)
+  ) {
     return;
   }
 
   const url = `ws://127.0.0.1:${bridgePort}/extension-bridge?token=${encodeURIComponent(bridgeToken)}`;
 
   intentionalClose = false;
-  setBridgeUiState(
-    'reconnecting',
-    'Looking for LibrAgent on this machine…',
-  );
+  setBridgeUiState('reconnecting', 'Looking for LibrAgent on this machine…');
 
   /** @type {WebSocket} */
   let ws;
@@ -824,27 +836,30 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       const connecting = Boolean(
         socket && socket.readyState === WebSocket.CONNECTING,
       );
-      chrome.storage.local.get(['bridgeUiState', 'bridgeUiDetail'], (stored) => {
-        let state = stored.bridgeUiState;
-        if (open) {
-          state = 'connected';
-        } else if (connecting) {
-          state = 'reconnecting';
-        } else if (
-          state !== 'connected' &&
-          state !== 'reconnecting' &&
-          state !== 'app_offline'
-        ) {
-          state = 'reconnecting';
-        }
-        sendResponse({
-          state,
-          detail:
-            typeof stored.bridgeUiDetail === 'string'
-              ? stored.bridgeUiDetail
-              : '',
-        });
-      });
+      chrome.storage.local.get(
+        ['bridgeUiState', 'bridgeUiDetail'],
+        (stored) => {
+          let state = stored.bridgeUiState;
+          if (open) {
+            state = 'connected';
+          } else if (connecting) {
+            state = 'reconnecting';
+          } else if (
+            state !== 'connected' &&
+            state !== 'reconnecting' &&
+            state !== 'app_offline'
+          ) {
+            state = 'reconnecting';
+          }
+          sendResponse({
+            state,
+            detail:
+              typeof stored.bridgeUiDetail === 'string'
+                ? stored.bridgeUiDetail
+                : '',
+          });
+        },
+      );
     });
     return true;
   }

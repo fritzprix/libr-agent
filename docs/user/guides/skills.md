@@ -89,6 +89,13 @@ weekly-notes 스킬을 만들고 엄격 모드로 검증해줘.
 weekly-notes 를 이 프로젝트(워크스페이스)에 배포해줘.
 ```
 
+GitHub에 올라와 있는 스킬 저장소(또는 하위 폴더) 주소가 있다면 바로 설치를 맡길 수도 있습니다:
+
+```
+@skill:skill-deployer
+https://github.com/owner/repo/tree/main/skills/my-skill 스킬을 내 계정 전체(글로벌)에 설치해줘.
+```
+
 - 어디에 둘지 모르겠으면 **이 프로젝트(워크스페이스)** 를 고르세요.
 - **앱 기본 제공** 영역에는 배포하지 마세요. 앱이 정리할 수 있습니다.
 - 어시스턴트 전용이면 deployer에 **어느 어시스턴트인지** 함께 알려 주세요.
@@ -101,7 +108,7 @@ weekly-notes 를 이 프로젝트(워크스페이스)에 배포해줘.
 
 ### 시작·환경
 
-`setup-wizard`, `tool-installer`, `agent-init`, `computer-diagnosis`
+`setup-wizard`, `mcp-installer`, `agent-init`, `computer-diagnosis`
 
 ### 멀티 에이전트 · 오케스트레이션
 
@@ -129,18 +136,18 @@ weekly-notes 를 이 프로젝트(워크스페이스)에 배포해줘.
 
 ### 자주 하는 조합
 
-| 하고 싶은 일        | 추천                                                  |
-| ------------------- | ----------------------------------------------------- |
-| 런타임 설치         | `@skill:setup-wizard` + App Wizard                    |
-| MCP 추천 설치       | [Extensions](extensions.md)                           |
-| MCP 커스텀/가져오기 | [커스텀 MCP](custom-mcp.md) · `@skill:tool-installer` |
-| 내 절차를 스킬로    | `skill-creator` → `skill-deployer`                    |
-| 자식 세션·팀        | [서브 에이전트 가이드](sub-agents.md)                 |
-| 압축 전 대화 복구   | `@skill:context-recall`                               |
-| 학술 논문·DOI       | `@skill:science-search`                               |
-| 메일                | `@skill:email-integration`                            |
-| 어시스턴트 설정     | [Assistants](assistants.md)                           |
-| 반복 실행           | [Playbooks](playbooks.md) · [자동화](automation.md)   |
+| 하고 싶은 일        | 추천                                                 |
+| ------------------- | ---------------------------------------------------- |
+| 런타임 설치         | `@skill:setup-wizard` + App Wizard                   |
+| MCP 추천 설치       | [Extensions](extensions.md)                          |
+| MCP 커스텀/가져오기 | [커스텀 MCP](custom-mcp.md) · `@skill:mcp-installer` |
+| 내 절차를 스킬로    | `skill-creator` → `skill-deployer`                   |
+| 자식 세션·팀        | [서브 에이전트 가이드](sub-agents.md)                |
+| 압축 전 대화 복구   | `@skill:context-recall`                              |
+| 학술 논문·DOI       | `@skill:science-search`                              |
+| 메일                | `@skill:email-integration`                           |
+| 어시스턴트 설정     | [Assistants](assistants.md)                          |
+| 반복 실행           | [Playbooks](playbooks.md) · [자동화](automation.md)  |
 
 ---
 

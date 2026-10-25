@@ -1,0 +1,53 @@
+$ node scripts/run-rust-tests-sequential.cjs --profile ci-test --test service_proxy_manager
+[run-rust-command] cargo test (jobs=1, test-threads=1)
+error: no test target named `service_proxy_manager` in default-run packages
+help: available test targets:
+    agent_org_service_context_tests
+    assistant_message_shape_tests
+    browser_extension_bridge_message_tests
+    browser_screenshot_limit_tests
+    bundled_skill_permission_tests
+    bundled_skill_timeout_tests
+    check_session_enrichment_tests
+    check_session_wait_timeout_tests
+    circuit_breaker_batch_loop_tests
+    circuit_breaker_outcome_streak_tests
+    compaction_intent_ledger_tests
+    complexity_model_routing_tests
+    container_attach_fs_tests
+    create_agent_tool_guidance_tests
+    create_session_request_tests
+    execution_mode_ssot_tests
+    http_access_guard_tests
+    integration_tests
+    markdown_pdf_export_tests
+    mcp_stdio_stderr_pipe_regression
+    message_cursor_pagination_tests
+    message_merge_tests
+    persistence_query_tests
+    powershell_stderr_sanitize_tests
+    present_interactive_markdown_render_tests
+    readonly_tool_hint_tests
+    reasoning_budget_recovery_tests
+    request_layout_checkpoint_tests
+    runtime_state_reuse_promote_tests
+    runtime_state_summary_tests
+    session_export_atif_tests
+    session_id_display_tests
+    session_start_mcp_regression_tests
+    spawn_workspace_inherit_tests
+    startup_phase_timing_tests
+    teamwork_org_lineage_stamp_tests
+    text_encoding_tests
+    tool_loop_resample_tests
+    verify_session_access_report_tests
+    wait_extension_schema_tests
+    windows_path_env_recovery_tests
+    windows_path_validation_tests
+    windows_stdin_encoding_tests
+    workspace_execution_platform_tests
+    workspace_running_processes_context_tests
+    workspace_shell_empty_io_tests
+    workspace_shell_tool_profile_tests
+    workspace_shell_waiting_prompt_tests
+[ELIFECYCLE] Command failed with exit code 101.

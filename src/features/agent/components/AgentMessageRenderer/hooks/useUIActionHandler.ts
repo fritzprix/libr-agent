@@ -18,7 +18,6 @@ import {
 } from '@/features/agent/lib/markdown-document-export';
 import { useTranslation } from 'react-i18next';
 
-
 const logger = getLogger('AgentMessageRenderer');
 
 /** In-flight interactive callback keys — blocks duplicate form submits. */

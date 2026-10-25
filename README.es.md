@@ -29,11 +29,11 @@ Muchos frameworks para agentes asumen que dominas la línea de comandos, editas 
 
 LibrAgent resuelve esto como una **aplicación de escritorio completa y lista para usar**:
 
-| Enfoque tradicional | Con LibrAgent |
-| ------------------- | ------------- |
-| Editar manualmente configuraciones JSON de MCP | **Extensiones con un clic** — Ajustes preestablecidos listos (GitHub, Brave Search, sistema de archivos) e importación directa desde Cursor, VS Code y Claude Code |
-| Programar sistemas multiagente desde código | **Patrones de coordinación integrados** — Habilidades estándar preconfiguradas (`pipeline`, `hub-spoke`, `divide-conquer`, `consensus-delegation`) |
-| Atarse a las herramientas y modelos de un solo proveedor | **Libertad tecnológica absoluta** — Conecta tus claves de API en la nube o modelos locales con [Ollama](https://ollama.com) bajo licencia abierta MIT |
+| Enfoque tradicional                                      | Con LibrAgent                                                                                                                                                      |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Editar manualmente configuraciones JSON de MCP           | **Extensiones con un clic** — Ajustes preestablecidos listos (GitHub, Brave Search, sistema de archivos) e importación directa desde Cursor, VS Code y Claude Code |
+| Programar sistemas multiagente desde código              | **Patrones de coordinación integrados** — Habilidades estándar preconfiguradas (`pipeline`, `hub-spoke`, `divide-conquer`, `consensus-delegation`)                 |
+| Atarse a las herramientas y modelos de un solo proveedor | **Libertad tecnológica absoluta** — Conecta tus claves de API en la nube o modelos locales con [Ollama](https://ollama.com) bajo licencia abierta MIT              |
 
 [Descargar la última versión](https://github.com/fritzprix/libr-agent/releases/latest) · [Guía de inicio en 5 minutos](#guía-de-inicio-en-5-minutos)
 
@@ -71,20 +71,20 @@ LibrAgent resuelve esto como una **aplicación de escritorio completa y lista pa
 
 Selecciona el patrón adecuado para la estructura de tu tarea directamente desde el panel de chat:
 
-| Nombre de habilidad | Patrón de coordinación | Caso de uso recomendado |
-| ------------------- | ---------------------- | ----------------------- |
-| `pipeline` | Fases secuenciales | El resultado de cada fase alimenta a la siguiente (Investigación → Borrador → Revisión) |
-| `hub-spoke` | Hub-and-Spoke | Un agente coordinador central gestiona e integra múltiples agentes especialistas |
-| `divide-conquer` | División paralela | Dividir el trabajo en subtareas independientes en paralelo y luego unificar |
-| `consensus-delegation` | Multiperspectiva | Plantear la misma cuestión a varios agentes expertos para conciliar criterios |
-| `gatekeeper` / `pair-programming` | Ciclos de revisión | Revisión estricta de código o programación colaborativa en pareja |
-| `delegate` | Delegación puntual | Delegar una tarea específica a una subsesión con trazabilidad completa |
-| `teamwork` → `org` | Equipo duradero | Equipos estables con estatutos compartidos y organigrama interactivo |
-| `schedule` / `loop` / `call-me-back` | Tiempo y eventos | Tareas programadas con Cron, demoras controladas o reactivación por eventos externos |
+| Nombre de habilidad                  | Patrón de coordinación | Caso de uso recomendado                                                                 |
+| ------------------------------------ | ---------------------- | --------------------------------------------------------------------------------------- |
+| `pipeline`                           | Fases secuenciales     | El resultado de cada fase alimenta a la siguiente (Investigación → Borrador → Revisión) |
+| `hub-spoke`                          | Hub-and-Spoke          | Un agente coordinador central gestiona e integra múltiples agentes especialistas        |
+| `divide-conquer`                     | División paralela      | Dividir el trabajo en subtareas independientes en paralelo y luego unificar             |
+| `consensus-delegation`               | Multiperspectiva       | Plantear la misma cuestión a varios agentes expertos para conciliar criterios           |
+| `gatekeeper` / `pair-programming`    | Ciclos de revisión     | Revisión estricta de código o programación colaborativa en pareja                       |
+| `delegate`                           | Delegación puntual     | Delegar una tarea específica a una subsesión con trazabilidad completa                  |
+| `teamwork` → `org`                   | Equipo duradero        | Equipos estables con estatutos compartidos y organigrama interactivo                    |
+| `schedule` / `loop` / `call-me-back` | Tiempo y eventos       | Tareas programadas con Cron, demoras controladas o reactivación por eventos externos    |
 
 Criterios de elección: [Selección de frameworks](src-tauri/bundled_skills/teamwork/references/framework-selection.md) · Guía completa: [Subagentes](docs/user/guides/sub-agents.md)
 
-Otras habilidades listas para usar: `setup-wizard`, `tool-installer`, `playbook-creator` y más — consulta **[Habilidades integradas](docs/user/guides/skills.md)**
+Otras habilidades listas para usar: `setup-wizard`, `mcp-installer`, `playbook-creator` y más — consulta **[Habilidades integradas](docs/user/guides/skills.md)**
 
 ---
 
@@ -92,18 +92,18 @@ Otras habilidades listas para usar: `setup-wizard`, `tool-installer`, `playbook-
 
 - **Compatibilidad total de protocolos**: stdio, HTTP, SSE y OAuth 2.1
 - **Más de 15 servidores integrados**: Workspace, Shell, Browser, Knowledge, Planning, Scheduled Tasks, entre otros
-- **Ajustes preestablecidos e instalación guiada**: Configuración interactiva asistida por agente con `tool-installer`
+- **Ajustes preestablecidos e instalación guiada**: Configuración interactiva asistida por agente con `mcp-installer`
 - **Aislamiento y seguridad sólidos**: Aislamiento de herramientas por sesión, restricciones de rutas y comandos, y modos de automatización seguros
 
 ### Capacidades centrales de ejecución
 
-| Área de ejecución | Funcionalidades |
-| ----------------- | --------------- |
-| **Workspace** | Edición precisa de código línea por línea, operaciones multifichero, inyección de contexto con `@file` / `@skill` / `@playbook` |
-| **Shell** | Terminales aisladas y persistentes con monitorización asíncrona de procesos |
-| **Browser** | Navegador en entorno seguro independiente y puente de extensión para sesiones activas de Chrome |
-| **Knowledge** | Grafo de conocimiento y motor de búsqueda híbrida BM25 de alto rendimiento |
-| **Export** | Informes estructurados en Markdown y exportación estandarizada de trayectorias ATIF ([Exportación de sesiones](docs/user/guides/session-export.md)) |
+| Área de ejecución | Funcionalidades                                                                                                                                     |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Workspace**     | Edición precisa de código línea por línea, operaciones multifichero, inyección de contexto con `@file` / `@skill` / `@playbook`                     |
+| **Shell**         | Terminales aisladas y persistentes con monitorización asíncrona de procesos                                                                         |
+| **Browser**       | Navegador en entorno seguro independiente y puente de extensión para sesiones activas de Chrome                                                     |
+| **Knowledge**     | Grafo de conocimiento y motor de búsqueda híbrida BM25 de alto rendimiento                                                                          |
+| **Export**        | Informes estructurados en Markdown y exportación estandarizada de trayectorias ATIF ([Exportación de sesiones](docs/user/guides/session-export.md)) |
 
 La compactación automática de contexto, la prevención de bucles infinitos y la validación de respuestas aseguran un rendimiento estable incluso en sesiones de larga duración.
 
@@ -151,10 +151,10 @@ La compactación automática de contexto, la prevención de bucles infinitos y l
 Descarga el instalador más reciente desde la **[Página de versiones (Releases)](https://github.com/fritzprix/libr-agent/releases/latest)**.
 
 <!-- RELEASE_DOWNLOADS_START -->
-- **Windows:** [`LibrAgent_0.9.27_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent_0.9.27_x64-setup.exe) · [`LibrAgent_0.9.27_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent_0.9.27_x64_en-US.msi)
-- **macOS (Apple Silicon):** [`LibrAgent_0.9.27_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent_0.9.27_aarch64.dmg)
-- **Linux:** [`LibrAgent_0.9.27_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent_0.9.27_amd64.AppImage) · [`LibrAgent_0.9.27_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent_0.9.27_amd64.deb) · [`LibrAgent-0.9.27-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent-0.9.27-1.x86_64.rpm)
-- **Todos los archivos de la release:** [página de Releases](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.27)
+- **Windows:** [`LibrAgent_0.9.28_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.28/LibrAgent_0.9.28_x64-setup.exe) · [`LibrAgent_0.9.28_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.28/LibrAgent_0.9.28_x64_en-US.msi)
+- **macOS (Apple Silicon):** [`LibrAgent_0.9.28_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.28/LibrAgent_0.9.28_aarch64.dmg)
+- **Linux:** [`LibrAgent_0.9.28_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.28/LibrAgent_0.9.28_amd64.AppImage) · [`LibrAgent_0.9.28_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.28/LibrAgent_0.9.28_amd64.deb) · [`LibrAgent-0.9.28-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.28/LibrAgent-0.9.28-1.x86_64.rpm)
+- **Todos los archivos de la release:** [página de Releases](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.28)
 <!-- RELEASE_DOWNLOADS_END -->
 
 ### Guía de inicio en 5 minutos

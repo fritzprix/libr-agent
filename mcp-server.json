@@ -5,14 +5,14 @@
       "description": "Read Hacker News — top, new, best, Ask HN, Show HN, and job stories.",
       "logo": "https://news.ycombinator.com/favicon.ico",
       "command": "npx",
-      "args": ["-y", "@fre4x/hn"]
+      "args": ["-y", "@fre4x/hn@latest"]
     },
     "yahoo-finance": {
       "category": "data",
       "description": "Get real-time stock prices, financials, options chains, and insider data. No API key required.",
       "logo": "https://s.yimg.com/rz/p/yahoo_finance_en-US_h_p_finance_2.png",
       "command": "npx",
-      "args": ["-y", "@fre4x/yahoo-finance"]
+      "args": ["-y", "@fre4x/yahoo-finance@latest"]
     },
     "ddg-search": {
       "category": "search",
@@ -74,7 +74,7 @@
       "description": "Google Jules — autonomous coding agent for GitHub tasks.",
       "logo": "https://jules.google.com/favicon.ico",
       "command": "npx",
-      "args": ["-y", "@fre4x/jules"],
+      "args": ["-y", "@fre4x/jules@latest"],
       "env": {
         "JULES_API_KEY": ""
       },
@@ -132,7 +132,7 @@
       "description": "Access Federal Reserve economic data — GDP, inflation, unemployment, interest rates, and 800K+ series.",
       "logo": "https://fred.stlouisfed.org/favicon.ico",
       "command": "npx",
-      "args": ["-y", "@fre4x/fred"],
+      "args": ["-y", "@fre4x/fred@latest"],
       "env": {
         "FRED_API_KEY": ""
       },
@@ -150,14 +150,14 @@
       "description": "Search and retrieve academic papers from arXiv — millions of papers across all categories.",
       "logo": "https://arxiv.org/favicon.ico",
       "command": "npx",
-      "args": ["-y", "@fre4x/arxiv"]
+      "args": ["-y", "@fre4x/arxiv@latest"]
     },
     "gemini": {
       "category": "ai",
       "description": "Google Gemini — multimodal text generation, image/video analysis, and image synthesis via Imagen.",
       "logo": "https://www.gstatic.com/lamda/images/gemini_favicon_f069958c85030456e93de685481c559f160ea06.svg",
       "command": "npx",
-      "args": ["-y", "@fre4x/gemini"],
+      "args": ["-y", "@fre4x/gemini@latest"],
       "env": {
         "GEMINI_API_KEY": ""
       },
@@ -175,7 +175,7 @@
       "description": "Grok API access for text generation and analysis.",
       "logo": "https://grok.ai/favicon.ico",
       "command": "npx",
-      "args": ["-y", "@fre4x/grok"],
+      "args": ["-y", "@fre4x/grok@latest"],
       "env": {
         "XAI_API_KEY": ""
       },
@@ -193,20 +193,20 @@
       "description": "Work with Word documents programmatically through MCP APIs.",
       "logo": "https://www.docx.com/favicon.ico",
       "command": "npx",
-      "args": ["-y", "@fre4x/docx"]
+      "args": ["-y", "@fre4x/docx@latest"]
     },
     "jupyter": {
       "category": "documents",
       "description": "Execute and manage Jupyter notebooks via MCP.",
       "logo": "https://jupyter.org/favicon.ico",
       "command": "npx",
-      "args": ["-y", "@fre4x/jupyter"]
+      "args": ["-y", "@fre4x/jupyter@latest"]
     },
     "comfyui": {
       "category": "creative",
       "description": "Interact with ComfyUI to generate and manage AI images.",
       "command": "npx",
-      "args": ["-y", "@fre4x/comfyui"],
+      "args": ["-y", "@fre4x/comfyui@latest"],
       "env": {
         "COMFYUI_SERVER_URL": "http://localhost:8188"
       },
@@ -223,7 +223,7 @@
       "category": "ai",
       "description": "OpenAI MCP server for text generation and analysis.",
       "command": "npx",
-      "args": ["-y", "@fre4x/openai"],
+      "args": ["-y", "@fre4x/openai@latest"],
       "env": {
         "OPENAI_API_KEY": ""
       },
@@ -241,7 +241,7 @@
       "description": "Interact with Hugging Face models and datasets.",
       "logo": "https://huggingface.co/front/assets/huggingface_logo-noborder.svg",
       "command": "npx",
-      "args": ["-y", "@fre4x/huggingface"],
+      "args": ["-y", "@fre4x/huggingface@latest"],
       "env": {
         "HF_TOKEN": "",
         "HF_MODEL_CACHE_DIR": "~/.cache/huggingface/hub",
@@ -280,7 +280,7 @@
       "description": "Interact with Telegram — send messages, read chats, search, download files, and receive real-time channel notifications.",
       "logo": "https://telegram.org/img/apple-touch-icon.png",
       "command": "npx",
-      "args": ["-y", "@fre4x/telegram"],
+      "args": ["-y", "@fre4x/telegram@latest"],
       "env": {
         "TELEGRAM_MCP_SESSION": "~/.libragent/telegram_mcp",
         "TELEGRAM_BOT_TOKEN": "",

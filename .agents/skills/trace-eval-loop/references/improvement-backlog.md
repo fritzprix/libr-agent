@@ -5,7 +5,8 @@ Save as `tasks.md`. Rank and keep each item minimal.
 ```markdown
 ## Ranked tasks
 
-### T1 — <title>  `[blocker|major|nit]`
+### T1 — <title> `[blocker|major|nit]`
+
 - **Class:** schema_guidance | handler_bug | response_bloat | recovery_gap |
   prompt_gap | export_defect | precondition | pattern_only
 - **Evidence:** step_id / tool_call_id / observation excerpt; path if known

@@ -21,6 +21,7 @@ import contextlib
 import json
 import os
 import re
+import shutil
 import subprocess
 from collections.abc import Awaitable
 from dataclasses import dataclass
@@ -52,6 +53,17 @@ try:
     import httpx
 except ImportError:  # pragma: no cover
     httpx = None  # type: ignore[assignment]
+
+from benchmarks.harbor.isolated_instance import (
+    DEFAULT_ROOT as BENCH_INSTANCE_DEFAULT_ROOT,
+    INSTANCE_APP_BIN_ENV,
+    INSTANCE_ROOT_ENV,
+    INSTANCE_SANDBOX_ENV,
+    SANDBOX_WORKDIR,
+    InstanceLayout,
+    relaunch,
+    safe_print,
+)
 
 EXECUTION_MODE_VALUES = ("normal", "yolo", "unsafe")
 DEFAULT_EXECUTION_MODE = "unsafe"
@@ -302,9 +314,31 @@ def extract_version_from_health_payload(payload: Any) -> str | None:
     return _string_field(payload, "version")
 
 
-def workspace_mode_name(use_attach: bool) -> str:
+WORKSPACE_MODE_ENV = "LIBRAGENT_HARBOR_WORKSPACE_MODE"
+# attach: LibrAgent attaches to the Harbor container (bench-only path).
+# managed: LibrAgent creates its own Docker session from the task image (product path).
+# host: LibrAgent runs on the host workspace (product path; needs a sandboxed HOME).
+WORKSPACE_MODES = ("attach", "managed", "host")
+
+
+def resolve_workspace_mode(env_map: dict[str, str]) -> str:
+    mode = env_map.get(WORKSPACE_MODE_ENV, "").strip().lower() or "attach"
+    if mode not in WORKSPACE_MODES:
+        raise RuntimeError(
+            f"{WORKSPACE_MODE_ENV} must be one of {', '.join(WORKSPACE_MODES)} (got {mode!r})."
+        )
+    if mode == "host" and env_map.get(INSTANCE_SANDBOX_ENV, "").strip() != "1":
+        raise RuntimeError(
+            f"{WORKSPACE_MODE_ENV}=host runs task commands on this machine; "
+            "use `run-harbor-bench.cjs --isolated --workspace-mode host` so the bench "
+            "instance runs in a filesystem sandbox."
+        )
+    return mode
+
+
+def workspace_mode_name(mode: str) -> str:
     """Harbor-facing workspace mode label matching completed-trial metadata."""
-    return "attach" if use_attach else "host-sync"
+    return "host-sync" if mode == "host" else mode
 
 
 def _environment_value(name: str) -> str | None:
@@ -756,6 +790,7 @@ def _attach_tool_observation(
     result = ObservationResult(
         source_call_id=source_call_id,
         content=_tool_observation_content(message),
+        extra={"tool_error": not _tool_result_succeeded(message)},
     )
     if source_call_id:
         matched = _find_agent_step_for_tool_call(steps, source_call_id)
@@ -1092,15 +1127,15 @@ _WORKDIR_EXISTENCE_FALLBACKS: tuple[str, ...] = (
 )
 
 
-def docker_inspect_workdir(container_id: str) -> str | None:
-    """Read the container's configured WorkingDir (image WORKDIR), if any."""
+def _docker_inspect_config(container_id: str, field: str) -> str | None:
+    """Read ``{{.Config.<field>}}`` of a container, or None when unavailable."""
     try:
         result = subprocess.run(
             [
                 "docker",
                 "inspect",
                 "-f",
-                "{{.Config.WorkingDir}}",
+                f"{{{{.Config.{field}}}}}",
                 container_id,
             ],
             check=False,
@@ -1109,22 +1144,32 @@ def docker_inspect_workdir(container_id: str) -> str | None:
             timeout=30,
         )
     except (OSError, subprocess.SubprocessError) as exc:
-        print(
-            f"[LibrAgent] Warning: docker inspect workdir failed for "
+        safe_print(
+            f"[LibrAgent] Warning: docker inspect {field} failed for "
             f"{container_id!r}: {exc}"
         )
         return None
     if result.returncode != 0:
         stderr = (result.stderr or "").strip()
-        print(
-            f"[LibrAgent] Warning: docker inspect workdir failed for "
+        safe_print(
+            f"[LibrAgent] Warning: docker inspect {field} failed for "
             f"{container_id!r}: {stderr or result.returncode}"
         )
         return None
-    workdir = (result.stdout or "").strip()
-    if not workdir or workdir == "/":
+    return (result.stdout or "").strip() or None
+
+
+def docker_inspect_workdir(container_id: str) -> str | None:
+    """Read the container's configured WorkingDir (image WORKDIR), if any."""
+    workdir = _docker_inspect_config(container_id, "WorkingDir")
+    if workdir == "/":
         return None
     return workdir
+
+
+def docker_inspect_image(container_id: str) -> str | None:
+    """Image reference the Harbor container was started from."""
+    return _docker_inspect_config(container_id, "Image")
 
 
 def docker_exec_pwd(container_id: str) -> str | None:
@@ -1138,7 +1183,7 @@ def docker_exec_pwd(container_id: str) -> str | None:
             timeout=30,
         )
     except (OSError, subprocess.SubprocessError) as exc:
-        print(
+        safe_print(
             f"[LibrAgent] Warning: docker exec pwd failed for "
             f"{container_id!r}: {exc}"
         )
@@ -1164,7 +1209,7 @@ def docker_path_is_dir(container_id: str, path: str) -> bool:
             timeout=30,
         )
     except (OSError, subprocess.SubprocessError) as exc:
-        print(
+        safe_print(
             f"[LibrAgent] Warning: docker exec test -d failed for "
             f"{container_id!r} path={path!r}: {exc}"
         )
@@ -1182,12 +1227,12 @@ def _accept_existing_workdir(
     if not candidate:
         return None
     if container_id is None:
-        print(f"[LibrAgent] Using {source} container workdir: {candidate}")
+        safe_print(f"[LibrAgent] Using {source} container workdir: {candidate}")
         return candidate
     if docker_path_is_dir(container_id, candidate):
-        print(f"[LibrAgent] Using {source} container workdir: {candidate}")
+        safe_print(f"[LibrAgent] Using {source} container workdir: {candidate}")
         return candidate
-    print(
+    safe_print(
         f"[LibrAgent] Warning: {source} workdir {candidate!r} does not exist in "
         f"container {container_id}; trying next candidate"
     )
@@ -1237,7 +1282,7 @@ def resolve_container_workdir(
             return accepted
 
     if container_id is None:
-        print(
+        safe_print(
             "[LibrAgent] Warning: no task workdir found without container id; "
             "falling back to /app (may be wrong for this task)"
         )
@@ -1245,13 +1290,13 @@ def resolve_container_workdir(
 
     # Prefer a real directory over advertising a fictional /app (OSWorld hosts).
     if docker_path_is_dir(container_id, "/app"):
-        print(
+        safe_print(
             "[LibrAgent] Warning: no task/image/pwd workdir resolved; "
             "using existing /app"
         )
         return "/app"
 
-    print(
+    safe_print(
         "[LibrAgent] Warning: no usable container workdir found "
         f"(including /app missing in {container_id}); using / as attach root"
     )
@@ -1262,7 +1307,7 @@ def resolve_harbor_main_container_id(environment: BaseEnvironment) -> str | None
     """Resolve Harbor's Docker Compose `main` container id, if available."""
     session_id = getattr(environment, "session_id", None)
     if not session_id:
-        print(
+        safe_print(
             "[LibrAgent] Warning: Harbor environment has no session_id; "
             "cannot resolve Compose main container for attach."
         )
@@ -1286,7 +1331,7 @@ def resolve_harbor_main_container_id(environment: BaseEnvironment) -> str | None
             timeout=30,
         )
     except (OSError, subprocess.SubprocessError) as exc:
-        print(
+        safe_print(
             f"[LibrAgent] Warning: docker ps failed while resolving Harbor main "
             f"container (project={project!r}): {exc}"
         )
@@ -1294,7 +1339,7 @@ def resolve_harbor_main_container_id(environment: BaseEnvironment) -> str | None
 
     if result.returncode != 0:
         stderr = (result.stderr or "").strip()
-        print(
+        safe_print(
             f"[LibrAgent] Warning: docker ps returned {result.returncode} while "
             f"resolving Harbor main container (project={project!r})"
             + (f": {stderr}" if stderr else "")
@@ -1306,12 +1351,38 @@ def resolve_harbor_main_container_id(environment: BaseEnvironment) -> str | None
         if cid:
             return cid
 
-    print(
+    safe_print(
         f"[LibrAgent] Warning: no running Compose service '{MAIN_COMPOSE_SERVICE}' "
         f"for project={project!r} (session_id={session_id!r}). "
         "If Harbor's sanitizer differs, attach will be skipped and host-sync fallback used."
     )
     return None
+
+
+@dataclass(frozen=True)
+class TrialInstanceReset:
+    layout: InstanceLayout
+    app_bin: Path
+
+
+def resolve_trial_instance_reset(env_map: dict[str, str]) -> TrialInstanceReset | None:
+    """Per-trial bench instance relaunch, enabled by ``run-harbor-bench.cjs --isolated``.
+
+    A relaunch kills in-flight sessions, so it is refused unless trials run one at a time.
+    """
+    app_bin = env_map.get(INSTANCE_APP_BIN_ENV, "").strip()
+    if not app_bin:
+        return None
+    concurrency = env_map.get("LIBRAGENT_HARBOR_CONCURRENT", "1").strip() or "1"
+    if concurrency != "1":
+        raise RuntimeError(
+            f"{INSTANCE_APP_BIN_ENV} requires --concurrent 1 (got {concurrency}): "
+            "relaunching the shared bench instance would kill other running trials."
+        )
+    root = Path(env_map.get(INSTANCE_ROOT_ENV, "").strip() or BENCH_INSTANCE_DEFAULT_ROOT)
+    if not root.is_absolute():
+        root = PACKAGE_JSON_PATH.parent / root
+    return TrialInstanceReset(layout=InstanceLayout(root), app_bin=Path(app_bin))
 
 
 class LibrAgentHarborAdapter(BaseAgent):
@@ -1394,12 +1465,20 @@ class LibrAgentHarborAdapter(BaseAgent):
         return True
 
     async def setup(self, environment: BaseEnvironment) -> None:
-        """Validates connection and resolves Harbor model_info from the assistant."""
+        """Resets the bench instance when isolated, validates connection, resolves model_info."""
         _ = environment  # Harbor requires the arg; health/model lookup is API-only.
         if httpx is None:
             raise RuntimeError(
                 "Python library 'httpx' is missing. Please run: pip install httpx"
             )
+
+        trial_reset = resolve_trial_instance_reset(dict(os.environ))
+        if trial_reset is not None:
+            await asyncio.to_thread(relaunch, trial_reset.layout, trial_reset.app_bin)
+            try:
+                shutil.copy2(trial_reset.layout.llm_settings_file, self.logs_dir / "llm_settings.json")
+            except OSError:
+                pass  # the record is diagnostic; a missing copy must not fail the trial
 
         async with httpx.AsyncClient() as client:
             try:
@@ -1414,7 +1493,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                     health_payload = None
                 live_version = extract_version_from_health_payload(health_payload)
                 if self._apply_agent_version(live_version):
-                    print(
+                    safe_print(
                         f"[{self.name()}] Adopted agent version from health: "
                         f"{live_version}"
                     )
@@ -1440,14 +1519,14 @@ class LibrAgentHarborAdapter(BaseAgent):
                 timeout=10.0,
             )
         except Exception as e:
-            print(
+            safe_print(
                 f"[{self.name()}] Warning: failed to fetch assistant "
                 f"{self.assistant_id} for model_info: {e}"
             )
             return
 
         if res.status_code != 200:
-            print(
+            safe_print(
                 f"[{self.name()}] Warning: assistant lookup for model_info returned "
                 f"{res.status_code}: {res.text}"
             )
@@ -1456,23 +1535,50 @@ class LibrAgentHarborAdapter(BaseAgent):
         try:
             payload = res.json()
         except Exception as e:
-            print(
+            safe_print(
                 f"[{self.name()}] Warning: assistant payload was not JSON: {e}"
             )
             return
 
         model_name = extract_model_name_from_assistant_payload(payload)
         if not model_name:
-            print(
+            safe_print(
                 f"[{self.name()}] Assistant {self.assistant_id} pins no model/provider; "
                 f"will adopt the model reported by the LibrAgent session during run."
             )
             return
 
         self._apply_model_name(model_name)
-        print(f"[{self.name()}] Resolved Harbor model_info from assistant: {model_name}")
+        safe_print(f"[{self.name()}] Resolved Harbor model_info from assistant: {model_name}")
 
     async def run(
+        self,
+        instruction: str,
+        environment: BaseEnvironment,
+        context: AgentContext,
+    ) -> None:
+        """Runs the trial, then keeps this trial's bench instance log next to its results."""
+        try:
+            await self._run_trial(instruction, environment, context)
+        finally:
+            self._save_instance_log()
+
+    def _save_instance_log(self) -> None:
+        """Copy the isolated instance log into the trial directory.
+
+        Every launch truncates the shared ``instance.log``, so the copy taken here
+        is the only record of this trial's instance after the next relaunch.
+        """
+        try:
+            trial_reset = resolve_trial_instance_reset(dict(os.environ))
+            if trial_reset is None:
+                return
+            self.logs_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(trial_reset.layout.log_file, self.logs_dir / "instance.log")
+        except (OSError, RuntimeError):
+            pass  # diagnostic only; a missing copy must not fail the trial
+
+    async def _run_trial(
         self,
         instruction: str,
         environment: BaseEnvironment,
@@ -1488,24 +1594,61 @@ class LibrAgentHarborAdapter(BaseAgent):
         container_id = resolve_harbor_main_container_id(environment)
         container_workdir = resolve_container_workdir(environment, container_id)
         attach_container_id = container_id
-        use_attach = attach_container_id is not None
+        requested_mode = resolve_workspace_mode(dict(os.environ))
+        managed_image: str | None = None
+        if requested_mode == "managed":
+            managed_image = (
+                docker_inspect_image(container_id) if container_id is not None else None
+            )
+            if managed_image is None:
+                raise RuntimeError(
+                    "Managed workspace mode needs the Harbor container image; "
+                    f"could not resolve it from container {container_id!r}."
+                )
+        if requested_mode == "attach" and attach_container_id is None:
+            workspace_mode = "host"
+        else:
+            workspace_mode = requested_mode
+        use_attach = workspace_mode == "attach"
 
         local_workspace: Path | None = None
         local_workspace_str: str | None = None
+        # Host side of the bench sandbox's /app when host mode was requested.
+        sandbox_app_dir: Path | None = None
+        if requested_mode == "host":
+            trial_reset = resolve_trial_instance_reset(dict(os.environ))
+            if trial_reset is None:
+                raise RuntimeError(
+                    "Host workspace mode needs the isolated bench instance (--isolated)."
+                )
+            if container_workdir.rstrip("/") != SANDBOX_WORKDIR:
+                raise RuntimeError(
+                    f"Host workspace mode mounts the task workspace at {SANDBOX_WORKDIR}; "
+                    f"this task uses {container_workdir}."
+                )
+            sandbox_app_dir = trial_reset.layout.app_dir
 
         if use_attach:
-            print(
+            safe_print(
                 f"[{self.name()}] Attaching LibrAgent Docker session to Harbor "
                 f"container {attach_container_id} (workdir={container_workdir})..."
             )
         else:
-            local_workspace = self._resolve_local_workspace(environment, context)
+            local_workspace = sandbox_app_dir or self._resolve_local_workspace(
+                environment, context
+            )
             local_workspace_str = str(local_workspace.resolve().absolute())
             os.makedirs(local_workspace_str, exist_ok=True)
-            print(
-                f"[{self.name()}] Harbor container id not resolved; falling back to "
-                f"host workspace sync ({local_workspace_str})."
-            )
+            if workspace_mode == requested_mode:
+                safe_print(
+                    f"[{self.name()}] Workspace mode {workspace_mode}: staging "
+                    f"{container_workdir} into {local_workspace_str}."
+                )
+            else:
+                safe_print(
+                    f"[{self.name()}] Harbor container id not resolved; falling back to "
+                    f"host workspace sync ({local_workspace_str})."
+                )
             await self._download_container_workdir(
                 environment,
                 container_id=attach_container_id,
@@ -1532,7 +1675,7 @@ class LibrAgentHarborAdapter(BaseAgent):
         }
         if max_input_context is not None:
             payload["maxInputContext"] = max_input_context
-            print(
+            safe_print(
                 f"[{self.name()}] Session maxInputContext override: "
                 f"{max_input_context} (task={task_id})"
             )
@@ -1544,19 +1687,30 @@ class LibrAgentHarborAdapter(BaseAgent):
                 "workdir": container_workdir,
                 "manageLifecycle": False,
             }
-        else:
+        elif managed_image is not None:
             payload["workspacePath"] = local_workspace_str
+            payload["workspaceIsolation"] = "docker"
+            payload["dockerConfig"] = {
+                "image": managed_image,
+                "workdir": container_workdir,
+                "manageLifecycle": True,
+            }
+        else:
+            payload["workspacePath"] = (
+                SANDBOX_WORKDIR if sandbox_app_dir is not None else local_workspace_str
+            )
             payload["workspaceIsolation"] = "host"
 
         async with httpx.AsyncClient(timeout=600.0) as client:
-            mode_desc = (
-                f"attach:{attach_container_id}"
-                if use_attach
-                else f"host:{local_workspace_str}"
-            )
+            if use_attach:
+                mode_desc = f"attach:{attach_container_id}"
+            elif managed_image is not None:
+                mode_desc = f"managed:{managed_image}:{local_workspace_str}"
+            else:
+                mode_desc = f"host:{local_workspace_str}"
             session_started_at = asyncio.get_running_loop().time()
             session_started_at_utc = datetime.now(timezone.utc).isoformat()
-            print(f"[{self.name()}] Creating session ({mode_desc})...")
+            safe_print(f"[{self.name()}] Creating session ({mode_desc})...")
             res = await client.post(f"{self.api_url}/sessions", json=payload)
             if res.status_code != 201:
                 raise RuntimeError(
@@ -1571,7 +1725,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                     f"'id': {response_json}"
                 )
 
-            print(
+            safe_print(
                 f"[{self.name()}] Session {session_id} spawned successfully "
                 f"(executionMode={self.execution_mode}). Awaiting execution completion..."
             )
@@ -1600,7 +1754,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                                 label="initial staging",
                             )
                 except Exception as e:
-                    print(
+                    safe_print(
                         f"[{self.name()}] Warning: failed to pull initial container files to host staging: {e}"
                     )
             last_session_info: dict[str, Any] | None = initial_session_info
@@ -1609,13 +1763,13 @@ class LibrAgentHarborAdapter(BaseAgent):
                 session_id=session_id,
                 container_id=attach_container_id,
                 container_workdir=container_workdir,
-                workspace_mode=workspace_mode_name(use_attach),
+                workspace_mode=workspace_mode_name(workspace_mode),
                 started_at=session_started_at_utc,
                 session_info=last_session_info,
                 max_input_context=max_input_context,
             )
             if self.poll_timeout_sec is not None:
-                print(
+                safe_print(
                     f"[{self.name()}] Poll wall-clock budget: "
                     f"{self.poll_timeout_sec:.0f}s"
                 )
@@ -1636,7 +1790,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                         poll_deadline is not None
                         and asyncio.get_running_loop().time() >= poll_deadline
                     ):
-                        print(
+                        safe_print(
                             f"[{self.name()}] Poll wall-clock budget exhausted "
                             f"(last status={last_status}). Writing diagnostic "
                             f"trajectory, then deleting session."
@@ -1652,7 +1806,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                                     extra={
                                         "poll_timeout_sec": self.poll_timeout_sec,
                                     },
-                                    workspace_mode=workspace_mode_name(use_attach),
+                                    workspace_mode=workspace_mode_name(workspace_mode),
                                     context=context,
                                     started_monotonic=session_started_at,
                                 )
@@ -1672,13 +1826,13 @@ class LibrAgentHarborAdapter(BaseAgent):
                             f"{self.api_url}/sessions/{session_id}"
                         )
                     except Exception as e:
-                        print(
+                        safe_print(
                             f"[{self.name()}] Connection error during polling, retrying: {e}"
                         )
                         continue
 
                     if status_res.status_code != 200:
-                        print(
+                        safe_print(
                             f"[{self.name()}] Warning: Failed to fetch session status: "
                             f"{status_res.text}"
                         )
@@ -1693,7 +1847,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                         seen_non_idle = True
 
                     if current_status == "paused":
-                        print(
+                        safe_print(
                             f"[{self.name()}] Session workflow was paused (or cancelled). "
                             f"Deleting session and failing fast."
                         )
@@ -1705,7 +1859,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                     if is_workflow_complete(
                         current_status, seen_non_idle=seen_non_idle
                     ):
-                        print(
+                        safe_print(
                             f"[{self.name()}] Session workflow reached terminal state: "
                             f"{current_status}"
                         )
@@ -1716,7 +1870,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                 # run as a successful completion (that caused verifiers to score
                 # incomplete workspaces), but still dump a diagnostic ATIF so
                 # timeout trials are analyzable.
-                print(
+                safe_print(
                     f"[{self.name()}] Session polling cancelled (Harbor timeout) "
                     f"while status={last_status}. Writing diagnostic trajectory, "
                     f"then deleting session (not a successful harvest)."
@@ -1729,7 +1883,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                             seen_non_idle=seen_non_idle,
                             reason="harbor_cancelled",
                             last_session_info=last_session_info,
-                            workspace_mode=workspace_mode_name(use_attach),
+                            workspace_mode=workspace_mode_name(workspace_mode),
                             context=context,
                             started_monotonic=session_started_at,
                         )
@@ -1746,7 +1900,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                 )
 
             if not use_attach and local_workspace is not None:
-                print(
+                safe_print(
                     f"[{self.name()}] Pushing updated workspace files from "
                     f"{local_workspace} to container {container_workdir}..."
                 )
@@ -1756,14 +1910,23 @@ class LibrAgentHarborAdapter(BaseAgent):
                         local_workspace,
                         container_workdir,
                     )
-                    print(f"[{self.name()}] Successfully pushed workspace files.")
+                    safe_print(f"[{self.name()}] Successfully pushed workspace files.")
+                    if sandbox_app_dir is not None:
+                        # The next relaunch wipes the sandbox; keep the trial artifact.
+                        await asyncio.to_thread(
+                            shutil.copytree,
+                            sandbox_app_dir,
+                            self._resolve_local_workspace(environment, context),
+                            symlinks=True,
+                            dirs_exist_ok=True,
+                        )
                 except Exception as e:
                     await self._delete_session(session_id)
                     raise RuntimeError(
                         f"Error pushing workspace files back to container: {e}"
                     ) from e
             elif use_attach:
-                print(
+                safe_print(
                     f"[{self.name()}] Attach mode: skipping host→container upload "
                     f"(agent wrote in-place under {container_workdir})."
                 )
@@ -1783,7 +1946,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                 params={"limit": TRAJECTORY_MESSAGE_LIMIT},
             )
             if messages_res.status_code != 200:
-                print(
+                safe_print(
                     f"[{self.name()}] Warning: Failed to harvest session messages "
                     f"({messages_res.status_code})"
                 )
@@ -1814,7 +1977,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                 last_session_info
             )
             if self._apply_model_name(session_model_name):
-                print(
+                safe_print(
                     f"[{self.name()}] Adopted Harbor model_info from session: "
                     f"{session_model_name}"
                 )
@@ -1827,7 +1990,7 @@ class LibrAgentHarborAdapter(BaseAgent):
             await self._write_compaction_telemetry_best_effort(session_id=session_id)
 
             if telemetry.tool_calls_count == 0:
-                print(
+                safe_print(
                     f"[{self.name()}] Empty agent work: terminal status={last_status} "
                     f"with 0 tool calls ({len(messages)} messages, "
                     f"turns={telemetry.n_turns}). Failing the trial."
@@ -1843,7 +2006,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                         completed=True,
                         extra={
                             "assistant_id": self.assistant_id,
-                            "workspaceMode": workspace_mode_name(use_attach),
+                            "workspaceMode": workspace_mode_name(workspace_mode),
                         },
                         completion=summarize_completion_telemetry(messages),
                         elapsed_wall_clock_sec=(
@@ -1880,7 +2043,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                 "finalStatus": last_status,
                 "completed": True,
                 "attachContainer": attach_container_id,
-                "workspaceMode": workspace_mode_name(use_attach),
+                "workspaceMode": workspace_mode_name(workspace_mode),
                 "assistant_id": self.assistant_id,
                 "n_turns": telemetry.n_turns,
                 "tool_calls_count": telemetry.tool_calls_count,
@@ -1894,7 +2057,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                 metadata["error"] = telemetry.error
             context.metadata = metadata
 
-            print(
+            safe_print(
                 f"[{self.name()}] Task complete. Response harvested successfully "
                 f"({len(messages)} messages, status={last_status}, "
                 f"turns={telemetry.n_turns}, tools={telemetry.tool_calls_count}, "
@@ -1930,7 +2093,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                     params={"limit": TRAJECTORY_MESSAGE_LIMIT},
                 )
             if messages_res.status_code != 200:
-                print(
+                safe_print(
                     f"[{self.name()}] Warning: diagnostic message harvest failed "
                     f"({messages_res.status_code})"
                 )
@@ -1938,7 +2101,7 @@ class LibrAgentHarborAdapter(BaseAgent):
             messages_data = messages_res.json()
             return normalize_session_messages(messages_data.get("messages"))
         except Exception as e:
-            print(
+            safe_print(
                 f"[{self.name()}] Warning: diagnostic message harvest error "
                 f"for session {session_id}: {e}"
             )
@@ -1995,7 +2158,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                 ),
             )
         )
-        print(
+        safe_print(
             f"[{self.name()}] Diagnostic dump ({reason}): "
             f"messages={len(messages)}, turns={telemetry.n_turns}, "
             f"tools={telemetry.tool_calls_count}, status={last_status}, "
@@ -2013,9 +2176,9 @@ class LibrAgentHarborAdapter(BaseAgent):
                 json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
                 encoding="utf-8",
             )
-            print(f"[{self.name()}] Wrote diagnostic meta to {meta_path}")
+            safe_print(f"[{self.name()}] Wrote diagnostic meta to {meta_path}")
         except Exception as e:
-            print(
+            safe_print(
                 f"[{self.name()}] Warning: failed to write diagnostic meta "
                 f"to {meta_path}: {e}"
             )
@@ -2085,7 +2248,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                 encoding="utf-8",
             )
         except Exception as e:
-            print(
+            safe_print(
                 f"[{self.name()}] Warning: failed to write benchmark contract "
                 f"to {contract_path}: {e}"
             )
@@ -2113,12 +2276,12 @@ class LibrAgentHarborAdapter(BaseAgent):
                 telemetry=telemetry,
             )
             write_atif_trajectory(trajectory_path, trajectory)
-            print(
+            safe_print(
                 f"[{self.name()}] Wrote ATIF trajectory "
                 f"({len(trajectory.steps)} steps) to {trajectory_path}"
             )
         except Exception as e:
-            print(
+            safe_print(
                 f"[{self.name()}] Warning: failed to write ATIF trajectory "
                 f"to {trajectory_path}: {e}"
             )
@@ -2135,7 +2298,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                     f"{self.api_url}/sessions/{session_id}/compact-context"
                 )
             if response.status_code != 200:
-                print(
+                safe_print(
                     f"[{self.name()}] Warning: compact-context harvest failed "
                     f"({response.status_code})"
                 )
@@ -2143,7 +2306,7 @@ class LibrAgentHarborAdapter(BaseAgent):
             payload = response.json()
             return payload if isinstance(payload, dict) else None
         except Exception as exc:
-            print(
+            safe_print(
                 f"[{self.name()}] Warning: compact-context harvest error: {exc}"
             )
             return None
@@ -2167,12 +2330,12 @@ class LibrAgentHarborAdapter(BaseAgent):
                 if isinstance(derived, dict)
                 else None
             )
-            print(
+            safe_print(
                 f"[{self.name()}] Wrote compaction telemetry "
                 f"(compactionCount={count}) to {compaction_path}"
             )
         except Exception as exc:
-            print(
+            safe_print(
                 f"[{self.name()}] Warning: failed to write compaction telemetry "
                 f"to {compaction_path}: {exc}"
             )
@@ -2208,19 +2371,19 @@ class LibrAgentHarborAdapter(BaseAgent):
                     f"{self.api_url}/sessions/{session_id}"
                 )
             if res.status_code == 200:
-                print(f"[{self.name()}] Deleted LibrAgent session {session_id}.")
+                safe_print(f"[{self.name()}] Deleted LibrAgent session {session_id}.")
             elif res.status_code == 404:
-                print(
+                safe_print(
                     f"[{self.name()}] Session {session_id} already gone "
                     f"(delete returned 404)."
                 )
             else:
-                print(
+                safe_print(
                     f"[{self.name()}] Warning: delete for session {session_id} "
                     f"returned {res.status_code}: {res.text}"
                 )
         except Exception as e:
-            print(
+            safe_print(
                 f"[{self.name()}] Warning: failed to delete session "
                 f"{session_id}: {e}"
             )
@@ -2250,7 +2413,7 @@ class LibrAgentHarborAdapter(BaseAgent):
     ) -> None:
         """Pull container workdir to host when the path is a real, syncable directory."""
         if container_workdir in {"/", "/tmp"}:
-            print(
+            safe_print(
                 f"[{self.name()}] Skipping {label} container file pull: "
                 f"workdir {container_workdir!r} is not a task workspace root."
             )
@@ -2258,12 +2421,12 @@ class LibrAgentHarborAdapter(BaseAgent):
         if container_id is not None and not docker_path_is_dir(
             container_id, container_workdir
         ):
-            print(
+            safe_print(
                 f"[{self.name()}] Skipping {label} container file pull: "
                 f"{container_workdir!r} does not exist in container {container_id}."
             )
             return
-        print(
+        safe_print(
             f"[{self.name()}] Pulling {label} container files from "
             f"{container_workdir} to {target_dir}..."
         )
@@ -2272,12 +2435,12 @@ class LibrAgentHarborAdapter(BaseAgent):
                 source_dir=container_workdir,
                 target_dir=target_dir,
             )
-            print(
+            safe_print(
                 f"[{self.name()}] Successfully pulled {label} files "
                 f"from {container_workdir}."
             )
         except Exception as e:
-            print(
+            safe_print(
                 f"[{self.name()}] Warning: failed to pull {label} container files: {e}"
             )
 

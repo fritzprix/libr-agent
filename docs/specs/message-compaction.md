@@ -298,10 +298,10 @@ summary.
 
 **Must vs Optional handoff sections (#2084):**
 
-| Kind | Headings | Emit rule |
-| ---- | -------- | --------- |
-| Must | Target Deliverable, Working Intent, Completion Criteria, Active Request, Required References | Always present after ensure (placeholder/`Needs context-recall` OK) |
-| Optional | Progress, Stable Context, Key Decisions & Constraints, Current State, Recent Tool Results, Next Actions | Omit when empty/low-value |
+| Kind     | Headings                                                                                                | Emit rule                                                           |
+| -------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Must     | Target Deliverable, Working Intent, Completion Criteria, Active Request, Required References            | Always present after ensure (placeholder/`Needs context-recall` OK) |
+| Optional | Progress, Stable Context, Key Decisions & Constraints, Current State, Recent Tool Results, Next Actions | Omit when empty/low-value                                           |
 
 Seeds fill gaps only — never overwrite a Must section that already has non-empty
 LLM-authored body (same preserve policy as the #2042 Working Intent ledger).
@@ -735,12 +735,12 @@ Compaction request assembly has three separate inputs:
 
 Seed contents:
 
-| Seed | Source | Truncation |
-| ---- | ------ | ---------- |
-| Active Request | Latest external-user block + prior-summary AR | Prose 160 chars |
-| Required References | Path/symbol extractors + prior-summary RR | Path-safe (higher limit; do not mangle paths at 160) |
-| Goal | `get_active_goal(session_id)` at prepare | Prose 160 chars |
-| Todos | `list_todos(session_id)` at prepare | Checkbox lines; path-aware truncate |
+| Seed                | Source                                        | Truncation                                           |
+| ------------------- | --------------------------------------------- | ---------------------------------------------------- |
+| Active Request      | Latest external-user block + prior-summary AR | Prose 160 chars                                      |
+| Required References | Path/symbol extractors + prior-summary RR     | Path-safe (higher limit; do not mangle paths at 160) |
+| Goal                | `get_active_goal(session_id)` at prepare      | Prose 160 chars                                      |
+| Todos               | `list_todos(session_id)` at prepare           | Checkbox lines; path-aware truncate                  |
 
 Instruction copy: fill or verify Must sections from seeds; if the LLM already
 wrote a Must section with non-empty content, keep it. Incremental residual prefix

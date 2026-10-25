@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,8 @@ from benchmarks.harbor.libragent_agent import (
     build_compaction_telemetry_document,
     build_diagnostic_meta,
     copy_telemetry_to_context,
+    docker_inspect_image,
+    docker_inspect_workdir,
     extract_model_name_from_assistant_payload,
     extract_model_name_from_session_payload,
     extract_trajectory_error,
@@ -31,6 +34,8 @@ from benchmarks.harbor.libragent_agent import (
     resolve_execution_mode,
     resolve_max_input_context,
     resolve_poll_timeout_sec,
+    resolve_trial_instance_reset,
+    resolve_workspace_mode,
     sanitize_docker_compose_project_name,
     split_harbor_model_name,
     summarize_completion_telemetry,
@@ -554,6 +559,7 @@ def test_build_atif_trajectory_maps_assistant_tools_and_observations() -> None:
     assert trajectory.steps[1].observation is not None
     assert trajectory.steps[1].observation.results[0].source_call_id == "call_1"
     assert "extract.js" in str(trajectory.steps[1].observation.results[0].content)
+    assert trajectory.steps[1].observation.results[0].extra == {"tool_error": False}
     assert trajectory.steps[1].metrics is not None
     assert trajectory.steps[1].metrics.prompt_tokens == 100
     assert trajectory.final_metrics is not None
@@ -944,8 +950,53 @@ def test_extract_version_from_health_payload() -> None:
 
 
 def test_workspace_mode_name() -> None:
-    assert workspace_mode_name(True) == "attach"
-    assert workspace_mode_name(False) == "host-sync"
+    assert workspace_mode_name("attach") == "attach"
+    assert workspace_mode_name("managed") == "managed"
+    assert workspace_mode_name("host") == "host-sync"
+
+
+def test_docker_inspect_helpers_read_container_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[list[str]] = []
+    outputs = {
+        "{{.Config.Image}}": "hb__t08:latest\n",
+        "{{.Config.WorkingDir}}": "/\n",
+    }
+
+    def fake_run(args: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, stdout=outputs[args[3]], stderr="")
+
+    monkeypatch.setattr("benchmarks.harbor.libragent_agent.subprocess.run", fake_run)
+
+    assert docker_inspect_image("c1") == "hb__t08:latest"
+    assert docker_inspect_workdir("c1") is None
+    assert calls[0] == ["docker", "inspect", "-f", "{{.Config.Image}}", "c1"]
+
+
+def test_resolve_workspace_mode_defaults_to_attach() -> None:
+    assert resolve_workspace_mode({}) == "attach"
+    assert resolve_workspace_mode({"LIBRAGENT_HARBOR_WORKSPACE_MODE": " Managed "}) == "managed"
+
+
+def test_resolve_workspace_mode_rejects_unknown_mode() -> None:
+    with pytest.raises(RuntimeError, match="must be one of"):
+        resolve_workspace_mode({"LIBRAGENT_HARBOR_WORKSPACE_MODE": "docker"})
+
+
+def test_host_workspace_mode_requires_sandboxed_home() -> None:
+    with pytest.raises(RuntimeError, match="filesystem sandbox"):
+        resolve_workspace_mode({"LIBRAGENT_HARBOR_WORKSPACE_MODE": "host"})
+    assert (
+        resolve_workspace_mode(
+            {
+                "LIBRAGENT_HARBOR_WORKSPACE_MODE": "host",
+                "LIBRAGENT_BENCH_INSTANCE_SANDBOX": "1",
+            }
+        )
+        == "host"
+    )
 
 
 def test_copy_telemetry_to_context() -> None:
@@ -1078,3 +1129,81 @@ def test_empty_agent_work_error_is_runtime_error() -> None:
     assert isinstance(err, RuntimeError)
     assert "no tools" in str(err)
 
+
+
+def test_trial_instance_reset_disabled_without_app_bin() -> None:
+    assert resolve_trial_instance_reset({}) is None
+
+
+def test_trial_instance_reset_resolves_layout(tmp_path: Path) -> None:
+    reset = resolve_trial_instance_reset(
+        {
+            "LIBRAGENT_BENCH_INSTANCE_APP_BIN": "/opt/libragent",
+            "LIBRAGENT_BENCH_INSTANCE_ROOT": str(tmp_path),
+            "LIBRAGENT_HARBOR_CONCURRENT": "1",
+        }
+    )
+    assert reset is not None
+    assert reset.app_bin == Path("/opt/libragent")
+    assert reset.layout.root == tmp_path
+
+
+def test_trial_instance_reset_refuses_concurrent_trials() -> None:
+    with pytest.raises(RuntimeError, match="--concurrent 1"):
+        resolve_trial_instance_reset(
+            {
+                "LIBRAGENT_BENCH_INSTANCE_APP_BIN": "/opt/libragent",
+                "LIBRAGENT_HARBOR_CONCURRENT": "4",
+            }
+        )
+
+
+def test_run_keeps_trial_instance_log_even_when_the_trial_fails(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+
+    from benchmarks.harbor.isolated_instance import (
+        INSTANCE_APP_BIN_ENV,
+        INSTANCE_ROOT_ENV,
+        InstanceLayout,
+    )
+
+    layout = InstanceLayout(tmp_path / "bench-instance")
+    layout.root.mkdir(parents=True)
+    layout.log_file.write_text("crash trace of this trial\n", encoding="utf-8")
+    monkeypatch.setenv(INSTANCE_APP_BIN_ENV, str(tmp_path / "libragent"))
+    monkeypatch.setenv(INSTANCE_ROOT_ENV, str(layout.root))
+    monkeypatch.setenv("LIBRAGENT_HARBOR_CONCURRENT", "1")
+    adapter = _make_adapter(tmp_path / "trial" / "agent")
+
+    async def failing_trial(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("trial blew up")
+
+    monkeypatch.setattr(adapter, "_run_trial", failing_trial)
+
+    with pytest.raises(RuntimeError, match="trial blew up"):
+        asyncio.run(adapter.run("instruction", None, None))  # type: ignore[arg-type]
+
+    assert (tmp_path / "trial" / "agent" / "instance.log").read_text(
+        encoding="utf-8"
+    ) == "crash trace of this trial\n"
+
+
+def test_run_without_isolated_instance_writes_no_instance_log(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+
+    from benchmarks.harbor.isolated_instance import INSTANCE_APP_BIN_ENV
+
+    monkeypatch.delenv(INSTANCE_APP_BIN_ENV, raising=False)
+    adapter = _make_adapter(tmp_path / "agent")
+
+    async def ok_trial(*_args: object, **_kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr(adapter, "_run_trial", ok_trial)
+    asyncio.run(adapter.run("instruction", None, None))  # type: ignore[arg-type]
+
+    assert not (tmp_path / "agent" / "instance.log").exists()

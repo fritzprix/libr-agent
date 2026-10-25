@@ -1,3 +1,4 @@
+use super::user_skills_guard::{refuse_user_skills_write, USER_SKILLS_WRITE_REJECTED_MARKER};
 use super::WorkspaceServer;
 use crate::SecureFileManager;
 use std::path::PathBuf;
@@ -85,6 +86,23 @@ impl WorkspaceServer {
                 allowed_roots.push(harness_root);
 
                 if !Self::path_is_within_any_root(&candidate_path, &allowed_roots) {
+                    let data_dir = self.session_manager.get_base_data_dir().clone();
+                    if Self::path_is_within_any_root(&candidate_path, &[data_dir]) {
+                        let aliases = self
+                            .get_skill_alias_roots(&target_session_id)
+                            .await
+                            .map(|roots| {
+                                roots
+                                    .iter()
+                                    .map(|root| format!("{}/", root.prefix))
+                                    .collect::<Vec<_>>()
+                            })
+                            .unwrap_or_default();
+                        return Err(format!(
+                            "Security error: {original_error}. This path is inside the LibrAgent data directory, which is not accessible. Only skill roots are reachable: {} (or their absolute host paths).",
+                            aliases.join(", ")
+                        ));
+                    }
                     return Err(format!("Security error: {original_error}"));
                 }
 
@@ -138,6 +156,9 @@ impl WorkspaceServer {
         if let Some((alias_prefix, _)) =
             crate::services::skill_service::extract_skill_alias_relative_path(path_str)
         {
+            if alias_prefix == crate::services::skill_service::USER_SKILLS_ALIAS_PREFIX {
+                return Err(super::user_skills_guard::user_skills_write_rejected_error());
+            }
             return Err(skill_alias_write_rejected_error(alias_prefix));
         }
 
@@ -184,7 +205,10 @@ impl WorkspaceServer {
             }
         }
 
-        self.validate_path_with_error_for_write(effective_path, Some(target_session_id))
+        let validated =
+            self.validate_path_with_error_for_write(effective_path, Some(target_session_id))?;
+        refuse_user_skills_write(&validated)?;
+        Ok(validated)
     }
 
     async fn map_docker_container_file_tool_path(
@@ -267,6 +291,20 @@ pub(crate) fn path_validation_failure_guidance(error: &str, fallback: Vec<String
             "Use workspace__runShell for this container path (ls/cat to inspect; mkdir -p + redirect or cp to write).".to_string(),
             "Do not retry as a workspace-relative path — that targets a different location under the workdir.".to_string(),
         ]
+    } else if error.contains(crate::session_isolation::HOST_DATA_DIR_NOT_IN_CONTAINER_MARKER) {
+        vec![
+            "Read skill files via the @system-skills/… or @user-skills/… alias (workspace__readFile / workspace__listDirectory).".to_string(),
+            format!(
+                "Run skill scripts in workspace__runShell from {}/… or {}/… (the skill tree is available there).",
+                crate::session_isolation::CONTAINER_SYSTEM_SKILLS_DIR,
+                crate::session_isolation::CONTAINER_USER_SKILLS_DIR
+            ),
+            "Do not search the container with find/ls for this host path — it does not exist there.".to_string(),
+        ]
+    } else if error.contains(USER_SKILLS_WRITE_REJECTED_MARKER) {
+        vec![
+            "Run `skill.py new <name>` or `skill.py clone <name>` in the workspace, edit that copy, then `skill.py validate <dir>` and `skill.py deploy <dir>` via workspace__runShell.".to_string(),
+        ]
     } else if error.contains(SKILL_ALIAS_WRITE_REJECTED_MARKER) {
         vec![
             "Write the skill to `.libragent/skills/<skill-name>/SKILL.md` (workspace) or use skill-deployer for `user_skills/` / `.libragent/skills/`.".to_string(),
@@ -342,6 +380,18 @@ mod guidance_tests {
     use crate::session_isolation::OUTSIDE_DOCKER_WORKDIR_FILE_TOOL_MARKER;
 
     #[test]
+    fn user_skills_refusal_guidance_names_deploy_and_other_errors_do_not() {
+        use super::super::user_skills_guard::user_skills_write_rejected_error;
+        let guidance =
+            path_validation_failure_guidance(&user_skills_write_rejected_error(), vec![]);
+        assert!(guidance.iter().any(|line| line.contains("skill.py deploy")));
+
+        let fallback = vec!["listDirectory".to_string()];
+        let other = path_validation_failure_guidance("Security error: blocked", fallback.clone());
+        assert_eq!(other, fallback);
+    }
+
+    #[test]
     fn outside_workdir_guidance_prefers_run_shell() {
         let err = format!("… {OUTSIDE_DOCKER_WORKDIR_FILE_TOOL_MARKER} /app …");
         let guidance = path_validation_failure_guidance(
@@ -354,6 +404,24 @@ mod guidance_tests {
         assert!(guidance
             .iter()
             .all(|line| !line.contains("workspace__listDirectory")));
+    }
+
+    #[test]
+    fn host_data_dir_guidance_points_at_container_skill_paths() {
+        let err = format!(
+            "'/x' {} (data/skills directory).",
+            crate::session_isolation::HOST_DATA_DIR_NOT_IN_CONTAINER_MARKER
+        );
+        let guidance = path_validation_failure_guidance(
+            &err,
+            vec!["Use workspace__listDirectory to see available paths".to_string()],
+        );
+        assert!(guidance
+            .iter()
+            .any(|line| line.contains(crate::session_isolation::CONTAINER_SYSTEM_SKILLS_DIR)));
+        assert!(guidance
+            .iter()
+            .all(|line| !line.contains("workspace__importFiles")));
     }
 
     #[test]

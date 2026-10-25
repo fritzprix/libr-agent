@@ -36,6 +36,26 @@ host-sync path: pull the container workdir to a host trial workspace, run a host
 session, then push changes back. On that path, prefer relative paths under the
 synced workspace rather than absolute container paths.
 
+Attach is a bench-only path. To grade the session types users actually run, pass
+`--workspace-mode` to `run-harbor-bench.cjs` (sets `LIBRAGENT_HARBOR_WORKSPACE_MODE`):
+
+| Mode               | Session                                                                              | Workspace |
+| ------------------ | ------------------------------------------------------------------------------------ | --------- |
+| `attach` (default) | Docker, attached to Harbor's container                                               | in place  |
+| `managed`          | Docker, LibrAgent-managed container from the task image, mounted at the task workdir | host-sync |
+| `host`             | Host workspace session                                                               | host-sync |
+
+`host` runs task commands on this machine, so it requires `--isolated` and runs the
+bench instance under bubblewrap: `/` is read-only, only the instance `run/` dir is
+writable, `HOME` (`run/home`) and `/tmp` (`run/tmp`) are throwaway, and `run/app` is
+mounted at `/app`, which becomes the session workspace. `DOCKER_CONFIG` keeps pointing
+at your real `~/.docker`. The sandbox stops stray writes to your files; it is not a
+security boundary: the network, `/dev`, and the sockets in `$XDG_RUNTIME_DIR` (D-Bus,
+SSH agent, rootless Docker) stay reachable. Requirements: `bwrap`, an existing `/app` mount point, and on
+Ubuntu an AppArmor profile that lets `/usr/bin/bwrap` create user namespaces. Only
+tasks whose workdir is `/app` run in `host` mode, and the task image's tools are not
+available. Shortcuts: `pnpm bench:layman:managed`, `pnpm bench:layman:host`.
+
 ## Prerequisites
 
 1. `pnpm tauri dev` (HTTP API on `http://localhost:3030/api`)
@@ -215,6 +235,46 @@ Environment overrides:
   Official Terminal-Bench submissions must not modify timeouts or resources; `pnpm bench:*`
   omits these flags unless you set the env vars or pass CLI options.
 - `LIBRAGENT_POLL_TIMEOUT_SEC` — optional adapter wall-clock poll budget; omit to wait until Harbor cancels
+
+## Isolated bench instance (clean state per job)
+
+Tasks that install MCP servers, deploy skills, or write knowledge mutate the app profile, so a
+second run against your everyday instance is graded on a dirty host. `isolated_instance.py` runs a
+separate LibrAgent process on its own data dir and port; your real profile is never modified.
+Linux only: `stop` finds detached sidecar processes through `/proc/<pid>/environ`.
+
+```bash
+# 1. Build a pruned seed once (read-only backup of your DB; keeps assistants + settings,
+#    drops sessions/messages/knowledge/schedules and MCP servers the assistant does not reference)
+pnpm bench:instance:seed --assistant-id <uuid>
+
+# 2. Before each job: reset run/ from the seed and start the instance (waits for /api/health)
+pnpm bench:instance:launch
+
+# 3. Run the benchmark against it
+pnpm bench:layman --api-url http://localhost:3031/api --assistant-id <uuid>
+
+# 4. Stop it
+pnpm bench:instance:stop
+```
+
+State lives under `.libragent/work/bench-instance/` (`seed/`, `run/`, `instance.log`). The
+instance sets `LIBRAGENT_DATA_DIR`, `LIBRAGENT_DB_PATH`, and `XDG_{DATA,CACHE,CONFIG}_HOME` under
+`run/`, so WebView storage is isolated too. Rebuild the seed after changing the assistant.
+
+LLM settings are not frozen in the seed: every launch re-copies provider configs, `preferredModel`,
+`fallbackModel`, `complexityModelMapping` and the temperature override from the primary profile
+(opened read-only) into `run/`, so changing the model in the prod app reaches the next trial. The
+effective models are printed at launch and written, without API keys, to
+`.libragent/work/bench-instance/llm_settings.json` and each trial's `llm_settings.json`
+(`mixed_models: true` flags a run that calls more than one model).
+
+> **Secrets:** the seed is copied from your primary profile's DB. It keeps the `settings` table,
+> the assistant row, and the MCP server rows the assistant references, so it retains your active
+> settings and credentials (for example API keys, provider tokens, and MCP server env/headers).
+> `.libragent/work/bench-instance/` (`seed/`, `run/`, `instance.log`) therefore contains
+> sensitive user secrets. Do not commit it, attach it to issues or PRs, or share it, and delete
+> it when you no longer need the seed.
 
 ## Timeouts (important)
 

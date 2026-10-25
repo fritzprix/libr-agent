@@ -158,7 +158,9 @@ impl WorkspaceServer {
                     )
                     .guidance(vec![
                         "Wait a few seconds before checking again".to_string(),
-                        "Or use workspace__waitForProcess with a non-zero timeout".to_string(),
+                        crate::mcp::builtin::error_guidance::wait_for_process_hint(Some(
+                            process_id,
+                        )),
                     ])
                     .to_mcp_result());
                 }
@@ -182,8 +184,7 @@ impl WorkspaceServer {
                 )
                 .guidance(vec![
                     "Process is still running in background".to_string(),
-                    "Use workspace__waitForProcess(timeout=0) to check status without waiting"
-                        .to_string(),
+                    crate::mcp::builtin::error_guidance::wait_for_process_hint(Some(process_id)),
                     "Increase timeout parameter if needed".to_string(),
                 ])
                 .to_mcp_result());

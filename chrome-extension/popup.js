@@ -39,7 +39,12 @@ function refreshFromStorage() {
       stored.bridgeUiState === 'app_offline'
         ? stored.bridgeUiState
         : 'unknown';
-    render(state, typeof stored.bridgeUiDetail === 'string' ? stored.bridgeUiDetail : undefined);
+    render(
+      state,
+      typeof stored.bridgeUiDetail === 'string'
+        ? stored.bridgeUiDetail
+        : undefined,
+    );
   });
 }
 

@@ -1,3 +1,31 @@
+## [0.9.28] - 2026-10-25
+
+### 🚀 Features & Capabilities
+
+- **Adjustable UI size**: Scale the entire interface from **Settings → General** or with `Ctrl/Cmd` + `+`, `-`, and `0` keyboard shortcuts (default `110%`, applied immediately) (#2291).
+- **Install skills from GitHub URLs & outbox deploy**: `skill-deployer` installs skills directly from GitHub repository or subfolder URLs with zip + git fallback (#2181), and `skill.py` (`new`/`clone`/`validate`/`deploy`) deploys validated user skills through a workspace outbox — including in Docker-isolated sessions (#2276, #2277).
+- **Curated MCP catalog & approval gating**: Renamed `tool-installer` to `mcp-installer` (with `@skill:tool-installer` compatibility and an offer to attach verified servers to the current assistant) (#2200); exposed curated presets via `tool__listServers(scope="catalog")` (#2199, #2258); curated presets skip manual approval while external or custom MCP server registrations and updates require hard approval (even in YOLO mode) and record server provenance (#2180, #2184, #2231, #2237).
+- **Per-session wake token for `call-me-back`**: Added `POST /api/sessions/:id/wake/:token` with per-session tokens exported as `LIBRAGENT_WAKE_URL` in host `runShell`/`spawnProcess` and redacted from tool results (#2182, #2230, #2238).
+- **`runShell` multi-line `script` mode & bash syntax precheck**: `runShell` accepts a `script` parameter that executes multi-line bash verbatim via an fd-3 heredoc and pre-validates bash syntax before running (#2214).
+- **Concise `listAgents` config summaries**: `agent__listAgents(type="configs")` defaults to a short `name`/`id`/`description` summary with ID matching in `query` and `verbose=true` for full details (#2305, #2312).
+
+### 🐛 Fixes & Hardening
+
+- **App database & user skills write protection**: Block shell access to LibrAgent's own SQLite database even in Unsafe mode (including when `XDG_DATA_HOME` is overridden) (#2266, #2285), and block direct workspace file-tool writes inside the user skills directory (#2275).
+- **Docker session skills & `cwd` handling**: Mount user/system skill roots read-only in Docker sessions, hide host `fallback_location` paths in container prompts, and honor `cwd` in Docker-isolated `runShell` and `spawnProcess` (#2244, #2276, #2293, #2309).
+- **Scheduled task vs session callback routing**: Clarify `scheduleCallback` (same session and workspace, explicit `delaySeconds` vs `at` constraint) versus `createScheduledTask` (standalone scheduled run requiring `workspaceOverride` for folder access) (#2284, #2311, #2316).
+- **Stream cancellation & final-turn tool recovery**: Propagate stream cancellation to the native HTTP request after response headers arrive (#2223), and recover when a model's final turn contains only text-formatted tool-call markup (#2282).
+- **Deleted session route guard**: Stop re-opening deleted sessions when navigating routes (#2233).
+- **Compaction diagnostics**: Save partial or raw LLM output with `finish_reason` and token usage when compaction streams error, abort, hit output caps, or produce clamped/invalid summaries (#2299, #2302, #2303, #2315).
+- **Linux `.deb` ONNX Runtime path**: Install bundled `libonnxruntime` under `/usr/lib/libragent/` with `RUNPATH` so `.deb` packages no longer conflict with distro `libonnxruntime` packages (#2210, #2232).
+- **Large media IPC & workspace search**: Avoid inline base64 over Tauri IPC for large media downloads (>2 MB) by persisting workspace-scoped temp `file://` URIs (#2144), and report nonexistent roots clearly in `globFiles`/`grepFiles` (#2261).
+
+### 🔧 Performance & Internal
+
+- **Harbor `layman-intent` benchmark & isolated runner**: Added the P0 `libragent-layman-intent` dataset, critical-path trajectory graders, `attach`/`managed`/`host` workspace modes, prod LLM settings sync, two-stage Ctrl+C shutdown, and per-trial instance logs (#2183, #2227, #2229, #2239, #2241, #2243, #2246, #2280, #2296, #2297, #2314).
+- **Maintainer automation skills (`worker-loop` & `gatekeeper-loop`)**: Added autonomous PR/issue `worker-loop` and paired `gatekeeper-loop` reviewer skills with dedicated worktree isolation.
+- **Modular codebase splits**: Split large backend and frontend modules (`agent/state`, `agent/handlers/sessions`, `agent/handlers/configs`, `browser/content`, `workspace_runtime_manager`, `AgentSessionListContext`, `SessionHistoryPanel`) into cohesive submodules.
+
 ## [0.9.27] - 2026-10-20
 
 ### 🚀 Features & Capabilities
@@ -130,7 +158,7 @@
 
 ### 🚀 Features & UI
 
-- **Mermaid & LaTeX in chat**: `` ```mermaid `` diagrams and `$` / `$$` math render in chat, `reportResult`, and `presentInteractive` (markdown). Message Copy / Export PDF use the same document path so PDFs keep diagrams and equations.
+- **Mermaid & LaTeX in chat**: ` ```mermaid ` diagrams and `$` / `$$` math render in chat, `reportResult`, and `presentInteractive` (markdown). Message Copy / Export PDF use the same document path so PDFs keep diagrams and equations.
 - **`visualize` skill**: One bundled skill for Mermaid/LaTeX in chat/UI plus Chart.js charts from CSV/Excel/JSON (replaces the old `data-viz` split).
 - **`browser-session-assist`**: Guides saved-login (`use_profile`) browser sessions; `email-integration` falls back to webmail when IMAP fails.
 
@@ -175,21 +203,21 @@
 ### 🐛 Fixes & Hardening
 
 - **AppImage on Ubuntu 22.04**: Linux bundles link Microsoft's ONNX Runtime 1.28 shared library (glibc 2.27) instead of pyke's static build, which needs glibc 2.38 and stopped the v0.9.17 AppImage. The library is included in the AppImage, deb, and rpm packages. PipeWire 1.0 from the Jammy PPA and the relative `.DirIcon` stay in place.
-> **Note:** `v0.9.18` compiled on Ubuntu 22.04 and built the deb, then the RPM packager rejected paths that did not start with `/`. Use **v0.9.19** for the AppImage.
+  > **Note:** `v0.9.18` compiled on Ubuntu 22.04 and built the deb, then the RPM packager rejected paths that did not start with `/`. Use **v0.9.19** for the AppImage.
 
 ## [0.9.17] - 2026-09-28
 
 ### 🐛 Fixes & Hardening
 
 - **AppImage on Ubuntu 22.04**: The Linux build installs PipeWire 1.0 from the Jammy upstream PPA. Stock Ubuntu 22.04 PipeWire 0.3.48 cannot compile `pipewire-rs` 0.10, which stopped the v0.9.16 AppImage. Those PPA libraries depend on glibc 2.34, so the AppImage still launches on AppImageHub's Ubuntu 22.04 runner, and `.DirIcon` stays a relative symlink.
-> **Note:** `v0.9.17` Linux CI still failed: pyke's static ONNX Runtime needs glibc 2.38. Use **v0.9.19** for the AppImage.
+  > **Note:** `v0.9.17` Linux CI still failed: pyke's static ONNX Runtime needs glibc 2.38. Use **v0.9.19** for the AppImage.
 
 ## [0.9.16] - 2026-09-28
 
 ### 🐛 Fixes & Hardening
 
 - **AppImage on Ubuntu 22.04**: Linux release and nightly bundles are built on Ubuntu 22.04 so the AppImage links against glibc 2.35. AppImageHub tests on Ubuntu 22.04; the Ubuntu 24.04 build required `GLIBC_2.39` and exited before it could show a window. The `.DirIcon` relative symlink from v0.9.14 remains in this build.
-> **Note:** `v0.9.16` Linux CI failed against Ubuntu 22.04's PipeWire 0.3.48. Use **v0.9.19** for the AppImage.
+  > **Note:** `v0.9.16` Linux CI failed against Ubuntu 22.04's PipeWire 0.3.48. Use **v0.9.19** for the AppImage.
 
 ## [0.9.15] - 2026-09-28
 
@@ -202,7 +230,7 @@
 ### 🐛 Fixes & Hardening
 
 - **AppImage `.DirIcon`**: Bump `@tauri-apps/cli` to 2.12.0 so Linux AppImages ship relative `.DirIcon` / `.desktop` symlinks (fixes AppImageHub catalog lint and AppManager install failures).
-> **Note:** `v0.9.14` release CI failed on the JS/Rust mismatch above; use **v0.9.15** for installable artifacts.
+  > **Note:** `v0.9.14` release CI failed on the JS/Rust mismatch above; use **v0.9.15** for installable artifacts.
 
 ## [0.9.13] - 2026-09-28
 

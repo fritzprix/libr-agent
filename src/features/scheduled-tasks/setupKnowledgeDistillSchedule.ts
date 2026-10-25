@@ -77,8 +77,7 @@ export async function setupKnowledgeDistillSchedule(deps: {
   if (!assistant?.id) {
     throw new Error(
       t('scheduledTasks.setupKnowledgeDistill.noAssistant', {
-        defaultValue:
-          'Create an assistant first, then try again.',
+        defaultValue: 'Create an assistant first, then try again.',
       }),
     );
   }

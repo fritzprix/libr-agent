@@ -508,6 +508,9 @@
       "uiVisualsTitle": "UI 시각 효과",
       "fontFamily": "글꼴",
       "fontFamilyDescription": "UI의 기본 글꼴을 변경합니다.",
+      "uiSize": "UI 크기",
+      "uiSizeDescription": "인터페이스 전체를 확대/축소합니다. 즉시 적용됩니다. 단축키: Ctrl/Cmd +, -, 0.",
+      "uiSizeReset": "100%로 초기화",
       "messageLayout": "메시지 레이아웃",
       "messageLayoutDocument": "문서형 (전체 너비 코딩 레이아웃)",
       "messageLayoutBubble": "말풍선 (클래식 채팅)",
@@ -1171,13 +1174,7 @@
           "잠재된 생각을",
           "설익은 아이디어를"
         ],
-        "flavors": [
-          "...",
-          " 🌪️",
-          " 🥐",
-          " 🐾",
-          " ✨"
-        ]
+        "flavors": ["...", " 🌪️", " 🥐", " 🐾", " ✨"]
       }
     },
     "messages": {
@@ -2003,6 +2000,11 @@
         "title": "조직 팀을 통째로 백업·이동해요",
         "body": "Org 화면에서 어시스턴트, 예약 작업, 플레이북, 스킬이 담긴 .libragent-org 번들로 팀을 내보내고 다른 기기에서 가져올 수 있어요.",
         "cta": "Org 열기"
+      },
+      "uiSize": {
+        "title": "화면 크기를 내 눈에 맞게 조절해요",
+        "body": "설정 → General이나 단축키 Ctrl/Cmd +, -, 0으로 인터페이스 전체 크기를 바로 키우거나 줄일 수 있어요.",
+        "cta": "General 설정 열기"
       }
     }
   }

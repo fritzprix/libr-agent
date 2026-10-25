@@ -16,6 +16,12 @@ use tokio::sync::RwLock;
 pub const REPEATED_THINKING_MAX_RETRIES: u32 = 2;
 pub const REPEATED_TEXT_LOOP_MAX_RETRIES: u32 = 2;
 pub const BAD_TOOL_ARGS_MAX_RETRIES: u32 = 2;
+/// Final turn that is only text-formatted tool-call markup (`<function=NAME>…`).
+/// Does not use `experimentalSettings.toolLoopMaxResampleRetries`.
+pub const MALFORMED_TOOL_MARKUP_MAX_RETRIES: u32 = 2;
+/// Corrective note appended before retrying; neutral on purpose (no tool names).
+pub const MALFORMED_TOOL_MARKUP_NOTE: &str = "Your previous reply contained text formatted like a tool call, but no structured tool call was made, so nothing was executed and that reply was discarded. If you meant to call a tool, send it as a structured tool call. Otherwise, continue your answer.";
+
 /// Client-side reasoning-budget abort: one clean resample, no prompt nudge.
 pub const REASONING_BUDGET_MAX_RETRIES: u32 = 1;
 /// Max FallThrough incidents per workflow before hard-stopping. Bounds
@@ -78,6 +84,10 @@ pub enum NonProductiveCompletionReason {
         reasoning_budget_tokens: usize,
         estimated_thinking_tokens: usize,
     },
+    MalformedToolMarkup {
+        assistant_message_id: String,
+        tool_name: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -86,6 +96,7 @@ enum StreamingRecoveryCounter {
     Text,
     BadToolArgs,
     ReasoningBudget,
+    MalformedToolMarkup,
 }
 
 impl StreamingRecoveryCounter {
@@ -95,6 +106,7 @@ impl StreamingRecoveryCounter {
             Self::Text => REPEATED_TEXT_LOOP_MAX_RETRIES,
             Self::BadToolArgs => BAD_TOOL_ARGS_MAX_RETRIES,
             Self::ReasoningBudget => REASONING_BUDGET_MAX_RETRIES,
+            Self::MalformedToolMarkup => MALFORMED_TOOL_MARKUP_MAX_RETRIES,
         }
     }
 
@@ -104,6 +116,7 @@ impl StreamingRecoveryCounter {
             Self::Text => *session.repeated_text_loop_retry_count.read().await,
             Self::BadToolArgs => *session.bad_tool_args_retry_count.read().await,
             Self::ReasoningBudget => *session.reasoning_budget_retry_count.read().await,
+            Self::MalformedToolMarkup => *session.malformed_tool_markup_retry_count.read().await,
         }
     }
 
@@ -120,6 +133,9 @@ impl StreamingRecoveryCounter {
             }
             Self::ReasoningBudget => {
                 *session.reasoning_budget_retry_count.write().await = value;
+            }
+            Self::MalformedToolMarkup => {
+                *session.malformed_tool_markup_retry_count.write().await = value;
             }
         }
     }
@@ -243,6 +259,20 @@ async fn handle_non_productive_completion(
                         max_retries
                     );
                 }
+                NonProductiveCompletionReason::MalformedToolMarkup {
+                    assistant_message_id,
+                    tool_name,
+                } => {
+                    log::warn!(
+                        "Text-formatted tool-call markup for '{}' ended session {} message {}. Discarding it and retrying LLM turn ({}/{}).",
+                        tool_name,
+                        session_id,
+                        assistant_message_id,
+                        next_retry_count,
+                        max_retries
+                    );
+                    append_recovery_note(&context, &session_id, MALFORMED_TOOL_MARKUP_NOTE).await?;
+                }
                 NonProductiveCompletionReason::ReasoningBudgetExceeded {
                     response_message_id,
                     observed_tail_chars,
@@ -301,6 +331,19 @@ async fn handle_non_productive_completion(
             })
         }
         NonProductiveCompletionAction::Fail => {
+            if matches!(
+                reason,
+                NonProductiveCompletionReason::MalformedToolMarkup { .. }
+            ) {
+                // Budget spent: end the way it does without recovery (no new error).
+                log::warn!(
+                    "Malformed tool-call markup persisted after {} retries for session {}. Ending the turn as before.",
+                    max_retries,
+                    session_id
+                );
+                return Ok(StreamingIssueOutcome::FallThrough);
+            }
+
             if matches!(
                 reason,
                 NonProductiveCompletionReason::MalformedToolCallArguments { .. }
@@ -376,6 +419,9 @@ async fn handle_non_productive_completion(
                 ),
                 NonProductiveCompletionReason::MalformedToolCallArguments { .. } => {
                     unreachable!("MalformedToolCallArguments Fail handled above")
+                }
+                NonProductiveCompletionReason::MalformedToolMarkup { .. } => {
+                    unreachable!("MalformedToolMarkup Fail handled above")
                 }
                 NonProductiveCompletionReason::ReasoningBudgetExceeded {
                     response_message_id,
@@ -707,6 +753,94 @@ pub async fn handle_thinking_only_completion(
     .await
 }
 
+/// Appends a hidden recovery note (user role) to the history before a retry.
+async fn append_recovery_note(
+    context: &RecoveryContext<'_>,
+    session_id: &str,
+    text: &str,
+) -> Result<(), String> {
+    let note = crate::models::chat::Message::new_user_message(
+        session_id.to_string(),
+        text.to_string(),
+        Some(crate::models::chat::MessageSource::Recovery),
+        None,
+    );
+    {
+        let active = context.active_sessions.read().await;
+        if let Some(session) = active.get(session_id) {
+            let mut messages = session.messages.write().await;
+            messages.push(note.clone());
+            crate::agent::state::enforce_cached_message_limit(&mut messages);
+        }
+    }
+    use crate::repositories::message_repository::MessageRepository as _;
+    crate::state::get_message_repository()
+        .insert(&note)
+        .await
+        .map_err(|error| format!("Failed to save recovery note: {error}"))?;
+    crate::agent::tauri_events::emit_agent_event(
+        context.app_handle,
+        crate::agent::events::AgentEvent::MessageAdded {
+            session_id: session_id.to_string(),
+            message: Box::new(note),
+        },
+    )
+    .map_err(|error| format!("Failed to emit MessageAdded for recovery note: {error}"))
+}
+
+/// A final turn that is only `<function=NAME>…` text: the caller has already
+/// discarded the message (it is neither cached nor persisted). Retries up to
+/// [`MALFORMED_TOOL_MARKUP_MAX_RETRIES`] times with a corrective note; after
+/// that returns `FallThrough` so the turn ends exactly as it does today.
+pub async fn handle_malformed_tool_markup_completion(
+    session_repo: &Arc<dyn SessionRepository>,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    proxy_manager: &Arc<MCPServiceProxyManager>,
+    app_handle: &AppHandle,
+    session_id: String,
+    assistant_message_id: String,
+    tool_name: String,
+) -> Result<StreamingIssueOutcome, String> {
+    let counter = StreamingRecoveryCounter::MalformedToolMarkup;
+
+    let (action, session_name) = {
+        let active = active_sessions.read().await;
+        let Some(session) = active.get(&session_id) else {
+            return Ok(StreamingIssueOutcome::Ignored);
+        };
+
+        let retry_count = counter.read_count(session).await;
+        let session_name = session
+            .metadata
+            .name
+            .clone()
+            .unwrap_or_else(|| session_id[..8.min(session_id.len())].to_string());
+
+        (
+            evaluate_non_productive_completion_action(retry_count, counter.max_retries()),
+            session_name,
+        )
+    };
+
+    handle_non_productive_completion(
+        RecoveryContext {
+            session_repo,
+            active_sessions,
+            proxy_manager,
+            app_handle,
+        },
+        session_id,
+        session_name,
+        counter,
+        action,
+        NonProductiveCompletionReason::MalformedToolMarkup {
+            assistant_message_id,
+            tool_name,
+        },
+    )
+    .await
+}
+
 /// Payload for a malformed/truncated tool-call-arguments recovery attempt.
 pub struct MalformedToolArgsIncident {
     pub assistant_message_id: String,
@@ -797,6 +931,43 @@ mod tests {
     fn bad_tool_args_incident_cap_is_positive() {
         assert!(BAD_TOOL_ARGS_MAX_INCIDENTS >= 1);
         assert!(BAD_TOOL_ARGS_MAX_RETRIES >= 1);
+    }
+
+    #[test]
+    fn malformed_tool_markup_retries_twice_then_gives_up() {
+        assert_eq!(MALFORMED_TOOL_MARKUP_MAX_RETRIES, 2);
+        for (count, expected) in [
+            (
+                0,
+                NonProductiveCompletionAction::Retry {
+                    next_retry_count: 1,
+                },
+            ),
+            (
+                1,
+                NonProductiveCompletionAction::Retry {
+                    next_retry_count: 2,
+                },
+            ),
+            (2, NonProductiveCompletionAction::Fail),
+        ] {
+            assert_eq!(
+                evaluate_non_productive_completion_action(
+                    count,
+                    StreamingRecoveryCounter::MalformedToolMarkup.max_retries()
+                ),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn malformed_tool_markup_note_is_neutral() {
+        let note = MALFORMED_TOOL_MARKUP_NOTE;
+        assert!(note.contains("structured tool call"));
+        assert!(note.contains("continue your answer"));
+        assert!(!note.contains("__"), "must not name or steer to a tool");
+        assert!(!note.contains("tool_choice"));
     }
 
     #[test]

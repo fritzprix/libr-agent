@@ -18,9 +18,9 @@ installed and on `PATH` (typically `~/.local/bin/agy`).
 
 ## vs `libr-delegate`
 
-| Caller need | Skill |
-| --- | --- |
-| Cursor → **agy** (Gemini/Claude/etc. CLI) | **This skill** |
+| Caller need                                 | Skill           |
+| ------------------------------------------- | --------------- |
+| Cursor → **agy** (Gemini/Claude/etc. CLI)   | **This skill**  |
 | Cursor → **LibrAgent** HTTP `/api/sessions` | `libr-delegate` |
 
 ## Preconditions
@@ -103,11 +103,11 @@ Scope: ...
 
 ## Model selection (strict)
 
-| Rule | Action |
-| --- | --- |
-| Normal delegate | Always `--model gemini-3.8-flash-high` (or omit `--model` when using `scripts/run.sh` / `AGY_MODEL` default) |
-| User names a model | Use **exactly** that id (verify with `agy models` if it fails) |
-| Agent judgment (“this needs Pro/Claude”) | **Forbidden** — keep the default |
+| Rule                                     | Action                                                                                                       |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Normal delegate                          | Always `--model gemini-3.8-flash-high` (or omit `--model` when using `scripts/run.sh` / `AGY_MODEL` default) |
+| User names a model                       | Use **exactly** that id (verify with `agy models` if it fails)                                               |
+| Agent judgment (“this needs Pro/Claude”) | **Forbidden** — keep the default                                                                             |
 
 Do **not** hardcode alternate model names into invocations. Do **not** “upgrade”
 to Pro/Opus/Claude unless the user asked. If `agy` rejects the default id as

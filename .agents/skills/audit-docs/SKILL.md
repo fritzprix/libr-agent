@@ -58,15 +58,16 @@ python3 .agents/skills/audit-docs/scripts/audit_docs.py --json --output audit_re
 
 Inspect code diffs between baseline and HEAD across five key architectural domains:
 
-| Code Domain | Source Paths | Target User Documentation |
-| --- | --- | --- |
-| **Bundled Skills** | `src-tauri/bundled_skills/` | [`docs/user/guides/skills.md`](file:///home/fritzprix/my_works/libr-agent/docs/user/guides/skills.md) |
-| **Built-in Tools** | `src-tauri/src/mcp/`, `src-tauri/src/agent/tools/` | [`docs/user/guides/builtin-tools.md`](file:///home/fritzprix/my_works/libr-agent/docs/user/guides/builtin-tools.md) |
+| Code Domain           | Source Paths                                        | Target User Documentation                                                                                                                                                                                                                                    |
+| --------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Bundled Skills**    | `src-tauri/bundled_skills/`                         | [`docs/user/guides/skills.md`](file:///home/fritzprix/my_works/libr-agent/docs/user/guides/skills.md)                                                                                                                                                        |
+| **Built-in Tools**    | `src-tauri/src/mcp/`, `src-tauri/src/agent/tools/`  | [`docs/user/guides/builtin-tools.md`](file:///home/fritzprix/my_works/libr-agent/docs/user/guides/builtin-tools.md)                                                                                                                                          |
 | **Settings & Config** | `src/components/settings/`, `src-tauri/src/config/` | [`docs/user/guides/troubleshooting.md`](file:///home/fritzprix/my_works/libr-agent/docs/user/guides/troubleshooting.md), [`getting-started/connecting-models.md`](file:///home/fritzprix/my_works/libr-agent/docs/user/getting-started/connecting-models.md) |
-| **UI Views / Routes** | `src/views/`, `src/routes/` | [`docs/user/guides/navigation-guide.md`](file:///home/fritzprix/my_works/libr-agent/docs/user/guides/navigation-guide.md), [`docs/user/index.md`](file:///home/fritzprix/my_works/libr-agent/docs/user/index.md) |
-| **Automation / Cron** | `src-tauri/src/scheduled/` | [`docs/user/guides/scheduled-tasks.md`](file:///home/fritzprix/my_works/libr-agent/docs/user/guides/scheduled-tasks.md), [`docs/user/guides/automation.md`](file:///home/fritzprix/my_works/libr-agent/docs/user/guides/automation.md) |
+| **UI Views / Routes** | `src/views/`, `src/routes/`                         | [`docs/user/guides/navigation-guide.md`](file:///home/fritzprix/my_works/libr-agent/docs/user/guides/navigation-guide.md), [`docs/user/index.md`](file:///home/fritzprix/my_works/libr-agent/docs/user/index.md)                                             |
+| **Automation / Cron** | `src-tauri/src/scheduled/`                          | [`docs/user/guides/scheduled-tasks.md`](file:///home/fritzprix/my_works/libr-agent/docs/user/guides/scheduled-tasks.md), [`docs/user/guides/automation.md`](file:///home/fritzprix/my_works/libr-agent/docs/user/guides/automation.md)                       |
 
 ### Verification Checklist:
+
 - [ ] Were new skills added to `bundled_skills` without being listed in the Skills Catalog?
 - [ ] Were new MCP tools or tool parameters added without reference entries?
 - [ ] Were UI setting keys renamed or added without updating troubleshooting and setup guides?
@@ -110,23 +111,27 @@ Structure the final audit report using this markdown format:
 # 📋 Documentation Gap Audit Report
 
 ## 1. Audit Scope & Baseline
+
 - Baseline: `<COMMIT_HASH>` (<SUMMARY>)
 - Target Head: `<HEAD_HASH>`
 - Audit Mode: `<AUTOMATIC | RELEASE | CUSTOM>`
 
 ## 2. Code Changes vs. Document Mapping Gaps
-| Change Type | Component / File | Detected Code Change | Affected Documentation | Status |
-| --- | --- | --- | --- | --- |
-| New Skill | `skill-name` | Added to bundled_skills | `guides/skills.md` | 🔴 Missing |
-| Tool Flag | `browser` | Added `--sandbox` arg | `guides/builtin-tools.md` | ⚠️ Outdated |
+
+| Change Type | Component / File | Detected Code Change    | Affected Documentation    | Status      |
+| ----------- | ---------------- | ----------------------- | ------------------------- | ----------- |
+| New Skill   | `skill-name`     | Added to bundled_skills | `guides/skills.md`        | 🔴 Missing  |
+| Tool Flag   | `browser`        | Added `--sandbox` arg   | `guides/builtin-tools.md` | ⚠️ Outdated |
 
 ## 3. Translation Parity Findings (KO ↔ EN)
+
 - Total Files Audited: XX
 - Truncated / Outdated EN Files: X
 - Parity Gaps List:
   - `path/to/doc.md`: Ratio XX%, missing sections: [...]
 
 ## 4. Actionable Remediation Plan
+
 1. [P0] Update `guides/skills.md` (KO & EN) to include `new-skill`.
 2. [P1] Re-translate `path/to/doc.md` to ASD-STE100 standards.
 3. [P2] Run `pnpm --filter libragent-docs build` to verify clean build.

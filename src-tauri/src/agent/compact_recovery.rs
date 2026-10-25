@@ -34,6 +34,27 @@ pub async fn handle_compact_error_state(
     session_id: String,
     error: AgentRuntimeError,
 ) -> Result<(), String> {
+    handle_compact_error_state_with_raw_output(
+        session_repo,
+        active_sessions,
+        dispatcher,
+        session_id,
+        error,
+        None,
+    )
+    .await
+}
+
+/// Same as [`handle_compact_error_state`], recording where the partial raw
+/// output of the failed compaction call was saved.
+pub async fn handle_compact_error_state_with_raw_output(
+    session_repo: &Arc<dyn SessionRepository>,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    dispatcher: &dyn AgentEventDispatcher,
+    session_id: String,
+    error: AgentRuntimeError,
+    raw_output_path: Option<String>,
+) -> Result<(), String> {
     let (snapshot, session_name) = {
         let active = active_sessions.read().await;
         if let Some(session) = active.get(&session_id) {
@@ -90,6 +111,7 @@ pub async fn handle_compact_error_state(
                     error: Some(error.display_message.clone()),
                     epoch_path: None,
                     fallback_path: None,
+                    raw_output_path,
                     prompt_tokens_before: None,
                     prompt_tokens_after_projection: None,
                 },

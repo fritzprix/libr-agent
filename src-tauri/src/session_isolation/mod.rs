@@ -11,7 +11,9 @@ pub mod runtime;
 pub mod types;
 
 pub use docker_file_path::{
-    map_docker_container_file_tool_path, OUTSIDE_DOCKER_WORKDIR_FILE_TOOL_MARKER,
+    container_path_for_skill_alias, map_docker_container_file_tool_path,
+    CONTAINER_SYSTEM_SKILLS_DIR, CONTAINER_USER_SKILLS_DIR, HOST_DATA_DIR_NOT_IN_CONTAINER_MARKER,
+    OUTSIDE_DOCKER_WORKDIR_FILE_TOOL_MARKER,
 };
 pub use path_mapper::PathMappingLayer;
 pub use runtime::{ShellDialect, SpawnedShell};
@@ -52,6 +54,10 @@ impl SessionIsolationManager {
                             &session,
                             &config.command,
                             &config.env_vars,
+                            config
+                                .working_directory
+                                .as_ref()
+                                .and_then(|path| path.to_str()),
                         )
                         .await
                         .map_err(|error| error.to_string());

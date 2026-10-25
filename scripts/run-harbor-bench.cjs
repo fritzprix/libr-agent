@@ -5,11 +5,26 @@
  *
  * Usage (same flags as the bash runner):
  *   node scripts/run-harbor-bench.cjs --preset terminal-bench --n-tasks 1
+ *
+ * --isolated: launch the seeded bench instance (benchmarks/harbor/isolated_instance.py),
+ * default --api-url/--assistant-id from its seed, relaunch it from the seed before every
+ * trial (requires --concurrent 1), and stop it when the run ends.
+ *
+ * Ctrl+C in --isolated mode: the first press lets Harbor cancel the trial and tear down
+ * its task containers (partial results are kept); the second press force-kills Harbor,
+ * the bench instance and the task containers. Either way the instance is stopped, no
+ * task container from this run is left, and the next --workspace-mode does not start.
  */
 'use strict';
 
+const fs = require('node:fs');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
+const {
+  createInterruptController,
+  killProcessTree,
+  leftoverTaskContainers,
+} = require('./lib/bench-interrupt.cjs');
 
 const repoRoot = path.resolve(__dirname, '..');
 const isWindows = process.platform === 'win32';
@@ -105,8 +120,9 @@ function toPowerShellArgs(argv) {
 /**
  * @param {string} command
  * @param {string[]} args
+ * @returns {number}
  */
-function run(command, args) {
+function runStatus(command, args) {
   const result = spawnSync(command, args, {
     cwd: repoRoot,
     stdio: 'inherit',
@@ -116,26 +132,263 @@ function run(command, args) {
 
   if (result.error) {
     console.error(result.error.message);
-    process.exit(1);
+    return 1;
   }
 
-  process.exit(result.status ?? 1);
+  return result.status ?? 1;
 }
 
-const argv = process.argv.slice(2);
+const ISOLATED_FLAG = '--isolated';
+const INSTANCE_MODULE = 'benchmarks.harbor.isolated_instance';
+const INSTANCE_ROOT = path.join(
+  repoRoot,
+  '.libragent',
+  'work',
+  'bench-instance',
+);
+const SEED_INFO_PATH = path.join(INSTANCE_ROOT, 'seed', 'seed.json');
+const RELEASE_APP_BIN = path.join(
+  repoRoot,
+  'src-tauri',
+  'target',
+  'release',
+  'libragent',
+);
 
-if (isWindows) {
+/**
+ * @returns {{ assistantId: string, port: number }}
+ */
+function readSeedInfo() {
+  if (!fs.existsSync(SEED_INFO_PATH)) {
+    console.error(
+      `No bench seed at ${SEED_INFO_PATH}.\n` +
+        'Create it once: pnpm bench:instance:seed --assistant-id <uuid>',
+    );
+    process.exit(1);
+  }
+  const info = JSON.parse(fs.readFileSync(SEED_INFO_PATH, 'utf8'));
+  if (typeof info.assistant_id !== 'string' || typeof info.port !== 'number') {
+    console.error(`Invalid seed info: ${SEED_INFO_PATH}`);
+    process.exit(1);
+  }
+  return { assistantId: info.assistant_id, port: info.port };
+}
+
+// One SIGINT listener for the whole run; runBenchChild attaches the press handler.
+const interrupt = createInterruptController();
+
+/**
+ * @param {string[]} args
+ * @returns {string[]}
+ */
+function dockerLines(args) {
+  const result = spawnSync('docker', args, { encoding: 'utf8' });
+  if (result.error || result.status !== 0) return [];
+  return result.stdout.split('\n').filter(Boolean);
+}
+
+function snapshotContainers() {
+  return dockerLines(['ps', '-q']);
+}
+
+/** Kill task containers started during this run that Harbor did not tear down. */
+function removeLeftoverContainers(/** @type {string[]} */ before) {
+  const now = dockerLines([
+    'ps',
+    '--format',
+    '{{.ID}}\t{{.Label "com.docker.compose.project"}}',
+  ]).map((line) => {
+    const [id, composeProject = ''] = line.split('\t');
+    return { id, composeProject };
+  });
+  const leftovers = leftoverTaskContainers(before, now);
+  if (leftovers.length > 0) {
+    console.error(`Removing ${leftovers.length} leftover task container(s).`);
+    spawnSync('docker', ['rm', '-f', ...leftovers], { stdio: 'ignore' });
+  }
+}
+
+/**
+ * Run the bench command, handling Ctrl+C: press 1 only reports (the terminal already
+ * delivered SIGINT to Harbor, which cancels and cleans up); press 2 SIGKILLs the
+ * whole process tree under the child.
+ * @param {string} command
+ * @param {string[]} args
+ * @returns {Promise<number>}
+ */
+function runBenchChild(command, args) {
+  return new Promise((resolve) => {
+    const child = spawn(command, args, {
+      cwd: repoRoot,
+      stdio: 'inherit',
+      env: process.env,
+    });
+    interrupt.attach((press) => {
+      if (press === 1) {
+        console.error(
+          '\nStopping: Harbor is cancelling the running trial and removing its task containers ' +
+            '(partial results are kept). Press Ctrl+C again to force-stop immediately.',
+        );
+        return;
+      }
+      console.error(
+        '\nForce-stopping: killing Harbor, the bench instance and task containers.',
+      );
+      if (child.pid !== undefined) killProcessTree(child.pid);
+    });
+    child.on('error', (error) => {
+      console.error(error.message);
+      interrupt.detach();
+      resolve(1);
+    });
+    child.on('close', (code, signal) => {
+      interrupt.detach();
+      resolve(code ?? (signal ? 128 : 1));
+    });
+  });
+}
+
+/**
+ * @param {string[]} benchCommand
+ * @param {string[]} benchArgs
+ * @returns {Promise<number>}
+ */
+async function runIsolated(benchCommand, benchArgs) {
+  if (process.platform !== 'linux') {
+    // Stopping detached sidecars relies on /proc/<pid>/environ.
+    console.error(`${ISOLATED_FLAG} is only supported on Linux.`);
+    return 1;
+  }
+  const concurrentIndex = benchArgs.indexOf('--concurrent');
+  if (concurrentIndex !== -1 && benchArgs[concurrentIndex + 1] !== '1') {
+    console.error(
+      `${ISOLATED_FLAG} restarts the bench instance before every trial and requires --concurrent 1.`,
+    );
+    return 1;
+  }
+  const { assistantId, port } = readSeedInfo();
+  const args = [...benchArgs];
+  if (!args.includes('--api-url')) {
+    args.push('--api-url', `http://localhost:${port}/api`);
+  }
+  if (!args.includes('--assistant-id')) {
+    args.push('--assistant-id', assistantId);
+  }
+
+  const launchStatus = runStatus('python', [
+    '-m',
+    INSTANCE_MODULE,
+    'launch',
+    '--app-bin',
+    RELEASE_APP_BIN,
+  ]);
+  if (launchStatus !== 0) {
+    return launchStatus;
+  }
+
+  // The Harbor adapter relaunches the instance from the seed before each trial.
+  process.env.LIBRAGENT_BENCH_INSTANCE_APP_BIN = RELEASE_APP_BIN;
+  process.env.LIBRAGENT_BENCH_INSTANCE_ROOT = INSTANCE_ROOT;
+  const containersBefore = snapshotContainers();
+  try {
+    return await runBenchChild(benchCommand[0], [
+      ...benchCommand.slice(1),
+      ...args,
+    ]);
+  } finally {
+    const forced = interrupt.presses >= 2;
+    runStatus('python', [
+      '-m',
+      INSTANCE_MODULE,
+      'stop',
+      ...(forced ? ['--force'] : []),
+    ]);
+    if (interrupt.presses > 0) {
+      removeLeftoverContainers(containersBefore);
+    }
+  }
+}
+
+const WORKSPACE_MODE_FLAG = '--workspace-mode';
+const WORKSPACE_MODES = ['attach', 'managed', 'host'];
+
+const rawArgv = process.argv.slice(2);
+const isolated = rawArgv.includes(ISOLATED_FLAG);
+const argv = rawArgv.filter((arg) => arg !== ISOLATED_FLAG);
+
+/**
+ * @param {string} mode
+ */
+function applyWorkspaceMode(mode) {
+  process.env.LIBRAGENT_HARBOR_WORKSPACE_MODE = mode;
+  // Read by the bench instance launcher and the Harbor adapter.
+  if (mode === 'host') {
+    process.env.LIBRAGENT_BENCH_INSTANCE_SANDBOX = '1';
+  } else {
+    delete process.env.LIBRAGENT_BENCH_INSTANCE_SANDBOX;
+  }
+}
+
+/** @type {string[]} */
+let workspaceModes = [];
+const workspaceModeIndex = argv.indexOf(WORKSPACE_MODE_FLAG);
+if (workspaceModeIndex !== -1) {
+  const [, mode] = argv.splice(workspaceModeIndex, 2);
+  if (mode !== 'all' && !WORKSPACE_MODES.includes(mode)) {
+    const got = mode === undefined ? 'no value' : `'${mode}'`;
+    console.error(
+      `${WORKSPACE_MODE_FLAG} must be one of ${[...WORKSPACE_MODES, 'all'].join(', ')} (got ${got}).`,
+    );
+    process.exit(1);
+  }
+  if ((mode === 'host' || mode === 'all') && !isolated) {
+    console.error(
+      `${WORKSPACE_MODE_FLAG} ${mode} runs task commands on this machine and requires ${ISOLATED_FLAG}.`,
+    );
+    process.exit(1);
+  }
+  workspaceModes = mode === 'all' ? WORKSPACE_MODES : [mode];
+  if (!isolated) {
+    applyWorkspaceMode(mode);
+  }
+}
+
+if (isolated) {
+  const sh = path.join(repoRoot, 'scripts', 'run-harbor-bench.sh');
+  // Between runs (launch, stop) Ctrl+C must not kill the runner before the instance is
+  // stopped; runBenchChild adds its own handler while Harbor is running.
+  process.on('SIGINT', () => interrupt.press());
+  (async () => {
+    let exitStatus = 0;
+    for (const mode of workspaceModes.length > 0 ? workspaceModes : [null]) {
+      if (mode !== null) {
+        applyWorkspaceMode(mode);
+        console.log(`==> Workspace mode: ${mode}`);
+      }
+      const status = await runIsolated(['bash', sh], argv);
+      if (status !== 0) {
+        exitStatus = status;
+      }
+      if (interrupt.presses > 0) {
+        break;
+      }
+    }
+    process.exit(exitStatus);
+  })();
+} else if (isWindows) {
   const ps1 = path.join(repoRoot, 'scripts', 'run-harbor-bench.ps1');
   const psArgs = toPowerShellArgs(argv);
-  run('powershell', [
-    '-NoProfile',
-    '-ExecutionPolicy',
-    'Bypass',
-    '-File',
-    ps1,
-    ...psArgs,
-  ]);
+  process.exit(
+    runStatus('powershell', [
+      '-NoProfile',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-File',
+      ps1,
+      ...psArgs,
+    ]),
+  );
 } else {
   const sh = path.join(repoRoot, 'scripts', 'run-harbor-bench.sh');
-  run('bash', [sh, ...argv]);
+  process.exit(runStatus('bash', [sh, ...argv]));
 }

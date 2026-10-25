@@ -2,6 +2,7 @@ pub mod assistant_message_shape;
 pub mod circuit_breaker;
 pub mod completion;
 pub mod context_selector;
+pub(crate) mod malformed_tool_markup;
 pub mod natural_recovery;
 pub mod prompt;
 pub mod request_layout;

@@ -33,7 +33,7 @@ against Completion Criteria; if uncertain, read the latest epoch file first.
 - If a fallback note names
   `.libragent/tool-results/compaction/fallback-….md`, read that **exact**
   path. Those files live under internal `tool-results` and are **not**
-  discoverable via `listDirectory` / `globFiles` — do not try to browse for
+  discoverable via `globFiles` — do not try to browse for
   them.
 
 ### 2. Otherwise discover epoch transcripts
@@ -41,8 +41,6 @@ against Completion Criteria; if uncertain, read the latest epoch file first.
 ```
 workspace__globFiles(path=".libragent", filePattern="pre_compaction_epoch_*.md")
 ```
-
-or `workspace__listDirectory(path=".libragent")`.
 
 Epoch numbers are **monotonic** (`1`, `2`, `3`, …). Retention keeps only the
 newest ~3 files, so `pre_compaction_epoch_1.md` may already be gone. Always

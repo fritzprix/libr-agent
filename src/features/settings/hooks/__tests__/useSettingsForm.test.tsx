@@ -348,5 +348,71 @@ describe('useSettingsForm', () => {
     expect(result.current.dirtyState['ai-models']).toBe(true);
     expect(result.current.isDirty).toBe(true);
   });
-});
 
+  describe('uiScale', () => {
+    it('is never dirty and follows the live global value while another edit is pending', () => {
+      const { result, rerender } = renderHook(() => useSettingsForm());
+
+      act(() => {
+        result.current.updateDisplay('fontFamily', 'Inter');
+      });
+      expect(result.current.dirtyState.general).toBe(true);
+
+      act(() => {
+        currentGlobalSettings = {
+          ...cloneSettings(DEFAULT_SETTING),
+          display: { ...DEFAULT_SETTING.display, uiScale: 1.5 },
+        };
+        rerender();
+      });
+
+      expect(result.current.formState.display.uiScale).toBe(1.5);
+      expect(result.current.formState.display.fontFamily).toBe('Inter');
+      expect(result.current.dirtyState['chat-interface']).toBe(false);
+    });
+
+    it('does not mark general dirty when only the live scale changes, and save keeps it', async () => {
+      const { result, rerender } = renderHook(() => useSettingsForm());
+
+      act(() => {
+        result.current.update('windowSize', 50);
+      });
+      act(() => {
+        currentGlobalSettings = {
+          ...cloneSettings(DEFAULT_SETTING),
+          display: { ...DEFAULT_SETTING.display, uiScale: 0.9 },
+        };
+        rerender();
+      });
+
+      expect(result.current.dirtyState.general).toBe(false);
+
+      await act(async () => {
+        await result.current.save();
+      });
+      expect(mockUpdateGlobal).toHaveBeenCalledWith(
+        expect.objectContaining({
+          display: expect.objectContaining({ uiScale: 0.9 }),
+        }),
+      );
+    });
+
+    it('clears the draft when only the live scale differs from globals', () => {
+      const { result, rerender } = renderHook(() => useSettingsForm());
+
+      act(() => {
+        result.current.update('windowSize', 50);
+      });
+      act(() => {
+        currentGlobalSettings = {
+          ...cloneSettings(DEFAULT_SETTING),
+          windowSize: 50,
+          display: { ...DEFAULT_SETTING.display, uiScale: 1.25 },
+        };
+        rerender();
+      });
+
+      expect(result.current.isDirty).toBe(false);
+    });
+  });
+});

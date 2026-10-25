@@ -130,6 +130,7 @@ fn build_active_session(session_id: &str, messages: Vec<Message>) -> AgentSessio
         repeated_thinking_retry_count: Arc::new(RwLock::new(0)),
         repeated_text_loop_retry_count: Arc::new(RwLock::new(0)),
         reasoning_budget_retry_count: Arc::new(RwLock::new(0)),
+        malformed_tool_markup_retry_count: Arc::new(RwLock::new(0)),
         bad_tool_args_retry_count: Arc::new(RwLock::new(0)),
         bad_tool_args_incident_count: Arc::new(RwLock::new(0)),
         pending_events: Arc::new(RwLock::new(PendingEventManager::new())),

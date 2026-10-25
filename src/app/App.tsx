@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Route, Routes, Navigate } from 'react-router-dom';
-import { lazy, Suspense, useEffect } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef } from 'react';
 import { Toaster } from '../components/ui/sonner';
 import AppSidebar from '../components/layout/AppSidebar';
 import { ThemeToggle } from '../components/common/ThemeToggle';
@@ -18,6 +18,8 @@ import { GlobalEventProvider } from '@/context/GlobalEventContext';
 import { UpdateProvider } from '@/context/UpdateContext';
 import { useSettings } from '../context/SettingsContext';
 import { markStartupMilestone } from '@/lib/performance/startup-metrics';
+import { applyUiScale } from '@/lib/ui-scale';
+import { useUiScaleShortcuts } from '@/hooks/use-ui-scale-shortcuts';
 import { emitFrontendReadyOnce } from './frontend-ready';
 import { AppControlBridge } from '@/features/app-control/useAppControlBridge';
 import '../styles/globals.css';
@@ -77,7 +79,14 @@ const FONT_MAP: Record<string, { sans: string; mono?: string }> = {
 };
 
 function App() {
-  const { value: settings } = useSettings();
+  const { value: settings, isLoading, update } = useSettings();
+  // The provider reports loading=false before its first fetch; only trust the
+  // value once a load has finished, so the default never overwrites the saved scale.
+  const hasStartedLoading = useRef(false);
+  if (isLoading) {
+    hasStartedLoading.current = true;
+  }
+  const settingsReady = hasStartedLoading.current && !isLoading;
 
   useEffect(() => {
     markStartupMilestone('app-mounted');
@@ -110,6 +119,21 @@ function App() {
       document.documentElement.style.removeProperty('--app-font-mono');
     }
   }, [settings.display.fontFamily]);
+
+  useEffect(() => {
+    if (settingsReady) {
+      void applyUiScale(settings.display.uiScale);
+    }
+  }, [settingsReady, settings.display.uiScale]);
+
+  const handleUiScaleChange = useCallback(
+    (uiScale: number) => {
+      void applyUiScale(uiScale);
+      void update({ display: { ...settings.display, uiScale } });
+    },
+    [settings.display, update],
+  );
+  useUiScaleShortcuts(settings.display.uiScale, handleUiScaleChange);
 
   useEffect(() => {
     const colorTheme = settings.display.colorTheme || 'neutral';

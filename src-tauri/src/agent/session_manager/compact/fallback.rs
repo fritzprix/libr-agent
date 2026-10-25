@@ -1,4 +1,5 @@
 use super::summary::{extract_message_preview, COMPACTION_SUMMARY_TRUNCATION_SUFFIX};
+use super::CompactStreamMeta;
 use crate::agent::compaction_text::sanitize_compaction_semantic_text;
 use crate::agent::llm::completion::{
     build_compaction_preservation_hints, summarize_recent_tool_calls,
@@ -8,6 +9,7 @@ use crate::mcp::types::MCPContent;
 use crate::models::chat::Message;
 
 const COMPACTION_FALLBACK_ARTIFACT_DIR: &str = ".libragent/tool-results/compaction";
+pub(super) const COMPACTION_RAW_OUTPUT_FILE_PREFIX: &str = "raw-";
 const COMPACTION_FALLBACK_ARTIFACT_MESSAGE_LIMIT: usize = 12;
 const COMPACTION_FALLBACK_ACTIVE_REQUEST_LIMIT: usize = 4;
 const COMPACTION_FALLBACK_REFERENCE_LIMIT: usize = 5;
@@ -77,6 +79,72 @@ pub(super) fn compaction_fallback_artifact_relative_path(
         created_at,
         sanitize_fallback_identifier(&session_id.chars().take(8).collect::<String>()),
         sanitize_fallback_identifier(&to_id.chars().take(12).collect::<String>())
+    )
+}
+
+pub(super) fn compaction_raw_output_relative_path(
+    session_id: &str,
+    to_id: &str,
+    created_at: i64,
+) -> String {
+    format!(
+        "{}/{}{}-{}-{}.md",
+        COMPACTION_FALLBACK_ARTIFACT_DIR,
+        COMPACTION_RAW_OUTPUT_FILE_PREFIX,
+        created_at,
+        sanitize_fallback_identifier(&session_id.chars().take(8).collect::<String>()),
+        sanitize_fallback_identifier(&to_id.chars().take(12).collect::<String>())
+    )
+}
+
+pub(super) struct RawCompactionOutputDump<'a> {
+    pub session_id: &'a str,
+    pub to_id: &'a str,
+    pub reason: &'a str,
+    pub raw_output: &'a str,
+    pub raw_estimated_tokens: usize,
+    pub clamped_estimated_tokens: Option<usize>,
+    pub hard_limit_tokens: Option<usize>,
+    pub retry_count: u32,
+    pub model: &'a str,
+    pub stream_meta: Option<&'a CompactStreamMeta>,
+}
+
+fn format_optional_tokens(tokens: Option<usize>) -> String {
+    tokens.map_or_else(|| "n/a".to_string(), |tokens| tokens.to_string())
+}
+
+/// Header + verbatim raw LLM output. `finish_reason` and usage are not
+/// known to the backend yet, so they are recorded as unknown; the model comes
+/// from the session metadata.
+pub(super) fn build_compaction_raw_output_artifact(dump: &RawCompactionOutputDump<'_>) -> String {
+    format!(
+        "# Compaction raw output\n\n\
+         - Session: `{}`\n\
+         - Boundary message: `{}`\n\
+         - Reason: {}\n\
+         - finish_reason: {}\n\
+         - usage: {}\n\
+         - model: {}\n\
+         - Raw estimated tokens: {}\n\
+         - Clamped estimated tokens: {}\n\
+         - Hard limit tokens: {}\n\
+         - Summary retries used: {}\n\n\
+         ## Raw output\n\n{}\n",
+        dump.session_id,
+        dump.to_id,
+        truncate_for_fallback(dump.reason, COMPACTION_FALLBACK_MESSAGE_TEXT_LIMIT),
+        dump.stream_meta
+            .and_then(|meta| meta.finish_reason.as_deref())
+            .unwrap_or("unknown"),
+        dump.stream_meta
+            .map_or_else(|| "unknown".to_string(), CompactStreamMeta::describe_usage),
+        dump.model,
+        dump.raw_estimated_tokens,
+        format_optional_tokens(dump.clamped_estimated_tokens),
+        format_optional_tokens(dump.hard_limit_tokens),
+        dump.retry_count,
+        dump.raw_output
     )
 }
 
@@ -342,4 +410,41 @@ pub(super) fn build_compaction_hard_fallback_artifact(
     }
 
     lines.join("\n").trim().to_string()
+}
+
+#[cfg(test)]
+mod raw_output_tests {
+    use super::*;
+
+    #[test]
+    fn raw_output_path_uses_raw_prefix_in_fallback_dir() {
+        assert_eq!(
+            compaction_raw_output_relative_path("abcdef123456", "msg/1234567890123", 42),
+            ".libragent/tool-results/compaction/raw-42-abcdef12-msg-12345678.md"
+        );
+    }
+
+    #[test]
+    fn raw_output_artifact_keeps_output_verbatim_under_header() {
+        let artifact = build_compaction_raw_output_artifact(&RawCompactionOutputDump {
+            session_id: "s1",
+            to_id: "m9",
+            reason: "clamped to hard limit",
+            raw_output: "line one\n\n  indented <tool_call>",
+            raw_estimated_tokens: 900,
+            clamped_estimated_tokens: Some(100),
+            hard_limit_tokens: None,
+            retry_count: 2,
+            model: "gpt-4.1",
+            stream_meta: None,
+        });
+        assert!(artifact.contains("- finish_reason: unknown"));
+        assert!(artifact.contains("- usage: unknown"));
+        assert!(artifact.contains("- Reason: clamped to hard limit"));
+        assert!(artifact.contains("- model: gpt-4.1"));
+        assert!(artifact.contains("- Raw estimated tokens: 900"));
+        assert!(artifact.contains("- Hard limit tokens: n/a"));
+        assert!(artifact.contains("- Summary retries used: 2"));
+        assert!(artifact.ends_with("## Raw output\n\nline one\n\n  indented <tool_call>\n"));
+    }
 }

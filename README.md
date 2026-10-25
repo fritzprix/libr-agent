@@ -28,11 +28,11 @@ Many agent harnesses require you to edit JSON configuration files, use command-l
 
 LibrAgent provides a **desktop product** for these tasks:
 
-| Traditional Setup | With LibrAgent |
-| ----------------- | -------------- |
-| Edit MCP configuration files manually | **Extensions** — One-click presets (GitHub, Brave Search, Filesystem) and import from Cursor, VS Code, Claude Code, and Windsurf |
-| Assemble multi-agent systems from code | **Standard coordination patterns** as bundled skills (`pipeline`, `hub-spoke`, `divide-conquer`, `consensus-delegation`) |
-| Restricted to one provider model and toolset | **Choose your LLM** (API keys or local [Ollama](https://ollama.com)) and your tool stack with MIT, local-first architecture |
+| Traditional Setup                            | With LibrAgent                                                                                                                   |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Edit MCP configuration files manually        | **Extensions** — One-click presets (GitHub, Brave Search, Filesystem) and import from Cursor, VS Code, Claude Code, and Windsurf |
+| Assemble multi-agent systems from code       | **Standard coordination patterns** as bundled skills (`pipeline`, `hub-spoke`, `divide-conquer`, `consensus-delegation`)         |
+| Restricted to one provider model and toolset | **Choose your LLM** (API keys or local [Ollama](https://ollama.com)) and your tool stack with MIT, local-first architecture      |
 
 [Download the latest release](https://github.com/fritzprix/libr-agent/releases/latest) · [5-minute onboarding](#the-5-minute-onboarding-path)
 
@@ -70,20 +70,20 @@ LibrAgent provides a **desktop product** for these tasks:
 
 Select a pattern that matches the structure of your task, then execute it from the chat interface:
 
-| Skill | Pattern | When to use |
-| ----- | ------- | ----------- |
-| `pipeline` | Sequential stages | Output from each step supplies the next step (research → draft → review) |
-| `hub-spoke` | Hub-and-spoke | One coordinator delegates tasks to multiple specialized workers |
-| `divide-conquer` | Parallel split | Divide work into independent tasks, then merge the results |
-| `consensus-delegation` | Multi-perspective | Send the same question to multiple specialists, then reconcile differences |
-| `gatekeeper` / `pair-programming` | Review loops | Enforce strict code review or collaborative two-agent programming |
-| `delegate` | Lightweight handoff | Run one child session with lineage tracking |
-| `teamwork` → `org` | Persistent team | Create durable multi-agent teams with shared guidelines |
-| `schedule` / `loop` / `call-me-back` | Time & events | Execute cron schedules, in-session delays, or resume on process events |
+| Skill                                | Pattern             | When to use                                                                |
+| ------------------------------------ | ------------------- | -------------------------------------------------------------------------- |
+| `pipeline`                           | Sequential stages   | Output from each step supplies the next step (research → draft → review)   |
+| `hub-spoke`                          | Hub-and-spoke       | One coordinator delegates tasks to multiple specialized workers            |
+| `divide-conquer`                     | Parallel split      | Divide work into independent tasks, then merge the results                 |
+| `consensus-delegation`               | Multi-perspective   | Send the same question to multiple specialists, then reconcile differences |
+| `gatekeeper` / `pair-programming`    | Review loops        | Enforce strict code review or collaborative two-agent programming          |
+| `delegate`                           | Lightweight handoff | Run one child session with lineage tracking                                |
+| `teamwork` → `org`                   | Persistent team     | Create durable multi-agent teams with shared guidelines                    |
+| `schedule` / `loop` / `call-me-back` | Time & events       | Execute cron schedules, in-session delays, or resume on process events     |
 
 Selection heuristics: [framework-selection](src-tauri/bundled_skills/teamwork/references/framework-selection.md) · Full guide: [Sub-agents](docs/user/guides/sub-agents.md).
 
-Additional default skills: `setup-wizard`, `tool-installer`, `playbook-creator`, and more — **[Bundled Skills](docs/user/guides/skills.md)**.
+Additional default skills: `setup-wizard`, `mcp-installer`, `playbook-creator`, and more — **[Bundled Skills](docs/user/guides/skills.md)**.
 
 ---
 
@@ -91,18 +91,18 @@ Additional default skills: `setup-wizard`, `tool-installer`, `playbook-creator`,
 
 - Transports: stdio, HTTP, SSE, OAuth 2.1
 - 15+ built-in servers (Workspace, Shell, Browser, Knowledge, Planning, Scheduled Tasks, and others)
-- One-click presets and agent-assisted installation (`tool-installer`)
+- One-click presets and agent-assisted installation (`mcp-installer`)
 - Tool isolation per session, file path guards, command guards, and optional automated execution modes
 
 ### Execution substrate
 
-| Substrate     | Capabilities                                                                                         |
-| ------------- | ---------------------------------------------------------------------------------------------------- |
-| **Workspace** | Line-precise editing, multi-file operations, and `@file` / `@skill` / `@playbook` context            |
-| **Shell**     | Isolated and persistent terminal sessions with asynchronous process monitoring                       |
+| Substrate     | Capabilities                                                                                                                                                                                                                                                                 |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Workspace** | Line-precise editing, multi-file operations, and `@file` / `@skill` / `@playbook` context                                                                                                                                                                                    |
+| **Shell**     | Isolated and persistent terminal sessions with asynchronous process monitoring                                                                                                                                                                                               |
 | **Browser**   | Built-in agent browser by default. Optional [Chrome extension](https://chromewebstore.google.com/detail/libragent-browser-bridge/eponcjengahlpkgbaolhemhmckopmfbe) when the agent needs sites where you are already signed in ([guide](docs/user/guides/browser-sidecar.md)) |
-| **Knowledge** | Graph-based knowledge store and BM25 search                                                          |
-| **Export**    | Markdown reports and ATIF trajectory exports ([session export](docs/user/guides/session-export.md))  |
+| **Knowledge** | Graph-based knowledge store and BM25 search                                                                                                                                                                                                                                  |
+| **Export**    | Markdown reports and ATIF trajectory exports ([session export](docs/user/guides/session-export.md))                                                                                                                                                                          |
 
 Long-running sessions maintain stability through context compaction, loop prevention, circuit breakers, and stale-response protection.
 
@@ -150,10 +150,10 @@ Long-running sessions maintain stability through context compaction, loop preven
 Download the latest installer from the **[Releases page](https://github.com/fritzprix/libr-agent/releases/latest)**.
 
 <!-- RELEASE_DOWNLOADS_START -->
-- **Windows:** [`LibrAgent_0.9.27_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent_0.9.27_x64-setup.exe) · [`LibrAgent_0.9.27_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent_0.9.27_x64_en-US.msi)
-- **macOS (Apple Silicon):** [`LibrAgent_0.9.27_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent_0.9.27_aarch64.dmg)
-- **Linux:** [`LibrAgent_0.9.27_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent_0.9.27_amd64.AppImage) · [`LibrAgent_0.9.27_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent_0.9.27_amd64.deb) · [`LibrAgent-0.9.27-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent-0.9.27-1.x86_64.rpm)
-- **All release assets:** [Releases page](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.27)
+- **Windows:** [`LibrAgent_0.9.28_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.28/LibrAgent_0.9.28_x64-setup.exe) · [`LibrAgent_0.9.28_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.28/LibrAgent_0.9.28_x64_en-US.msi)
+- **macOS (Apple Silicon):** [`LibrAgent_0.9.28_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.28/LibrAgent_0.9.28_aarch64.dmg)
+- **Linux:** [`LibrAgent_0.9.28_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.28/LibrAgent_0.9.28_amd64.AppImage) · [`LibrAgent_0.9.28_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.28/LibrAgent_0.9.28_amd64.deb) · [`LibrAgent-0.9.28-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.28/LibrAgent-0.9.28-1.x86_64.rpm)
+- **All release assets:** [Releases page](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.28)
 <!-- RELEASE_DOWNLOADS_END -->
 
 ### The 5-minute onboarding path

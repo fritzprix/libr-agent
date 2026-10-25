@@ -697,19 +697,74 @@ fn delete_session_tool_schema_is_exposed() {
     );
 }
 
+fn transport_variants(
+    tool: &tauri_mcp_agent_lib::mcp::types::MCPTool,
+) -> Vec<tauri_mcp_agent_lib::mcp::schema::JSONSchema> {
+    let props = extract_object_properties(&tool.input_schema, &tool.name);
+    let transport = props
+        .get("transport")
+        .unwrap_or_else(|| panic!("{} input_schema must contain transport", tool.name));
+    transport
+        .one_of
+        .clone()
+        .unwrap_or_else(|| panic!("{} transport must be a oneOf of variants", tool.name))
+}
+
+fn object_required(schema: &tauri_mcp_agent_lib::mcp::schema::JSONSchema) -> Vec<String> {
+    match &schema.schema_type {
+        JSONSchemaType::Object { required, .. } => required.clone().unwrap_or_default(),
+        other => panic!("expected Object schema, got {other:?}"),
+    }
+}
+
+#[test]
+fn tool_transport_schema_requires_command_for_stdio_and_url_for_http() {
+    for tool in [
+        tool_tools::register_server_tool(),
+        tool_tools::update_server_tool(),
+    ] {
+        let variants = transport_variants(&tool);
+        assert_eq!(
+            variants.len(),
+            2,
+            "{}: expected stdio and http variants",
+            tool.name
+        );
+
+        let stdio = &variants[0];
+        let stdio_props = extract_object_properties(stdio, "stdio transport");
+        assert_eq!(
+            stdio_props.get("type").and_then(|t| t.const_value.clone()),
+            Some(json!("stdio")),
+            "{}: stdio variant must pin type to 'stdio'",
+            tool.name
+        );
+        assert!(object_required(stdio).contains(&"command".to_string()));
+        assert!(!stdio_props.contains_key("url"));
+
+        let http = &variants[1];
+        let http_props = extract_object_properties(http, "http transport");
+        assert_eq!(
+            http_props.get("type").and_then(|t| t.enum_values.clone()),
+            Some(vec![json!("http"), json!("http-sse")]),
+            "{}: http variant must accept http and http-sse",
+            tool.name
+        );
+        assert!(object_required(http).contains(&"url".to_string()));
+        assert!(!http_props.contains_key("command"));
+    }
+}
+
 #[test]
 fn tool_transport_schema_allows_env_and_header_maps() {
     let register_tool = tool_tools::register_server_tool();
-    let props = extract_object_properties(&register_tool.input_schema, "registerServer");
-    let transport = props
-        .get("transport")
-        .expect("register input_schema must contain transport");
-    let transport_props = extract_object_properties(transport, "transport");
+    let variants = transport_variants(&register_tool);
 
-    for key in ["env", "headers"] {
-        let field = transport_props
+    for (variant, key) in [(&variants[0], "env"), (&variants[1], "headers")] {
+        let variant_props = extract_object_properties(variant, "transport variant");
+        let field = variant_props
             .get(key)
-            .unwrap_or_else(|| panic!("transport schema missing '{key}'"));
+            .unwrap_or_else(|| panic!("transport variant missing '{key}'"));
 
         match &field.schema_type {
             JSONSchemaType::Object {
@@ -800,7 +855,7 @@ async fn media_deploy_assist_plugin_is_configured_in_sensitive_tools() {
 
     let decision = tauri_mcp_agent_lib::agent::tool_approvals::evaluate_tool_execution_policy(
         "media__deployAssistPlugin",
-        &serde_json::json!({ "files": [] }),
+        &json!({ "files": [] }),
     )
     .await;
     assert!(

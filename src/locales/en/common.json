@@ -508,6 +508,9 @@
       "uiVisualsTitle": "UI Visuals",
       "fontFamily": "Font Family",
       "fontFamilyDescription": "Change the default font family for the UI.",
+      "uiSize": "UI size",
+      "uiSizeDescription": "Scales the whole interface. Applies immediately. Shortcuts: Ctrl/Cmd +, -, 0.",
+      "uiSizeReset": "Reset to 100%",
       "messageLayout": "Message Layout",
       "messageLayoutDocument": "Document (full-width coding layout)",
       "messageLayoutBubble": "Bubble (classic chat bubbles)",
@@ -2007,6 +2010,11 @@
         "title": "Back up or move an Organization team",
         "body": "Export a team from Org as a .libragent-org bundle—including assistants, schedules, playbooks, and skills—and import it on another device.",
         "cta": "Open Org"
+      },
+      "uiSize": {
+        "title": "Adjust the UI size",
+        "body": "Scale the whole interface from Settings → General or press Ctrl/Cmd +, -, and 0 at any time.",
+        "cta": "Open General settings"
       }
     }
   }

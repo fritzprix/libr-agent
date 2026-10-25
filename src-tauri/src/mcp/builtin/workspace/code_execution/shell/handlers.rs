@@ -8,6 +8,7 @@ use crate::mcp::types::MCPResult;
 
 use super::super::super::{utils, WorkspaceServer, PERSISTENT_SHELL_TOOL};
 use super::super::validation;
+use super::input::ShellInput;
 use super::policy::{evaluate_shell_policy, ShellPolicyAction, ShellPolicyContext};
 
 impl WorkspaceServer {
@@ -60,6 +61,71 @@ impl WorkspaceServer {
         None
     }
 
+    /// Read exactly one of `command` / `script`; `script` is bash-only.
+    fn parse_run_shell_input<'a>(
+        &self,
+        args: &'a Value,
+        tool_name: &str,
+    ) -> Result<ShellInput<'a>, MCPResult> {
+        let command = args.get("command").and_then(|v| v.as_str());
+        let script = args.get("script").and_then(|v| v.as_str());
+        match (command, script) {
+            (Some(command), None) => Ok(ShellInput::Command(command)),
+            (None, Some(script)) => {
+                let is_powershell = tool_name == "runPowerShell"
+                    || self.code_tools_profile()
+                        == super::super::super::tools::CodeToolsProfile::HostWindows;
+                if is_powershell {
+                    return Err(guided_error(
+                        ErrorCategory::InvalidInput,
+                        "script is only supported for bash shells",
+                        ToolGroup::Workspace,
+                    )
+                    .guidance(validation::write_file_then_shell_guidance())
+                    .to_mcp_result());
+                }
+                if script.trim().is_empty() {
+                    return Err(missing_param_error("script", ToolGroup::Workspace));
+                }
+                let max_chars = super::super::super::tools::code_tools::RUN_SHELL_SCRIPT_MAX_CHARS;
+                if script.chars().count() > max_chars as usize {
+                    return Err(guided_error(
+                        ErrorCategory::InvalidInput,
+                        format!("script exceeds {max_chars} characters"),
+                        ToolGroup::Workspace,
+                    )
+                    .guidance(validation::write_file_then_shell_guidance())
+                    .to_mcp_result());
+                }
+                Ok(ShellInput::Script(script))
+            }
+            (Some(_), Some(_)) => Err(guided_error(
+                ErrorCategory::InvalidInput,
+                "Provide either command or script, not both",
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                "Use command for a one-line shell command.".to_string(),
+                "Use script for multi-line logic, loops, or nested quotes.".to_string(),
+            ])
+            .to_mcp_result()),
+            (None, None) => Err(missing_param_error("command", ToolGroup::Workspace)),
+        }
+    }
+
+    async fn validate_bash_syntax(&self, raw_command: &str) -> Option<MCPResult> {
+        let error = validation::check_bash_syntax(raw_command).await?;
+        Some(
+            guided_error(
+                ErrorCategory::InvalidInput,
+                error.summary(),
+                ToolGroup::Workspace,
+            )
+            .guidance(error.guidance())
+            .to_mcp_result(),
+        )
+    }
+
     fn sync_timeout_exceeded_result(&self, timeout_secs: u64, max_timeout: u64) -> MCPResult {
         let primary_shell = match self.code_tools_profile() {
             super::super::super::tools::CodeToolsProfile::HostWindows => "runPowerShell",
@@ -108,6 +174,9 @@ impl WorkspaceServer {
         };
 
         if let Some(result) = self.validate_windows_shell_syntax(raw_command) {
+            return Ok(result);
+        }
+        if let Some(result) = self.validate_bash_syntax(raw_command).await {
             return Ok(result);
         }
 
@@ -166,14 +235,18 @@ impl WorkspaceServer {
         session_id: &str,
         tool_name: &str,
     ) -> Result<MCPResult, String> {
-        let raw_command = match args.get("command").and_then(|v| v.as_str()) {
-            Some(cmd) => cmd,
-            None => {
-                return Ok(missing_param_error("command", ToolGroup::Workspace));
-            }
+        let input = match self.parse_run_shell_input(&args, tool_name) {
+            Ok(input) => input,
+            Err(result) => return Ok(result),
         };
+        let raw_command = input.text();
 
-        if let Some(result) = self.validate_windows_shell_syntax(raw_command) {
+        if matches!(input, ShellInput::Command(_)) {
+            if let Some(result) = self.validate_windows_shell_syntax(raw_command) {
+                return Ok(result);
+            }
+        }
+        if let Some(result) = self.validate_bash_syntax(raw_command).await {
             return Ok(result);
         }
 
@@ -212,47 +285,36 @@ impl WorkspaceServer {
         };
 
         let requested_cwd = args.get("cwd").and_then(|v| v.as_str());
-        if requested_cwd.is_some() && utils::is_session_docker_isolated(session_id).await {
-            return Ok(guided_error(
-                ErrorCategory::InvalidInput,
-                "cwd is not supported for Docker-isolated sessions",
-                ToolGroup::Workspace,
-            )
-            .guidance(vec![
-                "Chain directory changes in one command (e.g. 'cd subdir && command').".to_string(),
-                format!(
-                    "Or use {} for a sticky shell working directory.",
-                    PERSISTENT_SHELL_TOOL
-                ),
-            ])
-            .to_mcp_result());
-        }
-
-        let working_directory =
-            match utils::resolve_isolated_shell_cwd(&workspace_path, requested_cwd) {
-                Ok(cwd) => cwd,
-                Err(message) => {
-                    return Ok(guided_error(
-                        ErrorCategory::InvalidInput,
-                        message,
-                        ToolGroup::Workspace,
-                    )
-                    .guidance(vec![
-                        "Pass cwd as a path under the session workspace (relative or absolute)."
-                            .to_string(),
-                        "Create the directory first with workspace__createDirectory if needed."
-                            .to_string(),
-                    ])
-                    .to_mcp_result());
-                }
-            };
+        let (is_docker, docker_root) = utils::session_docker_root(session_id).await;
+        let cwd_result = if is_docker {
+            utils::resolve_docker_shell_cwd(&docker_root, requested_cwd)
+        } else {
+            utils::resolve_isolated_shell_cwd(&workspace_path, requested_cwd)
+        };
+        let working_directory = match cwd_result {
+            Ok(cwd) => cwd,
+            Err(message) => {
+                return Ok(guided_error(
+                    ErrorCategory::InvalidInput,
+                    message,
+                    ToolGroup::Workspace,
+                )
+                .guidance(vec![
+                    "Pass cwd as a path under the session workspace (relative or absolute)."
+                        .to_string(),
+                    "Create the directory first with workspace__createDirectory if needed."
+                        .to_string(),
+                ])
+                .to_mcp_result());
+            }
+        };
 
         // Policy after cwd resolve so relative path checks use the real working dir.
         if let Some(result) = self.apply_shell_policy_block(
             tool_name,
             raw_command,
             &workspace_path,
-            working_directory.as_deref(),
+            working_directory.as_deref().filter(|_| !is_docker),
             Some(&env_vars),
         ) {
             return Ok(result);
@@ -260,16 +322,21 @@ impl WorkspaceServer {
 
         // Execute with configured isolation level (workspace root unless cwd is set)
         let isolation_level = utils::get_shell_isolation_level().await;
-        self.execute_shell_with_isolation(
-            raw_command,
-            tool_name,
-            isolation_level,
-            timeout_secs,
-            session_id,
-            env_vars,
-            working_directory,
-        )
-        .await
+        let result = self
+            .execute_shell_with_isolation(
+                input,
+                tool_name,
+                isolation_level,
+                timeout_secs,
+                session_id,
+                env_vars,
+                working_directory,
+            )
+            .await;
+        if utils::is_session_docker_isolated(session_id).await {
+            install_skill_outbox(workspace_path).await;
+        }
+        result
     }
 
     /// Handle async shell execution (separate tool)
@@ -349,8 +416,23 @@ impl WorkspaceServer {
             return None;
         }
 
-        if self.unsafe_mode_bypasses_shell_policy() {
+        if !decision.enforced_in_unsafe && self.unsafe_mode_bypasses_shell_policy() {
             return None;
+        }
+
+        if decision.enforced_in_unsafe {
+            return Some(
+                guided_error(
+                    ErrorCategory::PermissionDenied,
+                    format!("Shell command blocked by policy: {}", decision.reason),
+                    ToolGroup::Workspace,
+                )
+                .guidance(vec![
+                    "Do not retry with another command, copy, link, or sudo: every route to this file is blocked, including in Unsafe mode".to_string(),
+                    "Use tool__* tools for MCP servers and agent__* tools for agents; skills go through the skill tools".to_string(),
+                ])
+                .to_mcp_result(),
+            );
         }
 
         Some(
@@ -367,6 +449,21 @@ impl WorkspaceServer {
             ])
             .to_mcp_result(),
         )
+    }
+}
+
+/// Installs skills that `skill.py deploy` staged in the workspace outbox (Docker sessions).
+async fn install_skill_outbox(workspace_path: std::path::PathBuf) {
+    let outcomes = tokio::task::spawn_blocking(move || {
+        crate::services::skill_service::install_outbox(&workspace_path)
+    })
+    .await
+    .unwrap_or_default();
+    for (name, outcome) in outcomes {
+        match outcome {
+            Ok(()) => tracing::info!("Installed staged user skill '{name}' from the Docker outbox"),
+            Err(reason) => tracing::warn!("Rejected staged user skill '{name}': {reason}"),
+        }
     }
 }
 
@@ -436,6 +533,7 @@ mod tests {
             bad_tool_args_retry_count: Arc::new(RwLock::new(0)),
             bad_tool_args_incident_count: Arc::new(RwLock::new(0)),
             reasoning_budget_retry_count: Arc::new(RwLock::new(0)),
+            malformed_tool_markup_retry_count: Arc::new(RwLock::new(0)),
             pending_events: Arc::new(RwLock::new(PendingEventManager::new())),
             pending_approvals: Arc::new(RwLock::new(HashMap::new())),
             context_registry: Arc::new(ContextRegistry::new()),
@@ -493,5 +591,41 @@ mod tests {
             result.is_none(),
             "unsafe mode should bypass shell policy blocks"
         );
+    }
+
+    #[tokio::test]
+    async fn unsafe_mode_still_blocks_app_database_access() {
+        let temp_dir = tempdir().expect("temp dir");
+        let session_id = "workspace-shell-unsafe-app-db";
+        register_unsafe_active_session(session_id).await;
+
+        let session_manager = Arc::new(
+            SessionManager::new_with_base_dir(temp_dir.path().to_path_buf())
+                .expect("session manager"),
+        );
+        let server = WorkspaceServer::new(session_id.to_string(), session_manager);
+        let workspace_path = temp_dir.path().join(session_id);
+        let db = dirs::data_dir()
+            .expect("data dir")
+            .join("com.fritzprix.libragent")
+            .join("libragent_v2.db");
+
+        let result = server.apply_shell_policy_block(
+            "runShell",
+            // Quoted like a real shell command: macOS data dirs contain a space.
+            &format!(
+                "sqlite3 '{}' 'select 1'",
+                db.display().to_string().replace('\'', "'\\''")
+            ),
+            &workspace_path,
+            None,
+            None,
+        );
+
+        let text = format!(
+            "{:?}",
+            result.expect("app database stays blocked in unsafe mode")
+        );
+        assert!(text.contains("LibrAgent's own database"), "{text}");
     }
 }

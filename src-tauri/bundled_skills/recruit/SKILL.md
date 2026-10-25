@@ -1,6 +1,9 @@
 ---
 name: recruit
-description: Analyze installed tools and existing assistant configurations to actively propose and create specialized LibrAgent assistants via agent__createAgent. Use when the user wants to recruit, create, or build a domain expert or specialist agent, utilizing a proactive "Architect" workflow that maps available inventory tools to functional gaps. Not for workspace agents.md (agent-init), teamwork/org, or registering MCP servers.
+description: >
+  Analyze installed tools and existing assistant configurations to actively propose and create specialized LibrAgent assistants via agent__createAgent. Use when the user wants to recruit, create, or build a domain expert or specialist agent, utilizing a proactive "Architect" workflow that maps available inventory tools to functional gaps.
+  Not for workspace agents.md (agent-init), teamwork/org, or registering MCP servers.
+  Triggers: "비서 하나 만들어줘", "전문 비서", "전문가 세팅해줘", "새 비서", "create an assistant", "make a specialist agent".
 ---
 
 # Recruit (The Architect)
@@ -16,7 +19,7 @@ Instead of passively asking the user what domain they want or waiting for exact 
 | **agent-init** | Generate `agents.md` / workspace guidelines |
 | **teamwork** / **org** | Persistent multi-agent task forces |
 | **delegate** | Spawn a child session with an existing assistant |
-| **tool-installer** | Register external MCP servers |
+| **mcp-installer** | Register external MCP servers |
 | **boost** | Analyze and optimize **existing** assistants (audit, prune, or augment) |
 
 ## Three Layers (Do Not Mix)

@@ -29,11 +29,11 @@
 
 LibrAgent は、これらの作業を直感的に解決する **完成されたデスクトップ製品** です：
 
-| 従来の課題 | LibrAgent のアプローチ |
-| ---------- | ---------------------- |
-| 複雑な MCP JSON 設定の手動編集 | **ワンクリック拡張機能** — GitHub、Brave Search、ファイルシステムなどのプリセット提供、および Cursor / VS Code / Claude Code からの設定インポート |
-| コードでの組み立てが必要なマルチエージェント | **標準協調パターンを内蔵** — `pipeline`、`hub-spoke`、`divide-conquer`、`consensus-delegation` などのバンドルスキル |
-| 特定ベンダーのモデル・ツールへの束縛 | **自由なスタック選択** — クラウド API からローカル [Ollama](https://ollama.com) まで自由に接続できる MIT ライセンス・ローカル優先設計 |
+| 従来の課題                                   | LibrAgent のアプローチ                                                                                                                            |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 複雑な MCP JSON 設定の手動編集               | **ワンクリック拡張機能** — GitHub、Brave Search、ファイルシステムなどのプリセット提供、および Cursor / VS Code / Claude Code からの設定インポート |
+| コードでの組み立てが必要なマルチエージェント | **標準協調パターンを内蔵** — `pipeline`、`hub-spoke`、`divide-conquer`、`consensus-delegation` などのバンドルスキル                               |
+| 特定ベンダーのモデル・ツールへの束縛         | **自由なスタック選択** — クラウド API からローカル [Ollama](https://ollama.com) まで自由に接続できる MIT ライセンス・ローカル優先設計             |
 
 [最新リリースをダウンロード](https://github.com/fritzprix/libr-agent/releases/latest) · [5分オンボーディング](#5分オンボーディングの手順)
 
@@ -71,20 +71,20 @@ LibrAgent は、これらの作業を直感的に解決する **完成された�
 
 タスクの特性に合わせた協調パターンを選択し、チャットから直接呼び出すことができます：
 
-| スキル名 | 協調パターン | 推奨用途 |
-| -------- | ------------ | -------- |
-| `pipeline` | 順次ステージ実行 | 前段の出力を次段の入力として順次処理（調査 → ドラフト → レビュー） |
-| `hub-spoke` | ハブ＆スポーク | 1 つの統合コーディネーターが複数の専門エージェントを総括管理 |
-| `divide-conquer` | 並列分割処理 | 独立したサブタスクに分割して並列実行し、結果をマージ |
-| `consensus-delegation` | 多角的比較分析 | 同一の課題を複数の専門エージェントに諮問し、合意を形成 |
-| `gatekeeper` / `pair-programming` | レビーループ | 厳格な品質レビューや 2 エージェントによるペアプログラミング |
-| `delegate` | 軽量タスク委任 | 単一の子セッションにタスクを委任し、系譜を追跡 |
-| `teamwork` → `org` | 永続プロジェクトチーム | 共有憲章と組織 UI（Org UI）に基づくチーム協調 |
-| `schedule` / `loop` / `call-me-back` | 時間・イベント駆動 | Cron スケジュール実行、セッション内遅延、外部イベントによる再開 |
+| スキル名                             | 協調パターン           | 推奨用途                                                           |
+| ------------------------------------ | ---------------------- | ------------------------------------------------------------------ |
+| `pipeline`                           | 順次ステージ実行       | 前段の出力を次段の入力として順次処理（調査 → ドラフト → レビュー） |
+| `hub-spoke`                          | ハブ＆スポーク         | 1 つの統合コーディネーターが複数の専門エージェントを総括管理       |
+| `divide-conquer`                     | 並列分割処理           | 独立したサブタスクに分割して並列実行し、結果をマージ               |
+| `consensus-delegation`               | 多角的比較分析         | 同一の課題を複数の専門エージェントに諮問し、合意を形成             |
+| `gatekeeper` / `pair-programming`    | レビーループ           | 厳格な品質レビューや 2 エージェントによるペアプログラミング        |
+| `delegate`                           | 軽量タスク委任         | 単一の子セッションにタスクを委任し、系譜を追跡                     |
+| `teamwork` → `org`                   | 永続プロジェクトチーム | 共有憲章と組織 UI（Org UI）に基づくチーム協調                      |
+| `schedule` / `loop` / `call-me-back` | 時間・イベント駆動     | Cron スケジュール実行、セッション内遅延、外部イベントによる再開    |
 
 選定ガイドライン: [フレームワーク選定基準](src-tauri/bundled_skills/teamwork/references/framework-selection.md) · 詳細ガイド: [サブエージェント](docs/user/guides/sub-agents.md)
 
-その他の初期スキル: `setup-wizard`、`tool-installer`、`playbook-creator` など — **[バンドルスキル一覧](docs/user/guides/skills.md)**
+その他の初期スキル: `setup-wizard`、`mcp-installer`、`playbook-creator` など — **[バンドルスキル一覧](docs/user/guides/skills.md)**
 
 ---
 
@@ -92,18 +92,18 @@ LibrAgent は、これらの作業を直感的に解決する **完成された�
 
 - **多彩なトランスポート**: stdio、HTTP、SSE、OAuth 2.1 をサポート
 - **15 以上の内蔵サーバー**: Workspace、Shell、Browser、Knowledge、Planning、Scheduled Tasks などを標準装備
-- **ワンクリックプリセットと対話型導入**: `tool-installer` によるエージェント支援型セットアップ
+- **ワンクリックプリセットと対話型導入**: `mcp-installer` によるエージェント支援型セットアップ
 - **強固なセッション分離**: セッションごとのツール分離、パスおよびコマンド実行ガード、安全な自動化モード
 
 ### コア実行インフラ
 
-| 実行領域 | 主要機能 |
-| -------- | -------- |
-| **Workspace** | 行単位の精密コード編集、複数ファイル一括操作、`@file` / `@skill` / `@playbook` コンテキスト注入 |
-| **Shell** | 分離された永続シェル環境およびバックグラウンドプロセスの非同期監視 |
-| **Browser** | 分離されたブラウザサイドカーおよび日常の Chrome セッションと連動する拡張ブリッジ |
-| **Knowledge** | ナレッジグラフと高速 BM25 ハイブリッド検索 |
-| **Export** | Markdown レポート出力および標準 ATIF セッション軌跡エクスポート（[セッションエクスポート](docs/user/guides/session-export.md)） |
+| 実行領域      | 主要機能                                                                                                                        |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| **Workspace** | 行単位の精密コード編集、複数ファイル一括操作、`@file` / `@skill` / `@playbook` コンテキスト注入                                 |
+| **Shell**     | 分離された永続シェル環境およびバックグラウンドプロセスの非同期監視                                                              |
+| **Browser**   | 分離されたブラウザサイドカーおよび日常の Chrome セッションと連動する拡張ブリッジ                                                |
+| **Knowledge** | ナレッジグラフと高速 BM25 ハイブリッド検索                                                                                      |
+| **Export**    | Markdown レポート出力および標準 ATIF セッション軌跡エクスポート（[セッションエクスポート](docs/user/guides/session-export.md)） |
 
 コンテキストの自動圧縮、無限ループ検知、サーキットブレーカー、応答バリデーションガードにより、長時間のセッションでも安定したパフォーマンスを維持します。
 
@@ -151,10 +151,10 @@ LibrAgent は、これらの作業を直感的に解決する **完成された�
 **[Releases ページ](https://github.com/fritzprix/libr-agent/releases/latest)**から最新のインストーラーをダウンロードしてください。
 
 <!-- RELEASE_DOWNLOADS_START -->
-- **Windows:** [`LibrAgent_0.9.27_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent_0.9.27_x64-setup.exe) · [`LibrAgent_0.9.27_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent_0.9.27_x64_en-US.msi)
-- **macOS (Apple Silicon):** [`LibrAgent_0.9.27_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent_0.9.27_aarch64.dmg)
-- **Linux:** [`LibrAgent_0.9.27_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent_0.9.27_amd64.AppImage) · [`LibrAgent_0.9.27_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent_0.9.27_amd64.deb) · [`LibrAgent-0.9.27-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.27/LibrAgent-0.9.27-1.x86_64.rpm)
-- **すべてのリリース資産:** [リリースページ](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.27)
+- **Windows:** [`LibrAgent_0.9.28_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.28/LibrAgent_0.9.28_x64-setup.exe) · [`LibrAgent_0.9.28_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.28/LibrAgent_0.9.28_x64_en-US.msi)
+- **macOS (Apple Silicon):** [`LibrAgent_0.9.28_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.28/LibrAgent_0.9.28_aarch64.dmg)
+- **Linux:** [`LibrAgent_0.9.28_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.28/LibrAgent_0.9.28_amd64.AppImage) · [`LibrAgent_0.9.28_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.28/LibrAgent_0.9.28_amd64.deb) · [`LibrAgent-0.9.28-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.28/LibrAgent-0.9.28-1.x86_64.rpm)
+- **すべてのリリース資産:** [リリースページ](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.28)
 <!-- RELEASE_DOWNLOADS_END -->
 
 ### 5分オンボーディングの手順

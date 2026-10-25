@@ -1,6 +1,7 @@
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{ContextVolatility, MCPResult, MCPTool, ServiceContext};
 use crate::repositories::assistant_repository::AssistantRepository;
+use crate::services::skill_service::SkillMetadata;
 use async_trait::async_trait;
 use log::{debug, warn};
 use serde_json::Value;
@@ -18,6 +19,55 @@ impl SkillsServer {
 }
 
 pub const NAME: &str = "skills";
+
+/// Renders the Available Skills context. In Docker sessions the host skill path
+/// does not exist in the container, so only the alias is shown (same
+/// `docker_session` rule as `format_skill_reference_block`).
+fn build_skills_prompt(skills: &[SkillMetadata], docker_session: bool) -> String {
+    let skills_xml = skills
+        .iter()
+        .map(|s| {
+            let source_attr = s
+                .source
+                .as_ref()
+                .map(|src| format!(" source=\"{}\"", src))
+                .unwrap_or_default();
+            let origin_attr = s
+                .origin
+                .as_ref()
+                .map(|origin| format!(" origin=\"{}\"", origin))
+                .unwrap_or_default();
+            let preferred_location = s.alias_path.as_deref().unwrap_or(&s.path);
+            let fallback_location = s
+                .alias_path
+                .as_ref()
+                .filter(|_| !docker_session)
+                .map(|_| format!("\n    <fallback_location>{}</fallback_location>", s.path))
+                .unwrap_or_default();
+            format!(
+                "  <skill{}{}>\n    <name>{}</name>\n    <description>{}</description>\n    <location>{}</location>{}\n  </skill>",
+                source_attr, origin_attr, s.name, s.description, preferred_location, fallback_location
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let fallback_guidance = if docker_session {
+        "This is a Docker session: read skills only through the <location> alias; host paths do not exist in the container.\n"
+    } else {
+        "When a <fallback_location> tag is present, use it only if alias access is unavailable.\n"
+    };
+    format!(
+        "## Available Skills\n\n\
+        You have access to the following skills. The <location> tag specifies the preferred documentation path for each skill.\n\
+        Managed skill aliases such as @system-skills/... and @user-skills/... are read-only references. \
+        {}\
+        To use a skill, you MUST first read its <location> file using `workspace__readFile`. \
+        Do not act from the description alone; read the file before any other tool call.\n\n\
+        <available_skills>\n{}\n</available_skills>",
+        fallback_guidance, skills_xml
+    )
+}
 
 #[async_trait]
 impl BuiltinMCPServer for SkillsServer {
@@ -138,43 +188,10 @@ impl BuiltinMCPServer for SkillsServer {
 
         debug!("Building skills context with {} skills", skills.len());
 
-        let skills_xml = skills
-            .iter()
-            .map(|s| {
-                let source_attr = s
-                    .source
-                    .as_ref()
-                    .map(|src| format!(" source=\"{}\"", src))
-                    .unwrap_or_default();
-                let origin_attr = s
-                    .origin
-                    .as_ref()
-                    .map(|origin| format!(" origin=\"{}\"", origin))
-                    .unwrap_or_default();
-                let preferred_location = s.alias_path.as_deref().unwrap_or(&s.path);
-                let fallback_location = s
-                    .alias_path
-                    .as_ref()
-                    .map(|_| format!("\n    <fallback_location>{}</fallback_location>", s.path))
-                    .unwrap_or_default();
-                format!(
-                    "  <skill{}{}>\n    <name>{}</name>\n    <description>{}</description>\n    <location>{}</location>{}\n  </skill>",
-                    source_attr, origin_attr, s.name, s.description, preferred_location, fallback_location
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        let prompt = format!(
-            "## Available Skills\n\n\
-            You have access to the following skills. The <location> tag specifies the preferred documentation path for each skill.\n\
-            Managed skill aliases such as @system-skills/... and @user-skills/... are read-only references. \
-            When a <fallback_location> tag is present, use it only if alias access is unavailable.\n\
-            To use a skill, you MUST first read its <location> file using `workspace__readFile`. \
-            Do not act from the description alone; read the file before any other tool call.\n\n\
-            <available_skills>\n{}\n</available_skills>",
-            skills_xml
-        );
+        let docker_session =
+            crate::mcp::builtin::workspace::utils::is_session_docker_isolated(&self.session_id)
+                .await;
+        let prompt = build_skills_prompt(&skills, docker_session);
 
         ServiceContext::new(prompt)
             .with_structured_state(serde_json::json!({
@@ -182,5 +199,39 @@ impl BuiltinMCPServer for SkillsServer {
                 "skills": skills,
             }))
             .with_volatility(ContextVolatility::Stable)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn aliased_skill() -> SkillMetadata {
+        SkillMetadata {
+            name: "delegate".to_string(),
+            description: "Delegate work".to_string(),
+            path: "/home/u/.local/share/libragent/skills/delegate/SKILL.md".to_string(),
+            alias_path: Some("@system-skills/delegate/SKILL.md".to_string()),
+            source: None,
+            origin: None,
+        }
+    }
+
+    #[test]
+    fn host_mode_keeps_fallback_location() {
+        let prompt = build_skills_prompt(&[aliased_skill()], false);
+        assert!(prompt.contains("<location>@system-skills/delegate/SKILL.md</location>"));
+        assert!(prompt.contains(
+            "<fallback_location>/home/u/.local/share/libragent/skills/delegate/SKILL.md</fallback_location>"
+        ));
+        assert!(prompt.contains("use it only if alias access is unavailable"));
+    }
+
+    #[test]
+    fn docker_mode_shows_only_the_alias() {
+        let prompt = build_skills_prompt(&[aliased_skill()], true);
+        assert!(prompt.contains("<location>@system-skills/delegate/SKILL.md</location>"));
+        assert!(!prompt.contains("fallback_location"));
+        assert!(!prompt.contains("/home/u/.local/share/libragent"));
     }
 }

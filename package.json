@@ -1,7 +1,7 @@
 {
   "name": "libragent",
   "private": true,
-  "version": "0.9.27",
+  "version": "0.9.28",
   "description": "A local agent operating environment — pick your model, install tools like apps, run coordination patterns; work stays on your machine",
   "author": "fritzprix",
   "license": "MIT",
@@ -110,6 +110,14 @@
     "bench:compaction:cascade": "node scripts/run-harbor-bench.cjs --preset dataset --dataset fritzprix/libragent-compaction-fact-recall-1@v0.5 --include *cascade*",
     "bench:compaction:mutchain": "node scripts/run-harbor-bench.cjs --preset dataset --dataset fritzprix/libragent-compaction-fact-recall-1@v0.5 --include *mutchain*",
     "bench:compaction:codesweep": "node scripts/run-harbor-bench.cjs --preset dataset --dataset fritzprix/libragent-compaction-fact-recall-1@v0.5 --include *codesweep*",
+    "bench:layman": "node scripts/run-harbor-bench.cjs --isolated --preset path --path benchmarks/harbor/libragent-layman-intent",
+    "bench:layman:managed": "node scripts/run-harbor-bench.cjs --isolated --workspace-mode managed --preset path --path benchmarks/harbor/libragent-layman-intent",
+    "bench:layman:host": "node scripts/run-harbor-bench.cjs --isolated --workspace-mode host --preset path --path benchmarks/harbor/libragent-layman-intent",
+    "bench:layman:all": "node scripts/run-harbor-bench.cjs --isolated --workspace-mode all --preset path --path benchmarks/harbor/libragent-layman-intent",
+    "bench:layman:n1": "node scripts/run-harbor-bench.cjs --isolated --preset path --path benchmarks/harbor/libragent-layman-intent --n-tasks 1",
+    "bench:instance:seed": "python -m benchmarks.harbor.isolated_instance seed --port 3031",
+    "bench:instance:launch": "python -m benchmarks.harbor.isolated_instance launch --app-bin src-tauri/target/release/libragent",
+    "bench:instance:stop": "python -m benchmarks.harbor.isolated_instance stop",
     "bench:knowledge-bridge": "bash scripts/run-knowledge-bridge-bench.sh",
     "bench:knowledge-bridge:hub": "bash scripts/run-knowledge-bridge-bench.sh --hub",
     "bench:knowledge-bridge:dry": "bash scripts/run-knowledge-bridge-bench.sh --dry-run",
@@ -224,6 +232,7 @@
     "vite": "^6.0.3",
     "vite-plugin-top-level-await": "^1.6.0",
     "vite-plugin-wasm": "^3.5.0",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "yaml": "2.8.0"
   }
 }

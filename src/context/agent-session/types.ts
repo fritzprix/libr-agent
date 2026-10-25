@@ -10,6 +10,9 @@ import type {
   WorkflowCompletionReason,
 } from '@/models/agent-ipc';
 
+/** Why a session pane learned its session no longer exists. */
+export type SessionGoneReason = 'deleted' | 'not_found';
+
 export type AgentEventPayload =
   | { type: 'workflowStarted'; sessionId: string }
   | {

@@ -5,7 +5,7 @@ description: 'stdio·HTTP 커스텀 MCP 서버를 등록하고 헤더·환경 �
 
 # 커스텀 MCP 설치
 
-> 추천 목록에 없는 MCP를 **Add Extension**으로 직접 등록하거나, 에이전트에게 `@skill:tool-installer`로 맡기는 방법입니다.  
+> 추천 목록에 없는 MCP를 **Add Extension**으로 직접 등록하거나, 에이전트에게 `@skill:mcp-installer`로 맡기는 방법입니다.  
 > 추천 프리셋만 쓰려면 [Extensions로 MCP 설치하기](extensions.md)를 보세요.
 
 ---
@@ -69,26 +69,32 @@ description: 'stdio·HTTP 커스텀 MCP 서버를 등록하고 헤더·환경 �
 
 ---
 
-## 방법 B — 에이전트: `@skill:tool-installer`
+## 방법 B — 에이전트: `@skill:mcp-installer`
 
 채팅에서:
 
 ```
-@skill:tool-installer
+@skill:mcp-installer
 npx로 @modelcontextprotocol/server-everything 를 LibrAgent에 등록해줘.
 ```
 
 ```
-@skill:tool-installer
+@skill:mcp-installer
 Cursor에 있는 MCP 설정을 읽어서 LibrAgent에 가져와줘.
 ```
 
 이 스킬이 하는 일:
 
-- 패키지·GitHub·JSON 설정으로 Extensions에 **직접 등록**
+- 패키지·GitHub·JSON 설정으로 Extensions에 **직접 등록** (추천 카탈로그에 있는 프리셋을 먼저 확인)
 - Cursor / VS Code / Windsurf / Claude Desktop 등 **설정 파일에서 가져와 비교·등록**
+- 등록 후 `tool__verifyServer`로 **실제 연결을 확인**하고, 실패하면 원인(런타임 없음, API 키 누락 등)을 알려 줌
+- 연결 확인이 끝나면 지금 대화 중인 어시스턴트에 바로 연결할지 물어보고 안내함
 
-자세한 절차는 번들 스킬 `tool-installer` 본문을 따릅니다. ([스킬 카탈로그](skills.md))
+추천 카탈로그의 기본 프리셋 그대로 설치할 때는 별도 승인 없이 바로 등록됩니다. 그 외 외부 패키지나 직접 수정한 MCP 서버를 등록·변경할 때는 앱이 실행할 명령(또는 URL)을 보여 주고 **승인을 받습니다.** YOLO 모드에서도 이 승인은 건너뛰지 않습니다. MCP 서버는 내 컴퓨터에서 임의 명령을 실행하기 때문입니다.
+
+GitHub 주소를 주면 에이전트가 먼저 내용을 확인합니다. `SKILL.md`가 있으면 스킬이므로 `skill-deployer`로, MCP 서버 패키지면 이 스킬로 설치합니다.
+
+자세한 절차는 번들 스킬 `mcp-installer` 본문을 따릅니다. ([스킬 카탈로그](skills.md))
 
 일상적으로는 **방법 A(Add Extension UI)** 를 먼저 쓰세요. 에이전트 설치는 마이그레이션·일괄 등록에 유리합니다.
 

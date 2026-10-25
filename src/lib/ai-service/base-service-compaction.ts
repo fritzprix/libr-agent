@@ -1,6 +1,7 @@
 import type { Message } from '@/models/chat';
 import { AIServiceError, type AIServiceProvider } from './types';
 import type { CompactOptions } from './base-service-shared';
+import type { CompactStreamMeta } from './service-contracts';
 
 const COMPACTION_CONTAMINATION_SENTINEL = '<tool_call>';
 const COMPACTION_TOOL_MARKUP_PATTERNS = [
@@ -12,6 +13,19 @@ const COMPACTION_TOOL_MARKUP_PATTERNS = [
   /"function_call"\s*:/i,
   /"tool_call_starts"\s*:/i,
 ] as const;
+
+const partialOutputByError = new WeakMap<object, string>();
+
+/**
+ * Text received before a compaction stream failed or was aborted, so the
+ * backend can save it verbatim for tuning the compaction prompt.
+ */
+export function getCompactionPartialOutput(error: unknown): string | undefined {
+  if (typeof error !== 'object' || error === null) {
+    return undefined;
+  }
+  return partialOutputByError.get(error);
+}
 
 interface CompactionContext {
   options?: CompactOptions;
@@ -120,6 +134,7 @@ export async function compactMessages(
   });
 
   let summaryText = '';
+  const streamMeta: CompactStreamMeta = {};
   let abortedForContamination = false;
   try {
     for await (const chunk of streamGenerator) {
@@ -132,6 +147,22 @@ export async function compactMessages(
         parsedChunk = JSON.parse(chunk);
       } catch {
         parsedChunk = { content: chunk };
+      }
+
+      if (typeof parsedChunk.finishReason === 'string') {
+        streamMeta.finishReason = parsedChunk.finishReason;
+      }
+      const usage = parsedChunk.usage as Record<string, unknown> | undefined;
+      if (usage && typeof usage === 'object') {
+        if (typeof usage.promptTokens === 'number') {
+          streamMeta.promptTokens = usage.promptTokens;
+        }
+        if (typeof usage.completionTokens === 'number') {
+          streamMeta.completionTokens = usage.completionTokens;
+        }
+        if (typeof usage.totalTokens === 'number') {
+          streamMeta.totalTokens = usage.totalTokens;
+        }
       }
 
       const toolPayloadMarker = detectParsedChunkToolCallPayload(parsedChunk);
@@ -161,9 +192,16 @@ export async function compactMessages(
         summaryText = nextSummaryText;
       }
     }
+  } catch (error) {
+    if (summaryText && typeof error === 'object' && error !== null) {
+      partialOutputByError.set(error, summaryText);
+    }
+    throw error;
   } finally {
     upstreamAbortSignal?.removeEventListener('abort', abortFromUpstream);
   }
+
+  context.options?.onStreamMeta?.(streamMeta);
 
   if (abortedForContamination) {
     return summaryText.trim();

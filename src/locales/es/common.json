@@ -501,6 +501,9 @@
       "uiVisualsTitle": "Aspecto visual de la interfaz",
       "fontFamily": "Familia tipográfica",
       "fontFamilyDescription": "Cambie la familia tipográfica predeterminada de la interfaz.",
+      "uiSize": "Tamaño de la interfaz",
+      "uiSizeDescription": "Escala toda la interfaz. Se aplica de inmediato. Atajos: Ctrl/Cmd +, -, 0.",
+      "uiSizeReset": "Restablecer al 100 %",
       "messageLayout": "Diseño de mensajes",
       "messageLayoutDocument": "Documento (diseño de ancho completo)",
       "messageLayoutBubble": "Burbujas (chat clásico)",
@@ -1995,6 +1998,11 @@
         "title": "Respalda o traslada un equipo de Org",
         "body": "Exporta un equipo desde Org como paquete .libragent-org —con asistentes, tareas programadas, playbooks y skills— e impórtalo en otro dispositivo.",
         "cta": "Abrir Org"
+      },
+      "uiSize": {
+        "title": "Ajustar el tamaño de la interfaz",
+        "body": "Escala toda la interfaz en Ajustes → General o con los atajos Ctrl/Cmd +, - y 0 en cualquier momento.",
+        "cta": "Abrir General"
       }
     }
   }

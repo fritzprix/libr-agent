@@ -30,10 +30,13 @@ pub use compact::build_compaction_hard_fallback_summary_for_testing;
 pub use compact::clamp_compact_summary_to_context_limit;
 pub use compact::clear_message_prompt_token_checkpoint_for_testing;
 pub use compact::compaction_fallback_artifact_relative_path_for_testing;
+pub use compact::dump_partial_compaction_output_if_any;
+pub use compact::dump_raw_compaction_output_if_needed;
 pub use compact::handle_compact_error_with_dispatcher;
 pub use compact::should_retry_budget_related_blocking_compaction;
 pub use compact::validate_compact_summary_for_testing;
 pub use compact::CompactContextView;
+pub use compact::CompactStreamMeta;
 pub use compact::CompactSummaryClampResult;
 
 use crate::agent::repositories::AgentRepositories;
@@ -428,6 +431,7 @@ impl AgentSessionManager {
 
     /// Terminate a running workflow
     pub async fn terminate_session(&self, session_id: String) -> Result<(), String> {
+        crate::server::wake::revoke_wake_token(&session_id);
         crate::agent::workflow::terminate_session(
             &self.session_repo,
             &self.active_sessions,
@@ -669,14 +673,19 @@ impl AgentSessionManager {
     /// Use `delete_session_only` when descendants should remain as top-level
     /// sessions instead of being deleted.
     pub async fn delete_session(&self, session_id: String) -> Result<Vec<String>, String> {
-        crate::agent::lifecycle::delete_session(
+        crate::server::wake::revoke_wake_token(&session_id);
+        let deleted_ids = crate::agent::lifecycle::delete_session(
             &self.session_repo,
             &self.active_sessions,
             &self.proxy_manager,
             &self.app_handle,
             session_id,
         )
-        .await
+        .await?;
+        for id in &deleted_ids {
+            crate::server::wake::revoke_wake_token(id);
+        }
+        Ok(deleted_ids)
     }
 
     /// Delete only this session, leaving children as orphaned top-level sessions.
@@ -684,6 +693,7 @@ impl AgentSessionManager {
         &self,
         session_id: String,
     ) -> Result<(String, Vec<String>), String> {
+        crate::server::wake::revoke_wake_token(&session_id);
         crate::agent::lifecycle::delete_session_only(
             &self.session_repo,
             &self.active_sessions,
@@ -793,6 +803,7 @@ impl AgentSessionManager {
         to_id: String,
         compacted_delta_count: usize,
         summary: String,
+        stream_meta: Option<compact::CompactStreamMeta>,
     ) -> Result<compact::CompactResponseOutcome, String> {
         compact::handle_compact_response(compact::CompactResponseParams {
             active_sessions: &self.active_sessions,
@@ -803,6 +814,7 @@ impl AgentSessionManager {
             to_id,
             compacted_delta_count,
             summary,
+            stream_meta,
         })
         .await
     }
@@ -812,6 +824,7 @@ impl AgentSessionManager {
         &self,
         session_id: String,
         error: crate::agent::llm::types::AgentRuntimeError,
+        partial_output: Option<String>,
     ) -> Result<(), String> {
         let dispatcher = TauriEventDispatcher::new(self.app_handle.clone());
         handle_compact_error_with_dispatcher(
@@ -822,6 +835,7 @@ impl AgentSessionManager {
             &dispatcher,
             session_id,
             error,
+            partial_output,
         )
         .await
     }

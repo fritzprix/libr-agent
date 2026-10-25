@@ -5,7 +5,8 @@ Save as `tasks.md`. Rank and keep each item minimal.
 ```markdown
 ## Ranked tasks
 
-### T1 — <title>  `[blocker|major|nit]`
+### T1 — <title> `[blocker|major|nit]`
+
 - **Class:** contract_lie | handler_bug | …
 - **Evidence:** report-raw / messages quote; code path if already known
 - **Owning paths:** e.g. chrome-extension/service_worker.js, …/bridge.rs

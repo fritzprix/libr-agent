@@ -46,6 +46,16 @@ export interface MCPServerConfig {
   transport: TransportConfig;
   authentication?: OAuthConfig;
   metadata?: ServerMetadata;
+  /** Set by agent installs (`tool__registerServer` / `tool__updateServer`). */
+  provenance?: ServerProvenance;
+}
+
+export interface ServerProvenance {
+  source: 'catalog' | 'external';
+  /** Catalog preset name when `source` is `catalog`. */
+  preset?: string;
+  /** Unix epoch milliseconds. */
+  recordedAt: number;
 }
 
 /**

@@ -7,7 +7,9 @@ import {
   AIServiceFactory,
   resolveProviderRuntimeConfig,
 } from '@/lib/ai-service';
+import { getCompactionPartialOutput } from '@/lib/ai-service/base-service-compaction';
 import { summarizeCompactionRequestSizes } from '@/lib/ai-service/request-ingredients';
+import type { CompactStreamMeta } from '@/lib/ai-service/service-contracts';
 import type { AIContextCompactionService } from '@/lib/ai-service/types';
 import { normalizeRustMessage } from '@/lib/ai-service/utils';
 import { getLogger } from '@/lib/logger';
@@ -126,17 +128,22 @@ export async function setupCompactRequestListener({
             maxTokens: compactRuntimeConfig.maxTokens,
           },
         );
+        let streamMeta: CompactStreamMeta | undefined;
         const summary = await service.compact(messages, {
           modelName: model,
           systemPrompt,
           availableTools,
           config: compactRuntimeConfig,
+          onStreamMeta: (meta) => {
+            streamMeta = meta;
+          },
         });
         const response = await handleCompactResponse(
           sessionId,
           toId,
           compactedDeltaCount,
           summary,
+          streamMeta,
         );
         if (response.data?.retried) {
           compactionRetrySessions.add(sessionId);
@@ -184,7 +191,11 @@ export async function setupCompactRequestListener({
             maxTokens: runtimeConfig.maxTokens,
           },
         );
-        await handleCompactError(sessionId, compactRuntimeError);
+        await handleCompactError(
+          sessionId,
+          compactRuntimeError,
+          getCompactionPartialOutput(error),
+        );
       }
     },
   );

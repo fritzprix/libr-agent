@@ -155,11 +155,14 @@ pub(super) fn media_local_path_error_category(error: &str) -> ErrorCategory {
 }
 
 /// Map/sync a workspace-local media path and read its bytes.
+///
+/// Returns `(bytes, resolved_host_path)` so callers can reuse the existing file
+/// as a `file://` URI instead of copying into `.libr-media/`.
 pub(super) async fn read_workspace_media_bytes(
     raw_path: &Path,
     workspace_dir: &Path,
     session_id: &str,
-) -> Result<Vec<u8>, MCPResult> {
+) -> Result<(Vec<u8>, std::path::PathBuf), MCPResult> {
     let resolved = match prepare_local_media_path(raw_path, workspace_dir, session_id).await {
         Ok(path) => path,
         Err(e) => {
@@ -170,7 +173,7 @@ pub(super) async fn read_workspace_media_bytes(
         }
     };
     match read_local_bytes(&resolved).await {
-        Ok(data) => Ok(data),
+        Ok(data) => Ok((data, resolved)),
         Err(e) => {
             Err(guided_error(ErrorCategory::ResourceNotFound, e, ToolGroup::Media).to_mcp_result())
         }

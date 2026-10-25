@@ -89,6 +89,13 @@ Create a weekly-notes skill and validate it strictly.
 Deploy weekly-notes to this project (workspace).
 ```
 
+You can also install a skill directly from a GitHub repository or subfolder URL:
+
+```
+@skill:skill-deployer
+Install the skill from https://github.com/owner/repo/tree/main/skills/my-skill for my whole account (global).
+```
+
 - Unsure where it should live? Choose **this project (workspace)**.
 - Do **not** deploy into the app’s built-in area — the app may clear it.
 - For an assistant-only skill, tell deployer **which assistant**.
@@ -101,7 +108,7 @@ Chat `@skill:` autocomplete is the freshest list. Common names:
 
 ### Setup and environment
 
-`setup-wizard`, `tool-installer`, `agent-init`, `computer-diagnosis`
+`setup-wizard`, `mcp-installer`, `agent-init`, `computer-diagnosis`
 
 ### Multi-agent and orchestration
 
@@ -133,7 +140,7 @@ How to split work across child sessions: [Sub-agents & orchestration](sub-agents
 | ------------------------------ | ------------------------------------------------------- |
 | Install runtimes               | `@skill:setup-wizard` + App Wizard                      |
 | Recommended MCP                | [Extensions](extensions.md)                             |
-| Custom MCP                     | [Custom MCP](custom-mcp.md) · `@skill:tool-installer`   |
+| Custom MCP                     | [Custom MCP](custom-mcp.md) · `@skill:mcp-installer`    |
 | Turn a procedure into a skill  | `skill-creator` → `skill-deployer`                      |
 | Child sessions / teams         | [Sub-agents guide](sub-agents.md)                       |
 | Recover pre-compaction context | `@skill:context-recall`                                 |

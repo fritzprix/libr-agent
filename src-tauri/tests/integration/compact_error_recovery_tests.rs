@@ -3,7 +3,9 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
-use tauri_mcp_agent_lib::agent::compact_recovery::handle_compact_error_state;
+use tauri_mcp_agent_lib::agent::compact_recovery::{
+    handle_compact_error_state, handle_compact_error_state_with_raw_output,
+};
 use tauri_mcp_agent_lib::agent::concurrency::{
     ConcurrencyGate, DEFAULT_MAX_ACTIVE_AGENTS, DEFAULT_MAX_ACTIVE_PROCESSES,
     DEFAULT_MAX_SUSPENDED_AGENTS, DEFAULT_MAX_SUSPENDED_PROCESSES,
@@ -137,6 +139,7 @@ fn build_agent_session(
         bad_tool_args_retry_count: Arc::new(RwLock::new(0)),
         bad_tool_args_incident_count: Arc::new(RwLock::new(0)),
         reasoning_budget_retry_count: Arc::new(RwLock::new(0)),
+        malformed_tool_markup_retry_count: Arc::new(RwLock::new(0)),
         pending_events: Arc::new(RwLock::new(PendingEventManager::new())),
         pending_approvals: Arc::new(RwLock::new(HashMap::new())),
         context_registry: Arc::new(ContextRegistry::new()),
@@ -283,6 +286,57 @@ async fn manual_compact_failure_clears_flags_without_failing_workflow() {
 
     assert_eq!(dispatcher.compact_states().len(), 1);
     assert!(dispatcher.agent_events().is_empty());
+}
+
+#[tokio::test]
+async fn compact_failure_records_raw_output_path_on_failed_telemetry() {
+    init_runtime_primitives();
+
+    let session_id = "compact-error-raw-output";
+    let metadata = build_session_metadata(session_id, SessionStatus::Busy);
+    let repo = Arc::new(InMemorySessionRepository::new());
+    repo.upsert_session(&metadata)
+        .await
+        .expect("session upsert should succeed");
+    let session_repo: Arc<dyn SessionRepository> = repo.clone();
+
+    let active_sessions = Arc::new(RwLock::new(HashMap::from([(
+        session_id.to_string(),
+        build_agent_session(metadata.clone(), false),
+    )])));
+    let dispatcher = RecordingDispatcher::default();
+    let raw_path = ".libragent/tool-results/compaction/raw-1-compact-e-tail.md";
+
+    handle_compact_error_state_with_raw_output(
+        &session_repo,
+        &active_sessions,
+        &dispatcher,
+        session_id.to_string(),
+        AgentRuntimeError::new(AgentRuntimeErrorType::AiServiceError, "stream dropped"),
+        Some(raw_path.to_string()),
+    )
+    .await
+    .expect("compact error handling should succeed");
+
+    let compaction = {
+        let active = active_sessions.read().await;
+        active
+            .get(session_id)
+            .expect("active session should exist")
+            .compaction
+            .clone()
+    };
+    let events = compaction.telemetry_events().await;
+    let failed = events
+        .iter()
+        .find(|event| {
+            matches!(
+                event.phase,
+                tauri_mcp_agent_lib::agent::compaction_telemetry::CompactionTelemetryPhase::Failed
+            )
+        })
+        .expect("a Failed telemetry event should be recorded");
+    assert_eq!(failed.raw_output_path.as_deref(), Some(raw_path));
 }
 
 #[test]

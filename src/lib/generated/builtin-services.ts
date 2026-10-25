@@ -51,8 +51,7 @@ export const ALL_BUILTIN_SERVICE_ALIASES = [
   'desktop',
 ] as const;
 
-export type BuiltinServiceAlias =
-  (typeof ALL_BUILTIN_SERVICE_ALIASES)[number];
+export type BuiltinServiceAlias = (typeof ALL_BUILTIN_SERVICE_ALIASES)[number];
 
 /** Core builtin services (optional: false in Rust) */
 export const CORE_BUILTIN_SERVICE_ALIASES = [

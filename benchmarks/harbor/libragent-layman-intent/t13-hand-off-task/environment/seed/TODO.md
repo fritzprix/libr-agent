@@ -1,0 +1,1 @@
+- data/sales.csv 를 월별 합계 표로 정리해서 data/monthly.md 로 저장

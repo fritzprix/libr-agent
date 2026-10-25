@@ -82,7 +82,7 @@ pub async fn handle_listen_content(
             },
             ContentSource::LocalFile(raw_path) => {
                 match read_workspace_media_bytes(&raw_path, &workspace_dir, &session_id).await {
-                    Ok(data) => (data, None),
+                    Ok((data, _resolved_path)) => (data, None),
                     Err(result) => return Ok(result),
                 }
             }

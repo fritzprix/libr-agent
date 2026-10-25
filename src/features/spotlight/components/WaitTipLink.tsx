@@ -3,7 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { ExternalLink, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { dismissSpotlight, loadSpotlightState, saveSpotlightState } from '../spotlight-state';
+import {
+  dismissSpotlight,
+  loadSpotlightState,
+  saveSpotlightState,
+} from '../spotlight-state';
 import { runSpotlightCta } from '../run-spotlight-cta';
 import type { Spotlight } from '../types';
 
@@ -67,7 +71,10 @@ export function WaitTipLink({ tip, className = '' }: WaitTipLinkProps) {
     >
       <span className="truncate">{label}</span>
       {pending ? (
-        <Loader2 className="h-3 w-3 shrink-0 animate-spin opacity-70" aria-hidden />
+        <Loader2
+          className="h-3 w-3 shrink-0 animate-spin opacity-70"
+          aria-hidden
+        />
       ) : (
         <ExternalLink className="h-3 w-3 shrink-0 opacity-70" aria-hidden />
       )}

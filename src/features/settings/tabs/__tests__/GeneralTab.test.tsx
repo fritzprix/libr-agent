@@ -121,4 +121,27 @@ describe('GeneralTab', () => {
     expect(amberRadio).toHaveAttribute('aria-checked', 'true');
     expect(neutralRadio).toHaveAttribute('aria-checked', 'false');
   });
+
+  it('reports UI size choices and reset through onUiScaleChange', () => {
+    const onUiScaleChange = vi.fn();
+
+    render(
+      <GeneralTab
+        localLanguage="en"
+        onChange={vi.fn()}
+        localDisplay={{ ...DEFAULT_SETTING.display, uiScale: 1.25 }}
+        onDisplaySettingsChange={vi.fn()}
+        onUiScaleChange={onUiScaleChange}
+      />,
+    );
+
+    expect(screen.getByRole('radio', { name: '125%' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+    fireEvent.click(screen.getByRole('radio', { name: '150%' }));
+    expect(onUiScaleChange).toHaveBeenCalledWith(1.5);
+    fireEvent.click(screen.getByRole('button', { name: 'Reset to 100%' }));
+    expect(onUiScaleChange).toHaveBeenCalledWith(1);
+  });
 });

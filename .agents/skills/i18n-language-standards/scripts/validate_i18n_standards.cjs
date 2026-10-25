@@ -14,7 +14,12 @@ const path = require('path');
 const LOCALES = ['en', 'ko', 'ja', 'zh', 'de', 'fr', 'es', 'pt'];
 const REPO_ROOT = path.resolve(__dirname, '../../../..');
 const LOCALES_DIR = path.join(REPO_ROOT, 'src', 'locales');
-const SETTINGS_COMPONENTS_DIR = path.join(REPO_ROOT, 'src', 'features', 'settings');
+const SETTINGS_COMPONENTS_DIR = path.join(
+  REPO_ROOT,
+  'src',
+  'features',
+  'settings',
+);
 
 // 1. Forbidden developer identifiers / internal code names that must NEVER appear in user-facing UI
 const FORBIDDEN_IDENTIFIERS = [
@@ -30,17 +35,41 @@ const FORBIDDEN_IDENTIFIERS = [
 
 // 2. Prohibited engineering jargon in user-facing strings (Settings view)
 const PROHIBITED_JARGON = [
-  { pattern: /\bclean resample\b/i, label: 'clean resample (use "automatic retry")' },
-  { pattern: /깨끗한 재샘플/, label: '깨끗한 재샘플 (사용 권장: "자동 재시도")' },
-  { pattern: /\bcircuit breaker\b/i, label: 'circuit breaker (use "stops" or "stop task")' },
+  {
+    pattern: /\bclean resample\b/i,
+    label: 'clean resample (use "automatic retry")',
+  },
+  {
+    pattern: /깨끗한 재샘플/,
+    label: '깨끗한 재샘플 (사용 권장: "자동 재시도")',
+  },
+  {
+    pattern: /\bcircuit breaker\b/i,
+    label: 'circuit breaker (use "stops" or "stop task")',
+  },
   { pattern: /서킷 브레이커/, label: '서킷 브레이커 (사용 권장: "작업 중단")' },
-  { pattern: /\bserving-engine\b/i, label: 'serving-engine (use "model provider")' },
+  {
+    pattern: /\bserving-engine\b/i,
+    label: 'serving-engine (use "model provider")',
+  },
   { pattern: /서빙 엔진/, label: '서빙 엔진 (사용 권장: "모델 제공자")' },
-  { pattern: /\bPrefill Performance\b/i, label: 'Prefill Performance (use "Initial Response Speed")' },
-  { pattern: /프리필 성능/, label: '프리필 성능 (사용 권장: "첫 응답 반응 속도")' },
+  {
+    pattern: /\bPrefill Performance\b/i,
+    label: 'Prefill Performance (use "Initial Response Speed")',
+  },
+  {
+    pattern: /프리필 성능/,
+    label: '프리필 성능 (사용 권장: "첫 응답 반응 속도")',
+  },
   { pattern: /\bold turns\b/i, label: 'old turns (use "older messages")' },
-  { pattern: /Automation Governance/i, label: 'Automation Governance (use "Automation Rules")' },
-  { pattern: /자동화 거버넌스/, label: '자동화 거버넌스 (사용 권장: "자동화 실행 규칙")' },
+  {
+    pattern: /Automation Governance/i,
+    label: 'Automation Governance (use "Automation Rules")',
+  },
+  {
+    pattern: /자동화 거버넌스/,
+    label: '자동화 거버넌스 (사용 권장: "자동화 실행 규칙")',
+  },
 ];
 
 let hasErrors = false;
@@ -56,11 +85,13 @@ function warn(msg) {
 
 function checkContent(filePath, content) {
   const relPath = path.relative(REPO_ROOT, filePath);
-  
+
   // Check forbidden identifiers
   for (const regex of FORBIDDEN_IDENTIFIERS) {
     if (regex.test(content)) {
-      error(`${relPath}: Contains forbidden internal identifier matching ${regex}`);
+      error(
+        `${relPath}: Contains forbidden internal identifier matching ${regex}`,
+      );
     }
   }
 
@@ -112,9 +143,11 @@ if (localeData.en && localeData.ko) {
   for (const lang of LOCALES) {
     if (!localeData[lang] || !localeData[lang].settings) continue;
     const currentKeys = new Set(collectKeys(localeData[lang].settings));
-    const missing = [...enKeys].filter(k => !currentKeys.has(k));
+    const missing = [...enKeys].filter((k) => !currentKeys.has(k));
     if (missing.length > 0) {
-      warn(`${lang} is missing ${missing.length} settings keys compared to en (e.g. ${missing.slice(0, 3).join(', ')})`);
+      warn(
+        `${lang} is missing ${missing.length} settings keys compared to en (e.g. ${missing.slice(0, 3).join(', ')})`,
+      );
     }
   }
 }
@@ -127,7 +160,10 @@ function scanDir(dir) {
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       scanDir(fullPath);
-    } else if (/\.(tsx|ts)$/.test(entry.name) && !entry.name.includes('.test.')) {
+    } else if (
+      /\.(tsx|ts)$/.test(entry.name) &&
+      !entry.name.includes('.test.')
+    ) {
       const content = fs.readFileSync(fullPath, 'utf8');
       checkContent(fullPath, content);
     }
@@ -139,9 +175,13 @@ if (fs.existsSync(SETTINGS_COMPONENTS_DIR)) {
 }
 
 if (hasErrors) {
-  console.error('\n❌ Language standards enforcement failed. Please fix the above issues.');
+  console.error(
+    '\n❌ Language standards enforcement failed. Please fix the above issues.',
+  );
   process.exit(1);
 } else {
-  console.log('\n✅ All locales and Settings components pass language standards validation!');
+  console.log(
+    '\n✅ All locales and Settings components pass language standards validation!',
+  );
   process.exit(0);
 }

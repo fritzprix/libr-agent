@@ -2,6 +2,7 @@ pub mod access_guard;
 pub mod handlers;
 pub mod mcp_handler;
 pub mod routes;
+pub mod wake;
 
 use log::info;
 use std::sync::atomic::{AtomicU16, Ordering};
@@ -26,6 +27,13 @@ pub fn active_http_port() -> u16 {
         return bound;
     }
     read_persisted_http_port().unwrap_or(3030)
+}
+
+/// `~/.libragent/http_port` is shared by every instance under one HOME. An instance
+/// with an overridden data dir (e.g. an isolated bench instance) must not clobber the
+/// primary instance's port.
+fn should_persist_global_http_port(data_dir_override: Option<&std::ffi::OsStr>) -> bool {
+    data_dir_override.is_none_or(|value| value.is_empty())
 }
 
 fn read_persisted_http_port() -> Option<u16> {
@@ -96,10 +104,12 @@ pub async fn init(
     set_active_http_port(bound_port);
 
     // Persist active HTTP port to ~/.libragent/http_port for external scripts/tools
-    if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
-        let dir = std::path::PathBuf::from(home).join(".libragent");
-        let _ = std::fs::create_dir_all(&dir);
-        let _ = std::fs::write(dir.join("http_port"), bound_port.to_string());
+    if should_persist_global_http_port(std::env::var_os("LIBRAGENT_DATA_DIR").as_deref()) {
+        if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
+            let dir = std::path::PathBuf::from(home).join(".libragent");
+            let _ = std::fs::create_dir_all(&dir);
+            let _ = std::fs::write(dir.join("http_port"), bound_port.to_string());
+        }
     }
 
     let routes = routes::get_routes(agent_manager, mcp_enabled, app_control_enabled, expose);
@@ -113,4 +123,23 @@ pub async fn init(
     });
 
     Ok(bound_port)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_persist_global_http_port;
+    use std::ffi::OsStr;
+
+    #[test]
+    fn default_data_dir_persists_global_port() {
+        assert!(should_persist_global_http_port(None));
+        assert!(should_persist_global_http_port(Some(OsStr::new(""))));
+    }
+
+    #[test]
+    fn overridden_data_dir_does_not_clobber_global_port() {
+        assert!(!should_persist_global_http_port(Some(OsStr::new(
+            "/tmp/bench/com.fritzprix.libragent"
+        ))));
+    }
 }

@@ -101,9 +101,7 @@ export function AgentChatHeader({
       }}
     >
       {children}
-      {session?.id ? (
-        <HeaderSessionExportMenu sessionId={session.id} />
-      ) : null}
+      {session?.id ? <HeaderSessionExportMenu sessionId={session.id} /> : null}
 
       <HeaderStatusBadges />
 

@@ -206,9 +206,7 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
 
   if (!displayItems.length) {
     if (message?.isStreaming && message.streamingPhase === 'prefill') {
-      return (
-        <StreamingPrefillIndicator />
-      );
+      return <StreamingPrefillIndicator />;
     }
     return null;
   }

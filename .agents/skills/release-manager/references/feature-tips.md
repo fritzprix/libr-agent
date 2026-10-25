@@ -13,12 +13,12 @@ in-app tip. Tips live in the spotlight module and surface as:
 Add/update a tip **only** if a change is something a non-developer end user
 should discover without reading CHANGELOG.
 
-| Include (layman) | Skip |
-|------------------|------|
-| New capability the user can try (browser profile import, scheduled starters, charts, Knowledge graph, themes) | Pure refactors, type cleanup, test-only |
-| New Settings control with visible UI | Internal harness / CI / docs-only |
-| UX that changes day-to-day chat/hub behavior | Bugfix that restores expected behavior (unless the feature itself was previously invisible) |
-| New entry point / page / workflow | Dependency bumps, logging, telemetry |
+| Include (layman)                                                                                              | Skip                                                                                        |
+| ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| New capability the user can try (browser profile import, scheduled starters, charts, Knowledge graph, themes) | Pure refactors, type cleanup, test-only                                                     |
+| New Settings control with visible UI                                                                          | Internal harness / CI / docs-only                                                           |
+| UX that changes day-to-day chat/hub behavior                                                                  | Bugfix that restores expected behavior (unless the feature itself was previously invisible) |
+| New entry point / page / workflow                                                                             | Dependency bumps, logging, telemetry                                                        |
 
 **Cap per release:** at most **1–3** new or refreshed tips. Prefer quality over volume.
 
@@ -27,11 +27,11 @@ commit body / checklist and move on (do not invent filler tips).
 
 ## Files to touch
 
-| Purpose | Path |
-|---------|------|
-| Tip registry | `src/features/spotlight/feature-spotlights.ts` |
-| i18n (required for all 8 locales) | `src/locales/{en,ko,ja,zh,de,fr,es,pt}/common.json` → `spotlight.items.<camelId>.*` |
-| Settings copy (only if toggle wording changes) | `settings.display.showFeatureTips*` in the same locale files |
+| Purpose                                        | Path                                                                                |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Tip registry                                   | `src/features/spotlight/feature-spotlights.ts`                                      |
+| i18n (required for all 8 locales)              | `src/locales/{en,ko,ja,zh,de,fr,es,pt}/common.json` → `spotlight.items.<camelId>.*` |
+| Settings copy (only if toggle wording changes) | `settings.display.showFeatureTips*` in the same locale files                        |
 
 Do **not** invent fake CTAs. `href` must open a real Settings tab or route.
 
@@ -90,9 +90,9 @@ For each new tip id `fooBar` (camelCase under `spotlight.items`):
 
 ## Example mapping
 
-| CHANGELOG (user-facing) | Tip action |
-|-------------------------|------------|
+| CHANGELOG (user-facing)                                   | Tip action                                                                    |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | “Sticky agent browser profile / clear agent browser data” | New/update tip for agent browser (settings/system); not Chrome profile import |
-| “CSV chart from chat drop” | Update `visualize-csv` for hub/release only (no wait) |
-| “Fixed race in tool loop” | Skip tip |
-| “Bump rmcp” | Skip tip |
+| “CSV chart from chat drop”                                | Update `visualize-csv` for hub/release only (no wait)                         |
+| “Fixed race in tool loop”                                 | Skip tip                                                                      |
+| “Bump rmcp”                                               | Skip tip                                                                      |

@@ -147,9 +147,8 @@ impl WorkspaceServer {
                     ));
                 }
                 "running" => {
-                    actions.push(format!(
-                        "Use workspace__waitForProcess('{}', 0) to check status",
-                        first_id
+                    actions.push(crate::mcp::builtin::error_guidance::wait_for_process_hint(
+                        Some(first_id),
                     ));
                     actions.push(format!(
                         "Use workspace__readProcessOutput('{}', 'both') to inspect stdout and stderr",
@@ -161,9 +160,8 @@ impl WorkspaceServer {
                     ));
                 }
                 _ => {
-                    actions.push(format!(
-                        "Use workspace__waitForProcess('{}', 0) to check status",
-                        first_id
+                    actions.push(crate::mcp::builtin::error_guidance::wait_for_process_hint(
+                        Some(first_id),
                     ));
                     actions.push(format!(
                         "Use workspace__readProcessOutput('{}', 'both') to inspect stdout and stderr",

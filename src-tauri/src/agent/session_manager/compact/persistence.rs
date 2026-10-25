@@ -26,6 +26,7 @@ pub(super) struct CompactSummaryPersistenceContext<'a> {
     pub telemetry_phase: CompactionTelemetryPhase,
     pub epoch_path: Option<String>,
     pub fallback_path: Option<String>,
+    pub raw_output_path: Option<String>,
 }
 
 pub(super) fn spawn_resume_completion(
@@ -216,6 +217,7 @@ pub(super) async fn abort_empty_delta_compaction_and_resume(
                     ),
                     epoch_path: None,
                     fallback_path: None,
+                    raw_output_path: None,
                     prompt_tokens_before: None,
                     prompt_tokens_after_projection: None,
                 })
@@ -313,6 +315,7 @@ pub(super) async fn persist_compact_summary_and_resume(
                     error: None,
                     epoch_path: context.epoch_path.clone(),
                     fallback_path: context.fallback_path.clone(),
+                    raw_output_path: context.raw_output_path.clone(),
                     prompt_tokens_before: None,
                     prompt_tokens_after_projection: None,
                 })

@@ -52,6 +52,7 @@ Think of Claude as exploring a path: a narrow bridge with cliffs needs specific 
 ### Cross-Platform by Default
 
 Never assume Linux/Bash. LibrAgent runs on Windows, macOS, and Linux.
+
 - **Dual command recipes**: Provide Bash and PowerShell snippets whenever commands use line continuations (`\`), environment variables, or chaining (`&&`). PowerShell 5.1 does not support `&&` (use `;`).
 - **Safe argument quoting**: Avoid unquoted variables in CLI arguments (e.g., `-p $prompt` splits arguments on spaces in PowerShell). Use quotes or Here-Strings (`@' ... '@`).
 - **Scripts parity**: Prefer OS-agnostic scripts (Node.js/Python), or provide dual `.sh` and `.ps1` wrappers. Use `/` for paths.

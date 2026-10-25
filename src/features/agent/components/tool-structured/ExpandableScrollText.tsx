@@ -50,7 +50,10 @@ export const ExpandableScrollText: React.FC<ExpandableScrollTextProps> = ({
         className={cn(
           'rounded border bg-muted/40 px-2.5 py-2 text-sm whitespace-pre-wrap break-words',
           expanded
-            ? cn(expandedMaxHeightClassName, 'overflow-y-auto agent-chat-scrollbar')
+            ? cn(
+                expandedMaxHeightClassName,
+                'overflow-y-auto agent-chat-scrollbar',
+              )
             : 'overflow-hidden',
         )}
         style={

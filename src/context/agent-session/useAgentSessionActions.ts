@@ -1,11 +1,13 @@
 import { useCallback, useRef } from 'react';
 import { safeInvoke } from '@/lib/backend/core';
 import { getMessagesBeforeCursor } from '@/lib/backend/messages';
+import { isSessionNotFoundError } from '@/lib/backend/session-errors';
 import { getLogger } from '@/lib/logger';
 import type { Message, RustMessage } from '@/models/chat';
 import type { AgentResponse, SendUserMessageRequest } from '@/models/agent-ipc';
 import type { useAgentSessionState } from './useAgentSessionState';
-import type { ExecutionMode } from './types';
+import type { ExecutionMode, SessionGoneReason } from './types';
+import { invalidateOpenSessionView } from './openSessionViewCache';
 import {
   isPendingApprovalAutoResolvedByMode,
   resolvedApprovalIdsFromModeChange,
@@ -32,6 +34,7 @@ export function useAgentSessionActionsLogic(
     acknowledgeSessionAttention: (viewedAt?: Date) => Promise<void>;
     clearPendingApproval: (sessionId: string, toolCallId: string) => void;
     renameSessionInList: (sessionId: string, name: string) => Promise<void>;
+    onSessionGone?: (sessionId: string, reason: SessionGoneReason) => void;
   },
 ) {
   const { state, setters } = stateProps;
@@ -158,9 +161,17 @@ export function useAgentSessionActionsLogic(
       await externalActions.acknowledgeSessionAttention();
     } catch (err) {
       logger.error('Failed to resume session', err);
+      if (isSessionNotFoundError(err)) {
+        // Terminal: drop the session so Resume/Retry are no longer offered.
+        const goneSessionId = state.session.id;
+        invalidateOpenSessionView(goneSessionId);
+        setters.setSession(null);
+        setters.setPendingApprovals([]);
+        externalActions.onSessionGone?.(goneSessionId, 'not_found');
+      }
       throw err;
     }
-  }, [externalActions, state.session]);
+  }, [externalActions, setters, state.session]);
 
   const regenerateLastTurn = useCallback(async () => {
     if (!state.session) return;

@@ -23,12 +23,12 @@ assembly, export fidelity). **Don't care:** model, serving engine.
 
 ## Relationship to sibling skills
 
-| Input / goal | Use |
-| --- | --- |
-| UI/session `*_trajectory.json` (ATIF-v1.7) → tool/harness backlog | **trace-eval-loop** (this skill) |
-| `jobs/<run>/` Harbor rewards + ATIF BM cycles | `harbor-harness-improvement-loop` / `jobs-trace-analyzer` |
-| Live Session API messages E2E | `libr-tool-e2e-harness-loop` |
-| Raw `.trace.json` conversation dump | `trace-analyzer` |
+| Input / goal                                                      | Use                                                       |
+| ----------------------------------------------------------------- | --------------------------------------------------------- |
+| UI/session `*_trajectory.json` (ATIF-v1.7) → tool/harness backlog | **trace-eval-loop** (this skill)                          |
+| `jobs/<run>/` Harbor rewards + ATIF BM cycles                     | `harbor-harness-improvement-loop` / `jobs-trace-analyzer` |
+| Live Session API messages E2E                                     | `libr-tool-e2e-harness-loop`                              |
+| Raw `.trace.json` conversation dump                               | `trace-analyzer`                                          |
 
 Session API has **no** ATIF export endpoint. Obtain ATIF via UI session export
 (`format: 'atif'`) or an already-exported file the user provides. See
@@ -108,16 +108,16 @@ For each trajectory (and for representative slices when many):
 
 ### 4. Map symptom → owning layer
 
-| Symptom | Inspect first |
-| --- | --- |
-| Correct tool never selected / unavailable | exposure, name, description, input schema |
-| Invalid/missing arguments | schema required/enums, validation error text |
-| Same failed call repeats | error recovery hint, state feedback, loop/escalation |
-| Success but misleading or bloated result | handler output, truncation/pagination, structured content, hints |
-| Many micro-tools for one outcome | tool boundaries / consolidation |
-| Skips planning/verification across tools | assistant/system/workspace prompt |
-| Export missing steps / wrong observation pairing | `session_export` ATIF builder / filter rules |
-| Metrics missing or contradictory | export `final_metrics`, adapter aggregation |
+| Symptom                                          | Inspect first                                                    |
+| ------------------------------------------------ | ---------------------------------------------------------------- |
+| Correct tool never selected / unavailable        | exposure, name, description, input schema                        |
+| Invalid/missing arguments                        | schema required/enums, validation error text                     |
+| Same failed call repeats                         | error recovery hint, state feedback, loop/escalation             |
+| Success but misleading or bloated result         | handler output, truncation/pagination, structured content, hints |
+| Many micro-tools for one outcome                 | tool boundaries / consolidation                                  |
+| Skips planning/verification across tools         | assistant/system/workspace prompt                                |
+| Export missing steps / wrong observation pairing | `session_export` ATIF builder / filter rules                     |
+| Metrics missing or contradictory                 | export `final_metrics`, adapter aggregation                      |
 
 Use `critique-builtin-tool`, `lean-builtin-tool-auditor`, or
 `refactor-builtin-tool` when evidence points at builtin implementation details.

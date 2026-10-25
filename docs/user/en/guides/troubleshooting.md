@@ -89,7 +89,7 @@ Do not look in the Settings menu:
 There is no "MCP Servers" tab in Settings. Use the sidebar **Extensions** screen.
 
 1. **Recommended**: Select from [Extensions → Recommended Extensions](extensions.md).
-2. **Custom / Imports**: Use [Installing Custom MCP Servers](custom-mcp.md) or invoke `@skill:tool-installer`.
+2. **Custom / Imports**: Use [Installing Custom MCP Servers](custom-mcp.md) or invoke `@skill:mcp-installer`.
 3. Confirm that your assistant profile permits access to the target MCP server.
 4. Verify that execution runtimes (`npx`, `uv`) execute properly in your terminal.
 

@@ -501,6 +501,9 @@
       "uiVisualsTitle": "Apparence de l'interface",
       "fontFamily": "Police",
       "fontFamilyDescription": "Change la police par défaut de l'interface.",
+      "uiSize": "Taille de l'interface",
+      "uiSizeDescription": "Met à l'échelle toute l'interface. S'applique immédiatement. Raccourcis : Ctrl/Cmd +, -, 0.",
+      "uiSizeReset": "Réinitialiser à 100 %",
       "messageLayout": "Disposition des messages",
       "messageLayoutDocument": "Document (mise en page pleine largeur)",
       "messageLayoutBubble": "Bulles (chat classique)",
@@ -1995,6 +1998,11 @@
         "title": "Sauvegarder ou déplacer une équipe Org",
         "body": "Exportez une équipe depuis Org sous forme de pack .libragent-org (assistants, planifications, playbooks et skills) et importez-la sur un autre appareil.",
         "cta": "Ouvrir Org"
+      },
+      "uiSize": {
+        "title": "Ajuster la taille de l'interface",
+        "body": "Redimensionnez toute l'interface dans Paramètres → General ou avec les raccourcis Ctrl/Cmd +, - et 0.",
+        "cta": "Ouvrir General"
       }
     }
   }

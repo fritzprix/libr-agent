@@ -87,7 +87,7 @@ Settings 탭이 아니라:
 Settings에 **「MCP Servers」** 탭은 **없습니다.** 사이드바 **Extensions**를 쓰세요.
 
 1. **추천**: [Extensions → Recommended Extensions](extensions.md)
-2. **직접/다른 에디터에서 가져오기**: [커스텀 MCP 설치](custom-mcp.md) 또는 `@skill:tool-installer`
+2. **직접/다른 에디터에서 가져오기**: [커스텀 MCP 설치](custom-mcp.md) 또는 `@skill:mcp-installer`
 3. Assistants에서 해당 MCP 허용 여부 확인
 4. OS에서 `npx`/`uv` 등 command가 실행 가능한지 확인 (App Wizard)
 

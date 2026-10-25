@@ -51,6 +51,7 @@ const SettingsPage: FC = function SettingsPage() {
     handleSaveAndLeave,
     handleTabChange,
     handleToolCallGroupVisibleCountChange,
+    handleUiScaleChange,
     handleWindowSizeChange,
     isDirty,
     isDiscardDialogOpen,
@@ -68,12 +69,12 @@ const SettingsPage: FC = function SettingsPage() {
     <div className="p-6 h-full flex flex-col bg-background">
       <div className="max-w-4xl mx-auto w-full flex flex-col h-full">
         {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-8">
+          <div className="flex min-w-0 items-center gap-4">
             <div className="flex items-center justify-center p-2.5 bg-primary/10 text-primary rounded-xl">
               <Settings size={28} />
             </div>
-            <div>
+            <div className="min-w-0">
               <h1 className="text-2xl text-foreground font-semibold tracking-tight">
                 {t('settings.title', 'Settings')}
               </h1>
@@ -145,7 +146,7 @@ const SettingsPage: FC = function SettingsPage() {
             onValueChange={handleTabChange}
             className="flex flex-col min-h-full"
           >
-            <TabsList className="sticky top-0 z-10 mb-4 flex gap-2 overflow-x-auto border border-border/60 bg-background/95 p-1 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+            <TabsList className="sticky top-0 z-10 mb-4 flex w-full max-w-full justify-start gap-2 overflow-x-auto border border-border/60 bg-background/95 p-1 backdrop-blur supports-[backdrop-filter]:bg-background/80">
               {tabNavigationItems.map((tab) => (
                 <TabsTrigger
                   key={tab.value}
@@ -166,6 +167,7 @@ const SettingsPage: FC = function SettingsPage() {
                 onChange={handleLanguageChange}
                 localDisplay={formState.display}
                 onDisplaySettingsChange={updateDisplay}
+                onUiScaleChange={handleUiScaleChange}
               />
             </TabsContent>
 
@@ -176,9 +178,7 @@ const SettingsPage: FC = function SettingsPage() {
                 providerEntries={PROVIDER_ENTRIES}
                 localPreferredModel={formState.preferredModel}
                 localFallbackModel={formState.fallbackModel}
-                complexityModelMapping={
-                  formState.complexityModelMapping ?? {}
-                }
+                complexityModelMapping={formState.complexityModelMapping ?? {}}
                 temperatureOverrideEnabled={
                   formState.temperatureOverrideEnabled
                 }

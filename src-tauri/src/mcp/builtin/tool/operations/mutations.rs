@@ -2,15 +2,45 @@ use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, not_found_error, ErrorCategory, SuccessHint, ToolGroup,
 };
 use crate::mcp::builtin::service_id::BuiltinServiceId;
-use crate::mcp::types::{MCPResult, MCPServerConfig, OAuthConfig, TransportConfig};
-use crate::repositories::mcp_server_repository::MCPServerRepository;
+use crate::mcp::types::{
+    MCPResult, MCPServerConfig, OAuthConfig, ServerProvenance, ServerProvenanceSource,
+    TransportConfig,
+};
 use crate::repositories::AssistantRepository;
-use crate::state::get_mcp_server_repository;
 use serde_json::{json, Value};
 
-use super::super::queries::get_server_config;
+use super::super::queries::{find_server_model, get_server_config};
 use super::super::ToolServer;
-use super::persistence::{delete_server_config_db, save_server_config};
+use super::catalog::matching_catalog_preset;
+use super::persistence::{delete_server_config_db, save_server_config, SavedServer};
+
+/// Catalog only for an exact preset transport without custom OAuth; the same
+/// rule lets `tool__registerServer` skip hard approval.
+pub(crate) fn install_provenance(
+    transport: &Value,
+    authentication: Option<&OAuthConfig>,
+) -> ServerProvenance {
+    let preset = authentication
+        .is_none()
+        .then(|| matching_catalog_preset(transport))
+        .flatten();
+    ServerProvenance {
+        source: if preset.is_some() {
+            ServerProvenanceSource::Catalog
+        } else {
+            ServerProvenanceSource::External
+        },
+        preset,
+        recorded_at: chrono::Utc::now().timestamp_millis(),
+    }
+}
+
+fn provenance_line(provenance: &ServerProvenance) -> String {
+    match &provenance.preset {
+        Some(preset) => format!("• Source: catalog preset '{preset}'"),
+        None => "• Source: external (not a catalog preset)".to_string(),
+    }
+}
 
 /// Register a new MCP server configuration
 pub async fn register_server(_server: &ToolServer, args: Value) -> Result<MCPResult, String> {
@@ -129,15 +159,18 @@ pub async fn register_server(_server: &ToolServer, args: Value) -> Result<MCPRes
         None => None,
     };
 
+    let provenance = install_provenance(transport_val, authentication.as_ref());
+    let source_line = provenance_line(&provenance);
     let config = MCPServerConfig {
         name: Some(name.clone()),
         transport,
         authentication,
         metadata,
+        provenance: Some(provenance),
     };
 
-    let id = match save_server_config(&config).await {
-        Ok(id) => id,
+    let SavedServer { id, name } = match save_server_config(&config).await {
+        Ok(saved) => saved,
         Err(e) => {
             return Ok(guided_error(
                 ErrorCategory::DatabaseError,
@@ -164,8 +197,8 @@ pub async fn register_server(_server: &ToolServer, args: Value) -> Result<MCPRes
 
     let hint = SuccessHint::new(
         format!(
-            "✓ Server configuration saved\n\n• Server Name: {}\n• Server ID: {}\n\nStatus: Saved (connectivity verification running in the background)",
-            name, id
+            "✓ Server configuration saved\n\n• Server Name: {}\n• Server ID: {}\n{}\n\nStatus: Saved (connectivity verification running in the background)",
+            name, id, source_line
         ),
         vec![
             "Use tool__listServers({\"availability\":\"inventory\"}) to confirm the registered server.".to_string(),
@@ -193,14 +226,7 @@ pub async fn delete_server(_server: &ToolServer, args: Value) -> Result<MCPResul
         Option::None => return Ok(missing_param_error("name", ToolGroup::Tool)),
     };
 
-    // Get server repository and fetch server details to get both name and id
-    let repo = get_mcp_server_repository();
-    let mut server = repo.get(&name).await.map_err(|e| e.to_string())?;
-    if server.is_none() {
-        server = repo.get_by_name(&name).await.map_err(|e| e.to_string())?;
-    }
-
-    let server = match server {
+    let server = match find_server_model(&name).await? {
         Some(s) => s,
         None => return Ok(not_found_error("Server", &name, ToolGroup::Tool)),
     };
@@ -364,16 +390,19 @@ pub async fn update_server(_server: &ToolServer, args: Value) -> Result<MCPResul
         None => None,
     };
 
+    let provenance = install_provenance(transport, authentication.as_ref());
+    let source_line = provenance_line(&provenance);
     let config = MCPServerConfig {
         name: Some(name.to_string()),
         transport: transport_config,
         authentication,
         metadata,
+        provenance: Some(provenance),
     };
 
     // Update config and get ID
-    let id = match save_server_config(&config).await {
-        Ok(id) => id,
+    let SavedServer { id, name } = match save_server_config(&config).await {
+        Ok(saved) => saved,
         Err(e) => {
             return Ok(guided_error(
                 ErrorCategory::DatabaseError,
@@ -396,8 +425,38 @@ pub async fn update_server(_server: &ToolServer, args: Value) -> Result<MCPResul
     );
 
     let hint = SuccessHint::new(
-        format!("✓ Server configuration updated for '{}' (ID: {})", name, id),
+        format!(
+            "✓ Server configuration updated for '{}' (ID: {})\n{}",
+            name, id, source_line
+        ),
         vec!["Use tool__listServers({\"availability\":\"inventory\",\"query\":\"<server-name>\"}) to verify changes".to_string()],
     );
     Ok(hint.to_mcp_result_with_data(Some(json!({ "name": name, "id": id }))))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn provenance_records_catalog_preset_or_external() {
+        let catalog = json!({
+            "type": "stdio",
+            "command": "npx",
+            "args": ["-y", "@fre4x/jules@latest"]
+        });
+        let provenance = install_provenance(&catalog, None);
+        assert_eq!(provenance.source, ServerProvenanceSource::Catalog);
+        assert_eq!(provenance.preset.as_deref(), Some("jules"));
+
+        let external = json!({ "type": "stdio", "command": "npx", "args": ["-y", "left-pad-mcp"] });
+        let provenance = install_provenance(&external, None);
+        assert_eq!(provenance.source, ServerProvenanceSource::External);
+        assert!(provenance.preset.is_none());
+
+        let stored = serde_json::to_value(&provenance).expect("serialize");
+        assert_eq!(stored["source"], "external");
+        assert!(stored.get("preset").is_none());
+        assert!(stored["recordedAt"].is_i64());
+    }
 }

@@ -6,11 +6,11 @@ Lessons distilled from incomplete renames and mixed skill-tree cleanups (e.g. um
 
 ## 0. Pick the correct tree
 
-| Intent | Path |
-| --- | --- |
-| Product / runtime bundled skill | `src-tauri/bundled_skills/<name>/` |
-| Cursor / agent-dev skill | `.agents/skills/<name>/` |
-| Do not use | `.github/skills/` (obsolete duplicate; do not recreate) |
+| Intent                          | Path                                                    |
+| ------------------------------- | ------------------------------------------------------- |
+| Product / runtime bundled skill | `src-tauri/bundled_skills/<name>/`                      |
+| Cursor / agent-dev skill        | `.agents/skills/<name>/`                                |
+| Do not use                      | `.github/skills/` (obsolete duplicate; do not recreate) |
 
 If a skill is listed in `scripts/check-skills-mirror-drift.cjs` (`MIRROR_MANIFEST`), edit `.agents/skills/<name>/` and sync identical content into `src-tauri/bundled_skills/<name>/`.
 

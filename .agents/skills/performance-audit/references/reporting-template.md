@@ -14,11 +14,11 @@ Standard template for writing performance analysis reports. Output files are typ
 
 ## 1. Executive Summary
 
-| Priority | Finding Count | Key Impact |
-|:---:|:---:|:---|
-| **P0 (Critical)** | N | Main thread blocking, UI freezes (>100ms), potential OOM or deadlocks |
-| **P1 (High)** | N | Noticeable latency, redundant I/O, heavy render cascades, missing indexes |
-| **P2 (Medium)** | N | Micro-optimizations, excessive cloning, minor state churn, cleanups |
+|     Priority      | Finding Count | Key Impact                                                                |
+| :---------------: | :-----------: | :------------------------------------------------------------------------ |
+| **P0 (Critical)** |       N       | Main thread blocking, UI freezes (>100ms), potential OOM or deadlocks     |
+|   **P1 (High)**   |       N       | Noticeable latency, redundant I/O, heavy render cascades, missing indexes |
+|  **P2 (Medium)**  |       N       | Micro-optimizations, excessive cloning, minor state churn, cleanups       |
 
 > **Summary**: [Brief 2-3 sentence overview of the current performance bottlenecks and anticipated benefits after applying the action plan.]
 
@@ -36,20 +36,23 @@ Standard template for writing performance analysis reports. Output files are typ
   [e.g., "Blocks Tokio runtime for ~200ms on large files", "Triggers 50+ re-renders of the entire message list", "Performs full table scan on 10,000 rows"]
 
 #### Before (Current Implementation)
+
 ```typescript // or rust / sql
 // Snippet of the current bottleneck
 ```
 
 #### After (Proposed Improvement)
+
 ```typescript // or rust / sql
 // Snippet of the optimized implementation
 ```
 
 #### Verification & Side Effect Check
+
 - [ ] **Risk assessment**: [Any breaking changes or behavioral differences?]
 - [ ] **Verification method**: [How to verify without heavy test suites, e.g. `pnpm rust:check` or targeted unit test]
 
-*(Repeat section for each finding)*
+_(Repeat section for each finding)_
 
 ---
 

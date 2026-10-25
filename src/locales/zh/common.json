@@ -501,6 +501,9 @@
       "uiVisualsTitle": "界面视觉",
       "fontFamily": "字体",
       "fontFamilyDescription": "更改界面的默认字体。",
+      "uiSize": "界面大小",
+      "uiSizeDescription": "缩放整个界面，立即生效。快捷键：Ctrl/Cmd +、-、0。",
+      "uiSizeReset": "重置为 100%",
       "messageLayout": "消息布局",
       "messageLayoutDocument": "文档式（全宽编码布局）",
       "messageLayoutBubble": "气泡（经典聊天气泡）",
@@ -1995,6 +1998,11 @@
         "title": "备份或迁移组织团队",
         "body": "在 Org 页面将团队导出为包含助手、定时任务、剧本和技能的 .libragent-org 归档包，并在另一台设备上导入。",
         "cta": "打开 Org"
+      },
+      "uiSize": {
+        "title": "调节界面显示大小",
+        "body": "在 设置 → General 中调节，或随时按 Ctrl/Cmd +、-、0 缩放整个界面。",
+        "cta": "打开 General 设置"
       }
     }
   }

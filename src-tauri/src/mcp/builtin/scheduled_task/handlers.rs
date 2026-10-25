@@ -7,6 +7,9 @@ use crate::mcp::builtin::error_guidance::{
 };
 use crate::repositories::{AssistantRepository, SessionRepository, UpdateScheduledTaskParams};
 use crate::scheduled::runner::compute_next_run_for_schedule_timezone;
+
+const SCHEDULE_CALLBACK_NEITHER_ERROR: &str = "Provide exactly one of delaySeconds or cronExpression (you passed neither). One-shot: {\"message\":\"check build\",\"delaySeconds\":600}. Recurring: {\"message\":\"daily report\",\"cronExpression\":\"0 9 * * *\"}";
+const SCHEDULE_CALLBACK_BOTH_ERROR: &str = "Provide exactly one of delaySeconds or cronExpression (you passed both). Use delaySeconds for a one-shot delay or cronExpression for a recurring schedule, not both. Example: {\"message\":\"check build\",\"delaySeconds\":600}";
 use crate::scheduled::task_input::reject_legacy_scheduled_task_fields;
 use crate::scheduled::{TASK_CATEGORY_GLOBAL, TASK_CATEGORY_SESSION};
 use crate::services::{default_schedule_timezone, CreateScheduledTaskInput, ScheduledTaskService};
@@ -580,13 +583,13 @@ pub async fn handle_schedule_callback(
         }
         (Some(_), Some(_)) => {
             return Ok(invalid_input_error(
-                "Provide exactly one of delaySeconds or cronExpression, not both",
+                SCHEDULE_CALLBACK_BOTH_ERROR,
                 ToolGroup::ScheduledTask,
             ));
         }
         (None, None) => {
             return Ok(invalid_input_error(
-                "Provide exactly one of delaySeconds or cronExpression",
+                SCHEDULE_CALLBACK_NEITHER_ERROR,
                 ToolGroup::ScheduledTask,
             ));
         }
@@ -864,5 +867,22 @@ fn service_error_result(operation: &str, error: &str) -> crate::mcp::types::MCPR
             ],
             ToolGroup::ScheduledTask,
         )
+    }
+}
+
+#[cfg(test)]
+mod schedule_callback_error_tests {
+    use super::{SCHEDULE_CALLBACK_BOTH_ERROR, SCHEDULE_CALLBACK_NEITHER_ERROR};
+
+    #[test]
+    fn either_or_errors_say_what_to_pass_with_an_example() {
+        for message in [
+            SCHEDULE_CALLBACK_NEITHER_ERROR,
+            SCHEDULE_CALLBACK_BOTH_ERROR,
+        ] {
+            assert!(message.contains("exactly one of delaySeconds or cronExpression"));
+            assert!(message.contains("\"delaySeconds\":600"));
+        }
+        assert!(SCHEDULE_CALLBACK_NEITHER_ERROR.contains("cronExpression\":\"0 9 * * *"));
     }
 }

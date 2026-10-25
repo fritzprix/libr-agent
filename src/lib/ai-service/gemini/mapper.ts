@@ -435,12 +435,24 @@ export function convertSingleMessage(message: Message): unknown {
 export function convertMCPSchemaToGeminiParameters(
   schema: JSONSchema,
 ): GeminiSchema {
-  // Base case: String type with optional enum
+  // Gemini interprets oneOf the same as anyOf.
+  const variants = schema.oneOf ?? schema.anyOf;
+  if (Array.isArray(variants) && variants.length > 0) {
+    const result: GeminiSchema = {
+      anyOf: variants.map(convertMCPSchemaToGeminiParameters),
+    };
+    if (schema.description) result.description = schema.description;
+    return result;
+  }
+
+  // Base case: String type with optional enum (const becomes a single-value enum)
   if (schema.type === 'string') {
     const result: GeminiSchema = { type: Type.STRING };
     if (schema.description) result.description = schema.description;
     if ('enum' in schema && Array.isArray(schema.enum)) {
       result.enum = schema.enum as string[];
+    } else if (typeof schema.const === 'string') {
+      result.enum = [schema.const];
     }
     return result;
   }
@@ -494,6 +506,10 @@ export function convertMCPSchemaToGeminiParameters(
       properties: geminiProperties,
     };
     if (schema.description) result.description = schema.description;
+    const required = (schema.required ?? []).filter(
+      (key) => key in geminiProperties,
+    );
+    if (required.length > 0) result.required = required;
     return result;
   }
 

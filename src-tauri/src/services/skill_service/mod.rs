@@ -3,6 +3,7 @@ mod contracts;
 mod directories;
 mod github;
 mod importing;
+mod outbox;
 mod scanning;
 
 pub use cache::{invalidate_skill_scan_cache, prewarm_managed_skill_scans};
@@ -29,6 +30,7 @@ pub use importing::{
     preview_github_skill_install, preview_user_skill_import, reset_assistant_skills,
     reset_user_skills, skill_storage_directory_name,
 };
+pub use outbox::{install_outbox, SKILL_OUTBOX_RELATIVE_DIR};
 pub use scanning::{
     copy_dir_recursive, get_skill_content, get_skill_content_from_roots, parse_skill_metadata,
     scan_skills_directory,

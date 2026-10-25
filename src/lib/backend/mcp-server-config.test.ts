@@ -19,7 +19,7 @@ function createServer(overrides: Partial<MCPServerEntity> = {}): MCPServerEntity
     transport: {
       type: 'stdio',
       command: 'npx',
-      args: ['-y', '@fre4x/huggingface'],
+      args: ['-y', '@fre4x/huggingface@latest'],
       env: {
         HF_ALLOW_REMOTE_MODELS: 'true',
       },
@@ -44,7 +44,7 @@ describe('mcp-server-config upsert', () => {
           transport: {
             type: 'stdio',
             command: 'npx',
-            args: ['-y', '@fre4x/huggingface'],
+            args: ['-y', '@fre4x/huggingface@latest'],
           },
         },
         toolCount: null,
@@ -64,7 +64,7 @@ describe('mcp-server-config upsert', () => {
         transport: {
           type: 'stdio',
           command: 'npx',
-          args: ['-y', '@fre4x/huggingface'],
+          args: ['-y', '@fre4x/huggingface@latest'],
           env: {
             HF_ALLOW_REMOTE_MODELS: 'true',
           },
@@ -85,7 +85,7 @@ describe('mcp-server-config upsert', () => {
             transport: {
               type: 'stdio',
               command: 'npx',
-              args: ['-y', '@fre4x/huggingface'],
+              args: ['-y', '@fre4x/huggingface@latest'],
             },
           },
           toolCount: 3,
@@ -103,7 +103,7 @@ describe('mcp-server-config upsert', () => {
           transport: {
             type: 'stdio',
             command: 'npx',
-            args: ['-y', '@fre4x/huggingface'],
+            args: ['-y', '@fre4x/huggingface@latest'],
             env: {
               HF_ALLOW_REMOTE_MODELS: 'true',
             },
@@ -127,7 +127,7 @@ describe('mcp-server-config upsert', () => {
         transport: {
           type: 'stdio',
           command: 'npx',
-          args: ['-y', '@fre4x/huggingface'],
+          args: ['-y', '@fre4x/huggingface@latest'],
           env: {
             HF_ALLOW_REMOTE_MODELS: 'true',
           },

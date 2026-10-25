@@ -85,6 +85,20 @@ fn embed_windows_comctl_v6_manifest_dependency() {
     );
 }
 
+/// The `.deb` ships the bundled ONNX Runtime under `/usr/lib/libragent/` so it
+/// never overlaps the distro `libonnxruntime*` packages (#2210). Point the app
+/// binary there relative to `/usr/bin`. Only for the dynamic-ORT Linux build
+/// (`tauri.appimage-ort.conf.json`); linuxdeploy rewrites the AppImage rpath.
+fn add_private_onnxruntime_rpath() {
+    println!("cargo:rerun-if-env-changed=ORT_PREFER_DYNAMIC_LINK");
+    if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("linux")
+        || env::var("ORT_PREFER_DYNAMIC_LINK").as_deref() != Ok("1")
+    {
+        return;
+    }
+    println!("cargo:rustc-link-arg-bins=-Wl,-rpath,$ORIGIN/../lib/libragent");
+}
+
 fn main() {
     println!("cargo:rerun-if-changed=bundled_skills");
     println!("cargo:rerun-if-changed=bundled_assistants");
@@ -104,5 +118,6 @@ fn main() {
     }
 
     embed_windows_comctl_v6_manifest_dependency();
+    add_private_onnxruntime_rpath();
     tauri_build::build()
 }

@@ -95,6 +95,14 @@ Options:
   --dry-run
   --debug
   -h, --help
+
+Stopping an isolated run (node scripts/run-harbor-bench.cjs --isolated, pnpm bench:layman):
+  First Ctrl+C   Prints what is being cleaned up, lets Harbor cancel the trial and remove its
+                 task containers; partial results are kept.
+  Second Ctrl+C  Force-kills Harbor, the bench instance and this run's task containers
+                 without waiting for graceful teardown.
+  Either way the instance is stopped, no task container from the run is left, and the
+  next --workspace-mode (with 'all') does not start.
 EOF
 }
 

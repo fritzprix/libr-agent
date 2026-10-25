@@ -3,6 +3,9 @@ use serde_json::json;
 
 // Unix platform tool (bash/sh) - PRIMARY TOOL (Isolated Shell)
 #[cfg(any(unix, windows))]
+/// Upper bound for `runShell.script`; longer logic belongs in a file run via `command`.
+pub const RUN_SHELL_SCRIPT_MAX_CHARS: u32 = 20_000;
+
 pub fn create_run_shell_tool() -> MCPTool {
     let mut props = SchemaProperties::new();
     props.insert(
@@ -10,12 +13,22 @@ pub fn create_run_shell_tool() -> MCPTool {
         string_prop_with_examples(
             Some(1),
             Some(1000),
-            Some("Shell command to execute (bash/sh)"),
+            Some("Single-line shell command to execute (bash/sh). Provide exactly one of command or script."),
             vec![
                 json!("pwd"),
                 json!("python3 --version"),
                 json!("git status --short"),
             ],
+        ),
+    );
+    props.insert(
+        "script".to_string(),
+        string_prop(
+            Some(1),
+            Some(RUN_SHELL_SCRIPT_MAX_CHARS),
+            Some(
+                "Multi-line bash script run verbatim (no quote escaping needed; newlines separate commands). Use instead of command for loops, nested quotes, or $(...). Provide exactly one of command or script.",
+            ),
         ),
     );
     props.insert(
@@ -48,9 +61,10 @@ pub fn create_run_shell_tool() -> MCPTool {
                        Two outcomes:\n\
                        1) Finished within timeout (exit success or failure): this response already has stdout/stderr and exit code. No processId — do not call workspace__waitForProcess/workspace__readProcessOutput for this run.\n\
                        2) Still running after the sync timeout: response includes processId; only then use workspace__waitForProcess/workspace__readProcessOutput/workspace__stopProcess.\n\
+                       For loops, nested quotes, or multi-step logic: pass script instead of command (runs verbatim, no escaping).\n\
                        For persistent cd/env vars: runInPersistentShell. For explicitly non-blocking tasks: spawnProcess."
             .to_string(),
-        input_schema: object_schema(props, vec!["command".to_string()]),
+        input_schema: object_schema(props, Vec::new()),
         output_schema: None,
         annotations: None,
         libragent_wait: None,
@@ -179,7 +193,7 @@ pub fn create_spawn_process_tool() -> MCPTool {
         description: "Start a command as a non-blocking background process. Returns the background process ID immediately.\n\
                        Optional name is a label only; workspace__waitForProcess, workspace__stopProcess, and workspace__readProcessOutput still require processId.\n\
                        Stateless — starts from workspace root (or optional cwd) each call. No interactive input.\n\
-                       Use workspace__waitForProcess(processId) to wait for completion, workspace__readProcessOutput(processId) to get output."
+                       Use workspace__waitForProcess(processId, timeout) to block until the process exits or the timeout elapses (timeout 0 returns the current status without waiting), workspace__readProcessOutput(processId) to get output."
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),
         output_schema: None,
@@ -365,7 +379,7 @@ pub fn create_spawn_process_tool() -> MCPTool {
         description: "Start a command as a non-blocking background process. Returns the background process ID immediately.\n\
                        Optional name is a label only; workspace__waitForProcess, workspace__stopProcess, and workspace__readProcessOutput still require processId.\n\
                        Stateless — starts from workspace root (or optional cwd) each call. No interactive input.\n\
-                       Use workspace__waitForProcess(processId) to wait for completion, workspace__readProcessOutput(processId) to get output."
+                       Use workspace__waitForProcess(processId, timeout) to block until the process exits or the timeout elapses (timeout 0 returns the current status without waiting), workspace__readProcessOutput(processId) to get output."
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),
         output_schema: None,

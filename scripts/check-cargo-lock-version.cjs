@@ -34,7 +34,9 @@ const lockVersionMatch = cargoLock.match(
   /\[\[package\]\]\s*\nname\s*=\s*"libragent"\s*\nversion\s*=\s*"([^"]+)"/m,
 );
 if (!lockVersionMatch) {
-  console.error('Error: Could not extract libragent package version from Cargo.lock');
+  console.error(
+    'Error: Could not extract libragent package version from Cargo.lock',
+  );
   process.exit(1);
 }
 const lockVersion = lockVersionMatch[1];
@@ -47,4 +49,6 @@ if (tomlVersion !== lockVersion) {
   process.exit(1);
 }
 
-console.log(`✅ [OK] Cargo.lock libragent version (v${lockVersion}) matches Cargo.toml (v${tomlVersion})`);
+console.log(
+  `✅ [OK] Cargo.lock libragent version (v${lockVersion}) matches Cargo.toml (v${tomlVersion})`,
+);

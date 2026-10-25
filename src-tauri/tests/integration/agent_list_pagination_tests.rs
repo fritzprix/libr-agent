@@ -153,7 +153,7 @@ async fn list_configs_keeps_table_contiguous_and_adds_pagination_note_after_rows
     .expect("list should succeed");
 
     let text = extract_text(&result);
-    assert!(text.contains("|---|---|---|---|---|\n|"));
+    assert!(text.contains("|---|---|---|\n|"));
     assert!(text.contains("Showing 2 to 3 of 3 items"));
 }
 
@@ -376,4 +376,92 @@ async fn list_sessions_empty_total_does_not_nudge_check_session() {
         structured.get("nextActions").is_none(),
         "empty list must omit checkSession nextActions: {structured}"
     );
+}
+
+fn result_size(result: &MCPResult) -> usize {
+    serde_json::to_string(result)
+        .expect("result should serialize")
+        .len()
+}
+
+async fn create_sixty_assistants(db: &DatabaseConnection, tag: &str) {
+    let repo = SqliteAssistantRepository::new(db.clone());
+    for index in 0..60 {
+        repo.create_assistant(
+            format!("{tag}-id-{index}"),
+            format!("{tag}-assistant-{index}"),
+            json!({
+                "description": format!(
+                    "{tag} specialist number {index} that helps with research, drafting and review of long documents"
+                ),
+                "systemPrompt": "You are a careful specialist. ".repeat(40),
+                "allowedBuiltInServiceAliases": ["workspace", "agent", "scheduled_task"],
+                "mcpServerIds": []
+            })
+            .to_string(),
+        )
+        .await
+        .expect("assistant should be created");
+    }
+}
+
+#[tokio::test]
+async fn list_configs_default_is_a_short_summary_and_verbose_keeps_details() {
+    let _guard = TEST_GUARD.lock().await;
+    let db = test_db().await;
+    let tag = format!("sum{}", next_test_id());
+    create_sixty_assistants(&db, &tag).await;
+
+    let summary = list_agent_configs_for_test(&db, &json!({ "query": tag, "limit": 60 }))
+        .await
+        .expect("summary list should succeed");
+    let verbose =
+        list_agent_configs_for_test(&db, &json!({ "query": tag, "limit": 60, "verbose": true }))
+            .await
+            .expect("verbose list should succeed");
+
+    eprintln!(
+        "RAW_SIZE summary={} verbose={}",
+        result_size(&summary),
+        result_size(&verbose)
+    );
+    let default_page = list_agent_configs_for_test(&db, &json!({ "query": tag }))
+        .await
+        .expect("default page should succeed");
+    eprintln!("RAW_SIZE default_page_20={}", result_size(&default_page));
+    assert!(extract_text(&default_page).contains("Narrow the list with query"));
+
+    let summary_text = extract_text(&summary);
+    assert!(summary_text.contains("| Name | ID | Description |"));
+    assert!(!summary_text.contains("Capabilities"));
+    assert!(summary_text.contains("verbose=true"));
+    let verbose_text = extract_text(&verbose);
+    assert!(verbose_text.contains("| Name | ID | Capabilities | Servers | Description |"));
+
+    let summary_json = serde_json::to_string(&summary).unwrap();
+    assert!(!summary_json.contains("systemPrompt"));
+    assert!(serde_json::to_string(&verbose)
+        .unwrap()
+        .contains("systemPrompt"));
+
+    assert!(result_size(&summary) * 2 < result_size(&verbose));
+}
+
+#[tokio::test]
+async fn list_configs_query_matches_id_for_detail_lookup() {
+    let _guard = TEST_GUARD.lock().await;
+    let db = test_db().await;
+    let tag = format!("idq{}", next_test_id());
+    create_sixty_assistants(&db, &tag).await;
+
+    let result = list_agent_configs_for_test(
+        &db,
+        &json!({ "query": format!("{tag}-id-7"), "verbose": true }),
+    )
+    .await
+    .expect("lookup should succeed");
+
+    let text = extract_text(&result);
+    assert!(text.contains(&format!("`{tag}-id-7`")));
+    assert!(text.contains("Capabilities"));
 }

@@ -18,7 +18,7 @@ pub mod guidance;
 pub use builder::{guided_error, ErrorBuilder};
 pub use categories::{ErrorCategory, ToolGroup};
 pub use convenience::*;
-pub use guidance::{hint_headers, ErrorGuidance, SuccessHint};
+pub use guidance::{hint_headers, wait_for_process_hint, ErrorGuidance, SuccessHint};
 
 #[cfg(test)]
 mod tests;
