@@ -137,7 +137,6 @@ async fn list_agent_configs_from_db(
 
     let mut results = Vec::new();
     let mut text_summary = format!("Found {} agent configurations.\n\n", total);
-    let mut any_truncated = false;
     if !paged_agents.is_empty() {
         if verbose {
             text_summary.push_str("| Name | ID | Capabilities | Servers | Description |\n");
@@ -171,7 +170,6 @@ async fn list_agent_configs_from_db(
                 .take(SUMMARY_DESCRIPTION_MAX_CHARS - 3)
                 .collect::<String>()
                 + "...";
-            any_truncated = true;
         }
 
         let name_clean = agent.name.replace('|', "\\|");
@@ -220,10 +218,6 @@ async fn list_agent_configs_from_db(
     if !verbose && !results.is_empty() {
         text_summary.push_str(
             "\n*(Summary view. For capabilities, servers and full descriptions of one config, call agent__listAgents(query=\"<id>\", verbose=true))*\n",
-        );
-    } else if any_truncated {
-        text_summary.push_str(
-            "\n*(Some descriptions were truncated. Use verbose=true to see full descriptions)*\n",
         );
     }
 
