@@ -38,6 +38,18 @@ from pathlib import Path
 APP_IDENTIFIER = "com.fritzprix.libragent"
 DB_FILE_NAME = "libragent_v2.db"
 DEFAULT_PORT = 3031
+
+
+def safe_print(*args: object, **kwargs: object) -> None:
+    """``print`` that survives a closed or broken stdout/stderr.
+
+    When the controlling terminal goes away every ``print`` raises
+    ``OSError: [Errno 5]``; diagnostics must not kill a trial or a run.
+    """
+    try:
+        print(*args, **kwargs)  # type: ignore[call-overload]
+    except (OSError, ValueError):
+        pass
 DEFAULT_ROOT = Path(".libragent/work/bench-instance")
 # Set by `run-harbor-bench.cjs --isolated`; the Harbor adapter relaunches the
 # instance from the seed before every trial when the app binary is given.
@@ -511,9 +523,9 @@ def launch(layout: InstanceLayout, app_bin: Path, *, timeout_sec: float) -> int:
     if not _wait_healthy(port, timeout_sec, process):
         stop(layout)
         raise InstanceError(f"Bench instance did not become healthy on port {port}; see {layout.log_file}")
-    print(f"Bench instance ready: pid={process.pid} api_url=http://localhost:{port}/api")
-    print(f"Data dir: {layout.data_dir.resolve()}")
-    print(
+    safe_print(f"Bench instance ready: pid={process.pid} api_url=http://localhost:{port}/api")
+    safe_print(f"Data dir: {layout.data_dir.resolve()}")
+    safe_print(
         f"LLM settings from {llm['source_db']}: models={', '.join(llm['models_in_effect']) or 'none'}"  # type: ignore[arg-type]
         + (" (MIXED)" if llm["mixed_models"] else "")
     )
@@ -577,15 +589,15 @@ def stop(layout: InstanceLayout, *, grace_sec: float = 10.0) -> None:
         if _pid_alive(pid):
             with contextlib.suppress(ProcessLookupError):
                 os.killpg(pid, signal.SIGKILL)
-        print(f"Stopped bench instance (pid {pid}).")
+        safe_print(f"Stopped bench instance (pid {pid}).")
     else:
-        print("No running bench instance.")
+        safe_print("No running bench instance.")
     layout.pid_file.unlink(missing_ok=True)
 
     strays = instance_pids(layout)
     if strays:
         _terminate(strays, grace_sec)
-        print(f"Stopped {len(strays)} detached bench process(es): {strays}")
+        safe_print(f"Stopped {len(strays)} detached bench process(es): {strays}")
 
 
 def relaunch(layout: InstanceLayout, app_bin: Path, *, timeout_sec: float = DEFAULT_LAUNCH_TIMEOUT_SEC) -> int:
@@ -623,13 +635,13 @@ def main(argv: list[str] | None = None) -> int:
             summary = build_seed(
                 args.source_db or default_source_db(), layout, assistant_id=args.assistant_id, port=args.port
             )
-            print(json.dumps(summary, indent=2))
+            safe_print(json.dumps(summary, indent=2))
         elif args.command == "launch":
             launch(layout, args.app_bin, timeout_sec=args.timeout)
         elif args.command == "stop":
             stop(layout, grace_sec=0.0 if args.force else 10.0)
     except InstanceError as error:
-        print(f"error: {error}", file=sys.stderr)
+        safe_print(f"error: {error}", file=sys.stderr)
         return 1
     return 0
 

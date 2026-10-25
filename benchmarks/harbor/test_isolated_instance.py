@@ -15,7 +15,9 @@ from benchmarks.harbor.isolated_instance import (
     instance_pids,
     instance_env,
     reset_run_dir,
+    safe_print,
     sandbox_command,
+    stop,
 )
 
 ASSISTANT_ID = "bench-assistant"
@@ -269,3 +271,26 @@ def test_llm_settings_sync_never_mutates_source_and_requires_it(seeded, tmp_path
     source.unlink()
     with pytest.raises(InstanceError):
         apply_prod_llm_settings(layout)
+
+
+class _BrokenStream:
+    """Stands in for stdout after the controlling terminal went away."""
+
+    def write(self, _text: str) -> int:
+        raise OSError(5, "Input/output error")
+
+    def flush(self) -> None:
+        raise OSError(5, "Input/output error")
+
+
+def test_safe_print_swallows_broken_stdout(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sys.stdout", _BrokenStream())
+    safe_print("diagnostic")  # must not raise
+
+
+def test_stop_completes_when_stdout_is_broken(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sys.stdout", _BrokenStream())
+    layout = InstanceLayout(tmp_path / "bench")
+    layout.root.mkdir(parents=True)
+    stop(layout)  # no running instance: used to die on print("No running bench instance.")
+    assert not layout.pid_file.exists()
