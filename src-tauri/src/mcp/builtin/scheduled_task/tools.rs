@@ -32,11 +32,11 @@ fn schedule_callback_tool() -> MCPTool {
         name: "scheduleCallback".to_string(),
         title: Some("Schedule Session Callback".to_string()),
         description: tool_description(
-            "Schedule a one-shot delay or recurring callback for the current session.",
+            "Schedule a one-shot delay or recurring callback for the current session. Pass EXACTLY ONE of delaySeconds (one-shot) or cronExpression (recurring); a call with neither or both fails.",
             &[],
             &[
                 "Provide message text to inject when the callback fires.",
-                "Use delaySeconds for one-shot OR cronExpression for recurring — not both.",
+                "Always include message plus exactly one of delaySeconds or cronExpression, e.g. {\"message\":\"check build\",\"delaySeconds\":600} or {\"message\":\"daily report\",\"cronExpression\":\"0 9 * * *\"}.",
                 execution_mode_workflow_steps()[0],
                 execution_mode_workflow_steps()[1],
             ],
@@ -66,7 +66,7 @@ fn schedule_callback_tool() -> MCPTool {
                     integer_prop(
                         Some(1),
                         Some(86400),
-                        Some("One-shot delay in seconds. Mutually exclusive with cronExpression."),
+                        Some("One-shot delay in seconds. Required unless cronExpression is given; never send both."),
                     ),
                 ),
                 (
@@ -74,7 +74,7 @@ fn schedule_callback_tool() -> MCPTool {
                     string_prop(
                         Some(1),
                         Some(120),
-                        Some("Cron expression for recurring session callbacks. Mutually exclusive with delaySeconds."),
+                        Some("Cron expression for recurring session callbacks. Required unless delaySeconds is given; never send both."),
                     ),
                 ),
                 (
@@ -400,5 +400,30 @@ fn delete_scheduled_task_tool() -> MCPTool {
         output_schema: None,
         annotations: None,
         libragent_wait: None,
+    }
+}
+
+#[cfg(test)]
+mod schedule_callback_schema_tests {
+    use super::schedule_callback_tool;
+
+    #[test]
+    fn either_or_constraint_is_explicit_in_descriptions() {
+        let tool = schedule_callback_tool();
+        assert!(tool.description.contains("EXACTLY ONE of delaySeconds"));
+        assert!(tool.description.contains("\"delaySeconds\":600"));
+
+        let schema = serde_json::to_value(&tool.input_schema).unwrap();
+        let props = &schema["properties"];
+        for field in ["delaySeconds", "cronExpression"] {
+            let description = props[field]["description"].as_str().unwrap();
+            assert!(
+                description.contains("never send both"),
+                "{field}: {description}"
+            );
+        }
+        // Root oneOf is not accepted by every supported provider; only message is required.
+        assert!(schema.get("oneOf").is_none());
+        assert_eq!(schema["required"], serde_json::json!(["message"]));
     }
 }
