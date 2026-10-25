@@ -66,4 +66,54 @@ function leftoverTaskContainers(before, now) {
     .map((container) => container.id);
 }
 
-module.exports = { descendantPids, leftoverTaskContainers };
+/**
+ * Counts Ctrl+C presses from one SIGINT listener and routes each to the handler
+ * attached for the running child (none between runs, when presses are only counted).
+ * @returns {{
+ *   presses: number,
+ *   press: () => void,
+ *   attach: (handler: (press: number) => void) => void,
+ *   detach: () => void,
+ * }}
+ */
+function createInterruptController() {
+  /** @type {((press: number) => void) | null} */
+  let handler = null;
+  const controller = {
+    presses: 0,
+    press() {
+      controller.presses += 1;
+      if (handler) handler(controller.presses);
+    },
+    attach(/** @type {(press: number) => void} */ next) {
+      handler = next;
+    },
+    detach() {
+      handler = null;
+    },
+  };
+  return controller;
+}
+
+/**
+ * SIGKILL `rootPid` and everything below it.
+ * @param {number} rootPid
+ * @param {(pid: number, signal: 'SIGKILL') => void} [kill]
+ * @param {string} [procRoot]
+ */
+function killProcessTree(rootPid, kill = process.kill, procRoot = '/proc') {
+  for (const pid of [...descendantPids(rootPid, procRoot), rootPid]) {
+    try {
+      kill(pid, 'SIGKILL');
+    } catch {
+      // already gone
+    }
+  }
+}
+
+module.exports = {
+  descendantPids,
+  leftoverTaskContainers,
+  createInterruptController,
+  killProcessTree,
+};

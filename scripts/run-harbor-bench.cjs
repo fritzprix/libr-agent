@@ -21,7 +21,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 const {
-  descendantPids,
+  createInterruptController,
+  killProcessTree,
   leftoverTaskContainers,
 } = require('./lib/bench-interrupt.cjs');
 
@@ -173,8 +174,8 @@ function readSeedInfo() {
   return { assistantId: info.assistant_id, port: info.port };
 }
 
-/** @type {{ presses: number }} */
-const interrupt = { presses: 0 };
+// One SIGINT listener for the whole run; runBenchChild attaches the press handler.
+const interrupt = createInterruptController();
 
 /**
  * @param {string[]} args
@@ -222,9 +223,8 @@ function runBenchChild(command, args) {
       stdio: 'inherit',
       env: process.env,
     });
-    const onSigint = () => {
-      interrupt.presses += 1;
-      if (interrupt.presses === 1) {
+    interrupt.attach((press) => {
+      if (press === 1) {
         console.error(
           '\nStopping: Harbor is cancelling the running trial and removing its task containers ' +
             '(partial results are kept). Press Ctrl+C again to force-stop immediately.',
@@ -234,26 +234,15 @@ function runBenchChild(command, args) {
       console.error(
         '\nForce-stopping: killing Harbor, the bench instance and task containers.',
       );
-      const pids = child.pid === undefined ? [] : descendantPids(child.pid);
-      for (const pid of [
-        ...pids,
-        ...(child.pid === undefined ? [] : [child.pid]),
-      ]) {
-        try {
-          process.kill(pid, 'SIGKILL');
-        } catch {
-          // already gone
-        }
-      }
-    };
-    process.on('SIGINT', onSigint);
+      if (child.pid !== undefined) killProcessTree(child.pid);
+    });
     child.on('error', (error) => {
       console.error(error.message);
-      process.off('SIGINT', onSigint);
+      interrupt.detach();
       resolve(1);
     });
     child.on('close', (code, signal) => {
-      process.off('SIGINT', onSigint);
+      interrupt.detach();
       resolve(code ?? (signal ? 128 : 1));
     });
   });
@@ -368,9 +357,7 @@ if (isolated) {
   const sh = path.join(repoRoot, 'scripts', 'run-harbor-bench.sh');
   // Between runs (launch, stop) Ctrl+C must not kill the runner before the instance is
   // stopped; runBenchChild adds its own handler while Harbor is running.
-  process.on('SIGINT', () => {
-    interrupt.presses += 1;
-  });
+  process.on('SIGINT', () => interrupt.press());
   (async () => {
     let exitStatus = 0;
     for (const mode of workspaceModes.length > 0 ? workspaceModes : [null]) {
