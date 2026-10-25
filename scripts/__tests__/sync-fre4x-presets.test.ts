@@ -194,6 +194,13 @@ describe('sync-fre4x-presets', () => {
       proxy: fre4x('proxy', declared('HTTPS_PROXY')),
       ca: fre4x('ca', declared('NODE_EXTRA_CA_CERTS')),
       cert: fre4x('cert', declared('SSL_CERT_FILE')),
+      tls: fre4x('tls', declared('NODE_TLS_REJECT_UNAUTHORIZED')),
+      nodeEnv: fre4x('nodeEnv', declared('NODE_PRESERVE_SYMLINKS')),
+      corepack: fre4x('corepack', declared('COREPACK_NPM_REGISTRY')),
+      git: fre4x('git', declared('GIT_SSH_COMMAND')),
+      bashEnv: fre4x('bashEnv', declared('BASH_ENV')),
+      env: fre4x('env', declared('ENV')),
+      npmToken: fre4x('npmToken', declared('NPM_TOKEN')),
       undeclared: fre4x('undeclared', { env: { SOME_KEY: 'x' } }),
       partial: fre4x('partial', {
         env: { A_KEY: '', B_KEY: '' },
