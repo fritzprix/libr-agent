@@ -21,9 +21,16 @@ pub async fn agent_handle_compact_response(
     to_id: String,
     compacted_delta_count: usize,
     summary: String,
+    stream_meta: Option<crate::agent::session_manager::CompactStreamMeta>,
 ) -> Result<AgentResponse, String> {
     let outcome = manager
-        .handle_compact_response(&session_id, to_id, compacted_delta_count, summary)
+        .handle_compact_response(
+            &session_id,
+            to_id,
+            compacted_delta_count,
+            summary,
+            stream_meta,
+        )
         .await?;
 
     Ok(AgentResponse {

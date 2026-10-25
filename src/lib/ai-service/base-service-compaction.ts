@@ -1,6 +1,7 @@
 import type { Message } from '@/models/chat';
 import { AIServiceError, type AIServiceProvider } from './types';
 import type { CompactOptions } from './base-service-shared';
+import type { CompactStreamMeta } from './service-contracts';
 
 const COMPACTION_CONTAMINATION_SENTINEL = '<tool_call>';
 const COMPACTION_TOOL_MARKUP_PATTERNS = [
@@ -133,6 +134,7 @@ export async function compactMessages(
   });
 
   let summaryText = '';
+  const streamMeta: CompactStreamMeta = {};
   let abortedForContamination = false;
   try {
     for await (const chunk of streamGenerator) {
@@ -145,6 +147,22 @@ export async function compactMessages(
         parsedChunk = JSON.parse(chunk);
       } catch {
         parsedChunk = { content: chunk };
+      }
+
+      if (typeof parsedChunk.finishReason === 'string') {
+        streamMeta.finishReason = parsedChunk.finishReason;
+      }
+      const usage = parsedChunk.usage as Record<string, unknown> | undefined;
+      if (usage && typeof usage === 'object') {
+        if (typeof usage.promptTokens === 'number') {
+          streamMeta.promptTokens = usage.promptTokens;
+        }
+        if (typeof usage.completionTokens === 'number') {
+          streamMeta.completionTokens = usage.completionTokens;
+        }
+        if (typeof usage.totalTokens === 'number') {
+          streamMeta.totalTokens = usage.totalTokens;
+        }
       }
 
       const toolPayloadMarker = detectParsedChunkToolCallPayload(parsedChunk);
@@ -182,6 +200,8 @@ export async function compactMessages(
   } finally {
     upstreamAbortSignal?.removeEventListener('abort', abortFromUpstream);
   }
+
+  context.options?.onStreamMeta?.(streamMeta);
 
   if (abortedForContamination) {
     return summaryText.trim();

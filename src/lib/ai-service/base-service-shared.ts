@@ -1,6 +1,7 @@
 import type { Message } from '@/models/chat';
 import type { MCPTool } from '@/lib/mcp';
 import type { AIServiceConfig, SamplingOptions } from './types';
+import type { CompactStreamMeta } from './service-contracts';
 
 export interface StreamChatOptions {
   modelName?: string;
@@ -39,6 +40,8 @@ export interface CompactOptions {
   systemPrompt?: string;
   availableTools?: MCPTool[];
   signal?: AbortSignal;
+  /** Called once the stream ends with what the provider reported, if anything. */
+  onStreamMeta?: (meta: CompactStreamMeta) => void;
 }
 
 export interface SampleTextOptions {

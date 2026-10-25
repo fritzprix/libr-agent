@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Message } from '@/models/chat';
 import { AIServiceProvider } from './types';
 import {
@@ -40,5 +40,30 @@ describe('compactMessages partial output', () => {
 
     await expect(compactMessages(messages, context)).rejects.toBe(failure);
     expect(getCompactionPartialOutput(failure)).toBeUndefined();
+  });
+});
+
+describe('compactMessages stream meta', () => {
+  it('reports finish reason and usage to onStreamMeta', async () => {
+    const onStreamMeta = vi.fn();
+    const context = {
+      ...contextFor(async function* () {
+        yield JSON.stringify({ content: 'a long enough summary body' });
+        yield JSON.stringify({
+          usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
+        });
+        yield JSON.stringify({ finishReason: 'length' });
+      }),
+      options: { onStreamMeta },
+    };
+
+    await compactMessages(messages, context);
+
+    expect(onStreamMeta).toHaveBeenCalledWith({
+      finishReason: 'length',
+      promptTokens: 10,
+      completionTokens: 20,
+      totalTokens: 30,
+    });
   });
 });
