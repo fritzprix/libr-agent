@@ -8,6 +8,8 @@ description: >
   needs parent workspace state, workspace instructions, or workspace-scoped
   skills. For generator-evaluator / strict acceptance criteria / proof before
   done, load `delegation-eval-loop` after this skill's spawn mechanics.
+  Triggers: "다른 애한테 시켜", "위임", "백그라운드로 돌려", "하위 세션",
+  "hand this off", "run this in the background", "have another agent do it".
 ---
 
 # Delegate
