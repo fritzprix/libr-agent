@@ -1998,6 +1998,11 @@
         "title": "Sauvegarder ou déplacer une équipe Org",
         "body": "Exportez une équipe depuis Org sous forme de pack .libragent-org (assistants, planifications, playbooks et skills) et importez-la sur un autre appareil.",
         "cta": "Ouvrir Org"
+      },
+      "uiSize": {
+        "title": "Ajuster la taille de l'interface",
+        "body": "Redimensionnez toute l'interface dans Paramètres → General ou avec les raccourcis Ctrl/Cmd +, - et 0.",
+        "cta": "Ouvrir General"
       }
     }
   }

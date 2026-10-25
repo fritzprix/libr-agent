@@ -1998,6 +1998,11 @@
         "title": "Organisationsteam sichern oder umziehen",
         "body": "Exportieren Sie ein Team unter Org als .libragent-org-Paket – inklusive Assistenten, Zeitplänen, Playbooks und Skills – und importieren Sie es auf einem anderen Gerät.",
         "cta": "Org öffnen"
+      },
+      "uiSize": {
+        "title": "Oberflächengröße anpassen",
+        "body": "Skalieren Sie die gesamte Oberfläche unter Einstellungen → General oder jederzeit mit Strg/Cmd +, - und 0.",
+        "cta": "General öffnen"
       }
     }
   }

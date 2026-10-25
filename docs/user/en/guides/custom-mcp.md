@@ -85,11 +85,12 @@ Import MCP server configurations from Cursor into LibrAgent.
 
 The tool installer skill handles:
 
-- Direct registration into Extensions from npm packages, GitHub repositories, or JSON configurations.
+- Direct registration into Extensions from npm packages, GitHub repositories, or JSON configurations (checking the curated preset catalog first).
 - Automatic configuration imports from Cursor, VS Code, Windsurf, and Claude Desktop.
 - A connection check with `tool__verifyServer` after registration. If the check fails, the agent tells you the cause (for example, a missing runtime or API key).
+- After verification succeeds, the agent offers to attach the server to your current assistant and reminds you to start a new session.
 
-Each time the agent registers or changes an MCP server, the app shows the command (or URL) that will run and asks for your **approval**. YOLO mode does not skip this approval, because an MCP server runs a command on your computer.
+Installing an unmodified preset from the curated catalog skips the approval prompt. For any other MCP server registration or update, the app shows the command (or URL) that will run and asks for your **approval**. YOLO mode does not skip this approval, because an MCP server runs a command on your computer.
 
 If you give a GitHub URL, the agent checks the repository first. A repository with `SKILL.md` is a skill and is installed with `skill-deployer`. An MCP server package is installed with this skill.
 

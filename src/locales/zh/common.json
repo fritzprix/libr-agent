@@ -1998,6 +1998,11 @@
         "title": "备份或迁移组织团队",
         "body": "在 Org 页面将团队导出为包含助手、定时任务、剧本和技能的 .libragent-org 归档包，并在另一台设备上导入。",
         "cta": "打开 Org"
+      },
+      "uiSize": {
+        "title": "调节界面显示大小",
+        "body": "在 设置 → General 中调节，或随时按 Ctrl/Cmd +、-、0 缩放整个界面。",
+        "cta": "打开 General 设置"
       }
     }
   }

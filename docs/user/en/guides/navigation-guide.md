@@ -85,5 +85,5 @@ Access all core capabilities of LibrAgent from the primary left sidebar:
 ## ⚙️ 3. Settings
 
 - **AI & Models**: Configure provider API keys and select default models.
-- **General**: Toggle dark/light appearance and UI language.
+- **General**: Toggle dark/light appearance, switch UI language, and adjust **UI size** (`Ctrl/Cmd` + `+`, `-`, `0`).
 - **Security & Updates**: Verify local session isolation and check for software updates.

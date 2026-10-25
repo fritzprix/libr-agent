@@ -1998,6 +1998,11 @@
         "title": "Faça backup ou mova uma equipe Org",
         "body": "Exporte uma equipe em Org como pacote .libragent-org — com assistentes, agendamentos, playbooks e skills — e importe em outro dispositivo.",
         "cta": "Abrir Org"
+      },
+      "uiSize": {
+        "title": "Ajustar o tamanho da interface",
+        "body": "Redimensione toda a interface em Configurações → General ou use os atalhos Ctrl/Cmd +, - e 0 a qualquer momento.",
+        "cta": "Abrir General"
       }
     }
   }

@@ -1,3 +1,31 @@
+## [0.9.28] - 2026-10-25
+
+### 🚀 Features & Capabilities
+
+- **Adjustable UI size**: Scale the entire interface from **Settings → General** or with `Ctrl/Cmd` + `+`, `-`, and `0` keyboard shortcuts (default `110%`, applied immediately) (#2291).
+- **Install skills from GitHub URLs & outbox deploy**: `skill-deployer` installs skills directly from GitHub repository or subfolder URLs with zip + git fallback (#2181), and `skill.py` (`new`/`clone`/`validate`/`deploy`) deploys validated user skills through a workspace outbox — including in Docker-isolated sessions (#2276, #2277).
+- **Curated MCP catalog & approval gating**: Renamed `tool-installer` to `mcp-installer` (with `@skill:tool-installer` compatibility and an offer to attach verified servers to the current assistant) (#2200); exposed curated presets via `tool__listServers(scope="catalog")` (#2199, #2258); curated presets skip manual approval while external or custom MCP server registrations and updates require hard approval (even in YOLO mode) and record server provenance (#2180, #2184, #2231, #2237).
+- **Per-session wake token for `call-me-back`**: Added `POST /api/sessions/:id/wake/:token` with per-session tokens exported as `LIBRAGENT_WAKE_URL` in host `runShell`/`spawnProcess` and redacted from tool results (#2182, #2230, #2238).
+- **`runShell` multi-line `script` mode & bash syntax precheck**: `runShell` accepts a `script` parameter that executes multi-line bash verbatim via an fd-3 heredoc and pre-validates bash syntax before running (#2214).
+- **Concise `listAgents` config summaries**: `agent__listAgents(type="configs")` defaults to a short `name`/`id`/`description` summary with ID matching in `query` and `verbose=true` for full details (#2305, #2312).
+
+### 🐛 Fixes & Hardening
+
+- **App database & user skills write protection**: Block shell access to LibrAgent's own SQLite database even in Unsafe mode (including when `XDG_DATA_HOME` is overridden) (#2266, #2285), and block direct workspace file-tool writes inside the user skills directory (#2275).
+- **Docker session skills & `cwd` handling**: Mount user/system skill roots read-only in Docker sessions, hide host `fallback_location` paths in container prompts, and honor `cwd` in Docker-isolated `runShell` and `spawnProcess` (#2244, #2276, #2293, #2309).
+- **Scheduled task vs session callback routing**: Clarify `scheduleCallback` (same session and workspace, explicit `delaySeconds` vs `at` constraint) versus `createScheduledTask` (standalone scheduled run requiring `workspaceOverride` for folder access) (#2284, #2311, #2316).
+- **Stream cancellation & final-turn tool recovery**: Propagate stream cancellation to the native HTTP request after response headers arrive (#2223), and recover when a model's final turn contains only text-formatted tool-call markup (#2282).
+- **Deleted session route guard**: Stop re-opening deleted sessions when navigating routes (#2233).
+- **Compaction diagnostics**: Save partial or raw LLM output with `finish_reason` and token usage when compaction streams error, abort, hit output caps, or produce clamped/invalid summaries (#2299, #2302, #2303, #2315).
+- **Linux `.deb` ONNX Runtime path**: Install bundled `libonnxruntime` under `/usr/lib/libragent/` with `RUNPATH` so `.deb` packages no longer conflict with distro `libonnxruntime` packages (#2210, #2232).
+- **Large media IPC & workspace search**: Avoid inline base64 over Tauri IPC for large media downloads (>2 MB) by persisting workspace-scoped temp `file://` URIs (#2144), and report nonexistent roots clearly in `globFiles`/`grepFiles` (#2261).
+
+### 🔧 Performance & Internal
+
+- **Harbor `layman-intent` benchmark & isolated runner**: Added the P0 `libragent-layman-intent` dataset, critical-path trajectory graders, `attach`/`managed`/`host` workspace modes, prod LLM settings sync, two-stage Ctrl+C shutdown, and per-trial instance logs (#2183, #2227, #2229, #2239, #2241, #2243, #2246, #2280, #2296, #2297, #2314).
+- **Maintainer automation skills (`worker-loop` & `gatekeeper-loop`)**: Added autonomous PR/issue `worker-loop` and paired `gatekeeper-loop` reviewer skills with dedicated worktree isolation.
+- **Modular codebase splits**: Split large backend and frontend modules (`agent/state`, `agent/handlers/sessions`, `agent/handlers/configs`, `browser/content`, `workspace_runtime_manager`, `AgentSessionListContext`, `SessionHistoryPanel`) into cohesive submodules.
+
 ## [0.9.27] - 2026-10-20
 
 ### 🚀 Features & Capabilities

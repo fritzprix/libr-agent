@@ -89,6 +89,13 @@ Create a weekly-notes skill and validate it strictly.
 Deploy weekly-notes to this project (workspace).
 ```
 
+You can also install a skill directly from a GitHub repository or subfolder URL:
+
+```
+@skill:skill-deployer
+Install the skill from https://github.com/owner/repo/tree/main/skills/my-skill for my whole account (global).
+```
+
 - Unsure where it should live? Choose **this project (workspace)**.
 - Do **not** deploy into the app’s built-in area — the app may clear it.
 - For an assistant-only skill, tell deployer **which assistant**.
