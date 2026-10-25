@@ -120,7 +120,7 @@ async fn scan_workspace_artifacts(session_id: &str) -> CompactWorkspaceArtifacts
     if let Ok(mut entries) = tokio::fs::read_dir(&fallback_dir).await {
         while let Ok(Some(entry)) = entries.next_entry().await {
             let name = entry.file_name().to_string_lossy().to_string();
-            if name.starts_with("fallback-") {
+            if name.starts_with("fallback-") || name.starts_with("raw-") {
                 fallback_artifacts.push(format!(".libragent/tool-results/compaction/{name}"));
             }
         }

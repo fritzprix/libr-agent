@@ -142,6 +142,7 @@ pub async fn handle_compact_error_with_dispatcher(
                         telemetry_phase: crate::agent::compaction_telemetry::CompactionTelemetryPhase::HardFallback,
                         epoch_path: None,
                         fallback_path: None,
+                        raw_output_path: None,
                     },
                     &error.display_message,
                     Some(&snapshot),

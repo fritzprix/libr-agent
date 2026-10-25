@@ -35,6 +35,8 @@ pub struct CompactionTelemetryEvent {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fallback_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw_output_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub prompt_tokens_before: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prompt_tokens_after_projection: Option<u64>,
@@ -48,6 +50,7 @@ pub struct CompactionTelemetryEventDraft {
     pub error: Option<String>,
     pub epoch_path: Option<String>,
     pub fallback_path: Option<String>,
+    pub raw_output_path: Option<String>,
     pub prompt_tokens_before: Option<u64>,
     pub prompt_tokens_after_projection: Option<u64>,
 }
@@ -78,6 +81,7 @@ pub fn push_compaction_event(
         error: draft.error,
         epoch_path: draft.epoch_path,
         fallback_path: draft.fallback_path,
+        raw_output_path: draft.raw_output_path,
         prompt_tokens_before: draft.prompt_tokens_before,
         prompt_tokens_after_projection: draft.prompt_tokens_after_projection,
     });

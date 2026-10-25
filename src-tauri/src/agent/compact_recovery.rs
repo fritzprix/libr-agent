@@ -90,6 +90,7 @@ pub async fn handle_compact_error_state(
                     error: Some(error.display_message.clone()),
                     epoch_path: None,
                     fallback_path: None,
+                    raw_output_path: None,
                     prompt_tokens_before: None,
                     prompt_tokens_after_projection: None,
                 },
