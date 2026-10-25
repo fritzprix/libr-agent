@@ -174,6 +174,21 @@ class CriticalPathTests(unittest.TestCase):
         # direct npm installs stay register -> verify
         self.assertEqual(_grade("T07", register, verify), [])
 
+    def test_watch_folder_accepts_a_task_only_with_workspace_override(self) -> None:
+        callback = _step(("a", "scheduled_task__scheduleCallback", {}, False))
+        self.assertEqual(_grade("T02", callback), [])
+        scoped = _step(
+            (
+                "a",
+                "scheduled_task__createScheduledTask",
+                {"workspaceOverride": "/app/inbox"},
+                False,
+            )
+        )
+        self.assertEqual(_grade("T02", scoped), [])
+        unscoped = _step(("a", "scheduled_task__createScheduledTask", {}, False))
+        self.assertNotEqual(_grade("T02", unscoped), [])
+
     def test_setup_wizard_accepts_verify_or_install(self) -> None:
         for script in ("verify_setup.sh", "install_node.sh", "install_node.ps1"):
             call = _step(("a", "workspace__runShell", {"command": f"bash {script}"}, False))

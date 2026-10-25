@@ -32,7 +32,7 @@ fn schedule_callback_tool() -> MCPTool {
         name: "scheduleCallback".to_string(),
         title: Some("Schedule Session Callback".to_string()),
         description: tool_description(
-            "Schedule a one-shot delay or recurring callback for the current session. Pass EXACTLY ONE of delaySeconds (one-shot) or cronExpression (recurring); a call with neither or both fails.",
+            "Schedule a one-shot delay or recurring callback for the current session; it runs in this session with its workspace access. Pass EXACTLY ONE of delaySeconds (one-shot) or cronExpression (recurring); a call with neither or both fails.",
             &[],
             &[
                 "Provide message text to inject when the callback fires.",
@@ -99,7 +99,7 @@ fn create_scheduled_task_tool() -> MCPTool {
         name: "createScheduledTask".to_string(),
         title: Some("Create Scheduled Task".to_string()),
         description: tool_description(
-            "Create a recurring scheduled task that can wake an assistant later.",
+            "Create a recurring scheduled task that can wake an assistant later. It runs outside the current session, so it does not inherit this session's workspace; set workspaceOverride when the task must access a specific folder.",
             &["Assistant configuration ID and valid cron expression."],
             &[
                 "Set name, cronExpression, and assistantId.",
@@ -425,5 +425,16 @@ mod schedule_callback_schema_tests {
         // Root oneOf is not accepted by every supported provider; only message is required.
         assert!(schema.get("oneOf").is_none());
         assert_eq!(schema["required"], serde_json::json!(["message"]));
+    }
+
+    #[test]
+    fn descriptions_state_the_workspace_access_criterion() {
+        let callback = schedule_callback_tool();
+        assert!(callback.description.contains("with its workspace access"));
+        let task = super::create_scheduled_task_tool();
+        assert!(task
+            .description
+            .contains("does not inherit this session's workspace"));
+        assert!(task.description.contains("workspaceOverride"));
     }
 }

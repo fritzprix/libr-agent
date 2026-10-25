@@ -183,7 +183,22 @@ TASKS: dict[str, TaskSpec] = {
     spec.task_id: spec
     for spec in (
         TaskSpec("T01", "t01-water-reminder", "P", "loop", SCHEDULE_CALLBACK),
-        TaskSpec("T02", "t02-watch-folder-mornings", "P", "loop", SCHEDULE_CALLBACK),
+        TaskSpec(
+            "T02",
+            "t02-watch-folder-mornings",
+            "P",
+            "loop",
+            (
+                # A scheduled task runs outside this session, so it only reaches
+                # the folder when the call carries a workspaceOverride.
+                Step(
+                    "__scheduleCallback",
+                    alternatives=(
+                        Step("__createScheduledTask", '"workspaceOverride"'),
+                    ),
+                ),
+            ),
+        ),
         TaskSpec(
             "T03",
             "t03-weekday-summary",
