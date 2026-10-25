@@ -8,7 +8,8 @@ mod summary;
 use self::context::compacted_messages_prefix_for_to_id;
 use self::fallback::{
     build_compaction_hard_fallback_artifact, build_compaction_hard_fallback_summary,
-    compaction_fallback_artifact_relative_path,
+    build_compaction_raw_output_artifact, compaction_fallback_artifact_relative_path,
+    compaction_raw_output_relative_path, RawCompactionOutputDump,
 };
 use self::persistence::{
     abort_empty_delta_compaction_and_resume, persist_compact_summary_and_resume,
@@ -56,6 +57,76 @@ pub struct CompactResponseParams<'a> {
 #[serde(rename_all = "camelCase")]
 pub struct CompactResponseOutcome {
     pub retried: bool,
+}
+
+/// Saves the pre-clamp LLM output so the compaction prompt can be tuned.
+/// Logs only the path and sizes, never the content.
+async fn dump_raw_compaction_output(dump: RawCompactionOutputDump<'_>) -> Option<String> {
+    let relative_path = compaction_raw_output_relative_path(
+        dump.session_id,
+        dump.to_id,
+        chrono::Utc::now().timestamp_millis(),
+    );
+    let text = build_compaction_raw_output_artifact(&dump);
+    match WorkspaceService::workspace_write_file(
+        &relative_path,
+        text.as_bytes(),
+        Some(dump.session_id.to_string()),
+    )
+    .await
+    {
+        Ok(()) => {
+            log::warn!(
+                "📝 Saved raw compaction output for session {} at '{}': raw_estimated_tokens={}, clamped_estimated_tokens={}, hard_limit_tokens={}",
+                dump.session_id,
+                relative_path,
+                dump.raw_estimated_tokens,
+                dump.clamped_estimated_tokens,
+                dump.hard_limit_tokens
+            );
+            Some(relative_path)
+        }
+        Err(error) => {
+            log::warn!(
+                "Failed to persist raw compaction output '{}' for session {}: {}",
+                relative_path,
+                dump.session_id,
+                error
+            );
+            None
+        }
+    }
+}
+
+/// Dumps the raw output when it was clamped or failed validation; a clean,
+/// unclamped summary writes nothing.
+pub async fn dump_raw_compaction_output_if_needed(
+    session_id: &str,
+    to_id: &str,
+    raw_output: &str,
+    clamp: &CompactSummaryClampResult,
+    validation: &Result<(), String>,
+    retry_count: u32,
+    model: &str,
+) -> Option<String> {
+    let reason = match (validation, clamp.was_clamped) {
+        (Err(error), true) => format!("clamped to hard limit; validation failed: {error}"),
+        (Err(error), false) => format!("validation failed: {error}"),
+        (Ok(()), true) => "clamped to hard limit".to_string(),
+        (Ok(()), false) => return None,
+    };
+    dump_raw_compaction_output(RawCompactionOutputDump {
+        session_id,
+        to_id,
+        reason: &reason,
+        raw_output,
+        raw_estimated_tokens: clamp.original_estimated_tokens,
+        clamped_estimated_tokens: clamp.estimated_tokens,
+        hard_limit_tokens: clamp.hard_limit_tokens,
+        retry_count,
+        model,
+    })
+    .await
 }
 
 async fn complete_compaction_with_hard_fallback(
@@ -229,6 +300,7 @@ pub async fn handle_compact_response(
             telemetry_phase: crate::agent::compaction_telemetry::CompactionTelemetryPhase::Failed,
             epoch_path: None,
             fallback_path: None,
+            raw_output_path: None,
         })
         .await;
     }
@@ -256,9 +328,30 @@ pub async fn handle_compact_response(
             clamped_summary.estimated_tokens
         );
     }
-    if let Err(validation_error) =
-        validate_compact_summary(&clamped_summary.summary, compacted_delta_count)
-    {
+    let validation_result =
+        validate_compact_summary(&clamped_summary.summary, compacted_delta_count);
+    let retry_count = match &compaction {
+        Some(compaction) => compaction.summary_retry_count().await,
+        None => 0,
+    };
+    let model = {
+        let active = active_sessions.read().await;
+        active
+            .get(session_id)
+            .map(|session| session.metadata.model.clone())
+            .unwrap_or_else(|| "unknown".to_string())
+    };
+    let raw_output_path = dump_raw_compaction_output_if_needed(
+        session_id,
+        &to_id,
+        &summary,
+        &clamped_summary,
+        &validation_result,
+        retry_count,
+        &model,
+    )
+    .await;
+    if let Err(validation_error) = validation_result {
         if let Some(outcome) = retry_invalid_compact_summary_if_possible(
             active_sessions,
             app_handle,
@@ -288,6 +381,7 @@ pub async fn handle_compact_response(
                     crate::agent::compaction_telemetry::CompactionTelemetryPhase::HardFallback,
                 epoch_path: None,
                 fallback_path: None,
+                raw_output_path,
             },
             &validation_error,
             fallback_snapshot.as_ref(),
@@ -346,6 +440,7 @@ pub async fn handle_compact_response(
                 crate::agent::compaction_telemetry::CompactionTelemetryPhase::Succeeded,
             epoch_path,
             fallback_path: None,
+            raw_output_path,
         },
         final_summary,
     )
