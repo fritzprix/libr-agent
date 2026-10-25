@@ -1,6 +1,6 @@
 ---
 name: mcp-installer
-description: "Registers, verifies, or imports MCP (Model Context Protocol) servers in LibrAgent or Claude Desktop. Use when users share MCP connection info (npm/npx/PyPI package, MCP server GitHub repo, config JSON, server URL), want a capability that needs a new MCP server (\"I want stock data\"), or want to import/sync settings from Cursor, VS Code, Windsurf, and similar editors. GitHub URL rule: a repo or subpath that contains SKILL.md is a skill — use skill-deployer instead; an MCP server package or MCP config uses this skill; if unsure, inspect the repo before installing. Triggers: install MCP, add MCP server, connect this, 연결해줘, 깔아줘, 설치해줘, MCP 추가, 서버 등록."
+description: "Registers, verifies, or imports MCP (Model Context Protocol) servers in LibrAgent or Claude Desktop. Use when users share MCP connection info (npm/npx/PyPI package, MCP server GitHub repo, config JSON, server URL), want a capability that needs a new MCP server (\"I want stock data\"), or want to import/sync settings from Cursor, VS Code, Windsurf, and similar editors. GitHub URL rule: a repo or subpath that contains SKILL.md is a skill — use skill-deployer instead; an MCP server package or MCP config uses this skill; if unsure, inspect the repo before installing. Capability requests (search the catalog with tool__listServers scope=catalog first, not the shell): 데이터 볼 수 있게 해줘, 기능 추가해줘, \"let me see X data\". Triggers: install MCP, add MCP server, connect this, 연결해줘, 깔아줘, 설치해줘, MCP 추가, 서버 등록, 데이터 볼 수 있게 해줘, 기능 추가해줘."
 ---
 
 # MCP Installer
