@@ -62,9 +62,10 @@ const NAME_RE = /^[a-z0-9][a-z0-9-]*$/;
 const PACKAGE_ARG_RE = /^@fre4x\/[a-z0-9][a-z0-9-]*(?:@[A-Za-z0-9._+-]+)?$/;
 const ENV_KEY_RE = /^[A-Z][A-Z0-9_]*$/;
 // Variables that change how the launcher itself runs (registry, proxy, preload,
-// trust store, search path): never accepted from upstream, declared or not.
+// trust store, search path, shell startup, package manager): never accepted from
+// upstream, declared or not. Whole families are blocked, not single names.
 const PROCESS_ENV_RE =
-  /^(NODE_OPTIONS|NODE_EXTRA_CA_CERTS|NODE_PATH|PATH|HOME|SHELL|NPM_CONFIG_.*|LD_.*|DYLD_.*|.*_PROXY|SSL_CERT_.*)$/i;
+  /^(PATH|HOME|SHELL|ENV|BASH_ENV|NODE_.*|NPM_.*|PNPM_.*|YARN_.*|COREPACK_.*|GIT_.*|LD_.*|DYLD_.*|.*_PROXY|SSL_CERT_.*)$/i;
 const ALLOWED_FIELDS = new Set(FIELD_ORDER);
 const ALLOWED_VARIABLE_FIELDS = new Set([
   'required',
