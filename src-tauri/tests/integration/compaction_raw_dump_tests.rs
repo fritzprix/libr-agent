@@ -4,7 +4,7 @@ use migration::MigratorTrait;
 use sea_orm::sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use std::str::FromStr;
 use tauri_mcp_agent_lib::agent::session_manager::{
-    dump_partial_compaction_output_if_any, dump_raw_compaction_output_if_needed,
+    dump_partial_compaction_output_if_any, dump_raw_compaction_output_if_needed, CompactStreamMeta,
     CompactSummaryClampResult,
 };
 use tauri_mcp_agent_lib::agent::ExecutionMode;
@@ -143,6 +143,7 @@ async fn clamped_summary_writes_raw_output_file() {
         &Ok(()),
         1,
         "gpt-4.1",
+        None,
     )
     .await
     .expect("clamp should write a raw dump");
@@ -171,6 +172,7 @@ async fn validation_failure_writes_raw_output_file_with_error() {
         &Err("Compaction summary contained tool-call markup".to_string()),
         2,
         "gpt-4.1",
+        None,
     )
     .await
     .expect("validation failure should write a raw dump");
@@ -198,6 +200,7 @@ async fn clean_unclamped_summary_writes_nothing() {
         &Ok(()),
         0,
         "gpt-4.1",
+        None,
     )
     .await;
 
@@ -244,4 +247,37 @@ async fn empty_partial_stream_output_writes_nothing() {
 
     assert!(path.is_none());
     assert!(raw_files(&workspace).is_empty());
+}
+
+#[tokio::test]
+async fn provider_output_cap_writes_raw_output_with_stream_meta() {
+    let _guard = test_guard().await;
+    let session_id = "raw-dump-length-session";
+    let workspace = session_with_workspace(session_id).await;
+    let meta = CompactStreamMeta {
+        finish_reason: Some("length".to_string()),
+        prompt_tokens: Some(1200),
+        completion_tokens: Some(4096),
+        total_tokens: Some(5296),
+    };
+
+    dump_raw_compaction_output_if_needed(
+        session_id,
+        "msg-4",
+        "summary cut off mid-sent",
+        &clamp_result(false),
+        &Ok(()),
+        0,
+        "gpt-4.1",
+        Some(&meta),
+    )
+    .await
+    .expect("finish_reason=length should write a raw dump");
+
+    let files = raw_files(&workspace);
+    assert_eq!(files.len(), 1);
+    let content = std::fs::read_to_string(&files[0]).unwrap();
+    assert!(content.contains("provider output cap reached"));
+    assert!(content.contains("- finish_reason: length"));
+    assert!(content.contains("- usage: prompt=1200, completion=4096, total=5296"));
 }

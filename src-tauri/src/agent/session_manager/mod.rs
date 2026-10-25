@@ -36,6 +36,7 @@ pub use compact::handle_compact_error_with_dispatcher;
 pub use compact::should_retry_budget_related_blocking_compaction;
 pub use compact::validate_compact_summary_for_testing;
 pub use compact::CompactContextView;
+pub use compact::CompactStreamMeta;
 pub use compact::CompactSummaryClampResult;
 
 use crate::agent::repositories::AgentRepositories;
@@ -802,6 +803,7 @@ impl AgentSessionManager {
         to_id: String,
         compacted_delta_count: usize,
         summary: String,
+        stream_meta: Option<compact::CompactStreamMeta>,
     ) -> Result<compact::CompactResponseOutcome, String> {
         compact::handle_compact_response(compact::CompactResponseParams {
             active_sessions: &self.active_sessions,
@@ -812,6 +814,7 @@ impl AgentSessionManager {
             to_id,
             compacted_delta_count,
             summary,
+            stream_meta,
         })
         .await
     }

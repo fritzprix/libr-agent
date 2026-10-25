@@ -1,4 +1,5 @@
 use super::summary::{extract_message_preview, COMPACTION_SUMMARY_TRUNCATION_SUFFIX};
+use super::CompactStreamMeta;
 use crate::agent::compaction_text::sanitize_compaction_semantic_text;
 use crate::agent::llm::completion::{
     build_compaction_preservation_hints, summarize_recent_tool_calls,
@@ -106,6 +107,7 @@ pub(super) struct RawCompactionOutputDump<'a> {
     pub hard_limit_tokens: Option<usize>,
     pub retry_count: u32,
     pub model: &'a str,
+    pub stream_meta: Option<&'a CompactStreamMeta>,
 }
 
 fn format_optional_tokens(tokens: Option<usize>) -> String {
@@ -121,8 +123,8 @@ pub(super) fn build_compaction_raw_output_artifact(dump: &RawCompactionOutputDum
          - Session: `{}`\n\
          - Boundary message: `{}`\n\
          - Reason: {}\n\
-         - finish_reason: unknown\n\
-         - usage: unknown\n\
+         - finish_reason: {}\n\
+         - usage: {}\n\
          - model: {}\n\
          - Raw estimated tokens: {}\n\
          - Clamped estimated tokens: {}\n\
@@ -132,6 +134,11 @@ pub(super) fn build_compaction_raw_output_artifact(dump: &RawCompactionOutputDum
         dump.session_id,
         dump.to_id,
         truncate_for_fallback(dump.reason, COMPACTION_FALLBACK_MESSAGE_TEXT_LIMIT),
+        dump.stream_meta
+            .and_then(|meta| meta.finish_reason.as_deref())
+            .unwrap_or("unknown"),
+        dump.stream_meta
+            .map_or_else(|| "unknown".to_string(), CompactStreamMeta::describe_usage),
         dump.model,
         dump.raw_estimated_tokens,
         format_optional_tokens(dump.clamped_estimated_tokens),

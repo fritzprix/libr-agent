@@ -42,6 +42,40 @@ pub use self::summary::{
     CompactSummaryClampResult,
 };
 
+/// What the frontend stream exposed about the compaction call; every field is
+/// absent for providers that do not report it.
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompactStreamMeta {
+    pub finish_reason: Option<String>,
+    pub prompt_tokens: Option<u64>,
+    pub completion_tokens: Option<u64>,
+    pub total_tokens: Option<u64>,
+}
+
+impl CompactStreamMeta {
+    fn hit_output_cap(&self) -> bool {
+        matches!(self.finish_reason.as_deref(), Some("length" | "max_tokens"))
+    }
+
+    pub(super) fn describe_usage(&self) -> String {
+        let part = |label: &str, value: Option<u64>| value.map(|v| format!("{label}={v}"));
+        let parts = [
+            part("prompt", self.prompt_tokens),
+            part("completion", self.completion_tokens),
+            part("total", self.total_tokens),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+        if parts.is_empty() {
+            "unknown".to_string()
+        } else {
+            parts.join(", ")
+        }
+    }
+}
+
 pub struct CompactResponseParams<'a> {
     pub active_sessions: &'a Arc<RwLock<HashMap<String, AgentSession>>>,
     pub app_handle: &'a AppHandle,
@@ -51,6 +85,7 @@ pub struct CompactResponseParams<'a> {
     pub to_id: String,
     pub compacted_delta_count: usize,
     pub summary: String,
+    pub stream_meta: Option<CompactStreamMeta>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -100,6 +135,7 @@ async fn dump_raw_compaction_output(dump: RawCompactionOutputDump<'_>) -> Option
 
 /// Dumps the raw output when it was clamped or failed validation; a clean,
 /// unclamped summary writes nothing.
+#[allow(clippy::too_many_arguments)]
 pub async fn dump_raw_compaction_output_if_needed(
     session_id: &str,
     to_id: &str,
@@ -108,13 +144,22 @@ pub async fn dump_raw_compaction_output_if_needed(
     validation: &Result<(), String>,
     retry_count: u32,
     model: &str,
+    stream_meta: Option<&CompactStreamMeta>,
 ) -> Option<String> {
-    let reason = match (validation, clamp.was_clamped) {
-        (Err(error), true) => format!("clamped to hard limit; validation failed: {error}"),
-        (Err(error), false) => format!("validation failed: {error}"),
-        (Ok(()), true) => "clamped to hard limit".to_string(),
-        (Ok(()), false) => return None,
-    };
+    let mut reasons = Vec::new();
+    if stream_meta.is_some_and(CompactStreamMeta::hit_output_cap) {
+        reasons.push("provider output cap reached (finish_reason=length)".to_string());
+    }
+    if clamp.was_clamped {
+        reasons.push("clamped to hard limit".to_string());
+    }
+    if let Err(error) = validation {
+        reasons.push(format!("validation failed: {error}"));
+    }
+    if reasons.is_empty() {
+        return None;
+    }
+    let reason = reasons.join("; ");
     dump_raw_compaction_output(RawCompactionOutputDump {
         session_id,
         to_id,
@@ -125,6 +170,7 @@ pub async fn dump_raw_compaction_output_if_needed(
         hard_limit_tokens: Some(clamp.hard_limit_tokens),
         retry_count,
         model,
+        stream_meta,
     })
     .await
 }
@@ -152,6 +198,7 @@ pub async fn dump_partial_compaction_output_if_any(
         hard_limit_tokens: None,
         retry_count,
         model,
+        stream_meta: None,
     })
     .await
 }
@@ -268,6 +315,7 @@ pub async fn handle_compact_response(
         to_id,
         compacted_delta_count,
         summary,
+        stream_meta,
     } = params;
     let (compaction, session_name) = {
         let active = active_sessions.read().await;
@@ -376,6 +424,7 @@ pub async fn handle_compact_response(
         &validation_result,
         retry_count,
         &model,
+        stream_meta.as_ref(),
     )
     .await;
     if let Err(validation_error) = validation_result {

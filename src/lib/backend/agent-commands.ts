@@ -192,6 +192,12 @@ export async function handleCompactResponse(
   toId: string,
   compactedDeltaCount: number,
   summary: string,
+  streamMeta?: {
+    finishReason?: string;
+    promptTokens?: number;
+    completionTokens?: number;
+    totalTokens?: number;
+  },
 ): Promise<AgentResponse<CompactResponseOutcome>> {
   return safeInvoke<AgentResponse<CompactResponseOutcome>>(
     'agent_handle_compact_response',
@@ -200,6 +206,7 @@ export async function handleCompactResponse(
       toId,
       compactedDeltaCount,
       summary,
+      streamMeta,
     },
   );
 }

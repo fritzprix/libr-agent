@@ -19,12 +19,22 @@ export interface AISampleTextOptions {
   signal?: AbortSignal;
 }
 
+/** Provider-reported details of a finished compaction stream. */
+export interface CompactStreamMeta {
+  finishReason?: string;
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+}
+
 export interface AICompactOptions {
   modelName?: string;
   config?: AIServiceConfig;
   systemPrompt?: string;
   availableTools?: MCPTool[];
   signal?: AbortSignal;
+  /** Called once the stream ends with what the provider reported, if anything. */
+  onStreamMeta?: (meta: CompactStreamMeta) => void;
 }
 
 export interface AIStreamingService {
