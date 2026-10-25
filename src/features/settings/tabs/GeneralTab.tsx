@@ -2,6 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { DisplaySettings } from '@/context/SettingsContext';
 import {
+  Button,
   Label,
   Select,
   SelectContent,
@@ -10,6 +11,8 @@ import {
   SelectValue,
 } from '@/components/ui';
 import { ColorThemePicker } from '../components/ColorThemePicker';
+import { cn } from '@/lib/utils';
+import { RESET_UI_SCALE, UI_SCALE_STEPS } from '@/lib/ui-scale';
 
 const LANGUAGE_OPTIONS = [
   { value: 'en', labelKey: 'settings.language.en', fallback: 'English' },
@@ -63,6 +66,7 @@ const PREFILL_DISPLAY_FORMAT_OPTIONS = [
 
 const LANGUAGE_SELECT_ID = 'settings-language';
 const FONT_FAMILY_SELECT_ID = 'settings-font-family';
+const UI_SIZE_LABEL_ID = 'settings-ui-size';
 const MESSAGE_LAYOUT_SELECT_ID = 'settings-message-layout';
 const TOOL_DETAIL_LEVEL_SELECT_ID = 'settings-tool-detail-level';
 const METRIC_DISPLAY_MODE_SELECT_ID = 'settings-metric-display-mode';
@@ -115,6 +119,8 @@ interface GeneralTabProps {
     key: keyof DisplaySettings,
     value: DisplaySettings[keyof DisplaySettings],
   ) => void;
+  /** Applies and persists the UI scale immediately, bypassing the Save button. */
+  onUiScaleChange?: (scale: number) => void;
 }
 
 function GeneralTabComponent({
@@ -122,6 +128,7 @@ function GeneralTabComponent({
   onChange,
   localDisplay,
   onDisplaySettingsChange,
+  onUiScaleChange,
 }: GeneralTabProps) {
   const { t } = useTranslation('common');
 
@@ -212,6 +219,58 @@ function GeneralTabComponent({
               {t(
                 'settings.display.fontFamilyDescription',
                 'Choose your preferred font for the application interface',
+              )}
+            </p>
+          </div>
+
+          <div className="min-w-0 md:col-span-2">
+            <Label
+              id={UI_SIZE_LABEL_ID}
+              className="mb-2 block text-muted-foreground"
+            >
+              {t('settings.display.uiSize', 'UI size')}
+            </Label>
+            <div className="flex flex-wrap items-center gap-2">
+              <div
+                role="radiogroup"
+                aria-labelledby={UI_SIZE_LABEL_ID}
+                className="inline-flex flex-wrap rounded-md border border-border/80 bg-background p-0.5"
+              >
+                {UI_SCALE_STEPS.map((step) => {
+                  const isSelected = localDisplay.uiScale === step;
+                  return (
+                    <button
+                      key={step}
+                      type="button"
+                      role="radio"
+                      aria-checked={isSelected}
+                      onClick={() => onUiScaleChange?.(step)}
+                      className={cn(
+                        'rounded px-3 py-1.5 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-ring',
+                        isSelected
+                          ? 'bg-primary text-primary-foreground'
+                          : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
+                      )}
+                    >
+                      {Math.round(step * 100)}%
+                    </button>
+                  );
+                })}
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={localDisplay.uiScale === RESET_UI_SCALE}
+                onClick={() => onUiScaleChange?.(RESET_UI_SCALE)}
+              >
+                {t('settings.display.uiSizeReset', 'Reset to 100%')}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {t(
+                'settings.display.uiSizeDescription',
+                'Scales the whole interface. Applies immediately. Shortcuts: Ctrl/Cmd +, -, 0.',
               )}
             </p>
           </div>

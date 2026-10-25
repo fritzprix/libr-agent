@@ -54,6 +54,12 @@ describe('normalizeDisplaySettings', () => {
     expect(normalized.colorTheme).toBe('amber');
   });
 
+  it('defaults uiScale to 110% when never set and keeps a saved step', () => {
+    expect(normalizeDisplaySettings({ fontFamily: 'Inter' }).uiScale).toBe(1.1);
+    expect(normalizeDisplaySettings({ uiScale: 1 }).uiScale).toBe(1);
+    expect(normalizeDisplaySettings({ uiScale: 3 }).uiScale).toBe(1.1);
+  });
+
   it('falls back to defaults for invalid blobs', () => {
     expect(normalizeDisplaySettings(null)).toEqual(DEFAULT_SETTING.display);
     expect(normalizeDisplaySettings({ messageLayout: 'wide' })).toEqual(

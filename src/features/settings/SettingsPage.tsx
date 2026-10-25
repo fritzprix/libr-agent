@@ -51,6 +51,7 @@ const SettingsPage: FC = function SettingsPage() {
     handleSaveAndLeave,
     handleTabChange,
     handleToolCallGroupVisibleCountChange,
+    handleUiScaleChange,
     handleWindowSizeChange,
     isDirty,
     isDiscardDialogOpen,
@@ -166,6 +167,7 @@ const SettingsPage: FC = function SettingsPage() {
                 onChange={handleLanguageChange}
                 localDisplay={formState.display}
                 onDisplaySettingsChange={updateDisplay}
+                onUiScaleChange={handleUiScaleChange}
               />
             </TabsContent>
 

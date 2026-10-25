@@ -12,6 +12,7 @@ import type {
   ServiceConfig,
 } from '@/context/SettingsContext';
 import { getLogger } from '@/lib/logger';
+import { applyUiScale } from '@/lib/ui-scale';
 import { dbUtils } from '@/lib/db/service';
 import { restartApp } from '@/lib/backend';
 import { factoryReset as backendFactoryReset } from '@/lib/backend/sessions';
@@ -49,7 +50,7 @@ async function invalidateModelCaches() {
 export function useSettingsPageController() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { value: globalSettings } = useSettings();
+  const { value: globalSettings, update: updateGlobalSettings } = useSettings();
   const { t } = useTranslation('common');
   const {
     formState,
@@ -65,6 +66,18 @@ export function useSettingsPageController() {
     save,
     isDirty,
   } = useSettingsForm();
+
+  // UI size applies and persists immediately; it never waits for Save.
+  const handleUiScaleChange = useCallback(
+    (uiScale: number) => {
+      void applyUiScale(uiScale);
+      updateDisplay('uiScale', uiScale);
+      void updateGlobalSettings({
+        display: { ...globalSettings.display, uiScale },
+      });
+    },
+    [globalSettings.display, updateDisplay, updateGlobalSettings],
+  );
 
   const [isDeleting, setIsDeleting] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
@@ -445,6 +458,7 @@ export function useSettingsPageController() {
     handleSaveAndLeave,
     handleTabChange,
     handleToolCallGroupVisibleCountChange,
+    handleUiScaleChange,
     handleWindowSizeChange,
     isDeleting,
     isDirty,

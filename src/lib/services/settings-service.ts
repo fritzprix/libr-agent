@@ -6,6 +6,7 @@ import {
   REPEATED_THINKING_MIN_REPETITIONS,
 } from '@/context/llm/repeatedTailDetector';
 import { DEFAULT_MAX_RECENT_MEDIA_MESSAGES } from '@/lib/media-settings';
+import { DEFAULT_UI_SCALE, normalizeUiScale } from '@/lib/ui-scale';
 
 export interface SafetySetting {
   category: string;
@@ -135,6 +136,8 @@ export interface DisplaySettings {
   /** Controls tool call display verbosity. 'simple' hides params/results/errors for regular users. */
   toolDetailLevel: 'simple' | 'developer';
   fontFamily: string;
+  /** Webview zoom factor; one of `UI_SCALE_STEPS`. */
+  uiScale: number;
   /**
    * Message layout style for the agent chat transcript.
    * - `document`: full-width document stream optimized for code/diffs (default)
@@ -281,6 +284,7 @@ export const DEFAULT_SETTING: Settings = {
     compactMetrics: false,
     toolDetailLevel: 'simple',
     fontFamily: 'Pretendard',
+    uiScale: DEFAULT_UI_SCALE,
     messageLayout: 'document',
     colorTheme: 'neutral',
     showFeatureTips: true,
@@ -352,6 +356,10 @@ export function normalizeDisplaySettings(
       typeof blob.fontFamily === 'string' && blob.fontFamily.length > 0
         ? blob.fontFamily
         : defaults.fontFamily,
+    uiScale:
+      blob.uiScale === undefined
+        ? defaults.uiScale
+        : normalizeUiScale(blob.uiScale),
     messageLayout: isMessageLayoutStyle(blob.messageLayout)
       ? blob.messageLayout
       : defaults.messageLayout,
