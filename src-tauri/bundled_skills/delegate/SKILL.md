@@ -9,7 +9,8 @@ description: >
   skills. For generator-evaluator / strict acceptance criteria / proof before
   done, load `delegation-eval-loop` after this skill's spawn mechanics.
   Triggers: "다른 애한테 시켜", "위임", "백그라운드로 돌려", "하위 세션",
-  "hand this off", "run this in the background", "have another agent do it".
+  "~시켜놓고", "백그라운드로 맡기고 우리는", "hand this off", "run this in the background",
+  "have another agent do it".
 ---
 
 # Delegate
@@ -48,6 +49,14 @@ Do **not** paste the full eval protocol into every delegation. Use light checks 
 7. Merge the result back into the parent flow.
 
 ## 1. Decide Whether to Delegate
+
+Sequential imperatives (for example "X를 다른 애한테 시켜놓고 우리는 딴 거 하자", "have another agent do X while we do Y")
+mean: call `agent__spawnSession` for X now, in the background, then continue with the parent task.
+Do not assume X was already handed off. Do this only when X's goal and deliverable can be written into
+the brief (see section 3: the child cannot see the parent's scratchpad or workspace, so inline the context
+it needs). Pick the assistant with `agent__listAgents(type="configs")` and pass its `configId`, with
+`waitForResult=false` (see section 4). If X is ambiguous or depends on context you cannot inline, ask one
+question instead.
 
 Delegate when the work is bounded, parallelizable, or benefits from a specialized assistant.
 
