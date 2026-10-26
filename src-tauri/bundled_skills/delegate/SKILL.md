@@ -54,7 +54,9 @@ Sequential imperatives (for example "X를 다른 애한테 시켜놓고 우리�
 mean: call `agent__spawnSession` for X now, in the background, then continue with the parent task.
 Do not assume X was already handed off. Do this only when X's goal and deliverable can be written into
 the brief (see section 3: the child cannot see the parent's scratchpad or workspace, so inline the context
-it needs). If X is ambiguous or depends on context you cannot inline, ask one question instead.
+it needs). Pick the assistant with `agent__listAgents(type="configs")` and pass its `configId`, with
+`waitForResult=false` (see section 4). If X is ambiguous or depends on context you cannot inline, ask one
+question instead.
 
 Delegate when the work is bounded, parallelizable, or benefits from a specialized assistant.
 
