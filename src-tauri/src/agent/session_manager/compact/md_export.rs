@@ -148,6 +148,8 @@ If intent or criteria are incomplete, unverified, or this summary feels incomple
 read `{path}` first, starting from the end: \
 `workspace__readFile(path=\"{path}\", size=-200)` (a negative `size` reads the last lines; \
 `tail {path}` in the session workspace also works). \
+If the tail is only assistant text and tool calls, search the file for the last `] USER` separator \
+to find the latest user request. \
 Read earlier parts only if needed — \
 empty Active Request alone is not a Done signal.",
         path = relative_path
@@ -181,6 +183,7 @@ mod tests {
         assert!(suffix.contains(
             "workspace__readFile(path=\".libragent/pre_compaction_epoch_4.md\", size=-200)"
         ));
+        assert!(suffix.contains("] USER"));
         assert!(suffix.contains("Before declaring done"));
         assert!(suffix.contains("Working Intent"));
         assert!(suffix.contains("Recent User Requests"));

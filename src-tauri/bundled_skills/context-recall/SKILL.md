@@ -59,6 +59,9 @@ Read the tail first with a negative `size`:
 workspace__readFile(path=".libragent/pre_compaction_epoch_{N}.md", size=-200)
 ```
 
+If the tail is only assistant text and tool calls, find the latest user request by
+searching the file for the last `] USER` separator line.
+
 Then read earlier parts (default top-down read) only if needed.
 
 Never pass globs to `workspace__readFile`. Read older epochs only if the

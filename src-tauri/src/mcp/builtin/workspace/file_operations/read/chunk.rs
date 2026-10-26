@@ -415,7 +415,7 @@ where
                 let chars_shown = last[..cut_at].chars().count();
                 hard_cut_chars_shown = chars_shown;
                 result_lines.push(format!(
-                    "{} …[hard-cut at {} chars, line continues]",
+                    "{} …[hard-cut at {} chars, line continues; the front of the line is shown]",
                     &last[..cut_at],
                     chars_shown
                 ));

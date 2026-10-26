@@ -630,6 +630,7 @@ mod tests {
         assert!(!chunk.content.is_empty());
         assert!(chunk.next_line_too_large);
         assert_eq!(chunk.displayed_start_line, 2);
+        assert!(chunk.content.contains("front of the line is shown"));
     }
 
     /// Every `is_tail_read` call site must keep the end: files over `LARGE_FILE_THRESHOLD`
