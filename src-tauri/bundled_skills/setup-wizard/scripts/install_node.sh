@@ -20,6 +20,14 @@ done
 echo "=== Node.js Installation Script ==="
 echo ""
 
+# The user-local fallback downloads Linux tarballs, so refuse other kernels instead of
+# installing binaries that cannot run (macOS: use Homebrew or the nodejs.org installer).
+if [ "$(uname -s)" != "Linux" ]; then
+    echo "This script supports Linux only (detected $(uname -s))." >&2
+    echo "On macOS, run 'brew install node' or use the installer from https://nodejs.org." >&2
+    exit 1
+fi
+
 # Check if Node.js is already installed
 if command -v node &> /dev/null && [ "$FORCE" -ne 1 ]; then
     echo "Node.js already installed: $(node --version)"
@@ -197,10 +205,17 @@ install_user_local() {
 
     # Non-interactive shells (bash -c) skip the rc files, so link into /usr/local/bin when possible.
     SYSTEM_LINKED=1
+    # Never replace a /usr/local/bin entry that another install provides.
     for bin in node npm npx corepack; do
-        if [ -e "$PREFIX/bin/$bin" ] && ! ln -sfn "$PREFIX/bin/$bin" "/usr/local/bin/$bin" 2> /dev/null; then
-            SYSTEM_LINKED=0
+        [ -e "$PREFIX/bin/$bin" ] || continue
+        target="/usr/local/bin/$bin"
+        if [ -e "$target" ] || [ -L "$target" ]; then
+            case $(readlink "$target" 2> /dev/null) in
+                "$PREFIX"/*) ;;
+                *) SYSTEM_LINKED=0; continue ;;
+            esac
         fi
+        ln -sfn "$PREFIX/bin/$bin" "$target" 2> /dev/null || SYSTEM_LINKED=0
     done
 
     # Idempotently add ~/.local/bin to the shell rc files
@@ -221,7 +236,7 @@ install_user_local() {
     echo "  $PATH_LINE"
     if [ "$SYSTEM_LINKED" -eq 0 ]; then
         echo ""
-        echo "Could not link into /usr/local/bin (not writable), so non-interactive shells"
+        echo "Could not link into /usr/local/bin (not writable, or already provided by another install), so non-interactive shells"
         echo "(e.g. 'bash -c \"node -v\"') will not find node on PATH. In those, use the absolute path:"
         echo "  $PREFIX/bin/node"
         echo "or run: export PATH=\"$PREFIX/bin:\$PATH\""
