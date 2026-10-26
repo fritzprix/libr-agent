@@ -7,6 +7,36 @@ use serde_json::{json, Value};
 
 use super::verify::test_server_connection;
 
+const AVAILABILITY_VALUES: &[&str] = &["inventory", "session"];
+const SCOPE_VALUES: &[&str] = &["all", "internal", "external", "catalog"];
+
+/// Returns a corrective message when `scope` / `availability` is outside its enum.
+fn validate_enum_args(scope: &str, availability: &str) -> Option<String> {
+    if !AVAILABILITY_VALUES.contains(&availability) {
+        let hint = if SCOPE_VALUES.contains(&availability) {
+            format!(" `{availability}` is a `scope` value; use scope:\"{availability}\".")
+        } else {
+            String::new()
+        };
+        return Some(format!(
+            "Invalid availability \"{availability}\". Allowed values: {}.{hint}",
+            AVAILABILITY_VALUES.join(", ")
+        ));
+    }
+    if !SCOPE_VALUES.contains(&scope) {
+        let hint = if AVAILABILITY_VALUES.contains(&scope) {
+            format!(" `{scope}` is an `availability` value; use availability:\"{scope}\".")
+        } else {
+            String::new()
+        };
+        return Some(format!(
+            "Invalid scope \"{scope}\". Allowed values: {}.{hint}",
+            SCOPE_VALUES.join(", ")
+        ));
+    }
+    None
+}
+
 /// Unified tool discovery across builtin and external MCP servers.
 pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResult, String> {
     let query = args
@@ -20,6 +50,16 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
         .get("availability")
         .and_then(|v| v.as_str())
         .unwrap_or("inventory");
+
+    if let Some(message) = validate_enum_args(scope, availability) {
+        return Ok(
+            guided_error(ErrorCategory::InvalidInput, message, ToolGroup::Tool)
+                .with_guidance(vec![
+                    "Retry tool__listServers with values from the schema enums".to_string(),
+                ])
+                .to_mcp_result(),
+        );
+    }
 
     let force_verify = args
         .get("forceVerify")
@@ -357,4 +397,40 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
                 "externalServers": external_servers,
             }))),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_enum_args;
+
+    #[test]
+    fn accepts_valid_values() {
+        for scope in ["all", "internal", "external", "catalog"] {
+            for availability in ["inventory", "session"] {
+                assert_eq!(validate_enum_args(scope, availability), None);
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_availability_with_allowed_values() {
+        let msg = validate_enum_args("all", "bogus").unwrap();
+        assert!(msg.contains("Invalid availability"));
+        assert!(msg.contains("inventory, session"));
+    }
+
+    #[test]
+    fn rejects_invalid_scope_with_allowed_values() {
+        let msg = validate_enum_args("bogus", "inventory").unwrap();
+        assert!(msg.contains("Invalid scope"));
+        assert!(msg.contains("all, internal, external, catalog"));
+    }
+
+    #[test]
+    fn points_cross_parameter_values_to_the_right_argument() {
+        let msg = validate_enum_args("all", "external").unwrap();
+        assert!(msg.contains("scope:\"external\""));
+        let msg = validate_enum_args("session", "inventory").unwrap();
+        assert!(msg.contains("availability:\"session\""));
+    }
 }
