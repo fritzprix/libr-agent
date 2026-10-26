@@ -25,6 +25,7 @@ const {
   killProcessTree,
   leftoverTaskContainers,
 } = require('./lib/bench-interrupt.cjs');
+const { planWorkspaceModes } = require('./lib/bench-workspace-mode.cjs');
 
 const repoRoot = path.resolve(__dirname, '..');
 const isWindows = process.platform === 'win32';
@@ -309,12 +310,8 @@ async function runIsolated(benchCommand, benchArgs) {
   }
 }
 
-const WORKSPACE_MODE_FLAG = '--workspace-mode';
-const WORKSPACE_MODES = ['managed', 'host'];
-
 const rawArgv = process.argv.slice(2);
 const isolated = rawArgv.includes(ISOLATED_FLAG);
-const argv = rawArgv.filter((arg) => arg !== ISOLATED_FLAG);
 
 /**
  * @param {string} mode
@@ -329,31 +326,19 @@ function applyWorkspaceMode(mode) {
   }
 }
 
-/** @type {string[]} */
-let workspaceModes = [];
-const workspaceModeIndex = argv.indexOf(WORKSPACE_MODE_FLAG);
-if (workspaceModeIndex !== -1) {
-  const [, mode] = argv.splice(workspaceModeIndex, 2);
-  if (mode !== 'all' && !WORKSPACE_MODES.includes(mode)) {
-    const got = mode === undefined ? 'no value' : `'${mode}'`;
-    console.error(
-      `${WORKSPACE_MODE_FLAG} must be one of ${[...WORKSPACE_MODES, 'all'].join(', ')} (got ${got}).`,
-    );
-    process.exit(1);
-  }
-  if ((mode === 'host' || mode === 'all') && !isolated) {
-    console.error(
-      `${WORKSPACE_MODE_FLAG} ${mode} runs task commands on this machine and requires ${ISOLATED_FLAG}.`,
-    );
-    process.exit(1);
-  }
-  workspaceModes = mode === 'all' ? WORKSPACE_MODES : [mode];
-  if (!isolated) {
-    applyWorkspaceMode(mode);
-  }
-} else if (!isolated) {
-  // `host` is the adapter default but needs the sandboxed instance (--isolated).
-  applyWorkspaceMode('managed');
+const plan = planWorkspaceModes(
+  rawArgv.filter((arg) => arg !== ISOLATED_FLAG),
+  isolated,
+  process.env.LIBRAGENT_HARBOR_WORKSPACE_MODE,
+);
+if (plan.error !== null) {
+  console.error(plan.error);
+  process.exit(1);
+}
+const argv = plan.argv;
+const workspaceModes = plan.modes;
+if (plan.immediate !== null) {
+  applyWorkspaceMode(plan.immediate);
 }
 
 if (isolated) {
@@ -363,11 +348,9 @@ if (isolated) {
   process.on('SIGINT', () => interrupt.press());
   (async () => {
     let exitStatus = 0;
-    for (const mode of workspaceModes.length > 0 ? workspaceModes : [null]) {
-      if (mode !== null) {
-        applyWorkspaceMode(mode);
-        console.log(`==> Workspace mode: ${mode}`);
-      }
+    for (const mode of workspaceModes) {
+      applyWorkspaceMode(mode);
+      console.log(`==> Workspace mode: ${mode}`);
       const status = await runIsolated(['bash', sh], argv);
       if (status !== 0) {
         exitStatus = status;
