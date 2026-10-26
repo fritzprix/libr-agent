@@ -310,7 +310,7 @@ async function runIsolated(benchCommand, benchArgs) {
 }
 
 const WORKSPACE_MODE_FLAG = '--workspace-mode';
-const WORKSPACE_MODES = ['attach', 'managed', 'host'];
+const WORKSPACE_MODES = ['managed', 'host'];
 
 const rawArgv = process.argv.slice(2);
 const isolated = rawArgv.includes(ISOLATED_FLAG);
@@ -351,6 +351,9 @@ if (workspaceModeIndex !== -1) {
   if (!isolated) {
     applyWorkspaceMode(mode);
   }
+} else if (!isolated) {
+  // `host` is the adapter default but needs the sandboxed instance (--isolated).
+  applyWorkspaceMode('managed');
 }
 
 if (isolated) {
