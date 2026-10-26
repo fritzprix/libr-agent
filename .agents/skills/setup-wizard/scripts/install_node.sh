@@ -45,11 +45,24 @@ if [ -f /etc/os-release ]; then
     echo ""
 fi
 
+fetch() {
+    if command -v curl &> /dev/null; then
+        curl -fsSL "$1"
+    elif command -v wget &> /dev/null; then
+        wget -qO- "$1"
+    else
+        echo "Neither curl nor wget is available." >&2
+        return 1
+    fi
+}
+
 install_with_system_pm() {
     case $OS in
         ubuntu|debian)
             echo "Installing Node.js on Ubuntu/Debian..."
-            if ! curl -fsSL https://deb.nodesource.com/setup_lts.x | $SUDO -E bash -; then
+            # Download first: a pipeline's status is bash's, so `curl -f | bash` hides a failed download.
+            if ! setup_script=$(fetch https://deb.nodesource.com/setup_lts.x) \
+                || ! printf '%s\n' "$setup_script" | $SUDO -E bash -; then
                 echo "Failed to add NodeSource repository." >&2
                 return 1
             fi
@@ -61,7 +74,8 @@ install_with_system_pm() {
 
         fedora|rhel|centos)
             echo "Installing Node.js on Fedora/RHEL/CentOS..."
-            if ! curl -fsSL https://rpm.nodesource.com/setup_lts.x | $SUDO bash -; then
+            if ! setup_script=$(fetch https://rpm.nodesource.com/setup_lts.x) \
+                || ! printf '%s\n' "$setup_script" | $SUDO bash -; then
                 echo "Failed to add NodeSource repository." >&2
                 return 1
             fi
@@ -88,20 +102,9 @@ install_with_system_pm() {
             ;;
 
         *)
-            return 1
+            return 2  # no recipe for this OS (distinct from a failed install)
             ;;
     esac
-}
-
-fetch() {
-    if command -v curl &> /dev/null; then
-        curl -fsSL "$1"
-    elif command -v wget &> /dev/null; then
-        wget -qO- "$1"
-    else
-        echo "Neither curl nor wget is available." >&2
-        return 1
-    fi
 }
 
 install_user_local() {
@@ -172,30 +175,33 @@ install_user_local() {
         fi
         echo "Checksum verified."
     else
-        echo "No checksum tool available — skipping verification (aborted instead of silently skipping)." >&2
+        echo "No checksum tool available (sha256sum/shasum/openssl). Aborting." >&2
         return 1
     fi
 
     rm -rf "$DEST"
-    mkdir -p "$DEST" "$PREFIX/bin"
+    if ! mkdir -p "$DEST" "$PREFIX/bin"; then
+        echo "Failed to create $DEST." >&2
+        return 1
+    fi
     if ! tar -xzf "$TMP_DIR/$TARBALL" -C "$DEST" --strip-components=1; then
         echo "Failed to extract $TARBALL." >&2
         return 1
     fi
     for bin in node npm npx corepack; do
-        if [ -e "$DEST/bin/$bin" ]; then
-            ln -sfn "$DEST/bin/$bin" "$PREFIX/bin/$bin"
+        if [ -e "$DEST/bin/$bin" ] && ! ln -sfn "$DEST/bin/$bin" "$PREFIX/bin/$bin"; then
+            echo "Failed to link $bin into $PREFIX/bin." >&2
+            return 1
         fi
     done
 
-    # Try to symlink to /usr/local/bin for non-interactive shell support
-    if [ -w "/usr/local/bin" ] || [ "$(id -u)" -eq 0 ]; then
-        for bin in node npm npx corepack; do
-            if [ -e "$PREFIX/bin/$bin" ]; then
-                ln -sfn "$PREFIX/bin/$bin" "/usr/local/bin/$bin" 2>/dev/null || true
-            fi
-        done
-    fi
+    # Non-interactive shells (bash -c) skip the rc files, so link into /usr/local/bin when possible.
+    SYSTEM_LINKED=1
+    for bin in node npm npx corepack; do
+        if [ -e "$PREFIX/bin/$bin" ] && ! ln -sfn "$PREFIX/bin/$bin" "/usr/local/bin/$bin" 2> /dev/null; then
+            SYSTEM_LINKED=0
+        fi
+    done
 
     # Idempotently add ~/.local/bin to the shell rc files
     PATH_LINE='export PATH="$HOME/.local/bin:$PATH"'
@@ -213,29 +219,31 @@ install_user_local() {
     echo "Installed to: $DEST"
     echo "PATH line (already appended to your shell rc files; add it manually to other shells):"
     echo "  $PATH_LINE"
+    if [ "$SYSTEM_LINKED" -eq 0 ]; then
+        echo ""
+        echo "Could not link into /usr/local/bin (not writable), so non-interactive shells"
+        echo "(e.g. 'bash -c \"node -v\"') will not find node on PATH. In those, use the absolute path:"
+        echo "  $PREFIX/bin/node"
+        echo "or run: export PATH=\"$PREFIX/bin:\$PATH\""
+    fi
 }
 
-if [ "$USE_SYSTEM_PM" -eq 1 ] && install_with_system_pm; then
-    :
-elif [ "$USE_SYSTEM_PM" -eq 1 ]; then
-    # This path is reached only when install_with_system_pm returned non-zero.
-    # Distinguish "unsupported OS" from "install failure" by checking if
-    # the case statement had a matching branch.
-    case $OS in
-        ubuntu|debian|fedora|rhel|centos|arch|manjaro|opensuse*)
-            echo "System package manager install failed for ${OS}. Falling back to user-local install."
-            install_user_local || {
-                echo "User-local install also failed. Please install Node.js manually." >&2
-                echo "1. NodeSource: https://github.com/nodesource/distributions"
-                echo "2. nvm: https://github.com/nvm-sh/nvm"
-                exit 1
-            }
-            ;;
-        *)
-            echo "No system package manager recipe for: ${OS:-unknown}; falling back to user-local install."
-            install_user_local || exit 1
-            ;;
-    esac
+if [ "$USE_SYSTEM_PM" -eq 1 ]; then
+    rc=0
+    install_with_system_pm || rc=$?
+    if [ "$rc" -eq 2 ]; then
+        echo "No system package manager recipe for: ${OS:-unknown}; falling back to user-local install."
+    elif [ "$rc" -ne 0 ]; then
+        echo "System package manager install failed for ${OS}. Falling back to user-local install."
+    fi
+    if [ "$rc" -ne 0 ]; then
+        install_user_local || {
+            echo "User-local install also failed. Please install Node.js manually." >&2
+            echo "1. NodeSource: https://github.com/nodesource/distributions"
+            echo "2. nvm: https://github.com/nvm-sh/nvm"
+            exit 1
+        }
+    fi
 else
     install_user_local || exit 1
 fi
