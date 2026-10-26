@@ -49,24 +49,42 @@ install_with_system_pm() {
     case $OS in
         ubuntu|debian)
             echo "Installing Node.js on Ubuntu/Debian..."
-            curl -fsSL https://deb.nodesource.com/setup_lts.x | $SUDO -E bash -
-            $SUDO apt-get install -y nodejs
+            if ! curl -fsSL https://deb.nodesource.com/setup_lts.x | $SUDO -E bash -; then
+                echo "Failed to add NodeSource repository." >&2
+                return 1
+            fi
+            if ! $SUDO apt-get install -y nodejs; then
+                echo "Failed to install nodejs via apt." >&2
+                return 1
+            fi
             ;;
 
         fedora|rhel|centos)
             echo "Installing Node.js on Fedora/RHEL/CentOS..."
-            curl -fsSL https://rpm.nodesource.com/setup_lts.x | $SUDO bash -
-            $SUDO dnf install -y nodejs
+            if ! curl -fsSL https://rpm.nodesource.com/setup_lts.x | $SUDO bash -; then
+                echo "Failed to add NodeSource repository." >&2
+                return 1
+            fi
+            if ! $SUDO dnf install -y nodejs; then
+                echo "Failed to install nodejs via dnf." >&2
+                return 1
+            fi
             ;;
 
         arch|manjaro)
             echo "Installing Node.js on Arch Linux..."
-            $SUDO pacman -S --noconfirm nodejs npm
+            if ! $SUDO pacman -S --noconfirm nodejs npm; then
+                echo "Failed to install nodejs via pacman." >&2
+                return 1
+            fi
             ;;
 
         opensuse*)
             echo "Installing Node.js on openSUSE..."
-            $SUDO zypper install -y nodejs npm
+            if ! $SUDO zypper install -y nodejs npm; then
+                echo "Failed to install nodejs via zypper." >&2
+                return 1
+            fi
             ;;
 
         *)
@@ -120,26 +138,64 @@ install_user_local() {
     TMP_DIR=$(mktemp -d)
     trap 'rm -rf "$TMP_DIR"' EXIT
 
-    fetch "https://nodejs.org/dist/$NODE_VERSION/$TARBALL" > "$TMP_DIR/$TARBALL"
+    if ! fetch "https://nodejs.org/dist/$NODE_VERSION/$TARBALL" > "$TMP_DIR/$TARBALL"; then
+        echo "Failed to download $TARBALL." >&2
+        return 1
+    fi
 
-    if command -v sha256sum &> /dev/null; then
+    # Checksum verification with fallback (sha256sum → shasum → openssl → fail closed)
+    verify_checksum() {
+        local file="$1" expected="$2"
+        if command -v sha256sum &> /dev/null; then
+            echo "$expected  $file" | sha256sum -c -s && return 0
+        elif command -v shasum &> /dev/null; then
+            echo "$expected  $file" | shasum -a 256 -c -s && return 0
+        elif command -v openssl &> /dev/null; then
+            local actual
+            actual=$(openssl dgst -sha256 "$file" | awk '{print $NF}')
+            [ "$actual" = "$expected" ] && return 0
+        else
+            echo "No checksum tool available (sha256sum/shasum/openssl). Aborting." >&2
+            return 1
+        fi
+    }
+
+    if command -v sha256sum &> /dev/null || command -v shasum &> /dev/null || command -v openssl &> /dev/null; then
         EXPECTED=$(fetch "https://nodejs.org/dist/$NODE_VERSION/SHASUMS256.txt" | grep " $TARBALL\$" | awk '{print $1}')
-        ACTUAL=$(sha256sum "$TMP_DIR/$TARBALL" | awk '{print $1}')
-        if [ -z "$EXPECTED" ] || [ "$EXPECTED" != "$ACTUAL" ]; then
-            echo "Checksum verification failed for $TARBALL."
+        if [ -z "$EXPECTED" ]; then
+            echo "Could not find checksum for $TARBALL in SHASUMS256.txt." >&2
+            return 1
+        fi
+        if ! verify_checksum "$TMP_DIR/$TARBALL" "$EXPECTED"; then
+            echo "Checksum verification failed for $TARBALL." >&2
             return 1
         fi
         echo "Checksum verified."
+    else
+        echo "No checksum tool available — skipping verification (aborted instead of silently skipping)." >&2
+        return 1
     fi
 
     rm -rf "$DEST"
     mkdir -p "$DEST" "$PREFIX/bin"
-    tar -xzf "$TMP_DIR/$TARBALL" -C "$DEST" --strip-components=1
+    if ! tar -xzf "$TMP_DIR/$TARBALL" -C "$DEST" --strip-components=1; then
+        echo "Failed to extract $TARBALL." >&2
+        return 1
+    fi
     for bin in node npm npx corepack; do
         if [ -e "$DEST/bin/$bin" ]; then
             ln -sfn "$DEST/bin/$bin" "$PREFIX/bin/$bin"
         fi
     done
+
+    # Try to symlink to /usr/local/bin for non-interactive shell support
+    if [ -w "/usr/local/bin" ] || [ "$(id -u)" -eq 0 ]; then
+        for bin in node npm npx corepack; do
+            if [ -e "$PREFIX/bin/$bin" ]; then
+                ln -sfn "$PREFIX/bin/$bin" "/usr/local/bin/$bin" 2>/dev/null || true
+            fi
+        done
+    fi
 
     # Idempotently add ~/.local/bin to the shell rc files
     PATH_LINE='export PATH="$HOME/.local/bin:$PATH"'
@@ -162,13 +218,24 @@ install_user_local() {
 if [ "$USE_SYSTEM_PM" -eq 1 ] && install_with_system_pm; then
     :
 elif [ "$USE_SYSTEM_PM" -eq 1 ]; then
-    echo "No system package manager recipe for: ${OS:-unknown}; falling back to the user-local install."
-    install_user_local || {
-        echo "Please install Node.js manually using one of these methods:"
-        echo "1. NodeSource: https://github.com/nodesource/distributions"
-        echo "2. nvm: https://github.com/nvm-sh/nvm"
-        exit 1
-    }
+    # This path is reached only when install_with_system_pm returned non-zero.
+    # Distinguish "unsupported OS" from "install failure" by checking if
+    # the case statement had a matching branch.
+    case $OS in
+        ubuntu|debian|fedora|rhel|centos|arch|manjaro|opensuse*)
+            echo "System package manager install failed for ${OS}. Falling back to user-local install."
+            install_user_local || {
+                echo "User-local install also failed. Please install Node.js manually." >&2
+                echo "1. NodeSource: https://github.com/nodesource/distributions"
+                echo "2. nvm: https://github.com/nvm-sh/nvm"
+                exit 1
+            }
+            ;;
+        *)
+            echo "No system package manager recipe for: ${OS:-unknown}; falling back to user-local install."
+            install_user_local || exit 1
+            ;;
+    esac
 else
     install_user_local || exit 1
 fi
