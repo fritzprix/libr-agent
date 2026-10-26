@@ -20,6 +20,11 @@ pub(super) struct ReadFileChunk {
     /// agent can continue reading from the correct character offset within
     /// the same line.
     pub(super) hard_cut_chars_shown: usize,
+    /// Tail reads only: last line of the earlier part of the range that was cut to fit
+    /// the inline limit (the range start is `displayed_start_line` before the cut).
+    pub(super) earlier_end_line: Option<usize>,
+    /// Tail reads only: first line of the requested range, to bound the earlier part.
+    pub(super) range_start_line: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
