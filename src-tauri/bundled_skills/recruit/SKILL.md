@@ -82,9 +82,11 @@ Do **not** ask vague questions like "What kind of expert do you want?". Instead,
 > 
 > Would you like me to create this specialist?
 
+Use that closing question only when the user asked for ideas or options. If the request was an explicit creation command ("만들어줘", "세팅해줘", "create one"), do not stop to ask: show the short proposal and call `agent__createAgent` in the same turn.
+
 ### 4. Create the Assistant
 
-Once the user approves or refines the proposal, execute the creation:
+Once the user approves or refines the proposal (or immediately, for an explicit creation command), execute the creation:
 
 ```json
 agent__createAgent({

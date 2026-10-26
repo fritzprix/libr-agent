@@ -5,7 +5,7 @@ description: >
   for parallel execution, and merge the results. Use when a task can be broken
   into non-overlapping pieces that don't depend on each other's output.
   Not for consensus/review (use consensus-delegation) or benchmarks (use bench).
-  Triggers: "분할 정복", "병렬 처리", "문서 N개 다 요약", "여러 개를 빠르게", "parallel execution", "split and process", "summarize all of these quickly".
+  Triggers: "분할 정복", "병렬 처리", "문서 여러 개 요약", "대량 문서 요약", "문서 수십 개 요약", "여러 개를 빠르게", "parallel execution", "split and process", "summarize all of these quickly".
 ---
 
 # Divide-Conquer

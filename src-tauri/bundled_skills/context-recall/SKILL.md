@@ -11,7 +11,8 @@ description: >
   recovery / fallback note names a transcript path. Triggers: "what did we
   discuss earlier", "before the context was reset", "older messages",
   "pre-compaction", "context recall", "recover history", "before declaring
-  done", "컴팩션 이전 대화", "과거 히스토리", "예전에 뭐라고 했지".
+  done", "컴팩션 이전 대화", "과거 히스토리", "예전에 뭐라고 했지", "아까 정한",
+  "아까 뭐였지".
 ---
 
 # Context Recall
@@ -25,6 +26,9 @@ After compaction, empty Active Request is not a Done signal. Before
 against Completion Criteria; if uncertain, read the latest epoch file first.
 
 ## Workflow
+
+For a recall question with no explicit path (for example "아까 정한 거 뭐였지"), run the
+`workspace__globFiles` call in step 2 first, before grepping the workspace.
 
 ### 1. Prefer an explicit path from the compact summary
 
