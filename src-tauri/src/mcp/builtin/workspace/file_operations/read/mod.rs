@@ -542,4 +542,45 @@ mod tests {
         // Size positive, offset negative
         assert_eq!(resolve_range(100, Some(-5), Some(10)), (96, 105));
     }
+
+    /// The recovery hint (`size=-TAIL`) must reach the last transcript line through the real
+    /// `readFile` path even when the tail is a long chain of large tool calls.
+    #[tokio::test]
+    async fn compaction_transcript_tail_read_includes_last_line() {
+        use crate::agent::session_manager::compact::md_export::build_compaction_markdown;
+        use crate::agent::types::{ToolCall, ToolCallFunction};
+        use crate::models::chat::Message;
+
+        let mut messages = Vec::new();
+        for i in 0..60 {
+            let mut message = Message::new_user_message("s".to_string(), String::new(), None, None);
+            message.role = "assistant".to_string();
+            message.content.clear();
+            message.tool_calls = Some(vec![ToolCall {
+                id: format!("call-{i}"),
+                r#type: "function".to_string(),
+                function: ToolCallFunction {
+                    name: "workspace__writeFile".to_string(),
+                    arguments: format!("{{\"content\":\"{}\"}}", "z".repeat(5_000)),
+                },
+            }]);
+            messages.push(message);
+        }
+        let mut last =
+            Message::new_user_message("s".to_string(), "LAST-LINE-MARKER".to_string(), None, None);
+        last.role = "assistant".to_string();
+        messages.push(last);
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pre_compaction_epoch_1.md");
+        std::fs::write(&path, build_compaction_markdown("s", &messages)).unwrap();
+
+        let limit = read_file_visible_content_limit_bytes(16 * 1024, true);
+        let chunk = read_file_lines_range(&path, None, Some(-40), true, limit)
+            .await
+            .unwrap();
+
+        assert!(chunk.content.contains("LAST-LINE-MARKER"));
+        assert!(!chunk.truncated);
+    }
 }

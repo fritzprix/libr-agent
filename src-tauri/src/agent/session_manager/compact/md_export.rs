@@ -5,6 +5,30 @@ use crate::services::WorkspaceService;
 use std::path::PathBuf;
 use tokio::fs;
 
+/// Lines the recovery hint asks `readFile` to read from the end of the transcript.
+const TAIL_HINT_LINES: usize = 40;
+
+/// Per tool-call argument cap. `readFile` returns at most ~16 KiB inline (front of the range
+/// first), so a tail of `TAIL_HINT_LINES` tool calls must stay well under that.
+const TOOL_ARGS_LIMIT_BYTES: usize = 240;
+
+/// Cuts `args` to `limit` bytes on a single line so a tool call never spans extra lines.
+fn truncate_args(args: &str, limit: usize) -> String {
+    let single_line = args.replace('\n', "\\n");
+    if single_line.len() <= limit {
+        return single_line;
+    }
+    let mut boundary = limit;
+    while boundary > 0 && !single_line.is_char_boundary(boundary) {
+        boundary -= 1;
+    }
+    format!(
+        "{} …[truncated {} bytes]",
+        &single_line[..boundary],
+        single_line.len() - boundary
+    )
+}
+
 fn truncate_text(text: &str, limit: usize) -> String {
     if text.len() <= limit {
         return text.to_string();
@@ -65,7 +89,8 @@ pub fn build_compaction_markdown(session_id: &str, messages: &[Message]) -> Stri
             for tc in tool_calls {
                 md.push_str(&format!(
                     "\n[TOOL CALL] {}({})\n",
-                    tc.function.name, tc.function.arguments
+                    tc.function.name,
+                    truncate_args(&tc.function.arguments, TOOL_ARGS_LIMIT_BYTES)
                 ));
             }
         }
@@ -145,11 +170,14 @@ Before declaring done / calling `ui__reportResult(success)`, or when mapping com
 restate Working Intent and Recent User Requests against Completion Criteria. \
 If intent or criteria are incomplete, unverified, or this summary feels incomplete, \
 read `{path}` first, starting from the end: \
-`workspace__readFile(path=\"{path}\", size=-200)` (a negative `size` reads the last lines; \
+`workspace__readFile(path=\"{path}\", size=-{tail})` (a negative `size` reads the last lines; \
 `tail {path}` in the session workspace also works). \
+If that result is truncated, re-read with a smaller negative `size` (for example -15) instead of \
+following its next offset forward, which moves away from the newest content. \
 Read earlier parts only if needed — \
 empty Active Request alone is not a Done signal.",
-        path = relative_path
+        path = relative_path,
+        tail = TAIL_HINT_LINES
     )
 }
 
@@ -178,8 +206,9 @@ mod tests {
         assert!(suffix.contains("chronological"));
         assert!(suffix.contains("at the end"));
         assert!(suffix.contains(
-            "workspace__readFile(path=\".libragent/pre_compaction_epoch_4.md\", size=-200)"
+            "workspace__readFile(path=\".libragent/pre_compaction_epoch_4.md\", size=-40)"
         ));
+        assert!(suffix.contains("smaller negative `size`"));
         assert!(suffix.contains("Before declaring done"));
         assert!(suffix.contains("Working Intent"));
         assert!(suffix.contains("Recent User Requests"));
@@ -214,6 +243,32 @@ mod tests {
         assert!(markdown.contains("$100M"));
         assert!(markdown.contains("`code`"));
         assert!(markdown.contains("\"quotes\""));
+    }
+
+    #[test]
+    fn tool_call_arguments_are_capped_on_a_single_line() {
+        let mut message = message_with_role("assistant", "");
+        message.content.clear();
+        message.tool_calls = Some(vec![ToolCall {
+            id: "call-1".to_string(),
+            r#type: "function".to_string(),
+            function: ToolCallFunction {
+                name: "workspace__writeFile".to_string(),
+                arguments: format!("{{\"content\":\"{}\"}}", "y\n".repeat(100_000)),
+            },
+        }]);
+
+        let markdown = build_compaction_markdown("session-big-args", &[message]);
+
+        assert!(markdown.len() < 1_000);
+        assert!(markdown.contains("…[truncated"));
+        assert_eq!(
+            markdown
+                .lines()
+                .filter(|l| l.contains("[TOOL CALL]"))
+                .count(),
+            1
+        );
     }
 
     #[test]

@@ -1,6 +1,6 @@
 mod context;
 mod fallback;
-mod md_export;
+pub(crate) mod md_export;
 mod persistence;
 mod recovery;
 mod summary;

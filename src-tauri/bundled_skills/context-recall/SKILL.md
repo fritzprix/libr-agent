@@ -56,8 +56,11 @@ Epoch files are chronological: the latest requests and work are at the **end**.
 Read the tail first with a negative `size`:
 
 ```
-workspace__readFile(path=".libragent/pre_compaction_epoch_{N}.md", size=-200)
+workspace__readFile(path=".libragent/pre_compaction_epoch_{N}.md", size=-40)
 ```
+
+If the result is truncated, re-read with a smaller negative `size` (e.g. `-15`) rather than
+following its next offset forward, which moves away from the newest content.
 
 Then read earlier parts (default top-down read) only if needed.
 
@@ -72,7 +75,7 @@ Each epoch file is Markdown with:
 - `---\n[timestamp] ROLE` separators
 - User/assistant text (truncated ~1500 bytes per block)
 - Thinking blocks (truncated ~1500 bytes)
-- `[TOOL CALL] name(args)` lines — **not** tool result bodies
+- `[TOOL CALL] name(args)` lines (args truncated ~240 bytes) — **not** tool result bodies
 
 For tool outputs, inspect workspace files those tools wrote (or other session
 artifacts). Do not expect result payloads inside the epoch file.
