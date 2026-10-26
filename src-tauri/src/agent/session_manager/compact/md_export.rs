@@ -149,7 +149,8 @@ read `{path}` first, starting from the end: \
 `workspace__readFile(path=\"{path}\", size=-200)` (a negative `size` reads the last lines; \
 `tail {path}` in the session workspace also works). \
 If the tail is only assistant text and tool calls, search the file for the last `] USER` separator \
-to find the latest user request. \
+(`workspace__grepFiles`, or `grep -n '\\] USER' {path} | tail -1`) to find the latest user request; \
+body text may also contain `] USER`, so confirm it follows a `---` line. \
 Read earlier parts only if needed — \
 empty Active Request alone is not a Done signal.",
         path = relative_path

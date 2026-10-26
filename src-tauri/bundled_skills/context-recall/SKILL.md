@@ -59,9 +59,6 @@ Read the tail first with a negative `size`:
 workspace__readFile(path=".libragent/pre_compaction_epoch_{N}.md", size=-200)
 ```
 
-If the tail is only assistant text and tool calls, find the latest user request by
-searching the file for the last `] USER` separator line.
-
 Then read earlier parts (default top-down read) only if needed.
 
 Never pass globs to `workspace__readFile`. Read older epochs only if the
@@ -79,6 +76,11 @@ Each epoch file is Markdown with:
 
 For tool outputs, inspect workspace files those tools wrote (or other session
 artifacts). Do not expect result payloads inside the epoch file.
+
+If the tail is only assistant text and tool calls, find the latest user request by
+searching for the last `] USER` separator line (`workspace__grepFiles`, or
+`grep -n '\] USER' <path> | tail -1`). User text can also contain `] USER`, so
+check that the match is followed by a `---` separator above it.
 
 ## Do Not
 
