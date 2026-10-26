@@ -264,6 +264,17 @@ impl WorkspaceServer {
                         ));
                     }
                 }
+                if let Some(earlier_end) = chunk.earlier_end_line {
+                    // Tail read cut at the front: point at the earlier part, still newest-first.
+                    summary_notes.push(format!(
+                        "Earlier lines {}-{} not shown. Read them with workspace__readFile({{\"path\": \"{}\", \"offset\": {}, \"size\": -{}}})",
+                        chunk.range_start_line,
+                        earlier_end,
+                        path_str,
+                        earlier_end,
+                        earlier_end - chunk.range_start_line + 1
+                    ));
+                }
                 if chunk.next_line_too_large {
                     let target_line = chunk.next_start_line.unwrap_or(chunk.displayed_start_line);
                     let already_shown = chunk.hard_cut_chars_shown;
@@ -543,44 +554,131 @@ mod tests {
         assert_eq!(resolve_range(100, Some(-5), Some(10)), (96, 105));
     }
 
-    /// The recovery hint (`size=-TAIL`) must reach the last transcript line through the real
-    /// `readFile` path even when the tail is a long chain of large tool calls.
-    #[tokio::test]
-    async fn compaction_transcript_tail_read_includes_last_line() {
-        use crate::agent::session_manager::compact::md_export::build_compaction_markdown;
-        use crate::agent::types::{ToolCall, ToolCallFunction};
-        use crate::models::chat::Message;
-
-        let mut messages = Vec::new();
+    fn tail_fixture(dir: &std::path::Path) -> std::path::PathBuf {
+        // 60 wide lines (~5 KB each) followed by a short marker line.
+        let mut text = String::new();
         for i in 0..60 {
-            let mut message = Message::new_user_message("s".to_string(), String::new(), None, None);
-            message.role = "assistant".to_string();
-            message.content.clear();
-            message.tool_calls = Some(vec![ToolCall {
-                id: format!("call-{i}"),
-                r#type: "function".to_string(),
-                function: ToolCallFunction {
-                    name: "workspace__writeFile".to_string(),
-                    arguments: format!("{{\"content\":\"{}\"}}", "z".repeat(5_000)),
-                },
-            }]);
-            messages.push(message);
+            text.push_str(&format!("line-{i} {}\n", "z".repeat(5_000)));
         }
-        let mut last =
-            Message::new_user_message("s".to_string(), "LAST-LINE-MARKER".to_string(), None, None);
-        last.role = "assistant".to_string();
-        messages.push(last);
+        text.push_str("LAST-LINE-MARKER\n");
+        let path = dir.join("tail.txt");
+        std::fs::write(&path, text).unwrap();
+        path
+    }
 
+    /// A tail read over the inline limit keeps the newest lines and cuts the front,
+    /// at both the default and the minimum inline limit.
+    #[tokio::test]
+    async fn tail_read_over_limit_keeps_last_line() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("pre_compaction_epoch_1.md");
-        std::fs::write(&path, build_compaction_markdown("s", &messages)).unwrap();
+        let path = tail_fixture(dir.path());
 
-        let limit = read_file_visible_content_limit_bytes(16 * 1024, true);
-        let chunk = read_file_lines_range(&path, None, Some(-40), true, limit)
+        for inline_limit in [16 * 1024, 4 * 1024] {
+            let limit = read_file_visible_content_limit_bytes(inline_limit, true);
+            let chunk = read_file_lines_range(&path, None, Some(-40), true, limit)
+                .await
+                .unwrap();
+
+            assert!(chunk.content.contains("LAST-LINE-MARKER"), "{inline_limit}");
+            assert!(chunk.truncated, "{inline_limit}");
+            assert_eq!(chunk.displayed_end_line, chunk.total_lines);
+            // 60 lines of ~5 KB cannot all fit; only the newest few do, never the first 22.
+            assert!(chunk.displayed_start_line > 22, "{inline_limit}");
+            assert_eq!(
+                chunk.earlier_end_line,
+                Some(chunk.displayed_start_line - 1),
+                "{inline_limit}"
+            );
+            assert_eq!(chunk.range_start_line, chunk.total_lines - 39);
+            // Slack covers the hard-cut/summary decorations, not extra lines.
+            assert!(chunk.content.len() <= limit + 64, "{inline_limit}");
+        }
+    }
+
+    #[tokio::test]
+    async fn tail_read_within_limit_is_unchanged_and_forward_read_keeps_front() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = tail_fixture(dir.path());
+        let limit = read_file_visible_content_limit_bytes(16 * 1024, false);
+
+        let small = read_file_lines_range(&path, None, Some(-2), false, limit)
             .await
             .unwrap();
+        assert!(!small.truncated);
+        assert_eq!(small.earlier_end_line, None);
+        assert!(small.content.contains("LAST-LINE-MARKER"));
 
-        assert!(chunk.content.contains("LAST-LINE-MARKER"));
-        assert!(!chunk.truncated);
+        let forward = read_file_lines_range(&path, None, Some(40), false, limit)
+            .await
+            .unwrap();
+        assert!(forward.truncated);
+        assert_eq!(forward.displayed_start_line, 1);
+        assert_eq!(forward.earlier_end_line, None);
+        assert!(forward.content.starts_with("line-0 "));
+    }
+
+    #[tokio::test]
+    async fn tail_read_of_single_oversized_last_line_hard_cuts_instead_of_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wide.txt");
+        std::fs::write(&path, format!("a\n{}\n", "w".repeat(50_000))).unwrap();
+        let limit = read_file_visible_content_limit_bytes(4 * 1024, false);
+
+        let chunk = read_file_lines_range(&path, None, Some(-2), false, limit)
+            .await
+            .unwrap();
+        assert!(!chunk.content.is_empty());
+        assert!(chunk.next_line_too_large);
+        assert_eq!(chunk.displayed_start_line, 2);
+        assert!(chunk.content.contains("front of the line is shown"));
+    }
+
+    /// Every `is_tail_read` call site must keep the end: files over `LARGE_FILE_THRESHOLD`
+    /// take the streaming (UTF-8) and full-decode (UTF-16) paths instead of the in-memory one.
+    async fn assert_large_tail_keeps_end(path: &std::path::Path) {
+        assert!(std::fs::metadata(path).unwrap().len() > super::super::utils::LARGE_FILE_THRESHOLD);
+        for inline_limit in [16 * 1024, 4 * 1024] {
+            let limit = read_file_visible_content_limit_bytes(inline_limit, false);
+            let chunk = read_file_lines_range(path, None, Some(-40), false, limit)
+                .await
+                .unwrap();
+            assert!(chunk.content.contains("LAST-LINE-MARKER"), "{inline_limit}");
+            assert!(chunk.truncated, "{inline_limit}");
+            assert_eq!(chunk.displayed_end_line, chunk.total_lines);
+            assert_eq!(
+                chunk.earlier_end_line,
+                Some(chunk.displayed_start_line - 1),
+                "{inline_limit}"
+            );
+            assert_eq!(chunk.range_start_line, chunk.total_lines - 39);
+        }
+    }
+
+    #[tokio::test]
+    async fn large_utf8_tail_read_keeps_last_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("large.txt");
+        let mut text = String::new();
+        for i in 0..400 {
+            text.push_str(&format!("line-{i} {}\n", "z".repeat(5_000)));
+        }
+        text.push_str("LAST-LINE-MARKER\n");
+        std::fs::write(&path, text).unwrap();
+        assert_large_tail_keeps_end(&path).await;
+    }
+
+    #[tokio::test]
+    async fn large_utf16_tail_read_keeps_last_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("large16.txt");
+        let mut text = String::new();
+        for i in 0..300 {
+            text.push_str(&format!("line-{i} {}\n", "z".repeat(2_000)));
+        }
+        text.push_str("LAST-LINE-MARKER\n");
+        let mut bytes = vec![0xFF, 0xFE];
+        bytes.extend(text.encode_utf16().flat_map(|unit| unit.to_le_bytes()));
+        std::fs::write(&path, bytes).unwrap();
+        assert_large_tail_keeps_end(&path).await;
     }
 }

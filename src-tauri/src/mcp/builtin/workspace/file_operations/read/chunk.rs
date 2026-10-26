@@ -54,6 +54,11 @@ pub(super) fn format_read_chunk_summary(
     )
 }
 
+/// A negative `size` asks for the end of a range, so inline truncation must cut the front.
+fn is_tail_read(size_opt: Option<isize>) -> bool {
+    size_opt.is_some_and(|size| size < 0)
+}
+
 pub(super) async fn read_file_lines_range(
     path: &std::path::Path,
     offset_opt: Option<isize>,
@@ -100,6 +105,7 @@ pub(super) async fn read_file_lines_range(
         total_lines,
         show_line_anchors,
         visible_content_limit_bytes,
+        is_tail_read(size_opt),
     )?;
 
     if let Some(note) = decode_note {
@@ -162,6 +168,7 @@ fn read_large_file_lines_range_blocking(
             total_lines,
             show_line_anchors,
             visible_content_limit_bytes,
+            is_tail_read(size_opt),
         )?;
         if let Some(note) = note {
             if !chunk.content.is_empty() {
@@ -183,6 +190,7 @@ fn read_large_file_lines_range_blocking(
         total_lines,
         show_line_anchors,
         visible_content_limit_bytes,
+        is_tail_read(size_opt),
     )?;
 
     if let Some(note) = decode_note {
@@ -301,6 +309,7 @@ fn read_chunk_from_lines<I>(
     total_lines: usize,
     show_line_anchors: bool,
     visible_content_limit_bytes: usize,
+    keep_end: bool,
 ) -> Result<ReadFileChunk, String>
 where
     I: IntoIterator<Item = Result<String, std::io::Error>>,
@@ -312,6 +321,10 @@ where
     let mut next_start_line = None;
     let mut next_line_too_large = false;
     let mut hard_cut_chars_shown: usize = 0;
+    // Tail reads: rolling window of the newest in-range lines that fit the limit.
+    let mut tail_window: std::collections::VecDeque<(usize, String)> = Default::default();
+    let mut tail_window_bytes = 0usize;
+    let mut tail_evicted = false;
 
     for (current_line, line_result) in (1usize..).zip(lines) {
         let line = line_result.map_err(|e| {
@@ -328,6 +341,22 @@ where
             } else {
                 line.clone()
             };
+
+            if keep_end {
+                let separator_len = usize::from(!tail_window.is_empty());
+                tail_window_bytes += separator_len + rendered_line.len();
+                tail_window.push_back((current_line, rendered_line));
+                while tail_window_bytes > visible_content_limit_bytes && tail_window.len() > 1 {
+                    if let Some((_, dropped)) = tail_window.pop_front() {
+                        tail_window_bytes -= dropped.len() + 1;
+                        tail_evicted = true;
+                    }
+                }
+                if current_line >= end {
+                    break;
+                }
+                continue;
+            }
 
             let separator_len = usize::from(!result_lines.is_empty());
             let candidate_len = content_bytes + separator_len + rendered_line.len();
@@ -373,6 +402,35 @@ where
         }
     }
 
+    let mut tail_first_line = None;
+    if keep_end {
+        if let Some((last_line, last)) = tail_window.back() {
+            if tail_window.len() == 1 && last.len() > visible_content_limit_bytes {
+                // The newest line alone is wider than the limit: hard-cut it rather than
+                // returning nothing (same contract as forward reads).
+                let mut cut_at = visible_content_limit_bytes.min(last.len());
+                while cut_at > 0 && !last.is_char_boundary(cut_at) {
+                    cut_at -= 1;
+                }
+                let chars_shown = last[..cut_at].chars().count();
+                hard_cut_chars_shown = chars_shown;
+                result_lines.push(format!(
+                    "{} …[hard-cut at {} chars, line continues; the front of the line is shown]",
+                    &last[..cut_at],
+                    chars_shown
+                ));
+                truncated = true;
+                next_line_too_large = true;
+                next_start_line = Some(*last_line);
+                tail_first_line = Some(*last_line);
+            } else {
+                tail_first_line = tail_window.front().map(|(line, _)| *line);
+                result_lines.extend(tail_window.drain(..).map(|(_, line)| line));
+                truncated = tail_evicted;
+            }
+        }
+    }
+
     if total_lines == 0 {
         if start > 1 {
             return Err(format!(
@@ -391,6 +449,8 @@ where
             suggested_end_line: None,
             next_line_too_large: false,
             hard_cut_chars_shown: 0,
+            earlier_end_line: None,
+            range_start_line: start,
         });
     }
 
@@ -402,12 +462,15 @@ where
     }
 
     let displayed_line_count = result_lines.len();
-    let displayed_start_line = start;
+    let displayed_start_line = tail_first_line.unwrap_or(start);
     let displayed_end_line = if displayed_line_count == 0 {
         start
     } else {
-        start + displayed_line_count - 1
+        displayed_start_line + displayed_line_count - 1
     };
+    // Tail reads cut the front, so the unread part lies before what is shown.
+    let earlier_end_line =
+        (tail_evicted && displayed_start_line > start).then(|| displayed_start_line - 1);
     let suggested_end_line = if displayed_line_count == 0 {
         next_start_line
     } else {
@@ -427,6 +490,8 @@ where
         suggested_end_line,
         next_line_too_large,
         hard_cut_chars_shown,
+        earlier_end_line,
+        range_start_line: start,
     })
 }
 

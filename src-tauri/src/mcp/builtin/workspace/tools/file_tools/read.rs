@@ -34,7 +34,7 @@ pub fn create_read_file_tool() -> MCPTool {
         integer_prop(
             None,
             None,
-            Some("Number of lines to read. If negative, reads that many lines from the end of the file (tail mode)."),
+            Some("Number of lines to read. If negative, reads that many lines from the end of the file (tail mode); if that exceeds the inline limit, the earliest lines are cut and the newest are kept."),
         ),
     );
     #[cfg(all(

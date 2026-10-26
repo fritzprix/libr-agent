@@ -19,7 +19,7 @@ use tokio::sync::RwLock;
 
 mod approvals;
 mod channel;
-pub(crate) mod compact;
+mod compact;
 pub mod execution_mode;
 mod message_injection;
 mod reload;
