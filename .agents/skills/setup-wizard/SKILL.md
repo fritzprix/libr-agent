@@ -52,10 +52,10 @@ Prefer scripts when the user wants hands-off install:
 ```
 
 ```bash
-# Linux/macOS examples
+# Linux/macOS examples (install_node.sh is Linux-only; on macOS use brew install node)
 bash "<skill-base-dir>/scripts/verify_setup.sh"
 bash "<skill-base-dir>/scripts/install_python.sh"
-bash "<skill-base-dir>/scripts/install_node.sh"
+bash "<skill-base-dir>/scripts/install_node.sh"   # Linux only; no-op if node exists, add --force to reinstall
 bash "<skill-base-dir>/scripts/install_uv.sh"
 ```
 
