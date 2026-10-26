@@ -208,10 +208,13 @@ TASKS: dict[str, TaskSpec] = {
         ),
         TaskSpec(
             "T04",
-            "t04-build-done-notify",
+            "t04-event-subscribe",
             "P",
             "call-me-back",
-            (Step("__spawnProcess"), Step("__waitForProcess")),
+            # An external event can't be waited on in-turn: the session must hook
+            # the mock CLI up to the wake URL and go idle. Harbor ends the trial at
+            # idle, so the firing is not judged; the test checks the recorded hook.
+            (Step("__runShell", "subscribe"),),
         ),
         TaskSpec("T05", "t05-tell-me-later", "P", "loop", SCHEDULE_CALLBACK),
         TaskSpec(

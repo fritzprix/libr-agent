@@ -40,8 +40,8 @@ Two graders use the same rules:
 - **Harbor reward.** Each task's `tests/test_outputs.py` grades
   `/logs/agent/trajectory.json`, which Harbor mounts from the trial's `agent/`
   directory. `tests/critical_path.py` is a copy of the shared module; a unit test
-  keeps the copies in sync. T04, T14 and T15 also check their artifact (build
-  log, summary of all 50 docs, README typo fix).
+  keeps the copies in sync. T04, T14 and T15 also check their artifact (relayctl
+  subscription, summary of all 50 docs, README typo fix).
 - **Host report.** `scripts/check-layman-intent-trajectories.py` grades a whole
   job and prints per-task, per-skill and overall routing accuracy. It matches
   trials to tasks by the `task_name` in each trial's `result.json`.
@@ -51,7 +51,7 @@ Two graders use the same rules:
 | T01 | `t01-water-reminder`          | P        | loop                | no-network |
 | T02 | `t02-watch-folder-mornings`   | P        | loop                | no-network |
 | T03 | `t03-weekday-summary`         | P        | schedule            | no-network |
-| T04 | `t04-build-done-notify`       | P        | call-me-back        | no-network |
+| T04 | `t04-event-subscribe`         | P        | call-me-back        | no-network |
 | T05 | `t05-tell-me-later`           | P        | loop                | no-network |
 | T06 | `t06-stock-data`              | P        | mcp-installer       | public     |
 | T07 | `t07-connect-npx-package`     | P        | mcp-installer       | public     |

@@ -143,11 +143,24 @@ class CriticalPathTests(unittest.TestCase):
     def test_steps_must_follow_the_critical_path_order(self) -> None:
         self.assertEqual(
             _grade(
-                "T04",
-                _step(("a", "workspace__waitForProcess", {}, False)),
-                _step(("b", "workspace__spawnProcess", {}, False)),
+                "T07",
+                _step(("a", "tool__verifyServer", {}, False)),
+                _step(("b", "tool__registerServer", {}, False)),
             ),
-            ["__waitForProcess only before __spawnProcess"],
+            ["__verifyServer only before __registerServer"],
+        )
+
+    def test_call_me_back_needs_the_subscribe_command(self) -> None:
+        subscribe = {"command": "/app/relayctl subscribe --topic x --exec 'curl ...'"}
+        self.assertEqual(
+            _grade("T04", _step(("a", "workspace__runShell", subscribe, False))), []
+        )
+        self.assertEqual(
+            _grade(
+                "T04",
+                _step(("a", "workspace__runShell", {"command": "relayctl topics"}, False)),
+            ),
+            ["missing __runShell (subscribe)"],
         )
 
     def test_catalog_installs_need_the_catalog_lookup_first(self) -> None:
