@@ -582,6 +582,7 @@ mod tests {
             assert!(chunk.content.contains("LAST-LINE-MARKER"), "{inline_limit}");
             assert!(chunk.truncated, "{inline_limit}");
             assert_eq!(chunk.displayed_end_line, chunk.total_lines);
+            // 60 lines of ~5 KB cannot all fit; only the newest few do, never the first 22.
             assert!(chunk.displayed_start_line > 22, "{inline_limit}");
             assert_eq!(
                 chunk.earlier_end_line,
@@ -589,6 +590,7 @@ mod tests {
                 "{inline_limit}"
             );
             assert_eq!(chunk.range_start_line, chunk.total_lines - 39);
+            // Slack covers the hard-cut/summary decorations, not extra lines.
             assert!(chunk.content.len() <= limit + 64, "{inline_limit}");
         }
     }
@@ -628,5 +630,54 @@ mod tests {
         assert!(!chunk.content.is_empty());
         assert!(chunk.next_line_too_large);
         assert_eq!(chunk.displayed_start_line, 2);
+    }
+
+    /// Every `is_tail_read` call site must keep the end: files over `LARGE_FILE_THRESHOLD`
+    /// take the streaming (UTF-8) and full-decode (UTF-16) paths instead of the in-memory one.
+    async fn assert_large_tail_keeps_end(path: &std::path::Path) {
+        assert!(std::fs::metadata(path).unwrap().len() > super::super::utils::LARGE_FILE_THRESHOLD);
+        for inline_limit in [16 * 1024, 4 * 1024] {
+            let limit = read_file_visible_content_limit_bytes(inline_limit, false);
+            let chunk = read_file_lines_range(path, None, Some(-40), false, limit)
+                .await
+                .unwrap();
+            assert!(chunk.content.contains("LAST-LINE-MARKER"), "{inline_limit}");
+            assert!(chunk.truncated, "{inline_limit}");
+            assert_eq!(chunk.displayed_end_line, chunk.total_lines);
+            assert_eq!(
+                chunk.earlier_end_line,
+                Some(chunk.displayed_start_line - 1),
+                "{inline_limit}"
+            );
+            assert_eq!(chunk.range_start_line, chunk.total_lines - 39);
+        }
+    }
+
+    #[tokio::test]
+    async fn large_utf8_tail_read_keeps_last_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("large.txt");
+        let mut text = String::new();
+        for i in 0..400 {
+            text.push_str(&format!("line-{i} {}\n", "z".repeat(5_000)));
+        }
+        text.push_str("LAST-LINE-MARKER\n");
+        std::fs::write(&path, text).unwrap();
+        assert_large_tail_keeps_end(&path).await;
+    }
+
+    #[tokio::test]
+    async fn large_utf16_tail_read_keeps_last_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("large16.txt");
+        let mut text = String::new();
+        for i in 0..300 {
+            text.push_str(&format!("line-{i} {}\n", "z".repeat(2_000)));
+        }
+        text.push_str("LAST-LINE-MARKER\n");
+        let mut bytes = vec![0xFF, 0xFE];
+        bytes.extend(text.encode_utf16().flat_map(|unit| unit.to_le_bytes()));
+        std::fs::write(&path, bytes).unwrap();
+        assert_large_tail_keeps_end(&path).await;
     }
 }
