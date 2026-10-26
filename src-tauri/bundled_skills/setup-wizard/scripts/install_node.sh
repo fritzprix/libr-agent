@@ -20,19 +20,19 @@ done
 echo "=== Node.js Installation Script ==="
 echo ""
 
+# Check if Node.js is already installed
+if command -v node &> /dev/null && [ "$FORCE" -ne 1 ]; then
+    echo "Node.js already installed: $(node --version)"
+    echo "Nothing to do. Re-run with --force to reinstall."
+    exit 0
+fi
+
 # The user-local fallback downloads Linux tarballs, so refuse other kernels instead of
 # installing binaries that cannot run (macOS: use Homebrew or the nodejs.org installer).
 if [ "$(uname -s)" != "Linux" ]; then
     echo "This script supports Linux only (detected $(uname -s))." >&2
     echo "On macOS, run 'brew install node' or use the installer from https://nodejs.org." >&2
     exit 1
-fi
-
-# Check if Node.js is already installed
-if command -v node &> /dev/null && [ "$FORCE" -ne 1 ]; then
-    echo "Node.js already installed: $(node --version)"
-    echo "Nothing to do. Re-run with --force to reinstall."
-    exit 0
 fi
 
 # Decide how to get privileges: root, passwordless sudo, or none (user-local install)
@@ -113,6 +113,24 @@ install_with_system_pm() {
             return 2  # no recipe for this OS (distinct from a failed install)
             ;;
     esac
+}
+
+# Link $1/bin/{node,npm,npx,corepack} into $2 so non-interactive shells find them.
+# Never replaces an entry that another install provides. Returns 1 if any link was skipped.
+link_system_bin() {
+    local prefix="$1" sysbin="$2" bin target status=0
+    for bin in node npm npx corepack; do
+        [ -e "$prefix/bin/$bin" ] || continue
+        target="$sysbin/$bin"
+        if [ -e "$target" ] || [ -L "$target" ]; then
+            case $(readlink "$target" 2> /dev/null) in
+                "$prefix"/*) ;;
+                *) status=1; continue ;;
+            esac
+        fi
+        ln -sfn "$prefix/bin/$bin" "$target" 2> /dev/null || status=1
+    done
+    return $status
 }
 
 install_user_local() {
@@ -204,19 +222,9 @@ install_user_local() {
     done
 
     # Non-interactive shells (bash -c) skip the rc files, so link into /usr/local/bin when possible.
+    SYSTEM_BIN_DIR="${LIBRAGENT_SYSTEM_BIN_DIR:-/usr/local/bin}"
     SYSTEM_LINKED=1
-    # Never replace a /usr/local/bin entry that another install provides.
-    for bin in node npm npx corepack; do
-        [ -e "$PREFIX/bin/$bin" ] || continue
-        target="/usr/local/bin/$bin"
-        if [ -e "$target" ] || [ -L "$target" ]; then
-            case $(readlink "$target" 2> /dev/null) in
-                "$PREFIX"/*) ;;
-                *) SYSTEM_LINKED=0; continue ;;
-            esac
-        fi
-        ln -sfn "$PREFIX/bin/$bin" "$target" 2> /dev/null || SYSTEM_LINKED=0
-    done
+    link_system_bin "$PREFIX" "$SYSTEM_BIN_DIR" || SYSTEM_LINKED=0
 
     # Idempotently add ~/.local/bin to the shell rc files
     PATH_LINE='export PATH="$HOME/.local/bin:$PATH"'
@@ -236,8 +244,14 @@ install_user_local() {
     echo "  $PATH_LINE"
     if [ "$SYSTEM_LINKED" -eq 0 ]; then
         echo ""
-        echo "Could not link into /usr/local/bin (not writable, or already provided by another install), so non-interactive shells"
-        echo "(e.g. 'bash -c \"node -v\"') will not find node on PATH. In those, use the absolute path:"
+        if [ -e "$SYSTEM_BIN_DIR/node" ]; then
+            echo "$SYSTEM_BIN_DIR/node already exists ($(readlink -f "$SYSTEM_BIN_DIR/node")) and was left alone."
+            echo "Non-interactive shells (e.g. 'bash -c \"node -v\"') will use that one, not this install."
+        else
+            echo "Could not link into $SYSTEM_BIN_DIR (not writable), so non-interactive shells"
+            echo "(e.g. 'bash -c \"node -v\"') will not find node on PATH."
+        fi
+        echo "To use this install there, use the absolute path:"
         echo "  $PREFIX/bin/node"
         echo "or run: export PATH=\"$PREFIX/bin:\$PATH\""
     fi
