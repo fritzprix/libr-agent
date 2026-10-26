@@ -139,11 +139,15 @@ pub fn format_transcript_recovery_suffix(relative_path: &str) -> String {
     format!(
         "\n\n---\n### Context recovery\n\
 A full pre-compaction transcript was saved to `{path}`.\n\
-It contains the user/assistant messages and tool calls from before this compaction.\n\
+It contains the user/assistant messages and tool calls from before this compaction, \
+in chronological order — the most recent requests and work are at the end.\n\
 Before declaring done / calling `ui__reportResult(success)`, or when mapping completion to user intent: \
 restate Working Intent and Recent User Requests against Completion Criteria. \
 If intent or criteria are incomplete, unverified, or this summary feels incomplete, \
-read `{path}` first (via `workspace__readFile` or `tail {path}` in the session workspace) — \
+read `{path}` first, starting from the end: \
+`workspace__readFile(path=\"{path}\", size=-200)` (a negative `size` reads the last lines; \
+`tail {path}` in the session workspace also works). \
+Read earlier parts only if needed — \
 empty Active Request alone is not a Done signal.",
         path = relative_path
     )
@@ -171,6 +175,11 @@ mod tests {
         assert!(suffix.contains("user/assistant messages and tool calls"));
         assert!(suffix.contains("workspace__readFile"));
         assert!(suffix.contains("tail .libragent/pre_compaction_epoch_4.md"));
+        assert!(suffix.contains("chronological"));
+        assert!(suffix.contains("at the end"));
+        assert!(suffix.contains(
+            "workspace__readFile(path=\".libragent/pre_compaction_epoch_4.md\", size=-200)"
+        ));
         assert!(suffix.contains("Before declaring done"));
         assert!(suffix.contains("Working Intent"));
         assert!(suffix.contains("Recent User Requests"));
