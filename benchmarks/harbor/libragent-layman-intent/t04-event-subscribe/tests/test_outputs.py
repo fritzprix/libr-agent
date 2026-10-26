@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from critical_path import grade_trajectory
+from critical_path import calls_wake, grade_trajectory
 
 TRAJECTORY = Path("/logs/agent/trajectory.json")
 STORE = Path("/app/.relay/subscriptions.json")
@@ -14,8 +14,8 @@ def test_subscription_registered():
     subs = json.loads(STORE.read_text(encoding="utf-8"))
     matching = [s for s in subs if s.get("topic") == "release.gate.passed"]
     assert matching, f"no subscription on release.gate.passed: {subs}"
-    assert any("LIBRAGENT_WAKE_URL" in s.get("exec", "") for s in matching), (
-        "the subscription's --exec does not call $LIBRAGENT_WAKE_URL"
+    assert any(calls_wake(s.get("exec", "")) for s in matching), (
+        "the subscription's --exec does not call the session wake URL"
     )
 
 

@@ -110,6 +110,15 @@ def runs_script(command: str, scripts: tuple[str, ...], _depth: int = 0) -> bool
     return False
 
 
+def calls_wake(command: str) -> bool:
+    """True when a stored command calls the session wake URL.
+
+    ``"$LIBRAGENT_WAKE_URL"`` in double quotes is expanded by the shell that runs
+    the subscribe call, so the stored text then holds the ``/wake/<token>`` URL.
+    """
+    return "LIBRAGENT_WAKE_URL" in command or "/wake/" in command
+
+
 @dataclass(frozen=True)
 class Step:
     tool: str  # matched as a suffix of the namespaced tool name
@@ -214,7 +223,7 @@ TASKS: dict[str, TaskSpec] = {
             # An external event can't be waited on in-turn: the session must hook
             # the mock CLI up to the wake URL and go idle. Harbor ends the trial at
             # idle, so the firing is not judged; the test checks the recorded hook.
-            (Step("__runShell", "subscribe"),),
+            (Step("__runShell", "subscribe", scripts=("relayctl",)),),
         ),
         TaskSpec("T05", "t05-tell-me-later", "P", "loop", SCHEDULE_CALLBACK),
         TaskSpec(

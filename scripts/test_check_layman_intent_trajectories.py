@@ -25,7 +25,13 @@ checker = importlib.util.module_from_spec(_SPEC)
 sys.modules[_SPEC.name] = checker
 _SPEC.loader.exec_module(checker)
 
-from layman_intent_critical_path import TASKS, grade_calls, load_calls, runs_script
+from layman_intent_critical_path import (
+    TASKS,
+    calls_wake,
+    grade_calls,
+    load_calls,
+    runs_script,
+)
 
 
 def _step(*calls: tuple[str, str, object, bool | None]) -> dict[str, object]:
@@ -150,6 +156,13 @@ class CriticalPathTests(unittest.TestCase):
             ["__verifyServer only before __registerServer"],
         )
 
+    def test_wake_call_is_literal_variable_or_expanded_url(self) -> None:
+        self.assertTrue(calls_wake("curl -s -X POST \"$LIBRAGENT_WAKE_URL\""))
+        self.assertTrue(
+            calls_wake("curl -s -X POST http://127.0.0.1:3030/api/sessions/s1/wake/tok")
+        )
+        self.assertFalse(calls_wake("echo done"))
+
     def test_call_me_back_needs_the_subscribe_command(self) -> None:
         subscribe = {"command": "/app/relayctl subscribe --topic x --exec 'curl ...'"}
         self.assertEqual(
@@ -160,7 +173,12 @@ class CriticalPathTests(unittest.TestCase):
                 "T04",
                 _step(("a", "workspace__runShell", {"command": "relayctl topics"}, False)),
             ),
-            ["missing __runShell (subscribe)"],
+            ["missing __runShell (relayctl subscribe)"],
+        )
+        reading = {"command": "cat /app/relayctl | grep subscribe"}
+        self.assertEqual(
+            _grade("T04", _step(("a", "workspace__runShell", reading, False))),
+            ["missing __runShell (relayctl subscribe)"],
         )
 
     def test_catalog_installs_need_the_catalog_lookup_first(self) -> None:
