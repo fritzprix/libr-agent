@@ -52,6 +52,15 @@ read the **highest N** first (most recent compaction).
 workspace__readFile(path=".libragent/pre_compaction_epoch_{N}.md")
 ```
 
+Epoch files are chronological: the latest requests and work are at the **end**.
+Read the tail first with a negative `size`:
+
+```
+workspace__readFile(path=".libragent/pre_compaction_epoch_{N}.md", size=-200)
+```
+
+Then read earlier parts (default top-down read) only if needed.
+
 Never pass globs to `workspace__readFile`. Read older epochs only if the
 newest file is insufficient.
 
