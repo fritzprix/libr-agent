@@ -16,17 +16,37 @@ One **tick** = one unit of work: service one PR, or — when no PR needs action 
 | `/worker-loop stop`   | Kill the loop process and report.                                      |
 | `/worker-loop status` | Print the state file summary; do no work.                              |
 
-### Arming the loop (Cursor local session)
+### Arming the loop
 
-Follow the Cursor `loop` skill mechanics:
+The loop uses the harness's native scheduling mechanism. Pick the appropriate subsection based on your runtime:
 
-1. Check for an existing loop first (`pgrep -af AGENT_LOOP_TICK_worker_loop`). Never arm two.
-2. Start a background shell (`block_until_ms: 0`) with `notify_on_output` pattern `^AGENT_LOOP_TICK_worker_loop`:
-   ```bash
-   while true; do sleep 600; echo 'AGENT_LOOP_TICK_worker_loop {"prompt":"/worker-loop"}'; done
-   ```
+#### LibrAgent (Native Desktop / Headless Runtime)
+Use the `scheduled_task` builtin toolset:
+1. Check for an existing task first: call `scheduled_task__listScheduledTasks()` to avoid duplicate schedules.
+2. Arm the callback:
+   - Tool: `scheduled_task__scheduleCallback`
+   - Parameters:
+     - `cronExpression`: cron string matching the desired interval (e.g., `*/10 * * * *` for 10m, `*/30 * * * *` for 30m).
+     - `prompt`: `"/worker-loop"`
+     - `isDaemon`: `false` (or `true` if scheduled beyond current session scope).
+3. Record the returned `taskId` in the state file under `loopPid` (or `loopTaskId`). Run the first tick immediately.
+4. To stop: `scheduled_task__deleteScheduledTask(taskId: "...")`.
+
+#### Cursor (External IDE Harness)
+Follow Cursor background task mechanics:
+1. Check for an existing loop process first. Never arm two.
+2. Start a background shell with output notification pattern `^AGENT_LOOP_TICK_worker_loop`:
+   - **Bash (Linux/macOS)**:
+     ```bash
+     while true; do sleep 600; echo 'AGENT_LOOP_TICK_worker_loop {"prompt":"/worker-loop"}'; done
+     ```
+   - **PowerShell (Windows)**:
+     ```powershell
+     while ($true) { Start-Sleep -Seconds 600; Write-Output 'AGENT_LOOP_TICK_worker_loop {"prompt":"/worker-loop"}' }
+     ```
 3. Record the shell PID in the state file (`loopPid`). Run the first tick immediately.
-4. On each `AGENT_LOOP_TICK_worker_loop` notification, run one tick. If a tick is still in progress when a notification arrives, ignore the notification.
+4. On each `AGENT_LOOP_TICK_worker_loop` notification, run one tick. If a tick is still in progress, ignore the notification.
+5. To stop: kill the shell PID recorded in `loopPid`.
 
 ## State
 
@@ -48,12 +68,23 @@ Read it at the start of every tick. If `current` is set, resume it instead of pi
 
 All edits, builds, commits, and pushes happen in a dedicated, persistent worktree — **never in the user's checkout**, which keeps its branch and uncommitted work untouched. Skill files, scripts, the state file, and ignored rule files such as `.agents/AGENTS.md` are read from the main checkout (`$MAIN`).
 
-```bash
-MAIN=$(git rev-parse --show-toplevel)       # the user's checkout
-WT="$MAIN/../$(basename "$MAIN").worktrees/worker"
-git -C "$MAIN" worktree list --porcelain | grep -qx "worktree $(realpath -m "$WT")" \
-  || git -C "$MAIN" worktree add --detach "$WT" "origin/$BASE"
-```
+- **Bash (Linux/macOS)**:
+  ```bash
+  MAIN=$(git rev-parse --show-toplevel)       # the user's checkout
+  WT="$MAIN/../$(basename "$MAIN").worktrees/worker"
+  BASE=$(git branch -r --list "origin/dev/*" --sort=-v:refname | head -n 1 | sed 's/^[ *]*origin\///')
+  git -C "$MAIN" worktree list --porcelain | grep -q "worktree ".*worker \
+    || git -C "$MAIN" worktree add --detach "$WT" "origin/$BASE"
+  ```
+- **PowerShell (Windows)**:
+  ```powershell
+  $MAIN = git rev-parse --show-toplevel
+  $WT = "$MAIN/../$((Split-Path $MAIN -Leaf)).worktrees/worker"
+  $BASE = (git branch -r --list "origin/dev/*" --sort=-v:refname | Select-Object -First 1).Trim().Replace("origin/", "")
+  if (-not (git -C $MAIN worktree list --porcelain | Select-String -Pattern "worktree .*worker" -Quiet)) {
+      git -C $MAIN worktree add --detach "$WT" "origin/$BASE"
+  }
+  ```
 
 - Keep it between ticks so Rust `target/` and `node_modules` stay warm; the first tick pays a full build. Do not share `target/` with `$MAIN`.
 - Run `pnpm install --frozen-lockfile` in `$WT` when `pnpm-lock.yaml` differs from the hash stored in state (`lockHash`).
@@ -75,6 +106,12 @@ git -C "$MAIN" worktree list --porcelain | grep -qx "worktree $(realpath -m "$WT
 ```bash
 python3 .agents/skills/worker-loop/scripts/pr_status.py          # all open PRs by @me
 python3 .agents/skills/worker-loop/scripts/pr_status.py --pr N    # one PR
+```
+
+*(Fallback if `python3` is unavailable or broken in the runtime)*:
+```bash
+gh pr list --author "@me" --state open --json number,title,headRefName,baseRefName,mergeable,reviewDecision,statusCheckRollup
+gh pr view <number> --json headRefOid,mergeable,reviewDecision,statusCheckRollup,comments
 ```
 
 Each PR has `nextAction`: `resolve-conflict` > `restack` > `address-gatekeeper` > `triage-comments` > `fix-ci` > `wait-ci` > `none`. Act on the **first** PR whose action is one of the first five; `wait-ci` and `none` mean nothing to do for that PR. If no PR has an actionable `nextAction`, go straight to step 2 in the same tick.
@@ -106,6 +143,11 @@ Each new PR branches from the latest `dev/<version>`. Exception: when the issue 
 python3 .agents/skills/worker-loop/scripts/issue_candidates.py
 ```
 
+*(Fallback if `python3` is unavailable or broken in the runtime)*:
+```bash
+gh issue list --state open --limit 30 --json number,title,labels,body,assignees
+```
+
 Candidates come pre-ranked; issues closed by an open PR are already excluded. The hint fields (`umbrellaHint`, `blockedHint`, `refsOpenPRs`, `externalRefs`) are reading signals, never skip reasons: read the full body with `gh issue view N` before skipping. Pick the first issue that is:
 
 - **Self-contained**: not an umbrella/epic.
@@ -118,10 +160,13 @@ Record skips in `skipped` with a reason taken from the issue body (not from a hi
 Then:
 
 1. `gh issue edit N --add-assignee @me`.
-2. Base = `python3 .agents/skills/create-pr/scripts/resolve_dev_base.py` (latest `dev/<version>`). In `$WT`: `git switch -c <type>/<short-slug>-<N> origin/<base>`.
+2. Determine `BASE` (always dynamically resolve the highest version):
+   - Via script: `python3 .agents/skills/create-pr/scripts/resolve_dev_base.py`
+   - Or pure git fallback: take the first line of `git branch -r --list "origin/dev/*" --sort=-v:refname` and strip `origin/` (e.g., `dev/<highest>`).
+   - In `$WT`: `git switch -c <type>/<short-slug>-<N> origin/$BASE`.
 3. Set `current` in state, then implement following `agents.md` conventions (KISS/YAGNI, no `as any`, match surrounding code).
 4. Verify narrowly, commit (`<type>(<scope>): <summary>`), push.
-5. Open the PR per the `create-pr` skill: base `dev/<version>`, semantic title, body with `Fixes #N` (merging into `dev/*` closes #N via the `close-linked-issues` workflow; use `Refs #N` for partial work), summary, and test plan. Clear `current`.
+5. Open the PR per the `create-pr` skill: base `$BASE` (the dynamically resolved `dev/<version>`), semantic title, body with `Fixes #N` (merging into `dev/*` closes #N via the `close-linked-issues` workflow; use `Refs #N` for partial work), summary, and test plan. Clear `current`.
 
 If implementation fails twice or the scope proves larger than expected, push nothing half-done: delete the local branch in `$WT`, record `skipped` with what was learned, and comment on the issue only if the finding is useful to humans.
 
