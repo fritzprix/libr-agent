@@ -65,7 +65,8 @@ pub fn build_compaction_markdown(session_id: &str, messages: &[Message]) -> Stri
             for tc in tool_calls {
                 md.push_str(&format!(
                     "\n[TOOL CALL] {}({})\n",
-                    tc.function.name, tc.function.arguments
+                    tc.function.name,
+                    truncate_text(&tc.function.arguments, 1500)
                 ));
             }
         }
@@ -214,6 +215,28 @@ mod tests {
         assert!(markdown.contains("$100M"));
         assert!(markdown.contains("`code`"));
         assert!(markdown.contains("\"quotes\""));
+    }
+
+    #[test]
+    fn build_compaction_markdown_caps_large_tool_call_arguments_so_tail_stays_readable() {
+        let mut message = message_with_role("assistant", "");
+        message.content.clear();
+        message.tool_calls = Some(vec![ToolCall {
+            id: "call-1".to_string(),
+            r#type: "function".to_string(),
+            function: ToolCallFunction {
+                name: "workspace__writeFile".to_string(),
+                arguments: format!(r#"{{"content":"{}"}}"#, "y".repeat(200_000)),
+            },
+        }]);
+        let last = message_with_role("assistant", "LAST-LINE-MARKER");
+
+        let markdown = build_compaction_markdown("session-big-args", &[message, last]);
+
+        assert!(markdown.len() < 5_000);
+        assert!(markdown.contains("[TOOL CALL] workspace__writeFile"));
+        assert!(markdown.contains("truncated"));
+        assert!(markdown.trim_end().ends_with("LAST-LINE-MARKER"));
     }
 
     #[test]

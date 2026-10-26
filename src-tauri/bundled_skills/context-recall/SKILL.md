@@ -72,7 +72,7 @@ Each epoch file is Markdown with:
 - `---\n[timestamp] ROLE` separators
 - User/assistant text (truncated ~1500 bytes per block)
 - Thinking blocks (truncated ~1500 bytes)
-- `[TOOL CALL] name(args)` lines — **not** tool result bodies
+- `[TOOL CALL] name(args)` lines (args truncated ~1500 bytes) — **not** tool result bodies
 
 For tool outputs, inspect workspace files those tools wrote (or other session
 artifacts). Do not expect result payloads inside the epoch file.
