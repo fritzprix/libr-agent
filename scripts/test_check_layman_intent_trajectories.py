@@ -162,6 +162,7 @@ class CriticalPathTests(unittest.TestCase):
             calls_wake("curl -s -X POST http://127.0.0.1:3030/api/sessions/s1/wake/tok")
         )
         self.assertFalse(calls_wake("echo done"))
+        self.assertFalse(calls_wake("echo $LIBRAGENT_WAKE_URL"))
 
     def test_call_me_back_needs_the_subscribe_command(self) -> None:
         subscribe = {"command": "/app/relayctl subscribe --topic x --exec 'curl ...'"}
