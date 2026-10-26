@@ -59,8 +59,9 @@ Prefer one `waitForProcess` over repeated short waits or clock callbacks.
 
 ### A2. Long local job — end the turn, get woken
 
-Use this only when `$LIBRAGENT_WAKE_URL` is set (test with `[ -n "$LIBRAGENT_WAKE_URL" ]`, never print it)
-and the session is not container/Docker-isolated. Otherwise nothing will wake you after the turn ends:
+Use this only when `$LIBRAGENT_WAKE_URL` is set. The variable is injected only into `runShell` /
+`spawnProcess` environments, so test it there with `[ -n "$LIBRAGENT_WAKE_URL" ]` (never print it); set
+means a host session. Otherwise nothing will wake you after the turn ends:
 always block on `workspace__waitForProcess` (section A).
 
 For jobs that run many minutes (long builds, training), do not hold the turn in

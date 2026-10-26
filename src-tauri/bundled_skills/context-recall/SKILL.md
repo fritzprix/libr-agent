@@ -27,8 +27,10 @@ against Completion Criteria; if uncertain, read the latest epoch file first.
 
 ## Workflow
 
-For a recall question with no explicit path (for example "아까 정한 거 뭐였지"), run the
-`workspace__globFiles` call in step 2 first, before grepping the workspace.
+If the answer is still visible in the current context, just answer from it. Only when it is not
+(a compact summary is present, or earlier content is missing) and no explicit path was given
+(for example "아까 정한 거 뭐였지"), run the `workspace__globFiles` call in step 2 first, before
+grepping the workspace.
 
 ### 1. Prefer an explicit path from the compact summary
 
