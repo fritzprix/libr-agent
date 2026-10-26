@@ -10,6 +10,23 @@ use super::verify::test_server_connection;
 const AVAILABILITY_VALUES: &[&str] = &["inventory", "session"];
 const SCOPE_VALUES: &[&str] = &["all", "internal", "external", "catalog"];
 
+/// Reads an enum argument: absent or `null` takes `default`; a non-string is rejected, not defaulted.
+fn enum_arg<'a>(args: &'a Value, key: &str, default: &'a str) -> Result<&'a str, String> {
+    match args.get(key) {
+        None | Some(Value::Null) => Ok(default),
+        Some(Value::String(value)) => Ok(value),
+        Some(other) => Err(format!(
+            "Invalid {key} {other}: expected a string. Allowed values: {}.",
+            if key == "scope" {
+                SCOPE_VALUES
+            } else {
+                AVAILABILITY_VALUES
+            }
+            .join(", ")
+        )),
+    }
+}
+
 /// Returns a corrective message when `scope` / `availability` is outside its enum.
 fn validate_enum_args(scope: &str, availability: &str) -> Option<String> {
     if !AVAILABILITY_VALUES.contains(&availability) {
@@ -45,21 +62,25 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
         .unwrap_or("")
         .to_lowercase();
 
-    let scope = args.get("scope").and_then(|v| v.as_str()).unwrap_or("all");
-    let availability = args
-        .get("availability")
-        .and_then(|v| v.as_str())
-        .unwrap_or("inventory");
-
-    if let Some(message) = validate_enum_args(scope, availability) {
-        return Ok(
-            guided_error(ErrorCategory::InvalidInput, message, ToolGroup::Tool)
-                .with_guidance(vec![
-                    "Retry tool__listServers with values from the schema enums".to_string(),
-                ])
-                .to_mcp_result(),
-        );
-    }
+    let enum_args = enum_arg(&args, "scope", "all").and_then(|scope| {
+        let availability = enum_arg(&args, "availability", "inventory")?;
+        match validate_enum_args(scope, availability) {
+            Some(message) => Err(message),
+            None => Ok((scope, availability)),
+        }
+    });
+    let (scope, availability) = match enum_args {
+        Ok(pair) => pair,
+        Err(message) => {
+            return Ok(
+                guided_error(ErrorCategory::InvalidInput, message, ToolGroup::Tool)
+                    .with_guidance(vec![
+                        "Retry tool__listServers with values from the schema enums".to_string(),
+                    ])
+                    .to_mcp_result(),
+            );
+        }
+    };
 
     let force_verify = args
         .get("forceVerify")
@@ -401,7 +422,40 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
 
 #[cfg(test)]
 mod tests {
-    use super::validate_enum_args;
+    use super::{list_tools, validate_enum_args, AVAILABILITY_VALUES, SCOPE_VALUES};
+    use crate::mcp::types::{MCPContent, MCPResult};
+    use serde_json::{json, Value};
+
+    fn error_text(result: &MCPResult) -> String {
+        assert_eq!(result.is_error, Some(true));
+        result
+            .content
+            .iter()
+            .flatten()
+            .filter_map(|c| match c {
+                MCPContent::Text { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn schema_enum(schema: &Value, key: &str) -> Vec<String> {
+        if let Some(prop) = schema.get("properties").and_then(|p| p.get(key)) {
+            return prop["enum"]
+                .as_array()
+                .expect("enum array")
+                .iter()
+                .map(|v| v.as_str().unwrap().to_string())
+                .collect();
+        }
+        schema
+            .as_object()
+            .into_iter()
+            .flat_map(|o| o.values())
+            .map(|v| schema_enum(v, key))
+            .find(|v| !v.is_empty())
+            .unwrap_or_default()
+    }
 
     #[test]
     fn accepts_valid_values() {
@@ -432,5 +486,34 @@ mod tests {
         assert!(msg.contains("scope:\"external\""));
         let msg = validate_enum_args("session", "inventory").unwrap();
         assert!(msg.contains("availability:\"session\""));
+    }
+
+    #[tokio::test]
+    async fn list_tools_rejects_non_string_and_out_of_enum_values() {
+        for args in [
+            json!({"availability": ["session"]}),
+            json!({"availability": true}),
+            json!({"scope": 1}),
+            json!({"scope": {}}),
+            json!({"availability": "bogus"}),
+            json!({"scope": "session"}),
+        ] {
+            let result = list_tools(args.clone(), None).await.unwrap();
+            let text = error_text(&result);
+            let allowed = if args.get("scope").is_some() {
+                SCOPE_VALUES
+            } else {
+                AVAILABILITY_VALUES
+            };
+            assert!(text.contains(&allowed.join(", ")), "{args}: {text}");
+        }
+    }
+
+    #[test]
+    fn enum_constants_match_tool_schema() {
+        let tool =
+            serde_json::to_value(crate::mcp::builtin::tool::tools::list_tools_tool()).unwrap();
+        assert_eq!(schema_enum(&tool, "scope"), SCOPE_VALUES);
+        assert_eq!(schema_enum(&tool, "availability"), AVAILABILITY_VALUES);
     }
 }
