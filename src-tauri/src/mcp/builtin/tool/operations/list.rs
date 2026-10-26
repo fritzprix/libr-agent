@@ -10,13 +10,25 @@ use super::verify::test_server_connection;
 const AVAILABILITY_VALUES: &[&str] = &["inventory", "session"];
 const SCOPE_VALUES: &[&str] = &["all", "internal", "external", "catalog"];
 
+fn json_type_name(value: &Value) -> &'static str {
+    match value {
+        Value::Null => "null",
+        Value::Bool(_) => "boolean",
+        Value::Number(_) => "number",
+        Value::String(_) => "string",
+        Value::Array(_) => "array",
+        Value::Object(_) => "object",
+    }
+}
+
 /// Reads an enum argument: absent or `null` takes `default`; a non-string is rejected, not defaulted.
 fn enum_arg<'a>(args: &'a Value, key: &str, default: &'a str) -> Result<&'a str, String> {
     match args.get(key) {
         None | Some(Value::Null) => Ok(default),
         Some(Value::String(value)) => Ok(value),
         Some(other) => Err(format!(
-            "Invalid {key} {other}: expected a string. Allowed values: {}.",
+            "Invalid {key}: expected a string, got {}. Allowed values: {}.",
+            json_type_name(other),
             if key == "scope" {
                 SCOPE_VALUES
             } else {
@@ -422,7 +434,7 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
 
 #[cfg(test)]
 mod tests {
-    use super::{list_tools, validate_enum_args, AVAILABILITY_VALUES, SCOPE_VALUES};
+    use super::{enum_arg, list_tools, validate_enum_args, AVAILABILITY_VALUES, SCOPE_VALUES};
     use crate::mcp::types::{MCPContent, MCPResult};
     use serde_json::{json, Value};
 
@@ -500,13 +512,30 @@ mod tests {
         ] {
             let result = list_tools(args.clone(), None).await.unwrap();
             let text = error_text(&result);
-            let allowed = if args.get("scope").is_some() {
-                SCOPE_VALUES
+            let (param, allowed) = if args.get("scope").is_some() {
+                ("scope", SCOPE_VALUES)
             } else {
-                AVAILABILITY_VALUES
+                ("availability", AVAILABILITY_VALUES)
             };
+            assert!(text.contains(param), "{args}: {text}");
             assert!(text.contains(&allowed.join(", ")), "{args}: {text}");
         }
+    }
+
+    #[test]
+    fn enum_arg_defaults_when_absent_or_null_and_passes_valid_strings() {
+        assert_eq!(enum_arg(&json!({}), "scope", "all"), Ok("all"));
+        assert_eq!(enum_arg(&json!({"scope": null}), "scope", "all"), Ok("all"));
+        assert_eq!(
+            enum_arg(
+                &json!({"availability": "session"}),
+                "availability",
+                "inventory"
+            ),
+            Ok("session")
+        );
+        let err = enum_arg(&json!({"scope": [1, 2, 3]}), "scope", "all").unwrap_err();
+        assert!(err.contains("array") && !err.contains("[1"));
     }
 
     #[test]
