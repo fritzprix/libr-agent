@@ -5,7 +5,32 @@ on:
   workflow_dispatch: # 수동 트리거 지원
 
 jobs:
+  # The release job below builds the latest dev branch, so the relay must come from it too.
+  latest-dev:
+    runs-on: ubuntu-latest
+    outputs:
+      ref: ${{ steps.dev.outputs.ref }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Find the latest dev branch
+        id: dev
+        shell: bash
+        run: |
+          LATEST_DEV=$(git for-each-ref --sort=-version:refname --format='%(refname:lstrip=3)' refs/remotes/origin/dev/ | head -n 1)
+          echo "ref=$LATEST_DEV" >> "$GITHUB_OUTPUT"
+
+  relay:
+    needs: latest-dev
+    uses: ./.github/workflows/session-relay.yml
+    with:
+      ref: ${{ needs.latest-dev.outputs.ref }}
+
   nightly-release:
+    needs: relay
     permissions:
       contents: write
     environment: copilot
@@ -75,10 +100,19 @@ jobs:
           fi
           echo "✅ Updater signing key is configured."
 
+      - name: Download session-relay binaries
+        uses: actions/download-artifact@v7
+        with:
+          pattern: session-relay-*
+          merge-multiple: true
+          path: relay
+
       - name: Build the app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Embedded into the app by build.rs (build_support/session_relay.rs).
+          LIBRAGENT_RELAY_DIR: ${{ github.workspace }}/relay
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}

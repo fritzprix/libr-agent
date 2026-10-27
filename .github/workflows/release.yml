@@ -11,7 +11,11 @@ on:
         default: ''
 
 jobs:
+  relay:
+    uses: ./.github/workflows/session-relay.yml
+
   release:
+    needs: relay
     permissions:
       contents: write
     environment: copilot
@@ -127,10 +131,19 @@ jobs:
             fi
           fi
 
+      - name: Download session-relay binaries
+        uses: actions/download-artifact@v7
+        with:
+          pattern: session-relay-*
+          merge-multiple: true
+          path: relay
+
       - name: Build the app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Embedded into the app by build.rs (build_support/session_relay.rs).
+          LIBRAGENT_RELAY_DIR: ${{ github.workspace }}/relay
           # OTA signing keys — generate once with: pnpm tauri signer generate -w ~/.tauri/libragent.key
           # Then add TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD to GitHub Secrets.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
