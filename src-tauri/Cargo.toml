@@ -24,6 +24,7 @@ test = false
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+sha2 = "0.10"
 
 [dependencies]
 agent-response-guards = { path = "agent-response-guards" }

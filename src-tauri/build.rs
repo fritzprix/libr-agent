@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 
 #[path = "build_support/bundled_skills.rs"]
 mod bundled_skills;
+#[path = "build_support/session_relay.rs"]
+mod session_relay;
 
 fn profile_output_dir(out_dir: &Path) -> Option<PathBuf> {
     out_dir
@@ -99,6 +101,15 @@ fn add_private_onnxruntime_rpath() {
     println!("cargo:rustc-link-arg-bins=-Wl,-rpath,$ORIGIN/../lib/libragent");
 }
 
+/// Embeds the session-relay binaries from `LIBRAGENT_RELAY_DIR` (see `build_support/session_relay.rs`).
+fn embed_session_relay() -> io::Result<()> {
+    println!("cargo:rerun-if-env-changed=LIBRAGENT_RELAY_DIR");
+    let out_dir =
+        PathBuf::from(env::var("OUT_DIR").map_err(|error| io::Error::other(error.to_string()))?);
+    let relay_dir = env::var_os("LIBRAGENT_RELAY_DIR").map(PathBuf::from);
+    session_relay::write_embed(&out_dir, relay_dir.as_deref())
+}
+
 fn main() {
     println!("cargo:rerun-if-changed=bundled_skills");
     println!("cargo:rerun-if-changed=bundled_assistants");
@@ -115,6 +126,10 @@ fn main() {
             "failed to mirror bundled_assistants into the target profile output directory: {}",
             error
         );
+    }
+
+    if let Err(error) = embed_session_relay() {
+        panic!("failed to embed the session relay: {}", error);
     }
 
     embed_windows_comctl_v6_manifest_dependency();

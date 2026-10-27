@@ -14,6 +14,7 @@ pub mod export_operations;
 pub mod file_operations;
 pub mod handlers;
 pub mod persistent_shell;
+pub mod session_relay;
 pub mod terminal_manager;
 pub mod text_encoding;
 pub mod tools;
