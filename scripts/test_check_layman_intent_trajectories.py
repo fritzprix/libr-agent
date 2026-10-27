@@ -285,7 +285,15 @@ class DatasetTests(unittest.TestCase):
             copy = task_dir / "tests" / "critical_path.py"
             self.assertEqual(copy.read_bytes(), shared, f"{copy} is out of sync")
             tests = (task_dir / "tests" / "test_outputs.py").read_text(encoding="utf-8")
-            self.assertIn(f'grade_trajectory("{spec.task_id}"', tests, spec.directory)
+            if spec.task_id == "T04":
+                # Graded on the mock's recorded state only, with no trajectory check.
+                self.assertIn("calls_wake(", tests, spec.directory)
+                self.assertIn(".sms_monitor/subscriptions.json", tests, spec.directory)
+                self.assertNotIn("grade_trajectory", tests, spec.directory)
+            else:
+                self.assertIn(
+                    f'grade_trajectory("{spec.task_id}"', tests, spec.directory
+                )
             self.assertNotIn("assert True", tests, spec.directory)
 
     def test_dataset_has_no_extra_tasks(self) -> None:
