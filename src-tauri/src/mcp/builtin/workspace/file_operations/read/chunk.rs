@@ -47,11 +47,10 @@ pub(super) fn format_read_chunk_summary(
         );
     }
 
-    // Mid-file through end: reached EOF but not a complete-file read.
-    format!(
-        "{} of {} (reached end; not complete file)",
-        line_label, chunk.total_lines
-    )
+    // Mid-file through end: state the range this call covered and that it reached the end of
+    // the file. No negative wording: a reader that already has the earlier lines would take
+    // "not complete" as "the file still has unread parts" and read it all again.
+    format!("{} of {} (end of file)", line_label, chunk.total_lines)
 }
 
 /// A negative `size` asks for the end of a range, so inline truncation must cut the front.
