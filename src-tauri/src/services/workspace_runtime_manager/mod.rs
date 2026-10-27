@@ -167,7 +167,14 @@ impl WorkspaceRuntimeManager {
         for (key, value) in merged_env {
             validate_env_key(&key).map_err(WorkspaceRuntimeError::InvalidConfig)?;
             validate_env_value(&key, &value).map_err(WorkspaceRuntimeError::InvalidConfig)?;
-            cmd.arg("-e").arg(format!("{key}={value}"));
+            if key == crate::server::wake::WAKE_URL_ENV {
+                // `-e KEY` copies the value from the docker CLI's own environment, so the
+                // token never appears in the host process list.
+                cmd.arg("-e").arg(&key);
+                cmd.env(&key, &value);
+            } else {
+                cmd.arg("-e").arg(format!("{key}={value}"));
+            }
         }
 
         cmd.arg(container_name);

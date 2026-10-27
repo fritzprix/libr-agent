@@ -111,6 +111,15 @@ pub(super) async fn ensure_bash_image_contract(
         cmd.args(["run", "-d", "--name", container_name, "--label", &label]);
         cmd.args(volume_args);
         cmd.args(["-w", &workdir]);
+        // Lets the container reach the wake-only listener on the host (needed on Linux; Docker
+        // Desktop resolves the name already).
+        cmd.args([
+            "--add-host",
+            &format!(
+                "{}:host-gateway",
+                crate::server::wake_listener::CONTAINER_HOST_NAME
+            ),
+        ]);
 
         if let Some(config) = &session.docker_config {
             append_port_binding_args(&mut cmd, config).await?;
