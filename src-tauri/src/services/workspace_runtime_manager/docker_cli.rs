@@ -60,6 +60,24 @@ pub(super) async fn docker_container_label(container_name: &str) -> RuntimeResul
     .await
 }
 
+pub(super) async fn docker_container_socket_generation(
+    container_name: &str,
+) -> RuntimeResult<Option<String>> {
+    let output = docker_output([
+        "inspect",
+        "-f",
+        "{{ index .Config.Labels \"com.libragent.socket_generation\" }}",
+        container_name,
+    ])
+    .await?;
+    let trimmed = output.trim();
+    if trimmed.is_empty() || trimmed == "<no value>" {
+        Ok(None)
+    } else {
+        Ok(Some(trimmed.to_string()))
+    }
+}
+
 #[cfg(unix)]
 pub(super) async fn current_uid_gid() -> Option<String> {
     let uid = AsyncCommand::new("id")

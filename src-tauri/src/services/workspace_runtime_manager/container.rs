@@ -8,7 +8,8 @@ use tokio::process::Command as AsyncCommand;
 
 use super::docker_cli::{
     apply_docker_cli_env, current_uid_gid, docker_container_exists, docker_container_running,
-    run_docker_status, run_status_command, verify_container_label,
+    docker_container_socket_generation, run_docker_status, run_status_command,
+    verify_container_label,
 };
 use super::error::{RuntimeResult, WorkspaceRuntimeError};
 use super::session_config::{
@@ -43,15 +44,41 @@ pub(super) async fn ensure_bash_image_contract(
         return ensure_supported_shell(session_id, container_name).await;
     }
 
-    if docker_container_exists(container_name).await? {
-        verify_container_label(container_name, session_id).await?;
-        if !docker_container_running(container_name).await? {
-            if let Some(reporter) = reporter {
-                reporter("Starting container");
+    let (expected_socket, expected_generation) =
+        match crate::server::session_socket::ensure_session_socket(session_id).await {
+            Ok(socket) => {
+                let gen = crate::server::session_socket::socket_generation(session_id);
+                (Some(socket), gen)
             }
-            run_docker_status(["start", container_name]).await?;
+            Err(error) => {
+                log::warn!("No Session API socket for {session_id}: {error}");
+                (None, None)
+            }
+        };
+
+    let needs_creation = if docker_container_exists(container_name).await? {
+        verify_container_label(container_name, session_id).await?;
+        let actual_generation = docker_container_socket_generation(container_name).await?;
+        if is_socket_mount_stale(actual_generation.as_deref(), expected_generation.as_deref()) {
+            log::warn!(
+                "Container '{container_name}' has a stale or missing socket mount; recreating it (state outside mounts is lost)"
+            );
+            run_docker_status(["rm", "-f", "-v", container_name]).await?;
+            true
+        } else {
+            if !docker_container_running(container_name).await? {
+                if let Some(reporter) = reporter {
+                    reporter("Starting container");
+                }
+                run_docker_status(["start", container_name]).await?;
+            }
+            false
         }
     } else {
+        true
+    };
+
+    if needs_creation {
         let config = session
             .docker_config
             .as_ref()
@@ -109,19 +136,25 @@ pub(super) async fn ensure_bash_image_contract(
         let mut cmd = AsyncCommand::new("docker");
         apply_docker_cli_env(&mut cmd);
         cmd.args(["run", "-d", "--name", container_name, "--label", &label]);
+        if let Some(generation) = &expected_generation {
+            cmd.args([
+                "--label",
+                &format!(
+                    "{}={generation}",
+                    crate::server::session_socket::CONTAINER_SOCKET_GENERATION_LABEL
+                ),
+            ]);
+        }
         cmd.args(volume_args);
         cmd.args(["-w", &workdir]);
         // The session's Session API socket, mounted as a single file (Docker Desktop on macOS
         // cannot connect to a socket reached through a mounted directory).
-        match crate::server::session_socket::ensure_session_socket(session_id).await {
-            Ok(socket) => {
-                cmd.arg("-v").arg(format!(
-                    "{}:{}",
-                    socket.display(),
-                    crate::server::session_socket::CONTAINER_SOCKET_PATH
-                ));
-            }
-            Err(error) => log::warn!("No Session API socket for {session_id}: {error}"),
+        if let Some(socket) = &expected_socket {
+            cmd.arg("-v").arg(format!(
+                "{}:{}",
+                socket.display(),
+                crate::server::session_socket::CONTAINER_SOCKET_PATH
+            ));
         }
 
         if let Some(config) = &session.docker_config {
@@ -292,5 +325,55 @@ pub(super) async fn resolve_teamwork_root_session_id(session: &SessionMetadata) 
         current.id
     } else {
         session.id.clone()
+    }
+}
+
+/// Decides whether a container's socket mount is stale and requires recreation.
+///
+/// A container without the generation label (`actual_label` is None or empty), or whose
+/// label does not match the host's current `expected_generation`, holds a stale or missing
+/// socket mount and must be recreated. When no generation is expected (e.g. platforms without
+/// socket support), this is false.
+pub fn is_socket_mount_stale(
+    actual_label: Option<&str>,
+    expected_generation: Option<&str>,
+) -> bool {
+    let Some(expected) = expected_generation.filter(|gen| !gen.trim().is_empty()) else {
+        return false;
+    };
+    match actual_label {
+        Some(actual) if !actual.trim().is_empty() => actual.trim() != expected.trim(),
+        _ => true,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_label_is_stale() {
+        assert!(is_socket_mount_stale(None, Some("gen-1")));
+        assert!(is_socket_mount_stale(Some(""), Some("gen-1")));
+        assert!(is_socket_mount_stale(Some("  "), Some("gen-1")));
+    }
+
+    #[test]
+    fn mismatched_generation_is_stale() {
+        assert!(is_socket_mount_stale(Some("gen-old"), Some("gen-new")));
+    }
+
+    #[test]
+    fn matching_generation_is_fresh() {
+        assert!(!is_socket_mount_stale(Some("gen-1"), Some("gen-1")));
+        assert!(!is_socket_mount_stale(Some(" gen-1 "), Some("gen-1")));
+    }
+
+    #[test]
+    fn no_expected_generation_is_not_stale() {
+        assert!(!is_socket_mount_stale(Some("gen-1"), None));
+        assert!(!is_socket_mount_stale(None, None));
+        assert!(!is_socket_mount_stale(Some("gen-1"), Some("")));
+        assert!(!is_socket_mount_stale(Some("gen-1"), Some("   ")));
     }
 }

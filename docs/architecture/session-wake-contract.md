@@ -27,7 +27,8 @@ has the same form in every mode: `http://127.0.0.1:<port>/api/sessions/<id>/wake
 The host opens no extra TCP port for containers. Each managed session has its own socket
 (`~/.libragent/sock/<session_id>.sock`, or under the data directory when one is set), mounted
 into its container as a single file. The relay is a static musl binary (x86_64, aarch64) embedded
-in the app and started with `docker exec -d`; it needs nothing from the image.
+in the app; the host starts it with `docker exec`, waits for it to print `ready`, and registers
+it only once listening. It needs nothing from the image.
 
 ## Permissions of a socket-origin request
 
@@ -66,9 +67,11 @@ socket is served. Requests on the main TCP port have no origin and behave as bef
 - **No relay, no URL.** `$LIBRAGENT_WAKE_URL` is set only while the relay is serving the port. If
   the container's port is already in use, the relay is not started, no URL is given and a warning
   is logged. A local build without the embedded relay behaves the same way.
-- **Relay died.** The next `runShell` checks the relay and starts it again.
-- **Stale or missing mount.** A container without the socket mount, or whose mount is stale after
-  a host restart, is recreated on next use with a warning. State outside the mounts is lost.
+- **Relay died.** A relay that exits (including exit code 4 when it can no longer accept connections)
+  is started again on the next `runShell`.
+- **Stale or missing mount.** A container without the socket mount (detected by a missing or mismatched
+  `com.libragent.socket_generation` label after a host restart) is recreated on next use with a
+  warning. State outside the mounts is lost.
 - **Windows.** No socket and no wake URL for Docker sessions for now.
 
 ## How the bench checks this

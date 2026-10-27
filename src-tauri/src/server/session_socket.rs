@@ -26,11 +26,17 @@ pub type ServeSession = Box<dyn Fn(String) -> BoxFuture<'static, ()> + Send + Sy
 /// Where the socket appears inside the container.
 pub const CONTAINER_SOCKET_PATH: &str = "/run/libragent/api.sock";
 
+/// Label applied to managed containers recording the socket generation they were created with.
+pub const CONTAINER_SOCKET_GENERATION_LABEL: &str = "com.libragent.socket_generation";
+
 static SERVE: OnceLock<ServeSession> = OnceLock::new();
 static SERVERS: Lazy<DashMap<String, JoinHandle<()>>> = Lazy::new(DashMap::new);
 /// Sessions whose container has a relay that reported it is listening. Only
 /// `mark_relay_ready` adds to it, so no Docker session is handed a wake URL that leads nowhere.
 static RELAYS: Lazy<DashSet<String>> = Lazy::new(DashSet::new);
+/// Generation identifier for each active session's socket. Changes whenever the socket file
+/// is created/recreated so stale mounts from prior app runs or earlier lifecycles are detected.
+static GENERATIONS: Lazy<DashMap<String, String>> = Lazy::new(DashMap::new);
 
 /// Records how a session's socket is served. Called once by `server::init`.
 pub fn register_serve(serve: ServeSession) {
@@ -74,6 +80,16 @@ pub fn clear_relay(session_id: &str) {
     RELAYS.remove(session_id);
 }
 
+/// Returns the current socket generation token for `session_id`.
+pub fn socket_generation(session_id: &str) -> Option<String> {
+    GENERATIONS.get(session_id).map(|entry| entry.clone())
+}
+
+#[cfg(test)]
+pub fn set_socket_generation_for_test(session_id: &str, generation: &str) {
+    GENERATIONS.insert(session_id.to_string(), generation.to_string());
+}
+
 /// True when the session's socket is served and its container relays `127.0.0.1` to it.
 pub fn is_reachable_from_container(session_id: &str) -> bool {
     is_serving(session_id) && RELAYS.contains(session_id)
@@ -92,6 +108,9 @@ pub async fn ensure_session_socket(session_id: &str) -> Result<PathBuf, String> 
 
     let path = socket_path(session_id)?;
     if is_serving(session_id) && path.exists() {
+        if !GENERATIONS.contains_key(session_id) {
+            GENERATIONS.insert(session_id.to_string(), uuid::Uuid::new_v4().to_string());
+        }
         return Ok(path);
     }
     let serve = SERVE
@@ -122,6 +141,7 @@ pub async fn ensure_session_socket(session_id: &str) -> Result<PathBuf, String> 
         .await
         .map_err(|e| format!("Failed to restrict '{}': {e}", path.display()))?;
 
+    let generation = uuid::Uuid::new_v4().to_string();
     let server = serve(session_id.to_string(), listener);
     let id = session_id.to_string();
     let handle = tokio::spawn(async move {
@@ -129,6 +149,7 @@ pub async fn ensure_session_socket(session_id: &str) -> Result<PathBuf, String> 
         log::info!("Session socket for {id} stopped");
     });
     SERVERS.insert(session_id.to_string(), handle);
+    GENERATIONS.insert(session_id.to_string(), generation);
     log::info!("Session socket for {session_id} at {}", path.display());
     Ok(path)
 }
@@ -141,6 +162,7 @@ pub async fn ensure_session_socket(_session_id: &str) -> Result<PathBuf, String>
 /// Stops serving the session's socket and removes the file.
 pub fn remove_session_socket(session_id: &str) {
     RELAYS.remove(session_id);
+    GENERATIONS.remove(session_id);
     if let Some((_, handle)) = SERVERS.remove(session_id) {
         handle.abort();
     }
@@ -169,5 +191,16 @@ mod tests {
     #[test]
     fn nothing_is_serving_without_a_listener() {
         assert!(!is_serving("socket-test-none"));
+    }
+
+    #[test]
+    fn socket_generation_tracked_and_cleared_on_removal() {
+        set_socket_generation_for_test("session-gen-test", "gen-123");
+        assert_eq!(
+            socket_generation("session-gen-test"),
+            Some("gen-123".to_string())
+        );
+        remove_session_socket("session-gen-test");
+        assert_eq!(socket_generation("session-gen-test"), None);
     }
 }
