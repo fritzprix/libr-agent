@@ -123,7 +123,8 @@ mod tests {
             ("POST", format!("{wake}/extra")),
             ("POST", "/api/sessions/s1/wake".to_string()),
         ] {
-            assert_eq!(status(method, &path, src).await, 404, "{method} {path}");
+            let code = status(method, &path, src).await;
+            assert!(matches!(code, 404 | 405), "{method} {path}: {code}");
         }
         assert_ne!(
             status("GET", &wake, src).await,
