@@ -107,6 +107,35 @@ fn check_requested_limits(
     Ok(())
 }
 
+/// Why a session created through a managed session's endpoint was refused on its limits.
+#[derive(Debug, PartialEq, Eq)]
+enum LimitDenied {
+    /// The request asks for more than the origin session allows.
+    Exceeds(&'static str),
+    /// The inherited limits could not be looked up. This is an authorization check, so an
+    /// error must refuse the request rather than read as "unlimited".
+    Unverifiable(String),
+}
+
+async fn check_endpoint_limits(
+    source: &dyn crate::services::agent_service::LimitSource,
+    origin: &str,
+    requested_depth: Option<u32>,
+    requested_fanout: Option<u32>,
+) -> Result<(), LimitDenied> {
+    let (inherited_depth, inherited_fanout) =
+        crate::services::agent_service::inherited_limits_with(source, origin)
+            .await
+            .map_err(LimitDenied::Unverifiable)?;
+    check_requested_limits(
+        requested_depth,
+        requested_fanout,
+        inherited_depth,
+        inherited_fanout,
+    )
+    .map_err(LimitDenied::Exceeds)
+}
+
 fn classify_spawn_error(err: &str) -> (StatusCode, String) {
     if err.contains("Assistant not found") {
         (StatusCode::NOT_FOUND, err.to_string())
@@ -156,19 +185,31 @@ pub async fn create_session(
     }
     if let Some(origin) = origin.as_deref() {
         // The new session's parent is the origin session, so its limits are the origin's.
-        let (inherited_depth, inherited_fanout) =
-            crate::services::agent_service::inherited_limits_for(origin).await;
-        if let Err(error) = check_requested_limits(
+        if let Err(denied) = check_endpoint_limits(
+            &crate::services::agent_service::RepositoryLimits,
+            origin,
             body.max_depth,
             body.max_fanout,
-            inherited_depth,
-            inherited_fanout,
-        ) {
+        )
+        .await
+        {
+            let (status, error) = match denied {
+                LimitDenied::Exceeds(error) => (StatusCode::FORBIDDEN, error.to_string()),
+                LimitDenied::Unverifiable(reason) => {
+                    log::warn!(
+                        "refusing a session created through the endpoint of {origin}: {reason}"
+                    );
+                    (
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "could not verify the limits inherited from the origin session; \
+                         request refused"
+                            .to_string(),
+                    )
+                }
+            };
             return Ok(warp::reply::with_status(
-                warp::reply::json(&ErrorResponse {
-                    error: error.to_string(),
-                }),
-                StatusCode::FORBIDDEN,
+                warp::reply::json(&ErrorResponse { error }),
+                status,
             ));
         }
     }
@@ -433,6 +474,70 @@ mod tests {
         // Only one of them limited.
         assert!(check_requested_limits(Some(2), Some(99), Some(3), None).is_ok());
         assert!(check_requested_limits(Some(4), Some(99), Some(3), None).is_err());
+    }
+
+    struct FakeLimits {
+        parent: Result<(Option<u32>, Option<u32>), String>,
+        baseline: Result<(Option<u32>, Option<u32>), String>,
+    }
+
+    #[async_trait::async_trait]
+    impl crate::services::agent_service::LimitSource for FakeLimits {
+        async fn parent_limits(
+            &self,
+            _parent_id: &str,
+        ) -> Result<(Option<u32>, Option<u32>), String> {
+            self.parent.clone()
+        }
+
+        async fn baseline(&self) -> Result<(Option<u32>, Option<u32>), String> {
+            self.baseline.clone()
+        }
+    }
+
+    #[tokio::test]
+    async fn endpoint_limit_check_refuses_when_the_inherited_limits_cannot_be_looked_up() {
+        // (a) lookup succeeds, a limit exists: a request above it is refused, one within is fine.
+        let limited = FakeLimits {
+            parent: Ok((Some(3), Some(5))),
+            baseline: Ok((None, None)),
+        };
+        assert!(matches!(
+            check_endpoint_limits(&limited, "s1", Some(4), None).await,
+            Err(LimitDenied::Exceeds(_))
+        ));
+        assert_eq!(
+            check_endpoint_limits(&limited, "s1", Some(3), Some(5)).await,
+            Ok(())
+        );
+
+        // (b) lookup succeeds, no limit anywhere: the request is allowed.
+        let unlimited = FakeLimits {
+            parent: Ok((None, None)),
+            baseline: Ok((None, None)),
+        };
+        assert_eq!(
+            check_endpoint_limits(&unlimited, "s1", Some(99), Some(99)).await,
+            Ok(())
+        );
+
+        // (c) lookup fails: refused, not read as unlimited.
+        let parent_down = FakeLimits {
+            parent: Err("db down".to_string()),
+            baseline: Ok((None, None)),
+        };
+        assert_eq!(
+            check_endpoint_limits(&parent_down, "s1", Some(99), Some(99)).await,
+            Err(LimitDenied::Unverifiable("db down".to_string()))
+        );
+        let settings_down = FakeLimits {
+            parent: Ok((None, None)),
+            baseline: Err("settings down".to_string()),
+        };
+        assert_eq!(
+            check_endpoint_limits(&settings_down, "s1", None, None).await,
+            Err(LimitDenied::Unverifiable("settings down".to_string()))
+        );
     }
 
     #[test]

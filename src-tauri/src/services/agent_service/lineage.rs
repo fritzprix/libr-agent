@@ -2,6 +2,7 @@ use crate::agent::types::{CreateSessionRequest, SessionLineageMeta};
 use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::settings_repository::SettingsRepository;
 use crate::repositories::SessionMetadata;
+use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 use tokio::sync::RwLock as TokioRwLock;
@@ -36,34 +37,46 @@ pub async fn acquire_parent_spawn_guard(
     Some(lock.lock_owned().await)
 }
 
-/// Baseline `maxDepth` / `maxFanout` from the `advancedSettings` JSON
+/// Parses the baseline `maxDepth` / `maxFanout` from the `advancedSettings` JSON
 /// (`defaultSessionMaxDepth` / `defaultSessionMaxFanout`). A missing, non-numeric or `0` value
-/// means unlimited, so it yields `None`.
-pub fn baseline_limits_from_settings(settings_json: &str) -> (Option<u32>, Option<u32>) {
-    let Ok(json) = serde_json::from_str::<serde_json::Value>(settings_json) else {
-        return (None, None);
-    };
+/// means unlimited (`None`); JSON that cannot be parsed is an error, not "unlimited".
+fn parse_baseline_limits(settings_json: &str) -> Result<(Option<u32>, Option<u32>), String> {
+    let json = serde_json::from_str::<serde_json::Value>(settings_json)
+        .map_err(|error| format!("advancedSettings is not valid JSON: {error}"))?;
     let limit = |key: &str| {
         json.get(key)
             .and_then(|value| value.as_u64())
             .and_then(|value| u32::try_from(value).ok())
             .filter(|value| *value > 0)
     };
-    (
+    Ok((
         limit("defaultSessionMaxDepth"),
         limit("defaultSessionMaxFanout"),
-    )
+    ))
 }
 
-/// Reads the baseline limits from the settings repository; unlimited when it is unavailable.
-async fn baseline_limits() -> (Option<u32>, Option<u32>) {
-    let Some(settings_repo) = crate::state::try_get_settings_repository() else {
-        return (None, None);
-    };
+/// Like [`parse_baseline_limits`] for callers that treat unreadable settings as unlimited.
+pub fn baseline_limits_from_settings(settings_json: &str) -> (Option<u32>, Option<u32>) {
+    parse_baseline_limits(settings_json).unwrap_or((None, None))
+}
+
+/// Reads the baseline limits from the settings repository. Nothing stored is a real "unlimited";
+/// an unavailable repository, a read error or unparsable stored JSON are errors.
+async fn try_baseline_limits() -> Result<(Option<u32>, Option<u32>), String> {
+    let settings_repo = crate::state::try_get_settings_repository()
+        .ok_or_else(|| "settings repository is not available".to_string())?;
     match settings_repo.get("advancedSettings").await {
-        Ok(Some(model)) => baseline_limits_from_settings(&model.value),
-        _ => (None, None),
+        Ok(Some(model)) => parse_baseline_limits(&model.value),
+        Ok(None) => Ok((None, None)),
+        Err(error) => Err(format!("could not read advancedSettings: {error}")),
     }
+}
+
+/// Baseline for ordinary session creation: a failed lookup is treated as unlimited, so a settings
+/// problem never blocks creating a session. Authorization (a request through a managed session's
+/// endpoint) must use [`try_baseline_limits`] / [`inherited_limits_for`] instead and refuse on error.
+async fn baseline_limits() -> (Option<u32>, Option<u32>) {
+    try_baseline_limits().await.unwrap_or((None, None))
 }
 
 /// The limit a new session ends up with: its own request, else what its parent carries, else the
@@ -85,30 +98,68 @@ pub fn request_within_limit(requested: Option<u32>, inherited: Option<u32>) -> b
     }
 }
 
-/// The `maxDepth` / `maxFanout` a child of `parent_id` inherits: what the parent carries, else
-/// the baseline from the settings.
-pub async fn inherited_limits_for(parent_id: &str) -> (Option<u32>, Option<u32>) {
-    let from_cache = {
-        let store = lineage_store().read().await;
-        store
-            .get(parent_id)
-            .map(|meta| (meta.max_depth, meta.max_fanout))
-    };
-    let (parent_depth, parent_fanout) = match from_cache {
-        Some(limits) => limits,
-        None => crate::state::get_session_repository()
+/// The two lookups behind `inherited_limits_for`. Both report a failure as `Err`, never as
+/// "no limit": the result authorizes requests, so an error must not read as unlimited.
+#[async_trait]
+pub trait LimitSource: Send + Sync {
+    /// The `(maxDepth, maxFanout)` the parent carries. `Err` when the parent does not exist or
+    /// the lookup failed.
+    async fn parent_limits(&self, parent_id: &str) -> Result<(Option<u32>, Option<u32>), String>;
+    /// The baseline from the settings. `Err` when it cannot be determined.
+    async fn baseline(&self) -> Result<(Option<u32>, Option<u32>), String>;
+}
+
+/// The real lookups: the lineage cache and session repository, and the settings repository.
+pub struct RepositoryLimits;
+
+#[async_trait]
+impl LimitSource for RepositoryLimits {
+    async fn parent_limits(&self, parent_id: &str) -> Result<(Option<u32>, Option<u32>), String> {
+        let from_cache = {
+            let store = lineage_store().read().await;
+            store
+                .get(parent_id)
+                .map(|meta| (meta.max_depth, meta.max_fanout))
+        };
+        if let Some(limits) = from_cache {
+            return Ok(limits);
+        }
+        match crate::state::get_session_repository()
             .get_session(parent_id)
             .await
-            .ok()
-            .flatten()
-            .map(|meta| (meta.max_depth, meta.max_fanout))
-            .unwrap_or((None, None)),
-    };
-    let (baseline_depth, baseline_fanout) = baseline_limits().await;
-    (
+        {
+            Ok(Some(meta)) => Ok((meta.max_depth, meta.max_fanout)),
+            Ok(None) => Err(format!("session {parent_id} not found")),
+            Err(error) => Err(format!("could not read session {parent_id}: {error}")),
+        }
+    }
+
+    async fn baseline(&self) -> Result<(Option<u32>, Option<u32>), String> {
+        try_baseline_limits().await
+    }
+}
+
+/// The `maxDepth` / `maxFanout` a child of `parent_id` inherits: what the parent carries, else
+/// the baseline from the settings. The baseline is only consulted when the parent leaves a limit
+/// open. Any lookup failure is an `Err`.
+pub async fn inherited_limits_with(
+    source: &dyn LimitSource,
+    parent_id: &str,
+) -> Result<(Option<u32>, Option<u32>), String> {
+    let (parent_depth, parent_fanout) = source.parent_limits(parent_id).await?;
+    if parent_depth.is_some() && parent_fanout.is_some() {
+        return Ok((parent_depth, parent_fanout));
+    }
+    let (baseline_depth, baseline_fanout) = source.baseline().await?;
+    Ok((
         parent_depth.or(baseline_depth),
         parent_fanout.or(baseline_fanout),
-    )
+    ))
+}
+
+/// [`inherited_limits_with`] over the real repositories.
+pub async fn inherited_limits_for(parent_id: &str) -> Result<(Option<u32>, Option<u32>), String> {
+    inherited_limits_with(&RepositoryLimits, parent_id).await
 }
 
 pub async fn remove_lineage(session_id: &str) {
@@ -348,6 +399,94 @@ mod tests {
         );
         assert_eq!(baseline_limits_from_settings("not json"), (None, None));
         assert_eq!(baseline_limits_from_settings("{}"), (None, None));
+    }
+
+    #[test]
+    fn unparsable_stored_settings_are_an_error_for_authorization_but_unlimited_elsewhere() {
+        assert!(parse_baseline_limits("not json").is_err());
+        assert_eq!(parse_baseline_limits("{}"), Ok((None, None)));
+        assert_eq!(baseline_limits_from_settings("not json"), (None, None));
+    }
+
+    /// Fake lookups: `parent` is what the parent carries (`Err` = lookup failure),
+    /// `baseline` the settings result. `baseline_calls` counts how often the baseline was read.
+    struct FakeLimits {
+        parent: Result<(Option<u32>, Option<u32>), String>,
+        baseline: Result<(Option<u32>, Option<u32>), String>,
+        baseline_calls: std::sync::atomic::AtomicUsize,
+    }
+
+    impl FakeLimits {
+        fn new(
+            parent: Result<(Option<u32>, Option<u32>), String>,
+            baseline: Result<(Option<u32>, Option<u32>), String>,
+        ) -> Self {
+            Self {
+                parent,
+                baseline,
+                baseline_calls: std::sync::atomic::AtomicUsize::new(0),
+            }
+        }
+
+        fn baseline_calls(&self) -> usize {
+            self.baseline_calls
+                .load(std::sync::atomic::Ordering::Relaxed)
+        }
+    }
+
+    #[async_trait]
+    impl LimitSource for FakeLimits {
+        async fn parent_limits(
+            &self,
+            _parent_id: &str,
+        ) -> Result<(Option<u32>, Option<u32>), String> {
+            self.parent.clone()
+        }
+
+        async fn baseline(&self) -> Result<(Option<u32>, Option<u32>), String> {
+            self.baseline_calls
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            self.baseline.clone()
+        }
+    }
+
+    #[tokio::test]
+    async fn inherited_limits_come_from_the_parent_then_the_baseline() {
+        // The parent sets depth only; the baseline fills fanout.
+        let source = FakeLimits::new(Ok((Some(2), None)), Ok((Some(9), Some(5))));
+        assert_eq!(
+            inherited_limits_with(&source, "p").await,
+            Ok((Some(2), Some(5)))
+        );
+
+        // Nothing anywhere is a real "unlimited".
+        let source = FakeLimits::new(Ok((None, None)), Ok((None, None)));
+        assert_eq!(inherited_limits_with(&source, "p").await, Ok((None, None)));
+    }
+
+    #[tokio::test]
+    async fn the_baseline_is_not_read_when_the_parent_sets_both_limits() {
+        let source = FakeLimits::new(Ok((Some(2), Some(3))), Err("settings down".to_string()));
+        assert_eq!(
+            inherited_limits_with(&source, "p").await,
+            Ok((Some(2), Some(3)))
+        );
+        assert_eq!(source.baseline_calls(), 0);
+    }
+
+    #[tokio::test]
+    async fn a_failed_lookup_is_an_error_not_unlimited() {
+        let parent_down = FakeLimits::new(Err("db down".to_string()), Ok((None, None)));
+        assert_eq!(
+            inherited_limits_with(&parent_down, "p").await,
+            Err("db down".to_string())
+        );
+
+        let baseline_down = FakeLimits::new(Ok((None, None)), Err("settings down".to_string()));
+        assert_eq!(
+            inherited_limits_with(&baseline_down, "p").await,
+            Err("settings down".to_string())
+        );
     }
 
     #[test]
