@@ -29,14 +29,17 @@ fn check_endpoint_origin_limits(
             "Sessions created from a managed Docker session must use workspaceIsolation \"docker\"",
         );
     }
-    if body
-        .docker_config
-        .as_ref()
-        .is_some_and(|config| config.is_attach())
-    {
-        return Err(
-            "Sessions created from a managed Docker session cannot attach an existing container",
-        );
+    // Defaults only: `portBindings` would publish host ports, `image`/`env`/`workdir` and
+    // `attachContainer`/`manageLifecycle` change what runs and what is kept on the host.
+    if body.docker_config.as_ref().is_some_and(|config| {
+        config.image.is_some()
+            || config.attach_container.is_some()
+            || config.workdir.is_some()
+            || config.manage_lifecycle.is_some()
+            || !config.env.is_empty()
+            || !config.port_bindings.is_empty()
+    }) {
+        return Err("Sessions created from a managed Docker session cannot set dockerConfig");
     }
     if body.workspace_path.is_some() {
         return Err("Sessions created from a managed Docker session cannot set workspacePath");
@@ -49,6 +52,38 @@ fn check_endpoint_origin_limits(
             "Sessions created from a managed Docker session must use the normal execution mode",
         );
     }
+    Ok(())
+}
+
+/// Pins the lineage of a session created through a managed session's endpoint: its parent is
+/// always the origin session, so "the origin session and its children" can be decided from the
+/// lineage, and it cannot join another session's tree or organization. Call after refs are
+/// resolved (a parent may be given as a short id).
+fn pin_endpoint_origin_lineage(
+    origin: Option<&str>,
+    body: &mut CreateSessionRequest,
+) -> Result<(), &'static str> {
+    use crate::execution_mode::ExecutionMode;
+
+    let Some(origin) = origin else {
+        return Ok(());
+    };
+    if body
+        .parent_session_id
+        .as_deref()
+        .is_some_and(|parent| parent != origin)
+    {
+        return Err(
+            "Sessions created from a managed Docker session must be children of that session",
+        );
+    }
+    if body.org_id.is_some() || body.org_name.is_some() || body.org_root_session_id.is_some() {
+        return Err(
+            "Sessions created from a managed Docker session cannot set organization fields",
+        );
+    }
+    body.parent_session_id = Some(origin.to_string());
+    body.execution_mode = Some(ExecutionMode::Normal);
     Ok(())
 }
 
@@ -87,10 +122,18 @@ pub async fn create_session(
         ));
     }
 
-    let body = match resolve_create_session_body_refs(body).await {
+    let mut body = match resolve_create_session_body_refs(body).await {
         Ok(body) => body,
         Err((status, error)) => return Ok(resolve_error_reply(status, error)),
     };
+    if let Err(error) = pin_endpoint_origin_lineage(origin.as_deref(), &mut body) {
+        return Ok(warp::reply::with_status(
+            warp::reply::json(&ErrorResponse {
+                error: error.to_string(),
+            }),
+            StatusCode::FORBIDDEN,
+        ));
+    }
 
     match crate::services::AgentService::spawn_agent_with_source(
         &manager,
@@ -320,6 +363,10 @@ mod tests {
             json!({}),
             json!({"workspaceIsolation": "host"}),
             json!({"workspaceIsolation": "docker", "dockerConfig": {"attachContainer": "web"}}),
+            json!({"workspaceIsolation": "docker", "dockerConfig": {"portBindings": [{"containerPort": 80, "hostPort": 8080}]}}),
+            json!({"workspaceIsolation": "docker", "dockerConfig": {"image": "evil"}}),
+            json!({"workspaceIsolation": "docker", "dockerConfig": {"env": {"A": "b"}}}),
+            json!({"workspaceIsolation": "docker", "dockerConfig": {"workdir": "/"}}),
             json!({"workspaceIsolation": "docker", "workspacePath": "/"}),
             json!({"workspaceIsolation": "docker", "executionMode": "yolo"}),
         ] {
@@ -328,5 +375,39 @@ mod tests {
                 "{rejected}"
             );
         }
+    }
+
+    #[test]
+    fn endpoint_requests_are_pinned_to_the_origin_lineage() {
+        let origin = Some("s1");
+
+        let mut body = request(json!({"workspaceIsolation": "docker"}));
+        pin_endpoint_origin_lineage(origin, &mut body).unwrap();
+        assert_eq!(body.parent_session_id.as_deref(), Some("s1"));
+        assert_eq!(
+            body.execution_mode,
+            Some(crate::execution_mode::ExecutionMode::Normal)
+        );
+
+        let mut own_parent = request(json!({"parentSessionId": "s1"}));
+        assert!(pin_endpoint_origin_lineage(origin, &mut own_parent).is_ok());
+
+        for rejected in [
+            json!({"parentSessionId": "other"}),
+            json!({"orgId": "o1"}),
+            json!({"orgName": "n"}),
+            json!({"orgRootSessionId": "r"}),
+        ] {
+            let mut body = request(rejected.clone());
+            assert!(
+                pin_endpoint_origin_lineage(origin, &mut body).is_err(),
+                "{rejected}"
+            );
+        }
+
+        let mut main_port = request(json!({"parentSessionId": "other", "orgId": "o1"}));
+        pin_endpoint_origin_lineage(None, &mut main_port).unwrap();
+        assert_eq!(main_port.parent_session_id.as_deref(), Some("other"));
+        assert!(main_port.execution_mode.is_none());
     }
 }
