@@ -89,12 +89,12 @@ pub async fn handle_rejection(err: Rejection) -> Result<warp::reply::Response, R
                 .into_response(),
         );
     }
-    if err.find::<super::api_key::Unauthorized>().is_some() {
+    if let Some(unauthorized) = err.find::<super::api_key::Unauthorized>() {
         let body = serde_json::json!({ "error": "missing or invalid API key" });
         return Ok(warp::reply::with_header(
             warp::reply::with_status(warp::reply::json(&body), StatusCode::UNAUTHORIZED),
             "www-authenticate",
-            "Bearer",
+            unauthorized.www_authenticate(),
         )
         .into_response());
     }

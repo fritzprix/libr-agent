@@ -2,9 +2,12 @@
 //! capturing a key injected through the environment.
 //!
 //! Issuing, listing, revoking and approving keys (and any key scope) are not here yet; they
-//! wait on owner decisions in #2348. Until a key is configured the TCP API behaves as before.
+//! wait on owner decisions in #2348. Until a key is injected the TCP API behaves as before.
+//! Once one is injected, anything wrong with it fails closed: every request is rejected.
 
 use sha2::{Digest, Sha256};
+use std::io;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use warp::http::{header, HeaderMap};
 use warp::reject::Reject;
@@ -12,6 +15,10 @@ use warp::{Filter, Rejection};
 
 /// Environment variable a launcher (for example the bench) uses to inject the key.
 pub const ENV_VAR: &str = "LIBRAGENT_SESSION_API_KEY";
+/// Alternative to [`ENV_VAR`]: path of a private file holding the key. The file is read and
+/// deleted at startup. Unlike the environment block, a file leaves no copy of the key in
+/// `/proc/<pid>/environ` for same-user processes to read.
+pub const ENV_FILE_VAR: &str = "LIBRAGENT_SESSION_API_KEY_FILE";
 /// Prefix so secret scanners can recognise a leaked key.
 pub const KEY_PREFIX: &str = "libr_";
 
@@ -22,11 +29,35 @@ const BASE62: &[u8; 62] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnop
 
 type KeyHash = [u8; 32];
 
-/// SHA-256 of the key captured from the environment at startup. Only the hash is kept.
-static ENV_KEY_HASH: OnceLock<KeyHash> = OnceLock::new();
+/// What startup found about an injected key.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum KeyState {
+    /// SHA-256 of the key. Only the hash is kept.
+    Key(KeyHash),
+    /// A key was injected but cannot be used (blank, unreadable, exposed): reject everything
+    /// instead of silently serving the API without authentication.
+    DenyAll,
+}
 
+static ENV_KEY_STATE: OnceLock<KeyState> = OnceLock::new();
+
+/// Rejection for a missing or wrong key.
 #[derive(Debug)]
-pub struct Unauthorized;
+pub struct Unauthorized {
+    /// A token was sent but is not accepted (RFC 6750 `invalid_token`).
+    invalid_token: bool,
+}
+
+impl Unauthorized {
+    /// Value of the `WWW-Authenticate` response header.
+    pub fn www_authenticate(&self) -> &'static str {
+        if self.invalid_token {
+            "Bearer error=\"invalid_token\""
+        } else {
+            "Bearer"
+        }
+    }
+}
 
 impl Reject for Unauthorized {}
 
@@ -65,6 +96,11 @@ fn hashes_equal(a: &KeyHash, b: &KeyHash) -> bool {
     a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
+fn looks_like_generated_key(key: &str) -> bool {
+    key.strip_prefix(KEY_PREFIX)
+        .is_some_and(|body| body.len() == KEY_CHARS && body.bytes().all(|b| BASE62.contains(&b)))
+}
+
 /// Value of an RFC 6750 `Authorization: Bearer <token>` header.
 fn bearer_token(headers: &HeaderMap) -> Option<&str> {
     let value = headers.get(header::AUTHORIZATION)?.to_str().ok()?;
@@ -73,45 +109,118 @@ fn bearer_token(headers: &HeaderMap) -> Option<&str> {
     (scheme.eq_ignore_ascii_case("bearer") && !token.is_empty()).then_some(token)
 }
 
-/// `Ok` when no key is configured, or when the request carries the configured key.
-fn check_bearer(headers: &HeaderMap, expected: Option<&KeyHash>) -> Result<(), Unauthorized> {
+/// `Ok` when no key is injected, or when the request carries the injected key.
+fn check_bearer(headers: &HeaderMap, expected: Option<KeyState>) -> Result<(), Unauthorized> {
     let Some(expected) = expected else {
         return Ok(());
     };
-    match bearer_token(headers) {
-        Some(token) if hashes_equal(&hash_key(token), expected) => Ok(()),
-        _ => Err(Unauthorized),
+    let token = bearer_token(headers);
+    let invalid_token = token.is_some();
+    match (expected, token) {
+        (KeyState::Key(expected), Some(token)) if hashes_equal(&hash_key(token), &expected) => {
+            Ok(())
+        }
+        _ => Err(Unauthorized { invalid_token }),
     }
 }
 
-/// Reads the injected key, keeps only its hash and removes the variable from the process
-/// environment so no child process (shells, MCP servers, `docker`) can inherit it.
-///
-/// Call it first in `main`, while the process is still single-threaded.
-pub fn capture_env_key() {
-    let value = std::env::var_os(ENV_VAR);
-    std::env::remove_var(ENV_VAR);
-    if let Some(hash) = value.and_then(|value| hash_from_env_value(&value.to_string_lossy())) {
-        let _ = ENV_KEY_HASH.set(hash);
-    }
+/// Reads and deletes the key file. A file that group or others can access is refused (and
+/// still deleted): the key in it must be treated as exposed.
+fn read_and_delete_key_file(path: &Path) -> io::Result<String> {
+    let result = read_private_file(path);
+    let _ = std::fs::remove_file(path);
+    result
 }
 
-fn hash_from_env_value(value: &str) -> Option<KeyHash> {
+fn read_private_file(path: &Path) -> io::Result<String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if std::fs::metadata(path)?.permissions().mode() & 0o077 != 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "key file must not be accessible by group or others (use mode 0600)",
+            ));
+        }
+    }
+    std::fs::read_to_string(path)
+}
+
+/// Decides the key state from what the environment held. The second value is a message for
+/// the operator, if anything about the key needs attention.
+fn resolve_env_key(
+    key: Option<&str>,
+    file_contents: Option<io::Result<String>>,
+) -> Option<(KeyState, Option<String>)> {
+    let (source, value) = match (file_contents, key) {
+        (Some(Err(error)), _) => {
+            return Some((
+                KeyState::DenyAll,
+                Some(format!("{ENV_FILE_VAR} could not be used ({error})")),
+            ));
+        }
+        (Some(Ok(contents)), _) => (ENV_FILE_VAR, contents),
+        (None, Some(key)) => (ENV_VAR, key.to_string()),
+        (None, None) => return None,
+    };
     let value = value.trim();
-    (!value.is_empty()).then(|| hash_key(value))
+    if value.is_empty() {
+        return Some((
+            KeyState::DenyAll,
+            Some(format!("{source} is set but empty")),
+        ));
+    }
+    let note = (!looks_like_generated_key(value)).then(|| {
+        format!(
+            "the key from {source} is not a generated key ({KEY_PREFIX} + {KEY_CHARS} characters)"
+        )
+    });
+    Some((KeyState::Key(hash_key(value)), note))
 }
 
-fn guard(expected: Option<KeyHash>) -> impl Filter<Extract = (), Error = Rejection> + Clone {
+/// Reads the injected key, keeps only its hash and removes both variables from the process
+/// environment so no child process (shells, MCP servers, `docker`) inherits them.
+///
+/// Call it first in `main`, while the process is still single-threaded. Removing a variable
+/// stops inheritance; it does not stop same-user processes reading the original environment
+/// block (`/proc/<pid>/environ` on Linux), which is why [`ENV_FILE_VAR`] exists.
+pub fn capture_env_key() {
+    let key = std::env::var_os(ENV_VAR).map(|value| value.to_string_lossy().into_owned());
+    let file = std::env::var_os(ENV_FILE_VAR).map(PathBuf::from);
+    std::env::remove_var(ENV_VAR);
+    std::env::remove_var(ENV_FILE_VAR);
+
+    let file_contents = file.map(|path| read_and_delete_key_file(&path));
+    let Some((state, note)) = resolve_env_key(key.as_deref(), file_contents) else {
+        return;
+    };
+    match (&state, note) {
+        (KeyState::DenyAll, Some(note)) => {
+            eprintln!("Session API key: {note}; every Session API request will be rejected");
+        }
+        (_, Some(note)) => eprintln!("Session API key: warning: {note}"),
+        _ => {}
+    }
+    let _ = ENV_KEY_STATE.set(state);
+}
+
+/// True when a key was injected (usable or not). The key itself is not kept, so a process
+/// restart cannot carry it over.
+pub fn is_configured() -> bool {
+    ENV_KEY_STATE.get().is_some()
+}
+
+fn guard(expected: Option<KeyState>) -> impl Filter<Extract = (), Error = Rejection> + Clone {
     warp::header::headers_cloned()
         .and_then(move |headers: HeaderMap| async move {
-            check_bearer(&headers, expected.as_ref()).map_err(warp::reject::custom)
+            check_bearer(&headers, expected).map_err(warp::reject::custom)
         })
         .untuple_one()
 }
 
-/// Requires the configured key on every request (a no-op while no key is configured).
+/// Requires the injected key on every request (a no-op while no key is injected).
 pub fn api_key_guard() -> impl Filter<Extract = (), Error = Rejection> + Clone {
-    guard(ENV_KEY_HASH.get().copied())
+    guard(ENV_KEY_STATE.get().copied())
 }
 
 #[cfg(test)]
@@ -128,13 +237,20 @@ mod tests {
         map
     }
 
+    fn key_state(key: &str) -> Option<KeyState> {
+        Some(KeyState::Key(hash_key(key)))
+    }
+
     #[test]
     fn generated_keys_have_the_documented_format() {
         let key = generate_key().unwrap();
         let body = key.strip_prefix(KEY_PREFIX).expect("prefix");
         assert_eq!(body.len(), KEY_CHARS);
         assert!(body.bytes().all(|byte| BASE62.contains(&byte)));
+        assert!(looks_like_generated_key(&key));
         assert_ne!(key, generate_key().unwrap());
+        assert!(!looks_like_generated_key("libr_short"));
+        assert!(!looks_like_generated_key("secret"));
     }
 
     #[test]
@@ -158,23 +274,20 @@ mod tests {
     }
 
     #[test]
-    fn no_configured_key_allows_every_request() {
+    fn no_injected_key_allows_every_request() {
         assert!(check_bearer(&headers(None), None).is_ok());
         assert!(check_bearer(&headers(Some("Bearer anything")), None).is_ok());
     }
 
     #[test]
-    fn configured_key_needs_the_matching_bearer_token() {
-        let expected = hash_key("libr_secret");
+    fn injected_key_needs_the_matching_bearer_token() {
+        let expected = key_state("libr_secret");
         for ok in [
             "Bearer libr_secret",
             "bearer libr_secret",
             "BEARER libr_secret",
         ] {
-            assert!(
-                check_bearer(&headers(Some(ok)), Some(&expected)).is_ok(),
-                "{ok}"
-            );
+            assert!(check_bearer(&headers(Some(ok)), expected).is_ok(), "{ok}");
         }
         for bad in [
             None,
@@ -184,23 +297,97 @@ mod tests {
             Some("Basic libr_secret"),
             Some("libr_secret"),
         ] {
+            assert!(check_bearer(&headers(bad), expected).is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn deny_all_rejects_even_a_well_formed_token() {
+        for authorization in [None, Some("Bearer libr_secret"), Some("Bearer ")] {
             assert!(
-                check_bearer(&headers(bad), Some(&expected)).is_err(),
-                "{bad:?}"
+                check_bearer(&headers(authorization), Some(KeyState::DenyAll)).is_err(),
+                "{authorization:?}"
             );
         }
     }
 
     #[test]
-    fn env_value_is_hashed_and_blank_values_are_ignored() {
-        assert_eq!(hash_from_env_value(" libr_a \n"), Some(hash_key("libr_a")));
-        assert_eq!(hash_from_env_value("   "), None);
-        assert_eq!(hash_from_env_value(""), None);
+    fn challenge_names_invalid_token_only_when_a_token_was_sent() {
+        let expected = key_state("libr_secret");
+        let missing = check_bearer(&headers(None), expected).unwrap_err();
+        assert_eq!(missing.www_authenticate(), "Bearer");
+        let wrong = check_bearer(&headers(Some("Bearer nope")), expected).unwrap_err();
+        assert_eq!(wrong.www_authenticate(), "Bearer error=\"invalid_token\"");
+    }
+
+    #[test]
+    fn unusable_injected_values_fail_closed() {
+        for (key, file) in [
+            (Some(""), None),
+            (Some("  \n"), None),
+            (None, Some(Ok(String::new()))),
+            (None, Some(Ok("\n".to_string()))),
+            (
+                Some("libr_valid"),
+                Some(Err(io::Error::from(io::ErrorKind::NotFound))),
+            ),
+        ] {
+            let (state, note) = resolve_env_key(key, file).expect("a key was injected");
+            assert_eq!(state, KeyState::DenyAll, "{key:?}");
+            assert!(note.is_some(), "{key:?}");
+        }
+    }
+
+    #[test]
+    fn usable_injected_values_are_hashed_and_nothing_injected_means_no_state() {
+        assert!(resolve_env_key(None, None).is_none());
+
+        let generated = generate_key().unwrap();
+        let (state, note) = resolve_env_key(Some(&format!(" {generated}\n")), None).unwrap();
+        assert_eq!(state, KeyState::Key(hash_key(&generated)));
+        assert!(note.is_none());
+
+        // The file wins over the variable, and a non-generated key only warns.
+        let (state, note) =
+            resolve_env_key(Some("from_env"), Some(Ok("from_file".to_string()))).unwrap();
+        assert_eq!(state, KeyState::Key(hash_key("from_file")));
+        assert!(note.unwrap().contains(ENV_FILE_VAR));
+    }
+
+    #[test]
+    fn key_file_is_read_and_deleted() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("session-api-key");
+        std::fs::write(&path, "libr_from_file\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        }
+        assert_eq!(
+            read_and_delete_key_file(&path).unwrap().trim(),
+            "libr_from_file"
+        );
+        assert!(!path.exists());
+        assert!(read_and_delete_key_file(&path).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn key_file_open_to_group_or_others_is_refused_and_deleted() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("session-api-key");
+        std::fs::write(&path, "libr_exposed").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let error = read_and_delete_key_file(&path).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+        assert!(!path.exists());
     }
 
     #[tokio::test]
     async fn guard_answers_401_with_www_authenticate() {
-        let routes = guard(Some(hash_key("libr_secret")))
+        let routes = guard(key_state("libr_secret"))
             .map(|| "ok")
             .recover(handle_rejection);
 
@@ -213,6 +400,10 @@ mod tests {
             .reply(&routes)
             .await;
         assert_eq!(wrong.status(), 401);
+        assert_eq!(
+            wrong.headers().get("www-authenticate").unwrap(),
+            "Bearer error=\"invalid_token\""
+        );
 
         let allowed = warp::test::request()
             .header("authorization", "Bearer libr_secret")
@@ -222,7 +413,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn guard_is_a_no_op_without_a_configured_key() {
+    async fn deny_all_guard_rejects_through_the_real_handler() {
+        let routes = guard(Some(KeyState::DenyAll))
+            .map(|| "ok")
+            .recover(handle_rejection);
+        let reply = warp::test::request()
+            .header("authorization", "Bearer libr_secret")
+            .reply(&routes)
+            .await;
+        assert_eq!(reply.status(), 401);
+    }
+
+    #[tokio::test]
+    async fn guard_is_a_no_op_without_an_injected_key() {
         let routes = guard(None).map(|| "ok").recover(handle_rejection);
         assert_eq!(warp::test::request().reply(&routes).await.status(), 200);
     }
