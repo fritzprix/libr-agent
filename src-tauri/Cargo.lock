@@ -4613,6 +4613,7 @@ dependencies = [
  "fastembed",
  "fern",
  "futures",
+ "getrandom 0.2.17",
  "glob",
  "handlebars",
  "html-escape",

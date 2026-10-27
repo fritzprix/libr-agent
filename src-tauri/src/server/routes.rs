@@ -247,5 +247,8 @@ pub fn get_routes(
         .or(mcp_route);
 
     // No allow_any_origin CORS. CLI clients omit Origin; browsers with Origin are rejected.
-    access_guard(expose).and(api).recover(handle_rejection)
+    access_guard(expose)
+        .and(crate::server::api_key::api_key_guard())
+        .and(api)
+        .recover(handle_rejection)
 }

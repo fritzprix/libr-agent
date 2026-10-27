@@ -11,6 +11,10 @@ use tauri_mcp_agent_lib::profile::{self, AppProfile};
 /// 3. Optionally resetting demo data for a clean slate
 /// 4. Calling `run_with_sqlite_sync` with the SQLite URL
 fn main() {
+    // First thing, while still single-threaded: take the injected Session API key out of the
+    // environment so no child process can inherit it.
+    tauri_mcp_agent_lib::server::api_key::capture_env_key();
+
     if std::env::args().any(|arg| arg == tauri_mcp_agent_lib::browser_sidecar::BROWSER_SIDECAR_FLAG)
     {
         if let Err(error) = tauri_mcp_agent_lib::browser_sidecar::run_sidecar_mode() {
