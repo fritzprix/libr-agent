@@ -164,36 +164,11 @@ class CriticalPathTests(unittest.TestCase):
         self.assertFalse(calls_wake("echo done"))
         self.assertFalse(calls_wake("echo $LIBRAGENT_WAKE_URL"))
 
-    def test_call_me_back_needs_the_subscribe_command(self) -> None:
-        subscribe = {"command": "/app/sms_monitor subscribe --hook 'curl ...'"}
+    def test_call_me_back_has_no_trajectory_checks(self) -> None:
+        # T04 is graded on the recorded subscription only, so no tool use fails it here.
         self.assertEqual(
-            _grade("T04", _step(("a", "workspace__runShell", subscribe, False))), []
+            _grade("T04", _step(("a", "workspace__waitForProcess", {}, False))), []
         )
-        self.assertEqual(
-            _grade(
-                "T04",
-                _step(("a", "workspace__runShell", {"command": "sms_monitor list"}, False)),
-            ),
-            ["missing __runShell (sms_monitor subscribe)"],
-        )
-        reading = {"command": "cat /app/sms_monitor | grep subscribe"}
-        self.assertEqual(
-            _grade("T04", _step(("a", "workspace__runShell", reading, False))),
-            ["missing __runShell (sms_monitor subscribe)"],
-        )
-
-    def test_call_me_back_fails_on_blocking_or_polling(self) -> None:
-        subscribe = {"command": "/app/sms_monitor subscribe --hook 'curl ...'"}
-        for tool in ("workspace__waitForProcess", "scheduled_task__scheduleCallback"):
-            self.assertEqual(
-                _grade(
-                    "T04",
-                    _step(("a", "workspace__runShell", subscribe, False)),
-                    _step(("b", tool, {}, False)),
-                ),
-                [f"forbidden __{tool.split('__')[1]}"],
-                tool,
-            )
 
     def test_catalog_installs_need_the_catalog_lookup_first(self) -> None:
         register = _step(("b", "tool__registerServer", {}, False))

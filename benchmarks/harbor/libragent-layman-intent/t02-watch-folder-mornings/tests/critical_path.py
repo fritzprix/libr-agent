@@ -224,17 +224,9 @@ TASKS: dict[str, TaskSpec] = {
             "t04-event-subscribe",
             "P",
             "call-me-back",
-            # An external event can't be waited on in-turn: the session must hook
-            # the mock CLI up to the wake URL and go idle. Harbor ends the trial at
-            # idle, so the firing is not judged; the test checks the recorded hook.
-            # Blocking on the process or polling (waitForProcess, scheduled tasks)
-            # is the wrong skill and fails.
-            (Step("__runShell", "subscribe", scripts=("sms_monitor",)),),
-            forbidden=(
-                "__waitForProcess",
-                "__scheduleCallback",
-                "__createScheduledTask",
-            ),
+            # No trajectory checks: T04 is graded only on the subscription that
+            # sms_monitor recorded (tests/test_outputs.py). Solving it with polling or
+            # callbacks fails because no hook that calls the wake URL gets registered.
         ),
         TaskSpec("T05", "t05-tell-me-later", "P", "loop", SCHEDULE_CALLBACK),
         TaskSpec(
