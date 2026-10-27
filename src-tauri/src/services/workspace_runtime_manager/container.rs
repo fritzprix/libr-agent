@@ -407,4 +407,58 @@ mod tests {
         assert!(!is_socket_mount_stale(Some("/path/to/sock"), Some("")));
         assert!(!is_socket_mount_stale(Some("/path/to/sock"), Some("   ")));
     }
+
+    /// Runs against a real Docker daemon; skipped where there is none or no small image.
+    async fn docker_test_container(name: &str, owner: &str) -> bool {
+        let _ = AsyncCommand::new("docker")
+            .args(["rm", "-f", name])
+            .output()
+            .await;
+        let started = AsyncCommand::new("docker")
+            .args([
+                "run",
+                "-d",
+                "--name",
+                name,
+                "--label",
+                &format!("com.libragent.session_id={owner}"),
+                "python:3.13-slim",
+                "sleep",
+                "60",
+            ])
+            .output()
+            .await;
+        matches!(started, Ok(output) if output.status.success())
+    }
+
+    #[tokio::test]
+    async fn removal_checks_the_owner_label_and_forgets_the_relay() {
+        let name = "libragent-test-remove-label";
+        if !docker_test_container(name, "owner-session").await {
+            eprintln!("skipped: no Docker daemon or image");
+            return;
+        }
+
+        // Another session must not be able to delete this container.
+        let refused = remove_managed_container("other-session", name).await;
+        assert!(matches!(
+            refused,
+            Err(WorkspaceRuntimeError::OwnershipMismatch { .. })
+        ));
+        assert!(docker_container_exists(name).await.unwrap());
+
+        // The owner can: the relay is forgotten and the container is gone.
+        crate::server::session_socket::mark_relay_ready("owner-session");
+        remove_managed_container("owner-session", name)
+            .await
+            .unwrap();
+        assert!(!docker_container_exists(name).await.unwrap());
+        assert!(!crate::server::session_socket::is_reachable_from_container(
+            "owner-session"
+        ));
+        let _ = AsyncCommand::new("docker")
+            .args(["rm", "-f", name])
+            .output()
+            .await;
+    }
 }

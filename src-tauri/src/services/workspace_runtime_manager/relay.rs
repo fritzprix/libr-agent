@@ -180,7 +180,9 @@ pub(super) async fn ensure_relay(session_id: &str, container_name: &str, arch: &
         }
         Some(RelayProcess::None) => {}
         None => {
+            // Not knowing is not "reachable": no URL until the relay is seen again.
             log::warn!("Cannot list the processes of '{container_name}'; no session relay");
+            crate::server::session_socket::clear_relay(session_id);
             return false;
         }
     }

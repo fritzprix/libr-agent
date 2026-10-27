@@ -15,7 +15,7 @@ use crate::models::workspace_isolation::{
 use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::SessionMetadata;
 use crate::session_isolation::{ShellDialect, ShellType, SpawnedShell};
-use dashmap::DashMap;
+use dashmap::{DashMap, DashSet};
 use once_cell::sync::Lazy;
 use tokio::process::Command as AsyncCommand;
 use tokio::sync::{Mutex, Notify};
@@ -109,17 +109,22 @@ impl WorkspaceRuntimeManager {
         ensure_relay_for_container(&session.id, &container_name).await
     }
 
-    /// Spawns a background task to ensure the session relay without blocking the caller.
+    /// Re-checks the session's relay in the background without blocking the caller, and starts it
+    /// when it is gone. One check per session runs at a time: a trigger that finds one running
+    /// does nothing, so calling this on every `runShell` queues nothing up.
     pub fn spawn_background_session_relay(session_id: &str) {
+        static CHECKING: Lazy<DashSet<String>> = Lazy::new(DashSet::new);
+        if !CHECKING.insert(session_id.to_string()) {
+            return;
+        }
         let id = session_id.to_string();
         tokio::spawn(async move {
-            let Some(session_repo) = crate::state::try_get_session_repository() else {
-                return;
-            };
-            let Ok(Some(session)) = session_repo.get_session(&id).await else {
-                return;
-            };
-            Self::ensure_session_relay(&session).await;
+            if let Some(session_repo) = crate::state::try_get_session_repository() {
+                if let Ok(Some(session)) = session_repo.get_session(&id).await {
+                    Self::ensure_session_relay(&session).await;
+                }
+            }
+            CHECKING.remove(&id);
         });
     }
 
@@ -428,18 +433,18 @@ async fn prepare_docker_runtime(
     .await?;
     stage_missing_skill_roots(&container_name).await;
 
-    let arch = match docker_container_architecture(&container_name).await {
-        Ok(arch) => arch,
-        Err(error) => {
-            tracing::warn!(
-                "Failed to inspect Docker architecture for {container_name}: {error}; falling back to host arch"
-            );
-            std::env::consts::ARCH.to_string()
+    // The architecture is read once and cached only when it was read; nothing is guessed from
+    // the host, so a failed inspect never picks a relay binary for the wrong architecture.
+    match docker_container_architecture(&container_name).await {
+        Ok(arch) => {
+            DOCKER_ARCH_CACHE.insert(session.id.clone(), arch);
         }
-    };
+        Err(error) => {
+            tracing::warn!("Failed to inspect Docker architecture for {container_name}: {error}");
+        }
+    }
 
     DOCKER_SHELL_CACHE.insert(session.id.clone(), shell);
-    DOCKER_ARCH_CACHE.insert(session.id.clone(), arch);
     DOCKER_CONTAINER_READY_CACHE.insert(session.id.clone(), now);
     Ok(shell)
 }

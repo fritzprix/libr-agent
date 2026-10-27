@@ -234,19 +234,21 @@ pub async fn is_session_docker_isolated(session_id: &str) -> bool {
 /// Adds this session's wake URL to a shell environment.
 ///
 /// Docker sessions reach the host through the relay on the container's loopback, so
-/// it gets the URL only once that relay has said it is listening. Without it the token could
+/// it gets the URL only while that relay is registered as reachable. Without it the token could
 /// reach whatever else listens on that port inside the container.
-/// Crucially, we do not block runShell waiting for relay startup. If the relay is
-/// not ready yet, we trigger background startup and proceed without the wake URL this turn.
+/// Crucially, we do not block runShell on the relay. Every call re-checks the relay in the
+/// background (one check at a time per session): a relay that died is noticed and started again,
+/// so the next `runShell` sees the corrected state. A session whose relay is not registered
+/// proceeds without the wake URL this turn.
 pub async fn add_wake_url_env(
     session_id: &str,
     env_vars: &mut std::collections::HashMap<String, String>,
 ) {
-    if is_session_docker_isolated(session_id).await
-        && !crate::server::session_socket::is_reachable_from_container(session_id)
-    {
+    if is_session_docker_isolated(session_id).await {
         crate::services::workspace_runtime_manager::WorkspaceRuntimeManager::spawn_background_session_relay(session_id);
-        return;
+        if !crate::server::session_socket::is_reachable_from_container(session_id) {
+            return;
+        }
     }
     env_vars.insert(
         crate::server::wake::WAKE_URL_ENV.to_string(),
