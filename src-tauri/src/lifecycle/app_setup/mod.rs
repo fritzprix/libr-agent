@@ -407,20 +407,32 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         let app_handle_for_signal = app.handle().clone();
         tauri::async_runtime::spawn(async move {
             use tokio::signal::unix::{signal, SignalKind};
-            if let (Ok(mut sigint), Ok(mut sigterm)) = (
+            let (Ok(mut sigint), Ok(mut sigterm)) = (
                 signal(SignalKind::interrupt()),
                 signal(SignalKind::terminate()),
-            ) {
+            ) else {
+                return;
+            };
+            // tokio keeps its OS handler for the life of the process, so signals must keep being
+            // received after the first one: it starts the cleanup, the second one ends the
+            // process right away (a cleanup that hangs, for example on Docker, cannot trap it).
+            let mut cleanup_started = false;
+            loop {
                 tokio::select! {
-                    _ = sigint.recv() => {
-                        info!("Received SIGINT, initiating graceful shutdown");
-                    }
-                    _ = sigterm.recv() => {
-                        info!("Received SIGTERM, initiating graceful shutdown");
-                    }
+                    _ = sigint.recv() => info!("Received SIGINT"),
+                    _ = sigterm.recv() => info!("Received SIGTERM"),
                 }
-                crate::services::workspace_runtime_manager::relay::shutdown_all_relays().await;
-                app_handle_for_signal.exit(0);
+                if cleanup_started {
+                    info!("Second signal received, exiting without waiting for cleanup");
+                    std::process::exit(1);
+                }
+                cleanup_started = true;
+                info!("Initiating graceful shutdown (signal again to exit immediately)");
+                let app_handle = app_handle_for_signal.clone();
+                tauri::async_runtime::spawn(async move {
+                    crate::services::workspace_runtime_manager::relay::shutdown_all_relays().await;
+                    app_handle.exit(0);
+                });
             }
         });
     }

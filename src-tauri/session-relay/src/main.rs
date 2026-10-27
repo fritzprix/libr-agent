@@ -4,12 +4,16 @@
 //!
 //! Usage: `session-relay <port> [socket-path]`
 //!
-//! Prints `ready` on stdout once it is listening: the host starts it with `docker exec` and
-//! treats that line as "this relay owns the port" (a port that is already in use exits instead).
+//! Prints `ready` on stdout once it is listening **and** the upstream socket accepted one
+//! connection: the host starts it with `docker exec` and treats that line as "a request to the
+//! port reaches the Session API" (a port that is already in use, or a socket that cannot be
+//! reached from this container, exits instead).
 //!
 //! Exit codes: 2 for bad arguments, 3 when the port cannot be bound (already in use), so the
-//! host can tell "do not hand out a wake URL" from a crash, and 4 when accepting connections
-//! fails for a reason that will not go away by itself (for example no file descriptors left).
+//! host can tell "do not hand out a wake URL" from a crash, 4 when accepting connections
+//! fails for a reason that will not go away by itself (for example no file descriptors left),
+//! and 5 when the upstream socket cannot be connected to (for example a Docker Desktop
+//! directory mount that does not carry sockets).
 //!
 //! One thread runs an event loop for all connections: each connection is a task on a
 //! current-thread runtime, not a thread.
@@ -82,6 +86,15 @@ async fn main() {
             std::process::exit(3);
         }
     };
+    // One probe connection before `ready`, so a URL is never handed out for a relay that cannot
+    // reach the Session API.
+    if let Err(error) = tokio::net::UnixStream::connect(&socket_path).await {
+        eprintln!(
+            "session-relay: cannot reach {}: {error}",
+            socket_path.display()
+        );
+        std::process::exit(5);
+    }
     println!("ready");
     let error = relay::serve(listener, socket_path).await;
     eprintln!("session-relay: cannot accept connections: {error}");

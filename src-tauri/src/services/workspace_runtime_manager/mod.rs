@@ -106,17 +106,7 @@ impl WorkspaceRuntimeManager {
         let Ok(container_name) = docker_container_name(session) else {
             return false;
         };
-        let arch = match Self::cached_docker_arch(&session.id) {
-            Some(arch) => arch,
-            None => {
-                let resolved = docker_cli::docker_container_architecture(&container_name)
-                    .await
-                    .unwrap_or_else(|_| std::env::consts::ARCH.to_string());
-                DOCKER_ARCH_CACHE.insert(session.id.clone(), resolved.clone());
-                resolved
-            }
-        };
-        relay::ensure_relay(&session.id, &container_name, &arch).await
+        ensure_relay_for_container(&session.id, &container_name).await
     }
 
     /// Spawns a background task to ensure the session relay without blocking the caller.
@@ -325,6 +315,26 @@ impl WorkspaceRuntimeManager {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+/// Starts the session's relay in `container_name`. The container's architecture picks the
+/// embedded binary; when it cannot be read the session gets no relay (nothing is guessed or
+/// cached), so no wake URL is handed out for a binary that may not run.
+pub(super) async fn ensure_relay_for_container(session_id: &str, container_name: &str) -> bool {
+    let arch = match WorkspaceRuntimeManager::cached_docker_arch(session_id) {
+        Some(arch) => arch,
+        None => match docker_cli::docker_container_architecture(container_name).await {
+            Ok(arch) => {
+                DOCKER_ARCH_CACHE.insert(session_id.to_string(), arch.clone());
+                arch
+            }
+            Err(error) => {
+                log::warn!("No session relay for {session_id}: cannot read the container architecture: {error}");
+                return false;
+            }
+        },
+    };
+    relay::ensure_relay(session_id, container_name, &arch).await
+}
 
 pub(super) fn clear_session_docker_caches(session_id: &str) {
     DOCKER_HEALTH_CACHE.remove(session_id);

@@ -182,7 +182,13 @@ pub(super) async fn ensure_bash_image_contract(
         reporter("Verifying shell");
     }
     let shell = ensure_supported_shell(session_id, container_name).await?;
-    super::WorkspaceRuntimeManager::spawn_background_session_relay(session_id);
+    // The runtime counts as ready only once the relay has answered, so the first command of the
+    // session already sees `$LIBRAGENT_WAKE_URL`. A relay that cannot start leaves the session
+    // without a URL (ensure_relay logs why); provisioning itself does not fail for it.
+    if let Some(reporter) = reporter {
+        reporter("Starting session relay");
+    }
+    super::ensure_relay_for_container(session_id, container_name).await;
     Ok(shell)
 }
 
@@ -191,9 +197,15 @@ pub(super) async fn remove_managed_container(
     session_id: &str,
     container_name: &str,
 ) -> RuntimeResult<()> {
+    let exists = docker_container_exists(container_name).await?;
+    if exists {
+        // Every removal goes through here, so every caller gets the ownership check: a
+        // container of another session with the same name is never touched.
+        verify_container_label(container_name, session_id).await?;
+    }
     super::relay::forget(session_id, container_name).await;
     super::clear_session_docker_caches(session_id);
-    if docker_container_exists(container_name).await? {
+    if exists {
         run_docker_status(["rm", "-f", "-v", container_name]).await?;
     }
     Ok(())

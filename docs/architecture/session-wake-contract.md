@@ -28,7 +28,10 @@ The host opens no extra TCP port for containers. Each managed session has its ow
 (`~/.libragent/sock/<session_id>/`, or under the data directory when one is set), mounted into its container
 at `/run/libragent/`. Inside the container, the socket appears at `/run/libragent/api.sock`. The relay is a
 static musl binary (x86_64, aarch64) embedded in the app; the host starts it with `docker exec`, waits for
-it to print `ready`, and registers it only once listening. It needs nothing from the image.
+it to print `ready`, and registers it only then. The relay prints `ready` once it is listening **and**
+one probe connection to `/run/libragent/api.sock` succeeded, so `ready` means a request to the port reaches
+the Session API. The session is ready only after that: provisioning waits for it (step "Starting session
+relay"), so the first command already sees `$LIBRAGENT_WAKE_URL`. It needs nothing from the image.
 
 ## Permissions of a socket-origin request
 
@@ -66,9 +69,12 @@ socket is served. Requests on the main TCP port have no origin and behave as bef
 
 - **No relay, no URL.** `$LIBRAGENT_WAKE_URL` is set only while the relay is serving the port. If
   the container's port is already in use, the relay is not started, no URL is given and a warning
-  is logged. A local build without the embedded relay behaves the same way.
+  is logged. A local build without the embedded relay behaves the same way. So does a relay that
+  cannot reach the socket (exit code 5): no `ready`, no URL.
 - **Relay died.** A relay that exits (including exit code 4 when it can no longer accept connections)
-  is started again on the next `runShell`.
+  is started again on the next `runShell`. A relay that runs for another port or socket than the current
+  ones (the host fell back to another port after a restart) is stopped and replaced; only a process whose
+  command line is the relay's path with the current port and socket counts as the running relay.
 - **Host restart & container preservation.** Sockets are served from per-session directories
   (`~/.libragent/sock/<session_id>/`), mounted at `/run/libragent/`. When the host restarts, it recreates
   `api.sock` in the existing directory, which is immediately visible inside the container without container

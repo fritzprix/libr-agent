@@ -1,5 +1,5 @@
-//! Runs the real binary: the host reads its exit codes (3 = port in use, so no wake URL; 2 = bad
-//! arguments) and relies on it forwarding to the unix socket.
+//! Runs the real binary: the host reads its exit codes (3 = port in use and 5 = socket unreachable, so no wake URL;
+//! 2 = bad arguments) and relies on it forwarding to the unix socket.
 #![cfg(unix)]
 
 use std::io::{BufRead, Read, Write};
@@ -140,10 +140,31 @@ fn serves_many_connections_at_once() {
 }
 
 #[test]
-fn a_missing_socket_closes_the_connection_and_the_relay_keeps_running() {
+fn an_unreachable_socket_exits_with_code_5_and_is_never_ready() {
+    // No server behind the socket (for example a directory mount that carries no sockets):
+    // the host must not get a `ready` line, so it hands out no wake URL.
+    let socket = temp_socket("unreachable");
+    let port = free_port();
+
+    let output = Command::new(RELAY)
+        .arg(port.to_string())
+        .arg(&socket)
+        .stderr(Stdio::null())
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(5));
+    assert!(output.stdout.is_empty());
+}
+
+#[test]
+fn a_socket_that_goes_away_closes_the_connection_and_the_relay_keeps_running() {
     let socket = temp_socket("missing");
     let port = free_port();
+    spawn_echo_server(&socket);
     let _relay = start_relay(port, &socket);
+    // The host restarted: the old socket file is gone until it serves a new one.
+    std::fs::remove_file(&socket).unwrap();
 
     // The relay closes the connection: an empty answer or a reset, never a reply.
     let mut client = TcpStream::connect(("127.0.0.1", port)).unwrap();
