@@ -42,7 +42,7 @@ jobs:
 
       - name: Test
         working-directory: src-tauri
-        run: cargo test -p session-relay --bin session-relay --target ${{ matrix.target }}
+        run: cargo test -p session-relay --target ${{ matrix.target }}
 
       - name: Build
         working-directory: src-tauri

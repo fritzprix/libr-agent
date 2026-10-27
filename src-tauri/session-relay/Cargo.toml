@@ -5,5 +5,8 @@ edition = "2021"
 description = "Forwards 127.0.0.1:<port> inside a managed Docker session to the session's unix socket"
 publish = false
 
-# No dependencies on purpose: the binary is built static (musl) in CI, embedded in the app, and
-# started inside session containers, so it must stay small and need nothing from the image.
+# The binary is built static (musl) in CI, embedded in the app, and started inside session
+# containers, so it must stay small and need nothing from the image. One thread serves every
+# connection: tokio's current-thread runtime, no worker threads.
+[dependencies]
+tokio = { version = "1.52", default-features = false, features = ["rt", "net", "io-util", "macros"] }
