@@ -4,8 +4,8 @@ pub mod endpoint_policy;
 pub mod handlers;
 pub mod mcp_handler;
 pub mod routes;
+pub mod session_socket;
 pub mod wake;
-pub mod wake_listener;
 
 use log::info;
 use std::sync::atomic::{AtomicU16, Ordering};
@@ -115,11 +115,19 @@ pub async fn init(
         }
     }
 
-    match wake_listener::start(agent_manager.clone()) {
-        Ok(port) => info!("Wake-only listener for Docker sessions on port {port}"),
-        Err(error) => log::warn!(
-            "Wake-only listener failed to start; Docker sessions get no wake URL: {error}"
-        ),
+    #[cfg(unix)]
+    {
+        let manager = agent_manager.clone();
+        session_socket::register_serve(Box::new(move |session_id, listener| {
+            // `origin` is fixed per listener and captured by the router, so a request cannot
+            // set or forge it. /mcp and the app-control routes are refused by the endpoint
+            // policy for an origin, so they are not built.
+            let routes = routes::get_routes(manager.clone(), false, false, false, Some(session_id));
+            Box::pin(
+                warp::serve(routes)
+                    .run_incoming(tokio_stream::wrappers::UnixListenerStream::new(listener)),
+            )
+        }));
     }
 
     let routes = routes::get_routes(

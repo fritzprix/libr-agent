@@ -4658,6 +4658,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tiktoken-rs",
  "tokio",
+ "tokio-stream",
  "tokio-util",
  "tracing",
  "url",

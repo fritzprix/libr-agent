@@ -684,6 +684,7 @@ impl AgentSessionManager {
         .await?;
         for id in &deleted_ids {
             crate::server::wake::revoke_wake_token(id);
+            crate::server::session_socket::remove_session_socket(id);
         }
         Ok(deleted_ids)
     }
@@ -694,6 +695,7 @@ impl AgentSessionManager {
         session_id: String,
     ) -> Result<(String, Vec<String>), String> {
         crate::server::wake::revoke_wake_token(&session_id);
+        crate::server::session_socket::remove_session_socket(&session_id);
         crate::agent::lifecycle::delete_session_only(
             &self.session_repo,
             &self.active_sessions,

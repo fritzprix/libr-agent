@@ -62,24 +62,6 @@ pub fn wake_url_for(session_id: &str) -> String {
     )
 }
 
-/// Wake URL a Docker container can reach: the wake-only listener on the host, through
-/// `host.docker.internal`. `None` when that listener is not running.
-pub fn container_wake_url_for(session_id: &str) -> Option<String> {
-    let port = super::wake_listener::wake_listener_port()?;
-    Some(container_wake_url(
-        port,
-        session_id,
-        &wake_token_for(session_id),
-    ))
-}
-
-fn container_wake_url(port: u16, session_id: &str, token: &str) -> String {
-    format!(
-        "http://{}:{port}/api/sessions/{session_id}/wake/{token}",
-        super::wake_listener::CONTAINER_HOST_NAME
-    )
-}
-
 /// Invalidates the session's token; later callbacks with it are rejected.
 pub fn revoke_wake_token(session_id: &str) {
     WAKE_TOKENS.remove(session_id);
@@ -194,27 +176,6 @@ impl WakePayload {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn container_url_targets_the_host_name_and_is_redacted() {
-        let id = "wake-test-container-url";
-        let token = wake_token_for(id);
-        let url = container_wake_url(4567, id, &token);
-
-        assert_eq!(
-            url,
-            format!("http://host.docker.internal:4567/api/sessions/{id}/wake/{token}")
-        );
-        let redacted = redact_wake_tokens(id, &url);
-        assert!(!redacted.contains(&token));
-        revoke_wake_token(id);
-    }
-
-    #[test]
-    fn no_container_url_until_the_wake_listener_runs() {
-        assert!(super::super::wake_listener::wake_listener_port().is_none());
-        assert!(container_wake_url_for("wake-test-no-listener").is_none());
-    }
 
     #[test]
     fn token_is_stable_until_revoked() {

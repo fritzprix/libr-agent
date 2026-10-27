@@ -111,15 +111,18 @@ pub(super) async fn ensure_bash_image_contract(
         cmd.args(["run", "-d", "--name", container_name, "--label", &label]);
         cmd.args(volume_args);
         cmd.args(["-w", &workdir]);
-        // Lets the container reach the wake-only listener on the host (needed on Linux; Docker
-        // Desktop resolves the name already).
-        cmd.args([
-            "--add-host",
-            &format!(
-                "{}:host-gateway",
-                crate::server::wake_listener::CONTAINER_HOST_NAME
-            ),
-        ]);
+        // The session's Session API socket, mounted as a single file (Docker Desktop on macOS
+        // cannot connect to a socket reached through a mounted directory).
+        match crate::server::session_socket::ensure_session_socket(session_id).await {
+            Ok(socket) => {
+                cmd.arg("-v").arg(format!(
+                    "{}:{}",
+                    socket.display(),
+                    crate::server::session_socket::CONTAINER_SOCKET_PATH
+                ));
+            }
+            Err(error) => log::warn!("No Session API socket for {session_id}: {error}"),
+        }
 
         if let Some(config) = &session.docker_config {
             append_port_binding_args(&mut cmd, config).await?;

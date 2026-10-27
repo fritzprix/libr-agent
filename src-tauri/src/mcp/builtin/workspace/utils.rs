@@ -240,15 +240,17 @@ pub async fn add_wake_url_env(
     session_id: &str,
     env_vars: &mut std::collections::HashMap<String, String>,
 ) {
-    let url = if is_session_docker_isolated(session_id).await {
-        match crate::server::wake::container_wake_url_for(session_id) {
-            Some(url) => url,
-            None => return,
-        }
-    } else {
-        crate::server::wake::wake_url_for(session_id)
-    };
-    env_vars.insert(crate::server::wake::WAKE_URL_ENV.to_string(), url);
+    // A Docker session reaches the same URL through the relay on the container's loopback, but
+    // only when its socket is being served.
+    if is_session_docker_isolated(session_id).await
+        && !crate::server::session_socket::is_serving(session_id)
+    {
+        return;
+    }
+    env_vars.insert(
+        crate::server::wake::WAKE_URL_ENV.to_string(),
+        crate::server::wake::wake_url_for(session_id),
+    );
 }
 
 /// Single DB read for Docker isolation + configured workdir (`/workspace` or attach `/app`).
