@@ -35,6 +35,81 @@ pub async fn acquire_parent_spawn_guard(
     Some(lock.lock_owned().await)
 }
 
+/// Baseline `maxDepth` / `maxFanout` from the `advancedSettings` JSON
+/// (`defaultSessionMaxDepth` / `defaultSessionMaxFanout`). A missing, non-numeric or `0` value
+/// means unlimited, so it yields `None`.
+pub fn baseline_limits_from_settings(settings_json: &str) -> (Option<u32>, Option<u32>) {
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(settings_json) else {
+        return (None, None);
+    };
+    let limit = |key: &str| {
+        json.get(key)
+            .and_then(|value| value.as_u64())
+            .and_then(|value| u32::try_from(value).ok())
+            .filter(|value| *value > 0)
+    };
+    (
+        limit("defaultSessionMaxDepth"),
+        limit("defaultSessionMaxFanout"),
+    )
+}
+
+/// Reads the baseline limits from the settings repository; unlimited when it is unavailable.
+async fn baseline_limits() -> (Option<u32>, Option<u32>) {
+    let Some(settings_repo) = crate::state::try_get_settings_repository() else {
+        return (None, None);
+    };
+    match settings_repo.get("advancedSettings").await {
+        Ok(Some(model)) => baseline_limits_from_settings(&model.value),
+        _ => (None, None),
+    }
+}
+
+/// The limit a new session ends up with: its own request, else what its parent carries, else the
+/// baseline from the settings.
+fn effective_limit(
+    requested: Option<u32>,
+    inherited: Option<u32>,
+    baseline: Option<u32>,
+) -> Option<u32> {
+    requested.or(inherited).or(baseline)
+}
+
+/// True when `requested` does not raise the limit `inherited` allows. No inherited limit means
+/// unlimited, so any request (which can only tighten it) is fine, and so is no request.
+pub fn request_within_limit(requested: Option<u32>, inherited: Option<u32>) -> bool {
+    match (requested, inherited) {
+        (Some(requested), Some(inherited)) => requested <= inherited,
+        _ => true,
+    }
+}
+
+/// The `maxDepth` / `maxFanout` a child of `parent_id` inherits: what the parent carries, else
+/// the baseline from the settings.
+pub async fn inherited_limits_for(parent_id: &str) -> (Option<u32>, Option<u32>) {
+    let from_cache = {
+        let store = lineage_store().read().await;
+        store
+            .get(parent_id)
+            .map(|meta| (meta.max_depth, meta.max_fanout))
+    };
+    let (parent_depth, parent_fanout) = match from_cache {
+        Some(limits) => limits,
+        None => crate::state::get_session_repository()
+            .get_session(parent_id)
+            .await
+            .ok()
+            .flatten()
+            .map(|meta| (meta.max_depth, meta.max_fanout))
+            .unwrap_or((None, None)),
+    };
+    let (baseline_depth, baseline_fanout) = baseline_limits().await;
+    (
+        parent_depth.or(baseline_depth),
+        parent_fanout.or(baseline_fanout),
+    )
+}
+
 pub async fn remove_lineage(session_id: &str) {
     lineage_store().write().await.remove(session_id);
     match parent_spawn_locks().lock() {
@@ -107,6 +182,7 @@ pub async fn resolve_spawn_lineage(
 ) -> Result<SessionLineageMeta, String> {
     let requested_max_depth = request.max_depth;
     let requested_max_fanout = request.max_fanout;
+    let (baseline_max_depth, baseline_max_fanout) = baseline_limits().await;
 
     if let Some(parent_id) = request.parent_session_id.as_deref() {
         // Clone parent fields under the read lock, then drop before any await
@@ -127,6 +203,7 @@ pub async fn resolve_spawn_lineage(
                 seed,
                 requested_max_depth,
                 requested_max_fanout,
+                (baseline_max_depth, baseline_max_fanout),
                 explicit_org,
             )
             .await;
@@ -152,6 +229,7 @@ pub async fn resolve_spawn_lineage(
             },
             requested_max_depth,
             requested_max_fanout,
+            (baseline_max_depth, baseline_max_fanout),
             explicit_org,
         )
         .await;
@@ -161,8 +239,8 @@ pub async fn resolve_spawn_lineage(
         parent_session_id: None,
         lineage_id: session_id.to_string(),
         depth: 0,
-        max_depth: requested_max_depth,
-        max_fanout: requested_max_fanout,
+        max_depth: effective_limit(requested_max_depth, None, baseline_max_depth),
+        max_fanout: effective_limit(requested_max_fanout, None, baseline_max_fanout),
         org_id: explicit_org.map(|(org_id, _, _)| org_id.clone()),
         org_name: explicit_org.map(|(_, org_name, _)| org_name.clone()),
         org_root_session_id: explicit_org
@@ -182,6 +260,7 @@ async fn build_child_lineage_meta(
     seed: ChildLineageSeed,
     requested_max_depth: Option<u32>,
     requested_max_fanout: Option<u32>,
+    baseline: (Option<u32>, Option<u32>),
     explicit_org: Option<&(String, String, String)>,
 ) -> Result<SessionLineageMeta, String> {
     let ChildLineageSeed {
@@ -191,8 +270,9 @@ async fn build_child_lineage_meta(
         inherited_max_depth,
         inherited_max_fanout,
     } = seed;
-    let effective_max_depth = requested_max_depth.or(inherited_max_depth);
-    let effective_max_fanout = requested_max_fanout.or(inherited_max_fanout);
+    let effective_max_depth = effective_limit(requested_max_depth, inherited_max_depth, baseline.0);
+    let effective_max_fanout =
+        effective_limit(requested_max_fanout, inherited_max_fanout, baseline.1);
     let next_depth = parent_depth.saturating_add(1);
     let child_count = crate::state::get_session_repository()
         .get_child_session_ids(&parent_id)
@@ -229,4 +309,62 @@ async fn build_child_lineage_meta(
         org_root_session_id: explicit_org
             .map(|(_, _, org_root_session_id)| org_root_session_id.clone()),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn baseline_limits_come_from_advanced_settings_and_zero_means_unlimited() {
+        assert_eq!(
+            baseline_limits_from_settings(
+                r#"{"defaultSessionMaxDepth":3,"defaultSessionMaxFanout":8}"#
+            ),
+            (Some(3), Some(8))
+        );
+        // 0 is "unlimited" in the settings UI.
+        assert_eq!(
+            baseline_limits_from_settings(
+                r#"{"defaultSessionMaxDepth":0,"defaultSessionMaxFanout":0}"#
+            ),
+            (None, None)
+        );
+        // One of the two missing, a non-number, a negative or an oversized value, broken JSON.
+        assert_eq!(
+            baseline_limits_from_settings(r#"{"defaultSessionMaxDepth":2}"#),
+            (Some(2), None)
+        );
+        assert_eq!(
+            baseline_limits_from_settings(
+                r#"{"defaultSessionMaxDepth":"3","defaultSessionMaxFanout":-1}"#
+            ),
+            (None, None)
+        );
+        assert_eq!(
+            baseline_limits_from_settings(r#"{"defaultSessionMaxDepth":99999999999}"#),
+            (None, None)
+        );
+        assert_eq!(baseline_limits_from_settings("not json"), (None, None));
+        assert_eq!(baseline_limits_from_settings("{}"), (None, None));
+    }
+
+    #[test]
+    fn effective_limit_prefers_the_request_then_the_parent_then_the_baseline() {
+        assert_eq!(effective_limit(Some(1), Some(2), Some(3)), Some(1));
+        assert_eq!(effective_limit(None, Some(2), Some(3)), Some(2));
+        assert_eq!(effective_limit(None, None, Some(3)), Some(3));
+        assert_eq!(effective_limit(None, None, None), None);
+    }
+
+    #[test]
+    fn a_request_may_tighten_but_not_raise_the_inherited_limit() {
+        assert!(request_within_limit(None, Some(3)));
+        assert!(request_within_limit(Some(3), Some(3)));
+        assert!(request_within_limit(Some(1), Some(3)));
+        assert!(!request_within_limit(Some(4), Some(3)));
+        // Unlimited inherited: a request can only tighten it.
+        assert!(request_within_limit(Some(99), None));
+        assert!(request_within_limit(None, None));
+    }
 }

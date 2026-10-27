@@ -9,7 +9,8 @@ use crate::models::workspace_isolation::{DockerWorkspaceConfig, WorkspaceIsolati
 use crate::session::get_session_manager;
 
 pub use lineage::{
-    lineage_store, normalize_explicit_org, remove_lineage, resolve_child_session_model_provider,
+    inherited_limits_for, lineage_store, normalize_explicit_org, remove_lineage,
+    request_within_limit, resolve_child_session_model_provider,
 };
 pub use workspace::{is_restricted_system_path, resolve_workspace_override_path};
 

@@ -87,6 +87,26 @@ fn pin_endpoint_origin_lineage(
     Ok(())
 }
 
+/// A session created through a managed session's endpoint may tighten `maxDepth` / `maxFanout`
+/// but not raise them above what it inherits. No inherited limit means unlimited, so a request is
+/// always fine then (decision on #2346: the baseline is `advancedSettings`, where 0 is unlimited).
+fn check_requested_limits(
+    requested_depth: Option<u32>,
+    requested_fanout: Option<u32>,
+    inherited_depth: Option<u32>,
+    inherited_fanout: Option<u32>,
+) -> Result<(), &'static str> {
+    use crate::services::agent_service::request_within_limit;
+
+    if !request_within_limit(requested_depth, inherited_depth) {
+        return Err("maxDepth above the limit inherited from the origin session");
+    }
+    if !request_within_limit(requested_fanout, inherited_fanout) {
+        return Err("maxFanout above the limit inherited from the origin session");
+    }
+    Ok(())
+}
+
 fn classify_spawn_error(err: &str) -> (StatusCode, String) {
     if err.contains("Assistant not found") {
         (StatusCode::NOT_FOUND, err.to_string())
@@ -133,6 +153,24 @@ pub async fn create_session(
             }),
             StatusCode::FORBIDDEN,
         ));
+    }
+    if let Some(origin) = origin.as_deref() {
+        // The new session's parent is the origin session, so its limits are the origin's.
+        let (inherited_depth, inherited_fanout) =
+            crate::services::agent_service::inherited_limits_for(origin).await;
+        if let Err(error) = check_requested_limits(
+            body.max_depth,
+            body.max_fanout,
+            inherited_depth,
+            inherited_fanout,
+        ) {
+            return Ok(warp::reply::with_status(
+                warp::reply::json(&ErrorResponse {
+                    error: error.to_string(),
+                }),
+                StatusCode::FORBIDDEN,
+            ));
+        }
     }
 
     match crate::services::AgentService::spawn_agent_with_source(
@@ -377,6 +415,24 @@ mod tests {
                 "{rejected}"
             );
         }
+    }
+
+    #[test]
+    fn endpoint_requests_may_tighten_but_not_raise_the_inherited_limits() {
+        // Inherited depth 3 / fanout 5.
+        let limits = |depth, fanout| check_requested_limits(depth, fanout, Some(3), Some(5));
+        assert!(limits(None, None).is_ok(), "no request inherits");
+        assert!(limits(Some(3), Some(5)).is_ok(), "equal is allowed");
+        assert!(limits(Some(1), Some(2)).is_ok(), "tightening is allowed");
+        assert!(limits(Some(4), None).is_err(), "raising depth");
+        assert!(limits(None, Some(6)).is_err(), "raising fanout");
+        assert!(limits(Some(4), Some(6)).is_err());
+
+        // No inherited limit (baseline 0 / unlimited): nothing to exceed.
+        assert!(check_requested_limits(Some(99), Some(99), None, None).is_ok());
+        // Only one of them limited.
+        assert!(check_requested_limits(Some(2), Some(99), Some(3), None).is_ok());
+        assert!(check_requested_limits(Some(4), Some(99), Some(3), None).is_err());
     }
 
     #[test]
