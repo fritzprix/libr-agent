@@ -68,6 +68,8 @@ Two graders use the same rules:
 | T18 | `t18-recall-deploy-time`      | P        | context-recall      | no-network |
 | T19 | `t19-remember-today`          | P        | knowledge-distiller | no-network |
 
+T04 needs `$LIBRAGENT_WAKE_URL`, which only host workspaces export: it holds in `host` mode (default, `--isolated`). In `managed` (Docker) mode it cannot pass until #2343 item 1 gives managed sessions a wake path, so a T04 failure there is expected, not a regression.
+
 Each task directory has a `README.md` with the prompt and the expected behavior.
 
 ## Running
