@@ -5,9 +5,9 @@ const path = require('path');
 const repoRoot = path.join(__dirname, '..');
 const gitDir = path.join(repoRoot, '.git');
 
-// Skip if .git folder doesn't exist or is a worktree file (e.g., inside Docker, CI, or git worktree)
-if (!fs.existsSync(gitDir) || !fs.statSync(gitDir).isDirectory()) {
-  console.log('⚠️ .git folder not found or is a worktree. Skipping git hooks installation.');
+// Skip if .git folder doesn't exist (e.g., inside Docker or CI without git repo context)
+if (!fs.existsSync(gitDir)) {
+  console.log('⚠️ .git folder not found. Skipping git hooks installation.');
   process.exit(0);
 }
 

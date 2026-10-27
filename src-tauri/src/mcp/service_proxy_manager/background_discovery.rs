@@ -3,8 +3,9 @@ use super::super::session_isolation::{HttpSessionManager, SessionMCPManager};
 use super::management::ProxyReadinessEntry;
 use super::persist_tool_cache_for_server;
 use super::runtime_updates::{
-    apply_discovery_timeout_finalize, apply_initialization_complete, apply_server_connecting,
-    apply_server_discovering, apply_server_failed, apply_server_ready, update_runtime_state_store,
+    apply_discovery_task_failed, apply_discovery_timeout_finalize, apply_initialization_complete,
+    apply_server_connecting, apply_server_discovering, apply_server_failed, apply_server_ready,
+    update_runtime_state_store,
 };
 use super::MCPServiceProxyManager;
 use crate::agent::runtime_state::SessionRuntimeTransport;
@@ -602,7 +603,9 @@ pub(super) async fn spawn_background_tool_loading(
                             &context.session_id,
                             context.app_handle.as_ref(),
                             |state| {
-                                apply_discovery_timeout_finalize(
+                                // The task is dead: its servers failed, they are not
+                                // "still starting" (which `TimedOut` would claim).
+                                apply_discovery_task_failed(
                                     state,
                                     "Tool discovery task failed before completion",
                                 );

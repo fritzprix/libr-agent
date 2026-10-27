@@ -1,9 +1,7 @@
 use super::super::service_proxy::MCPServiceProxy;
 use super::super::session_isolation::{HttpSessionManager, SessionMCPManager};
 use super::super::session_isolation_config::SessionIsolationConfig;
-use super::background_discovery::{
-    spawn_background_tool_loading, spawn_retry_failed_servers, BackgroundDiscoveryPlan,
-};
+use super::background_discovery::{spawn_background_tool_loading, BackgroundDiscoveryPlan};
 use super::proxy_config::{
     apply_startup_timeout_settings, decide_existing_proxy_disposition,
     load_requested_server_configs, ExistingProxyDisposition,
@@ -14,9 +12,7 @@ use super::runtime_updates::{
     build_bootstrap_runtime_state, update_runtime_state_store,
 };
 use super::MCPServiceProxyManager;
-use crate::agent::runtime_state::{
-    SessionRuntimeServerStatus, SessionRuntimeState, SessionRuntimeTransport,
-};
+use crate::agent::runtime_state::{SessionRuntimeState, SessionRuntimeTransport};
 use crate::session::SessionManager;
 use futures::FutureExt;
 use sea_orm::DatabaseConnection;
@@ -306,7 +302,7 @@ impl MCPServiceProxyManager {
                         loaded.has_external_servers(),
                     );
                     let update_result = self
-                        .set_runtime_state(&session_id, runtime_state.clone(), app_handle.as_ref())
+                        .set_runtime_state(&session_id, runtime_state, app_handle.as_ref())
                         .await;
                     if update_result.emitted {
                         runtime_state_emits += 1;
@@ -320,66 +316,17 @@ impl MCPServiceProxyManager {
                         }
                     }
 
-                    // Requirement 3: retry failed servers on session re-entry (Reuse path)
-                    let failed_server_names: Vec<String> = runtime_state
-                        .servers
-                        .iter()
-                        .filter(|s| s.status == SessionRuntimeServerStatus::Failed)
-                        .map(|s| s.name.clone())
-                        .collect();
-
-                    if !failed_server_names.is_empty() {
-                        let retry_stdio: HashMap<_, _> = loaded
-                            .stdio_configs
-                            .clone()
-                            .into_iter()
-                            .filter(|(name, _)| failed_server_names.contains(name))
-                            .collect();
-                        let retry_http: HashMap<_, _> = loaded
-                            .http_configs
-                            .clone()
-                            .into_iter()
-                            .filter(|(name, _)| failed_server_names.contains(name))
-                            .collect();
-
-                        if !retry_stdio.is_empty() || !retry_http.is_empty() {
-                            let stdio_mgr = self
-                                .session_stdio_managers
-                                .read()
-                                .await
-                                .get(&session_id)
-                                .cloned();
-                            let http_mgr = self
-                                .session_http_managers
-                                .read()
-                                .await
-                                .get(&session_id)
-                                .cloned();
-                            if let (Some(stdio_mgr), Some(http_mgr)) = (stdio_mgr, http_mgr) {
-                                log::info!(
-                                    "Retrying {} failed MCP server(s) on session reuse ({})",
-                                    retry_stdio.len() + retry_http.len(),
-                                    session_id
-                                );
-                                let tool_discovery_timeout =
-                                    Duration::from_secs(self.startup_timeout_secs().await);
-                                spawn_retry_failed_servers(
-                                    self,
-                                    session_id.clone(),
-                                    super::background_discovery::RetryFailedServersParams {
-                                        proxy: existing.clone(),
-                                        stdio_manager: stdio_mgr,
-                                        http_manager: http_mgr,
-                                        stdio_configs: retry_stdio,
-                                        http_configs: retry_http,
-                                        server_name_to_id: loaded.server_name_to_id,
-                                        tool_discovery_timeout,
-                                        app_handle: app_handle.clone(),
-                                    },
-                                )
-                                .await;
-                            }
-                        }
+                    // Re-entering a session retries its failed servers (not the ones that are
+                    // still starting in the background).
+                    if let Err(error) = self
+                        .retry_failed_servers(&session_id, None, app_handle.as_ref())
+                        .await
+                    {
+                        log::warn!(
+                            "Could not retry failed MCP servers on session reuse ({}): {}",
+                            session_id,
+                            error
+                        );
                     }
                     log_create_proxy_metrics(&CreateProxyMetrics {
                         session_id: &session_id,

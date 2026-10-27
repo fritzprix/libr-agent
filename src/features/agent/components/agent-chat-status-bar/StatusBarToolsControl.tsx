@@ -1,9 +1,11 @@
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import { useAgentSessionState } from '@/context/AgentSessionContext';
 import { useSessionAgentTools } from '@/features/agent/hooks/useSessionAgentTools';
+import { safeInvoke } from '@/lib/backend/core';
 import { isBuiltinTool } from '@/lib/tool-call-utils';
 import { cn } from '@/lib/utils';
-import { AlertTriangle, Wrench } from 'lucide-react';
+import { AlertTriangle, RotateCcw, Wrench } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import AgentToolsModal from '../AgentToolsModal';
@@ -11,6 +13,33 @@ import AgentToolsModal from '../AgentToolsModal';
 export function StatusBarToolsControl() {
   const { t } = useTranslation();
   const [showToolsModal, setShowToolsModal] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const { session, runtimeState } = useAgentSessionState();
+  const sessionId = session?.id;
+
+  // Failed MCP servers stay retryable for as long as the session is open, not only while the
+  // loading overlay or a toast is on screen.
+  const failedServerNames = useMemo(
+    () =>
+      runtimeState.servers
+        .filter((server) => server.status === 'failed')
+        .map((server) => server.name),
+    [runtimeState.servers],
+  );
+
+  const retryFailedServers = async () => {
+    if (!sessionId || retrying) return;
+    setRetrying(true);
+    try {
+      await Promise.all(
+        failedServerNames.map((serverName) =>
+          safeInvoke('retry_session_mcp_server', { sessionId, serverName }),
+        ),
+      );
+    } finally {
+      setRetrying(false);
+    }
+  };
 
   // Single Source of Truth: Fetch filtered tools from Rust backend
   const {
@@ -83,6 +112,25 @@ export function StatusBarToolsControl() {
             {toolsError ? toolsError : t('agent.statusBar.viewToolsTitle')}
           </TooltipContent>
         </Tooltip>
+        {sessionId && failedServerNames.length > 0 ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                data-testid="retry-failed-mcp-servers"
+                onClick={() => void retryFailedServers()}
+                disabled={retrying}
+                className="text-xs flex items-center gap-1 cursor-pointer rounded-sm text-destructive hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-50"
+              >
+                <RotateCcw
+                  className={cn('size-3', retrying && 'animate-spin')}
+                />
+                {t('common.retry', 'Retry')} ({failedServerNames.length})
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>{failedServerNames.join(', ')}</TooltipContent>
+          </Tooltip>
+        ) : null}
       </div>
 
       <AgentToolsModal

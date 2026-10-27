@@ -101,6 +101,7 @@ const mockAgentChat = {
 
 vi.mock('@/context/AgentSessionContext', () => ({
   useAgentSession: () => mockAgentSession,
+  useAgentSessionState: () => mockAgentSession,
 }));
 
 vi.mock('@/context/AgentChatContext', () => ({

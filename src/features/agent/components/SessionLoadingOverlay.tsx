@@ -74,7 +74,9 @@ function McpServerStatusList({
   sessionId?: string;
 }) {
   const { t } = useTranslation();
-  const [retryingServers, setRetryingServers] = useState<Record<string, boolean>>({});
+  const [retryingServers, setRetryingServers] = useState<
+    Record<string, boolean>
+  >({});
 
   const handleRetry = async (serverName: string) => {
     if (!sessionId) return;
@@ -125,7 +127,9 @@ function McpServerStatusList({
                 className="ml-auto inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] rounded border border-border bg-background hover:bg-accent text-foreground disabled:opacity-50"
                 title={t('common.retry', 'Retry')}
               >
-                <RotateCcw className={cn('size-3', isRetrying && 'animate-spin')} />
+                <RotateCcw
+                  className={cn('size-3', isRetrying && 'animate-spin')}
+                />
                 <span>{t('common.retry', 'Retry')}</span>
               </button>
             ) : null}
