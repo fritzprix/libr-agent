@@ -1,7 +1,7 @@
 mod container;
 mod docker_cli;
 mod error;
-mod relay;
+pub mod relay;
 mod session_config;
 
 use std::collections::HashSet;
@@ -12,6 +12,7 @@ use std::time::Instant;
 use crate::models::workspace_isolation::{
     validate_env_key, validate_env_value, WorkspaceIsolationMode,
 };
+use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::SessionMetadata;
 use crate::session_isolation::{ShellDialect, ShellType, SpawnedShell};
 use dashmap::DashMap;
@@ -49,8 +50,8 @@ pub type DockerStepReporter = Arc<dyn Fn(&str) + Send + Sync>;
 
 use container::{ensure_bash_image_contract, stage_missing_skill_roots};
 use docker_cli::{
-    apply_docker_cli_env, docker_container_architecture, docker_container_exists,
-    docker_container_label, docker_output_slice, run_docker_status, verify_container_label,
+    apply_docker_cli_env, docker_container_architecture, docker_container_label,
+    docker_output_slice, run_docker_status, verify_container_label,
 };
 use error::{as_docker_unavailable, RuntimeResult};
 use session_config::{
@@ -105,10 +106,31 @@ impl WorkspaceRuntimeManager {
         let Ok(container_name) = docker_container_name(session) else {
             return false;
         };
-        let Some(arch) = Self::cached_docker_arch(&session.id) else {
-            return false;
+        let arch = match Self::cached_docker_arch(&session.id) {
+            Some(arch) => arch,
+            None => {
+                let resolved = docker_cli::docker_container_architecture(&container_name)
+                    .await
+                    .unwrap_or_else(|_| std::env::consts::ARCH.to_string());
+                DOCKER_ARCH_CACHE.insert(session.id.clone(), resolved.clone());
+                resolved
+            }
         };
         relay::ensure_relay(&session.id, &container_name, &arch).await
+    }
+
+    /// Spawns a background task to ensure the session relay without blocking the caller.
+    pub fn spawn_background_session_relay(session_id: &str) {
+        let id = session_id.to_string();
+        tokio::spawn(async move {
+            let Some(session_repo) = crate::state::try_get_session_repository() else {
+                return;
+            };
+            let Ok(Some(session)) = session_repo.get_session(&id).await else {
+                return;
+            };
+            Self::ensure_session_relay(&session).await;
+        });
     }
 
     /// Cache-aware variant used by high-frequency shell execution paths.
@@ -248,20 +270,14 @@ impl WorkspaceRuntimeManager {
             return Ok(());
         }
 
-        clear_session_docker_caches(&session.id);
-
         if !session_manage_lifecycle(session) {
+            clear_session_docker_caches(&session.id);
             return Ok(());
         }
 
         Self::healthcheck().await?;
         let container_name = docker_container_name(session)?;
-        if !docker_container_exists(&container_name).await? {
-            return Ok(());
-        }
-
-        verify_container_label(&container_name, &session.id).await?;
-        run_docker_status(["rm", "-f", "-v", &container_name]).await
+        container::remove_managed_container(&session.id, &container_name).await
     }
 
     pub async fn sweep_stale_containers(
@@ -291,7 +307,9 @@ impl WorkspaceRuntimeManager {
             }
 
             verify_container_label(container_name, &session_id).await?;
-            if let Err(error) = run_docker_status(["rm", "-f", "-v", container_name]).await {
+            if let Err(error) =
+                container::remove_managed_container(&session_id, container_name).await
+            {
                 tracing::warn!(
                     "Failed to remove stale Docker container '{}': {}",
                     container_name,
@@ -308,8 +326,7 @@ impl WorkspaceRuntimeManager {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-fn clear_session_docker_caches(session_id: &str) {
-    relay::forget(session_id);
+pub(super) fn clear_session_docker_caches(session_id: &str) {
     DOCKER_HEALTH_CACHE.remove(session_id);
     DOCKER_CONTAINER_READY_CACHE.remove(session_id);
     DOCKER_SHELL_CACHE.remove(session_id);

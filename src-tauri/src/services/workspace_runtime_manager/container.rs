@@ -8,8 +8,7 @@ use tokio::process::Command as AsyncCommand;
 
 use super::docker_cli::{
     apply_docker_cli_env, current_uid_gid, docker_container_exists, docker_container_running,
-    docker_container_socket_generation, run_docker_status, run_status_command,
-    verify_container_label,
+    docker_container_socket_mount, run_docker_status, run_status_command, verify_container_label,
 };
 use super::error::{RuntimeResult, WorkspaceRuntimeError};
 use super::session_config::{
@@ -44,26 +43,26 @@ pub(super) async fn ensure_bash_image_contract(
         return ensure_supported_shell(session_id, container_name).await;
     }
 
-    let (expected_socket, expected_generation) =
-        match crate::server::session_socket::ensure_session_socket(session_id).await {
-            Ok(socket) => {
-                let gen = crate::server::session_socket::socket_generation(session_id);
-                (Some(socket), gen)
-            }
-            Err(error) => {
-                log::warn!("No Session API socket for {session_id}: {error}");
-                (None, None)
-            }
-        };
+    let expected_sock_dir = match crate::server::session_socket::session_socket_dir(session_id) {
+        Ok(dir) => Some(dir),
+        Err(error) => {
+            log::warn!("No Session API socket directory for {session_id}: {error}");
+            None
+        }
+    };
+    if let Err(error) = crate::server::session_socket::ensure_session_socket(session_id).await {
+        log::warn!("No Session API socket for {session_id}: {error}");
+    }
 
+    let expected_mount = expected_sock_dir.as_ref().map(|d| d.to_string_lossy());
     let needs_creation = if docker_container_exists(container_name).await? {
         verify_container_label(container_name, session_id).await?;
-        let actual_generation = docker_container_socket_generation(container_name).await?;
-        if is_socket_mount_stale(actual_generation.as_deref(), expected_generation.as_deref()) {
+        let actual_mount = docker_container_socket_mount(container_name).await?;
+        if is_socket_mount_stale(actual_mount.as_deref(), expected_mount.as_deref()) {
             log::warn!(
                 "Container '{container_name}' has a stale or missing socket mount; recreating it (state outside mounts is lost)"
             );
-            run_docker_status(["rm", "-f", "-v", container_name]).await?;
+            remove_managed_container(session_id, container_name).await?;
             true
         } else {
             if !docker_container_running(container_name).await? {
@@ -136,24 +135,26 @@ pub(super) async fn ensure_bash_image_contract(
         let mut cmd = AsyncCommand::new("docker");
         apply_docker_cli_env(&mut cmd);
         cmd.args(["run", "-d", "--name", container_name, "--label", &label]);
-        if let Some(generation) = &expected_generation {
+        if let Some(sock_dir) = &expected_sock_dir {
             cmd.args([
                 "--label",
                 &format!(
-                    "{}={generation}",
-                    crate::server::session_socket::CONTAINER_SOCKET_GENERATION_LABEL
+                    "{}={}",
+                    crate::server::session_socket::CONTAINER_SOCKET_MOUNT_LABEL,
+                    sock_dir.display()
                 ),
             ]);
         }
         cmd.args(volume_args);
         cmd.args(["-w", &workdir]);
-        // The session's Session API socket, mounted as a single file (Docker Desktop on macOS
-        // cannot connect to a socket reached through a mounted directory).
-        if let Some(socket) = &expected_socket {
+        // The session's Session API socket directory, mounted at /run/libragent.
+        // Recreating the socket file on host restart remains visible inside the container
+        // without recreating the container.
+        if let Some(sock_dir) = &expected_sock_dir {
             cmd.arg("-v").arg(format!(
                 "{}:{}",
-                socket.display(),
-                crate::server::session_socket::CONTAINER_SOCKET_PATH
+                sock_dir.display(),
+                crate::server::session_socket::CONTAINER_SOCKET_DIR
             ));
         }
 
@@ -180,7 +181,22 @@ pub(super) async fn ensure_bash_image_contract(
     if let Some(reporter) = reporter {
         reporter("Verifying shell");
     }
-    ensure_supported_shell(session_id, container_name).await
+    let shell = ensure_supported_shell(session_id, container_name).await?;
+    super::WorkspaceRuntimeManager::spawn_background_session_relay(session_id);
+    Ok(shell)
+}
+
+/// Unifies all container removal operations: forgets the relay, clears caches, and removes container.
+pub(super) async fn remove_managed_container(
+    session_id: &str,
+    container_name: &str,
+) -> RuntimeResult<()> {
+    super::relay::forget(session_id, container_name).await;
+    super::clear_session_docker_caches(session_id);
+    if docker_container_exists(container_name).await? {
+        run_docker_status(["rm", "-f", "-v", container_name]).await?;
+    }
+    Ok(())
 }
 
 const FALLBACK_CONTAINER_HOME: &str = "/tmp";
@@ -330,18 +346,15 @@ pub(super) async fn resolve_teamwork_root_session_id(session: &SessionMetadata) 
 
 /// Decides whether a container's socket mount is stale and requires recreation.
 ///
-/// A container without the generation label (`actual_label` is None or empty), or whose
-/// label does not match the host's current `expected_generation`, holds a stale or missing
-/// socket mount and must be recreated. When no generation is expected (e.g. platforms without
+/// A container without the socket mount label (`actual_mount` is None or empty), or whose
+/// label does not match the host's current `expected_mount`, holds a stale or missing
+/// socket mount and must be recreated. When no mount is expected (e.g. platforms without
 /// socket support), this is false.
-pub fn is_socket_mount_stale(
-    actual_label: Option<&str>,
-    expected_generation: Option<&str>,
-) -> bool {
-    let Some(expected) = expected_generation.filter(|gen| !gen.trim().is_empty()) else {
+pub fn is_socket_mount_stale(actual_mount: Option<&str>, expected_mount: Option<&str>) -> bool {
+    let Some(expected) = expected_mount.filter(|m| !m.trim().is_empty()) else {
         return false;
     };
-    match actual_label {
+    match actual_mount {
         Some(actual) if !actual.trim().is_empty() => actual.trim() != expected.trim(),
         _ => true,
     }
@@ -353,27 +366,33 @@ mod tests {
 
     #[test]
     fn missing_label_is_stale() {
-        assert!(is_socket_mount_stale(None, Some("gen-1")));
-        assert!(is_socket_mount_stale(Some(""), Some("gen-1")));
-        assert!(is_socket_mount_stale(Some("  "), Some("gen-1")));
+        assert!(is_socket_mount_stale(None, Some("/path/to/sock/dir")));
+        assert!(is_socket_mount_stale(Some(""), Some("/path/to/sock/dir")));
+        assert!(is_socket_mount_stale(Some("  "), Some("/path/to/sock/dir")));
     }
 
     #[test]
-    fn mismatched_generation_is_stale() {
-        assert!(is_socket_mount_stale(Some("gen-old"), Some("gen-new")));
+    fn mismatched_mount_is_stale() {
+        assert!(is_socket_mount_stale(Some("/path/old"), Some("/path/new")));
     }
 
     #[test]
-    fn matching_generation_is_fresh() {
-        assert!(!is_socket_mount_stale(Some("gen-1"), Some("gen-1")));
-        assert!(!is_socket_mount_stale(Some(" gen-1 "), Some("gen-1")));
+    fn matching_mount_is_fresh() {
+        assert!(!is_socket_mount_stale(
+            Some("/path/to/sock"),
+            Some("/path/to/sock")
+        ));
+        assert!(!is_socket_mount_stale(
+            Some(" /path/to/sock "),
+            Some("/path/to/sock")
+        ));
     }
 
     #[test]
-    fn no_expected_generation_is_not_stale() {
-        assert!(!is_socket_mount_stale(Some("gen-1"), None));
+    fn no_expected_mount_is_not_stale() {
+        assert!(!is_socket_mount_stale(Some("/path/to/sock"), None));
         assert!(!is_socket_mount_stale(None, None));
-        assert!(!is_socket_mount_stale(Some("gen-1"), Some("")));
-        assert!(!is_socket_mount_stale(Some("gen-1"), Some("   ")));
+        assert!(!is_socket_mount_stale(Some("/path/to/sock"), Some("")));
+        assert!(!is_socket_mount_stale(Some("/path/to/sock"), Some("   ")));
     }
 }

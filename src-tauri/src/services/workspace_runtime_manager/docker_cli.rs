@@ -60,13 +60,13 @@ pub(super) async fn docker_container_label(container_name: &str) -> RuntimeResul
     .await
 }
 
-pub(super) async fn docker_container_socket_generation(
+pub(super) async fn docker_container_socket_mount(
     container_name: &str,
 ) -> RuntimeResult<Option<String>> {
     let output = docker_output([
         "inspect",
         "-f",
-        "{{ index .Config.Labels \"com.libragent.socket_generation\" }}",
+        "{{ index .Config.Labels \"com.libragent.socket_mount\" }}",
         container_name,
     ])
     .await?;

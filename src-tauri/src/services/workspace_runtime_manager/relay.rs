@@ -22,8 +22,43 @@ use super::docker_cli::{apply_docker_cli_env, run_docker_status};
 /// Where the relay binary is placed inside the container.
 const CONTAINER_RELAY_PATH: &str = "/tmp/libragent-session-relay";
 
-/// The `docker exec` process of each session's running relay.
-static RELAYS: Lazy<DashMap<String, Arc<Mutex<Option<Child>>>>> = Lazy::new(DashMap::new);
+pub(super) struct RelayEntry {
+    pub container_name: String,
+    pub child: Mutex<Option<Child>>,
+}
+
+/// The running relay state for each session.
+static RELAYS: Lazy<DashMap<String, Arc<RelayEntry>>> = Lazy::new(DashMap::new);
+
+/// Checks if the relay binary is actively running inside `container_name`.
+pub(super) async fn is_running_in_container(container_name: &str) -> bool {
+    let mut cmd = AsyncCommand::new("docker");
+    apply_docker_cli_env(&mut cmd);
+    cmd.args(["top", container_name]);
+    match cmd.output().await {
+        Ok(output) if output.status.success() => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            stdout.lines().any(|line| {
+                line.contains(CONTAINER_RELAY_PATH) || line.contains("libragent-session-relay")
+            })
+        }
+        _ => false,
+    }
+}
+
+/// Kills any running relay processes inside `container_name`.
+pub(super) async fn terminate_relay_in_container(container_name: &str) {
+    let mut cmd = AsyncCommand::new("docker");
+    apply_docker_cli_env(&mut cmd);
+    cmd.args([
+        "exec",
+        container_name,
+        "sh",
+        "-c",
+        "for p in /proc/[0-9]*; do pid=\"${p##*/}\"; if [ \"$pid\" != \"$$\" ] && [ -f \"$p/cmdline\" ] && grep -qa 'libragent-session-relay' \"$p/cmdline\"; then kill \"$pid\" 2>/dev/null; fi; done",
+    ]);
+    let _ = cmd.status().await;
+}
 
 /// Waits for the relay's first line. `Ok` only when it is `ready`; a relay that exits first (port
 /// in use, bad arguments) or says anything else is an error.
@@ -48,6 +83,7 @@ async fn wait_for_ready(child: &mut Child) -> Result<(), String> {
 }
 
 /// True while the relay's `docker exec` process is still running.
+#[allow(dead_code)]
 fn is_running(child: &mut Child) -> bool {
     matches!(child.try_wait(), Ok(None))
 }
@@ -83,16 +119,24 @@ async fn write_executable(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 /// the socket is not served, the port is in use, or starting it failed): then the session gets no
 /// wake URL.
 pub(super) async fn ensure_relay(session_id: &str, container_name: &str, arch: &str) -> bool {
-    let slot = RELAYS
+    let entry = RELAYS
         .entry(session_id.to_string())
-        .or_insert_with(|| Arc::new(Mutex::new(None)))
+        .or_insert_with(|| {
+            Arc::new(RelayEntry {
+                container_name: container_name.to_string(),
+                child: Mutex::new(None),
+            })
+        })
         .clone();
-    let mut running = slot.lock().await;
+    let mut running = entry.child.lock().await;
 
-    if let Some(child) = running.as_mut() {
-        if is_running(child) {
-            return true;
-        }
+    // Check if the relay is actively running inside the container (independent of host docker client)
+    if is_running_in_container(container_name).await {
+        crate::server::session_socket::mark_relay_ready(session_id);
+        return true;
+    }
+
+    if running.is_some() {
         log::info!("The session relay for {session_id} stopped; starting it again");
         crate::server::session_socket::clear_relay(session_id);
         *running = None;
@@ -129,7 +173,8 @@ async fn start(session_id: &str, container_name: &str, bytes: &[u8]) -> Result<C
         .arg(crate::server::session_socket::CONTAINER_SOCKET_PATH)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null());
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
     let mut child = cmd
         .spawn()
         .map_err(|error| format!("could not run docker exec for {session_id}: {error}"))?;
@@ -138,16 +183,24 @@ async fn start(session_id: &str, container_name: &str, bytes: &[u8]) -> Result<C
 }
 
 /// Forgets the session's relay: the container is gone or being replaced.
-pub(super) fn forget(session_id: &str) {
+pub(super) async fn forget(session_id: &str, container_name: &str) {
     crate::server::session_socket::clear_relay(session_id);
-    if let Some((_, slot)) = RELAYS.remove(session_id) {
-        if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            handle.spawn(async move {
-                if let Some(mut child) = slot.lock().await.take() {
-                    let _ = child.kill().await;
-                }
-            });
+    if let Some((_, entry)) = RELAYS.remove(session_id) {
+        if let Some(mut child) = entry.child.lock().await.take() {
+            let _ = child.kill().await;
         }
+    }
+    terminate_relay_in_container(container_name).await;
+}
+
+/// Shuts down all running relays across all containers upon app exit.
+pub async fn shutdown_all_relays() {
+    let active: Vec<(String, String)> = RELAYS
+        .iter()
+        .map(|entry| (entry.key().clone(), entry.value().container_name.clone()))
+        .collect();
+    for (session_id, container_name) in active {
+        forget(&session_id, &container_name).await;
     }
 }
 
@@ -202,5 +255,41 @@ mod tests {
         assert!(!crate::server::session_socket::is_reachable_from_container(
             "relay-test-none"
         ));
+    }
+
+    #[tokio::test]
+    async fn forget_cleans_up_relay_and_session_socket() {
+        crate::server::session_socket::mark_relay_ready("test-forget-sess");
+        assert!(
+            crate::server::session_socket::is_reachable_from_container("test-forget-sess") == false
+        ); // not serving
+
+        let entry = Arc::new(RelayEntry {
+            container_name: "test-container".to_string(),
+            child: Mutex::new(Some(shell("sleep 30"))),
+        });
+        RELAYS.insert("test-forget-sess".to_string(), entry);
+
+        forget("test-forget-sess", "nonexistent-container").await;
+
+        assert!(!RELAYS.contains_key("test-forget-sess"));
+    }
+
+    #[tokio::test]
+    async fn shutdown_all_relays_cleans_up_all_active_relays() {
+        let entry1 = Arc::new(RelayEntry {
+            container_name: "c1".to_string(),
+            child: Mutex::new(Some(shell("sleep 30"))),
+        });
+        let entry2 = Arc::new(RelayEntry {
+            container_name: "c2".to_string(),
+            child: Mutex::new(Some(shell("sleep 30"))),
+        });
+        RELAYS.insert("s1".to_string(), entry1);
+        RELAYS.insert("s2".to_string(), entry2);
+
+        shutdown_all_relays().await;
+
+        assert!(RELAYS.is_empty());
     }
 }

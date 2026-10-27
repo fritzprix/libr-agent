@@ -24,11 +24,11 @@ has the same form in every mode: `http://127.0.0.1:<port>/api/sessions/<id>/wake
 | Host | Host loopback, the Session API itself |
 | Managed Docker | The container's `127.0.0.1:<port>` is served by a relay inside the container, which forwards to the session's unix socket mounted at `/run/libragent/api.sock`; the host serves that socket with the same router as the main port |
 
-The host opens no extra TCP port for containers. Each managed session has its own socket
-(`~/.libragent/sock/<session_id>.sock`, or under the data directory when one is set), mounted
-into its container as a single file. The relay is a static musl binary (x86_64, aarch64) embedded
-in the app; the host starts it with `docker exec`, waits for it to print `ready`, and registers
-it only once listening. It needs nothing from the image.
+The host opens no extra TCP port for containers. Each managed session has its own socket directory
+(`~/.libragent/sock/<session_id>/`, or under the data directory when one is set), mounted into its container
+at `/run/libragent/`. Inside the container, the socket appears at `/run/libragent/api.sock`. The relay is a
+static musl binary (x86_64, aarch64) embedded in the app; the host starts it with `docker exec`, waits for
+it to print `ready`, and registers it only once listening. It needs nothing from the image.
 
 ## Permissions of a socket-origin request
 
@@ -69,9 +69,12 @@ socket is served. Requests on the main TCP port have no origin and behave as bef
   is logged. A local build without the embedded relay behaves the same way.
 - **Relay died.** A relay that exits (including exit code 4 when it can no longer accept connections)
   is started again on the next `runShell`.
-- **Stale or missing mount.** A container without the socket mount (detected by a missing or mismatched
-  `com.libragent.socket_generation` label after a host restart) is recreated on next use with a
-  warning. State outside the mounts is lost.
+- **Host restart & container preservation.** Sockets are served from per-session directories
+  (`~/.libragent/sock/<session_id>/`), mounted at `/run/libragent/`. When the host restarts, it recreates
+  `api.sock` in the existing directory, which is immediately visible inside the container without container
+  recreation.
+- **Stale or missing mount.** A container without the directory socket mount (detected by a missing or mismatched
+  `com.libragent.socket_mount` label) is recreated on next use with a warning. State outside the mounts is lost.
 - **Windows.** No socket and no wake URL for Docker sessions for now.
 
 ## How the bench checks this

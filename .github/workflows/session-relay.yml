@@ -18,6 +18,9 @@ on:
       - 'src-tauri/session-relay/**'
       - '.github/workflows/session-relay.yml'
 
+permissions:
+  contents: read
+
 jobs:
   build:
     name: Build ${{ matrix.arch }}

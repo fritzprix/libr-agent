@@ -231,36 +231,21 @@ pub async fn is_session_docker_isolated(session_id: &str) -> bool {
     session_docker_root(session_id).await.0
 }
 
-/// Starts the Docker session's wake relay if it is not running, and says whether it is.
-async fn docker_relay_is_ready(session_id: &str) -> bool {
-    use crate::repositories::session_repository::SessionRepository;
-
-    let Some(session_repo) = crate::state::try_get_session_repository() else {
-        return false;
-    };
-    let Ok(Some(session)) = session_repo.get_session(session_id).await else {
-        return false;
-    };
-    crate::services::workspace_runtime_manager::WorkspaceRuntimeManager::ensure_session_relay(
-        &session,
-    )
-    .await
-        && crate::server::session_socket::is_reachable_from_container(session_id)
-}
-
 /// Adds this session's wake URL to a shell environment.
 ///
-/// Docker sessions get the URL of the wake-only host listener instead of host loopback, which a
-/// container cannot reach. The runtime passes it to `docker exec` without putting the token in
-/// the host process list (see `create_docker_exec_command`).
+/// Docker sessions reach the host through the relay on the container's loopback, so
+/// it gets the URL only once that relay has said it is listening. Without it the token could
+/// reach whatever else listens on that port inside the container.
+/// Crucially, we do not block runShell waiting for relay startup. If the relay is
+/// not ready yet, we trigger background startup and proceed without the wake URL this turn.
 pub async fn add_wake_url_env(
     session_id: &str,
     env_vars: &mut std::collections::HashMap<String, String>,
 ) {
-    // A Docker session reaches the same URL through the relay on the container's loopback, so
-    // it gets the URL only once that relay has said it is listening. Without it the token could
-    // reach whatever else listens on that port inside the container.
-    if is_session_docker_isolated(session_id).await && !docker_relay_is_ready(session_id).await {
+    if is_session_docker_isolated(session_id).await
+        && !crate::server::session_socket::is_reachable_from_container(session_id)
+    {
+        crate::services::workspace_runtime_manager::WorkspaceRuntimeManager::spawn_background_session_relay(session_id);
         return;
     }
     env_vars.insert(

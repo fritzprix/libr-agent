@@ -66,12 +66,20 @@ fn embed_arch(
     println!("cargo:rerun-if-changed={}", binary_path.display());
     println!("cargo:rerun-if-changed={}", sha_path.display());
 
-    let (Ok(bytes), Ok(sha_file)) = (fs::read(&binary_path), fs::read_to_string(&sha_path)) else {
-        println!(
-            "cargo:warning=session-relay-{arch} (or its .sha256) not found in LIBRAGENT_RELAY_DIR; building without it"
-        );
-        return Ok(None);
-    };
+    let bytes = fs::read(&binary_path).map_err(|e| {
+        io::Error::other(format!(
+            "LIBRAGENT_RELAY_DIR was specified ({}), but {} could not be read: {e}",
+            relay_dir.display(),
+            binary_path.display()
+        ))
+    })?;
+    let sha_file = fs::read_to_string(&sha_path).map_err(|e| {
+        io::Error::other(format!(
+            "LIBRAGENT_RELAY_DIR was specified ({}), but {} could not be read: {e}",
+            relay_dir.display(),
+            sha_path.display()
+        ))
+    })?;
     let Some(expected) = expected_hash(&sha_file) else {
         return Err(io::Error::other(format!(
             "{} is not a sha256sum line",
@@ -88,4 +96,34 @@ fn embed_arch(
     let copied = out_dir.join(format!("session-relay-{arch}"));
     fs::write(&copied, &bytes)?;
     Ok(Some((copied, actual)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn embed_without_relay_dir_writes_none() {
+        let temp = std::env::temp_dir().join(format!("relay-test-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&temp).unwrap();
+        write_embed(&temp, None).unwrap();
+        let content = fs::read_to_string(temp.join("session_relay_embed.rs")).unwrap();
+        assert!(content.contains("pub static X86_64: Option<EmbeddedRelay> = None;"));
+        assert!(content.contains("pub static AARCH64: Option<EmbeddedRelay> = None;"));
+        let _ = fs::remove_dir_all(&temp);
+    }
+
+    #[test]
+    fn embed_with_missing_arch_fails_when_dir_specified() {
+        let temp = std::env::temp_dir().join(format!("relay-test-{}", uuid::Uuid::new_v4()));
+        let empty_relay_dir = temp.join("empty_relay");
+        fs::create_dir_all(&empty_relay_dir).unwrap();
+        let err = write_embed(&temp, Some(&empty_relay_dir)).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("LIBRAGENT_RELAY_DIR was specified"),
+            "{err}"
+        );
+        let _ = fs::remove_dir_all(&temp);
+    }
 }

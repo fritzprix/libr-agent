@@ -23,20 +23,20 @@ pub type ServeSession =
 #[cfg(not(unix))]
 pub type ServeSession = Box<dyn Fn(String) -> BoxFuture<'static, ()> + Send + Sync>;
 
+/// Where the socket directory appears inside the container.
+pub const CONTAINER_SOCKET_DIR: &str = "/run/libragent";
+
 /// Where the socket appears inside the container.
 pub const CONTAINER_SOCKET_PATH: &str = "/run/libragent/api.sock";
 
-/// Label applied to managed containers recording the socket generation they were created with.
-pub const CONTAINER_SOCKET_GENERATION_LABEL: &str = "com.libragent.socket_generation";
+/// Label applied to managed containers recording the socket mount path they were created with.
+pub const CONTAINER_SOCKET_MOUNT_LABEL: &str = "com.libragent.socket_mount";
 
 static SERVE: OnceLock<ServeSession> = OnceLock::new();
 static SERVERS: Lazy<DashMap<String, JoinHandle<()>>> = Lazy::new(DashMap::new);
 /// Sessions whose container has a relay that reported it is listening. Only
 /// `mark_relay_ready` adds to it, so no Docker session is handed a wake URL that leads nowhere.
 static RELAYS: Lazy<DashSet<String>> = Lazy::new(DashSet::new);
-/// Generation identifier for each active session's socket. Changes whenever the socket file
-/// is created/recreated so stale mounts from prior app runs or earlier lifecycles are detected.
-static GENERATIONS: Lazy<DashMap<String, String>> = Lazy::new(DashMap::new);
 
 /// Records how a session's socket is served. Called once by `server::init`.
 pub fn register_serve(serve: ServeSession) {
@@ -52,7 +52,7 @@ fn is_plain_session_id(session_id: &str) -> bool {
 
 /// `<LIBRAGENT_DATA_DIR>/sock` for an isolated instance (so it never touches the user's real
 /// `~/.libragent`), otherwise `~/.libragent/sock`.
-fn socket_dir() -> Result<PathBuf, String> {
+fn base_socket_dir() -> Result<PathBuf, String> {
     if let Some(data_dir) = std::env::var_os("LIBRAGENT_DATA_DIR") {
         return Ok(PathBuf::from(data_dir).join("sock"));
     }
@@ -60,14 +60,19 @@ fn socket_dir() -> Result<PathBuf, String> {
     Ok(home.join(".libragent").join("sock"))
 }
 
-/// Host path of a session's socket.
-pub fn socket_path(session_id: &str) -> Result<PathBuf, String> {
+/// Host path of a session's socket directory (`~/.libragent/sock/<session_id>`).
+pub fn session_socket_dir(session_id: &str) -> Result<PathBuf, String> {
     if !is_plain_session_id(session_id) {
         return Err(format!(
-            "Invalid session id for a socket path: {session_id}"
+            "Invalid session id for a socket directory: {session_id}"
         ));
     }
-    Ok(socket_dir()?.join(format!("{session_id}.sock")))
+    Ok(base_socket_dir()?.join(session_id))
+}
+
+/// Host path of a session's socket (`~/.libragent/sock/<session_id>/api.sock`).
+pub fn socket_path(session_id: &str) -> Result<PathBuf, String> {
+    Ok(session_socket_dir(session_id)?.join("api.sock"))
 }
 
 /// Records that the session's relay is listening in its container.
@@ -78,16 +83,6 @@ pub fn mark_relay_ready(session_id: &str) {
 /// Records that the session's relay is gone (it exited, or the container was removed).
 pub fn clear_relay(session_id: &str) {
     RELAYS.remove(session_id);
-}
-
-/// Returns the current socket generation token for `session_id`.
-pub fn socket_generation(session_id: &str) -> Option<String> {
-    GENERATIONS.get(session_id).map(|entry| entry.clone())
-}
-
-#[cfg(test)]
-pub fn set_socket_generation_for_test(session_id: &str, generation: &str) {
-    GENERATIONS.insert(session_id.to_string(), generation.to_string());
 }
 
 /// True when the session's socket is served and its container relays `127.0.0.1` to it.
@@ -106,11 +101,9 @@ pub fn is_serving(session_id: &str) -> bool {
 pub async fn ensure_session_socket(session_id: &str) -> Result<PathBuf, String> {
     use std::os::unix::fs::PermissionsExt;
 
-    let path = socket_path(session_id)?;
+    let dir = session_socket_dir(session_id)?;
+    let path = dir.join("api.sock");
     if is_serving(session_id) && path.exists() {
-        if !GENERATIONS.contains_key(session_id) {
-            GENERATIONS.insert(session_id.to_string(), uuid::Uuid::new_v4().to_string());
-        }
         return Ok(path);
     }
     let serve = SERVE
@@ -120,13 +113,10 @@ pub async fn ensure_session_socket(session_id: &str) -> Result<PathBuf, String> 
     if let Some((_, stale)) = SERVERS.remove(session_id) {
         stale.abort();
     }
-    let dir = path
-        .parent()
-        .ok_or_else(|| "Socket path has no parent".to_string())?;
-    tokio::fs::create_dir_all(dir)
+    tokio::fs::create_dir_all(&dir)
         .await
         .map_err(|e| format!("Failed to create '{}': {e}", dir.display()))?;
-    tokio::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
+    tokio::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))
         .await
         .map_err(|e| format!("Failed to restrict '{}': {e}", dir.display()))?;
     match tokio::fs::remove_file(&path).await {
@@ -141,7 +131,6 @@ pub async fn ensure_session_socket(session_id: &str) -> Result<PathBuf, String> 
         .await
         .map_err(|e| format!("Failed to restrict '{}': {e}", path.display()))?;
 
-    let generation = uuid::Uuid::new_v4().to_string();
     let server = serve(session_id.to_string(), listener);
     let id = session_id.to_string();
     let handle = tokio::spawn(async move {
@@ -149,7 +138,6 @@ pub async fn ensure_session_socket(session_id: &str) -> Result<PathBuf, String> 
         log::info!("Session socket for {id} stopped");
     });
     SERVERS.insert(session_id.to_string(), handle);
-    GENERATIONS.insert(session_id.to_string(), generation);
     log::info!("Session socket for {session_id} at {}", path.display());
     Ok(path)
 }
@@ -159,15 +147,15 @@ pub async fn ensure_session_socket(_session_id: &str) -> Result<PathBuf, String>
     Err("Session sockets are not supported on this platform".to_string())
 }
 
-/// Stops serving the session's socket and removes the file.
+/// Stops serving the session's socket and removes the file and directory.
 pub fn remove_session_socket(session_id: &str) {
     RELAYS.remove(session_id);
-    GENERATIONS.remove(session_id);
     if let Some((_, handle)) = SERVERS.remove(session_id) {
         handle.abort();
     }
-    if let Ok(path) = socket_path(session_id) {
-        let _ = std::fs::remove_file(path);
+    if let Ok(dir) = session_socket_dir(session_id) {
+        let _ = std::fs::remove_file(dir.join("api.sock"));
+        let _ = std::fs::remove_dir(dir);
     }
 }
 
@@ -184,8 +172,10 @@ mod tests {
     fn socket_path_rejects_ids_that_could_escape_the_directory() {
         for id in ["", "../x", "a/b", "a\\b", "a.b", "a b"] {
             assert!(socket_path(id).is_err(), "{id:?}");
+            assert!(session_socket_dir(id).is_err(), "{id:?}");
         }
         assert!(socket_path("abc123-_X").is_ok());
+        assert!(session_socket_dir("abc123-_X").is_ok());
     }
 
     #[test]
@@ -194,13 +184,9 @@ mod tests {
     }
 
     #[test]
-    fn socket_generation_tracked_and_cleared_on_removal() {
-        set_socket_generation_for_test("session-gen-test", "gen-123");
-        assert_eq!(
-            socket_generation("session-gen-test"),
-            Some("gen-123".to_string())
-        );
-        remove_session_socket("session-gen-test");
-        assert_eq!(socket_generation("session-gen-test"), None);
+    fn session_socket_dir_places_api_sock_inside() {
+        let dir = session_socket_dir("session-test-dir").unwrap();
+        let sock = socket_path("session-test-dir").unwrap();
+        assert_eq!(sock, dir.join("api.sock"));
     }
 }

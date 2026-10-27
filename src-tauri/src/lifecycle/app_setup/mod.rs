@@ -402,6 +402,29 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     // Windows: keep minimize → taskbar behavior reliable (no orphan tray tool-window).
     crate::lifecycle::windows_taskbar::ensure_main_window_taskbar_button(app.handle());
 
+    #[cfg(unix)]
+    {
+        let app_handle_for_signal = app.handle().clone();
+        tauri::async_runtime::spawn(async move {
+            use tokio::signal::unix::{signal, SignalKind};
+            if let (Ok(mut sigint), Ok(mut sigterm)) = (
+                signal(SignalKind::interrupt()),
+                signal(SignalKind::terminate()),
+            ) {
+                tokio::select! {
+                    _ = sigint.recv() => {
+                        info!("Received SIGINT, initiating graceful shutdown");
+                    }
+                    _ = sigterm.recv() => {
+                        info!("Received SIGTERM, initiating graceful shutdown");
+                    }
+                }
+                crate::services::workspace_runtime_manager::relay::shutdown_all_relays().await;
+                app_handle_for_signal.exit(0);
+            }
+        });
+    }
+
     info!("✅ LibrAgent setup completed successfully");
     Ok(())
 }

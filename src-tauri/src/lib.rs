@@ -449,6 +449,7 @@ pub fn run() {
                     crate::utils::keep_awake::shutdown();
                     let app_handle_clone = app_handle.clone();
                     tauri::async_runtime::block_on(async move {
+                        crate::services::workspace_runtime_manager::relay::shutdown_all_relays().await;
                         if let Some(browser_server) =
                             app_handle_clone.try_state::<InteractiveBrowserServer>()
                         {
