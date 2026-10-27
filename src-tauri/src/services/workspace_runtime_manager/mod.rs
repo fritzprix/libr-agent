@@ -445,13 +445,14 @@ async fn prepare_docker_runtime(
     }
 
     DOCKER_SHELL_CACHE.insert(session.id.clone(), shell);
-    DOCKER_CONTAINER_READY_CACHE.insert(session.id.clone(), now);
 
     // The session lock is released before waiting for the relay: removing or replacing the
     // container, and other provisioning callers, must not queue behind a relay that is slow
-    // to say `ready`. The runtime still counts as ready only once the relay answered, so the
-    // first command of the session already sees `$LIBRAGENT_WAKE_URL`. A relay that cannot
-    // start leaves the session without a URL (`ensure_relay` logs why).
+    // to say `ready`. The runtime is marked ready only after that wait, so a command that
+    // arrives meanwhile does not take the cached path past a relay that is still starting: it
+    // provisions too and then waits on the relay's own start, not on the session lock. The
+    // first command of the session therefore already sees `$LIBRAGENT_WAKE_URL`. A relay that
+    // cannot start leaves the session without a URL (`ensure_relay` logs why).
     drop(guard);
     if !session_config::session_is_attach(session) {
         if let Some(reporter) = reporter.as_ref() {
@@ -459,5 +460,6 @@ async fn prepare_docker_runtime(
         }
         ensure_relay_for_container(&session.id, &container_name).await;
     }
+    DOCKER_CONTAINER_READY_CACHE.insert(session.id.clone(), now);
     Ok(shell)
 }
