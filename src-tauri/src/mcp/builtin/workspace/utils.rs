@@ -240,10 +240,11 @@ pub async fn add_wake_url_env(
     session_id: &str,
     env_vars: &mut std::collections::HashMap<String, String>,
 ) {
-    // A Docker session reaches the same URL through the relay on the container's loopback, but
-    // only when its socket is being served.
+    // A Docker session reaches the same URL through the relay on the container's loopback, so
+    // it gets the URL only once that relay is running. Without it the token could reach
+    // whatever else listens on that port inside the container.
     if is_session_docker_isolated(session_id).await
-        && !crate::server::session_socket::is_serving(session_id)
+        && !crate::server::session_socket::is_reachable_from_container(session_id)
     {
         return;
     }

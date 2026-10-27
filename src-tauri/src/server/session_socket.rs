@@ -9,7 +9,7 @@
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
-use dashmap::DashMap;
+use dashmap::{DashMap, DashSet};
 use futures::future::BoxFuture;
 use once_cell::sync::Lazy;
 use tokio::task::JoinHandle;
@@ -28,6 +28,9 @@ pub const CONTAINER_SOCKET_PATH: &str = "/run/libragent/api.sock";
 
 static SERVE: OnceLock<ServeSession> = OnceLock::new();
 static SERVERS: Lazy<DashMap<String, JoinHandle<()>>> = Lazy::new(DashMap::new);
+/// Sessions whose container has a running relay to the socket. Nothing sets it yet: the relay
+/// is not implemented, so no Docker session is handed a wake URL that leads nowhere.
+static RELAYS: Lazy<DashSet<String>> = Lazy::new(DashSet::new);
 
 /// Records how a session's socket is served. Called once by `server::init`.
 pub fn register_serve(serve: ServeSession) {
@@ -41,9 +44,14 @@ fn is_plain_session_id(session_id: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
 }
 
+/// `<LIBRAGENT_DATA_DIR>/sock` for an isolated instance (so it never touches the user's real
+/// `~/.libragent`), otherwise `~/.libragent/sock`.
 fn socket_dir() -> Result<PathBuf, String> {
-    let home = std::env::var("HOME").map_err(|_| "HOME is not set".to_string())?;
-    Ok(PathBuf::from(home).join(".libragent").join("sock"))
+    if let Some(data_dir) = std::env::var_os("LIBRAGENT_DATA_DIR") {
+        return Ok(PathBuf::from(data_dir).join("sock"));
+    }
+    let home = dirs::home_dir().ok_or_else(|| "Home directory is not available".to_string())?;
+    Ok(home.join(".libragent").join("sock"))
 }
 
 /// Host path of a session's socket.
@@ -54,6 +62,11 @@ pub fn socket_path(session_id: &str) -> Result<PathBuf, String> {
         ));
     }
     Ok(socket_dir()?.join(format!("{session_id}.sock")))
+}
+
+/// True when the session's socket is served and its container relays `127.0.0.1` to it.
+pub fn is_reachable_from_container(session_id: &str) -> bool {
+    is_serving(session_id) && RELAYS.contains(session_id)
 }
 
 /// True while the session's socket is being served.
@@ -117,6 +130,7 @@ pub async fn ensure_session_socket(_session_id: &str) -> Result<PathBuf, String>
 
 /// Stops serving the session's socket and removes the file.
 pub fn remove_session_socket(session_id: &str) {
+    RELAYS.remove(session_id);
     if let Some((_, handle)) = SERVERS.remove(session_id) {
         handle.abort();
     }
@@ -128,6 +142,11 @@ pub fn remove_session_socket(session_id: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_served_socket_is_not_reachable_without_a_relay() {
+        assert!(!is_reachable_from_container("socket-test-no-relay"));
+    }
 
     #[test]
     fn socket_path_rejects_ids_that_could_escape_the_directory() {

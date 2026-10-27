@@ -319,7 +319,7 @@ mod tests {
             &method,
             path,
             &|session| {
-                let found = ["s1", "s2", "s3", "s4"].contains(&session);
+                let found = ["s1", "s2", "s3", "s4", "s5"].contains(&session);
                 let session = session.to_string();
                 Box::pin(async move { found.then_some(session) })
             },
@@ -346,7 +346,7 @@ mod tests {
         assert!(!authorized(Method::POST, "/api/sessions/s4/messages").await);
         // (e) a ref that does not resolve.
         assert!(!authorized(Method::POST, "/api/sessions/missing/messages").await);
-        // (f) a resolved session whose parent lookup fails.
+        // (f) a session that resolves (s5) but whose parent lookup fails.
         assert!(!authorized(Method::POST, "/api/sessions/s5/messages").await);
         // Delete and terminate: a direct child only, never the origin.
         assert!(authorized(Method::DELETE, "/api/sessions/s2").await);
