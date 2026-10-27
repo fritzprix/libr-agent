@@ -448,3 +448,127 @@ async fn test_activity_tracking_initialization() {
     let processes = manager.active_processes.read().await;
     assert_eq!(processes.len(), 0, "Process map should be empty initially");
 }
+
+/// Manager whose only server accepts the process but never answers `initialize`.
+#[cfg(unix)]
+fn create_silent_server_manager(startup_timeout_seconds: u64) -> SessionMCPManager {
+    let mut configs = HashMap::new();
+    configs.insert(
+        "silent".to_string(),
+        MCPServerConfig {
+            name: Some("silent".to_string()),
+            transport: TransportConfig::Stdio {
+                command: "sleep".to_string(),
+                args: vec!["600".to_string()],
+                env: HashMap::new(),
+            },
+            authentication: None,
+            metadata: None,
+            provenance: None,
+        },
+    );
+    let config = SessionIsolationConfig {
+        idle_timeout_minutes: 5,
+        cleanup_interval_minutes: 5,
+        process_startup_timeout_seconds: startup_timeout_seconds,
+        max_restart_attempts: 0,
+        http_connection_pool_size: 10,
+    };
+    SessionMCPManager::new(
+        "silent-session".to_string(),
+        configs,
+        config,
+        std::env::current_dir().unwrap(),
+        create_test_channel_event_tx(),
+    )
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn tool_calls_keep_the_configured_startup_timeout() {
+    let manager = create_silent_server_manager(1);
+
+    // Discovery may wait longer than the session wait, but a tool call must not.
+    let started = std::time::Instant::now();
+    let result = manager
+        .call_tool("silent", "any_tool", serde_json::json!({}))
+        .await;
+
+    assert!(matches!(result, Err(SessionMCPError::InitTimeout(_))));
+    assert!(started.elapsed() < Duration::from_secs(10));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn discovery_can_wait_longer_than_the_configured_startup_timeout() {
+    let manager = create_silent_server_manager(1);
+
+    // With a 1s configured timeout and a 3s discovery timeout, the wait is the longer one.
+    let started = std::time::Instant::now();
+    let result = manager
+        .list_tools_with_init_timeout("silent", Duration::from_secs(3))
+        .await;
+
+    assert!(matches!(result, Err(SessionMCPError::InitTimeout(_))));
+    assert!(started.elapsed() >= Duration::from_secs(3));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn shutdown_ends_a_pending_initialize() {
+    let manager = create_silent_server_manager(600);
+
+    let pending = {
+        let manager = manager.clone();
+        tokio::spawn(async move {
+            manager
+                .list_tools_with_init_timeout("silent", Duration::from_secs(600))
+                .await
+        })
+    };
+    // Let the spawn reach the pending initialize.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(!pending.is_finished());
+
+    manager.shutdown_all().await;
+
+    let result = tokio::time::timeout(Duration::from_secs(5), pending)
+        .await
+        .expect("pending initialize should end when the session shuts down")
+        .unwrap();
+    assert!(matches!(result, Err(SessionMCPError::SessionClosed)));
+    assert!(manager.active_processes.read().await.is_empty());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn tool_call_does_not_wait_on_discovery_holding_the_spawn_lock() {
+    let manager = create_silent_server_manager(1);
+
+    // Discovery holds the spawn lock while the slow server initializes.
+    let discovery = {
+        let manager = manager.clone();
+        tokio::spawn(async move {
+            manager
+                .list_tools_with_init_timeout("silent", Duration::from_secs(600))
+                .await
+        })
+    };
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    let started = std::time::Instant::now();
+    let result = manager
+        .call_tool("silent", "any_tool", serde_json::json!({}))
+        .await;
+
+    match result {
+        Err(SessionMCPError::InitTimeout(message)) => {
+            assert!(message.contains("still starting"), "{message}")
+        }
+        other => panic!("expected a still-starting error, got {other:?}"),
+    }
+    assert!(started.elapsed() < Duration::from_secs(10));
+    assert!(!discovery.is_finished(), "discovery keeps loading");
+
+    manager.shutdown_all().await;
+}

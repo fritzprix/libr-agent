@@ -32,7 +32,8 @@ function serverStatusLabel(
     case 'discovering_tools':
       return t('agent.statusBar.mcpServerDiscovering');
     case 'timed_out':
-      return t('agent.statusBar.mcpServerTimedOut');
+      // The session stopped waiting; the server keeps starting in the background.
+      return t('agent.statusBar.mcpServerStarting');
     case 'failed': {
       const error = server.error?.trim() ?? '';
       if (error && isMcpServerTimeoutError(error)) {
@@ -51,7 +52,7 @@ function ServerStatusIcon({ server }: { server: SessionRuntimeServerState }) {
       <Check className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
     );
   }
-  if (server.status === 'failed' || server.status === 'timed_out') {
+  if (server.status === 'failed') {
     return <AlertCircle className="size-3.5 shrink-0 text-destructive" />;
   }
   return (
@@ -83,7 +84,7 @@ function McpServerStatusList({
           key={`${server.transport}:${server.name}`}
           className={cn(
             'flex items-center gap-2 text-xs',
-            server.status === 'failed' || server.status === 'timed_out'
+            server.status === 'failed'
               ? 'text-destructive/90'
               : server.status === 'ready'
                 ? 'text-emerald-700 dark:text-emerald-300'

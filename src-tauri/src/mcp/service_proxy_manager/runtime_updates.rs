@@ -245,13 +245,33 @@ fn apply_completion_step(state: &mut SessionRuntimeState) {
         .map(|server| server.name.as_str())
         .collect();
 
+    let timed_out_names: Vec<&str> = state
+        .servers
+        .iter()
+        .filter(|server| server.status == SessionRuntimeServerStatus::TimedOut)
+        .map(|server| server.name.as_str())
+        .collect();
+
     match state.initialization.result {
         SessionRuntimeInitResult::Success => {
-            state.set_current_step(format!("MCP ready: {}", ready_names.join(", ")));
+            if timed_out_names.is_empty() {
+                state.set_current_step(format!("MCP ready: {}", ready_names.join(", ")));
+            } else if ready_names.is_empty() {
+                state.set_current_step(format!(
+                    "MCP still starting: {}",
+                    timed_out_names.join(", ")
+                ));
+            } else {
+                state.set_current_step(format!(
+                    "MCP ready: {} (still starting: {})",
+                    ready_names.join(", "),
+                    timed_out_names.join(", ")
+                ));
+            }
         }
         SessionRuntimeInitResult::Partial => {
             state.set_current_step(format!(
-                "MCP partial: {} failed/timed out ({}/{} ready)",
+                "MCP partial: {} failed ({}/{} ready)",
                 unsuccessful_names.join(", "),
                 ready_names.len(),
                 state.servers.len()
@@ -347,4 +367,152 @@ pub(super) fn apply_discovery_timeout_finalize(
     }
     apply_completion_step(state);
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn configured_state() -> SessionRuntimeState {
+        let mut state = SessionRuntimeState::default();
+        state.proxy.exists = true;
+        state.proxy.mode = SessionRuntimeProxyMode::Configured;
+        state
+    }
+
+    fn server(state: &SessionRuntimeState, name: &str) -> SessionRuntimeServerState {
+        state
+            .servers
+            .iter()
+            .find(|server| server.name == name)
+            .cloned()
+            .unwrap()
+    }
+
+    #[test]
+    fn a_slow_server_becomes_ready_after_the_session_stopped_waiting() {
+        let mut state = configured_state();
+        apply_server_connecting(&mut state, "slow", SessionRuntimeTransport::Stdio);
+        apply_server_ready(&mut state, "fast", SessionRuntimeTransport::Stdio, 2);
+
+        // The session wait runs out: the slow server is TimedOut, the session is Ready.
+        assert!(apply_discovery_timeout_finalize(&mut state, "waited 30s"));
+        assert_eq!(
+            server(&state, "slow").status,
+            SessionRuntimeServerStatus::TimedOut
+        );
+        assert!(state.proxy.ready);
+
+        // The server finishes loading later: its tools show up and it is no longer TimedOut.
+        apply_server_ready(&mut state, "slow", SessionRuntimeTransport::Stdio, 5);
+        apply_initialization_complete(&mut state);
+        let slow = server(&state, "slow");
+        assert_eq!(slow.status, SessionRuntimeServerStatus::Ready);
+        assert_eq!(slow.tool_count, 5);
+        assert_eq!(slow.error, None);
+        assert_eq!(
+            state.initialization.result,
+            SessionRuntimeInitResult::Success
+        );
+        assert!(state.proxy.ready);
+    }
+
+    #[test]
+    fn a_session_whose_only_server_timed_out_is_not_failed() {
+        let mut state = configured_state();
+        apply_server_connecting(&mut state, "slow", SessionRuntimeTransport::Stdio);
+        apply_discovery_timeout_finalize(&mut state, "waited 30s");
+
+        assert_eq!(state.phase, SessionRuntimePhase::Ready);
+        assert_eq!(
+            state.initialization.result,
+            SessionRuntimeInitResult::Success
+        );
+        assert_eq!(state.initialization.error, None);
+        assert!(state.proxy.ready);
+        assert_eq!(
+            state.initialization.current_step.as_deref(),
+            Some("MCP still starting: slow")
+        );
+
+        apply_server_ready(&mut state, "slow", SessionRuntimeTransport::Stdio, 3);
+        apply_initialization_complete(&mut state);
+        assert_eq!(
+            state.initialization.result,
+            SessionRuntimeInitResult::Success
+        );
+        assert_eq!(server(&state, "slow").tool_count, 3);
+    }
+
+    #[test]
+    fn several_timed_out_servers_all_join_later_without_a_failed_session() {
+        let mut state = configured_state();
+        for name in ["fred", "jupyter", "yahoo_finance"] {
+            apply_server_connecting(&mut state, name, SessionRuntimeTransport::Stdio);
+        }
+        apply_discovery_timeout_finalize(&mut state, "waited 30s");
+        assert_eq!(state.phase, SessionRuntimePhase::Ready);
+        assert_eq!(state.initialization.error, None);
+
+        for name in ["fred", "jupyter", "yahoo_finance"] {
+            apply_server_ready(&mut state, name, SessionRuntimeTransport::Stdio, 1);
+        }
+        apply_initialization_complete(&mut state);
+        assert_eq!(state.phase, SessionRuntimePhase::Ready);
+        assert_eq!(
+            state.initialization.result,
+            SessionRuntimeInitResult::Success
+        );
+    }
+
+    #[test]
+    fn a_failed_server_is_still_counted_next_to_a_timed_out_one() {
+        let mut state = configured_state();
+        apply_server_connecting(&mut state, "slow", SessionRuntimeTransport::Stdio);
+        apply_server_failed(
+            &mut state,
+            "broken",
+            SessionRuntimeTransport::Stdio,
+            "process exited".to_string(),
+        );
+        apply_discovery_timeout_finalize(&mut state, "waited 30s");
+
+        assert_eq!(state.phase, SessionRuntimePhase::Degraded);
+        assert_eq!(
+            state.initialization.result,
+            SessionRuntimeInitResult::Partial
+        );
+        assert_eq!(
+            state.initialization.error.as_deref(),
+            Some("1 of 2 external servers failed during initialization")
+        );
+        assert!(state.proxy.ready);
+        assert_eq!(
+            server(&state, "slow").status,
+            SessionRuntimeServerStatus::TimedOut
+        );
+    }
+
+    #[test]
+    fn a_server_that_fails_is_failed_immediately_not_timed_out() {
+        let mut state = configured_state();
+        apply_server_connecting(&mut state, "broken", SessionRuntimeTransport::Stdio);
+        apply_server_failed(
+            &mut state,
+            "broken",
+            SessionRuntimeTransport::Stdio,
+            "process exited".to_string(),
+        );
+
+        let broken = server(&state, "broken");
+        assert_eq!(broken.status, SessionRuntimeServerStatus::Failed);
+        assert_eq!(broken.error.as_deref(), Some("process exited"));
+
+        // The session wait running out later must not rewrite a real failure.
+        apply_discovery_timeout_finalize(&mut state, "waited 30s");
+        assert_eq!(
+            server(&state, "broken").status,
+            SessionRuntimeServerStatus::Failed
+        );
+    }
 }

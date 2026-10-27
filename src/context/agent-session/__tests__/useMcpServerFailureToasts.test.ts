@@ -152,7 +152,7 @@ describe('useMcpServerFailureToasts', () => {
     expect(toast.error).not.toHaveBeenCalled();
   });
 
-  it('toasts server timeouts when status is timed_out', () => {
+  it('does not toast a timed_out server: the session stopped waiting but it keeps starting', () => {
     const state = mockRuntimeState([
       {
         name: 'slow-stdio',
@@ -165,9 +165,25 @@ describe('useMcpServerFailureToasts', () => {
 
     renderHook(() => useMcpServerFailureToasts('s1', state));
 
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('toasts a server timeout once the safety cap has marked it failed', () => {
+    const state = mockRuntimeState([
+      {
+        name: 'hung-stdio',
+        transport: 'stdio',
+        status: 'failed',
+        toolCount: 0,
+        error: "stdio server 'hung-stdio' tool discovery timed out after 600s",
+      },
+    ]);
+
+    renderHook(() => useMcpServerFailureToasts('s1', state));
+
     const expectedId = mcpServerFailureToastId(
       's1',
-      'stdio:slow-stdio:timed_out:Tool discovery timed out after 30s',
+      "stdio:hung-stdio:failed:stdio server 'hung-stdio' tool discovery timed out after 600s",
     );
     expect(toast.error).toHaveBeenCalledWith(
       'agent.statusBar.mcpServerTimeout',

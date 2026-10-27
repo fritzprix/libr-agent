@@ -51,6 +51,10 @@ pub struct SessionMCPManager {
 
     /// Native channel events intercepted from stdio MCP servers.
     pub(crate) channel_event_tx: super::channel_events::ChannelEventSender,
+
+    /// Cancelled by `shutdown_all` so a pending server initialize ends (and its child
+    /// process is dropped) when the session is destroyed instead of running to its timeout.
+    pub(crate) shutdown_token: CancellationToken,
 }
 
 impl SessionMCPManager {

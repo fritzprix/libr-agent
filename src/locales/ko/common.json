@@ -1415,6 +1415,7 @@
       "mcpServerDiscovering": "도구 검색 중…",
       "mcpServerReadyTools": "도구 {{count}}개",
       "mcpServerTimedOut": "시간 초과",
+      "mcpServerStarting": "아직 준비 중",
       "mcpServerFailedShort": "실패",
       "executionModeNormalTitle": "기본 모드. 정책 차단 및 승인 규칙이 적용됩니다.",
       "executionModeYoloTitle": "YOLO 모드. 일반 승인은 자동 승인되지만, 중요한 승인은 수동 확인이 필요합니다.",

@@ -1425,6 +1425,7 @@
       "mcpServerDiscovering": "Discovering tools…",
       "mcpServerReadyTools": "{{count}} tools",
       "mcpServerTimedOut": "Timed out",
+      "mcpServerStarting": "Still starting",
       "mcpServerFailedShort": "Failed",
       "executionModeNormalTitle": "Normal mode. Policy blocks and approval rules are enforced.",
       "executionModeYoloTitle": "YOLO mode. Standard approvals are auto-approved, but hard approvals still require manual approval.",
