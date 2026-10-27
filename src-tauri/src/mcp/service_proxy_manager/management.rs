@@ -8,7 +8,9 @@ use super::runtime_updates::{
 use super::MCPServiceProxyManager;
 use crate::agent::runtime_state::SessionRuntimeState;
 use crate::mcp::builtin::service_id::BuiltinServiceId;
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 use tauri::AppHandle;
 use tokio::sync::Mutex;
 
@@ -119,6 +121,103 @@ impl MCPServiceProxyManager {
     /// * `None` - No proxy found for this session
     pub async fn get_proxy(&self, session_id: &str) -> Option<Arc<MCPServiceProxy>> {
         self.proxies.read().await.get(session_id).cloned()
+    }
+
+    /// Manually retry a failed MCP server in an active session.
+    pub async fn retry_failed_server(
+        &self,
+        session_id: &str,
+        server_name: &str,
+        app_handle: Option<&AppHandle>,
+    ) -> Result<(), String> {
+        let state = self.get_runtime_state(session_id).await;
+        let server = state
+            .servers
+            .iter()
+            .find(|s| s.name == server_name)
+            .ok_or_else(|| {
+                format!(
+                    "Server '{}' not found in session '{}'",
+                    server_name, session_id
+                )
+            })?;
+
+        if server.status != crate::agent::runtime_state::SessionRuntimeServerStatus::Failed {
+            log::debug!(
+                "Server '{}' in session '{}' is not in Failed status ({:?}); skipping retry",
+                server_name,
+                session_id,
+                server.status
+            );
+            return Ok(());
+        }
+
+        let proxy = self
+            .proxies
+            .read()
+            .await
+            .get(session_id)
+            .cloned()
+            .ok_or_else(|| format!("No active proxy for session '{}'", session_id))?;
+
+        let stdio_mgr = self
+            .session_stdio_managers
+            .read()
+            .await
+            .get(session_id)
+            .cloned()
+            .ok_or_else(|| format!("No stdio manager for session '{}'", session_id))?;
+
+        let http_mgr = self
+            .session_http_managers
+            .read()
+            .await
+            .get(session_id)
+            .cloned()
+            .ok_or_else(|| format!("No http manager for session '{}'", session_id))?;
+
+        let configs_guard = self.session_server_configs.read().await;
+        let loaded = configs_guard
+            .get(session_id)
+            .ok_or_else(|| format!("No server configs cached for session '{}'", session_id))?;
+
+        let mut retry_stdio = HashMap::new();
+        let mut retry_http = HashMap::new();
+        if let Some(config) = loaded.stdio_configs.get(server_name) {
+            retry_stdio.insert(server_name.to_string(), config.clone());
+        } else if let Some(config) = loaded.http_configs.get(server_name) {
+            retry_http.insert(server_name.to_string(), config.clone());
+        } else {
+            return Err(format!(
+                "Configuration for server '{}' not found in session '{}'",
+                server_name, session_id
+            ));
+        }
+
+        let tool_discovery_timeout = Duration::from_secs(self.startup_timeout_secs().await);
+        log::info!(
+            "Manually retrying failed MCP server '{}' for session '{}'",
+            server_name,
+            session_id
+        );
+
+        super::background_discovery::spawn_retry_failed_servers(
+            self,
+            session_id.to_string(),
+            super::background_discovery::RetryFailedServersParams {
+                proxy,
+                stdio_manager: stdio_mgr,
+                http_manager: http_mgr,
+                stdio_configs: retry_stdio,
+                http_configs: retry_http,
+                server_name_to_id: loaded.server_name_to_id.clone(),
+                tool_discovery_timeout,
+                app_handle: app_handle.cloned(),
+            },
+        )
+        .await;
+
+        Ok(())
     }
 
     /// Cancel resources owned by a session without destroying its proxy.
@@ -269,6 +368,7 @@ impl MCPServiceProxyManager {
         // 2. Cleanup readiness signal (drops Sender, waking any waiters with RecvError)
         self.proxy_readiness.write().await.remove(session_id);
         self.runtime_states.write().await.remove(session_id);
+        self.session_server_configs.write().await.remove(session_id);
         self.process_cancel_pending.lock().await.remove(session_id);
         self.process_cancel_retry_states
             .lock()

@@ -1,7 +1,9 @@
 use super::super::service_proxy::MCPServiceProxy;
 use super::super::session_isolation::{HttpSessionManager, SessionMCPManager};
 use super::super::session_isolation_config::SessionIsolationConfig;
-use super::background_discovery::{spawn_background_tool_loading, BackgroundDiscoveryPlan};
+use super::background_discovery::{
+    spawn_background_tool_loading, spawn_retry_failed_servers, BackgroundDiscoveryPlan,
+};
 use super::proxy_config::{
     apply_startup_timeout_settings, decide_existing_proxy_disposition,
     load_requested_server_configs, ExistingProxyDisposition,
@@ -12,7 +14,9 @@ use super::runtime_updates::{
     build_bootstrap_runtime_state, update_runtime_state_store,
 };
 use super::MCPServiceProxyManager;
-use crate::agent::runtime_state::{SessionRuntimeState, SessionRuntimeTransport};
+use crate::agent::runtime_state::{
+    SessionRuntimeServerStatus, SessionRuntimeState, SessionRuntimeTransport,
+};
 use crate::session::SessionManager;
 use futures::FutureExt;
 use sea_orm::DatabaseConnection;
@@ -89,6 +93,11 @@ fn log_create_proxy_metrics(metrics: &CreateProxyMetrics<'_>) {
 async fn cleanup_session_resources(manager: &MCPServiceProxyManager, session_id: &str) {
     manager.proxy_readiness.write().await.remove(session_id);
     manager.runtime_states.write().await.remove(session_id);
+    manager
+        .session_server_configs
+        .write()
+        .await
+        .remove(session_id);
     if let Some(old_mgr) = manager
         .session_stdio_managers
         .write()
@@ -201,6 +210,7 @@ impl MCPServiceProxyManager {
             proxy_readiness: Arc::new(RwLock::new(HashMap::new())),
             creation_guards: Arc::new(Mutex::new(HashMap::new())),
             runtime_states: Arc::new(RwLock::new(HashMap::new())),
+            session_server_configs: Arc::new(RwLock::new(HashMap::new())),
             process_cancel_pending: Arc::new(Mutex::new(std::collections::HashSet::new())),
             process_cancel_retry_states: Arc::new(Mutex::new(HashMap::new())),
             process_cancel_retry_counts: Arc::new(Mutex::new(HashMap::new())),
@@ -284,6 +294,10 @@ impl MCPServiceProxyManager {
                     } else {
                         log::debug!("Proxy already exists for session: {}", session_id);
                     }
+                    self.session_server_configs
+                        .write()
+                        .await
+                        .insert(session_id.clone(), loaded.clone());
                     // Lazy ensure_builtin_proxy writes ready with no AppHandle (no emit).
                     // On Reuse, promote incomplete snapshots and force-emit the store's
                     // authoritative state so FE remounts leave Hydrating.
@@ -292,7 +306,7 @@ impl MCPServiceProxyManager {
                         loaded.has_external_servers(),
                     );
                     let update_result = self
-                        .set_runtime_state(&session_id, runtime_state, app_handle.as_ref())
+                        .set_runtime_state(&session_id, runtime_state.clone(), app_handle.as_ref())
                         .await;
                     if update_result.emitted {
                         runtime_state_emits += 1;
@@ -303,6 +317,68 @@ impl MCPServiceProxyManager {
                             Some(app),
                         ) {
                             runtime_state_emits += 1;
+                        }
+                    }
+
+                    // Requirement 3: retry failed servers on session re-entry (Reuse path)
+                    let failed_server_names: Vec<String> = runtime_state
+                        .servers
+                        .iter()
+                        .filter(|s| s.status == SessionRuntimeServerStatus::Failed)
+                        .map(|s| s.name.clone())
+                        .collect();
+
+                    if !failed_server_names.is_empty() {
+                        let retry_stdio: HashMap<_, _> = loaded
+                            .stdio_configs
+                            .clone()
+                            .into_iter()
+                            .filter(|(name, _)| failed_server_names.contains(name))
+                            .collect();
+                        let retry_http: HashMap<_, _> = loaded
+                            .http_configs
+                            .clone()
+                            .into_iter()
+                            .filter(|(name, _)| failed_server_names.contains(name))
+                            .collect();
+
+                        if !retry_stdio.is_empty() || !retry_http.is_empty() {
+                            let stdio_mgr = self
+                                .session_stdio_managers
+                                .read()
+                                .await
+                                .get(&session_id)
+                                .cloned();
+                            let http_mgr = self
+                                .session_http_managers
+                                .read()
+                                .await
+                                .get(&session_id)
+                                .cloned();
+                            if let (Some(stdio_mgr), Some(http_mgr)) = (stdio_mgr, http_mgr) {
+                                log::info!(
+                                    "Retrying {} failed MCP server(s) on session reuse ({})",
+                                    retry_stdio.len() + retry_http.len(),
+                                    session_id
+                                );
+                                let tool_discovery_timeout =
+                                    Duration::from_secs(self.startup_timeout_secs().await);
+                                spawn_retry_failed_servers(
+                                    self,
+                                    session_id.clone(),
+                                    super::background_discovery::RetryFailedServersParams {
+                                        proxy: existing.clone(),
+                                        stdio_manager: stdio_mgr,
+                                        http_manager: http_mgr,
+                                        stdio_configs: retry_stdio,
+                                        http_configs: retry_http,
+                                        server_name_to_id: loaded.server_name_to_id,
+                                        tool_discovery_timeout,
+                                        app_handle: app_handle.clone(),
+                                    },
+                                )
+                                .await;
+                            }
                         }
                     }
                     log_create_proxy_metrics(&CreateProxyMetrics {
@@ -513,6 +589,10 @@ impl MCPServiceProxyManager {
             .write()
             .await
             .insert(session_id.clone(), http_manager.clone());
+        self.session_server_configs
+            .write()
+            .await
+            .insert(session_id.clone(), loaded.clone());
 
         let update_result = update_runtime_state_store(
             &self.runtime_states,

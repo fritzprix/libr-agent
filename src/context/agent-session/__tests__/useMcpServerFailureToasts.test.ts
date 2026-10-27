@@ -1,12 +1,17 @@
 import { renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { toast } from 'sonner';
+import { safeInvoke } from '@/lib/backend/core';
 
 import type { SessionRuntimeState } from '@/models/agent-ipc';
 import {
   mcpServerFailureToastId,
   useMcpServerFailureToasts,
 } from '../useMcpServerFailureToasts';
+
+vi.mock('@/lib/backend/core', () => ({
+  safeInvoke: vi.fn(),
+}));
 
 vi.mock('sonner', () => ({
   toast: {
@@ -192,5 +197,39 @@ describe('useMcpServerFailureToasts', () => {
         duration: 8000,
       }),
     );
+  });
+
+  it('provides a retry action in the toast that invokes retry_session_mcp_server', () => {
+    const state = mockRuntimeState([
+      {
+        name: 'exa',
+        transport: 'http',
+        status: 'failed',
+        toolCount: 0,
+        error: 'Connection refused',
+      },
+    ]);
+
+    renderHook(() => useMcpServerFailureToasts('s1', state));
+
+    expect(toast.error).toHaveBeenCalledWith(
+      'agent.statusBar.mcpServerFailed',
+      expect.objectContaining({
+        action: expect.objectContaining({
+          label: 'common.retry',
+          onClick: expect.any(Function),
+        }),
+      }),
+    );
+
+    const callArgs = vi.mocked(toast.error).mock.calls[0][1] as {
+      action: { label: string; onClick: () => void };
+    };
+    callArgs.action.onClick();
+
+    expect(safeInvoke).toHaveBeenCalledWith('retry_session_mcp_server', {
+      sessionId: 's1',
+      serverName: 'exa',
+    });
   });
 });

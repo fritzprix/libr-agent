@@ -169,3 +169,16 @@ pub async fn start_oauth_flow(
         server_id
     ))
 }
+
+/// Manually retry a failed MCP server in an active session.
+#[tauri::command]
+pub async fn retry_session_mcp_server(
+    session_id: String,
+    server_name: String,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    let proxy_manager = crate::state::get_mcp_service_proxy_manager();
+    proxy_manager
+        .retry_failed_server(&session_id, &server_name, Some(&app_handle))
+        .await
+}

@@ -49,6 +49,7 @@ pub fn decide_existing_proxy_disposition(
     }
 }
 
+#[derive(Debug, Clone)]
 pub(super) struct LoadedServerConfigs {
     pub(super) stdio_configs: HashMap<String, crate::mcp::types::MCPServerConfig>,
     pub(super) http_configs: HashMap<String, crate::mcp::types::MCPServerConfig>,

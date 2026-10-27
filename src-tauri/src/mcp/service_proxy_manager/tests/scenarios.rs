@@ -498,3 +498,60 @@ async fn test_empty_mcp_server_ids_means_no_external_servers() {
     // Cleanup
     manager.destroy_proxy(&session_id).await;
 }
+
+#[tokio::test]
+async fn test_retry_failed_server_validations() {
+    use crate::agent::runtime_state::{
+        SessionRuntimeServerState, SessionRuntimeServerStatus, SessionRuntimeTransport,
+    };
+
+    let harness = create_test_harness().await;
+    let manager = &harness.manager;
+    let session_id = "retry-validation-test";
+
+    insert_test_session(&manager, session_id).await;
+
+    // 1. Calling retry on a nonexistent session/server returns error
+    let err = manager
+        .retry_failed_server("nonexistent-session", "test-server", None)
+        .await;
+    assert!(err.is_err());
+
+    // 2. Create proxy with builtin tool
+    manager
+        .create_proxy(
+            session_id.to_string(),
+            vec!["playbook".to_string()],
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+
+    // 3. Server not in runtime_state returns error
+    let err = manager
+        .retry_failed_server(session_id, "unknown-server", None)
+        .await;
+    assert!(err.unwrap_err().contains("not found"));
+
+    // 4. Server in Ready status skips retry cleanly (Ok(()))
+    let mut state = manager.get_runtime_state(session_id).await;
+    state.servers.push(SessionRuntimeServerState {
+        name: "ready-server".to_string(),
+        transport: SessionRuntimeTransport::Stdio,
+        status: SessionRuntimeServerStatus::Ready,
+        tool_count: 5,
+        error: None,
+    });
+    manager.set_runtime_state(session_id, state, None).await;
+
+    let res = manager
+        .retry_failed_server(session_id, "ready-server", None)
+        .await;
+    assert!(
+        res.is_ok(),
+        "Non-failed server should return Ok(()) without retrying"
+    );
+
+    manager.destroy_proxy(session_id).await;
+}

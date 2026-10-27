@@ -1,8 +1,10 @@
-import { AlertCircle, Check } from 'lucide-react';
+import { useState } from 'react';
+import { AlertCircle, Check, RotateCcw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { isMcpServerTimeoutError } from '@/context/agent-session/mcpServerFailureFeedback';
+import { safeInvoke } from '@/lib/backend/core';
 import type {
   SessionRuntimeInitResult,
   SessionRuntimeServerState,
@@ -11,6 +13,7 @@ import { cn } from '@/lib/utils';
 
 interface SessionLoadingOverlayProps {
   label: string;
+  sessionId?: string;
   initializationStep?: string | null;
   initializationError?: string | null;
   variant: 'blocking' | 'overlay';
@@ -65,10 +68,25 @@ function ServerStatusIcon({ server }: { server: SessionRuntimeServerState }) {
 
 function McpServerStatusList({
   servers,
+  sessionId,
 }: {
   servers: SessionRuntimeServerState[];
+  sessionId?: string;
 }) {
   const { t } = useTranslation();
+  const [retryingServers, setRetryingServers] = useState<Record<string, boolean>>({});
+
+  const handleRetry = async (serverName: string) => {
+    if (!sessionId) return;
+    setRetryingServers((prev) => ({ ...prev, [serverName]: true }));
+    try {
+      await safeInvoke('retry_session_mcp_server', { sessionId, serverName });
+    } catch {
+      // safeInvoke returns null on error and logs; the background discovery will transition state
+    } finally {
+      setRetryingServers((prev) => ({ ...prev, [serverName]: false }));
+    }
+  };
 
   if (servers.length === 0) {
     return null;
@@ -79,32 +97,48 @@ function McpServerStatusList({
       className="flex flex-col gap-1 mt-2 w-full max-w-sm"
       data-testid="mcp-server-status-list"
     >
-      {servers.map((server) => (
-        <li
-          key={`${server.transport}:${server.name}`}
-          className={cn(
-            'flex items-center gap-2 text-xs',
-            server.status === 'failed'
-              ? 'text-destructive/90'
-              : server.status === 'ready'
-                ? 'text-emerald-700 dark:text-emerald-300'
-                : 'text-muted-foreground',
-          )}
-        >
-          <ServerStatusIcon server={server} />
-          <span className="font-medium truncate">{server.name}</span>
-          <span className="opacity-70 shrink-0">{server.transport}</span>
-          <span className="opacity-80 truncate">
-            {serverStatusLabel(server, t)}
-          </span>
-        </li>
-      ))}
+      {servers.map((server) => {
+        const isRetrying = Boolean(retryingServers[server.name]);
+        return (
+          <li
+            key={`${server.transport}:${server.name}`}
+            className={cn(
+              'flex items-center gap-2 text-xs',
+              server.status === 'failed'
+                ? 'text-destructive/90'
+                : server.status === 'ready'
+                  ? 'text-emerald-700 dark:text-emerald-300'
+                  : 'text-muted-foreground',
+            )}
+          >
+            <ServerStatusIcon server={server} />
+            <span className="font-medium truncate">{server.name}</span>
+            <span className="opacity-70 shrink-0">{server.transport}</span>
+            <span className="opacity-80 truncate">
+              {serverStatusLabel(server, t)}
+            </span>
+            {server.status === 'failed' && sessionId ? (
+              <button
+                type="button"
+                onClick={() => void handleRetry(server.name)}
+                disabled={isRetrying}
+                className="ml-auto inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] rounded border border-border bg-background hover:bg-accent text-foreground disabled:opacity-50"
+                title={t('common.retry', 'Retry')}
+              >
+                <RotateCcw className={cn('size-3', isRetrying && 'animate-spin')} />
+                <span>{t('common.retry', 'Retry')}</span>
+              </button>
+            ) : null}
+          </li>
+        );
+      })}
     </ul>
   );
 }
 
 export function SessionLoadingOverlay({
   label,
+  sessionId,
   initializationStep,
   initializationError,
   variant,
@@ -149,7 +183,7 @@ export function SessionLoadingOverlay({
           ) : null}
         </div>
 
-        <McpServerStatusList servers={servers} />
+        <McpServerStatusList servers={servers} sessionId={sessionId} />
       </div>
     </>
   );
