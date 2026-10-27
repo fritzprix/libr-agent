@@ -29,17 +29,17 @@ fn check_endpoint_origin_limits(
             "Sessions created from a managed Docker session must use workspaceIsolation \"docker\"",
         );
     }
-    // Defaults only: `portBindings` would publish host ports, `image`/`env`/`workdir` and
-    // `attachContainer`/`manageLifecycle` change what runs and what is kept on the host.
+    // Only `image` may be set (Docker sessions require one). `portBindings` would publish host
+    // ports; `env`, `workdir`, `attachContainer` and `manageLifecycle` change what runs and what
+    // is kept on the host.
     if body.docker_config.as_ref().is_some_and(|config| {
-        config.image.is_some()
-            || config.attach_container.is_some()
+        config.attach_container.is_some()
             || config.workdir.is_some()
             || config.manage_lifecycle.is_some()
             || !config.env.is_empty()
             || !config.port_bindings.is_empty()
     }) {
-        return Err("Sessions created from a managed Docker session cannot set dockerConfig");
+        return Err("Sessions created from a managed Docker session cannot set dockerConfig fields other than image");
     }
     if body.workspace_path.is_some() {
         return Err("Sessions created from a managed Docker session cannot set workspacePath");
@@ -358,13 +358,15 @@ mod tests {
         let origin = Some("s1");
         let managed = json!({"workspaceIsolation": "docker"});
         assert!(check_endpoint_origin_limits(origin, &request(managed)).is_ok());
+        let with_image =
+            json!({"workspaceIsolation": "docker", "dockerConfig": {"image": "node:22"}});
+        assert!(check_endpoint_origin_limits(origin, &request(with_image)).is_ok());
 
         for rejected in [
             json!({}),
             json!({"workspaceIsolation": "host"}),
             json!({"workspaceIsolation": "docker", "dockerConfig": {"attachContainer": "web"}}),
             json!({"workspaceIsolation": "docker", "dockerConfig": {"portBindings": [{"containerPort": 80, "hostPort": 8080}]}}),
-            json!({"workspaceIsolation": "docker", "dockerConfig": {"image": "evil"}}),
             json!({"workspaceIsolation": "docker", "dockerConfig": {"env": {"A": "b"}}}),
             json!({"workspaceIsolation": "docker", "dockerConfig": {"workdir": "/"}}),
             json!({"workspaceIsolation": "docker", "workspacePath": "/"}),
