@@ -10,6 +10,48 @@ use super::helpers::{
 };
 use super::types::{ChildSessionsResponse, CreateSessionRequest, ErrorResponse};
 
+/// Limits for sessions requested through a managed session's own endpoint (`origin` is the
+/// session that owns the endpoint, fixed by the listener, never taken from the request).
+/// Such a request may only create managed Docker sessions with defaults: no attaching to an
+/// existing container, no host `workspacePath` to mount, no raised execution mode.
+fn check_endpoint_origin_limits(
+    origin: Option<&str>,
+    body: &CreateSessionRequest,
+) -> Result<(), &'static str> {
+    use crate::execution_mode::ExecutionMode;
+    use crate::models::workspace_isolation::WorkspaceIsolationMode;
+
+    if origin.is_none() {
+        return Ok(());
+    }
+    if body.workspace_isolation != Some(WorkspaceIsolationMode::Docker) {
+        return Err(
+            "Sessions created from a managed Docker session must use workspaceIsolation \"docker\"",
+        );
+    }
+    if body
+        .docker_config
+        .as_ref()
+        .is_some_and(|config| config.is_attach())
+    {
+        return Err(
+            "Sessions created from a managed Docker session cannot attach an existing container",
+        );
+    }
+    if body.workspace_path.is_some() {
+        return Err("Sessions created from a managed Docker session cannot set workspacePath");
+    }
+    if body
+        .execution_mode
+        .is_some_and(|mode| mode != ExecutionMode::Normal)
+    {
+        return Err(
+            "Sessions created from a managed Docker session must use the normal execution mode",
+        );
+    }
+    Ok(())
+}
+
 fn classify_spawn_error(err: &str) -> (StatusCode, String) {
     if err.contains("Assistant not found") {
         (StatusCode::NOT_FOUND, err.to_string())
@@ -33,8 +75,18 @@ fn classify_spawn_error(err: &str) -> (StatusCode, String) {
 
 pub async fn create_session(
     manager: Arc<AgentSessionManager>,
+    origin: Option<String>,
     body: CreateSessionRequest,
 ) -> Result<impl Reply, Rejection> {
+    if let Err(error) = check_endpoint_origin_limits(origin.as_deref(), &body) {
+        return Ok(warp::reply::with_status(
+            warp::reply::json(&ErrorResponse {
+                error: error.to_string(),
+            }),
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
     let body = match resolve_create_session_body_refs(body).await {
         Ok(body) => body,
         Err((status, error)) => return Ok(resolve_error_reply(status, error)),
@@ -232,4 +284,49 @@ pub async fn get_child_sessions(id: String) -> Result<impl Reply, Rejection> {
         }),
         StatusCode::OK,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn request(extra: serde_json::Value) -> CreateSessionRequest {
+        let mut value = json!({"assistantId": "a1"});
+        value
+            .as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        serde_json::from_value(value).unwrap()
+    }
+
+    #[test]
+    fn main_port_requests_are_unrestricted() {
+        assert!(check_endpoint_origin_limits(None, &request(json!({}))).is_ok());
+        assert!(check_endpoint_origin_limits(
+            None,
+            &request(json!({"workspacePath": "/tmp", "executionMode": "unsafe"}))
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn endpoint_requests_may_only_create_default_managed_sessions() {
+        let origin = Some("s1");
+        let managed = json!({"workspaceIsolation": "docker"});
+        assert!(check_endpoint_origin_limits(origin, &request(managed)).is_ok());
+
+        for rejected in [
+            json!({}),
+            json!({"workspaceIsolation": "host"}),
+            json!({"workspaceIsolation": "docker", "dockerConfig": {"attachContainer": "web"}}),
+            json!({"workspaceIsolation": "docker", "workspacePath": "/"}),
+            json!({"workspaceIsolation": "docker", "executionMode": "yolo"}),
+        ] {
+            assert!(
+                check_endpoint_origin_limits(origin, &request(rejected.clone())).is_err(),
+                "{rejected}"
+            );
+        }
+    }
 }

@@ -121,7 +121,13 @@ pub async fn init(
         ),
     }
 
-    let routes = routes::get_routes(agent_manager, mcp_enabled, app_control_enabled, expose);
+    let routes = routes::get_routes(
+        agent_manager,
+        mcp_enabled,
+        app_control_enabled,
+        expose,
+        None,
+    );
 
     let server_future = warp::serve(routes).run((bind_addr.octets(), bound_port));
 

@@ -10,8 +10,12 @@ pub fn get_routes(
     mcp_enabled: bool,
     app_control_enabled: bool,
     expose: bool,
+    origin: Option<String>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
     let agent_manager = warp::any().map(move || agent_manager.clone());
+    // Fixed per listener: the managed session whose endpoint this router serves (`None` on the
+    // main TCP port). A closure capture, so a request cannot set or forge it.
+    let origin = warp::any().map(move || origin.clone());
 
     // POST /api/sessions
     let create_session = warp::post()
@@ -19,6 +23,7 @@ pub fn get_routes(
         .and(warp::path("sessions"))
         .and(warp::path::end())
         .and(agent_manager.clone())
+        .and(origin)
         .and(warp::body::json())
         .and_then(handlers::create_session);
 
