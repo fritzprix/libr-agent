@@ -378,7 +378,7 @@ async fn prepare_docker_runtime(
         .entry(session.id.clone())
         .or_insert_with(|| Arc::new(Mutex::new(())))
         .clone();
-    let _guard = lock.lock().await;
+    let guard = lock.lock().await;
 
     let now = Instant::now();
     let ttl = std::time::Duration::from_secs(DOCKER_RUNTIME_CACHE_TTL_SECS);
@@ -446,5 +446,18 @@ async fn prepare_docker_runtime(
 
     DOCKER_SHELL_CACHE.insert(session.id.clone(), shell);
     DOCKER_CONTAINER_READY_CACHE.insert(session.id.clone(), now);
+
+    // The session lock is released before waiting for the relay: removing or replacing the
+    // container, and other provisioning callers, must not queue behind a relay that is slow
+    // to say `ready`. The runtime still counts as ready only once the relay answered, so the
+    // first command of the session already sees `$LIBRAGENT_WAKE_URL`. A relay that cannot
+    // start leaves the session without a URL (`ensure_relay` logs why).
+    drop(guard);
+    if !session_config::session_is_attach(session) {
+        if let Some(reporter) = reporter.as_ref() {
+            reporter("Starting session relay");
+        }
+        ensure_relay_for_container(&session.id, &container_name).await;
+    }
     Ok(shell)
 }

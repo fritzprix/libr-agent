@@ -22,8 +22,7 @@ pub(super) async fn docker_container_architecture(container_name: &str) -> Runti
 }
 
 pub(super) async fn docker_container_exists(container_name: &str) -> RuntimeResult<bool> {
-    let mut cmd = AsyncCommand::new("docker");
-    apply_docker_cli_env(&mut cmd);
+    let mut cmd = docker_command();
     cmd.args(["inspect", container_name]);
     let output = cmd.output().await.map_err(map_docker_spawn_error)?;
     Ok(output.status.success())
@@ -104,8 +103,7 @@ pub(super) async fn current_uid_gid() -> Option<String> {
 }
 
 pub(super) async fn run_docker_status<const N: usize>(args: [&str; N]) -> RuntimeResult<()> {
-    let mut cmd = AsyncCommand::new("docker");
-    apply_docker_cli_env(&mut cmd);
+    let mut cmd = docker_command();
     cmd.args(args);
     run_status_command(cmd).await
 }
@@ -115,8 +113,7 @@ pub(super) async fn docker_output<const N: usize>(args: [&str; N]) -> RuntimeRes
 }
 
 pub(super) async fn docker_output_slice(args: &[&str]) -> RuntimeResult<String> {
-    let mut cmd = AsyncCommand::new("docker");
-    apply_docker_cli_env(&mut cmd);
+    let mut cmd = docker_command();
     cmd.args(args);
     let output = cmd.output().await.map_err(map_docker_spawn_error)?;
     if !output.status.success() {
@@ -131,6 +128,39 @@ pub(super) async fn run_status_command(mut cmd: AsyncCommand) -> RuntimeResult<(
         Ok(())
     } else {
         Err(format_docker_failure(&output))
+    }
+}
+
+/// A `docker` CLI command with the isolated environment applied. Tests can point it at a fake
+/// CLI (`test_docker::use_program`), so the container lifecycle runs without a daemon.
+pub(super) fn docker_command() -> AsyncCommand {
+    #[cfg(test)]
+    let program = test_docker::program();
+    #[cfg(not(test))]
+    let program = std::ffi::OsString::from("docker");
+    let mut cmd = AsyncCommand::new(program);
+    apply_docker_cli_env(&mut cmd);
+    cmd
+}
+
+#[cfg(test)]
+pub(super) mod test_docker {
+    use std::ffi::OsString;
+    use std::sync::RwLock;
+
+    static PROGRAM: RwLock<Option<OsString>> = RwLock::new(None);
+
+    pub(in super::super) fn program() -> OsString {
+        PROGRAM
+            .read()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(|| OsString::from("docker"))
+    }
+
+    /// Runs `docker_command()` as `program` until `None` is set again.
+    pub(in super::super) fn use_program(program: Option<OsString>) {
+        *PROGRAM.write().unwrap() = program;
     }
 }
 

@@ -2,7 +2,10 @@
 //! connection to the session's unix socket (`/run/libragent/api.sock`), which the host serves
 //! with the Session API. See `docs/architecture/session-wake-contract.md`.
 //!
-//! Usage: `session-relay <port> [socket-path]`
+//! Usage: `session-relay <port> [socket-path] [instance-id]`
+//!
+//! `instance-id` is not used by the relay: it only makes this process's command line unique, so
+//! the host can stop exactly the relay one start launched.
 //!
 //! Prints `ready` on stdout once it is listening **and** the upstream socket accepted one
 //! connection: the host starts it with `docker exec` and treats that line as "a request to the

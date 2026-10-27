@@ -43,22 +43,30 @@ pub(super) async fn ensure_bash_image_contract(
         return ensure_supported_shell(session_id, container_name).await;
     }
 
-    let expected_sock_dir = match crate::server::session_socket::session_socket_dir(session_id) {
-        Ok(dir) => Some(dir),
-        Err(error) => {
-            log::warn!("No Session API socket directory for {session_id}: {error}");
-            None
-        }
-    };
     if let Err(error) = crate::server::session_socket::ensure_session_socket(session_id).await {
         log::warn!("No Session API socket for {session_id}: {error}");
     }
+    // The mount kind (file on macOS, directory elsewhere) is decided in `session_socket`;
+    // the container records which one it was created with.
+    let socket_mount = crate::server::session_socket::socket_mount_paths(session_id).and_then(
+        |(host, container)| {
+            crate::server::session_socket::socket_mount_label(session_id)
+                .map(|label| (host, container, label))
+        },
+    );
+    let socket_mount = match socket_mount {
+        Ok(mount) => Some(mount),
+        Err(error) => {
+            log::warn!("No Session API socket mount for {session_id}: {error}");
+            None
+        }
+    };
 
-    let expected_mount = expected_sock_dir.as_ref().map(|d| d.to_string_lossy());
+    let expected_mount = socket_mount.as_ref().map(|(_, _, label)| label.as_str());
     let needs_creation = if docker_container_exists(container_name).await? {
         verify_container_label(container_name, session_id).await?;
         let actual_mount = docker_container_socket_mount(container_name).await?;
-        if is_socket_mount_stale(actual_mount.as_deref(), expected_mount.as_deref()) {
+        if is_socket_mount_stale(actual_mount.as_deref(), expected_mount) {
             log::warn!(
                 "Container '{container_name}' has a stale or missing socket mount; recreating it (state outside mounts is lost)"
             );
@@ -135,27 +143,19 @@ pub(super) async fn ensure_bash_image_contract(
         let mut cmd = AsyncCommand::new("docker");
         apply_docker_cli_env(&mut cmd);
         cmd.args(["run", "-d", "--name", container_name, "--label", &label]);
-        if let Some(sock_dir) = &expected_sock_dir {
+        if let Some((_, _, label)) = &socket_mount {
             cmd.args([
                 "--label",
                 &format!(
-                    "{}={}",
-                    crate::server::session_socket::CONTAINER_SOCKET_MOUNT_LABEL,
-                    sock_dir.display()
+                    "{}={label}",
+                    crate::server::session_socket::CONTAINER_SOCKET_MOUNT_LABEL
                 ),
             ]);
         }
         cmd.args(volume_args);
         cmd.args(["-w", &workdir]);
-        // The session's Session API socket directory, mounted at /run/libragent.
-        // Recreating the socket file on host restart remains visible inside the container
-        // without recreating the container.
-        if let Some(sock_dir) = &expected_sock_dir {
-            cmd.arg("-v").arg(format!(
-                "{}:{}",
-                sock_dir.display(),
-                crate::server::session_socket::CONTAINER_SOCKET_DIR
-            ));
+        if let Some((host, container, _)) = &socket_mount {
+            cmd.arg("-v").arg(format!("{}:{container}", host.display()));
         }
 
         if let Some(config) = &session.docker_config {
@@ -182,13 +182,6 @@ pub(super) async fn ensure_bash_image_contract(
         reporter("Verifying shell");
     }
     let shell = ensure_supported_shell(session_id, container_name).await?;
-    // The runtime counts as ready only once the relay has answered, so the first command of the
-    // session already sees `$LIBRAGENT_WAKE_URL`. A relay that cannot start leaves the session
-    // without a URL (ensure_relay logs why); provisioning itself does not fail for it.
-    if let Some(reporter) = reporter {
-        reporter("Starting session relay");
-    }
-    super::ensure_relay_for_container(session_id, container_name).await;
     Ok(shell)
 }
 
@@ -401,6 +394,18 @@ mod tests {
     }
 
     #[test]
+    fn a_container_made_with_the_other_mount_kind_is_stale() {
+        assert!(is_socket_mount_stale(
+            Some("dir:/data/sock/s1"),
+            Some("file:/data/sock/s1/api.sock@gen-1")
+        ));
+        assert!(is_socket_mount_stale(
+            Some("file:/data/sock/s1/api.sock@gen-1"),
+            Some("dir:/data/sock/s1")
+        ));
+    }
+
+    #[test]
     fn no_expected_mount_is_not_stale() {
         assert!(!is_socket_mount_stale(Some("/path/to/sock"), None));
         assert!(!is_socket_mount_stale(None, None));
@@ -408,57 +413,41 @@ mod tests {
         assert!(!is_socket_mount_stale(Some("/path/to/sock"), Some("   ")));
     }
 
-    /// Runs against a real Docker daemon; skipped where there is none or no small image.
-    async fn docker_test_container(name: &str, owner: &str) -> bool {
-        let _ = AsyncCommand::new("docker")
-            .args(["rm", "-f", name])
-            .output()
-            .await;
-        let started = AsyncCommand::new("docker")
-            .args([
-                "run",
-                "-d",
-                "--name",
-                name,
-                "--label",
-                &format!("com.libragent.session_id={owner}"),
-                "python:3.13-slim",
-                "sleep",
-                "60",
-            ])
-            .output()
-            .await;
-        matches!(started, Ok(output) if output.status.success())
-    }
-
+    #[cfg(unix)]
     #[tokio::test]
-    async fn removal_checks_the_owner_label_and_forgets_the_relay() {
-        let name = "libragent-test-remove-label";
-        if !docker_test_container(name, "owner-session").await {
-            eprintln!("skipped: no Docker daemon or image");
-            return;
-        }
+    async fn removal_checks_the_owner_label_then_forgets_the_relay_and_removes() {
+        use super::super::relay::tests::FakeDocker;
+        // A container owned by "owner-session": `inspect` answers its label.
+        let docker = FakeDocker::with_script(
+            "",
+            r#"case "$*" in *com.libragent.session_id*) echo owner-session; exit 0;; esac"#,
+        );
 
         // Another session must not be able to delete this container.
-        let refused = remove_managed_container("other-session", name).await;
+        let refused = remove_managed_container("other-session", "c-owned").await;
         assert!(matches!(
             refused,
             Err(WorkspaceRuntimeError::OwnershipMismatch { .. })
         ));
-        assert!(docker_container_exists(name).await.unwrap());
+        assert!(!docker.calls().iter().any(|call| call.starts_with("rm ")));
 
-        // The owner can: the relay is forgotten and the container is gone.
+        // The owner can: the relay flag is cleared, then the container is removed.
         crate::server::session_socket::mark_relay_ready("owner-session");
-        remove_managed_container("owner-session", name)
+        remove_managed_container("owner-session", "c-owned")
             .await
             .unwrap();
-        assert!(!docker_container_exists(name).await.unwrap());
+        let calls = docker.calls();
+        let label = calls
+            .iter()
+            .rposition(|call| call.contains("com.libragent.session_id"))
+            .expect("label checked");
+        let removed = calls
+            .iter()
+            .position(|call| call == "rm -f -v c-owned")
+            .expect("container removed");
+        assert!(label < removed, "{calls:?}");
         assert!(!crate::server::session_socket::is_reachable_from_container(
             "owner-session"
         ));
-        let _ = AsyncCommand::new("docker")
-            .args(["rm", "-f", name])
-            .output()
-            .await;
     }
 }
