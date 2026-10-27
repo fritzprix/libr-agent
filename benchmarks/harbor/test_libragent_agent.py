@@ -27,6 +27,7 @@ from benchmarks.harbor.libragent_agent import (
     extract_trajectory_error,
     extract_version_from_health_payload,
     format_harbor_model_name,
+    INSTANCE_SANDBOX_ENV,
     is_workflow_complete,
     normalize_session_messages,
     read_repo_package_version,
@@ -309,21 +310,6 @@ async def test_download_container_workdir_skips_root_workdir() -> None:
         label="final",
     )
     assert calls == []
-
-
-def test_attach_session_payload_shape() -> None:
-    """Document expected dockerConfig when Harbor main container is resolved."""
-    payload = {
-        "workspaceIsolation": "docker",
-        "dockerConfig": {
-            "attachContainer": "cid123",
-            "workdir": "/workspace",
-            "manageLifecycle": False,
-        },
-    }
-    assert payload["dockerConfig"]["manageLifecycle"] is False
-    assert payload["dockerConfig"]["workdir"] == "/workspace"
-    assert "image" not in payload["dockerConfig"]
 
 
 def test_format_harbor_model_name() -> None:
@@ -888,7 +874,7 @@ def test_adapter_writes_benchmark_contract(
         session_id="session-1",
         container_id="container-1",
         container_workdir="/app",
-        workspace_mode="attach",
+        workspace_mode="managed",
         started_at="2026-08-28T00:00:00+00:00",
         session_info={
             "status": "busy",
@@ -913,7 +899,7 @@ def test_adapter_writes_benchmark_contract(
         "harbor_reported": "NovitaAI/Qwen3.6",
         "session_effective": "openai/Qwen3.6",
     }
-    assert payload["execution"]["workspace_mode"] == "attach"
+    assert payload["execution"]["workspace_mode"] == "managed"
     assert payload["execution"]["max_input_context"] == 42_500
     assert payload["harbor"]["n_attempts"] == "5"
     assert payload["harbor"]["concurrency"] == "2"
@@ -950,7 +936,6 @@ def test_extract_version_from_health_payload() -> None:
 
 
 def test_workspace_mode_name() -> None:
-    assert workspace_mode_name("attach") == "attach"
     assert workspace_mode_name("managed") == "managed"
     assert workspace_mode_name("host") == "host-sync"
 
@@ -975,9 +960,16 @@ def test_docker_inspect_helpers_read_container_config(
     assert calls[0] == ["docker", "inspect", "-f", "{{.Config.Image}}", "c1"]
 
 
-def test_resolve_workspace_mode_defaults_to_attach() -> None:
-    assert resolve_workspace_mode({}) == "attach"
+def test_resolve_workspace_mode_defaults_to_host() -> None:
+    assert resolve_workspace_mode({INSTANCE_SANDBOX_ENV: "1"}) == "host"
+    with pytest.raises(RuntimeError, match="--isolated"):
+        resolve_workspace_mode({})
     assert resolve_workspace_mode({"LIBRAGENT_HARBOR_WORKSPACE_MODE": " Managed "}) == "managed"
+
+
+def test_resolve_workspace_mode_rejects_attach() -> None:
+    with pytest.raises(RuntimeError, match="must be one of"):
+        resolve_workspace_mode({"LIBRAGENT_HARBOR_WORKSPACE_MODE": "attach"})
 
 
 def test_resolve_workspace_mode_rejects_unknown_mode() -> None:
@@ -1097,7 +1089,7 @@ async def test_dump_incomplete_diagnostics_writes_trajectory_and_meta(
         seen_non_idle=True,
         reason="harbor_cancelled",
         last_session_info={"model": "openai/gpt-5.4"},
-        workspace_mode="attach",
+        workspace_mode="managed",
         context=context,
     )
 
@@ -1109,7 +1101,7 @@ async def test_dump_incomplete_diagnostics_writes_trajectory_and_meta(
     assert meta["reason"] == "harbor_cancelled"
     assert meta["tool_calls_count"] == 1
     assert meta["last_status"] == "busy"
-    assert meta["workspaceMode"] == "attach"
+    assert meta["workspaceMode"] == "managed"
     assert meta["last_tool_call"] == {
         "tool_call_id": "c1",
         "function_name": "workspace__runShell",

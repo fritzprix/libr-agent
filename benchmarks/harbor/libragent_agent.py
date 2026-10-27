@@ -2,16 +2,15 @@
 
 Bridges Harbor's terminal-benchmark loop to LibrAgent's headless Session API.
 
-When the Harbor environment is a local Docker Compose trial, the adapter attaches
-LibrAgent's Docker session to Harbor's existing main container. Workdir is taken
-from task config when set; otherwise from the container image WORKDIR (often
-`/workspace` for Harbor Index / BixBench, `/app` for classic Terminal-Bench).
+LibrAgent runs either as a host workspace session (default) or as a
+LibrAgent-managed Docker session built from the task image; both sync the task
+workdir to a host workspace and back. The workdir is taken from task config when
+set; otherwise from the container image WORKDIR (often `/workspace` for Harbor
+Index / BixBench, `/app` for classic Terminal-Bench).
 
 Resolved workdirs are verified with ``docker exec test -d`` when a container id
 is available. Image WORKDIR metadata alone is not trusted — OSWorld QEMU host
 images may advertise ``/app`` even though that path does not exist.
-
-Non-Docker Harbor backends fall back to the legacy host-workspace sync path.
 """
 
 from __future__ import annotations
@@ -315,14 +314,13 @@ def extract_version_from_health_payload(payload: Any) -> str | None:
 
 
 WORKSPACE_MODE_ENV = "LIBRAGENT_HARBOR_WORKSPACE_MODE"
-# attach: LibrAgent attaches to the Harbor container (bench-only path).
 # managed: LibrAgent creates its own Docker session from the task image (product path).
 # host: LibrAgent runs on the host workspace (product path; needs a sandboxed HOME).
-WORKSPACE_MODES = ("attach", "managed", "host")
+WORKSPACE_MODES = ("managed", "host")
 
 
 def resolve_workspace_mode(env_map: dict[str, str]) -> str:
-    mode = env_map.get(WORKSPACE_MODE_ENV, "").strip().lower() or "attach"
+    mode = env_map.get(WORKSPACE_MODE_ENV, "").strip().lower() or "host"
     if mode not in WORKSPACE_MODES:
         raise RuntimeError(
             f"{WORKSPACE_MODE_ENV} must be one of {', '.join(WORKSPACE_MODES)} (got {mode!r})."
@@ -331,7 +329,7 @@ def resolve_workspace_mode(env_map: dict[str, str]) -> str:
         raise RuntimeError(
             f"{WORKSPACE_MODE_ENV}=host runs task commands on this machine; "
             "use `run-harbor-bench.cjs --isolated --workspace-mode host` so the bench "
-            "instance runs in a filesystem sandbox."
+            "instance runs in a filesystem sandbox, or pass `--workspace-mode managed`."
         )
     return mode
 
@@ -1250,7 +1248,7 @@ def resolve_container_workdir(
     Priority (each candidate must exist in the container when ``container_id``
     is set):
     1. Harbor task ``[environment].workdir`` when the task sets it explicitly
-    2. Docker image WORKDIR of the attached Harbor main container
+    2. Docker image WORKDIR of the Harbor main container
     3. Live ``docker exec … pwd`` (container process cwd)
     4. Common existing roots (``/workspace``, ``/home/agent``, ``/osworld``, …)
     5. Last-resort ``/app`` only when that directory exists (or no container id)
@@ -1298,7 +1296,7 @@ def resolve_container_workdir(
 
     safe_print(
         "[LibrAgent] Warning: no usable container workdir found "
-        f"(including /app missing in {container_id}); using / as attach root"
+        f"(including /app missing in {container_id}); using / as root"
     )
     return "/"
 
@@ -1309,7 +1307,7 @@ def resolve_harbor_main_container_id(environment: BaseEnvironment) -> str | None
     if not session_id:
         safe_print(
             "[LibrAgent] Warning: Harbor environment has no session_id; "
-            "cannot resolve Compose main container for attach."
+            "cannot resolve Compose main container."
         )
         return None
 
@@ -1354,7 +1352,7 @@ def resolve_harbor_main_container_id(environment: BaseEnvironment) -> str | None
     safe_print(
         f"[LibrAgent] Warning: no running Compose service '{MAIN_COMPOSE_SERVICE}' "
         f"for project={project!r} (session_id={session_id!r}). "
-        "If Harbor's sanitizer differs, attach will be skipped and host-sync fallback used."
+        "If Harbor's sanitizer differs, the container id stays unresolved."
     )
     return None
 
@@ -1593,7 +1591,6 @@ class LibrAgentHarborAdapter(BaseAgent):
 
         container_id = resolve_harbor_main_container_id(environment)
         container_workdir = resolve_container_workdir(environment, container_id)
-        attach_container_id = container_id
         requested_mode = resolve_workspace_mode(dict(os.environ))
         managed_image: str | None = None
         if requested_mode == "managed":
@@ -1605,14 +1602,8 @@ class LibrAgentHarborAdapter(BaseAgent):
                     "Managed workspace mode needs the Harbor container image; "
                     f"could not resolve it from container {container_id!r}."
                 )
-        if requested_mode == "attach" and attach_container_id is None:
-            workspace_mode = "host"
-        else:
-            workspace_mode = requested_mode
-        use_attach = workspace_mode == "attach"
+        workspace_mode = requested_mode
 
-        local_workspace: Path | None = None
-        local_workspace_str: str | None = None
         # Host side of the bench sandbox's /app when host mode was requested.
         sandbox_app_dir: Path | None = None
         if requested_mode == "host":
@@ -1628,34 +1619,22 @@ class LibrAgentHarborAdapter(BaseAgent):
                 )
             sandbox_app_dir = trial_reset.layout.app_dir
 
-        if use_attach:
-            safe_print(
-                f"[{self.name()}] Attaching LibrAgent Docker session to Harbor "
-                f"container {attach_container_id} (workdir={container_workdir})..."
-            )
-        else:
-            local_workspace = sandbox_app_dir or self._resolve_local_workspace(
-                environment, context
-            )
-            local_workspace_str = str(local_workspace.resolve().absolute())
-            os.makedirs(local_workspace_str, exist_ok=True)
-            if workspace_mode == requested_mode:
-                safe_print(
-                    f"[{self.name()}] Workspace mode {workspace_mode}: staging "
-                    f"{container_workdir} into {local_workspace_str}."
-                )
-            else:
-                safe_print(
-                    f"[{self.name()}] Harbor container id not resolved; falling back to "
-                    f"host workspace sync ({local_workspace_str})."
-                )
-            await self._download_container_workdir(
-                environment,
-                container_id=attach_container_id,
-                container_workdir=container_workdir,
-                target_dir=local_workspace_str,
-                label="initial",
-            )
+        local_workspace = sandbox_app_dir or self._resolve_local_workspace(
+            environment, context
+        )
+        local_workspace_str = str(local_workspace.resolve().absolute())
+        os.makedirs(local_workspace_str, exist_ok=True)
+        safe_print(
+            f"[{self.name()}] Workspace mode {workspace_mode}: staging "
+            f"{container_workdir} into {local_workspace_str}."
+        )
+        await self._download_container_workdir(
+            environment,
+            container_id=container_id,
+            container_workdir=container_workdir,
+            target_dir=local_workspace_str,
+            label="initial",
+        )
 
         raw_context_task_id = getattr(context, "task_id", None)
         context_task_id = (
@@ -1680,14 +1659,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                 f"{max_input_context} (task={task_id})"
             )
 
-        if use_attach and attach_container_id is not None:
-            payload["workspaceIsolation"] = "docker"
-            payload["dockerConfig"] = {
-                "attachContainer": attach_container_id,
-                "workdir": container_workdir,
-                "manageLifecycle": False,
-            }
-        elif managed_image is not None:
+        if managed_image is not None:
             payload["workspacePath"] = local_workspace_str
             payload["workspaceIsolation"] = "docker"
             payload["dockerConfig"] = {
@@ -1702,9 +1674,7 @@ class LibrAgentHarborAdapter(BaseAgent):
             payload["workspaceIsolation"] = "host"
 
         async with httpx.AsyncClient(timeout=600.0) as client:
-            if use_attach:
-                mode_desc = f"attach:{attach_container_id}"
-            elif managed_image is not None:
+            if managed_image is not None:
                 mode_desc = f"managed:{managed_image}:{local_workspace_str}"
             else:
                 mode_desc = f"host:{local_workspace_str}"
@@ -1730,38 +1700,11 @@ class LibrAgentHarborAdapter(BaseAgent):
                 f"(executionMode={self.execution_mode}). Awaiting execution completion..."
             )
 
-            # In attach/docker mode, download initial container files to host staging workspace
-            # so that host-based file search tools (like globFiles, grepFiles) can find them.
-            initial_session_info: dict[str, Any] | None = None
-            if use_attach:
-                try:
-                    session_res = await client.get(f"{self.api_url}/sessions/{session_id}")
-                    if session_res.status_code == 200:
-                        session_info = session_res.json()
-                        if isinstance(session_info, dict):
-                            initial_session_info = session_info
-                        host_workspace = session_info.get("dockerHostWorkspacePath")
-                        if host_workspace:
-                            host_workspace_path = Path(host_workspace)
-                            os.makedirs(host_workspace_path, exist_ok=True)
-                            await self._download_container_workdir(
-                                environment,
-                                container_id=attach_container_id,
-                                container_workdir=container_workdir,
-                                target_dir=str(
-                                    host_workspace_path.resolve().absolute()
-                                ),
-                                label="initial staging",
-                            )
-                except Exception as e:
-                    safe_print(
-                        f"[{self.name()}] Warning: failed to pull initial container files to host staging: {e}"
-                    )
-            last_session_info: dict[str, Any] | None = initial_session_info
+            last_session_info: dict[str, Any] | None = None
             self._write_benchmark_contract(
                 task_id=task_id,
                 session_id=session_id,
-                container_id=attach_container_id,
+                container_id=container_id,
                 container_workdir=container_workdir,
                 workspace_mode=workspace_mode_name(workspace_mode),
                 started_at=session_started_at_utc,
@@ -1899,47 +1842,31 @@ class LibrAgentHarborAdapter(BaseAgent):
                     f"workflow (last status={last_status})."
                 )
 
-            if not use_attach and local_workspace is not None:
-                safe_print(
-                    f"[{self.name()}] Pushing updated workspace files from "
-                    f"{local_workspace} to container {container_workdir}..."
-                )
-                try:
-                    await self._upload_workspace(
-                        environment,
-                        local_workspace,
-                        container_workdir,
-                    )
-                    safe_print(f"[{self.name()}] Successfully pushed workspace files.")
-                    if sandbox_app_dir is not None:
-                        # The next relaunch wipes the sandbox; keep the trial artifact.
-                        await asyncio.to_thread(
-                            shutil.copytree,
-                            sandbox_app_dir,
-                            self._resolve_local_workspace(environment, context),
-                            symlinks=True,
-                            dirs_exist_ok=True,
-                        )
-                except Exception as e:
-                    await self._delete_session(session_id)
-                    raise RuntimeError(
-                        f"Error pushing workspace files back to container: {e}"
-                    ) from e
-            elif use_attach:
-                safe_print(
-                    f"[{self.name()}] Attach mode: skipping host→container upload "
-                    f"(agent wrote in-place under {container_workdir})."
-                )
-                local_workspace = self._resolve_local_workspace(environment, context)
-                local_workspace_str = str(local_workspace.resolve().absolute())
-                os.makedirs(local_workspace_str, exist_ok=True)
-                await self._download_container_workdir(
+            safe_print(
+                f"[{self.name()}] Pushing updated workspace files from "
+                f"{local_workspace} to container {container_workdir}..."
+            )
+            try:
+                await self._upload_workspace(
                     environment,
-                    container_id=attach_container_id,
-                    container_workdir=container_workdir,
-                    target_dir=local_workspace_str,
-                    label="final",
+                    local_workspace,
+                    container_workdir,
                 )
+                safe_print(f"[{self.name()}] Successfully pushed workspace files.")
+                if sandbox_app_dir is not None:
+                    # The next relaunch wipes the sandbox; keep the trial artifact.
+                    await asyncio.to_thread(
+                        shutil.copytree,
+                        sandbox_app_dir,
+                        self._resolve_local_workspace(environment, context),
+                        symlinks=True,
+                        dirs_exist_ok=True,
+                    )
+            except Exception as e:
+                await self._delete_session(session_id)
+                raise RuntimeError(
+                    f"Error pushing workspace files back to container: {e}"
+                ) from e
 
             messages_res = await client.get(
                 f"{self.api_url}/sessions/{session_id}/messages",
@@ -2042,7 +1969,6 @@ class LibrAgentHarborAdapter(BaseAgent):
                 "sessionId": session_id,
                 "finalStatus": last_status,
                 "completed": True,
-                "attachContainer": attach_container_id,
                 "workspaceMode": workspace_mode_name(workspace_mode),
                 "assistant_id": self.assistant_id,
                 "n_turns": telemetry.n_turns,
@@ -2067,8 +1993,7 @@ class LibrAgentHarborAdapter(BaseAgent):
             )
 
             # Harvest + ATIF dump finished; delete the LibrAgent session so it
-            # does not linger (and, in attach mode, keep writing into Harbor's
-            # container) after Harbor moves on to the next task. DELETE also
+            # does not linger after Harbor moves on to the next task. DELETE also
             # terminates any still-running workflow before removing DB/workspace.
             await self._delete_session(session_id)
 
