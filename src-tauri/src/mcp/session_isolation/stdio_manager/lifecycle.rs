@@ -89,7 +89,23 @@ impl SessionMCPManager {
             .or_insert_with(|| Arc::new(Mutex::new(())))
             .clone();
 
-        let _guard = spawn_lock.lock().await;
+        // Bounded by the same timeout as the initialize: while background discovery holds the
+        // lock for a slow server, a tool call must not wait longer than its configured
+        // startup timeout.
+        let _guard = tokio::time::timeout(init_timeout, spawn_lock.lock())
+            .await
+            .map_err(|_| {
+                warn!(
+                    "MCP server '{}' is still starting for session '{}'; gave up waiting for it after {}s",
+                    server_name,
+                    self.session_id,
+                    init_timeout.as_secs()
+                );
+                SessionMCPError::InitTimeout(format!(
+                    "{} is still starting; try again shortly",
+                    server_name
+                ))
+            })?;
 
         if self.shutdown_token.is_cancelled() {
             return Err(SessionMCPError::SessionClosed);

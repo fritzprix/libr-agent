@@ -539,3 +539,36 @@ async fn shutdown_ends_a_pending_initialize() {
     assert!(matches!(result, Err(SessionMCPError::SessionClosed)));
     assert!(manager.active_processes.read().await.is_empty());
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn tool_call_does_not_wait_on_discovery_holding_the_spawn_lock() {
+    let manager = create_silent_server_manager(1);
+
+    // Discovery holds the spawn lock while the slow server initializes.
+    let discovery = {
+        let manager = manager.clone();
+        tokio::spawn(async move {
+            manager
+                .list_tools_with_init_timeout("silent", Duration::from_secs(600))
+                .await
+        })
+    };
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    let started = std::time::Instant::now();
+    let result = manager
+        .call_tool("silent", "any_tool", serde_json::json!({}))
+        .await;
+
+    match result {
+        Err(SessionMCPError::InitTimeout(message)) => {
+            assert!(message.contains("still starting"), "{message}")
+        }
+        other => panic!("expected a still-starting error, got {other:?}"),
+    }
+    assert!(started.elapsed() < Duration::from_secs(10));
+    assert!(!discovery.is_finished(), "discovery keeps loading");
+
+    manager.shutdown_all().await;
+}
