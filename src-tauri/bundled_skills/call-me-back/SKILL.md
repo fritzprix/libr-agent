@@ -59,14 +59,10 @@ Prefer one `waitForProcess` over repeated short waits or clock callbacks.
 
 ### A2. Long local job — end the turn, get woken
 
-Use this only when `$LIBRAGENT_WAKE_URL` is set. The variable is injected only into `runShell` /
-`spawnProcess` environments, so test it there with `[ -n "$LIBRAGENT_WAKE_URL" ]` (never print it); set
-means a host session. Otherwise nothing will wake you after the turn ends:
-always block on `workspace__waitForProcess` (section A).
-
 For jobs that run many minutes (long builds, training), do not hold the turn in
-`waitForProcess`. `runShell` / `spawnProcess` on host workspaces export
-`$LIBRAGENT_WAKE_URL`, a tokenized wake URL for **this** session only.
+`waitForProcess`. `runShell` / `spawnProcess` export `$LIBRAGENT_WAKE_URL`, a tokenized wake
+URL for **this** session only. It has the same form in host sessions and in managed Docker
+sessions.
 
 1. Start the job with an unconditional callback (fires on success **and** failure):
    `long_cmd > job.log 2>&1; curl -s -X POST "$LIBRAGENT_WAKE_URL" -H 'Content-Type: application/json' -d "{\"exitCode\":$?,\"logPath\":\"job.log\"}"`
@@ -80,7 +76,9 @@ Payload fields (all optional): `status` (`success`/`failure`, else derived from
 `exitCode`), `exitCode`, `summary`, `logPath`.
 
 - Never `echo` / print `$LIBRAGENT_WAKE_URL` or paste its value into files or replies.
-- Not set in Docker-isolated sessions; use `waitForProcess` there.
+- If `$LIBRAGENT_WAKE_URL` is unset, this session has no wake path (for example a Docker
+  container created before the wake socket existed): tell the user, instead of hooking a
+  callback that cannot fire.
 - The token is revoked when the session is terminated or deleted, and does not
   survive an app restart; late callbacks get `401`. If no callback came, check
   `job.log` yourself.
