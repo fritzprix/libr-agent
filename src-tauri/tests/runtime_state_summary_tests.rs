@@ -84,7 +84,7 @@ fn recompute_summary_finalizes_to_degraded_after_bootstrap() {
     );
     assert_eq!(
         state.initialization.error.as_deref(),
-        Some("1 of 2 external servers failed or timed out during initialization")
+        Some("1 of 2 external servers failed during initialization")
     );
     assert!(state.proxy.ready);
 }
@@ -120,11 +120,14 @@ fn finalize_discovery_timeout_marks_pending_servers_and_sets_ready() {
         Some("discovery soft timeout")
     );
     assert_eq!(state.servers[1].status, SessionRuntimeServerStatus::Ready);
-    assert_eq!(state.phase, SessionRuntimePhase::Degraded);
+    // A timed-out server is "still starting", not a failure: the session is Ready, without an
+    // error, and the slow server adds its tools when it comes up.
+    assert_eq!(state.phase, SessionRuntimePhase::Ready);
     assert_eq!(
         state.initialization.result,
-        SessionRuntimeInitResult::Partial
+        SessionRuntimeInitResult::Success
     );
+    assert_eq!(state.initialization.error, None);
     assert!(state.proxy.ready);
 }
 
@@ -155,20 +158,57 @@ fn finalize_discovery_timeout_is_idempotent_after_bootstrap() {
 }
 
 #[test]
-fn finalize_discovery_timeout_all_pending_becomes_failed_but_ready_with_proxy() {
+fn finalize_discovery_timeout_all_pending_leaves_the_session_ready_without_an_error() {
     let mut state = configured_state();
     state.set_proxy_exists(true);
 
     assert!(state.finalize_discovery_timeout("deadline exceeded"));
 
+    // Every server timed out, none failed: the session is usable and nothing is reported as
+    // a failure, so the UI does not show an initialization error for a slow start.
     assert!(state
         .servers
         .iter()
         .all(|s| s.status == SessionRuntimeServerStatus::TimedOut));
-    assert_eq!(state.phase, SessionRuntimePhase::Failed);
+    assert_eq!(state.phase, SessionRuntimePhase::Ready);
     assert_eq!(
         state.initialization.result,
-        SessionRuntimeInitResult::Failed
+        SessionRuntimeInitResult::Success
+    );
+    assert_eq!(state.initialization.error, None);
+    assert!(state.proxy.ready);
+}
+
+#[test]
+fn a_failed_server_next_to_a_timed_out_one_degrades_the_session() {
+    let mut state = configured_state();
+    state.set_proxy_exists(true);
+    state.upsert_server(
+        "alpha",
+        SessionRuntimeTransport::Stdio,
+        SessionRuntimeServerStatus::Failed,
+        0,
+        Some("alpha failed".to_string()),
+    );
+    state.upsert_server(
+        "beta",
+        SessionRuntimeTransport::Http,
+        SessionRuntimeServerStatus::Connecting,
+        0,
+        None,
+    );
+
+    assert!(state.finalize_discovery_timeout("deadline exceeded"));
+
+    assert_eq!(state.servers[0].status, SessionRuntimeServerStatus::Failed);
+    assert_eq!(
+        state.servers[1].status,
+        SessionRuntimeServerStatus::TimedOut
+    );
+    assert_eq!(state.phase, SessionRuntimePhase::Degraded);
+    assert_eq!(
+        state.initialization.error.as_deref(),
+        Some("1 of 2 external servers failed during initialization")
     );
     assert!(state.proxy.ready);
 }
