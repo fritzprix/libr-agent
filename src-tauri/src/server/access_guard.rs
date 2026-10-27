@@ -81,13 +81,22 @@ pub fn access_guard(expose: bool) -> impl Filter<Extract = (), Error = Rejection
         .untuple_one()
 }
 
-pub async fn handle_rejection(err: Rejection) -> Result<impl Reply, Rejection> {
+pub async fn handle_rejection(err: Rejection) -> Result<warp::reply::Response, Rejection> {
     if let Some(denied) = err.find::<AccessDenied>() {
         let body = serde_json::json!({ "error": denied.reason });
-        return Ok(warp::reply::with_status(
-            warp::reply::json(&body),
-            StatusCode::FORBIDDEN,
-        ));
+        return Ok(
+            warp::reply::with_status(warp::reply::json(&body), StatusCode::FORBIDDEN)
+                .into_response(),
+        );
+    }
+    if err.find::<super::api_key::Unauthorized>().is_some() {
+        let body = serde_json::json!({ "error": "missing or invalid API key" });
+        return Ok(warp::reply::with_header(
+            warp::reply::with_status(warp::reply::json(&body), StatusCode::UNAUTHORIZED),
+            "www-authenticate",
+            "Bearer",
+        )
+        .into_response());
     }
     Err(err)
 }
