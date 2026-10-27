@@ -16,8 +16,16 @@ pub fn normalize_docker_arch(arch: &str) -> String {
     }
 }
 
+/// The architecture of the image a container runs. A container has no `.Architecture` of its
+/// own, so it is read from the image; an empty answer is an error, never the host's guess.
 pub(super) async fn docker_container_architecture(container_name: &str) -> RuntimeResult<String> {
-    let arch = docker_output(["inspect", "-f", "{{.Architecture}}", container_name]).await?;
+    let image = docker_output(["inspect", "-f", "{{.Image}}", container_name]).await?;
+    let arch = docker_output(["image", "inspect", "-f", "{{.Architecture}}", &image]).await?;
+    if arch.trim().is_empty() {
+        return Err(WorkspaceRuntimeError::DockerCommandFailed(format!(
+            "image {image} of '{container_name}' reports no architecture"
+        )));
+    }
     Ok(normalize_docker_arch(&arch))
 }
 
@@ -169,4 +177,38 @@ pub(super) fn apply_docker_cli_env(cmd: &mut AsyncCommand) {
     // flag every runShell/docker exec flashes a terminal window.
     crate::utils::platform::suppress_console_window_async(cmd);
     crate::utils::env::apply_isolated_env_async(cmd);
+}
+
+#[cfg(all(test, unix))]
+mod architecture_tests {
+    use super::*;
+    use crate::services::workspace_runtime_manager::relay::tests::FakeDocker;
+
+    #[tokio::test]
+    async fn the_architecture_is_read_from_the_containers_image() {
+        let docker = FakeDocker::with_script(
+            "",
+            r#"case "$*" in "inspect -f {{.Image}} c-arch") echo sha256:img; exit 0;; "image inspect -f {{.Architecture}} sha256:img") echo arm64; exit 0;; esac"#,
+        );
+        assert_eq!(
+            docker_container_architecture("c-arch").await.unwrap(),
+            "aarch64"
+        );
+        assert_eq!(
+            docker.calls(),
+            vec![
+                "inspect -f {{.Image}} c-arch".to_string(),
+                "image inspect -f {{.Architecture}} sha256:img".to_string(),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn an_image_without_an_architecture_is_an_error_not_the_hosts() {
+        let _docker = FakeDocker::with_script(
+            "",
+            r#"case "$*" in "inspect -f {{.Image}} c-none") echo sha256:img; exit 0;; "image inspect "*) echo; exit 0;; esac"#,
+        );
+        assert!(docker_container_architecture("c-none").await.is_err());
+    }
 }
