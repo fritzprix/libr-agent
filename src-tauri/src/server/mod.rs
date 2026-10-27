@@ -3,6 +3,7 @@ pub mod handlers;
 pub mod mcp_handler;
 pub mod routes;
 pub mod wake;
+pub mod wake_listener;
 
 use log::info;
 use std::sync::atomic::{AtomicU16, Ordering};
@@ -110,6 +111,13 @@ pub async fn init(
             let _ = std::fs::create_dir_all(&dir);
             let _ = std::fs::write(dir.join("http_port"), bound_port.to_string());
         }
+    }
+
+    match wake_listener::start(agent_manager.clone()) {
+        Ok(port) => info!("Wake-only listener for Docker sessions on port {port}"),
+        Err(error) => log::warn!(
+            "Wake-only listener failed to start; Docker sessions get no wake URL: {error}"
+        ),
     }
 
     let routes = routes::get_routes(agent_manager, mcp_enabled, app_control_enabled, expose);
