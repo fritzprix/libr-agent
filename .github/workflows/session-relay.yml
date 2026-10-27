@@ -1,0 +1,67 @@
+name: Session relay
+
+# Builds the static session-relay binaries that the app embeds and starts inside managed Docker
+# session containers (see docs/architecture/session-wake-contract.md). The binaries are never
+# committed; a build that wants the relay downloads the `session-relay-*` artifacts into one
+# directory and points LIBRAGENT_RELAY_DIR at it.
+
+on:
+  workflow_call:
+  pull_request:
+    branches: [main, master, 'dev/*']
+    paths:
+      - 'src-tauri/session-relay/**'
+      - '.github/workflows/session-relay.yml'
+
+jobs:
+  build:
+    name: Build ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install musl tools
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Test
+        working-directory: src-tauri
+        run: cargo test -p session-relay --bin session-relay --target ${{ matrix.target }}
+
+      - name: Build
+        working-directory: src-tauri
+        run: cargo build -p session-relay --release --locked --target ${{ matrix.target }}
+
+      - name: Package and check it is static
+        run: |
+          mkdir -p dist
+          cp src-tauri/target/${{ matrix.target }}/release/session-relay dist/session-relay-${{ matrix.arch }}
+          file dist/session-relay-${{ matrix.arch }}
+          if ldd dist/session-relay-${{ matrix.arch }} 2>&1 | grep -qv "not a dynamic executable\|statically linked"; then
+            echo "session-relay must be statically linked"; exit 1
+          fi
+          (cd dist && sha256sum session-relay-${{ matrix.arch }} > session-relay-${{ matrix.arch }}.sha256)
+          cat dist/session-relay-${{ matrix.arch }}.sha256
+
+      - name: Upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: session-relay-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error

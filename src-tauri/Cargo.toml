@@ -143,4 +143,4 @@ debug = 0
 incremental = false
 
 [workspace]
-members = ["migration", "agent-response-guards"]
+members = ["migration", "agent-response-guards", "session-relay"]

@@ -1,0 +1,9 @@
+[package]
+name = "session-relay"
+version = "0.1.0"
+edition = "2021"
+description = "Forwards 127.0.0.1:<port> inside a managed Docker session to the session's unix socket"
+publish = false
+
+# No dependencies on purpose: the binary is built static (musl) in CI, embedded in the app, and
+# started inside session containers, so it must stay small and need nothing from the image.
