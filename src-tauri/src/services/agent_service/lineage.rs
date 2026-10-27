@@ -1,5 +1,6 @@
 use crate::agent::types::{CreateSessionRequest, SessionLineageMeta};
 use crate::repositories::session_repository::SessionRepository;
+use crate::repositories::settings_repository::SettingsRepository;
 use crate::repositories::SessionMetadata;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
