@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+"""Mock SMS monitor CLI (benchmark fixture). Records subscriptions and replies; never fires."""
+import argparse
+import json
+import sys
+import time
+from pathlib import Path
+
+STATE_DIR = Path("/app/.sms_monitor")
+SUBSCRIPTIONS = STATE_DIR / "subscriptions.json"
+REPLIES = STATE_DIR / "replies.json"
+
+
+def load(path):
+    return json.loads(path.read_text()) if path.exists() else []
+
+
+def save(path, items):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(items, indent=2))
+
+
+def now():
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def fail(message):
+    print(f"sms_monitor: error: {message}", file=sys.stderr)
+    sys.exit(2)
+
+
+def cmd_subscribe(args):
+    if not args.hook or not args.hook.strip():
+        fail("--hook COMMAND is required: the shell command to run when a message arrives.")
+    subs = load(SUBSCRIPTIONS)
+    sub = {"id": f"sub-{len(subs) + 1}", "hook": args.hook, "registered_at": now()}
+    save(SUBSCRIPTIONS, subs + [sub])
+    print(f"subscribed {sub['id']}")
+
+
+def cmd_list(_):
+    subs = load(SUBSCRIPTIONS)
+    if not subs:
+        print("no subscriptions")
+    for sub in subs:
+        print(f"{sub['id']} hook={sub['hook']}")
+
+
+def cmd_reply(args):
+    if not args.message_id.strip() or not args.message.strip():
+        fail("--message_id and --message must not be empty.")
+    replies = load(REPLIES)
+    reply = {"message_id": args.message_id, "message": args.message, "sent_at": now()}
+    save(REPLIES, replies + [reply])
+    print(f"replied to {args.message_id}")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog="sms_monitor",
+        description="Watch incoming text messages and reply to them. "
+        "A subscription runs a shell command when a message arrives.",
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+    s = sub.add_parser("subscribe", help="run a shell command when a message arrives")
+    s.add_argument("--hook", help="shell command to run when a message arrives")
+    s.set_defaults(fn=cmd_subscribe)
+    sub.add_parser("list", help="list subscriptions").set_defaults(fn=cmd_list)
+    r = sub.add_parser("reply", help="reply to a message")
+    r.add_argument("--message_id", required=True, help="id of the message to reply to")
+    r.add_argument("--message", required=True, help="reply text")
+    r.set_defaults(fn=cmd_reply)
+    args = parser.parse_args()
+    args.fn(args)
+
+
+if __name__ == "__main__":
+    main()

@@ -13,6 +13,7 @@ byte-for-byte copy so the container verifier can grade
 from __future__ import annotations
 
 import json
+import re
 import shlex
 from dataclasses import dataclass
 from pathlib import Path, PurePath
@@ -108,6 +109,18 @@ def runs_script(command: str, scripts: tuple[str, ...], _depth: int = 0) -> bool
         if names[0] in SCRIPT_LAUNCHERS and any(name in scripts for name in names):
             return True
     return False
+
+
+def calls_wake(command: str) -> bool:
+    """True when a stored command POSTs to the session wake URL.
+
+    ``"$LIBRAGENT_WAKE_URL"`` in double quotes is expanded by the shell that runs
+    the subscribe call, so the stored text then holds the ``/wake/<token>`` URL.
+    A bare mention (``echo $LIBRAGENT_WAKE_URL``) does not wake anything, so an
+    HTTP client (``curl``/``wget``) must be present too.
+    """
+    names_wake = "LIBRAGENT_WAKE_URL" in command or "/wake/" in command
+    return names_wake and re.search(r"\b(curl|wget)\b", command) is not None
 
 
 @dataclass(frozen=True)
@@ -208,10 +221,12 @@ TASKS: dict[str, TaskSpec] = {
         ),
         TaskSpec(
             "T04",
-            "t04-build-done-notify",
+            "t04-event-subscribe",
             "P",
             "call-me-back",
-            (Step("__spawnProcess"), Step("__waitForProcess")),
+            # No trajectory checks: T04 is graded only on the subscription that
+            # sms_monitor recorded (tests/test_outputs.py). Solving it with polling or
+            # callbacks fails because no hook that calls the wake URL gets registered.
         ),
         TaskSpec("T05", "t05-tell-me-later", "P", "loop", SCHEDULE_CALLBACK),
         TaskSpec(

@@ -40,8 +40,8 @@ Two graders use the same rules:
 - **Harbor reward.** Each task's `tests/test_outputs.py` grades
   `/logs/agent/trajectory.json`, which Harbor mounts from the trial's `agent/`
   directory. `tests/critical_path.py` is a copy of the shared module; a unit test
-  keeps the copies in sync. T04, T14 and T15 also check their artifact (build
-  log, summary of all 50 docs, README typo fix).
+  keeps the copies in sync. T04 (sms_monitor subscription) is graded only on its artifact; T14 and T15
+  (summary of all 50 docs, README typo fix) also check theirs.
 - **Host report.** `scripts/check-layman-intent-trajectories.py` grades a whole
   job and prints per-task, per-skill and overall routing accuracy. It matches
   trials to tasks by the `task_name` in each trial's `result.json`.
@@ -51,7 +51,7 @@ Two graders use the same rules:
 | T01 | `t01-water-reminder`          | P        | loop                | no-network |
 | T02 | `t02-watch-folder-mornings`   | P        | loop                | no-network |
 | T03 | `t03-weekday-summary`         | P        | schedule            | no-network |
-| T04 | `t04-build-done-notify`       | P        | call-me-back        | no-network |
+| T04 | `t04-event-subscribe`         | P        | call-me-back        | no-network |
 | T05 | `t05-tell-me-later`           | P        | loop                | no-network |
 | T06 | `t06-stock-data`              | P        | mcp-installer       | public     |
 | T07 | `t07-connect-npx-package`     | P        | mcp-installer       | public     |
@@ -67,6 +67,8 @@ Two graders use the same rules:
 | T17 | `t17-stock-assistant`         | P        | recruit             | no-network |
 | T18 | `t18-recall-deploy-time`      | P        | context-recall      | no-network |
 | T19 | `t19-remember-today`          | P        | knowledge-distiller | no-network |
+
+T04 (`sms_monitor`) runs in both `host` and `managed` mode with no skip. It is graded at idle on the registered hook only (it must call `$LIBRAGENT_WAKE_URL`), with no trajectory checks; the wake itself and the reply are not checked. `managed` is validated after #2346 lands.
 
 Each task directory has a `README.md` with the prompt and the expected behavior.
 
