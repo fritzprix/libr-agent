@@ -56,7 +56,8 @@ fn parse_baseline_limits(settings_json: &str) -> Result<(Option<u32>, Option<u32
 }
 
 /// Like [`parse_baseline_limits`] for callers that treat unreadable settings as unlimited.
-pub fn baseline_limits_from_settings(settings_json: &str) -> (Option<u32>, Option<u32>) {
+#[cfg(test)]
+fn baseline_limits_from_settings(settings_json: &str) -> (Option<u32>, Option<u32>) {
     parse_baseline_limits(settings_json).unwrap_or((None, None))
 }
 
