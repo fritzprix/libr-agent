@@ -184,7 +184,7 @@ async fn load_stdio_tools(
                     task_context.session_id
                 );
                 match await_tool_discovery(
-                    manager.list_tools(&server_name),
+                    manager.list_tools_with_init_timeout(&server_name, task_context.server_discovery_cap),
                     task_context.server_discovery_cap,
                     "stdio",
                     &server_name,

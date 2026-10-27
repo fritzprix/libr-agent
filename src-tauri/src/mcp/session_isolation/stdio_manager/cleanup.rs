@@ -52,6 +52,9 @@ impl SessionMCPManager {
             self.session_id
         );
 
+        // End pending server initializes so they do not outlive the session
+        self.shutdown_token.cancel();
+
         // Cancel all active calls
         let tokens = self.active_call_tokens.read().await;
         for token in tokens.values() {
