@@ -4,6 +4,9 @@
 //!
 //! Usage: `session-relay <port> [socket-path]`
 //!
+//! Prints `ready` on stdout once it is listening: the host starts it with `docker exec` and
+//! treats that line as "this relay owns the port" (a port that is already in use exits instead).
+//!
 //! Exit codes: 2 for bad arguments, 3 when the port cannot be bound (already in use), so the
 //! host can tell "do not hand out a wake URL" from a crash, and 4 when accepting connections
 //! fails for a reason that will not go away by itself (for example no file descriptors left).
@@ -79,6 +82,7 @@ async fn main() {
             std::process::exit(3);
         }
     };
+    println!("ready");
     let error = relay::serve(listener, socket_path).await;
     eprintln!("session-relay: cannot accept connections: {error}");
     std::process::exit(4);

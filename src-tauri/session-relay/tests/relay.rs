@@ -2,7 +2,7 @@
 //! arguments) and relies on it forwarding to the unix socket.
 #![cfg(unix)]
 
-use std::io::{Read, Write};
+use std::io::{BufRead, Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
 use std::os::unix::net::UnixListener;
 use std::path::PathBuf;
@@ -55,10 +55,17 @@ fn start_relay(port: u16, socket: &PathBuf) -> Relay {
     let child = Command::new(RELAY)
         .arg(port.to_string())
         .arg(socket)
+        .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
         .unwrap();
-    let relay = Relay(child);
+    let mut relay = Relay(child);
+    // `ready` is printed once the relay is listening.
+    let mut line = String::new();
+    std::io::BufReader::new(relay.0.stdout.as_mut().unwrap())
+        .read_line(&mut line)
+        .unwrap();
+    assert_eq!(line.trim(), "ready");
     let deadline = Instant::now() + Duration::from_secs(10);
     while TcpStream::connect(("127.0.0.1", port)).is_err() {
         assert!(Instant::now() < deadline, "relay did not start listening");
@@ -81,13 +88,15 @@ fn a_port_that_is_in_use_exits_with_code_3() {
     let taken = TcpListener::bind(("127.0.0.1", 0)).unwrap();
     let port = taken.local_addr().unwrap().port();
 
-    let status = Command::new(RELAY)
+    let output = Command::new(RELAY)
         .arg(port.to_string())
         .stderr(Stdio::null())
-        .status()
+        .output()
         .unwrap();
 
-    assert_eq!(status.code(), Some(3));
+    assert_eq!(output.status.code(), Some(3));
+    // Never announces itself as ready when somebody else owns the port.
+    assert!(output.stdout.is_empty());
 }
 
 #[test]

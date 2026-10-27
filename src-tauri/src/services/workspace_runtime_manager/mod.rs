@@ -1,6 +1,7 @@
 mod container;
 mod docker_cli;
 mod error;
+mod relay;
 mod session_config;
 
 use std::collections::HashSet;
@@ -96,6 +97,18 @@ impl WorkspaceRuntimeManager {
     /// Returns the cached Docker container architecture for a session, if known.
     pub fn cached_docker_arch(session_id: &str) -> Option<String> {
         DOCKER_ARCH_CACHE.get(session_id).map(|entry| entry.clone())
+    }
+
+    /// Makes sure the session's wake relay runs in its container. True when it does, so the
+    /// session may be handed `$LIBRAGENT_WAKE_URL`.
+    pub async fn ensure_session_relay(session: &SessionMetadata) -> bool {
+        let Ok(container_name) = docker_container_name(session) else {
+            return false;
+        };
+        let Some(arch) = Self::cached_docker_arch(&session.id) else {
+            return false;
+        };
+        relay::ensure_relay(&session.id, &container_name, &arch).await
     }
 
     /// Cache-aware variant used by high-frequency shell execution paths.
@@ -296,6 +309,7 @@ impl WorkspaceRuntimeManager {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 fn clear_session_docker_caches(session_id: &str) {
+    relay::forget(session_id);
     DOCKER_HEALTH_CACHE.remove(session_id);
     DOCKER_CONTAINER_READY_CACHE.remove(session_id);
     DOCKER_SHELL_CACHE.remove(session_id);

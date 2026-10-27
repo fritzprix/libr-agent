@@ -28,8 +28,8 @@ pub const CONTAINER_SOCKET_PATH: &str = "/run/libragent/api.sock";
 
 static SERVE: OnceLock<ServeSession> = OnceLock::new();
 static SERVERS: Lazy<DashMap<String, JoinHandle<()>>> = Lazy::new(DashMap::new);
-/// Sessions whose container has a running relay to the socket. Nothing sets it yet: the relay
-/// is not implemented, so no Docker session is handed a wake URL that leads nowhere.
+/// Sessions whose container has a relay that reported it is listening. Only
+/// `mark_relay_ready` adds to it, so no Docker session is handed a wake URL that leads nowhere.
 static RELAYS: Lazy<DashSet<String>> = Lazy::new(DashSet::new);
 
 /// Records how a session's socket is served. Called once by `server::init`.
@@ -62,6 +62,16 @@ pub fn socket_path(session_id: &str) -> Result<PathBuf, String> {
         ));
     }
     Ok(socket_dir()?.join(format!("{session_id}.sock")))
+}
+
+/// Records that the session's relay is listening in its container.
+pub fn mark_relay_ready(session_id: &str) {
+    RELAYS.insert(session_id.to_string());
+}
+
+/// Records that the session's relay is gone (it exited, or the container was removed).
+pub fn clear_relay(session_id: &str) {
+    RELAYS.remove(session_id);
 }
 
 /// True when the session's socket is served and its container relays `127.0.0.1` to it.

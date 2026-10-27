@@ -2,8 +2,6 @@
 //!
 //! A build without `LIBRAGENT_RELAY_DIR` embeds nothing: [`relay_binary`] is `None`, and a managed
 //! Docker session then has no relay and no `$LIBRAGENT_WAKE_URL`.
-// Used by the container start-up that follows (G12.2).
-#![allow(dead_code)]
 
 use sha2::{Digest, Sha256};
 
