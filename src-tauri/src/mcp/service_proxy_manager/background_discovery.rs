@@ -30,8 +30,17 @@ struct DiscoveryContext {
     app_handle: Option<AppHandle>,
     runtime_states: RuntimeStateStore,
     server_name_to_id: Arc<HashMap<String, String>>,
+    /// How long the session waits before it carries on without pending servers.
     tool_discovery_timeout: Duration,
+    /// Safety cap for one server; a server is only given up on after this (or on exit/error).
+    server_discovery_cap: Duration,
     runtime_state_emits: Arc<AtomicU32>,
+}
+
+fn server_discovery_cap(session_wait: Duration) -> Duration {
+    Duration::from_secs(crate::config::mcp_server_startup_cap_seconds(
+        session_wait.as_secs(),
+    ))
 }
 
 struct PanicDiscoveryResult {
@@ -176,7 +185,7 @@ async fn load_stdio_tools(
                 );
                 match await_tool_discovery(
                     manager.list_tools(&server_name),
-                    task_context.tool_discovery_timeout,
+                    task_context.server_discovery_cap,
                     "stdio",
                     &server_name,
                     &task_context.session_id,
@@ -386,7 +395,7 @@ async fn load_http_tools(
                 );
                 match await_tool_discovery(
                     manager.list_tools(&server_name),
-                    task_context.tool_discovery_timeout,
+                    task_context.server_discovery_cap,
                     "http",
                     &server_name,
                     &task_context.session_id,
@@ -519,6 +528,7 @@ pub(super) async fn spawn_background_tool_loading(
         runtime_states: manager.runtime_states.clone(),
         server_name_to_id: Arc::new(plan.server_name_to_id),
         tool_discovery_timeout: plan.tool_discovery_timeout,
+        server_discovery_cap: server_discovery_cap(plan.tool_discovery_timeout),
         runtime_state_emits: Arc::new(AtomicU32::new(0)),
     };
     tokio::spawn(async move {
@@ -705,4 +715,57 @@ async fn finish_background_discovery(
         stats.stdio_ms,
         stats.http_ms,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn server_cap_outlasts_the_session_wait() {
+        assert_eq!(server_discovery_cap(Duration::from_secs(30)).as_secs(), 600);
+        assert_eq!(
+            server_discovery_cap(Duration::from_secs(900)).as_secs(),
+            900
+        );
+    }
+
+    #[tokio::test]
+    async fn a_slow_server_is_not_given_up_at_the_session_wait() {
+        let session_wait = Duration::from_millis(20);
+        let slow = || async {
+            tokio::time::sleep(Duration::from_millis(120)).await;
+            Ok::<_, String>(3)
+        };
+
+        // The session-wait budget alone would have timed this server out (the old behavior).
+        let at_session_wait =
+            await_tool_discovery(slow(), session_wait, "stdio", "s", "sess").await;
+        assert!(at_session_wait.unwrap_err().contains("timed out"));
+
+        // With the server cap it keeps loading and becomes ready.
+        let at_cap = await_tool_discovery(
+            slow(),
+            server_discovery_cap(session_wait),
+            "stdio",
+            "s",
+            "sess",
+        )
+        .await;
+        assert_eq!(at_cap.unwrap(), 3);
+    }
+
+    #[tokio::test]
+    async fn a_server_that_errors_is_failed_immediately() {
+        let result = await_tool_discovery(
+            async { Err::<(), _>("connection closed") },
+            server_discovery_cap(Duration::from_secs(30)),
+            "stdio",
+            "s",
+            "sess",
+        )
+        .await;
+        let error = result.unwrap_err();
+        assert!(error.contains("tool discovery failed") && !error.contains("timed out"));
+    }
 }

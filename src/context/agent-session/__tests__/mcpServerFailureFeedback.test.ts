@@ -95,7 +95,7 @@ describe('collectNewMcpServerFailures', () => {
     expect(toasts[0]?.kind).toBe('timeout');
   });
 
-  it('returns timeout toasts for timed_out status from discovery finalize', () => {
+  it('does not toast a timed_out server: it is still starting, not failed', () => {
     const toasts = collectNewMcpServerFailures(new Set(), [
       server({
         name: 'slow-stdio',
@@ -110,9 +110,15 @@ describe('collectNewMcpServerFailures', () => {
       }),
     ]);
 
-    expect(toasts).toHaveLength(1);
-    expect(toasts[0]?.kind).toBe('timeout');
-    expect(toasts[0]?.serverName).toBe('slow-stdio');
-    expect(toasts[0]?.key).toContain('timed_out');
+    expect(toasts).toHaveLength(0);
+  });
+
+  it('does not toast servers that are connecting or discovering', () => {
+    const toasts = collectNewMcpServerFailures(new Set(), [
+      server({ name: 'a', status: 'connecting' }),
+      server({ name: 'b', status: 'discovering_tools' }),
+    ]);
+
+    expect(toasts).toHaveLength(0);
   });
 });

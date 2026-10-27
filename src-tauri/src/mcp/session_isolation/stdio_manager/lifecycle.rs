@@ -168,14 +168,20 @@ impl SessionMCPManager {
         debug!("Created transport for command: {} {:?}", command, args);
 
         // 7. Initialize rmcp client with timeout
-        let timeout = Duration::from_secs(self.config.process_startup_timeout_seconds);
+        // Not the session wait: a server that is alive but slow to initialize must not be
+        // killed when the session stops waiting. A dead process makes `serve` return an error
+        // right away; this cap only catches one that never answers.
+        let cap_seconds = crate::config::mcp_server_startup_cap_seconds(
+            self.config.process_startup_timeout_seconds,
+        );
+        let timeout = Duration::from_secs(cap_seconds);
         let client = tokio::time::timeout(timeout, ().serve(transport))
             .await
             .map_err(|_| {
                 error!(
                     "MCP server '{}' init timed out after {}s for session '{}' (final={} {:?}). Check preceding [MCP stderr:{}] lines.",
                     server_name,
-                    self.config.process_startup_timeout_seconds,
+                    cap_seconds,
                     self.session_id,
                     final_command,
                     final_args,

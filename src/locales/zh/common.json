@@ -1413,6 +1413,7 @@
       "mcpServerDiscovering": "正在发现工具…",
       "mcpServerReadyTools": "{{count}} 个工具",
       "mcpServerTimedOut": "超时",
+      "mcpServerStarting": "仍在启动",
       "mcpServerFailedShort": "失败",
       "executionModeNormalTitle": "普通模式。强制执行策略阻止与批准规则。",
       "executionModeYoloTitle": "YOLO 模式。标准操作自动批准，但关键操作仍需手动批准。",

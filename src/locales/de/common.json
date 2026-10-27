@@ -1413,6 +1413,7 @@
       "mcpServerDiscovering": "Werkzeuge werden erkannt…",
       "mcpServerReadyTools": "{{count}} Werkzeuge",
       "mcpServerTimedOut": "Zeitüberschreitung",
+      "mcpServerStarting": "Startet noch",
       "mcpServerFailedShort": "Fehlgeschlagen",
       "executionModeNormalTitle": "Normaler Modus. Richtlinienblockierungen und Genehmigungsregeln werden erzwungen.",
       "executionModeYoloTitle": "YOLO-Modus. Standardaktionen werden automatisch genehmigt, kritische Aktionen erfordern weiterhin manuelle Freigabe.",
