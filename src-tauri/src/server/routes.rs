@@ -15,6 +15,7 @@ pub fn get_routes(
     let agent_manager = warp::any().map(move || agent_manager.clone());
     // Fixed per listener: the managed session whose endpoint this router serves (`None` on the
     // main TCP port). A closure capture, so a request cannot set or forge it.
+    let policy_origin = origin.clone();
     let origin = warp::any().map(move || origin.clone());
 
     // POST /api/sessions
@@ -253,7 +254,12 @@ pub fn get_routes(
 
     // No allow_any_origin CORS. CLI clients omit Origin; browsers with Origin are rejected.
     access_guard(expose)
-        .and(crate::server::api_key::api_key_guard())
+        .and(crate::server::api_key::api_key_guard_for(
+            policy_origin.is_some(),
+        ))
+        .and(crate::server::endpoint_policy::endpoint_guard(
+            policy_origin,
+        ))
         .and(api)
         .recover(handle_rejection)
 }

@@ -223,6 +223,19 @@ pub fn api_key_guard() -> impl Filter<Extract = (), Error = Rejection> + Clone {
     guard(ENV_KEY_STATE.get().copied())
 }
 
+/// [`api_key_guard`] for a router that may serve a managed session's own unix socket. The
+/// socket is reachable only from that session's container and is limited by the endpoint
+/// permission table, so it does not carry the key; the main port always requires it.
+pub fn api_key_guard_for(
+    session_socket: bool,
+) -> impl Filter<Extract = (), Error = Rejection> + Clone {
+    guard(if session_socket {
+        None
+    } else {
+        ENV_KEY_STATE.get().copied()
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

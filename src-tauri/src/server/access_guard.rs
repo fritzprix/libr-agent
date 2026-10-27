@@ -98,5 +98,17 @@ pub async fn handle_rejection(err: Rejection) -> Result<warp::reply::Response, R
         )
         .into_response());
     }
+    if err
+        .find::<super::endpoint_policy::EndpointForbidden>()
+        .is_some()
+    {
+        let body = serde_json::json!({
+            "error": "this request is not permitted through a managed session's endpoint"
+        });
+        return Ok(
+            warp::reply::with_status(warp::reply::json(&body), StatusCode::FORBIDDEN)
+                .into_response(),
+        );
+    }
     Err(err)
 }

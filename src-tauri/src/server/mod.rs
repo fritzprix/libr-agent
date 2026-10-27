@@ -1,5 +1,6 @@
 pub mod access_guard;
 pub mod api_key;
+pub mod endpoint_policy;
 pub mod handlers;
 pub mod mcp_handler;
 pub mod routes;
