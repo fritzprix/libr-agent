@@ -3,7 +3,7 @@ artifacts = []
 
 [task]
 name = "fritzprix/layman-t04-event-subscribe-v1"
-description = "Layman intent T04 (P): subscribe a wake hook to an external event via a mock CLI, then go idle"
+description = "Layman intent T04 (P): subscribe a wake hook on a mock SMS CLI and go idle"
 keywords = ["libragent", "layman-intent", "skill-routing", "call-me-back"]
 [[task.authors]]
 name = "fritzprix"

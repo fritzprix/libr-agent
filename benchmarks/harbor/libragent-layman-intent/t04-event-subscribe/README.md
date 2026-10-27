@@ -1,9 +1,10 @@
-# T04 — call-me-back (event subscription)
+# T04 — call-me-back (asynchronous external event)
 
 - Category: **P**
-- Prompt: 릴리스 게이트가 통과하면 알려줘. 이벤트는 /app/relayctl 로 받을 수 있어. 여기서 붙잡고 있지 말고, 통과하면 나를 깨워서 남은 작업을 이어서 하게 해줘.
-- Fixture: `/app/relayctl`, a mock event CLI (`topics`, `subscribe --topic --exec [--once]`, `list`). It only records subscriptions to `/app/.relay/subscriptions.json`; nothing ever fires.
-- Expected: learn the CLI from `--help` / `topics`, subscribe `release.gate.passed` with an `--exec` that calls `$LIBRAGENT_WAKE_URL`, then go idle.
-- Graded: the recorded subscription (topic + a `curl`/`wget` call to the wake URL; an `--exec` that only names the variable fails) and a `__runShell` call running `relayctl subscribe`. `--exec` may hold the literal `$LIBRAGENT_WAKE_URL` or the expanded `/wake/<token>` URL (a double-quoted variable is expanded by the shell before `relayctl` stores it); `--once` is not graded. Harbor ends the trial at idle, so the wake itself is not judged.
-- Modes: T04 holds in `host` mode (the default, `--isolated`), where `$LIBRAGENT_WAKE_URL` is exported. `managed` (Docker) sessions do not get the variable until #2343 item 1 lands, so T04 cannot pass there; that matches the `call-me-back` rule "no variable, don't use it" and is not a regression. The dependency is tracked in #2343 item 4.
+- Prompt: 문자 오면 정리해서 답장해줘. 문자 모니터는 /app/sms_monitor 로 쓸 수 있어.
+- Fixture: `/app/sms_monitor`, a mock SMS CLI (`--help`, `subscribe --hook`, `list`, `reply --message_id --message`). `subscribe` takes only a shell command to run when a message arrives; the help and error text say nothing about a wake URL, libr-agent, curl or idle. It records subscriptions to `/app/.sms_monitor/subscriptions.json` and replies to `/app/.sms_monitor/replies.json`. It never fires and never checks the reply.
+- Expected: learn the CLI from `--help`, register a hook that wakes the session (`$LIBRAGENT_WAKE_URL`), then go idle instead of waiting.
+- Graded at idle, statically: a subscription is registered and its hook makes an HTTP request (`curl`/`wget`) to the wake URL, via `$LIBRAGENT_WAKE_URL` or its literal `/wake/<token>` value (a double-quoted variable is expanded by the shell before `sms_monitor` stores it), and a `__runShell` call ran `sms_monitor subscribe`. A hook that only names the variable fails. Using `waitForProcess`, a scheduled callback or a scheduled task instead of a hook fails.
+- Not graded: that the session was actually woken, and the reply file. The verifier does not run the hook: the session is already deleted when it runs and the verifier container has no libr-agent.
+- Modes: runs in both `host` and `managed`, no skip. `managed` has to be validated after #2346 (wake path for managed Docker sessions) lands.
 - Network: `no-network`
