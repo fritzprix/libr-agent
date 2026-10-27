@@ -348,3 +348,5 @@ be required):
 New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' `
   -Name LongPathsEnabled -Value 1 -PropertyType DWORD -Force
 ```
+
+T04 depends on `$LIBRAGENT_WAKE_URL`: see [session-wake-contract.md](../../docs/architecture/session-wake-contract.md).

@@ -94,6 +94,10 @@ Apply targeted replacements, insertions, and deletions to one file.
 }
 ```
 
+## Session wake
+
+`$LIBRAGENT_WAKE_URL` and how it reaches host and Docker sessions: see [session-wake-contract.md](../architecture/session-wake-contract.md).
+
 ## Related Tools
 
 - `deleteFile`: Destructive removal.

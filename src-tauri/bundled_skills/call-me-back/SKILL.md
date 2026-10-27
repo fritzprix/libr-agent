@@ -143,6 +143,10 @@ honest in the reply. Prefer inject/wake whenever a callback hook exists.
   explicitly asked for a global scheduled worker (`schedule`).
 - Do not invent per-product command catalogs in this skill; reuse the inject contract.
 
+## Wake contract
+
+How `$LIBRAGENT_WAKE_URL` reaches host and Docker sessions: `docs/architecture/session-wake-contract.md` in the LibrAgent repo.
+
 ## Related skills
 
 - **`loop`** — clock-based session reminders and recurring checks
