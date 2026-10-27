@@ -6,6 +6,7 @@
 //! other sessions, on settings, on tool servers or on human approvals are refused. The main
 //! TCP port has no origin and is not affected.
 
+use futures::future::BoxFuture;
 use warp::filters::path::FullPath;
 use warp::http::Method;
 use warp::reject::Reject;
@@ -39,8 +40,28 @@ fn owned(session: &str, direct_child_only: bool) -> Decision {
     }
 }
 
-/// Classifies a request by method and path. Unknown paths are denied.
+/// True when every segment is a plain token. The guard classifies the raw path string while
+/// warp routes on its own parse of it, so any spelling the two could read differently
+/// (empty segments, dot segments, percent-escapes, `\`, `;`) is refused instead of classified.
+fn is_canonical_path(path: &str) -> bool {
+    path.strip_prefix('/').is_some_and(|rest| {
+        let rest = rest.strip_suffix('/').unwrap_or(rest);
+        rest.split('/').all(|segment| {
+            !segment.is_empty()
+                && segment != "."
+                && segment != ".."
+                && segment
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.'))
+        })
+    })
+}
+
+/// Classifies a request by method and path. Unknown and non-canonical paths are denied.
 fn classify(method: &Method, path: &str) -> Decision {
+    if !is_canonical_path(path) {
+        return Decision::Deny;
+    }
     let segments: Vec<&str> = path.trim_matches('/').split('/').collect();
     let read = method == Method::GET;
     match segments.as_slice() {
@@ -75,7 +96,49 @@ fn is_permitted(
     target_parent == Some(origin)
 }
 
+/// Resolves a session ref from the path to a stored session id; `None` when it cannot.
+type ResolveRef<'a> = &'a (dyn Fn(&str) -> BoxFuture<'a, Option<String>> + Sync);
+/// Reads a session's parent: `Err` when the lookup fails or the session does not exist,
+/// `Ok(None)` when it has no parent.
+type ParentOf<'a> = &'a (dyn Fn(&str) -> BoxFuture<'a, Result<Option<String>, ()>> + Sync);
+
 async fn authorize(origin: &str, method: &Method, path: &str) -> bool {
+    authorize_with(
+        origin,
+        method,
+        path,
+        &|session| {
+            let session = session.to_string();
+            Box::pin(async move {
+                crate::server::handlers::helpers::resolve_http_session_ref(&session)
+                    .await
+                    .ok()
+            })
+        },
+        &|target| {
+            let target = target.to_string();
+            Box::pin(async move {
+                match crate::state::get_session_repository()
+                    .get_session(&target)
+                    .await
+                {
+                    Ok(Some(metadata)) => Ok(metadata.parent_session_id),
+                    _ => Err(()),
+                }
+            })
+        },
+    )
+    .await
+}
+
+/// The decision with both lookups injected. Every failure refuses.
+async fn authorize_with(
+    origin: &str,
+    method: &Method,
+    path: &str,
+    resolve: ResolveRef<'_>,
+    parent_of: ParentOf<'_>,
+) -> bool {
     match classify(method, path) {
         Decision::Allow => true,
         Decision::Deny => false,
@@ -83,20 +146,15 @@ async fn authorize(origin: &str, method: &Method, path: &str) -> bool {
             session,
             direct_child_only,
         } => {
-            let Ok(target) =
-                crate::server::handlers::helpers::resolve_http_session_ref(&session).await
-            else {
+            let Some(target) = resolve(&session).await else {
                 return false;
             };
             let parent = if target == origin {
                 None
             } else {
-                match crate::state::get_session_repository()
-                    .get_session(&target)
-                    .await
-                {
-                    Ok(Some(metadata)) => metadata.parent_session_id,
-                    _ => return false,
+                match parent_of(&target).await {
+                    Ok(parent) => parent,
+                    Err(()) => return false,
                 }
             };
             is_permitted(origin, &target, direct_child_only, parent.as_deref())
@@ -229,6 +287,74 @@ mod tests {
         assert!(!is_permitted("s1", "s3", false, Some("s2")));
         assert!(!is_permitted("s1", "s4", false, Some("other")));
         assert!(!is_permitted("s1", "s5", false, None));
+    }
+
+    #[test]
+    fn non_canonical_paths_are_denied() {
+        for path in [
+            "/api/sessions/s1/channel//permission",
+            "/api/sessions//s1/messages",
+            "/api/sessions/s1/channel/%70ermission",
+            "/api/sessions/s1/%74erminate",
+            "/api/sessions/s1/./channel/permission",
+            "/api/sessions/s1/../s2/messages",
+            "/api/sessions/s1/channel\\permission",
+            "/api/sessions/s1;x/messages",
+            "api/sessions/s1/messages",
+            "",
+        ] {
+            assert_eq!(decision(Method::POST, path), Decision::Deny, "{path}");
+        }
+        // A trailing slash is still the same route.
+        assert_eq!(
+            decision(Method::GET, "/api/sessions/s2/messages/"),
+            owned("s2", false)
+        );
+    }
+
+    /// Sessions: s1 (origin), s2 (child of s1), s3 (child of s2), s4 (child of other).
+    async fn authorized(method: Method, path: &str) -> bool {
+        authorize_with(
+            "s1",
+            &method,
+            path,
+            &|session| {
+                let found = ["s1", "s2", "s3", "s4"].contains(&session);
+                let session = session.to_string();
+                Box::pin(async move { found.then_some(session) })
+            },
+            &|target| {
+                let parent = match target {
+                    "s2" => Ok(Some("s1".to_string())),
+                    "s3" => Ok(Some("s2".to_string())),
+                    "s4" => Ok(Some("other".to_string())),
+                    _ => Err(()),
+                };
+                Box::pin(async move { parent })
+            },
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn authorize_follows_ownership_and_fails_closed() {
+        // (a) the origin itself, (b) a direct child.
+        assert!(authorized(Method::POST, "/api/sessions/s1/messages").await);
+        assert!(authorized(Method::POST, "/api/sessions/s2/messages").await);
+        // (c) a grandchild, (d) a sibling's child.
+        assert!(!authorized(Method::POST, "/api/sessions/s3/messages").await);
+        assert!(!authorized(Method::POST, "/api/sessions/s4/messages").await);
+        // (e) a ref that does not resolve.
+        assert!(!authorized(Method::POST, "/api/sessions/missing/messages").await);
+        // (f) a resolved session whose parent lookup fails.
+        assert!(!authorized(Method::POST, "/api/sessions/s5/messages").await);
+        // Delete and terminate: a direct child only, never the origin.
+        assert!(authorized(Method::DELETE, "/api/sessions/s2").await);
+        assert!(!authorized(Method::DELETE, "/api/sessions/s1").await);
+        assert!(!authorized(Method::POST, "/api/sessions/s1/terminate").await);
+        // Routes that need no lookup.
+        assert!(authorized(Method::POST, "/api/sessions/s9/wake/tok").await);
+        assert!(!authorized(Method::POST, "/api/sessions/s1/channel/permission").await);
     }
 
     fn routes(
