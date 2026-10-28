@@ -105,7 +105,10 @@ fn normalize_thinking_effort(
     effort: Option<&Value>,
     legacy_budget: Option<&Value>,
 ) -> ThinkingEffort {
-    if let Some(effort) = effort.and_then(Value::as_str).and_then(ThinkingEffort::parse) {
+    if let Some(effort) = effort
+        .and_then(Value::as_str)
+        .and_then(ThinkingEffort::parse)
+    {
         return effort;
     }
     match legacy_budget.and_then(Value::as_f64) {
