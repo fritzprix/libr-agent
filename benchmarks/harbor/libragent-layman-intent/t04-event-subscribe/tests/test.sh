@@ -1,6 +1,6 @@
 #!/bin/bash
-# Container verifier. Grades /logs/agent/trajectory.json by the skill's
-# critical path (tests/critical_path.py); see the dataset README.
+# Container verifier. Grades the sms_monitor state left by a real wake
+# (tests/test_outputs.py); see the task README.
 mkdir -p /logs/verifier
 pytest --ctrf /logs/verifier/ctrf.json /tests/test_outputs.py -rA
 if [ $? -eq 0 ]; then

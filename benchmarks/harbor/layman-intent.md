@@ -40,7 +40,7 @@ Two graders use the same rules:
 - **Harbor reward.** Each task's `tests/test_outputs.py` grades
   `/logs/agent/trajectory.json`, which Harbor mounts from the trial's `agent/`
   directory. `tests/critical_path.py` is a copy of the shared module; a unit test
-  keeps the copies in sync. T04 (sms_monitor subscription) is graded only on its artifact; T14 and T15
+  keeps the copies in sync. T04 (sms_monitor) is graded on the wake and the reply that follows it; T14 and T15
   (summary of all 50 docs, README typo fix) also check theirs.
 - **Host report.** `scripts/check-layman-intent-trajectories.py` grades a whole
   job and prints per-task, per-skill and overall routing accuracy. It matches
@@ -68,7 +68,7 @@ Two graders use the same rules:
 | T18 | `t18-recall-deploy-time`      | P        | context-recall      | no-network |
 | T19 | `t19-remember-today`          | P        | knowledge-distiller | no-network |
 
-T04 (`sms_monitor`) runs in both `host` and `managed` mode with no skip. It is graded at idle on the registered hook only (it must call `$LIBRAGENT_WAKE_URL`), with no trajectory checks; the wake itself and the reply are not checked. `managed` is validated after #2346 lands.
+T04 (`sms_monitor`) runs in both `host` and `managed` mode and is graded on a real wake. After the session first goes idle, the adapter delivers a message declared in the task's `task.toml` (`[metadata.libragent_event]`); the fixture runs the registered hooks, and the adapter waits until the woken session is idle again. The verifier passes only if the trajectory shows the wake message followed by the session's own reply to that message, whose id it could not know before the wake; a hook that replies by itself fails. Contract: [Session Wake Callback Contract](../../docs/architecture/session-wake-contract.md).
 
 Each task directory has a `README.md` with the prompt and the expected behavior.
 
