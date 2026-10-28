@@ -5,6 +5,28 @@ use crate::server::mcp_handler;
 use std::sync::Arc;
 use warp::Filter;
 
+/// `POST /api/sessions/:id/wake/:token` — process-completion callback.
+///
+/// Shared by the main Session API server and the wake-only listener, so both
+/// authorize through the same handler.
+pub fn wake_route(
+    agent_manager: impl Filter<Extract = (Arc<AgentSessionManager>,), Error = std::convert::Infallible>
+        + Clone
+        + Send,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+    warp::post()
+        .and(warp::path("api"))
+        .and(warp::path("sessions"))
+        .and(warp::path::param())
+        .and(warp::path("wake"))
+        .and(warp::path::param())
+        .and(warp::path::end())
+        .and(agent_manager)
+        .and(warp::body::content_length_limit(16 * 1024))
+        .and(warp::body::bytes())
+        .and_then(handlers::wake_session)
+}
+
 pub fn get_routes(
     agent_manager: Arc<AgentSessionManager>,
     mcp_enabled: bool,
@@ -63,18 +85,8 @@ pub fn get_routes(
         .and(warp::body::json())
         .and_then(handlers::send_message);
 
-    // POST /api/sessions/:id/wake/:token — process-completion callback (per-session token)
-    let wake_session = warp::post()
-        .and(warp::path("api"))
-        .and(warp::path("sessions"))
-        .and(warp::path::param())
-        .and(warp::path("wake"))
-        .and(warp::path::param())
-        .and(warp::path::end())
-        .and(agent_manager.clone())
-        .and(warp::body::content_length_limit(16 * 1024))
-        .and(warp::body::bytes())
-        .and_then(handlers::wake_session);
+    // Authorized by its per-session token alone, so it sits outside the API key guard.
+    let wake_session = wake_route(agent_manager.clone());
 
     // POST /api/sessions/:id/channel
     let inject_channel_message = warp::post()
@@ -228,7 +240,6 @@ pub fn get_routes(
         .or(get_compact_context)
         .or(get_messages)
         .or(send_message)
-        .or(wake_session)
         .or(inject_channel_message_auto)
         .or(inject_channel_message)
         .or(respond_channel_permission)
@@ -248,7 +259,6 @@ pub fn get_routes(
 
     // No allow_any_origin CORS. CLI clients omit Origin; browsers with Origin are rejected.
     access_guard(expose)
-        .and(crate::server::api_key::api_key_guard())
-        .and(api)
+        .and(wake_session.or(crate::server::api_key::api_key_guard().and(api)))
         .recover(handle_rejection)
 }

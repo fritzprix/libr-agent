@@ -50,6 +50,22 @@ pub(super) async fn verify_container_label(
     Ok(())
 }
 
+/// Label set on containers created with the host mapping for wake callbacks.
+pub(super) const WAKE_HOST_LABEL: &str = "com.libragent.wake_host";
+
+/// True when the container was created with the host mapping (see [`WAKE_HOST_LABEL`]).
+/// Containers created before it existed carry no label and must be recreated.
+pub(super) async fn docker_container_has_wake_host(container_name: &str) -> RuntimeResult<bool> {
+    let value = docker_output([
+        "inspect",
+        "-f",
+        &format!("{{{{ index .Config.Labels \"{WAKE_HOST_LABEL}\" }}}}"),
+        container_name,
+    ])
+    .await?;
+    Ok(value.trim() == "1")
+}
+
 pub(super) async fn docker_container_label(container_name: &str) -> RuntimeResult<String> {
     docker_output([
         "inspect",

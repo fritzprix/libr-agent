@@ -309,8 +309,11 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         .inner()
         .clone_for_task();
     tauri::async_runtime::spawn(async move {
+        let server_manager = std::sync::Arc::new(server_manager);
+        // Failure is recorded by the listener; Docker sessions then get no wake URL.
+        let _ = crate::server::wake_listener::start(server_manager.clone()).await;
         match crate::server::init(
-            std::sync::Arc::new(server_manager),
+            server_manager,
             startup_settings.http_port,
             startup_settings.http_expose,
             mcp_enabled,

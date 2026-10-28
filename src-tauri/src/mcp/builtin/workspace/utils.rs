@@ -231,21 +231,52 @@ pub async fn is_session_docker_isolated(session_id: &str) -> bool {
     session_docker_root(session_id).await.0
 }
 
-/// Adds this session's wake URL to a host shell environment.
+/// Adds this session's wake URL to a shell environment.
 ///
-/// Skipped for Docker sessions: `docker exec -e` would expose the token in the
-/// host process list, and the container cannot reach the host loopback anyway.
+/// Host sessions get the loopback URL. Managed Docker sessions get the
+/// `host.docker.internal` URL of the wake listener, or no URL (and a logged
+/// error) while that listener is not running. Attached containers are never
+/// created by LibrAgent, so they have no host mapping and get none.
 pub async fn add_wake_url_env(
     session_id: &str,
     env_vars: &mut std::collections::HashMap<String, String>,
 ) {
-    if is_session_docker_isolated(session_id).await {
-        return;
+    use crate::models::workspace_isolation::WorkspaceIsolationMode;
+    use crate::repositories::session_repository::SessionRepository;
+
+    let session = match crate::state::try_get_session_repository() {
+        Some(session_repo) => session_repo.get_session(session_id).await.ok().flatten(),
+        None => None,
+    };
+    let docker = session
+        .as_ref()
+        .filter(|session| session.workspace_isolation == WorkspaceIsolationMode::Docker);
+
+    let url = match docker {
+        None => Some(crate::server::wake::wake_url_for(session_id)),
+        Some(session)
+            if session
+                .docker_config
+                .as_ref()
+                .is_some_and(|config| config.is_attach()) =>
+        {
+            None
+        }
+        Some(_) => {
+            let url = crate::server::wake::docker_wake_url_for(session_id);
+            if url.is_none() {
+                log::error!(
+                    "No wake URL for Docker session {session_id}: {}",
+                    crate::server::wake_listener::last_error()
+                        .unwrap_or_else(|| "wake listener is not running".to_string())
+                );
+            }
+            url
+        }
+    };
+    if let Some(url) = url {
+        env_vars.insert(crate::server::wake::WAKE_URL_ENV.to_string(), url);
     }
-    env_vars.insert(
-        crate::server::wake::WAKE_URL_ENV.to_string(),
-        crate::server::wake::wake_url_for(session_id),
-    );
 }
 
 /// Single DB read for Docker isolation + configured workdir (`/workspace` or attach `/app`).
