@@ -262,6 +262,11 @@ async function loadSettings(forceRefresh = false): Promise<Settings> {
       const { settings, didMigrate, didMigrateExperimental } =
         mapDtosToSettings(dtos);
 
+      const advanced = await safeInvoke<AdvancedSettings>(
+        'get_advanced_settings',
+      );
+      settings.advanced = advanced;
+
       if (didMigrate || didMigrateExperimental) {
         try {
           const migrationPatch: Record<string, SettingValue | null> = {};

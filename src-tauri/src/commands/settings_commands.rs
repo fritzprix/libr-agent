@@ -1,3 +1,4 @@
+use crate::models::advanced_settings::AdvancedSettings;
 use crate::repositories::settings_repository::SettingsRepository;
 use crate::state::get_settings_repository;
 use serde::{Deserialize, Serialize};
@@ -99,4 +100,9 @@ pub async fn list_settings() -> Result<Vec<SettingDto>, String> {
         .await
         .map_err(|e| format!("Failed to list settings: {}", e))?;
     Ok(models.into_iter().map(|s| s.into()).collect())
+}
+
+#[command]
+pub async fn get_advanced_settings() -> Result<AdvancedSettings, String> {
+    Ok(AdvancedSettings::load_global().await)
 }

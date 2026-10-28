@@ -44,7 +44,15 @@ describe('SettingsContext', () => {
   });
 
   it('dedupes the initial settings fetch across StrictMode remounts', async () => {
-    vi.mocked(safeInvoke).mockResolvedValue([]);
+    vi.mocked(safeInvoke).mockImplementation((command: string) => {
+      if (command === 'list_settings') {
+        return Promise.resolve([]);
+      }
+      if (command === 'get_advanced_settings') {
+        return Promise.resolve({ ...DEFAULT_SETTING.advanced });
+      }
+      return Promise.reject(new Error(`Unexpected command: ${command}`));
+    });
 
     const wrapper = ({ children }: { children: React.ReactNode }) => (
       <React.StrictMode>
@@ -58,8 +66,9 @@ describe('SettingsContext', () => {
       expect(result.current.isLoading).toBe(false);
     });
 
-    expect(safeInvoke).toHaveBeenCalledTimes(1);
+    expect(safeInvoke).toHaveBeenCalledTimes(2);
     expect(safeInvoke).toHaveBeenCalledWith('list_settings');
+    expect(safeInvoke).toHaveBeenCalledWith('get_advanced_settings');
   });
 
   it('does not let an older settings fetch overwrite a refreshed cache', async () => {
@@ -96,6 +105,10 @@ describe('SettingsContext', () => {
         return Promise.resolve([]);
       }
 
+      if (command === 'get_advanced_settings') {
+        return Promise.resolve({ ...DEFAULT_SETTING.advanced });
+      }
+
       return Promise.reject(new Error(`Unexpected command: ${command}`));
     });
 
@@ -117,7 +130,6 @@ describe('SettingsContext', () => {
       expect(safeInvoke).toHaveBeenCalledWith('update_settings', {
         settings: { uiLanguage: 'ko' },
       });
-      expect(vi.mocked(safeInvoke)).toHaveBeenCalledTimes(3);
     });
 
     freshSettings.resolve([
@@ -144,7 +156,7 @@ describe('SettingsContext', () => {
       expect(cachedRender.result.current.isLoading).toBe(false);
     });
 
-    expect(vi.mocked(safeInvoke)).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(safeInvoke)).toHaveBeenCalledTimes(5);
   });
 
   it('syncs i18n language from persisted settings after initial load', async () => {
