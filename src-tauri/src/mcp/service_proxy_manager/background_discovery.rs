@@ -3,8 +3,9 @@ use super::super::session_isolation::{HttpSessionManager, SessionMCPManager};
 use super::management::ProxyReadinessEntry;
 use super::persist_tool_cache_for_server;
 use super::runtime_updates::{
-    apply_discovery_timeout_finalize, apply_initialization_complete, apply_server_connecting,
-    apply_server_discovering, apply_server_failed, apply_server_ready, update_runtime_state_store,
+    apply_discovery_task_failed, apply_discovery_timeout_finalize, apply_initialization_complete,
+    apply_server_connecting, apply_server_discovering, apply_server_failed, apply_server_ready,
+    update_runtime_state_store,
 };
 use super::MCPServiceProxyManager;
 use crate::agent::runtime_state::SessionRuntimeTransport;
@@ -602,7 +603,9 @@ pub(super) async fn spawn_background_tool_loading(
                             &context.session_id,
                             context.app_handle.as_ref(),
                             |state| {
-                                apply_discovery_timeout_finalize(
+                                // The task is dead: its servers failed, they are not
+                                // "still starting" (which `TimedOut` would claim).
+                                apply_discovery_task_failed(
                                     state,
                                     "Tool discovery task failed before completion",
                                 );
@@ -664,6 +667,23 @@ pub(super) async fn spawn_background_tool_loading(
                             context.session_id,
                             error
                         );
+                        // The task that was still starting `TimedOut` servers is dead, so
+                        // they failed; leaving `TimedOut` would show "starting" forever.
+                        let update_result = update_runtime_state_store(
+                            &context.runtime_states,
+                            &context.session_id,
+                            context.app_handle.as_ref(),
+                            |state| {
+                                apply_discovery_task_failed(
+                                    state,
+                                    "Tool discovery task failed before completion",
+                                );
+                            },
+                        )
+                        .await;
+                        if update_result.emitted {
+                            context.runtime_state_emits.fetch_add(1, Ordering::Relaxed);
+                        }
                     }
                 }
             }
@@ -715,6 +735,62 @@ async fn finish_background_discovery(
         stats.stdio_ms,
         stats.http_ms,
     );
+}
+
+/// Parameters for retrying failed servers in the background.
+pub(super) struct RetryFailedServersParams {
+    pub proxy: Arc<MCPServiceProxy>,
+    pub stdio_manager: SessionMCPManager,
+    pub http_manager: HttpSessionManager,
+    pub stdio_configs: HashMap<String, crate::mcp::types::MCPServerConfig>,
+    pub http_configs: HashMap<String, crate::mcp::types::MCPServerConfig>,
+    pub server_name_to_id: HashMap<String, String>,
+    pub tool_discovery_timeout: Duration,
+    pub app_handle: Option<AppHandle>,
+}
+
+/// Spawns background discovery to retry a set of failed MCP servers for an existing session.
+/// Does not touch proxy readiness (the session is already active/ready).
+pub(super) async fn spawn_retry_failed_servers(
+    manager: &MCPServiceProxyManager,
+    session_id: String,
+    params: RetryFailedServersParams,
+) {
+    let context = DiscoveryContext {
+        session_id: session_id.clone(),
+        app_handle: params.app_handle,
+        runtime_states: manager.runtime_states.clone(),
+        server_name_to_id: Arc::new(params.server_name_to_id),
+        tool_discovery_timeout: params.tool_discovery_timeout,
+        server_discovery_cap: server_discovery_cap(params.tool_discovery_timeout),
+        runtime_state_emits: Arc::new(AtomicU32::new(0)),
+    };
+
+    tokio::spawn(async move {
+        let stdio_fut = load_stdio_tools(
+            context.clone(),
+            params.stdio_manager,
+            params.proxy.clone(),
+            params.stdio_configs,
+        );
+        let http_fut = load_http_tools(
+            context.clone(),
+            params.http_manager,
+            params.proxy,
+            params.http_configs,
+        );
+        tokio::join!(stdio_fut, http_fut);
+
+        update_runtime_state_store(
+            &context.runtime_states,
+            &context.session_id,
+            context.app_handle.as_ref(),
+            |state| {
+                state.recompute_summary();
+            },
+        )
+        .await;
+    });
 }
 
 #[cfg(test)]

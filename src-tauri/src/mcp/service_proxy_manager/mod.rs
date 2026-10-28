@@ -90,6 +90,9 @@ pub struct MCPServiceProxyManager {
     /// Structured runtime state snapshots owned by Rust and pushed to the frontend.
     runtime_states: Arc<RwLock<HashMap<String, SessionRuntimeState>>>,
 
+    /// Saved server configs per session, used for retrying failed servers on session reuse or manual retry.
+    session_server_configs: Arc<RwLock<HashMap<String, proxy_config::LoadedServerConfigs>>>,
+
     /// Sessions whose active process was stopped by a user cancel. The next
     /// foreground tool result consumes this marker and continues the workflow.
     process_cancel_pending: Arc<Mutex<HashSet<String>>>,

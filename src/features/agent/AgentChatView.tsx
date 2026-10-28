@@ -476,6 +476,7 @@ function AgentChatViewContent({
       {shouldShowBlockingLoader ? (
         <SessionLoadingOverlay
           label={sessionLoadingLabel}
+          sessionId={session?.id}
           initializationStep={initializationStep}
           initializationError={initializationError}
           servers={runtimeState.servers}

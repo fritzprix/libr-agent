@@ -369,6 +369,46 @@ pub(super) fn apply_discovery_timeout_finalize(
     true
 }
 
+/// The discovery task ended without finishing its servers (it panicked or was aborted). No task
+/// is starting them any more, so every server that is not `Ready` or `Failed` is a failure, not
+/// a server that is "still starting"; that makes it a retry target. Recomputes the summary.
+pub(super) fn apply_discovery_task_failed(state: &mut SessionRuntimeState, reason: &str) {
+    for server in &mut state.servers {
+        if !matches!(
+            server.status,
+            SessionRuntimeServerStatus::Ready | SessionRuntimeServerStatus::Failed
+        ) {
+            server.status = SessionRuntimeServerStatus::Failed;
+            server.error = Some(reason.to_string());
+        }
+    }
+    state.recompute_summary();
+    apply_completion_step(state);
+}
+
+/// Starts a retry: moves each `Failed` server accepted by `wanted` to `Connecting` in one step
+/// and returns their names. A server that is already `Connecting`, `DiscoveringTools`,
+/// `TimedOut` (still starting in the background) or `Ready` is not returned, so a second trigger
+/// for the same server finds nothing to retry. This is the only way a retry is started.
+pub(super) fn claim_failed_servers_for_retry(
+    state: &mut SessionRuntimeState,
+    wanted: impl Fn(&str) -> bool,
+) -> Vec<String> {
+    let mut claimed = Vec::new();
+    for server in &mut state.servers {
+        if server.status == SessionRuntimeServerStatus::Failed && wanted(&server.name) {
+            server.status = SessionRuntimeServerStatus::Connecting;
+            server.tool_count = 0;
+            server.error = None;
+            claimed.push(server.name.clone());
+        }
+    }
+    if !claimed.is_empty() {
+        refresh_discovery_step(state);
+    }
+    claimed
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -513,6 +553,126 @@ mod tests {
         assert_eq!(
             server(&state, "broken").status,
             SessionRuntimeServerStatus::Failed
+        );
+    }
+
+    #[test]
+    fn a_retry_claims_failed_servers_once() {
+        let mut state = configured_state();
+        apply_server_failed(
+            &mut state,
+            "broken",
+            SessionRuntimeTransport::Stdio,
+            "x".into(),
+        );
+
+        let first = claim_failed_servers_for_retry(&mut state, |_| true);
+        assert_eq!(first, vec!["broken".to_string()]);
+        assert_eq!(
+            server(&state, "broken").status,
+            SessionRuntimeServerStatus::Connecting
+        );
+        assert_eq!(server(&state, "broken").error, None);
+
+        // A second trigger for the same server finds nothing to retry.
+        assert!(claim_failed_servers_for_retry(&mut state, |_| true).is_empty());
+    }
+
+    #[test]
+    fn a_retry_leaves_servers_that_are_not_failed_alone() {
+        let mut state = configured_state();
+        apply_server_connecting(&mut state, "slow", SessionRuntimeTransport::Stdio);
+        apply_server_ready(&mut state, "ready", SessionRuntimeTransport::Stdio, 1);
+        apply_server_failed(
+            &mut state,
+            "broken",
+            SessionRuntimeTransport::Stdio,
+            "x".into(),
+        );
+        // The session stopped waiting for "slow", which is still starting in the background.
+        assert!(apply_discovery_timeout_finalize(&mut state, "waited 30s"));
+        assert_eq!(
+            server(&state, "slow").status,
+            SessionRuntimeServerStatus::TimedOut
+        );
+
+        let claimed = claim_failed_servers_for_retry(&mut state, |_| true);
+
+        assert_eq!(claimed, vec!["broken".to_string()]);
+        assert_eq!(
+            server(&state, "slow").status,
+            SessionRuntimeServerStatus::TimedOut
+        );
+        assert_eq!(
+            server(&state, "ready").status,
+            SessionRuntimeServerStatus::Ready
+        );
+    }
+
+    #[test]
+    fn a_retry_only_claims_servers_it_has_a_config_for() {
+        let mut state = configured_state();
+        apply_server_failed(&mut state, "a", SessionRuntimeTransport::Stdio, "x".into());
+        apply_server_failed(&mut state, "b", SessionRuntimeTransport::Stdio, "x".into());
+
+        let claimed = claim_failed_servers_for_retry(&mut state, |name| name == "b");
+
+        assert_eq!(claimed, vec!["b".to_string()]);
+        assert_eq!(
+            server(&state, "a").status,
+            SessionRuntimeServerStatus::Failed
+        );
+    }
+
+    #[test]
+    fn a_discovery_task_that_died_leaves_failed_servers_not_timed_out_ones() {
+        let mut state = configured_state();
+        apply_server_connecting(&mut state, "starting", SessionRuntimeTransport::Stdio);
+        apply_server_ready(&mut state, "ready", SessionRuntimeTransport::Stdio, 1);
+
+        apply_discovery_task_failed(&mut state, "Tool discovery task failed before completion");
+
+        let starting = server(&state, "starting");
+        assert_eq!(starting.status, SessionRuntimeServerStatus::Failed);
+        assert_eq!(
+            starting.error.as_deref(),
+            Some("Tool discovery task failed before completion")
+        );
+        assert_eq!(
+            server(&state, "ready").status,
+            SessionRuntimeServerStatus::Ready
+        );
+        // And it is a retry target.
+        assert_eq!(
+            claim_failed_servers_for_retry(&mut state, |_| true),
+            vec!["starting".to_string()]
+        );
+    }
+
+    #[test]
+    fn a_task_that_dies_after_the_deadline_turns_timed_out_servers_into_retry_targets() {
+        let mut state = configured_state();
+        apply_server_connecting(&mut state, "slow", SessionRuntimeTransport::Stdio);
+        apply_server_ready(&mut state, "ready", SessionRuntimeTransport::Stdio, 1);
+        apply_discovery_timeout_finalize(&mut state, "waited 30s");
+        assert_eq!(
+            server(&state, "slow").status,
+            SessionRuntimeServerStatus::TimedOut
+        );
+
+        apply_discovery_task_failed(&mut state, "Tool discovery task failed before completion");
+
+        assert_eq!(
+            server(&state, "slow").status,
+            SessionRuntimeServerStatus::Failed
+        );
+        assert_eq!(
+            server(&state, "ready").status,
+            SessionRuntimeServerStatus::Ready
+        );
+        assert_eq!(
+            claim_failed_servers_for_retry(&mut state, |_| true),
+            vec!["slow".to_string()]
         );
     }
 }

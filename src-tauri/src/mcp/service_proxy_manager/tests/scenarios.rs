@@ -498,3 +498,153 @@ async fn test_empty_mcp_server_ids_means_no_external_servers() {
     // Cleanup
     manager.destroy_proxy(&session_id).await;
 }
+
+#[tokio::test]
+async fn test_retry_failed_server_validations() {
+    use crate::agent::runtime_state::{
+        SessionRuntimeServerState, SessionRuntimeServerStatus, SessionRuntimeTransport,
+    };
+
+    let harness = create_test_harness().await;
+    let manager = &harness.manager;
+    let session_id = "retry-validation-test";
+
+    insert_test_session(&manager, session_id).await;
+
+    // 1. Calling retry on a nonexistent session/server returns error
+    let err = manager
+        .retry_failed_server("nonexistent-session", "test-server", None)
+        .await;
+    assert!(err.is_err());
+
+    // 2. Create proxy with builtin tool
+    manager
+        .create_proxy(
+            session_id.to_string(),
+            vec!["playbook".to_string()],
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+
+    // 3. Server not in runtime_state returns error
+    let err = manager
+        .retry_failed_server(session_id, "unknown-server", None)
+        .await;
+    assert!(err.unwrap_err().contains("not found"));
+
+    // 4. Server in Ready status skips retry cleanly (Ok(()))
+    let mut state = manager.get_runtime_state(session_id).await;
+    state.servers.push(SessionRuntimeServerState {
+        name: "ready-server".to_string(),
+        transport: SessionRuntimeTransport::Stdio,
+        status: SessionRuntimeServerStatus::Ready,
+        tool_count: 5,
+        error: None,
+    });
+    manager.set_runtime_state(session_id, state, None).await;
+
+    let res = manager
+        .retry_failed_server(session_id, "ready-server", None)
+        .await;
+    assert!(
+        res.is_ok(),
+        "Non-failed server should return Ok(()) without retrying"
+    );
+
+    manager.destroy_proxy(session_id).await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_retry_failed_servers_retries_failed_but_not_timed_out() {
+    use crate::agent::runtime_state::{
+        SessionRuntimeServerState, SessionRuntimeServerStatus, SessionRuntimeTransport,
+    };
+    use crate::mcp::types::{MCPServerConfig, TransportConfig};
+
+    let harness = create_test_harness().await;
+    let manager = &harness.manager;
+    let session_id = "retry-reuse-test";
+    insert_test_session(manager, session_id).await;
+    manager
+        .create_proxy(
+            session_id.to_string(),
+            vec!["playbook".to_string()],
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+
+    let stdio_config = || MCPServerConfig {
+        name: None,
+        transport: TransportConfig::Stdio {
+            command: "libragent-test-no-such-command".to_string(),
+            args: vec![],
+            env: Default::default(),
+        },
+        authentication: None,
+        metadata: None,
+        provenance: None,
+    };
+    let mut loaded = manager
+        .session_server_configs
+        .read()
+        .await
+        .get(session_id)
+        .cloned()
+        .expect("configs are cached when the proxy is created");
+    for name in ["failed-server", "slow-server"] {
+        loaded
+            .stdio_configs
+            .insert(name.to_string(), stdio_config());
+    }
+    manager
+        .session_server_configs
+        .write()
+        .await
+        .insert(session_id.to_string(), loaded);
+
+    let mut state = manager.get_runtime_state(session_id).await;
+    for (name, status) in [
+        ("failed-server", SessionRuntimeServerStatus::Failed),
+        ("slow-server", SessionRuntimeServerStatus::TimedOut),
+    ] {
+        state.servers.push(SessionRuntimeServerState {
+            name: name.to_string(),
+            transport: SessionRuntimeTransport::Stdio,
+            status,
+            tool_count: 0,
+            error: Some("x".to_string()),
+        });
+    }
+    manager.set_runtime_state(session_id, state, None).await;
+
+    // The path session re-entry takes: `Failed` is retried, `TimedOut` (still starting in the
+    // background) is not.
+    let started = manager
+        .retry_failed_servers(session_id, None, None)
+        .await
+        .unwrap();
+    assert_eq!(started, 1);
+    let slow = manager
+        .get_runtime_state(session_id)
+        .await
+        .servers
+        .into_iter()
+        .find(|server| server.name == "slow-server")
+        .unwrap();
+    assert_eq!(slow.status, SessionRuntimeServerStatus::TimedOut);
+
+    // A manual retry of the server that is still starting is a no-op.
+    assert_eq!(
+        manager
+            .retry_failed_servers(session_id, Some("slow-server"), None)
+            .await
+            .unwrap(),
+        0
+    );
+
+    manager.destroy_proxy(session_id).await;
+}

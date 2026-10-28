@@ -213,7 +213,10 @@ impl SessionMCPManager {
             .get(server_name)
             .ok_or_else(|| SessionMCPError::ServerNotFound(server_name.to_string()))?;
 
-        match process.client.list_all_tools().await {
+        let listed = process.client.list_all_tools().await;
+        drop(processes);
+
+        match listed {
             Ok(tools_response) => {
                 debug!(
                     "Fetched {} tools from server '{}' for session '{}'",
@@ -257,6 +260,9 @@ impl SessionMCPManager {
                     "Failed to list tools from server '{}' for session '{}': {}",
                     server_name, self.session_id, e
                 );
+                // A client that failed to list tools is dead or broken; keeping it would make
+                // `ensure_process_running` hand the same client back on every retry.
+                self.active_processes.write().await.remove(server_name);
                 Err(SessionMCPError::ToolCallFailed(format!(
                     "Failed to list tools: {}",
                     e
