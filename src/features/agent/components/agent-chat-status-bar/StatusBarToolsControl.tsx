@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import { AlertTriangle, RotateCcw, Wrench } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 import AgentToolsModal from '../AgentToolsModal';
 
 export function StatusBarToolsControl() {
@@ -36,6 +37,8 @@ export function StatusBarToolsControl() {
           safeInvoke('retry_session_mcp_server', { sessionId, serverName }),
         ),
       );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error));
     } finally {
       setRetrying(false);
     }

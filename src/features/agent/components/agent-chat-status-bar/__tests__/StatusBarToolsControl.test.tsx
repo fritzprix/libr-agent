@@ -7,9 +7,12 @@ import { StatusBarToolsControl } from '../StatusBarToolsControl';
 
 const mocks = vi.hoisted(() => ({
   safeInvoke: vi.fn(),
+  toastError: vi.fn(),
   servers: [] as SessionRuntimeServerState[],
   sessionId: 'sess-1' as string | undefined,
 }));
+
+vi.mock('sonner', () => ({ toast: { error: mocks.toastError } }));
 
 vi.mock('@/lib/backend/core', () => ({ safeInvoke: mocks.safeInvoke }));
 
@@ -81,5 +84,17 @@ describe('StatusBarToolsControl retry', () => {
       sessionId: 'sess-1',
       serverName: 'b',
     });
+  });
+
+  it('tells the user when a retry is rejected instead of leaving it unhandled', async () => {
+    mocks.servers = [server('a', 'failed')];
+    mocks.safeInvoke.mockRejectedValue(new Error('no proxy for session'));
+    render(<StatusBarToolsControl />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('retry-failed-mcp-servers'));
+    });
+
+    expect(mocks.toastError).toHaveBeenCalledWith('no proxy for session');
   });
 });
