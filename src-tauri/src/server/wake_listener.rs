@@ -3,26 +3,30 @@
 //! Containers reach the host at `host.docker.internal:<port>`. They get this
 //! listener and nothing else: only the wake route is registered, every other
 //! path or method answers 404, and the main Session API server stays on
-//! loopback. The port is assigned by the OS and is the one actually bound.
-//! If the listener fails to start or stops, [`port`] is `None`, [`last_error`]
-//! says why, and Docker sessions get no wake URL.
+//! loopback. It binds only the Docker bridge gateway address, never all
+//! interfaces, so the LAN cannot reach it. The port is assigned by the OS and
+//! is the one actually bound.
+//!
+//! The listener starts on the first Docker session that needs a wake URL, when
+//! the Docker daemon is known to be up. If the gateway cannot be found, the
+//! bind fails or the listener stops, [`port`] is `None`, [`last_error`] says
+//! why, and Docker sessions get no wake URL; the next such session tries again.
 
 use crate::agent::AgentSessionManager;
 use futures::Stream;
 use std::net::Ipv4Addr;
 use std::sync::atomic::{AtomicU16, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use tokio::net::{TcpListener, TcpStream};
 use warp::http::StatusCode;
 use warp::{Filter, Rejection, Reply};
 
-/// Bind address. Open question (#2358): all interfaces vs. the Docker bridge
-/// gateway; the wake token is the only credential either way.
-const BIND_ADDR: Ipv4Addr = Ipv4Addr::UNSPECIFIED;
-
 /// `0` = not running.
 static PORT: AtomicU16 = AtomicU16::new(0);
 static LAST_ERROR: Mutex<Option<String>> = Mutex::new(None);
+static AGENT_MANAGER: OnceLock<Arc<AgentSessionManager>> = OnceLock::new();
+/// Serializes start attempts so concurrent sessions bind one listener.
+static START: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 /// Port the listener is bound to, or `None` while it is not running.
 pub fn port() -> Option<u16> {
@@ -77,19 +81,53 @@ fn routes(
     super::routes::wake_route(manager).recover(only_wake_or_404)
 }
 
-/// Binds an OS-assigned port and serves the wake route on it.
-pub async fn start(agent_manager: Arc<AgentSessionManager>) -> Result<u16, String> {
-    let result = bind_and_serve(agent_manager).await;
-    if let Err(message) = &result {
-        record_failure(message.clone());
-    }
-    result
+/// Registers the session manager the wake route serves. Binding waits for
+/// [`ensure_running`].
+pub fn install(agent_manager: Arc<AgentSessionManager>) {
+    let _ = AGENT_MANAGER.set(agent_manager);
 }
 
-async fn bind_and_serve(agent_manager: Arc<AgentSessionManager>) -> Result<u16, String> {
-    let listener = TcpListener::bind((BIND_ADDR, 0))
+/// Port of the running listener, starting it on the Docker bridge gateway if
+/// it is not running. `None` (with [`last_error`] set) when it cannot start.
+pub async fn ensure_running() -> Option<u16> {
+    if let Some(port) = port() {
+        return Some(port);
+    }
+    let _start = START.lock().await;
+    if let Some(port) = port() {
+        return Some(port);
+    }
+    match start().await {
+        Ok(port) => Some(port),
+        Err(message) => {
+            record_failure(message);
+            None
+        }
+    }
+}
+
+async fn start() -> Result<u16, String> {
+    let agent_manager = AGENT_MANAGER
+        .get()
+        .cloned()
+        .ok_or_else(|| "wake listener is not installed".to_string())?;
+    let gateway = crate::services::workspace_runtime_manager::docker_bridge_gateway()
         .await
-        .map_err(|error| format!("wake listener could not bind: {error}"))?;
+        .map_err(|error| format!("wake listener could not find the Docker bridge gateway: {error}"))?
+        .ok_or_else(|| {
+            "wake listener could not find the Docker bridge gateway: no IPv4 gateway on network `bridge`"
+                .to_string()
+        })?;
+    bind_and_serve(agent_manager, gateway).await
+}
+
+async fn bind_and_serve(
+    agent_manager: Arc<AgentSessionManager>,
+    address: Ipv4Addr,
+) -> Result<u16, String> {
+    let listener = TcpListener::bind((address, 0))
+        .await
+        .map_err(|error| format!("wake listener could not bind {address}: {error}"))?;
     let bound = listener
         .local_addr()
         .map_err(|error| format!("wake listener has no local address: {error}"))?
@@ -100,7 +138,7 @@ async fn bind_and_serve(agent_manager: Arc<AgentSessionManager>) -> Result<u16, 
     if let Ok(mut error) = LAST_ERROR.lock() {
         *error = None;
     }
-    log::info!("Wake listener serving on {BIND_ADDR}:{bound}");
+    log::info!("Wake listener serving on {address}:{bound}");
 
     tokio::spawn(async move {
         server.await;

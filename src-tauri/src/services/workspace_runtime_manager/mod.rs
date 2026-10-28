@@ -84,7 +84,7 @@ use session_config::{
     session_manage_lifecycle,
 };
 
-pub use docker_cli::normalize_docker_arch;
+pub use docker_cli::{docker_bridge_gateway, normalize_docker_arch};
 pub use error::{
     WorkspaceRuntimeError, AGENT_ERROR_DOCKER_NOT_AVAILABLE, AGENT_ERROR_DOCKER_NOT_INSTALLED,
 };

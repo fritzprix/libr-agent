@@ -250,7 +250,7 @@ pub async fn add_wake_url_env(
             None
         }
         Some(_) => {
-            let url = crate::server::wake::docker_wake_url_for(session_id);
+            let url = crate::server::wake::docker_wake_url_for(session_id).await;
             if url.is_none() {
                 log::error!(
                     "No wake URL for Docker session {session_id}: {}",
