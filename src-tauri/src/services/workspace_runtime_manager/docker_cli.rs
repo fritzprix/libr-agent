@@ -66,6 +66,27 @@ pub(super) async fn docker_container_has_wake_host(container_name: &str) -> Runt
     Ok(value.trim() == "1")
 }
 
+/// IPv4 gateway of Docker's default `bridge` network: the host address that managed
+/// containers (default network, `host-gateway` mapping) reach as `host.docker.internal`.
+pub async fn docker_bridge_gateway() -> RuntimeResult<Option<std::net::Ipv4Addr>> {
+    let output = docker_output([
+        "network",
+        "inspect",
+        "bridge",
+        "-f",
+        "{{range .IPAM.Config}}{{.Gateway}} {{end}}",
+    ])
+    .await?;
+    Ok(parse_bridge_gateway(&output))
+}
+
+/// First IPv4 address in `docker network inspect` gateway output (IPv6 entries skipped).
+fn parse_bridge_gateway(output: &str) -> Option<std::net::Ipv4Addr> {
+    output
+        .split_whitespace()
+        .find_map(|gateway| gateway.parse().ok())
+}
+
 pub(super) async fn docker_container_label(container_name: &str) -> RuntimeResult<String> {
     docker_output([
         "inspect",
@@ -137,4 +158,20 @@ pub(super) fn apply_docker_cli_env(cmd: &mut AsyncCommand) {
     // flag every runShell/docker exec flashes a terminal window.
     crate::utils::platform::suppress_console_window_async(cmd);
     crate::utils::env::apply_isolated_env_async(cmd);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_bridge_gateway;
+    use std::net::Ipv4Addr;
+
+    #[test]
+    fn bridge_gateway_is_the_first_ipv4_entry() {
+        assert_eq!(
+            parse_bridge_gateway("fd00::1 172.17.0.1 "),
+            Some(Ipv4Addr::new(172, 17, 0, 1))
+        );
+        assert_eq!(parse_bridge_gateway("fd00::1"), None);
+        assert_eq!(parse_bridge_gateway(""), None);
+    }
 }

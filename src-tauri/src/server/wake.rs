@@ -69,10 +69,10 @@ pub fn wake_url_for(session_id: &str) -> String {
     )
 }
 
-/// Wake URL for a managed Docker container, or `None` while the wake listener
-/// is not running.
-pub fn docker_wake_url_for(session_id: &str) -> Option<String> {
-    let port = super::wake_listener::port()?;
+/// Wake URL for a managed Docker container, starting the wake listener if
+/// needed, or `None` when it cannot run.
+pub async fn docker_wake_url_for(session_id: &str) -> Option<String> {
+    let port = super::wake_listener::ensure_running().await?;
     Some(wake_url(&format!("{DOCKER_HOST_NAME}:{port}"), session_id))
 }
 
@@ -310,9 +310,9 @@ mod token_policy_tests {
         );
     }
 
-    #[test]
-    fn docker_url_uses_the_listener_port_and_needs_it_running() {
-        assert!(super::super::wake_listener::port().is_none());
-        assert!(docker_wake_url_for("s").is_none());
+    #[tokio::test]
+    async fn docker_url_needs_a_running_listener() {
+        // Not installed in unit tests, so the listener cannot start.
+        assert!(docker_wake_url_for("s").await.is_none());
     }
 }

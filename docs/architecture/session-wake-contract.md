@@ -56,6 +56,13 @@ A full, tokenized wake URL for **this** session only:
 - The app runs a second, **wake-only** HTTP listener. Only the wake route is
   registered on it; every other path returns `404`. Containers reach this listener
   and nothing else.
+- It binds only the IPv4 gateway of Docker's default `bridge` network (the address
+  `host-gateway` maps to), never `0.0.0.0`, so other interfaces such as the LAN
+  cannot reach it. If the gateway cannot be found or bound, the listener does not
+  start, the error is recorded and Docker sessions get no wake URL; it never falls
+  back to all interfaces.
+- It starts on the first Docker session that needs a wake URL (the daemon is up by
+  then) and is retried by the next such session after a failure.
 - The URL carries the port that was actually bound, not a configured one.
 - Non-wake routes are therefore unreachable from non-loopback callers by
   construction, not by a filter on a shared server.
@@ -99,5 +106,6 @@ checks the contract in both `host` and `managed` workspace modes.
 
 ## Open
 
-- Bind address of the wake listener (all interfaces vs. the Docker bridge gateway).
-  Decided in #2358 after measuring on each platform, then recorded here.
+- Bind address on Docker Desktop (macOS, Windows): the bridge gateway lives inside
+  Docker's VM, so binding it on the host may fail there. Measured by the owner in
+  #2358; Linux binds the `docker0` gateway.
