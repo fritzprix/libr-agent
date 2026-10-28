@@ -1,6 +1,6 @@
 use crate::agent::ExecutionMode;
 use crate::entity::scheduled_task::Model as ScheduledTaskModel;
-use crate::repositories::settings_repository::SettingsRepository;
+use crate::models::system_settings::SystemSettings;
 use crate::repositories::{
     CreateScheduledTaskParams, ScheduledTaskRepository, UpdateScheduledTaskParams,
 };
@@ -9,7 +9,6 @@ use crate::scheduled::{
     is_one_shot_task, is_session_task, normalize_cron, paused_one_shot_remaining_ms,
     ScheduleTimezone, SCHEDULE_TIMEZONE_LOCAL, TASK_CATEGORY_GLOBAL,
 };
-use crate::state::get_settings_repository;
 use chrono::TimeZone;
 use cron::Schedule;
 use std::str::FromStr;
@@ -381,24 +380,10 @@ pub fn default_schedule_timezone() -> &'static str {
 }
 
 async fn load_governance_settings() -> ScheduledTaskGovernanceSettings {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    struct SystemSettings {
-        scheduled_task_minimum_interval_minutes: Option<u64>,
-    }
-
-    let Ok(Some(model)) = get_settings_repository().get("systemSettings").await else {
-        return ScheduledTaskGovernanceSettings::default();
-    };
-
-    let Ok(settings) = serde_json::from_str::<SystemSettings>(&model.value) else {
-        return ScheduledTaskGovernanceSettings::default();
-    };
-
     ScheduledTaskGovernanceSettings {
-        minimum_interval_minutes: settings
-            .scheduled_task_minimum_interval_minutes
-            .unwrap_or(0),
+        minimum_interval_minutes: SystemSettings::load_global()
+            .await
+            .scheduled_task_minimum_interval_minutes,
     }
 }
 

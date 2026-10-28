@@ -4,6 +4,7 @@ import {
   type DisplaySettings,
   type ExperimentalSettings,
   type Settings,
+  type SystemSettings,
 } from '@/lib/services/settings-service';
 
 /**
@@ -51,10 +52,27 @@ export const TEST_EXPERIMENTAL_SETTINGS: ExperimentalSettings = {
   toolLoopMaxResampleRetries: 2,
 };
 
+/** Test data only: Rust owns `system` (`get_system_settings`). */
+export const TEST_SYSTEM_SETTINGS: SystemSettings = {
+  maxFileUploadSizeMB: 50,
+  webActionTimeoutSeconds: 30,
+  httpServerPort: 3030,
+  httpServerExpose: false,
+  mcpServerStartupTimeoutSeconds: 30,
+  mcpToolTimeoutSeconds: 0,
+  searchIndexFrequencyMinutes: 5,
+  scheduledTaskMinimumIntervalMinutes: 0,
+  shellIsolationLevel: 'medium',
+  shellRuntimeBootstrap: false,
+  skillsDirectory: '',
+  preventSleepDuringAgentWork: true,
+};
+
 /** Complete settings for tests: frontend defaults plus the Rust-owned fixtures. */
 export const TEST_SETTINGS: Settings = {
   ...DEFAULT_SETTING,
   advanced: TEST_ADVANCED_SETTINGS,
   display: TEST_DISPLAY_SETTINGS,
   experimental: TEST_EXPERIMENTAL_SETTINGS,
+  system: TEST_SYSTEM_SETTINGS,
 };

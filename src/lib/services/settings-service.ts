@@ -5,7 +5,9 @@ import type { ToolLoopRecoveryPolicy } from '@/lib/generated/ToolLoopRecoveryPol
 import { llmConfigManager } from '@/lib/llm-config-manager';
 import type { ColorTheme } from '@/lib/generated/ColorTheme';
 import type { DisplaySettings } from '@/lib/generated/DisplaySettings';
+import type { IsolationLevel } from '@/lib/generated/IsolationLevel';
 import type { MessageLayoutStyle } from '@/lib/generated/MessageLayoutStyle';
+import type { SystemSettings } from '@/lib/generated/SystemSettings';
 
 export interface SafetySetting {
   category: string;
@@ -91,7 +93,8 @@ export type { AdvancedSettings };
 /** Normalized by Rust (`get_display_settings`); generated from the Rust model. */
 export type { ColorTheme, DisplaySettings, MessageLayoutStyle };
 
-export type IsolationLevel = 'basic' | 'medium' | 'high';
+/** Normalized by Rust (`get_experimental_settings`); generated from the Rust model. */
+export type { ExperimentalSettings, ToolLoopRecoveryPolicy };
 
 /** Context management strategy:
  * - 'window': sliding window — keep the N most recent messages (existing behavior)
@@ -99,27 +102,8 @@ export type IsolationLevel = 'basic' | 'medium' | 'high';
  */
 export type ContextStrategy = 'window' | 'compact';
 
-export interface SystemSettings {
-  maxFileUploadSizeMB: number;
-  webActionTimeoutSeconds: number;
-  httpServerPort: number;
-  httpServerExpose: boolean;
-  mcpServerStartupTimeoutSeconds: number;
-  mcpToolTimeoutSeconds: number;
-  searchIndexFrequencyMinutes: number;
-  scheduledTaskMinimumIntervalMinutes: number;
-  shellIsolationLevel: IsolationLevel;
-  shellRuntimeBootstrap: boolean;
-  skillsDirectory?: string;
-  /**
-   * When true (default), inhibit system idle sleep while LibrAgent is running.
-   * Does not keep the display forced on.
-   */
-  preventSleepDuringAgentWork: boolean;
-}
-
-/** Normalized by Rust (`get_experimental_settings`); generated from the Rust model. */
-export type { ExperimentalSettings, ToolLoopRecoveryPolicy };
+/** Normalized by Rust (`get_system_settings`); generated from the Rust model. */
+export type { IsolationLevel, SystemSettings };
 
 export interface Settings {
   serviceConfigs: Record<AIServiceProvider, ServiceConfig>;
@@ -151,14 +135,15 @@ export interface Settings {
 const DEFAULT_MODEL = llmConfigManager.recommendModel({});
 
 /**
- * Frontend defaults. `advanced`, `display` and `experimental` are not here: Rust owns their
- * schema and defaults, `get_advanced_settings` / `get_display_settings` /
- * `get_experimental_settings` always return the complete object, and `SettingsProvider` renders nothing that
- * reads settings before it arrives.
+ * Frontend defaults. `advanced`, `display`, `experimental` and `system` are not
+ * here: Rust owns their schema and defaults, `get_advanced_settings` /
+ * `get_display_settings` / `get_experimental_settings` / `get_system_settings`
+ * always return the complete object, and `SettingsProvider` renders nothing
+ * that reads settings before it arrives.
  */
 export const DEFAULT_SETTING: Omit<
   Settings,
-  'advanced' | 'display' | 'experimental'
+  'advanced' | 'display' | 'experimental' | 'system'
 > = {
   serviceConfigs: Object.values(AIServiceProvider).reduce(
     (acc, provider) => {
@@ -182,20 +167,6 @@ export const DEFAULT_SETTING: Omit<
   uiLanguage: 'en',
   toolCallGroupVisibleCount: 4,
   agentHubUrl: '',
-  system: {
-    maxFileUploadSizeMB: 50,
-    webActionTimeoutSeconds: 30,
-    httpServerPort: 3030,
-    httpServerExpose: false,
-    mcpServerStartupTimeoutSeconds: 30,
-    mcpToolTimeoutSeconds: 0,
-    searchIndexFrequencyMinutes: 5,
-    scheduledTaskMinimumIntervalMinutes: 0,
-    shellIsolationLevel: 'medium',
-    shellRuntimeBootstrap: false,
-    skillsDirectory: '',
-    preventSleepDuringAgentWork: true,
-  },
 };
 
 export interface ISettingsService {

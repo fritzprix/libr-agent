@@ -81,12 +81,13 @@ function isCustomOpenAIProviderArray(
   });
 }
 
-/** `advanced`, `display` and `experimental` come complete from Rust. */
+/** `advanced`, `display`, `experimental` and `system` come complete from Rust. */
 function mapDtosToSettings(
   dtos: SettingDto[],
   advanced: AdvancedSettings,
   display: DisplaySettings,
   experimental: ExperimentalSettings,
+  system: SystemSettings,
 ): {
   settings: Settings;
   didMigrate: boolean;
@@ -114,8 +115,6 @@ function mapDtosToSettings(
     }
     return defaultValue;
   };
-
-  const storedSystem = getTypedValue('systemSettings', DEFAULT_SETTING.system);
 
   const mapped: Settings = {
     ...DEFAULT_SETTING,
@@ -170,14 +169,7 @@ function mapDtosToSettings(
     agentHubUrl: getTypedValue('agentHubUrl', DEFAULT_SETTING.agentHubUrl),
     advanced,
     display,
-    system: {
-      ...DEFAULT_SETTING.system,
-      ...storedSystem,
-      preventSleepDuringAgentWork:
-        typeof storedSystem.preventSleepDuringAgentWork === 'boolean'
-          ? storedSystem.preventSleepDuringAgentWork
-          : DEFAULT_SETTING.system.preventSleepDuringAgentWork,
-    },
+    system,
     experimental,
   };
 
@@ -211,13 +203,15 @@ async function loadSettings(forceRefresh = false): Promise<Settings> {
     safeInvoke<AdvancedSettings>('get_advanced_settings'),
     safeInvoke<DisplaySettings>('get_display_settings'),
     safeInvoke<ExperimentalSettings>('get_experimental_settings'),
+    safeInvoke<SystemSettings>('get_system_settings'),
   ])
-    .then(async ([dtos, advanced, display, experimental]) => {
+    .then(async ([dtos, advanced, display, experimental, system]) => {
       const { settings, didMigrate } = mapDtosToSettings(
         dtos,
         advanced,
         display,
         experimental,
+        system,
       );
 
       if (didMigrate) {

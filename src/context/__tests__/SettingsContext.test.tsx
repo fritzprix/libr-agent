@@ -14,6 +14,7 @@ import {
   TEST_ADVANCED_SETTINGS,
   TEST_DISPLAY_SETTINGS,
   TEST_EXPERIMENTAL_SETTINGS,
+  TEST_SYSTEM_SETTINGS,
 } from '@/test/fixtures/settings';
 
 vi.mock('@/lib/backend/core', () => ({
@@ -57,6 +58,9 @@ describe('SettingsContext', () => {
       if (command === 'get_display_settings') {
         return Promise.resolve({ ...TEST_DISPLAY_SETTINGS });
       }
+      if (command === 'get_system_settings') {
+        return Promise.resolve({ ...TEST_SYSTEM_SETTINGS });
+      }
       if (command === 'get_experimental_settings') {
         return Promise.resolve({ ...TEST_EXPERIMENTAL_SETTINGS });
       }
@@ -78,11 +82,12 @@ describe('SettingsContext', () => {
       expect(result.current.isLoading).toBe(false);
     });
 
-    expect(safeInvoke).toHaveBeenCalledTimes(4);
+    expect(safeInvoke).toHaveBeenCalledTimes(5);
     expect(safeInvoke).toHaveBeenCalledWith('list_settings');
     expect(safeInvoke).toHaveBeenCalledWith('get_advanced_settings');
     expect(safeInvoke).toHaveBeenCalledWith('get_display_settings');
     expect(safeInvoke).toHaveBeenCalledWith('get_experimental_settings');
+    expect(safeInvoke).toHaveBeenCalledWith('get_system_settings');
   });
 
   it('does not let an older settings fetch overwrite a refreshed cache', async () => {
@@ -121,6 +126,9 @@ describe('SettingsContext', () => {
 
       if (command === 'get_display_settings') {
         return Promise.resolve({ ...TEST_DISPLAY_SETTINGS });
+      }
+      if (command === 'get_system_settings') {
+        return Promise.resolve({ ...TEST_SYSTEM_SETTINGS });
       }
       if (command === 'get_experimental_settings') {
         return Promise.resolve({ ...TEST_EXPERIMENTAL_SETTINGS });
@@ -236,6 +244,9 @@ describe('SettingsContext', () => {
       if (command === 'get_display_settings') {
         return Promise.resolve({ ...TEST_DISPLAY_SETTINGS });
       }
+      if (command === 'get_system_settings') {
+        return Promise.resolve({ ...TEST_SYSTEM_SETTINGS });
+      }
       if (command === 'get_experimental_settings') {
         return Promise.resolve({ ...TEST_EXPERIMENTAL_SETTINGS });
       }
@@ -282,6 +293,9 @@ describe('SettingsContext', () => {
       }
       if (command === 'get_display_settings') {
         return Promise.resolve({ ...TEST_DISPLAY_SETTINGS });
+      }
+      if (command === 'get_system_settings') {
+        return Promise.resolve({ ...TEST_SYSTEM_SETTINGS });
       }
       if (command === 'get_experimental_settings') {
         return Promise.resolve({ ...TEST_EXPERIMENTAL_SETTINGS });
