@@ -1,7 +1,7 @@
+use crate::models::system_settings::SystemSettings;
 use crate::models::workspace_isolation::DEFAULT_DOCKER_WORKDIR;
 use crate::session_isolation::IsolationLevel;
 use regex::Regex;
-use serde_json::Value;
 use std::ffi::OsStr;
 use std::path::{Component, Path};
 
@@ -16,56 +16,16 @@ pub const DOCKER_WORKSPACE_ROOT: &str = DEFAULT_DOCKER_WORKDIR;
 /// Get configured shell isolation level from settings
 /// Returns the configured isolation level or Medium as default
 pub async fn get_shell_isolation_level() -> IsolationLevel {
-    use crate::repositories::settings_repository::SettingsRepository;
-    use crate::state::get_settings_repository;
-
-    let repo = get_settings_repository();
-
-    // Get systemSettings object which contains shellIsolationLevel
-    match repo.get("systemSettings").await {
-        Ok(Some(model)) => {
-            match serde_json::from_str::<Value>(&model.value) {
-                Ok(json) => {
-                    if let Some(level_str) =
-                        json.get("shellIsolationLevel").and_then(|v| v.as_str())
-                    {
-                        match level_str {
-                            "basic" => IsolationLevel::Basic,
-                            "medium" => IsolationLevel::Medium,
-                            "high" => IsolationLevel::High,
-                            _ => IsolationLevel::Medium, // Invalid value, use default
-                        }
-                    } else {
-                        IsolationLevel::Medium // Field not present, use default
-                    }
-                }
-                Err(_) => IsolationLevel::Medium, // JSON parse error, use default
-            }
-        }
-        _ => IsolationLevel::Medium, // Setting not found, use default
-    }
+    SystemSettings::load_global()
+        .await
+        .shell_isolation_level
+        .into()
 }
 
 /// Whether persistent shells should source conda/nvm integration scripts on startup.
 /// Defaults to false (opt-in).
 pub async fn get_shell_runtime_bootstrap_enabled() -> bool {
-    use crate::repositories::settings_repository::SettingsRepository;
-    use crate::state::try_get_settings_repository;
-
-    let Some(repo) = try_get_settings_repository() else {
-        return false;
-    };
-
-    match repo.get("systemSettings").await {
-        Ok(Some(model)) => match serde_json::from_str::<Value>(&model.value) {
-            Ok(json) => json
-                .get("shellRuntimeBootstrap")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false),
-            Err(_) => false,
-        },
-        _ => false,
-    }
+    SystemSettings::load_global().await.shell_runtime_bootstrap
 }
 
 /// Get diff context lines from settings (defaults to 3)
