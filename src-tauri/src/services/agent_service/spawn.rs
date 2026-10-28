@@ -110,6 +110,13 @@ impl AgentService {
             }
         };
 
+        // Root sessions get the configured default limits when they are created.
+        // Take the stored limits so the response and the cached lineage that
+        // children inherit (and fanout checks read) match the session row.
+        let mut lineage_meta = lineage_meta;
+        lineage_meta.max_depth = session.max_depth;
+        lineage_meta.max_fanout = session.max_fanout;
+
         lineage_store()
             .write()
             .await
