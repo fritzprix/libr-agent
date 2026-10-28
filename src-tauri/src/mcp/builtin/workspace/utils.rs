@@ -70,22 +70,9 @@ pub async fn get_shell_runtime_bootstrap_enabled() -> bool {
 
 /// Get diff context lines from settings (defaults to 3)
 pub async fn get_diff_context_lines() -> usize {
-    use crate::repositories::settings_repository::SettingsRepository;
-    use crate::state::get_settings_repository;
-
-    let repo = get_settings_repository();
-    // Setting key is 'advancedSettings' based on RustSettingsService
-    match repo.get("advancedSettings").await {
-        Ok(Some(model)) => match serde_json::from_str::<Value>(&model.value) {
-            Ok(json) => json
-                .get("diffContextLines")
-                .and_then(|v| v.as_u64())
-                .map(|v| v as usize)
-                .unwrap_or(3),
-            Err(_) => 3,
-        },
-        _ => 3,
-    }
+    crate::models::advanced_settings::AdvancedSettings::load_global()
+        .await
+        .diff_context_lines
 }
 
 pub fn default_sync_execution_timeout() -> u64 {

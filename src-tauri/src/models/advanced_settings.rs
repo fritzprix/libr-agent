@@ -1,0 +1,253 @@
+//! Backend model of the `advancedSettings` settings row.
+//!
+//! Schema and defaults live here. Stored JSON may be missing fields, hold
+//! values of the wrong type, or not parse at all; [`AdvancedSettings::from_stored`]
+//! always returns a complete, in-range object, falling back per field.
+
+use crate::agent::concurrency::{
+    DEFAULT_MAX_ACTIVE_AGENTS, DEFAULT_MAX_ACTIVE_PROCESSES, DEFAULT_MAX_SUSPENDED_AGENTS,
+    DEFAULT_MAX_SUSPENDED_PROCESSES,
+};
+use crate::agent::tools::spillover::TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES;
+use crate::repositories::settings_repository::SettingsRepository;
+use serde::Serialize;
+use serde_json::{Map, Value};
+
+const SETTINGS_KEY: &str = "advancedSettings";
+const CONCURRENCY_RANGE: (u32, u32) = (1, 256);
+const LOOP_THRESHOLD_RANGE: (usize, usize) = (2, 20);
+const LOOP_HARD_BREAK_OFFSET_RANGE: (usize, usize) = (1, 20);
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdvancedSettings {
+    pub max_retries: u32,
+    /// Milliseconds.
+    pub retry_delay: u64,
+    pub diff_context_lines: usize,
+    pub default_max_output_tokens: u64,
+    /// Not clamped here; the spillover module owns its byte bounds.
+    pub tool_result_inline_limit_bytes: usize,
+    /// `0` means no default limit.
+    pub default_session_max_depth: u32,
+    /// `0` means no default limit.
+    pub default_session_max_fanout: u32,
+    pub max_concurrent_active_sessions: u32,
+    pub max_suspended_sessions: u32,
+    pub max_concurrent_active_processes: u32,
+    pub max_suspended_processes: u32,
+    pub loop_prevention_threshold: usize,
+    pub loop_prevention_hard_break_offset: usize,
+    pub thinking_loop_min_pattern_length: u64,
+    pub thinking_loop_min_repetitions: u64,
+    pub max_recent_media_messages: u64,
+    pub thinking_effort: String,
+}
+
+impl Default for AdvancedSettings {
+    fn default() -> Self {
+        Self {
+            max_retries: 1,
+            retry_delay: 5000,
+            diff_context_lines: 3,
+            default_max_output_tokens: 8192,
+            tool_result_inline_limit_bytes: TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES,
+            default_session_max_depth: 0,
+            default_session_max_fanout: 0,
+            max_concurrent_active_sessions: DEFAULT_MAX_ACTIVE_AGENTS,
+            max_suspended_sessions: DEFAULT_MAX_SUSPENDED_AGENTS,
+            max_concurrent_active_processes: DEFAULT_MAX_ACTIVE_PROCESSES,
+            max_suspended_processes: DEFAULT_MAX_SUSPENDED_PROCESSES,
+            loop_prevention_threshold: 3,
+            loop_prevention_hard_break_offset: 2,
+            thinking_loop_min_pattern_length: 256,
+            thinking_loop_min_repetitions: 4,
+            max_recent_media_messages: 1,
+            thinking_effort: "off".to_string(),
+        }
+    }
+}
+
+fn uint(map: &Map<String, Value>, key: &str) -> Option<u64> {
+    map.get(key).and_then(Value::as_u64)
+}
+
+fn uint_in<T: TryFrom<u64> + Ord + Copy>(
+    map: &Map<String, Value>,
+    key: &str,
+    (min, max): (T, T),
+    default: T,
+) -> T {
+    uint(map, key)
+        .map(|value| T::try_from(value).unwrap_or(max).clamp(min, max))
+        .unwrap_or(default)
+}
+
+impl AdvancedSettings {
+    /// Normalizes a stored row value; `None`, broken JSON and non-object JSON
+    /// yield the defaults.
+    pub fn from_stored(raw: Option<&str>) -> Self {
+        let defaults = Self::default();
+        let Some(Value::Object(map)) = raw.and_then(|raw| serde_json::from_str(raw).ok()) else {
+            return defaults;
+        };
+
+        Self {
+            max_retries: uint_in(&map, "maxRetries", (0, u32::MAX), defaults.max_retries),
+            retry_delay: uint(&map, "retryDelay").unwrap_or(defaults.retry_delay),
+            diff_context_lines: uint_in(
+                &map,
+                "diffContextLines",
+                (0, usize::MAX),
+                defaults.diff_context_lines,
+            ),
+            default_max_output_tokens: uint(&map, "defaultMaxOutputTokens")
+                .filter(|tokens| *tokens > 0)
+                .unwrap_or(defaults.default_max_output_tokens),
+            tool_result_inline_limit_bytes: uint_in(
+                &map,
+                "toolResultInlineLimitBytes",
+                (0, usize::MAX),
+                defaults.tool_result_inline_limit_bytes,
+            ),
+            default_session_max_depth: uint_in(
+                &map,
+                "defaultSessionMaxDepth",
+                (0, u32::MAX),
+                defaults.default_session_max_depth,
+            ),
+            default_session_max_fanout: uint_in(
+                &map,
+                "defaultSessionMaxFanout",
+                (0, u32::MAX),
+                defaults.default_session_max_fanout,
+            ),
+            max_concurrent_active_sessions: uint_in(
+                &map,
+                "maxConcurrentActiveSessions",
+                CONCURRENCY_RANGE,
+                defaults.max_concurrent_active_sessions,
+            ),
+            max_suspended_sessions: uint_in(
+                &map,
+                "maxSuspendedSessions",
+                CONCURRENCY_RANGE,
+                defaults.max_suspended_sessions,
+            ),
+            max_concurrent_active_processes: uint_in(
+                &map,
+                "maxConcurrentActiveProcesses",
+                CONCURRENCY_RANGE,
+                defaults.max_concurrent_active_processes,
+            ),
+            max_suspended_processes: uint_in(
+                &map,
+                "maxSuspendedProcesses",
+                CONCURRENCY_RANGE,
+                defaults.max_suspended_processes,
+            ),
+            loop_prevention_threshold: uint_in(
+                &map,
+                "loopPreventionThreshold",
+                LOOP_THRESHOLD_RANGE,
+                defaults.loop_prevention_threshold,
+            ),
+            loop_prevention_hard_break_offset: uint_in(
+                &map,
+                "loopPreventionHardBreakOffset",
+                LOOP_HARD_BREAK_OFFSET_RANGE,
+                defaults.loop_prevention_hard_break_offset,
+            ),
+            thinking_loop_min_pattern_length: uint(&map, "thinkingLoopMinPatternLength")
+                .unwrap_or(defaults.thinking_loop_min_pattern_length),
+            thinking_loop_min_repetitions: uint(&map, "thinkingLoopMinRepetitions")
+                .unwrap_or(defaults.thinking_loop_min_repetitions),
+            max_recent_media_messages: uint(&map, "maxRecentMediaMessages")
+                .unwrap_or(defaults.max_recent_media_messages),
+            thinking_effort: map
+                .get("thinkingEffort")
+                .and_then(Value::as_str)
+                .filter(|effort| !effort.is_empty())
+                .map(str::to_string)
+                .unwrap_or(defaults.thinking_effort),
+        }
+    }
+
+    /// Reads and normalizes the stored row; defaults when the repository is
+    /// not initialized yet or the read fails.
+    pub async fn load(repo: &impl SettingsRepository) -> Self {
+        match repo.get(SETTINGS_KEY).await {
+            Ok(Some(model)) => Self::from_stored(Some(&model.value)),
+            _ => Self::default(),
+        }
+    }
+
+    /// [`Self::load`] through the global repository.
+    pub async fn load_global() -> Self {
+        match crate::state::try_get_settings_repository() {
+            Some(repo) => Self::load(repo).await,
+            None => Self::default(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_row_and_broken_json_yield_defaults() {
+        let defaults = AdvancedSettings::default();
+        assert_eq!(AdvancedSettings::from_stored(None), defaults);
+        assert_eq!(AdvancedSettings::from_stored(Some("{not json")), defaults);
+        assert_eq!(AdvancedSettings::from_stored(Some("[1,2]")), defaults);
+        assert_eq!(AdvancedSettings::from_stored(Some("{}")), defaults);
+    }
+
+    #[test]
+    fn partial_row_keeps_present_fields_and_fills_the_rest() {
+        let settings = AdvancedSettings::from_stored(Some(
+            r#"{"maxRetries":5,"defaultSessionMaxDepth":3,"thinkingEffort":"high"}"#,
+        ));
+        assert_eq!(settings.max_retries, 5);
+        assert_eq!(settings.default_session_max_depth, 3);
+        assert_eq!(settings.thinking_effort, "high");
+        assert_eq!(settings.retry_delay, 5000);
+        assert_eq!(settings.diff_context_lines, 3);
+    }
+
+    #[test]
+    fn wrong_typed_fields_fall_back_individually() {
+        let settings = AdvancedSettings::from_stored(Some(
+            r#"{"maxRetries":"many","retryDelay":-1,"diffContextLines":7,"thinkingEffort":4}"#,
+        ));
+        assert_eq!(settings.max_retries, 1);
+        assert_eq!(settings.retry_delay, 5000);
+        assert_eq!(settings.diff_context_lines, 7);
+        assert_eq!(settings.thinking_effort, "off");
+    }
+
+    #[test]
+    fn bounded_fields_are_clamped() {
+        let settings = AdvancedSettings::from_stored(Some(
+            r#"{"maxConcurrentActiveSessions":0,"maxSuspendedSessions":9999,
+                "loopPreventionThreshold":1,"loopPreventionHardBreakOffset":500}"#,
+        ));
+        assert_eq!(settings.max_concurrent_active_sessions, 1);
+        assert_eq!(settings.max_suspended_sessions, 256);
+        assert_eq!(settings.loop_prevention_threshold, 2);
+        assert_eq!(settings.loop_prevention_hard_break_offset, 20);
+    }
+
+    #[test]
+    fn serialized_keys_match_the_stored_camel_case_names() {
+        let value = serde_json::to_value(AdvancedSettings::default()).unwrap();
+        let keys: Vec<_> = value.as_object().unwrap().keys().cloned().collect();
+        assert!(keys.contains(&"maxConcurrentActiveSessions".to_string()));
+        assert!(keys.contains(&"defaultSessionMaxFanout".to_string()));
+        assert_eq!(
+            AdvancedSettings::from_stored(Some(&value.to_string())),
+            AdvancedSettings::default()
+        );
+    }
+}

@@ -1,8 +1,6 @@
 use crate::mcp::types::MCPContent;
 use crate::models::chat::Message;
-use crate::repositories::settings_repository::SettingsRepository;
 use crate::services::WorkspaceService;
-use serde_json::Value;
 
 pub const TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES: usize = 16 * 1024;
 const TOOL_RESULT_SPILLOVER_DIR: &str = ".libragent/tool-results";
@@ -55,21 +53,8 @@ pub fn tool_result_preview_content_limit_bytes(limit_bytes: usize) -> usize {
 }
 
 pub async fn tool_result_inline_limit_bytes() -> usize {
-    let Some(settings_repo) = crate::state::try_get_settings_repository() else {
-        return TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES;
-    };
-
-    match settings_repo.get("advancedSettings").await {
-        Ok(Some(model)) => match serde_json::from_str::<Value>(&model.value) {
-            Ok(json) => json
-                .get("toolResultInlineLimitBytes")
-                .and_then(|value| value.as_u64())
-                .map(|value| clamp_tool_result_inline_limit_bytes(value as usize))
-                .unwrap_or(TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES),
-            Err(_) => TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES,
-        },
-        _ => TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES,
-    }
+    let settings = crate::models::advanced_settings::AdvancedSettings::load_global().await;
+    clamp_tool_result_inline_limit_bytes(settings.tool_result_inline_limit_bytes)
 }
 
 /// How the inline spillover preview was produced.

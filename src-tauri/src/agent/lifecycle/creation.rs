@@ -1,6 +1,7 @@
 use crate::agent::context::registry::ContextRegistry;
 use crate::agent::state::AgentSession;
 use crate::mcp::MCPServiceProxyManager;
+use crate::models::advanced_settings::AdvancedSettings;
 use crate::models::workspace_isolation::{DockerWorkspaceConfig, WorkspaceIsolationMode};
 use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::settings_repository::SettingsRepository;
@@ -159,6 +160,21 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
         None
     };
 
+    // Root sessions created without explicit limits get the configured defaults, so
+    // the limits also apply to requests that did not come through the UI.
+    let (default_max_depth, default_max_fanout) = if existing_session.is_none()
+        && agent_config.parent_session_id.is_none()
+    {
+        let defaults = AdvancedSettings::load_global().await;
+        (
+            (defaults.default_session_max_depth > 0).then_some(defaults.default_session_max_depth),
+            (defaults.default_session_max_fanout > 0)
+                .then_some(defaults.default_session_max_fanout),
+        )
+    } else {
+        (None, None)
+    };
+
     let session = SessionMetadata {
         id: session_id.clone(),
         name,
@@ -173,8 +189,8 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
         parent_session_id: agent_config.parent_session_id.clone(),
         lineage_id: agent_config.lineage_id.clone(),
         depth: agent_config.depth,
-        max_depth: agent_config.max_depth,
-        max_fanout: agent_config.max_fanout,
+        max_depth: agent_config.max_depth.or(default_max_depth),
+        max_fanout: agent_config.max_fanout.or(default_max_fanout),
         org_id: agent_config.org_id.clone(),
         org_name: agent_config.org_name.clone(),
         org_root_session_id: agent_config.org_root_session_id.clone(),

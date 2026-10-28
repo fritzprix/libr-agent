@@ -1,7 +1,6 @@
 use crate::agent::types::ToolCall;
 use crate::agent::AgentConfig;
 use crate::models::chat::Message;
-use crate::repositories::settings_repository::SettingsRepository;
 use once_cell::sync::Lazy;
 use regex::{Captures, Regex};
 use serde_json::Value;
@@ -204,33 +203,11 @@ pub fn build_tool_call_indices(messages: &[Message]) -> std::collections::HashMa
 ///   `NaturalRecoveryErrorEscalate` fires once at `hard_break - 1` when
 ///   `offset >= 2` (with offset=1 the escalate step is skipped: soft then hard).
 pub(crate) async fn load_loop_prevention_settings() -> (usize, usize) {
-    let default_threshold = 3;
-    let default_offset = 2;
-    let Some(settings_repo) = crate::state::try_get_settings_repository() else {
-        return (default_threshold, default_offset);
-    };
-
-    match settings_repo.get("advancedSettings").await {
-        Ok(Some(model)) => match serde_json::from_str::<serde_json::Value>(&model.value) {
-            Ok(json) => {
-                let threshold = json
-                    .get("loopPreventionThreshold")
-                    .and_then(|value| value.as_u64())
-                    .map(|v| v as usize)
-                    .unwrap_or(default_threshold)
-                    .clamp(2, 20);
-                let offset = json
-                    .get("loopPreventionHardBreakOffset")
-                    .and_then(|v| v.as_u64())
-                    .map(|v| v as usize)
-                    .unwrap_or(default_offset)
-                    .clamp(1, 20);
-                (threshold, offset)
-            }
-            Err(_) => (default_threshold, default_offset),
-        },
-        _ => (default_threshold, default_offset),
-    }
+    let settings = crate::models::advanced_settings::AdvancedSettings::load_global().await;
+    (
+        settings.loop_prevention_threshold,
+        settings.loop_prevention_hard_break_offset,
+    )
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
