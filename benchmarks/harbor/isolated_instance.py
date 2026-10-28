@@ -398,11 +398,19 @@ def sandbox_enabled(env: dict[str, str]) -> bool:
 
 
 def sandbox_command(layout: InstanceLayout, app_bin: Path, env: dict[str, str]) -> list[str]:
-    """bubblewrap argv that runs ``app_bin`` with only the run dir writable."""
+    """bubblewrap argv that runs ``app_bin`` with only the run dir writable.
+
+    The sandbox has its own PID namespace, so every process started in it,
+    detached daemons included, ends with the instance and is not visible to
+    the next trial. No ``--die-with-parent``: the parent is the short-lived
+    ``launch`` process, and the instance must outlive it.
+    """
     run_dir = str(layout.run_dir.resolve())
     command = [
         "bwrap",
+        "--unshare-pid",
         "--ro-bind", "/", "/",
+        "--proc", "/proc",  # this namespace's procfs, not the host's
         "--dev-bind", "/dev", "/dev",
         "--bind", run_dir, run_dir,
         "--bind", str(layout.tmp_dir.resolve()), "/tmp",
