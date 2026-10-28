@@ -648,4 +648,31 @@ mod tests {
             vec!["starting".to_string()]
         );
     }
+
+    #[test]
+    fn a_task_that_dies_after_the_deadline_turns_timed_out_servers_into_retry_targets() {
+        let mut state = configured_state();
+        apply_server_connecting(&mut state, "slow", SessionRuntimeTransport::Stdio);
+        apply_server_ready(&mut state, "ready", SessionRuntimeTransport::Stdio, 1);
+        apply_discovery_timeout_finalize(&mut state, "waited 30s");
+        assert_eq!(
+            server(&state, "slow").status,
+            SessionRuntimeServerStatus::TimedOut
+        );
+
+        apply_discovery_task_failed(&mut state, "Tool discovery task failed before completion");
+
+        assert_eq!(
+            server(&state, "slow").status,
+            SessionRuntimeServerStatus::Failed
+        );
+        assert_eq!(
+            server(&state, "ready").status,
+            SessionRuntimeServerStatus::Ready
+        );
+        assert_eq!(
+            claim_failed_servers_for_retry(&mut state, |_| true),
+            vec!["slow".to_string()]
+        );
+    }
 }

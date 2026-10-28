@@ -483,6 +483,58 @@ fn create_silent_server_manager(startup_timeout_seconds: u64) -> SessionMCPManag
     )
 }
 
+/// Manager whose only server answers `initialize` and then exits, so listing its tools fails.
+#[cfg(unix)]
+fn create_dying_server_manager() -> SessionMCPManager {
+    let init_response = r#"{"jsonrpc":"2.0","id":0,"result":{"protocolVersion":"2024-11-05","capabilities":{},"serverInfo":{"name":"dying","version":"1"}}}"#;
+    let mut configs = HashMap::new();
+    configs.insert(
+        "dying".to_string(),
+        MCPServerConfig {
+            name: Some("dying".to_string()),
+            transport: TransportConfig::Stdio {
+                command: "sh".to_string(),
+                args: vec![
+                    "-c".to_string(),
+                    format!("read line; printf '%s\\n' '{init_response}'"),
+                ],
+                env: HashMap::new(),
+            },
+            authentication: None,
+            metadata: None,
+            provenance: None,
+        },
+    );
+    let config = SessionIsolationConfig {
+        idle_timeout_minutes: 5,
+        cleanup_interval_minutes: 5,
+        process_startup_timeout_seconds: 5,
+        max_restart_attempts: 0,
+        http_connection_pool_size: 10,
+    };
+    SessionMCPManager::new(
+        "dying-session".to_string(),
+        configs,
+        config,
+        std::env::current_dir().unwrap(),
+        create_test_channel_event_tx(),
+    )
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_failed_tool_listing_drops_the_process_so_a_retry_spawns_a_new_one() {
+    let manager = create_dying_server_manager();
+
+    let result = manager
+        .list_tools_with_init_timeout("dying", Duration::from_secs(5))
+        .await;
+
+    assert!(result.is_err());
+    // The broken client must not stay registered, or a retry would reuse it.
+    assert!(manager.active_processes.read().await.is_empty());
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn tool_calls_keep_the_configured_startup_timeout() {

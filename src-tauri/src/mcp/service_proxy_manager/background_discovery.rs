@@ -667,6 +667,23 @@ pub(super) async fn spawn_background_tool_loading(
                             context.session_id,
                             error
                         );
+                        // The task that was still starting `TimedOut` servers is dead, so
+                        // they failed; leaving `TimedOut` would show "starting" forever.
+                        let update_result = update_runtime_state_store(
+                            &context.runtime_states,
+                            &context.session_id,
+                            context.app_handle.as_ref(),
+                            |state| {
+                                apply_discovery_task_failed(
+                                    state,
+                                    "Tool discovery task failed before completion",
+                                );
+                            },
+                        )
+                        .await;
+                        if update_result.emitted {
+                            context.runtime_state_emits.fetch_add(1, Ordering::Relaxed);
+                        }
                     }
                 }
             }
