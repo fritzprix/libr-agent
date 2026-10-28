@@ -1,6 +1,7 @@
 import {
   DEFAULT_SETTING,
   type AdvancedSettings,
+  type DisplaySettings,
   type ExperimentalSettings,
   type Settings,
 } from '@/lib/services/settings-service';
@@ -29,6 +30,20 @@ export const TEST_ADVANCED_SETTINGS: AdvancedSettings = {
   thinkingEffort: 'off',
 };
 
+/** Test data only: Rust owns `display` (`get_display_settings`). */
+export const TEST_DISPLAY_SETTINGS: DisplaySettings = {
+  metricDisplayMode: 'inline',
+  prefillDisplayFormat: 'time',
+  showTokenSpeed: true,
+  compactMetrics: false,
+  toolDetailLevel: 'simple',
+  fontFamily: 'Pretendard',
+  uiScale: 1.1,
+  messageLayout: 'document',
+  colorTheme: 'neutral',
+  showFeatureTips: true,
+};
+
 /** Test data only: Rust owns `experimental` (`get_experimental_settings`). */
 export const TEST_EXPERIMENTAL_SETTINGS: ExperimentalSettings = {
   inlineAudioAttachment: true,
@@ -40,5 +55,6 @@ export const TEST_EXPERIMENTAL_SETTINGS: ExperimentalSettings = {
 export const TEST_SETTINGS: Settings = {
   ...DEFAULT_SETTING,
   advanced: TEST_ADVANCED_SETTINGS,
+  display: TEST_DISPLAY_SETTINGS,
   experimental: TEST_EXPERIMENTAL_SETTINGS,
 };

@@ -12,6 +12,7 @@ import { __resetRustSettingsServiceCacheForTests } from '@/lib/services/rust-set
 import { settingsService } from '@/lib/services/settings-service';
 import {
   TEST_ADVANCED_SETTINGS,
+  TEST_DISPLAY_SETTINGS,
   TEST_EXPERIMENTAL_SETTINGS,
 } from '@/test/fixtures/settings';
 
@@ -53,6 +54,9 @@ describe('SettingsContext', () => {
       if (command === 'list_settings') {
         return Promise.resolve([]);
       }
+      if (command === 'get_display_settings') {
+        return Promise.resolve({ ...TEST_DISPLAY_SETTINGS });
+      }
       if (command === 'get_experimental_settings') {
         return Promise.resolve({ ...TEST_EXPERIMENTAL_SETTINGS });
       }
@@ -74,9 +78,10 @@ describe('SettingsContext', () => {
       expect(result.current.isLoading).toBe(false);
     });
 
-    expect(safeInvoke).toHaveBeenCalledTimes(3);
+    expect(safeInvoke).toHaveBeenCalledTimes(4);
     expect(safeInvoke).toHaveBeenCalledWith('list_settings');
     expect(safeInvoke).toHaveBeenCalledWith('get_advanced_settings');
+    expect(safeInvoke).toHaveBeenCalledWith('get_display_settings');
     expect(safeInvoke).toHaveBeenCalledWith('get_experimental_settings');
   });
 
@@ -114,6 +119,9 @@ describe('SettingsContext', () => {
         return Promise.resolve([]);
       }
 
+      if (command === 'get_display_settings') {
+        return Promise.resolve({ ...TEST_DISPLAY_SETTINGS });
+      }
       if (command === 'get_experimental_settings') {
         return Promise.resolve({ ...TEST_EXPERIMENTAL_SETTINGS });
       }
@@ -225,6 +233,9 @@ describe('SettingsContext', () => {
       if (command === 'list_settings') {
         return Promise.resolve([]);
       }
+      if (command === 'get_display_settings') {
+        return Promise.resolve({ ...TEST_DISPLAY_SETTINGS });
+      }
       if (command === 'get_experimental_settings') {
         return Promise.resolve({ ...TEST_EXPERIMENTAL_SETTINGS });
       }
@@ -268,6 +279,9 @@ describe('SettingsContext', () => {
     vi.mocked(safeInvoke).mockImplementation((command: string) => {
       if (command === 'list_settings') {
         return Promise.resolve([]);
+      }
+      if (command === 'get_display_settings') {
+        return Promise.resolve({ ...TEST_DISPLAY_SETTINGS });
       }
       if (command === 'get_experimental_settings') {
         return Promise.resolve({ ...TEST_EXPERIMENTAL_SETTINGS });

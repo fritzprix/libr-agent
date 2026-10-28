@@ -1,4 +1,5 @@
 use crate::models::advanced_settings::AdvancedSettings;
+use crate::models::display_settings::DisplaySettings;
 use crate::models::experimental_settings::ExperimentalSettings;
 use crate::repositories::settings_repository::SettingsRepository;
 use crate::state::get_settings_repository;
@@ -111,4 +112,9 @@ pub async fn get_advanced_settings() -> Result<AdvancedSettings, String> {
 #[command]
 pub async fn get_experimental_settings() -> Result<ExperimentalSettings, String> {
     Ok(ExperimentalSettings::load_global().await)
+}
+
+#[command]
+pub async fn get_display_settings() -> Result<DisplaySettings, String> {
+    Ok(DisplaySettings::load_global().await)
 }

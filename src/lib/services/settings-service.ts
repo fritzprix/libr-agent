@@ -3,7 +3,9 @@ import type { AdvancedSettings } from '@/lib/generated/AdvancedSettings';
 import type { ExperimentalSettings } from '@/lib/generated/ExperimentalSettings';
 import type { ToolLoopRecoveryPolicy } from '@/lib/generated/ToolLoopRecoveryPolicy';
 import { llmConfigManager } from '@/lib/llm-config-manager';
-import { DEFAULT_UI_SCALE, normalizeUiScale } from '@/lib/ui-scale';
+import type { ColorTheme } from '@/lib/generated/ColorTheme';
+import type { DisplaySettings } from '@/lib/generated/DisplaySettings';
+import type { MessageLayoutStyle } from '@/lib/generated/MessageLayoutStyle';
 
 export interface SafetySetting {
   category: string;
@@ -86,44 +88,8 @@ export function normalizeComplexityModelMapping(
 /** Normalized by Rust (`get_advanced_settings`); generated from the Rust model. */
 export type { AdvancedSettings };
 
-/** Chat message chrome: classic bubbles vs full-width coding-agent document stream. */
-export type MessageLayoutStyle = 'document' | 'bubble';
-
-export type ColorTheme = 'neutral' | 'amber' | 'violet' | 'ocean' | 'forest';
-export const COLOR_THEMES: ColorTheme[] = [
-  'neutral',
-  'amber',
-  'violet',
-  'ocean',
-  'forest',
-];
-
-export function isColorTheme(val: unknown): val is ColorTheme {
-  return (
-    typeof val === 'string' && (COLOR_THEMES as readonly string[]).includes(val)
-  );
-}
-
-export interface DisplaySettings {
-  metricDisplayMode: 'tooltip' | 'inline';
-  prefillDisplayFormat: 'time' | 'tokensPerSecond';
-  showTokenSpeed: boolean;
-  compactMetrics: boolean;
-  /** Controls tool call display verbosity. 'simple' hides params/results/errors for regular users. */
-  toolDetailLevel: 'simple' | 'developer';
-  fontFamily: string;
-  /** Webview zoom factor; one of `UI_SCALE_STEPS`. */
-  uiScale: number;
-  /**
-   * Message layout style for the agent chat transcript.
-   * - `document`: full-width document stream optimized for code/diffs (default)
-   * - `bubble`: classic messenger bubbles
-   */
-  messageLayout: MessageLayoutStyle;
-  colorTheme: ColorTheme;
-  /** When true, show release/hub feature discovery tips on the agent hub. */
-  showFeatureTips: boolean;
-}
+/** Normalized by Rust (`get_display_settings`); generated from the Rust model. */
+export type { ColorTheme, DisplaySettings, MessageLayoutStyle };
 
 export type IsolationLevel = 'basic' | 'medium' | 'high';
 
@@ -185,12 +151,15 @@ export interface Settings {
 const DEFAULT_MODEL = llmConfigManager.recommendModel({});
 
 /**
- * Frontend defaults. `advanced` and `experimental` are not here: Rust owns their
- * schema and defaults, `get_advanced_settings` / `get_experimental_settings`
- * always return the complete object, and `SettingsProvider` renders nothing that
+ * Frontend defaults. `advanced`, `display` and `experimental` are not here: Rust owns their
+ * schema and defaults, `get_advanced_settings` / `get_display_settings` /
+ * `get_experimental_settings` always return the complete object, and `SettingsProvider` renders nothing that
  * reads settings before it arrives.
  */
-export const DEFAULT_SETTING: Omit<Settings, 'advanced' | 'experimental'> = {
+export const DEFAULT_SETTING: Omit<
+  Settings,
+  'advanced' | 'display' | 'experimental'
+> = {
   serviceConfigs: Object.values(AIServiceProvider).reduce(
     (acc, provider) => {
       acc[provider] = {};
@@ -213,18 +182,6 @@ export const DEFAULT_SETTING: Omit<Settings, 'advanced' | 'experimental'> = {
   uiLanguage: 'en',
   toolCallGroupVisibleCount: 4,
   agentHubUrl: '',
-  display: {
-    metricDisplayMode: 'inline',
-    prefillDisplayFormat: 'time',
-    showTokenSpeed: true,
-    compactMetrics: false,
-    toolDetailLevel: 'simple',
-    fontFamily: 'Pretendard',
-    uiScale: DEFAULT_UI_SCALE,
-    messageLayout: 'document',
-    colorTheme: 'neutral',
-    showFeatureTips: true,
-  },
   system: {
     maxFileUploadSizeMB: 50,
     webActionTimeoutSeconds: 30,
@@ -240,69 +197,6 @@ export const DEFAULT_SETTING: Omit<Settings, 'advanced' | 'experimental'> = {
     preventSleepDuringAgentWork: true,
   },
 };
-
-export function isMessageLayoutStyle(
-  value: unknown,
-): value is MessageLayoutStyle {
-  return value === 'document' || value === 'bubble';
-}
-
-/**
- * Merge a stored displaySettings blob with defaults so newly added fields
- * (e.g. messageLayout) are present for older DB values.
- */
-export function normalizeDisplaySettings(
-  stored: unknown,
-  defaults: DisplaySettings = DEFAULT_SETTING.display,
-): DisplaySettings {
-  const blob =
-    typeof stored === 'object' && stored !== null
-      ? (stored as Partial<DisplaySettings>)
-      : {};
-
-  return {
-    metricDisplayMode:
-      blob.metricDisplayMode === 'tooltip' ||
-      blob.metricDisplayMode === 'inline'
-        ? blob.metricDisplayMode
-        : defaults.metricDisplayMode,
-    prefillDisplayFormat:
-      blob.prefillDisplayFormat === 'time' ||
-      blob.prefillDisplayFormat === 'tokensPerSecond'
-        ? blob.prefillDisplayFormat
-        : defaults.prefillDisplayFormat,
-    showTokenSpeed:
-      typeof blob.showTokenSpeed === 'boolean'
-        ? blob.showTokenSpeed
-        : defaults.showTokenSpeed,
-    compactMetrics:
-      typeof blob.compactMetrics === 'boolean'
-        ? blob.compactMetrics
-        : defaults.compactMetrics,
-    toolDetailLevel:
-      blob.toolDetailLevel === 'simple' || blob.toolDetailLevel === 'developer'
-        ? blob.toolDetailLevel
-        : defaults.toolDetailLevel,
-    fontFamily:
-      typeof blob.fontFamily === 'string' && blob.fontFamily.length > 0
-        ? blob.fontFamily
-        : defaults.fontFamily,
-    uiScale:
-      blob.uiScale === undefined
-        ? defaults.uiScale
-        : normalizeUiScale(blob.uiScale),
-    messageLayout: isMessageLayoutStyle(blob.messageLayout)
-      ? blob.messageLayout
-      : defaults.messageLayout,
-    colorTheme: isColorTheme(blob.colorTheme)
-      ? blob.colorTheme
-      : defaults.colorTheme,
-    showFeatureTips:
-      typeof blob.showFeatureTips === 'boolean'
-        ? blob.showFeatureTips
-        : defaults.showFeatureTips,
-  };
-}
 
 export interface ISettingsService {
   getSettings(): Promise<Settings>;
