@@ -44,10 +44,6 @@ struct StartupSettingsSnapshot {
 pub struct ManagedSkillsSyncHandle(pub tauri::async_runtime::JoinHandle<()>);
 
 async fn load_startup_settings() -> StartupSettingsSnapshot {
-    use crate::agent::concurrency::{
-        DEFAULT_MAX_ACTIVE_AGENTS, DEFAULT_MAX_ACTIVE_PROCESSES, DEFAULT_MAX_SUSPENDED_AGENTS,
-        DEFAULT_MAX_SUSPENDED_PROCESSES,
-    };
     use crate::state::get_settings_repository;
 
     let settings_repo = get_settings_repository();
@@ -60,20 +56,8 @@ async fn load_startup_settings() -> StartupSettingsSnapshot {
         system_settings.prevent_sleep_during_agent_work_or_default(),
     );
 
-    let advanced_settings = match settings_repo.get("advancedSettings").await {
-        Ok(Some(model)) => {
-            serde_json::from_str::<serde_json::Value>(&model.value).unwrap_or_default()
-        }
-        _ => serde_json::Value::Null,
-    };
-
-    let get_u32 = |key: &str, default: u32| -> u32 {
-        advanced_settings
-            .get(key)
-            .and_then(|value| value.as_u64())
-            .map(|value| value.clamp(1, 256) as u32)
-            .unwrap_or(default)
-    };
+    let advanced_settings =
+        crate::models::advanced_settings::AdvancedSettings::load(settings_repo).await;
 
     StartupSettingsSnapshot {
         web_action_timeout: std::time::Duration::from_secs(
@@ -82,10 +66,10 @@ async fn load_startup_settings() -> StartupSettingsSnapshot {
         http_port: system_settings.http_server_port.unwrap_or(3030),
         http_expose: system_settings.http_server_expose.unwrap_or(false),
         search_index_frequency_minutes: system_settings.search_index_frequency_minutes.unwrap_or(5),
-        active_agents: get_u32("maxConcurrentActiveSessions", DEFAULT_MAX_ACTIVE_AGENTS),
-        suspended_agents: get_u32("maxSuspendedSessions", DEFAULT_MAX_SUSPENDED_AGENTS),
-        active_processes: get_u32("maxConcurrentActiveProcesses", DEFAULT_MAX_ACTIVE_PROCESSES),
-        suspended_processes: get_u32("maxSuspendedProcesses", DEFAULT_MAX_SUSPENDED_PROCESSES),
+        active_agents: advanced_settings.max_concurrent_active_sessions,
+        suspended_agents: advanced_settings.max_suspended_sessions,
+        active_processes: advanced_settings.max_concurrent_active_processes,
+        suspended_processes: advanced_settings.max_suspended_processes,
     }
 }
 
