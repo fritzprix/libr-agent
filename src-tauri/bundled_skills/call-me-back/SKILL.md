@@ -3,7 +3,7 @@ name: call-me-back
 description: >-
   Resume this agent session on a completion signal instead of clock polling.
   Use when wiring external hooks/--exec/webhooks that must POST into this
-  session (wake URL is already in Agent Runtime Identity), or waiting for
+  session (use $LIBRAGENT_WAKE_URL), or waiting for
   process exit, ticket/job status, file watchers — "call me back when done",
   "끝나면 깨워줘", "subscribe --exec", "register hook", "완료되면 콜백",
   "webhook으로 깨워줘", "run in background with hook". NEVER for pure time
@@ -60,13 +60,15 @@ Prefer one `waitForProcess` over repeated short waits or clock callbacks.
 ### A2. Long local job — end the turn, get woken
 
 Use this only when `$LIBRAGENT_WAKE_URL` is set. The variable is injected only into `runShell` /
-`spawnProcess` environments, so test it there with `[ -n "$LIBRAGENT_WAKE_URL" ]` (never print it); set
-means a host session. Otherwise nothing will wake you after the turn ends:
+`spawnProcess` environments, so test it there with `[ -n "$LIBRAGENT_WAKE_URL" ]` (never print it).
+It is set in host sessions and in managed Docker sessions on Linux. If it is unset (managed Docker on
+Docker Desktop, an attached container, or the wake listener is down), nothing will wake you after the turn ends:
 always block on `workspace__waitForProcess` (section A).
 
 For jobs that run many minutes (long builds, training), do not hold the turn in
-`waitForProcess`. `runShell` / `spawnProcess` on host workspaces export
-`$LIBRAGENT_WAKE_URL`, a tokenized wake URL for **this** session only.
+`waitForProcess`. `runShell` / `spawnProcess` export
+`$LIBRAGENT_WAKE_URL`, a tokenized wake URL for **this** session only. In a managed Docker
+session on Linux it points at the host through `host.docker.internal`; use it the same way.
 
 1. Start the job with an unconditional callback (fires on success **and** failure):
    `long_cmd > job.log 2>&1; curl -s -X POST "$LIBRAGENT_WAKE_URL" -H 'Content-Type: application/json' -d "{\"exitCode\":$?,\"logPath\":\"job.log\"}"`
@@ -80,7 +82,8 @@ Payload fields (all optional): `status` (`success`/`failure`, else derived from
 `exitCode`), `exitCode`, `summary`, `logPath`.
 
 - Never `echo` / print `$LIBRAGENT_WAKE_URL` or paste its value into files or replies.
-- Not set in Docker-isolated sessions; use `waitForProcess` there.
+- Unset (Docker Desktop managed session, attached container, wake listener down): use `waitForProcess`.
+- No `curl` in the image: POST with an HTTP client it has (for example `python3`).
 - Contract (modes, exposure, security): `docs/architecture/session-wake-contract.md`.
 - The token is revoked when the session is terminated or deleted, and does not
   survive an app restart; late callbacks get `401`. If no callback came, check
@@ -99,15 +102,17 @@ recipes to this skill — read that system's own hook docs, then wire its payloa
 
 **Harness wake (SSOT):**
 
-Agent Runtime Identity already injects the concrete wake URL for **this** session
-(`External wake (this session): POST http://127.0.0.1:<port>/api/sessions/<id>/messages`).
-Copy that URL — do not invent a path or leave `--exec` as `echo` / file-append only.
+Every wake goes through `$LIBRAGENT_WAKE_URL`, the tokenized wake URL for **this** session
+(where it is set, and what to do when it is not: section A2). Point the hook, webhook or
+`--exec` command at it. Do not invent a path, do not use the main Session API `/messages`,
+and do not leave `--exec` as `echo` / file-append only.
 
-- Body: JSON `{"content":"<event summary>"}` (optional `"source":"api"`).
-- Channel-style alternative: `POST …/channel` with `serverName` + `content` (+ optional `meta`).
+- The variable exists only in `runShell` / `spawnProcess` environments. Expand it when you
+  register the callback (double-quoted), so the stored hook carries the value. Never print it.
+- Body: optional JSON (`status`, `exitCode`, `summary`, `logPath`); an empty body also wakes.
 
-Map the external event (env, stdin JSON, query, body) **into** that `content` / `meta`.
-The external side only needs to run something that performs this inject.
+Map the external event (env, stdin JSON, query, body) **into** those fields, with the event
+summary in `summary`. The external side only needs to run something that performs this POST.
 
 #### Two phases
 

@@ -336,19 +336,16 @@ fn build_stable_prefix(
         } else {
             crate::utils::session_id::display_session_id(session_id)
         };
-        let http_port = crate::server::active_http_port();
         let mut identity = format!(
             "\n\n## Agent Runtime Identity\n\
             - Agent Name: {}\n\
             - Agent ID (Config ID): {}\n\
             - Session ID: {}\n\
-            - External wake (this session): POST http://127.0.0.1:{}/api/sessions/{}/messages body {{\"content\":\"…\"}} — wire hooks/webhooks/--exec here (not echo-only stubs). Skill: call-me-back.\n\
-            - Process-completion wake: runShell/spawnProcess (host workspaces) export $LIBRAGENT_WAKE_URL (tokenized, this session only). Chain `long_cmd > log 2>&1; curl -s -X POST \"$LIBRAGENT_WAKE_URL\" -H 'Content-Type: application/json' -d \"{{\\\"exitCode\\\":$?,\\\"logPath\\\":\\\"log\\\"}}\"`, then end your turn. Never print the variable.\n\
+            - External wake (this session): hooks, webhooks, watchers and --exec commands must POST to $LIBRAGENT_WAKE_URL (not echo-only stubs), never to the main Session API /messages. Skill: call-me-back.\n\
+            - Process-completion wake: runShell/spawnProcess export $LIBRAGENT_WAKE_URL (host and Linux managed Docker sessions; if unset, e.g. Docker Desktop, use waitForProcess) (tokenized, this session only). Chain `long_cmd > log 2>&1; curl -s -X POST \"$LIBRAGENT_WAKE_URL\" -H 'Content-Type: application/json' -d \"{{\\\"exitCode\\\":$?,\\\"logPath\\\":\\\"log\\\"}}\"`, then end your turn. Never print the variable.\n\
             - Note: Agent ID / Config ID is your configuration template ID (for agent__spawnSession). Session ID is your running instance ID (for agent__messageToSession / agent__checkSession / external wake).",
             agent_config.name.trim(),
             agent_id,
-            display_session,
-            http_port,
             display_session
         );
 
@@ -535,8 +532,12 @@ mod tests {
 
         // Assert 1: Agent Identity
         assert!(prompt.contains("You are a test assistant."));
-        assert!(prompt.contains("External wake (this session): POST http://127.0.0.1:"));
-        assert!(prompt.contains("/api/sessions/(unknown-session)/messages"));
+        assert!(prompt.contains("External wake (this session): hooks, webhooks"));
+        assert!(prompt.contains("must POST to $LIBRAGENT_WAKE_URL"));
+        assert!(
+            !prompt.contains("/api/sessions/(unknown-session)/messages"),
+            "external hooks must not be pointed at the main Session API"
+        );
         assert!(prompt.contains(r#"curl -s -X POST "$LIBRAGENT_WAKE_URL""#));
         assert!(
             !prompt.contains("/wake/"),
@@ -579,8 +580,8 @@ mod tests {
             - Agent ID (Config ID): (unknown)\n\
             - Session ID: (unknown-session)"
         ));
-        assert!(prompt.contains("External wake (this session): POST http://127.0.0.1:"));
-        assert!(prompt.contains("/api/sessions/(unknown-session)/messages"));
+        assert!(prompt.contains("External wake (this session): hooks, webhooks"));
+        assert!(!prompt.contains("/api/sessions/(unknown-session)/messages"));
         assert!(prompt.contains("## Session Context"));
         assert!(prompt.contains("<session-context>"));
         assert!(!prompt.contains("passive environment reference only"));
