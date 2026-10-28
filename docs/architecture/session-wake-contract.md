@@ -35,17 +35,18 @@ POST /api/sessions/:id/wake/:token
 A full, tokenized wake URL for **this** session only:
 `http://<host>:<port>/api/sessions/<id>/wake/<token>`.
 
-| Session mode | `<host>:<port>` | Reached through |
-| --- | --- | --- |
-| host | `127.0.0.1:<Session API port>` | host loopback, main Session API server |
-| managed Docker | `host.docker.internal:<wake listener port>` | wake listener (below) |
+| Session mode                                    | `<host>:<port>`                             | Reached through                        |
+| ----------------------------------------------- | ------------------------------------------- | -------------------------------------- |
+| host                                            | `127.0.0.1:<Session API port>`              | host loopback, main Session API server |
+| managed Docker (Linux)                          | `host.docker.internal:<wake listener port>` | wake listener (below)                  |
+| managed Docker (Docker Desktop: macOS, Windows) | not set                                     | see Constraints                        |
 
 - Injected only into the environments of `runShell` / `spawnProcess` started by the
   session. It is not in the model's context; the model refers to it by name.
 - Managed Docker containers are created with
-  `--add-host=host.docker.internal:host-gateway`. Linux needs it; Docker Desktop
-  (macOS, Windows) provides the name already, so no per-platform branch exists.
-  Containers created without the mapping must be recreated.
+  `--add-host=host.docker.internal:host-gateway` on every platform (Docker Desktop
+  provides the name already). Containers created without the mapping must be
+  recreated.
 - When no wake URL can be built for a session (for example the wake listener is not
   running), the variable is not injected and the failure is reported explicitly,
   never replaced by an unreachable URL.
@@ -64,8 +65,9 @@ A full, tokenized wake URL for **this** session only:
 - It starts on the first Docker session that needs a wake URL (the daemon is up by
   then) and is retried by the next such session after a failure.
 - The URL carries the port that was actually bound, not a configured one.
-- Non-wake routes are therefore unreachable from non-loopback callers by
-  construction, not by a filter on a shared server.
+- On Linux, non-wake routes are therefore unreachable from containers by
+  construction, not by a filter on a shared server. Docker Desktop is different; see
+  Constraints.
 
 ## Security
 
@@ -104,8 +106,18 @@ checks the contract in both `host` and `managed` workspace modes.
 - Negative checks: a wake with another session's token is rejected, and a request
   from the container to any non-wake Session API route is refused.
 
-## Open
+## Constraints
 
-- Bind address on Docker Desktop (macOS, Windows): the bridge gateway lives inside
-  Docker's VM, so binding it on the host may fail there. Measured by the owner in
-  #2358; Linux binds the `docker0` gateway.
+- **Docker Desktop (macOS, Windows): no wake URL in managed Docker sessions.** The
+  bridge gateway exists only inside Docker's VM, so the wake listener cannot bind it
+  on the host. The listener stays down, the error is recorded and
+  `$LIBRAGENT_WAKE_URL` is not injected (fail-closed, as under Exposure). There is no
+  separate Desktop bind. Sessions there wait with the existing paths, such as
+  `waitForProcess`.
+- **Docker Desktop: containers reach the host's loopback services.**
+  `host.docker.internal` leads to host loopback, so a container reaches the main
+  Session API on `127.0.0.1`. Without a Session API key, the only check in front of
+  the non-wake routes is the `Host` header guard (`access_guard`), and a container
+  can send `Host: 127.0.0.1`. This is an open gap, to be handled separately.
+- Host sessions on every platform, and managed Docker sessions on Linux, get the wake
+  URL as described above.
