@@ -5,7 +5,7 @@
 environment like any daemon it starts. When a message file appears in
 incoming/, the watcher stores the message, runs every subscription's hook with
 SMS_MESSAGE_ID, SMS_FROM and SMS_TEXT set, and records the hooks' exit codes in
-delivered/<id>.json. Replies are only recorded.
+delivered/<id>.json HOOK_GRACE_SEC after they return. Replies are only recorded.
 """
 import argparse
 import json
@@ -22,6 +22,11 @@ REPLIES = STATE_DIR / "replies.json"
 INCOMING = STATE_DIR / "incoming"
 DELIVERED = STATE_DIR / "delivered"
 WATCHER_PID = STATE_DIR / "watcher.pid"
+# Seconds to wait after the hooks return before writing delivered/<id>.json.
+# A hook may send its wake in the background (`curl ... &`); the harbor adapter
+# reads delivered/<id>.json as "the wake, if any, has arrived", so give such a
+# background request time to land first.
+HOOK_GRACE_SEC = 5
 
 
 def load(path):
@@ -65,6 +70,7 @@ def handle(path):
             ["sh", "-c", sub["hook"]], env=env, capture_output=True, cwd="/app"
         )
         hooks.append({"subscription": sub["id"], "exit_code": result.returncode})
+    time.sleep(HOOK_GRACE_SEC)
     DELIVERED.mkdir(parents=True, exist_ok=True)
     record = {"message_id": message["id"], "hooks": hooks, "handled_at": now()}
     (DELIVERED / f"{message['id']}.json").write_text(json.dumps(record, indent=2))
