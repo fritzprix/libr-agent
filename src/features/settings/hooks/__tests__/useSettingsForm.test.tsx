@@ -1,12 +1,12 @@
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useSettingsForm } from '../useSettingsForm';
-import { DEFAULT_SETTING } from '@/context/SettingsContext';
+import { TEST_SETTINGS } from '@/test/fixtures/settings';
 import { AIServiceProvider } from '@/lib/ai-service';
 
 // Mock dependencies
 const mockUpdateGlobal = vi.fn();
-let currentGlobalSettings = { ...DEFAULT_SETTING };
+let currentGlobalSettings = { ...TEST_SETTINGS };
 
 vi.mock('@/hooks/use-settings', () => ({
   useSettings: () => ({
@@ -22,12 +22,12 @@ function cloneSettings<T>(settings: T): T {
 describe('useSettingsForm', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    currentGlobalSettings = { ...DEFAULT_SETTING };
+    currentGlobalSettings = { ...TEST_SETTINGS };
   });
 
   it('should initialize with global settings', () => {
     const { result } = renderHook(() => useSettingsForm());
-    expect(result.current.formState).toEqual(DEFAULT_SETTING);
+    expect(result.current.formState).toEqual(TEST_SETTINGS);
     expect(result.current.isDirty).toBe(false);
     expect(result.current.dirtyState).toEqual({
       general: false,
@@ -90,7 +90,7 @@ describe('useSettingsForm', () => {
       result.current.reset();
     });
 
-    expect(result.current.formState).toEqual(DEFAULT_SETTING);
+    expect(result.current.formState).toEqual(TEST_SETTINGS);
     expect(result.current.isDirty).toBe(false);
   });
 
@@ -145,7 +145,7 @@ describe('useSettingsForm', () => {
 
     act(() => {
       currentGlobalSettings = {
-        ...cloneSettings(DEFAULT_SETTING),
+        ...cloneSettings(TEST_SETTINGS),
         windowSize: 50,
       };
       rerender();
@@ -194,7 +194,7 @@ describe('useSettingsForm', () => {
 
     act(() => {
       currentGlobalSettings = {
-        ...cloneSettings(DEFAULT_SETTING),
+        ...cloneSettings(TEST_SETTINGS),
         windowSize: 64,
       };
       rerender();
@@ -213,7 +213,7 @@ describe('useSettingsForm', () => {
 
     act(() => {
       currentGlobalSettings = {
-        ...cloneSettings(DEFAULT_SETTING),
+        ...cloneSettings(TEST_SETTINGS),
         windowSize: 64,
       };
       rerender();
@@ -233,7 +233,7 @@ describe('useSettingsForm', () => {
 
     act(() => {
       currentGlobalSettings = {
-        ...cloneSettings(DEFAULT_SETTING),
+        ...cloneSettings(TEST_SETTINGS),
         windowSize: 64,
       };
       rerender();
@@ -257,7 +257,7 @@ describe('useSettingsForm', () => {
 
     act(() => {
       currentGlobalSettings = {
-        ...cloneSettings(DEFAULT_SETTING),
+        ...cloneSettings(TEST_SETTINGS),
         windowSize: 64,
       };
       rerender();
@@ -360,8 +360,8 @@ describe('useSettingsForm', () => {
 
       act(() => {
         currentGlobalSettings = {
-          ...cloneSettings(DEFAULT_SETTING),
-          display: { ...DEFAULT_SETTING.display, uiScale: 1.5 },
+          ...cloneSettings(TEST_SETTINGS),
+          display: { ...TEST_SETTINGS.display, uiScale: 1.5 },
         };
         rerender();
       });
@@ -379,8 +379,8 @@ describe('useSettingsForm', () => {
       });
       act(() => {
         currentGlobalSettings = {
-          ...cloneSettings(DEFAULT_SETTING),
-          display: { ...DEFAULT_SETTING.display, uiScale: 0.9 },
+          ...cloneSettings(TEST_SETTINGS),
+          display: { ...TEST_SETTINGS.display, uiScale: 0.9 },
         };
         rerender();
       });
@@ -405,9 +405,9 @@ describe('useSettingsForm', () => {
       });
       act(() => {
         currentGlobalSettings = {
-          ...cloneSettings(DEFAULT_SETTING),
+          ...cloneSettings(TEST_SETTINGS),
           windowSize: 50,
-          display: { ...DEFAULT_SETTING.display, uiScale: 1.25 },
+          display: { ...TEST_SETTINGS.display, uiScale: 1.25 },
         };
         rerender();
       });

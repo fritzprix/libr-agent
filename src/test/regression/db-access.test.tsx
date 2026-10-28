@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { useMCPServerRegistry, MCPServerRegistryProvider } from '@/context/MCPServerRegistryContext';
-import { SettingsProvider } from '@/context/SettingsContext';
+import { TestSettingsProvider } from '@/test/fixtures/TestSettingsProvider';
 import { ReactNode } from 'react';
 
 // Stateful mock stores
@@ -59,9 +59,9 @@ beforeEach(() => {
 
 // Mock wrapper
 const wrapper = ({ children }: { children: ReactNode }) => (
-    <SettingsProvider>
+    <TestSettingsProvider>
         <MCPServerRegistryProvider>{children}</MCPServerRegistryProvider>
-    </SettingsProvider>
+    </TestSettingsProvider>
 );
 
 describe('DB Access Regression Tests', () => {

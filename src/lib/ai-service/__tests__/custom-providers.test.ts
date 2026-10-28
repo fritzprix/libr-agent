@@ -15,6 +15,7 @@ import {
 } from '../last-selected-model-storage';
 import type { Settings } from '@/lib/services/settings-service';
 import { DEFAULT_SETTING } from '@/lib/services/settings-service';
+import { TEST_SETTINGS } from '@/test/fixtures/settings';
 
 function settingsWithCustom(
   overrides: Partial<Settings> = {},
@@ -132,7 +133,7 @@ describe('custom provider helpers', () => {
 
   it('migrates legacy openai use3rdParty config into customProviders', () => {
     const { settings, didMigrate } = migrateLegacyOpenAICompatibleSettings({
-      ...DEFAULT_SETTING,
+      ...TEST_SETTINGS,
       serviceConfigs: {
         ...DEFAULT_SETTING.serviceConfigs,
         [AIServiceProvider.OpenAI]: {
@@ -168,7 +169,7 @@ describe('custom provider helpers', () => {
 
   it('does not duplicate custom providers when migrating the same base URL twice', () => {
     const first = migrateLegacyOpenAICompatibleSettings({
-      ...DEFAULT_SETTING,
+      ...TEST_SETTINGS,
       serviceConfigs: {
         ...DEFAULT_SETTING.serviceConfigs,
         [AIServiceProvider.OpenAI]: {

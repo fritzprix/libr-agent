@@ -1,11 +1,6 @@
 import { AIServiceProvider } from '@/lib/ai-service';
 import type { AdvancedSettings } from '@/lib/generated/AdvancedSettings';
 import { llmConfigManager } from '@/lib/llm-config-manager';
-import {
-  REPEATED_THINKING_MIN_PATTERN_LENGTH,
-  REPEATED_THINKING_MIN_REPETITIONS,
-} from '@/context/llm/repeatedTailDetector';
-import { DEFAULT_MAX_RECENT_MEDIA_MESSAGES } from '@/lib/media-settings';
 import { DEFAULT_UI_SCALE, normalizeUiScale } from '@/lib/ui-scale';
 
 export interface SafetySetting {
@@ -214,7 +209,12 @@ export interface Settings {
 
 const DEFAULT_MODEL = llmConfigManager.recommendModel({});
 
-export const DEFAULT_SETTING: Settings = {
+/**
+ * Frontend defaults. `advanced` is not here: Rust owns its schema and defaults,
+ * `get_advanced_settings` always returns the complete object, and
+ * `SettingsProvider` renders nothing that reads settings before it arrives.
+ */
+export const DEFAULT_SETTING: Omit<Settings, 'advanced'> = {
   serviceConfigs: Object.values(AIServiceProvider).reduce(
     (acc, provider) => {
       acc[provider] = {};
@@ -237,27 +237,6 @@ export const DEFAULT_SETTING: Settings = {
   uiLanguage: 'en',
   toolCallGroupVisibleCount: 4,
   agentHubUrl: '',
-  // Placeholder until the first load only: loaded settings always take
-  // `advanced` from Rust (`get_advanced_settings`), which owns these defaults.
-  advanced: {
-    maxRetries: 1,
-    retryDelay: 5000,
-    diffContextLines: 3,
-    defaultMaxOutputTokens: 8192,
-    toolResultInlineLimitBytes: 16 * 1024,
-    defaultSessionMaxDepth: 0,
-    defaultSessionMaxFanout: 0,
-    maxConcurrentActiveSessions: 4,
-    maxSuspendedSessions: 8,
-    maxConcurrentActiveProcesses: 10,
-    maxSuspendedProcesses: 20,
-    loopPreventionThreshold: 3,
-    loopPreventionHardBreakOffset: 2,
-    thinkingLoopMinPatternLength: REPEATED_THINKING_MIN_PATTERN_LENGTH,
-    thinkingLoopMinRepetitions: REPEATED_THINKING_MIN_REPETITIONS,
-    maxRecentMediaMessages: DEFAULT_MAX_RECENT_MEDIA_MESSAGES,
-    thinkingEffort: 'off',
-  },
   display: {
     metricDisplayMode: 'inline',
     prefillDisplayFormat: 'time',

@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { buildServiceRuntimeConfig } from '../service-runtime-config';
-import { DEFAULT_SETTING } from '@/lib/services/settings-service';
+import { TEST_ADVANCED_SETTINGS, TEST_SETTINGS } from '@/test/fixtures/settings';
 
 describe('buildServiceRuntimeConfig', () => {
   it('includes retry settings from advanced settings', () => {
     const settings = {
-      ...DEFAULT_SETTING,
+      ...TEST_SETTINGS,
       advanced: {
-        ...DEFAULT_SETTING.advanced,
+        ...TEST_ADVANCED_SETTINGS,
         maxRetries: 3,
         retryDelay: 1000,
       },
@@ -19,7 +19,7 @@ describe('buildServiceRuntimeConfig', () => {
 
   it('includes temperature when override is enabled', () => {
     const settings = {
-      ...DEFAULT_SETTING,
+      ...TEST_SETTINGS,
       temperatureOverrideEnabled: true,
       temperature: 0.5,
     };
@@ -29,7 +29,7 @@ describe('buildServiceRuntimeConfig', () => {
 
   it('omits temperature when override is disabled', () => {
     const settings = {
-      ...DEFAULT_SETTING,
+      ...TEST_SETTINGS,
       temperatureOverrideEnabled: false,
       temperature: 0.5,
     };
@@ -39,9 +39,9 @@ describe('buildServiceRuntimeConfig', () => {
 
   it('includes thinkingEffort from advanced settings', () => {
     const settings = {
-      ...DEFAULT_SETTING,
+      ...TEST_SETTINGS,
       advanced: {
-        ...DEFAULT_SETTING.advanced,
+        ...TEST_ADVANCED_SETTINGS,
         thinkingEffort: 'auto' as const,
       },
     };
@@ -51,9 +51,9 @@ describe('buildServiceRuntimeConfig', () => {
 
   it('includes thinkingEffort when disabled (off)', () => {
     const settings = {
-      ...DEFAULT_SETTING,
+      ...TEST_SETTINGS,
       advanced: {
-        ...DEFAULT_SETTING.advanced,
+        ...TEST_ADVANCED_SETTINGS,
         thinkingEffort: 'off' as const,
       },
     };
