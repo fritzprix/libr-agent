@@ -45,6 +45,8 @@ Ubuntu an AppArmor profile that lets `/usr/bin/bwrap` create user namespaces. On
 tasks whose workdir is `/app` run in `host` mode, and the task image's tools are not
 available. Shortcuts: `pnpm bench:layman:managed`, `pnpm bench:layman:host`.
 
+`managed` sessions reach the host through the wake callback path; see the [Session Wake Callback Contract](../../docs/architecture/session-wake-contract.md).
+
 ## Prerequisites
 
 1. `pnpm tauri dev` (HTTP API on `http://localhost:3030/api`)

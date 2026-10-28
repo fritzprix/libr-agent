@@ -97,3 +97,4 @@ Apply targeted replacements, insertions, and deletions to one file.
 ## Related Tools
 
 - `deleteFile`: Destructive removal.
+- Wake callbacks (call-me-back): [Session Wake Callback Contract](../architecture/session-wake-contract.md)
