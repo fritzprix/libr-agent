@@ -1247,6 +1247,11 @@ def test_woken_work_finished_states() -> None:
     assert woken_work_finished(woken, "busy", 2) is False
     assert woken_work_finished(woken, "idle", 2) is False  # woken, not yet answered
     assert woken_work_finished(woken + [{"role": "assistant"}], "idle", 2) is True
+    # A woken turn may end on a tool result (e.g. ui__reportResult).
+    assert woken_work_finished(woken + [{"role": "assistant"}, {"role": "tool"}], "idle", 2) is True
+    # A second wake that the session has not answered yet.
+    answered_then_woken = woken + [{"role": "assistant"}, {"role": "user"}]
+    assert woken_work_finished(answered_then_woken, "idle", 2) is False
     assert woken_work_finished(woken, "error", 2) is True
 
 

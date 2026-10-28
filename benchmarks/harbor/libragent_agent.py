@@ -1095,14 +1095,20 @@ def woken_work_finished(messages: list[Any], status: str, baseline: int) -> bool
     ``None``: no wake reached the session (no new message). The wake route stores
     its message before it answers, so once the fixture reports the event handled,
     a missing message means the session was not woken. ``False``: woken, still
-    working. ``True``: woken and back at a terminal status after replying.
+    working. ``True``: woken and back at a terminal status after it responded
+    (any non-user message after the latest user message; a turn may end on a
+    tool result such as ``ui__reportResult``).
     """
-    if len(messages) <= baseline:
+    new = messages[baseline:]
+    if not new:
         return None
     normalized = status.strip().lower()
     if normalized not in TERMINAL_WORKFLOW_STATUSES:
         return False
-    return normalized == "error" or messages[-1].get("role") == "assistant"
+    if normalized == "error":
+        return True
+    last_user = max((i for i, m in enumerate(new) if m.get("role") == "user"), default=-1)
+    return any(m.get("role") != "user" for m in new[last_user + 1 :])
 
 
 def resolve_poll_timeout_sec(
