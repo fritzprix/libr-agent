@@ -81,6 +81,7 @@ Payload fields (all optional): `status` (`success`/`failure`, else derived from
 
 - Never `echo` / print `$LIBRAGENT_WAKE_URL` or paste its value into files or replies.
 - Not set in Docker-isolated sessions; use `waitForProcess` there.
+- Contract (modes, exposure, security): `docs/architecture/session-wake-contract.md`.
 - The token is revoked when the session is terminated or deleted, and does not
   survive an app restart; late callbacks get `401`. If no callback came, check
   `job.log` yourself.
