@@ -27,7 +27,6 @@ _SPEC.loader.exec_module(checker)
 
 from layman_intent_critical_path import (
     TASKS,
-    calls_wake,
     grade_calls,
     load_calls,
     runs_script,
@@ -156,16 +155,8 @@ class CriticalPathTests(unittest.TestCase):
             ["__verifyServer only before __registerServer"],
         )
 
-    def test_wake_call_is_literal_variable_or_expanded_url(self) -> None:
-        self.assertTrue(calls_wake("curl -s -X POST \"$LIBRAGENT_WAKE_URL\""))
-        self.assertTrue(
-            calls_wake("curl -s -X POST http://127.0.0.1:3030/api/sessions/s1/wake/tok")
-        )
-        self.assertFalse(calls_wake("echo done"))
-        self.assertFalse(calls_wake("echo $LIBRAGENT_WAKE_URL"))
-
     def test_call_me_back_has_no_trajectory_checks(self) -> None:
-        # T04 is graded on the recorded subscription only, so no tool use fails it here.
+        # T04 is graded on the reply after a real wake, so no tool use fails it here.
         self.assertEqual(
             _grade("T04", _step(("a", "workspace__waitForProcess", {}, False))), []
         )
@@ -286,9 +277,9 @@ class DatasetTests(unittest.TestCase):
             self.assertEqual(copy.read_bytes(), shared, f"{copy} is out of sync")
             tests = (task_dir / "tests" / "test_outputs.py").read_text(encoding="utf-8")
             if spec.task_id == "T04":
-                # Graded on the mock's recorded state only, with no trajectory check.
-                self.assertIn("calls_wake(", tests, spec.directory)
-                self.assertIn(".sms_monitor/subscriptions.json", tests, spec.directory)
+                # Graded on the reply sent after a real wake, with no trajectory check.
+                self.assertIn('"replies.json"', tests, spec.directory)
+                self.assertIn('"delivered"', tests, spec.directory)
                 self.assertNotIn("grade_trajectory", tests, spec.directory)
             else:
                 self.assertIn(

@@ -1051,6 +1051,60 @@ def is_workflow_complete(status: str, *, seen_non_idle: bool) -> bool:
     return True
 
 
+@dataclass(frozen=True)
+class PostIdleEvent:
+    """External event delivered after the session first goes idle (call-me-back tasks).
+
+    Declared in the task's ``task.toml`` under ``[metadata.libragent_event]``, which
+    the agent never sees. Paths are relative to the task workspace.
+    """
+
+    requires: str  # file that must exist for anything to receive the event
+    path: str  # file the adapter writes to deliver the event
+    content: str
+    done: str  # file the fixture writes once it has handled the event
+
+
+def load_post_idle_event(logs_dir: Path) -> PostIdleEvent | None:
+    """Read the trial's task ``[metadata.libragent_event]``, if it declares one."""
+    import tomllib
+
+    try:
+        config = json.loads((logs_dir.parent / "config.json").read_text(encoding="utf-8"))
+        task_dir = Path(config["task"]["path"])
+        task = tomllib.loads((task_dir / "task.toml").read_text(encoding="utf-8"))
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    spec = task.get("metadata", {}).get("libragent_event")
+    if not isinstance(spec, dict):
+        return None
+    try:
+        return PostIdleEvent(
+            requires=str(spec["requires"]),
+            path=str(spec["path"]),
+            content=str(spec["content"]),
+            done=str(spec["done"]),
+        )
+    except KeyError as error:
+        raise RuntimeError(f"[metadata.libragent_event] is missing {error}") from error
+
+
+def woken_work_finished(messages: list[Any], status: str, baseline: int) -> bool | None:
+    """Whether the session handled a wake that arrived after ``baseline`` messages.
+
+    ``None``: no wake reached the session (no new message). The wake route stores
+    its message before it answers, so once the fixture reports the event handled,
+    a missing message means the session was not woken. ``False``: woken, still
+    working. ``True``: woken and back at a terminal status after replying.
+    """
+    if len(messages) <= baseline:
+        return None
+    normalized = status.strip().lower()
+    if normalized not in TERMINAL_WORKFLOW_STATUSES:
+        return False
+    return normalized == "error" or messages[-1].get("role") == "assistant"
+
+
 def resolve_poll_timeout_sec(
     explicit_timeout: float | None = None,
     *,
@@ -1673,6 +1727,8 @@ class LibrAgentHarborAdapter(BaseAgent):
             )
             payload["workspaceIsolation"] = "host"
 
+        post_idle_event = load_post_idle_event(self.logs_dir)
+
         async with httpx.AsyncClient(timeout=600.0) as client:
             if managed_image is not None:
                 mode_desc = f"managed:{managed_image}:{local_workspace_str}"
@@ -1808,6 +1864,15 @@ class LibrAgentHarborAdapter(BaseAgent):
                         )
                         completed = True
                         break
+
+                if post_idle_event is not None:
+                    await self._deliver_post_idle_event(
+                        client,
+                        session_id=session_id,
+                        workspace=Path(local_workspace_str),
+                        event=post_idle_event,
+                        poll_interval=poll_interval,
+                    )
             except asyncio.CancelledError:
                 # Harbor agent timeout cancels this coroutine. Do NOT treat the
                 # run as a successful completion (that caused verifiers to score
@@ -2006,6 +2071,72 @@ class LibrAgentHarborAdapter(BaseAgent):
             with contextlib.suppress(BaseException):
                 await task
             raise
+
+    async def _deliver_post_idle_event(
+        self,
+        client: Any,
+        *,
+        session_id: str,
+        workspace: Path,
+        event: PostIdleEvent,
+        poll_interval: float,
+    ) -> None:
+        """Deliver the task's external event and wait until the woken session is done.
+
+        Every wait is on observable state (the fixture's ``done`` file, the session's
+        messages and status); Harbor's agent timeout bounds them.
+        """
+        if not (workspace / event.requires).exists():
+            safe_print(
+                f"[{self.name()}] Post-idle event skipped: {event.requires} does not "
+                f"exist, so nothing is listening for it."
+            )
+            return
+
+        async def session_state() -> tuple[list[Any], str] | None:
+            """Messages and status, or ``None`` on a failed read (retried by callers)."""
+            try:
+                messages_res = await client.get(
+                    f"{self.api_url}/sessions/{session_id}/messages",
+                    params={"limit": TRAJECTORY_MESSAGE_LIMIT},
+                )
+                status_res = await client.get(f"{self.api_url}/sessions/{session_id}")
+            except Exception as e:
+                safe_print(f"[{self.name()}] Connection error, retrying: {e}")
+                return None
+            if messages_res.status_code != 200 or status_res.status_code != 200:
+                return None
+            return (
+                normalize_session_messages(messages_res.json().get("messages")),
+                str(status_res.json().get("status", "idle")),
+            )
+
+        before = None
+        while before is None:
+            before = await session_state()
+            if before is None:
+                await asyncio.sleep(poll_interval)
+        baseline = len(before[0])
+
+        target = workspace / event.path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(event.content, encoding="utf-8")
+        safe_print(f"[{self.name()}] Post-idle event delivered: {event.path}")
+
+        while not (workspace / event.done).exists():
+            await asyncio.sleep(poll_interval)
+        safe_print(f"[{self.name()}] Fixture handled the event: {event.done}")
+
+        while True:
+            state = await session_state()
+            finished = woken_work_finished(*state, baseline) if state else False
+            if finished is None:
+                safe_print(f"[{self.name()}] Session was not woken by the event.")
+                return
+            if finished:
+                safe_print(f"[{self.name()}] Woken session finished: status={state[1]}")
+                return
+            await asyncio.sleep(poll_interval)
 
     async def _fetch_session_messages_best_effort(self, session_id: str) -> list[Any]:
         """GET session messages on a short-lived client; never raise."""

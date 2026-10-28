@@ -31,3 +31,11 @@ mcp_servers = []
 [environment.env]
 
 [solution.env]
+
+# Delivered by the LibrAgent harbor adapter after the session first goes idle
+# (benchmarks/harbor/libragent_agent.py `PostIdleEvent`). The agent never sees it.
+[metadata.libragent_event]
+requires = ".sms_monitor/subscriptions.json"
+path = ".sms_monitor/incoming/m-5c1e.json"
+content = '{"id": "m-5c1e", "from": "+82-10-2471-9035", "text": "내일 회의 3시로 옮겨도 될까요?"}'
+done = ".sms_monitor/delivered/m-5c1e.json"
