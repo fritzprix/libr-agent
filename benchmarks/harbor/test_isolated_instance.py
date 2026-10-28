@@ -14,6 +14,7 @@ from benchmarks.harbor.isolated_instance import (
     build_seed,
     instance_pids,
     instance_env,
+    instance_running,
     reset_run_dir,
     safe_print,
     sandbox_command,
@@ -297,3 +298,24 @@ def test_stop_completes_when_stdout_is_broken(tmp_path: Path, monkeypatch: pytes
     layout.root.mkdir(parents=True)
     stop(layout)  # no running instance: used to die on print("No running bench instance.")
     assert not layout.pid_file.exists()
+
+
+def test_instance_running_follows_the_launched_process(tmp_path: Path) -> None:
+    import os
+    import subprocess
+
+    layout = InstanceLayout(tmp_path / "bench")
+    layout.root.mkdir(parents=True)
+    assert not instance_running(layout)  # no pid file
+
+    env = dict(os.environ, LIBRAGENT_DATA_DIR=str(layout.data_dir.resolve()))
+    child = subprocess.Popen(["sleep", "60"], env=env)
+    layout.pid_file.write_text(str(child.pid), encoding="utf-8")
+    try:
+        assert instance_running(layout)
+        child.kill()
+        os.waitid(os.P_PID, child.pid, os.WEXITED | os.WNOWAIT)  # dead, still a zombie
+        assert not instance_running(layout)  # a zombie is not running
+    finally:
+        child.kill()
+        child.returncode = 0  # already reaped by instance_running

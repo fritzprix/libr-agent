@@ -60,6 +60,7 @@ from benchmarks.harbor.isolated_instance import (
     INSTANCE_SANDBOX_ENV,
     SANDBOX_WORKDIR,
     InstanceLayout,
+    instance_running,
     relaunch,
     safe_print,
 )
@@ -1780,6 +1781,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                 )
 
             poll_interval = self.poll_interval_sec
+            bench_instance = resolve_trial_instance_reset(dict(os.environ))
             seen_non_idle = False
             completed = False
             last_status = "unknown"
@@ -1831,6 +1833,34 @@ class LibrAgentHarborAdapter(BaseAgent):
                             f"{self.api_url}/sessions/{session_id}"
                         )
                     except Exception as e:
+                        # A dead bench instance never answers again; only an
+                        # instance that is still running is worth retrying.
+                        # Without --isolated the API is external and always retried.
+                        if bench_instance is not None and not instance_running(
+                            bench_instance.layout
+                        ):
+                            safe_print(
+                                f"[{self.name()}] Bench instance is no longer running "
+                                f"({e}). Writing diagnostic trajectory and failing the trial."
+                            )
+                            with contextlib.suppress(asyncio.CancelledError):
+                                await self._run_shielded(
+                                    self._dump_incomplete_diagnostics(
+                                        session_id=session_id,
+                                        last_status=last_status,
+                                        seen_non_idle=seen_non_idle,
+                                        reason="instance_gone",
+                                        last_session_info=last_session_info,
+                                        workspace_mode=workspace_mode_name(workspace_mode),
+                                        context=context,
+                                        started_monotonic=session_started_at,
+                                    )
+                                )
+                            raise RuntimeError(
+                                f"Bench instance stopped during the trial (session "
+                                f"{session_id}, last status={last_status}); see "
+                                f"{bench_instance.layout.log_file}."
+                            ) from e
                         safe_print(
                             f"[{self.name()}] Connection error during polling, retrying: {e}"
                         )
