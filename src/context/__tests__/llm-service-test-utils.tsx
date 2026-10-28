@@ -5,7 +5,7 @@ import {
   useLLMService,
   useStreamingMessages,
 } from '../LLMServiceContext';
-import { SettingsProvider } from '../SettingsContext';
+import { TestSettingsProvider } from '@/test/fixtures/TestSettingsProvider';
 
 const { loggerInfo, loggerDebug, loggerWarn, loggerError } = vi.hoisted(() => ({
   loggerInfo: vi.fn(),
@@ -59,9 +59,9 @@ vi.mock('@/lib/retry-utils', async (importOriginal) => {
 // Test wrapper with required providers
 export function TestWrapper({ children }: { children: ReactNode }) {
   return (
-    <SettingsProvider>
+    <TestSettingsProvider>
       <LLMServiceProvider>{children}</LLMServiceProvider>
-    </SettingsProvider>
+    </TestSettingsProvider>
   );
 }
 

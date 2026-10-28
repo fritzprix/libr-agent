@@ -1,11 +1,6 @@
 import { AIServiceProvider } from '@/lib/ai-service';
-import type { ThinkingEffort } from '@/lib/ai-service/thinking-effort-mapping';
+import type { AdvancedSettings } from '@/lib/generated/AdvancedSettings';
 import { llmConfigManager } from '@/lib/llm-config-manager';
-import {
-  REPEATED_THINKING_MIN_PATTERN_LENGTH,
-  REPEATED_THINKING_MIN_REPETITIONS,
-} from '@/context/llm/repeatedTailDetector';
-import { DEFAULT_MAX_RECENT_MEDIA_MESSAGES } from '@/lib/media-settings';
 import { DEFAULT_UI_SCALE, normalizeUiScale } from '@/lib/ui-scale';
 
 export interface SafetySetting {
@@ -86,29 +81,8 @@ export function normalizeComplexityModelMapping(
   return result;
 }
 
-export interface AdvancedSettings {
-  maxRetries: number;
-  retryDelay: number; // in milliseconds
-  diffContextLines: number;
-  defaultMaxOutputTokens: number;
-  toolResultInlineLimitBytes: number;
-  defaultSessionMaxDepth: number;
-  defaultSessionMaxFanout: number;
-  // SP2: Global concurrent execution limits (runtime semaphores, not per-parent counts)
-  maxConcurrentActiveSessions: number; // default 4 — simultaneous LLM loops
-  maxSuspendedSessions: number; // default 8 — sessions blocked on awaitAgent
-  maxConcurrentActiveProcesses: number; // default 10 — simultaneous shell processes
-  maxSuspendedProcesses: number; // default 20 — processes blocked on pollProcess
-  loopPreventionThreshold: number; // default 3 — consecutive identical (call, outcome) streak before soft recovery
-  /** Gap after soft recovery before hard break. Default 2 so Soft→Escalate→Hard can fire for error loops. */
-  loopPreventionHardBreakOffset: number;
-  thinkingLoopMinPatternLength: number; // default 256 — minimum repeating sequence length for thinking loops
-  thinkingLoopMinRepetitions: number; // default 4 — minimum repetitions for thinking loops
-  /** Number of recent media-containing messages that retain full payloads. */
-  maxRecentMediaMessages: number;
-  /** Thinking effort preset for extended reasoning/thinking. */
-  thinkingEffort: ThinkingEffort;
-}
+/** Normalized by Rust (`get_advanced_settings`); generated from the Rust model. */
+export type { AdvancedSettings };
 
 /** Chat message chrome: classic bubbles vs full-width coding-agent document stream. */
 export type MessageLayoutStyle = 'document' | 'bubble';
@@ -235,7 +209,12 @@ export interface Settings {
 
 const DEFAULT_MODEL = llmConfigManager.recommendModel({});
 
-export const DEFAULT_SETTING: Settings = {
+/**
+ * Frontend defaults. `advanced` is not here: Rust owns its schema and defaults,
+ * `get_advanced_settings` always returns the complete object, and
+ * `SettingsProvider` renders nothing that reads settings before it arrives.
+ */
+export const DEFAULT_SETTING: Omit<Settings, 'advanced'> = {
   serviceConfigs: Object.values(AIServiceProvider).reduce(
     (acc, provider) => {
       acc[provider] = {};
@@ -258,25 +237,6 @@ export const DEFAULT_SETTING: Settings = {
   uiLanguage: 'en',
   toolCallGroupVisibleCount: 4,
   agentHubUrl: '',
-  advanced: {
-    maxRetries: 1,
-    retryDelay: 5000,
-    diffContextLines: 3,
-    defaultMaxOutputTokens: 8192,
-    toolResultInlineLimitBytes: 16 * 1024,
-    defaultSessionMaxDepth: 0,
-    defaultSessionMaxFanout: 0,
-    maxConcurrentActiveSessions: 4,
-    maxSuspendedSessions: 8,
-    maxConcurrentActiveProcesses: 10,
-    maxSuspendedProcesses: 20,
-    loopPreventionThreshold: 3,
-    loopPreventionHardBreakOffset: 2,
-    thinkingLoopMinPatternLength: REPEATED_THINKING_MIN_PATTERN_LENGTH,
-    thinkingLoopMinRepetitions: REPEATED_THINKING_MIN_REPETITIONS,
-    maxRecentMediaMessages: DEFAULT_MAX_RECENT_MEDIA_MESSAGES,
-    thinkingEffort: 'off',
-  },
   display: {
     metricDisplayMode: 'inline',
     prefillDisplayFormat: 'time',

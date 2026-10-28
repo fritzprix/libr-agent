@@ -22,8 +22,6 @@ import {
   migrateLegacyOpenAICompatibleSettings,
   normalizeCustomOpenAIProviders,
 } from '@/lib/ai-service/custom-providers';
-import { normalizeThinkingEffort } from '@/lib/ai-service/thinking-effort-mapping';
-import { normalizeMaxRecentMediaMessages } from '@/lib/media-settings';
 
 const logger = getLogger('RustSettingsService');
 
@@ -62,37 +60,6 @@ function invalidateCachedSettingsState() {
   cachedSettingsPromise = null;
 }
 
-function isPartialAdvancedSettings(
-  val: unknown,
-): val is Partial<AdvancedSettings> {
-  if (typeof val !== 'object' || val === null) {
-    return false;
-  }
-  const obj = val as Record<string, unknown>;
-  const keys: (keyof AdvancedSettings)[] = [
-    'maxRetries',
-    'retryDelay',
-    'diffContextLines',
-    'defaultMaxOutputTokens',
-    'toolResultInlineLimitBytes',
-    'defaultSessionMaxDepth',
-    'defaultSessionMaxFanout',
-    'maxConcurrentActiveSessions',
-    'maxSuspendedSessions',
-    'maxConcurrentActiveProcesses',
-    'maxSuspendedProcesses',
-    'loopPreventionThreshold',
-    'loopPreventionHardBreakOffset',
-    'thinkingLoopMinPatternLength',
-    'thinkingLoopMinRepetitions',
-    'maxRecentMediaMessages',
-  ];
-  return keys.every((key) => {
-    const value = obj[key];
-    return value === undefined || typeof value === 'number';
-  });
-}
-
 function isCustomOpenAIProviderArray(
   val: unknown,
 ): val is CustomOpenAIProvider[] {
@@ -118,7 +85,11 @@ function isCustomOpenAIProviderArray(
   });
 }
 
-function mapDtosToSettings(dtos: SettingDto[]): {
+/** `advanced` comes complete from Rust (`get_advanced_settings`). */
+function mapDtosToSettings(
+  dtos: SettingDto[],
+  advanced: AdvancedSettings,
+): {
   settings: Settings;
   didMigrate: boolean;
   didMigrateExperimental: boolean;
@@ -148,11 +119,6 @@ function mapDtosToSettings(dtos: SettingDto[]): {
   };
 
   const storedSystem = getTypedValue('systemSettings', DEFAULT_SETTING.system);
-  const storedAdvanced = getTypedValue<Partial<AdvancedSettings>>(
-    'advancedSettings',
-    {},
-    isPartialAdvancedSettings,
-  );
 
   const { experimental, didMigrate: didMigrateExperimental } =
     normalizeExperimentalSettings(settingsMap.get('experimentalSettings'));
@@ -208,17 +174,7 @@ function mapDtosToSettings(dtos: SettingDto[]): {
       DEFAULT_SETTING.toolCallGroupVisibleCount,
     ),
     agentHubUrl: getTypedValue('agentHubUrl', DEFAULT_SETTING.agentHubUrl),
-    advanced: {
-      ...DEFAULT_SETTING.advanced,
-      ...storedAdvanced,
-      maxRecentMediaMessages: normalizeMaxRecentMediaMessages(
-        storedAdvanced.maxRecentMediaMessages,
-      ),
-      thinkingEffort: normalizeThinkingEffort(
-        storedAdvanced.thinkingEffort,
-        (storedAdvanced as { thinkingBudget?: unknown }).thinkingBudget,
-      ),
-    },
+    advanced,
     display: normalizeDisplaySettings(settingsMap.get('displaySettings')),
     system: {
       ...DEFAULT_SETTING.system,
@@ -257,15 +213,13 @@ async function loadSettings(forceRefresh = false): Promise<Settings> {
   }
 
   const requestGeneration = settingsCacheGeneration;
-  const request = safeInvoke<SettingDto[]>('list_settings')
-    .then(async (dtos) => {
+  const request = Promise.all([
+    safeInvoke<SettingDto[]>('list_settings'),
+    safeInvoke<AdvancedSettings>('get_advanced_settings'),
+  ])
+    .then(async ([dtos, advanced]) => {
       const { settings, didMigrate, didMigrateExperimental } =
-        mapDtosToSettings(dtos);
-
-      const advanced = await safeInvoke<AdvancedSettings>(
-        'get_advanced_settings',
-      );
-      settings.advanced = advanced;
+        mapDtosToSettings(dtos, advanced);
 
       if (didMigrate || didMigrateExperimental) {
         try {

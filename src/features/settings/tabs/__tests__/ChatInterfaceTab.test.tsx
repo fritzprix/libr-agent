@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { DEFAULT_SETTING } from '@/context/SettingsContext';
 import ChatInterfaceTab from '../ChatInterfaceTab';
+import { TEST_ADVANCED_SETTINGS } from '@/test/fixtures/settings';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -52,7 +53,7 @@ describe('ChatInterfaceTab', () => {
         localWindowSize={DEFAULT_SETTING.windowSize}
         localMaxInputContext={DEFAULT_SETTING.maxInputContext}
         localToolCallGroupVisibleCount={DEFAULT_SETTING.toolCallGroupVisibleCount}
-        localAdvancedSettings={DEFAULT_SETTING.advanced}
+        localAdvancedSettings={TEST_ADVANCED_SETTINGS}
         onContextStrategyChange={onContextStrategyChange}
         onWindowSizeChange={onWindowSizeChange}
         onMaxInputContextChange={onMaxInputContextChange}
@@ -80,7 +81,7 @@ describe('ChatInterfaceTab', () => {
         localWindowSize={DEFAULT_SETTING.windowSize}
         localMaxInputContext={DEFAULT_SETTING.maxInputContext}
         localToolCallGroupVisibleCount={DEFAULT_SETTING.toolCallGroupVisibleCount}
-        localAdvancedSettings={DEFAULT_SETTING.advanced}
+        localAdvancedSettings={TEST_ADVANCED_SETTINGS}
         onContextStrategyChange={onContextStrategyChange}
         onWindowSizeChange={onWindowSizeChange}
         onMaxInputContextChange={onMaxInputContextChange}
