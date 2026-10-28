@@ -8,7 +8,7 @@ description: >
   or what belongs in assistant systemPrompt vs workspace agents.md vs skills.
   Triggers: harness, system prompt layers, agents.md vs SOUL, session workspace,
   sub-agent isolation, tool naming, bootstrap workspace guidelines,
-  external inject, wake session, HTTP /api/sessions messages.
+  external inject, wake session, $LIBRAGENT_WAKE_URL.
 ---
 
 # LibrAgent Harness Reference
@@ -58,14 +58,12 @@ Do **not** dump long operating doctrine into every assistant `systemPrompt`. Pre
 
 ## External wake (hooks / webhooks)
 
-Outside processes resume a session only by HTTP inject (not by printing to their own stdout).
+Outside processes resume a session only by an HTTP POST to its wake URL (not by printing to their own stdout).
 
-**Already in every turn:** `## Agent Runtime Identity` includes
-`External wake (this session): POST http://127.0.0.1:<port>/api/sessions/<id>/messages`
-with this session’s real port + id. Agents must wire hooks/`--exec`/webhooks to that URL
-(body `{"content":"…"}`). Echo-only or file-append stubs do **not** wake the session.
-
-Also available: `POST …/channel` (`serverName` + `content`, optional `meta`).
+**In every session shell:** `$LIBRAGENT_WAKE_URL` (`runShell` / `spawnProcess` environments;
+host and Linux managed Docker sessions). Agents must wire hooks/`--exec`/webhooks to it, never
+to the main Session API `/messages`. Echo-only or file-append stubs do **not** wake the session.
+Contract: `docs/architecture/session-wake-contract.md`.
 
 For event-driven resume vs clock polling, use **`call-me-back`**. Do not list per-app hook CLIs here.
 

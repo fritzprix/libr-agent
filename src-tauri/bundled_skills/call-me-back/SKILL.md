@@ -3,7 +3,7 @@ name: call-me-back
 description: >-
   Resume this agent session on a completion signal instead of clock polling.
   Use when wiring external hooks/--exec/webhooks that must POST into this
-  session (wake URL is already in Agent Runtime Identity), or waiting for
+  session (use $LIBRAGENT_WAKE_URL), or waiting for
   process exit, ticket/job status, file watchers — "call me back when done",
   "끝나면 깨워줘", "subscribe --exec", "register hook", "완료되면 콜백",
   "webhook으로 깨워줘", "run in background with hook". NEVER for pure time
@@ -83,6 +83,7 @@ Payload fields (all optional): `status` (`success`/`failure`, else derived from
 
 - Never `echo` / print `$LIBRAGENT_WAKE_URL` or paste its value into files or replies.
 - Unset (Docker Desktop managed session, attached container, wake listener down): use `waitForProcess`.
+- No `curl` in the image: POST with an HTTP client it has (for example `python3`).
 - Contract (modes, exposure, security): `docs/architecture/session-wake-contract.md`.
 - The token is revoked when the session is terminated or deleted, and does not
   survive an app restart; late callbacks get `401`. If no callback came, check
@@ -101,15 +102,17 @@ recipes to this skill — read that system's own hook docs, then wire its payloa
 
 **Harness wake (SSOT):**
 
-Agent Runtime Identity already injects the concrete wake URL for **this** session
-(`External wake (this session): POST http://127.0.0.1:<port>/api/sessions/<id>/messages`).
-Copy that URL — do not invent a path or leave `--exec` as `echo` / file-append only.
+Every wake goes through `$LIBRAGENT_WAKE_URL`, the tokenized wake URL for **this** session
+(where it is set, and what to do when it is not: section A2). Point the hook, webhook or
+`--exec` command at it. Do not invent a path, do not use the main Session API `/messages`,
+and do not leave `--exec` as `echo` / file-append only.
 
-- Body: JSON `{"content":"<event summary>"}` (optional `"source":"api"`).
-- Channel-style alternative: `POST …/channel` with `serverName` + `content` (+ optional `meta`).
+- The variable exists only in `runShell` / `spawnProcess` environments. Expand it when you
+  register the callback (double-quoted), so the stored hook carries the value. Never print it.
+- Body: optional JSON (`status`, `exitCode`, `summary`, `logPath`); an empty body also wakes.
 
-Map the external event (env, stdin JSON, query, body) **into** that `content` / `meta`.
-The external side only needs to run something that performs this inject.
+Map the external event (env, stdin JSON, query, body) **into** those fields, with the event
+summary in `summary`. The external side only needs to run something that performs this POST.
 
 #### Two phases
 
