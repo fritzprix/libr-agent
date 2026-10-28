@@ -65,8 +65,9 @@ A full, tokenized wake URL for **this** session only:
 - It starts on the first Docker session that needs a wake URL (the daemon is up by
   then) and is retried by the next such session after a failure.
 - The URL carries the port that was actually bound, not a configured one.
-- Non-wake routes are therefore unreachable from non-loopback callers by
-  construction, not by a filter on a shared server.
+- On Linux, non-wake routes are therefore unreachable from containers by
+  construction, not by a filter on a shared server. Docker Desktop is different; see
+  Constraints.
 
 ## Security
 
@@ -113,5 +114,10 @@ checks the contract in both `host` and `managed` workspace modes.
   `$LIBRAGENT_WAKE_URL` is not injected (fail-closed, as under Exposure). There is no
   separate Desktop bind. Sessions there wait with the existing paths, such as
   `waitForProcess`.
+- **Docker Desktop: containers reach the host's loopback services.**
+  `host.docker.internal` leads to host loopback, so a container reaches the main
+  Session API on `127.0.0.1`. Without a Session API key, the only check in front of
+  the non-wake routes is the `Host` header guard (`access_guard`), and a container
+  can send `Host: 127.0.0.1`. This is an open gap, to be handled separately.
 - Host sessions on every platform, and managed Docker sessions on Linux, get the wake
   URL as described above.
