@@ -3,6 +3,9 @@
 //! Schema and defaults live here. Stored JSON may be missing fields, hold
 //! values of the wrong type, or not parse at all; [`AdvancedSettings::from_stored`]
 //! always returns a complete, in-range object, falling back per field.
+//!
+//! The frontend's `AdvancedSettings` type is generated from this model
+//! (`src/lib/generated/`); `ts_bindings` fails when the checked-in file is stale.
 
 use crate::agent::concurrency::{
     DEFAULT_MAX_ACTIVE_AGENTS, DEFAULT_MAX_ACTIVE_PROCESSES, DEFAULT_MAX_SUSPENDED_AGENTS,
@@ -18,7 +21,33 @@ const CONCURRENCY_RANGE: (u32, u32) = (1, 256);
 const LOOP_THRESHOLD_RANGE: (usize, usize) = (2, 20);
 const LOOP_HARD_BREAK_OFFSET_RANGE: (usize, usize) = (1, 20);
 
+/// Extended reasoning effort preset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum ThinkingEffort {
+    Off,
+    Low,
+    Medium,
+    High,
+    Auto,
+}
+
+impl ThinkingEffort {
+    fn parse(effort: &str) -> Option<Self> {
+        match effort {
+            "off" => Some(Self::Off),
+            "low" => Some(Self::Low),
+            "medium" => Some(Self::Medium),
+            "high" => Some(Self::High),
+            "auto" => Some(Self::Auto),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct AdvancedSettings {
     pub max_retries: u32,
@@ -41,7 +70,7 @@ pub struct AdvancedSettings {
     pub thinking_loop_min_pattern_length: u64,
     pub thinking_loop_min_repetitions: u64,
     pub max_recent_media_messages: u64,
-    pub thinking_effort: String,
+    pub thinking_effort: ThinkingEffort,
 }
 
 impl Default for AdvancedSettings {
@@ -63,32 +92,30 @@ impl Default for AdvancedSettings {
             thinking_loop_min_pattern_length: 256,
             thinking_loop_min_repetitions: 4,
             max_recent_media_messages: 1,
-            thinking_effort: "off".to_string(),
+            thinking_effort: ThinkingEffort::Off,
         }
     }
 }
 
 const MAX_RECENT_MEDIA_MESSAGES: i64 = 5;
-const THINKING_EFFORTS: [&str; 5] = ["off", "low", "medium", "high", "auto"];
 
 /// A known effort wins; otherwise a legacy numeric `thinkingBudget` maps to one
 /// (`0` off, `-1` auto, up to 2048 low, up to 16384 medium, above that high).
-fn normalize_thinking_effort(effort: Option<&Value>, legacy_budget: Option<&Value>) -> String {
-    if let Some(effort) = effort
-        .and_then(Value::as_str)
-        .filter(|effort| THINKING_EFFORTS.contains(effort))
-    {
-        return effort.to_string();
+fn normalize_thinking_effort(
+    effort: Option<&Value>,
+    legacy_budget: Option<&Value>,
+) -> ThinkingEffort {
+    if let Some(effort) = effort.and_then(Value::as_str).and_then(ThinkingEffort::parse) {
+        return effort;
     }
-    let mapped = match legacy_budget.and_then(Value::as_f64) {
-        Some(0.0) => "off",
-        Some(-1.0) => "auto",
-        Some(budget) if budget <= 2048.0 => "low",
-        Some(budget) if budget <= 16384.0 => "medium",
-        Some(_) => "high",
-        None => "off",
-    };
-    mapped.to_string()
+    match legacy_budget.and_then(Value::as_f64) {
+        Some(0.0) => ThinkingEffort::Off,
+        Some(-1.0) => ThinkingEffort::Auto,
+        Some(budget) if budget <= 2048.0 => ThinkingEffort::Low,
+        Some(budget) if budget <= 16384.0 => ThinkingEffort::Medium,
+        Some(_) => ThinkingEffort::High,
+        None => ThinkingEffort::Off,
+    }
 }
 
 fn uint(map: &Map<String, Value>, key: &str) -> Option<u64> {
@@ -236,7 +263,7 @@ mod tests {
         ));
         assert_eq!(settings.max_retries, 5);
         assert_eq!(settings.default_session_max_depth, 3);
-        assert_eq!(settings.thinking_effort, "high");
+        assert_eq!(settings.thinking_effort, ThinkingEffort::High);
         assert_eq!(settings.retry_delay, 5000);
         assert_eq!(settings.diff_context_lines, 3);
     }
@@ -249,11 +276,17 @@ mod tests {
         assert_eq!(settings.max_retries, 1);
         assert_eq!(settings.retry_delay, 5000);
         assert_eq!(settings.diff_context_lines, 7);
-        assert_eq!(settings.thinking_effort, "off");
+        assert_eq!(settings.thinking_effort, ThinkingEffort::Off);
     }
 
-    fn effort(raw: &str) -> String {
-        AdvancedSettings::from_stored(Some(raw)).thinking_effort
+    fn effort(raw: &str) -> &'static str {
+        match AdvancedSettings::from_stored(Some(raw)).thinking_effort {
+            ThinkingEffort::Off => "off",
+            ThinkingEffort::Low => "low",
+            ThinkingEffort::Medium => "medium",
+            ThinkingEffort::High => "high",
+            ThinkingEffort::Auto => "auto",
+        }
     }
 
     #[test]
@@ -270,6 +303,14 @@ mod tests {
         assert_eq!(
             effort(r#"{"thinkingEffort":"low","thinkingBudget":99999}"#),
             "low"
+        );
+    }
+
+    #[test]
+    fn effort_serializes_as_its_lowercase_name() {
+        assert_eq!(
+            serde_json::to_value(ThinkingEffort::Medium).unwrap(),
+            serde_json::json!("medium")
         );
     }
 
@@ -305,5 +346,40 @@ mod tests {
             AdvancedSettings::from_stored(Some(&value.to_string())),
             AdvancedSettings::default()
         );
+    }
+}
+
+/// Checked-in TS types for the frontend. `UPDATE_TS_BINDINGS=1` rewrites them;
+/// otherwise a stale file fails the test.
+#[cfg(test)]
+mod ts_bindings {
+    use super::{AdvancedSettings, ThinkingEffort};
+    use std::path::Path;
+    use ts_rs::{Config, TS};
+
+    const OUT_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../src/lib/generated");
+
+    fn check<T: TS + 'static>() {
+        // Values are JSON numbers, never bigint.
+        let cfg = Config::new().with_large_int("number");
+        let path = Path::new(OUT_DIR).join(T::output_path().expect("exportable type"));
+        let expected = T::export_to_string(&cfg).expect("bindings");
+        if std::env::var_os("UPDATE_TS_BINDINGS").is_some() {
+            std::fs::write(&path, &expected).expect("write bindings");
+            return;
+        }
+        let current = std::fs::read_to_string(&path).unwrap_or_default();
+        assert_eq!(
+            current,
+            expected,
+            "{} is stale; run `UPDATE_TS_BINDINGS=1 pnpm rust:test --lib ts_bindings`",
+            path.display()
+        );
+    }
+
+    #[test]
+    fn advanced_settings_bindings_are_current() {
+        check::<AdvancedSettings>();
+        check::<ThinkingEffort>();
     }
 }

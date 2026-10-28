@@ -135,6 +135,8 @@ workspace-str-replace = []
 [dev-dependencies]
 # test-util enables tokio::time::pause() / advance() for time-controlled async tests.
 tokio = { version = "1.52", features = ["test-util"] }
+# TS types generated from Rust models (src/lib/generated); test-only, no runtime cost.
+ts-rs = "12.0.1"
 
 [profile.ci-test]
 inherits = "test"

@@ -8,9 +8,10 @@
  */
 
 import { AIServiceProvider } from './types';
+import type { ThinkingEffort } from '@/lib/generated/ThinkingEffort';
 
-/** User-facing thinking effort preset stored in settings. */
-export type ThinkingEffort = 'off' | 'low' | 'medium' | 'high' | 'auto';
+/** User-facing thinking effort preset stored in settings (generated from Rust). */
+export type { ThinkingEffort };
 
 export const THINKING_EFFORT_VALUES = [
   'off',
@@ -41,34 +42,6 @@ export interface ThinkingNativeParams {
   extendedThinking?: boolean;
   /** Provider-native thinking budget (Gemini). */
   thinkingBudget?: number;
-}
-
-/**
- * Normalize persisted or legacy values into a thinking effort enum.
- */
-export function normalizeThinkingEffort(
-  effort: unknown,
-  legacyBudget?: unknown,
-): ThinkingEffort {
-  if (
-    effort === 'off' ||
-    effort === 'low' ||
-    effort === 'medium' ||
-    effort === 'high' ||
-    effort === 'auto'
-  ) {
-    return effort;
-  }
-
-  if (typeof legacyBudget === 'number') {
-    if (legacyBudget === 0) return 'off';
-    if (legacyBudget === -1) return 'auto';
-    if (legacyBudget <= 2048) return 'low';
-    if (legacyBudget <= 16384) return 'medium';
-    return 'high';
-  }
-
-  return 'off';
 }
 
 /**

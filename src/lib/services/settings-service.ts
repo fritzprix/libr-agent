@@ -1,5 +1,5 @@
 import { AIServiceProvider } from '@/lib/ai-service';
-import type { ThinkingEffort } from '@/lib/ai-service/thinking-effort-mapping';
+import type { AdvancedSettings } from '@/lib/generated/AdvancedSettings';
 import { llmConfigManager } from '@/lib/llm-config-manager';
 import {
   REPEATED_THINKING_MIN_PATTERN_LENGTH,
@@ -86,29 +86,8 @@ export function normalizeComplexityModelMapping(
   return result;
 }
 
-export interface AdvancedSettings {
-  maxRetries: number;
-  retryDelay: number; // in milliseconds
-  diffContextLines: number;
-  defaultMaxOutputTokens: number;
-  toolResultInlineLimitBytes: number;
-  defaultSessionMaxDepth: number;
-  defaultSessionMaxFanout: number;
-  // SP2: Global concurrent execution limits (runtime semaphores, not per-parent counts)
-  maxConcurrentActiveSessions: number; // default 4 — simultaneous LLM loops
-  maxSuspendedSessions: number; // default 8 — sessions blocked on awaitAgent
-  maxConcurrentActiveProcesses: number; // default 10 — simultaneous shell processes
-  maxSuspendedProcesses: number; // default 20 — processes blocked on pollProcess
-  loopPreventionThreshold: number; // default 3 — consecutive identical (call, outcome) streak before soft recovery
-  /** Gap after soft recovery before hard break. Default 2 so Soft→Escalate→Hard can fire for error loops. */
-  loopPreventionHardBreakOffset: number;
-  thinkingLoopMinPatternLength: number; // default 256 — minimum repeating sequence length for thinking loops
-  thinkingLoopMinRepetitions: number; // default 4 — minimum repetitions for thinking loops
-  /** Number of recent media-containing messages that retain full payloads. */
-  maxRecentMediaMessages: number;
-  /** Thinking effort preset for extended reasoning/thinking. */
-  thinkingEffort: ThinkingEffort;
-}
+/** Normalized by Rust (`get_advanced_settings`); generated from the Rust model. */
+export type { AdvancedSettings };
 
 /** Chat message chrome: classic bubbles vs full-width coding-agent document stream. */
 export type MessageLayoutStyle = 'document' | 'bubble';
@@ -258,6 +237,8 @@ export const DEFAULT_SETTING: Settings = {
   uiLanguage: 'en',
   toolCallGroupVisibleCount: 4,
   agentHubUrl: '',
+  // Placeholder until the first load only: loaded settings always take
+  // `advanced` from Rust (`get_advanced_settings`), which owns these defaults.
   advanced: {
     maxRetries: 1,
     retryDelay: 5000,
