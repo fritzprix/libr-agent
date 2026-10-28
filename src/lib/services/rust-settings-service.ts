@@ -13,7 +13,6 @@ import {
   type SystemSettings,
   type ExperimentalSettings,
   normalizeComplexityModelMapping,
-  normalizeDisplaySettings,
 } from './settings-service';
 import type { AIServiceProvider } from '@/lib/ai-service';
 import {
@@ -82,10 +81,11 @@ function isCustomOpenAIProviderArray(
   });
 }
 
-/** `advanced` and `experimental` come complete from Rust. */
+/** `advanced`, `display` and `experimental` come complete from Rust. */
 function mapDtosToSettings(
   dtos: SettingDto[],
   advanced: AdvancedSettings,
+  display: DisplaySettings,
   experimental: ExperimentalSettings,
 ): {
   settings: Settings;
@@ -169,7 +169,7 @@ function mapDtosToSettings(
     ),
     agentHubUrl: getTypedValue('agentHubUrl', DEFAULT_SETTING.agentHubUrl),
     advanced,
-    display: normalizeDisplaySettings(settingsMap.get('displaySettings')),
+    display,
     system: {
       ...DEFAULT_SETTING.system,
       ...storedSystem,
@@ -209,12 +209,14 @@ async function loadSettings(forceRefresh = false): Promise<Settings> {
   const request = Promise.all([
     safeInvoke<SettingDto[]>('list_settings'),
     safeInvoke<AdvancedSettings>('get_advanced_settings'),
+    safeInvoke<DisplaySettings>('get_display_settings'),
     safeInvoke<ExperimentalSettings>('get_experimental_settings'),
   ])
-    .then(async ([dtos, advanced, experimental]) => {
+    .then(async ([dtos, advanced, display, experimental]) => {
       const { settings, didMigrate } = mapDtosToSettings(
         dtos,
         advanced,
+        display,
         experimental,
       );
 

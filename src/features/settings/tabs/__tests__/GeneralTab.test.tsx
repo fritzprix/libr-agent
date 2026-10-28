@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { describe, expect, it, vi } from 'vitest';
 
-import { DEFAULT_SETTING } from '@/context/SettingsContext';
+import { TEST_DISPLAY_SETTINGS } from '@/test/fixtures/settings';
 import GeneralTab from '../GeneralTab';
 
 vi.mock('react-i18next', () => ({
@@ -20,7 +20,7 @@ describe('GeneralTab', () => {
       <GeneralTab
         localLanguage="en"
         onChange={onChange}
-        localDisplay={DEFAULT_SETTING.display}
+        localDisplay={TEST_DISPLAY_SETTINGS}
         onDisplaySettingsChange={onDisplaySettingsChange}
       />,
     );
@@ -34,7 +34,7 @@ describe('GeneralTab', () => {
         localLanguage="en"
         onChange={onChange}
         localDisplay={{
-          ...DEFAULT_SETTING.display,
+          ...TEST_DISPLAY_SETTINGS,
           toolDetailLevel: 'developer',
         }}
         onDisplaySettingsChange={onDisplaySettingsChange}
@@ -54,7 +54,7 @@ describe('GeneralTab', () => {
       <GeneralTab
         localLanguage="en"
         onChange={onChange}
-        localDisplay={DEFAULT_SETTING.display}
+        localDisplay={TEST_DISPLAY_SETTINGS}
         onDisplaySettingsChange={onDisplaySettingsChange}
       />,
     );
@@ -68,7 +68,7 @@ describe('GeneralTab', () => {
         localLanguage="en"
         onChange={onChange}
         localDisplay={{
-          ...DEFAULT_SETTING.display,
+          ...TEST_DISPLAY_SETTINGS,
           messageLayout: 'bubble',
         }}
         onDisplaySettingsChange={onDisplaySettingsChange}
@@ -88,7 +88,7 @@ describe('GeneralTab', () => {
       <GeneralTab
         localLanguage="en"
         onChange={onChange}
-        localDisplay={DEFAULT_SETTING.display}
+        localDisplay={TEST_DISPLAY_SETTINGS}
         onDisplaySettingsChange={onDisplaySettingsChange}
       />,
     );
@@ -111,7 +111,7 @@ describe('GeneralTab', () => {
         localLanguage="en"
         onChange={onChange}
         localDisplay={{
-          ...DEFAULT_SETTING.display,
+          ...TEST_DISPLAY_SETTINGS,
           colorTheme: 'amber',
         }}
         onDisplaySettingsChange={onDisplaySettingsChange}
@@ -129,7 +129,7 @@ describe('GeneralTab', () => {
       <GeneralTab
         localLanguage="en"
         onChange={vi.fn()}
-        localDisplay={{ ...DEFAULT_SETTING.display, uiScale: 1.25 }}
+        localDisplay={{ ...TEST_DISPLAY_SETTINGS, uiScale: 1.25 }}
         onDisplaySettingsChange={vi.fn()}
         onUiScaleChange={onUiScaleChange}
       />,
