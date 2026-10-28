@@ -81,8 +81,8 @@ fn normalize_thinking_effort(effort: Option<&Value>, legacy_budget: Option<&Valu
         return effort.to_string();
     }
     let mapped = match legacy_budget.and_then(Value::as_f64) {
-        Some(budget) if budget == 0.0 => "off",
-        Some(budget) if budget == -1.0 => "auto",
+        Some(0.0) => "off",
+        Some(-1.0) => "auto",
         Some(budget) if budget <= 2048.0 => "low",
         Some(budget) if budget <= 16384.0 => "medium",
         Some(_) => "high",
