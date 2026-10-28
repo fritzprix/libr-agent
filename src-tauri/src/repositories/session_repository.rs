@@ -202,17 +202,6 @@ pub struct SessionListPage {
     pub next_cursor: Option<SessionListCursor>,
 }
 
-impl SessionMetadata {
-    /// Runs in a container LibrAgent created (not an attached one).
-    pub fn is_managed_docker(&self) -> bool {
-        self.workspace_isolation == WorkspaceIsolationMode::Docker
-            && !self
-                .docker_config
-                .as_ref()
-                .is_some_and(DockerWorkspaceConfig::is_attach)
-    }
-}
-
 impl TryFrom<session::Model> for SessionMetadata {
     type Error = DbError;
 
@@ -308,14 +297,13 @@ pub trait SessionRepository: Send + Sync {
     /// Get all session IDs ordered by most recent activity
     async fn get_all_session_ids(&self) -> Result<Vec<String>, DbError>;
 
-    /// True when any session runs in a LibrAgent-managed Docker container (attached
-    /// containers do not count).
-    async fn has_managed_docker_sessions(&self) -> Result<bool, DbError> {
+    /// True when any session runs in a Docker container (managed or attached).
+    async fn has_docker_sessions(&self) -> Result<bool, DbError> {
         Ok(self
             .get_all_sessions()
             .await?
             .iter()
-            .any(SessionMetadata::is_managed_docker))
+            .any(|session| session.workspace_isolation == WorkspaceIsolationMode::Docker))
     }
 
     /// List sessions ordered by most recent activity with cursor pagination.
@@ -577,19 +565,14 @@ impl SessionRepository for SqliteSessionRepository {
         sessions
     }
 
-    async fn has_managed_docker_sessions(&self) -> Result<bool, DbError> {
-        use sea_orm::{ColumnTrait, QueryFilter};
+    async fn has_docker_sessions(&self) -> Result<bool, DbError> {
+        use sea_orm::{ColumnTrait, PaginatorTrait, QueryFilter};
 
-        let models = Session::find()
+        let count = Session::find()
             .filter(session::Column::WorkspaceIsolation.eq(WorkspaceIsolationMode::Docker.as_str()))
-            .all(&self.db)
+            .count(&self.db)
             .await?;
-        for model in models {
-            if SessionMetadata::try_from(model)?.is_managed_docker() {
-                return Ok(true);
-            }
-        }
-        Ok(false)
+        Ok(count > 0)
     }
 
     async fn get_all_session_ids(&self) -> Result<Vec<String>, DbError> {

@@ -61,8 +61,8 @@ impl Unauthorized {
 
 impl Reject for Unauthorized {}
 
-/// Rejection while no key is injected but a managed Docker session exists: a container can
-/// reach host loopback on some platforms (Docker Desktop), so loopback alone is not enough.
+/// Rejection while no key is injected but a Docker session exists: a container can reach
+/// host loopback on some platforms (Docker Desktop), so loopback alone is not enough.
 #[derive(Debug)]
 pub struct KeyRequired;
 
@@ -217,11 +217,11 @@ pub fn is_configured() -> bool {
     ENV_KEY_STATE.get().is_some()
 }
 
-/// `managed_docker` reports whether a managed Docker session exists; it is asked only
-/// while no key is injected.
+/// `docker_sessions` reports whether a Docker session (managed or attached) exists; it is
+/// asked only while no key is injected.
 fn guard<F, Fut>(
     expected: Option<KeyState>,
-    managed_docker: F,
+    docker_sessions: F,
 ) -> impl Filter<Extract = (), Error = Rejection> + Clone
 where
     F: Fn() -> Fut + Clone + Send + Sync + 'static,
@@ -229,9 +229,9 @@ where
 {
     warp::header::headers_cloned()
         .and_then(move |headers: HeaderMap| {
-            let managed_docker = managed_docker.clone();
+            let docker_sessions = docker_sessions.clone();
             async move {
-                if expected.is_none() && managed_docker().await {
+                if expected.is_none() && docker_sessions().await {
                     return Err(warp::reject::custom(KeyRequired));
                 }
                 check_bearer(&headers, expected).map_err(warp::reject::custom)
@@ -240,20 +240,21 @@ where
         .untuple_one()
 }
 
-/// Whether any managed Docker session exists; a failed read counts as yes (fail closed).
-async fn managed_docker_sessions_exist() -> bool {
+/// Whether any Docker session (managed or attached) exists; a failed read counts as yes (fail closed).
+async fn docker_sessions_exist() -> bool {
     use crate::repositories::session_repository::SessionRepository;
 
     match crate::state::try_get_session_repository() {
-        Some(repo) => repo.has_managed_docker_sessions().await.unwrap_or(true),
+        Some(repo) => repo.has_docker_sessions().await.unwrap_or(true),
         None => false,
     }
 }
 
-/// Requires the injected key on every request. Without one, requests pass unless a managed
-/// Docker session exists; then they are refused (the key is never given to containers).
+/// Requires the injected key on every request. Without one, requests pass unless a Docker
+/// session (managed or attached) exists; then they are refused. The key is never given to
+/// containers.
 pub fn api_key_guard() -> impl Filter<Extract = (), Error = Rejection> + Clone {
-    guard(ENV_KEY_STATE.get().copied(), managed_docker_sessions_exist)
+    guard(ENV_KEY_STATE.get().copied(), docker_sessions_exist)
 }
 
 #[cfg(test)]
@@ -474,7 +475,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn without_a_key_managed_docker_sessions_close_the_api() {
+    async fn without_a_key_docker_sessions_sessions_close_the_api() {
         let routes = guard(None, docker_sessions)
             .map(|| "ok")
             .recover(handle_rejection);
@@ -486,12 +487,12 @@ mod tests {
         ] {
             let reply = request.reply(&routes).await;
             assert_eq!(reply.status(), 401);
-            assert!(String::from_utf8_lossy(reply.body()).contains("managed Docker sessions"));
+            assert!(String::from_utf8_lossy(reply.body()).contains("Docker sessions exist"));
         }
     }
 
     #[tokio::test]
-    async fn with_a_key_managed_docker_sessions_change_nothing() {
+    async fn with_a_key_docker_sessions_sessions_change_nothing() {
         let routes = guard(key_state("libr_secret"), docker_sessions)
             .map(|| "ok")
             .recover(handle_rejection);

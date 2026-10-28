@@ -23,6 +23,7 @@ import argparse
 import contextlib
 import json
 import os
+import secrets
 import shutil
 import signal
 import socket
@@ -142,6 +143,21 @@ class InstanceLayout:
     @property
     def log_file(self) -> Path:
         return self.root / "instance.log"
+
+    @property
+    def api_key_file(self) -> Path:
+        """Session API key of the running instance (0600), for the harness only."""
+        return self.root / "session_api_key"
+
+    @property
+    def api_header_file(self) -> Path:
+        """``Authorization`` header line for ``curl -H @file`` (0600); keeps the key out of argv."""
+        return self.root / "session_api_header"
+
+    @property
+    def app_key_input(self) -> Path:
+        """Key handed to the app via LIBRAGENT_SESSION_API_KEY_FILE; the app reads and deletes it."""
+        return self.run_dir / "session_api_key.in"
 
     @property
     def llm_settings_file(self) -> Path:
@@ -469,14 +485,48 @@ def _port_in_use(port: int) -> bool:
         return sock.connect_ex(("127.0.0.1", port)) == 0
 
 
-def _wait_healthy(port: int, timeout_sec: float, process: subprocess.Popen[bytes]) -> bool:
+_KEY_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+
+
+def _write_private(path: Path, text: str) -> None:
+    path.unlink(missing_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(text)
+
+
+def issue_api_key(layout: InstanceLayout) -> str:
+    """A fresh Session API key for one launch (same format as the app's generated keys).
+
+    The instance requires it on every main-API request; the app never hands it to
+    containers. The harness reads its copy through :func:`auth_headers`.
+    """
+    key = "libr_" + "".join(secrets.choice(_KEY_ALPHABET) for _ in range(43))
+    _write_private(layout.api_key_file, key)
+    _write_private(layout.api_header_file, f"Authorization: Bearer {key}\n")
+    _write_private(layout.app_key_input, key)
+    return key
+
+
+def auth_headers(layout: InstanceLayout) -> dict[str, str]:
+    """``Authorization`` header for the running instance, or none if it has no key."""
+    try:
+        key = layout.api_key_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        return {}
+    return {"Authorization": f"Bearer {key}"} if key else {}
+
+
+def _wait_healthy(
+    port: int, timeout_sec: float, process: subprocess.Popen[bytes], headers: dict[str, str]
+) -> bool:
     deadline = time.monotonic() + timeout_sec
-    url = f"http://127.0.0.1:{port}/api/health"
+    request = urllib.request.Request(f"http://127.0.0.1:{port}/api/health", headers=headers)
     while time.monotonic() < deadline:
         if process.poll() is not None:
             return False
         try:
-            with urllib.request.urlopen(url, timeout=2) as response:
+            with urllib.request.urlopen(request, timeout=2) as response:
                 if response.status == 200:
                     return True
         except (urllib.error.URLError, OSError):
@@ -531,6 +581,8 @@ def launch(layout: InstanceLayout, app_bin: Path, *, timeout_sec: float) -> int:
         _check_sandbox_available()
 
     reset_run_dir(layout)
+    issue_api_key(layout)
+    env["LIBRAGENT_SESSION_API_KEY_FILE"] = str(layout.app_key_input.resolve())
     llm = apply_prod_llm_settings(layout)
     command = sandbox_command(layout, app_bin, env) if sandbox_enabled(env) else [str(app_bin.resolve())]
     log = layout.log_file.open("wb")
@@ -543,7 +595,7 @@ def launch(layout: InstanceLayout, app_bin: Path, *, timeout_sec: float) -> int:
     )
     layout.pid_file.write_text(str(process.pid), encoding="utf-8")
 
-    if not _wait_healthy(port, timeout_sec, process):
+    if not _wait_healthy(port, timeout_sec, process, auth_headers(layout)):
         stop(layout)
         raise InstanceError(f"Bench instance did not become healthy on port {port}; see {layout.log_file}")
     safe_print(f"Bench instance ready: pid={process.pid} api_url=http://localhost:{port}/api")

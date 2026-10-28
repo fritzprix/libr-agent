@@ -243,9 +243,11 @@ resolve_assistant_id() {
   fi
   echo "==> Resolving assistant '$ASSISTANT_NAME'" >&2
   "$PYTHON" - "$API_URL" "$ASSISTANT_NAME" <<'PY'
-import json, sys, urllib.request
+import json, os, sys, urllib.request
 api, name = sys.argv[1], sys.argv[2]
-with urllib.request.urlopen(f"{api}/assistants", timeout=15) as resp:
+key_file = os.path.join(os.environ.get("LIBRAGENT_BENCH_INSTANCE_ROOT", ""), "session_api_key")
+headers = {"Authorization": f"Bearer {open(key_file).read().strip()}"} if os.path.isfile(key_file) else {}
+with urllib.request.urlopen(urllib.request.Request(f"{api}/assistants", headers=headers), timeout=15) as resp:
     payload = json.load(resp)
 assistants = payload if isinstance(payload, list) else payload.get("assistants", [])
 match = next((a for a in assistants if a.get("name") == name), None)
@@ -264,12 +266,14 @@ resolve_harbor_model() {
   fi
   echo "==> Resolving Harbor -m from LibrAgent global preferredModel" >&2
   "$PYTHON" - "$API_URL" <<'PY'
-import json, sys, urllib.error, urllib.request
+import json, os, sys, urllib.error, urllib.request
 
 api = sys.argv[1].rstrip("/")
 url = f"{api}/settings/preferredModel"
+key_file = os.path.join(os.environ.get("LIBRAGENT_BENCH_INSTANCE_ROOT", ""), "session_api_key")
+headers = {"Authorization": f"Bearer {open(key_file).read().strip()}"} if os.path.isfile(key_file) else {}
 try:
-    with urllib.request.urlopen(url, timeout=15) as resp:
+    with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=15) as resp:
         payload = json.load(resp)
 except urllib.error.HTTPError as e:
     body = e.read().decode("utf-8", errors="replace")
@@ -314,6 +318,12 @@ fi
 
 if [[ "$AGENT" == "libragent" || "$AGENT" == "benchmarks.harbor.libragent_agent:LibrAgentHarborAdapter" ]]; then
   need curl
+  # The isolated bench instance requires its per-launch Session API key. `-H @file`
+  # keeps the key out of the process list.
+  CURL_AUTH=()
+  if [[ -n "${LIBRAGENT_BENCH_INSTANCE_ROOT:-}" && -f "$LIBRAGENT_BENCH_INSTANCE_ROOT/session_api_header" ]]; then
+    CURL_AUTH=(-H "@$LIBRAGENT_BENCH_INSTANCE_ROOT/session_api_header")
+  fi
   ASSISTANT_ID="$(resolve_assistant_id)"
   echo "Using assistantId=$ASSISTANT_ID"
   HARBOR_MODEL="$(resolve_harbor_model)"
@@ -321,9 +331,9 @@ if [[ "$AGENT" == "libragent" || "$AGENT" == "benchmarks.harbor.libragent_agent:
 
   if [[ "$SKIP_HEALTH" -eq 0 ]]; then
     echo "==> Checking $API_URL/health"
-    curl -fsS "$API_URL/health" >/dev/null
+    curl -fsS "${CURL_AUTH[@]}" "$API_URL/health" >/dev/null
     echo "==> Smoke-checking executionMode=$EXECUTION_MODE (create → verify mode → await idle → delete)"
-    CREATE=$(curl -fsS -X POST "$API_URL/sessions" \
+    CREATE=$(curl -fsS "${CURL_AUTH[@]}" -X POST "$API_URL/sessions" \
       -H 'Content-Type: application/json' \
       -d "$("$PYTHON" - <<PY
 import json
@@ -338,11 +348,11 @@ PY
 )")
     SID=$("$PYTHON" -c 'import json,sys; print(json.load(sys.stdin)["id"])' <<<"$CREATE")
     cleanup_smoke() {
-      curl -fsS -X DELETE "$API_URL/sessions/$SID" >/dev/null 2>&1 || true
+      curl -fsS "${CURL_AUTH[@]}" -X DELETE "$API_URL/sessions/$SID" >/dev/null 2>&1 || true
       echo "  smoke session deleted ($SID)"
     }
     trap cleanup_smoke EXIT
-    SESSION_JSON=$(curl -fsS "$API_URL/sessions/$SID")
+    SESSION_JSON=$(curl -fsS "${CURL_AUTH[@]}" "$API_URL/sessions/$SID")
     MODE=$("$PYTHON" -c 'import json,sys; print(json.load(sys.stdin).get("executionMode"))' <<<"$SESSION_JSON")
     STATUS=$("$PYTHON" -c 'import json,sys; print(json.load(sys.stdin).get("status"))' <<<"$SESSION_JSON")
     LAST_MSG=$("$PYTHON" -c 'import json,sys; print(json.load(sys.stdin).get("lastMessageAt"))' <<<"$SESSION_JSON")
@@ -360,7 +370,7 @@ PY
         break
       fi
       sleep 1
-      SESSION_JSON=$(curl -fsS "$API_URL/sessions/$SID")
+      SESSION_JSON=$(curl -fsS "${CURL_AUTH[@]}" "$API_URL/sessions/$SID")
       STATUS=$("$PYTHON" -c 'import json,sys; print(json.load(sys.stdin).get("status"))' <<<"$SESSION_JSON")
     done
     echo "  settled status=$STATUS"

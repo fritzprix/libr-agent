@@ -327,7 +327,7 @@ async fn app_sqlite_connection_uses_wal_normal_sync_and_memory_cache() {
 }
 
 #[tokio::test]
-async fn managed_docker_sessions_are_detected_but_attached_ones_are_not() {
+async fn docker_sessions_managed_or_attached_are_detected() {
     use tauri_mcp_agent_lib::models::workspace_isolation::DockerWorkspaceConfig;
 
     let (sessions, _) = setup_repos().await;
@@ -344,18 +344,22 @@ async fn managed_docker_sessions_are_detected_but_attached_ones_are_not() {
         .upsert_session(&build_session_metadata("host-session"))
         .await
         .unwrap();
+    assert!(!sessions.has_docker_sessions().await.unwrap());
+
+    // Model-run code executes in attached containers too, so they count.
     let mut attached = build_session_metadata("attached-session");
     attached.workspace_isolation = WorkspaceIsolationMode::Docker;
     attached.docker_config = Some(docker(Some("my-container")));
     sessions.upsert_session(&attached).await.unwrap();
-    assert!(!sessions.has_managed_docker_sessions().await.unwrap());
+    assert!(sessions.has_docker_sessions().await.unwrap());
 
     let mut managed = build_session_metadata("managed-session");
     managed.workspace_isolation = WorkspaceIsolationMode::Docker;
     managed.docker_config = Some(docker(None));
     sessions.upsert_session(&managed).await.unwrap();
-    assert!(sessions.has_managed_docker_sessions().await.unwrap());
+    sessions.delete_session("attached-session").await.unwrap();
+    assert!(sessions.has_docker_sessions().await.unwrap());
 
     sessions.delete_session("managed-session").await.unwrap();
-    assert!(!sessions.has_managed_docker_sessions().await.unwrap());
+    assert!(!sessions.has_docker_sessions().await.unwrap());
 }
