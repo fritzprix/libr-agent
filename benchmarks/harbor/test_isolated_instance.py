@@ -153,7 +153,10 @@ def test_sandbox_command_keeps_only_run_dir_writable(tmp_path: Path) -> None:
     run_dir = str(layout.run_dir.resolve())
     command = sandbox_command(layout, Path("/opt/libragent"), {"XDG_RUNTIME_DIR": "/run/user/1000"})
 
-    assert command[:3] == ["bwrap", "--ro-bind", "/"]
+    assert command[0] == "bwrap"
+    assert "--unshare-pid" in command
+    assert ("--proc", "/proc") in list(zip(command, command[1:]))
+    assert "--die-with-parent" not in command  # the instance outlives `launch`
     assert command[-2:] == ["--", "/opt/libragent"]
     pairs = list(zip(command, command[1:], command[2:]))
     assert ("--bind", run_dir, run_dir) in pairs
