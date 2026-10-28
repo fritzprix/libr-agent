@@ -68,6 +68,29 @@ impl Default for AdvancedSettings {
     }
 }
 
+const MAX_RECENT_MEDIA_MESSAGES: i64 = 5;
+const THINKING_EFFORTS: [&str; 5] = ["off", "low", "medium", "high", "auto"];
+
+/// A known effort wins; otherwise a legacy numeric `thinkingBudget` maps to one
+/// (`0` off, `-1` auto, up to 2048 low, up to 16384 medium, above that high).
+fn normalize_thinking_effort(effort: Option<&Value>, legacy_budget: Option<&Value>) -> String {
+    if let Some(effort) = effort
+        .and_then(Value::as_str)
+        .filter(|effort| THINKING_EFFORTS.contains(effort))
+    {
+        return effort.to_string();
+    }
+    let mapped = match legacy_budget.and_then(Value::as_f64) {
+        Some(budget) if budget == 0.0 => "off",
+        Some(budget) if budget == -1.0 => "auto",
+        Some(budget) if budget <= 2048.0 => "low",
+        Some(budget) if budget <= 16384.0 => "medium",
+        Some(_) => "high",
+        None => "off",
+    };
+    mapped.to_string()
+}
+
 fn uint(map: &Map<String, Value>, key: &str) -> Option<u64> {
     map.get(key).and_then(Value::as_u64)
 }
@@ -162,14 +185,16 @@ impl AdvancedSettings {
                 .unwrap_or(defaults.thinking_loop_min_pattern_length),
             thinking_loop_min_repetitions: uint(&map, "thinkingLoopMinRepetitions")
                 .unwrap_or(defaults.thinking_loop_min_repetitions),
-            max_recent_media_messages: uint(&map, "maxRecentMediaMessages")
+            max_recent_media_messages: map
+                .get("maxRecentMediaMessages")
+                .and_then(Value::as_f64)
+                .filter(|value| value.is_finite())
+                .map(|value| (value.trunc() as i64).clamp(1, MAX_RECENT_MEDIA_MESSAGES) as u64)
                 .unwrap_or(defaults.max_recent_media_messages),
-            thinking_effort: map
-                .get("thinkingEffort")
-                .and_then(Value::as_str)
-                .filter(|effort| !effort.is_empty())
-                .map(str::to_string)
-                .unwrap_or(defaults.thinking_effort),
+            thinking_effort: normalize_thinking_effort(
+                map.get("thinkingEffort"),
+                map.get("thinkingBudget"),
+            ),
         }
     }
 
@@ -225,6 +250,37 @@ mod tests {
         assert_eq!(settings.retry_delay, 5000);
         assert_eq!(settings.diff_context_lines, 7);
         assert_eq!(settings.thinking_effort, "off");
+    }
+
+    fn effort(raw: &str) -> String {
+        AdvancedSettings::from_stored(Some(raw)).thinking_effort
+    }
+
+    #[test]
+    fn unknown_effort_falls_back_to_the_legacy_budget_then_off() {
+        assert_eq!(effort(r#"{"thinkingEffort":"medium"}"#), "medium");
+        assert_eq!(effort(r#"{"thinkingEffort":"extreme"}"#), "off");
+        assert_eq!(effort(r#"{"thinkingBudget":0}"#), "off");
+        assert_eq!(effort(r#"{"thinkingBudget":-1}"#), "auto");
+        assert_eq!(effort(r#"{"thinkingBudget":2048}"#), "low");
+        assert_eq!(effort(r#"{"thinkingBudget":2049}"#), "medium");
+        assert_eq!(effort(r#"{"thinkingBudget":16384}"#), "medium");
+        assert_eq!(effort(r#"{"thinkingBudget":16385}"#), "high");
+        assert_eq!(effort(r#"{"thinkingBudget":"big"}"#), "off");
+        assert_eq!(
+            effort(r#"{"thinkingEffort":"low","thinkingBudget":99999}"#),
+            "low"
+        );
+    }
+
+    #[test]
+    fn recent_media_messages_are_truncated_and_clamped_to_one_through_five() {
+        let media = |raw: &str| AdvancedSettings::from_stored(Some(raw)).max_recent_media_messages;
+        assert_eq!(media(r#"{"maxRecentMediaMessages":3.9}"#), 3);
+        assert_eq!(media(r#"{"maxRecentMediaMessages":0}"#), 1);
+        assert_eq!(media(r#"{"maxRecentMediaMessages":-4}"#), 1);
+        assert_eq!(media(r#"{"maxRecentMediaMessages":50}"#), 5);
+        assert_eq!(media(r#"{"maxRecentMediaMessages":"2"}"#), 1);
     }
 
     #[test]
