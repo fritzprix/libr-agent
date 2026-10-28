@@ -1,4 +1,5 @@
 use crate::models::advanced_settings::AdvancedSettings;
+use crate::models::experimental_settings::ExperimentalSettings;
 use crate::repositories::settings_repository::SettingsRepository;
 use crate::state::get_settings_repository;
 use serde::{Deserialize, Serialize};
@@ -105,4 +106,9 @@ pub async fn list_settings() -> Result<Vec<SettingDto>, String> {
 #[command]
 pub async fn get_advanced_settings() -> Result<AdvancedSettings, String> {
     Ok(AdvancedSettings::load_global().await)
+}
+
+#[command]
+pub async fn get_experimental_settings() -> Result<ExperimentalSettings, String> {
+    Ok(ExperimentalSettings::load_global().await)
 }

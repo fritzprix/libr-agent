@@ -105,7 +105,8 @@ use commands::scheduled_task_commands::{
 use commands::session_commands::remove_session;
 use commands::session_export_commands::export_session_file;
 use commands::settings_commands::{
-    delete_setting, get_advanced_settings, get_setting, list_settings, set_setting, update_settings,
+    delete_setting, get_advanced_settings, get_experimental_settings, get_setting, list_settings,
+    set_setting, update_settings,
 };
 use commands::skill_commands::{
     get_aggregated_skills, get_default_skills_directory, get_managed_skills_overview,
@@ -387,6 +388,7 @@ pub fn run() {
                 delete_setting,
                 list_settings,
                 get_advanced_settings,
+                get_experimental_settings,
                 export_migration,
                 import_migration,
                 inspect_migration,

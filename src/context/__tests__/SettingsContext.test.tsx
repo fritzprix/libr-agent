@@ -10,7 +10,10 @@ import {
 } from '../SettingsContext';
 import { __resetRustSettingsServiceCacheForTests } from '@/lib/services/rust-settings-service';
 import { settingsService } from '@/lib/services/settings-service';
-import { TEST_ADVANCED_SETTINGS } from '@/test/fixtures/settings';
+import {
+  TEST_ADVANCED_SETTINGS,
+  TEST_EXPERIMENTAL_SETTINGS,
+} from '@/test/fixtures/settings';
 
 vi.mock('@/lib/backend/core', () => ({
   safeInvoke: vi.fn(),
@@ -50,6 +53,9 @@ describe('SettingsContext', () => {
       if (command === 'list_settings') {
         return Promise.resolve([]);
       }
+      if (command === 'get_experimental_settings') {
+        return Promise.resolve({ ...TEST_EXPERIMENTAL_SETTINGS });
+      }
       if (command === 'get_advanced_settings') {
         return Promise.resolve({ ...TEST_ADVANCED_SETTINGS });
       }
@@ -68,9 +74,10 @@ describe('SettingsContext', () => {
       expect(result.current.isLoading).toBe(false);
     });
 
-    expect(safeInvoke).toHaveBeenCalledTimes(2);
+    expect(safeInvoke).toHaveBeenCalledTimes(3);
     expect(safeInvoke).toHaveBeenCalledWith('list_settings');
     expect(safeInvoke).toHaveBeenCalledWith('get_advanced_settings');
+    expect(safeInvoke).toHaveBeenCalledWith('get_experimental_settings');
   });
 
   it('does not let an older settings fetch overwrite a refreshed cache', async () => {
@@ -107,6 +114,9 @@ describe('SettingsContext', () => {
         return Promise.resolve([]);
       }
 
+      if (command === 'get_experimental_settings') {
+        return Promise.resolve({ ...TEST_EXPERIMENTAL_SETTINGS });
+      }
       if (command === 'get_advanced_settings') {
         return Promise.resolve({ ...TEST_ADVANCED_SETTINGS });
       }
@@ -215,6 +225,9 @@ describe('SettingsContext', () => {
       if (command === 'list_settings') {
         return Promise.resolve([]);
       }
+      if (command === 'get_experimental_settings') {
+        return Promise.resolve({ ...TEST_EXPERIMENTAL_SETTINGS });
+      }
       if (command === 'get_advanced_settings') {
         return new Promise((resolve) => {
           resolveAdvanced = resolve;
@@ -255,6 +268,9 @@ describe('SettingsContext', () => {
     vi.mocked(safeInvoke).mockImplementation((command: string) => {
       if (command === 'list_settings') {
         return Promise.resolve([]);
+      }
+      if (command === 'get_experimental_settings') {
+        return Promise.resolve({ ...TEST_EXPERIMENTAL_SETTINGS });
       }
       if (command === 'get_advanced_settings') {
         return Promise.resolve({ ...TEST_ADVANCED_SETTINGS, maxRetries: 7 });

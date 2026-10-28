@@ -1,5 +1,7 @@
 import { AIServiceProvider } from '@/lib/ai-service';
 import type { AdvancedSettings } from '@/lib/generated/AdvancedSettings';
+import type { ExperimentalSettings } from '@/lib/generated/ExperimentalSettings';
+import type { ToolLoopRecoveryPolicy } from '@/lib/generated/ToolLoopRecoveryPolicy';
 import { llmConfigManager } from '@/lib/llm-config-manager';
 import { DEFAULT_UI_SCALE, normalizeUiScale } from '@/lib/ui-scale';
 
@@ -150,35 +152,8 @@ export interface SystemSettings {
   preventSleepDuringAgentWork: boolean;
 }
 
-/** Canonical tool-loop recovery policy stored in experimentalSettings. */
-export type ToolLoopRecoveryPolicy = 'resampleThenBreak' | 'legacyGuidance';
-
-export function isToolLoopRecoveryPolicy(
-  value: unknown,
-): value is ToolLoopRecoveryPolicy {
-  return value === 'resampleThenBreak' || value === 'legacyGuidance';
-}
-
-export interface ExperimentalSettings {
-  inlineAudioAttachment: boolean;
-  /**
-   * Default `resampleThenBreak`: discard the looping assistant turn and
-   * request a fresh completion. `legacyGuidance` injects loop-prevention
-   * text into tool errors (opt-in).
-   */
-  toolLoopRecoveryPolicy: ToolLoopRecoveryPolicy;
-
-  /** Max clean resample retries before promoting to circuit breaker. */
-  toolLoopMaxResampleRetries: number;
-}
-
-/**
- * Partial / legacy DB blob for `experimentalSettings`.
- * `toolLoopLegacyGuidanceEnabled` is read-only migration input.
- */
-export type StoredExperimentalSettings = Partial<ExperimentalSettings> & {
-  toolLoopLegacyGuidanceEnabled?: boolean;
-};
+/** Normalized by Rust (`get_experimental_settings`); generated from the Rust model. */
+export type { ExperimentalSettings, ToolLoopRecoveryPolicy };
 
 export interface Settings {
   serviceConfigs: Record<AIServiceProvider, ServiceConfig>;
@@ -210,11 +185,12 @@ export interface Settings {
 const DEFAULT_MODEL = llmConfigManager.recommendModel({});
 
 /**
- * Frontend defaults. `advanced` is not here: Rust owns its schema and defaults,
- * `get_advanced_settings` always returns the complete object, and
- * `SettingsProvider` renders nothing that reads settings before it arrives.
+ * Frontend defaults. `advanced` and `experimental` are not here: Rust owns their
+ * schema and defaults, `get_advanced_settings` / `get_experimental_settings`
+ * always return the complete object, and `SettingsProvider` renders nothing that
+ * reads settings before it arrives.
  */
-export const DEFAULT_SETTING: Omit<Settings, 'advanced'> = {
+export const DEFAULT_SETTING: Omit<Settings, 'advanced' | 'experimental'> = {
   serviceConfigs: Object.values(AIServiceProvider).reduce(
     (acc, provider) => {
       acc[provider] = {};
@@ -262,11 +238,6 @@ export const DEFAULT_SETTING: Omit<Settings, 'advanced'> = {
     shellRuntimeBootstrap: false,
     skillsDirectory: '',
     preventSleepDuringAgentWork: true,
-  },
-  experimental: {
-    inlineAudioAttachment: true,
-    toolLoopRecoveryPolicy: 'resampleThenBreak',
-    toolLoopMaxResampleRetries: 2,
   },
 };
 
@@ -330,57 +301,6 @@ export function normalizeDisplaySettings(
       typeof blob.showFeatureTips === 'boolean'
         ? blob.showFeatureTips
         : defaults.showFeatureTips,
-  };
-}
-
-/**
- * Canonicalize experimental settings from a DB blob.
- * Maps deprecated `toolLoopLegacyGuidanceEnabled` → `toolLoopRecoveryPolicy`
- * and drops the legacy key from the returned object.
- */
-export function normalizeExperimentalSettings(
-  stored: unknown,
-  defaults: ExperimentalSettings = DEFAULT_SETTING.experimental,
-): { experimental: ExperimentalSettings; didMigrate: boolean } {
-  const blob =
-    typeof stored === 'object' && stored !== null
-      ? (stored as StoredExperimentalSettings)
-      : {};
-
-  const hasLegacyKey = Object.prototype.hasOwnProperty.call(
-    blob,
-    'toolLoopLegacyGuidanceEnabled',
-  );
-
-  let policy = defaults.toolLoopRecoveryPolicy;
-  if (isToolLoopRecoveryPolicy(blob.toolLoopRecoveryPolicy)) {
-    policy = blob.toolLoopRecoveryPolicy;
-  } else if (
-    hasLegacyKey &&
-    typeof blob.toolLoopLegacyGuidanceEnabled === 'boolean'
-  ) {
-    policy = blob.toolLoopLegacyGuidanceEnabled
-      ? 'legacyGuidance'
-      : 'resampleThenBreak';
-  }
-
-  const maxRetries =
-    typeof blob.toolLoopMaxResampleRetries === 'number' &&
-    Number.isFinite(blob.toolLoopMaxResampleRetries)
-      ? Math.min(20, Math.max(0, Math.trunc(blob.toolLoopMaxResampleRetries)))
-      : defaults.toolLoopMaxResampleRetries;
-
-  return {
-    experimental: {
-      inlineAudioAttachment:
-        typeof blob.inlineAudioAttachment === 'boolean'
-          ? blob.inlineAudioAttachment
-          : defaults.inlineAudioAttachment,
-      toolLoopRecoveryPolicy: policy,
-      toolLoopMaxResampleRetries: maxRetries,
-    },
-    // Persist rewrite whenever the deprecated key is still present in DB JSON.
-    didMigrate: hasLegacyKey,
   };
 }
 

@@ -1,6 +1,7 @@
 import {
   DEFAULT_SETTING,
   type AdvancedSettings,
+  type ExperimentalSettings,
   type Settings,
 } from '@/lib/services/settings-service';
 
@@ -28,8 +29,16 @@ export const TEST_ADVANCED_SETTINGS: AdvancedSettings = {
   thinkingEffort: 'off',
 };
 
-/** Complete settings for tests: frontend defaults plus the advanced fixture. */
+/** Test data only: Rust owns `experimental` (`get_experimental_settings`). */
+export const TEST_EXPERIMENTAL_SETTINGS: ExperimentalSettings = {
+  inlineAudioAttachment: true,
+  toolLoopRecoveryPolicy: 'resampleThenBreak',
+  toolLoopMaxResampleRetries: 2,
+};
+
+/** Complete settings for tests: frontend defaults plus the Rust-owned fixtures. */
 export const TEST_SETTINGS: Settings = {
   ...DEFAULT_SETTING,
   advanced: TEST_ADVANCED_SETTINGS,
+  experimental: TEST_EXPERIMENTAL_SETTINGS,
 };

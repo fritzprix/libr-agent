@@ -12,9 +12,7 @@ import {
   type DisplaySettings,
   type SystemSettings,
   type ExperimentalSettings,
-  type StoredExperimentalSettings,
   normalizeComplexityModelMapping,
-  normalizeExperimentalSettings,
   normalizeDisplaySettings,
 } from './settings-service';
 import type { AIServiceProvider } from '@/lib/ai-service';
@@ -40,7 +38,6 @@ type SettingValue =
   | DisplaySettings // displaySettings
   | SystemSettings // systemSettings
   | ExperimentalSettings // experimentalSettings
-  | StoredExperimentalSettings // experimentalSettings (partial / legacy DB blob)
   | undefined; // agentHubUrl can be undefined
 
 interface SettingDto {
@@ -85,14 +82,14 @@ function isCustomOpenAIProviderArray(
   });
 }
 
-/** `advanced` comes complete from Rust (`get_advanced_settings`). */
+/** `advanced` and `experimental` come complete from Rust. */
 function mapDtosToSettings(
   dtos: SettingDto[],
   advanced: AdvancedSettings,
+  experimental: ExperimentalSettings,
 ): {
   settings: Settings;
   didMigrate: boolean;
-  didMigrateExperimental: boolean;
 } {
   const settingsMap = new Map<string, SettingValue>();
   dtos.forEach((dto) => {
@@ -119,9 +116,6 @@ function mapDtosToSettings(
   };
 
   const storedSystem = getTypedValue('systemSettings', DEFAULT_SETTING.system);
-
-  const { experimental, didMigrate: didMigrateExperimental } =
-    normalizeExperimentalSettings(settingsMap.get('experimentalSettings'));
 
   const mapped: Settings = {
     ...DEFAULT_SETTING,
@@ -191,7 +185,6 @@ function mapDtosToSettings(
   return {
     settings: openaiMigration.settings,
     didMigrate: openaiMigration.didMigrate,
-    didMigrateExperimental,
   };
 }
 
@@ -216,28 +209,24 @@ async function loadSettings(forceRefresh = false): Promise<Settings> {
   const request = Promise.all([
     safeInvoke<SettingDto[]>('list_settings'),
     safeInvoke<AdvancedSettings>('get_advanced_settings'),
+    safeInvoke<ExperimentalSettings>('get_experimental_settings'),
   ])
-    .then(async ([dtos, advanced]) => {
-      const { settings, didMigrate, didMigrateExperimental } =
-        mapDtosToSettings(dtos, advanced);
+    .then(async ([dtos, advanced, experimental]) => {
+      const { settings, didMigrate } = mapDtosToSettings(
+        dtos,
+        advanced,
+        experimental,
+      );
 
-      if (didMigrate || didMigrateExperimental) {
+      if (didMigrate) {
         try {
-          const migrationPatch: Record<string, SettingValue | null> = {};
-          if (didMigrate) {
-            migrationPatch.serviceConfigs = settings.serviceConfigs;
-            migrationPatch.customProviders = settings.customProviders;
-            migrationPatch.preferredModel = settings.preferredModel;
-            migrationPatch.fallbackModel = settings.fallbackModel ?? null;
-          }
-          if (didMigrateExperimental) {
-            logger.info(
-              'Migrating experimentalSettings: dropping toolLoopLegacyGuidanceEnabled',
-            );
-            migrationPatch.experimentalSettings = settings.experimental;
-          }
           await safeInvoke<SettingDto[]>('update_settings', {
-            settings: migrationPatch,
+            settings: {
+              serviceConfigs: settings.serviceConfigs,
+              customProviders: settings.customProviders,
+              preferredModel: settings.preferredModel,
+              fallbackModel: settings.fallbackModel ?? null,
+            },
           });
         } catch (error) {
           logger.warn('Failed to persist settings migration', error);
@@ -363,9 +352,7 @@ export class RustSettingsService implements ISettingsService {
       }
 
       if (settings.experimental) {
-        changes['experimentalSettings'] = normalizeExperimentalSettings(
-          settings.experimental,
-        ).experimental;
+        changes['experimentalSettings'] = settings.experimental;
       }
 
       // Perform a single batch update
