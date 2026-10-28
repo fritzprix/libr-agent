@@ -494,6 +494,21 @@ def _pid_alive(pid: int) -> bool:
     return True
 
 
+def instance_running(layout: InstanceLayout) -> bool:
+    """Whether the launched instance process is still running.
+
+    An instance launched by this process becomes our zombie when it exits, and
+    a zombie still answers ``kill(pid, 0)``; ``waitpid`` reaps and detects it.
+    """
+    pid = _read_pid(layout)
+    if pid is None:
+        return False
+    with contextlib.suppress(ChildProcessError):
+        if os.waitpid(pid, os.WNOHANG)[0] == pid:
+            return False
+    return _pid_alive(pid) and _owns_pid(layout, pid)
+
+
 def launch(layout: InstanceLayout, app_bin: Path, *, timeout_sec: float) -> int:
     port = _read_seed_port(layout)
     existing = _read_pid(layout)
