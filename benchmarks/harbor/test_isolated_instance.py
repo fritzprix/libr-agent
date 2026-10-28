@@ -13,7 +13,9 @@ from benchmarks.harbor.isolated_instance import (
     apply_prod_llm_settings,
     build_seed,
     instance_pids,
+    auth_headers,
     instance_env,
+    issue_api_key,
     instance_running,
     reset_run_dir,
     safe_print,
@@ -319,3 +321,23 @@ def test_instance_running_follows_the_launched_process(tmp_path: Path) -> None:
     finally:
         child.kill()
         child.returncode = 0  # already reaped by instance_running
+
+
+def test_each_launch_issues_a_private_api_key(tmp_path: Path) -> None:
+    import stat
+
+    layout = InstanceLayout(tmp_path / "bench")
+    reset_run_dir_dirs = [layout.root, layout.run_dir]
+    for directory in reset_run_dir_dirs:
+        directory.mkdir(parents=True, exist_ok=True)
+    assert auth_headers(layout) == {}
+
+    key = issue_api_key(layout)
+    assert key.startswith("libr_") and len(key) == len("libr_") + 43
+    assert auth_headers(layout) == {"Authorization": f"Bearer {key}"}
+    assert layout.api_header_file.read_text() == f"Authorization: Bearer {key}\n"
+    assert layout.app_key_input.read_text() == key
+    for path in (layout.api_key_file, layout.api_header_file, layout.app_key_input):
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600, path
+
+    assert issue_api_key(layout) != key  # a new key per launch

@@ -61,6 +61,13 @@ impl Unauthorized {
 
 impl Reject for Unauthorized {}
 
+/// Rejection while no key is injected but a Docker session exists: a container can reach
+/// host loopback on some platforms (Docker Desktop), so loopback alone is not enough.
+#[derive(Debug)]
+pub struct KeyRequired;
+
+impl Reject for KeyRequired {}
+
 fn base62_encode_fixed(bytes: &[u8]) -> String {
     let mut digits = Vec::with_capacity(KEY_CHARS);
     let mut number = bytes.to_vec();
@@ -210,17 +217,44 @@ pub fn is_configured() -> bool {
     ENV_KEY_STATE.get().is_some()
 }
 
-fn guard(expected: Option<KeyState>) -> impl Filter<Extract = (), Error = Rejection> + Clone {
+/// `docker_sessions` reports whether a Docker session (managed or attached) exists; it is
+/// asked only while no key is injected.
+fn guard<F, Fut>(
+    expected: Option<KeyState>,
+    docker_sessions: F,
+) -> impl Filter<Extract = (), Error = Rejection> + Clone
+where
+    F: Fn() -> Fut + Clone + Send + Sync + 'static,
+    Fut: std::future::Future<Output = bool> + Send,
+{
     warp::header::headers_cloned()
-        .and_then(move |headers: HeaderMap| async move {
-            check_bearer(&headers, expected).map_err(warp::reject::custom)
+        .and_then(move |headers: HeaderMap| {
+            let docker_sessions = docker_sessions.clone();
+            async move {
+                if expected.is_none() && docker_sessions().await {
+                    return Err(warp::reject::custom(KeyRequired));
+                }
+                check_bearer(&headers, expected).map_err(warp::reject::custom)
+            }
         })
         .untuple_one()
 }
 
-/// Requires the injected key on every request (a no-op while no key is injected).
+/// Whether any Docker session (managed or attached) exists; a failed read counts as yes (fail closed).
+async fn docker_sessions_exist() -> bool {
+    use crate::repositories::session_repository::SessionRepository;
+
+    match crate::state::try_get_session_repository() {
+        Some(repo) => repo.has_docker_sessions().await.unwrap_or(true),
+        None => false,
+    }
+}
+
+/// Requires the injected key on every request. Without one, requests pass unless a Docker
+/// session (managed or attached) exists; then they are refused. The key is never given to
+/// containers.
 pub fn api_key_guard() -> impl Filter<Extract = (), Error = Rejection> + Clone {
-    guard(ENV_KEY_STATE.get().copied())
+    guard(ENV_KEY_STATE.get().copied(), docker_sessions_exist)
 }
 
 #[cfg(test)]
@@ -387,7 +421,7 @@ mod tests {
 
     #[tokio::test]
     async fn guard_answers_401_with_www_authenticate() {
-        let routes = guard(key_state("libr_secret"))
+        let routes = guard(key_state("libr_secret"), docker_sessions)
             .map(|| "ok")
             .recover(handle_rejection);
 
@@ -414,7 +448,7 @@ mod tests {
 
     #[tokio::test]
     async fn deny_all_guard_rejects_through_the_real_handler() {
-        let routes = guard(Some(KeyState::DenyAll))
+        let routes = guard(Some(KeyState::DenyAll), docker_sessions)
             .map(|| "ok")
             .recover(handle_rejection);
         let reply = warp::test::request()
@@ -424,9 +458,49 @@ mod tests {
         assert_eq!(reply.status(), 401);
     }
 
+    async fn docker_sessions() -> bool {
+        true
+    }
+
+    async fn no_docker_sessions() -> bool {
+        false
+    }
+
     #[tokio::test]
     async fn guard_is_a_no_op_without_an_injected_key() {
-        let routes = guard(None).map(|| "ok").recover(handle_rejection);
+        let routes = guard(None, no_docker_sessions)
+            .map(|| "ok")
+            .recover(handle_rejection);
         assert_eq!(warp::test::request().reply(&routes).await.status(), 200);
+    }
+
+    #[tokio::test]
+    async fn without_a_key_docker_sessions_sessions_close_the_api() {
+        let routes = guard(None, docker_sessions)
+            .map(|| "ok")
+            .recover(handle_rejection);
+        for request in [
+            warp::test::request(),
+            // A container can spoof Host and send any token; neither helps.
+            warp::test::request().header("host", "127.0.0.1:3030"),
+            warp::test::request().header("authorization", "Bearer libr_anything"),
+        ] {
+            let reply = request.reply(&routes).await;
+            assert_eq!(reply.status(), 401);
+            assert!(String::from_utf8_lossy(reply.body()).contains("Docker sessions exist"));
+        }
+    }
+
+    #[tokio::test]
+    async fn with_a_key_docker_sessions_sessions_change_nothing() {
+        let routes = guard(key_state("libr_secret"), docker_sessions)
+            .map(|| "ok")
+            .recover(handle_rejection);
+        let ok = warp::test::request()
+            .header("authorization", "Bearer libr_secret")
+            .reply(&routes)
+            .await;
+        assert_eq!(ok.status(), 200);
+        assert_eq!(warp::test::request().reply(&routes).await.status(), 401);
     }
 }

@@ -60,6 +60,7 @@ from benchmarks.harbor.isolated_instance import (
     INSTANCE_SANDBOX_ENV,
     SANDBOX_WORKDIR,
     InstanceLayout,
+    auth_headers,
     instance_running,
     relaunch,
     safe_print,
@@ -1539,7 +1540,7 @@ class LibrAgentHarborAdapter(BaseAgent):
             except OSError:
                 pass  # the record is diagnostic; a missing copy must not fail the trial
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(headers=self._api_headers()) as client:
             try:
                 res = await client.get(f"{self.api_url}/health", timeout=5.0)
                 if res.status_code != 200:
@@ -1736,7 +1737,7 @@ class LibrAgentHarborAdapter(BaseAgent):
 
         post_idle_event = load_post_idle_event(self.logs_dir)
 
-        async with httpx.AsyncClient(timeout=600.0) as client:
+        async with httpx.AsyncClient(headers=self._api_headers(), timeout=600.0) as client:
             if managed_image is not None:
                 mode_desc = f"managed:{managed_image}:{local_workspace_str}"
             else:
@@ -2174,12 +2175,18 @@ class LibrAgentHarborAdapter(BaseAgent):
                 return
             await asyncio.sleep(poll_interval)
 
+    def _api_headers(self) -> dict[str, str]:
+        """Session API key of the current bench instance (it changes per launch); none
+        without --isolated, where the API is external."""
+        trial_reset = resolve_trial_instance_reset(dict(os.environ))
+        return auth_headers(trial_reset.layout) if trial_reset is not None else {}
+
     async def _fetch_session_messages_best_effort(self, session_id: str) -> list[Any]:
         """GET session messages on a short-lived client; never raise."""
         if httpx is None:
             return []
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(headers=self._api_headers(), timeout=30.0) as client:
                 messages_res = await client.get(
                     f"{self.api_url}/sessions/{session_id}/messages",
                     params={"limit": TRAJECTORY_MESSAGE_LIMIT},
@@ -2385,7 +2392,7 @@ class LibrAgentHarborAdapter(BaseAgent):
         if httpx is None:
             return None
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
+            async with httpx.AsyncClient(headers=self._api_headers(), timeout=15.0) as client:
                 response = await client.get(
                     f"{self.api_url}/sessions/{session_id}/compact-context"
                 )
@@ -2458,7 +2465,7 @@ class LibrAgentHarborAdapter(BaseAgent):
         if httpx is None:
             return
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(headers=self._api_headers(), timeout=30.0) as client:
                 res = await client.delete(
                     f"{self.api_url}/sessions/{session_id}"
                 )

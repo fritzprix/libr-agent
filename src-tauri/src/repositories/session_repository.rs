@@ -297,6 +297,15 @@ pub trait SessionRepository: Send + Sync {
     /// Get all session IDs ordered by most recent activity
     async fn get_all_session_ids(&self) -> Result<Vec<String>, DbError>;
 
+    /// True when any session runs in a Docker container (managed or attached).
+    async fn has_docker_sessions(&self) -> Result<bool, DbError> {
+        Ok(self
+            .get_all_sessions()
+            .await?
+            .iter()
+            .any(|session| session.workspace_isolation == WorkspaceIsolationMode::Docker))
+    }
+
     /// List sessions ordered by most recent activity with cursor pagination.
     ///
     /// When `search` is non-empty (after trim), results are restricted to sessions
@@ -554,6 +563,16 @@ impl SessionRepository for SqliteSessionRepository {
             models.into_iter().map(SessionMetadata::try_from).collect();
 
         sessions
+    }
+
+    async fn has_docker_sessions(&self) -> Result<bool, DbError> {
+        use sea_orm::{ColumnTrait, PaginatorTrait, QueryFilter};
+
+        let count = Session::find()
+            .filter(session::Column::WorkspaceIsolation.eq(WorkspaceIsolationMode::Docker.as_str()))
+            .count(&self.db)
+            .await?;
+        Ok(count > 0)
     }
 
     async fn get_all_session_ids(&self) -> Result<Vec<String>, DbError> {

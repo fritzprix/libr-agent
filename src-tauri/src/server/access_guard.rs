@@ -89,6 +89,17 @@ pub async fn handle_rejection(err: Rejection) -> Result<warp::reply::Response, R
                 .into_response(),
         );
     }
+    if err.find::<super::api_key::KeyRequired>().is_some() {
+        let body = serde_json::json!({
+            "error": "the Session API needs a key while Docker sessions exist; start LibrAgent with LIBRAGENT_SESSION_API_KEY"
+        });
+        return Ok(warp::reply::with_header(
+            warp::reply::with_status(warp::reply::json(&body), StatusCode::UNAUTHORIZED),
+            "www-authenticate",
+            "Bearer",
+        )
+        .into_response());
+    }
     if let Some(unauthorized) = err.find::<super::api_key::Unauthorized>() {
         let body = serde_json::json!({ "error": "missing or invalid API key" });
         return Ok(warp::reply::with_header(

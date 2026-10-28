@@ -325,3 +325,41 @@ async fn app_sqlite_connection_uses_wal_normal_sync_and_memory_cache() {
         .expect("journal_mode value");
     assert_eq!(mode.to_ascii_lowercase(), "wal");
 }
+
+#[tokio::test]
+async fn docker_sessions_managed_or_attached_are_detected() {
+    use tauri_mcp_agent_lib::models::workspace_isolation::DockerWorkspaceConfig;
+
+    let (sessions, _) = setup_repos().await;
+    let docker = |attach: Option<&str>| DockerWorkspaceConfig {
+        image: Some("python:3.11-slim".to_string()),
+        attach_container: attach.map(str::to_string),
+        workdir: None,
+        manage_lifecycle: None,
+        env: Default::default(),
+        port_bindings: Vec::new(),
+    };
+
+    sessions
+        .upsert_session(&build_session_metadata("host-session"))
+        .await
+        .unwrap();
+    assert!(!sessions.has_docker_sessions().await.unwrap());
+
+    // Model-run code executes in attached containers too, so they count.
+    let mut attached = build_session_metadata("attached-session");
+    attached.workspace_isolation = WorkspaceIsolationMode::Docker;
+    attached.docker_config = Some(docker(Some("my-container")));
+    sessions.upsert_session(&attached).await.unwrap();
+    assert!(sessions.has_docker_sessions().await.unwrap());
+
+    let mut managed = build_session_metadata("managed-session");
+    managed.workspace_isolation = WorkspaceIsolationMode::Docker;
+    managed.docker_config = Some(docker(None));
+    sessions.upsert_session(&managed).await.unwrap();
+    sessions.delete_session("attached-session").await.unwrap();
+    assert!(sessions.has_docker_sessions().await.unwrap());
+
+    sessions.delete_session("managed-session").await.unwrap();
+    assert!(!sessions.has_docker_sessions().await.unwrap());
+}
