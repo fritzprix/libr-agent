@@ -4,6 +4,7 @@ pub mod handlers;
 pub mod mcp_handler;
 pub mod routes;
 pub mod wake;
+pub mod wake_listener;
 
 use log::info;
 use std::sync::atomic::{AtomicU16, Ordering};
