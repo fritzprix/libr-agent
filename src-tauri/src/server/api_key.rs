@@ -27,7 +27,7 @@ const KEY_BYTES: usize = 32;
 const KEY_CHARS: usize = 43;
 const BASE62: &[u8; 62] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
-type KeyHash = [u8; 32];
+pub(crate) type KeyHash = [u8; 32];
 
 /// What startup found about an injected key.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -99,7 +99,7 @@ pub fn hash_key(key: &str) -> KeyHash {
     Sha256::digest(key.as_bytes()).into()
 }
 
-fn hashes_equal(a: &KeyHash, b: &KeyHash) -> bool {
+pub(crate) fn hashes_equal(a: &KeyHash, b: &KeyHash) -> bool {
     a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
@@ -116,19 +116,53 @@ fn bearer_token(headers: &HeaderMap) -> Option<&str> {
     (scheme.eq_ignore_ascii_case("bearer") && !token.is_empty()).then_some(token)
 }
 
-/// `Ok` when no key is injected, or when the request carries the injected key.
-fn check_bearer(headers: &HeaderMap, expected: Option<KeyState>) -> Result<(), Unauthorized> {
-    let Some(expected) = expected else {
-        return Ok(());
-    };
+/// `Ok` when no key is configured anywhere, or when the request carries an accepted key
+/// (either injected via environment or issued via agent pairing).
+fn check_bearer<H, A>(
+    headers: &HeaderMap,
+    expected_env: Option<KeyState>,
+    has_issued_keys: H,
+    accept_issued_key: A,
+) -> Result<(), Unauthorized>
+where
+    H: Fn() -> bool,
+    A: Fn(&str) -> bool,
+{
     let token = bearer_token(headers);
     let invalid_token = token.is_some();
-    match (expected, token) {
-        (KeyState::Key(expected), Some(token)) if hashes_equal(&hash_key(token), &expected) => {
-            Ok(())
-        }
-        _ => Err(Unauthorized { invalid_token }),
+
+    // If an environment key is in DenyAll mode, fail closed immediately.
+    if matches!(expected_env, Some(KeyState::DenyAll)) {
+        return Err(Unauthorized { invalid_token });
     }
+
+    let any_key_configured = expected_env.is_some() || has_issued_keys();
+    if !any_key_configured {
+        return Ok(());
+    }
+
+    if let Some(token) = token {
+        // 1. Check against environment injected key
+        if let Some(KeyState::Key(expected_hash)) = expected_env {
+            if hashes_equal(&hash_key(token), &expected_hash) {
+                return Ok(());
+            }
+        }
+        // 2. Check against issued pairing keys
+        if accept_issued_key(token) {
+            return Ok(());
+        }
+
+        // Token was sent, but matched neither
+        return Err(Unauthorized {
+            invalid_token: true,
+        });
+    }
+
+    // No token provided, but at least one key is configured: reject.
+    Err(Unauthorized {
+        invalid_token: false,
+    })
 }
 
 /// Reads and deletes the key file. A file that group or others can access is refused (and
@@ -218,23 +252,31 @@ pub fn is_configured() -> bool {
 }
 
 /// `docker_sessions` reports whether a Docker session (managed or attached) exists; it is
-/// asked only while no key is injected.
-fn guard<F, Fut>(
+/// asked only while no key is injected or issued.
+fn guard<F, Fut, H, A>(
     expected: Option<KeyState>,
     docker_sessions: F,
+    has_issued_keys: H,
+    accept_issued_key: A,
 ) -> impl Filter<Extract = (), Error = Rejection> + Clone
 where
     F: Fn() -> Fut + Clone + Send + Sync + 'static,
     Fut: std::future::Future<Output = bool> + Send,
+    H: Fn() -> bool + Clone + Send + Sync + 'static,
+    A: Fn(&str) -> bool + Clone + Send + Sync + 'static,
 {
     warp::header::headers_cloned()
         .and_then(move |headers: HeaderMap| {
             let docker_sessions = docker_sessions.clone();
+            let has_issued_keys = has_issued_keys.clone();
+            let accept_issued_key = accept_issued_key.clone();
             async move {
-                if expected.is_none() && docker_sessions().await {
+                let has_any_key = expected.is_some() || has_issued_keys();
+                if !has_any_key && docker_sessions().await {
                     return Err(warp::reject::custom(KeyRequired));
                 }
-                check_bearer(&headers, expected).map_err(warp::reject::custom)
+                check_bearer(&headers, expected, has_issued_keys, accept_issued_key)
+                    .map_err(warp::reject::custom)
             }
         })
         .untuple_one()
@@ -254,7 +296,12 @@ async fn docker_sessions_exist() -> bool {
 /// session (managed or attached) exists; then they are refused. The key is never given to
 /// containers.
 pub fn api_key_guard() -> impl Filter<Extract = (), Error = Rejection> + Clone {
-    guard(ENV_KEY_STATE.get().copied(), docker_sessions_exist)
+    guard(
+        ENV_KEY_STATE.get().copied(),
+        docker_sessions_exist,
+        super::pairing::has_any_active_issued_key,
+        super::pairing::is_token_accepted_by_issued_keys,
+    )
 }
 
 #[cfg(test)]
@@ -273,6 +320,24 @@ mod tests {
 
     fn key_state(key: &str) -> Option<KeyState> {
         Some(KeyState::Key(hash_key(key)))
+    }
+
+    fn check_bearer_env_only(
+        headers: &HeaderMap,
+        expected: Option<KeyState>,
+    ) -> Result<(), Unauthorized> {
+        check_bearer(headers, expected, || false, |_| false)
+    }
+
+    fn guard_env_only<F, Fut>(
+        expected: Option<KeyState>,
+        docker_sessions: F,
+    ) -> impl Filter<Extract = (), Error = Rejection> + Clone
+    where
+        F: Fn() -> Fut + Clone + Send + Sync + 'static,
+        Fut: std::future::Future<Output = bool> + Send,
+    {
+        guard(expected, docker_sessions, || false, |_| false)
     }
 
     #[test]
@@ -309,8 +374,8 @@ mod tests {
 
     #[test]
     fn no_injected_key_allows_every_request() {
-        assert!(check_bearer(&headers(None), None).is_ok());
-        assert!(check_bearer(&headers(Some("Bearer anything")), None).is_ok());
+        assert!(check_bearer_env_only(&headers(None), None).is_ok());
+        assert!(check_bearer_env_only(&headers(Some("Bearer anything")), None).is_ok());
     }
 
     #[test]
@@ -321,7 +386,10 @@ mod tests {
             "bearer libr_secret",
             "BEARER libr_secret",
         ] {
-            assert!(check_bearer(&headers(Some(ok)), expected).is_ok(), "{ok}");
+            assert!(
+                check_bearer_env_only(&headers(Some(ok)), expected).is_ok(),
+                "{ok}"
+            );
         }
         for bad in [
             None,
@@ -331,7 +399,10 @@ mod tests {
             Some("Basic libr_secret"),
             Some("libr_secret"),
         ] {
-            assert!(check_bearer(&headers(bad), expected).is_err(), "{bad:?}");
+            assert!(
+                check_bearer_env_only(&headers(bad), expected).is_err(),
+                "{bad:?}"
+            );
         }
     }
 
@@ -339,7 +410,7 @@ mod tests {
     fn deny_all_rejects_even_a_well_formed_token() {
         for authorization in [None, Some("Bearer libr_secret"), Some("Bearer ")] {
             assert!(
-                check_bearer(&headers(authorization), Some(KeyState::DenyAll)).is_err(),
+                check_bearer_env_only(&headers(authorization), Some(KeyState::DenyAll)).is_err(),
                 "{authorization:?}"
             );
         }
@@ -348,9 +419,9 @@ mod tests {
     #[test]
     fn challenge_names_invalid_token_only_when_a_token_was_sent() {
         let expected = key_state("libr_secret");
-        let missing = check_bearer(&headers(None), expected).unwrap_err();
+        let missing = check_bearer_env_only(&headers(None), expected).unwrap_err();
         assert_eq!(missing.www_authenticate(), "Bearer");
-        let wrong = check_bearer(&headers(Some("Bearer nope")), expected).unwrap_err();
+        let wrong = check_bearer_env_only(&headers(Some("Bearer nope")), expected).unwrap_err();
         assert_eq!(wrong.www_authenticate(), "Bearer error=\"invalid_token\"");
     }
 
@@ -421,7 +492,7 @@ mod tests {
 
     #[tokio::test]
     async fn guard_answers_401_with_www_authenticate() {
-        let routes = guard(key_state("libr_secret"), docker_sessions)
+        let routes = guard_env_only(key_state("libr_secret"), docker_sessions)
             .map(|| "ok")
             .recover(handle_rejection);
 
@@ -448,7 +519,7 @@ mod tests {
 
     #[tokio::test]
     async fn deny_all_guard_rejects_through_the_real_handler() {
-        let routes = guard(Some(KeyState::DenyAll), docker_sessions)
+        let routes = guard_env_only(Some(KeyState::DenyAll), docker_sessions)
             .map(|| "ok")
             .recover(handle_rejection);
         let reply = warp::test::request()
@@ -468,7 +539,7 @@ mod tests {
 
     #[tokio::test]
     async fn guard_is_a_no_op_without_an_injected_key() {
-        let routes = guard(None, no_docker_sessions)
+        let routes = guard_env_only(None, no_docker_sessions)
             .map(|| "ok")
             .recover(handle_rejection);
         assert_eq!(warp::test::request().reply(&routes).await.status(), 200);
@@ -476,7 +547,7 @@ mod tests {
 
     #[tokio::test]
     async fn without_a_key_docker_sessions_sessions_close_the_api() {
-        let routes = guard(None, docker_sessions)
+        let routes = guard_env_only(None, docker_sessions)
             .map(|| "ok")
             .recover(handle_rejection);
         for request in [
@@ -493,7 +564,7 @@ mod tests {
 
     #[tokio::test]
     async fn with_a_key_docker_sessions_sessions_change_nothing() {
-        let routes = guard(key_state("libr_secret"), docker_sessions)
+        let routes = guard_env_only(key_state("libr_secret"), docker_sessions)
             .map(|| "ok")
             .recover(handle_rejection);
         let ok = warp::test::request()
@@ -502,5 +573,54 @@ mod tests {
             .await;
         assert_eq!(ok.status(), 200);
         assert_eq!(warp::test::request().reply(&routes).await.status(), 401);
+    }
+
+    #[tokio::test]
+    async fn guard_with_issued_key_and_docker_sessions_permits_valid_and_rejects_revoked() {
+        use crate::server::pairing;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let _guard = pairing::test_env_data_dir(temp_dir.path());
+
+        let raw_key = generate_key().unwrap();
+        let hash = pairing::hash_to_hex(&hash_key(&raw_key));
+        let issued = pairing::IssuedApiKey {
+            id: "key-1".to_string(),
+            name: "test-agent".to_string(),
+            key_hash: hash,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            revoked_at: None,
+        };
+        pairing::save_issued_keys_all(&[issued]).unwrap();
+
+        // No env key (None), but docker_sessions returns true
+        let routes = guard(
+            None,
+            docker_sessions,
+            pairing::has_any_active_issued_key,
+            pairing::is_token_accepted_by_issued_keys,
+        )
+        .map(|| "ok")
+        .recover(handle_rejection);
+
+        // 1. Valid issued key with docker sessions -> 200 OK
+        let ok = warp::test::request()
+            .header("authorization", format!("Bearer {raw_key}"))
+            .reply(&routes)
+            .await;
+        assert_eq!(ok.status(), 200);
+
+        // 2. Missing authorization with docker sessions -> 401 Unauthorized
+        let missing = warp::test::request().reply(&routes).await;
+        assert_eq!(missing.status(), 401);
+
+        // 3. Revoke key -> no active keys left -> returns 401 KeyRequired
+        pairing::revoke_issued_key("key-1").unwrap();
+        let revoked = warp::test::request()
+            .header("authorization", format!("Bearer {raw_key}"))
+            .reply(&routes)
+            .await;
+        assert_eq!(revoked.status(), 401);
+        assert!(String::from_utf8_lossy(revoked.body()).contains("Docker sessions exist"));
     }
 }

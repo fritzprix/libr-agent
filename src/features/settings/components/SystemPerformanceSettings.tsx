@@ -1,3 +1,4 @@
+import { SessionApiKeysSection } from './SessionApiKeysSection';
 import { SystemAutomationSection } from './system-performance/SystemAutomationSection';
 import { SystemBackgroundTasksSection } from './system-performance/SystemBackgroundTasksSection';
 import { SystemNetworkSection } from './system-performance/SystemNetworkSection';
@@ -26,6 +27,8 @@ export function SystemPerformanceSettings({
         networkSettingsChanged={networkSettingsChanged}
         onChange={onChange}
       />
+
+      <SessionApiKeysSection />
     </div>
   );
 }

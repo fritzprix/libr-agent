@@ -17,9 +17,10 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { PanelRight } from 'lucide-react';
+import { KeyRound, PanelRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
+import { getAgentIntegrationInstruction } from '../lib/pairingInstruction';
 import { HeaderStatusBadges } from './HeaderStatusBadges';
 import { PanelAttentionDot } from './PanelAttentionDot';
 import { SessionExportMenu } from './SessionExportMenu';
@@ -91,6 +92,26 @@ export function AgentChatHeader({
     }
   };
 
+  const handleCopyIntegrationInstruction = async () => {
+    try {
+      const instruction = getAgentIntegrationInstruction();
+      await navigator.clipboard.writeText(instruction);
+      toast.success(
+        t(
+          'agent.header.integrationInstructionCopied',
+          'Integration instructions copied to clipboard. Paste them into your external AI agent.',
+        ),
+      );
+    } catch {
+      toast.error(
+        t(
+          'agent.header.integrationInstructionCopyFailed',
+          'Failed to copy integration instructions to clipboard',
+        ),
+      );
+    }
+  };
+
   return (
     <AgentSessionHeader
       assistantName={assistantName}
@@ -102,6 +123,32 @@ export function AgentChatHeader({
     >
       {children}
       {session?.id ? <HeaderSessionExportMenu sessionId={session.id} /> : null}
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              void handleCopyIntegrationInstruction();
+            }}
+            aria-label={t(
+              'agent.header.integrateExternalAgentAria',
+              'Integrate into Agent Session (copy instructions)',
+            )}
+            className="h-6 px-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <KeyRound className="h-4 w-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          {t(
+            'agent.header.integrateExternalAgentTooltip',
+            'Integrate into Agent Session (copy instructions)',
+          )}
+        </TooltipContent>
+      </Tooltip>
 
       <HeaderStatusBadges />
 

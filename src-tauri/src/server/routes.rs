@@ -88,6 +88,20 @@ pub fn get_routes(
     // Authorized by its per-session token alone, so it sits outside the API key guard.
     let wake_session = wake_route(agent_manager.clone());
 
+    // POST /api/pairings — unauthenticated pairing endpoint (restricted strictly to loopback)
+    let pairing_route = warp::post()
+        .and(warp::path("api"))
+        .and(warp::path("pairings"))
+        .and(warp::path::end())
+        .and(warp::body::content_length_limit(4 * 1024))
+        .and(warp::body::json())
+        .and_then(handlers::handle_pairing_request);
+
+    // Pairing MUST only be reachable from loopback (localhost), even if expose is true.
+    let pairing_session = access_guard(false)
+        .and(crate::server::access_guard::loopback_peer_guard())
+        .and(pairing_route);
+
     // POST /api/sessions/:id/channel
     let inject_channel_message = warp::post()
         .and(warp::path("api"))
@@ -259,6 +273,10 @@ pub fn get_routes(
 
     // No allow_any_origin CORS. CLI clients omit Origin; browsers with Origin are rejected.
     access_guard(expose)
-        .and(wake_session.or(crate::server::api_key::api_key_guard().and(api)))
+        .and(
+            wake_session
+                .or(pairing_session)
+                .or(crate::server::api_key::api_key_guard().and(api)),
+        )
         .recover(handle_rejection)
 }
