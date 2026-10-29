@@ -81,6 +81,20 @@ pub fn access_guard(expose: bool) -> impl Filter<Extract = (), Error = Rejection
         .untuple_one()
 }
 
+/// Warp filter: reject with 403 when the remote peer address is None or not a loopback address.
+pub fn loopback_peer_guard() -> impl Filter<Extract = (), Error = Rejection> + Clone {
+    warp::addr::remote()
+        .and_then(|addr: Option<std::net::SocketAddr>| async move {
+            match addr {
+                Some(a) if a.ip().is_loopback() => Ok(()),
+                _ => Err(warp::reject::custom(AccessDenied {
+                    reason: "pairing is only permitted from loopback",
+                })),
+            }
+        })
+        .untuple_one()
+}
+
 pub async fn handle_rejection(err: Rejection) -> Result<warp::reply::Response, Rejection> {
     if let Some(denied) = err.find::<AccessDenied>() {
         let body = serde_json::json!({ "error": denied.reason });
@@ -110,4 +124,45 @@ pub async fn handle_rejection(err: Rejection) -> Result<warp::reply::Response, R
         .into_response());
     }
     Err(err)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn loopback_peer_guard_accepts_loopback_and_rejects_non_loopback_or_missing() {
+        let filter = loopback_peer_guard().map(|| "ok").recover(handle_rejection);
+
+        // IPv4 loopback
+        let res = warp::test::request()
+            .remote_addr("127.0.0.1:54321".parse().unwrap())
+            .reply(&filter)
+            .await;
+        assert_eq!(res.status(), 200);
+
+        // IPv6 loopback
+        let res = warp::test::request()
+            .remote_addr("[::1]:54321".parse().unwrap())
+            .reply(&filter)
+            .await;
+        assert_eq!(res.status(), 200);
+
+        // LAN/remote address: rejected with 403
+        let res = warp::test::request()
+            .remote_addr("192.168.1.100:54321".parse().unwrap())
+            .reply(&filter)
+            .await;
+        assert_eq!(res.status(), 403);
+        assert!(
+            String::from_utf8_lossy(res.body()).contains("pairing is only permitted from loopback")
+        );
+
+        // Missing remote address (None): rejected with 403
+        let res = warp::test::request().reply(&filter).await;
+        assert_eq!(res.status(), 403);
+        assert!(
+            String::from_utf8_lossy(res.body()).contains("pairing is only permitted from loopback")
+        );
+    }
 }

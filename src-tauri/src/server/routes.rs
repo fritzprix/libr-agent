@@ -98,7 +98,9 @@ pub fn get_routes(
         .and_then(handlers::handle_pairing_request);
 
     // Pairing MUST only be reachable from loopback (localhost), even if expose is true.
-    let pairing_session = access_guard(false).and(pairing_route);
+    let pairing_session = access_guard(false)
+        .and(crate::server::access_guard::loopback_peer_guard())
+        .and(pairing_route);
 
     // POST /api/sessions/:id/channel
     let inject_channel_message = warp::post()

@@ -256,7 +256,8 @@ where
         .and_then(move |headers: HeaderMap| {
             let docker_sessions = docker_sessions.clone();
             async move {
-                if expected.is_none() && docker_sessions().await {
+                let has_any_key = expected.is_some() || super::pairing::has_any_active_issued_key();
+                if !has_any_key && docker_sessions().await {
                     return Err(warp::reject::custom(KeyRequired));
                 }
                 check_bearer(&headers, expected).map_err(warp::reject::custom)
@@ -527,5 +528,49 @@ mod tests {
             .await;
         assert_eq!(ok.status(), 200);
         assert_eq!(warp::test::request().reply(&routes).await.status(), 401);
+    }
+
+    #[tokio::test]
+    async fn guard_with_issued_key_and_docker_sessions_permits_valid_and_rejects_revoked() {
+        use crate::server::pairing;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let _guard = pairing::test_env_data_dir(temp_dir.path());
+
+        let raw_key = generate_key().unwrap();
+        let hash = pairing::hash_to_hex(&hash_key(&raw_key));
+        let issued = pairing::IssuedApiKey {
+            id: "key-1".to_string(),
+            name: "test-agent".to_string(),
+            key_hash: hash,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            revoked_at: None,
+        };
+        pairing::save_issued_keys_all(&[issued]).unwrap();
+
+        // No env key (None), but docker_sessions returns true
+        let routes = guard(None, docker_sessions)
+            .map(|| "ok")
+            .recover(handle_rejection);
+
+        // 1. Valid issued key with docker sessions -> 200 OK
+        let ok = warp::test::request()
+            .header("authorization", format!("Bearer {raw_key}"))
+            .reply(&routes)
+            .await;
+        assert_eq!(ok.status(), 200);
+
+        // 2. Missing authorization with docker sessions -> 401 Unauthorized
+        let missing = warp::test::request().reply(&routes).await;
+        assert_eq!(missing.status(), 401);
+
+        // 3. Revoke key -> no active keys left -> returns 401 KeyRequired
+        pairing::revoke_issued_key("key-1").unwrap();
+        let revoked = warp::test::request()
+            .header("authorization", format!("Bearer {raw_key}"))
+            .reply(&routes)
+            .await;
+        assert_eq!(revoked.status(), 401);
+        assert!(String::from_utf8_lossy(revoked.body()).contains("Docker sessions exist"));
     }
 }

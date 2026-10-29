@@ -99,7 +99,7 @@ pub fn is_valid_pairing_code_format(code: &str) -> bool {
         && bytes[4..7].iter().all(|b| b.is_ascii_alphanumeric())
 }
 
-fn keys_file_path() -> PathBuf {
+pub fn keys_file_path() -> PathBuf {
     let data_dir = crate::profile::data_dir(crate::profile::resolve_profile());
     data_dir.join(KEY_FILE_NAME)
 }
@@ -124,13 +124,18 @@ pub fn load_issued_keys() -> Vec<IssuedApiKey> {
     keys
 }
 
-fn save_issued_keys_all(keys: &[IssuedApiKey]) -> Result<(), std::io::Error> {
+pub fn save_issued_keys_all(keys: &[IssuedApiKey]) -> Result<(), std::io::Error> {
     let path = keys_file_path();
     if let Some(parent) = path.parent() {
         let _ = fs::create_dir_all(parent);
     }
     let json = serde_json::to_string_pretty(keys).map_err(std::io::Error::other)?;
     fs::write(&path, json)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
+    }
 
     if let Ok(mut guard) = KEYS_CACHE.write() {
         *guard = Some(keys.to_vec());
@@ -287,19 +292,19 @@ pub fn approve_pairing(code: &str) -> Result<IssuedApiKeySummary, String> {
     let mut lock = PENDING_PAIRING
         .lock()
         .map_err(|e| format!("Lock error: {e}"))?;
-    let pending = lock
+    let pending_ref = lock
         .as_mut()
         .ok_or_else(|| "No pending pairing request found".to_string())?;
 
-    if Instant::now() >= pending.expires_at {
+    if Instant::now() >= pending_ref.expires_at {
         let _ = lock.take();
         return Err("Pairing request has expired".to_string());
     }
 
     let input_code = code.trim().to_ascii_lowercase();
-    if input_code != pending.code {
-        pending.failed_attempts += 1;
-        if pending.failed_attempts >= MAX_FAILED_ATTEMPTS {
+    if input_code != pending_ref.code {
+        pending_ref.failed_attempts += 1;
+        if pending_ref.failed_attempts >= MAX_FAILED_ATTEMPTS {
             if let Some(p) = lock.take() {
                 let _ = p.responder.send(Err(
                     "Pairing rejected: 3 incorrect code attempts".to_string()
@@ -307,19 +312,23 @@ pub fn approve_pairing(code: &str) -> Result<IssuedApiKeySummary, String> {
             }
             return Err("Code incorrect 3 times. Pairing request cancelled.".to_string());
         }
-        let remaining = MAX_FAILED_ATTEMPTS - pending.failed_attempts;
+        let remaining = MAX_FAILED_ATTEMPTS - pending_ref.failed_attempts;
         return Err(format!("Incorrect code. Attempts remaining: {remaining}"));
     }
 
-    let pending = lock.take().expect("pending exists");
+    if pending_ref.responder.is_closed() {
+        let _ = lock.take();
+        return Err("Pairing request connection was closed by the client".to_string());
+    }
+
     let raw_key = generate_key().map_err(|e| format!("Failed to generate API key: {e}"))?;
     let hash = hash_key(&raw_key);
     let hex_hash = hash_to_hex(&hash);
     let now_iso = chrono::Utc::now().to_rfc3339();
 
     let issued = IssuedApiKey {
-        id: pending.id.clone(),
-        name: pending.name.clone(),
+        id: pending_ref.id.clone(),
+        name: pending_ref.name.clone(),
         key_hash: hex_hash,
         created_at: now_iso.clone(),
         revoked_at: None,
@@ -327,6 +336,7 @@ pub fn approve_pairing(code: &str) -> Result<IssuedApiKeySummary, String> {
 
     save_new_key(&issued).map_err(|e| format!("Failed to persist issued key: {e}"))?;
 
+    let pending = lock.take().expect("pending exists");
     let summary = IssuedApiKeySummary {
         id: pending.id,
         name: pending.name,
@@ -388,6 +398,41 @@ pub fn revoke_issued_key(id: &str) -> Result<(), String> {
 }
 
 #[cfg(test)]
+pub struct TestEnvDataDir {
+    _lock: std::sync::MutexGuard<'static, ()>,
+    prev_env: Option<String>,
+}
+
+#[cfg(test)]
+static TEST_SERIAL_LOCK: Mutex<()> = Mutex::new(());
+
+#[cfg(test)]
+pub fn test_env_data_dir(path: &std::path::Path) -> TestEnvDataDir {
+    let lock = TEST_SERIAL_LOCK.lock().unwrap();
+    let prev_env = std::env::var("LIBRAGENT_DATA_DIR").ok();
+    std::env::set_var("LIBRAGENT_DATA_DIR", path);
+    *PENDING_PAIRING.lock().unwrap() = None;
+    *KEYS_CACHE.write().unwrap() = None;
+    TestEnvDataDir {
+        _lock: lock,
+        prev_env,
+    }
+}
+
+#[cfg(test)]
+impl Drop for TestEnvDataDir {
+    fn drop(&mut self) {
+        if let Some(prev) = &self.prev_env {
+            std::env::set_var("LIBRAGENT_DATA_DIR", prev);
+        } else {
+            std::env::remove_var("LIBRAGENT_DATA_DIR");
+        }
+        *PENDING_PAIRING.lock().unwrap() = None;
+        *KEYS_CACHE.write().unwrap() = None;
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -413,5 +458,143 @@ mod tests {
         assert_eq!(hex.len(), 64);
         let decoded = hex_to_hash(&hex).expect("valid hex");
         assert_eq!(hash, decoded);
+    }
+
+    #[tokio::test]
+    async fn wrong_code_three_times_cancels_request_and_issues_no_key() {
+        let temp = tempfile::tempdir().unwrap();
+        let _guard = test_env_data_dir(temp.path());
+
+        let req_task = tokio::spawn(handle_pairing_request(PairingRequestBody {
+            name: "test-agent".to_string(),
+            code: "abc-123".to_string(),
+        }));
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(get_pending_pairing().is_some());
+
+        // Attempt 1: wrong
+        let err1 = approve_pairing("wrong1").unwrap_err();
+        assert!(err1.contains("Attempts remaining: 2"), "{err1}");
+
+        // Attempt 2: wrong
+        let err2 = approve_pairing("wrong2").unwrap_err();
+        assert!(err2.contains("Attempts remaining: 1"), "{err2}");
+
+        // Attempt 3: wrong -> cancelled
+        let err3 = approve_pairing("wrong3").unwrap_err();
+        assert!(err3.contains("cancelled"), "{err3}");
+
+        // Request task gets forbidden
+        let res = req_task.await.unwrap();
+        assert!(res.is_err());
+        let (status, msg) = res.unwrap_err();
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert!(msg.contains("3 incorrect code attempts"));
+
+        // No pending pairing, no keys issued
+        assert!(get_pending_pairing().is_none());
+        assert!(load_issued_keys().is_empty());
+    }
+
+    #[tokio::test]
+    async fn second_request_while_pending_returns_conflict_409() {
+        let temp = tempfile::tempdir().unwrap();
+        let _guard = test_env_data_dir(temp.path());
+
+        let req_task = tokio::spawn(handle_pairing_request(PairingRequestBody {
+            name: "agent-1".to_string(),
+            code: "aaa-111".to_string(),
+        }));
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let conflict = handle_pairing_request(PairingRequestBody {
+            name: "agent-2".to_string(),
+            code: "bbb-222".to_string(),
+        })
+        .await;
+
+        assert!(conflict.is_err());
+        let (status, msg) = conflict.unwrap_err();
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert!(msg.contains("Another pairing request is already pending"));
+
+        // Clean up first task by rejecting it
+        reject_pending_pairing().unwrap();
+        let _ = req_task.await;
+    }
+
+    #[tokio::test]
+    async fn expired_request_cannot_be_approved() {
+        let temp = tempfile::tempdir().unwrap();
+        let _guard = test_env_data_dir(temp.path());
+
+        let (tx, _rx) = tokio::sync::oneshot::channel();
+        {
+            let mut lock = PENDING_PAIRING.lock().unwrap();
+            *lock = Some(PendingPairing {
+                id: "test-id".to_string(),
+                name: "agent".to_string(),
+                code: "exp-123".to_string(),
+                expires_at: Instant::now() - Duration::from_secs(1),
+                failed_attempts: 0,
+                responder: tx,
+            });
+        }
+
+        let err = approve_pairing("exp-123").unwrap_err();
+        assert!(err.contains("expired"), "{err}");
+        assert!(get_pending_pairing().is_none());
+    }
+
+    #[tokio::test]
+    async fn revoked_key_is_rejected_by_is_token_accepted_by_issued_keys() {
+        let temp = tempfile::tempdir().unwrap();
+        let _guard = test_env_data_dir(temp.path());
+
+        let req_task = tokio::spawn(handle_pairing_request(PairingRequestBody {
+            name: "agent-d".to_string(),
+            code: "ddd-444".to_string(),
+        }));
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let summary = approve_pairing("ddd-444").unwrap();
+        let resp = req_task.await.unwrap().unwrap();
+
+        assert_eq!(summary.id, resp.id);
+        assert!(is_token_accepted_by_issued_keys(&resp.api_key));
+
+        // Revoke the key
+        revoke_issued_key(&resp.id).unwrap();
+
+        // Must now be rejected
+        assert!(!is_token_accepted_by_issued_keys(&resp.api_key));
+    }
+
+    #[tokio::test]
+    async fn persisted_file_contains_only_hash_never_raw_key() {
+        let temp = tempfile::tempdir().unwrap();
+        let _guard = test_env_data_dir(temp.path());
+
+        let req_task = tokio::spawn(handle_pairing_request(PairingRequestBody {
+            name: "agent-e".to_string(),
+            code: "eee-555".to_string(),
+        }));
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let summary = approve_pairing("eee-555").unwrap();
+        let resp = req_task.await.unwrap().unwrap();
+
+        let path = keys_file_path();
+        let contents = std::fs::read_to_string(&path).unwrap();
+
+        // Raw key must NEVER appear in the persisted JSON file
+        assert!(!contents.contains(&resp.api_key));
+
+        // Hex hash of the key must appear
+        let expected_hex = hash_to_hex(&hash_key(&resp.api_key));
+        assert!(contents.contains(&expected_hex));
+        assert!(contents.contains(&summary.id));
     }
 }
