@@ -118,14 +118,13 @@ fn bearer_token(headers: &HeaderMap) -> Option<&str> {
 
 /// `Ok` when no key is configured anywhere, or when the request carries an accepted key
 /// (either injected via environment or issued via agent pairing).
-fn check_bearer<H, A>(
+fn check_bearer<A>(
     headers: &HeaderMap,
     expected_env: Option<KeyState>,
-    has_issued_keys: H,
+    has_issued_keys: bool,
     accept_issued_key: A,
 ) -> Result<(), Unauthorized>
 where
-    H: Fn() -> bool,
     A: Fn(&str) -> bool,
 {
     let token = bearer_token(headers);
@@ -136,7 +135,7 @@ where
         return Err(Unauthorized { invalid_token });
     }
 
-    let any_key_configured = expected_env.is_some() || has_issued_keys();
+    let any_key_configured = expected_env.is_some() || has_issued_keys;
     if !any_key_configured {
         return Ok(());
     }
@@ -262,7 +261,7 @@ fn guard<F, Fut, H, A>(
 where
     F: Fn() -> Fut + Clone + Send + Sync + 'static,
     Fut: std::future::Future<Output = bool> + Send,
-    H: Fn() -> bool + Clone + Send + Sync + 'static,
+    H: Fn() -> Result<bool, String> + Clone + Send + Sync + 'static,
     A: Fn(&str) -> bool + Clone + Send + Sync + 'static,
 {
     warp::header::headers_cloned()
@@ -271,11 +270,21 @@ where
             let has_issued_keys = has_issued_keys.clone();
             let accept_issued_key = accept_issued_key.clone();
             async move {
-                let has_any_key = expected.is_some() || has_issued_keys();
+                let issued_result = has_issued_keys();
+                // Fail-closed if issued keys file failed to load:
+                // Requests requiring authentication or verification must be rejected.
+                if issued_result.is_err() {
+                    let token = bearer_token(&headers);
+                    return Err(warp::reject::custom(Unauthorized {
+                        invalid_token: token.is_some(),
+                    }));
+                }
+                let has_issued = issued_result.unwrap_or(false);
+                let has_any_key = expected.is_some() || has_issued;
                 if !has_any_key && docker_sessions().await {
                     return Err(warp::reject::custom(KeyRequired));
                 }
-                check_bearer(&headers, expected, has_issued_keys, accept_issued_key)
+                check_bearer(&headers, expected, has_issued, accept_issued_key)
                     .map_err(warp::reject::custom)
             }
         })
@@ -326,7 +335,7 @@ mod tests {
         headers: &HeaderMap,
         expected: Option<KeyState>,
     ) -> Result<(), Unauthorized> {
-        check_bearer(headers, expected, || false, |_| false)
+        check_bearer(headers, expected, false, |_| false)
     }
 
     fn guard_env_only<F, Fut>(
@@ -337,7 +346,7 @@ mod tests {
         F: Fn() -> Fut + Clone + Send + Sync + 'static,
         Fut: std::future::Future<Output = bool> + Send,
     {
-        guard(expected, docker_sessions, || false, |_| false)
+        guard(expected, docker_sessions, || Ok(false), |_| false)
     }
 
     #[test]
@@ -622,5 +631,158 @@ mod tests {
             .await;
         assert_eq!(revoked.status(), 401);
         assert!(String::from_utf8_lossy(revoked.body()).contains("Docker sessions exist"));
+    }
+
+    #[tokio::test]
+    async fn guard_fails_closed_when_issued_key_file_is_corrupted() {
+        use crate::server::pairing;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let _guard = pairing::test_env_data_dir(temp_dir.path());
+
+        let file_path = pairing::keys_file_path();
+        std::fs::write(&file_path, "{broken json").unwrap();
+
+        let routes = guard(
+            None,
+            no_docker_sessions,
+            pairing::has_any_active_issued_key,
+            pairing::is_token_accepted_by_issued_keys,
+        )
+        .map(|| "ok")
+        .recover(handle_rejection);
+
+        // Missing key must fail closed with 401 (not allowed through)
+        let missing = warp::test::request().reply(&routes).await;
+        assert_eq!(missing.status(), 401);
+        assert_eq!(missing.headers().get("www-authenticate").unwrap(), "Bearer");
+
+        // Request with bearer token must also fail closed with 401
+        let with_token = warp::test::request()
+            .header("authorization", "Bearer libr_some_random_key")
+            .reply(&routes)
+            .await;
+        assert_eq!(with_token.status(), 401);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn guard_fails_closed_when_issued_key_file_is_unreadable() {
+        use crate::server::pairing;
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let _guard = pairing::test_env_data_dir(temp_dir.path());
+
+        let file_path = pairing::keys_file_path();
+        std::fs::write(&file_path, "[]").unwrap();
+        std::fs::set_permissions(&file_path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        pairing::invalidate_keys_cache();
+
+        let routes = guard(
+            None,
+            no_docker_sessions,
+            pairing::has_any_active_issued_key,
+            pairing::is_token_accepted_by_issued_keys,
+        )
+        .map(|| "ok")
+        .recover(handle_rejection);
+
+        let missing = warp::test::request().reply(&routes).await;
+        assert_eq!(missing.status(), 401);
+
+        let with_token = warp::test::request()
+            .header("authorization", "Bearer libr_test_key")
+            .reply(&routes)
+            .await;
+        assert_eq!(with_token.status(), 401);
+
+        let _ = std::fs::set_permissions(&file_path, std::fs::Permissions::from_mode(0o600));
+    }
+
+    #[tokio::test]
+    async fn deleted_key_returns_401_when_active_keys_remain_and_allows_when_all_deleted() {
+        use crate::server::pairing;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let _guard = pairing::test_env_data_dir(temp_dir.path());
+
+        let raw_key_1 = generate_key().unwrap();
+        let raw_key_2 = generate_key().unwrap();
+
+        let key1 = pairing::IssuedApiKey {
+            id: "key-1".to_string(),
+            name: "agent-1".to_string(),
+            key_hash: pairing::hash_to_hex(&hash_key(&raw_key_1)),
+            created_at: chrono::Utc::now().to_rfc3339(),
+            revoked_at: None,
+        };
+        let key2 = pairing::IssuedApiKey {
+            id: "key-2".to_string(),
+            name: "agent-2".to_string(),
+            key_hash: pairing::hash_to_hex(&hash_key(&raw_key_2)),
+            created_at: chrono::Utc::now().to_rfc3339(),
+            revoked_at: None,
+        };
+        pairing::save_issued_keys_all(&[key1, key2]).unwrap();
+
+        let routes = guard(
+            None,
+            no_docker_sessions,
+            pairing::has_any_active_issued_key,
+            pairing::is_token_accepted_by_issued_keys,
+        )
+        .map(|| "ok")
+        .recover(handle_rejection);
+
+        // 1. Both keys valid
+        assert_eq!(
+            warp::test::request()
+                .header("authorization", format!("Bearer {raw_key_1}"))
+                .reply(&routes)
+                .await
+                .status(),
+            200
+        );
+        assert_eq!(
+            warp::test::request()
+                .header("authorization", format!("Bearer {raw_key_2}"))
+                .reply(&routes)
+                .await
+                .status(),
+            200
+        );
+        // Request without key is rejected because active keys exist
+        assert_eq!(warp::test::request().reply(&routes).await.status(), 401);
+
+        // 2. Delete key-1
+        pairing::revoke_issued_key("key-1").unwrap();
+
+        // Key 1 is now rejected with 401
+        assert_eq!(
+            warp::test::request()
+                .header("authorization", format!("Bearer {raw_key_1}"))
+                .reply(&routes)
+                .await
+                .status(),
+            401
+        );
+        // Request without key is still rejected with 401 because key-2 remains active
+        assert_eq!(warp::test::request().reply(&routes).await.status(), 401);
+        // Key 2 is still accepted with 200
+        assert_eq!(
+            warp::test::request()
+                .header("authorization", format!("Bearer {raw_key_2}"))
+                .reply(&routes)
+                .await
+                .status(),
+            200
+        );
+
+        // 3. Delete key-2 (last key)
+        pairing::revoke_issued_key("key-2").unwrap();
+
+        // When the last key is deleted, the server reverts to unauthenticated loopback access (no key required)
+        assert_eq!(warp::test::request().reply(&routes).await.status(), 200);
     }
 }

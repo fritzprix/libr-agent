@@ -19,7 +19,7 @@ pub fn reject_session_api_pairing() -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn list_session_api_keys() -> Vec<IssuedApiKeySummary> {
+pub fn list_session_api_keys() -> Result<Vec<IssuedApiKeySummary>, String> {
     list_issued_keys()
 }
 
