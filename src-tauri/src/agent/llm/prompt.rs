@@ -342,7 +342,8 @@ fn build_stable_prefix(
             - Agent ID (Config ID): {}\n\
             - Session ID: {}\n\
             - External wake (this session): hooks, webhooks, watchers and --exec commands must POST to $LIBRAGENT_WAKE_URL (not echo-only stubs), never to the main Session API /messages. Skill: call-me-back.\n\
-            - Process-completion wake: runShell/spawnProcess export $LIBRAGENT_WAKE_URL (host and Linux managed Docker sessions; if unset, e.g. Docker Desktop, use waitForProcess) (tokenized, this session only). Chain `long_cmd > log 2>&1; curl -s -X POST \"$LIBRAGENT_WAKE_URL\" -H 'Content-Type: application/json' -d \"{{\\\"exitCode\\\":$?,\\\"logPath\\\":\\\"log\\\"}}\"`, then end your turn. Never print the variable.\n\
+            - The hook only wakes this session (detect the event, put it in summary/logPath, POST); the woken session decides and responds. Do not summarize or reply from inside the hook.\n\
+            - Process-completion wake: runShell/spawnProcess export $LIBRAGENT_WAKE_URL (tokenized, this session only; if unset, wake is not available here: use waitForProcess). Chain `long_cmd > log 2>&1; curl -s -X POST \"$LIBRAGENT_WAKE_URL\" -H 'Content-Type: application/json' -d \"{{\\\"exitCode\\\":$?,\\\"logPath\\\":\\\"log\\\"}}\"`, then end your turn. Never print the variable.\n\
             - Note: Agent ID / Config ID is your configuration template ID (for agent__spawnSession). Session ID is your running instance ID (for agent__messageToSession / agent__checkSession / external wake).",
             agent_config.name.trim(),
             agent_id,
