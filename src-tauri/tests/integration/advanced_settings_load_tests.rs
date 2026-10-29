@@ -51,7 +51,7 @@ async fn advanced_settings_load_handles_broken_json() {
     assert_eq!(settings, AdvancedSettings::default());
 }
 
-#[tokio::test]
+#[test]
 fn advanced_settings_legacy_thinking_budget_maps_to_effort() {
     assert_eq!(
         AdvancedSettings::from_stored(Some(r#"{"thinkingBudget":0}"#)).thinking_effort,
@@ -83,14 +83,14 @@ fn advanced_settings_legacy_thinking_budget_maps_to_effort() {
     );
 }
 
-#[tokio::test]
+#[test]
 fn advanced_settings_thinking_effort_wins_over_legacy_budget() {
     let settings =
         AdvancedSettings::from_stored(Some(r#"{"thinkingEffort":"low","thinkingBudget":99999}"#));
     assert_eq!(settings.thinking_effort, ThinkingEffort::Low);
 }
 
-#[tokio::test]
+#[test]
 fn advanced_settings_thinking_effort_serializes_as_lowercase() {
     assert_eq!(
         serde_json::to_value(ThinkingEffort::Medium).unwrap(),
