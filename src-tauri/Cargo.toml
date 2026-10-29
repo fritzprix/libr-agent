@@ -143,5 +143,9 @@ inherits = "test"
 debug = 0
 incremental = false
 
+[profile.release]
+debug = 0
+strip = true
+
 [workspace]
 members = ["migration", "agent-response-guards"]
