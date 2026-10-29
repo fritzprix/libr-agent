@@ -318,7 +318,8 @@ impl BuiltinServerRegistry {
         normalized
     }
 
-    /// Normalizes shell command parameters by fixing unmatched or consecutive quotes.
+    /// Normalizes shell command parameters by fixing unmatched quotes.
+    /// `""` is left as-is: it is a valid empty-string argument.
     /// @internal
     fn normalize_command_parameter(command: &str) -> String {
         let mut normalized = command.to_string();
@@ -337,34 +338,7 @@ impl BuiltinServerRegistry {
             info!("Fixed unmatched single quote in command parameter");
         }
 
-        // Fix consecutive quotes pattern like echo "hello""
-        if normalized.contains("\"\"") {
-            normalized = Self::fix_consecutive_quotes_in_command(&normalized);
-        }
-
         normalized
-    }
-
-    /// A helper to fix consecutive quotes in shell commands.
-    /// @internal
-    fn fix_consecutive_quotes_in_command(input: &str) -> String {
-        let mut result = String::new();
-        let chars: Vec<char> = input.chars().collect();
-        let mut i = 0;
-
-        while i < chars.len() {
-            if i + 1 < chars.len() && chars[i] == '"' && chars[i + 1] == '"' {
-                // Found consecutive quotes - add only one
-                result.push('"');
-                i += 2;
-                info!("Fixed consecutive quotes in command");
-            } else {
-                result.push(chars[i]);
-                i += 1;
-            }
-        }
-
-        result
     }
 
     /// Creates a new `BuiltinServerRegistry` and registers the default servers

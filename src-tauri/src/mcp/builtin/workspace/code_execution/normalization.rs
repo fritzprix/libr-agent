@@ -75,12 +75,7 @@ pub fn normalize_shell_command(raw_command: &str) -> String {
             info!("Shell command: Added missing single quote");
         }
 
-        // 3. Fix consecutive quote patterns
-        if normalized.contains("\"\"") {
-            normalized = fix_consecutive_quotes(&normalized);
-        }
-
-        // 4. Inject -S flag for sudo commands to read from stdin in non-interactive/non-PTY shells
+        // 3. Inject -S flag for sudo commands to read from stdin in non-interactive/non-PTY shells
         normalized = inject_sudo_stdin_flag(&normalized);
 
         normalized
@@ -217,57 +212,6 @@ pub fn inject_sudo_stdin_flag(command: &str) -> String {
     result
 }
 
-/// Fix consecutive quotes based on context
-#[cfg(not(windows))]
-fn fix_consecutive_quotes(input: &str) -> String {
-    let mut result = String::new();
-    let chars: Vec<char> = input.chars().collect();
-    let mut i = 0;
-
-    while i < chars.len() {
-        if i + 1 < chars.len() && chars[i] == '"' && chars[i + 1] == '"' {
-            // Consecutive quotes found
-
-            // Check if the first quote is escaped (preceded by odd number of backslashes)
-            let mut backslash_count = 0;
-            let mut j = i;
-            while j > 0 && chars[j - 1] == '\\' {
-                backslash_count += 1;
-                j -= 1;
-            }
-
-            if backslash_count % 2 != 0 {
-                // It is an escaped quote (e.g. \"), so it's not a start of consecutive quotes
-                result.push(chars[i]);
-                i += 1;
-                continue;
-            }
-
-            if i > 0 && chars[i - 1] != ' ' && chars[i - 1] != '=' {
-                // If no space or equals before, escape the first one
-                result.push('\\');
-                result.push('"');
-                i += 1; // Second quote processed in next loop
-            } else if i + 2 < chars.len() && chars[i + 2] != ' ' {
-                // If no space after, escape the second one
-                result.push('"');
-                result.push('\\');
-                result.push('"');
-                i += 2;
-            } else {
-                // Default: keep one, remove one
-                result.push('"');
-                i += 2;
-            }
-        } else {
-            result.push(chars[i]);
-            i += 1;
-        }
-    }
-
-    result
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -308,6 +252,17 @@ mod tests {
 
         // Trailing backslash (should be preserved)
         assert_eq!(normalize_shell_command("echo hello \\"), "echo hello \\");
+
+        // Empty-string arguments are valid shell and must pass through unchanged
+        for cmd in [
+            "echo \"\"",
+            "X=\"\" ; echo \"[$X]\"",
+            "cat f && echo \"\" && echo \"=== B ===\" || echo \"no\"",
+            "printf \"%s\\n\" \"\" \"x\"",
+            "echo '{\"a\":\"\"}'",
+        ] {
+            assert_eq!(normalize_shell_command(cmd), cmd);
+        }
     }
 
     #[test]
