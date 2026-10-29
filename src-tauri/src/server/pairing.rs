@@ -176,24 +176,13 @@ pub fn save_issued_keys_all(keys: &[IssuedApiKey]) -> Result<(), std::io::Error>
 
     let json = serde_json::to_string_pretty(keys).map_err(std::io::Error::other)?;
 
-    // Atomic write: write to temp file in same directory, set 0600 on unix, then rename/persist
+    // Atomic write: write to temp file in same directory, sync to disk, then rename/persist
     let mut temp_file = tempfile::NamedTempFile::new_in(parent)?;
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(temp_file.path(), fs::Permissions::from_mode(0o600));
-    }
 
     use std::io::Write;
     temp_file.write_all(json.as_bytes())?;
     temp_file.flush()?;
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(temp_file.path(), fs::Permissions::from_mode(0o600));
-    }
+    temp_file.as_file().sync_all()?;
 
     temp_file.persist(&path).map_err(|e| e.error)?;
 
@@ -466,11 +455,6 @@ pub fn revoke_issued_key(id: &str) -> Result<(), String> {
 
     save_issued_keys_all(&keys).map_err(|e| format!("Failed to update keys: {e}"))?;
     Ok(())
-}
-
-/// Alias for `revoke_issued_key` matching the delete semantics.
-pub fn delete_issued_key(id: &str) -> Result<(), String> {
-    revoke_issued_key(id)
 }
 
 #[cfg(test)]
@@ -776,7 +760,7 @@ mod tests {
         assert_eq!(list[0].id, "key-2");
 
         // Revoke/delete key-2
-        delete_issued_key("key-2").unwrap();
+        revoke_issued_key("key-2").unwrap();
 
         let disk_after_k2 = fs::read_to_string(&file_path).unwrap();
         assert!(!disk_after_k2.contains("key-2"));

@@ -272,9 +272,15 @@ where
             async move {
                 let issued_result = has_issued_keys();
                 // Fail-closed if issued keys file failed to load:
-                // Requests requiring authentication or verification must be rejected.
+                // Requests requiring authentication or verification must be rejected,
+                // but an operator with a valid env-injected key is still permitted.
                 if issued_result.is_err() {
                     let token = bearer_token(&headers);
+                    if let (Some(token), Some(KeyState::Key(expected_hash))) = (token, expected) {
+                        if hashes_equal(&hash_key(token), &expected_hash) {
+                            return Ok(());
+                        }
+                    }
                     return Err(warp::reject::custom(Unauthorized {
                         invalid_token: token.is_some(),
                     }));
@@ -663,6 +669,90 @@ mod tests {
             .reply(&routes)
             .await;
         assert_eq!(with_token.status(), 401);
+    }
+
+    #[tokio::test]
+    async fn guard_with_missing_key_file_allows_unauthenticated_and_rejects_on_docker_sessions() {
+        use crate::server::pairing;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let _guard = pairing::test_env_data_dir(temp_dir.path());
+
+        let file_path = pairing::keys_file_path();
+        assert!(!file_path.exists(), "key file must not exist initially");
+
+        // Guard with no docker sessions
+        let routes_no_docker = guard(
+            None,
+            no_docker_sessions,
+            pairing::has_any_active_issued_key,
+            pairing::is_token_accepted_by_issued_keys,
+        )
+        .map(|| "ok")
+        .recover(handle_rejection);
+
+        // (a) Request without a token -> 200 OK
+        let reply_ok = warp::test::request().reply(&routes_no_docker).await;
+        assert_eq!(reply_ok.status(), 200);
+
+        // Guard with docker sessions
+        let routes_with_docker = guard(
+            None,
+            docker_sessions,
+            pairing::has_any_active_issued_key,
+            pairing::is_token_accepted_by_issued_keys,
+        )
+        .map(|| "ok")
+        .recover(handle_rejection);
+
+        // (b) Request with docker sessions -> 401 KeyRequired
+        let reply_docker = warp::test::request().reply(&routes_with_docker).await;
+        assert_eq!(reply_docker.status(), 401);
+        assert!(String::from_utf8_lossy(reply_docker.body()).contains("Docker sessions exist"));
+
+        // (c) The file still does not exist afterwards (the guard does not create it)
+        assert!(!file_path.exists(), "guard must not create key file");
+    }
+
+    #[tokio::test]
+    async fn guard_fails_closed_when_issued_key_file_is_corrupted_permits_valid_env_key() {
+        use crate::server::pairing;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let _guard = pairing::test_env_data_dir(temp_dir.path());
+
+        let file_path = pairing::keys_file_path();
+        std::fs::write(&file_path, "{broken json").unwrap();
+
+        let raw_env_key = "libr_env_key_for_bench_testing_1234567890abc";
+        let env_key_state = KeyState::Key(hash_key(raw_env_key));
+
+        let routes = guard(
+            Some(env_key_state),
+            no_docker_sessions,
+            pairing::has_any_active_issued_key,
+            pairing::is_token_accepted_by_issued_keys,
+        )
+        .map(|| "ok")
+        .recover(handle_rejection);
+
+        // 1. Request with valid env-injected key still succeeds
+        let valid = warp::test::request()
+            .header("authorization", format!("Bearer {raw_env_key}"))
+            .reply(&routes)
+            .await;
+        assert_eq!(valid.status(), 200);
+
+        // 2. Request with wrong key fails
+        let wrong = warp::test::request()
+            .header("authorization", "Bearer libr_wrong_key")
+            .reply(&routes)
+            .await;
+        assert_eq!(wrong.status(), 401);
+
+        // 3. Request without key fails closed
+        let missing = warp::test::request().reply(&routes).await;
+        assert_eq!(missing.status(), 401);
     }
 
     #[cfg(unix)]
