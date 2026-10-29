@@ -1,5 +1,6 @@
 // Auto-generated module declarations for LibrAgent integration tests
 
+pub mod advanced_settings_load_tests;
 pub mod agent_capability_contract_tests;
 pub mod agent_delegation_access_tests;
 pub mod agent_list_pagination_tests;
