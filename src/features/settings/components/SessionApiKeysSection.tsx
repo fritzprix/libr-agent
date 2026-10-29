@@ -8,7 +8,7 @@ import {
   RefreshCw,
   Trash2,
   ShieldCheck,
-  ShieldAlert,
+  AlertCircle,
 } from 'lucide-react';
 import {
   listSessionApiKeys,
@@ -23,15 +23,19 @@ function SessionApiKeysSectionComponent() {
   const { t } = useTranslation('common');
   const [keys, setKeys] = useState<IssuedApiKeySummary[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [revokingId, setRevokingId] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const fetchKeys = useCallback(async () => {
     setIsLoading(true);
+    setLoadError(null);
     try {
       const data = await listSessionApiKeys();
       setKeys(data);
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
       logger.error('Failed to list session API keys', { err });
+      setLoadError(message);
       toast.error(
         t('settings.sessionApi.fetchError', 'Failed to load Session API keys'),
       );
@@ -44,26 +48,26 @@ function SessionApiKeysSectionComponent() {
     void fetchKeys();
   }, [fetchKeys]);
 
-  const handleRevoke = useCallback(
+  const handleDelete = useCallback(
     async (id: string, name: string) => {
-      setRevokingId(id);
+      setDeletingId(id);
       try {
         await revokeSessionApiKey(id);
         toast.success(
           t(
-            'settings.sessionApi.revokeSuccess',
-            'Revoked API key for {{name}}',
+            'settings.sessionApi.deleteSuccess',
+            'Deleted API key for {{name}}',
             { name },
           ),
         );
         await fetchKeys();
       } catch (err) {
-        logger.error('Failed to revoke API key', { err, id });
+        logger.error('Failed to delete API key', { err, id });
         toast.error(
-          t('settings.sessionApi.revokeError', 'Failed to revoke API key'),
+          t('settings.sessionApi.deleteError', 'Failed to delete API key'),
         );
       } finally {
-        setRevokingId(null);
+        setDeletingId(null);
       }
     },
     [fetchKeys, t],
@@ -96,11 +100,32 @@ function SessionApiKeysSectionComponent() {
       <p className="text-xs text-muted-foreground">
         {t(
           'settings.sessionApi.description',
-          'API keys issued to external AI agents via pairing. Revoked keys are rejected immediately with 401.',
+          'API keys issued to external AI agents via pairing. When any key exists, requests without a valid key are rejected with 401. When no keys exist, localhost requests are allowed without a key.',
         )}
       </p>
 
-      {keys.length === 0 ? (
+      {loadError ? (
+        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-xs text-destructive space-y-2">
+          <div className="flex items-center gap-2 font-medium">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>
+              {t(
+                'settings.sessionApi.errorTitle',
+                'Failed to load Session API keys',
+              )}
+            </span>
+          </div>
+          <p className="text-[11px] text-destructive/90 break-all font-mono">
+            {loadError}
+          </p>
+          <p className="text-[11px] text-muted-foreground">
+            {t(
+              'settings.sessionApi.errorHelp',
+              'The key file may be damaged or have incorrect permissions. Key verification is locked (fail-closed) until the issue is resolved.',
+            )}
+          </p>
+        </div>
+      ) : keys.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border/70 p-6 text-center text-xs text-muted-foreground">
           {t(
             'settings.sessionApi.emptyList',
@@ -110,8 +135,7 @@ function SessionApiKeysSectionComponent() {
       ) : (
         <div className="divide-y divide-border/50 rounded-lg border border-border/60 overflow-hidden">
           {keys.map((k) => {
-            const isRevoked = Boolean(k.revokedAt);
-            const isBusy = revokingId === k.id;
+            const isBusy = deletingId === k.id;
             return (
               <div
                 key={k.id}
@@ -122,49 +146,31 @@ function SessionApiKeysSectionComponent() {
                     <span className="font-medium text-foreground truncate">
                       {k.name}
                     </span>
-                    {isRevoked ? (
-                      <Badge
-                        variant="outline"
-                        className="border-destructive/30 bg-destructive/10 text-destructive text-[10px] gap-1 px-1.5 py-0"
-                      >
-                        <ShieldAlert className="h-3 w-3" />
-                        {t('settings.sessionApi.revoked', 'Revoked')}
-                      </Badge>
-                    ) : (
-                      <Badge
-                        variant="outline"
-                        className="border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] gap-1 px-1.5 py-0"
-                      >
-                        <ShieldCheck className="h-3 w-3" />
-                        {t('settings.sessionApi.active', 'Active')}
-                      </Badge>
-                    )}
+                    <Badge
+                      variant="outline"
+                      className="border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] gap-1 px-1.5 py-0"
+                    >
+                      <ShieldCheck className="h-3 w-3" />
+                      {t('settings.sessionApi.active', 'Active')}
+                    </Badge>
                   </div>
                   <div className="text-[11px] text-muted-foreground font-mono truncate">
                     {t('settings.sessionApi.created', 'Created')}:{' '}
                     {new Date(k.createdAt).toLocaleString()}
-                    {k.revokedAt && (
-                      <span className="ml-2 text-destructive/80">
-                        ({t('settings.sessionApi.revokedAt', 'Revoked')}:{' '}
-                        {new Date(k.revokedAt).toLocaleString()})
-                      </span>
-                    )}
                   </div>
                 </div>
 
-                {!isRevoked && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={isBusy}
-                    onClick={() => void handleRevoke(k.id, k.name)}
-                    className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive shrink-0 gap-1"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                    {t('common.revoke', 'Revoke')}
-                  </Button>
-                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={isBusy}
+                  onClick={() => void handleDelete(k.id, k.name)}
+                  className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive shrink-0 gap-1"
+                >
+                  <Trash2 className="h-3 w-3" />
+                  {t('common.delete', 'Delete')}
+                </Button>
               </div>
             );
           })}

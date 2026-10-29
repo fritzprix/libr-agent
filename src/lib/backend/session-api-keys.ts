@@ -48,7 +48,7 @@ export async function listSessionApiKeys(): Promise<IssuedApiKeySummary[]> {
 }
 
 /**
- * Revokes an issued Session API key by ID.
+ * Revokes/deletes an issued Session API key by ID.
  */
 export async function revokeSessionApiKey(id: string): Promise<void> {
   return safeInvoke<void>('revoke_session_api_key', { id });

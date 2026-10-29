@@ -18,13 +18,14 @@ const KEY_FILE_NAME: &str = "session_api_keys.json";
 pub const PAIRING_TIMEOUT_SECS: u64 = 120;
 pub const MAX_FAILED_ATTEMPTS: u32 = 3;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct IssuedApiKey {
     pub id: String,
     pub name: String,
     /// Hex-encoded SHA-256 hash of the key
     pub key_hash: String,
     pub created_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub revoked_at: Option<String>,
 }
 
@@ -38,7 +39,7 @@ pub struct PendingPairing {
 }
 
 static PENDING_PAIRING: Mutex<Option<PendingPairing>> = Mutex::new(None);
-static KEYS_CACHE: RwLock<Option<Vec<IssuedApiKey>>> = RwLock::new(None);
+static KEYS_CACHE: RwLock<Option<Result<Vec<IssuedApiKey>, String>>> = RwLock::new(None);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -54,6 +55,7 @@ pub struct IssuedApiKeySummary {
     pub id: String,
     pub name: String,
     pub created_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub revoked_at: Option<String>,
 }
 
@@ -104,33 +106,86 @@ pub fn keys_file_path() -> PathBuf {
     data_dir.join(KEY_FILE_NAME)
 }
 
-pub fn load_issued_keys() -> Vec<IssuedApiKey> {
+pub fn invalidate_keys_cache() {
+    if let Ok(mut guard) = KEYS_CACHE.write() {
+        *guard = None;
+    }
+}
+
+pub fn load_issued_keys() -> Result<Vec<IssuedApiKey>, String> {
     if let Ok(guard) = KEYS_CACHE.read() {
-        if let Some(keys) = guard.as_ref() {
-            return keys.clone();
+        if let Some(Ok(keys)) = guard.as_ref() {
+            return Ok(keys.clone());
         }
     }
 
     let path = keys_file_path();
-    let keys: Vec<IssuedApiKey> = match fs::read_to_string(&path) {
-        Ok(contents) => serde_json::from_str(&contents).unwrap_or_default(),
-        Err(_) => Vec::new(),
-    };
+    let res = load_issued_keys_from_path(&path);
 
     if let Ok(mut guard) = KEYS_CACHE.write() {
-        *guard = Some(keys.clone());
+        if let Ok(keys) = &res {
+            *guard = Some(Ok(keys.clone()));
+        } else {
+            *guard = None;
+        }
     }
 
-    keys
+    res
+}
+
+fn load_issued_keys_from_path(path: &std::path::Path) -> Result<Vec<IssuedApiKey>, String> {
+    match fs::metadata(path) {
+        Ok(_meta) => {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                if _meta.permissions().mode() & 0o077 != 0 {
+                    return Err(
+                        "key file must not be accessible by group or others (use mode 0600)"
+                            .to_string(),
+                    );
+                }
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(Vec::new());
+        }
+        Err(e) => {
+            return Err(format!("failed to check key file metadata: {e}"));
+        }
+    }
+
+    let contents = match fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(format!("failed to read key file: {e}")),
+    };
+
+    let keys: Vec<IssuedApiKey> =
+        serde_json::from_str(&contents).map_err(|e| format!("failed to parse key file: {e}"))?;
+
+    Ok(keys)
 }
 
 pub fn save_issued_keys_all(keys: &[IssuedApiKey]) -> Result<(), std::io::Error> {
     let path = keys_file_path();
-    if let Some(parent) = path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
+    let parent = path.parent().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::NotFound, "invalid key file path")
+    })?;
+    fs::create_dir_all(parent)?;
+
     let json = serde_json::to_string_pretty(keys).map_err(std::io::Error::other)?;
-    fs::write(&path, json)?;
+
+    // Atomic write: write to temp file in same directory, sync to disk, then rename/persist
+    let mut temp_file = tempfile::NamedTempFile::new_in(parent)?;
+
+    use std::io::Write;
+    temp_file.write_all(json.as_bytes())?;
+    temp_file.flush()?;
+    temp_file.as_file().sync_all()?;
+
+    temp_file.persist(&path).map_err(|e| e.error)?;
+
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -138,29 +193,31 @@ pub fn save_issued_keys_all(keys: &[IssuedApiKey]) -> Result<(), std::io::Error>
     }
 
     if let Ok(mut guard) = KEYS_CACHE.write() {
-        *guard = Some(keys.to_vec());
+        *guard = Some(Ok(keys.to_vec()));
     }
     Ok(())
 }
 
 fn save_new_key(key: &IssuedApiKey) -> Result<(), std::io::Error> {
-    let mut keys = load_issued_keys();
+    let mut keys = load_issued_keys().map_err(std::io::Error::other)?;
     keys.push(key.clone());
     save_issued_keys_all(&keys)
 }
 
-/// Returns true if there is any active (non-revoked) key in the persistent store.
-pub fn has_any_active_issued_key() -> bool {
-    load_issued_keys()
-        .iter()
-        .any(|key| key.revoked_at.is_none())
+/// Returns true if there is any active key in the persistent store.
+/// Returns Err if the key store could not be read or parsed (fail-closed signal).
+pub fn has_any_active_issued_key() -> Result<bool, String> {
+    let keys = load_issued_keys()?;
+    Ok(keys.iter().any(|key| key.revoked_at.is_none()))
 }
 
 /// Verifies whether the provided token matches any active issued API key.
 pub fn is_token_accepted_by_issued_keys(token: &str) -> bool {
+    let Ok(keys) = load_issued_keys() else {
+        return false;
+    };
     let token_hash = hash_key(token);
-    load_issued_keys()
-        .iter()
+    keys.iter()
         .filter(|key| key.revoked_at.is_none())
         .any(|key| {
             if let Some(expected_hash) = hex_to_hash(&key.key_hash) {
@@ -175,6 +232,14 @@ pub fn is_token_accepted_by_issued_keys(token: &str) -> bool {
 pub async fn handle_pairing_request(
     body: PairingRequestBody,
 ) -> Result<PairingSuccessResponse, (StatusCode, String)> {
+    // Fail closed if the key storage cannot be read/parsed
+    if let Err(e) = load_issued_keys() {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Session API key storage is in an error state: {e}"),
+        ));
+    }
+
     let name = body.name.trim();
     if name.is_empty() {
         return Err((
@@ -362,34 +427,29 @@ pub fn reject_pending_pairing() -> Result<(), String> {
     Ok(())
 }
 
-pub fn list_issued_keys() -> Vec<IssuedApiKeySummary> {
-    load_issued_keys()
+pub fn list_issued_keys() -> Result<Vec<IssuedApiKeySummary>, String> {
+    invalidate_keys_cache();
+    let keys = load_issued_keys()?;
+    Ok(keys
         .into_iter()
+        .filter(|k| k.revoked_at.is_none())
         .map(|k| IssuedApiKeySummary {
             id: k.id,
             name: k.name,
             created_at: k.created_at,
-            revoked_at: k.revoked_at,
+            revoked_at: None,
         })
-        .collect()
+        .collect())
 }
 
+/// Revoking a key deletes it from the persistent key file (does not keep a revoked_at tombstone).
 pub fn revoke_issued_key(id: &str) -> Result<(), String> {
-    let mut keys = load_issued_keys();
-    let mut found = false;
-    let now_iso = chrono::Utc::now().to_rfc3339();
+    let mut keys =
+        load_issued_keys().map_err(|e| format!("Cannot delete key: key storage error: {e}"))?;
+    let original_len = keys.len();
+    keys.retain(|k| k.id != id);
 
-    for key in &mut keys {
-        if key.id == id {
-            found = true;
-            if key.revoked_at.is_none() {
-                key.revoked_at = Some(now_iso.clone());
-            }
-            break;
-        }
-    }
-
-    if !found {
+    if keys.len() == original_len {
         return Err("API key not found".to_string());
     }
 
@@ -408,11 +468,11 @@ static TEST_SERIAL_LOCK: Mutex<()> = Mutex::new(());
 
 #[cfg(test)]
 pub fn test_env_data_dir(path: &std::path::Path) -> TestEnvDataDir {
-    let lock = TEST_SERIAL_LOCK.lock().unwrap();
+    let lock = TEST_SERIAL_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let prev_env = std::env::var("LIBRAGENT_DATA_DIR").ok();
     std::env::set_var("LIBRAGENT_DATA_DIR", path);
-    *PENDING_PAIRING.lock().unwrap() = None;
-    *KEYS_CACHE.write().unwrap() = None;
+    *PENDING_PAIRING.lock().unwrap_or_else(|p| p.into_inner()) = None;
+    invalidate_keys_cache();
     TestEnvDataDir {
         _lock: lock,
         prev_env,
@@ -427,8 +487,8 @@ impl Drop for TestEnvDataDir {
         } else {
             std::env::remove_var("LIBRAGENT_DATA_DIR");
         }
-        *PENDING_PAIRING.lock().unwrap() = None;
-        *KEYS_CACHE.write().unwrap() = None;
+        *PENDING_PAIRING.lock().unwrap_or_else(|p| p.into_inner()) = None;
+        invalidate_keys_cache();
     }
 }
 
@@ -494,7 +554,7 @@ mod tests {
 
         // No pending pairing, no keys issued
         assert!(get_pending_pairing().is_none());
-        assert!(load_issued_keys().is_empty());
+        assert!(load_issued_keys().unwrap().is_empty());
     }
 
     #[tokio::test]
@@ -570,6 +630,177 @@ mod tests {
 
         // Must now be rejected
         assert!(!is_token_accepted_by_issued_keys(&resp.api_key));
+    }
+
+    #[test]
+    fn file_not_found_treated_as_zero_keys() {
+        let temp = tempfile::tempdir().unwrap();
+        let _guard = test_env_data_dir(temp.path());
+
+        let keys = load_issued_keys().expect("missing file should yield Ok([])");
+        assert!(keys.is_empty());
+
+        let has_keys = has_any_active_issued_key().expect("should return Ok(false)");
+        assert!(!has_keys);
+
+        let list = list_issued_keys().expect("should return Ok([])");
+        assert!(list.is_empty());
+    }
+
+    #[test]
+    fn corrupted_key_file_fails_closed_and_prevents_overwrite() {
+        let temp = tempfile::tempdir().unwrap();
+        let _guard = test_env_data_dir(temp.path());
+
+        let file_path = keys_file_path();
+        let bad_content = "{corrupted json content";
+        fs::write(&file_path, bad_content).unwrap();
+
+        // 1. Reading fails closed with Err
+        assert!(load_issued_keys().is_err());
+        assert!(has_any_active_issued_key().is_err());
+        assert!(list_issued_keys().is_err());
+
+        // 2. save_new_key refuses to overwrite
+        let sample = IssuedApiKey {
+            id: "key-sample".to_string(),
+            name: "sample".to_string(),
+            key_hash: "a".repeat(64),
+            created_at: chrono::Utc::now().to_rfc3339(),
+            revoked_at: None,
+        };
+        assert!(save_new_key(&sample).is_err());
+        let on_disk = fs::read_to_string(&file_path).unwrap();
+        assert_eq!(on_disk, bad_content, "file must not be overwritten");
+
+        // 3. revoke_issued_key refuses to overwrite
+        assert!(revoke_issued_key("key-sample").is_err());
+        let on_disk_after_revoke = fs::read_to_string(&file_path).unwrap();
+        assert_eq!(
+            on_disk_after_revoke, bad_content,
+            "file must not be overwritten on revoke"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unreadable_key_file_fails_closed_and_prevents_overwrite() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = tempfile::tempdir().unwrap();
+        let _guard = test_env_data_dir(temp.path());
+
+        let file_path = keys_file_path();
+        let sample = IssuedApiKey {
+            id: "key-1".to_string(),
+            name: "test".to_string(),
+            key_hash: "b".repeat(64),
+            created_at: chrono::Utc::now().to_rfc3339(),
+            revoked_at: None,
+        };
+        save_issued_keys_all(&[sample.clone()]).unwrap();
+
+        // Case A: Mode 0644 (accessible to others -> rejected under 0600 policy)
+        fs::set_permissions(&file_path, fs::Permissions::from_mode(0o644)).unwrap();
+        invalidate_keys_cache();
+
+        assert!(load_issued_keys().is_err());
+        assert!(has_any_active_issued_key().is_err());
+        assert!(save_new_key(&sample).is_err());
+        assert!(revoke_issued_key("key-1").is_err());
+
+        // Case B: Mode 0000 (completely unreadable)
+        fs::set_permissions(&file_path, fs::Permissions::from_mode(0o000)).unwrap();
+        invalidate_keys_cache();
+
+        assert!(load_issued_keys().is_err());
+        assert!(has_any_active_issued_key().is_err());
+        assert!(save_new_key(&sample).is_err());
+        assert!(revoke_issued_key("key-1").is_err());
+
+        // Restore permission for clean tempdir cleanup
+        let _ = fs::set_permissions(&file_path, fs::Permissions::from_mode(0o600));
+    }
+
+    #[test]
+    fn key_revocation_removes_entry_from_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let _guard = test_env_data_dir(temp.path());
+
+        let file_path = keys_file_path();
+        let key1 = IssuedApiKey {
+            id: "key-1".to_string(),
+            name: "agent-1".to_string(),
+            key_hash: "1".repeat(64),
+            created_at: chrono::Utc::now().to_rfc3339(),
+            revoked_at: None,
+        };
+        let key2 = IssuedApiKey {
+            id: "key-2".to_string(),
+            name: "agent-2".to_string(),
+            key_hash: "2".repeat(64),
+            created_at: chrono::Utc::now().to_rfc3339(),
+            revoked_at: None,
+        };
+
+        save_issued_keys_all(&[key1.clone(), key2.clone()]).unwrap();
+        let disk_initial = fs::read_to_string(&file_path).unwrap();
+        assert!(disk_initial.contains("key-1"));
+        assert!(disk_initial.contains("key-2"));
+
+        // Revoke/delete key-1
+        revoke_issued_key("key-1").unwrap();
+
+        // Raw file check: key-1 must NOT remain in the file
+        let disk_after_k1 = fs::read_to_string(&file_path).unwrap();
+        assert!(!disk_after_k1.contains("key-1"));
+        assert!(disk_after_k1.contains("key-2"));
+
+        let list = list_issued_keys().unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].id, "key-2");
+
+        // Revoke/delete key-2
+        revoke_issued_key("key-2").unwrap();
+
+        let disk_after_k2 = fs::read_to_string(&file_path).unwrap();
+        assert!(!disk_after_k2.contains("key-2"));
+        assert_eq!(list_issued_keys().unwrap().len(), 0);
+
+        // Deleting already deleted key returns error
+        assert!(revoke_issued_key("key-1").is_err());
+    }
+
+    #[test]
+    fn atomic_write_creates_valid_file_with_0600_permissions() {
+        let temp = tempfile::tempdir().unwrap();
+        let _guard = test_env_data_dir(temp.path());
+
+        let file_path = keys_file_path();
+        let sample = IssuedApiKey {
+            id: "key-atomic".to_string(),
+            name: "atomic-agent".to_string(),
+            key_hash: "c".repeat(64),
+            created_at: chrono::Utc::now().to_rfc3339(),
+            revoked_at: None,
+        };
+
+        save_issued_keys_all(&[sample.clone()]).unwrap();
+        assert!(file_path.exists());
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&file_path).unwrap().permissions().mode();
+            assert_eq!(
+                mode & 0o777,
+                0o600,
+                "file must have 0600 mode on unix (got {mode:o})"
+            );
+        }
+
+        let loaded = load_issued_keys().unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].id, "key-atomic");
     }
 
     #[tokio::test]
