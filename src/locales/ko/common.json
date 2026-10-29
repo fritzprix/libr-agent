@@ -934,6 +934,23 @@
         "title": "툴 결과에 루프 경고 표시 (레거시)",
         "description": "켜면 조용히 재시도하는 대신 루프 경고 메시지를 도구 오류로 표시합니다."
       }
+    },
+    "sessionApi": {
+      "title": "Session API 키 관리",
+      "description": "페어링을 통해 외부 AI 에이전트에 발급된 API 키입니다. 폐기된 키는 즉시 401로 차단됩니다.",
+      "emptyList": "발급된 API 키가 없습니다. 대화창의 'Agent Session에 통합하기' 버튼으로 외부 에이전트와 페어링하세요.",
+      "fetchError": "Session API 키 목록을 불러오지 못했습니다",
+      "revokeSuccess": "{{name}}의 API 키가 폐기되었습니다",
+      "revokeError": "API 키 폐기에 실패했습니다",
+      "revoked": "폐기됨",
+      "active": "정상",
+      "created": "발급일",
+      "revokedAt": "폐기일",
+      "pairingTitle": "AI 에이전트 페어링 승인",
+      "pairingDescription": "외부 에이전트 \"{{name}}\"이(가) Session API 연결을 요청했습니다. 해당 에이전트 화면에 표시된 6자리 코드를 입력해주세요.",
+      "pairingCodeLabel": "페어링 코드 (xxx-yyy)",
+      "pairingSuccess": "{{name}} 에이전트와 성공적으로 페어링되었습니다",
+      "pairingRejected": "페어링 요청이 거절되었습니다"
     }
   },
   "mcpServer": {
@@ -1286,7 +1303,11 @@
       "renameCancelAria": "세션 제목 편집 취소",
       "renameSuccess": "세션 제목이 업데이트되었습니다",
       "renameError": "세션 제목 업데이트에 실패했습니다",
-      "renameEmptyError": "세션 제목은 비워 둘 수 없습니다"
+      "renameEmptyError": "세션 제목은 비워 둘 수 없습니다",
+      "integrateExternalAgentAria": "Agent Session에 통합하기 (지침 복사)",
+      "integrateExternalAgentTooltip": "Agent Session에 통합하기 (지침 복사)",
+      "integrationInstructionCopied": "에이전트 연동 지침이 클립보드에 복사되었습니다. 외부 AI 에이전트에 붙여넣으세요.",
+      "integrationInstructionCopyFailed": "에이전트 연동 지침 복사에 실패했습니다"
     },
     "sessionExport": {
       "menuAria": "세션 내보내기",

@@ -27,7 +27,7 @@ const KEY_BYTES: usize = 32;
 const KEY_CHARS: usize = 43;
 const BASE62: &[u8; 62] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
-type KeyHash = [u8; 32];
+pub(crate) type KeyHash = [u8; 32];
 
 /// What startup found about an injected key.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -99,7 +99,7 @@ pub fn hash_key(key: &str) -> KeyHash {
     Sha256::digest(key.as_bytes()).into()
 }
 
-fn hashes_equal(a: &KeyHash, b: &KeyHash) -> bool {
+pub(crate) fn hashes_equal(a: &KeyHash, b: &KeyHash) -> bool {
     a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
@@ -116,19 +116,44 @@ fn bearer_token(headers: &HeaderMap) -> Option<&str> {
     (scheme.eq_ignore_ascii_case("bearer") && !token.is_empty()).then_some(token)
 }
 
-/// `Ok` when no key is injected, or when the request carries the injected key.
-fn check_bearer(headers: &HeaderMap, expected: Option<KeyState>) -> Result<(), Unauthorized> {
-    let Some(expected) = expected else {
-        return Ok(());
-    };
+/// `Ok` when no key is configured anywhere, or when the request carries an accepted key
+/// (either injected via environment or issued via agent pairing).
+fn check_bearer(headers: &HeaderMap, expected_env: Option<KeyState>) -> Result<(), Unauthorized> {
     let token = bearer_token(headers);
     let invalid_token = token.is_some();
-    match (expected, token) {
-        (KeyState::Key(expected), Some(token)) if hashes_equal(&hash_key(token), &expected) => {
-            Ok(())
-        }
-        _ => Err(Unauthorized { invalid_token }),
+
+    // If an environment key is in DenyAll mode, fail closed immediately.
+    if matches!(expected_env, Some(KeyState::DenyAll)) {
+        return Err(Unauthorized { invalid_token });
     }
+
+    let any_key_configured = expected_env.is_some() || super::pairing::has_any_active_issued_key();
+    if !any_key_configured {
+        return Ok(());
+    }
+
+    if let Some(token) = token {
+        // 1. Check against environment injected key
+        if let Some(KeyState::Key(expected_hash)) = expected_env {
+            if hashes_equal(&hash_key(token), &expected_hash) {
+                return Ok(());
+            }
+        }
+        // 2. Check against issued pairing keys
+        if super::pairing::is_token_accepted_by_issued_keys(token) {
+            return Ok(());
+        }
+
+        // Token was sent, but matched neither
+        return Err(Unauthorized {
+            invalid_token: true,
+        });
+    }
+
+    // No token provided, but at least one key is configured: reject.
+    Err(Unauthorized {
+        invalid_token: false,
+    })
 }
 
 /// Reads and deletes the key file. A file that group or others can access is refused (and

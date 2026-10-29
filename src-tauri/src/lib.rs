@@ -102,6 +102,10 @@ use commands::scheduled_task_commands::{
     get_scheduled_task, list_scheduled_tasks, list_session_scheduled_tasks, toggle_scheduled_task,
     toggle_session_scheduled_task, update_scheduled_task,
 };
+use commands::session_api_key_commands::{
+    approve_session_api_pairing, get_pending_session_api_pairing, list_session_api_keys,
+    reject_session_api_pairing, revoke_session_api_key,
+};
 use commands::session_commands::remove_session;
 use commands::session_export_commands::export_session_file;
 use commands::settings_commands::{
@@ -391,6 +395,11 @@ pub fn run() {
                 get_display_settings,
                 get_experimental_settings,
                 get_system_settings,
+                get_pending_session_api_pairing,
+                approve_session_api_pairing,
+                reject_session_api_pairing,
+                list_session_api_keys,
+                revoke_session_api_key,
                 export_migration,
                 import_migration,
                 inspect_migration,
