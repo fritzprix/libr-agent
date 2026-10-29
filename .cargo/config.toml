@@ -6,8 +6,14 @@ debug = 1
 [profile.test]
 debug = 1
 
+[profile.release]
+debug = 0
+strip = true
+
 [build]
 # Hard cap concurrent rustc/linker processes for ANY bare `cargo …` invocation.
 # Full suite safety still requires `pnpm rust:test` (sequential per-target link);
 # this alone does not make `cargo test --tests` safe on 32GB machines.
 jobs = 2
+rustflags = ["-C", "symbol-mangling-version=v0"]
+
