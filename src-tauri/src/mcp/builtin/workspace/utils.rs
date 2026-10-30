@@ -253,8 +253,15 @@ pub async fn root_exec_blocker(session_id: &str) -> Option<crate::services::Root
         Some(session_repo) => session_repo.get_session(session_id).await.ok().flatten(),
         None => None,
     };
+    root_exec_blocker_for(session.as_ref())
+}
+
+/// [`root_exec_blocker`] for a loaded session; no session counts as a host session.
+pub fn root_exec_blocker_for(
+    session: Option<&crate::repositories::SessionMetadata>,
+) -> Option<crate::services::RootExecBlocker> {
     match session {
-        Some(session) => crate::services::WorkspaceRuntimeManager::root_exec_blocker(&session),
+        Some(session) => crate::services::WorkspaceRuntimeManager::root_exec_blocker(session),
         None => Some(crate::services::RootExecBlocker::HostSession),
     }
 }

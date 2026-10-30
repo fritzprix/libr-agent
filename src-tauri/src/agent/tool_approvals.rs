@@ -7,6 +7,7 @@ use crate::agent::state::PendingApprovalKind;
 use crate::mcp::builtin::workspace::code_execution::shell::policy::{
     evaluate_shell_policy, is_shell_tool_name, ShellPolicyAction, ShellPolicyContext,
 };
+use crate::services::as_root_requested;
 
 static TOOL_APPROVALS_CONFIG: OnceCell<ToolApprovalsConfig> = OnceCell::const_new();
 
@@ -83,10 +84,9 @@ pub fn pending_approval_is_auto_approvable_in_unsafe(approval_kind: PendingAppro
     !matches!(approval_kind, PendingApprovalKind::Root)
 }
 
-/// True for a `runShell` call with `asRoot: true`.
+/// True for a `runShell` call that asks to run as root (see [`as_root_requested`]).
 pub fn requests_root_execution(tool_name: &str, args: &serde_json::Value) -> bool {
-    tool_name.rsplit("__").next() == Some("runShell")
-        && args.get("asRoot").and_then(|value| value.as_bool()) == Some(true)
+    tool_name.rsplit("__").next() == Some("runShell") && as_root_requested(args)
 }
 
 /// Error for an entry point that runs tools without an approval card (the MCP endpoint and
@@ -753,6 +753,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_non_boolean_as_root_still_asks_for_root_approval() {
+        for as_root in [
+            serde_json::json!("true"),
+            serde_json::json!(1),
+            serde_json::json!("false"),
+        ] {
+            let decision = evaluate_tool_execution_policy(
+                "workspace__runShell",
+                &serde_json::json!({ "command": "apt-get install -y nodejs", "asRoot": as_root }),
+            )
+            .await;
+            assert!(
+                matches!(
+                    decision,
+                    ToolExecutionPolicyDecision::RequireRootApproval(_)
+                ),
+                "asRoot={as_root}: {decision:?}"
+            );
+            assert!(approval_request_for_runtime(&decision, true, true).is_some());
+        }
+    }
+
+    #[tokio::test]
     async fn a_root_command_asks_for_approval_in_every_mode() {
         let decision = evaluate_tool_execution_policy(
             "workspace__runShell",
@@ -794,6 +817,14 @@ mod tests {
         assert!(requests_root_execution("workspace__runShell", &root));
         assert!(requests_root_execution("runShell", &root));
         assert!(!requests_root_execution("workspace__spawnProcess", &root));
+        assert!(requests_root_execution(
+            "workspace__runShell",
+            &serde_json::json!({ "command": "id", "asRoot": "true" })
+        ));
+        assert!(!requests_root_execution(
+            "workspace__runShell",
+            &serde_json::json!({ "command": "id" })
+        ));
         assert!(!requests_root_execution(
             "workspace__runShell",
             &serde_json::json!({ "command": "id", "asRoot": false })

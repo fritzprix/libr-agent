@@ -69,10 +69,29 @@ pub async fn resume_session(
                 &session,
             )
             .await?;
-        } else {
-            crate::services::WorkspaceRuntimeManager::ensure_runtime_cached(&session)
-                .await
-                .map_err(|error| error.to_string())?;
+        } else if let Err(error) =
+            crate::services::WorkspaceRuntimeManager::ensure_runtime_cached(&session).await
+        {
+            // Store this failure: an older reason may name a different cause.
+            let reason =
+                crate::services::docker_provisioning::failure_reason(&session, &error.to_string());
+            let dispatcher = TauriEventDispatcher::new(app_handle.clone());
+            if let Err(record_error) = record_session_error_with_dispatcher(
+                session_repo,
+                active_sessions,
+                &dispatcher,
+                session_id,
+                &reason,
+            )
+            .await
+            {
+                log::warn!(
+                    "Failed to record Docker runtime failure for session {}: {}",
+                    session_id,
+                    record_error
+                );
+            }
+            return Err(reason);
         }
     }
 
@@ -245,8 +264,75 @@ pub async fn update_session_status_with_reason(
         session_id,
         status,
         Some(reason),
+        false,
     )
     .await
+}
+
+/// Sets `Error` with `reason` for a session that may not be loaded in memory (for example when
+/// loading it failed). Loaded sessions take the normal status transition. A `Busy` session is
+/// not changed: its running workflow owns the status and the active agent permit.
+pub async fn record_session_error_with_dispatcher(
+    session_repo: &Arc<dyn SessionRepository>,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    dispatcher: &dyn AgentEventDispatcher,
+    session_id: &str,
+    reason: &str,
+) -> Result<(), String> {
+    {
+        // Keep the lock until the write: a concurrent resume must not load the session between
+        // the check and the write.
+        let active = active_sessions.write().await;
+        match active.get(session_id) {
+            Some(session) if session.metadata.status == SessionStatus::Busy => {
+                log::info!(
+                    "Session {} is running; not setting Error for: {}",
+                    session_id,
+                    reason
+                );
+                return Ok(());
+            }
+            Some(_) => {}
+            None => {
+                session_repo
+                    .update_status(session_id, SessionStatus::Error, Some(reason))
+                    .await
+                    .map_err(|error| format!("Failed to update session status: {}", error))?;
+                drop(active);
+                return emit_unloaded_session_error(dispatcher, session_id, reason);
+            }
+        }
+    }
+
+    apply_session_status(
+        session_repo,
+        active_sessions,
+        dispatcher,
+        session_id,
+        SessionStatus::Error,
+        Some(reason),
+        true,
+    )
+    .await
+}
+
+fn emit_unloaded_session_error(
+    dispatcher: &dyn AgentEventDispatcher,
+    session_id: &str,
+    reason: &str,
+) -> Result<(), String> {
+    match crate::state::try_get_session_bus() {
+        Some(bus) => bus.notify_status_change(session_id),
+        None => log::warn!(
+            "SessionBus not initialized; status waiters for session {} are not woken",
+            session_id
+        ),
+    }
+    dispatcher.emit_agent_event(AgentEvent::StatusChanged {
+        session_id: session_id.to_string(),
+        status: SessionStatus::Error,
+        status_reason: Some(reason.to_string()),
+    })
 }
 
 pub async fn update_session_status_with_dispatcher(
@@ -263,10 +349,13 @@ pub async fn update_session_status_with_dispatcher(
         session_id,
         status,
         None,
+        false,
     )
     .await
 }
 
+/// With `skip_if_busy`, a session that is `Busy` once the transition lock is held keeps its
+/// status and permit, and the call returns `Ok(())`.
 async fn apply_session_status(
     session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
@@ -274,6 +363,7 @@ async fn apply_session_status(
     session_id: &str,
     status: SessionStatus,
     reason: Option<&str>,
+    skip_if_busy: bool,
 ) -> Result<(), String> {
     // Acquire concurrency permits OUTSIDE `transition_lock`. Waiting on a full
     // gate while holding the lock deadlocks cancel/clear for the same session
@@ -318,6 +408,15 @@ async fn apply_session_status(
             initial_status
         }
     };
+    if skip_if_busy && prev_status == SessionStatus::Busy {
+        *transition_handle.write().await = None;
+        log::info!(
+            "Session {} is running; not changing its status to {:?}",
+            session_id,
+            status
+        );
+        return Ok(());
+    }
     let is_prev_busy = prev_status == SessionStatus::Busy;
     let is_next_busy = status == SessionStatus::Busy;
     let mut acquired_permit: Option<ActiveAgentPermit> = pre_acquired_permit.take();
@@ -406,4 +505,183 @@ async fn apply_session_status(
     dispatcher.emit_agent_event(event)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::repositories::InMemorySessionRepository;
+    use std::sync::Mutex;
+
+    #[derive(Default)]
+    struct RecordingDispatcher {
+        events: Mutex<Vec<AgentEvent>>,
+    }
+
+    impl AgentEventDispatcher for RecordingDispatcher {
+        fn emit_agent_event(&self, event: AgentEvent) -> Result<(), String> {
+            self.events.lock().expect("event lock").push(event);
+            Ok(())
+        }
+
+        fn emit_compact_state(
+            &self,
+            _event: crate::agent::llm::types::CompactStateEvent,
+        ) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn a_later_failure_replaces_the_old_status_reason_of_an_unloaded_session() {
+        let repo: Arc<dyn SessionRepository> = Arc::new(InMemorySessionRepository::new());
+        let session = SessionMetadata {
+            status: SessionStatus::Error,
+            status_reason: Some("container libr-old was removed".to_string()),
+            ..SessionMetadata::test_fixture("errored-session")
+        };
+        repo.upsert_session(&session).await.expect("upsert");
+        let active_sessions = Arc::new(RwLock::new(HashMap::new()));
+        let dispatcher = RecordingDispatcher::default();
+
+        let reason = crate::services::docker_provisioning::failure_reason(
+            &session,
+            "Cannot connect to the Docker daemon",
+        );
+        record_session_error_with_dispatcher(
+            &repo,
+            &active_sessions,
+            &dispatcher,
+            "errored-session",
+            &reason,
+        )
+        .await
+        .expect("record failure");
+
+        let stored = repo
+            .get_session("errored-session")
+            .await
+            .expect("get")
+            .expect("session");
+        assert_eq!(stored.status, SessionStatus::Error);
+        assert_eq!(stored.status_reason.as_deref(), Some(reason.as_str()));
+        assert!(reason.contains("Cannot connect to the Docker daemon"));
+
+        let events = dispatcher.events.lock().expect("event lock").clone();
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            AgentEvent::StatusChanged {
+                session_id,
+                status,
+                status_reason,
+            } => {
+                assert_eq!(session_id, "errored-session");
+                assert_eq!(*status, SessionStatus::Error);
+                assert_eq!(status_reason.as_deref(), Some(reason.as_str()));
+            }
+            other => panic!("unexpected event: {:?}", other),
+        }
+    }
+
+    async fn running_session(
+        session_id: &str,
+        gate: &crate::agent::concurrency::ConcurrencyGate,
+    ) -> (
+        Arc<dyn SessionRepository>,
+        Arc<RwLock<HashMap<String, AgentSession>>>,
+    ) {
+        let repo: Arc<dyn SessionRepository> = Arc::new(InMemorySessionRepository::new());
+        let session = SessionMetadata {
+            status: SessionStatus::Busy,
+            ..SessionMetadata::test_fixture(session_id)
+        };
+        repo.upsert_session(&session).await.expect("upsert");
+        let mut loaded = AgentSession::new(session, Arc::new(ContextRegistry::new()), None);
+        loaded.is_running = true;
+        loaded.active_permit = Some(gate.acquire_active_agent().await.expect("permit"));
+        let active_sessions = Arc::new(RwLock::new(HashMap::from([(
+            session_id.to_string(),
+            loaded,
+        )])));
+        (repo, active_sessions)
+    }
+
+    async fn assert_still_running(
+        repo: &Arc<dyn SessionRepository>,
+        active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+        dispatcher: &RecordingDispatcher,
+        gate: &crate::agent::concurrency::ConcurrencyGate,
+        session_id: &str,
+    ) {
+        let stored = repo
+            .get_session(session_id)
+            .await
+            .expect("get")
+            .expect("session");
+        assert_eq!(stored.status, SessionStatus::Busy);
+        assert_eq!(stored.status_reason, None);
+        {
+            let active = active_sessions.read().await;
+            let loaded = active.get(session_id).expect("loaded session");
+            assert_eq!(loaded.metadata.status, SessionStatus::Busy);
+            assert!(loaded.is_running);
+            assert!(loaded.active_permit.is_some());
+            assert!(loaded.status_transition.read().await.is_none());
+        }
+        // The gate has one slot, so a second permit is only free if the session lost its own.
+        let second_permit = tokio::time::timeout(
+            std::time::Duration::from_millis(20),
+            gate.acquire_active_agent(),
+        )
+        .await;
+        assert!(second_permit.is_err(), "the session's permit was released");
+        assert!(dispatcher.events.lock().expect("event lock").is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_failure_does_not_change_a_running_session() {
+        let gate = crate::agent::concurrency::ConcurrencyGate::new(1, 1, 1, 1);
+        let (repo, active_sessions) = running_session("running-session", &gate).await;
+        let dispatcher = RecordingDispatcher::default();
+
+        record_session_error_with_dispatcher(
+            &repo,
+            &active_sessions,
+            &dispatcher,
+            "running-session",
+            "No such container: libr-gone",
+        )
+        .await
+        .expect("record failure");
+
+        assert_still_running(
+            &repo,
+            &active_sessions,
+            &dispatcher,
+            &gate,
+            "running-session",
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn skip_if_busy_leaves_a_session_that_is_busy_under_the_transition_lock() {
+        let gate = crate::agent::concurrency::ConcurrencyGate::new(1, 1, 1, 1);
+        let (repo, active_sessions) = running_session("busy-session", &gate).await;
+        let dispatcher = RecordingDispatcher::default();
+
+        apply_session_status(
+            &repo,
+            &active_sessions,
+            &dispatcher,
+            "busy-session",
+            SessionStatus::Error,
+            Some("No such container: libr-gone"),
+            true,
+        )
+        .await
+        .expect("apply status");
+
+        assert_still_running(&repo, &active_sessions, &dispatcher, &gate, "busy-session").await;
+    }
 }

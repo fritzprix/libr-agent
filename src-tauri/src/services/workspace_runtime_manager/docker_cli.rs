@@ -16,8 +16,18 @@ pub fn normalize_docker_arch(arch: &str) -> String {
     }
 }
 
+/// Architecture of the image that the container runs. A container has no `Architecture` field;
+/// its image has.
 pub(super) async fn docker_container_architecture(container_name: &str) -> RuntimeResult<String> {
-    let arch = docker_output(["inspect", "-f", "{{.Architecture}}", container_name]).await?;
+    let image_id = docker_output(["inspect", "-f", "{{.Image}}", container_name]).await?;
+    let arch = docker_output([
+        "image",
+        "inspect",
+        "-f",
+        "{{.Architecture}}",
+        image_id.trim(),
+    ])
+    .await?;
     Ok(normalize_docker_arch(&arch))
 }
 

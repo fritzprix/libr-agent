@@ -328,20 +328,22 @@ mod tests {
 
     #[tokio::test]
     async fn the_mcp_endpoint_refuses_root_commands() {
-        let response = handle_tools_call(
-            "no-such-session",
-            Some(serde_json::json!(1)),
-            Some(serde_json::json!({
-                "name": "workspace__runShell",
-                "arguments": { "command": "id", "asRoot": true }
-            })),
-        )
-        .await;
+        for as_root in [serde_json::json!(true), serde_json::json!("true")] {
+            let response = handle_tools_call(
+                "no-such-session",
+                Some(serde_json::json!(1)),
+                Some(serde_json::json!({
+                    "name": "workspace__runShell",
+                    "arguments": { "command": "id", "asRoot": as_root }
+                })),
+            )
+            .await;
 
-        let error = response.error.expect("asRoot must be refused");
-        assert_eq!(
-            error.message,
-            crate::agent::tool_approvals::ROOT_EXECUTION_NEEDS_APPROVAL
-        );
+            let error = response.error.expect("asRoot must be refused");
+            assert_eq!(
+                error.message,
+                crate::agent::tool_approvals::ROOT_EXECUTION_NEEDS_APPROVAL
+            );
+        }
     }
 }
