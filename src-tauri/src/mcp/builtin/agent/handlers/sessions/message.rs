@@ -2,7 +2,7 @@ use serde_json::{json, Value};
 
 use super::super::super::utils::{
     build_agent_tool_data, check_session_next_actions, insert_agent_session_id_fields,
-    parse_complexity, read_required_string, resolve_model_for_complexity,
+    read_complexity, read_required_string, resolve_model_for_complexity,
 };
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHint, ToolGroup};
 use crate::mcp::types::MCPResult;
@@ -56,13 +56,21 @@ pub async fn message_to_session(
     args: Value,
     caller_session_id: &str,
 ) -> Result<MCPResult, String> {
+    let session_ref = match read_required_string(&args, "sessionId") {
+        Ok(value) => value,
+        Err(result) => return Ok(result),
+    };
+    let message_text = match read_required_string(&args, "message") {
+        Ok(value) => value,
+        Err(result) => return Ok(result),
+    };
+    let complexity = match read_complexity(&args) {
+        Ok(level) => level,
+        Err(result) => return Ok(result),
+    };
     let manager = server
         .get_manager()
         .ok_or("AgentSessionManager not available")?;
-    let session_ref = read_required_string(&args, "sessionId")?;
-    let message_text = read_required_string(&args, "message")?;
-    let complexity_raw = read_required_string(&args, "complexity")?;
-    let complexity = parse_complexity(&complexity_raw)?;
     let reset = args.get("reset").and_then(|v| v.as_bool()).unwrap_or(false);
     let (wait_for_response, timeout_seconds) = match parse_message_to_session_wait_config(&args) {
         Ok(config) => config,

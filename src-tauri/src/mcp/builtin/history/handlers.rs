@@ -4,7 +4,8 @@ use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 
 use crate::mcp::builtin::error_guidance::{
-    guided_error, operation_failed_error, ErrorCategory, SuccessHint, ToolGroup,
+    guided_error, invalid_input_error, missing_param_error, operation_failed_error, ErrorCategory,
+    SuccessHint, ToolGroup,
 };
 use crate::mcp::builtin::history::types::{
     HistoryMessageListItem, HistoryMessageReadResponse, HistorySearchMatch, HistorySessionItem,
@@ -870,15 +871,28 @@ pub async fn export_dataset(args: Value) -> Result<MCPResult, String> {
         .get("sessionIds")
         .and_then(|v| serde_json::from_value(v.clone()).ok());
 
-    let format: ExportFormat = args
-        .get("format")
-        .and_then(|v| serde_json::from_value(v.clone()).ok())
-        .ok_or_else(|| "Missing or invalid 'format' parameter".to_string())?;
+    let Some(format_value) = args.get("format") else {
+        return Ok(missing_param_error("format", ToolGroup::Agent));
+    };
+    let format: ExportFormat = match serde_json::from_value(format_value.clone()) {
+        Ok(format) => format,
+        Err(e) => {
+            return Ok(invalid_input_error(
+                &format!("Invalid 'format' parameter: {e}"),
+                ToolGroup::Agent,
+            ))
+        }
+    };
 
-    let output_path: String = args
-        .get("outputPath")
-        .and_then(|v| v.as_str().map(|s| s.to_string()))
-        .ok_or_else(|| "Missing or invalid 'outputPath' parameter".to_string())?;
+    let Some(output_path_value) = args.get("outputPath") else {
+        return Ok(missing_param_error("outputPath", ToolGroup::Agent));
+    };
+    let Some(output_path) = output_path_value.as_str().map(str::to_string) else {
+        return Ok(invalid_input_error(
+            "Invalid 'outputPath' parameter: expected a string path",
+            ToolGroup::Agent,
+        ));
+    };
 
     let filters: Option<DatasetFilter> = args
         .get("filters")
@@ -890,4 +904,53 @@ pub async fn export_dataset(args: Value) -> Result<MCPResult, String> {
         "Successfully exported dataset: {} sessions, {} messages written to {}",
         result.session_count, result.message_count, result.output_path
     )))
+}
+
+#[cfg(test)]
+mod export_dataset_tests {
+    use super::export_dataset;
+    use crate::mcp::types::{MCPContent, MCPResult};
+    use serde_json::json;
+
+    fn error_text(result: Result<MCPResult, String>) -> String {
+        let result = result.expect("bad arguments must not be an internal error");
+        assert_eq!(result.is_error, Some(true));
+        let text: String = result
+            .content
+            .iter()
+            .flatten()
+            .filter_map(|item| match item {
+                MCPContent::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(!text.to_lowercase().contains("system error"), "{text}");
+        text
+    }
+
+    #[tokio::test]
+    async fn missing_format_names_the_param() {
+        let text = error_text(export_dataset(json!({ "outputPath": "/tmp/out.json" })).await);
+        assert!(text.contains("'format'"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn invalid_format_is_reported_as_invalid() {
+        let args = json!({ "format": "csv", "outputPath": "/tmp/out.json" });
+        let text = error_text(export_dataset(args).await);
+        assert!(text.contains("Invalid 'format' parameter"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn missing_output_path_names_the_param() {
+        let text = error_text(export_dataset(json!({ "format": "alpaca" })).await);
+        assert!(text.contains("'outputPath'"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn non_string_output_path_is_reported_as_invalid() {
+        let args = json!({ "format": "alpaca", "outputPath": 3 });
+        let text = error_text(export_dataset(args).await);
+        assert!(text.contains("Invalid 'outputPath' parameter"), "{text}");
+    }
 }

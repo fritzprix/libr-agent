@@ -5,6 +5,8 @@
 //! `complexityModelMapping` setting; unset levels inherit global
 //! `preferredModel`.
 
+use crate::mcp::builtin::error_guidance::{invalid_input_error, ToolGroup};
+use crate::mcp::types::MCPResult;
 use crate::repositories::settings_repository::SettingsRepository;
 use serde_json::Value;
 
@@ -38,6 +40,12 @@ pub fn parse_complexity(raw: &str) -> Result<&'static str, String> {
             "Invalid complexity '{other}'. Expected one of: low, normal, high"
         )),
     }
+}
+
+/// Read and validate the required `complexity` argument of a delegation tool.
+pub fn read_complexity(args: &Value) -> Result<&'static str, MCPResult> {
+    let raw = super::read_required_string(args, "complexity")?;
+    parse_complexity(&raw).map_err(|message| invalid_input_error(&message, ToolGroup::Agent))
 }
 
 /// Resolve an explicit model/provider override for a complexity level.
@@ -125,6 +133,7 @@ pub async fn resolve_model_for_complexity(
 #[cfg(test)]
 mod unit_tests {
     use super::*;
+    use crate::mcp::types::MCPContent;
     use serde_json::json;
 
     #[test]
@@ -132,6 +141,51 @@ mod unit_tests {
         assert_eq!(parse_complexity("low").unwrap(), "low");
         assert_eq!(parse_complexity(" normal ").unwrap(), "normal");
         assert!(parse_complexity("medium").is_err());
+    }
+
+    fn error_text(result: &MCPResult) -> String {
+        assert_eq!(result.is_error, Some(true));
+        result
+            .content
+            .as_ref()
+            .and_then(|c| c.first())
+            .and_then(|item| match item {
+                MCPContent::Text { text } => Some(text.clone()),
+                _ => None,
+            })
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn read_complexity_missing_returns_param_guidance() {
+        let args = json!({ "configId": "cfg", "task": "do it" });
+        let text = error_text(&read_complexity(&args).unwrap_err());
+        assert!(text.contains("Missing required parameter: 'complexity'"));
+        assert!(!text.contains("system error"));
+    }
+
+    #[test]
+    fn read_complexity_invalid_returns_input_guidance() {
+        let args = json!({ "complexity": "medium" });
+        let text = error_text(&read_complexity(&args).unwrap_err());
+        assert!(text.contains("Invalid complexity 'medium'"));
+        assert!(!text.contains("system error"));
+    }
+
+    #[test]
+    fn read_required_string_missing_names_param() {
+        let text =
+            error_text(&super::super::read_required_string(&json!({}), "sessionId").unwrap_err());
+        assert!(text.contains("'sessionId'"));
+        assert!(!text.contains("system error"));
+    }
+
+    #[test]
+    fn read_complexity_accepts_valid_level() {
+        assert_eq!(
+            read_complexity(&json!({ "complexity": "high" })).unwrap(),
+            "high"
+        );
     }
 
     #[test]

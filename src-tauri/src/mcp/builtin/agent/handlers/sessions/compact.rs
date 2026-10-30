@@ -18,10 +18,13 @@ pub async fn compact_session_context(
     args: Value,
     caller_session_id: &str,
 ) -> Result<MCPResult, String> {
+    let session_ref = match read_required_string(&args, "sessionId") {
+        Ok(value) => value,
+        Err(result) => return Ok(result),
+    };
     let manager = server
         .get_manager()
         .ok_or("AgentSessionManager not available")?;
-    let session_ref = read_required_string(&args, "sessionId")?;
     let timeout_seconds = args
         .get("timeout")
         .and_then(|value| value.as_u64())
