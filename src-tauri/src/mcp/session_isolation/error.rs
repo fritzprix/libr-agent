@@ -16,8 +16,9 @@ pub enum SessionMCPError {
     #[error("Process spawn failed: {0}")]
     SpawnFailed(String),
 
-    /// The Docker session container could not be prepared (provisioning failed, the image
-    /// cannot be pulled, or the attached container does not exist).
+    /// The Docker session container cannot be prepared until the user changes the session: the
+    /// image does not exist or the attached container does not exist. Daemon and network
+    /// failures are `SpawnFailed` instead, so they are retried with backoff.
     #[error("Session container is not available: {0}")]
     ContainerUnavailable(String),
 
