@@ -134,7 +134,7 @@ fn prune_archived_logs(log_dir: &Path, policy: ArchivePolicy, now: SystemTime) -
         .collect();
 
     // Newest first, so everything past the budget is the oldest.
-    archives.sort_by(|a, b| b.1.cmp(&a.1));
+    archives.sort_by_key(|a| std::cmp::Reverse(a.1));
 
     let mut kept_bytes: u64 = 0;
     let mut removed_files = 0;
