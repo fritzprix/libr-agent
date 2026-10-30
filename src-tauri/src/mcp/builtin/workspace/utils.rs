@@ -259,6 +259,26 @@ pub async fn root_exec_blocker(session_id: &str) -> Option<crate::services::Root
     }
 }
 
+/// Takes the root-exec lock of the session container (see [`crate::services::RootExecLease`]).
+pub async fn begin_root_exec(session_id: &str) -> Result<crate::services::RootExecLease, String> {
+    use crate::repositories::session_repository::SessionRepository;
+
+    let session = match crate::state::try_get_session_repository() {
+        Some(session_repo) => session_repo
+            .get_session(session_id)
+            .await
+            .map_err(|error| error.to_string())?,
+        None => None,
+    };
+    let session = session.ok_or_else(|| {
+        crate::services::RootExecBlocker::HostSession
+            .message()
+            .to_string()
+    })?;
+    crate::services::WorkspaceRuntimeManager::begin_root_exec(&session)
+        .map_err(|error| error.to_string())
+}
+
 /// CWD reported by isolated/async shell tools for a session.
 pub async fn effective_command_cwd(session_id: &str, host_workspace: &Path) -> String {
     let (is_docker, docker_root) = session_docker_root(session_id).await;

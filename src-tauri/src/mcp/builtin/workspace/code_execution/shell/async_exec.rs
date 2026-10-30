@@ -157,6 +157,7 @@ impl WorkspaceServer {
             env_vars,
             isolation_level,
             shell_type: None, // Default to platform default shell
+            // `asRoot` is refused in dispatch for spawnProcess.
             run_as_root: false,
         };
 

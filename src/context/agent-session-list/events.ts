@@ -1,6 +1,7 @@
 import { applyViewedAtToSession } from '@/lib/session-utils';
 import type { AgentSession } from '@/models/agent';
 import type {
+  PendingApprovalKind,
   WorkflowCompletionReason,
   SessionRuntimeState,
 } from '@/models/agent-ipc';
@@ -14,7 +15,7 @@ export interface AgentEventPayload {
     createdAt: number;
   };
   toolCallId?: string;
-  approvalKind?: 'standard' | 'hard';
+  approvalKind?: PendingApprovalKind;
   approved?: boolean;
   reason?: WorkflowCompletionReason;
   runtimeState?: SessionRuntimeState;

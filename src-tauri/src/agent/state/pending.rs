@@ -121,6 +121,8 @@ impl PendingEventManager {
 pub enum PendingApprovalKind {
     Standard,
     Hard,
+    /// A command that runs as root (runShell `asRoot`). No execution mode skips it.
+    Root,
 }
 
 /// Data for a pending tool execution approval

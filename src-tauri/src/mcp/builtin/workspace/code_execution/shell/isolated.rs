@@ -117,6 +117,25 @@ impl WorkspaceServer {
         let stdout_path = process_tmp_dir.join("stdout");
         let stderr_path = process_tmp_dir.join("stderr");
 
+        let root_lease = if run_as_root {
+            match utils::begin_root_exec(&session_id).await {
+                Ok(lease) => Some(lease),
+                Err(message) => {
+                    return Ok(guided_error(
+                        ErrorCategory::InvalidState,
+                        message,
+                        ToolGroup::Workspace,
+                    )
+                    .guidance(vec![
+                        "Run the command again after the other asRoot command ends".to_string(),
+                    ])
+                    .to_mcp_result());
+                }
+            }
+        } else {
+            None
+        };
+
         let isolation_config = IsolatedProcessConfig {
             session_id: session_id.clone(),
             workspace_path: workspace_path.clone(),
@@ -248,6 +267,25 @@ impl WorkspaceServer {
             )
             .await;
 
+            // The workspace must belong to the host user again before the result is visible.
+            let restore_error = match root_lease {
+                Some(lease) => lease.finish().await.err(),
+                None => None,
+            };
+            if let Some(error) = &restore_error {
+                error!("Root command {} cleanup failed: {}", pid_copy, error);
+                let note = format!("\nLibrAgent: {error}\n");
+                if let Ok(mut file) = tokio::fs::OpenOptions::new()
+                    .append(true)
+                    .create(true)
+                    .open(&stderr_path_for_task)
+                    .await
+                {
+                    use tokio::io::AsyncWriteExt;
+                    let _ = file.write_all(note.as_bytes()).await;
+                }
+            }
+
             let mut reg = registry.write().await;
             if let Some(entry) = reg.entries.get_mut(&pid_copy) {
                 match result {
@@ -261,11 +299,12 @@ impl WorkspaceServer {
                             terminal_manager::get_file_size(&stderr_path_for_task).await;
 
                         if entry.status != terminal_manager::ProcessStatus::Killed {
-                            entry.status = if exit_code.unwrap_or(-1) == 0 {
-                                terminal_manager::ProcessStatus::Finished
-                            } else {
-                                terminal_manager::ProcessStatus::Failed
-                            };
+                            entry.status =
+                                if exit_code.unwrap_or(-1) == 0 && restore_error.is_none() {
+                                    terminal_manager::ProcessStatus::Finished
+                                } else {
+                                    terminal_manager::ProcessStatus::Failed
+                                };
                         }
                     }
                     Err(e) => {

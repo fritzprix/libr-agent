@@ -8,9 +8,9 @@ use crate::session_isolation::{ShellType, CONTAINER_SYSTEM_SKILLS_DIR, CONTAINER
 use tokio::process::Command as AsyncCommand;
 
 use super::docker_cli::{
-    apply_docker_cli_env, current_uid_gid, docker_container_exists, docker_container_has_wake_host,
+    apply_docker_cli_env, current_uid_gid, docker_container_exists, docker_container_has_label,
     docker_container_running, run_docker_status, run_status_command, verify_container_label,
-    WAKE_HOST_LABEL,
+    ROOT_HARDENING_LABEL, WAKE_HOST_LABEL,
 };
 use super::error::{RuntimeResult, WorkspaceRuntimeError};
 use super::session_config::{
@@ -30,6 +30,26 @@ fn wake_host_run_args() -> [String; 3] {
         ),
         "--label".to_string(),
         format!("{WAKE_HOST_LABEL}=1"),
+    ]
+}
+
+/// `docker run` arguments that limit what a root `docker exec` (runShell `asRoot`) can leave
+/// behind for the host, and mark the container as created with them:
+/// - `no-new-privileges`: a setuid file cannot give root to a later non-root command.
+/// - no `SETFCAP`: root cannot put file capabilities on a file in a host bind mount.
+/// - no `MKNOD`: root cannot create a device node in a host bind mount.
+///
+/// A setuid bit and root ownership are still possible; `RootExecLease::finish` removes them.
+pub(super) fn hardening_run_args() -> [String; 8] {
+    [
+        "--security-opt".to_string(),
+        "no-new-privileges".to_string(),
+        "--cap-drop".to_string(),
+        "SETFCAP".to_string(),
+        "--cap-drop".to_string(),
+        "MKNOD".to_string(),
+        "--label".to_string(),
+        format!("{ROOT_HARDENING_LABEL}=1"),
     ]
 }
 
@@ -62,8 +82,11 @@ pub(super) async fn ensure_bash_image_contract(
     let mut container_exists = docker_container_exists(container_name).await?;
     if container_exists {
         verify_container_label(container_name, session_id).await?;
-        if !docker_container_has_wake_host(container_name).await? {
-            // Created before the host mapping existed: wake callbacks cannot reach the host.
+        if !docker_container_has_label(container_name, WAKE_HOST_LABEL).await?
+            || !docker_container_has_label(container_name, ROOT_HARDENING_LABEL).await?
+        {
+            // Created before the host mapping (wake callbacks cannot reach the host) or before
+            // the root-exec hardening existed.
             if let Some(reporter) = reporter {
                 reporter("Recreating container");
             }
@@ -139,6 +162,7 @@ pub(super) async fn ensure_bash_image_contract(
         apply_docker_cli_env(&mut cmd);
         cmd.args(["run", "-d", "--name", container_name, "--label", &label]);
         cmd.args(wake_host_run_args());
+        cmd.args(hardening_run_args());
         cmd.args(volume_args);
         cmd.args(["-w", &workdir]);
 
@@ -354,6 +378,23 @@ mod wake_host_tests {
                 "--add-host=host.docker.internal:host-gateway",
                 "--label",
                 "com.libragent.wake_host=1"
+            ]
+        );
+    }
+
+    #[test]
+    fn hardening_blocks_new_privileges_file_capabilities_and_device_nodes() {
+        assert_eq!(
+            hardening_run_args(),
+            [
+                "--security-opt",
+                "no-new-privileges",
+                "--cap-drop",
+                "SETFCAP",
+                "--cap-drop",
+                "MKNOD",
+                "--label",
+                "com.libragent.root_hardening=1"
             ]
         );
     }

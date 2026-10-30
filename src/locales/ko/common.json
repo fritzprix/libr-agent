@@ -1217,6 +1217,10 @@
       "reject": "거부",
       "rejectShortcut": "거부 (Esc)",
       "hardApprove": "고위험 작업 승인",
+      "rootTitle": "루트 승인 필요",
+      "rootDescription": "이 명령은 세션 컨테이너에서 루트로 실행됩니다. 모든 실행 모드에서 사용자 승인이 필요합니다.",
+      "rootBadge": "루트로 실행",
+      "rootApprove": "루트 명령 승인",
       "approve": "승인",
       "approveShortcut": "승인 (⌘↵ / Ctrl+↵)",
       "approveShortcutBadge": "⌘↵"

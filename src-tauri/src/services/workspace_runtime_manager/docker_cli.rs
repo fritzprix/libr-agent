@@ -53,17 +53,42 @@ pub(super) async fn verify_container_label(
 /// Label set on containers created with the host mapping for wake callbacks.
 pub(super) const WAKE_HOST_LABEL: &str = "com.libragent.wake_host";
 
-/// True when the container was created with the host mapping (see [`WAKE_HOST_LABEL`]).
-/// Containers created before it existed carry no label and must be recreated.
-pub(super) async fn docker_container_has_wake_host(container_name: &str) -> RuntimeResult<bool> {
+/// Label set on containers created with the root-exec hardening (see `hardening_run_args`).
+pub(super) const ROOT_HARDENING_LABEL: &str = "com.libragent.root_hardening";
+
+/// True when the container carries `label=1`. Containers created before a label existed lack
+/// it and must be recreated.
+pub(super) async fn docker_container_has_label(
+    container_name: &str,
+    label: &str,
+) -> RuntimeResult<bool> {
     let value = docker_output([
         "inspect",
         "-f",
-        &format!("{{{{ index .Config.Labels \"{WAKE_HOST_LABEL}\" }}}}"),
+        &format!("{{{{ index .Config.Labels \"{label}\" }}}}"),
         container_name,
     ])
     .await?;
     Ok(value.trim() == "1")
+}
+
+/// Destinations of the container's read-write mounts, one per line of `docker inspect`.
+pub(super) async fn docker_rw_mount_destinations(
+    container_name: &str,
+) -> RuntimeResult<Vec<String>> {
+    let output = docker_output([
+        "inspect",
+        "-f",
+        "{{range .Mounts}}{{if .RW}}{{println .Destination}}{{end}}{{end}}",
+        container_name,
+    ])
+    .await?;
+    Ok(output
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(str::to_string)
+        .collect())
 }
 
 /// IPv4 gateway of Docker's default `bridge` network: the host address that managed

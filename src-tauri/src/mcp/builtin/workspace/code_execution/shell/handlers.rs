@@ -686,4 +686,32 @@ mod tests {
             "{text}"
         );
     }
+
+    #[tokio::test]
+    async fn shell_tools_other_than_run_shell_refuse_as_root() {
+        let temp_dir = tempdir().expect("temp dir");
+        let session_id = "workspace-shell-as-root-other-tools";
+        let session_manager = Arc::new(
+            SessionManager::new_with_base_dir(temp_dir.path().to_path_buf())
+                .expect("session manager"),
+        );
+        let server = WorkspaceServer::new(session_id.to_string(), session_manager);
+
+        for tool in ["spawnProcess", "runInPersistentShell"] {
+            let result = server
+                .call_tool(
+                    tool,
+                    serde_json::json!({ "command": "id -u > uid.txt", "asRoot": true }),
+                    Some(session_id.to_string()),
+                )
+                .await
+                .expect("guided result");
+            let text = format!("{result:?}");
+            assert!(
+                text.contains("only workspace__runShell accepts asRoot"),
+                "{tool}: {text}"
+            );
+        }
+        assert!(!temp_dir.path().join(session_id).join("uid.txt").exists());
+    }
 }

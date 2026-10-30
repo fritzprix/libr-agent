@@ -100,6 +100,14 @@ async fn handle_tools_call(
         .arguments
         .unwrap_or_else(|| serde_json::Value::Object(Default::default()));
 
+    if crate::agent::tool_approvals::requests_root_execution(&call.name, &args) {
+        return error_response(
+            id,
+            -32602,
+            crate::agent::tool_approvals::ROOT_EXECUTION_NEEDS_APPROVAL.to_string(),
+        );
+    }
+
     let proxy_manager = get_mcp_service_proxy_manager();
     match proxy_manager.call_tool(session_id, &call.name, args).await {
         Ok(mcp_response) => {
@@ -312,4 +320,28 @@ pub async fn mcp_rpc_auto(
     };
 
     mcp_rpc(session_id, body).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn the_mcp_endpoint_refuses_root_commands() {
+        let response = handle_tools_call(
+            "no-such-session",
+            Some(serde_json::json!(1)),
+            Some(serde_json::json!({
+                "name": "workspace__runShell",
+                "arguments": { "command": "id", "asRoot": true }
+            })),
+        )
+        .await;
+
+        let error = response.error.expect("asRoot must be refused");
+        assert_eq!(
+            error.message,
+            crate::agent::tool_approvals::ROOT_EXECUTION_NEEDS_APPROVAL
+        );
+    }
 }

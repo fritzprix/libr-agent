@@ -3,7 +3,8 @@ import type { ExecutionMode } from './types';
 
 /**
  * Mirrors backend `ExecutionMode::include_hard_approvals` +
- * `pending_approval_is_auto_approvable_in_yolo`.
+ * `pending_approval_is_auto_approvable_in_yolo` /
+ * `pending_approval_is_auto_approvable_in_unsafe`.
  *
  * Used to reconcile frontend pending widgets after a successful mode change
  * without waiting for `toolExecutionApprovalResolved` events.
@@ -13,10 +14,10 @@ export function isPendingApprovalAutoResolvedByMode(
   approvalKind: PendingApprovalKind,
 ): boolean {
   if (mode === 'unsafe') {
-    return true;
+    return approvalKind !== 'root';
   }
   if (mode === 'yolo') {
-    return approvalKind !== 'hard';
+    return approvalKind === 'standard';
   }
   return false;
 }

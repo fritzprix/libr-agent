@@ -243,7 +243,7 @@ impl WorkspaceServer {
                     &session_id,
                     HashMap::new(), // Pass empty env vars for fallback
                     None,
-                    false,
+                    false, // `asRoot` is refused in dispatch for persistent shells.
                 )
                 .await
             }

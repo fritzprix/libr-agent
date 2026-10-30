@@ -73,6 +73,18 @@ impl WorkspaceServer {
             return Ok(self.shell_tool_unavailable_result(tool_name));
         }
 
+        if tool_name != "runShell" && args.get("asRoot").and_then(Value::as_bool) == Some(true) {
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                format!("Tool '{tool_name}' cannot run as root; only workspace__runShell accepts asRoot"),
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                "Run the command with workspace__runShell and asRoot: true".to_string(),
+            ])
+            .to_mcp_result());
+        }
+
         match tool_name {
             // ── File operation tools ──────────────────────────────────────────
             "readFile" => self.handle_read_file(args, session_id).await,

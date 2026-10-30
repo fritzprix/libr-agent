@@ -1,6 +1,7 @@
 mod container;
 mod docker_cli;
 mod error;
+mod root_exec;
 mod session_config;
 
 use std::collections::HashSet;
@@ -231,6 +232,7 @@ pub use docker_cli::{docker_bridge_gateway, normalize_docker_arch};
 pub use error::{
     WorkspaceRuntimeError, AGENT_ERROR_DOCKER_NOT_AVAILABLE, AGENT_ERROR_DOCKER_NOT_INSTALLED,
 };
+pub use root_exec::RootExecLease;
 pub use session_config::build_docker_volume_args;
 pub(crate) use session_config::session_docker_workdir;
 
@@ -322,6 +324,9 @@ impl WorkspaceRuntimeManager {
             }
         }
         let shell = prepare_docker_runtime(session, true, true, None).await?;
+        if run_as_root {
+            root_exec::verify_root_exec_ready(session).await?;
+        }
         build_docker_exec_command(session, shell, command, env_vars, cwd_override, run_as_root)
     }
 
