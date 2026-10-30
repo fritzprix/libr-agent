@@ -12,9 +12,10 @@ use crate::entity::{prelude::*, session};
 use crate::execution_mode::ExecutionMode;
 use crate::models::workspace_isolation::{DockerWorkspaceConfig, WorkspaceIsolationMode};
 
-const SESSION_UPSERT_COLUMNS: [session::Column; 24] = [
+const SESSION_UPSERT_COLUMNS: [session::Column; 25] = [
     session::Column::Name,
     session::Column::Status,
+    session::Column::StatusReason,
     session::Column::Model,
     session::Column::Provider,
     session::Column::AssistantId,
