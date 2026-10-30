@@ -5,6 +5,13 @@ use std::str::FromStr;
 
 pub const DEFAULT_DOCKER_WORKDIR: &str = "/workspace";
 
+/// Image for managed Docker sessions that set no image (built from
+/// `docker/Dockerfile`, published to GHCR on release tags).
+pub const DEFAULT_SESSION_IMAGE: &str = concat!(
+    "ghcr.io/fritzprix/libragent-session:",
+    env!("LIBRAGENT_SESSION_IMAGE_TAG")
+);
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum WorkspaceIsolationMode {
@@ -40,11 +47,12 @@ impl FromStr for WorkspaceIsolationMode {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct DockerWorkspaceConfig {
-    /// Image for managed LibrAgent Docker sessions. Optional when attaching to an
-    /// existing container (`attach_container`).
+    /// Image for managed LibrAgent Docker sessions. Set to
+    /// [`DEFAULT_SESSION_IMAGE`] at session creation when empty. Not used when
+    /// attaching to an existing container (`attach_container`).
     #[serde(default)]
     pub image: Option<String>,
     /// Existing Docker container id/name to attach instead of creating one.
@@ -89,6 +97,15 @@ impl DockerWorkspaceConfig {
             .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
+    }
+
+    /// Managed configs with no image get [`DEFAULT_SESSION_IMAGE`]. The session
+    /// stores the result, so an app update does not change its image.
+    pub fn with_default_image(mut self) -> Self {
+        if !self.is_attach() && self.image_ref().is_none() {
+            self.image = Some(DEFAULT_SESSION_IMAGE.to_string());
+        }
+        self
     }
 
     pub fn workdir(&self) -> &str {

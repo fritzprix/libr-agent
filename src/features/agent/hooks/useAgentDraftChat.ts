@@ -94,7 +94,8 @@ export function useAgentDraftChat() {
   );
   const [workspaceIsolation, setWorkspaceIsolation] =
     useState<WorkspaceIsolationChoice>('host');
-  const [dockerImage, setDockerImage] = useState<string>('python:3.11-slim');
+  // Empty means the LibrAgent default image; the backend resolves it.
+  const [dockerImage, setDockerImage] = useState<string>('');
   const [dockerError, setDockerError] = useState<DockerStartError | null>(null);
   const [dragState, setDragState] = useState<'none' | 'valid' | 'invalid'>(
     'none',
@@ -404,10 +405,7 @@ export function useAgentDraftChat() {
         return;
       }
 
-      if (isolation === 'docker' && !dockerImage.trim()) {
-        toast.error(t('agent.draft.dockerImageRequired'));
-        return;
-      }
+      const customDockerImage = dockerImage.trim();
 
       setIsSubmitting(true);
       const newSessionId = generateSessionId();
@@ -425,7 +423,12 @@ export function useAgentDraftChat() {
         toastId = toast.loading(
           isolation === 'docker'
             ? t('agent.draft.dockerCreating', {
-                image: dockerImage,
+                image:
+                  customDockerImage ||
+                  t(
+                    'agent.workspace.defaultDockerImage',
+                    'LibrAgent default image',
+                  ),
                 defaultValue:
                   'Creating session — preparing Docker image {{image}}…',
               })
@@ -474,7 +477,7 @@ export function useAgentDraftChat() {
             dockerConfig:
               isolation === 'docker'
                 ? {
-                    image: dockerImage,
+                    image: customDockerImage || undefined,
                   }
                 : undefined,
           },

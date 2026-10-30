@@ -41,7 +41,7 @@ export interface AgentConfig {
 export type WorkspaceIsolationMode = 'host' | 'docker';
 
 export interface DockerWorkspaceConfig {
-  /** Required for managed Docker sessions; omit when attaching to an existing container. */
+  /** Managed sessions without an image use the LibrAgent default image; ignored when attaching. */
   image?: string;
   /** Existing container id/name to attach (Harbor task containers). */
   attachContainer?: string;

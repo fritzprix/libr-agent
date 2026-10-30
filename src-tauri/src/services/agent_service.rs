@@ -47,9 +47,7 @@ impl AgentService {
                     );
                 }
 
-                let config = docker_config.ok_or_else(|| {
-                    "dockerConfig is required for Docker workspace isolation".to_string()
-                })?;
+                let config = docker_config.unwrap_or_default().with_default_image();
                 config.validate()?;
                 Ok((WorkspaceIsolationMode::Docker, Some(config)))
             }
@@ -304,5 +302,82 @@ impl AgentService {
             .ok_or_else(|| format!("No proxy found for session: {}", session_id))?;
 
         Ok(proxy.get_service_contexts(None).await)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::workspace_isolation::DEFAULT_SESSION_IMAGE;
+
+    fn docker_request(
+        config: Option<DockerWorkspaceConfig>,
+    ) -> Result<(WorkspaceIsolationMode, Option<DockerWorkspaceConfig>), String> {
+        AgentService::validate_workspace_isolation_request(
+            Some(WorkspaceIsolationMode::Docker),
+            config,
+            false,
+        )
+    }
+
+    #[test]
+    fn docker_session_without_config_uses_the_default_image() {
+        let (mode, config) = docker_request(None).expect("valid request");
+        assert_eq!(mode, WorkspaceIsolationMode::Docker);
+        assert_eq!(
+            config.as_ref().and_then(DockerWorkspaceConfig::image_ref),
+            Some(DEFAULT_SESSION_IMAGE)
+        );
+    }
+
+    #[test]
+    fn docker_session_with_blank_image_uses_the_default_image() {
+        let (_, config) = docker_request(Some(DockerWorkspaceConfig {
+            image: Some("  ".to_string()),
+            ..Default::default()
+        }))
+        .expect("valid request");
+        assert_eq!(
+            config.as_ref().and_then(DockerWorkspaceConfig::image_ref),
+            Some(DEFAULT_SESSION_IMAGE)
+        );
+    }
+
+    #[test]
+    fn docker_session_keeps_the_image_it_sets() {
+        let (_, config) = docker_request(Some(DockerWorkspaceConfig {
+            image: Some("python:3.12-slim".to_string()),
+            ..Default::default()
+        }))
+        .expect("valid request");
+        assert_eq!(
+            config.as_ref().and_then(DockerWorkspaceConfig::image_ref),
+            Some("python:3.12-slim")
+        );
+    }
+
+    #[test]
+    fn attach_session_gets_no_image() {
+        let (_, config) = docker_request(Some(DockerWorkspaceConfig {
+            attach_container: Some("dev-box".to_string()),
+            ..Default::default()
+        }))
+        .expect("valid request");
+        assert_eq!(
+            config.as_ref().and_then(DockerWorkspaceConfig::image_ref),
+            None
+        );
+    }
+
+    #[test]
+    fn default_image_is_version_pinned_on_ghcr() {
+        let (repository, tag) = DEFAULT_SESSION_IMAGE
+            .rsplit_once(':')
+            .expect("image has a tag");
+        assert_eq!(repository, "ghcr.io/fritzprix/libragent-session");
+        assert!(
+            tag.split('.').count() == 3 && tag.split('.').all(|part| part.parse::<u32>().is_ok()),
+            "tag must be a release version, got '{tag}'"
+        );
     }
 }
