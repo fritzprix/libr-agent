@@ -1,7 +1,11 @@
 use super::SessionMCPManager;
 use crate::mcp::session_isolation::error::SessionMCPError;
+use crate::mcp::session_isolation::exec_target::{
+    is_runtime_missing, runtime_missing_message, session_image, StdioExecTarget,
+};
 use crate::mcp::session_isolation::process::MCPProcess;
 use crate::mcp::types::{MCPServerConfig, TransportConfig};
+use crate::services::WorkspaceRuntimeManager;
 use dashmap::DashMap;
 use log::{debug, error, info, warn};
 use rmcp::ServiceExt;
@@ -131,7 +135,115 @@ impl SessionMCPManager {
             _ => return Err(SessionMCPError::InvalidTransport("Expected stdio".into())),
         };
 
-        // 6. Spawn process with cross-platform command preparation
+        // 6. Build the command where this session runs stdio servers
+        let target = StdioExecTarget::for_session(Some(&self.session_id))
+            .await
+            .map_err(SessionMCPError::SpawnFailed)?;
+        let container_session = target.container_session();
+        let (cmd, container) = match container_session {
+            Some(session) => {
+                let config_env_keys: Vec<&str> = env.keys().map(|k| k.as_str()).collect();
+                info!(
+                    "Spawning MCP server '{}' for session '{}' in its container: {} {:?} config_env_keys={:?}",
+                    server_name, self.session_id, command, args, config_env_keys
+                );
+                let cmd =
+                    WorkspaceRuntimeManager::create_docker_mcp_command(session, command, args, env)
+                        .await
+                        .map_err(|e| SessionMCPError::SpawnFailed(e.to_string()))?;
+                let container = WorkspaceRuntimeManager::container_name(session)
+                    .map_err(|e| SessionMCPError::SpawnFailed(e.to_string()))?;
+                (cmd, Some(container))
+            }
+            None => (self.host_command(server_name, command, args, env)?, None),
+        };
+        let spawn_desc = match &container {
+            Some(container) => format!("{command} {args:?} in container '{container}'"),
+            None => format!("{command} {args:?} on host"),
+        };
+
+        let transport =
+            crate::mcp::session_isolation::channel_transport::spawn_channel_aware_stdio(
+                cmd,
+                server_name.to_string(),
+                self.channel_event_tx.clone(),
+                container,
+            )
+            .map_err(|e| {
+                error!(
+                    "Failed to spawn MCP server '{}' for session '{}': {} ({})",
+                    server_name, self.session_id, e, spawn_desc
+                );
+                SessionMCPError::SpawnFailed(format!("{}", e))
+            })?;
+        let exit_report = transport.exit_report();
+
+        debug!("Created transport for command: {}", spawn_desc);
+
+        // 7. Initialize rmcp client with timeout
+        // A dead process makes `serve` return an error right away; the timeout only catches
+        // one that never answers. Session shutdown drops the pending initialize (and with it
+        // the child process).
+        let init_timeout_seconds = init_timeout.as_secs();
+        let serve_result = tokio::select! {
+            _ = self.shutdown_token.cancelled() => {
+                return Err(SessionMCPError::SessionClosed);
+            }
+            result = tokio::time::timeout(init_timeout, ().serve(transport)) => result,
+        };
+        let client = serve_result
+            .map_err(|_| {
+                error!(
+                    "MCP server '{}' init timed out after {}s for session '{}' ({}). Check preceding [MCP stderr:{}] lines.",
+                    server_name,
+                    init_timeout_seconds,
+                    self.session_id,
+                    spawn_desc,
+                    server_name
+                );
+                SessionMCPError::InitTimeout(server_name.to_string())
+            })?
+            .map_err(|e| {
+                error!(
+                    "MCP server '{}' init failed for session '{}': {} ({}). Check preceding [MCP stderr:{}] lines.",
+                    server_name, self.session_id, e, spawn_desc, server_name
+                );
+                match container_session {
+                    Some(session) if is_runtime_missing(&exit_report) => {
+                        SessionMCPError::RuntimeMissing(runtime_missing_message(
+                            command,
+                            &session_image(session),
+                        ))
+                    }
+                    _ => SessionMCPError::InitFailed(format!("{}", e)),
+                }
+            })?;
+
+        self.update_channel_metadata(server_name, client.peer_info())
+            .await;
+
+        info!("Successfully connected to MCP server: {}", server_name);
+
+        // 8. Store process and update activity timestamp
+        let process = MCPProcess::new(client);
+
+        let mut processes = self.active_processes.write().await;
+        processes.insert(server_name.to_string(), process);
+
+        let mut activity = self.last_activity.write().await;
+        activity.insert(server_name.to_string(), Instant::now());
+
+        Ok(())
+    }
+
+    /// Host spawn: Windows `.cmd` wrapping, host PATH diagnostics, isolated host env.
+    pub(super) fn host_command(
+        &self,
+        server_name: &str,
+        command: &str,
+        args: &[String],
+        env: &HashMap<String, String>,
+    ) -> Result<Command, SessionMCPError> {
         // On Windows, this wraps .cmd/.bat files with cmd.exe
         let (final_command, final_args) =
             crate::mcp::utils::command_helper::prepare_command(command, args);
@@ -190,69 +302,7 @@ impl SessionMCPManager {
             cmd.creation_flags(CREATE_NO_WINDOW);
         }
 
-        let transport =
-            crate::mcp::session_isolation::channel_transport::spawn_channel_aware_stdio(
-                cmd,
-                server_name.to_string(),
-                self.channel_event_tx.clone(),
-            )
-            .map_err(|e| {
-                error!(
-                    "Failed to spawn MCP server '{}' for session '{}': {} (final={} {:?})",
-                    server_name, self.session_id, e, final_command, final_args
-                );
-                SessionMCPError::SpawnFailed(format!("{}", e))
-            })?;
-
-        debug!("Created transport for command: {} {:?}", command, args);
-
-        // 7. Initialize rmcp client with timeout
-        // A dead process makes `serve` return an error right away; the timeout only catches
-        // one that never answers. Session shutdown drops the pending initialize (and with it
-        // the child process).
-        let init_timeout_seconds = init_timeout.as_secs();
-        let serve_result = tokio::select! {
-            _ = self.shutdown_token.cancelled() => {
-                return Err(SessionMCPError::SessionClosed);
-            }
-            result = tokio::time::timeout(init_timeout, ().serve(transport)) => result,
-        };
-        let client = serve_result
-            .map_err(|_| {
-                error!(
-                    "MCP server '{}' init timed out after {}s for session '{}' (final={} {:?}). Check preceding [MCP stderr:{}] lines.",
-                    server_name,
-                    init_timeout_seconds,
-                    self.session_id,
-                    final_command,
-                    final_args,
-                    server_name
-                );
-                SessionMCPError::InitTimeout(server_name.to_string())
-            })?
-            .map_err(|e| {
-                error!(
-                    "MCP server '{}' init failed for session '{}': {} (final={} {:?}). Check preceding [MCP stderr:{}] lines.",
-                    server_name, self.session_id, e, final_command, final_args, server_name
-                );
-                SessionMCPError::InitFailed(format!("{}", e))
-            })?;
-
-        self.update_channel_metadata(server_name, client.peer_info())
-            .await;
-
-        info!("Successfully connected to MCP server: {}", server_name);
-
-        // 8. Store process and update activity timestamp
-        let process = MCPProcess::new(client);
-
-        let mut processes = self.active_processes.write().await;
-        processes.insert(server_name.to_string(), process);
-
-        let mut activity = self.last_activity.write().await;
-        activity.insert(server_name.to_string(), Instant::now());
-
-        Ok(())
+        Ok(cmd)
     }
 }
 

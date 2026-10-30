@@ -1,8 +1,13 @@
 use crate::mcp::builtin::service_id::BuiltinServiceId;
+use crate::mcp::session_isolation::exec_target::StdioExecTarget;
+use crate::mcp::session_isolation::{SessionMCPError, SessionMCPManager};
+use crate::mcp::session_isolation_config::SessionIsolationConfig;
+use crate::mcp::types::TransportConfig;
 use crate::mcp::utils::sanitize_mcp_server_name;
 use crate::mcp::{MCPServerManager, MCPTool};
 use crate::repositories::mcp_server_repository::MCPServerRepository;
 use serde_json::Value;
+use std::collections::HashMap;
 use std::time::Duration;
 
 pub struct McpServerService;
@@ -116,6 +121,63 @@ impl McpServerService {
 
         // Return tools or error
         tools_result.map_err(|e| format!("Failed to list tools from '{}': {}", server_name, e))
+    }
+
+    /// Verifies `config` where `target` runs stdio servers. A Docker session tests a stdio
+    /// server in its container; everything else uses [`Self::verify_config`].
+    pub async fn verify_config_at(
+        config: crate::mcp::types::MCPServerConfig,
+        target: &StdioExecTarget,
+    ) -> Result<Vec<MCPTool>, String> {
+        match (target.container_session(), &config.transport) {
+            (Some(session), TransportConfig::Stdio { .. }) => {
+                Self::verify_stdio_in_container(config, &session.id).await
+            }
+            _ => Self::verify_config(config).await,
+        }
+    }
+
+    /// Starts the server through a short-lived session manager, so the test uses the same
+    /// container spawn (and missing-runtime message) as the tool calls of that session.
+    async fn verify_stdio_in_container(
+        config: crate::mcp::types::MCPServerConfig,
+        session_id: &str,
+    ) -> Result<Vec<MCPTool>, String> {
+        let server_name = config
+            .name
+            .clone()
+            .unwrap_or_else(|| "unnamed_server".to_string());
+        let (channel_event_tx, _channel_event_rx) =
+            crate::mcp::session_isolation::channel_events::create_channel_event_bus();
+        let manager = SessionMCPManager::new(
+            session_id.to_string(),
+            HashMap::from([(server_name.clone(), config)]),
+            SessionIsolationConfig::default(),
+            std::env::temp_dir(),
+            channel_event_tx,
+        );
+
+        let timeout = verify_config_timeout();
+        let result = tokio::time::timeout(
+            timeout,
+            manager.list_tools_with_init_timeout(&server_name, timeout),
+        )
+        .await;
+        manager.shutdown_all().await;
+
+        match result {
+            Ok(Ok(tools)) => Ok(tools),
+            Ok(Err(SessionMCPError::RuntimeMissing(message))) => Err(message),
+            Ok(Err(error)) => Err(format!(
+                "Failed to start '{}' in the session container: {}",
+                server_name, error
+            )),
+            Err(_) => Err(format!(
+                "Timed out starting '{}' in the session container after {}s",
+                server_name,
+                timeout.as_secs()
+            )),
+        }
     }
 
     /// Run connectivity verification in the background and notify the UI when done.

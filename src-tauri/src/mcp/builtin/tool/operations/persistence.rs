@@ -1,16 +1,28 @@
-use crate::mcp::types::MCPServerConfig;
+use crate::mcp::session_isolation::exec_target::StdioExecTarget;
+use crate::mcp::types::{MCPServerConfig, TransportConfig};
 use crate::mcp::utils::sanitize_mcp_server_name;
 use crate::repositories::mcp_server_repository::MCPServerRepository;
 use crate::services::McpServerService;
 use crate::state::get_mcp_server_repository;
 
+/// Result of testing a saved stdio server in the container of a Docker session.
+pub(super) enum ContainerCheck {
+    Passed { tool_count: usize },
+    Failed(String),
+}
+
 pub(super) struct SavedServer {
     pub id: String,
     /// Name the row is stored under; tool calls must use this, not the requested name.
     pub name: String,
+    /// Set when the save was tested in a session container instead of the global probe.
+    pub container_check: Option<ContainerCheck>,
 }
 
-pub(super) async fn save_server_config(config: &MCPServerConfig) -> Result<SavedServer, String> {
+pub(super) async fn save_server_config(
+    config: &MCPServerConfig,
+    target: &StdioExecTarget,
+) -> Result<SavedServer, String> {
     let repo = get_mcp_server_repository();
     let raw_name = config
         .name
@@ -64,14 +76,79 @@ pub(super) async fn save_server_config(config: &MCPServerConfig) -> Result<Saved
         }
     };
 
-    if needs_probe {
-        McpServerService::schedule_background_probe(id.clone());
-    }
+    let container_check = match verification_plan(needs_probe, target, config) {
+        VerificationPlan::None => None,
+        VerificationPlan::BackgroundProbe => {
+            McpServerService::schedule_background_probe(id.clone());
+            None
+        }
+        VerificationPlan::SessionContainer => {
+            let mut probe_config = config.clone();
+            probe_config.name = Some(stored_name.clone());
+            let verify = McpServerService::verify_config_at(probe_config, target);
+            Some(check_in_container(repo, &id, &stored_name, verify).await?)
+        }
+    };
 
     Ok(SavedServer {
         id,
         name: stored_name,
+        container_check,
     })
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum VerificationPlan {
+    None,
+    /// Global probe on the host; it sets `success` or `error` on the record.
+    BackgroundProbe,
+    /// Test in the Docker session container; only the response gets the result.
+    SessionContainer,
+}
+
+fn verification_plan(
+    needs_probe: bool,
+    target: &StdioExecTarget,
+    config: &MCPServerConfig,
+) -> VerificationPlan {
+    if !needs_probe {
+        return VerificationPlan::None;
+    }
+    let stdio = matches!(config.transport, TransportConfig::Stdio { .. });
+    if stdio && target.container_session().is_some() {
+        VerificationPlan::SessionContainer
+    } else {
+        VerificationPlan::BackgroundProbe
+    }
+}
+
+/// A container result belongs to one session, so a failure must not change the global record.
+/// The record gets no verification status (not `pending`: no background probe resolves it).
+async fn check_in_container(
+    repo: &dyn MCPServerRepository,
+    id: &str,
+    name: &str,
+    verify: impl std::future::Future<Output = Result<Vec<crate::mcp::MCPTool>, String>>,
+) -> Result<ContainerCheck, String> {
+    repo.clear_verification_status(id)
+        .await
+        .map_err(|e| format!("Failed to reset verification status: {}", e))?;
+
+    match verify.await {
+        Ok(tools) => {
+            let tools_json = crate::mcp::utils::serialize_mcp_tools(&tools);
+            if let Err(e) = repo
+                .update_cached_tools(id, tools.len() as i32, tools_json)
+                .await
+            {
+                log::warn!("Failed to cache tool list for '{}' ({}): {}", name, id, e);
+            }
+            Ok(ContainerCheck::Passed {
+                tool_count: tools.len(),
+            })
+        }
+        Err(error) => Ok(ContainerCheck::Failed(error)),
+    }
 }
 
 pub(super) async fn delete_server_config_db(id_or_name: String) -> Result<(), String> {
@@ -98,4 +175,97 @@ pub(super) async fn delete_server_config_db(id_or_name: String) -> Result<(), St
     let server = server.ok_or_else(|| format!("MCP server '{}' not found", id_or_name))?;
 
     McpServerService::delete_server_config(repo, &server.id).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mcp::session_isolation::exec_target::test_docker_session;
+    use crate::models::workspace_isolation::DockerWorkspaceConfig;
+    use crate::repositories::mcp_server_repository::SqliteMCPServerRepository;
+    use sea_orm::Database;
+    use sea_orm_migration::MigratorTrait;
+
+    async fn repo() -> SqliteMCPServerRepository {
+        crate::lifecycle::database::register_sqlite_vec();
+        let db = Database::connect("sqlite::memory:")
+            .await
+            .expect("memory db");
+        crate::migration::Migrator::up(&db, None)
+            .await
+            .expect("migrations");
+        SqliteMCPServerRepository::new(db)
+    }
+
+    fn stdio_config() -> MCPServerConfig {
+        serde_json::from_value(serde_json::json!({
+            "name": "srv",
+            "transport": { "type": "stdio", "command": "npx", "args": ["-y", "srv"] }
+        }))
+        .expect("config")
+    }
+
+    fn docker_target() -> StdioExecTarget {
+        StdioExecTarget::from_session(test_docker_session(DockerWorkspaceConfig {
+            image: Some("python:3.12-slim".to_string()),
+            attach_container: None,
+            workdir: None,
+            manage_lifecycle: None,
+            env: Default::default(),
+            port_bindings: Vec::new(),
+        }))
+    }
+
+    #[test]
+    fn docker_session_register_tests_in_container_not_background_probe() {
+        let config = stdio_config();
+        assert_eq!(
+            verification_plan(true, &docker_target(), &config),
+            VerificationPlan::SessionContainer
+        );
+        assert_eq!(
+            verification_plan(true, &StdioExecTarget::Host, &config),
+            VerificationPlan::BackgroundProbe
+        );
+        assert_eq!(
+            verification_plan(false, &docker_target(), &config),
+            VerificationPlan::None
+        );
+    }
+
+    #[test]
+    fn docker_session_http_server_keeps_background_probe() {
+        let config: MCPServerConfig = serde_json::from_value(serde_json::json!({
+            "name": "web",
+            "transport": { "type": "http", "url": "http://localhost:1/mcp" }
+        }))
+        .expect("config");
+        assert_eq!(
+            verification_plan(true, &docker_target(), &config),
+            VerificationPlan::BackgroundProbe
+        );
+    }
+
+    #[tokio::test]
+    async fn failed_container_check_leaves_no_pending_and_no_global_result() {
+        let repo = repo().await;
+        let created = repo
+            .create("srv", serde_json::to_value(stdio_config()).unwrap())
+            .await
+            .expect("create");
+        assert_eq!(created.verification_status.as_deref(), Some("pending"));
+
+        let check = check_in_container(&repo, &created.id, "srv", async {
+            Err("The command 'npx' is not in the session container.".to_string())
+        })
+        .await
+        .expect("check");
+
+        assert!(matches!(check, ContainerCheck::Failed(ref e) if e.contains("'npx'")));
+        let stored = repo.get(&created.id).await.unwrap().expect("record");
+        assert_eq!(stored.verification_status, None);
+        assert_eq!(stored.last_verification_error, None);
+        assert_eq!(stored.cached_tools, None);
+        assert_eq!(stored.tool_count, None);
+    }
 }

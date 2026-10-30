@@ -47,6 +47,9 @@ pub trait MCPServerRepository: Send + Sync {
 
     /// Persist a verification error for the given server.
     async fn set_verification_error(&self, id: &str, error: String) -> Result<(), DbError>;
+
+    /// Remove the verification status (the UI shows the server as not verified).
+    async fn clear_verification_status(&self, id: &str) -> Result<(), DbError>;
 }
 
 /// SQLite implementation of MCPServerRepository using SeaORM
@@ -237,6 +240,22 @@ impl MCPServerRepository for SqliteMCPServerRepository {
             let mut active: mcp_server::ActiveModel = model.into();
             active.verification_status = Set(Some("error".to_string()));
             active.last_verification_error = Set(Some(error));
+            active.updated_at = Set(now);
+            active.update(&self.db).await?;
+            Ok(())
+        } else {
+            Err(DbError::NotFound(format!("Server '{}' not found", id)))
+        }
+    }
+
+    async fn clear_verification_status(&self, id: &str) -> Result<(), DbError> {
+        let now = chrono::Utc::now().timestamp_millis();
+        let existing = mcp_server::Entity::find_by_id(id).one(&self.db).await?;
+
+        if let Some(model) = existing {
+            let mut active: mcp_server::ActiveModel = model.into();
+            active.verification_status = Set(None);
+            active.last_verification_error = Set(None);
             active.updated_at = Set(now);
             active.update(&self.db).await?;
             Ok(())

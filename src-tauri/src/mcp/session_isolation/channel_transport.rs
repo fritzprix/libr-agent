@@ -5,6 +5,7 @@ use rmcp::{
     transport::Transport,
 };
 use serde::{de::DeserializeOwned, Serialize};
+use std::collections::VecDeque;
 use std::marker::PhantomData;
 use std::process::Stdio;
 use std::sync::Arc;
@@ -18,12 +19,69 @@ use tokio_util::{
 };
 
 const MAX_WAIT_ON_DROP_SECS: u64 = 3;
+const EXIT_WAIT_AFTER_EOF_MS: u64 = 500;
+const STDERR_TAIL_LINES: usize = 20;
 
 type ClientStdioWriter = FramedWrite<ChildStdin, JsonRpcMessageCodec<TxJsonRpcMessage<RoleClient>>>;
 type ClientStdioWriterHandle = Arc<Mutex<Option<ClientStdioWriter>>>;
 
+#[derive(Debug, Default)]
+struct ChildExitState {
+    exit_code: Option<i32>,
+    stderr_tail: VecDeque<String>,
+}
+
+/// Exit code and last stderr lines of an MCP child, kept after the transport is handed to
+/// rmcp so a failed initialize can be explained (the MCP error itself only says "closed").
+#[derive(Debug, Clone, Default)]
+pub struct ChildExitReport(Arc<std::sync::Mutex<ChildExitState>>);
+
+impl ChildExitReport {
+    pub fn exit_code(&self) -> Option<i32> {
+        self.lock().exit_code
+    }
+
+    pub fn stderr_tail(&self) -> Vec<String> {
+        self.lock().stderr_tail.iter().cloned().collect()
+    }
+
+    pub(crate) fn record_exit_code(&self, code: Option<i32>) {
+        self.lock().exit_code = code;
+    }
+
+    pub(crate) fn push_stderr(&self, line: &str) {
+        let mut state = self.lock();
+        if state.stderr_tail.len() == STDERR_TAIL_LINES {
+            state.stderr_tail.pop_front();
+        }
+        state.stderr_tail.push_back(line.to_string());
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, ChildExitState> {
+        self.0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
 struct ChildWithCleanup {
     inner: Option<Child>,
+    /// Set when the child is a `docker exec` client: killing the client does not stop the
+    /// server process inside this container.
+    container: Option<String>,
+}
+
+impl ChildWithCleanup {
+    fn warn_if_left_in_container(&self, server_name: &str) {
+        if let Some(container) = &self.container {
+            log::warn!(
+                "MCP server '{}' did not stop after stdin closed; killed its docker exec client. \
+                 Its process may still run in container '{}'",
+                server_name,
+                container
+            );
+        }
+    }
 }
 
 impl Drop for ChildWithCleanup {
@@ -41,6 +99,8 @@ impl Drop for ChildWithCleanup {
 pub struct ChannelAwareStdioTransport {
     child: ChildWithCleanup,
     transport: ChannelAwareAsyncRwTransport,
+    server_name: String,
+    report: ChildExitReport,
 }
 
 struct ChannelAwareAsyncRwTransport {
@@ -60,6 +120,7 @@ impl ChannelAwareStdioTransport {
                         log::warn!("Error killing channel-aware MCP child: {error}");
                         return Err(error);
                     }
+                    self.child.warn_if_left_in_container(&self.server_name);
                 },
                 result = wait_fut => {
                     if let Err(error) = result {
@@ -73,10 +134,13 @@ impl ChannelAwareStdioTransport {
     }
 }
 
+/// Spawns `command` as a stdio MCP server. `container` names the session container when
+/// `command` is a `docker exec` client.
 pub fn spawn_channel_aware_stdio(
     mut command: tokio::process::Command,
     server_name: String,
     event_tx: ChannelEventSender,
+    container: Option<String>,
 ) -> std::io::Result<ChannelAwareStdioTransport> {
     configure_mcp_child_stdio(&mut command);
 
@@ -90,19 +154,48 @@ pub fn spawn_channel_aware_stdio(
         .take()
         .ok_or_else(|| std::io::Error::other("stdout was already taken"))?;
 
+    let report = ChildExitReport::default();
+
     // Observability only: draining piped stderr. Safe to change logging style,
     // but do NOT remove stderr piping from configure_mcp_child_stdio().
     if let Some(child_stderr) = child.stderr.take() {
-        spawn_stderr_logger(server_name.clone(), child_stderr);
+        spawn_stderr_logger(server_name.clone(), child_stderr, report.clone());
     }
 
     let transport =
-        ChannelAwareAsyncRwTransport::new(child_stdout, child_stdin, server_name, event_tx);
+        ChannelAwareAsyncRwTransport::new(child_stdout, child_stdin, server_name.clone(), event_tx);
 
     Ok(ChannelAwareStdioTransport {
-        child: ChildWithCleanup { inner: Some(child) },
+        child: ChildWithCleanup {
+            inner: Some(child),
+            container,
+        },
         transport,
+        server_name,
+        report,
     })
+}
+
+impl ChannelAwareStdioTransport {
+    /// Shared handle to the child's exit code and stderr tail; stays valid after `serve`.
+    pub fn exit_report(&self) -> ChildExitReport {
+        self.report.clone()
+    }
+
+    /// Called when stdout reaches EOF: the child is exiting, so record its exit code.
+    async fn record_exit_after_eof(&mut self) {
+        let Some(child) = self.child.inner.as_mut() else {
+            return;
+        };
+        let wait = tokio::time::timeout(
+            std::time::Duration::from_millis(EXIT_WAIT_AFTER_EOF_MS),
+            child.wait(),
+        )
+        .await;
+        if let Ok(Ok(status)) = wait {
+            self.report.record_exit_code(status.code());
+        }
+    }
 }
 
 /// Configure stdio pipes for session-isolated MCP child processes.
@@ -139,7 +232,11 @@ fn configure_mcp_child_stdio(command: &mut tokio::process::Command) {
 /// This logger is optional observability on top of piped stderr. Stdio MCP servers
 /// often print the real crash reason only on stderr; without draining/logging it,
 /// LibrAgent may only see `connection closed: initialize response`.
-fn spawn_stderr_logger(server_name: String, child_stderr: tokio::process::ChildStderr) {
+fn spawn_stderr_logger(
+    server_name: String,
+    child_stderr: tokio::process::ChildStderr,
+    report: ChildExitReport,
+) {
     tokio::spawn(async move {
         use tokio::io::{AsyncBufReadExt, BufReader};
 
@@ -150,6 +247,7 @@ fn spawn_stderr_logger(server_name: String, child_stderr: tokio::process::ChildS
                     let trimmed = line.trim();
                     if !trimmed.is_empty() {
                         log::warn!("[MCP stderr:{}] {}", server_name, trimmed);
+                        report.push_stderr(trimmed);
                     }
                 }
                 Ok(None) => break,
@@ -199,10 +297,12 @@ impl Transport<RoleClient> for ChannelAwareStdioTransport {
         self.transport.send(item)
     }
 
-    fn receive(
-        &mut self,
-    ) -> impl std::future::Future<Output = Option<RxJsonRpcMessage<RoleClient>>> + Send {
-        self.transport.receive()
+    async fn receive(&mut self) -> Option<RxJsonRpcMessage<RoleClient>> {
+        let message = self.transport.receive().await;
+        if message.is_none() {
+            self.record_exit_after_eof().await;
+        }
+        message
     }
 
     async fn close(&mut self) -> Result<(), Self::Error> {
