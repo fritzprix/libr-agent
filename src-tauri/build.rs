@@ -109,24 +109,37 @@ fn git_stdout(args: &[&str]) -> Option<String> {
     (!text.is_empty()).then(|| text.to_string())
 }
 
-/// The session image is published only for released versions. A build whose
-/// version has no release tag (dev or local build) uses the last release tag
-/// reachable from HEAD. Without git metadata, the package version is used.
+/// The session image is published only for release tags (`vX.Y.Z`, no pre-release).
+/// A build whose version has no release tag (dev, pre-release or local build) uses
+/// the last release tag reachable from HEAD. Without git metadata, the package
+/// version without its pre-release part is used.
 fn emit_session_image_tag() {
-    for path in ["../.git/HEAD", "../.git/packed-refs", "../.git/refs/tags"] {
-        if Path::new(path).exists() {
-            println!("cargo:rerun-if-changed={path}");
+    // `--git-path` resolves the files of a linked worktree too.
+    for name in ["HEAD", "packed-refs", "refs/tags"] {
+        if let Some(path) = git_stdout(&["rev-parse", "--git-path", name]) {
+            if Path::new(&path).exists() {
+                println!("cargo:rerun-if-changed={path}");
+            }
         }
     }
 
     let version = env!("CARGO_PKG_VERSION");
+    let is_release = !version.contains('-');
     let release_tag = format!("v{version}");
-    let tag = if git_stdout(&["tag", "--list", &release_tag]).is_some() {
+    let tag = if is_release && git_stdout(&["tag", "--list", &release_tag]).is_some() {
         version.to_string()
     } else {
-        git_stdout(&["describe", "--tags", "--abbrev=0", "--match", "v[0-9]*"])
-            .and_then(|tag| tag.strip_prefix('v').map(str::to_string))
-            .unwrap_or_else(|| version.to_string())
+        git_stdout(&[
+            "describe",
+            "--tags",
+            "--abbrev=0",
+            "--match",
+            "v[0-9]*",
+            "--exclude",
+            "*-*",
+        ])
+        .and_then(|tag| tag.strip_prefix('v').map(str::to_string))
+        .unwrap_or_else(|| version.split('-').next().unwrap_or(version).to_string())
     };
     println!("cargo:rustc-env=LIBRAGENT_SESSION_IMAGE_TAG={tag}");
 }

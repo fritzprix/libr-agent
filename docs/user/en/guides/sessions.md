@@ -66,8 +66,8 @@ When the session is **idle** (not streaming), the latest assistant message shows
 In the **New Session** draft, turn on **Use Docker Container** to run the session's shell commands and stdio MCP servers in a container instead of on your computer.
 
 - **Default image**: when you set no image (preset **LibrAgent**), the session uses `ghcr.io/fritzprix/libragent-session:<version>`. It contains bash, git, node with npm and npx, python3, and uv with uvx. It does not contain the docker CLI or build tools.
-- **Size**: the compressed download is about 150 MB on linux/amd64. The target is 200 MB or less on each architecture (linux/amd64, linux/arm64). The first session pulls the image once.
-- **Version**: the tag is the LibrAgent version. A development build uses the tag of the last released version. If that image is not available, the session start fails with an error that names the image. Set a different image to continue.
+- **Size**: the compressed download is about 152 MB (linux/amd64 and linux/arm64). The first session pulls the image once.
+- **Version**: the tag is the LibrAgent version. A development or pre-release build uses the tag of the last released version. The first published image is for LibrAgent 0.9.30; a development build made before that release has no default image. If that image is not available, the session start fails with an error that names the image. Set a different image to continue.
 - **Different image**: type an image name or select a preset. The session stores the image, so an app update does not change it. If the image does not have a runtime that a tool needs (for example `npx`), the session reports this when the tool starts.
 
 ---
