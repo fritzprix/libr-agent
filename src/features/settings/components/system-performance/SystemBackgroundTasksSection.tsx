@@ -162,6 +162,35 @@ function SystemBackgroundTasksSectionComponent({
         onValueChange={(value) => onChange('mcpToolTimeoutSeconds', value)}
         containerClassName="min-w-0"
       />
+
+      <NumberSettingField
+        label={t('settings.system.logRetentionDays', 'Keep App Logs (Days)')}
+        labelAdornment={
+          (localSystemSettings.logRetentionDays ?? 30) === 0 ? (
+            <Badge variant="outline" className="text-xs">
+              {t('settings.system.logRetentionDaysUnlimited', 'No limit')}
+            </Badge>
+          ) : undefined
+        }
+        description={t(
+          'settings.system.logRetentionDaysDescription',
+          'Delete saved app logs older than this number of days. Logs can contain your chat content. Set to 0 to keep logs by count and size limits only.',
+        )}
+        placeholder={t(
+          'settings.system.placeholders.logRetentionDays',
+          'e.g., 30',
+        )}
+        min={0}
+        value={localSystemSettings.logRetentionDays ?? 30}
+        parseValue={(rawValue) =>
+          parseIntegerInput(rawValue, {
+            fallback: 30,
+            min: 0,
+          })
+        }
+        onValueChange={(value) => onChange('logRetentionDays', value)}
+        containerClassName="min-w-0"
+      />
     </div>
   );
 }

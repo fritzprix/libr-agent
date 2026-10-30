@@ -135,7 +135,9 @@ fn should_sweep_stale_containers(data_dir_override: Option<&std::ffi::OsStr>) ->
 pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     // Setup custom file logger FIRST (before any log calls)
     let log_dir = app.path().app_log_dir()?;
-    logger::setup_file_logger(log_dir)?;
+    let log_retention_days =
+        tauri::async_runtime::block_on(SystemSettings::load_global()).log_retention_days;
+    logger::setup_file_logger(log_dir, log_retention_days)?;
 
     // Test if Rust logger is properly initialized
     log::info!("🔥 Logger initialized - testing Rust log to file");

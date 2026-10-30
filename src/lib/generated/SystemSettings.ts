@@ -13,4 +13,8 @@ scheduledTaskMinimumIntervalMinutes: number, shellIsolationLevel: IsolationLevel
 /**
  * Inhibit idle sleep while LibrAgent is running. Does not keep the display on.
  */
-preventSleepDuringAgentWork: boolean, };
+preventSleepDuringAgentWork: boolean, 
+/**
+ * Archived app logs older than this are deleted. `0` means no age limit.
+ */
+logRetentionDays: number, };

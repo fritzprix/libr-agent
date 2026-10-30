@@ -75,6 +75,7 @@ function getSystemComparableState(settings: SettingsFormState) {
       settings.system.scheduledTaskMinimumIntervalMinutes,
     httpServerPort: settings.system.httpServerPort,
     httpServerExpose: settings.system.httpServerExpose,
+    logRetentionDays: settings.system.logRetentionDays,
   };
 }
 

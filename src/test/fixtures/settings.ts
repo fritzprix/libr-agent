@@ -66,6 +66,7 @@ export const TEST_SYSTEM_SETTINGS: SystemSettings = {
   shellRuntimeBootstrap: false,
   skillsDirectory: '',
   preventSleepDuringAgentWork: true,
+  logRetentionDays: 30,
 };
 
 /** Complete settings for tests: frontend defaults plus the Rust-owned fixtures. */

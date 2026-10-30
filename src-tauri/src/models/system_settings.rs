@@ -53,6 +53,8 @@ pub struct SystemSettings {
     pub skills_directory: String,
     /// Inhibit idle sleep while LibrAgent is running. Does not keep the display on.
     pub prevent_sleep_during_agent_work: bool,
+    /// Archived app logs older than this are deleted. `0` means no age limit.
+    pub log_retention_days: u64,
 }
 
 impl Default for SystemSettings {
@@ -70,6 +72,7 @@ impl Default for SystemSettings {
             shell_runtime_bootstrap: false,
             skills_directory: String::new(),
             prevent_sleep_during_agent_work: true,
+            log_retention_days: 30,
         }
     }
 }
@@ -138,6 +141,7 @@ impl SystemSettings {
                 "preventSleepDuringAgentWork",
                 defaults.prevent_sleep_during_agent_work,
             ),
+            log_retention_days: parsed(&map, "logRetentionDays", defaults.log_retention_days),
         }
     }
 
@@ -176,8 +180,10 @@ mod tests {
     fn partial_row_keeps_present_fields_and_fills_the_rest() {
         let settings = SystemSettings::from_stored(Some(
             r#"{"maxFileUploadSizeMB":10,"httpServerPort":4000,"shellIsolationLevel":"high",
-                "scheduledTaskMinimumIntervalMinutes":15,"preventSleepDuringAgentWork":false}"#,
+                "scheduledTaskMinimumIntervalMinutes":15,"preventSleepDuringAgentWork":false,
+                "logRetentionDays":0}"#,
         ));
+        assert_eq!(settings.log_retention_days, 0);
         assert_eq!(settings.max_file_upload_size_mb, 10);
         assert_eq!(settings.http_server_port, 4000);
         assert_eq!(settings.shell_isolation_level, IsolationLevel::High);
@@ -214,7 +220,8 @@ mod tests {
         let keys = value.as_object().unwrap();
         assert!(keys.contains_key("maxFileUploadSizeMB"));
         assert!(keys.contains_key("mcpServerStartupTimeoutSeconds"));
-        assert_eq!(keys.len(), 12);
+        assert!(keys.contains_key("logRetentionDays"));
+        assert_eq!(keys.len(), 13);
         assert_eq!(
             SystemSettings::from_stored(Some(&value.to_string())),
             SystemSettings::default()
