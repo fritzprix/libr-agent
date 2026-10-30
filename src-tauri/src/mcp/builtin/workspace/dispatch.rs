@@ -69,10 +69,6 @@ impl WorkspaceServer {
             .clone()
             .unwrap_or_else(|| self.session_id.clone());
 
-        if !self.code_tools_profile().allows_shell_tool(tool_name) {
-            return Ok(self.shell_tool_unavailable_result(tool_name));
-        }
-
         if tool_name != "runShell" && args.get("asRoot").and_then(Value::as_bool) == Some(true) {
             return Ok(guided_error(
                 ErrorCategory::InvalidInput,
@@ -83,6 +79,10 @@ impl WorkspaceServer {
                 "Run the command with workspace__runShell and asRoot: true".to_string(),
             ])
             .to_mcp_result());
+        }
+
+        if !self.code_tools_profile().allows_shell_tool(tool_name) {
+            return Ok(self.shell_tool_unavailable_result(tool_name));
         }
 
         match tool_name {
