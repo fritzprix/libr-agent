@@ -43,9 +43,9 @@ pub(super) async fn ensure_bash_image_contract(
 ) -> RuntimeResult<ShellType> {
     if session_is_attach(session) {
         if !docker_container_exists(container_name).await? {
-            return Err(WorkspaceRuntimeError::DockerCommandFailed(format!(
-                "Attach container '{container_name}' was not found"
-            )));
+            return Err(WorkspaceRuntimeError::AttachContainerNotFound(
+                container_name.to_string(),
+            ));
         }
         if !docker_container_running(container_name).await? {
             if let Some(reporter) = reporter {
@@ -179,10 +179,30 @@ async fn ensure_image_available(image_ref: &str) -> RuntimeResult<()> {
         .await
         .map_err(|error| match error {
             WorkspaceRuntimeError::DockerCommandFailed(details) => {
-                WorkspaceRuntimeError::DockerCommandFailed(image_pull_failure(image_ref, &details))
+                let message = image_pull_failure(image_ref, &details);
+                if is_image_missing(&details) {
+                    WorkspaceRuntimeError::ImageNotFound(message)
+                } else {
+                    WorkspaceRuntimeError::DockerCommandFailed(message)
+                }
             }
             other => other,
         })
+}
+
+/// Registry answers that mean the image does not exist (or is not visible to this user).
+/// Network and daemon errors do not match, so they stay retryable.
+fn is_image_missing(details: &str) -> bool {
+    const MISSING_MARKERS: [&str; 4] = [
+        "manifest unknown",
+        "repository does not exist",
+        "pull access denied",
+        "invalid reference format",
+    ];
+    let details = details.to_ascii_lowercase();
+    MISSING_MARKERS
+        .iter()
+        .any(|marker| details.contains(marker))
 }
 
 fn image_pull_failure(image_ref: &str, details: &str) -> String {
@@ -376,5 +396,24 @@ mod image_pull_tests {
         let message = image_pull_failure("python:3.12-slim", "denied");
         assert!(message.contains("'python:3.12-slim'"), "{message}");
         assert!(!message.contains("settings"), "{message}");
+    }
+
+    #[test]
+    fn only_registry_not_found_answers_count_as_a_missing_image() {
+        for missing in [
+            "Error response from daemon: manifest for foo:1 not found: manifest unknown",
+            "Error response from daemon: pull access denied for nosuch, repository does not exist or may require 'docker login'",
+            "invalid reference format: repository name must be lowercase",
+        ] {
+            assert!(is_image_missing(missing), "{missing}");
+        }
+        for transient in [
+            "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
+            "Get \"https://registry-1.docker.io/v2/\": dial tcp: lookup registry-1.docker.io: no such host",
+            "net/http: TLS handshake timeout",
+            "toomanyrequests: You have reached your pull rate limit",
+        ] {
+            assert!(!is_image_missing(transient), "{transient}");
+        }
     }
 }

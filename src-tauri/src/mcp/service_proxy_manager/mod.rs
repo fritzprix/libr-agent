@@ -31,6 +31,7 @@ mod creation;
 mod lazy_proxy;
 mod management;
 mod proxy_config;
+mod retry_policy;
 mod runtime_updates;
 #[cfg(test)]
 mod test_helpers;
@@ -93,6 +94,9 @@ pub struct MCPServiceProxyManager {
     /// Saved server configs per session, used for retrying failed servers on session reuse or manual retry.
     session_server_configs: Arc<RwLock<HashMap<String, proxy_config::LoadedServerConfigs>>>,
 
+    /// Failure counts and backoff of failed servers, used to limit automatic retries.
+    server_retry_states: retry_policy::RetryStateStore,
+
     /// Sessions whose active process was stopped by a user cancel. The next
     /// foreground tool result consumes this marker and continues the workflow.
     process_cancel_pending: Arc<Mutex<HashSet<String>>>,
@@ -120,6 +124,7 @@ impl std::fmt::Debug for MCPServiceProxyManager {
             .field("config", &self.config)
             .field("proxy_readiness", &"<RwLock<HashMap>>")
             .field("runtime_states", &"<RwLock<HashMap>>")
+            .field("server_retry_states", &self.server_retry_states)
             .field("process_cancel_pending", &"<Mutex<HashSet<String>>>")
             .field(
                 "process_cancel_retry_states",

@@ -6,6 +6,7 @@ use crate::mcp::session_isolation::exec_target::{
 };
 use crate::mcp::session_isolation::process::MCPProcess;
 use crate::mcp::types::{MCPServerConfig, TransportConfig};
+use crate::services::workspace_runtime_manager::WorkspaceRuntimeError;
 use crate::services::WorkspaceRuntimeManager;
 use dashmap::DashMap;
 use log::{debug, error, info, warn};
@@ -20,6 +21,44 @@ use tokio_util::sync::CancellationToken;
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+/// Only failures that repeat until the user changes the session become `ContainerUnavailable`
+/// (no automatic retry). Daemon and network failures stay `SpawnFailed` (retried with backoff).
+fn container_prepare_error(error: WorkspaceRuntimeError) -> SessionMCPError {
+    if error.is_permanent() {
+        SessionMCPError::ContainerUnavailable(error.to_string())
+    } else {
+        SessionMCPError::SpawnFailed(error.to_string())
+    }
+}
+
+#[cfg(test)]
+mod container_prepare_error_tests {
+    use super::*;
+
+    #[test]
+    fn only_a_missing_image_or_attach_container_is_unavailable() {
+        for permanent in [
+            WorkspaceRuntimeError::ImageNotFound("Cannot pull Docker image 'x'".to_string()),
+            WorkspaceRuntimeError::AttachContainerNotFound("c".to_string()),
+        ] {
+            assert!(matches!(
+                container_prepare_error(permanent),
+                SessionMCPError::ContainerUnavailable(_)
+            ));
+        }
+        for transient in [
+            WorkspaceRuntimeError::DockerNotAvailable("daemon down".to_string()),
+            WorkspaceRuntimeError::DockerCommandFailed("dial tcp: i/o timeout".to_string()),
+            WorkspaceRuntimeError::Io("disk full".to_string()),
+        ] {
+            assert!(matches!(
+                container_prepare_error(transient),
+                SessionMCPError::SpawnFailed(_)
+            ));
+        }
+    }
+}
 
 impl SessionMCPManager {
     /// Creates a new SessionMCPManager for the given session.
@@ -151,7 +190,7 @@ impl SessionMCPManager {
                 let docker =
                     WorkspaceRuntimeManager::create_docker_mcp_command(session, command, args, env)
                         .await
-                        .map_err(|e| SessionMCPError::SpawnFailed(e.to_string()))?;
+                        .map_err(container_prepare_error)?;
                 let exec = ContainerExec {
                     container: docker.container,
                     env_file: docker.env_file,
