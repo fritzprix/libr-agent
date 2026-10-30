@@ -298,7 +298,7 @@ static SESSION_API_KEY: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::L
 
 /// Failure text that is safe to store and return to Session API callers: session env values,
 /// wake tokens, and session API keys are replaced, and the text is cut to a fixed length.
-fn failure_reason(session: &SessionMetadata, error: &str) -> String {
+pub(crate) fn failure_reason(session: &SessionMetadata, error: &str) -> String {
     let mut reason = crate::server::wake::redact_wake_tokens(&session.id, error).into_owned();
     reason = SESSION_API_KEY
         .replace_all(&reason, "[redacted]")

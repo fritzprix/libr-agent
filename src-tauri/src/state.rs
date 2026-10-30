@@ -561,6 +561,11 @@ pub fn get_session_bus() -> &'static SessionBus {
         .expect("SessionBus not initialized. Call init_session_bus() first.")
 }
 
+/// Get the global `SessionBus` if it is initialized.
+pub fn try_get_session_bus() -> Option<&'static SessionBus> {
+    SESSION_BUS.get()
+}
+
 // ── SP2: ConcurrencyGate ──────────────────────────────────────────────────────
 
 /// Initialize the global `ConcurrencyGate`.  Called once during application setup

@@ -69,10 +69,29 @@ pub async fn resume_session(
                 &session,
             )
             .await?;
-        } else {
-            crate::services::WorkspaceRuntimeManager::ensure_runtime_cached(&session)
-                .await
-                .map_err(|error| error.to_string())?;
+        } else if let Err(error) =
+            crate::services::WorkspaceRuntimeManager::ensure_runtime_cached(&session).await
+        {
+            // Store this failure: an older reason may name a different cause.
+            let reason =
+                crate::services::docker_provisioning::failure_reason(&session, &error.to_string());
+            let dispatcher = TauriEventDispatcher::new(app_handle.clone());
+            if let Err(record_error) = record_session_error_with_dispatcher(
+                session_repo,
+                active_sessions,
+                &dispatcher,
+                session_id,
+                &reason,
+            )
+            .await
+            {
+                log::warn!(
+                    "Failed to record Docker runtime failure for session {}: {}",
+                    session_id,
+                    record_error
+                );
+            }
+            return Err(reason);
         }
     }
 
@@ -249,6 +268,42 @@ pub async fn update_session_status_with_reason(
     .await
 }
 
+/// Sets `Error` with `reason` for a session that may not be loaded in memory (for example when
+/// loading it failed). Loaded sessions take the normal status transition.
+pub async fn record_session_error_with_dispatcher(
+    session_repo: &Arc<dyn SessionRepository>,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    dispatcher: &dyn AgentEventDispatcher,
+    session_id: &str,
+    reason: &str,
+) -> Result<(), String> {
+    let is_active = active_sessions.read().await.contains_key(session_id);
+    if is_active {
+        return apply_session_status(
+            session_repo,
+            active_sessions,
+            dispatcher,
+            session_id,
+            SessionStatus::Error,
+            Some(reason),
+        )
+        .await;
+    }
+
+    session_repo
+        .update_status(session_id, SessionStatus::Error, Some(reason))
+        .await
+        .map_err(|error| format!("Failed to update session status: {}", error))?;
+    if let Some(bus) = crate::state::try_get_session_bus() {
+        bus.notify_status_change(session_id);
+    }
+    dispatcher.emit_agent_event(AgentEvent::StatusChanged {
+        session_id: session_id.to_string(),
+        status: SessionStatus::Error,
+        status_reason: Some(reason.to_string()),
+    })
+}
+
 pub async fn update_session_status_with_dispatcher(
     session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
@@ -406,4 +461,81 @@ async fn apply_session_status(
     dispatcher.emit_agent_event(event)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::repositories::InMemorySessionRepository;
+    use std::sync::Mutex;
+
+    #[derive(Default)]
+    struct RecordingDispatcher {
+        events: Mutex<Vec<AgentEvent>>,
+    }
+
+    impl AgentEventDispatcher for RecordingDispatcher {
+        fn emit_agent_event(&self, event: AgentEvent) -> Result<(), String> {
+            self.events.lock().expect("event lock").push(event);
+            Ok(())
+        }
+
+        fn emit_compact_state(
+            &self,
+            _event: crate::agent::llm::types::CompactStateEvent,
+        ) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn a_later_failure_replaces_the_old_status_reason_of_an_unloaded_session() {
+        let repo: Arc<dyn SessionRepository> = Arc::new(InMemorySessionRepository::new());
+        let session = SessionMetadata {
+            status: SessionStatus::Error,
+            status_reason: Some("container libr-old was removed".to_string()),
+            ..SessionMetadata::test_fixture("errored-session")
+        };
+        repo.upsert_session(&session).await.expect("upsert");
+        let active_sessions = Arc::new(RwLock::new(HashMap::new()));
+        let dispatcher = RecordingDispatcher::default();
+
+        let reason = crate::services::docker_provisioning::failure_reason(
+            &session,
+            "Cannot connect to the Docker daemon",
+        );
+        record_session_error_with_dispatcher(
+            &repo,
+            &active_sessions,
+            &dispatcher,
+            "errored-session",
+            &reason,
+        )
+        .await
+        .expect("record failure");
+
+        let stored = repo
+            .get_session("errored-session")
+            .await
+            .expect("get")
+            .expect("session");
+        assert_eq!(stored.status, SessionStatus::Error);
+        assert_eq!(stored.status_reason.as_deref(), Some(reason.as_str()));
+        assert!(reason.contains("Cannot connect to the Docker daemon"));
+
+        let events = dispatcher.events.lock().expect("event lock").clone();
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            AgentEvent::StatusChanged {
+                session_id,
+                status,
+                status_reason,
+            } => {
+                assert_eq!(session_id, "errored-session");
+                assert_eq!(*status, SessionStatus::Error);
+                assert_eq!(status_reason.as_deref(), Some(reason.as_str()));
+            }
+            other => panic!("unexpected event: {:?}", other),
+        }
+    }
 }
