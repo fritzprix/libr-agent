@@ -264,6 +264,7 @@ pub async fn update_session_status_with_reason(
         session_id,
         status,
         Some(reason),
+        false,
     )
     .await
 }
@@ -310,6 +311,7 @@ pub async fn record_session_error_with_dispatcher(
         session_id,
         SessionStatus::Error,
         Some(reason),
+        true,
     )
     .await
 }
@@ -347,10 +349,13 @@ pub async fn update_session_status_with_dispatcher(
         session_id,
         status,
         None,
+        false,
     )
     .await
 }
 
+/// With `skip_if_busy`, a session that is `Busy` once the transition lock is held keeps its
+/// status and permit, and the call returns `Ok(())`.
 async fn apply_session_status(
     session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
@@ -358,6 +363,7 @@ async fn apply_session_status(
     session_id: &str,
     status: SessionStatus,
     reason: Option<&str>,
+    skip_if_busy: bool,
 ) -> Result<(), String> {
     // Acquire concurrency permits OUTSIDE `transition_lock`. Waiting on a full
     // gate while holding the lock deadlocks cancel/clear for the same session
@@ -402,6 +408,15 @@ async fn apply_session_status(
             initial_status
         }
     };
+    if skip_if_busy && prev_status == SessionStatus::Busy {
+        *transition_handle.write().await = None;
+        log::info!(
+            "Session {} is running; not changing its status to {:?}",
+            session_id,
+            status
+        );
+        return Ok(());
+    }
     let is_prev_busy = prev_status == SessionStatus::Busy;
     let is_next_busy = status == SessionStatus::Busy;
     let mut acquired_permit: Option<ActiveAgentPermit> = pre_acquired_permit.take();
@@ -568,20 +583,65 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn a_failure_does_not_change_a_running_session() {
+    async fn running_session(
+        session_id: &str,
+        gate: &crate::agent::concurrency::ConcurrencyGate,
+    ) -> (
+        Arc<dyn SessionRepository>,
+        Arc<RwLock<HashMap<String, AgentSession>>>,
+    ) {
         let repo: Arc<dyn SessionRepository> = Arc::new(InMemorySessionRepository::new());
         let session = SessionMetadata {
             status: SessionStatus::Busy,
-            ..SessionMetadata::test_fixture("running-session")
+            ..SessionMetadata::test_fixture(session_id)
         };
         repo.upsert_session(&session).await.expect("upsert");
         let mut loaded = AgentSession::new(session, Arc::new(ContextRegistry::new()), None);
         loaded.is_running = true;
+        loaded.active_permit = Some(gate.acquire_active_agent().await.expect("permit"));
         let active_sessions = Arc::new(RwLock::new(HashMap::from([(
-            "running-session".to_string(),
+            session_id.to_string(),
             loaded,
         )])));
+        (repo, active_sessions)
+    }
+
+    async fn assert_still_running(
+        repo: &Arc<dyn SessionRepository>,
+        active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+        dispatcher: &RecordingDispatcher,
+        gate: &crate::agent::concurrency::ConcurrencyGate,
+        session_id: &str,
+    ) {
+        let stored = repo
+            .get_session(session_id)
+            .await
+            .expect("get")
+            .expect("session");
+        assert_eq!(stored.status, SessionStatus::Busy);
+        assert_eq!(stored.status_reason, None);
+        {
+            let active = active_sessions.read().await;
+            let loaded = active.get(session_id).expect("loaded session");
+            assert_eq!(loaded.metadata.status, SessionStatus::Busy);
+            assert!(loaded.is_running);
+            assert!(loaded.active_permit.is_some());
+            assert!(loaded.status_transition.read().await.is_none());
+        }
+        // The gate has one slot, so a second permit is only free if the session lost its own.
+        let second_permit = tokio::time::timeout(
+            std::time::Duration::from_millis(20),
+            gate.acquire_active_agent(),
+        )
+        .await;
+        assert!(second_permit.is_err(), "the session's permit was released");
+        assert!(dispatcher.events.lock().expect("event lock").is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_failure_does_not_change_a_running_session() {
+        let gate = crate::agent::concurrency::ConcurrencyGate::new(1, 1, 1, 1);
+        let (repo, active_sessions) = running_session("running-session", &gate).await;
         let dispatcher = RecordingDispatcher::default();
 
         record_session_error_with_dispatcher(
@@ -594,17 +654,34 @@ mod tests {
         .await
         .expect("record failure");
 
-        let stored = repo
-            .get_session("running-session")
-            .await
-            .expect("get")
-            .expect("session");
-        assert_eq!(stored.status, SessionStatus::Busy);
-        assert_eq!(stored.status_reason, None);
-        let active = active_sessions.read().await;
-        let loaded = active.get("running-session").expect("loaded session");
-        assert_eq!(loaded.metadata.status, SessionStatus::Busy);
-        assert!(loaded.is_running);
-        assert!(dispatcher.events.lock().expect("event lock").is_empty());
+        assert_still_running(
+            &repo,
+            &active_sessions,
+            &dispatcher,
+            &gate,
+            "running-session",
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn skip_if_busy_leaves_a_session_that_is_busy_under_the_transition_lock() {
+        let gate = crate::agent::concurrency::ConcurrencyGate::new(1, 1, 1, 1);
+        let (repo, active_sessions) = running_session("busy-session", &gate).await;
+        let dispatcher = RecordingDispatcher::default();
+
+        apply_session_status(
+            &repo,
+            &active_sessions,
+            &dispatcher,
+            "busy-session",
+            SessionStatus::Error,
+            Some("No such container: libr-gone"),
+            true,
+        )
+        .await
+        .expect("apply status");
+
+        assert_still_running(&repo, &active_sessions, &dispatcher, &gate, "busy-session").await;
     }
 }
