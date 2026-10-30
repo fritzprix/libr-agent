@@ -56,9 +56,6 @@ pub async fn message_to_session(
     args: Value,
     caller_session_id: &str,
 ) -> Result<MCPResult, String> {
-    let manager = server
-        .get_manager()
-        .ok_or("AgentSessionManager not available")?;
     let session_ref = match read_required_string(&args, "sessionId") {
         Ok(value) => value,
         Err(result) => return Ok(result),
@@ -71,6 +68,9 @@ pub async fn message_to_session(
         Ok(level) => level,
         Err(result) => return Ok(result),
     };
+    let manager = server
+        .get_manager()
+        .ok_or("AgentSessionManager not available")?;
     let reset = args.get("reset").and_then(|v| v.as_bool()).unwrap_or(false);
     let (wait_for_response, timeout_seconds) = match parse_message_to_session_wait_config(&args) {
         Ok(config) => config,

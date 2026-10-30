@@ -25,6 +25,18 @@ async fn spawn_session_impl(
     caller_session_id: &str,
     tool_name: &str,
 ) -> Result<MCPResult, String> {
+    let assistant_id = match read_required_string(&args, "configId") {
+        Ok(value) => value,
+        Err(result) => return Ok(result),
+    };
+    let task = match read_required_string(&args, "task") {
+        Ok(value) => value,
+        Err(result) => return Ok(result),
+    };
+    let complexity = match read_complexity(&args) {
+        Ok(level) => level,
+        Err(result) => return Ok(result),
+    };
     let manager = server
         .get_manager()
         .ok_or("AgentSessionManager not available")?;
@@ -45,18 +57,6 @@ async fn spawn_session_impl(
     };
 
     let explicit_org = caller_explicit_org.clone();
-    let assistant_id = match read_required_string(&args, "configId") {
-        Ok(value) => value,
-        Err(result) => return Ok(result),
-    };
-    let task = match read_required_string(&args, "task") {
-        Ok(value) => value,
-        Err(result) => return Ok(result),
-    };
-    let complexity = match read_complexity(&args) {
-        Ok(level) => level,
-        Err(result) => return Ok(result),
-    };
     let resolved_model = resolve_model_for_complexity(complexity).await?;
     let requested_workspace_override = args
         .get("workspaceOverride")
