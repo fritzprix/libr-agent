@@ -136,10 +136,11 @@ fn create_integration_manager() -> SessionMCPManager {
 async fn test_lazy_spawn() {
     // Skip if python3 is not available in this environment (CI/CD safety).
     // Using an upfront check avoids silently passing after all assertions are skipped.
-    if std::process::Command::new("python3")
+    if !std::process::Command::new("python3")
         .arg("--version")
         .output()
-        .is_err()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
     {
         eprintln!("Skipping integration test: python3 not available");
         return;
@@ -178,10 +179,11 @@ async fn test_multiple_spawn_attempts_are_serialized() {
     // Skip if python3 is not available. Checking upfront ensures that if the
     // dependency is missing, the test skips cleanly rather than silently passing
     // after all 5 concurrent spawn attempts fail inside the loop.
-    if std::process::Command::new("python3")
+    if !std::process::Command::new("python3")
         .arg("--version")
         .output()
-        .is_err()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
     {
         eprintln!("Skipping integration test: python3 not available");
         return;
@@ -217,10 +219,11 @@ async fn test_multiple_spawn_attempts_are_serialized() {
 
 #[tokio::test]
 async fn test_spawn_uses_session_workspace_as_cwd() {
-    if std::process::Command::new("python3")
+    if !std::process::Command::new("python3")
         .arg("--version")
         .output()
-        .is_err()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
     {
         eprintln!("Skipping integration test: python3 not available");
         return;

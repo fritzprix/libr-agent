@@ -344,11 +344,14 @@ mod tests {
             assert!(platform.distro.is_some(), "Linux distro should be detected");
         }
 
-        // Verify package manager detection
-        assert!(
-            platform.package_manager.is_some(),
-            "Package manager should be detected on most systems"
-        );
+        // Verify package manager detection (Unix-like systems always have one; Windows may not have choco/scoop/winget)
+        #[cfg(not(target_os = "windows"))]
+        {
+            assert!(
+                platform.package_manager.is_some(),
+                "Package manager should be detected on most systems"
+            );
+        }
 
         // Verify installed tools map is populated
         assert!(
