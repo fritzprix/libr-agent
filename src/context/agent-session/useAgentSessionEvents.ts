@@ -247,8 +247,9 @@ export function useAgentSessionEvents(
               case 'statusChanged': {
                 const newStatus = payload.status;
                 setters.setWorkflowStatus(newStatus);
+                const statusReason = payload.statusReason ?? undefined;
                 setters.setSession((prev) =>
-                  prev ? { ...prev, status: newStatus } : null,
+                  prev ? { ...prev, status: newStatus, statusReason } : null,
                 );
 
                 if (newStatus === 'busy' || newStatus === 'queued') {

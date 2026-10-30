@@ -228,12 +228,52 @@ pub async fn update_session_status(
     .await
 }
 
+/// Like [`update_session_status`], and stores why the session has the new status.
+pub async fn update_session_status_with_reason(
+    session_repo: &Arc<dyn SessionRepository>,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    app_handle: &AppHandle,
+    session_id: &str,
+    status: SessionStatus,
+    reason: &str,
+) -> Result<(), String> {
+    let dispatcher = TauriEventDispatcher::new(app_handle.clone());
+    apply_session_status(
+        session_repo,
+        active_sessions,
+        &dispatcher,
+        session_id,
+        status,
+        Some(reason),
+    )
+    .await
+}
+
 pub async fn update_session_status_with_dispatcher(
     session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     dispatcher: &dyn AgentEventDispatcher,
     session_id: &str,
     status: SessionStatus,
+) -> Result<(), String> {
+    apply_session_status(
+        session_repo,
+        active_sessions,
+        dispatcher,
+        session_id,
+        status,
+        None,
+    )
+    .await
+}
+
+async fn apply_session_status(
+    session_repo: &Arc<dyn SessionRepository>,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    dispatcher: &dyn AgentEventDispatcher,
+    session_id: &str,
+    status: SessionStatus,
+    reason: Option<&str>,
 ) -> Result<(), String> {
     // Acquire concurrency permits OUTSIDE `transition_lock`. Waiting on a full
     // gate while holding the lock deadlocks cancel/clear for the same session
@@ -321,7 +361,9 @@ pub async fn update_session_status_with_dispatcher(
         drop(permit);
     }
 
-    let persist_result = session_repo.update_status(session_id, status.clone()).await;
+    let persist_result = session_repo
+        .update_status(session_id, status.clone(), reason)
+        .await;
 
     if let Err(error) = persist_result {
         let mut active = active_sessions.write().await;
@@ -344,6 +386,7 @@ pub async fn update_session_status_with_dispatcher(
             session.active_permit = Some(permit);
         }
         session.metadata.status = status.clone();
+        session.metadata.status_reason = reason.map(str::to_string);
         // SP3: Update is_running based on status.
         // Busy means the workflow is active/running.
         session.is_running = status == SessionStatus::Busy;
@@ -358,6 +401,7 @@ pub async fn update_session_status_with_dispatcher(
     let event = AgentEvent::StatusChanged {
         session_id: session_id.to_string(),
         status,
+        status_reason: reason.map(str::to_string),
     };
     dispatcher.emit_agent_event(event)?;
 

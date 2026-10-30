@@ -47,6 +47,8 @@ mod tests {
         // Initialize DB with a file to debug persistence issues
         let temp_dir = std::env::temp_dir();
         let db_path = temp_dir.join("libragent_test.db");
+        // A file from an earlier run keeps its old schema; tables below come from the entities.
+        let _ = std::fs::remove_file(&db_path);
         let db_url = format!(
             "sqlite://{}?mode=rwc",
             db_path.to_string_lossy().replace('\\', "/")

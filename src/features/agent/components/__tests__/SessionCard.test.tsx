@@ -67,6 +67,28 @@ describe('SessionCard', () => {
     ).toBeInTheDocument();
   });
 
+  it('shows the stored reason of an error session', () => {
+    const reason = "Attach container 'dev-box' was not found";
+
+    const { rerender } = render(
+      <SessionCard
+        session={{ ...mockSession, status: 'error', statusReason: reason }}
+        onResume={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(reason)).toHaveAttribute('title', reason);
+
+    rerender(
+      <SessionCard
+        session={{ ...mockSession, status: 'idle', statusReason: reason }}
+        onResume={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText(reason)).not.toBeInTheDocument();
+  });
+
   it('displays tooltip on delete button hover', async () => {
     const onResume = vi.fn();
     const onDelete = vi.fn();

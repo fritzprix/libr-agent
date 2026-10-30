@@ -9,6 +9,7 @@ export interface AgentEventPayload {
   type: string;
   sessionId?: string;
   status?: AgentSession['status'];
+  statusReason?: string | null;
   message?: {
     role: 'user' | 'assistant' | 'system' | 'tool';
     createdAt: number;
@@ -86,6 +87,7 @@ const handleStatusChanged: AgentEventHandler = (payload, deps) => {
   deps.applySessionUpdate(payload.sessionId, (session) => ({
     ...session,
     status: nextStatus,
+    statusReason: payload.statusReason ?? undefined,
     provisioningStep:
       nextStatus === 'provisioning' ? session.provisioningStep : undefined,
   }));

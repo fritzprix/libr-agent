@@ -69,6 +69,8 @@ pub enum AgentEvent {
     StatusChanged {
         session_id: String,
         status: SessionStatus,
+        /// Stored reason for the new status; `None` when the status has no reason.
+        status_reason: Option<String>,
     },
 
     /// Message added to session (includes full message for immediate UI update)
@@ -219,7 +221,9 @@ pub(crate) fn summarize_agent_event(event: &AgentEvent) -> String {
         AgentEvent::WorkflowError { session_id, .. } => {
             format!("WorkflowError(session={session_id})")
         }
-        AgentEvent::StatusChanged { session_id, status } => {
+        AgentEvent::StatusChanged {
+            session_id, status, ..
+        } => {
             format!("StatusChanged(session={session_id}, status={status:?})")
         }
         AgentEvent::MessageAdded { session_id, message } => {

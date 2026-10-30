@@ -42,6 +42,7 @@ fn sample_metadata(mode: ExecutionMode) -> SessionMetadata {
         docker_config: None,
         docker_container_name: None,
         docker_host_workspace_path: None,
+        status_reason: None,
     }
 }
 

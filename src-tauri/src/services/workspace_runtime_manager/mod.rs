@@ -597,6 +597,7 @@ mod exec_env_tests {
             }),
             docker_container_name: Some("libragent-session-s1".to_string()),
             docker_host_workspace_path: Some("/tmp/s1".to_string()),
+            status_reason: None,
         }
     }
 

@@ -186,6 +186,10 @@ pub struct SessionMetadata {
     pub docker_config: Option<DockerWorkspaceConfig>,
     pub docker_container_name: Option<String>,
     pub docker_host_workspace_path: Option<String>,
+    /// Why the session has its current status (for example a Docker setup failure).
+    /// Any status change without a reason clears it.
+    #[serde(default)]
+    pub status_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -257,6 +261,7 @@ impl TryFrom<session::Model> for SessionMetadata {
             docker_config,
             docker_container_name: model.docker_container_name,
             docker_host_workspace_path: model.docker_host_workspace_path,
+            status_reason: model.status_reason,
         })
     }
 }
@@ -270,8 +275,13 @@ pub trait SessionRepository: Send + Sync {
     /// Get session metadata by ID
     async fn get_session(&self, session_id: &str) -> Result<Option<SessionMetadata>, DbError>;
 
-    /// Update session status
-    async fn update_status(&self, session_id: &str, status: SessionStatus) -> Result<(), DbError>;
+    /// Update session status and replace its status reason (`None` clears it).
+    async fn update_status(
+        &self,
+        session_id: &str,
+        status: SessionStatus,
+        reason: Option<&str>,
+    ) -> Result<(), DbError>;
 
     /// Update session configuration (model and/or provider)
     async fn update_session_config(
@@ -444,6 +454,7 @@ impl SqliteSessionRepository {
             docker_config_json: Set(docker_config_json),
             docker_container_name: Set(session.docker_container_name.clone()),
             docker_host_workspace_path: Set(session.docker_host_workspace_path.clone()),
+            status_reason: Set(session.status_reason.clone()),
         })
     }
 
@@ -483,12 +494,18 @@ impl SessionRepository for SqliteSessionRepository {
         }
     }
 
-    async fn update_status(&self, session_id: &str, status: SessionStatus) -> Result<(), DbError> {
+    async fn update_status(
+        &self,
+        session_id: &str,
+        status: SessionStatus,
+        reason: Option<&str>,
+    ) -> Result<(), DbError> {
         let now = chrono::Utc::now().timestamp_millis();
 
         session::ActiveModel {
             id: Set(session_id.to_string()),
             status: Set(status.as_str().to_string()),
+            status_reason: Set(reason.map(str::to_string)),
             updated_at: Set(now),
             ..Default::default()
         }
@@ -874,6 +891,7 @@ impl SessionMetadata {
             docker_config: None,
             docker_container_name: None,
             docker_host_workspace_path: None,
+            status_reason: None,
         }
     }
 }

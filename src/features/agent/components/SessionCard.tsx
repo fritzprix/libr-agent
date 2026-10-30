@@ -368,6 +368,14 @@ export const SessionCard = memo(function SessionCard({
                 {session.provisioningStep}
               </span>
             ) : null}
+            {session.status === 'error' && session.statusReason ? (
+              <span
+                className="text-[10px] text-destructive truncate max-w-[180px]"
+                title={session.statusReason}
+              >
+                {session.statusReason}
+              </span>
+            ) : null}
           </div>
         </div>
 

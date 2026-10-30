@@ -86,6 +86,7 @@ async fn test_playbook_ui_rendering_integration() {
         docker_config_json: Set(None),
         docker_container_name: Set(None),
         docker_host_workspace_path: Set(None),
+        status_reason: Set(None),
     };
     session::Entity::insert(new_session)
         .exec(db.as_ref())
@@ -247,6 +248,7 @@ async fn test_playbook_ui_interaction_flow() {
         docker_config_json: Set(None),
         docker_container_name: Set(None),
         docker_host_workspace_path: Set(None),
+        status_reason: Set(None),
     };
     session::Entity::insert(new_session)
         .exec(db.as_ref())
@@ -387,6 +389,7 @@ async fn test_playbook_listing_respects_sorting_and_bookmark_priority() {
         docker_config_json: Set(None),
         docker_container_name: Set(None),
         docker_host_workspace_path: Set(None),
+        status_reason: Set(None),
     };
     session::Entity::insert(new_session)
         .exec(db.as_ref())

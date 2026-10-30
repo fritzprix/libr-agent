@@ -75,6 +75,7 @@ async fn docker_workspace_run_shell_smoke_test() {
         }),
         docker_container_name: Some(container_name.clone()),
         docker_host_workspace_path: Some(workspace_path.to_string_lossy().to_string()),
+        status_reason: None,
     };
 
     repo.upsert_session(&session)
@@ -189,6 +190,7 @@ async fn docker_workspace_persistent_shell_smoke_test() {
         }),
         docker_container_name: Some(container_name.clone()),
         docker_host_workspace_path: Some(workspace_path.to_string_lossy().to_string()),
+        status_reason: None,
     };
 
     repo.upsert_session(&session)
@@ -313,6 +315,7 @@ async fn docker_workspace_loopback_dynamic_port_smoke_test() {
         }),
         docker_container_name: Some(container_name.clone()),
         docker_host_workspace_path: Some(workspace_path.to_string_lossy().to_string()),
+        status_reason: None,
     };
 
     repo.upsert_session(&session)
@@ -398,6 +401,7 @@ async fn docker_workspace_sh_fallback_smoke_test() {
         }),
         docker_container_name: Some(container_name.clone()),
         docker_host_workspace_path: Some(workspace_path.to_string_lossy().to_string()),
+        status_reason: None,
     };
 
     repo.upsert_session(&session)

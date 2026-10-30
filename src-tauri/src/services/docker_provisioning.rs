@@ -247,6 +247,7 @@ async fn fail_docker_provisioning(
         .docker_config
         .as_ref()
         .and_then(docker_runtime_image_label);
+    let reason = failure_reason(session, error);
 
     emit_docker_runtime_step(
         &deps.proxy_manager,
@@ -257,7 +258,7 @@ async fn fail_docker_provisioning(
             step: "Docker workspace setup failed",
             failed: true,
             is_final: false,
-            error: Some(error),
+            error: Some(&reason),
         },
     )
     .await;
@@ -271,16 +272,55 @@ async fn fail_docker_provisioning(
         return Ok(());
     }
 
-    crate::agent::lifecycle::update_session_status(
+    crate::agent::lifecycle::update_session_status_with_reason(
         &deps.session_repo,
         &deps.active_sessions,
         &deps.app_handle,
         &session.id,
         SessionStatus::Error,
+        &reason,
     )
     .await?;
 
     Ok(())
+}
+
+const MAX_STORED_REASON_CHARS: usize = 2_000;
+/// Shorter env values (flags such as `1` or `true`) are not secrets and stay readable.
+const MIN_REDACTED_ENV_VALUE_CHARS: usize = 4;
+static SESSION_API_KEY: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(|| {
+    regex::Regex::new(&format!(
+        "{}[0-9A-Za-z]+",
+        regex::escape(crate::server::api_key::KEY_PREFIX)
+    ))
+    .expect("valid session API key regex")
+});
+
+/// Failure text that is safe to store and return to Session API callers: session env values,
+/// wake tokens, and session API keys are replaced, and the text is cut to a fixed length.
+fn failure_reason(session: &SessionMetadata, error: &str) -> String {
+    let mut reason = crate::server::wake::redact_wake_tokens(&session.id, error).into_owned();
+    reason = SESSION_API_KEY
+        .replace_all(&reason, "[redacted]")
+        .into_owned();
+    if let Some(config) = &session.docker_config {
+        let mut values: Vec<&str> = config
+            .env
+            .values()
+            .map(String::as_str)
+            .filter(|value| value.chars().count() >= MIN_REDACTED_ENV_VALUE_CHARS)
+            .collect();
+        // A value inside a longer value must not leave the rest of the longer one readable.
+        values.sort_by_key(|value| std::cmp::Reverse(value.len()));
+        for value in values {
+            reason = reason.replace(value, "[redacted]");
+        }
+    }
+    if reason.chars().count() > MAX_STORED_REASON_CHARS {
+        reason = reason.chars().take(MAX_STORED_REASON_CHARS).collect();
+        reason.push('…');
+    }
+    reason
 }
 
 async fn emit_docker_runtime_step(
@@ -434,4 +474,66 @@ async fn drain_and_start_pending_workflows(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::workspace_isolation::DockerWorkspaceConfig;
+
+    fn docker_session(env: &[(&str, &str)]) -> SessionMetadata {
+        SessionMetadata {
+            workspace_isolation: WorkspaceIsolationMode::Docker,
+            docker_config: Some(DockerWorkspaceConfig {
+                image: Some("python:3.12-slim".to_string()),
+                attach_container: None,
+                workdir: None,
+                manage_lifecycle: None,
+                env: env
+                    .iter()
+                    .map(|(key, value)| (key.to_string(), value.to_string()))
+                    .collect(),
+                port_bindings: Vec::new(),
+            }),
+            ..SessionMetadata::test_fixture("provisioning-session")
+        }
+    }
+
+    #[test]
+    fn failure_reason_keeps_the_cause_and_hides_secrets() {
+        let session = docker_session(&[("API_TOKEN", "sk-live-123456"), ("DEBUG", "1")]);
+        let wake_token = "a".repeat(64);
+        let error = format!(
+            "Docker command failed: pull failed with API_TOKEN=sk-live-123456 DEBUG=1 \
+             key libr_AbC123xyz url http://host.docker.internal:4000/api/sessions/s/wake/{wake_token}"
+        );
+
+        let reason = failure_reason(&session, &error);
+
+        assert!(reason.contains("pull failed"), "{reason}");
+        assert!(reason.contains("API_TOKEN=[redacted]"), "{reason}");
+        assert!(reason.contains("DEBUG=1"), "{reason}");
+        assert!(!reason.contains("sk-live-123456"), "{reason}");
+        assert!(!reason.contains("libr_AbC123xyz"), "{reason}");
+        assert!(!reason.contains(&wake_token), "{reason}");
+    }
+
+    #[test]
+    fn a_longer_env_value_is_hidden_completely_when_a_shorter_one_is_inside_it() {
+        let session = docker_session(&[("SHORT", "secret"), ("LONG", "secret-and-more")]);
+
+        let reason = failure_reason(&session, "value secret-and-more");
+
+        assert_eq!(reason, "value [redacted]");
+    }
+
+    #[test]
+    fn a_long_failure_reason_is_cut() {
+        let session = docker_session(&[]);
+
+        let reason = failure_reason(&session, &"x".repeat(MAX_STORED_REASON_CHARS + 50));
+
+        assert_eq!(reason.chars().count(), MAX_STORED_REASON_CHARS + 1);
+        assert!(reason.ends_with('…'));
+    }
 }

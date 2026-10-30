@@ -321,6 +321,8 @@ export interface AgentSessionMetadata {
   dockerConfig?: DockerWorkspaceConfig;
   dockerContainerName?: string;
   dockerHostWorkspacePath?: string;
+  /** Why the session has its current status, for example a Docker setup failure. */
+  statusReason?: string | null;
 }
 
 export interface AgentSessionListCursor {

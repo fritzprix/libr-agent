@@ -249,6 +249,7 @@ fn build_session_metadata(session_id: &str, status: SessionStatus) -> SessionMet
         docker_config: None,
         docker_container_name: None,
         docker_host_workspace_path: None,
+        status_reason: None,
     }
 }
 
@@ -601,6 +602,7 @@ async fn settle_session_and_go_idle_returns_error_when_workflow_completed_emit_f
             AgentEvent::StatusChanged {
                 session_id,
                 status: SessionStatus::Idle,
+                ..
             } if session_id == &harness.session_id
         )
     }));
@@ -644,6 +646,7 @@ async fn settle_session_and_finalize_error_returns_error_when_workflow_error_emi
             AgentEvent::StatusChanged {
                 session_id,
                 status: SessionStatus::Error,
+                ..
             } if session_id == &harness.session_id
         )
     }));
