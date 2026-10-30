@@ -5,19 +5,25 @@ import type { LoggerConfig } from './logger-types';
 
 const LOGGER_CONFIG_STORAGE_KEY = 'libragent-logger-config';
 
-function isStoredLoggerConfig(value: unknown): value is LoggerConfig {
+// Stored configs from older versions may carry removed keys, so copy only the
+// known fields instead of spreading the parsed object.
+function parseStoredLoggerConfig(value: unknown): LoggerConfig | null {
   if (typeof value !== 'object' || value === null) {
-    return false;
+    return null;
   }
 
-  const config = value as Record<string, unknown>;
-  return (
-    typeof config.enableFileLogging === 'boolean' &&
-    typeof config.autoBackupOnStartup === 'boolean' &&
-    typeof config.maxBackupFiles === 'number' &&
-    isLoggerLevel(config.logLevel) &&
-    typeof config.maxMessageLength === 'number'
-  );
+  const { enableFileLogging, logLevel, maxMessageLength } = value as Record<
+    string,
+    unknown
+  >;
+  if (
+    typeof enableFileLogging !== 'boolean' ||
+    !isLoggerLevel(logLevel) ||
+    typeof maxMessageLength !== 'number'
+  ) {
+    return null;
+  }
+  return { enableFileLogging, logLevel, maxMessageLength };
 }
 
 export const logUtils = {
@@ -77,7 +83,7 @@ export const logUtils = {
       }
 
       const parsed: unknown = JSON.parse(configStr);
-      return isStoredLoggerConfig(parsed) ? parsed : null;
+      return parseStoredLoggerConfig(parsed);
     } catch (error) {
       console.error('Failed to load logger config:', error);
       return null;
@@ -106,10 +112,6 @@ export const logUtils = {
 
   enableFileLogging: async (enabled: boolean = true): Promise<void> => {
     await logUtils.updateConfig({ enableFileLogging: enabled });
-  },
-
-  enableAutoBackup: async (enabled: boolean = true): Promise<void> => {
-    await logUtils.updateConfig({ autoBackupOnStartup: enabled });
   },
 
   setMaxMessageLength: async (length: number): Promise<void> => {

@@ -8,8 +8,6 @@ export enum LogLevel {
 
 export interface LoggerConfig {
   enableFileLogging: boolean;
-  autoBackupOnStartup: boolean;
-  maxBackupFiles: number;
   logLevel: 'trace' | 'debug' | 'info' | 'warn' | 'error';
   maxMessageLength: number;
 }
