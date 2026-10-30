@@ -14,6 +14,7 @@ mod arg_normalization_tests {
             "echo \"a\\\"b\"",
             "ls # don't care",
             "cat <<'EOF' > f.txt\nit's fine\nEOF",
+            "echo \"$(printf '%s' \"it's\")\"",
             "python -c \"print('it' + \\\"'\\\" + 's')\"",
         ] {
             let out = BuiltinServerRegistry::normalize_json_args(json!({ "command": cmd }));

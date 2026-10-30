@@ -1,179 +1,22 @@
-use tracing::info;
-
 /// Normalize shell command for proper execution
-/// Handles platform-specific quoting and escaping rules
+/// Quoting is never rewritten: an unclosed quote is reported by the bash syntax
+/// pre-check (`validate_bash_syntax`), and guessing a repair here only risks
+/// corrupting valid commands the guess misreads.
 pub fn normalize_shell_command(raw_command: &str) -> String {
     #[cfg(windows)]
     {
         // Windows: PowerShell handles both single and double quotes correctly
         // No normalization needed - pass command as-is to avoid breaking nested quotes
         // in Python/Node.js inline commands like: python -c "print('Hello')"
-        info!("Windows command (no normalization): {}", raw_command);
+        tracing::info!("Windows command (no normalization): {}", raw_command);
         raw_command.to_string()
     }
 
     #[cfg(not(windows))]
     {
-        // Unix shell quoting normalization
-        let mut normalized = raw_command.to_string();
-
-        // 1. Close a quote left open at the end of the command
-        if let Some(quote) = find_unclosed_quote(&normalized) {
-            normalized.push(quote);
-            info!("Shell command: Added missing {} quote", quote);
-        }
-
-        // 2. Inject -S flag for sudo commands to read from stdin in non-interactive/non-PTY shells
-        normalized = inject_sudo_stdin_flag(&normalized);
-
-        normalized
+        // Inject -S flag for sudo commands to read from stdin in non-interactive/non-PTY shells
+        inject_sudo_stdin_flag(raw_command)
     }
-}
-
-/// Returns the quote character left open at the end of a POSIX shell command, if any.
-///
-/// Apostrophes and quotes in comments, heredoc bodies and escapes are literal text,
-/// not quote delimiters, so they are skipped. `$'...'` (ANSI-C quoting) honors
-/// backslash escapes. An unterminated heredoc is not a quote problem: returns `None`.
-#[cfg_attr(windows, allow(dead_code))]
-fn find_unclosed_quote(command: &str) -> Option<char> {
-    let chars: Vec<char> = command.chars().collect();
-    let len = chars.len();
-    // (delimiter, strip leading tabs) for heredocs whose body starts at the next newline
-    let mut pending_heredocs: Vec<(String, bool)> = Vec::new();
-    let mut prev_unescaped_dollar = false;
-    let mut i = 0;
-
-    while i < len {
-        let c = chars[i];
-        let after_dollar = prev_unescaped_dollar;
-        prev_unescaped_dollar = false;
-
-        match c {
-            '\\' => i += 2,
-            '\'' => {
-                i += 1;
-                loop {
-                    if i >= len {
-                        return Some('\'');
-                    }
-                    match chars[i] {
-                        '\\' if after_dollar => i += 2,
-                        '\'' => break,
-                        _ => i += 1,
-                    }
-                }
-                i += 1;
-            }
-            '"' => {
-                i += 1;
-                loop {
-                    if i >= len {
-                        return Some('"');
-                    }
-                    match chars[i] {
-                        '\\' => i += 2,
-                        '"' => break,
-                        _ => i += 1,
-                    }
-                }
-                i += 1;
-            }
-            '#' if i == 0 || is_word_break(chars[i - 1]) => {
-                while i < len && chars[i] != '\n' {
-                    i += 1;
-                }
-            }
-            '<' if chars.get(i + 1) == Some(&'<') && chars.get(i + 2) != Some(&'<') => {
-                i += 2;
-                if let Some(heredoc) = parse_heredoc_delimiter(&chars, &mut i) {
-                    pending_heredocs.push(heredoc);
-                }
-            }
-            '\n' => {
-                i += 1;
-                for (delimiter, strip_tabs) in pending_heredocs.drain(..) {
-                    loop {
-                        if i >= len {
-                            return None;
-                        }
-                        let line_end = chars[i..]
-                            .iter()
-                            .position(|&ch| ch == '\n')
-                            .map_or(len, |p| i + p);
-                        let mut line = &chars[i..line_end];
-                        if strip_tabs {
-                            while line.first() == Some(&'\t') {
-                                line = &line[1..];
-                            }
-                        }
-                        i = line_end + 1;
-                        if line.iter().copied().eq(delimiter.chars()) {
-                            break;
-                        }
-                    }
-                }
-            }
-            _ => {
-                prev_unescaped_dollar = c == '$';
-                i += 1;
-            }
-        }
-    }
-
-    None
-}
-
-/// Characters after which a `#` starts a comment.
-#[cfg_attr(windows, allow(dead_code))]
-fn is_word_break(c: char) -> bool {
-    c.is_whitespace() || matches!(c, ';' | '&' | '|' | '(' | ')')
-}
-
-/// Parses the delimiter word after `<<` (cursor just past it), advancing the cursor.
-/// Returns `None` when the text is not a heredoc (e.g. arithmetic `$((1<<2))`).
-#[cfg_attr(windows, allow(dead_code))]
-fn parse_heredoc_delimiter(chars: &[char], i: &mut usize) -> Option<(String, bool)> {
-    let strip_tabs = chars.get(*i) == Some(&'-');
-    if strip_tabs {
-        *i += 1;
-    }
-    while matches!(chars.get(*i), Some(' ' | '\t')) {
-        *i += 1;
-    }
-
-    let first = *chars.get(*i)?;
-    if !(first.is_alphabetic() || matches!(first, '_' | '\'' | '"' | '\\')) {
-        return None;
-    }
-
-    let mut delimiter = String::new();
-    while let Some(&c) = chars.get(*i) {
-        if c.is_whitespace() || matches!(c, ';' | '&' | '|' | '<' | '>' | '(' | ')') {
-            break;
-        }
-        *i += 1;
-        match c {
-            '\'' | '"' => {
-                while let Some(&inner) = chars.get(*i) {
-                    *i += 1;
-                    if inner == c {
-                        break;
-                    }
-                    delimiter.push(inner);
-                }
-            }
-            '\\' => {
-                if let Some(&escaped) = chars.get(*i) {
-                    delimiter.push(escaped);
-                    *i += 1;
-                }
-            }
-            _ => delimiter.push(c),
-        }
-    }
-
-    (!delimiter.is_empty()).then_some((delimiter, strip_tabs))
 }
 
 /// Inject -S flag for sudo commands to read from stdin in non-interactive/non-PTY shells
@@ -311,77 +154,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn find_unclosed_quote_ignores_literal_quote_characters() {
-        for cmd in [
-            "echo \"it's done\"",
-            "echo \"a\\\"b\"",
-            "echo it\\'s",
-            "ls # don't care",
-            "echo hi; # it's a comment\necho 'ok'",
-            "echo $'it\\'s'",
-            "cat <<'EOF' > f.txt\nit's fine\nEOF",
-            "cat <<EOF\nshe said \"hi\nEOF\necho done",
-            "cat <<-\"END\"\n\tdon't\n\tEND",
-            "cat <<A <<B\nit's\nA\n\"\nB",
-            "echo $((1<<2)) 'x'",
-            "cat <<EOF\nunterminated heredoc it's",
-            "echo ''\"\"",
-        ] {
-            assert_eq!(find_unclosed_quote(cmd), None, "{cmd:?}");
-        }
-    }
-
-    #[test]
-    fn find_unclosed_quote_detects_open_quote() {
-        assert_eq!(find_unclosed_quote("echo \"hello"), Some('"'));
-        assert_eq!(find_unclosed_quote("echo 'hello"), Some('\''));
-        assert_eq!(find_unclosed_quote("echo \"it's"), Some('"'));
-        assert_eq!(find_unclosed_quote("echo a#b 'x"), Some('\''));
-        assert_eq!(
-            find_unclosed_quote("cat <<EOF\nbody\nEOF\necho 'x"),
-            Some('\'')
-        );
-    }
-
-    #[test]
     #[cfg(not(windows))]
     fn test_normalize_shell_command_unix() {
-        // Basic cases
-        assert_eq!(normalize_shell_command("echo hello"), "echo hello");
-        assert_eq!(normalize_shell_command("echo 'hello'"), "echo 'hello'");
-        assert_eq!(normalize_shell_command("echo \"hello\""), "echo \"hello\"");
-
-        // Missing quotes
-        assert_eq!(normalize_shell_command("echo \"hello"), "echo \"hello\"");
-        assert_eq!(normalize_shell_command("echo 'hello"), "echo 'hello'");
-
-        // Escaped quotes (should NOT be counted as closing quotes)
-        assert_eq!(
-            normalize_shell_command("echo \"foo\\\"bar\""),
-            "echo \"foo\\\"bar\""
-        );
-
-        // Nested quotes
-        assert_eq!(
-            normalize_shell_command("echo '\"hello\"'"),
-            "echo '\"hello\"'"
-        );
-        assert_eq!(
-            normalize_shell_command("echo \"'hello'\""),
-            "echo \"'hello'\""
-        );
-
-        // Complex case with multiple escapes
-        assert_eq!(
-            normalize_shell_command("echo \"path: \\\"/tmp/foo\\\"\""),
-            "echo \"path: \\\"/tmp/foo\\\"\""
-        );
-
-        // Trailing backslash (should be preserved)
-        assert_eq!(normalize_shell_command("echo hello \\"), "echo hello \\");
-
-        // Empty-string arguments are valid shell and must pass through unchanged
+        // Quoting is never rewritten. Unclosed quotes are left for the bash syntax
+        // pre-check to report rather than patched with a guess.
         for cmd in [
+            "echo hello",
+            "echo 'hello'",
+            "echo \"hello\"",
+            "echo \"hello",
+            "echo 'hello",
+            "echo \"foo\\\"bar\"",
+            "echo '\"hello\"'",
+            "echo \"'hello'\"",
+            "echo \"path: \\\"/tmp/foo\\\"\"",
+            "echo hello \\",
             "echo \"\"",
             "X=\"\" ; echo \"[$X]\"",
             "cat f && echo \"\" && echo \"=== B ===\" || echo \"no\"",
@@ -390,9 +177,17 @@ mod tests {
             "echo \"it's done\"",
             "ls # don't care",
             "cat <<'EOF' > f.txt\nit's fine\nEOF",
+            "echo \"$(printf '%s' \"it's\")\"",
+            "echo \"`printf '%s' \"it's\"`\"",
         ] {
             assert_eq!(normalize_shell_command(cmd), cmd);
         }
+
+        // sudo -S injection still applies
+        assert_eq!(
+            normalize_shell_command("cd /tmp && sudo apt update"),
+            "cd /tmp && sudo -S apt update"
+        );
     }
 
     #[test]

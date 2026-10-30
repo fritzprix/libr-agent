@@ -167,8 +167,7 @@ impl BuiltinServerRegistry {
 
                 // `code` and `command` values pass through untouched: they arrive as
                 // decoded JSON strings, so quote-count "repairs" here only corrupt valid
-                // input. Shell commands get context-aware normalization at execution time
-                // (`normalize_shell_command`).
+                // input. Unclosed shell quotes are reported by `validate_bash_syntax`.
                 Value::Object(obj)
             }
             _ => args,
