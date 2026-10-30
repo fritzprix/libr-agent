@@ -1,4 +1,4 @@
-use crate::services::McpServerService;
+use crate::services::{McpServerService, SaveVerification};
 use crate::state::get_mcp_server_repository;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -43,8 +43,13 @@ impl From<crate::entity::mcp_server::Model> for MCPServerDto {
 
 #[command]
 pub async fn create_mcp_server_config(name: String, config: Value) -> Result<MCPServerDto, String> {
-    let model =
-        McpServerService::create_server_config(get_mcp_server_repository(), name, config).await?;
+    let model = McpServerService::create_server_config(
+        get_mcp_server_repository(),
+        name,
+        config,
+        SaveVerification::Pending,
+    )
+    .await?;
     McpServerService::schedule_background_probe(model.id.clone());
     Ok(model.into())
 }
@@ -55,9 +60,14 @@ pub async fn update_mcp_server_config(
     name: Option<String>,
     config: Option<Value>,
 ) -> Result<MCPServerDto, String> {
-    let updated =
-        McpServerService::update_server_config(get_mcp_server_repository(), id, name, config)
-            .await?;
+    let updated = McpServerService::update_server_config(
+        get_mcp_server_repository(),
+        id,
+        name,
+        config,
+        SaveVerification::Pending,
+    )
+    .await?;
     if updated.verification_status.as_deref() == Some("pending") {
         McpServerService::schedule_background_probe(updated.id.clone());
     }

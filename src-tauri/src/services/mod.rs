@@ -29,7 +29,7 @@ pub use interactive_browser_server::{
     BrowserSession, BrowserSessionTarget, InteractiveBrowserServer, SessionStatus,
 };
 pub use log_service::LogService;
-pub use mcp_server_service::McpServerService;
+pub use mcp_server_service::{McpServerService, SaveVerification};
 pub use message_service::MessageService;
 pub use playbook_service::PlaybookService;
 pub use scheduled_task_service::{

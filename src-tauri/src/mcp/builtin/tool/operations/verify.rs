@@ -2,6 +2,7 @@ use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, not_found_error, ErrorCategory, SuccessHint, ToolGroup,
 };
 use crate::mcp::builtin::utils::load_session_tool_access;
+use crate::mcp::session_isolation::exec_target::StdioExecTarget;
 use crate::mcp::types::{MCPResult, TransportConfig};
 use crate::repositories::mcp_server_repository::MCPServerRepository;
 use crate::state::get_mcp_server_repository;
@@ -48,9 +49,19 @@ pub async fn verify_server(
         TransportConfig::Http { url, .. } => ("http", format!("URL: {}", url)),
     };
 
+    let target = match StdioExecTarget::for_session(session_id).await {
+        Ok(target) => target,
+        Err(error) => {
+            return Ok(
+                guided_error(ErrorCategory::DatabaseError, error, ToolGroup::Tool).to_mcp_result(),
+            )
+        }
+    };
+    let in_container = target.container_session().is_some();
+
     // Test connection and list tools
     let start_time = Instant::now();
-    let verification_result = test_server_connection(&config, name).await;
+    let verification_result = test_server_connection(&config, name, &target).await;
     let latency_ms = start_time.elapsed().as_millis();
 
     // Emit resource updated event for frontend cache revalidation
@@ -121,6 +132,7 @@ pub async fn verify_server(
             );
 
             let suggestions = match transport_type {
+                "stdio" if in_container => container_stdio_guidance(),
                 "stdio" => vec![
                     "Verify the command path is correct and executable".to_string(),
                     "Check that all required arguments are provided".to_string(),
@@ -147,12 +159,27 @@ pub async fn verify_server(
     }
 }
 
-/// Test server connection by spawning/connecting and calling the remote MCP ListTools API.
+/// Next steps for a stdio server that failed in a Docker session container.
+pub(super) fn container_stdio_guidance() -> Vec<String> {
+    vec![
+        "In a Docker session, stdio servers run in the session container, not on the host"
+            .to_string(),
+        "Make sure the command is in the container: workspace__runShell runs in the same container"
+            .to_string(),
+        "Install the runtime in the container, or use a command that the session image has"
+            .to_string(),
+        "Do not register a host path: it does not resolve in the container".to_string(),
+    ]
+}
+
+/// Test server connection by spawning/connecting and calling the remote MCP ListTools API
+/// where `target` runs stdio servers.
 /// Returns `(tool_count, tools_json)` where `tools_json` is a JSON array of
 /// `{"name": "...", "description": "..."}` entries for caching.
 pub(super) async fn test_server_connection(
     config: &crate::mcp::types::MCPServerConfig,
     server_name: &str,
+    target: &StdioExecTarget,
 ) -> Result<(usize, String), String> {
     let mut cloned = config.clone();
     if cloned.name.is_none() {
@@ -160,7 +187,8 @@ pub(super) async fn test_server_connection(
     }
 
     let tools =
-        crate::services::mcp_server_service::McpServerService::verify_config(cloned).await?;
+        crate::services::mcp_server_service::McpServerService::verify_config_at(cloned, target)
+            .await?;
     let tools_json = crate::mcp::utils::serialize_mcp_tools(&tools);
     Ok((tools.len(), tools_json))
 }

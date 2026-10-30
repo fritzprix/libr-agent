@@ -6,6 +6,7 @@ use crate::state::get_mcp_server_repository;
 use serde_json::{json, Value};
 
 use super::verify::test_server_connection;
+use crate::mcp::session_isolation::exec_target::StdioExecTarget;
 
 const AVAILABILITY_VALUES: &[&str] = &["inventory", "session"];
 const SCOPE_VALUES: &[&str] = &["all", "internal", "external", "catalog"];
@@ -176,13 +177,27 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
             }
         };
 
+        let verify_target = if force_verify {
+            match StdioExecTarget::for_session(session_id).await {
+                Ok(target) => target,
+                Err(e) => {
+                    return Ok(
+                        guided_error(ErrorCategory::DatabaseError, e, ToolGroup::Tool)
+                            .to_mcp_result(),
+                    )
+                }
+            }
+        } else {
+            StdioExecTarget::Host
+        };
+
         for model in &models {
             let config_opt: Option<MCPServerConfig> = serde_json::from_str(&model.config).ok();
 
             // Determine tool source: live (forceVerify) or cached
             let tools_json_str: Option<String> = if force_verify {
                 if let Some(ref config) = config_opt {
-                    match test_server_connection(config, &model.name).await {
+                    match test_server_connection(config, &model.name, &verify_target).await {
                         Ok((_, json_str)) => Some(json_str),
                         Err(e) => {
                             log::warn!("tool::list live verify failed for '{}': {}", model.name, e);

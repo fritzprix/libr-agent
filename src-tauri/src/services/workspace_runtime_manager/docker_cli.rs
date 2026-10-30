@@ -153,6 +153,21 @@ pub(super) async fn run_status_command(mut cmd: AsyncCommand) -> RuntimeResult<(
     }
 }
 
+/// Absolute path of the docker CLI on the host PATH, so a `PATH` in the child env (meant for
+/// the container) cannot change which `docker` the host runs. Falls back to a PATH lookup.
+pub(super) fn docker_program() -> std::path::PathBuf {
+    let names: &[&str] = if cfg!(windows) {
+        &["docker.exe", "docker"]
+    } else {
+        &["docker"]
+    };
+    let effective_path = crate::utils::env::get_effective_path();
+    std::env::split_paths(&effective_path)
+        .flat_map(|dir| names.iter().map(move |name| dir.join(name)))
+        .find(|candidate| candidate.is_file())
+        .unwrap_or_else(|| std::path::PathBuf::from("docker"))
+}
+
 pub(super) fn apply_docker_cli_env(cmd: &mut AsyncCommand) {
     // On Windows GUI hosts, docker.exe is a console subsystem binary; without this
     // flag every runShell/docker exec flashes a terminal window.

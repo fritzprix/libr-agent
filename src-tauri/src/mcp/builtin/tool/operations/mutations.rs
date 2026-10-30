@@ -12,7 +12,11 @@ use serde_json::{json, Value};
 use super::super::queries::{find_server_model, get_server_config};
 use super::super::ToolServer;
 use super::catalog::matching_catalog_preset;
-use super::persistence::{delete_server_config_db, save_server_config, SavedServer};
+use super::persistence::{
+    delete_server_config_db, save_server_config, ContainerCheck, SavedServer,
+};
+use super::verify::container_stdio_guidance;
+use crate::mcp::session_isolation::exec_target::StdioExecTarget;
 
 /// Catalog only for an exact preset transport without custom OAuth; the same
 /// rule lets `tool__registerServer` skip hard approval.
@@ -35,6 +39,28 @@ pub(crate) fn install_provenance(
     }
 }
 
+async fn session_exec_target(session_id: Option<&str>) -> Result<StdioExecTarget, MCPResult> {
+    StdioExecTarget::for_session(session_id)
+        .await
+        .map_err(|error| {
+            guided_error(ErrorCategory::DatabaseError, error, ToolGroup::Tool).to_mcp_result()
+        })
+}
+
+/// The container test failed: the record is saved, but only this response reports the failure.
+fn container_check_failed(name: &str, id: &str, error: &str) -> MCPResult {
+    guided_error(
+        ErrorCategory::OperationFailed,
+        format!(
+            "Server '{}' (ID: {}) was saved, but it did not start in the session container.\n\n{}",
+            name, id, error
+        ),
+        ToolGroup::Tool,
+    )
+    .with_guidance(container_stdio_guidance())
+    .to_mcp_result_with_data(Some(json!({ "name": name, "id": id })))
+}
+
 fn provenance_line(provenance: &ServerProvenance) -> String {
     match &provenance.preset {
         Some(preset) => format!("• Source: catalog preset '{preset}'"),
@@ -43,7 +69,11 @@ fn provenance_line(provenance: &ServerProvenance) -> String {
 }
 
 /// Register a new MCP server configuration
-pub async fn register_server(_server: &ToolServer, args: Value) -> Result<MCPResult, String> {
+pub async fn register_server(
+    _server: &ToolServer,
+    args: Value,
+    session_id: Option<&str>,
+) -> Result<MCPResult, String> {
     let name = match args.get("name").and_then(|v| v.as_str()) {
         Some(n) if !n.is_empty() => n.to_string(),
         Some(_) => {
@@ -169,7 +199,16 @@ pub async fn register_server(_server: &ToolServer, args: Value) -> Result<MCPRes
         provenance: Some(provenance),
     };
 
-    let SavedServer { id, name } = match save_server_config(&config).await {
+    let target = match session_exec_target(session_id).await {
+        Ok(target) => target,
+        Err(result) => return Ok(result),
+    };
+
+    let SavedServer {
+        id,
+        name,
+        container_check,
+    } = match save_server_config(&config, &target).await {
         Ok(saved) => saved,
         Err(e) => {
             return Ok(guided_error(
@@ -195,10 +234,21 @@ pub async fn register_server(_server: &ToolServer, args: Value) -> Result<MCPRes
         Some(name.to_string()),
     );
 
+    let status = match container_check {
+        Some(ContainerCheck::Failed(error)) => {
+            return Ok(container_check_failed(&name, &id, &error))
+        }
+        Some(ContainerCheck::Passed { tool_count }) => format!(
+            "Saved and verified in the session container ({} tools)",
+            tool_count
+        ),
+        None => "Saved (connectivity verification running in the background)".to_string(),
+    };
+
     let hint = SuccessHint::new(
         format!(
-            "✓ Server configuration saved\n\n• Server Name: {}\n• Server ID: {}\n{}\n\nStatus: Saved (connectivity verification running in the background)",
-            name, id, source_line
+            "✓ Server configuration saved\n\n• Server Name: {}\n• Server ID: {}\n{}\n\nStatus: {}",
+            name, id, source_line, status
         ),
         vec![
             "Use tool__listServers({\"availability\":\"inventory\"}) to confirm the registered server.".to_string(),
@@ -312,7 +362,11 @@ pub async fn delete_server(_server: &ToolServer, args: Value) -> Result<MCPResul
 }
 
 /// Update an existing MCP server configuration
-pub async fn update_server(_server: &ToolServer, args: Value) -> Result<MCPResult, String> {
+pub async fn update_server(
+    _server: &ToolServer,
+    args: Value,
+    session_id: Option<&str>,
+) -> Result<MCPResult, String> {
     let name = match args.get("name").and_then(|v| v.as_str()) {
         Some(n) if !n.is_empty() => n,
         Some(_) => {
@@ -400,8 +454,17 @@ pub async fn update_server(_server: &ToolServer, args: Value) -> Result<MCPResul
         provenance: Some(provenance),
     };
 
+    let target = match session_exec_target(session_id).await {
+        Ok(target) => target,
+        Err(result) => return Ok(result),
+    };
+
     // Update config and get ID
-    let SavedServer { id, name } = match save_server_config(&config).await {
+    let SavedServer {
+        id,
+        name,
+        container_check,
+    } = match save_server_config(&config, &target).await {
         Ok(saved) => saved,
         Err(e) => {
             return Ok(guided_error(
@@ -424,10 +487,21 @@ pub async fn update_server(_server: &ToolServer, args: Value) -> Result<MCPResul
         Some(name.to_string()),
     );
 
+    let status = match container_check {
+        Some(ContainerCheck::Failed(error)) => {
+            return Ok(container_check_failed(&name, &id, &error))
+        }
+        Some(ContainerCheck::Passed { tool_count }) => format!(
+            "\nStatus: verified in the session container ({} tools)",
+            tool_count
+        ),
+        None => String::new(),
+    };
+
     let hint = SuccessHint::new(
         format!(
-            "✓ Server configuration updated for '{}' (ID: {})\n{}",
-            name, id, source_line
+            "✓ Server configuration updated for '{}' (ID: {})\n{}{}",
+            name, id, source_line, status
         ),
         vec!["Use tool__listServers({\"availability\":\"inventory\",\"query\":\"<server-name>\"}) to verify changes".to_string()],
     );

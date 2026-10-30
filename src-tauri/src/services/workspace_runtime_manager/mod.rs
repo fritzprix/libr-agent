@@ -49,7 +49,8 @@ pub type DockerStepReporter = Arc<dyn Fn(&str) + Send + Sync>;
 use container::{ensure_bash_image_contract, stage_missing_skill_roots};
 use docker_cli::{
     apply_docker_cli_env, docker_container_architecture, docker_container_exists,
-    docker_container_label, docker_output_slice, run_docker_status, verify_container_label,
+    docker_container_label, docker_output_slice, docker_program, run_docker_status,
+    verify_container_label,
 };
 use error::{as_docker_unavailable, RuntimeResult};
 
@@ -73,6 +74,85 @@ fn apply_exec_env(
         }
     }
     Ok(())
+}
+
+/// `docker exec` client for a stdio MCP server in a session container.
+pub struct DockerMcpCommand {
+    pub command: AsyncCommand,
+    pub container: String,
+    /// The CLI reads this file when the process starts; keep it for the process lifetime.
+    pub env_file: Option<tempfile::TempPath>,
+}
+
+fn build_docker_mcp_command(
+    session: &SessionMetadata,
+    command: &str,
+    args: &[String],
+    env: &std::collections::HashMap<String, String>,
+) -> RuntimeResult<DockerMcpCommand> {
+    let container = docker_container_name(session)?;
+    let mut cmd = AsyncCommand::new(docker_program());
+    apply_docker_cli_env(&mut cmd);
+    cmd.args(["exec", "-i", "-w", &session_docker_workdir(session)]);
+
+    let mut merged_env = session
+        .docker_config
+        .as_ref()
+        .map(|config| config.env.clone())
+        .unwrap_or_default();
+    merged_env.extend(env.iter().map(|(k, v)| (k.clone(), v.clone())));
+    let env_file = write_exec_env_file(merged_env)?;
+    if let Some(path) = &env_file {
+        cmd.arg("--env-file").arg(path.as_os_str());
+    }
+
+    cmd.arg(&container).arg(command).args(args);
+    Ok(DockerMcpCommand {
+        command: cmd,
+        container,
+        env_file,
+    })
+}
+
+/// Writes the server env to a private (0600) temp file for `docker exec --env-file`. Values
+/// stay out of the host process list, and out of the docker CLI's own environment: there,
+/// `HOME`, `DOCKER_HOST`, `DOCKER_CONTEXT` or `DOCKER_CONFIG` would change which daemon the
+/// CLI uses.
+fn write_exec_env_file(
+    env: std::collections::HashMap<String, String>,
+) -> RuntimeResult<Option<tempfile::TempPath>> {
+    use std::io::Write;
+
+    let mut entries = Vec::with_capacity(env.len());
+    for (key, value) in env {
+        validate_env_key(&key).map_err(WorkspaceRuntimeError::InvalidConfig)?;
+        validate_env_value(&key, &value).map_err(WorkspaceRuntimeError::InvalidConfig)?;
+        if value.contains(['\n', '\r']) {
+            return Err(WorkspaceRuntimeError::InvalidConfig(format!(
+                "Env value of '{key}' contains a line break; stdio MCP servers in a Docker \
+                 session cannot receive it"
+            )));
+        }
+        if !is_session_api_key_var(&key) {
+            entries.push((key, value));
+        }
+    }
+    if entries.is_empty() {
+        return Ok(None);
+    }
+    entries.sort();
+
+    let io_error =
+        |e: std::io::Error| WorkspaceRuntimeError::Io(format!("Failed to write MCP env file: {e}"));
+    let mut file = tempfile::Builder::new()
+        .prefix("libragent-mcp-env-")
+        .tempfile()
+        .map_err(io_error)?;
+    for (key, value) in &entries {
+        writeln!(file, "{key}={value}").map_err(io_error)?;
+    }
+    file.flush().map_err(io_error)?;
+    Ok(Some(file.into_temp_path()))
 }
 
 /// The Session API key must never reach a container, whatever the caller passes.
@@ -197,6 +277,27 @@ impl WorkspaceRuntimeManager {
         // runShell intentionally executes shell syntax; this mirrors the host shell path.
         cmd.args([shell.command(), "-lc", command]);
         Ok(cmd)
+    }
+
+    /// Builds `docker exec -i -w <workdir> <container> <command> <args...>` for a stdio MCP
+    /// server of a Docker session. Argv goes unchanged (no shell). Only the session Docker env
+    /// and the server env reach the container, never the host env.
+    pub async fn create_docker_mcp_command(
+        session: &SessionMetadata,
+        command: &str,
+        args: &[String],
+        env: &std::collections::HashMap<String, String>,
+    ) -> RuntimeResult<DockerMcpCommand> {
+        Self::prepare_mcp_container(session).await?;
+        build_docker_mcp_command(session, command, args, env)
+    }
+
+    /// Waits for provisioning and makes sure the session container runs (may pull an image).
+    pub async fn prepare_mcp_container(session: &SessionMetadata) -> RuntimeResult<()> {
+        wait_for_docker_provisioning(&session.id).await;
+        prepare_docker_runtime(session, true, true, None)
+            .await
+            .map(|_| ())
     }
 
     pub async fn spawn_docker_persistent_shell(
@@ -455,6 +556,190 @@ mod exec_env_tests {
         assert!(args.contains(&"LIBRAGENT_WAKE_URL".to_string()));
         assert!(args.contains(&"PLAIN=1".to_string()));
         assert!(envs.contains(&("LIBRAGENT_WAKE_URL".to_string(), Some(url.to_string()))));
+    }
+
+    fn docker_session(env: Vec<(&str, &str)>) -> SessionMetadata {
+        SessionMetadata {
+            id: "s1".to_string(),
+            name: None,
+            status: crate::repositories::SessionStatus::Idle,
+            model: "m".to_string(),
+            provider: "p".to_string(),
+            assistant_id: None,
+            parent_session_id: None,
+            lineage_id: None,
+            depth: None,
+            max_depth: None,
+            max_fanout: None,
+            org_id: None,
+            org_name: None,
+            org_root_session_id: None,
+            created_at: 0,
+            updated_at: 0,
+            last_viewed_at: None,
+            last_message_at: None,
+            last_attention_at: None,
+            last_attention_reason: None,
+            is_bookmarked: false,
+            execution_mode: crate::execution_mode::ExecutionMode::Normal,
+            workspace_override: None,
+            workspace_isolation: WorkspaceIsolationMode::Docker,
+            docker_config: Some(crate::models::workspace_isolation::DockerWorkspaceConfig {
+                image: Some("python:3.12-slim".to_string()),
+                attach_container: None,
+                workdir: Some("/work".to_string()),
+                manage_lifecycle: None,
+                env: env
+                    .into_iter()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect(),
+                port_bindings: Vec::new(),
+            }),
+            docker_container_name: Some("libragent-session-s1".to_string()),
+            docker_host_workspace_path: Some("/tmp/s1".to_string()),
+        }
+    }
+
+    fn command_parts(cmd: &AsyncCommand) -> (Vec<String>, Vec<(String, Option<String>)>) {
+        let std_cmd = cmd.as_std();
+        let args = std_cmd
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        let envs = std_cmd
+            .get_envs()
+            .map(|(k, v)| {
+                (
+                    k.to_string_lossy().into_owned(),
+                    v.map(|v| v.to_string_lossy().into_owned()),
+                )
+            })
+            .collect();
+        (args, envs)
+    }
+
+    #[test]
+    fn mcp_command_execs_argv_in_the_session_container() {
+        let session = docker_session(vec![]);
+        let built = build_docker_mcp_command(
+            &session,
+            "npx",
+            &["-y".to_string(), "@scope/server".to_string()],
+            &std::collections::HashMap::new(),
+        )
+        .unwrap();
+        assert_eq!(built.container, "libragent-session-s1");
+        assert!(built.env_file.is_none());
+        let (args, _) = command_parts(&built.command);
+        assert_eq!(
+            args,
+            vec![
+                "exec",
+                "-i",
+                "-w",
+                "/work",
+                "libragent-session-s1",
+                "npx",
+                "-y",
+                "@scope/server"
+            ]
+        );
+    }
+
+    #[test]
+    fn mcp_command_passes_env_values_in_a_private_file() {
+        let session = docker_session(vec![("SESSION_VAR", "from-session")]);
+        let env = std::collections::HashMap::from([
+            ("API_TOKEN".to_string(), "secret-value".to_string()),
+            ("SESSION_VAR".to_string(), "from-server".to_string()),
+            (
+                "LIBRAGENT_SESSION_API_KEY".to_string(),
+                "libr_key".to_string(),
+            ),
+        ]);
+        let built = build_docker_mcp_command(&session, "node", &[], &env).unwrap();
+        let (args, envs) = command_parts(&built.command);
+        let env_file = built.env_file.as_ref().expect("env file");
+        let path = env_file.to_string_lossy().into_owned();
+
+        assert_eq!(
+            args,
+            vec![
+                "exec",
+                "-i",
+                "-w",
+                "/work",
+                "--env-file",
+                path.as_str(),
+                "libragent-session-s1",
+                "node"
+            ]
+        );
+        assert_eq!(
+            std::fs::read_to_string(env_file).unwrap(),
+            "API_TOKEN=secret-value\nSESSION_VAR=from-server\n"
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(env_file).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
+        assert!(envs
+            .iter()
+            .all(|(_, value)| value.as_deref() != Some("secret-value")));
+
+        let file_path = env_file.to_path_buf();
+        drop(built);
+        assert!(!file_path.exists(), "env file is removed with the command");
+    }
+
+    #[test]
+    fn server_env_does_not_change_how_the_docker_cli_connects() {
+        let session = docker_session(vec![]);
+        let env = std::collections::HashMap::from([
+            ("HOME".to_string(), "/container/home".to_string()),
+            (
+                "DOCKER_HOST".to_string(),
+                "tcp://elsewhere:2375".to_string(),
+            ),
+            ("DOCKER_CONTEXT".to_string(), "other".to_string()),
+            (
+                "DOCKER_CONFIG".to_string(),
+                "/container/.docker".to_string(),
+            ),
+            ("PATH".to_string(), "/opt/node/bin".to_string()),
+        ]);
+        let built = build_docker_mcp_command(&session, "node", &[], &env).unwrap();
+        let (_, envs) = command_parts(&built.command);
+        for (key, value) in &env {
+            assert!(
+                !envs.contains(&(key.clone(), Some(value.clone()))),
+                "server value of {key} reached the docker CLI env"
+            );
+        }
+        let file = std::fs::read_to_string(built.env_file.as_ref().unwrap()).unwrap();
+        assert!(file.contains("DOCKER_HOST=tcp://elsewhere:2375\n"));
+        assert!(file.contains("HOME=/container/home\n"));
+    }
+
+    #[test]
+    fn env_value_with_a_line_break_is_rejected() {
+        let session = docker_session(vec![]);
+        let env = std::collections::HashMap::from([("A".to_string(), "x\nB=y".to_string())]);
+        assert!(build_docker_mcp_command(&session, "node", &[], &env).is_err());
+    }
+
+    #[test]
+    fn mcp_command_does_not_forward_host_env_into_the_container() {
+        let session = docker_session(vec![]);
+        let built =
+            build_docker_mcp_command(&session, "node", &[], &std::collections::HashMap::new())
+                .unwrap();
+        let (args, envs) = command_parts(&built.command);
+        assert!(!args.iter().any(|arg| arg == "-e" || arg == "--env-file"));
+        // The docker CLI itself still gets the isolated host env (PATH, HOME, …).
+        assert!(envs.iter().any(|(key, _)| key == "PATH"));
     }
 
     #[test]

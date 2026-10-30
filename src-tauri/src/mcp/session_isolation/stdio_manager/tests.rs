@@ -627,3 +627,29 @@ async fn tool_call_does_not_wait_on_discovery_holding_the_spawn_lock() {
 
     manager.shutdown_all().await;
 }
+
+#[cfg(not(windows))]
+#[test]
+fn host_session_spawns_the_configured_command_on_the_host() {
+    let manager = create_test_manager();
+    let env = HashMap::from([("TEST_VAR".to_string(), "test_value".to_string())]);
+    let cmd = manager
+        .host_command("test-server", "echo", &["hello".to_string()], &env)
+        .expect("host command");
+    let std_cmd = cmd.as_std();
+
+    assert_eq!(std_cmd.get_program(), "echo");
+    let args: Vec<_> = std_cmd.get_args().collect();
+    assert_eq!(args, vec!["hello"]);
+    assert!(std_cmd
+        .get_envs()
+        .any(|(key, value)| key == "TEST_VAR" && value == Some("test_value".as_ref())));
+}
+
+#[tokio::test]
+async fn session_without_a_docker_record_runs_stdio_on_the_host() {
+    let target = crate::mcp::session_isolation::exec_target::StdioExecTarget::for_session(None)
+        .await
+        .expect("target");
+    assert!(target.container_session().is_none());
+}

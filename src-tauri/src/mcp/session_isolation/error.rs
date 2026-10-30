@@ -28,6 +28,10 @@ pub enum SessionMCPError {
     #[error("Process initialization failed: {0}")]
     InitFailed(String),
 
+    /// The server command does not exist (or is not executable) in the session container.
+    #[error("{0}")]
+    RuntimeMissing(String),
+
     /// Tool call was cancelled.
     #[error("Tool call cancelled")]
     CallCancelled,
