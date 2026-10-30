@@ -27,6 +27,15 @@ pub fn restart_app(app: tauri::AppHandle) -> Result<(), String> {
         );
     }
 
+    // The Session API key is injected through the environment and only its hash is kept, so a
+    // restarted app would come back without it and serve the API unauthenticated.
+    if crate::server::api_key::is_configured() {
+        return Err(
+            "Restarting is disabled while a Session API key is injected: the restarted app would run without authentication. Quit and relaunch it with the key."
+                .to_string(),
+        );
+    }
+
     app.restart();
 }
 

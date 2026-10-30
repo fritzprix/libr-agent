@@ -11,7 +11,8 @@ description: >
   recovery / fallback note names a transcript path. Triggers: "what did we
   discuss earlier", "before the context was reset", "older messages",
   "pre-compaction", "context recall", "recover history", "before declaring
-  done", "컴팩션 이전 대화", "과거 히스토리", "예전에 뭐라고 했지".
+  done", "컴팩션 이전 대화", "과거 히스토리", "예전에 뭐라고 했지", "아까 정한",
+  "아까 뭐였지".
 ---
 
 # Context Recall
@@ -25,6 +26,11 @@ After compaction, empty Active Request is not a Done signal. Before
 against Completion Criteria; if uncertain, read the latest epoch file first.
 
 ## Workflow
+
+If the answer is still visible in the current context, just answer from it. Only when it is not
+(a compact summary is present, or earlier content is missing) and no explicit path was given, run
+the `workspace__globFiles` call in step 2 first, before grepping the workspace. This is the case for
+questions like "아까 정한 거 뭐였지".
 
 ### 1. Prefer an explicit path from the compact summary
 
@@ -52,6 +58,15 @@ read the **highest N** first (most recent compaction).
 workspace__readFile(path=".libragent/pre_compaction_epoch_{N}.md")
 ```
 
+Epoch files are chronological: the latest requests and work are at the **end**.
+Read the tail first with a negative `size`:
+
+```
+workspace__readFile(path=".libragent/pre_compaction_epoch_{N}.md", size=-200)
+```
+
+Then read earlier parts (default top-down read) only if needed.
+
 Never pass globs to `workspace__readFile`. Read older epochs only if the
 newest file is insufficient.
 
@@ -67,6 +82,11 @@ Each epoch file is Markdown with:
 
 For tool outputs, inspect workspace files those tools wrote (or other session
 artifacts). Do not expect result payloads inside the epoch file.
+
+If the tail is only assistant text and tool calls, find the latest user request by
+searching for the last `] USER` separator line (`workspace__grepFiles`, or
+`grep -n '\] USER' <path> | tail -1`). User text can also contain `] USER`, so
+check that the match is followed by a `---` separator above it.
 
 ## Do Not
 

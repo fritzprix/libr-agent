@@ -6,7 +6,7 @@ import { AIServiceFactory } from '@/lib/ai-service/factory';
 import * as agentCommands from '@/lib/backend/agent-commands';
 import { AIServiceError, AIServiceProvider } from '@/lib/ai-service/types';
 import type { Message } from '@/models/chat';
-import { SettingsProvider } from '../SettingsContext';
+import { TestSettingsProvider } from '@/test/fixtures/TestSettingsProvider';
 import type { ReactNode } from 'react';
 
 // Mock Tauri APIs
@@ -51,9 +51,9 @@ vi.mock('@/lib/retry-utils', async (importOriginal) => {
 // Test wrappers
 function TestWrapper({ children }: { children: ReactNode }) {
   return (
-    <SettingsProvider>
+    <TestSettingsProvider>
       <LLMServiceProvider>{children}</LLMServiceProvider>
-    </SettingsProvider>
+    </TestSettingsProvider>
   );
 }
 

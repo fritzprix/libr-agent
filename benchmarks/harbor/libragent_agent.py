@@ -2,16 +2,15 @@
 
 Bridges Harbor's terminal-benchmark loop to LibrAgent's headless Session API.
 
-When the Harbor environment is a local Docker Compose trial, the adapter attaches
-LibrAgent's Docker session to Harbor's existing main container. Workdir is taken
-from task config when set; otherwise from the container image WORKDIR (often
-`/workspace` for Harbor Index / BixBench, `/app` for classic Terminal-Bench).
+LibrAgent runs either as a host workspace session (default) or as a
+LibrAgent-managed Docker session built from the task image; both sync the task
+workdir to a host workspace and back. The workdir is taken from task config when
+set; otherwise from the container image WORKDIR (often `/workspace` for Harbor
+Index / BixBench, `/app` for classic Terminal-Bench).
 
 Resolved workdirs are verified with ``docker exec test -d`` when a container id
 is available. Image WORKDIR metadata alone is not trusted — OSWorld QEMU host
 images may advertise ``/app`` even though that path does not exist.
-
-Non-Docker Harbor backends fall back to the legacy host-workspace sync path.
 """
 
 from __future__ import annotations
@@ -61,6 +60,8 @@ from benchmarks.harbor.isolated_instance import (
     INSTANCE_SANDBOX_ENV,
     SANDBOX_WORKDIR,
     InstanceLayout,
+    auth_headers,
+    instance_running,
     relaunch,
     safe_print,
 )
@@ -315,14 +316,13 @@ def extract_version_from_health_payload(payload: Any) -> str | None:
 
 
 WORKSPACE_MODE_ENV = "LIBRAGENT_HARBOR_WORKSPACE_MODE"
-# attach: LibrAgent attaches to the Harbor container (bench-only path).
 # managed: LibrAgent creates its own Docker session from the task image (product path).
 # host: LibrAgent runs on the host workspace (product path; needs a sandboxed HOME).
-WORKSPACE_MODES = ("attach", "managed", "host")
+WORKSPACE_MODES = ("managed", "host")
 
 
 def resolve_workspace_mode(env_map: dict[str, str]) -> str:
-    mode = env_map.get(WORKSPACE_MODE_ENV, "").strip().lower() or "attach"
+    mode = env_map.get(WORKSPACE_MODE_ENV, "").strip().lower() or "host"
     if mode not in WORKSPACE_MODES:
         raise RuntimeError(
             f"{WORKSPACE_MODE_ENV} must be one of {', '.join(WORKSPACE_MODES)} (got {mode!r})."
@@ -331,7 +331,7 @@ def resolve_workspace_mode(env_map: dict[str, str]) -> str:
         raise RuntimeError(
             f"{WORKSPACE_MODE_ENV}=host runs task commands on this machine; "
             "use `run-harbor-bench.cjs --isolated --workspace-mode host` so the bench "
-            "instance runs in a filesystem sandbox."
+            "instance runs in a filesystem sandbox, or pass `--workspace-mode managed`."
         )
     return mode
 
@@ -1053,6 +1053,66 @@ def is_workflow_complete(status: str, *, seen_non_idle: bool) -> bool:
     return True
 
 
+@dataclass(frozen=True)
+class PostIdleEvent:
+    """External event delivered after the session first goes idle (call-me-back tasks).
+
+    Declared in the task's ``task.toml`` under ``[metadata.libragent_event]``, which
+    the agent never sees. Paths are relative to the task workspace.
+    """
+
+    requires: str  # file that must exist for anything to receive the event
+    path: str  # file the adapter writes to deliver the event
+    content: str
+    done: str  # file the fixture writes once it has handled the event
+
+
+def load_post_idle_event(logs_dir: Path) -> PostIdleEvent | None:
+    """Read the trial's task ``[metadata.libragent_event]``, if it declares one."""
+    import tomllib
+
+    try:
+        config = json.loads((logs_dir.parent / "config.json").read_text(encoding="utf-8"))
+        task_dir = Path(config["task"]["path"])
+        task = tomllib.loads((task_dir / "task.toml").read_text(encoding="utf-8"))
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    spec = task.get("metadata", {}).get("libragent_event")
+    if not isinstance(spec, dict):
+        return None
+    try:
+        return PostIdleEvent(
+            requires=str(spec["requires"]),
+            path=str(spec["path"]),
+            content=str(spec["content"]),
+            done=str(spec["done"]),
+        )
+    except KeyError as error:
+        raise RuntimeError(f"[metadata.libragent_event] is missing {error}") from error
+
+
+def woken_work_finished(messages: list[Any], status: str, baseline: int) -> bool | None:
+    """Whether the session handled a wake that arrived after ``baseline`` messages.
+
+    ``None``: no wake reached the session (no new message). The wake route stores
+    its message before it answers, so once the fixture reports the event handled,
+    a missing message means the session was not woken. ``False``: woken, still
+    working. ``True``: woken and back at a terminal status after it responded
+    (any non-user message after the latest user message; a turn may end on a
+    tool result such as ``ui__reportResult``).
+    """
+    new = messages[baseline:]
+    if not new:
+        return None
+    normalized = status.strip().lower()
+    if normalized not in TERMINAL_WORKFLOW_STATUSES:
+        return False
+    if normalized == "error":
+        return True
+    last_user = max((i for i, m in enumerate(new) if m.get("role") == "user"), default=-1)
+    return any(m.get("role") != "user" for m in new[last_user + 1 :])
+
+
 def resolve_poll_timeout_sec(
     explicit_timeout: float | None = None,
     *,
@@ -1250,7 +1310,7 @@ def resolve_container_workdir(
     Priority (each candidate must exist in the container when ``container_id``
     is set):
     1. Harbor task ``[environment].workdir`` when the task sets it explicitly
-    2. Docker image WORKDIR of the attached Harbor main container
+    2. Docker image WORKDIR of the Harbor main container
     3. Live ``docker exec … pwd`` (container process cwd)
     4. Common existing roots (``/workspace``, ``/home/agent``, ``/osworld``, …)
     5. Last-resort ``/app`` only when that directory exists (or no container id)
@@ -1298,7 +1358,7 @@ def resolve_container_workdir(
 
     safe_print(
         "[LibrAgent] Warning: no usable container workdir found "
-        f"(including /app missing in {container_id}); using / as attach root"
+        f"(including /app missing in {container_id}); using / as root"
     )
     return "/"
 
@@ -1309,7 +1369,7 @@ def resolve_harbor_main_container_id(environment: BaseEnvironment) -> str | None
     if not session_id:
         safe_print(
             "[LibrAgent] Warning: Harbor environment has no session_id; "
-            "cannot resolve Compose main container for attach."
+            "cannot resolve Compose main container."
         )
         return None
 
@@ -1354,7 +1414,7 @@ def resolve_harbor_main_container_id(environment: BaseEnvironment) -> str | None
     safe_print(
         f"[LibrAgent] Warning: no running Compose service '{MAIN_COMPOSE_SERVICE}' "
         f"for project={project!r} (session_id={session_id!r}). "
-        "If Harbor's sanitizer differs, attach will be skipped and host-sync fallback used."
+        "If Harbor's sanitizer differs, the container id stays unresolved."
     )
     return None
 
@@ -1480,7 +1540,7 @@ class LibrAgentHarborAdapter(BaseAgent):
             except OSError:
                 pass  # the record is diagnostic; a missing copy must not fail the trial
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(headers=self._api_headers()) as client:
             try:
                 res = await client.get(f"{self.api_url}/health", timeout=5.0)
                 if res.status_code != 200:
@@ -1593,7 +1653,6 @@ class LibrAgentHarborAdapter(BaseAgent):
 
         container_id = resolve_harbor_main_container_id(environment)
         container_workdir = resolve_container_workdir(environment, container_id)
-        attach_container_id = container_id
         requested_mode = resolve_workspace_mode(dict(os.environ))
         managed_image: str | None = None
         if requested_mode == "managed":
@@ -1605,14 +1664,8 @@ class LibrAgentHarborAdapter(BaseAgent):
                     "Managed workspace mode needs the Harbor container image; "
                     f"could not resolve it from container {container_id!r}."
                 )
-        if requested_mode == "attach" and attach_container_id is None:
-            workspace_mode = "host"
-        else:
-            workspace_mode = requested_mode
-        use_attach = workspace_mode == "attach"
+        workspace_mode = requested_mode
 
-        local_workspace: Path | None = None
-        local_workspace_str: str | None = None
         # Host side of the bench sandbox's /app when host mode was requested.
         sandbox_app_dir: Path | None = None
         if requested_mode == "host":
@@ -1628,34 +1681,22 @@ class LibrAgentHarborAdapter(BaseAgent):
                 )
             sandbox_app_dir = trial_reset.layout.app_dir
 
-        if use_attach:
-            safe_print(
-                f"[{self.name()}] Attaching LibrAgent Docker session to Harbor "
-                f"container {attach_container_id} (workdir={container_workdir})..."
-            )
-        else:
-            local_workspace = sandbox_app_dir or self._resolve_local_workspace(
-                environment, context
-            )
-            local_workspace_str = str(local_workspace.resolve().absolute())
-            os.makedirs(local_workspace_str, exist_ok=True)
-            if workspace_mode == requested_mode:
-                safe_print(
-                    f"[{self.name()}] Workspace mode {workspace_mode}: staging "
-                    f"{container_workdir} into {local_workspace_str}."
-                )
-            else:
-                safe_print(
-                    f"[{self.name()}] Harbor container id not resolved; falling back to "
-                    f"host workspace sync ({local_workspace_str})."
-                )
-            await self._download_container_workdir(
-                environment,
-                container_id=attach_container_id,
-                container_workdir=container_workdir,
-                target_dir=local_workspace_str,
-                label="initial",
-            )
+        local_workspace = sandbox_app_dir or self._resolve_local_workspace(
+            environment, context
+        )
+        local_workspace_str = str(local_workspace.resolve().absolute())
+        os.makedirs(local_workspace_str, exist_ok=True)
+        safe_print(
+            f"[{self.name()}] Workspace mode {workspace_mode}: staging "
+            f"{container_workdir} into {local_workspace_str}."
+        )
+        await self._download_container_workdir(
+            environment,
+            container_id=container_id,
+            container_workdir=container_workdir,
+            target_dir=local_workspace_str,
+            label="initial",
+        )
 
         raw_context_task_id = getattr(context, "task_id", None)
         context_task_id = (
@@ -1680,14 +1721,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                 f"{max_input_context} (task={task_id})"
             )
 
-        if use_attach and attach_container_id is not None:
-            payload["workspaceIsolation"] = "docker"
-            payload["dockerConfig"] = {
-                "attachContainer": attach_container_id,
-                "workdir": container_workdir,
-                "manageLifecycle": False,
-            }
-        elif managed_image is not None:
+        if managed_image is not None:
             payload["workspacePath"] = local_workspace_str
             payload["workspaceIsolation"] = "docker"
             payload["dockerConfig"] = {
@@ -1701,10 +1735,10 @@ class LibrAgentHarborAdapter(BaseAgent):
             )
             payload["workspaceIsolation"] = "host"
 
-        async with httpx.AsyncClient(timeout=600.0) as client:
-            if use_attach:
-                mode_desc = f"attach:{attach_container_id}"
-            elif managed_image is not None:
+        post_idle_event = load_post_idle_event(self.logs_dir)
+
+        async with httpx.AsyncClient(headers=self._api_headers(), timeout=600.0) as client:
+            if managed_image is not None:
                 mode_desc = f"managed:{managed_image}:{local_workspace_str}"
             else:
                 mode_desc = f"host:{local_workspace_str}"
@@ -1730,38 +1764,11 @@ class LibrAgentHarborAdapter(BaseAgent):
                 f"(executionMode={self.execution_mode}). Awaiting execution completion..."
             )
 
-            # In attach/docker mode, download initial container files to host staging workspace
-            # so that host-based file search tools (like globFiles, grepFiles) can find them.
-            initial_session_info: dict[str, Any] | None = None
-            if use_attach:
-                try:
-                    session_res = await client.get(f"{self.api_url}/sessions/{session_id}")
-                    if session_res.status_code == 200:
-                        session_info = session_res.json()
-                        if isinstance(session_info, dict):
-                            initial_session_info = session_info
-                        host_workspace = session_info.get("dockerHostWorkspacePath")
-                        if host_workspace:
-                            host_workspace_path = Path(host_workspace)
-                            os.makedirs(host_workspace_path, exist_ok=True)
-                            await self._download_container_workdir(
-                                environment,
-                                container_id=attach_container_id,
-                                container_workdir=container_workdir,
-                                target_dir=str(
-                                    host_workspace_path.resolve().absolute()
-                                ),
-                                label="initial staging",
-                            )
-                except Exception as e:
-                    safe_print(
-                        f"[{self.name()}] Warning: failed to pull initial container files to host staging: {e}"
-                    )
-            last_session_info: dict[str, Any] | None = initial_session_info
+            last_session_info: dict[str, Any] | None = None
             self._write_benchmark_contract(
                 task_id=task_id,
                 session_id=session_id,
-                container_id=attach_container_id,
+                container_id=container_id,
                 container_workdir=container_workdir,
                 workspace_mode=workspace_mode_name(workspace_mode),
                 started_at=session_started_at_utc,
@@ -1775,6 +1782,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                 )
 
             poll_interval = self.poll_interval_sec
+            bench_instance = resolve_trial_instance_reset(dict(os.environ))
             seen_non_idle = False
             completed = False
             last_status = "unknown"
@@ -1826,6 +1834,34 @@ class LibrAgentHarborAdapter(BaseAgent):
                             f"{self.api_url}/sessions/{session_id}"
                         )
                     except Exception as e:
+                        # A dead bench instance never answers again; only an
+                        # instance that is still running is worth retrying.
+                        # Without --isolated the API is external and always retried.
+                        if bench_instance is not None and not instance_running(
+                            bench_instance.layout
+                        ):
+                            safe_print(
+                                f"[{self.name()}] Bench instance is no longer running "
+                                f"({e}). Writing diagnostic trajectory and failing the trial."
+                            )
+                            with contextlib.suppress(asyncio.CancelledError):
+                                await self._run_shielded(
+                                    self._dump_incomplete_diagnostics(
+                                        session_id=session_id,
+                                        last_status=last_status,
+                                        seen_non_idle=seen_non_idle,
+                                        reason="instance_gone",
+                                        last_session_info=last_session_info,
+                                        workspace_mode=workspace_mode_name(workspace_mode),
+                                        context=context,
+                                        started_monotonic=session_started_at,
+                                    )
+                                )
+                            raise RuntimeError(
+                                f"Bench instance stopped during the trial (session "
+                                f"{session_id}, last status={last_status}); see "
+                                f"{bench_instance.layout.log_file}."
+                            ) from e
                         safe_print(
                             f"[{self.name()}] Connection error during polling, retrying: {e}"
                         )
@@ -1865,6 +1901,15 @@ class LibrAgentHarborAdapter(BaseAgent):
                         )
                         completed = True
                         break
+
+                if post_idle_event is not None:
+                    await self._deliver_post_idle_event(
+                        client,
+                        session_id=session_id,
+                        workspace=Path(local_workspace_str),
+                        event=post_idle_event,
+                        poll_interval=poll_interval,
+                    )
             except asyncio.CancelledError:
                 # Harbor agent timeout cancels this coroutine. Do NOT treat the
                 # run as a successful completion (that caused verifiers to score
@@ -1899,47 +1944,31 @@ class LibrAgentHarborAdapter(BaseAgent):
                     f"workflow (last status={last_status})."
                 )
 
-            if not use_attach and local_workspace is not None:
-                safe_print(
-                    f"[{self.name()}] Pushing updated workspace files from "
-                    f"{local_workspace} to container {container_workdir}..."
-                )
-                try:
-                    await self._upload_workspace(
-                        environment,
-                        local_workspace,
-                        container_workdir,
-                    )
-                    safe_print(f"[{self.name()}] Successfully pushed workspace files.")
-                    if sandbox_app_dir is not None:
-                        # The next relaunch wipes the sandbox; keep the trial artifact.
-                        await asyncio.to_thread(
-                            shutil.copytree,
-                            sandbox_app_dir,
-                            self._resolve_local_workspace(environment, context),
-                            symlinks=True,
-                            dirs_exist_ok=True,
-                        )
-                except Exception as e:
-                    await self._delete_session(session_id)
-                    raise RuntimeError(
-                        f"Error pushing workspace files back to container: {e}"
-                    ) from e
-            elif use_attach:
-                safe_print(
-                    f"[{self.name()}] Attach mode: skipping host→container upload "
-                    f"(agent wrote in-place under {container_workdir})."
-                )
-                local_workspace = self._resolve_local_workspace(environment, context)
-                local_workspace_str = str(local_workspace.resolve().absolute())
-                os.makedirs(local_workspace_str, exist_ok=True)
-                await self._download_container_workdir(
+            safe_print(
+                f"[{self.name()}] Pushing updated workspace files from "
+                f"{local_workspace} to container {container_workdir}..."
+            )
+            try:
+                await self._upload_workspace(
                     environment,
-                    container_id=attach_container_id,
-                    container_workdir=container_workdir,
-                    target_dir=local_workspace_str,
-                    label="final",
+                    local_workspace,
+                    container_workdir,
                 )
+                safe_print(f"[{self.name()}] Successfully pushed workspace files.")
+                if sandbox_app_dir is not None:
+                    # The next relaunch wipes the sandbox; keep the trial artifact.
+                    await asyncio.to_thread(
+                        shutil.copytree,
+                        sandbox_app_dir,
+                        self._resolve_local_workspace(environment, context),
+                        symlinks=True,
+                        dirs_exist_ok=True,
+                    )
+            except Exception as e:
+                await self._delete_session(session_id)
+                raise RuntimeError(
+                    f"Error pushing workspace files back to container: {e}"
+                ) from e
 
             messages_res = await client.get(
                 f"{self.api_url}/sessions/{session_id}/messages",
@@ -2042,7 +2071,6 @@ class LibrAgentHarborAdapter(BaseAgent):
                 "sessionId": session_id,
                 "finalStatus": last_status,
                 "completed": True,
-                "attachContainer": attach_container_id,
                 "workspaceMode": workspace_mode_name(workspace_mode),
                 "assistant_id": self.assistant_id,
                 "n_turns": telemetry.n_turns,
@@ -2067,8 +2095,7 @@ class LibrAgentHarborAdapter(BaseAgent):
             )
 
             # Harvest + ATIF dump finished; delete the LibrAgent session so it
-            # does not linger (and, in attach mode, keep writing into Harbor's
-            # container) after Harbor moves on to the next task. DELETE also
+            # does not linger after Harbor moves on to the next task. DELETE also
             # terminates any still-running workflow before removing DB/workspace.
             await self._delete_session(session_id)
 
@@ -2082,12 +2109,84 @@ class LibrAgentHarborAdapter(BaseAgent):
                 await task
             raise
 
+    async def _deliver_post_idle_event(
+        self,
+        client: Any,
+        *,
+        session_id: str,
+        workspace: Path,
+        event: PostIdleEvent,
+        poll_interval: float,
+    ) -> None:
+        """Deliver the task's external event and wait until the woken session is done.
+
+        Every wait is on observable state (the fixture's ``done`` file, the session's
+        messages and status); Harbor's agent timeout bounds them.
+        """
+        if not (workspace / event.requires).exists():
+            safe_print(
+                f"[{self.name()}] Post-idle event skipped: {event.requires} does not "
+                f"exist, so nothing is listening for it."
+            )
+            return
+
+        async def session_state() -> tuple[list[Any], str] | None:
+            """Messages and status, or ``None`` on a failed read (retried by callers)."""
+            try:
+                messages_res = await client.get(
+                    f"{self.api_url}/sessions/{session_id}/messages",
+                    params={"limit": TRAJECTORY_MESSAGE_LIMIT},
+                )
+                status_res = await client.get(f"{self.api_url}/sessions/{session_id}")
+            except Exception as e:
+                safe_print(f"[{self.name()}] Connection error, retrying: {e}")
+                return None
+            if messages_res.status_code != 200 or status_res.status_code != 200:
+                return None
+            return (
+                normalize_session_messages(messages_res.json().get("messages")),
+                str(status_res.json().get("status", "idle")),
+            )
+
+        before = None
+        while before is None:
+            before = await session_state()
+            if before is None:
+                await asyncio.sleep(poll_interval)
+        baseline = len(before[0])
+
+        target = workspace / event.path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(event.content, encoding="utf-8")
+        safe_print(f"[{self.name()}] Post-idle event delivered: {event.path}")
+
+        while not (workspace / event.done).exists():
+            await asyncio.sleep(poll_interval)
+        safe_print(f"[{self.name()}] Fixture handled the event: {event.done}")
+
+        while True:
+            state = await session_state()
+            finished = woken_work_finished(*state, baseline) if state else False
+            if finished is None:
+                safe_print(f"[{self.name()}] Session was not woken by the event.")
+                return
+            if finished:
+                safe_print(f"[{self.name()}] Woken session finished: status={state[1]}")
+                return
+            await asyncio.sleep(poll_interval)
+
+    def _api_headers(self) -> dict[str, str]:
+        """Session API key of the current bench instance (it changes per launch); none
+        without --isolated, where the API is external."""
+        trial_reset = resolve_trial_instance_reset(dict(os.environ))
+        return auth_headers(trial_reset.layout) if trial_reset is not None else {}
+
     async def _fetch_session_messages_best_effort(self, session_id: str) -> list[Any]:
         """GET session messages on a short-lived client; never raise."""
         if httpx is None:
             return []
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(headers=self._api_headers(), timeout=30.0) as client:
                 messages_res = await client.get(
                     f"{self.api_url}/sessions/{session_id}/messages",
                     params={"limit": TRAJECTORY_MESSAGE_LIMIT},
@@ -2293,7 +2392,7 @@ class LibrAgentHarborAdapter(BaseAgent):
         if httpx is None:
             return None
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
+            async with httpx.AsyncClient(headers=self._api_headers(), timeout=15.0) as client:
                 response = await client.get(
                     f"{self.api_url}/sessions/{session_id}/compact-context"
                 )
@@ -2366,7 +2465,7 @@ class LibrAgentHarborAdapter(BaseAgent):
         if httpx is None:
             return
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(headers=self._api_headers(), timeout=30.0) as client:
                 res = await client.delete(
                     f"{self.api_url}/sessions/{session_id}"
                 )

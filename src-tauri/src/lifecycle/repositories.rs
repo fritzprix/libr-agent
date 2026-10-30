@@ -1,11 +1,10 @@
-use crate::lifecycle::settings::SystemSettings;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::{
-    SettingsRepository, SqliteAssistantRepository, SqliteAttachmentsRepository,
-    SqliteCompactContextRepository, SqliteKnowledgeRepository, SqliteKnowledgeV2Repository,
-    SqliteMCPServerRepository, SqliteMessageRepository, SqlitePendingQueueRepository,
-    SqlitePlanningRepository, SqlitePlaybookRepository, SqliteScheduledTaskRepository,
-    SqliteSessionRepository, SqliteSettingsRepository,
+    SqliteAssistantRepository, SqliteAttachmentsRepository, SqliteCompactContextRepository,
+    SqliteKnowledgeRepository, SqliteKnowledgeV2Repository, SqliteMCPServerRepository,
+    SqliteMessageRepository, SqlitePendingQueueRepository, SqlitePlanningRepository,
+    SqlitePlaybookRepository, SqliteScheduledTaskRepository, SqliteSessionRepository,
+    SqliteSettingsRepository,
 };
 use crate::state::{
     set_assistant_repository, set_attachments_repository, set_compact_context_repository,
@@ -18,7 +17,7 @@ use log::info;
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;
 
-pub async fn init_repositories(db: &DatabaseConnection) -> SystemSettings {
+pub async fn init_repositories(db: &DatabaseConnection) {
     let message_repo = SqliteMessageRepository::new(db.clone());
     info!("✅ Message repository initialized");
 
@@ -35,15 +34,6 @@ pub async fn init_repositories(db: &DatabaseConnection) -> SystemSettings {
     let settings_repo = SqliteSettingsRepository::new(db.clone());
     set_settings_repository(settings_repo.clone());
     info!("✅ Settings repository initialized");
-
-    let system_settings: SystemSettings = match settings_repo.get("systemSettings").await {
-        Ok(Some(model)) => serde_json::from_str(&model.value).unwrap_or_default(),
-        Ok(None) => SystemSettings::default(),
-        Err(e) => {
-            log::warn!("Failed to fetch system settings: {}, using defaults", e);
-            SystemSettings::default()
-        }
-    };
 
     // Set the global database connection
     set_database_connection(db.clone());
@@ -92,6 +82,4 @@ pub async fn init_repositories(db: &DatabaseConnection) -> SystemSettings {
         "mcp_proxy_manager_init",
         Some(proxy_start.elapsed().as_millis()),
     );
-
-    system_settings
 }

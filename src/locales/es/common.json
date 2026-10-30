@@ -1413,6 +1413,7 @@
       "mcpServerDiscovering": "Descubriendo herramientas…",
       "mcpServerReadyTools": "{{count}} herramientas",
       "mcpServerTimedOut": "Tiempo agotado",
+      "mcpServerStarting": "Aún iniciando",
       "mcpServerFailedShort": "Error",
       "executionModeNormalTitle": "Modo normal. Se aplican las políticas de bloqueo y las reglas de aprobación.",
       "executionModeYoloTitle": "Modo YOLO. Las acciones estándar se aprueban automáticamente, pero las críticas requieren aprobación manual.",

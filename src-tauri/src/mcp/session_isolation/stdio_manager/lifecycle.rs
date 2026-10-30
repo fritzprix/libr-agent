@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::process::Command;
 use tokio::sync::{Mutex, RwLock};
+use tokio_util::sync::CancellationToken;
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -38,6 +39,7 @@ impl SessionMCPManager {
             channel_metadata: Arc::new(RwLock::new(HashMap::new())),
             workspace_dir,
             channel_event_tx,
+            shutdown_token: CancellationToken::new(),
         }
     }
 
@@ -55,6 +57,23 @@ impl SessionMCPManager {
         &self,
         server_name: &str,
     ) -> Result<(), SessionMCPError> {
+        self.ensure_process_running_with_init_timeout(
+            server_name,
+            Duration::from_secs(self.config.process_startup_timeout_seconds),
+        )
+        .await
+    }
+
+    /// Same as [`Self::ensure_process_running`] with an explicit initialize timeout.
+    ///
+    /// Only background discovery passes a longer one (the server startup cap): there the
+    /// session has already stopped waiting, so a slow server may keep loading. Tool calls
+    /// keep the configured startup timeout.
+    pub(crate) async fn ensure_process_running_with_init_timeout(
+        &self,
+        server_name: &str,
+        init_timeout: Duration,
+    ) -> Result<(), SessionMCPError> {
         // 1. Fast path: check if already running
         {
             let processes = self.active_processes.read().await;
@@ -70,7 +89,27 @@ impl SessionMCPManager {
             .or_insert_with(|| Arc::new(Mutex::new(())))
             .clone();
 
-        let _guard = spawn_lock.lock().await;
+        // Bounded by the same timeout as the initialize: while background discovery holds the
+        // lock for a slow server, a tool call must not wait longer than its configured
+        // startup timeout.
+        let _guard = tokio::time::timeout(init_timeout, spawn_lock.lock())
+            .await
+            .map_err(|_| {
+                warn!(
+                    "MCP server '{}' is still starting for session '{}'; gave up waiting for it after {}s",
+                    server_name,
+                    self.session_id,
+                    init_timeout.as_secs()
+                );
+                SessionMCPError::InitTimeout(format!(
+                    "{} is still starting; try again shortly",
+                    server_name
+                ))
+            })?;
+
+        if self.shutdown_token.is_cancelled() {
+            return Err(SessionMCPError::SessionClosed);
+        }
 
         // 3. Double-check after acquiring lock (another task may have spawned)
         {
@@ -168,14 +207,22 @@ impl SessionMCPManager {
         debug!("Created transport for command: {} {:?}", command, args);
 
         // 7. Initialize rmcp client with timeout
-        let timeout = Duration::from_secs(self.config.process_startup_timeout_seconds);
-        let client = tokio::time::timeout(timeout, ().serve(transport))
-            .await
+        // A dead process makes `serve` return an error right away; the timeout only catches
+        // one that never answers. Session shutdown drops the pending initialize (and with it
+        // the child process).
+        let init_timeout_seconds = init_timeout.as_secs();
+        let serve_result = tokio::select! {
+            _ = self.shutdown_token.cancelled() => {
+                return Err(SessionMCPError::SessionClosed);
+            }
+            result = tokio::time::timeout(init_timeout, ().serve(transport)) => result,
+        };
+        let client = serve_result
             .map_err(|_| {
                 error!(
                     "MCP server '{}' init timed out after {}s for session '{}' (final={} {:?}). Check preceding [MCP stderr:{}] lines.",
                     server_name,
-                    self.config.process_startup_timeout_seconds,
+                    init_timeout_seconds,
                     self.session_id,
                     final_command,
                     final_args,

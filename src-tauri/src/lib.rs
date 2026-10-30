@@ -78,7 +78,7 @@ use commands::log_commands::{
 use commands::mcp_commands::{
     get_oauth_token, has_oauth_token, list_available_builtin_server_definitions,
     list_builtin_servers, list_builtin_servers_with_metadata, list_builtin_tools, probe_mcp_server,
-    revoke_oauth_token, start_oauth_flow, validate_tool_schema,
+    retry_session_mcp_server, revoke_oauth_token, start_oauth_flow, validate_tool_schema,
 };
 use commands::mcp_server_config_commands::{
     create_mcp_server_config, delete_mcp_server_config, list_mcp_server_configs,
@@ -102,10 +102,15 @@ use commands::scheduled_task_commands::{
     get_scheduled_task, list_scheduled_tasks, list_session_scheduled_tasks, toggle_scheduled_task,
     toggle_session_scheduled_task, update_scheduled_task,
 };
+use commands::session_api_key_commands::{
+    approve_session_api_pairing, get_pending_session_api_pairing, list_session_api_keys,
+    reject_session_api_pairing, revoke_session_api_key,
+};
 use commands::session_commands::remove_session;
 use commands::session_export_commands::export_session_file;
 use commands::settings_commands::{
-    delete_setting, get_setting, list_settings, set_setting, update_settings,
+    delete_setting, get_advanced_settings, get_display_settings, get_experimental_settings,
+    get_setting, get_system_settings, list_settings, set_setting, update_settings,
 };
 use commands::skill_commands::{
     get_aggregated_skills, get_default_skills_directory, get_managed_skills_overview,
@@ -218,6 +223,7 @@ pub fn run() {
                 restart_app,
                 list_workspace_files,
                 probe_mcp_server,
+                retry_session_mcp_server,
                 validate_tool_schema,
                 list_builtin_servers,
                 list_builtin_tools,
@@ -385,6 +391,15 @@ pub fn run() {
                 get_setting,
                 delete_setting,
                 list_settings,
+                get_advanced_settings,
+                get_display_settings,
+                get_experimental_settings,
+                get_system_settings,
+                get_pending_session_api_pairing,
+                approve_session_api_pairing,
+                reject_session_api_pairing,
+                list_session_api_keys,
+                revoke_session_api_key,
                 export_migration,
                 import_migration,
                 inspect_migration,

@@ -81,20 +81,8 @@ impl MCPServiceProxyBuilder {
 
     /// Helper to fetch tool timeout from system settings in DB
     async fn fetch_tool_timeout() -> u64 {
-        use crate::repositories::settings_repository::SettingsRepository;
-        let Some(repo) = crate::state::try_get_settings_repository() else {
-            return crate::config::mcp_tool_call_timeout_seconds();
-        };
-
-        match repo.get("systemSettings").await {
-            Ok(Some(model)) => match serde_json::from_str::<serde_json::Value>(&model.value) {
-                Ok(json) => json
-                    .get("mcpToolTimeoutSeconds")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or_else(crate::config::mcp_tool_call_timeout_seconds),
-                Err(_) => crate::config::mcp_tool_call_timeout_seconds(),
-            },
-            _ => crate::config::mcp_tool_call_timeout_seconds(),
-        }
+        crate::models::system_settings::SystemSettings::load_global()
+            .await
+            .mcp_tool_timeout_seconds
     }
 }

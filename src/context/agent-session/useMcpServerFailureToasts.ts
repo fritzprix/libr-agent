@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
+import { safeInvoke } from '@/lib/backend/core';
 import type { SessionRuntimeState } from '@/models/agent-ipc';
 import { collectNewMcpServerFailures } from './mcpServerFailureFeedback';
 
@@ -53,6 +54,17 @@ export function useMcpServerFailureToasts(
       const toastId = mcpServerFailureToastId(sessionId, failure.key);
       activeToastIdsRef.current.add(toastId);
 
+      const retryAction = {
+        label: t('common.retry', 'Retry'),
+        onClick: () => {
+          sessionToastedKeys.delete(failure.key);
+          void safeInvoke('retry_session_mcp_server', {
+            sessionId,
+            serverName: failure.serverName,
+          });
+        },
+      };
+
       if (failure.kind === 'timeout') {
         toast.error(
           t('agent.statusBar.mcpServerTimeout', {
@@ -65,6 +77,7 @@ export function useMcpServerFailureToasts(
               error: failure.error,
             }),
             duration: 8000,
+            action: retryAction,
           },
         );
       } else {
@@ -79,6 +92,7 @@ export function useMcpServerFailureToasts(
               error: failure.error,
             }),
             duration: 8000,
+            action: retryAction,
           },
         );
       }

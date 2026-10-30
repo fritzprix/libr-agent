@@ -27,7 +27,9 @@ from benchmarks.harbor.libragent_agent import (
     extract_trajectory_error,
     extract_version_from_health_payload,
     format_harbor_model_name,
+    INSTANCE_SANDBOX_ENV,
     is_workflow_complete,
+    load_post_idle_event,
     normalize_session_messages,
     read_repo_package_version,
     resolve_container_workdir,
@@ -37,6 +39,7 @@ from benchmarks.harbor.libragent_agent import (
     resolve_trial_instance_reset,
     resolve_workspace_mode,
     sanitize_docker_compose_project_name,
+    woken_work_finished,
     split_harbor_model_name,
     summarize_completion_telemetry,
     summarize_trajectory,
@@ -309,21 +312,6 @@ async def test_download_container_workdir_skips_root_workdir() -> None:
         label="final",
     )
     assert calls == []
-
-
-def test_attach_session_payload_shape() -> None:
-    """Document expected dockerConfig when Harbor main container is resolved."""
-    payload = {
-        "workspaceIsolation": "docker",
-        "dockerConfig": {
-            "attachContainer": "cid123",
-            "workdir": "/workspace",
-            "manageLifecycle": False,
-        },
-    }
-    assert payload["dockerConfig"]["manageLifecycle"] is False
-    assert payload["dockerConfig"]["workdir"] == "/workspace"
-    assert "image" not in payload["dockerConfig"]
 
 
 def test_format_harbor_model_name() -> None:
@@ -888,7 +876,7 @@ def test_adapter_writes_benchmark_contract(
         session_id="session-1",
         container_id="container-1",
         container_workdir="/app",
-        workspace_mode="attach",
+        workspace_mode="managed",
         started_at="2026-08-28T00:00:00+00:00",
         session_info={
             "status": "busy",
@@ -913,7 +901,7 @@ def test_adapter_writes_benchmark_contract(
         "harbor_reported": "NovitaAI/Qwen3.6",
         "session_effective": "openai/Qwen3.6",
     }
-    assert payload["execution"]["workspace_mode"] == "attach"
+    assert payload["execution"]["workspace_mode"] == "managed"
     assert payload["execution"]["max_input_context"] == 42_500
     assert payload["harbor"]["n_attempts"] == "5"
     assert payload["harbor"]["concurrency"] == "2"
@@ -950,7 +938,6 @@ def test_extract_version_from_health_payload() -> None:
 
 
 def test_workspace_mode_name() -> None:
-    assert workspace_mode_name("attach") == "attach"
     assert workspace_mode_name("managed") == "managed"
     assert workspace_mode_name("host") == "host-sync"
 
@@ -975,9 +962,16 @@ def test_docker_inspect_helpers_read_container_config(
     assert calls[0] == ["docker", "inspect", "-f", "{{.Config.Image}}", "c1"]
 
 
-def test_resolve_workspace_mode_defaults_to_attach() -> None:
-    assert resolve_workspace_mode({}) == "attach"
+def test_resolve_workspace_mode_defaults_to_host() -> None:
+    assert resolve_workspace_mode({INSTANCE_SANDBOX_ENV: "1"}) == "host"
+    with pytest.raises(RuntimeError, match="--isolated"):
+        resolve_workspace_mode({})
     assert resolve_workspace_mode({"LIBRAGENT_HARBOR_WORKSPACE_MODE": " Managed "}) == "managed"
+
+
+def test_resolve_workspace_mode_rejects_attach() -> None:
+    with pytest.raises(RuntimeError, match="must be one of"):
+        resolve_workspace_mode({"LIBRAGENT_HARBOR_WORKSPACE_MODE": "attach"})
 
 
 def test_resolve_workspace_mode_rejects_unknown_mode() -> None:
@@ -1097,7 +1091,7 @@ async def test_dump_incomplete_diagnostics_writes_trajectory_and_meta(
         seen_non_idle=True,
         reason="harbor_cancelled",
         last_session_info={"model": "openai/gpt-5.4"},
-        workspace_mode="attach",
+        workspace_mode="managed",
         context=context,
     )
 
@@ -1109,7 +1103,7 @@ async def test_dump_incomplete_diagnostics_writes_trajectory_and_meta(
     assert meta["reason"] == "harbor_cancelled"
     assert meta["tool_calls_count"] == 1
     assert meta["last_status"] == "busy"
-    assert meta["workspaceMode"] == "attach"
+    assert meta["workspaceMode"] == "managed"
     assert meta["last_tool_call"] == {
         "tool_call_id": "c1",
         "function_name": "workspace__runShell",
@@ -1207,3 +1201,90 @@ def test_run_without_isolated_instance_writes_no_instance_log(
     asyncio.run(adapter.run("instruction", None, None))  # type: ignore[arg-type]
 
     assert not (tmp_path / "agent" / "instance.log").exists()
+
+
+T04_DIR = Path(__file__).parent / "libragent-layman-intent" / "t04-event-subscribe"
+
+
+def _trial_logs_dir(tmp_path: Path, task_dir: Path) -> Path:
+    trial = tmp_path / "t04-event-subscribe__abc"
+    (trial / "agent").mkdir(parents=True)
+    (trial / "config.json").write_text(json.dumps({"task": {"path": str(task_dir)}}))
+    return trial / "agent"
+
+
+def test_post_idle_event_is_read_from_the_trial_task(tmp_path: Path) -> None:
+    event = load_post_idle_event(_trial_logs_dir(tmp_path, T04_DIR))
+    assert event is not None
+    assert event.requires == ".sms_monitor/subscriptions.json"
+    message = json.loads(event.content)
+    assert event.path == f".sms_monitor/incoming/{message['id']}.json"
+    assert event.done == f".sms_monitor/delivered/{message['id']}.json"
+    # The grader checks the reply to the delivered message.
+    assert f'MESSAGE_ID = "{message["id"]}"' in (T04_DIR / "tests" / "test_outputs.py").read_text()
+
+
+def test_post_idle_event_absent_without_metadata_or_trial_config(tmp_path: Path) -> None:
+    task = tmp_path / "task"
+    task.mkdir()
+    (task / "task.toml").write_text('[metadata]\ndifficulty = "easy"\n')
+    assert load_post_idle_event(_trial_logs_dir(tmp_path, task)) is None
+    assert load_post_idle_event(tmp_path / "no-trial" / "agent") is None
+
+
+def test_post_idle_event_with_missing_field_is_an_error(tmp_path: Path) -> None:
+    task = tmp_path / "task"
+    task.mkdir()
+    (task / "task.toml").write_text('[metadata.libragent_event]\npath = "x"\n')
+    with pytest.raises(RuntimeError, match="requires"):
+        load_post_idle_event(_trial_logs_dir(tmp_path, task))
+
+
+def test_woken_work_finished_states() -> None:
+    before = [{"role": "user"}, {"role": "assistant"}]
+    assert woken_work_finished(before, "idle", 2) is None  # never woken
+    woken = before + [{"role": "user"}]
+    assert woken_work_finished(woken, "busy", 2) is False
+    assert woken_work_finished(woken, "idle", 2) is False  # woken, not yet answered
+    assert woken_work_finished(woken + [{"role": "assistant"}], "idle", 2) is True
+    # A woken turn may end on a tool result (e.g. ui__reportResult).
+    assert woken_work_finished(woken + [{"role": "assistant"}, {"role": "tool"}], "idle", 2) is True
+    # A second wake that the session has not answered yet.
+    answered_then_woken = woken + [{"role": "assistant"}, {"role": "user"}]
+    assert woken_work_finished(answered_then_woken, "idle", 2) is False
+    assert woken_work_finished(woken, "error", 2) is True
+
+
+def test_wake_message_reaches_the_trajectory_as_a_user_step() -> None:
+    # T04's verifier finds the wake by this prefix (server/wake.rs `to_message`).
+    messages = [
+        {"role": "user", "content": [{"type": "text", "text": "문자 오면 답장해줘"}]},
+        {"role": "assistant", "content": [{"type": "text", "text": "구독했어."}]},
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "[wake callback] Background process finished: status=completed"}
+            ],
+        },
+        {
+            "role": "assistant",
+            "content": [{"type": "text", "text": ""}],
+            "toolCalls": [
+                {
+                    "id": "call_reply",
+                    "type": "function",
+                    "function": {
+                        "name": "workspace__runShell",
+                        "arguments": '{"command":"/app/sms_monitor reply --message_id m-5c1e --message ok"}',
+                    },
+                }
+            ],
+        },
+    ]
+    steps = build_atif_trajectory(
+        messages, agent_name="LibrAgent", agent_version="0.9.28", model_name=None
+    ).model_dump(mode="json")["steps"]
+    woken = [i for i, s in enumerate(steps) if str(s.get("message", "")).startswith("[wake callback]")]
+    assert woken and steps[woken[0]]["source"] == "user"
+    after = [c for s in steps[woken[0] + 1 :] for c in s.get("tool_calls") or []]
+    assert any("m-5c1e" in json.dumps(c["arguments"]) for c in after)

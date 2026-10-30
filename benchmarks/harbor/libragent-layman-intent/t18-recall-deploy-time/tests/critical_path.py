@@ -208,10 +208,12 @@ TASKS: dict[str, TaskSpec] = {
         ),
         TaskSpec(
             "T04",
-            "t04-build-done-notify",
+            "t04-event-subscribe",
             "P",
             "call-me-back",
-            (Step("__spawnProcess"), Step("__waitForProcess")),
+            # No trajectory checks: T04 is graded on the reply its woken session sent
+            # (tests/test_outputs.py). Polling or callbacks fail: the session never
+            # goes idle, or nothing wakes it when the message arrives.
         ),
         TaskSpec("T05", "t05-tell-me-later", "P", "loop", SCHEDULE_CALLBACK),
         TaskSpec(

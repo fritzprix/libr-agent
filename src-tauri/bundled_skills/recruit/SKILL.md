@@ -82,9 +82,11 @@ Do **not** ask vague questions like "What kind of expert do you want?". Instead,
 > 
 > Would you like me to create this specialist?
 
+Use that closing question when the user asked for ideas or options, or gave no role/domain ("전문가 하나 만들어줘"). If the user named the role or domain in a creation command ("주식 투자 비서 만들어줘"), do not stop to ask: show the short proposal and call `agent__createAgent` in the same turn, then tell the user the name and tools of what was created so it can be changed or removed. If the name already exists, `agent__createAgent` returns a duplicate error: tell the user which assistant already has that name and propose a different one.
+
 ### 4. Create the Assistant
 
-Once the user approves or refines the proposal, execute the creation:
+Once the user approves or refines the proposal (or immediately, for a creation command that names the role or domain), execute the creation:
 
 ```json
 agent__createAgent({

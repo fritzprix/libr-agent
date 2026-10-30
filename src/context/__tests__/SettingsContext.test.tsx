@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from '@testing-library/react';
+import { render, renderHook, screen, waitFor } from '@testing-library/react';
 import { act } from '@testing-library/react';
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -9,6 +9,13 @@ import {
   useSettings,
 } from '../SettingsContext';
 import { __resetRustSettingsServiceCacheForTests } from '@/lib/services/rust-settings-service';
+import { settingsService } from '@/lib/services/settings-service';
+import {
+  TEST_ADVANCED_SETTINGS,
+  TEST_DISPLAY_SETTINGS,
+  TEST_EXPERIMENTAL_SETTINGS,
+  TEST_SYSTEM_SETTINGS,
+} from '@/test/fixtures/settings';
 
 vi.mock('@/lib/backend/core', () => ({
   safeInvoke: vi.fn(),
@@ -44,7 +51,24 @@ describe('SettingsContext', () => {
   });
 
   it('dedupes the initial settings fetch across StrictMode remounts', async () => {
-    vi.mocked(safeInvoke).mockResolvedValue([]);
+    vi.mocked(safeInvoke).mockImplementation((command: string) => {
+      if (command === 'list_settings') {
+        return Promise.resolve([]);
+      }
+      if (command === 'get_display_settings') {
+        return Promise.resolve({ ...TEST_DISPLAY_SETTINGS });
+      }
+      if (command === 'get_system_settings') {
+        return Promise.resolve({ ...TEST_SYSTEM_SETTINGS });
+      }
+      if (command === 'get_experimental_settings') {
+        return Promise.resolve({ ...TEST_EXPERIMENTAL_SETTINGS });
+      }
+      if (command === 'get_advanced_settings') {
+        return Promise.resolve({ ...TEST_ADVANCED_SETTINGS });
+      }
+      return Promise.reject(new Error(`Unexpected command: ${command}`));
+    });
 
     const wrapper = ({ children }: { children: React.ReactNode }) => (
       <React.StrictMode>
@@ -58,8 +82,12 @@ describe('SettingsContext', () => {
       expect(result.current.isLoading).toBe(false);
     });
 
-    expect(safeInvoke).toHaveBeenCalledTimes(1);
+    expect(safeInvoke).toHaveBeenCalledTimes(5);
     expect(safeInvoke).toHaveBeenCalledWith('list_settings');
+    expect(safeInvoke).toHaveBeenCalledWith('get_advanced_settings');
+    expect(safeInvoke).toHaveBeenCalledWith('get_display_settings');
+    expect(safeInvoke).toHaveBeenCalledWith('get_experimental_settings');
+    expect(safeInvoke).toHaveBeenCalledWith('get_system_settings');
   });
 
   it('does not let an older settings fetch overwrite a refreshed cache', async () => {
@@ -96,55 +124,54 @@ describe('SettingsContext', () => {
         return Promise.resolve([]);
       }
 
+      if (command === 'get_display_settings') {
+        return Promise.resolve({ ...TEST_DISPLAY_SETTINGS });
+      }
+      if (command === 'get_system_settings') {
+        return Promise.resolve({ ...TEST_SYSTEM_SETTINGS });
+      }
+      if (command === 'get_experimental_settings') {
+        return Promise.resolve({ ...TEST_EXPERIMENTAL_SETTINGS });
+      }
+      if (command === 'get_advanced_settings') {
+        return Promise.resolve({ ...TEST_ADVANCED_SETTINGS });
+      }
+
       return Promise.reject(new Error(`Unexpected command: ${command}`));
     });
 
-    const wrapper = ({ children }: { children: React.ReactNode }) => (
-      <SettingsProvider>{children}</SettingsProvider>
-    );
-
-    const { result, unmount } = renderHook(() => useSettings(), { wrapper });
-
+    // The provider renders no consumer before the first load, so drive the
+    // service directly: an update lands while the initial fetch is in flight.
+    const initial = settingsService.getSettings();
     await waitFor(() => {
       expect(safeInvoke).toHaveBeenCalledWith('list_settings');
     });
 
-    act(() => {
-      void result.current.update({ uiLanguage: 'ko' });
-    });
-
+    const updating = settingsService.updateSettings({ uiLanguage: 'ko' });
     await waitFor(() => {
       expect(safeInvoke).toHaveBeenCalledWith('update_settings', {
         settings: { uiLanguage: 'ko' },
       });
-      expect(vi.mocked(safeInvoke)).toHaveBeenCalledTimes(3);
     });
 
     freshSettings.resolve([
       { key: 'uiLanguage', value: 'ko', createdAt: 0, updatedAt: 0 },
     ]);
-
-    await waitFor(() => {
-      expect(result.current.value.uiLanguage).toBe('ko');
-      expect(result.current.isLoading).toBe(false);
-    });
+    expect((await updating).uiLanguage).toBe('ko');
 
     staleSettings.resolve([
       { key: 'uiLanguage', value: 'en', createdAt: 0, updatedAt: 0 },
     ]);
-    await Promise.resolve();
+    await initial;
 
-    expect(result.current.value.uiLanguage).toBe('ko');
-
-    unmount();
-
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <SettingsProvider>{children}</SettingsProvider>
+    );
     const cachedRender = renderHook(() => useSettings(), { wrapper });
     await waitFor(() => {
       expect(cachedRender.result.current.value.uiLanguage).toBe('ko');
       expect(cachedRender.result.current.isLoading).toBe(false);
     });
-
-    expect(vi.mocked(safeInvoke)).toHaveBeenCalledTimes(3);
   });
 
   it('syncs i18n language from persisted settings after initial load', async () => {
@@ -206,5 +233,89 @@ describe('SettingsContext', () => {
     expect(i18nMock.changeLanguage).toHaveBeenCalledWith(
       DEFAULT_SETTING.uiLanguage,
     );
+  });
+
+  it('renders children only after the first load', async () => {
+    let resolveAdvanced: (value: unknown) => void = () => {};
+    vi.mocked(safeInvoke).mockImplementation((command: string) => {
+      if (command === 'list_settings') {
+        return Promise.resolve([]);
+      }
+      if (command === 'get_display_settings') {
+        return Promise.resolve({ ...TEST_DISPLAY_SETTINGS });
+      }
+      if (command === 'get_system_settings') {
+        return Promise.resolve({ ...TEST_SYSTEM_SETTINGS });
+      }
+      if (command === 'get_experimental_settings') {
+        return Promise.resolve({ ...TEST_EXPERIMENTAL_SETTINGS });
+      }
+      if (command === 'get_advanced_settings') {
+        return new Promise((resolve) => {
+          resolveAdvanced = resolve;
+        });
+      }
+      return Promise.reject(new Error(`Unexpected command: ${command}`));
+    });
+
+    render(
+      <SettingsProvider>
+        <span>app</span>
+      </SettingsProvider>,
+    );
+    expect(screen.queryByText('app')).toBeNull();
+
+    await act(async () => {
+      resolveAdvanced({ ...TEST_ADVANCED_SETTINGS });
+    });
+    expect(await screen.findByText('app')).toBeTruthy();
+  });
+
+  it('shows the error instead of children when the first load fails', async () => {
+    vi.mocked(safeInvoke).mockRejectedValue(new Error('db unreadable'));
+
+    render(
+      <SettingsProvider>
+        <span>app</span>
+      </SettingsProvider>,
+    );
+
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      'db unreadable',
+    );
+    expect(screen.queryByText('app')).toBeNull();
+  });
+
+  it('keeps the last loaded settings when a reload fails', async () => {
+    vi.mocked(safeInvoke).mockImplementation((command: string) => {
+      if (command === 'list_settings') {
+        return Promise.resolve([]);
+      }
+      if (command === 'get_display_settings') {
+        return Promise.resolve({ ...TEST_DISPLAY_SETTINGS });
+      }
+      if (command === 'get_system_settings') {
+        return Promise.resolve({ ...TEST_SYSTEM_SETTINGS });
+      }
+      if (command === 'get_experimental_settings') {
+        return Promise.resolve({ ...TEST_EXPERIMENTAL_SETTINGS });
+      }
+      if (command === 'get_advanced_settings') {
+        return Promise.resolve({ ...TEST_ADVANCED_SETTINGS, maxRetries: 7 });
+      }
+      return Promise.reject(new Error(`Unexpected command: ${command}`));
+    });
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <SettingsProvider>{children}</SettingsProvider>
+    );
+    const { result } = renderHook(() => useSettings(), { wrapper });
+    await waitFor(() => expect(result.current.value.advanced.maxRetries).toBe(7));
+
+    vi.mocked(safeInvoke).mockRejectedValue(new Error('db unreadable'));
+    await act(async () => {
+      await expect(result.current.update({ uiLanguage: 'en' })).rejects.toThrow();
+    });
+
+    expect(result.current.value.advanced.maxRetries).toBe(7);
   });
 });

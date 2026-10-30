@@ -4,8 +4,7 @@ use crate::agent::runtime_state::{
 };
 use crate::mcp::utils::unique_session_server_name;
 use crate::repositories::mcp_server_repository::MCPServerRepository;
-use crate::repositories::settings_repository::SettingsRepository;
-use crate::state::{get_mcp_server_repository, get_settings_repository};
+use crate::state::get_mcp_server_repository;
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,6 +48,7 @@ pub fn decide_existing_proxy_disposition(
     }
 }
 
+#[derive(Debug, Clone)]
 pub(super) struct LoadedServerConfigs {
     pub(super) stdio_configs: HashMap<String, crate::mcp::types::MCPServerConfig>,
     pub(super) http_configs: HashMap<String, crate::mcp::types::MCPServerConfig>,
@@ -222,26 +222,11 @@ pub(super) async fn load_requested_server_configs(
 pub(super) async fn apply_startup_timeout_settings(
     base_config: SessionIsolationConfig,
 ) -> SessionIsolationConfig {
-    let mut config = base_config;
-
-    if let Ok(settings_repo) = std::panic::catch_unwind(get_settings_repository) {
-        if let Ok(Some(model)) = settings_repo.get("systemSettings").await {
-            #[derive(serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct SystemSettings {
-                mcp_server_startup_timeout_seconds: Option<u64>,
-            }
-
-            if let Ok(settings) = serde_json::from_str::<SystemSettings>(&model.value) {
-                if let Some(timeout) = settings.mcp_server_startup_timeout_seconds {
-                    log::debug!("Applying user setting: MCP startup timeout = {}s", timeout);
-                    config = config.with_startup_timeout(timeout);
-                }
-            }
-        }
-    }
-
-    config
+    let timeout = crate::models::system_settings::SystemSettings::load_global()
+        .await
+        .mcp_server_startup_timeout_seconds;
+    log::debug!("Applying MCP startup timeout = {}s", timeout);
+    base_config.with_startup_timeout(timeout)
 }
 
 /// Resolve the effective MCP discovery / Session Ready timeout in seconds

@@ -136,10 +136,11 @@ fn create_integration_manager() -> SessionMCPManager {
 async fn test_lazy_spawn() {
     // Skip if python3 is not available in this environment (CI/CD safety).
     // Using an upfront check avoids silently passing after all assertions are skipped.
-    if std::process::Command::new("python3")
+    if !std::process::Command::new("python3")
         .arg("--version")
         .output()
-        .is_err()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
     {
         eprintln!("Skipping integration test: python3 not available");
         return;
@@ -178,10 +179,11 @@ async fn test_multiple_spawn_attempts_are_serialized() {
     // Skip if python3 is not available. Checking upfront ensures that if the
     // dependency is missing, the test skips cleanly rather than silently passing
     // after all 5 concurrent spawn attempts fail inside the loop.
-    if std::process::Command::new("python3")
+    if !std::process::Command::new("python3")
         .arg("--version")
         .output()
-        .is_err()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
     {
         eprintln!("Skipping integration test: python3 not available");
         return;
@@ -217,10 +219,11 @@ async fn test_multiple_spawn_attempts_are_serialized() {
 
 #[tokio::test]
 async fn test_spawn_uses_session_workspace_as_cwd() {
-    if std::process::Command::new("python3")
+    if !std::process::Command::new("python3")
         .arg("--version")
         .output()
-        .is_err()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
     {
         eprintln!("Skipping integration test: python3 not available");
         return;
@@ -447,4 +450,180 @@ async fn test_activity_tracking_initialization() {
 
     let processes = manager.active_processes.read().await;
     assert_eq!(processes.len(), 0, "Process map should be empty initially");
+}
+
+/// Manager whose only server accepts the process but never answers `initialize`.
+#[cfg(unix)]
+fn create_silent_server_manager(startup_timeout_seconds: u64) -> SessionMCPManager {
+    let mut configs = HashMap::new();
+    configs.insert(
+        "silent".to_string(),
+        MCPServerConfig {
+            name: Some("silent".to_string()),
+            transport: TransportConfig::Stdio {
+                command: "sleep".to_string(),
+                args: vec!["600".to_string()],
+                env: HashMap::new(),
+            },
+            authentication: None,
+            metadata: None,
+            provenance: None,
+        },
+    );
+    let config = SessionIsolationConfig {
+        idle_timeout_minutes: 5,
+        cleanup_interval_minutes: 5,
+        process_startup_timeout_seconds: startup_timeout_seconds,
+        max_restart_attempts: 0,
+        http_connection_pool_size: 10,
+    };
+    SessionMCPManager::new(
+        "silent-session".to_string(),
+        configs,
+        config,
+        std::env::current_dir().unwrap(),
+        create_test_channel_event_tx(),
+    )
+}
+
+/// Manager whose only server answers `initialize` and then exits, so listing its tools fails.
+#[cfg(unix)]
+fn create_dying_server_manager() -> SessionMCPManager {
+    let init_response = r#"{"jsonrpc":"2.0","id":0,"result":{"protocolVersion":"2024-11-05","capabilities":{},"serverInfo":{"name":"dying","version":"1"}}}"#;
+    let mut configs = HashMap::new();
+    configs.insert(
+        "dying".to_string(),
+        MCPServerConfig {
+            name: Some("dying".to_string()),
+            transport: TransportConfig::Stdio {
+                command: "sh".to_string(),
+                args: vec![
+                    "-c".to_string(),
+                    format!("read line; printf '%s\\n' '{init_response}'"),
+                ],
+                env: HashMap::new(),
+            },
+            authentication: None,
+            metadata: None,
+            provenance: None,
+        },
+    );
+    let config = SessionIsolationConfig {
+        idle_timeout_minutes: 5,
+        cleanup_interval_minutes: 5,
+        process_startup_timeout_seconds: 5,
+        max_restart_attempts: 0,
+        http_connection_pool_size: 10,
+    };
+    SessionMCPManager::new(
+        "dying-session".to_string(),
+        configs,
+        config,
+        std::env::current_dir().unwrap(),
+        create_test_channel_event_tx(),
+    )
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_failed_tool_listing_drops_the_process_so_a_retry_spawns_a_new_one() {
+    let manager = create_dying_server_manager();
+
+    let result = manager
+        .list_tools_with_init_timeout("dying", Duration::from_secs(5))
+        .await;
+
+    assert!(result.is_err());
+    // The broken client must not stay registered, or a retry would reuse it.
+    assert!(manager.active_processes.read().await.is_empty());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn tool_calls_keep_the_configured_startup_timeout() {
+    let manager = create_silent_server_manager(1);
+
+    // Discovery may wait longer than the session wait, but a tool call must not.
+    let started = std::time::Instant::now();
+    let result = manager
+        .call_tool("silent", "any_tool", serde_json::json!({}))
+        .await;
+
+    assert!(matches!(result, Err(SessionMCPError::InitTimeout(_))));
+    assert!(started.elapsed() < Duration::from_secs(10));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn discovery_can_wait_longer_than_the_configured_startup_timeout() {
+    let manager = create_silent_server_manager(1);
+
+    // With a 1s configured timeout and a 3s discovery timeout, the wait is the longer one.
+    let started = std::time::Instant::now();
+    let result = manager
+        .list_tools_with_init_timeout("silent", Duration::from_secs(3))
+        .await;
+
+    assert!(matches!(result, Err(SessionMCPError::InitTimeout(_))));
+    assert!(started.elapsed() >= Duration::from_secs(3));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn shutdown_ends_a_pending_initialize() {
+    let manager = create_silent_server_manager(600);
+
+    let pending = {
+        let manager = manager.clone();
+        tokio::spawn(async move {
+            manager
+                .list_tools_with_init_timeout("silent", Duration::from_secs(600))
+                .await
+        })
+    };
+    // Let the spawn reach the pending initialize.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(!pending.is_finished());
+
+    manager.shutdown_all().await;
+
+    let result = tokio::time::timeout(Duration::from_secs(5), pending)
+        .await
+        .expect("pending initialize should end when the session shuts down")
+        .unwrap();
+    assert!(matches!(result, Err(SessionMCPError::SessionClosed)));
+    assert!(manager.active_processes.read().await.is_empty());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn tool_call_does_not_wait_on_discovery_holding_the_spawn_lock() {
+    let manager = create_silent_server_manager(1);
+
+    // Discovery holds the spawn lock while the slow server initializes.
+    let discovery = {
+        let manager = manager.clone();
+        tokio::spawn(async move {
+            manager
+                .list_tools_with_init_timeout("silent", Duration::from_secs(600))
+                .await
+        })
+    };
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    let started = std::time::Instant::now();
+    let result = manager
+        .call_tool("silent", "any_tool", serde_json::json!({}))
+        .await;
+
+    match result {
+        Err(SessionMCPError::InitTimeout(message)) => {
+            assert!(message.contains("still starting"), "{message}")
+        }
+        other => panic!("expected a still-starting error, got {other:?}"),
+    }
+    assert!(started.elapsed() < Duration::from_secs(10));
+    assert!(!discovery.is_finished(), "discovery keeps loading");
+
+    manager.shutdown_all().await;
 }

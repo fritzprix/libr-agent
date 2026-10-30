@@ -55,14 +55,11 @@ if ($LASTEXITCODE -ne 0) {
 
 # 4. Verify Backend Compilation
 Write-Host "Verifying backend compilation..."
-Push-Location src-tauri
-cargo check
+pnpm rust:check
 if ($LASTEXITCODE -ne 0) {
-    Pop-Location
     Write-Host "Error: Backend check failed"
     exit 1
 }
-Pop-Location
 
 Write-Host ">>> Bumping version..."
 $newVersionOutput = node scripts/bump-version.cjs $VersionBump 2>&1

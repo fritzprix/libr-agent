@@ -13,7 +13,10 @@ from benchmarks.harbor.isolated_instance import (
     apply_prod_llm_settings,
     build_seed,
     instance_pids,
+    auth_headers,
     instance_env,
+    issue_api_key,
+    instance_running,
     reset_run_dir,
     safe_print,
     sandbox_command,
@@ -153,7 +156,10 @@ def test_sandbox_command_keeps_only_run_dir_writable(tmp_path: Path) -> None:
     run_dir = str(layout.run_dir.resolve())
     command = sandbox_command(layout, Path("/opt/libragent"), {"XDG_RUNTIME_DIR": "/run/user/1000"})
 
-    assert command[:3] == ["bwrap", "--ro-bind", "/"]
+    assert command[0] == "bwrap"
+    assert "--unshare-pid" in command
+    assert ("--proc", "/proc") in list(zip(command, command[1:]))
+    assert "--die-with-parent" not in command  # the instance outlives `launch`
     assert command[-2:] == ["--", "/opt/libragent"]
     pairs = list(zip(command, command[1:], command[2:]))
     assert ("--bind", run_dir, run_dir) in pairs
@@ -294,3 +300,44 @@ def test_stop_completes_when_stdout_is_broken(tmp_path: Path, monkeypatch: pytes
     layout.root.mkdir(parents=True)
     stop(layout)  # no running instance: used to die on print("No running bench instance.")
     assert not layout.pid_file.exists()
+
+
+def test_instance_running_follows_the_launched_process(tmp_path: Path) -> None:
+    import os
+    import subprocess
+
+    layout = InstanceLayout(tmp_path / "bench")
+    layout.root.mkdir(parents=True)
+    assert not instance_running(layout)  # no pid file
+
+    env = dict(os.environ, LIBRAGENT_DATA_DIR=str(layout.data_dir.resolve()))
+    child = subprocess.Popen(["sleep", "60"], env=env)
+    layout.pid_file.write_text(str(child.pid), encoding="utf-8")
+    try:
+        assert instance_running(layout)
+        child.kill()
+        os.waitid(os.P_PID, child.pid, os.WEXITED | os.WNOWAIT)  # dead, still a zombie
+        assert not instance_running(layout)  # a zombie is not running
+    finally:
+        child.kill()
+        child.returncode = 0  # already reaped by instance_running
+
+
+def test_each_launch_issues_a_private_api_key(tmp_path: Path) -> None:
+    import stat
+
+    layout = InstanceLayout(tmp_path / "bench")
+    reset_run_dir_dirs = [layout.root, layout.run_dir]
+    for directory in reset_run_dir_dirs:
+        directory.mkdir(parents=True, exist_ok=True)
+    assert auth_headers(layout) == {}
+
+    key = issue_api_key(layout)
+    assert key.startswith("libr_") and len(key) == len("libr_") + 43
+    assert auth_headers(layout) == {"Authorization": f"Bearer {key}"}
+    assert layout.api_header_file.read_text() == f"Authorization: Bearer {key}\n"
+    assert layout.app_key_input.read_text() == key
+    for path in (layout.api_key_file, layout.api_header_file, layout.app_key_input):
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600, path
+
+    assert issue_api_key(layout) != key  # a new key per launch

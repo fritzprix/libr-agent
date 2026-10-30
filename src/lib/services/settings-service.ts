@@ -1,12 +1,13 @@
 import { AIServiceProvider } from '@/lib/ai-service';
-import type { ThinkingEffort } from '@/lib/ai-service/thinking-effort-mapping';
+import type { AdvancedSettings } from '@/lib/generated/AdvancedSettings';
+import type { ExperimentalSettings } from '@/lib/generated/ExperimentalSettings';
+import type { ToolLoopRecoveryPolicy } from '@/lib/generated/ToolLoopRecoveryPolicy';
 import { llmConfigManager } from '@/lib/llm-config-manager';
-import {
-  REPEATED_THINKING_MIN_PATTERN_LENGTH,
-  REPEATED_THINKING_MIN_REPETITIONS,
-} from '@/context/llm/repeatedTailDetector';
-import { DEFAULT_MAX_RECENT_MEDIA_MESSAGES } from '@/lib/media-settings';
-import { DEFAULT_UI_SCALE, normalizeUiScale } from '@/lib/ui-scale';
+import type { ColorTheme } from '@/lib/generated/ColorTheme';
+import type { DisplaySettings } from '@/lib/generated/DisplaySettings';
+import type { IsolationLevel } from '@/lib/generated/IsolationLevel';
+import type { MessageLayoutStyle } from '@/lib/generated/MessageLayoutStyle';
+import type { SystemSettings } from '@/lib/generated/SystemSettings';
 
 export interface SafetySetting {
   category: string;
@@ -86,70 +87,14 @@ export function normalizeComplexityModelMapping(
   return result;
 }
 
-export interface AdvancedSettings {
-  maxRetries: number;
-  retryDelay: number; // in milliseconds
-  diffContextLines: number;
-  defaultMaxOutputTokens: number;
-  toolResultInlineLimitBytes: number;
-  defaultSessionMaxDepth: number;
-  defaultSessionMaxFanout: number;
-  // SP2: Global concurrent execution limits (runtime semaphores, not per-parent counts)
-  maxConcurrentActiveSessions: number; // default 4 — simultaneous LLM loops
-  maxSuspendedSessions: number; // default 8 — sessions blocked on awaitAgent
-  maxConcurrentActiveProcesses: number; // default 10 — simultaneous shell processes
-  maxSuspendedProcesses: number; // default 20 — processes blocked on pollProcess
-  loopPreventionThreshold: number; // default 3 — consecutive identical (call, outcome) streak before soft recovery
-  /** Gap after soft recovery before hard break. Default 2 so Soft→Escalate→Hard can fire for error loops. */
-  loopPreventionHardBreakOffset: number;
-  thinkingLoopMinPatternLength: number; // default 256 — minimum repeating sequence length for thinking loops
-  thinkingLoopMinRepetitions: number; // default 4 — minimum repetitions for thinking loops
-  /** Number of recent media-containing messages that retain full payloads. */
-  maxRecentMediaMessages: number;
-  /** Thinking effort preset for extended reasoning/thinking. */
-  thinkingEffort: ThinkingEffort;
-}
+/** Normalized by Rust (`get_advanced_settings`); generated from the Rust model. */
+export type { AdvancedSettings };
 
-/** Chat message chrome: classic bubbles vs full-width coding-agent document stream. */
-export type MessageLayoutStyle = 'document' | 'bubble';
+/** Normalized by Rust (`get_display_settings`); generated from the Rust model. */
+export type { ColorTheme, DisplaySettings, MessageLayoutStyle };
 
-export type ColorTheme = 'neutral' | 'amber' | 'violet' | 'ocean' | 'forest';
-export const COLOR_THEMES: ColorTheme[] = [
-  'neutral',
-  'amber',
-  'violet',
-  'ocean',
-  'forest',
-];
-
-export function isColorTheme(val: unknown): val is ColorTheme {
-  return (
-    typeof val === 'string' && (COLOR_THEMES as readonly string[]).includes(val)
-  );
-}
-
-export interface DisplaySettings {
-  metricDisplayMode: 'tooltip' | 'inline';
-  prefillDisplayFormat: 'time' | 'tokensPerSecond';
-  showTokenSpeed: boolean;
-  compactMetrics: boolean;
-  /** Controls tool call display verbosity. 'simple' hides params/results/errors for regular users. */
-  toolDetailLevel: 'simple' | 'developer';
-  fontFamily: string;
-  /** Webview zoom factor; one of `UI_SCALE_STEPS`. */
-  uiScale: number;
-  /**
-   * Message layout style for the agent chat transcript.
-   * - `document`: full-width document stream optimized for code/diffs (default)
-   * - `bubble`: classic messenger bubbles
-   */
-  messageLayout: MessageLayoutStyle;
-  colorTheme: ColorTheme;
-  /** When true, show release/hub feature discovery tips on the agent hub. */
-  showFeatureTips: boolean;
-}
-
-export type IsolationLevel = 'basic' | 'medium' | 'high';
+/** Normalized by Rust (`get_experimental_settings`); generated from the Rust model. */
+export type { ExperimentalSettings, ToolLoopRecoveryPolicy };
 
 /** Context management strategy:
  * - 'window': sliding window — keep the N most recent messages (existing behavior)
@@ -157,54 +102,8 @@ export type IsolationLevel = 'basic' | 'medium' | 'high';
  */
 export type ContextStrategy = 'window' | 'compact';
 
-export interface SystemSettings {
-  maxFileUploadSizeMB: number;
-  webActionTimeoutSeconds: number;
-  httpServerPort: number;
-  httpServerExpose: boolean;
-  mcpServerStartupTimeoutSeconds: number;
-  mcpToolTimeoutSeconds: number;
-  searchIndexFrequencyMinutes: number;
-  scheduledTaskMinimumIntervalMinutes: number;
-  shellIsolationLevel: IsolationLevel;
-  shellRuntimeBootstrap: boolean;
-  skillsDirectory?: string;
-  /**
-   * When true (default), inhibit system idle sleep while LibrAgent is running.
-   * Does not keep the display forced on.
-   */
-  preventSleepDuringAgentWork: boolean;
-}
-
-/** Canonical tool-loop recovery policy stored in experimentalSettings. */
-export type ToolLoopRecoveryPolicy = 'resampleThenBreak' | 'legacyGuidance';
-
-export function isToolLoopRecoveryPolicy(
-  value: unknown,
-): value is ToolLoopRecoveryPolicy {
-  return value === 'resampleThenBreak' || value === 'legacyGuidance';
-}
-
-export interface ExperimentalSettings {
-  inlineAudioAttachment: boolean;
-  /**
-   * Default `resampleThenBreak`: discard the looping assistant turn and
-   * request a fresh completion. `legacyGuidance` injects loop-prevention
-   * text into tool errors (opt-in).
-   */
-  toolLoopRecoveryPolicy: ToolLoopRecoveryPolicy;
-
-  /** Max clean resample retries before promoting to circuit breaker. */
-  toolLoopMaxResampleRetries: number;
-}
-
-/**
- * Partial / legacy DB blob for `experimentalSettings`.
- * `toolLoopLegacyGuidanceEnabled` is read-only migration input.
- */
-export type StoredExperimentalSettings = Partial<ExperimentalSettings> & {
-  toolLoopLegacyGuidanceEnabled?: boolean;
-};
+/** Normalized by Rust (`get_system_settings`); generated from the Rust model. */
+export type { IsolationLevel, SystemSettings };
 
 export interface Settings {
   serviceConfigs: Record<AIServiceProvider, ServiceConfig>;
@@ -235,7 +134,17 @@ export interface Settings {
 
 const DEFAULT_MODEL = llmConfigManager.recommendModel({});
 
-export const DEFAULT_SETTING: Settings = {
+/**
+ * Frontend defaults. `advanced`, `display`, `experimental` and `system` are not
+ * here: Rust owns their schema and defaults, `get_advanced_settings` /
+ * `get_display_settings` / `get_experimental_settings` / `get_system_settings`
+ * always return the complete object, and `SettingsProvider` renders nothing
+ * that reads settings before it arrives.
+ */
+export const DEFAULT_SETTING: Omit<
+  Settings,
+  'advanced' | 'display' | 'experimental' | 'system'
+> = {
   serviceConfigs: Object.values(AIServiceProvider).reduce(
     (acc, provider) => {
       acc[provider] = {};
@@ -258,171 +167,7 @@ export const DEFAULT_SETTING: Settings = {
   uiLanguage: 'en',
   toolCallGroupVisibleCount: 4,
   agentHubUrl: '',
-  advanced: {
-    maxRetries: 1,
-    retryDelay: 5000,
-    diffContextLines: 3,
-    defaultMaxOutputTokens: 8192,
-    toolResultInlineLimitBytes: 16 * 1024,
-    defaultSessionMaxDepth: 0,
-    defaultSessionMaxFanout: 0,
-    maxConcurrentActiveSessions: 4,
-    maxSuspendedSessions: 8,
-    maxConcurrentActiveProcesses: 10,
-    maxSuspendedProcesses: 20,
-    loopPreventionThreshold: 3,
-    loopPreventionHardBreakOffset: 2,
-    thinkingLoopMinPatternLength: REPEATED_THINKING_MIN_PATTERN_LENGTH,
-    thinkingLoopMinRepetitions: REPEATED_THINKING_MIN_REPETITIONS,
-    maxRecentMediaMessages: DEFAULT_MAX_RECENT_MEDIA_MESSAGES,
-    thinkingEffort: 'off',
-  },
-  display: {
-    metricDisplayMode: 'inline',
-    prefillDisplayFormat: 'time',
-    showTokenSpeed: true,
-    compactMetrics: false,
-    toolDetailLevel: 'simple',
-    fontFamily: 'Pretendard',
-    uiScale: DEFAULT_UI_SCALE,
-    messageLayout: 'document',
-    colorTheme: 'neutral',
-    showFeatureTips: true,
-  },
-  system: {
-    maxFileUploadSizeMB: 50,
-    webActionTimeoutSeconds: 30,
-    httpServerPort: 3030,
-    httpServerExpose: false,
-    mcpServerStartupTimeoutSeconds: 30,
-    mcpToolTimeoutSeconds: 0,
-    searchIndexFrequencyMinutes: 5,
-    scheduledTaskMinimumIntervalMinutes: 0,
-    shellIsolationLevel: 'medium',
-    shellRuntimeBootstrap: false,
-    skillsDirectory: '',
-    preventSleepDuringAgentWork: true,
-  },
-  experimental: {
-    inlineAudioAttachment: true,
-    toolLoopRecoveryPolicy: 'resampleThenBreak',
-    toolLoopMaxResampleRetries: 2,
-  },
 };
-
-export function isMessageLayoutStyle(
-  value: unknown,
-): value is MessageLayoutStyle {
-  return value === 'document' || value === 'bubble';
-}
-
-/**
- * Merge a stored displaySettings blob with defaults so newly added fields
- * (e.g. messageLayout) are present for older DB values.
- */
-export function normalizeDisplaySettings(
-  stored: unknown,
-  defaults: DisplaySettings = DEFAULT_SETTING.display,
-): DisplaySettings {
-  const blob =
-    typeof stored === 'object' && stored !== null
-      ? (stored as Partial<DisplaySettings>)
-      : {};
-
-  return {
-    metricDisplayMode:
-      blob.metricDisplayMode === 'tooltip' ||
-      blob.metricDisplayMode === 'inline'
-        ? blob.metricDisplayMode
-        : defaults.metricDisplayMode,
-    prefillDisplayFormat:
-      blob.prefillDisplayFormat === 'time' ||
-      blob.prefillDisplayFormat === 'tokensPerSecond'
-        ? blob.prefillDisplayFormat
-        : defaults.prefillDisplayFormat,
-    showTokenSpeed:
-      typeof blob.showTokenSpeed === 'boolean'
-        ? blob.showTokenSpeed
-        : defaults.showTokenSpeed,
-    compactMetrics:
-      typeof blob.compactMetrics === 'boolean'
-        ? blob.compactMetrics
-        : defaults.compactMetrics,
-    toolDetailLevel:
-      blob.toolDetailLevel === 'simple' || blob.toolDetailLevel === 'developer'
-        ? blob.toolDetailLevel
-        : defaults.toolDetailLevel,
-    fontFamily:
-      typeof blob.fontFamily === 'string' && blob.fontFamily.length > 0
-        ? blob.fontFamily
-        : defaults.fontFamily,
-    uiScale:
-      blob.uiScale === undefined
-        ? defaults.uiScale
-        : normalizeUiScale(blob.uiScale),
-    messageLayout: isMessageLayoutStyle(blob.messageLayout)
-      ? blob.messageLayout
-      : defaults.messageLayout,
-    colorTheme: isColorTheme(blob.colorTheme)
-      ? blob.colorTheme
-      : defaults.colorTheme,
-    showFeatureTips:
-      typeof blob.showFeatureTips === 'boolean'
-        ? blob.showFeatureTips
-        : defaults.showFeatureTips,
-  };
-}
-
-/**
- * Canonicalize experimental settings from a DB blob.
- * Maps deprecated `toolLoopLegacyGuidanceEnabled` → `toolLoopRecoveryPolicy`
- * and drops the legacy key from the returned object.
- */
-export function normalizeExperimentalSettings(
-  stored: unknown,
-  defaults: ExperimentalSettings = DEFAULT_SETTING.experimental,
-): { experimental: ExperimentalSettings; didMigrate: boolean } {
-  const blob =
-    typeof stored === 'object' && stored !== null
-      ? (stored as StoredExperimentalSettings)
-      : {};
-
-  const hasLegacyKey = Object.prototype.hasOwnProperty.call(
-    blob,
-    'toolLoopLegacyGuidanceEnabled',
-  );
-
-  let policy = defaults.toolLoopRecoveryPolicy;
-  if (isToolLoopRecoveryPolicy(blob.toolLoopRecoveryPolicy)) {
-    policy = blob.toolLoopRecoveryPolicy;
-  } else if (
-    hasLegacyKey &&
-    typeof blob.toolLoopLegacyGuidanceEnabled === 'boolean'
-  ) {
-    policy = blob.toolLoopLegacyGuidanceEnabled
-      ? 'legacyGuidance'
-      : 'resampleThenBreak';
-  }
-
-  const maxRetries =
-    typeof blob.toolLoopMaxResampleRetries === 'number' &&
-    Number.isFinite(blob.toolLoopMaxResampleRetries)
-      ? Math.min(20, Math.max(0, Math.trunc(blob.toolLoopMaxResampleRetries)))
-      : defaults.toolLoopMaxResampleRetries;
-
-  return {
-    experimental: {
-      inlineAudioAttachment:
-        typeof blob.inlineAudioAttachment === 'boolean'
-          ? blob.inlineAudioAttachment
-          : defaults.inlineAudioAttachment,
-      toolLoopRecoveryPolicy: policy,
-      toolLoopMaxResampleRetries: maxRetries,
-    },
-    // Persist rewrite whenever the deprecated key is still present in DB JSON.
-    didMigrate: hasLegacyKey,
-  };
-}
 
 export interface ISettingsService {
   getSettings(): Promise<Settings>;

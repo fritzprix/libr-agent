@@ -89,6 +89,11 @@ fn log_create_proxy_metrics(metrics: &CreateProxyMetrics<'_>) {
 async fn cleanup_session_resources(manager: &MCPServiceProxyManager, session_id: &str) {
     manager.proxy_readiness.write().await.remove(session_id);
     manager.runtime_states.write().await.remove(session_id);
+    manager
+        .session_server_configs
+        .write()
+        .await
+        .remove(session_id);
     if let Some(old_mgr) = manager
         .session_stdio_managers
         .write()
@@ -201,6 +206,7 @@ impl MCPServiceProxyManager {
             proxy_readiness: Arc::new(RwLock::new(HashMap::new())),
             creation_guards: Arc::new(Mutex::new(HashMap::new())),
             runtime_states: Arc::new(RwLock::new(HashMap::new())),
+            session_server_configs: Arc::new(RwLock::new(HashMap::new())),
             process_cancel_pending: Arc::new(Mutex::new(std::collections::HashSet::new())),
             process_cancel_retry_states: Arc::new(Mutex::new(HashMap::new())),
             process_cancel_retry_counts: Arc::new(Mutex::new(HashMap::new())),
@@ -284,6 +290,10 @@ impl MCPServiceProxyManager {
                     } else {
                         log::debug!("Proxy already exists for session: {}", session_id);
                     }
+                    self.session_server_configs
+                        .write()
+                        .await
+                        .insert(session_id.clone(), loaded.clone());
                     // Lazy ensure_builtin_proxy writes ready with no AppHandle (no emit).
                     // On Reuse, promote incomplete snapshots and force-emit the store's
                     // authoritative state so FE remounts leave Hydrating.
@@ -304,6 +314,19 @@ impl MCPServiceProxyManager {
                         ) {
                             runtime_state_emits += 1;
                         }
+                    }
+
+                    // Re-entering a session retries its failed servers (not the ones that are
+                    // still starting in the background).
+                    if let Err(error) = self
+                        .retry_failed_servers(&session_id, None, app_handle.as_ref())
+                        .await
+                    {
+                        log::warn!(
+                            "Could not retry failed MCP servers on session reuse ({}): {}",
+                            session_id,
+                            error
+                        );
                     }
                     log_create_proxy_metrics(&CreateProxyMetrics {
                         session_id: &session_id,
@@ -513,6 +536,10 @@ impl MCPServiceProxyManager {
             .write()
             .await
             .insert(session_id.clone(), http_manager.clone());
+        self.session_server_configs
+            .write()
+            .await
+            .insert(session_id.clone(), loaded.clone());
 
         let update_result = update_runtime_state_store(
             &self.runtime_states,

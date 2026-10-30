@@ -1,7 +1,7 @@
+use crate::models::system_settings::SystemSettings;
 use crate::models::workspace_isolation::DEFAULT_DOCKER_WORKDIR;
 use crate::session_isolation::IsolationLevel;
 use regex::Regex;
-use serde_json::Value;
 use std::ffi::OsStr;
 use std::path::{Component, Path};
 
@@ -16,76 +16,23 @@ pub const DOCKER_WORKSPACE_ROOT: &str = DEFAULT_DOCKER_WORKDIR;
 /// Get configured shell isolation level from settings
 /// Returns the configured isolation level or Medium as default
 pub async fn get_shell_isolation_level() -> IsolationLevel {
-    use crate::repositories::settings_repository::SettingsRepository;
-    use crate::state::get_settings_repository;
-
-    let repo = get_settings_repository();
-
-    // Get systemSettings object which contains shellIsolationLevel
-    match repo.get("systemSettings").await {
-        Ok(Some(model)) => {
-            match serde_json::from_str::<Value>(&model.value) {
-                Ok(json) => {
-                    if let Some(level_str) =
-                        json.get("shellIsolationLevel").and_then(|v| v.as_str())
-                    {
-                        match level_str {
-                            "basic" => IsolationLevel::Basic,
-                            "medium" => IsolationLevel::Medium,
-                            "high" => IsolationLevel::High,
-                            _ => IsolationLevel::Medium, // Invalid value, use default
-                        }
-                    } else {
-                        IsolationLevel::Medium // Field not present, use default
-                    }
-                }
-                Err(_) => IsolationLevel::Medium, // JSON parse error, use default
-            }
-        }
-        _ => IsolationLevel::Medium, // Setting not found, use default
-    }
+    SystemSettings::load_global()
+        .await
+        .shell_isolation_level
+        .into()
 }
 
 /// Whether persistent shells should source conda/nvm integration scripts on startup.
 /// Defaults to false (opt-in).
 pub async fn get_shell_runtime_bootstrap_enabled() -> bool {
-    use crate::repositories::settings_repository::SettingsRepository;
-    use crate::state::try_get_settings_repository;
-
-    let Some(repo) = try_get_settings_repository() else {
-        return false;
-    };
-
-    match repo.get("systemSettings").await {
-        Ok(Some(model)) => match serde_json::from_str::<Value>(&model.value) {
-            Ok(json) => json
-                .get("shellRuntimeBootstrap")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false),
-            Err(_) => false,
-        },
-        _ => false,
-    }
+    SystemSettings::load_global().await.shell_runtime_bootstrap
 }
 
 /// Get diff context lines from settings (defaults to 3)
 pub async fn get_diff_context_lines() -> usize {
-    use crate::repositories::settings_repository::SettingsRepository;
-    use crate::state::get_settings_repository;
-
-    let repo = get_settings_repository();
-    // Setting key is 'advancedSettings' based on RustSettingsService
-    match repo.get("advancedSettings").await {
-        Ok(Some(model)) => match serde_json::from_str::<Value>(&model.value) {
-            Ok(json) => json
-                .get("diffContextLines")
-                .and_then(|v| v.as_u64())
-                .map(|v| v as usize)
-                .unwrap_or(3),
-            Err(_) => 3,
-        },
-        _ => 3,
-    }
+    crate::models::advanced_settings::AdvancedSettings::load_global()
+        .await
+        .diff_context_lines
 }
 
 pub fn default_sync_execution_timeout() -> u64 {
@@ -231,21 +178,52 @@ pub async fn is_session_docker_isolated(session_id: &str) -> bool {
     session_docker_root(session_id).await.0
 }
 
-/// Adds this session's wake URL to a host shell environment.
+/// Adds this session's wake URL to a shell environment.
 ///
-/// Skipped for Docker sessions: `docker exec -e` would expose the token in the
-/// host process list, and the container cannot reach the host loopback anyway.
+/// Host sessions get the loopback URL. Managed Docker sessions get the
+/// `host.docker.internal` URL of the wake listener, or no URL (and a logged
+/// error) while that listener is not running. Attached containers are never
+/// created by LibrAgent, so they have no host mapping and get none.
 pub async fn add_wake_url_env(
     session_id: &str,
     env_vars: &mut std::collections::HashMap<String, String>,
 ) {
-    if is_session_docker_isolated(session_id).await {
-        return;
+    use crate::models::workspace_isolation::WorkspaceIsolationMode;
+    use crate::repositories::session_repository::SessionRepository;
+
+    let session = match crate::state::try_get_session_repository() {
+        Some(session_repo) => session_repo.get_session(session_id).await.ok().flatten(),
+        None => None,
+    };
+    let docker = session
+        .as_ref()
+        .filter(|session| session.workspace_isolation == WorkspaceIsolationMode::Docker);
+
+    let url = match docker {
+        None => Some(crate::server::wake::wake_url_for(session_id)),
+        Some(session)
+            if session
+                .docker_config
+                .as_ref()
+                .is_some_and(|config| config.is_attach()) =>
+        {
+            None
+        }
+        Some(_) => {
+            let url = crate::server::wake::docker_wake_url_for(session_id).await;
+            if url.is_none() {
+                log::error!(
+                    "No wake URL for Docker session {session_id}: {}",
+                    crate::server::wake_listener::last_error()
+                        .unwrap_or_else(|| "wake listener is not running".to_string())
+                );
+            }
+            url
+        }
+    };
+    if let Some(url) = url {
+        env_vars.insert(crate::server::wake::WAKE_URL_ENV.to_string(), url);
     }
-    env_vars.insert(
-        crate::server::wake::WAKE_URL_ENV.to_string(),
-        crate::server::wake::wake_url_for(session_id),
-    );
 }
 
 /// Single DB read for Docker isolation + configured workdir (`/workspace` or attach `/app`).

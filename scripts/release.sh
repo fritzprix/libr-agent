@@ -28,7 +28,7 @@ pnpm build
 
 # 4. Verify Backend Compilation
 echo "Verifying Backend Compilation..."
-(cd src-tauri && cargo check)
+pnpm rust:check
 
 echo ">>> Final Verification passed."
 echo ">>> Proceeding to bump version to next '$1' and publish..."

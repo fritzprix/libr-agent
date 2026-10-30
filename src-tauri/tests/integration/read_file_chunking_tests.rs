@@ -424,8 +424,12 @@ async fn read_file_reached_end_from_mid_file_is_not_complete() {
 
     let text = extract_text_content(&result);
     assert!(
-        text.contains("lines 4-5 of 5 (reached end; not complete file)"),
-        "mid-to-end reads should distinguish EOF from complete-file: {text}"
+        text.contains("lines 4-5 of 5 (end of file)"),
+        "mid-to-end reads should say the end of the file was reached: {text}"
+    );
+    assert!(
+        !text.contains("not complete"),
+        "the header must not use negative wording that invites a re-read: {text}"
     );
     assert!(
         !text.contains("Next chunk: workspace__readFile("),

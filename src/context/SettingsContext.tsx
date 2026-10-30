@@ -83,6 +83,15 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     load();
   }, [load]);
 
+  // Children render only once settings have loaded: `advanced` has no frontend
+  // default (Rust owns it). A failed reload keeps the last loaded settings.
+  const [loaded, setLoaded] = useState<Settings | null>(null);
+  useEffect(() => {
+    if (value) {
+      setLoaded(value);
+    }
+  }, [value]);
+
   useEffect(() => {
     if (loading) {
       return;
@@ -118,16 +127,17 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     [load, settingsService],
   );
 
-  const contextValue: SettingsContextType = useMemo(() => {
-    const finalValue = value || DEFAULT_SETTING;
-
+  const contextValue: SettingsContextType | null = useMemo(() => {
+    if (!loaded) {
+      return null;
+    }
     return {
-      value: finalValue,
+      value: loaded,
       isLoading: loading,
       update,
       error: error ?? null,
     };
-  }, [value, loading, update, error]);
+  }, [loaded, loading, update, error]);
 
   const modalViewContextValue: SettingModalViewContextType = useMemo(() => {
     return {
@@ -135,6 +145,13 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       toggleOpen: () => setOpenSettingModal((prev) => !prev),
     };
   }, [openSettingModal]);
+
+  if (!contextValue) {
+    // Only when the settings DB cannot be read; there is no default to fall back to.
+    return error ? (
+      <div role="alert">Failed to load settings: {error.message}</div>
+    ) : null;
+  }
 
   return (
     <SettingModalViewContext.Provider value={modalViewContextValue}>

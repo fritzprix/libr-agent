@@ -934,6 +934,23 @@
         "title": "Show loop warnings in tool results (legacy)",
         "description": "When enabled, shows loop warning messages as tool errors instead of retrying silently."
       }
+    },
+    "sessionApi": {
+      "title": "Session API Keys",
+      "description": "API keys issued to external AI agents via pairing. When any key exists, requests without a valid key are rejected with 401. When no keys exist, localhost requests are allowed without a key.",
+      "emptyList": "No API keys issued yet. Use \"Integrate into Agent Session\" in chat to pair an external agent.",
+      "fetchError": "Failed to load Session API keys",
+      "errorTitle": "Failed to load Session API keys",
+      "errorHelp": "The key file may be damaged or have incorrect permissions. Key verification is locked (fail-closed) until the issue is resolved.",
+      "deleteSuccess": "Deleted API key for {{name}}",
+      "deleteError": "Failed to delete API key",
+      "active": "Active",
+      "created": "Created",
+      "pairingTitle": "Agent Pairing Request",
+      "pairingDescription": "External agent \"{{name}}\" is requesting Session API access. Enter the 6-character code shown on the agent screen to authorize.",
+      "pairingCodeLabel": "Pairing Code (xxx-yyy)",
+      "pairingSuccess": "Successfully paired with {{name}}",
+      "pairingRejected": "Pairing request rejected"
     }
   },
   "mcpServer": {
@@ -1296,7 +1313,11 @@
       "renameCancelAria": "Cancel editing session title",
       "renameSuccess": "Session title updated",
       "renameError": "Failed to update session title",
-      "renameEmptyError": "Session title cannot be empty"
+      "renameEmptyError": "Session title cannot be empty",
+      "integrateExternalAgentAria": "Integrate into Agent Session (copy instructions)",
+      "integrateExternalAgentTooltip": "Integrate into Agent Session (copy instructions)",
+      "integrationInstructionCopied": "Integration instructions copied to clipboard. Paste them into your external AI agent.",
+      "integrationInstructionCopyFailed": "Failed to copy integration instructions to clipboard"
     },
     "sessionExport": {
       "menuAria": "Export session",
@@ -1425,6 +1446,7 @@
       "mcpServerDiscovering": "Discovering tools…",
       "mcpServerReadyTools": "{{count}} tools",
       "mcpServerTimedOut": "Timed out",
+      "mcpServerStarting": "Still starting",
       "mcpServerFailedShort": "Failed",
       "executionModeNormalTitle": "Normal mode. Policy blocks and approval rules are enforced.",
       "executionModeYoloTitle": "YOLO mode. Standard approvals are auto-approved, but hard approvals still require manual approval.",

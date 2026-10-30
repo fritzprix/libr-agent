@@ -11,7 +11,7 @@ import { AIServiceFactory } from '@/lib/ai-service/factory';
 import type { Message } from '@/models/chat';
 import { getMessagesPageForSession } from '@/lib/backend/messages';
 import { LLMServiceProvider } from '../LLMServiceContext';
-import { SettingsProvider } from '../SettingsContext';
+import { TestSettingsProvider } from '@/test/fixtures/TestSettingsProvider';
 
 export function createDeferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -65,11 +65,11 @@ vi.mock('@/lib/logger', () => ({
 // Test wrapper with required providers
 export function TestWrapper({ children }: { children: ReactNode }) {
   return (
-    <SettingsProvider>
+    <TestSettingsProvider>
       <LLMServiceProvider>
         <AgentChatProvider>{children}</AgentChatProvider>
       </LLMServiceProvider>
-    </SettingsProvider>
+    </TestSettingsProvider>
   );
 }
 

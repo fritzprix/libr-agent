@@ -5,9 +5,11 @@ import { listen } from '@tauri-apps/api/event';
 import { AIServiceFactory } from '@/lib/ai-service/factory';
 import * as agentCommands from '@/lib/backend/agent-commands';
 import type { Message } from '@/models/chat';
-import { SettingsProvider, SettingsContext, DEFAULT_SETTING } from '../SettingsContext';
+import { SettingsContext } from '../SettingsContext';
+import { TestSettingsProvider } from '@/test/fixtures/TestSettingsProvider';
 import type { ReactNode } from 'react';
 import type { AIServiceProvider } from '@/lib/ai-service';
+import { TEST_SETTINGS } from '@/test/fixtures/settings';
 
 // Mock Tauri APIs
 vi.mock('@tauri-apps/api/event', () => ({
@@ -51,9 +53,9 @@ vi.mock('@/lib/retry-utils', async (importOriginal) => {
 // Test wrappers
 function TestWrapper({ children }: { children: ReactNode }) {
   return (
-    <SettingsProvider>
+    <TestSettingsProvider>
       <LLMServiceProvider>{children}</LLMServiceProvider>
-    </SettingsProvider>
+    </TestSettingsProvider>
   );
 }
 
@@ -203,7 +205,7 @@ describe('LLMServiceContext – SP4 Retry & Fallback Recovery', () => {
 
     // Custom wrapper that provides settings with a fallback model configured
     const fallbackSettings = {
-      ...DEFAULT_SETTING,
+      ...TEST_SETTINGS,
       fallbackModel: {
         provider: 'anthropic' as AIServiceProvider,
         model: 'claude-3-5-sonnet-20241022',

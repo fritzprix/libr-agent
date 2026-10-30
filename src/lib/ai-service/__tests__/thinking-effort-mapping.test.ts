@@ -1,28 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import {
-  mapThinkingEffort,
-  normalizeThinkingEffort,
-} from '../thinking-effort-mapping';
+import { mapThinkingEffort } from '../thinking-effort-mapping';
 import { AIServiceProvider } from '../types';
-
-describe('normalizeThinkingEffort', () => {
-  it('passes through valid effort values', () => {
-    expect(normalizeThinkingEffort('medium')).toBe('medium');
-    expect(normalizeThinkingEffort('auto')).toBe('auto');
-  });
-
-  it('migrates legacy numeric budgets', () => {
-    expect(normalizeThinkingEffort(undefined, 0)).toBe('off');
-    expect(normalizeThinkingEffort(undefined, -1)).toBe('auto');
-    expect(normalizeThinkingEffort(undefined, 1024)).toBe('low');
-    expect(normalizeThinkingEffort(undefined, 8192)).toBe('medium');
-    expect(normalizeThinkingEffort(undefined, 24576)).toBe('high');
-  });
-
-  it('defaults unknown values to off', () => {
-    expect(normalizeThinkingEffort('invalid')).toBe('off');
-  });
-});
 
 describe('mapThinkingEffort', () => {
   it('returns disabled for off and undefined', () => {

@@ -52,12 +52,39 @@ use docker_cli::{
     docker_container_label, docker_output_slice, run_docker_status, verify_container_label,
 };
 use error::{as_docker_unavailable, RuntimeResult};
+
+/// Passes `env` to `docker exec`. The wake URL is given as `-e KEY` with its value in the
+/// docker CLI's own environment, so its token never appears in the host process list.
+fn apply_exec_env(
+    cmd: &mut AsyncCommand,
+    env: impl IntoIterator<Item = (String, String)>,
+) -> RuntimeResult<()> {
+    for (key, value) in env {
+        validate_env_key(&key).map_err(WorkspaceRuntimeError::InvalidConfig)?;
+        validate_env_value(&key, &value).map_err(WorkspaceRuntimeError::InvalidConfig)?;
+        if is_session_api_key_var(&key) {
+            continue;
+        }
+        if key == crate::server::wake::WAKE_URL_ENV {
+            cmd.arg("-e").arg(&key);
+            cmd.env(&key, &value);
+        } else {
+            cmd.arg("-e").arg(format!("{key}={value}"));
+        }
+    }
+    Ok(())
+}
+
+/// The Session API key must never reach a container, whatever the caller passes.
+fn is_session_api_key_var(key: &str) -> bool {
+    key == crate::server::api_key::ENV_VAR || key == crate::server::api_key::ENV_FILE_VAR
+}
 use session_config::{
     docker_container_name, docker_host_workspace_path, path_mapper_for_session,
     session_manage_lifecycle,
 };
 
-pub use docker_cli::normalize_docker_arch;
+pub use docker_cli::{docker_bridge_gateway, normalize_docker_arch};
 pub use error::{
     WorkspaceRuntimeError, AGENT_ERROR_DOCKER_NOT_AVAILABLE, AGENT_ERROR_DOCKER_NOT_INSTALLED,
 };
@@ -164,11 +191,7 @@ impl WorkspaceRuntimeManager {
             merged_env.insert(key.clone(), value.clone());
         }
 
-        for (key, value) in merged_env {
-            validate_env_key(&key).map_err(WorkspaceRuntimeError::InvalidConfig)?;
-            validate_env_value(&key, &value).map_err(WorkspaceRuntimeError::InvalidConfig)?;
-            cmd.arg("-e").arg(format!("{key}={value}"));
-        }
+        apply_exec_env(&mut cmd, merged_env)?;
 
         cmd.arg(container_name);
         // runShell intentionally executes shell syntax; this mirrors the host shell path.
@@ -394,4 +417,53 @@ async fn prepare_docker_runtime(
     DOCKER_ARCH_CACHE.insert(session.id.clone(), arch);
     DOCKER_CONTAINER_READY_CACHE.insert(session.id.clone(), now);
     Ok(shell)
+}
+
+#[cfg(test)]
+mod exec_env_tests {
+    use super::*;
+
+    fn args_and_env(env: Vec<(&str, &str)>) -> (Vec<String>, Vec<(String, Option<String>)>) {
+        let mut cmd = AsyncCommand::new("docker");
+        apply_exec_env(
+            &mut cmd,
+            env.into_iter().map(|(k, v)| (k.to_string(), v.to_string())),
+        )
+        .unwrap();
+        let std_cmd = cmd.as_std();
+        let args = std_cmd
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        let envs = std_cmd
+            .get_envs()
+            .map(|(k, v)| {
+                (
+                    k.to_string_lossy().into_owned(),
+                    v.map(|v| v.to_string_lossy().into_owned()),
+                )
+            })
+            .collect();
+        (args, envs)
+    }
+
+    #[test]
+    fn wake_url_value_stays_out_of_the_docker_arguments() {
+        let url = "http://host.docker.internal:4000/api/sessions/s/wake/secrettoken";
+        let (args, envs) = args_and_env(vec![("LIBRAGENT_WAKE_URL", url), ("PLAIN", "1")]);
+        assert!(args.iter().all(|arg| !arg.contains("secrettoken")));
+        assert!(args.contains(&"LIBRAGENT_WAKE_URL".to_string()));
+        assert!(args.contains(&"PLAIN=1".to_string()));
+        assert!(envs.contains(&("LIBRAGENT_WAKE_URL".to_string(), Some(url.to_string()))));
+    }
+
+    #[test]
+    fn session_api_key_variables_are_never_passed() {
+        let (args, envs) = args_and_env(vec![
+            ("LIBRAGENT_SESSION_API_KEY", "libr_secret"),
+            ("LIBRAGENT_SESSION_API_KEY_FILE", "/tmp/key"),
+        ]);
+        assert!(args.is_empty());
+        assert!(envs.is_empty());
+    }
 }

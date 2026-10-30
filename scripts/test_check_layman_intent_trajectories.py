@@ -25,7 +25,12 @@ checker = importlib.util.module_from_spec(_SPEC)
 sys.modules[_SPEC.name] = checker
 _SPEC.loader.exec_module(checker)
 
-from layman_intent_critical_path import TASKS, grade_calls, load_calls, runs_script
+from layman_intent_critical_path import (
+    TASKS,
+    grade_calls,
+    load_calls,
+    runs_script,
+)
 
 
 def _step(*calls: tuple[str, str, object, bool | None]) -> dict[str, object]:
@@ -143,11 +148,17 @@ class CriticalPathTests(unittest.TestCase):
     def test_steps_must_follow_the_critical_path_order(self) -> None:
         self.assertEqual(
             _grade(
-                "T04",
-                _step(("a", "workspace__waitForProcess", {}, False)),
-                _step(("b", "workspace__spawnProcess", {}, False)),
+                "T07",
+                _step(("a", "tool__verifyServer", {}, False)),
+                _step(("b", "tool__registerServer", {}, False)),
             ),
-            ["__waitForProcess only before __spawnProcess"],
+            ["__verifyServer only before __registerServer"],
+        )
+
+    def test_call_me_back_has_no_trajectory_checks(self) -> None:
+        # T04 is graded on the reply after a real wake, so no tool use fails it here.
+        self.assertEqual(
+            _grade("T04", _step(("a", "workspace__waitForProcess", {}, False))), []
         )
 
     def test_catalog_installs_need_the_catalog_lookup_first(self) -> None:
@@ -265,7 +276,15 @@ class DatasetTests(unittest.TestCase):
             copy = task_dir / "tests" / "critical_path.py"
             self.assertEqual(copy.read_bytes(), shared, f"{copy} is out of sync")
             tests = (task_dir / "tests" / "test_outputs.py").read_text(encoding="utf-8")
-            self.assertIn(f'grade_trajectory("{spec.task_id}"', tests, spec.directory)
+            if spec.task_id == "T04":
+                # Graded on the reply sent after a real wake, with no trajectory check.
+                self.assertIn('"replies.json"', tests, spec.directory)
+                self.assertIn('"delivered"', tests, spec.directory)
+                self.assertNotIn("grade_trajectory", tests, spec.directory)
+            else:
+                self.assertIn(
+                    f'grade_trajectory("{spec.task_id}"', tests, spec.directory
+                )
             self.assertNotIn("assert True", tests, spec.directory)
 
     def test_dataset_has_no_extra_tasks(self) -> None:

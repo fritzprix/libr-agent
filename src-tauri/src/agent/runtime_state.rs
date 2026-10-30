@@ -43,7 +43,9 @@ pub enum SessionRuntimeServerStatus {
     DiscoveringTools,
     Ready,
     Failed,
-    /// Discovery deadline or soft wait timed out before this server finished.
+    /// The session stopped waiting for this server; it is still starting in the background.
+    /// Not a failure: it does not count against the session summary, and a late ready
+    /// replaces it.
     TimedOut,
 }
 
@@ -231,10 +233,7 @@ impl SessionRuntimeState {
     }
 
     pub fn is_unsuccessful_terminal_status(status: &SessionRuntimeServerStatus) -> bool {
-        matches!(
-            status,
-            SessionRuntimeServerStatus::Failed | SessionRuntimeServerStatus::TimedOut
-        )
+        matches!(status, SessionRuntimeServerStatus::Failed)
     }
 
     /// Mark still-pending servers as timed out and recompute Session Ready.
@@ -268,6 +267,11 @@ impl SessionRuntimeState {
             .iter()
             .filter(|server| Self::is_unsuccessful_terminal_status(&server.status))
             .count();
+        let timed_out_servers = self
+            .servers
+            .iter()
+            .filter(|server| server.status == SessionRuntimeServerStatus::TimedOut)
+            .count();
 
         if self.proxy.mode == SessionRuntimeProxyMode::None {
             self.phase = SessionRuntimePhase::NotStarted;
@@ -292,14 +296,27 @@ impl SessionRuntimeState {
             return;
         }
 
-        if unsuccessful_servers > 0 && ready_servers > 0 {
+        if unsuccessful_servers > 0 && (ready_servers > 0 || timed_out_servers > 0) {
             self.phase = SessionRuntimePhase::Degraded;
             self.proxy.ready = true;
             self.initialization.result = SessionRuntimeInitResult::Partial;
             self.initialization.error = Some(format!(
-                "{} of {} external servers failed or timed out during initialization",
+                "{} of {} external servers failed during initialization",
                 unsuccessful_servers, total_servers
             ));
+            return;
+        }
+
+        // Servers the session stopped waiting for are still starting, not failed: the
+        // session is ready and they join when they finish.
+        if unsuccessful_servers == 0
+            && timed_out_servers > 0
+            && ready_servers + timed_out_servers == total_servers
+        {
+            self.phase = SessionRuntimePhase::Ready;
+            self.proxy.ready = true;
+            self.initialization.result = SessionRuntimeInitResult::Success;
+            self.initialization.error = None;
             return;
         }
 
@@ -313,12 +330,7 @@ impl SessionRuntimeState {
                 .servers
                 .iter()
                 .find_map(|server| server.error.clone())
-                .or_else(|| {
-                    Some(
-                        "All external servers failed or timed out during initialization"
-                            .to_string(),
-                    )
-                });
+                .or_else(|| Some("All external servers failed during initialization".to_string()));
             return;
         }
 

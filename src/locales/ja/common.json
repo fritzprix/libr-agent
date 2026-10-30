@@ -1413,6 +1413,7 @@
       "mcpServerDiscovering": "ツールを検出中…",
       "mcpServerReadyTools": "{{count}} ツール",
       "mcpServerTimedOut": "タイムアウト",
+      "mcpServerStarting": "起動中",
       "mcpServerFailedShort": "失敗",
       "executionModeNormalTitle": "通常モード。ポリシー制限と承認ルールが適用されます。",
       "executionModeYoloTitle": "YOLO モード。標準的な承認は自動化されますが、重要なアクションは手動承認が必要です。",

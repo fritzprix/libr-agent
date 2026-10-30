@@ -14,9 +14,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { LLMServiceProvider, useLLMService } from '../LLMServiceContext';
 import { listen } from '@tauri-apps/api/event';
 import { AIServiceFactory } from '@/lib/ai-service/factory';
-import { SettingsContext, DEFAULT_SETTING } from '../SettingsContext';
+import { SettingsContext } from '../SettingsContext';
 import type { Settings } from '../SettingsContext';
 import type { ReactNode } from 'react';
+import { TEST_SETTINGS } from '@/test/fixtures/settings';
 
 // ---------------------------------------------------------------------------
 // Tauri / service mocks
@@ -67,7 +68,7 @@ function ControllableWrapper({
   initialStrategy?: Settings['contextStrategy'];
 }) {
   const [settings, setSettings] = useState<Settings>({
-    ...DEFAULT_SETTING,
+    ...TEST_SETTINGS,
     contextStrategy: initialStrategy,
   });
 

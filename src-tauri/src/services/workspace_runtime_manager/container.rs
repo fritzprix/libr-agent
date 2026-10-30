@@ -7,8 +7,9 @@ use crate::session_isolation::{ShellType, CONTAINER_SYSTEM_SKILLS_DIR, CONTAINER
 use tokio::process::Command as AsyncCommand;
 
 use super::docker_cli::{
-    apply_docker_cli_env, current_uid_gid, docker_container_exists, docker_container_running,
-    run_docker_status, run_status_command, verify_container_label,
+    apply_docker_cli_env, current_uid_gid, docker_container_exists, docker_container_has_wake_host,
+    docker_container_running, run_docker_status, run_status_command, verify_container_label,
+    WAKE_HOST_LABEL,
 };
 use super::error::{RuntimeResult, WorkspaceRuntimeError};
 use super::session_config::{
@@ -16,6 +17,20 @@ use super::session_config::{
     session_is_attach,
 };
 use super::DockerStepReporter;
+
+/// `docker run` arguments that let the container reach the host (Linux needs the
+/// explicit mapping; Docker Desktop provides the name already) and mark it as
+/// created with them.
+fn wake_host_run_args() -> [String; 3] {
+    [
+        format!(
+            "--add-host={}:host-gateway",
+            crate::server::wake::DOCKER_HOST_NAME
+        ),
+        "--label".to_string(),
+        format!("{WAKE_HOST_LABEL}=1"),
+    ]
+}
 
 pub(super) async fn ensure_bash_image_contract(
     session_id: &str,
@@ -43,8 +58,20 @@ pub(super) async fn ensure_bash_image_contract(
         return ensure_supported_shell(session_id, container_name).await;
     }
 
-    if docker_container_exists(container_name).await? {
+    let mut container_exists = docker_container_exists(container_name).await?;
+    if container_exists {
         verify_container_label(container_name, session_id).await?;
+        if !docker_container_has_wake_host(container_name).await? {
+            // Created before the host mapping existed: wake callbacks cannot reach the host.
+            if let Some(reporter) = reporter {
+                reporter("Recreating container");
+            }
+            run_docker_status(["rm", "-f", container_name]).await?;
+            container_exists = false;
+        }
+    }
+
+    if container_exists {
         if !docker_container_running(container_name).await? {
             if let Some(reporter) = reporter {
                 reporter("Starting container");
@@ -109,6 +136,7 @@ pub(super) async fn ensure_bash_image_contract(
         let mut cmd = AsyncCommand::new("docker");
         apply_docker_cli_env(&mut cmd);
         cmd.args(["run", "-d", "--name", container_name, "--label", &label]);
+        cmd.args(wake_host_run_args());
         cmd.args(volume_args);
         cmd.args(["-w", &workdir]);
 
@@ -280,5 +308,22 @@ pub(super) async fn resolve_teamwork_root_session_id(session: &SessionMetadata) 
         current.id
     } else {
         session.id.clone()
+    }
+}
+
+#[cfg(test)]
+mod wake_host_tests {
+    use super::*;
+
+    #[test]
+    fn run_args_map_the_host_name_and_mark_the_container() {
+        assert_eq!(
+            wake_host_run_args(),
+            [
+                "--add-host=host.docker.internal:host-gateway",
+                "--label",
+                "com.libragent.wake_host=1"
+            ]
+        );
     }
 }

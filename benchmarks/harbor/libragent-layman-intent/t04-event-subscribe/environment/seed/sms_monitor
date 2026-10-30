@@ -1,0 +1,161 @@
+#!/usr/bin/env python3
+"""Mock SMS monitor CLI (benchmark fixture).
+
+`subscribe` starts a background watcher (once), which keeps the subscriber's
+environment like any daemon it starts. When a message file appears in
+incoming/, the watcher stores the message, runs every subscription's hook with
+SMS_MESSAGE_ID, SMS_FROM and SMS_TEXT set, and records the hooks' exit codes in
+delivered/<id>.json HOOK_GRACE_SEC after they return. Replies are only recorded.
+"""
+import argparse
+import json
+import os
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+STATE_DIR = Path("/app/.sms_monitor")
+SUBSCRIPTIONS = STATE_DIR / "subscriptions.json"
+MESSAGES = STATE_DIR / "messages.json"
+REPLIES = STATE_DIR / "replies.json"
+INCOMING = STATE_DIR / "incoming"
+DELIVERED = STATE_DIR / "delivered"
+WATCHER_PID = STATE_DIR / "watcher.pid"
+# Seconds to wait after the hooks return before writing delivered/<id>.json.
+# A hook may send its wake in the background (`curl ... &`); the harbor adapter
+# reads delivered/<id>.json as "the wake, if any, has arrived", so give such a
+# background request time to land first.
+HOOK_GRACE_SEC = 5
+
+
+def load(path):
+    return json.loads(path.read_text()) if path.exists() else []
+
+
+def save(path, items):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(items, indent=2))
+
+
+def now():
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def fail(message):
+    print(f"sms_monitor: error: {message}", file=sys.stderr)
+    sys.exit(2)
+
+
+def watcher_running():
+    try:
+        os.kill(int(WATCHER_PID.read_text()), 0)
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def handle(path):
+    message = json.loads(path.read_text())
+    save(MESSAGES, load(MESSAGES) + [dict(message, received_at=now())])
+    env = dict(
+        os.environ,
+        SMS_MESSAGE_ID=message["id"],
+        SMS_FROM=message["from"],
+        SMS_TEXT=message["text"],
+    )
+    hooks = []
+    for sub in load(SUBSCRIPTIONS):
+        result = subprocess.run(
+            ["sh", "-c", sub["hook"]], env=env, capture_output=True, cwd="/app"
+        )
+        hooks.append({"subscription": sub["id"], "exit_code": result.returncode})
+    time.sleep(HOOK_GRACE_SEC)
+    DELIVERED.mkdir(parents=True, exist_ok=True)
+    record = {"message_id": message["id"], "hooks": hooks, "handled_at": now()}
+    (DELIVERED / f"{message['id']}.json").write_text(json.dumps(record, indent=2))
+    path.unlink()
+
+
+def watch():
+    while True:
+        for path in sorted(INCOMING.glob("*.json")) if INCOMING.exists() else []:
+            handle(path)
+        time.sleep(0.5)
+
+
+def start_watcher():
+    if watcher_running():
+        return
+    if os.fork():
+        return
+    os.setsid()
+    if os.fork():
+        os._exit(0)
+    devnull = os.open(os.devnull, os.O_RDWR)
+    for fd in (0, 1, 2):
+        os.dup2(devnull, fd)
+    WATCHER_PID.write_text(str(os.getpid()))
+    watch()
+
+
+def cmd_subscribe(args):
+    if not args.hook or not args.hook.strip():
+        fail("--hook COMMAND is required: the shell command to run when a message arrives.")
+    subs = load(SUBSCRIPTIONS)
+    sub = {"id": f"sub-{len(subs) + 1}", "hook": args.hook, "registered_at": now()}
+    save(SUBSCRIPTIONS, subs + [sub])
+    start_watcher()
+    print(f"subscribed {sub['id']}")
+
+
+def cmd_list(_):
+    subs = load(SUBSCRIPTIONS)
+    if not subs:
+        print("no subscriptions")
+    for sub in subs:
+        print(f"{sub['id']} hook={sub['hook']}")
+
+
+def cmd_inbox(_):
+    messages = load(MESSAGES)
+    if not messages:
+        print("no messages")
+    for message in messages:
+        print(f"{message['id']} from={message['from']} at={message['received_at']}: {message['text']}")
+
+
+def cmd_reply(args):
+    if not args.message_id.strip() or not args.message.strip():
+        fail("--message_id and --message must not be empty.")
+    if args.message_id not in {m["id"] for m in load(MESSAGES)}:
+        fail(f"no message with id {args.message_id}; see `sms_monitor inbox`.")
+    replies = load(REPLIES)
+    reply = {"message_id": args.message_id, "message": args.message, "sent_at": now()}
+    save(REPLIES, replies + [reply])
+    print(f"replied to {args.message_id}")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog="sms_monitor",
+        description="Watch incoming text messages and reply to them. "
+        "A subscription runs a shell command when a message arrives; the command "
+        "gets SMS_MESSAGE_ID, SMS_FROM and SMS_TEXT in its environment.",
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+    s = sub.add_parser("subscribe", help="run a shell command when a message arrives")
+    s.add_argument("--hook", help="shell command to run when a message arrives")
+    s.set_defaults(fn=cmd_subscribe)
+    sub.add_parser("list", help="list subscriptions").set_defaults(fn=cmd_list)
+    sub.add_parser("inbox", help="list received messages").set_defaults(fn=cmd_inbox)
+    r = sub.add_parser("reply", help="reply to a message")
+    r.add_argument("--message_id", required=True, help="id of the message to reply to")
+    r.add_argument("--message", required=True, help="reply text")
+    r.set_defaults(fn=cmd_reply)
+    args = parser.parse_args()
+    args.fn(args)
+
+
+if __name__ == "__main__":
+    main()

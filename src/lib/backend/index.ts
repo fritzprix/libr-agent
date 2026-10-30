@@ -127,3 +127,16 @@ export type {
   SessionExportFormat,
   ExportSessionFileArgs,
 } from './session-export';
+
+// Session API Key Management
+export {
+  getPendingSessionApiPairing,
+  approveSessionApiPairing,
+  rejectSessionApiPairing,
+  listSessionApiKeys,
+  revokeSessionApiKey,
+} from './session-api-keys';
+export type {
+  PendingPairingInfo,
+  IssuedApiKeySummary,
+} from './session-api-keys';

@@ -9,11 +9,12 @@
 //! results are passed through [`redact_wake_tokens`] before they reach the
 //! model, the UI or stored history.
 //!
-//! The token is a routing credential for the callback, not the Session API's
-//! security boundary. `POST /api/sessions/<id>/messages` intentionally stays
-//! token-less: the UI and external clients use it, and the local access guard
-//! (localhost + Host/Origin checks) protects the whole Session API. Revisit
-//! this when the Session API gets its own authentication (#2235).
+//! The wake route is authorized by this token alone and is exempt from the
+//! Session API key. Managed Docker containers reach it through the wake-only
+//! listener (see `wake_listener`), where the token is the only credential, so
+//! it is a CSPRNG value (at least 128 bits) compared in constant time. Every
+//! other route stays loopback-only and key-guarded. Contract:
+//! `docs/architecture/session-wake-contract.md`.
 
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
@@ -25,6 +26,13 @@ use std::borrow::Cow;
 /// Environment variable carrying this session's wake URL into shell processes.
 pub const WAKE_URL_ENV: &str = "LIBRAGENT_WAKE_URL";
 
+/// Hex characters in a wake token (two UUIDv4 values, 244 random bits).
+const WAKE_TOKEN_HEX_LEN: usize = 64;
+const _: () = assert!(WAKE_TOKEN_HEX_LEN * 4 >= 128);
+
+/// Host name containers use to reach the host (mapped with `--add-host` on Linux).
+pub const DOCKER_HOST_NAME: &str = "host.docker.internal";
+
 const MAX_SUMMARY_CHARS: usize = 2_000;
 const MAX_LOG_PATH_CHARS: usize = 1_024;
 
@@ -33,8 +41,9 @@ static WAKE_TOKENS: Lazy<DashMap<String, String>> = Lazy::new(DashMap::new);
 const REDACTED_TOKEN: &str = "[redacted]";
 
 /// Any wake URL path, including tokens of other or revoked sessions.
-static WAKE_PATH_TOKEN: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"/wake/[0-9a-f]{64}").expect("valid wake token regex"));
+static WAKE_PATH_TOKEN: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(&format!("/wake/[0-9a-f]{{{WAKE_TOKEN_HEX_LEN}}}")).expect("valid wake token regex")
+});
 
 fn mint_token() -> String {
     format!(
@@ -54,10 +63,22 @@ pub fn wake_token_for(session_id: &str) -> String {
 
 /// Full wake URL for a session (contains the secret token).
 pub fn wake_url_for(session_id: &str) -> String {
-    format!(
-        "http://127.0.0.1:{}/api/sessions/{}/wake/{}",
-        super::active_http_port(),
+    wake_url(
+        &format!("127.0.0.1:{}", super::active_http_port()),
         session_id,
+    )
+}
+
+/// Wake URL for a managed Docker container, starting the wake listener if
+/// needed, or `None` when it cannot run.
+pub async fn docker_wake_url_for(session_id: &str) -> Option<String> {
+    let port = super::wake_listener::ensure_running().await?;
+    Some(wake_url(&format!("{DOCKER_HOST_NAME}:{port}"), session_id))
+}
+
+fn wake_url(authority: &str, session_id: &str) -> String {
+    format!(
+        "http://{authority}/api/sessions/{session_id}/wake/{}",
         wake_token_for(session_id)
     )
 }
@@ -264,5 +285,34 @@ mod tests {
         let message = payload.to_message();
         assert!(message.ends_with('…'));
         assert!(message.len() < MAX_SUMMARY_CHARS + 200);
+    }
+}
+
+#[cfg(test)]
+mod token_policy_tests {
+    use super::*;
+
+    #[test]
+    fn tokens_have_the_declared_length_and_are_hex() {
+        let token = mint_token();
+        assert_eq!(token.len(), WAKE_TOKEN_HEX_LEN);
+        assert!(token.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        assert_ne!(token, mint_token());
+    }
+
+    #[test]
+    fn redaction_covers_exactly_the_declared_token_length() {
+        let token = mint_token();
+        let text = format!("curl http://h:1/api/sessions/s/wake/{token}");
+        assert_eq!(
+            redact_wake_tokens("other", &text),
+            "curl http://h:1/api/sessions/s/wake/[redacted]"
+        );
+    }
+
+    #[tokio::test]
+    async fn docker_url_needs_a_running_listener() {
+        // Not installed in unit tests, so the listener cannot start.
+        assert!(docker_wake_url_for("s").await.is_none());
     }
 }

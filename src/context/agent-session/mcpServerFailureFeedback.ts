@@ -19,15 +19,20 @@ export function isMcpServerTimeoutError(error: string): boolean {
   );
 }
 
+/**
+ * Only a real failure (process exited, initialize returned an error, or the safety
+ * cap ran out) toasts. `timed_out` means the session stopped waiting while the server
+ * keeps starting in the background, so it is shown as "still starting", not as an error.
+ */
 function isToastableServerFailure(
   status: SessionRuntimeServerState['status'],
 ): boolean {
-  return status === 'failed' || status === 'timed_out';
+  return status === 'failed';
 }
 
 /**
- * Diff runtime server snapshots and return newly failed/timed-out servers that
- * should toast once.
+ * Diff runtime server snapshots and return newly failed servers that should toast
+ * once.
  */
 export function collectNewMcpServerFailures(
   previousKeys: ReadonlySet<string>,
@@ -46,10 +51,9 @@ export function collectNewMcpServerFailures(
       continue;
     }
 
-    const kind: McpServerFailureToastKind =
-      server.status === 'timed_out' || isMcpServerTimeoutError(error)
-        ? 'timeout'
-        : 'failed';
+    const kind: McpServerFailureToastKind = isMcpServerTimeoutError(error)
+      ? 'timeout'
+      : 'failed';
 
     toasts.push({
       key,

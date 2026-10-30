@@ -65,7 +65,8 @@ pub fn build_compaction_markdown(session_id: &str, messages: &[Message]) -> Stri
             for tc in tool_calls {
                 md.push_str(&format!(
                     "\n[TOOL CALL] {}({})\n",
-                    tc.function.name, tc.function.arguments
+                    tc.function.name,
+                    truncate_text(&tc.function.arguments, 1500)
                 ));
             }
         }
@@ -139,11 +140,18 @@ pub fn format_transcript_recovery_suffix(relative_path: &str) -> String {
     format!(
         "\n\n---\n### Context recovery\n\
 A full pre-compaction transcript was saved to `{path}`.\n\
-It contains the user/assistant messages and tool calls from before this compaction.\n\
+It contains the user/assistant messages and tool calls from before this compaction, \
+in chronological order — the most recent requests and work are at the end.\n\
 Before declaring done / calling `ui__reportResult(success)`, or when mapping completion to user intent: \
 restate Working Intent and Recent User Requests against Completion Criteria. \
 If intent or criteria are incomplete, unverified, or this summary feels incomplete, \
-read `{path}` first (via `workspace__readFile` or `tail {path}` in the session workspace) — \
+read `{path}` first, starting from the end: \
+`workspace__readFile(path=\"{path}\", size=-200)` (a negative `size` reads the last lines; \
+`tail {path}` in the session workspace also works). \
+If the tail is only assistant text and tool calls, search the file for the last `] USER` separator \
+(`workspace__grepFiles`, or `grep -n '\\] USER' {path} | tail -1`) to find the latest user request; \
+body text may also contain `] USER`, so confirm it follows a `---` line. \
+Read earlier parts only if needed — \
 empty Active Request alone is not a Done signal.",
         path = relative_path
     )
@@ -171,6 +179,12 @@ mod tests {
         assert!(suffix.contains("user/assistant messages and tool calls"));
         assert!(suffix.contains("workspace__readFile"));
         assert!(suffix.contains("tail .libragent/pre_compaction_epoch_4.md"));
+        assert!(suffix.contains("chronological"));
+        assert!(suffix.contains("at the end"));
+        assert!(suffix.contains(
+            "workspace__readFile(path=\".libragent/pre_compaction_epoch_4.md\", size=-200)"
+        ));
+        assert!(suffix.contains("] USER"));
         assert!(suffix.contains("Before declaring done"));
         assert!(suffix.contains("Working Intent"));
         assert!(suffix.contains("Recent User Requests"));
@@ -205,6 +219,25 @@ mod tests {
         assert!(markdown.contains("$100M"));
         assert!(markdown.contains("`code`"));
         assert!(markdown.contains("\"quotes\""));
+    }
+
+    #[test]
+    fn tool_call_arguments_share_the_text_cap() {
+        let mut message = message_with_role("assistant", "");
+        message.content.clear();
+        message.tool_calls = Some(vec![ToolCall {
+            id: "call-1".to_string(),
+            r#type: "function".to_string(),
+            function: ToolCallFunction {
+                name: "workspace__writeFile".to_string(),
+                arguments: "y".repeat(100_000),
+            },
+        }]);
+
+        let markdown = build_compaction_markdown("session-big-args", &[message]);
+
+        assert!(markdown.len() < 3_000);
+        assert!(markdown.contains("truncated"));
     }
 
     #[test]

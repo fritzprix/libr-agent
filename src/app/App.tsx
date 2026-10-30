@@ -47,6 +47,11 @@ const KnowledgePage = lazy(() => import('@/features/knowledge/KnowledgePage'));
 const ScheduledTasksPage = lazy(
   () => import('@/features/scheduled-tasks/ScheduledTasksRoute'),
 );
+const SessionApiPairingDialog = lazy(() =>
+  import('@/features/agent/components/SessionApiPairingDialog').then((mod) => ({
+    default: mod.SessionApiPairingDialog,
+  })),
+);
 
 function StartupRouteMountMarker({
   routeName,
@@ -291,6 +296,7 @@ function App() {
                           </div>
                         </DnDContextProvider>
                       </SidebarProvider>
+                      <SessionApiPairingDialog />
                       <Toaster position="top-right" />
                     </AgentSessionListProvider>
                   </MCPServerProvider>

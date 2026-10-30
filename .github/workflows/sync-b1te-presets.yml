@@ -1,0 +1,148 @@
+name: 🔄 Sync b1te presets
+
+# Keeps the `@fre4x/*` entries of mcp-server.json in sync with the `presets.json`
+# that b1te publishes with each release (fre4x/b1te#584, #2179).
+#
+# - b1te's publish workflow sends `repository_dispatch` (event_type
+#   `b1te-presets-released`, client_payload.tag / client_payload.repo); this needs a
+#   LIBRAGENT_DISPATCH_TOKEN secret on the b1te side.
+# - A daily schedule is the fallback when a dispatch is missed.
+# - If anything changed, one PR against the latest dev/* branch is opened or updated;
+#   if nothing differs from dev any more, a stale open sync PR is closed.
+#   It is never merged automatically.
+# - Repository settings needed: Actions > General > "Allow GitHub Actions to create and
+#   approve pull requests". Pull requests created with GITHUB_TOKEN do not start other
+#   workflows; push an empty commit or re-run checks before merging.
+on:
+  repository_dispatch:
+    types: [b1te-presets-released]
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'b1te release tag (default: latest release)'
+        required: false
+      repo:
+        description: 'Source repo (default: fre4x/b1te; maintainers only)'
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-b1te-presets
+  cancel-in-progress: false
+
+env:
+  SYNC_BRANCH: automation/b1te-presets
+
+jobs:
+  sync:
+    name: Sync @fre4x presets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve inputs
+        id: inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_TAG: ${{ github.event.client_payload.tag || github.event.inputs.tag }}
+          # Only a maintainer-run workflow_dispatch may change the source repo; a
+          # repository_dispatch payload is always pulled from fre4x/b1te.
+          EVENT_REPO: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.repo || '' }}
+        run: |
+          set -euo pipefail
+          # Dispatch payloads are data: validate before use.
+          src_repo="fre4x/b1te"
+          if [[ -n "${EVENT_REPO}" ]]; then
+            [[ "${EVENT_REPO}" =~ ^fre4x/[A-Za-z0-9._-]+$ ]] || { echo "::error::Unexpected source repo"; exit 1; }
+            src_repo="${EVENT_REPO}"
+          fi
+          tag="${EVENT_TAG}"
+          if [[ -n "${tag}" ]]; then
+            [[ "${tag}" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "::error::Unexpected tag"; exit 1; }
+          fi
+          dev_branch="$(gh api "repos/${GITHUB_REPOSITORY}/git/matching-refs/heads/dev/" -q '.[].ref' \
+            | sed 's#^refs/heads/##' | sort -V | tail -n 1)"
+          [[ -n "${dev_branch}" ]] || { echo "::error::No dev/* branch found"; exit 1; }
+          {
+            echo "src_repo=${src_repo}"
+            echo "tag=${tag}"
+            echo "dev_branch=${dev_branch}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout ${{ steps.inputs.outputs.dev_branch }}
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.inputs.outputs.dev_branch }}
+          fetch-depth: 0
+
+      - name: Download presets.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SRC_REPO: ${{ steps.inputs.outputs.src_repo }}
+          TAG: ${{ steps.inputs.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # No tag: the latest release.
+          gh release download ${TAG:+"${TAG}"} -R "${SRC_REPO}" -p presets.json \
+            -O "${RUNNER_TEMP}/presets.json" --clobber
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+
+      - name: Regenerate @fre4x presets
+        id: sync
+        run: |
+          set -euo pipefail
+          node scripts/sync-fre4x-presets.cjs \
+            --input "${RUNNER_TEMP}/presets.json" \
+            --summary "${RUNNER_TEMP}/summary.md" | tee "${RUNNER_TEMP}/sync.log"
+          grep -q '^changed=true$' "${RUNNER_TEMP}/sync.log" && echo "changed=true" >> "$GITHUB_OUTPUT" \
+            || echo "changed=false" >> "$GITHUB_OUTPUT"
+
+      - name: Format mcp-server.json
+        if: steps.sync.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').devDependencies.prettier.replace(/^[^0-9]*/, '')")"
+          npx --yes "prettier@${version}" --write mcp-server.json
+
+      - name: Open or update the PR
+        if: steps.sync.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEV_BRANCH: ${{ steps.inputs.outputs.dev_branch }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C "${SYNC_BRANCH}"
+          git add mcp-server.json
+          git commit -m "chore(mcp): sync @fre4x presets from b1te"
+          # The branch is owned by this workflow and is rebuilt from the dev branch each run.
+          git push --force origin "${SYNC_BRANCH}"
+
+          title="chore(mcp): sync @fre4x presets from b1te"
+          { cat "${RUNNER_TEMP}/summary.md"; printf '\nRefs #2179\n'; } > "${RUNNER_TEMP}/body.md"
+          existing="$(gh pr list --head "${SYNC_BRANCH}" --base "${DEV_BRANCH}" --state open --json number -q '.[0].number // empty')"
+          if [[ -n "${existing}" ]]; then
+            gh pr edit "${existing}" --title "${title}" --body-file "${RUNNER_TEMP}/body.md"
+          else
+            gh pr create --base "${DEV_BRANCH}" --head "${SYNC_BRANCH}" --title "${title}" --body-file "${RUNNER_TEMP}/body.md"
+          fi
+
+      - name: Close a stale sync PR
+        if: steps.sync.outputs.changed == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEV_BRANCH: ${{ steps.inputs.outputs.dev_branch }}
+        run: |
+          set -euo pipefail
+          existing="$(gh pr list --head "${SYNC_BRANCH}" --base "${DEV_BRANCH}" --state open --json number -q '.[0].number // empty')"
+          if [[ -n "${existing}" ]]; then
+            gh pr close "${existing}" --comment "${DEV_BRANCH} already matches the latest b1te presets, so this sync PR is no longer needed."
+          fi

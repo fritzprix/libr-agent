@@ -199,6 +199,21 @@ pub fn mcp_startup_timeout_seconds() -> u64 {
     DEFAULT_MCP_STARTUP_TIMEOUT_SECONDS
 }
 
+/// Safety cap for one MCP server to start and list its tools (10 minutes).
+///
+/// The startup timeout above only bounds how long a *session* waits before it carries on
+/// without the server. The server itself keeps loading in the background and is given up on
+/// only when its process exits, initialize returns an error, or this cap runs out. The cap
+/// is a safety net for a process that stays alive but never answers, not the normal way a
+/// slow start (cold `npx`/`uvx` installs, a slow machine) is judged.
+const DEFAULT_MCP_SERVER_STARTUP_CAP_SECONDS: u64 = 600;
+
+/// Safety cap, in seconds, for one MCP server to become ready. Never shorter than the time a
+/// session waits for it.
+pub fn mcp_server_startup_cap_seconds(session_wait_seconds: u64) -> u64 {
+    DEFAULT_MCP_SERVER_STARTUP_CAP_SECONDS.max(session_wait_seconds)
+}
+
 /// Get the MCP tool call timeout in seconds from environment variable or default.
 ///
 /// Returns 0 by default, which means no timeout (disabled).
@@ -213,6 +228,18 @@ pub fn mcp_tool_call_timeout_seconds() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn server_startup_cap_is_a_safety_net_longer_than_the_session_wait() {
+        assert_eq!(mcp_server_startup_cap_seconds(30), 600);
+        assert_eq!(mcp_server_startup_cap_seconds(0), 600);
+        // A user who raised the session wait above the cap keeps that value as the cap.
+        assert_eq!(mcp_server_startup_cap_seconds(900), 900);
+        assert!(
+            mcp_server_startup_cap_seconds(mcp_startup_timeout_seconds())
+                > mcp_startup_timeout_seconds()
+        );
+    }
 
     #[test]
     fn test_defaults_when_no_env() {

@@ -7,43 +7,32 @@ Benchmark sessions default to **`unsafe`** so shell and other hard-approval tool
 without manual approval. Override with Harbor `--ak execution_mode=yolo|normal` or
 `LIBRAGENT_EXECUTION_MODE`.
 
-## Workspace modes (Docker attach vs host sync)
+## Workspace modes (host vs managed Docker)
 
-For **Docker-backed Harbor trials**, the adapter prefers attaching LibrAgent to
-Harbor’s existing Compose `main` container:
+Every trial syncs the task workdir to a host trial workspace, runs the session, and
+pushes changes back to Harbor's container before the verifier runs. `workdir` is
+resolved **per task**, not a fixed path:
 
-- Session uses `workspaceIsolation: "docker"` with
-  `dockerConfig: { attachContainer, workdir, manageLifecycle: false }`
-  - `workdir` is resolved **per task**, not a fixed path:
-    1. task `[environment].workdir` when set
-    2. else container image `WORKDIR` (`docker inspect`)
-    3. else live `docker exec … pwd`
-    4. else common existing roots (`/workspace`, `/home/agent`, `/osworld`, …)
-    5. else `/app` only when that directory exists (legacy TB); never attach to a
-       missing `/app` (OSWorld QEMU hosts often advertise WORKDIR=/app without
-       creating it)
-  - Each candidate is checked with `docker exec test -d` before use.
-  - Host `download_dir` pulls are skipped when the workdir is missing or is a
-    bare root (`/`, `/tmp`).
-- Shell and file tools run **inside** that container (`docker exec -w …` /
-  `docker cp`). Absolute paths under that workdir are valid.
-- LibrAgent does **not** create a second container and does **not** destroy
-  Harbor’s container on session end.
+1. task `[environment].workdir` when set
+2. else container image `WORKDIR` (`docker inspect`)
+3. else live `docker exec … pwd`
+4. else common existing roots (`/workspace`, `/home/agent`, `/osworld`, …)
+5. else `/app` only when that directory exists (legacy TB)
 
-If the main container ID cannot be resolved (non-Docker Harbor providers such as
-Modal/E2B, or missing Compose labels), the adapter **falls back** to the older
-host-sync path: pull the container workdir to a host trial workspace, run a host
-session, then push changes back. On that path, prefer relative paths under the
-synced workspace rather than absolute container paths.
+Each candidate is checked with `docker exec test -d` before use. Host `download_dir`
+pulls are skipped when the workdir is missing or is a bare root (`/`, `/tmp`). On the
+host path, prefer relative paths under the synced workspace rather than absolute
+container paths.
 
-Attach is a bench-only path. To grade the session types users actually run, pass
-`--workspace-mode` to `run-harbor-bench.cjs` (sets `LIBRAGENT_HARBOR_WORKSPACE_MODE`):
+Pass `--workspace-mode` to `run-harbor-bench.cjs` (sets
+`LIBRAGENT_HARBOR_WORKSPACE_MODE`) to pick the session type users actually run:
 
-| Mode               | Session                                                                              | Workspace |
-| ------------------ | ------------------------------------------------------------------------------------ | --------- |
-| `attach` (default) | Docker, attached to Harbor's container                                               | in place  |
-| `managed`          | Docker, LibrAgent-managed container from the task image, mounted at the task workdir | host-sync |
-| `host`             | Host workspace session                                                               | host-sync |
+| Mode             | Session                                                                              | Workspace |
+| ---------------- | ------------------------------------------------------------------------------------ | --------- |
+| `host` (default) | Host workspace session                                                               | host-sync |
+| `managed`        | Docker, LibrAgent-managed container from the task image, mounted at the task workdir | host-sync |
+
+`host` needs `--isolated`; without it the runner defaults to `managed`.
 
 `host` runs task commands on this machine, so it requires `--isolated` and runs the
 bench instance under bubblewrap: `/` is read-only, only the instance `run/` dir is
@@ -55,6 +44,8 @@ SSH agent, rootless Docker) stay reachable. Requirements: `bwrap`, an existing `
 Ubuntu an AppArmor profile that lets `/usr/bin/bwrap` create user namespaces. Only
 tasks whose workdir is `/app` run in `host` mode, and the task image's tools are not
 available. Shortcuts: `pnpm bench:layman:managed`, `pnpm bench:layman:host`.
+
+`managed` sessions reach the host through the wake callback path; see the [Session Wake Callback Contract](../../docs/architecture/session-wake-contract.md).
 
 ## Prerequisites
 
