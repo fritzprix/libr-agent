@@ -7,8 +7,19 @@ use serde_json::Value;
 /// MCP Server repository trait for abstraction and testability
 #[async_trait]
 pub trait MCPServerRepository: Send + Sync {
-    /// Create a new MCP server config (ID is auto-generated)
-    async fn create(&self, name: &str, config: Value) -> Result<mcp_server::Model, DbError>;
+    /// Create a new MCP server config (ID is auto-generated) with pending verification.
+    async fn create(&self, name: &str, config: Value) -> Result<mcp_server::Model, DbError> {
+        self.create_with_verification(name, config, true).await
+    }
+
+    /// Create a new MCP server config. Without `pending` the record has no verification
+    /// status (the UI shows it as not verified).
+    async fn create_with_verification(
+        &self,
+        name: &str,
+        config: Value,
+        pending: bool,
+    ) -> Result<mcp_server::Model, DbError>;
 
     /// Get an MCP server config by ID (primary key)
     async fn get(&self, id: &str) -> Result<Option<mcp_server::Model>, DbError>;
@@ -48,8 +59,9 @@ pub trait MCPServerRepository: Send + Sync {
     /// Persist a verification error for the given server.
     async fn set_verification_error(&self, id: &str, error: String) -> Result<(), DbError>;
 
-    /// Remove the verification status (the UI shows the server as not verified).
-    async fn clear_verification_status(&self, id: &str) -> Result<(), DbError>;
+    /// Remove the verification status, error and cached tools (the UI shows the server as
+    /// not verified).
+    async fn clear_verification(&self, id: &str) -> Result<(), DbError>;
 }
 
 /// SQLite implementation of MCPServerRepository using SeaORM
@@ -67,7 +79,12 @@ impl SqliteMCPServerRepository {
 
 #[async_trait]
 impl MCPServerRepository for SqliteMCPServerRepository {
-    async fn create(&self, name: &str, config: Value) -> Result<mcp_server::Model, DbError> {
+    async fn create_with_verification(
+        &self,
+        name: &str,
+        config: Value,
+        pending: bool,
+    ) -> Result<mcp_server::Model, DbError> {
         // Reject empty or whitespace-only server names
         let name = name.trim();
         if name.is_empty() {
@@ -93,7 +110,7 @@ impl MCPServerRepository for SqliteMCPServerRepository {
             config: Set(config.to_string()),
             tool_count: Set(None), // NULL initially - will be populated during verification/connection
             cached_tools: Set(None), // NULL initially - populated after verifyServer or probe
-            verification_status: Set(Some("pending".to_string())),
+            verification_status: Set(pending.then(|| "pending".to_string())),
             last_verification_error: Set(None),
             created_at: Set(now),
             updated_at: Set(now),
@@ -248,7 +265,7 @@ impl MCPServerRepository for SqliteMCPServerRepository {
         }
     }
 
-    async fn clear_verification_status(&self, id: &str) -> Result<(), DbError> {
+    async fn clear_verification(&self, id: &str) -> Result<(), DbError> {
         let now = chrono::Utc::now().timestamp_millis();
         let existing = mcp_server::Entity::find_by_id(id).one(&self.db).await?;
 
@@ -256,6 +273,8 @@ impl MCPServerRepository for SqliteMCPServerRepository {
             let mut active: mcp_server::ActiveModel = model.into();
             active.verification_status = Set(None);
             active.last_verification_error = Set(None);
+            active.tool_count = Set(None);
+            active.cached_tools = Set(None);
             active.updated_at = Set(now);
             active.update(&self.db).await?;
             Ok(())

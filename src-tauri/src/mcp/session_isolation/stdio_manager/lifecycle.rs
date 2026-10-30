@@ -1,4 +1,5 @@
 use super::SessionMCPManager;
+use crate::mcp::session_isolation::channel_transport::ContainerExec;
 use crate::mcp::session_isolation::error::SessionMCPError;
 use crate::mcp::session_isolation::exec_target::{
     is_runtime_missing, runtime_missing_message, session_image, StdioExecTarget,
@@ -144,23 +145,26 @@ impl SessionMCPManager {
             Some(session) => {
                 let config_env_keys: Vec<&str> = env.keys().map(|k| k.as_str()).collect();
                 info!(
-                    "Spawning MCP server '{}' for session '{}' in its container: {} {:?} config_env_keys={:?}",
-                    server_name, self.session_id, command, args, config_env_keys
+                    "Spawning MCP server '{}' for session '{}' in its container: {} config_env_keys={:?}",
+                    server_name, self.session_id, command, config_env_keys
                 );
-                let cmd =
+                let docker =
                     WorkspaceRuntimeManager::create_docker_mcp_command(session, command, args, env)
                         .await
                         .map_err(|e| SessionMCPError::SpawnFailed(e.to_string()))?;
-                let container = WorkspaceRuntimeManager::container_name(session)
-                    .map_err(|e| SessionMCPError::SpawnFailed(e.to_string()))?;
-                (cmd, Some(container))
+                let exec = ContainerExec {
+                    container: docker.container,
+                    env_file: docker.env_file,
+                };
+                (docker.command, Some(exec))
             }
             None => (self.host_command(server_name, command, args, env)?, None),
         };
         let spawn_desc = match &container {
-            Some(container) => format!("{command} {args:?} in container '{container}'"),
-            None => format!("{command} {args:?} on host"),
+            Some(exec) => format!("{command} in container '{}'", exec.container),
+            None => format!("{command} on host"),
         };
+        debug!("MCP server '{}' args: {:?}", server_name, args);
 
         let transport =
             crate::mcp::session_isolation::channel_transport::spawn_channel_aware_stdio(
@@ -250,16 +254,15 @@ impl SessionMCPManager {
 
         let config_env_keys: Vec<&str> = env.keys().map(|k| k.as_str()).collect();
         info!(
-            "Spawning MCP server '{}' for session '{}': raw={} {:?} -> final={} {:?} cwd={:?} config_env_keys={:?}",
+            "Spawning MCP server '{}' for session '{}': raw={} -> final={} cwd={:?} config_env_keys={:?}",
             server_name,
             self.session_id,
             command,
-            args,
             final_command,
-            final_args,
             self.workspace_dir,
             config_env_keys
         );
+        debug!("MCP server '{}' final args: {:?}", server_name, final_args);
         log_spawn_path_diagnostics(server_name, command);
 
         let mut cmd = Command::new(&final_command);

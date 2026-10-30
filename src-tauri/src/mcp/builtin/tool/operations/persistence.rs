@@ -2,7 +2,7 @@ use crate::mcp::session_isolation::exec_target::StdioExecTarget;
 use crate::mcp::types::{MCPServerConfig, TransportConfig};
 use crate::mcp::utils::sanitize_mcp_server_name;
 use crate::repositories::mcp_server_repository::MCPServerRepository;
-use crate::services::McpServerService;
+use crate::services::{McpServerService, SaveVerification};
 use crate::state::get_mcp_server_repository;
 
 /// Result of testing a saved stdio server in the container of a Docker session.
@@ -43,6 +43,12 @@ pub(super) async fn save_server_config(
         Err(e) => return Err(format!("DB query error while saving server config: {}", e)),
     };
 
+    let verification = if tests_in_container(target, config) {
+        SaveVerification::Unverified
+    } else {
+        SaveVerification::Pending
+    };
+
     let (id, stored_name, needs_probe) = match existing {
         Some(existing) => {
             // Keep legacy display names (including whitespace) intact.
@@ -61,6 +67,7 @@ pub(super) async fn save_server_config(
                 existing.id.clone(),
                 None,
                 Some(config_value),
+                verification,
             )
             .await?;
 
@@ -70,8 +77,13 @@ pub(super) async fn save_server_config(
             let mut config = config.clone();
             config.name = Some(sanitized_name.clone());
             let config_value = serde_json::to_value(&config).map_err(|e| e.to_string())?;
-            let created =
-                McpServerService::create_server_config(repo, sanitized_name, config_value).await?;
+            let created = McpServerService::create_server_config(
+                repo,
+                sanitized_name,
+                config_value,
+                verification,
+            )
+            .await?;
             (created.id, created.name, true)
         }
     };
@@ -114,26 +126,26 @@ fn verification_plan(
     if !needs_probe {
         return VerificationPlan::None;
     }
-    let stdio = matches!(config.transport, TransportConfig::Stdio { .. });
-    if stdio && target.container_session().is_some() {
+    if tests_in_container(target, config) {
         VerificationPlan::SessionContainer
     } else {
         VerificationPlan::BackgroundProbe
     }
 }
 
+fn tests_in_container(target: &StdioExecTarget, config: &MCPServerConfig) -> bool {
+    matches!(config.transport, TransportConfig::Stdio { .. })
+        && target.container_session().is_some()
+}
+
 /// A container result belongs to one session, so a failure must not change the global record.
-/// The record gets no verification status (not `pending`: no background probe resolves it).
+/// The record was saved unverified (not `pending`: no background probe resolves it).
 async fn check_in_container(
     repo: &dyn MCPServerRepository,
     id: &str,
     name: &str,
     verify: impl std::future::Future<Output = Result<Vec<crate::mcp::MCPTool>, String>>,
 ) -> Result<ContainerCheck, String> {
-    repo.clear_verification_status(id)
-        .await
-        .map_err(|e| format!("Failed to reset verification status: {}", e))?;
-
     match verify.await {
         Ok(tools) => {
             let tools_json = crate::mcp::utils::serialize_mcp_tools(&tools);
@@ -247,13 +259,64 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn failed_container_check_leaves_no_pending_and_no_global_result() {
+    async fn unverified_save_never_writes_pending() {
         let repo = repo().await;
-        let created = repo
-            .create("srv", serde_json::to_value(stdio_config()).unwrap())
+        let created = McpServerService::create_server_config(
+            &repo,
+            "srv".to_string(),
+            serde_json::to_value(stdio_config()).unwrap(),
+            SaveVerification::Unverified,
+        )
+        .await
+        .expect("create");
+        assert_eq!(created.verification_status, None);
+    }
+
+    #[tokio::test]
+    async fn unverified_update_drops_the_old_cached_tools() {
+        let repo = repo().await;
+        let created = McpServerService::create_server_config(
+            &repo,
+            "srv".to_string(),
+            serde_json::to_value(stdio_config()).unwrap(),
+            SaveVerification::Pending,
+        )
+        .await
+        .expect("create");
+        repo.update_cached_tools(&created.id, 3, "[]".to_string())
             .await
-            .expect("create");
-        assert_eq!(created.verification_status.as_deref(), Some("pending"));
+            .expect("cache");
+
+        let new_config = serde_json::json!({
+            "name": "srv",
+            "transport": { "type": "stdio", "command": "uvx", "args": ["srv"] }
+        });
+        let updated = McpServerService::update_server_config(
+            &repo,
+            created.id.clone(),
+            None,
+            Some(new_config),
+            SaveVerification::Unverified,
+        )
+        .await
+        .expect("update");
+
+        assert_eq!(updated.verification_status, None);
+        assert_eq!(updated.cached_tools, None);
+        assert_eq!(updated.tool_count, None);
+    }
+
+    #[tokio::test]
+    async fn failed_container_check_leaves_no_global_result() {
+        let repo = repo().await;
+        let created = McpServerService::create_server_config(
+            &repo,
+            "srv".to_string(),
+            serde_json::to_value(stdio_config()).unwrap(),
+            SaveVerification::Unverified,
+        )
+        .await
+        .expect("create");
 
         let check = check_in_container(&repo, &created.id, "srv", async {
             Err("The command 'npx' is not in the session container.".to_string())

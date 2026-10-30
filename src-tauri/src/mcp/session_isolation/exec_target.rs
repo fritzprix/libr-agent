@@ -26,15 +26,9 @@ impl StdioExecTarget {
         match session_repo.get_session(session_id).await {
             Ok(Some(session)) => Ok(Self::from_session(session)),
             Ok(None) => Ok(Self::Host),
-            Err(error) => {
-                let message = error.to_string();
-                if message.contains("no such table: sessions") {
-                    return Ok(Self::Host);
-                }
-                Err(format!(
-                    "Failed to read workspace isolation of session '{session_id}': {message}"
-                ))
-            }
+            Err(error) => Err(format!(
+                "Failed to read workspace isolation of session '{session_id}': {error}"
+            )),
         }
     }
 

@@ -12,6 +12,16 @@ use std::time::Duration;
 
 pub struct McpServerService;
 
+/// Verification state a saved config starts with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SaveVerification {
+    /// A background probe sets `success` or `error`.
+    Pending,
+    /// The caller tests the server in a session container; the record keeps no status,
+    /// error or cached tools until a check succeeds.
+    Unverified,
+}
+
 /// Probe/install verification can include cold `npx`/`uvx` downloads; keep a
 /// floor above the session startup default (30s) so first installs do not fail
 /// prematurely while the UI shows pending verification.
@@ -131,7 +141,7 @@ impl McpServerService {
     ) -> Result<Vec<MCPTool>, String> {
         match (target.container_session(), &config.transport) {
             (Some(session), TransportConfig::Stdio { .. }) => {
-                Self::verify_stdio_in_container(config, &session.id).await
+                Self::verify_stdio_in_container(config, session).await
             }
             _ => Self::verify_config(config).await,
         }
@@ -139,14 +149,19 @@ impl McpServerService {
 
     /// Starts the server through a short-lived session manager, so the test uses the same
     /// container spawn (and missing-runtime message) as the tool calls of that session.
+    /// The container is prepared first: an image pull does not count against the timeout.
     async fn verify_stdio_in_container(
         config: crate::mcp::types::MCPServerConfig,
-        session_id: &str,
+        session: &crate::repositories::SessionMetadata,
     ) -> Result<Vec<MCPTool>, String> {
         let server_name = config
             .name
             .clone()
             .unwrap_or_else(|| "unnamed_server".to_string());
+        crate::services::WorkspaceRuntimeManager::prepare_mcp_container(session)
+            .await
+            .map_err(|e| format!("Failed to prepare the session container: {}", e))?;
+        let session_id = session.id.as_str();
         let (channel_event_tx, _channel_event_rx) =
             crate::mcp::session_isolation::channel_events::create_channel_event_bus();
         let manager = SessionMCPManager::new(
@@ -299,6 +314,7 @@ impl McpServerService {
         repo: &dyn MCPServerRepository,
         name: String,
         mut config: Value,
+        verification: SaveVerification,
     ) -> Result<crate::entity::mcp_server::Model, String> {
         let name = sanitize_mcp_server_name(&name);
         if BuiltinServiceId::from_alias(&name).is_some() {
@@ -320,15 +336,17 @@ impl McpServerService {
 
         // Save-first: Install UI returns immediately with verification_status=pending.
         // Callers should `schedule_background_probe` (commands / tool path do this).
+        let pending = verification == SaveVerification::Pending;
         let model = repo
-            .create(&name, config)
+            .create_with_verification(&name, config, pending)
             .await
             .map_err(|e| format!("Failed to create MCP server config: {}", e))?;
 
         log::info!(
-            "'{}' ({}) saved with pending verification (background probe expected)",
+            "'{}' ({}) saved ({:?} verification)",
             model.name,
-            model.id
+            model.id,
+            verification
         );
 
         Ok(model)
@@ -339,6 +357,7 @@ impl McpServerService {
         id: String,
         name: Option<String>,
         config: Option<Value>,
+        verification: SaveVerification,
     ) -> Result<crate::entity::mcp_server::Model, String> {
         // Preserve legacy display names (including whitespace). Session load sanitizes
         // tool prefixes at runtime; do not rewrite existing DB rows on update.
@@ -385,15 +404,20 @@ impl McpServerService {
             .map_err(|e| format!("Failed to update MCP server config: {}", e))?;
 
         if requires_reverification {
-            repo.mark_verification_pending(&updated.id, true)
-                .await
-                .map_err(|e| format!("Failed to mark verification pending: {}", e))?;
+            match verification {
+                SaveVerification::Pending => {
+                    repo.mark_verification_pending(&updated.id, true).await
+                }
+                SaveVerification::Unverified => repo.clear_verification(&updated.id).await,
+            }
+            .map_err(|e| format!("Failed to reset verification: {}", e))?;
 
             let updated = Self::fetch_server_model(repo, &updated.id).await?;
             log::info!(
-                "'{}' ({}) updated; verification marked pending (background probe expected)",
+                "'{}' ({}) updated ({:?} verification)",
                 updated.name,
-                updated.id
+                updated.id,
+                verification
             );
             return Ok(updated);
         }

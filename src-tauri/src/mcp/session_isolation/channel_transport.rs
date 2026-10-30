@@ -64,21 +64,29 @@ impl ChildExitReport {
     }
 }
 
+/// A stdio MCP server started with `docker exec` in a session container.
+pub struct ContainerExec {
+    pub container: String,
+    /// `--env-file` of the exec client; removed when the client is dropped.
+    pub env_file: Option<tempfile::TempPath>,
+}
+
 struct ChildWithCleanup {
     inner: Option<Child>,
+    server_name: String,
     /// Set when the child is a `docker exec` client: killing the client does not stop the
     /// server process inside this container.
-    container: Option<String>,
+    container: Option<ContainerExec>,
 }
 
 impl ChildWithCleanup {
-    fn warn_if_left_in_container(&self, server_name: &str) {
-        if let Some(container) = &self.container {
+    fn warn_if_left_in_container(&self) {
+        if let Some(exec) = &self.container {
             log::warn!(
-                "MCP server '{}' did not stop after stdin closed; killed its docker exec client. \
+                "Killed the docker exec client of MCP server '{}' before it exited. \
                  Its process may still run in container '{}'",
-                server_name,
-                container
+                self.server_name,
+                exec.container
             );
         }
     }
@@ -87,6 +95,9 @@ impl ChildWithCleanup {
 impl Drop for ChildWithCleanup {
     fn drop(&mut self) {
         if let Some(mut child) = self.inner.take() {
+            if matches!(child.try_wait(), Ok(None)) {
+                self.warn_if_left_in_container();
+            }
             tokio::spawn(async move {
                 if let Err(error) = child.start_kill() {
                     log::warn!("Error killing channel-aware MCP child process: {}", error);
@@ -99,7 +110,6 @@ impl Drop for ChildWithCleanup {
 pub struct ChannelAwareStdioTransport {
     child: ChildWithCleanup,
     transport: ChannelAwareAsyncRwTransport,
-    server_name: String,
     report: ChildExitReport,
 }
 
@@ -120,7 +130,7 @@ impl ChannelAwareStdioTransport {
                         log::warn!("Error killing channel-aware MCP child: {error}");
                         return Err(error);
                     }
-                    self.child.warn_if_left_in_container(&self.server_name);
+                    self.child.warn_if_left_in_container();
                 },
                 result = wait_fut => {
                     if let Err(error) = result {
@@ -134,13 +144,13 @@ impl ChannelAwareStdioTransport {
     }
 }
 
-/// Spawns `command` as a stdio MCP server. `container` names the session container when
-/// `command` is a `docker exec` client.
+/// Spawns `command` as a stdio MCP server. `container` is set when `command` is a
+/// `docker exec` client.
 pub fn spawn_channel_aware_stdio(
     mut command: tokio::process::Command,
     server_name: String,
     event_tx: ChannelEventSender,
-    container: Option<String>,
+    container: Option<ContainerExec>,
 ) -> std::io::Result<ChannelAwareStdioTransport> {
     configure_mcp_child_stdio(&mut command);
 
@@ -168,10 +178,10 @@ pub fn spawn_channel_aware_stdio(
     Ok(ChannelAwareStdioTransport {
         child: ChildWithCleanup {
             inner: Some(child),
+            server_name,
             container,
         },
         transport,
-        server_name,
         report,
     })
 }
