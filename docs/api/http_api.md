@@ -9,7 +9,11 @@ LibrAgent provides a robust HTTP API for remote management of AI agents, session
 - **Access control**:
   - Requests with a non-empty `Origin` header are rejected (`403`). CLI clients (Harbor, libr-delegate, bench scripts) omit `Origin` and are unaffected.
   - When the server is bound to loopback only (default), `Host` must be `localhost`, `127.0.0.1`, or `[::1]` (optional port). This mitigates DNS rebinding.
-  - When **Expose to network** is enabled, the Host loopback check is skipped so LAN clients can use the machine IP; Origin rejection still applies. There is no bearer-token auth on this API.
+  - When **Expose to network** is enabled, the Host loopback check is skipped so LAN clients can use the machine IP; Origin rejection still applies.
+- **Authentication**:
+  - Bearer token authentication supported via `Authorization: Bearer <token>` (`libr_...`).
+  - Keys can be injected via `LIBRAGENT_SESSION_API_KEY` or `LIBRAGENT_SESSION_API_KEY_FILE`, or issued dynamically via the interactive agent pairing flow (`POST /api/pairings`).
+  - Authentication is required when an API key is configured or when managed Docker sessions exist.
 - **CORS**: Cross-origin browser access is not enabled (no `Access-Control-Allow-Origin`).
 
 ---

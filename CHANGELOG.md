@@ -1,3 +1,26 @@
+## [0.9.29] - 2026-10-30
+
+### 🚀 Features & Capabilities
+
+- **Session API agent pairing & bearer key issuance**: External tools, agents, and benchmark harnesses can pair with LibrAgent via a secure 6-digit PIN dialog and receive bearer API keys, managed under **Settings → System** (#2348, #2389). Includes atomic fail-closed persistence and automatic enforcement when managed Docker sessions exist (#2382, #2390, #2392).
+- **Managed Docker wake listener & bridge routing**: Automatically exposes a dedicated wake listener on the Docker bridge gateway (`/api/sessions/:id/wake`) for containerized sessions, delivering real wake events back to parent sessions (#2361, #2366, #2370).
+- **Unified Rust AdvancedSettings model**: Consolidated fragmented frontend settings schemas and migrations into a single Rust backend data model via `ts-rs` (`systemSettings`, `displaySettings`, `experimentalSettings`), unifying `thinkingEffort` and adding `get_advanced_settings` for single-roundtrip initialization (#2354, #2362, #2367, #2369, #2377, #2383, #2384, #2385, #2388).
+- **MCP server startup resilience & manual retry**: Stdio MCP servers that take longer to initialize keep starting instead of failing permanently (#2351), previously failed servers are automatically retested on session switch/reuse (#2355), and the agent chat status bar offers a manual retry action for failed tools (#2355).
+
+### 🐛 Fixes & Hardening
+
+- **Workspace shell quote normalization**: Stopped naive quote auto-repair from mangling valid multi-line scripts, quotes, and code blocks in `runShell`, while preserving valid empty-quote arguments (`""`, `''`) (#2397).
+- **Bundled skills guidance & contracts**: Clarified `call-me-back` wait contracts (distinguishing timer delays, event hooks, and managed Docker wake URLs) and tightened critical-path rules for `recruit`, `call-me-back`, `delegate`, `divide-conquer`, and `context-recall` (#2341, #2368, #2394, #2395).
+- **File reading observations**: Mid-to-end `readFile` observations now report `end of file` rather than `not complete file` to avoid misleading agents into looping (#2353), and large tail reads reliably preserve the newest lines (#2339).
+- **Compaction transcript safety**: Clamped tool-call argument sizes in the epoch transcript so recovery tail reads don't exceed model context limits (#2335), with improved recovery hints (#2331).
+- **Setup wizard & Linux support**: Guarded Node.js installation to Linux, protected `/usr/local/bin` from accidental overwrite, and added fallback to user-local Node installation when sudo is absent (#2332, #2337).
+- **Windows MSVC PDB limits**: Resolved Windows Tauri release build MSVC PDB symbol limits (#2391).
+
+### 🔧 Performance & Internal
+
+- **Harbor benchmark improvements**: Updated layman intent T04 to grade against real container wake callbacks with `sms_monitor`, eliminated attach workspace mode in favor of host mode sandboxing with dedicated PID namespaces (#2342, #2344, #2372, #2378, #2379).
+- **Dependency bumps**: Updated `tokio` (1.54.1), `html-escape` (0.3.0), `libc` (0.2.191), `ammonia` (4.2.4), and `calamine` (0.37.0).
+
 ## [0.9.28] - 2026-10-25
 
 ### 🚀 Features & Capabilities
