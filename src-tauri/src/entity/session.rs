@@ -31,6 +31,7 @@ pub struct Model {
     pub docker_config_json: Option<String>,
     pub docker_container_name: Option<String>,
     pub docker_host_workspace_path: Option<String>,
+    pub status_reason: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

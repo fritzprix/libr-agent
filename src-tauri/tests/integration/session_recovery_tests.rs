@@ -153,6 +153,7 @@ fn build_session_metadata(session_id: &str, status: SessionStatus) -> SessionMet
         docker_config: None,
         docker_container_name: None,
         docker_host_workspace_path: None,
+        status_reason: None,
     }
 }
 
@@ -269,6 +270,7 @@ async fn recover_sessions_marks_crashed_busy_sessions_paused_without_auto_resumi
             AgentEvent::StatusChanged {
                 session_id: changed_session_id,
                 status: SessionStatus::Paused,
+                ..
             } if changed_session_id == &session_id
         )),
         "recovery should emit a paused status change for the recovered session"

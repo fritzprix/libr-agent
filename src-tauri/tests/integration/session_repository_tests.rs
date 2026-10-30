@@ -43,6 +43,7 @@ fn build_session(id: &str, updated_at: i64) -> SessionMetadata {
         docker_config: None,
         docker_container_name: None,
         docker_host_workspace_path: None,
+        status_reason: None,
     }
 }
 
@@ -77,7 +78,7 @@ async fn update_status_persists_new_timestamp() {
         .expect("session should insert");
 
     tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-    repo.update_status("test-session-2", SessionStatus::Busy)
+    repo.update_status("test-session-2", SessionStatus::Busy, None)
         .await
         .expect("status update should succeed");
 
@@ -89,6 +90,53 @@ async fn update_status_persists_new_timestamp() {
 
     assert_eq!(retrieved.status, SessionStatus::Busy);
     assert!(retrieved.updated_at > session.updated_at);
+}
+
+#[tokio::test]
+async fn status_reason_is_stored_with_the_status_and_cleared_by_the_next_change() {
+    let db = common::setup_test_db_with_migrations().await;
+    let repo = SqliteSessionRepository::new(db.clone());
+    repo.upsert_session(&build_session("failed-session", 1_000))
+        .await
+        .expect("session should insert");
+
+    repo.update_status(
+        "failed-session",
+        SessionStatus::Error,
+        Some("Attach container 'dev-box' was not found"),
+    )
+    .await
+    .expect("status update should succeed");
+
+    // A new repository over the same database reads what an app restart reads.
+    let reopened = SqliteSessionRepository::new(db);
+    let failed = reopened
+        .get_session("failed-session")
+        .await
+        .expect("session lookup should succeed")
+        .expect("session should exist");
+    assert_eq!(failed.status, SessionStatus::Error);
+    assert_eq!(
+        failed.status_reason.as_deref(),
+        Some("Attach container 'dev-box' was not found")
+    );
+    let json = serde_json::to_value(&failed).expect("session serializes");
+    assert_eq!(
+        json["statusReason"],
+        "Attach container 'dev-box' was not found"
+    );
+
+    reopened
+        .update_status("failed-session", SessionStatus::Idle, None)
+        .await
+        .expect("status update should succeed");
+    let recovered = reopened
+        .get_session("failed-session")
+        .await
+        .expect("session lookup should succeed")
+        .expect("session should exist");
+    assert_eq!(recovered.status, SessionStatus::Idle);
+    assert_eq!(recovered.status_reason, None);
 }
 
 #[tokio::test]
@@ -313,6 +361,7 @@ async fn get_session_reads_execution_mode_column() {
         docker_config_json: Set(None),
         docker_container_name: Set(None),
         docker_host_workspace_path: Set(None),
+        status_reason: Set(None),
     }
     .insert(&db)
     .await

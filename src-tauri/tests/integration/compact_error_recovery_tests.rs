@@ -110,6 +110,7 @@ fn build_session_metadata(session_id: &str, status: SessionStatus) -> SessionMet
         docker_config: None,
         docker_container_name: None,
         docker_host_workspace_path: None,
+        status_reason: None,
     }
 }
 
@@ -230,6 +231,7 @@ async fn preflight_compact_failure_transitions_workflow_to_error() {
         AgentEvent::StatusChanged {
             session_id: emitted_session_id,
             status: SessionStatus::Error,
+            ..
         } if emitted_session_id == session_id
     ));
     assert!(matches!(

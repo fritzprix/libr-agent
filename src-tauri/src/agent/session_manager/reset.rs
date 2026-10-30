@@ -36,7 +36,7 @@ pub(crate) async fn reset_session(
         } else {
             manager
                 .session_repo
-                .update_status(session_id, crate::repositories::SessionStatus::Idle)
+                .update_status(session_id, crate::repositories::SessionStatus::Idle, None)
                 .await
                 .map_err(|e| format!("Failed to update session status in DB: {}", e))
         }

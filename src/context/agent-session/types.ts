@@ -25,6 +25,7 @@ export type AgentEventPayload =
       type: 'statusChanged';
       sessionId: string;
       status: SessionWorkflowStatus;
+      statusReason?: string | null;
     }
   | { type: 'messageAdded'; sessionId: string; message: RustMessage }
   | { type: 'messagesRemoved'; sessionId: string; messageIds: string[] }

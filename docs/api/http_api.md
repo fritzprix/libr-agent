@@ -159,9 +159,12 @@ Retrieves current session metadata and execution state.
   "workspaceIsolation": "host | docker",
   "dockerConfig": null,
   "dockerContainerName": null,
-  "dockerHostWorkspacePath": null
+  "dockerHostWorkspacePath": null,
+  "statusReason": "string (nullable)"
 }
 ```
+
+`statusReason` tells why the session has its current status. When a Docker session cannot prepare its container (for example, a failed image pull or a missing attach container), `status` is `Error` and `statusReason` contains the failure. Session env values, wake tokens, and session API keys are replaced with `[redacted]`. The value stays after an app restart. The next status change clears it.
 
 ---
 

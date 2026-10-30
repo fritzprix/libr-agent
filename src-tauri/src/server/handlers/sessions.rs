@@ -1,5 +1,6 @@
 use crate::agent::AgentSessionManager;
 use crate::models::chat::MessageSource;
+use crate::repositories::SessionRepository;
 use crate::utils::session_id::display_session_id;
 use std::sync::Arc;
 use warp::{http::StatusCode, Rejection, Reply};
@@ -7,6 +8,7 @@ use warp::{http::StatusCode, Rejection, Reply};
 use super::helpers::{
     lineage_store, map_create_session_response_for_http, map_session_metadata_for_http,
     resolve_create_session_body_refs, resolve_error_reply, resolve_http_session_ref,
+    resolve_session_ref_in,
 };
 use super::types::{ChildSessionsResponse, CreateSessionRequest, ErrorResponse};
 
@@ -67,26 +69,33 @@ pub async fn get_session(
     id: String,
     manager: Arc<AgentSessionManager>,
 ) -> Result<impl Reply, Rejection> {
-    let id = match resolve_http_session_ref(&id).await {
+    Ok(get_session_reply(&id, &manager.repositories().session).await)
+}
+
+async fn get_session_reply(
+    id: &str,
+    session_repo: &Arc<dyn SessionRepository>,
+) -> warp::reply::WithStatus<warp::reply::Json> {
+    let id = match resolve_session_ref_in(session_repo.as_ref(), id).await {
         Ok(id) => id,
-        Err((status, error)) => return Ok(resolve_error_reply(status, error)),
+        Err((status, error)) => return resolve_error_reply(status, error),
     };
 
-    match manager.get_session(&id).await {
-        Ok(Some(session)) => Ok(warp::reply::with_status(
+    match crate::agent::lifecycle::get_session(session_repo, &id).await {
+        Ok(Some(session)) => warp::reply::with_status(
             warp::reply::json(&map_session_metadata_for_http(session)),
             StatusCode::OK,
-        )),
-        Ok(None) => Ok(warp::reply::with_status(
+        ),
+        Ok(None) => warp::reply::with_status(
             warp::reply::json(&ErrorResponse {
                 error: "Session not found".to_string(),
             }),
             StatusCode::NOT_FOUND,
-        )),
-        Err(e) => Ok(warp::reply::with_status(
+        ),
+        Err(e) => warp::reply::with_status(
             warp::reply::json(&ErrorResponse { error: e }),
             StatusCode::INTERNAL_SERVER_ERROR,
-        )),
+        ),
     }
 }
 
@@ -232,4 +241,95 @@ pub async fn get_child_sessions(id: String) -> Result<impl Reply, Rejection> {
         }),
         StatusCode::OK,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::repositories::{SessionMetadata, SessionStatus, SqliteSessionRepository};
+    use migration::{Migrator, MigratorTrait};
+
+    async fn sqlite_session_repo() -> Arc<dyn SessionRepository> {
+        crate::lifecycle::database::register_sqlite_vec();
+        let db = sea_orm::Database::connect("sqlite::memory:")
+            .await
+            .expect("in-memory sqlite should connect");
+        Migrator::up(&db, None)
+            .await
+            .expect("migrations should run");
+        Arc::new(SqliteSessionRepository::new(db))
+    }
+
+    async fn get_session_json(
+        id: &str,
+        repo: &Arc<dyn SessionRepository>,
+    ) -> (StatusCode, serde_json::Value) {
+        let response = get_session_reply(id, repo).await.into_response();
+        let status = response.status();
+        let body = warp::hyper::body::to_bytes(response.into_body())
+            .await
+            .expect("reply body should be readable");
+        let json = serde_json::from_slice(&body).expect("reply body should be JSON");
+        (status, json)
+    }
+
+    #[tokio::test]
+    async fn get_session_returns_the_failure_reason_until_the_next_status_change() {
+        let repo = sqlite_session_repo().await;
+        let id = "status-reason-http-session";
+        repo.upsert_session(&SessionMetadata::test_fixture(id))
+            .await
+            .expect("session should be stored");
+
+        let (status, json) = get_session_json(id, &repo).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(json["statusReason"], serde_json::Value::Null);
+
+        let reason = "Docker workspace setup failed: image 'missing:latest' was not found";
+        repo.update_status(id, SessionStatus::Error, Some(reason))
+            .await
+            .expect("failure should be stored");
+        let (status, json) = get_session_json(id, &repo).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(json["status"], "error");
+        assert_eq!(json["statusReason"], reason);
+
+        repo.update_status(id, SessionStatus::Idle, None)
+            .await
+            .expect("status change should be stored");
+        let (_, json) = get_session_json(id, &repo).await;
+        assert_eq!(json["status"], "idle");
+        assert_eq!(json["statusReason"], serde_json::Value::Null);
+    }
+
+    #[tokio::test]
+    async fn a_full_upsert_with_a_new_status_clears_the_failure_reason() {
+        let repo = sqlite_session_repo().await;
+        let id = "status-reason-upsert-session";
+        let mut session = SessionMetadata::test_fixture(id);
+        repo.upsert_session(&session)
+            .await
+            .expect("session should be stored");
+        repo.update_status(id, SessionStatus::Error, Some("setup failed"))
+            .await
+            .expect("failure should be stored");
+
+        session.status = SessionStatus::Idle;
+        session.status_reason = None;
+        repo.upsert_session(&session)
+            .await
+            .expect("upsert should be stored");
+
+        let (_, json) = get_session_json(id, &repo).await;
+        assert_eq!(json["status"], "idle");
+        assert_eq!(json["statusReason"], serde_json::Value::Null);
+
+        session.status = SessionStatus::Error;
+        session.status_reason = Some("restart failed".to_string());
+        repo.upsert_session(&session)
+            .await
+            .expect("upsert should be stored");
+        let (_, json) = get_session_json(id, &repo).await;
+        assert_eq!(json["statusReason"], "restart failed");
+    }
 }

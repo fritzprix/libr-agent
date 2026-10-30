@@ -188,6 +188,51 @@ describe('AgentSessionListContext – statusChanged event (crash recovery)', () 
         });
     });
 
+    it('keeps the status reason of statusChanged and clears it on the next change', async () => {
+        const { result } = renderHook(() => useAgentSessionListState(), {
+            wrapper: TestWrapperWithEvent,
+        });
+
+        await waitFor(() => {
+            expect(result.current.sessions).toHaveLength(1);
+            expect(agentEventHandler).toBeDefined();
+        });
+
+        act(() => {
+            agentEventHandler?.({
+                payload: {
+                    type: 'statusChanged',
+                    sessionId: 'session-child',
+                    status: 'error',
+                    statusReason: "Attach container 'dev-box' was not found",
+                },
+            });
+        });
+
+        await waitFor(() => {
+            expect(result.current.sessions[0].status).toBe('error');
+            expect(result.current.sessions[0].statusReason).toBe(
+                "Attach container 'dev-box' was not found",
+            );
+        });
+
+        act(() => {
+            agentEventHandler?.({
+                payload: {
+                    type: 'statusChanged',
+                    sessionId: 'session-child',
+                    status: 'idle',
+                    statusReason: null,
+                },
+            });
+        });
+
+        await waitFor(() => {
+            expect(result.current.sessions[0].status).toBe('idle');
+            expect(result.current.sessions[0].statusReason).toBeUndefined();
+        });
+    });
+
     it('does NOT reload sessions (invoke) when statusChanged fires', async () => {
         const { result } = renderHook(() => useAgentSessionListState(), {
             wrapper: TestWrapperWithEvent,

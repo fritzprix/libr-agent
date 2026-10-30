@@ -452,12 +452,15 @@ function AgentChatViewContent({
     runtimeState.initialization.docker?.step ??
     runtimeState.initialization.currentStep ??
     optionalSessionState.initializationStep?.step;
-  const initializationError =
+  const runtimeError =
     runtimeState.phase === 'failed'
       ? (runtimeState.initialization.docker?.error ??
-        runtimeState.initialization.error ??
-        null)
-      : null;
+        runtimeState.initialization.error)
+      : undefined;
+  const initializationError =
+    runtimeError ??
+    (session?.status === 'error' ? session.statusReason : undefined) ??
+    null;
   const isProxyReady = optionalSessionState.isProxyReady;
   const shouldShowBlockingLoader =
     (!session || runtimeState.phase === 'failed') && isSessionLoading;

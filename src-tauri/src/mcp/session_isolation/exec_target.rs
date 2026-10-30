@@ -115,6 +115,7 @@ pub(crate) fn test_docker_session(
         docker_config: Some(config),
         docker_container_name: None,
         docker_host_workspace_path: None,
+        status_reason: None,
     }
 }
 

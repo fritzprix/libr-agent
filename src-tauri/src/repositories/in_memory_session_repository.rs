@@ -101,10 +101,16 @@ impl SessionRepository for InMemorySessionRepository {
     ///
     /// This operation is idempotent - if session doesn't exist, it silently succeeds.
     /// This matches the behavior needed for ephemeral sessions during creation.
-    async fn update_status(&self, session_id: &str, status: SessionStatus) -> Result<(), DbError> {
+    async fn update_status(
+        &self,
+        session_id: &str,
+        status: SessionStatus,
+        reason: Option<&str>,
+    ) -> Result<(), DbError> {
         let mut sessions = self.sessions.write().await;
         if let Some(session) = sessions.get_mut(session_id) {
             session.status = status.clone();
+            session.status_reason = reason.map(str::to_string);
             session.updated_at = chrono::Utc::now().timestamp_millis();
             log::debug!(
                 "InMemory: Updated status for {} to {:?}",
@@ -482,7 +488,7 @@ mod tests {
         };
 
         repo.upsert_session(&session).await.unwrap();
-        repo.update_status("test-session", SessionStatus::Busy)
+        repo.update_status("test-session", SessionStatus::Busy, None)
             .await
             .unwrap();
 
@@ -494,7 +500,9 @@ mod tests {
     #[tokio::test]
     async fn test_update_status_nonexistent_session_is_idempotent() {
         let repo = InMemorySessionRepository::new();
-        let result = repo.update_status("nonexistent", SessionStatus::Busy).await;
+        let result = repo
+            .update_status("nonexistent", SessionStatus::Busy, None)
+            .await;
         assert!(result.is_ok());
     }
 

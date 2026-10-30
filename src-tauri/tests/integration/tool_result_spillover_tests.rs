@@ -60,6 +60,7 @@ fn build_session_metadata(session_id: &str, status: SessionStatus) -> SessionMet
         docker_config: None,
         docker_container_name: None,
         docker_host_workspace_path: None,
+        status_reason: None,
     }
 }
 

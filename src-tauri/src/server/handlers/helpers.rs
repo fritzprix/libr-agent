@@ -17,7 +17,14 @@ use super::types::ErrorResponse;
 ///
 /// Exact match first; legacy short suffix / `session-{…}` as read-only fallback.
 pub async fn resolve_http_session_ref(input_ref: &str) -> Result<String, (StatusCode, String)> {
-    let repo = get_session_repository();
+    resolve_session_ref_in(get_session_repository(), input_ref).await
+}
+
+/// [`resolve_http_session_ref`] against the given repository.
+pub async fn resolve_session_ref_in(
+    repo: &dyn SessionRepository,
+    input_ref: &str,
+) -> Result<String, (StatusCode, String)> {
     if repo
         .get_session(input_ref)
         .await
