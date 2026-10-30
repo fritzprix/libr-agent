@@ -245,6 +245,20 @@ pub async fn session_docker_root(session_id: &str) -> (bool, String) {
     (false, DEFAULT_DOCKER_WORKDIR.to_string())
 }
 
+/// Why `runShell` with `asRoot` cannot run in this session, or `None` when it can.
+pub async fn root_exec_blocker(session_id: &str) -> Option<crate::services::RootExecBlocker> {
+    use crate::repositories::session_repository::SessionRepository;
+
+    let session = match crate::state::try_get_session_repository() {
+        Some(session_repo) => session_repo.get_session(session_id).await.ok().flatten(),
+        None => None,
+    };
+    match session {
+        Some(session) => crate::services::WorkspaceRuntimeManager::root_exec_blocker(&session),
+        None => Some(crate::services::RootExecBlocker::HostSession),
+    }
+}
+
 /// CWD reported by isolated/async shell tools for a session.
 pub async fn effective_command_cwd(session_id: &str, host_workspace: &Path) -> String {
     let (is_docker, docker_root) = session_docker_root(session_id).await;

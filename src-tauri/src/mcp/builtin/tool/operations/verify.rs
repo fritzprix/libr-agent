@@ -166,7 +166,9 @@ pub(super) fn container_stdio_guidance() -> Vec<String> {
             .to_string(),
         "Make sure the command is in the container: workspace__runShell runs in the same container"
             .to_string(),
-        "Install the runtime in the container, or use a command that the session image has"
+        "Install the runtime with workspace__runShell and asRoot=true (for example: apt-get update && apt-get install -y nodejs npm), or use a command that the session image has"
+            .to_string(),
+        "For an attached container, install the runtime outside LibrAgent: asRoot is not available"
             .to_string(),
         "Do not register a host path: it does not resolve in the container".to_string(),
     ]

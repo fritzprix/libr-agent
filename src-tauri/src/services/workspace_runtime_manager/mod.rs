@@ -114,6 +114,69 @@ fn build_docker_mcp_command(
     })
 }
 
+/// Reason that root execution is not available for a session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RootExecBlocker {
+    /// The session runs commands on the host.
+    HostSession,
+    /// The session uses a container that LibrAgent did not create.
+    AttachedContainer,
+}
+
+impl RootExecBlocker {
+    pub fn message(self) -> &'static str {
+        match self {
+            Self::HostSession => {
+                "asRoot is only available in a Docker session that uses a LibrAgent-managed container"
+            }
+            Self::AttachedContainer => {
+                "asRoot is not available for an attached container: LibrAgent does not manage it"
+            }
+        }
+    }
+}
+
+/// Builds `docker exec -i [-u 0] -w <workdir> [env] <container> <shell> -lc <command>`.
+fn build_docker_exec_command(
+    session: &SessionMetadata,
+    shell: ShellType,
+    command: &str,
+    env_vars: &std::collections::HashMap<String, String>,
+    cwd_override: Option<&str>,
+    run_as_root: bool,
+) -> RuntimeResult<AsyncCommand> {
+    let container_name = docker_container_name(session)?;
+    let workdir = cwd_override
+        .map(str::to_string)
+        .unwrap_or_else(|| session_docker_workdir(session));
+    let mut cmd = AsyncCommand::new("docker");
+    apply_docker_cli_env(&mut cmd);
+    cmd.args(["exec", "-i"]);
+    if run_as_root {
+        // The container itself runs as the host user; only this exec gets uid 0.
+        cmd.args(["-u", "0"]);
+    }
+    cmd.args(["-w", &workdir]);
+
+    let mut merged_env = session
+        .docker_config
+        .as_ref()
+        .map(|config| config.env.clone())
+        .unwrap_or_default();
+    for (key, value) in env_vars {
+        validate_env_key(key).map_err(WorkspaceRuntimeError::InvalidConfig)?;
+        validate_env_value(key, value).map_err(WorkspaceRuntimeError::InvalidConfig)?;
+        merged_env.insert(key.clone(), value.clone());
+    }
+
+    apply_exec_env(&mut cmd, merged_env)?;
+
+    cmd.arg(container_name);
+    // runShell intentionally executes shell syntax; this mirrors the host shell path.
+    cmd.args([shell.command(), "-lc", command]);
+    Ok(cmd)
+}
+
 /// Writes the server env to a private (0600) temp file for `docker exec --env-file`. Values
 /// stay out of the host process list, and out of the docker CLI's own environment: there,
 /// `HOME`, `DOCKER_HOST`, `DOCKER_CONTEXT` or `DOCKER_CONFIG` would change which daemon the
@@ -249,34 +312,33 @@ impl WorkspaceRuntimeManager {
         command: &str,
         env_vars: &std::collections::HashMap<String, String>,
         cwd_override: Option<&str>,
+        run_as_root: bool,
     ) -> RuntimeResult<AsyncCommand> {
+        if run_as_root {
+            if let Some(blocker) = Self::root_exec_blocker(session) {
+                return Err(WorkspaceRuntimeError::InvalidConfig(
+                    blocker.message().to_string(),
+                ));
+            }
+        }
         let shell = prepare_docker_runtime(session, true, true, None).await?;
+        build_docker_exec_command(session, shell, command, env_vars, cwd_override, run_as_root)
+    }
 
-        let container_name = docker_container_name(session)?;
-        let workdir = cwd_override
-            .map(str::to_string)
-            .unwrap_or_else(|| session_docker_workdir(session));
-        let mut cmd = AsyncCommand::new("docker");
-        apply_docker_cli_env(&mut cmd);
-        cmd.args(["exec", "-i", "-w", &workdir]);
-
-        let mut merged_env = session
+    /// Why a shell command of this session cannot run as root, or `None` when it can.
+    /// Only a container that LibrAgent created and manages allows root.
+    pub fn root_exec_blocker(session: &SessionMetadata) -> Option<RootExecBlocker> {
+        if session.workspace_isolation != WorkspaceIsolationMode::Docker {
+            return Some(RootExecBlocker::HostSession);
+        }
+        if session
             .docker_config
             .as_ref()
-            .map(|config| config.env.clone())
-            .unwrap_or_default();
-        for (key, value) in env_vars {
-            validate_env_key(key).map_err(WorkspaceRuntimeError::InvalidConfig)?;
-            validate_env_value(key, value).map_err(WorkspaceRuntimeError::InvalidConfig)?;
-            merged_env.insert(key.clone(), value.clone());
+            .is_some_and(|config| config.is_attach())
+        {
+            return Some(RootExecBlocker::AttachedContainer);
         }
-
-        apply_exec_env(&mut cmd, merged_env)?;
-
-        cmd.arg(container_name);
-        // runShell intentionally executes shell syntax; this mirrors the host shell path.
-        cmd.args([shell.command(), "-lc", command]);
-        Ok(cmd)
+        None
     }
 
     /// Builds `docker exec -i -w <workdir> <container> <command> <args...>` for a stdio MCP
@@ -740,6 +802,65 @@ mod exec_env_tests {
         assert!(!args.iter().any(|arg| arg == "-e" || arg == "--env-file"));
         // The docker CLI itself still gets the isolated host env (PATH, HOME, …).
         assert!(envs.iter().any(|(key, _)| key == "PATH"));
+    }
+
+    #[test]
+    fn shell_command_runs_as_root_only_when_asked() {
+        let session = docker_session(vec![]);
+        let env = std::collections::HashMap::new();
+
+        let root = build_docker_exec_command(
+            &session,
+            ShellType::Bash,
+            "apt-get update",
+            &env,
+            None,
+            true,
+        )
+        .unwrap();
+        let (args, _) = command_parts(&root);
+        assert_eq!(
+            args,
+            vec![
+                "exec",
+                "-i",
+                "-u",
+                "0",
+                "-w",
+                "/work",
+                "libragent-session-s1",
+                "bash",
+                "-lc",
+                "apt-get update"
+            ]
+        );
+
+        let user =
+            build_docker_exec_command(&session, ShellType::Bash, "id", &env, None, false).unwrap();
+        let (args, _) = command_parts(&user);
+        assert!(!args.iter().any(|arg| arg == "-u"));
+    }
+
+    #[test]
+    fn root_is_available_only_in_a_managed_session_container() {
+        let managed = docker_session(vec![]);
+        assert_eq!(WorkspaceRuntimeManager::root_exec_blocker(&managed), None);
+
+        let mut attached = docker_session(vec![]);
+        if let Some(config) = attached.docker_config.as_mut() {
+            config.attach_container = Some("dev-box".to_string());
+        }
+        assert_eq!(
+            WorkspaceRuntimeManager::root_exec_blocker(&attached),
+            Some(RootExecBlocker::AttachedContainer)
+        );
+
+        let mut host = docker_session(vec![]);
+        host.workspace_isolation = WorkspaceIsolationMode::Host;
+        assert_eq!(
+            WorkspaceRuntimeManager::root_exec_blocker(&host),
+            Some(RootExecBlocker::HostSession)
+        );
     }
 
     #[test]

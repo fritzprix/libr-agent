@@ -38,6 +38,8 @@ pub struct IsolatedProcessConfig {
     pub env_vars: HashMap<String, String>,
     pub isolation_level: IsolationLevel,
     pub shell_type: Option<ShellType>,
+    /// Run as uid 0. Only a LibrAgent-managed Docker session container allows it.
+    pub run_as_root: bool,
 }
 
 impl IsolatedProcessConfig {

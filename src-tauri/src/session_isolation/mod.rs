@@ -58,6 +58,7 @@ impl SessionIsolationManager {
                                 .working_directory
                                 .as_ref()
                                 .and_then(|path| path.to_str()),
+                            config.run_as_root,
                         )
                         .await
                         .map_err(|error| error.to_string());
@@ -84,6 +85,12 @@ impl SessionIsolationManager {
                     }
                 }
             }
+        }
+
+        if config.run_as_root {
+            return Err(crate::services::RootExecBlocker::HostSession
+                .message()
+                .to_string());
         }
 
         match config.isolation_level {
@@ -126,5 +133,30 @@ mod tests {
     #[test]
     fn test_isolation_manager_creation() {
         let _manager = SessionIsolationManager::new();
+    }
+
+    #[tokio::test]
+    async fn a_host_command_never_runs_as_root() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let config = IsolatedProcessConfig {
+            session_id: "isolation-root-host-session".to_string(),
+            workspace_path: workspace.path().to_path_buf(),
+            working_directory: None,
+            command: "id -u".to_string(),
+            args: vec![],
+            env_vars: std::collections::HashMap::new(),
+            isolation_level: IsolationLevel::Basic,
+            shell_type: None,
+            run_as_root: true,
+        };
+
+        let error = SessionIsolationManager::new()
+            .create_isolated_command(config)
+            .await
+            .expect_err("host root execution is rejected");
+        assert_eq!(
+            error,
+            crate::services::RootExecBlocker::HostSession.message()
+        );
     }
 }

@@ -157,6 +157,7 @@ impl WorkspaceServer {
             env_vars,
             isolation_level,
             shell_type: None, // Default to platform default shell
+            run_as_root: false,
         };
 
         // Create isolated command

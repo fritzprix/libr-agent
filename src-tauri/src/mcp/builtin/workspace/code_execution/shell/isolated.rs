@@ -28,6 +28,7 @@ impl WorkspaceServer {
         session_id: &str,
         mut env_vars: HashMap<String, String>,
         working_directory: Option<std::path::PathBuf>,
+        run_as_root: bool,
     ) -> Result<MCPResult, String> {
         let command = input.text();
         let session_id = session_id.to_string();
@@ -125,6 +126,7 @@ impl WorkspaceServer {
             env_vars,
             isolation_level,
             shell_type: None, // Default to platform default shell
+            run_as_root,
         };
 
         // Create isolated command
