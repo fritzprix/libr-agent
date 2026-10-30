@@ -144,7 +144,7 @@ impl BuiltinServerRegistry {
     /// The normalized `serde_json::Value`.
     fn normalize_json_args(args: Value) -> Value {
         match args {
-            Value::Object(mut obj) => {
+            Value::Object(obj) => {
                 // Handle "raw" field from frontend when JSON parsing failed
                 if let Some(raw_value) = obj.get("raw").cloned() {
                     info!("Processing raw arguments from frontend JSON parsing failure");
@@ -165,24 +165,9 @@ impl BuiltinServerRegistry {
                     }
                 }
 
-                // Handle code execution parameters
-                if let Some(Value::String(code_str)) = obj.get("code").cloned() {
-                    let normalized_code = Self::normalize_code_parameter(&code_str);
-                    if normalized_code != code_str {
-                        info!("Normalized 'code' parameter for execution");
-                        obj.insert("code".to_string(), Value::String(normalized_code));
-                    }
-                }
-
-                // Handle shell command parameters
-                if let Some(Value::String(command_str)) = obj.get("command").cloned() {
-                    let normalized_command = Self::normalize_command_parameter(&command_str);
-                    if normalized_command != command_str {
-                        info!("Normalized 'command' parameter for execution");
-                        obj.insert("command".to_string(), Value::String(normalized_command));
-                    }
-                }
-
+                // `code` and `command` values pass through untouched: they arrive as
+                // decoded JSON strings, so quote-count "repairs" here only corrupt valid
+                // input. Unclosed shell quotes are reported by `validate_bash_syntax`.
                 Value::Object(obj)
             }
             _ => args,
@@ -294,77 +279,6 @@ impl BuiltinServerRegistry {
             }
         }
         None
-    }
-
-    /// Normalizes code parameters by fixing unmatched quotes.
-    /// @internal
-    fn normalize_code_parameter(code: &str) -> String {
-        let mut normalized = code.to_string();
-
-        // Fix unmatched quotes
-        let double_quote_count = normalized.chars().filter(|&c| c == '"').count();
-        let single_quote_count = normalized.chars().filter(|&c| c == '\'').count();
-
-        if double_quote_count % 2 != 0 {
-            normalized.push('"');
-            info!("Fixed unmatched double quote in code parameter");
-        }
-
-        if single_quote_count % 2 != 0 {
-            normalized.push('\'');
-            info!("Fixed unmatched single quote in code parameter");
-        }
-
-        normalized
-    }
-
-    /// Normalizes shell command parameters by fixing unmatched or consecutive quotes.
-    /// @internal
-    fn normalize_command_parameter(command: &str) -> String {
-        let mut normalized = command.to_string();
-
-        // Fix unmatched quotes
-        let double_quote_count = normalized.chars().filter(|&c| c == '"').count();
-        let single_quote_count = normalized.chars().filter(|&c| c == '\'').count();
-
-        if double_quote_count % 2 != 0 {
-            normalized.push('"');
-            info!("Fixed unmatched double quote in command parameter");
-        }
-
-        if single_quote_count % 2 != 0 {
-            normalized.push('\'');
-            info!("Fixed unmatched single quote in command parameter");
-        }
-
-        // Fix consecutive quotes pattern like echo "hello""
-        if normalized.contains("\"\"") {
-            normalized = Self::fix_consecutive_quotes_in_command(&normalized);
-        }
-
-        normalized
-    }
-
-    /// A helper to fix consecutive quotes in shell commands.
-    /// @internal
-    fn fix_consecutive_quotes_in_command(input: &str) -> String {
-        let mut result = String::new();
-        let chars: Vec<char> = input.chars().collect();
-        let mut i = 0;
-
-        while i < chars.len() {
-            if i + 1 < chars.len() && chars[i] == '"' && chars[i + 1] == '"' {
-                // Found consecutive quotes - add only one
-                result.push('"');
-                i += 2;
-                info!("Fixed consecutive quotes in command");
-            } else {
-                result.push(chars[i]);
-                i += 1;
-            }
-        }
-
-        result
     }
 
     /// Creates a new `BuiltinServerRegistry` and registers the default servers
