@@ -269,7 +269,8 @@ pub async fn update_session_status_with_reason(
 }
 
 /// Sets `Error` with `reason` for a session that may not be loaded in memory (for example when
-/// loading it failed). Loaded sessions take the normal status transition.
+/// loading it failed). Loaded sessions take the normal status transition. A `Busy` session is
+/// not changed: its running workflow owns the status and the active agent permit.
 pub async fn record_session_error_with_dispatcher(
     session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
@@ -277,25 +278,53 @@ pub async fn record_session_error_with_dispatcher(
     session_id: &str,
     reason: &str,
 ) -> Result<(), String> {
-    let is_active = active_sessions.read().await.contains_key(session_id);
-    if is_active {
-        return apply_session_status(
-            session_repo,
-            active_sessions,
-            dispatcher,
-            session_id,
-            SessionStatus::Error,
-            Some(reason),
-        )
-        .await;
+    {
+        // Keep the lock until the write: a concurrent resume must not load the session between
+        // the check and the write.
+        let active = active_sessions.write().await;
+        match active.get(session_id) {
+            Some(session) if session.metadata.status == SessionStatus::Busy => {
+                log::info!(
+                    "Session {} is running; not setting Error for: {}",
+                    session_id,
+                    reason
+                );
+                return Ok(());
+            }
+            Some(_) => {}
+            None => {
+                session_repo
+                    .update_status(session_id, SessionStatus::Error, Some(reason))
+                    .await
+                    .map_err(|error| format!("Failed to update session status: {}", error))?;
+                drop(active);
+                return emit_unloaded_session_error(dispatcher, session_id, reason);
+            }
+        }
     }
 
-    session_repo
-        .update_status(session_id, SessionStatus::Error, Some(reason))
-        .await
-        .map_err(|error| format!("Failed to update session status: {}", error))?;
-    if let Some(bus) = crate::state::try_get_session_bus() {
-        bus.notify_status_change(session_id);
+    apply_session_status(
+        session_repo,
+        active_sessions,
+        dispatcher,
+        session_id,
+        SessionStatus::Error,
+        Some(reason),
+    )
+    .await
+}
+
+fn emit_unloaded_session_error(
+    dispatcher: &dyn AgentEventDispatcher,
+    session_id: &str,
+    reason: &str,
+) -> Result<(), String> {
+    match crate::state::try_get_session_bus() {
+        Some(bus) => bus.notify_status_change(session_id),
+        None => log::warn!(
+            "SessionBus not initialized; status waiters for session {} are not woken",
+            session_id
+        ),
     }
     dispatcher.emit_agent_event(AgentEvent::StatusChanged {
         session_id: session_id.to_string(),
@@ -537,5 +566,45 @@ mod tests {
             }
             other => panic!("unexpected event: {:?}", other),
         }
+    }
+
+    #[tokio::test]
+    async fn a_failure_does_not_change_a_running_session() {
+        let repo: Arc<dyn SessionRepository> = Arc::new(InMemorySessionRepository::new());
+        let session = SessionMetadata {
+            status: SessionStatus::Busy,
+            ..SessionMetadata::test_fixture("running-session")
+        };
+        repo.upsert_session(&session).await.expect("upsert");
+        let mut loaded = AgentSession::new(session, Arc::new(ContextRegistry::new()), None);
+        loaded.is_running = true;
+        let active_sessions = Arc::new(RwLock::new(HashMap::from([(
+            "running-session".to_string(),
+            loaded,
+        )])));
+        let dispatcher = RecordingDispatcher::default();
+
+        record_session_error_with_dispatcher(
+            &repo,
+            &active_sessions,
+            &dispatcher,
+            "running-session",
+            "No such container: libr-gone",
+        )
+        .await
+        .expect("record failure");
+
+        let stored = repo
+            .get_session("running-session")
+            .await
+            .expect("get")
+            .expect("session");
+        assert_eq!(stored.status, SessionStatus::Busy);
+        assert_eq!(stored.status_reason, None);
+        let active = active_sessions.read().await;
+        let loaded = active.get("running-session").expect("loaded session");
+        assert_eq!(loaded.metadata.status, SessionStatus::Busy);
+        assert!(loaded.is_running);
+        assert!(dispatcher.events.lock().expect("event lock").is_empty());
     }
 }
