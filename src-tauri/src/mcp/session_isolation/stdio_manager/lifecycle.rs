@@ -151,7 +151,7 @@ impl SessionMCPManager {
                 let docker =
                     WorkspaceRuntimeManager::create_docker_mcp_command(session, command, args, env)
                         .await
-                        .map_err(|e| SessionMCPError::SpawnFailed(e.to_string()))?;
+                        .map_err(|e| SessionMCPError::ContainerUnavailable(e.to_string()))?;
                 let exec = ContainerExec {
                     container: docker.container,
                     env_file: docker.env_file,

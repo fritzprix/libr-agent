@@ -286,17 +286,28 @@ fn apply_completion_step(state: &mut SessionRuntimeState) {
     }
 }
 
+/// The last failure reason of a server. A retry keeps it until the server is ready or fails
+/// again, so the reason stays visible while the server restarts.
+fn last_server_error(state: &SessionRuntimeState, server_name: &str) -> Option<String> {
+    state
+        .servers
+        .iter()
+        .find(|server| server.name == server_name)
+        .and_then(|server| server.error.clone())
+}
+
 pub(super) fn apply_server_discovering(
     state: &mut SessionRuntimeState,
     server_name: &str,
     transport: SessionRuntimeTransport,
 ) {
+    let error = last_server_error(state, server_name);
     state.upsert_server(
         server_name,
         transport,
         SessionRuntimeServerStatus::DiscoveringTools,
         0,
-        None,
+        error,
     );
     refresh_discovery_step(state);
 }
@@ -306,12 +317,13 @@ pub(super) fn apply_server_connecting(
     server_name: &str,
     transport: SessionRuntimeTransport,
 ) {
+    let error = last_server_error(state, server_name);
     state.upsert_server(
         server_name,
         transport,
         SessionRuntimeServerStatus::Connecting,
         0,
-        None,
+        error,
     );
     refresh_discovery_step(state);
 }
@@ -390,6 +402,7 @@ pub(super) fn apply_discovery_task_failed(state: &mut SessionRuntimeState, reaso
 /// and returns their names. A server that is already `Connecting`, `DiscoveringTools`,
 /// `TimedOut` (still starting in the background) or `Ready` is not returned, so a second trigger
 /// for the same server finds nothing to retry. This is the only way a retry is started.
+/// The last failure reason is kept.
 pub(super) fn claim_failed_servers_for_retry(
     state: &mut SessionRuntimeState,
     wanted: impl Fn(&str) -> bool,
@@ -399,7 +412,6 @@ pub(super) fn claim_failed_servers_for_retry(
         if server.status == SessionRuntimeServerStatus::Failed && wanted(&server.name) {
             server.status = SessionRuntimeServerStatus::Connecting;
             server.tool_count = 0;
-            server.error = None;
             claimed.push(server.name.clone());
         }
     }
@@ -572,10 +584,44 @@ mod tests {
             server(&state, "broken").status,
             SessionRuntimeServerStatus::Connecting
         );
-        assert_eq!(server(&state, "broken").error, None);
+        assert_eq!(server(&state, "broken").error.as_deref(), Some("x"));
 
         // A second trigger for the same server finds nothing to retry.
         assert!(claim_failed_servers_for_retry(&mut state, |_| true).is_empty());
+    }
+
+    #[test]
+    fn a_retry_keeps_the_last_failure_reason_until_ready_or_a_new_failure() {
+        let mut state = configured_state();
+        apply_server_failed(
+            &mut state,
+            "broken",
+            SessionRuntimeTransport::Stdio,
+            "image pull failed".into(),
+        );
+
+        claim_failed_servers_for_retry(&mut state, |_| true);
+        apply_server_connecting(&mut state, "broken", SessionRuntimeTransport::Stdio);
+        apply_server_discovering(&mut state, "broken", SessionRuntimeTransport::Stdio);
+        assert_eq!(
+            server(&state, "broken").error.as_deref(),
+            Some("image pull failed")
+        );
+
+        apply_server_failed(
+            &mut state,
+            "broken",
+            SessionRuntimeTransport::Stdio,
+            "process exited".into(),
+        );
+        assert_eq!(
+            server(&state, "broken").error.as_deref(),
+            Some("process exited")
+        );
+
+        claim_failed_servers_for_retry(&mut state, |_| true);
+        apply_server_ready(&mut state, "broken", SessionRuntimeTransport::Stdio, 2);
+        assert_eq!(server(&state, "broken").error, None);
     }
 
     #[test]

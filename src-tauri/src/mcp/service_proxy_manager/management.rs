@@ -1,6 +1,7 @@
 use super::super::service_proxy::MCPServiceProxy;
 use super::super::types::MCPResponse;
 use super::proxy_config::resolve_startup_timeout_seconds;
+use super::retry_policy::RetryTrigger;
 use super::runtime_updates::{
     apply_discovery_timeout_finalize, emit_runtime_state, replace_runtime_state_store,
     update_runtime_state_store, RuntimeStateUpdateResult,
@@ -10,7 +11,7 @@ use crate::agent::runtime_state::SessionRuntimeState;
 use crate::mcp::builtin::service_id::BuiltinServiceId;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::AppHandle;
 use tokio::sync::Mutex;
 
@@ -141,19 +142,29 @@ impl MCPServiceProxyManager {
         if server.status != crate::agent::runtime_state::SessionRuntimeServerStatus::Failed {
             return Ok(());
         }
-        self.retry_failed_servers(session_id, Some(server_name), app_handle)
-            .await
-            .map(|_| ())
+        self.retry_failed_servers(
+            session_id,
+            Some(server_name),
+            RetryTrigger::Manual,
+            app_handle,
+        )
+        .await
+        .map(|_| ())
     }
 
     /// Retries the session's `Failed` servers (only `only` when given) and returns how many
     /// were started. The `Failed -> Connecting` move happens under the runtime state lock before
     /// anything is spawned, so a second trigger for the same server (a double click, re-entering
     /// the session twice) finds it `Connecting` and starts nothing.
+    ///
+    /// An automatic retry skips servers that are still in their backoff delay, that reached
+    /// the retry limit, or whose failure cannot change between attempts. A manual retry starts
+    /// them all and resets their failure count.
     pub(super) async fn retry_failed_servers(
         &self,
         session_id: &str,
         only: Option<&str>,
+        trigger: RetryTrigger,
         app_handle: Option<&AppHandle>,
     ) -> Result<usize, String> {
         let proxy = self
@@ -194,6 +205,38 @@ impl MCPServiceProxyManager {
             }
         }
 
+        let auto_allowed = match trigger {
+            RetryTrigger::Manual => None,
+            RetryTrigger::Automatic => {
+                let failed: Vec<String> = self
+                    .get_runtime_state(session_id)
+                    .await
+                    .servers
+                    .into_iter()
+                    .filter(|server| {
+                        server.status
+                            == crate::agent::runtime_state::SessionRuntimeServerStatus::Failed
+                    })
+                    .map(|server| server.name)
+                    .collect();
+                if failed.is_empty() {
+                    return Ok(0);
+                }
+                let allowed = self
+                    .server_retry_states
+                    .auto_retry_allowed(session_id, &failed, Instant::now())
+                    .await;
+                if allowed.len() < failed.len() {
+                    log::debug!(
+                        "Automatic retry skips {} failed MCP server(s) in backoff or at the retry limit for session '{}'",
+                        failed.len() - allowed.len(),
+                        session_id
+                    );
+                }
+                Some(allowed)
+            }
+        };
+
         let mut claimed = Vec::new();
         super::runtime_updates::update_runtime_state_store(
             &self.runtime_states,
@@ -202,6 +245,9 @@ impl MCPServiceProxyManager {
             |state| {
                 claimed = super::runtime_updates::claim_failed_servers_for_retry(state, |name| {
                     only.is_none_or(|only| only == name)
+                        && auto_allowed
+                            .as_ref()
+                            .is_none_or(|allowed| allowed.iter().any(|allowed| allowed == name))
                         && (loaded.stdio_configs.contains_key(name)
                             || loaded.http_configs.contains_key(name))
                 });
@@ -210,6 +256,13 @@ impl MCPServiceProxyManager {
         .await;
         if claimed.is_empty() {
             return Ok(0);
+        }
+        if trigger == RetryTrigger::Manual {
+            for name in &claimed {
+                self.server_retry_states
+                    .clear_server(session_id, name)
+                    .await;
+            }
         }
 
         let retry_stdio: HashMap<_, _> = loaded
@@ -399,6 +452,7 @@ impl MCPServiceProxyManager {
         self.proxy_readiness.write().await.remove(session_id);
         self.runtime_states.write().await.remove(session_id);
         self.session_server_configs.write().await.remove(session_id);
+        self.server_retry_states.clear_session(session_id).await;
         self.process_cancel_pending.lock().await.remove(session_id);
         self.process_cancel_retry_states
             .lock()

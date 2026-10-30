@@ -2,6 +2,7 @@ use super::super::service_proxy::MCPServiceProxy;
 use super::super::session_isolation::{HttpSessionManager, SessionMCPManager};
 use super::management::ProxyReadinessEntry;
 use super::persist_tool_cache_for_server;
+use super::retry_policy::{FailureKind, RetryStateStore};
 use super::runtime_updates::{
     apply_discovery_task_failed, apply_discovery_timeout_finalize, apply_initialization_complete,
     apply_server_connecting, apply_server_discovering, apply_server_failed, apply_server_ready,
@@ -9,6 +10,7 @@ use super::runtime_updates::{
 };
 use super::MCPServiceProxyManager;
 use crate::agent::runtime_state::SessionRuntimeTransport;
+use crate::mcp::session_isolation::SessionMCPError;
 use crate::services::mcp_server_service::summarize_tool_names;
 use futures::FutureExt;
 use std::any::Any;
@@ -36,6 +38,21 @@ struct DiscoveryContext {
     /// Safety cap for one server; a server is only given up on after this (or on exit/error).
     server_discovery_cap: Duration,
     runtime_state_emits: Arc<AtomicU32>,
+    retry_states: RetryStateStore,
+}
+
+/// Why tool discovery of one server failed, and whether a later attempt can succeed.
+#[derive(Debug)]
+struct DiscoveryFailure {
+    message: String,
+    kind: FailureKind,
+}
+
+fn stdio_failure_kind(error: &SessionMCPError) -> FailureKind {
+    match error {
+        SessionMCPError::ContainerUnavailable(_) => FailureKind::Permanent,
+        _ => FailureKind::Transient,
+    }
 }
 
 fn server_discovery_cap(session_wait: Duration) -> Duration {
@@ -76,7 +93,12 @@ async fn mark_server_failed(
     server_name: &str,
     transport: SessionRuntimeTransport,
     error: String,
+    kind: FailureKind,
 ) {
+    context
+        .retry_states
+        .record_failure(&context.session_id, server_name, kind, Instant::now())
+        .await;
     let update_result = update_runtime_state_store(
         &context.runtime_states,
         &context.session_id,
@@ -118,24 +140,31 @@ async fn await_tool_discovery<T, E, F>(
     transport: &str,
     server_name: &str,
     session_id: &str,
-) -> Result<T, String>
+    failure_kind: impl Fn(&E) -> FailureKind,
+) -> Result<T, DiscoveryFailure>
 where
     F: Future<Output = Result<T, E>>,
     E: std::fmt::Display,
 {
     match tokio::time::timeout(timeout, future).await {
         Ok(Ok(value)) => Ok(value),
-        Ok(Err(error)) => Err(format!(
-            "{} server '{}' tool discovery failed for session '{}': {}",
-            transport, server_name, session_id, error
-        )),
-        Err(_) => Err(format!(
-            "{} server '{}' tool discovery timed out after {}s for session '{}'",
-            transport,
-            server_name,
-            timeout.as_secs(),
-            session_id
-        )),
+        Ok(Err(error)) => Err(DiscoveryFailure {
+            message: format!(
+                "{} server '{}' tool discovery failed for session '{}': {}",
+                transport, server_name, session_id, error
+            ),
+            kind: failure_kind(&error),
+        }),
+        Err(_) => Err(DiscoveryFailure {
+            message: format!(
+                "{} server '{}' tool discovery timed out after {}s for session '{}'",
+                transport,
+                server_name,
+                timeout.as_secs(),
+                session_id
+            ),
+            kind: FailureKind::Transient,
+        }),
     }
 }
 
@@ -190,6 +219,7 @@ async fn load_stdio_tools(
                     "stdio",
                     &server_name,
                     &task_context.session_id,
+                    stdio_failure_kind,
                 )
                 .await
                 {
@@ -227,6 +257,10 @@ async fn load_stdio_tools(
                         proxy
                             .set_session_stdio_tools(server_name.clone(), prefixed_tools)
                             .await;
+                        task_context
+                            .retry_states
+                            .clear_server(&task_context.session_id, &server_name)
+                            .await;
                         let update_result = update_runtime_state_store(
                             &task_context.runtime_states,
                             &task_context.session_id,
@@ -247,15 +281,16 @@ async fn load_stdio_tools(
                                 .fetch_add(1, Ordering::Relaxed);
                         }
                     }
-                    Err(error) => {
+                    Err(failure) => {
+                        log::error!("[bg] ❌ {}", failure.message);
                         mark_server_failed(
                             &task_context,
                             &server_name,
                             SessionRuntimeTransport::Stdio,
-                            error.clone(),
+                            failure.message,
+                            failure.kind,
                         )
                         .await;
-                        log::error!("[bg] ❌ {}", error);
                     }
                 }
             })
@@ -291,6 +326,7 @@ async fn load_stdio_tools(
                     &server_name,
                     SessionRuntimeTransport::Stdio,
                     error,
+                    FailureKind::Transient,
                 )
                 .await;
             }
@@ -349,6 +385,10 @@ async fn load_http_tools(
                         "[bg] ⚡ Skipping HTTP server '{}' - tools already cached",
                         server_name
                     );
+                    task_context
+                        .retry_states
+                        .clear_server(&task_context.session_id, &server_name)
+                        .await;
                     let update_result = update_runtime_state_store(
                         &task_context.runtime_states,
                         &task_context.session_id,
@@ -400,6 +440,7 @@ async fn load_http_tools(
                     "http",
                     &server_name,
                     &task_context.session_id,
+                    |_| FailureKind::Transient,
                 )
                 .await
                 {
@@ -437,6 +478,10 @@ async fn load_http_tools(
                         proxy
                             .set_session_http_tools(server_name.clone(), prefixed_tools)
                             .await;
+                        task_context
+                            .retry_states
+                            .clear_server(&task_context.session_id, &server_name)
+                            .await;
                         let update_result = update_runtime_state_store(
                             &task_context.runtime_states,
                             &task_context.session_id,
@@ -457,15 +502,16 @@ async fn load_http_tools(
                                 .fetch_add(1, Ordering::Relaxed);
                         }
                     }
-                    Err(error) => {
+                    Err(failure) => {
+                        log::error!("[bg] ❌ {}", failure.message);
                         mark_server_failed(
                             &task_context,
                             &server_name,
                             SessionRuntimeTransport::Http,
-                            error.clone(),
+                            failure.message,
+                            failure.kind,
                         )
                         .await;
-                        log::error!("[bg] ❌ {}", error);
                     }
                 }
             })
@@ -496,8 +542,14 @@ async fn load_http_tools(
                 panic_error: Some(error),
             }) => {
                 log::error!("[bg] ❌ {}", error);
-                mark_server_failed(&context, &server_name, SessionRuntimeTransport::Http, error)
-                    .await;
+                mark_server_failed(
+                    &context,
+                    &server_name,
+                    SessionRuntimeTransport::Http,
+                    error,
+                    FailureKind::Transient,
+                )
+                .await;
             }
             Ok(PanicDiscoveryResult {
                 panic_error: None, ..
@@ -531,6 +583,7 @@ pub(super) async fn spawn_background_tool_loading(
         tool_discovery_timeout: plan.tool_discovery_timeout,
         server_discovery_cap: server_discovery_cap(plan.tool_discovery_timeout),
         runtime_state_emits: Arc::new(AtomicU32::new(0)),
+        retry_states: manager.server_retry_states.clone(),
     };
     tokio::spawn(async move {
         let total_start = Instant::now();
@@ -764,6 +817,7 @@ pub(super) async fn spawn_retry_failed_servers(
         tool_discovery_timeout: params.tool_discovery_timeout,
         server_discovery_cap: server_discovery_cap(params.tool_discovery_timeout),
         runtime_state_emits: Arc::new(AtomicU32::new(0)),
+        retry_states: manager.server_retry_states.clone(),
     };
 
     tokio::spawn(async move {
@@ -816,8 +870,13 @@ mod tests {
 
         // The session-wait budget alone would have timed this server out (the old behavior).
         let at_session_wait =
-            await_tool_discovery(slow(), session_wait, "stdio", "s", "sess").await;
-        assert!(at_session_wait.unwrap_err().contains("timed out"));
+            await_tool_discovery(slow(), session_wait, "stdio", "s", "sess", |_: &String| {
+                FailureKind::Transient
+            })
+            .await;
+        let timed_out = at_session_wait.unwrap_err();
+        assert!(timed_out.message.contains("timed out"));
+        assert_eq!(timed_out.kind, FailureKind::Transient);
 
         // With the server cap it keeps loading and becomes ready.
         let at_cap = await_tool_discovery(
@@ -826,6 +885,7 @@ mod tests {
             "stdio",
             "s",
             "sess",
+            |_: &String| FailureKind::Transient,
         )
         .await;
         assert_eq!(at_cap.unwrap(), 3);
@@ -839,9 +899,35 @@ mod tests {
             "stdio",
             "s",
             "sess",
+            |_: &&str| FailureKind::Transient,
         )
         .await;
-        let error = result.unwrap_err();
+        let error = result.unwrap_err().message;
         assert!(error.contains("tool discovery failed") && !error.contains("timed out"));
+    }
+
+    #[tokio::test]
+    async fn an_unavailable_session_container_is_a_permanent_failure() {
+        let result = await_tool_discovery(
+            async {
+                Err::<(), _>(SessionMCPError::ContainerUnavailable(
+                    "Cannot pull Docker image 'missing:latest'".to_string(),
+                ))
+            },
+            server_discovery_cap(Duration::from_secs(30)),
+            "stdio",
+            "s",
+            "sess",
+            stdio_failure_kind,
+        )
+        .await;
+        let failure = result.unwrap_err();
+        assert_eq!(failure.kind, FailureKind::Permanent);
+        assert!(failure
+            .message
+            .contains("Session container is not available"));
+
+        let crashed = SessionMCPError::InitFailed("connection closed".to_string());
+        assert_eq!(stdio_failure_kind(&crashed), FailureKind::Transient);
     }
 }

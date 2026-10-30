@@ -94,6 +94,7 @@ async fn cleanup_session_resources(manager: &MCPServiceProxyManager, session_id:
         .write()
         .await
         .remove(session_id);
+    manager.server_retry_states.clear_session(session_id).await;
     if let Some(old_mgr) = manager
         .session_stdio_managers
         .write()
@@ -207,6 +208,7 @@ impl MCPServiceProxyManager {
             creation_guards: Arc::new(Mutex::new(HashMap::new())),
             runtime_states: Arc::new(RwLock::new(HashMap::new())),
             session_server_configs: Arc::new(RwLock::new(HashMap::new())),
+            server_retry_states: Default::default(),
             process_cancel_pending: Arc::new(Mutex::new(std::collections::HashSet::new())),
             process_cancel_retry_states: Arc::new(Mutex::new(HashMap::new())),
             process_cancel_retry_counts: Arc::new(Mutex::new(HashMap::new())),
@@ -319,7 +321,12 @@ impl MCPServiceProxyManager {
                     // Re-entering a session retries its failed servers (not the ones that are
                     // still starting in the background).
                     if let Err(error) = self
-                        .retry_failed_servers(&session_id, None, app_handle.as_ref())
+                        .retry_failed_servers(
+                            &session_id,
+                            None,
+                            super::retry_policy::RetryTrigger::Automatic,
+                            app_handle.as_ref(),
+                        )
                         .await
                     {
                         log::warn!(
