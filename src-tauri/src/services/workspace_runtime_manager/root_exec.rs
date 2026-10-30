@@ -24,6 +24,15 @@ use super::error::{RuntimeResult, WorkspaceRuntimeError};
 use super::session_config::docker_container_name;
 use super::WorkspaceRuntimeManager;
 
+/// Whether tool arguments ask to run as root. Only an absent `asRoot` or exactly `false` means
+/// "not root": models also send `"true"`, `1` and similar, and those must not run unapproved.
+pub fn as_root_requested(args: &serde_json::Value) -> bool {
+    !matches!(
+        args.get("asRoot"),
+        None | Some(serde_json::Value::Bool(false))
+    )
+}
+
 /// One root command at a time per container: the cleanup stops every root process.
 static ROOT_EXEC_LOCKS: Lazy<DashMap<String, Arc<Mutex<()>>>> = Lazy::new(DashMap::new);
 
@@ -204,6 +213,28 @@ fn restore_mounts_args(container: &str, uid: &str, gid: &str, mounts: &[String])
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_an_absent_or_false_as_root_means_not_root() {
+        for args in [
+            serde_json::json!({ "command": "id" }),
+            serde_json::json!({ "command": "id", "asRoot": false }),
+        ] {
+            assert!(!as_root_requested(&args), "{args}");
+        }
+        for value in [
+            serde_json::json!(true),
+            serde_json::json!("true"),
+            serde_json::json!("false"),
+            serde_json::json!(1),
+            serde_json::json!(0),
+            serde_json::json!(null),
+            serde_json::json!({}),
+        ] {
+            let args = serde_json::json!({ "command": "id", "asRoot": value });
+            assert!(as_root_requested(&args), "{args}");
+        }
+    }
 
     #[test]
     fn cleanup_runs_as_root_and_passes_ids_and_mounts_as_arguments() {

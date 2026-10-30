@@ -386,6 +386,18 @@ impl AgentSessionManager {
     }
 
     /// Resume a paused workflow
+    /// Reload the session (this prepares the Docker runtime again, or fails when the container
+    /// cannot be used) and then resume its workflow. Retry after an error must use this:
+    /// [`Self::resume_workflow`] alone skips the runtime when the session is already in memory.
+    pub async fn resume_session_and_workflow(&self, session_id: &str) -> Result<(), String> {
+        self.resume_session(session_id)
+            .await
+            .map_err(|e| format!("Failed to resume session: {}", e))?;
+        self.resume_workflow(session_id.to_string())
+            .await
+            .map_err(|e| format!("Failed to resume workflow: {}", e))
+    }
+
     pub async fn resume_workflow(&self, session_id: String) -> Result<(), String> {
         self.ensure_session_active(&session_id).await?;
         crate::agent::workflow::resume_workflow(

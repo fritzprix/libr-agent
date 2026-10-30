@@ -69,7 +69,7 @@ impl WorkspaceServer {
             .clone()
             .unwrap_or_else(|| self.session_id.clone());
 
-        if tool_name != "runShell" && args.get("asRoot").and_then(Value::as_bool) == Some(true) {
+        if tool_name != "runShell" && crate::services::as_root_requested(&args) {
             return Ok(guided_error(
                 ErrorCategory::InvalidInput,
                 format!("Tool '{tool_name}' cannot run as root; only workspace__runShell accepts asRoot"),

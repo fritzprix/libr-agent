@@ -241,7 +241,7 @@ impl WorkspaceServer {
         };
         let raw_command = input.text();
 
-        let run_as_root = args.get("asRoot").and_then(Value::as_bool).unwrap_or(false);
+        let run_as_root = crate::services::as_root_requested(&args);
         if run_as_root {
             if let Some(blocker) = utils::root_exec_blocker(session_id).await {
                 return Ok(root_exec_unavailable_result(blocker));
@@ -662,6 +662,16 @@ mod tests {
         assert!(text.contains("LibrAgent's own database"), "{text}");
     }
 
+    /// `asRoot` values that are not exactly `false`; each one must take the root path.
+    fn non_false_as_root_values() -> [serde_json::Value; 4] {
+        [
+            serde_json::json!(true),
+            serde_json::json!("true"),
+            serde_json::json!(1),
+            serde_json::json!("yes"),
+        ]
+    }
+
     #[tokio::test]
     async fn as_root_is_rejected_outside_a_managed_session_container() {
         let temp_dir = tempdir().expect("temp dir");
@@ -672,20 +682,52 @@ mod tests {
         );
         let server = WorkspaceServer::new(session_id.to_string(), session_manager);
 
-        let result = server
-            .handle_run_shell(
-                serde_json::json!({ "command": "id -u", "asRoot": true }),
-                session_id,
-                "runShell",
-            )
-            .await
-            .expect("guided result");
+        for as_root in non_false_as_root_values() {
+            let result = server
+                .handle_run_shell(
+                    serde_json::json!({ "command": "id -u > uid.txt", "asRoot": as_root }),
+                    session_id,
+                    "runShell",
+                )
+                .await
+                .expect("guided result");
 
-        let text = format!("{result:?}");
-        assert!(
-            text.contains(crate::services::RootExecBlocker::HostSession.message()),
-            "{text}"
-        );
+            let text = format!("{result:?}");
+            assert!(
+                text.contains(crate::services::RootExecBlocker::HostSession.message()),
+                "asRoot={as_root}: {text}"
+            );
+        }
+        assert!(!temp_dir.path().join(session_id).join("uid.txt").exists());
+    }
+
+    #[test]
+    fn as_root_is_rejected_for_an_attached_container() {
+        use crate::models::workspace_isolation::{DockerWorkspaceConfig, WorkspaceIsolationMode};
+
+        let session = SessionMetadata {
+            workspace_isolation: WorkspaceIsolationMode::Docker,
+            docker_config: Some(DockerWorkspaceConfig {
+                attach_container: Some("someone-elses-container".to_string()),
+                ..DockerWorkspaceConfig::default()
+            }),
+            ..SessionMetadata::test_fixture("workspace-shell-as-root-attach")
+        };
+
+        for as_root in non_false_as_root_values() {
+            let args = serde_json::json!({ "command": "id -u", "asRoot": as_root });
+            assert!(
+                crate::services::as_root_requested(&args),
+                "asRoot={as_root}"
+            );
+            let blocker = utils::root_exec_blocker_for(Some(&session))
+                .expect("an attached container must refuse asRoot");
+            let text = format!("{:?}", root_exec_unavailable_result(blocker));
+            assert!(
+                text.contains(crate::services::RootExecBlocker::AttachedContainer.message()),
+                "asRoot={as_root}: {text}"
+            );
+        }
     }
 
     #[tokio::test]
@@ -699,19 +741,21 @@ mod tests {
         let server = WorkspaceServer::new(session_id.to_string(), session_manager);
 
         for tool in ["spawnProcess", "runInPersistentShell"] {
-            let result = server
-                .call_tool(
-                    tool,
-                    serde_json::json!({ "command": "id -u > uid.txt", "asRoot": true }),
-                    Some(session_id.to_string()),
-                )
-                .await
-                .expect("guided result");
-            let text = format!("{result:?}");
-            assert!(
-                text.contains("only workspace__runShell accepts asRoot"),
-                "{tool}: {text}"
-            );
+            for as_root in non_false_as_root_values() {
+                let result = server
+                    .call_tool(
+                        tool,
+                        serde_json::json!({ "command": "id -u > uid.txt", "asRoot": as_root }),
+                        Some(session_id.to_string()),
+                    )
+                    .await
+                    .expect("guided result");
+                let text = format!("{result:?}");
+                assert!(
+                    text.contains("only workspace__runShell accepts asRoot"),
+                    "{tool} asRoot={as_root}: {text}"
+                );
+            }
         }
         assert!(!temp_dir.path().join(session_id).join("uid.txt").exists());
     }

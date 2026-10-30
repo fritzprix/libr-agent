@@ -111,22 +111,10 @@ pub async fn resume_session_workflow(
         Err((status, error)) => return Ok(resolve_error_reply(status, error)),
     };
 
-    // Step 1: Load the session into active_sessions and recreate the MCP proxy
-    if let Err(e) = manager.resume_session(&id).await {
+    // Reload the session (runtime + MCP proxy), then resume from existing messages.
+    if let Err(error) = manager.resume_session_and_workflow(&id).await {
         return Ok(warp::reply::with_status(
-            warp::reply::json(&ErrorResponse {
-                error: format!("Failed to resume session: {}", e),
-            }),
-            StatusCode::INTERNAL_SERVER_ERROR,
-        ));
-    }
-
-    // Step 2: Resume the workflow from existing messages (no new message injection)
-    if let Err(e) = manager.resume_workflow(id.clone()).await {
-        return Ok(warp::reply::with_status(
-            warp::reply::json(&ErrorResponse {
-                error: format!("Failed to resume workflow: {}", e),
-            }),
+            warp::reply::json(&ErrorResponse { error }),
             StatusCode::INTERNAL_SERVER_ERROR,
         ));
     }

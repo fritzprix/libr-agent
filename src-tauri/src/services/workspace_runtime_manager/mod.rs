@@ -232,7 +232,7 @@ pub use docker_cli::{docker_bridge_gateway, normalize_docker_arch};
 pub use error::{
     WorkspaceRuntimeError, AGENT_ERROR_DOCKER_NOT_AVAILABLE, AGENT_ERROR_DOCKER_NOT_INSTALLED,
 };
-pub use root_exec::RootExecLease;
+pub use root_exec::{as_root_requested, RootExecLease};
 pub use session_config::build_docker_volume_args;
 pub(crate) use session_config::session_docker_workdir;
 

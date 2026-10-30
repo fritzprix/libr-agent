@@ -229,13 +229,13 @@ pub async fn agent_pause_workflow(
     })
 }
 
-/// Resume a paused workflow
+/// Resume a paused workflow or retry after an error. Same steps as `POST /api/sessions/:id/resume`.
 #[command]
 pub async fn agent_resume_workflow(
     manager: State<'_, AgentSessionManager>,
     session_id: String,
 ) -> Result<AgentResponse, String> {
-    manager.resume_workflow(session_id.clone()).await?;
+    manager.resume_session_and_workflow(&session_id).await?;
 
     Ok(AgentResponse {
         success: true,
