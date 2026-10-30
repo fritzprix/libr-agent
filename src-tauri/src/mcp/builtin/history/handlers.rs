@@ -4,7 +4,8 @@ use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 
 use crate::mcp::builtin::error_guidance::{
-    guided_error, operation_failed_error, ErrorCategory, SuccessHint, ToolGroup,
+    guided_error, invalid_input_error, missing_param_error, operation_failed_error, ErrorCategory,
+    SuccessHint, ToolGroup,
 };
 use crate::mcp::builtin::history::types::{
     HistoryMessageListItem, HistoryMessageReadResponse, HistorySearchMatch, HistorySessionItem,
@@ -870,15 +871,28 @@ pub async fn export_dataset(args: Value) -> Result<MCPResult, String> {
         .get("sessionIds")
         .and_then(|v| serde_json::from_value(v.clone()).ok());
 
-    let format: ExportFormat = args
-        .get("format")
-        .and_then(|v| serde_json::from_value(v.clone()).ok())
-        .ok_or_else(|| "Missing or invalid 'format' parameter".to_string())?;
+    let Some(format_value) = args.get("format") else {
+        return Ok(missing_param_error("format", ToolGroup::Agent));
+    };
+    let format: ExportFormat = match serde_json::from_value(format_value.clone()) {
+        Ok(format) => format,
+        Err(e) => {
+            return Ok(invalid_input_error(
+                &format!("Invalid 'format' parameter: {e}"),
+                ToolGroup::Agent,
+            ))
+        }
+    };
 
-    let output_path: String = args
-        .get("outputPath")
-        .and_then(|v| v.as_str().map(|s| s.to_string()))
-        .ok_or_else(|| "Missing or invalid 'outputPath' parameter".to_string())?;
+    let Some(output_path_value) = args.get("outputPath") else {
+        return Ok(missing_param_error("outputPath", ToolGroup::Agent));
+    };
+    let Some(output_path) = output_path_value.as_str().map(str::to_string) else {
+        return Ok(invalid_input_error(
+            "Invalid 'outputPath' parameter: expected a string path",
+            ToolGroup::Agent,
+        ));
+    };
 
     let filters: Option<DatasetFilter> = args
         .get("filters")

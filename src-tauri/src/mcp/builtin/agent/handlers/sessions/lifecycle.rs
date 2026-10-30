@@ -22,7 +22,10 @@ pub async fn stop_session(
     let manager = server
         .get_manager()
         .ok_or("AgentSessionManager not available")?;
-    let session_ref = read_required_string(&args, "sessionId")?;
+    let session_ref = match read_required_string(&args, "sessionId") {
+        Ok(value) => value,
+        Err(result) => return Ok(result),
+    };
 
     if crate::utils::session_id::session_id_matches_legacy_ref(caller_session_id, &session_ref) {
         return Ok(self_target_session_action_result(
@@ -110,7 +113,10 @@ pub async fn delete_session(
     let manager = server
         .get_manager()
         .ok_or("AgentSessionManager not available")?;
-    let session_ref = read_required_string(&args, "sessionId")?;
+    let session_ref = match read_required_string(&args, "sessionId") {
+        Ok(value) => value,
+        Err(result) => return Ok(result),
+    };
 
     // 1. Prevent self-deletion (matching stopSession pattern)
     if crate::utils::session_id::session_id_matches_legacy_ref(caller_session_id, &session_ref) {

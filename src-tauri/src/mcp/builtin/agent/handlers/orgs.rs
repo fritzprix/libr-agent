@@ -409,7 +409,10 @@ pub async fn create_org(
         return Ok(result);
     }
 
-    let org_name = read_required_string(&args, "name")?;
+    let org_name = match read_required_string(&args, "name") {
+        Ok(value) => value,
+        Err(result) => return Ok(result),
+    };
     let org_id = format!("org-{}", uuid::Uuid::new_v4().simple());
     let org_root_session_id = session.id.clone();
     let session_repo = crate::state::get_session_repository();

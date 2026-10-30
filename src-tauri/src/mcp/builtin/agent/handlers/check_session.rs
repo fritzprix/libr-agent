@@ -29,7 +29,10 @@ pub async fn check_session(
     let manager = server
         .get_manager()
         .ok_or("AgentSessionManager not available")?;
-    let session_ref = read_required_string(&args, "sessionId")?;
+    let session_ref = match read_required_string(&args, "sessionId") {
+        Ok(value) => value,
+        Err(result) => return Ok(result),
+    };
     let wait = args.get("wait").and_then(|v| v.as_bool()).unwrap_or(false);
     let timeout_secs = args.get("timeout").and_then(|v| v.as_u64()).unwrap_or(3600);
 
