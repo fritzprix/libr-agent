@@ -24,6 +24,8 @@ pub enum ToolExecutionPolicyDecision {
     Allow,
     RequireApproval(ToolApprovalRequest),
     RequireHardApproval(ToolApprovalRequest),
+    /// Runs as root. Every execution mode asks the user, also YOLO and Unsafe.
+    RequireRootApproval(ToolApprovalRequest),
     Block(BlockedToolExecution),
 }
 
@@ -45,6 +47,9 @@ pub fn approval_request_for_runtime(
     yolo_enabled: bool,
     unsafe_enabled: bool,
 ) -> Option<&ToolApprovalRequest> {
+    if let ToolExecutionPolicyDecision::RequireRootApproval(request) = decision {
+        return Some(request);
+    }
     if unsafe_enabled {
         return None;
     }
@@ -73,6 +78,21 @@ pub fn blocked_execution_for_runtime(
 pub fn pending_approval_is_auto_approvable_in_yolo(approval_kind: PendingApprovalKind) -> bool {
     matches!(approval_kind, PendingApprovalKind::Standard)
 }
+
+pub fn pending_approval_is_auto_approvable_in_unsafe(approval_kind: PendingApprovalKind) -> bool {
+    !matches!(approval_kind, PendingApprovalKind::Root)
+}
+
+/// True for a `runShell` call with `asRoot: true`.
+pub fn requests_root_execution(tool_name: &str, args: &serde_json::Value) -> bool {
+    tool_name.rsplit("__").next() == Some("runShell")
+        && args.get("asRoot").and_then(|value| value.as_bool()) == Some(true)
+}
+
+/// Error for an entry point that runs tools without an approval card (the MCP endpoint and
+/// direct builtin calls): a root command needs the user's approval in the app.
+pub const ROOT_EXECUTION_NEEDS_APPROVAL: &str =
+    "runShell with asRoot needs the user's approval in a LibrAgent agent session; this entry point cannot ask for it";
 
 pub async fn is_approval_required(tool_name: &str) -> bool {
     let config = get_tool_approvals_config().await;
@@ -116,6 +136,22 @@ pub async fn evaluate_tool_execution_policy(
             environment: environment.as_ref(),
             force_approval: requires_approval,
         });
+
+        if requests_root_execution(tool_name, args) {
+            return match decision.action {
+                // A blocked root command stays blocked in Unsafe mode too.
+                ShellPolicyAction::Block => {
+                    ToolExecutionPolicyDecision::Block(BlockedToolExecution {
+                        message: decision.reason,
+                        enforced_in_unsafe: true,
+                    })
+                }
+                _ => ToolExecutionPolicyDecision::RequireRootApproval(ToolApprovalRequest {
+                    description: format!("Run as root: {}", decision.description),
+                    input_preview: decision.input_preview,
+                }),
+            };
+        }
 
         return match decision.action {
             ShellPolicyAction::Allow => ToolExecutionPolicyDecision::Allow,
@@ -714,5 +750,53 @@ mod tests {
         assert!(blocked_execution_for_runtime(&bypassable, false).is_some());
         assert!(blocked_execution_for_runtime(&bypassable, true).is_none());
         assert!(blocked_execution_for_runtime(&enforced, true).is_some());
+    }
+
+    #[tokio::test]
+    async fn a_root_command_asks_for_approval_in_every_mode() {
+        let decision = evaluate_tool_execution_policy(
+            "workspace__runShell",
+            &serde_json::json!({ "command": "apt-get install -y nodejs", "asRoot": true }),
+        )
+        .await;
+        let ToolExecutionPolicyDecision::RequireRootApproval(request) = &decision else {
+            panic!("asRoot must require root approval, got {decision:?}");
+        };
+        assert!(request.description.starts_with("Run as root"));
+
+        for (yolo, unsafe_mode) in [(false, false), (true, false), (false, true), (true, true)] {
+            assert!(
+                approval_request_for_runtime(&decision, yolo, unsafe_mode).is_some(),
+                "yolo={yolo} unsafe={unsafe_mode}"
+            );
+        }
+        assert!(!pending_approval_is_auto_approvable_in_yolo(
+            PendingApprovalKind::Root
+        ));
+        assert!(!pending_approval_is_auto_approvable_in_unsafe(
+            PendingApprovalKind::Root
+        ));
+    }
+
+    #[tokio::test]
+    async fn a_blocked_root_command_stays_blocked_in_unsafe_mode() {
+        let decision = evaluate_tool_execution_policy(
+            "workspace__runShell",
+            &serde_json::json!({ "command": "rm -rf /", "asRoot": true }),
+        )
+        .await;
+        assert!(blocked_execution_for_runtime(&decision, true).is_some());
+    }
+
+    #[test]
+    fn only_run_shell_with_as_root_true_requests_root() {
+        let root = serde_json::json!({ "command": "id", "asRoot": true });
+        assert!(requests_root_execution("workspace__runShell", &root));
+        assert!(requests_root_execution("runShell", &root));
+        assert!(!requests_root_execution("workspace__spawnProcess", &root));
+        assert!(!requests_root_execution(
+            "workspace__runShell",
+            &serde_json::json!({ "command": "id", "asRoot": false })
+        ));
     }
 }

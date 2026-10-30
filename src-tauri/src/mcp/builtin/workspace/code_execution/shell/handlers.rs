@@ -241,6 +241,13 @@ impl WorkspaceServer {
         };
         let raw_command = input.text();
 
+        let run_as_root = args.get("asRoot").and_then(Value::as_bool).unwrap_or(false);
+        if run_as_root {
+            if let Some(blocker) = utils::root_exec_blocker(session_id).await {
+                return Ok(root_exec_unavailable_result(blocker));
+            }
+        }
+
         if matches!(input, ShellInput::Command(_)) {
             if let Some(result) = self.validate_windows_shell_syntax(raw_command) {
                 return Ok(result);
@@ -331,6 +338,7 @@ impl WorkspaceServer {
                 session_id,
                 env_vars,
                 working_directory,
+                run_as_root,
             )
             .await;
         if utils::is_session_docker_isolated(session_id).await {
@@ -450,6 +458,30 @@ impl WorkspaceServer {
             .to_mcp_result(),
         )
     }
+}
+
+fn root_exec_unavailable_result(blocker: crate::services::RootExecBlocker) -> MCPResult {
+    use crate::services::RootExecBlocker;
+
+    let guidance = match blocker {
+        RootExecBlocker::HostSession => vec![
+            "Run the command again without asRoot".to_string(),
+            "LibrAgent does not get root on the host: ask the user to install system packages"
+                .to_string(),
+        ],
+        RootExecBlocker::AttachedContainer => vec![
+            "Run the command again without asRoot".to_string(),
+            "Ask the user to install system packages in the attached container outside LibrAgent (for example with docker exec -u 0)"
+                .to_string(),
+        ],
+    };
+    guided_error(
+        ErrorCategory::PermissionDenied,
+        blocker.message(),
+        ToolGroup::Workspace,
+    )
+    .guidance(guidance)
+    .to_mcp_result()
 }
 
 /// Installs skills that `skill.py deploy` staged in the workspace outbox (Docker sessions).
@@ -628,5 +660,59 @@ mod tests {
             result.expect("app database stays blocked in unsafe mode")
         );
         assert!(text.contains("LibrAgent's own database"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn as_root_is_rejected_outside_a_managed_session_container() {
+        let temp_dir = tempdir().expect("temp dir");
+        let session_id = "workspace-shell-as-root-host";
+        let session_manager = Arc::new(
+            SessionManager::new_with_base_dir(temp_dir.path().to_path_buf())
+                .expect("session manager"),
+        );
+        let server = WorkspaceServer::new(session_id.to_string(), session_manager);
+
+        let result = server
+            .handle_run_shell(
+                serde_json::json!({ "command": "id -u", "asRoot": true }),
+                session_id,
+                "runShell",
+            )
+            .await
+            .expect("guided result");
+
+        let text = format!("{result:?}");
+        assert!(
+            text.contains(crate::services::RootExecBlocker::HostSession.message()),
+            "{text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn shell_tools_other_than_run_shell_refuse_as_root() {
+        let temp_dir = tempdir().expect("temp dir");
+        let session_id = "workspace-shell-as-root-other-tools";
+        let session_manager = Arc::new(
+            SessionManager::new_with_base_dir(temp_dir.path().to_path_buf())
+                .expect("session manager"),
+        );
+        let server = WorkspaceServer::new(session_id.to_string(), session_manager);
+
+        for tool in ["spawnProcess", "runInPersistentShell"] {
+            let result = server
+                .call_tool(
+                    tool,
+                    serde_json::json!({ "command": "id -u > uid.txt", "asRoot": true }),
+                    Some(session_id.to_string()),
+                )
+                .await
+                .expect("guided result");
+            let text = format!("{result:?}");
+            assert!(
+                text.contains("only workspace__runShell accepts asRoot"),
+                "{tool}: {text}"
+            );
+        }
+        assert!(!temp_dir.path().join(session_id).join("uid.txt").exists());
     }
 }

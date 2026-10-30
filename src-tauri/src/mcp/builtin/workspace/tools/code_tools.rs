@@ -6,7 +6,7 @@ use serde_json::json;
 /// Upper bound for `runShell.script`; longer logic belongs in a file run via `command`.
 pub const RUN_SHELL_SCRIPT_MAX_CHARS: u32 = 20_000;
 
-pub fn create_run_shell_tool() -> MCPTool {
+pub fn create_run_shell_tool(allow_root: bool) -> MCPTool {
     let mut props = SchemaProperties::new();
     props.insert(
         "command".to_string(),
@@ -52,6 +52,17 @@ pub fn create_run_shell_tool() -> MCPTool {
             ),
         ),
     );
+    if allow_root {
+        props.insert(
+            "asRoot".to_string(),
+            boolean_prop_with_default(
+                false,
+                Some(
+                    "Run this call as root in the session container. Use it only to install system packages (for example: apt-get update && apt-get install -y nodejs npm). Files that a root command writes in the workspace belong to root. Not available for an attached container.",
+                ),
+            ),
+        );
+    }
 
     MCPTool {
         name: "runShell".to_string(),
@@ -485,5 +496,19 @@ mod tests {
             }
             _ => panic!("Expected Object schema type"),
         }
+    }
+
+    #[test]
+    fn as_root_is_offered_only_when_the_session_allows_root() {
+        use crate::mcp::schema::JSONSchemaType;
+
+        let has_as_root = |tool: MCPTool| match tool.input_schema.schema_type {
+            JSONSchemaType::Object { properties, .. } => properties
+                .as_ref()
+                .is_some_and(|props| props.contains_key("asRoot")),
+            _ => panic!("Expected Object schema type"),
+        };
+        assert!(has_as_root(create_run_shell_tool(true)));
+        assert!(!has_as_root(create_run_shell_tool(false)));
     }
 }

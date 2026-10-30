@@ -95,6 +95,7 @@ async fn docker_workspace_run_shell_smoke_test() {
             env_vars: HashMap::new(),
             isolation_level: IsolationLevel::Medium,
             shell_type: None,
+            run_as_root: false,
         })
         .await
         .expect("Docker isolated command should be created");
@@ -419,6 +420,7 @@ async fn docker_workspace_sh_fallback_smoke_test() {
             env_vars: HashMap::new(),
             isolation_level: IsolationLevel::Medium,
             shell_type: None,
+            run_as_root: false,
         })
         .await
         .expect("Docker isolated sh fallback command should be created");

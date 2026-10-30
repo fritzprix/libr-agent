@@ -38,5 +38,5 @@ pub use scheduled_task_service::{
 pub use secure_file_manager::SecureFileManager;
 pub use session_cleanup_service::SessionCleanupService;
 pub use session_directory_service::SessionDirectoryService;
-pub use workspace_runtime_manager::WorkspaceRuntimeManager;
+pub use workspace_runtime_manager::{RootExecBlocker, RootExecLease, WorkspaceRuntimeManager};
 pub use workspace_service::{WorkspaceFileContentResponse, WorkspaceFileItem, WorkspaceService};

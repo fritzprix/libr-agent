@@ -31,7 +31,52 @@ const hardApproval: PendingApproval = {
   inputPreview: 'rm -rf /important',
 };
 
+const rootApproval: PendingApproval = {
+  toolCallId: 'call-root',
+  toolName: 'workspace__runShell',
+  arguments: '{"command":"apt-get install -y nodejs","asRoot":true}',
+  approvalKind: 'root',
+  requestId: 'req-root',
+  description: 'Run as root: apt-get install -y nodejs',
+  inputPreview: 'apt-get install -y nodejs',
+};
+
 describe('PendingApprovalWidget', () => {
+  it('shows that a root approval runs as root, also in Unsafe mode', () => {
+    render(
+      <PendingApprovalWidget
+        approvals={[rootApproval]}
+        executionMode="unsafe"
+        onRespond={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    expect(screen.getByText('Root Approval Required')).toBeInTheDocument();
+    expect(screen.getByText('Runs as root')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /Approve root command/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/"asRoot": true/)).toBeInTheDocument();
+  });
+
+  it('gives a root approval keyboard priority over a hard approval', async () => {
+    const onRespond = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <PendingApprovalWidget
+        approvals={[standardApproval, hardApproval, rootApproval]}
+        executionMode="normal"
+        onRespond={onRespond}
+      />,
+    );
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    await waitFor(() => {
+      expect(onRespond).toHaveBeenCalledWith('call-root', false);
+    });
+  });
+
   it('surfaces hard approvals distinctly when YOLO mode is enabled', () => {
     render(
       <PendingApprovalWidget

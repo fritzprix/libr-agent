@@ -22,6 +22,7 @@ async fn test_env_leakage_in_unix_isolation() {
         env_vars: HashMap::new(),
         isolation_level: IsolationLevel::Basic,
         shell_type: Some(ShellType::Bash),
+        run_as_root: false,
     };
 
     let mut cmd: tokio::process::Command = create_basic_isolated_command(config)
@@ -107,6 +108,7 @@ async fn test_env_leakage_in_linux_high_isolation() {
         env_vars: HashMap::new(),
         isolation_level: IsolationLevel::High,
         shell_type: None,
+        run_as_root: false,
     };
 
     let mut cmd = create_high_isolated_command(config)

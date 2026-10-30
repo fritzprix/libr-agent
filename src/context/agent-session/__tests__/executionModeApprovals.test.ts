@@ -23,6 +23,12 @@ describe('isPendingApprovalAutoResolvedByMode', () => {
     );
     expect(isPendingApprovalAutoResolvedByMode('unsafe', 'hard')).toBe(true);
   });
+
+  it('never auto-resolves a root approval', () => {
+    for (const mode of ['normal', 'yolo', 'unsafe'] as const) {
+      expect(isPendingApprovalAutoResolvedByMode(mode, 'root')).toBe(false);
+    }
+  });
 });
 
 describe('resolvedApprovalIdsFromModeChange', () => {

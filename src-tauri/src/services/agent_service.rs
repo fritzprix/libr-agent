@@ -176,6 +176,10 @@ impl AgentService {
         use crate::mcp::types::MCPResponseResult;
         use crate::state::get_mcp_service_proxy_manager;
 
+        if crate::agent::tool_approvals::requests_root_execution(&tool_name, &args) {
+            return Err(crate::agent::tool_approvals::ROOT_EXECUTION_NEEDS_APPROVAL.to_string());
+        }
+
         let proxy_manager = get_mcp_service_proxy_manager();
 
         let response = proxy_manager

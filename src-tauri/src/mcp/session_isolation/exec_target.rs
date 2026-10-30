@@ -78,8 +78,10 @@ pub fn runtime_missing_message(command: &str, image: &str) -> String {
          The image of this session is '{image}'. \
          In a Docker session, stdio MCP servers run in the session container, not on the host. \
          A server command with a host path does not resolve in the container. \
-         Install the runtime in the container (for example with workspace__runShell), \
-         then register or verify the server again."
+         Install the runtime in the container with workspace__runShell and asRoot=true \
+         (for example: apt-get update && apt-get install -y nodejs npm). \
+         For an attached container, install it outside LibrAgent. \
+         Then register or verify the server again."
     )
 }
 
@@ -199,5 +201,7 @@ mod tests {
         assert!(message.contains("'python:3.12-slim'"));
         assert!(message.contains("run in the session container"));
         assert!(message.contains("host path does not resolve"));
+        assert!(message.contains("asRoot=true"));
+        assert!(message.contains("attached container"));
     }
 }

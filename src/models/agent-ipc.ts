@@ -354,7 +354,8 @@ export interface MessageSlice<TMessage = RustMessage> {
   oldestCursor?: MessageCursor | null;
 }
 
-export type PendingApprovalKind = 'standard' | 'hard';
+/** `root`: a runShell command with `asRoot`. No execution mode approves it automatically. */
+export type PendingApprovalKind = 'standard' | 'hard' | 'root';
 
 export interface PendingApprovalSnapshot {
   toolCallId: string;
