@@ -1,6 +1,7 @@
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 
+use crate::models::workspace_isolation::DEFAULT_SESSION_IMAGE;
 use crate::repositories::{SessionMetadata, SessionRepository};
 use crate::services::skill_service;
 use crate::session_isolation::{ShellType, CONTAINER_SYSTEM_SKILLS_DIR, CONTAINER_USER_SKILLS_DIR};
@@ -104,6 +105,7 @@ pub(super) async fn ensure_bash_image_contract(
         if let Some(reporter) = reporter {
             reporter(&format!("Pulling image {image}"));
         }
+        ensure_image_available(image_ref).await?;
 
         let root_session_id = resolve_teamwork_root_session_id(session).await;
         let session_manager =
@@ -164,6 +166,35 @@ pub(super) async fn ensure_bash_image_contract(
         reporter("Verifying shell");
     }
     ensure_supported_shell(session_id, container_name).await
+}
+
+async fn ensure_image_available(image_ref: &str) -> RuntimeResult<()> {
+    if run_docker_status(["image", "inspect", image_ref])
+        .await
+        .is_ok()
+    {
+        return Ok(());
+    }
+    run_docker_status(["pull", image_ref])
+        .await
+        .map_err(|error| match error {
+            WorkspaceRuntimeError::DockerCommandFailed(details) => {
+                WorkspaceRuntimeError::DockerCommandFailed(image_pull_failure(image_ref, &details))
+            }
+            other => other,
+        })
+}
+
+fn image_pull_failure(image_ref: &str, details: &str) -> String {
+    if image_ref == DEFAULT_SESSION_IMAGE {
+        format!(
+            "Cannot pull the default LibrAgent session image '{image_ref}': {details}. \
+             This image is published only for released LibrAgent versions. \
+             Set a different Docker image in the session isolation settings."
+        )
+    } else {
+        format!("Cannot pull Docker image '{image_ref}': {details}")
+    }
 }
 
 const FALLBACK_CONTAINER_HOME: &str = "/tmp";
@@ -325,5 +356,25 @@ mod wake_host_tests {
                 "com.libragent.wake_host=1"
             ]
         );
+    }
+}
+
+#[cfg(test)]
+mod image_pull_tests {
+    use super::*;
+
+    #[test]
+    fn default_image_pull_failure_names_the_image_and_the_override() {
+        let message = image_pull_failure(DEFAULT_SESSION_IMAGE, "manifest unknown");
+        assert!(message.contains(DEFAULT_SESSION_IMAGE), "{message}");
+        assert!(message.contains("manifest unknown"), "{message}");
+        assert!(message.contains("session isolation settings"), "{message}");
+    }
+
+    #[test]
+    fn custom_image_pull_failure_names_the_image_only() {
+        let message = image_pull_failure("python:3.12-slim", "denied");
+        assert!(message.contains("'python:3.12-slim'"), "{message}");
+        assert!(!message.contains("settings"), "{message}");
     }
 }

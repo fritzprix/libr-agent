@@ -1,49 +1,35 @@
-# Base image: Debian Bookworm Slim (Lightweight & Compatible)
-FROM debian:bookworm-slim
+# LibrAgent default Docker session image.
+#
+# Contents: bash, git, node (npm, npx), python3, uv (uvx).
+# Not included: docker CLI, compilers, build tools.
+# Compressed size target: 200 MB or less per architecture
+# (.github/workflows/session-image.yml fails the build above it).
+FROM ghcr.io/astral-sh/uv:0.13.6 AS uv
 
-# Prevent interactive prompts during build
+FROM node:26-trixie-slim
+
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install essential dependencies and Docker CLI prerequisites
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    ca-certificates \
-    git \
-    unzip \
-    gnupg \
-    && install -m 0755 -d /etc/apt/keyrings \
-    && curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
-    && chmod a+r /etc/apt/keyrings/docker.gpg \
-    && echo \
-    "deb [arch="$(dpkg --print-architecture)" signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \
-    "$(. /etc/os-release && echo "$VERSION_CODENAME")" stable" | \
-    tee /etc/apt/sources.list.d/docker.list > /dev/null \
-    && apt-get update && apt-get install -y --no-install-recommends \
-    docker-ce-cli \
-    python3 \
-    python3-pip \
-    python3-venv \
-    nodejs \
-    npm \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        git \
+        python3 \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python3 /usr/local/bin/python
 
-# Install uv (The Astral Python package manager)
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+COPY --from=uv /uv /uvx /usr/local/bin/
 
-# Create aliases/wrappers if necessary (uvx is included with uv)
-# Ensure standard generic links exist
-RUN ln -sf /usr/bin/python3 /usr/bin/python
-
-# Create workspace and skills directories
+RUN mkdir -p /workspace /skills
 WORKDIR /workspace
-RUN mkdir -p /skills
 
-# Verify installations
-RUN uv --version && \
-    node --version && \
-    npm --version && \
-    docker --version && \
-    python --version
+RUN bash --version >/dev/null \
+    && git --version \
+    && node --version \
+    && npm --version \
+    && npx --version \
+    && python3 --version \
+    && uv --version \
+    && uvx --version
 
-# Default command keeps the container running
 CMD ["tail", "-f", "/dev/null"]

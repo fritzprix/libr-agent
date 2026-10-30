@@ -76,7 +76,7 @@ Creates a new isolated agent session and starts an initial workflow.
   "workspacePath": "absolute path (optional)",
   "workspaceIsolation": "host | docker (optional)",
   "dockerConfig": {
-    "image": "string (optional)",
+    "image": "string (optional; default: ghcr.io/fritzprix/libragent-session:<app version>)",
     "env": { "KEY": "VALUE" }
   },
   "executionMode": "normal | yolo | unsafe (optional)",

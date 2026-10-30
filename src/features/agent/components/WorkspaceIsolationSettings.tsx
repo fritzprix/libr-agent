@@ -145,7 +145,10 @@ export function WorkspaceIsolationSettings({
             <Input
               value={dockerImage}
               onChange={(e) => setDockerImage(e.target.value)}
-              placeholder="e.g. python:3.11-slim"
+              placeholder={t(
+                'agent.workspace.defaultDockerImage',
+                'LibrAgent default image',
+              )}
               className="h-8 text-xs font-mono bg-background"
             />
           </div>

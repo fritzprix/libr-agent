@@ -1,0 +1,120 @@
+name: 🐳 Session Image
+on:
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+    paths:
+      - 'docker/**'
+      - '.github/workflows/session-image.yml'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to publish (e.g. v0.9.30). Leave empty to build and report the size only.'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/fritzprix/libragent-session
+  LOCAL_IMAGE: localhost:5000/libragent-session:ci
+  PLATFORMS: linux/amd64,linux/arm64
+  # Compressed size target per architecture (issue #2402).
+  SIZE_LIMIT_MB: 200
+
+jobs:
+  session-image:
+    runs-on: ubuntu-latest
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5000:5000
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Resolve release version
+        id: version
+        shell: bash
+        run: |
+          TAG="${{ github.event_name == 'push' && github.ref_name || inputs.tag }}"
+          if [ -n "$TAG" ]; then
+            echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+        with:
+          driver-opts: network=host
+
+      - name: Build into the local registry
+        uses: docker/build-push-action@v7
+        with:
+          context: docker
+          platforms: ${{ env.PLATFORMS }}
+          push: true
+          provenance: false
+          tags: ${{ env.LOCAL_IMAGE }}
+          cache-from: type=gha,scope=session-image
+          cache-to: type=gha,mode=max,scope=session-image
+
+      - name: Report compressed size
+        shell: bash
+        run: |
+          set -euo pipefail
+          REGISTRY="http://localhost:5000/v2/libragent-session/manifests"
+          ACCEPT_INDEX='application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json'
+          ACCEPT_MANIFEST='application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json'
+          LIMIT_BYTES=$((SIZE_LIMIT_MB * 1000 * 1000))
+
+          {
+            echo "### Session image compressed size"
+            echo
+            echo "| Platform | Size (MB) | Target (MB) |"
+            echo "|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          FAILED=0
+          while read -r PLATFORM DIGEST; do
+            BYTES=$(curl -fsS -H "Accept: $ACCEPT_MANIFEST" "$REGISTRY/$DIGEST" \
+              | jq '[.config.size] + [.layers[].size] | add')
+            MB=$(awk "BEGIN { printf \"%.1f\", $BYTES / 1000000 }")
+            echo "$PLATFORM: $MB MB"
+            echo "| $PLATFORM | $MB | $SIZE_LIMIT_MB |" >> "$GITHUB_STEP_SUMMARY"
+            if [ "$BYTES" -gt "$LIMIT_BYTES" ]; then
+              echo "::error::$PLATFORM image is $MB MB, above the $SIZE_LIMIT_MB MB target"
+              FAILED=1
+            fi
+          done < <(curl -fsS -H "Accept: $ACCEPT_INDEX" "$REGISTRY/ci" \
+            | jq -r '.manifests[] | select(.platform.os == "linux") | "\(.platform.os)/\(.platform.architecture) \(.digest)"')
+
+          exit "$FAILED"
+
+      - name: Log in to GHCR
+        if: steps.version.outputs.version != ''
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to GHCR
+        if: steps.version.outputs.version != ''
+        uses: docker/build-push-action@v7
+        with:
+          context: docker
+          platforms: ${{ env.PLATFORMS }}
+          push: true
+          provenance: false
+          tags: ${{ env.IMAGE }}:${{ steps.version.outputs.version }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+          cache-from: type=gha,scope=session-image

@@ -99,4 +99,29 @@ describe('WorkspaceIsolationSettings', () => {
       await screen.findByText('Docker daemon is not running.'),
     ).toBeInTheDocument();
   });
+
+  it('shows the LibrAgent default image when no image is set', async () => {
+    mocks.checkDockerHealth.mockResolvedValueOnce(undefined);
+    const setDockerImage = vi.fn();
+
+    render(
+      <WorkspaceIsolationSettings
+        switchId="docker-isolation"
+        workspaceIsolation="docker"
+        setWorkspaceIsolation={vi.fn()}
+        dockerImage=""
+        setDockerImage={setDockerImage}
+      />,
+    );
+
+    expect(
+      screen.getByPlaceholderText('LibrAgent default image'),
+    ).toHaveValue('');
+    const defaultPreset = screen.getByRole('button', { name: 'LibrAgent' });
+    expect(defaultPreset.className).toContain('border-primary');
+
+    screen.getByRole('button', { name: 'Python 3' }).click();
+    expect(setDockerImage).toHaveBeenCalledWith('python:3.11-slim');
+    await vi.waitFor(() => expect(mocks.checkDockerHealth).toHaveBeenCalled());
+  });
 });

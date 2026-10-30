@@ -99,9 +99,42 @@ fn add_private_onnxruntime_rpath() {
     println!("cargo:rustc-link-arg-bins=-Wl,-rpath,$ORIGIN/../lib/libragent");
 }
 
+fn git_stdout(args: &[&str]) -> Option<String> {
+    let output = std::process::Command::new("git").args(args).output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8(output.stdout).ok()?;
+    let text = text.trim();
+    (!text.is_empty()).then(|| text.to_string())
+}
+
+/// The session image is published only for released versions. A build whose
+/// version has no release tag (dev or local build) uses the last release tag
+/// reachable from HEAD. Without git metadata, the package version is used.
+fn emit_session_image_tag() {
+    for path in ["../.git/HEAD", "../.git/packed-refs", "../.git/refs/tags"] {
+        if Path::new(path).exists() {
+            println!("cargo:rerun-if-changed={path}");
+        }
+    }
+
+    let version = env!("CARGO_PKG_VERSION");
+    let release_tag = format!("v{version}");
+    let tag = if git_stdout(&["tag", "--list", &release_tag]).is_some() {
+        version.to_string()
+    } else {
+        git_stdout(&["describe", "--tags", "--abbrev=0", "--match", "v[0-9]*"])
+            .and_then(|tag| tag.strip_prefix('v').map(str::to_string))
+            .unwrap_or_else(|| version.to_string())
+    };
+    println!("cargo:rustc-env=LIBRAGENT_SESSION_IMAGE_TAG={tag}");
+}
+
 fn main() {
     println!("cargo:rerun-if-changed=bundled_skills");
     println!("cargo:rerun-if-changed=bundled_assistants");
+    emit_session_image_tag();
 
     if let Err(error) = sync_bundled_skills_into_profile_output() {
         panic!(
