@@ -6,9 +6,23 @@ use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{BuiltinServerMetadata, MCPResult, MCPTool, ServiceContext};
 
-mod handlers;
+mod args;
+mod constants;
+mod export;
+mod helpers;
+mod messages;
+mod render;
+mod search;
+mod sessions;
+#[cfg(test)]
+mod tests;
 mod tools;
 mod types;
+
+use export::export_dataset;
+use messages::read_message;
+use search::search_history;
+use sessions::{list_sessions, read_session};
 
 pub const NAME: &str = "history";
 
@@ -62,10 +76,10 @@ impl BuiltinMCPServer for HistoryServer {
         let caller_session_id = session_id.unwrap_or_else(|| self.session_id.clone());
 
         let result = match tool_name {
-            "listSessions" => handlers::list_sessions(self, args).await,
-            "readSession" => handlers::read_session(self, args).await,
-            "readMessage" => handlers::read_message(self, args).await,
-            "searchHistory" => handlers::search_history(self, args, &caller_session_id).await,
+            "listSessions" => list_sessions(self, args).await,
+            "readSession" => read_session(self, args).await,
+            "readMessage" => read_message(self, args).await,
+            "searchHistory" => search_history(self, args, &caller_session_id).await,
             "exportDataset" | "export_dataset" => {
                 if tool_name == "export_dataset" {
                     warn!(
@@ -73,7 +87,7 @@ impl BuiltinMCPServer for HistoryServer {
                         "deprecated history tool name; use exportDataset"
                     );
                 }
-                handlers::export_dataset(args).await
+                export_dataset(args).await
             }
             _ => {
                 return Ok(guided_error(
