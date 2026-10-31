@@ -1203,10 +1203,6 @@
       "reject": "Ablehnen",
       "rejectShortcut": "Ablehnen (Esc)",
       "hardApprove": "Risikoreiche Aktion genehmigen",
-      "rootTitle": "Root-Genehmigung erforderlich",
-      "rootDescription": "Dieser Befehl läuft als root im Sitzungscontainer. Jeder Ausführungsmodus verlangt Ihre Genehmigung.",
-      "rootBadge": "Läuft als root",
-      "rootApprove": "Root-Befehl genehmigen",
       "approve": "Genehmigen",
       "approveShortcut": "Genehmigen (⌘↵ / Ctrl+↵)",
       "approveShortcutBadge": "⌘↵"

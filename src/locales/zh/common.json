@@ -1203,10 +1203,6 @@
       "reject": "拒绝",
       "rejectShortcut": "拒绝 (Esc)",
       "hardApprove": "批准高风险操作",
-      "rootTitle": "需要 root 审批",
-      "rootDescription": "此命令在会话容器中以 root 身份运行。所有执行模式都需要您的批准。",
-      "rootBadge": "以 root 运行",
-      "rootApprove": "批准 root 命令",
       "approve": "批准",
       "approveShortcut": "批准 (⌘↵ / Ctrl+↵)",
       "approveShortcutBadge": "⌘↵"

@@ -183,15 +183,10 @@ fn pending_approval_ids(
     approvals
         .iter()
         .filter(|(_, approval)| {
-            if include_hard_approvals {
-                crate::agent::tool_approvals::pending_approval_is_auto_approvable_in_unsafe(
+            include_hard_approvals
+                || crate::agent::tool_approvals::pending_approval_is_auto_approvable_in_yolo(
                     approval.approval_kind,
                 )
-            } else {
-                crate::agent::tool_approvals::pending_approval_is_auto_approvable_in_yolo(
-                    approval.approval_kind,
-                )
-            }
         })
         .map(|(tool_call_id, _)| tool_call_id.clone())
         .collect()
@@ -335,19 +330,5 @@ mod tests {
         let drained = drain_matching_approvals(&mut approvals, true);
         assert_eq!(drained.len(), 2);
         assert!(approvals.is_empty());
-    }
-
-    #[test]
-    fn no_mode_switch_approves_a_root_command() {
-        for include_hard_approvals in [false, true] {
-            let mut approvals = HashMap::new();
-            approvals.insert(
-                "root-tool".to_string(),
-                sample_approval(PendingApprovalKind::Root),
-            );
-            let drained = drain_matching_approvals(&mut approvals, include_hard_approvals);
-            assert!(drained.is_empty());
-            assert!(approvals.contains_key("root-tool"));
-        }
     }
 }

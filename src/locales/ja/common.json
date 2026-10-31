@@ -1203,10 +1203,6 @@
       "reject": "拒否",
       "rejectShortcut": "拒否 (Esc)",
       "hardApprove": "高リスク操作を承認",
-      "rootTitle": "root 承認が必要です",
-      "rootDescription": "このコマンドはセッションコンテナ内で root として実行されます。すべての実行モードで承認が必要です。",
-      "rootBadge": "root として実行",
-      "rootApprove": "root コマンドを承認",
       "approve": "承認",
       "approveShortcut": "承認 (⌘↵ / Ctrl+↵)",
       "approveShortcutBadge": "⌘↵"

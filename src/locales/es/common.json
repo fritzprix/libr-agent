@@ -1203,10 +1203,6 @@
       "reject": "Rechazar",
       "rejectShortcut": "Rechazar (Esc)",
       "hardApprove": "Aprobar acción de alto riesgo",
-      "rootTitle": "Se requiere aprobación de root",
-      "rootDescription": "Este comando se ejecuta como root en el contenedor de la sesión. Todos los modos de ejecución requieren su aprobación.",
-      "rootBadge": "Se ejecuta como root",
-      "rootApprove": "Aprobar comando root",
       "approve": "Aprobar",
       "approveShortcut": "Aprobar (⌘↵ / Ctrl+↵)",
       "approveShortcutBadge": "⌘↵"
