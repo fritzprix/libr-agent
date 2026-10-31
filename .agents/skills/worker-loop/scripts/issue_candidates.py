@@ -31,7 +31,7 @@ def gh(*args: str) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--limit", type=int, default=100)
+    parser.add_argument("--limit", type=int, default=100, help="Candidate issues limit (default: 100)")
     args = parser.parse_args()
 
     me = gh("api", "user", "--jq", ".login").strip()

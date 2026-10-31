@@ -16,13 +16,19 @@ import re
 import subprocess
 import sys
 
-MARKER = re.compile(r"<!--\s*(gatekeeper-loop|worker-loop):\s*(.*?)\s*-->")
+# Loop markers must appear at the very start of the comment (ignoring optional UTF-8 BOM and leading whitespace).
+# Quoted markers or mentions later in the comment are ignored.
+START_MARKER = re.compile(r"^(?:\ufeff)?\s*<!--\s*(gatekeeper-loop|worker-loop):\s*(.*?)\s*-->")
 
 THREADS_QUERY = """
-query($owner: String!, $name: String!, $number: Int!) {
+query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
-      reviewThreads(first: 100) {
+      reviewThreads(first: 100, after: $cursor) {
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
         nodes {
           id isResolved isOutdated path line
           comments(first: 1) { nodes { author { login } body url } }
@@ -75,7 +81,7 @@ def gatekeeper_state(comments: list[dict], me: str, head_sha: str) -> dict | Non
     for c in comments:
         if (c.get("author") or {}).get("login") != me:
             continue
-        match = MARKER.search(c.get("body") or "")
+        match = START_MARKER.match(c.get("body") or "")
         if not match:
             continue
         fields = dict(kv.split("=", 1) for kv in match.group(2).split() if "=" in kv)
@@ -130,38 +136,53 @@ def summarize(number: int, owner: str, name: str, me: str) -> dict:
     failing = [c.get("name") or c.get("context") for c in checks if check_state(c) in FAILED]
     pending = [c.get("name") or c.get("context") for c in checks if check_state(c) in PENDING]
 
-    threads_raw = json.loads(
-        gh("api", "graphql", "-f", f"query={THREADS_QUERY}", "-F", f"owner={owner}",
-           "-F", f"name={name}", "-F", f"number={number}")
-    )
-    nodes = threads_raw["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"]
     threads = []
-    for node in nodes:
-        if node["isResolved"]:
-            continue
-        first = (node["comments"]["nodes"] or [{}])[0]
-        threads.append({
-            "threadId": node["id"],
-            "outdated": node["isOutdated"],
-            "path": node["path"],
-            "line": node["line"],
-            "author": (first.get("author") or {}).get("login"),
-            "body": short(first.get("body")),
-            "url": first.get("url"),
-        })
+    cursor = None
+    while True:
+        args = ["api", "graphql", "-f", f"query={THREADS_QUERY}", "-F", f"owner={owner}",
+                "-F", f"name={name}", "-F", f"number={number}"]
+        if cursor:
+            args.extend(["-F", f"cursor={cursor}"])
+        threads_raw = json.loads(gh(*args))
+        review_threads = (
+            threads_raw.get("data", {}).get("repository", {}).get("pullRequest", {}).get("reviewThreads") or {}
+        )
+        nodes = review_threads.get("nodes") or []
+        for node in nodes:
+            if node["isResolved"]:
+                continue
+            first = (node["comments"]["nodes"] or [{}])[0]
+            threads.append({
+                "threadId": node["id"],
+                "outdated": node["isOutdated"],
+                "path": node["path"],
+                "line": node["line"],
+                "author": (first.get("author") or {}).get("login"),
+                "body": short(first.get("body")),
+                "url": first.get("url"),
+            })
+        page_info = review_threads.get("pageInfo") or {}
+        if not page_info.get("hasNextPage"):
+            break
+        cursor = page_info.get("endCursor")
 
     commits = pr.get("commits") or []
     last_commit_at = commits[-1]["committedDate"] if commits else ""
-    new_comments = [
-        {
-            "author": c["author"]["login"],
-            "createdAt": c["createdAt"],
-            "body": short(c.get("body")),
-            "url": c.get("url"),
-        }
-        for c in pr.get("comments") or []
-        if c.get("author", {}).get("login") != me and c.get("createdAt", "") > last_commit_at
-    ]
+    # Filter comments: keep non-bot comments posted after the latest commit that do NOT
+    # carry loop markers. This includes human owner comments even when the owner shares login @me.
+    new_comments = []
+    for c in pr.get("comments") or []:
+        author_login = (c.get("author") or {}).get("login") or ""
+        body = c.get("body") or ""
+        if author_login.endswith("[bot]") or START_MARKER.match(body):
+            continue
+        if c.get("createdAt", "") > last_commit_at:
+            new_comments.append({
+                "author": author_login,
+                "createdAt": c["createdAt"],
+                "body": short(body),
+                "url": c.get("url"),
+            })
 
     duplicates = duplicate_commits(pr["baseRefName"], pr["headRefName"])
 
@@ -206,8 +227,8 @@ def main() -> None:
     if args.pr:
         numbers = [args.pr]
     else:
-        listed = json.loads(gh("pr", "list", "--author", "@me", "--state", "open", "--json", "number"))
-        numbers = [p["number"] for p in listed]
+        listed = json.loads(gh("pr", "list", "--author", "@me", "--state", "open", "--json", "number,isDraft"))
+        numbers = [p["number"] for p in listed if not p.get("isDraft")]
 
     print(json.dumps([summarize(n, owner, name, me) for n in numbers], ensure_ascii=False, indent=2))
 

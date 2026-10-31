@@ -18,9 +18,9 @@ Classify every finding. Code review and `changes-requested` verdicts proceed imm
 5. **Security** — Tool approval/policy, filesystem/shell access, secrets in logs or previews, untrusted input handling. Security-sensitive PRs get `gatekeeper:needs-human` and an approve must list the bypass scenarios checked.
 6. **User-facing** — UI text follows i18n standards (ko/en), docs updated when behavior changes, bundled skill `.force_update` bumped when a bundled `SKILL.md` changes.
 7. **PR hygiene** — Semantic title, base is the latest `dev/<version>`, body has `Fixes #N` (closes on merge into `dev/*` too; partial work must use `Refs #N`) and a test plan that matches what was run.
-8. **CI vs Code Review** — 빌드와 테스트를 확인할 때 로컬에서 무겁게 다시 돌리지 말고 CI 결과를 본다. **단, CI는 코드 리뷰(diff 검토, 설계 분석, 인수 조건 충족, 에지 케이스)를 대신하지 않는다.** CI 통과 여부와 무관하게 코드 리뷰를 직접 수행하며, CI 녹색은 `approve`를 낼 때만 확인하는 조건이다. CI가 실패한 경우에도 로그를 분석하여 실패 원인과 구체적 수정 지침을 finding으로 보고한다.
+8. **CI vs Code Review** — Check build and test results in CI; do not re-run heavy test suites locally. **However, CI does not replace code review (diff inspection, design analysis, acceptance criteria satisfaction, edge cases).** Perform code review directly regardless of CI status. Green CI is only a condition for issuing an approve verdict. If CI fails, analyze failure logs and include root cause and specific fix guidance in findings.
 9. **Cross-platform** — New or changed tests/code touching paths, separators, shell, processes or permissions must pass on every OS job in CI (ubuntu, windows, macos). Read each job's result for the reviewed head; cancelled/skipped is not a pass. Reason about Windows path and quoting behavior in the diff itself, since CI may not have finished yet.
-10. **Stacked PRs** — Base가 `dev/*`가 아닌 스택 PR은 GitHub Actions CI가 트리거되지 않는다. `ciPending`을 무시하고 코드 리뷰를 진행하며, approve 시 *"CI는 retarget 후 확인 필요"*라는 조건을 명시한다.
+10. **Stacked PRs** — Stacked PRs whose base is not a dev branch (`dev/*`) do not trigger GitHub Actions CI. Ignore `ciPending` and perform code review normally. When approving, add the explicit condition: _"CI requires verification after retargeting"_.
 
 ## Re-review discipline
 
