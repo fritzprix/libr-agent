@@ -43,12 +43,11 @@ function isTypingTarget(target: EventTarget | null): boolean {
   );
 }
 
-/** Prefer root, then hard approvals; otherwise use the first pending item. */
+/** Prefer hard approvals; otherwise use the first pending item. */
 function pickPriorityApproval(
   approvals: PendingApproval[],
 ): PendingApproval | undefined {
   return (
-    approvals.find((approval) => approval.approvalKind === 'root') ??
     approvals.find((approval) => approval.approvalKind === 'hard') ??
     approvals[0]
   );
@@ -156,33 +155,24 @@ export function PendingApprovalWidget({
         }
 
         const isSubmitting = submittingId === approval.toolCallId;
-        const isRootApproval = approval.approvalKind === 'root';
-        const isHardApproval =
-          isRootApproval || approval.approvalKind === 'hard';
-        const title = isRootApproval
-          ? t('agent.approval.rootTitle', 'Root Approval Required')
-          : isHardApproval
-            ? t('agent.approval.hardTitle', 'Hard Approval Required')
-            : t('agent.approval.title', 'Approval Required');
-        const subtitle = isRootApproval
-          ? t(
-              'agent.approval.rootDescription',
-              'This command runs as root in the session container. Every execution mode requires your approval.',
-            )
-          : isHardApproval
-            ? executionMode === 'yolo'
-              ? t(
-                  'agent.approval.hardDescriptionYolo',
-                  'YOLO mode is on, but this high-risk action still requires manual approval.',
-                )
-              : t(
-                  'agent.approval.hardDescription',
-                  'This high-risk action requires explicit approval.',
-                )
+        const isHardApproval = approval.approvalKind === 'hard';
+        const title = isHardApproval
+          ? t('agent.approval.hardTitle', 'Hard Approval Required')
+          : t('agent.approval.title', 'Approval Required');
+        const subtitle = isHardApproval
+          ? executionMode === 'yolo'
+            ? t(
+                'agent.approval.hardDescriptionYolo',
+                'YOLO mode is on, but this high-risk action still requires manual approval.',
+              )
             : t(
-                'agent.approval.description',
-                'The agent wants to execute this tool.',
-              );
+                'agent.approval.hardDescription',
+                'This high-risk action requires explicit approval.',
+              )
+          : t(
+              'agent.approval.description',
+              'The agent wants to execute this tool.',
+            );
         const containerClass = isHardApproval
           ? 'border-destructive/50 bg-destructive/5 shadow-md'
           : 'border-warning/50 bg-warning/5 shadow-md';
@@ -190,16 +180,12 @@ export function PendingApprovalWidget({
           ? 'w-8 h-8 rounded-full bg-destructive/15 flex items-center justify-center text-destructive flex-shrink-0'
           : 'w-8 h-8 rounded-full bg-warning/20 flex items-center justify-center text-warning flex-shrink-0';
         const ApproveIcon = isHardApproval ? Shield : Check;
-        const approvalKindLabel = isRootApproval
-          ? t('agent.approval.rootBadge', 'Runs as root')
-          : isHardApproval
-            ? t('agent.approval.hardBadge', 'Hard approval')
-            : t('agent.approval.standardBadge', 'Standard approval');
-        const approveLabel = isRootApproval
-          ? t('agent.approval.rootApprove', 'Approve root command')
-          : isHardApproval
-            ? t('agent.approval.hardApprove', 'Approve high-risk action')
-            : t('agent.approval.approve', 'Approve');
+        const approvalKindLabel = isHardApproval
+          ? t('agent.approval.hardBadge', 'Hard approval')
+          : t('agent.approval.standardBadge', 'Standard approval');
+        const approveLabel = isHardApproval
+          ? t('agent.approval.hardApprove', 'Approve high-risk action')
+          : t('agent.approval.approve', 'Approve');
 
         const card = (
           <Card className={containerClass}>

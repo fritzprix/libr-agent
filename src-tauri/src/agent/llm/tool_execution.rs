@@ -619,7 +619,6 @@ pub async fn execute_tool_calls(
         ) {
             let approval_kind = match &policy_decision {
                 ToolExecutionPolicyDecision::RequireHardApproval(_) => PendingApprovalKind::Hard,
-                ToolExecutionPolicyDecision::RequireRootApproval(_) => PendingApprovalKind::Root,
                 ToolExecutionPolicyDecision::RequireApproval(_) => PendingApprovalKind::Standard,
                 _ => PendingApprovalKind::Standard,
             };

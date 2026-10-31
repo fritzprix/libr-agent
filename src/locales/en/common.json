@@ -1227,10 +1227,6 @@
       "reject": "Reject",
       "rejectShortcut": "Reject (Esc)",
       "hardApprove": "Approve high-risk action",
-      "rootTitle": "Root Approval Required",
-      "rootDescription": "This command runs as root in the session container. Every execution mode requires your approval.",
-      "rootBadge": "Runs as root",
-      "rootApprove": "Approve root command",
       "approve": "Approve",
       "approveShortcut": "Approve (⌘↵ / Ctrl+↵)",
       "approveShortcutBadge": "⌘↵"

@@ -25,8 +25,9 @@ pub enum ToolExecutionPolicyDecision {
     Allow,
     RequireApproval(ToolApprovalRequest),
     RequireHardApproval(ToolApprovalRequest),
-    /// Runs as root. Every execution mode asks the user, also YOLO and Unsafe.
-    RequireRootApproval(ToolApprovalRequest),
+    /// Runs as root. Runs without approval in a LibrAgent-managed container, in every execution
+    /// mode; refused before execution elsewhere (see [`root_execution_refusal`]).
+    RunAsRoot,
     Block(BlockedToolExecution),
 }
 
@@ -48,9 +49,6 @@ pub fn approval_request_for_runtime(
     yolo_enabled: bool,
     unsafe_enabled: bool,
 ) -> Option<&ToolApprovalRequest> {
-    if let ToolExecutionPolicyDecision::RequireRootApproval(request) = decision {
-        return Some(request);
-    }
     if unsafe_enabled {
         return None;
     }
@@ -80,10 +78,6 @@ pub fn pending_approval_is_auto_approvable_in_yolo(approval_kind: PendingApprova
     matches!(approval_kind, PendingApprovalKind::Standard)
 }
 
-pub fn pending_approval_is_auto_approvable_in_unsafe(approval_kind: PendingApprovalKind) -> bool {
-    !matches!(approval_kind, PendingApprovalKind::Root)
-}
-
 /// True for a `runShell` call that asks to run as root (see [`as_root_requested`]).
 pub fn requests_root_execution(tool_name: &str, args: &serde_json::Value) -> bool {
     tool_name.rsplit("__").next() == Some("runShell") && as_root_requested(args)
@@ -95,17 +89,14 @@ pub const ROOT_EXECUTION_NEEDS_APPROVAL: &str =
     "runShell with asRoot needs the user's approval in a LibrAgent agent session; this entry point cannot ask for it";
 
 /// The refusal for a root request that `session` can never run (a host session or an attached
-/// container), so the user is not asked to approve it. `None` when `decision` does not ask for
-/// root or the session uses a LibrAgent-managed container. A `session` of `None` (the session is
-/// not loaded in memory) is refused as a host session.
+/// container). `None` when `decision` does not ask for root or the session uses a
+/// LibrAgent-managed container, where the root command runs without approval. A `session` of
+/// `None` (the session is not loaded in memory) is refused as a host session.
 pub fn root_execution_refusal(
     decision: &ToolExecutionPolicyDecision,
     session: Option<&crate::repositories::SessionMetadata>,
 ) -> Option<crate::mcp::types::MCPResult> {
-    if !matches!(
-        decision,
-        ToolExecutionPolicyDecision::RequireRootApproval(_)
-    ) {
+    if *decision != ToolExecutionPolicyDecision::RunAsRoot {
         return None;
     }
     crate::mcp::builtin::workspace::utils::root_exec_blocker_for(session)
@@ -164,10 +155,7 @@ pub async fn evaluate_tool_execution_policy(
                         enforced_in_unsafe: true,
                     })
                 }
-                _ => ToolExecutionPolicyDecision::RequireRootApproval(ToolApprovalRequest {
-                    description: format!("Run as root: {}", decision.description),
-                    input_preview: decision.input_preview,
-                }),
+                _ => ToolExecutionPolicyDecision::RunAsRoot,
             };
         }
 
@@ -771,7 +759,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_non_boolean_as_root_still_asks_for_root_approval() {
+    async fn a_non_boolean_as_root_still_takes_the_root_path() {
         for as_root in [
             serde_json::json!("true"),
             serde_json::json!(1),
@@ -782,14 +770,11 @@ mod tests {
                 &serde_json::json!({ "command": "apt-get install -y nodejs", "asRoot": as_root }),
             )
             .await;
-            assert!(
-                matches!(
-                    decision,
-                    ToolExecutionPolicyDecision::RequireRootApproval(_)
-                ),
-                "asRoot={as_root}: {decision:?}"
+            assert_eq!(
+                decision,
+                ToolExecutionPolicyDecision::RunAsRoot,
+                "asRoot={as_root}"
             );
-            assert!(approval_request_for_runtime(&decision, true, true).is_some());
         }
     }
 
@@ -837,9 +822,8 @@ mod tests {
             }
             assert!(
                 root_execution_refusal(&decision, Some(&managed)).is_none(),
-                "a managed session must still ask for approval (asRoot={as_root})"
+                "a managed session must run the root command (asRoot={as_root})"
             );
-            assert!(approval_request_for_runtime(&decision, false, false).is_some());
         }
 
         let plain = evaluate_tool_execution_policy(
@@ -851,29 +835,34 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_root_command_asks_for_approval_in_every_mode() {
+    async fn a_root_command_in_a_managed_container_runs_without_approval_in_every_mode() {
+        use crate::models::workspace_isolation::{DockerWorkspaceConfig, WorkspaceIsolationMode};
+        use crate::repositories::SessionMetadata;
+
+        let managed = SessionMetadata {
+            workspace_isolation: WorkspaceIsolationMode::Docker,
+            docker_config: Some(DockerWorkspaceConfig::default()),
+            ..SessionMetadata::test_fixture("root-allow-managed")
+        };
         let decision = evaluate_tool_execution_policy(
             "workspace__runShell",
             &serde_json::json!({ "command": "apt-get install -y nodejs", "asRoot": true }),
         )
         .await;
-        let ToolExecutionPolicyDecision::RequireRootApproval(request) = &decision else {
-            panic!("asRoot must require root approval, got {decision:?}");
-        };
-        assert!(request.description.starts_with("Run as root"));
+        assert_eq!(decision, ToolExecutionPolicyDecision::RunAsRoot);
+        assert!(root_execution_refusal(&decision, Some(&managed)).is_none());
 
-        for (yolo, unsafe_mode) in [(false, false), (true, false), (false, true), (true, true)] {
+        // normal, YOLO, Unsafe
+        for (yolo, unsafe_mode) in [(false, false), (true, false), (false, true)] {
             assert!(
-                approval_request_for_runtime(&decision, yolo, unsafe_mode).is_some(),
+                approval_request_for_runtime(&decision, yolo, unsafe_mode).is_none(),
+                "yolo={yolo} unsafe={unsafe_mode}"
+            );
+            assert!(
+                blocked_execution_for_runtime(&decision, unsafe_mode).is_none(),
                 "yolo={yolo} unsafe={unsafe_mode}"
             );
         }
-        assert!(!pending_approval_is_auto_approvable_in_yolo(
-            PendingApprovalKind::Root
-        ));
-        assert!(!pending_approval_is_auto_approvable_in_unsafe(
-            PendingApprovalKind::Root
-        ));
     }
 
     #[tokio::test]
