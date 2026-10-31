@@ -70,6 +70,21 @@ In the **New Session** draft, turn on **Use Docker Container** to run the sessio
 - **Version**: the tag is the LibrAgent version. A development or pre-release build uses the tag of the last released version. The first published image is for LibrAgent 0.9.30; a development build made before that release has no default image. If that image is not available, the session start fails with an error that names the image. Set a different image to continue.
 - **Different image**: type an image name or select a preset. The session stores the image, so an app update does not change it. If the image does not have a runtime that a tool needs (for example `npx`), the session reports this when the tool starts.
 
+### Root commands (`asRoot`)
+
+The agent can run a `runShell` command as root with `asRoot`, for example to install a system package (`apt-get install -y nodejs`).
+
+- **Where**: only in a container that LibrAgent creates for the session. A session on your computer or in an attached container refuses `asRoot` and shows no approval card.
+- **Approval**: root itself asks for no approval, in every execution mode. A command that needs a hard approval or that is blocked without root keeps that approval or block with root.
+- **Protection**: the container runs without the `SETFCAP`, `MKNOD`, and `NET_RAW` capabilities and with `no-new-privileges`. After each root command, LibrAgent stops the processes that the command left and gives the workspace files back to you: it removes setuid/setgid bits and device nodes, and changes root-owned files to your user.
+- **Workspace**: the workspace of a container session must not be your home directory or a folder that contains it. Select a project folder.
+
+Accepted residual risk:
+
+- A root command can change the container file system (programs, `/etc`). These changes stay in the session container and go away when LibrAgent creates the container again.
+- A command can change the files in the workspace, with or without root, because the container runs as your user.
+- With rootful Docker and no user namespace remapping, these protections do not stop a kernel exploit that escapes the container.
+
 ---
 
 ## Export
