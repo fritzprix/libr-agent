@@ -42,8 +42,8 @@ class GhError(RuntimeError):
     pass
 
 
-def gh(*args: str) -> str:
-    result = subprocess.run(["gh", *args], capture_output=True, text=True, encoding="utf-8")
+def gh(*args: str, stdin: str | None = None) -> str:
+    result = subprocess.run(["gh", *args], input=stdin, capture_output=True, text=True, encoding="utf-8")
     if result.returncode != 0:
         raise GhError(f"gh {' '.join(args[:3])} failed: {result.stderr.strip()}")
     return result.stdout
@@ -88,12 +88,17 @@ def ensure_labels(labels: list[str]) -> None:
             gh("label", "create", label, "--description", "Created by producer-loop")
 
 
-def file_findings(task: str, findings: list[dict], state: dict, create: bool) -> list[dict]:
-    """Return one result per finding: skipped (with reason), would-create, or created."""
+def file_findings(task: str, findings: list[dict], state: dict, create: bool,
+                  results: list[dict] | None = None) -> list[dict]:
+    """Return one result per finding: skipped (with reason), would-create, or created.
+
+    Results are appended to `results` as they happen, so a caller that passes its own
+    list still holds the issues created before a later gh call raised.
+    """
     cap = cap_for(state, task)
     labels = [PRODUCER_LABEL, f"auto:{task}"]
     known = state.setdefault("fingerprints", {})
-    results: list[dict] = []
+    results = [] if results is None else results
     created = 0
     labels_ready = False
     for finding in findings:
@@ -124,8 +129,10 @@ def file_findings(task: str, findings: list[dict], state: dict, create: bool) ->
         if not labels_ready:
             ensure_labels(labels)
             labels_ready = True
-        url = gh("issue", "create", "--title", title, "--body", f"{body}\n\n{marker(fp)}\n",
-                 *[arg for label in labels for arg in ("--label", label)]).strip()
+        # --body-file - keeps long bodies under the Windows command-line limit.
+        url = gh("issue", "create", "--title", title, "--body-file", "-",
+                 *[arg for label in labels for arg in ("--label", label)],
+                 stdin=f"{body}\n\n{marker(fp)}\n").strip()
         number = int(url.rsplit("/", 1)[-1])
         known[fp] = number
         results.append({"key": key, "fingerprint": fp, "action": "created", "issue": number, "url": url})
@@ -142,18 +149,26 @@ def main(argv: list[str] | None = None) -> int:
 
     state_path = args.state_file or producer_gate.default_state_path()
     state = producer_gate.tick_gate.load_state(state_path)
+    results: list[dict] = []
+    error: str | None = None
     try:
         findings = json.loads(args.findings.read_text(encoding="utf-8"))
         if not isinstance(findings, list):
             raise ValueError("findings file must hold a JSON list")
-        results = file_findings(args.task, findings, state, args.create)
+        file_findings(args.task, findings, state, args.create, results)
     except (GhError, ValueError, OSError) as e:
+        error = str(e)
         sys.stderr.write(f"file_issue error: {e}\n")
-        return 3
-    if args.create:
-        producer_gate.tick_gate.save_state(state_path, state)
-    print(json.dumps({"dryRun": not args.create, "results": results}, ensure_ascii=False, indent=2))
-    return 0
+    finally:
+        # Save even on failure: issues created before the error must stay deduped,
+        # because GitHub search can lag behind a fresh issue for minutes.
+        if args.create:
+            producer_gate.tick_gate.save_state(state_path, state)
+    output: dict = {"dryRun": not args.create, "results": results}
+    if error is not None:
+        output["error"] = error
+    print(json.dumps(output, ensure_ascii=False, indent=2))
+    return 3 if error is not None else 0
 
 
 if __name__ == "__main__":

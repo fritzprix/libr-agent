@@ -18,13 +18,15 @@ def finding(key, body="Evidence: src/a.rs:10 handles input without a bound."):
 class FakeGh:
     """Records gh calls; `issues` are existing issues returned by `issue list`."""
 
-    def __init__(self, issues=None, labels=()):
+    def __init__(self, issues=None, labels=(), fail_on_create=None):
         self.issues = issues or []
         self.labels = list(labels)
         self.calls = []
+        self.bodies = []
         self.next_number = 100
+        self.fail_on_create = fail_on_create
 
-    def __call__(self, *args):
+    def __call__(self, *args, stdin=None):
         self.calls.append(args)
         if args[:2] == ("issue", "list"):
             return json.dumps(self.issues)
@@ -34,6 +36,9 @@ class FakeGh:
             self.labels.append(args[2])
             return ""
         if args[:2] == ("issue", "create"):
+            if self.fail_on_create == len(self.bodies):
+                raise file_issue.GhError("gh issue create failed: rate limited")
+            self.bodies.append(stdin)
             self.next_number += 1
             return f"https://github.com/o/r/issues/{self.next_number}\n"
         raise AssertionError(f"unexpected gh call: {args}")
@@ -76,6 +81,27 @@ class FileIssueTest(unittest.TestCase):
             self.assertEqual(fake.created(), [])
             self.assertFalse((Path(tmp) / "state.json").exists())
 
+    def test_gh_failure_after_create_keeps_created_issue(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            findings = Path(tmp) / "f.json"
+            findings.write_text(json.dumps([finding("a"), finding("b")]), encoding="utf-8")
+            state_file = Path(tmp) / "state.json"
+            fake = FakeGh(fail_on_create=1)
+            out = io.StringIO()
+            with patch.object(file_issue, "gh", fake), contextlib.redirect_stdout(out), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                code = file_issue.main(["--task", "security", "--findings", str(findings),
+                                        "--state-file", str(state_file), "--create"])
+            self.assertEqual(code, 3)
+            fp = file_issue.fingerprint("security", "a")
+            saved = json.loads(state_file.read_text(encoding="utf-8"))
+            self.assertEqual(saved["fingerprints"][fp], 101)
+            self.assertNotIn(file_issue.fingerprint("security", "b"), saved["fingerprints"])
+            report = json.loads(out.getvalue())
+            self.assertIn("rate limited", report["error"])
+            self.assertEqual([r["url"] for r in report["results"] if r["action"] == "created"],
+                             ["https://github.com/o/r/issues/101"])
+
     def test_create_adds_labels_marker_and_records_fingerprint(self):
         fake = FakeGh()
         results, state = self.run_findings(fake, "uiux", [finding("a")])
@@ -84,7 +110,8 @@ class FileIssueTest(unittest.TestCase):
         labels = [call[i + 1] for i, arg in enumerate(call) if arg == "--label"]
         self.assertEqual(labels, ["auto:producer", "auto:uiux"])
         fp = file_issue.fingerprint("uiux", "a")
-        self.assertIn(file_issue.marker(fp), call[call.index("--body") + 1])
+        self.assertEqual(call[call.index("--body-file") + 1], "-")
+        self.assertIn(file_issue.marker(fp), fake.bodies[0])
         self.assertEqual(state["fingerprints"][fp], results[0]["issue"])
         self.assertIn(("label", "create", "auto:uiux", "--description", "Created by producer-loop"), fake.calls)
 
