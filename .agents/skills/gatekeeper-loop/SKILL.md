@@ -79,7 +79,7 @@ Check build and test results in CI; do not run them locally. **However, CI does 
 ```bash
 MAIN=$(git rev-parse --show-toplevel)
 WT="$MAIN/../$(basename "$MAIN").worktrees/gatekeeper"
-git -C "$MAIN" worktree list --porcelain | grep -q "worktree .*/gatekeeper$" \
+python3 -c "import subprocess, sys, os; out = subprocess.run(['git', '-C', sys.argv[1], 'worktree', 'list', '--porcelain'], capture_output=True, text=True).stdout; target = os.path.abspath(sys.argv[2]); sys.exit(0 if any(line == f'worktree {target}' for line in out.splitlines()) else 1)" "$MAIN" "$WT" \
   || git -C "$MAIN" worktree add --detach "$WT" "origin/<head>"
 git -C "$WT" checkout --detach --force "origin/<head>" && git -C "$WT" clean -fd
 ```

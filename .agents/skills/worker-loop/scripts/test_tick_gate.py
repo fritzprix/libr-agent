@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Tests for tick_gate logic."""
 import json
+import os
 import tempfile
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import tick_gate
 
@@ -31,28 +32,74 @@ class TickGateTest(unittest.TestCase):
         tick_gate.release_lock(self.lock_file)
         self.assertFalse(tick_gate.check_lock(self.lock_file))
 
-    def test_stale_lock_ignored(self):
-        # Create a lock file with timestamp 20 minutes ago
-        old_time = time.time() - 1200
-        self.lock_file.write_text(json.dumps({"pid": 999999, "time": old_time}))
-        self.assertFalse(tick_gate.check_lock(self.lock_file, ttl_seconds=900))
+    def test_lock_with_pid(self):
+        # Current process PID is alive
+        tick_gate.acquire_lock(self.lock_file, pid=os.getpid())
+        self.assertTrue(tick_gate.check_lock(self.lock_file))
 
-    def test_compute_fingerprint(self):
+        # Dead PID is recognized as stale
+        dead_pid = 9999999
+        tick_gate.acquire_lock(self.lock_file, pid=dead_pid)
+        self.assertFalse(tick_gate.check_lock(self.lock_file))
+
+    def test_stale_lock_by_ttl(self):
+        # Create a lock file with timestamp older than TTL
+        old_time = time.time() - (tick_gate.LOCK_TTL_SECONDS + 10)
+        self.lock_file.write_text(json.dumps({"time": old_time, "pid": os.getpid()}))
+        self.assertFalse(tick_gate.check_lock(self.lock_file))
+
+    def test_gh_failure_raises_gh_error(self):
+        with patch("tick_gate.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=1, stderr="Bad credentials", stdout="")
+            with self.assertRaises(tick_gate.GhError):
+                tick_gate.gh("api", "user")
+
+    def test_compute_fingerprint_graphql(self):
+        fake_graphql = {
+            "data": {
+                "repository": {
+                    "pullRequests": {
+                        "nodes": [
+                            {
+                                "number": 1,
+                                "headRefOid": "sha1",
+                                "mergeable": "MERGEABLE",
+                                "updatedAt": "2026-01-01T00:00:00Z",
+                                "isDraft": False,
+                                "author": {"login": "me"},
+                                "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "PENDING"}}}]},
+                                "comments": {"nodes": [{"createdAt": "2026-01-01T01:00:00Z"}]},
+                            }
+                        ]
+                    },
+                    "issues": {
+                        "nodes": [
+                            {"number": 10, "updatedAt": "2026-01-01T00:00:00Z"}
+                        ]
+                    }
+                }
+            }
+        }
         with patch.object(tick_gate, "gh") as mock_gh:
             mock_gh.side_effect = [
-                json.dumps([{"number": 1, "headRefOid": "abc", "mergeable": "MERGEABLE", "updatedAt": "2026-01-01T00:00:00Z"}]),
-                json.dumps([{"number": 10, "updatedAt": "2026-01-01T00:00:00Z"}]),
+                json.dumps({"owner": {"login": "owner"}, "name": "repo"}),  # repo view
+                "me\n",  # api user
+                json.dumps(fake_graphql),  # graphql
             ]
             fp1 = tick_gate.compute_fingerprint()
             self.assertTrue(isinstance(fp1, str) and len(fp1) == 64)
 
-            # Same inputs produce same hash
+            # Change in CI state produces a different fingerprint
+            fake_graphql_ci_failed = json.loads(json.dumps(fake_graphql))
+            fake_graphql_ci_failed["data"]["repository"]["pullRequests"]["nodes"][0]["commits"]["nodes"][0]["commit"]["statusCheckRollup"]["state"] = "FAILURE"
+
             mock_gh.side_effect = [
-                json.dumps([{"number": 1, "headRefOid": "abc", "mergeable": "MERGEABLE", "updatedAt": "2026-01-01T00:00:00Z"}]),
-                json.dumps([{"number": 10, "updatedAt": "2026-01-01T00:00:00Z"}]),
+                json.dumps({"owner": {"login": "owner"}, "name": "repo"}),
+                "me\n",
+                json.dumps(fake_graphql_ci_failed),
             ]
             fp2 = tick_gate.compute_fingerprint()
-            self.assertEqual(fp1, fp2)
+            self.assertNotEqual(fp1, fp2)
 
 
 if __name__ == "__main__":

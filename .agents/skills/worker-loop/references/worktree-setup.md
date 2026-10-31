@@ -9,7 +9,7 @@ All edits, builds, commits, and pushes happen in a dedicated, persistent worktre
   MAIN=$(git rev-parse --show-toplevel)       # the user's checkout
   WT="$MAIN/../$(basename "$MAIN").worktrees/worker"
   BASE=$(git branch -r --list "origin/dev/*" --sort=-v:refname | head -n 1 | sed 's/^[ *]*origin\///')
-  git -C "$MAIN" worktree list --porcelain | grep -q "worktree .*/worker$" \
+  python3 -c "import subprocess, sys, os; out = subprocess.run(['git', '-C', sys.argv[1], 'worktree', 'list', '--porcelain'], capture_output=True, text=True).stdout; target = os.path.abspath(sys.argv[2]); sys.exit(0 if any(line == f'worktree {target}' for line in out.splitlines()) else 1)" "$MAIN" "$WT" \
     || git -C "$MAIN" worktree add --detach "$WT" "origin/$BASE"
   ```
 - **PowerShell (Windows)**:
@@ -17,7 +17,8 @@ All edits, builds, commits, and pushes happen in a dedicated, persistent worktre
   $MAIN = git rev-parse --show-toplevel
   $WT = "$MAIN/../$((Split-Path $MAIN -Leaf)).worktrees/worker"
   $BASE = (git branch -r --list "origin/dev/*" --sort=-v:refname | Select-Object -First 1).Trim().Replace("origin/", "")
-  if (-not (git -C $MAIN worktree list --porcelain | Select-String -Pattern "worktree .*worker" -Quiet)) {
+  python3 -c "import subprocess, sys, os; out = subprocess.run(['git', '-C', sys.argv[1], 'worktree', 'list', '--porcelain'], capture_output=True, text=True).stdout; target = os.path.abspath(sys.argv[2]); sys.exit(0 if any(line == f'worktree {target}' for line in out.splitlines()) else 1)" $MAIN $WT
+  if ($LASTEXITCODE -ne 0) {
       git -C $MAIN worktree add --detach "$WT" "origin/$BASE"
   }
   ```

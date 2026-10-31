@@ -17,7 +17,7 @@ Talks to the gatekeeper reviewer only through PR comments. See [references/sched
   "scheduler": { "kind": "scheduled_task", "id": "task-123" },
   "current": { "issue": 101, "branch": "feat/some-feature-101", "pr": null, "phase": "implementing" },
   "needsUser": [{ "ref": "PR #N", "question": "...", "since": "2026-10-22T10:00:00Z" }],
-  "skipped": { "102": { "reason": "waits on upstream #584", "updatedAt": "2026-10-22T10:00:00Z" } },
+  "skipped": { "102": { "reason": "waits on upstream #584", "updatedAt": "2026-10-22T10:00:00Z", "evidence": "blocked by external API" } },
   "history": [{ "at": "...", "action": "fix-ci", "ref": "PR #N", "result": "pushed 1a2b3c" }]
 }
 ```
@@ -76,7 +76,7 @@ Pick the first candidate issue that is:
 - **Decided**: owner `Decision` or recommendation present. Use `needsUser` only when choice is ambiguous.
 - **Sized for one PR**: reviewable diff (<= 400 changed lines, <= 10 files). Large issues: implement one checklist item.
 
-Record skips in `skipped` with `{ "reason": "...", "updatedAt": "<issue.updatedAt>" }` taken from the issue body so later ticks do not re-read them unless `updatedAt` changes.
+Record skips in `skipped` with `{ "reason": "...", "updatedAt": "<issue.updatedAt>", "evidence": "<quoted lines if owner-share>" }`. The `updatedAt` comes from issue metadata (via `issue_candidates.py`), and `evidence` quotes specific lines showing what remaining step requires the owner (benchmarks, baselines, publishing). Storing this evidence ensures subsequent idle checks do not re-read the issue body or comments unless `updatedAt` changes.
 
 Then:
 1. `gh issue edit N --add-assignee @me`.
@@ -96,4 +96,4 @@ Report `needsUser` items once when newly created.
 **Idle check**: Before ending idle, inspect each `skipped` issue against `issue_candidates.py` output:
 - **Do NOT re-read the body or comments** of a skipped issue unless its `updatedAt` changed since the recorded timestamp.
 - If `updatedAt` changed, re-read the issue to see if new decisions unblocked it.
-- Finally release lock: `python3 .agents/skills/worker-loop/scripts/tick_gate.py --unlock`.
+- Finally, update the gate fingerprint on successful tick completion and release the lock: `python3 .agents/skills/worker-loop/scripts/tick_gate.py --update --unlock`.

@@ -332,6 +332,16 @@ class GapTests(unittest.TestCase):
         self.assertEqual(len(verdicts), 0)
         self.assertEqual(len(responses), 0)
 
+    def test_bom_marker_parsed(self) -> None:
+        self.assertTrue(START_MARKER.match("\ufeff<!-- gatekeeper-loop: verdict=approve -->"))
+        comments = [
+            {"author": {"login": "me"}, "createdAt": "t",
+             "body": "\ufeff<!-- gatekeeper-loop: verdict=clean head=abc -->"}
+        ]
+        verdicts, _ = parse_markers(comments, "me")
+        self.assertEqual(len(verdicts), 1)
+        self.assertEqual(verdicts[0]["verdict"], "clean")
+
     def test_owner_comment_quoting_marker_is_surfaced(self) -> None:
         comments = [
             {"author": {"login": "me"},

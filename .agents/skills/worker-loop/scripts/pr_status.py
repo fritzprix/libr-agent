@@ -16,9 +16,9 @@ import re
 import subprocess
 import sys
 
-# Loop markers must appear at the very start of the comment (first non-whitespace line).
+# Loop markers must appear at the very start of the comment (ignoring optional UTF-8 BOM and leading whitespace).
 # Quoted markers or mentions later in the comment are ignored.
-START_MARKER = re.compile(r"^\s*<!--\s*(gatekeeper-loop|worker-loop):\s*(.*?)\s*-->")
+START_MARKER = re.compile(r"^(?:\ufeff)?\s*<!--\s*(gatekeeper-loop|worker-loop):\s*(.*?)\s*-->")
 
 THREADS_QUERY = """
 query($owner: String!, $name: String!, $number: Int!, $cursor: String) {

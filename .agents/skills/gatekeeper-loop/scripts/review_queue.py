@@ -33,9 +33,9 @@ import sys
 from pathlib import Path
 
 MAX_ROUNDS = 5
-# Loop markers must appear at the very start of the comment (first non-whitespace line).
+# Loop markers must appear at the very start of the comment (ignoring optional UTF-8 BOM and leading whitespace).
 # Quoted markers or mentions later in the comment are ignored.
-START_MARKER = re.compile(r"^\s*<!--\s*(gatekeeper-loop|worker-loop):\s*(.*?)\s*-->")
+START_MARKER = re.compile(r"^(?:\ufeff)?\s*<!--\s*(gatekeeper-loop|worker-loop):\s*(.*?)\s*-->")
 FAILED = {"FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE"}
 PENDING = {"PENDING", "QUEUED", "IN_PROGRESS", "WAITING", "EXPECTED", "REQUESTED"}
 PROTECTED_SKILL_PREFIXES = (
