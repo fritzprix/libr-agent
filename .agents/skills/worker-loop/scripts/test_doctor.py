@@ -29,6 +29,7 @@ class DoctorTest(unittest.TestCase):
         mock_resp.__enter__.return_value = mock_resp
         mock_urlopen.return_value = mock_resp
         self.assertTrue(doctor.check_network())
+        self.assertEqual(mock_urlopen.call_args.kwargs.get("timeout"), doctor.NETWORK_TIMEOUT_SECONDS)
 
     @patch("doctor.urllib.request.urlopen")
     def test_check_network_failure(self, mock_urlopen):

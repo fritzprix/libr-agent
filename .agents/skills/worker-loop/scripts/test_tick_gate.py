@@ -57,21 +57,21 @@ class TickGateTest(unittest.TestCase):
     def test_compute_fingerprint_graphql(self):
         fake_graphql = {
             "data": {
+                "search": {
+                    "nodes": [
+                        {
+                            "number": 1,
+                            "headRefOid": "sha1",
+                            "mergeable": "MERGEABLE",
+                            "updatedAt": "2026-01-01T00:00:00Z",
+                            "isDraft": False,
+                            "author": {"login": "me"},
+                            "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "PENDING"}}}]},
+                            "comments": {"nodes": [{"createdAt": "2026-01-01T01:00:00Z"}]},
+                        }
+                    ]
+                },
                 "repository": {
-                    "pullRequests": {
-                        "nodes": [
-                            {
-                                "number": 1,
-                                "headRefOid": "sha1",
-                                "mergeable": "MERGEABLE",
-                                "updatedAt": "2026-01-01T00:00:00Z",
-                                "isDraft": False,
-                                "author": {"login": "me"},
-                                "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "PENDING"}}}]},
-                                "comments": {"nodes": [{"createdAt": "2026-01-01T01:00:00Z"}]},
-                            }
-                        ]
-                    },
                     "issues": {
                         "nodes": [
                             {"number": 10, "updatedAt": "2026-01-01T00:00:00Z"}
@@ -91,7 +91,7 @@ class TickGateTest(unittest.TestCase):
 
             # Change in CI state produces a different fingerprint
             fake_graphql_ci_failed = json.loads(json.dumps(fake_graphql))
-            fake_graphql_ci_failed["data"]["repository"]["pullRequests"]["nodes"][0]["commits"]["nodes"][0]["commit"]["statusCheckRollup"]["state"] = "FAILURE"
+            fake_graphql_ci_failed["data"]["search"]["nodes"][0]["commits"]["nodes"][0]["commit"]["statusCheckRollup"]["state"] = "FAILURE"
 
             mock_gh.side_effect = [
                 json.dumps({"owner": {"login": "owner"}, "name": "repo"}),
@@ -100,6 +100,17 @@ class TickGateTest(unittest.TestCase):
             ]
             fp2 = tick_gate.compute_fingerprint()
             self.assertNotEqual(fp1, fp2)
+
+    def test_update_takes_precedence_over_current(self):
+        state = {"current": "some-feature-branch", "lastFingerprint": "old"}
+        tick_gate.save_state(self.state_file, state)
+        with patch.object(tick_gate, "compute_fingerprint", return_value="new_fp_1234567890"), \
+             patch("sys.argv", ["tick_gate.py", "--state-file", str(self.state_file), "--update"]), \
+             self.assertRaises(SystemExit) as cm:
+            tick_gate.main()
+        self.assertEqual(cm.exception.code, tick_gate.EXIT_RUN)
+        saved = tick_gate.load_state(self.state_file)
+        self.assertEqual(saved.get("lastFingerprint"), "new_fp_1234567890")
 
 
 if __name__ == "__main__":

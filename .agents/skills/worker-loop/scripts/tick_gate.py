@@ -40,10 +40,10 @@ ISSUE_LIMIT = 30
 PR_LIMIT = 30
 
 GRAPHQL_GATE_QUERY = """
-query($owner: String!, $name: String!, $prLimit: Int!, $issueLimit: Int!) {
-  repository(owner: $owner, name: $name) {
-    pullRequests(first: $prLimit, states: [OPEN]) {
-      nodes {
+query($prQuery: String!, $prLimit: Int!, $owner: String!, $name: String!, $issueLimit: Int!) {
+  search(query: $prQuery, type: ISSUE, first: $prLimit) {
+    nodes {
+      ... on PullRequest {
         number
         headRefOid
         mergeable
@@ -66,6 +66,8 @@ query($owner: String!, $name: String!, $prLimit: Int!, $issueLimit: Int!) {
         }
       }
     }
+  }
+  repository(owner: $owner, name: $name) {
     issues(first: $issueLimit, states: [OPEN], orderBy: {field: UPDATED_AT, direction: DESC}) {
       nodes {
         number
@@ -169,21 +171,26 @@ def compute_fingerprint() -> str:
     repo = json.loads(repo_raw)
     owner, name = repo["owner"]["login"], repo["name"]
     me = gh("api", "user", "--jq", ".login").strip()
+    pr_query = f"repo:{owner}/{name} is:pr is:open author:@me"
 
     query_raw = gh(
         "api", "graphql",
         "-f", f"query={GRAPHQL_GATE_QUERY}",
+        "-F", f"prQuery={pr_query}",
         "-F", f"owner={owner}",
         "-F", f"name={name}",
         "-F", f"prLimit={PR_LIMIT}",
         "-F", f"issueLimit={ISSUE_LIMIT}",
     )
-    data = json.loads(query_raw).get("data", {}).get("repository", {})
+    data = json.loads(query_raw).get("data", {})
+    repo_data = data.get("repository", {})
 
-    pr_nodes = data.get("pullRequests", {}).get("nodes") or []
+    pr_nodes = data.get("search", {}).get("nodes") or []
     # Only PRs authored by @me and not draft
     prs_fingerprint = []
-    for pr in prnodes if (prnodes := pr_nodes) else []:
+    for pr in pr_nodes:
+        if not pr:
+            continue
         if (pr.get("author") or {}).get("login") != me:
             continue
         if pr.get("isDraft"):
@@ -206,7 +213,7 @@ def compute_fingerprint() -> str:
         ))
     prs_fingerprint.sort()
 
-    issue_nodes = data.get("issues", {}).get("nodes") or []
+    issue_nodes = repo_data.get("issues", {}).get("nodes") or []
     issues_fingerprint = sorted((i["number"], i.get("updatedAt")) for i in issue_nodes)
 
     hasher = hashlib.sha256()
@@ -238,18 +245,18 @@ def main() -> None:
     state = load_state(state_path)
 
     try:
-        # If currently implementing an issue or branch, always run
-        if state.get("current"):
-            if args.lock:
-                acquire_lock(lock_path, pid=args.pid)
-            print("RUN (current work in progress)")
-            sys.exit(EXIT_RUN)
-
         if args.update:
             fp = compute_fingerprint()
             state["lastFingerprint"] = fp
             save_state(state_path, state)
             print(f"UPDATED: {fp[:12]}")
+            sys.exit(EXIT_RUN)
+
+        # If currently implementing an issue or branch, always run
+        if state.get("current"):
+            if args.lock:
+                acquire_lock(lock_path, pid=args.pid)
+            print("RUN (current work in progress)")
             sys.exit(EXIT_RUN)
 
         fp = compute_fingerprint()

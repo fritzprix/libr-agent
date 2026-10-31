@@ -21,6 +21,8 @@ import sys
 import urllib.request
 from pathlib import Path
 
+NETWORK_TIMEOUT_SECONDS = 5
+
 
 def check(name: str, cmd: list[str]) -> bool:
     try:
@@ -45,7 +47,7 @@ def check_network() -> bool:
             "https://api.github.com",
             headers={"User-Agent": "LibrAgent-Doctor"}
         )
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        with urllib.request.urlopen(req, timeout=NETWORK_TIMEOUT_SECONDS) as resp:
             if resp.status == 200:
                 print("  [OK] Network: GitHub API reachable")
                 return True
