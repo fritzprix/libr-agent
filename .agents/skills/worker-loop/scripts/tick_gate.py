@@ -241,10 +241,6 @@ def main() -> None:
             save_state(state_path, state)
             print(f"UPDATED: {fp[:12]}")
 
-        if args.unlock:
-            release_lock(lock_path)
-            print("UNLOCKED")
-
         if args.update or args.unlock:
             sys.exit(EXIT_RUN)
 
@@ -281,6 +277,10 @@ def main() -> None:
     except Exception as e:
         sys.stderr.write(f"tick_gate unexpected error: {e}\n")
         sys.exit(EXIT_ERROR)
+    finally:
+        if args.unlock:
+            release_lock(lock_path)
+            print("UNLOCKED")
 
 
 if __name__ == "__main__":

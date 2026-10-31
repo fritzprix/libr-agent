@@ -129,6 +129,19 @@ class TickGateTest(unittest.TestCase):
         self.assertEqual(saved.get("lastFingerprint"), "new_fp_combined")
         self.assertFalse(tick_gate.check_lock(self.lock_file))
 
+    def test_update_and_unlock_gh_error_releases_lock(self):
+        tick_gate.acquire_lock(self.lock_file)
+        self.assertTrue(tick_gate.check_lock(self.lock_file))
+
+        with patch.object(tick_gate, "compute_fingerprint", side_effect=tick_gate.GhError("simulated gh failure")), \
+             patch("sys.argv", ["tick_gate.py", "--state-file", str(self.state_file), "--update", "--unlock"]), \
+             self.assertRaises(SystemExit) as cm:
+            tick_gate.main()
+
+        self.assertEqual(cm.exception.code, tick_gate.EXIT_ERROR)
+        self.assertEqual(cm.exception.code, 3)
+        self.assertFalse(tick_gate.check_lock(self.lock_file))
+
 
 if __name__ == "__main__":
     unittest.main()

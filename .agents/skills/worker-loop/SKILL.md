@@ -128,6 +128,7 @@ At the end of **every** tick that acquired the lock (work completed, idle, or st
 - If work completed successfully: `python3 .agents/skills/worker-loop/scripts/tick_gate.py --update --unlock`
 - If stopped with `needsUser`, idle, or error: `python3 .agents/skills/worker-loop/scripts/tick_gate.py --unlock`
 - A tick that stopped with `BUSY` did not acquire the lock and must NOT run `--unlock` (it would delete another tick's lock). Unlock only a lock this tick acquired.
+- The lock is TTL-only (30 min); a tick longer than that can overlap the next tick, and this risk is accepted.
 
 ## Hard rules
 
