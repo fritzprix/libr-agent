@@ -29,7 +29,7 @@ forbidden tool was called. Deeper analysis is left to an agent-based eval loop.
 
 Step rules beyond "tool called, last call succeeded":
 
-- **Catalog installs (T06, T09)**: `listServers` with `scope: "catalog"` → `registerServer` → `verifyServer`. Direct installs (T07, T10) stay `registerServer` → `verifyServer`.
+- **Catalog installs (T06, T09)**: `listServers` with `scope: "catalog"` → `registerServer` → `verifyServer`. Direct installs (T07, T10) stay `registerServer` → `verifyServer`. In all four, a successful `updateServer` also satisfies the register step: after a failed container check the record is already saved, so the retry is `updateServer`.
 - **setup-wizard (T11)**: running `verify_setup` or `install_node` counts.
 - **skill-creator (T12)**: `writeFile` of a `SKILL.md`, then a strict validation: `validate_skill.py --strict`, or `skill.py validate` / `skill.py deploy` (always strict).
 - **divide-conquer (T14)**: at least two `spawnSession` calls; the last one must succeed.

@@ -170,6 +170,8 @@ pub(super) fn container_stdio_guidance() -> Vec<String> {
             .to_string(),
         "For an attached container, install the runtime outside LibrAgent: asRoot is not available"
             .to_string(),
+        "After the runtime is installed, call tool__updateServer for the saved server, then tool__verifyServer. Do not call tool__registerServer again: the name is already saved"
+            .to_string(),
         "Do not register a host path: it does not resolve in the container".to_string(),
     ]
 }

@@ -533,4 +533,12 @@ mod tests {
         assert!(stored.get("preset").is_none());
         assert!(stored["recordedAt"].is_i64());
     }
+
+    #[test]
+    fn container_guidance_retries_with_update_not_register() {
+        let guidance = container_stdio_guidance().join("\n");
+        assert!(guidance.contains("tool__updateServer"));
+        assert!(guidance.contains("then tool__verifyServer"));
+        assert!(guidance.contains("Do not call tool__registerServer again"));
+    }
 }
