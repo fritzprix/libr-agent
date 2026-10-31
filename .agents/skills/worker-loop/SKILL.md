@@ -93,7 +93,7 @@ python3 .agents/skills/worker-loop/scripts/issue_candidates.py
 gh issue list --state open --limit 30 --json number,title,labels,body,assignees
 ```
 
-Candidates come pre-ranked. The hint fields (`umbrellaHint`, `blockedHint`, `refsOpenPRs`, `externalRefs`) are reading signals, never skip reasons: read full body with `gh issue view N` before skipping. Pick the first candidate issue that is:
+Candidates come pre-ranked. Issues labeled `auto:producer` (filed by `producer-loop`) are excluded until a human adds the `approved` label; `validated` alone is not enough. The hint fields (`umbrellaHint`, `blockedHint`, `refsOpenPRs`, `externalRefs`) are reading signals, never skip reasons: read full body with `gh issue view N` before skipping. Pick the first candidate issue that is:
 - **Self-contained**: not an umbrella/epic.
 - **Unblocked**: `refsOpenPRs` means using a stacked PR (branch from that PR head, set base to that branch, write `Depends on #N` in the body); `externalRefs` means waiting on upstream only if body explicitly says so.
 - **Decided**: owner `Decision` or recommendation present. Use `needsUser` only when options are given with no recommendation and choice alters implementation.

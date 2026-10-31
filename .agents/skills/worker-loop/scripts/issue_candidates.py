@@ -14,6 +14,9 @@ import subprocess
 import sys
 
 EXCLUDED_LABELS = {"wontfix", "duplicate", "invalid", "question"}
+# Issues filed by producer-loop need a human `approved` label; `validated` alone is not enough.
+PRODUCER_LABEL = "auto:producer"
+APPROVED_LABEL = "approved"
 DEPRIORITIZED_LABELS = {"backlog"}
 REF_PATTERN = re.compile(r"(?<![\w/])#(\d+)\b")
 EXTERNAL_REF_PATTERN = re.compile(r"\b[\w.-]+/[\w.-]+#\d+\b")
@@ -27,6 +30,26 @@ def gh(*args: str) -> str:
     if result.returncode != 0:
         sys.exit(f"gh {' '.join(args)} failed: {result.stderr.strip()}")
     return result.stdout
+
+
+def exclusion_reason(
+    number: int,
+    labels: set[str],
+    assignees: list[str],
+    me: str,
+    closing_pr: dict[int, list[int]],
+) -> str | None:
+    """Why an open issue is not a candidate, or None when it is."""
+    if labels & EXCLUDED_LABELS:
+        return f"label: {', '.join(sorted(labels & EXCLUDED_LABELS))}"
+    if PRODUCER_LABEL in labels and APPROVED_LABEL not in labels:
+        state = "validated" if "validated" in labels else "rejected" if "rejected" in labels else "not yet validated"
+        return f"{PRODUCER_LABEL} issue ({state}) waits for a human '{APPROVED_LABEL}' label"
+    if assignees and me not in assignees:
+        return f"assigned to {', '.join(assignees)}"
+    if number in closing_pr:
+        return f"closed by open PR #{', #'.join(map(str, closing_pr[number]))}"
+    return None
 
 
 def main() -> None:
@@ -65,13 +88,7 @@ def main() -> None:
         refs = sorted({int(n) for n in REF_PATTERN.findall(body)} - {number})
         checkboxes = re.findall(r"^\s*[-*] \[( |x|X)\]", body, re.M)
 
-        reason = None
-        if labels & EXCLUDED_LABELS:
-            reason = f"label: {', '.join(sorted(labels & EXCLUDED_LABELS))}"
-        elif assignees and me not in assignees:
-            reason = f"assigned to {', '.join(assignees)}"
-        elif number in closing_pr:
-            reason = f"closed by open PR #{', #'.join(map(str, closing_pr[number]))}"
+        reason = exclusion_reason(number, labels, assignees, me, closing_pr)
 
         entry = {
             "number": number,
