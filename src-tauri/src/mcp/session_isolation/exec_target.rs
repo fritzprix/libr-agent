@@ -81,7 +81,7 @@ pub fn runtime_missing_message(command: &str, image: &str) -> String {
          Install the runtime in the container with workspace__runShell and asRoot=true \
          (for example: apt-get update && apt-get install -y nodejs npm). \
          For an attached container, install it outside LibrAgent. \
-         Then register or verify the server again."
+         Then call tool__updateServer for the saved server, and then tool__verifyServer."
     )
 }
 
@@ -203,5 +203,7 @@ mod tests {
         assert!(message.contains("host path does not resolve"));
         assert!(message.contains("asRoot=true"));
         assert!(message.contains("attached container"));
+        assert!(message.contains("tool__updateServer"));
+        assert!(!message.contains("register or verify"));
     }
 }
