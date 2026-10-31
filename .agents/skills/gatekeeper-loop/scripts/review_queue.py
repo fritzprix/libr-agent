@@ -26,21 +26,47 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
 from pathlib import Path
 
 MAX_ROUNDS = 5
-MARKER = re.compile(r"<!--\s*(gatekeeper-loop|worker-loop):\s*(.*?)\s*-->")
+# Loop markers must appear at the very start of the comment (first non-whitespace line).
+# Quoted markers or mentions later in the comment are ignored.
+START_MARKER = re.compile(r"^\s*<!--\s*(gatekeeper-loop|worker-loop):\s*(.*?)\s*-->")
 FAILED = {"FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE"}
 PENDING = {"PENDING", "QUEUED", "IN_PROGRESS", "WAITING", "EXPECTED", "REQUESTED"}
-DEFAULT_STATE_FILE = Path(".libragent/work/gatekeeper-loop/state.json")
+PROTECTED_SKILL_PREFIXES = (
+    ".agents/skills/gatekeeper-loop/",
+    ".agents/skills/worker-loop/",
+)
 OWNER_ASSOCIATIONS = {"OWNER", "MEMBER", "COLLABORATOR"}
-OWN_SKILL_PREFIX = ".agents/skills/gatekeeper-loop/"
 SENSITIVE_PATH = re.compile(
     r"(shell[_-]?policy|tool[_-]?approval|permission|secret|credential|keychain|sandbox)", re.I
 )
+
+
+def get_default_state_file() -> Path:
+    env = os.environ.get("LOOP_STATE_DIR")
+    if env:
+        p = Path(env)
+        return (
+            p
+            if p.name == "state.json"
+            else (p if p.name == "gatekeeper-loop" else p / "gatekeeper-loop") / "state.json"
+        )
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--git-common-dir"],
+            capture_output=True, text=True, check=True
+        ).stdout.strip()
+        common = Path(out).resolve()
+        repo_root = common.parent if common.name == ".git" else common
+        return repo_root / ".libragent" / "work" / "gatekeeper-loop" / "state.json"
+    except Exception:
+        return Path(".libragent/work/gatekeeper-loop/state.json")
 
 
 def gh(*args: str) -> str:
@@ -65,7 +91,7 @@ def parse_markers(comments: list[dict], me: str) -> tuple[list[dict], list[dict]
     for c in comments:
         if (c.get("author") or {}).get("login") != me:
             continue
-        match = MARKER.search(c.get("body") or "")
+        match = START_MARKER.match(c.get("body") or "")
         if not match:
             continue
         fields = dict(kv.split("=", 1) for kv in match.group(2).split() if "=" in kv)
@@ -79,7 +105,7 @@ def owner_comments_after(comments: list[dict], me: str, since: str | None) -> li
     found = []
     for c in comments:
         login = (c.get("author") or {}).get("login") or ""
-        if login.endswith("[bot]") or MARKER.search(c.get("body") or ""):
+        if login.endswith("[bot]") or START_MARKER.match(c.get("body") or ""):
             continue
         if login != me and c.get("authorAssociation") not in OWNER_ASSOCIATIONS:
             continue
@@ -102,7 +128,7 @@ def git_is_ancestor(old: str, new: str) -> bool:
 
 
 def load_state(path: Path | None = None) -> dict:
-    state_path = path or DEFAULT_STATE_FILE
+    state_path = path or get_default_state_file()
     if state_path.is_file():
         try:
             return json.loads(state_path.read_text(encoding="utf-8"))
@@ -225,7 +251,7 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
 
     labels = sorted(label["name"] for label in pr.get("labels") or [])
     paths = [f["path"] for f in pr.get("files") or []]
-    own_skill = any(p.startswith(OWN_SKILL_PREFIX) for p in paths)
+    own_skill = any(p.startswith(PROTECTED_SKILL_PREFIXES) for p in paths)
     sensitive = sorted(p for p in paths if SENSITIVE_PATH.search(p))
 
     status, reason, priority = classify(
@@ -246,7 +272,7 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
         owner_comment=bool(owner),
     )
     if own_skill:
-        status, reason, priority = "human-only", "changes the gatekeeper's own skill; left to the human", 9
+        status, reason, priority = "human-only", "changes loop skill files; left to the human", 9
 
     if status != "review" or not reviewed_head or reviewed_head == head:
         review_mode = "full" if status == "review" and not reviewed_head else "incremental"
@@ -285,7 +311,7 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pr", type=int, help="Only this PR number")
-    parser.add_argument("--state-file", type=Path, default=DEFAULT_STATE_FILE, help="Path to state.json")
+    parser.add_argument("--state-file", type=Path, default=None, help="Path to state.json")
     args = parser.parse_args()
 
     state = load_state(args.state_file)

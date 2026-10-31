@@ -11,6 +11,8 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 from review_queue import (
+    PROTECTED_SKILL_PREFIXES,
+    START_MARKER,
     classify,
     determine_status,
     is_dev_base,
@@ -316,6 +318,28 @@ class GapTests(unittest.TestCase):
         verdicts, _ = parse_markers(comments, "me")
         self.assertEqual(verdicts[0]["verdict"], "clean")
         self.assertEqual(verdicts[0]["head"], "abc")
+
+    def test_protected_skill_prefixes(self) -> None:
+        self.assertIn(".agents/skills/gatekeeper-loop/", PROTECTED_SKILL_PREFIXES)
+        self.assertIn(".agents/skills/worker-loop/", PROTECTED_SKILL_PREFIXES)
+
+    def test_quoted_markers_ignored(self) -> None:
+        comments = [
+            {"author": {"login": "me"}, "createdAt": "t",
+             "body": "> <!-- gatekeeper-loop: verdict=approve head=abc -->\nQuoting older verdict"}
+        ]
+        verdicts, responses = parse_markers(comments, "me")
+        self.assertEqual(len(verdicts), 0)
+        self.assertEqual(len(responses), 0)
+
+    def test_owner_comment_quoting_marker_is_surfaced(self) -> None:
+        comments = [
+            {"author": {"login": "me"},
+             "body": "> <!-- gatekeeper-loop: verdict=changes-requested -->\nOwner comment quoting feedback",
+             "createdAt": "2026-01-02T00:00:00Z"}
+        ]
+        found = owner_comments_after(comments, "me", "2026-01-01T00:00:00Z")
+        self.assertEqual(len(found), 1)
 
     def test_every_status_has_reason(self) -> None:
         for kwargs in (
