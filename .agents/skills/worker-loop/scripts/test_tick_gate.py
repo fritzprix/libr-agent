@@ -43,6 +43,7 @@ class TickGateTest(unittest.TestCase):
         self.assertFalse(tick_gate.check_lock(self.lock_file))
 
     def test_stale_lock_by_ttl(self):
+        self.assertEqual(tick_gate.LOCK_TTL_SECONDS, 1800)
         # Create a lock file with timestamp older than TTL
         old_time = time.time() - (tick_gate.LOCK_TTL_SECONDS + 10)
         self.lock_file.write_text(json.dumps({"time": old_time, "pid": os.getpid()}))
@@ -111,6 +112,22 @@ class TickGateTest(unittest.TestCase):
         self.assertEqual(cm.exception.code, tick_gate.EXIT_RUN)
         saved = tick_gate.load_state(self.state_file)
         self.assertEqual(saved.get("lastFingerprint"), "new_fp_1234567890")
+
+    def test_update_and_unlock_combined(self):
+        tick_gate.acquire_lock(self.lock_file)
+        self.assertTrue(tick_gate.check_lock(self.lock_file))
+        state = {"current": None, "lastFingerprint": "old_fp"}
+        tick_gate.save_state(self.state_file, state)
+
+        with patch.object(tick_gate, "compute_fingerprint", return_value="new_fp_combined"), \
+             patch("sys.argv", ["tick_gate.py", "--state-file", str(self.state_file), "--update", "--unlock"]), \
+             self.assertRaises(SystemExit) as cm:
+            tick_gate.main()
+
+        self.assertEqual(cm.exception.code, tick_gate.EXIT_RUN)
+        saved = tick_gate.load_state(self.state_file)
+        self.assertEqual(saved.get("lastFingerprint"), "new_fp_combined")
+        self.assertFalse(tick_gate.check_lock(self.lock_file))
 
 
 if __name__ == "__main__":

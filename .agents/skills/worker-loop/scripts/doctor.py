@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -51,8 +52,17 @@ def check_network() -> bool:
             if resp.status == 200:
                 print("  [OK] Network: GitHub API reachable")
                 return True
+            if resp.status in (403, 429):
+                print(f"  [WARN] Network: GitHub API rate limited (HTTP {resp.status})")
+                return True
             print(f"  [FAIL] Network: HTTP status {resp.status}")
             return False
+    except urllib.error.HTTPError as e:
+        if e.code in (403, 429):
+            print(f"  [WARN] Network: GitHub API rate limited (HTTP {e.code})")
+            return True
+        print(f"  [FAIL] Network: HTTP error {e.code}")
+        return False
     except Exception as e:
         print(f"  [FAIL] Network unreachable: {e}")
         return False

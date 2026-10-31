@@ -32,8 +32,8 @@ EXIT_NOOP = 1
 EXIT_BUSY = 2
 EXIT_ERROR = 3
 
-# Lock TTL is 15 minutes, per issue #2418 (C3).
-LOCK_TTL_SECONDS = 900
+# Lock TTL is 30 minutes; ticks with Rust builds can exceed 15 minutes.
+LOCK_TTL_SECONDS = 1800
 
 # 30 candidates covers active queue without query bloat; matches worker-loop Step 2 fallback limit.
 ISSUE_LIMIT = 30
@@ -233,24 +233,26 @@ def main() -> None:
     state_path = args.state_file or default_state_path()
     lock_path = state_path.parent / "tick.lock"
 
-    if args.unlock:
-        release_lock(lock_path)
-        print("UNLOCKED")
-        sys.exit(EXIT_RUN)
-
-    if check_lock(lock_path):
-        print("BUSY (tick in progress)")
-        sys.exit(EXIT_BUSY)
-
-    state = load_state(state_path)
-
     try:
         if args.update:
+            state = load_state(state_path)
             fp = compute_fingerprint()
             state["lastFingerprint"] = fp
             save_state(state_path, state)
             print(f"UPDATED: {fp[:12]}")
+
+        if args.unlock:
+            release_lock(lock_path)
+            print("UNLOCKED")
+
+        if args.update or args.unlock:
             sys.exit(EXIT_RUN)
+
+        if check_lock(lock_path):
+            print("BUSY (tick in progress)")
+            sys.exit(EXIT_BUSY)
+
+        state = load_state(state_path)
 
         # If currently implementing an issue or branch, always run
         if state.get("current"):

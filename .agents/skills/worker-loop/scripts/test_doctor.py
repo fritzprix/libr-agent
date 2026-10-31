@@ -36,6 +36,21 @@ class DoctorTest(unittest.TestCase):
         mock_urlopen.side_effect = Exception("network unreachable")
         self.assertFalse(doctor.check_network())
 
+    @patch("doctor.urllib.request.urlopen")
+    def test_check_network_rate_limit_403(self, mock_urlopen):
+        mock_urlopen.side_effect = doctor.urllib.error.HTTPError("https://api.github.com", 403, "rate limit", {}, None)
+        self.assertTrue(doctor.check_network())
+
+    @patch("doctor.urllib.request.urlopen")
+    def test_check_network_rate_limit_429(self, mock_urlopen):
+        mock_urlopen.side_effect = doctor.urllib.error.HTTPError("https://api.github.com", 429, "too many requests", {}, None)
+        self.assertTrue(doctor.check_network())
+
+    @patch("doctor.urllib.request.urlopen")
+    def test_check_network_http_500_failure(self, mock_urlopen):
+        mock_urlopen.side_effect = doctor.urllib.error.HTTPError("https://api.github.com", 500, "internal server error", {}, None)
+        self.assertFalse(doctor.check_network())
+
     @patch("doctor.subprocess.run")
     def test_check_push_permission_success(self, mock_run):
         mock_run.return_value = MagicMock(returncode=0, stderr="")
