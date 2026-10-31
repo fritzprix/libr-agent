@@ -811,8 +811,10 @@ mod tests {
         });
         // The promotion clones the transition lock under the same read lock in which it reads
         // `Queued`, and keeps the clone while it waits: one more reference shows both.
+        // Only a limit that stops a hang; the promotion normally waits after a few yields.
+        const PROMOTION_WAIT_LIMIT: std::time::Duration = std::time::Duration::from_secs(5);
         let references_before = Arc::strong_count(&transition_lock);
-        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        tokio::time::timeout(PROMOTION_WAIT_LIMIT, async {
             while Arc::strong_count(&transition_lock) == references_before {
                 tokio::task::yield_now().await;
             }
