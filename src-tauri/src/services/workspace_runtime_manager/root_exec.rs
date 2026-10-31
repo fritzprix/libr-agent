@@ -88,22 +88,44 @@ impl RootExecLease {
         if uid == "0" {
             return Ok(());
         }
-        let stop_args = stop_foreign_processes_args(&self.container, &uid);
-        docker_output_slice(&as_str_args(&stop_args)).await?;
+        let container = self.container.as_str();
+        let stop = async {
+            let stop_args = stop_foreign_processes_args(container, &uid);
+            docker_output_slice(&as_str_args(&stop_args))
+                .await
+                .map(|_| ())
+        };
+        let restore = async {
+            let mounts = docker_rw_mount_destinations(container).await?;
+            if mounts.is_empty() {
+                return Ok(());
+            }
+            let restore_args = restore_mounts_args(container, &uid, &gid, &mounts);
+            docker_output_slice(&as_str_args(&restore_args))
+                .await
+                .map(|_| ())
+        };
+        stop_then_restore(stop, restore).await
+    }
+}
 
-        let mounts = docker_rw_mount_destinations(&self.container).await?;
-        if mounts.is_empty() {
-            return Ok(());
-        }
-        let restore_args = restore_mounts_args(&self.container, &uid, &gid, &mounts);
-        docker_output_slice(&as_str_args(&restore_args))
-            .await
-            .map(|_| ())
-            .map_err(|error| {
-                WorkspaceRuntimeError::Io(format!(
-                    "Could not give the workspace back to the host user after the root command: {error}"
-                ))
-            })
+/// Runs `restore` also when `stop` fails: a root command can leave root-owned or setuid files in
+/// the workspace whether or not its processes could be stopped. A restore error comes first,
+/// because it leaves the host exposed.
+async fn stop_then_restore(
+    stop: impl std::future::Future<Output = RuntimeResult<()>>,
+    restore: impl std::future::Future<Output = RuntimeResult<()>>,
+) -> RuntimeResult<()> {
+    let stop_result = stop.await;
+    let restore_result = restore.await;
+    match (stop_result, restore_result) {
+        (_, Err(error)) => Err(WorkspaceRuntimeError::Io(format!(
+            "Could not give the workspace back to the host user after the root command: {error}"
+        ))),
+        (Err(error), Ok(())) => Err(WorkspaceRuntimeError::Io(format!(
+            "Could not stop the processes of the root command: {error}"
+        ))),
+        (Ok(()), Ok(())) => Ok(()),
     }
 }
 
@@ -275,6 +297,50 @@ mod tests {
         ));
         drop(first);
         assert!(WorkspaceRuntimeManager::begin_root_exec(&session).is_ok());
+    }
+
+    #[tokio::test]
+    async fn restore_runs_after_a_failed_stop() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let restored = AtomicBool::new(false);
+        let result = stop_then_restore(
+            async { Err(WorkspaceRuntimeError::Io("stop failed".to_string())) },
+            async {
+                restored.store(true, Ordering::SeqCst);
+                Ok(())
+            },
+        )
+        .await;
+        assert!(
+            restored.load(Ordering::SeqCst),
+            "restore must run after a failed stop"
+        );
+        let error = result
+            .expect_err("a failed stop is still reported")
+            .to_string();
+        assert!(error.contains("stop the processes"), "{error}");
+        assert!(error.contains("stop failed"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn a_restore_error_is_reported_before_a_stop_error() {
+        let error = stop_then_restore(
+            async { Err(WorkspaceRuntimeError::Io("stop failed".to_string())) },
+            async { Err(WorkspaceRuntimeError::Io("chown failed".to_string())) },
+        )
+        .await
+        .expect_err("restore failed")
+        .to_string();
+        assert!(error.contains("give the workspace back"), "{error}");
+        assert!(error.contains("chown failed"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn stop_and_restore_success_is_ok() {
+        assert!(stop_then_restore(async { Ok(()) }, async { Ok(()) })
+            .await
+            .is_ok());
     }
 
     #[cfg(unix)]
