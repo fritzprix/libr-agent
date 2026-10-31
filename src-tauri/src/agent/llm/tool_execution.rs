@@ -595,7 +595,8 @@ pub async fn execute_tool_calls(
         let root_refusal = {
             let active = active_sessions.read().await;
             crate::agent::tool_approvals::root_execution_refusal(
-                &policy_decision,
+                tool_name,
+                &args,
                 active.get(&session_id).map(|session| &session.metadata),
             )
         };
@@ -619,7 +620,6 @@ pub async fn execute_tool_calls(
         ) {
             let approval_kind = match &policy_decision {
                 ToolExecutionPolicyDecision::RequireHardApproval(_) => PendingApprovalKind::Hard,
-                ToolExecutionPolicyDecision::RequireApproval(_) => PendingApprovalKind::Standard,
                 _ => PendingApprovalKind::Standard,
             };
             match context
