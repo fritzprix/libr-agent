@@ -407,6 +407,22 @@ fn args_parse_error_result(
     }
 }
 
+fn tool_result_from_mcp_result(result: crate::mcp::types::MCPResult) -> ToolExecutionResult {
+    let is_error = result.indicates_error();
+    let structured_content = result.structured_content.clone();
+    ToolExecutionResult {
+        success: !is_error,
+        content: String::new(),
+        structured_content,
+        error: None,
+        is_error,
+        mcp_content: crate::agent::tools::convert_mcp_response_content(Some(
+            crate::mcp::types::MCPResponseResult::ToolCall(result),
+        )),
+        cancellation: None,
+    }
+}
+
 fn error_result(message: impl Into<String>) -> ToolExecutionResult {
     let message = message.into();
     ToolExecutionResult {
@@ -569,6 +585,26 @@ pub async fn execute_tool_calls(
                     tool_call_id,
                     error_result(blocked.message.clone()),
                     "policy-blocked tool execution",
+                )
+                .await;
+            index += 1;
+            continue;
+        }
+
+        // Only the in-memory metadata is read: a session that is not loaded gets the host refusal.
+        let root_refusal = {
+            let active = active_sessions.read().await;
+            crate::agent::tool_approvals::root_execution_refusal(
+                &policy_decision,
+                active.get(&session_id).map(|session| &session.metadata),
+            )
+        };
+        if let Some(refusal) = root_refusal {
+            context
+                .continue_after_tool(
+                    tool_call_id,
+                    tool_result_from_mcp_result(refusal),
+                    "root execution unavailable",
                 )
                 .await;
             index += 1;

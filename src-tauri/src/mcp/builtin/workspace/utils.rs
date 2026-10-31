@@ -266,6 +266,34 @@ pub fn root_exec_blocker_for(
     }
 }
 
+/// The tool result for an `asRoot` call that this session can never run.
+pub fn root_exec_unavailable_result(
+    blocker: crate::services::RootExecBlocker,
+) -> crate::mcp::types::MCPResult {
+    use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
+    use crate::services::RootExecBlocker;
+
+    let guidance = match blocker {
+        RootExecBlocker::HostSession => vec![
+            "Run the command again without asRoot".to_string(),
+            "LibrAgent does not get root on the host: ask the user to install system packages"
+                .to_string(),
+        ],
+        RootExecBlocker::AttachedContainer => vec![
+            "Run the command again without asRoot".to_string(),
+            "Ask the user to install system packages in the attached container outside LibrAgent (for example with docker exec -u 0)"
+                .to_string(),
+        ],
+    };
+    guided_error(
+        ErrorCategory::PermissionDenied,
+        blocker.message(),
+        ToolGroup::Workspace,
+    )
+    .guidance(guidance)
+    .to_mcp_result()
+}
+
 /// Takes the root-exec lock of the session container (see [`crate::services::RootExecLease`]).
 pub async fn begin_root_exec(session_id: &str) -> Result<crate::services::RootExecLease, String> {
     use crate::repositories::session_repository::SessionRepository;

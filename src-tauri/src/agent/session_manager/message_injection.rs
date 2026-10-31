@@ -133,15 +133,21 @@ pub async fn inject_messages(
             }
 
             // Transition status to Busy (bypasses concurrency gate block since permit is held)
-            if let Err(e) = crate::agent::lifecycle::update_session_status(
+            let promoted = crate::agent::lifecycle::promote_queued_session_to_busy(
                 &session_repo,
                 &active_sessions,
                 &app_handle,
                 &session_id_clone,
-                SessionStatus::Busy,
             )
-            .await
-            {
+            .await;
+            if let Ok(false) = promoted {
+                log::info!(
+                    "Session {} left Queued before its injected workflow started. Not starting it.",
+                    session_id_clone
+                );
+                return;
+            }
+            if let Err(e) = promoted {
                 log::error!(
                     "Failed to transition injected session {} to Busy: {}",
                     session_id_clone,
