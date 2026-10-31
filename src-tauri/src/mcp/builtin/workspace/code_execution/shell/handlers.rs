@@ -244,7 +244,7 @@ impl WorkspaceServer {
         let run_as_root = crate::services::as_root_requested(&args);
         if run_as_root {
             if let Some(blocker) = utils::root_exec_blocker(session_id).await {
-                return Ok(root_exec_unavailable_result(blocker));
+                return Ok(utils::root_exec_unavailable_result(blocker));
             }
         }
 
@@ -458,30 +458,6 @@ impl WorkspaceServer {
             .to_mcp_result(),
         )
     }
-}
-
-fn root_exec_unavailable_result(blocker: crate::services::RootExecBlocker) -> MCPResult {
-    use crate::services::RootExecBlocker;
-
-    let guidance = match blocker {
-        RootExecBlocker::HostSession => vec![
-            "Run the command again without asRoot".to_string(),
-            "LibrAgent does not get root on the host: ask the user to install system packages"
-                .to_string(),
-        ],
-        RootExecBlocker::AttachedContainer => vec![
-            "Run the command again without asRoot".to_string(),
-            "Ask the user to install system packages in the attached container outside LibrAgent (for example with docker exec -u 0)"
-                .to_string(),
-        ],
-    };
-    guided_error(
-        ErrorCategory::PermissionDenied,
-        blocker.message(),
-        ToolGroup::Workspace,
-    )
-    .guidance(guidance)
-    .to_mcp_result()
 }
 
 /// Installs skills that `skill.py deploy` staged in the workspace outbox (Docker sessions).
@@ -722,7 +698,7 @@ mod tests {
             );
             let blocker = utils::root_exec_blocker_for(Some(&session))
                 .expect("an attached container must refuse asRoot");
-            let text = format!("{:?}", root_exec_unavailable_result(blocker));
+            let text = format!("{:?}", utils::root_exec_unavailable_result(blocker));
             assert!(
                 text.contains(crate::services::RootExecBlocker::AttachedContainer.message()),
                 "asRoot={as_root}: {text}"

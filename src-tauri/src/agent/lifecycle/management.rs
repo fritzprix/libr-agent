@@ -264,9 +264,10 @@ pub async fn update_session_status_with_reason(
         session_id,
         status,
         Some(reason),
-        false,
+        TransitionGuard::Always,
     )
     .await
+    .map(|_| ())
 }
 
 /// Sets `Error` with `reason` for a session that may not be loaded in memory (for example when
@@ -311,9 +312,10 @@ pub async fn record_session_error_with_dispatcher(
         session_id,
         SessionStatus::Error,
         Some(reason),
-        true,
+        TransitionGuard::UnlessBusy,
     )
     .await
+    .map(|_| ())
 }
 
 fn emit_unloaded_session_error(
@@ -321,13 +323,7 @@ fn emit_unloaded_session_error(
     session_id: &str,
     reason: &str,
 ) -> Result<(), String> {
-    match crate::state::try_get_session_bus() {
-        Some(bus) => bus.notify_status_change(session_id),
-        None => log::warn!(
-            "SessionBus not initialized; status waiters for session {} are not woken",
-            session_id
-        ),
-    }
+    wake_status_waiters(session_id);
     dispatcher.emit_agent_event(AgentEvent::StatusChanged {
         session_id: session_id.to_string(),
         status: SessionStatus::Error,
@@ -349,13 +345,70 @@ pub async fn update_session_status_with_dispatcher(
         session_id,
         status,
         None,
-        false,
+        TransitionGuard::Always,
+    )
+    .await
+    .map(|_| ())
+}
+
+/// Moves a `Queued` session to `Busy` for the task that holds its active agent permit. Returns
+/// `Ok(false)` and drops that permit when the session is no longer `Queued` (for example a failed
+/// resume set `Error` meanwhile); its status and reason stay, and the work must not start.
+pub async fn promote_queued_session_to_busy(
+    session_repo: &Arc<dyn SessionRepository>,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    app_handle: &AppHandle,
+    session_id: &str,
+) -> Result<bool, String> {
+    let dispatcher = TauriEventDispatcher::new(app_handle.clone());
+    promote_queued_session_to_busy_with_dispatcher(
+        session_repo,
+        active_sessions,
+        &dispatcher,
+        session_id,
     )
     .await
 }
 
-/// With `skip_if_busy`, a session that is `Busy` once the transition lock is held keeps its
-/// status and permit, and the call returns `Ok(())`.
+pub async fn promote_queued_session_to_busy_with_dispatcher(
+    session_repo: &Arc<dyn SessionRepository>,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    dispatcher: &dyn AgentEventDispatcher,
+    session_id: &str,
+) -> Result<bool, String> {
+    let promoted = apply_session_status(
+        session_repo,
+        active_sessions,
+        dispatcher,
+        session_id,
+        SessionStatus::Busy,
+        None,
+        TransitionGuard::OnlyFromQueued,
+    )
+    .await?;
+    if !promoted {
+        let mut active = active_sessions.write().await;
+        if let Some(session) = active.get_mut(session_id) {
+            if session.metadata.status != SessionStatus::Busy {
+                session.active_permit.take();
+            }
+        }
+    }
+    Ok(promoted)
+}
+
+/// Condition that [`apply_session_status`] checks under the session's transition lock.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TransitionGuard {
+    Always,
+    /// A `Busy` session keeps its status and permit.
+    UnlessBusy,
+    /// Only a `Queued` session changes.
+    OnlyFromQueued,
+}
+
+/// Returns `Ok(false)` without a change when `guard` does not allow it for the status that the
+/// session has once the transition lock is held.
 async fn apply_session_status(
     session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
@@ -363,8 +416,8 @@ async fn apply_session_status(
     session_id: &str,
     status: SessionStatus,
     reason: Option<&str>,
-    skip_if_busy: bool,
-) -> Result<(), String> {
+    guard: TransitionGuard,
+) -> Result<bool, String> {
     // Acquire concurrency permits OUTSIDE `transition_lock`. Waiting on a full
     // gate while holding the lock deadlocks cancel/clear for the same session
     // (and blocks every other status transition for it).
@@ -408,14 +461,20 @@ async fn apply_session_status(
             initial_status
         }
     };
-    if skip_if_busy && prev_status == SessionStatus::Busy {
+    let allowed = match guard {
+        TransitionGuard::Always => true,
+        TransitionGuard::UnlessBusy => prev_status != SessionStatus::Busy,
+        TransitionGuard::OnlyFromQueued => prev_status == SessionStatus::Queued,
+    };
+    if !allowed {
         *transition_handle.write().await = None;
         log::info!(
-            "Session {} is running; not changing its status to {:?}",
+            "Session {} is {:?}; not changing its status to {:?}",
             session_id,
+            prev_status,
             status
         );
-        return Ok(());
+        return Ok(false);
     }
     let is_prev_busy = prev_status == SessionStatus::Busy;
     let is_next_busy = status == SessionStatus::Busy;
@@ -494,7 +553,7 @@ async fn apply_session_status(
     drop(active); // Release write lock before waking waiters.
 
     // SP1: Wake any tasks sleeping on this session's status change (e.g. awaitAgent).
-    crate::state::get_session_bus().notify_status_change(session_id);
+    wake_status_waiters(session_id);
 
     // Emit status changed event
     let event = AgentEvent::StatusChanged {
@@ -504,7 +563,17 @@ async fn apply_session_status(
     };
     dispatcher.emit_agent_event(event)?;
 
-    Ok(())
+    Ok(true)
+}
+
+fn wake_status_waiters(session_id: &str) {
+    match crate::state::try_get_session_bus() {
+        Some(bus) => bus.notify_status_change(session_id),
+        None => log::warn!(
+            "SessionBus not initialized; status waiters for session {} are not woken",
+            session_id
+        ),
+    }
 }
 
 #[cfg(test)]
@@ -665,7 +734,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn skip_if_busy_leaves_a_session_that_is_busy_under_the_transition_lock() {
+    async fn unless_busy_leaves_a_session_that_is_busy_under_the_transition_lock() {
         let gate = crate::agent::concurrency::ConcurrencyGate::new(1, 1, 1, 1);
         let (repo, active_sessions) = running_session("busy-session", &gate).await;
         let dispatcher = RecordingDispatcher::default();
@@ -677,11 +746,129 @@ mod tests {
             "busy-session",
             SessionStatus::Error,
             Some("No such container: libr-gone"),
-            true,
+            TransitionGuard::UnlessBusy,
         )
         .await
         .expect("apply status");
 
         assert_still_running(&repo, &active_sessions, &dispatcher, &gate, "busy-session").await;
+    }
+
+    async fn queued_session_holding_its_permit(
+        session_id: &str,
+        gate: &crate::agent::concurrency::ConcurrencyGate,
+    ) -> (
+        Arc<dyn SessionRepository>,
+        Arc<RwLock<HashMap<String, AgentSession>>>,
+    ) {
+        let repo: Arc<dyn SessionRepository> = Arc::new(InMemorySessionRepository::new());
+        let session = SessionMetadata {
+            status: SessionStatus::Queued,
+            ..SessionMetadata::test_fixture(session_id)
+        };
+        repo.upsert_session(&session).await.expect("upsert");
+        let mut loaded = AgentSession::new(session, Arc::new(ContextRegistry::new()), None);
+        // The start task has passed its `Queued` check and stored its permit.
+        loaded.active_permit = Some(gate.acquire_active_agent().await.expect("permit"));
+        let active_sessions = Arc::new(RwLock::new(HashMap::from([(
+            session_id.to_string(),
+            loaded,
+        )])));
+        (repo, active_sessions)
+    }
+
+    #[tokio::test]
+    async fn an_error_written_after_the_queued_check_is_not_replaced_by_busy() {
+        let gate = crate::agent::concurrency::ConcurrencyGate::new(1, 1, 1, 1);
+        let (repo, active_sessions) =
+            queued_session_holding_its_permit("queued-session", &gate).await;
+        let reason = "Docker runtime unavailable: No such container: libr-gone";
+
+        // A failed resume writes Error between the start task's check and its Busy write.
+        repo.update_status("queued-session", SessionStatus::Error, Some(reason))
+            .await
+            .expect("write error");
+        {
+            let mut active = active_sessions.write().await;
+            let session = active.get_mut("queued-session").expect("loaded session");
+            session.metadata.status = SessionStatus::Error;
+            session.metadata.status_reason = Some(reason.to_string());
+        }
+
+        let dispatcher = RecordingDispatcher::default();
+        let promoted = promote_queued_session_to_busy_with_dispatcher(
+            &repo,
+            &active_sessions,
+            &dispatcher,
+            "queued-session",
+        )
+        .await
+        .expect("promote");
+
+        assert!(!promoted, "the work must not start");
+        let stored = repo
+            .get_session("queued-session")
+            .await
+            .expect("get")
+            .expect("session");
+        assert_eq!(stored.status, SessionStatus::Error);
+        assert_eq!(stored.status_reason.as_deref(), Some(reason));
+        {
+            let active = active_sessions.read().await;
+            let loaded = active.get("queued-session").expect("loaded session");
+            assert_eq!(loaded.metadata.status, SessionStatus::Error);
+            assert_eq!(loaded.metadata.status_reason.as_deref(), Some(reason));
+            assert!(!loaded.is_running);
+            assert!(
+                loaded.active_permit.is_none(),
+                "the start task's permit is given back"
+            );
+            assert!(loaded.status_transition.read().await.is_none());
+        }
+        assert!(dispatcher.events.lock().expect("event lock").is_empty());
+        let freed = tokio::time::timeout(
+            std::time::Duration::from_millis(20),
+            gate.acquire_active_agent(),
+        )
+        .await;
+        assert!(freed.is_ok(), "the gate slot must be free again");
+    }
+
+    #[tokio::test]
+    async fn a_queued_session_is_promoted_to_busy_with_its_permit() {
+        let gate = crate::agent::concurrency::ConcurrencyGate::new(1, 1, 1, 1);
+        let (repo, active_sessions) =
+            queued_session_holding_its_permit("promoted-session", &gate).await;
+        let dispatcher = RecordingDispatcher::default();
+
+        let promoted = promote_queued_session_to_busy_with_dispatcher(
+            &repo,
+            &active_sessions,
+            &dispatcher,
+            "promoted-session",
+        )
+        .await
+        .expect("promote");
+
+        assert!(promoted);
+        let stored = repo
+            .get_session("promoted-session")
+            .await
+            .expect("get")
+            .expect("session");
+        assert_eq!(stored.status, SessionStatus::Busy);
+        let active = active_sessions.read().await;
+        let loaded = active.get("promoted-session").expect("loaded session");
+        assert_eq!(loaded.metadata.status, SessionStatus::Busy);
+        assert!(loaded.is_running);
+        assert!(loaded.active_permit.is_some());
+        let events = dispatcher.events.lock().expect("event lock").clone();
+        assert!(matches!(
+            events.as_slice(),
+            [AgentEvent::StatusChanged {
+                status: SessionStatus::Busy,
+                ..
+            }]
+        ));
     }
 }

@@ -94,6 +94,23 @@ pub fn requests_root_execution(tool_name: &str, args: &serde_json::Value) -> boo
 pub const ROOT_EXECUTION_NEEDS_APPROVAL: &str =
     "runShell with asRoot needs the user's approval in a LibrAgent agent session; this entry point cannot ask for it";
 
+/// The refusal for a root request that `session` can never run (a host session or an attached
+/// container), so the user is not asked to approve it. `None` when `decision` does not ask for
+/// root or the session uses a LibrAgent-managed container.
+pub fn root_execution_refusal(
+    decision: &ToolExecutionPolicyDecision,
+    session: Option<&crate::repositories::SessionMetadata>,
+) -> Option<crate::mcp::types::MCPResult> {
+    if !matches!(
+        decision,
+        ToolExecutionPolicyDecision::RequireRootApproval(_)
+    ) {
+        return None;
+    }
+    crate::mcp::builtin::workspace::utils::root_exec_blocker_for(session)
+        .map(crate::mcp::builtin::workspace::utils::root_exec_unavailable_result)
+}
+
 pub async fn is_approval_required(tool_name: &str) -> bool {
     let config = get_tool_approvals_config().await;
     requires_approval_by_config(config, tool_name)
@@ -773,6 +790,63 @@ mod tests {
             );
             assert!(approval_request_for_runtime(&decision, true, true).is_some());
         }
+    }
+
+    #[tokio::test]
+    async fn a_root_command_is_refused_without_a_card_where_root_cannot_run() {
+        use crate::models::workspace_isolation::{DockerWorkspaceConfig, WorkspaceIsolationMode};
+        use crate::repositories::SessionMetadata;
+        use crate::services::RootExecBlocker;
+
+        let host = SessionMetadata::test_fixture("root-refusal-host");
+        let attach = SessionMetadata {
+            workspace_isolation: WorkspaceIsolationMode::Docker,
+            docker_config: Some(DockerWorkspaceConfig {
+                attach_container: Some("someone-elses-container".to_string()),
+                ..DockerWorkspaceConfig::default()
+            }),
+            ..SessionMetadata::test_fixture("root-refusal-attach")
+        };
+        let managed = SessionMetadata {
+            workspace_isolation: WorkspaceIsolationMode::Docker,
+            docker_config: Some(DockerWorkspaceConfig::default()),
+            ..SessionMetadata::test_fixture("root-refusal-managed")
+        };
+
+        for as_root in [serde_json::json!(true), serde_json::json!("true")] {
+            let decision = evaluate_tool_execution_policy(
+                "workspace__runShell",
+                &serde_json::json!({ "command": "id -u", "asRoot": as_root }),
+            )
+            .await;
+            for (session, blocker) in [
+                (Some(&host), RootExecBlocker::HostSession),
+                (None, RootExecBlocker::HostSession),
+                (Some(&attach), RootExecBlocker::AttachedContainer),
+            ] {
+                let refusal = root_execution_refusal(&decision, session)
+                    .unwrap_or_else(|| panic!("asRoot={as_root} must be refused: {session:?}"));
+                assert!(refusal.indicates_error(), "asRoot={as_root}");
+                let text = format!("{refusal:?}");
+                assert!(text.contains(blocker.message()), "asRoot={as_root}: {text}");
+                assert!(
+                    text.contains("Run the command again without asRoot"),
+                    "asRoot={as_root}: {text}"
+                );
+            }
+            assert!(
+                root_execution_refusal(&decision, Some(&managed)).is_none(),
+                "a managed session must still ask for approval (asRoot={as_root})"
+            );
+            assert!(approval_request_for_runtime(&decision, false, false).is_some());
+        }
+
+        let plain = evaluate_tool_execution_policy(
+            "workspace__runShell",
+            &serde_json::json!({ "command": "id -u" }),
+        )
+        .await;
+        assert!(root_execution_refusal(&plain, Some(&host)).is_none());
     }
 
     #[tokio::test]
