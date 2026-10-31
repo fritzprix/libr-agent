@@ -809,10 +809,16 @@ mod tests {
                 .await
             }
         });
-        // The promotion has read `Queued` and now waits for the transition lock.
-        for _ in 0..10 {
-            tokio::task::yield_now().await;
-        }
+        // The promotion clones the transition lock under the same read lock in which it reads
+        // `Queued`, and keeps the clone while it waits: one more reference shows both.
+        let references_before = Arc::strong_count(&transition_lock);
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while Arc::strong_count(&transition_lock) == references_before {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("the promotion reads the status and waits for the transition lock");
         assert!(!promotion.is_finished());
 
         // A failed resume writes Error before the Busy write.
