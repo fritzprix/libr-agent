@@ -52,11 +52,8 @@ def get_default_state_file() -> Path:
     env = os.environ.get("LOOP_STATE_DIR")
     if env:
         p = Path(env)
-        return (
-            p
-            if p.name == "state.json"
-            else (p if p.name == "gatekeeper-loop" else p / "gatekeeper-loop") / "state.json"
-        )
+        base = p.parent if p.name == "state.json" else p
+        return (base if base.name == "gatekeeper-loop" else base / "gatekeeper-loop") / "state.json"
     try:
         out = subprocess.run(
             ["git", "rev-parse", "--git-common-dir"],
