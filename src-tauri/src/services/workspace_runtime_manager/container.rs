@@ -14,8 +14,8 @@ use super::docker_cli::{
 };
 use super::error::{RuntimeResult, WorkspaceRuntimeError};
 use super::session_config::{
-    build_docker_volume_args, build_skill_volume_args, docker_mount_path, session_docker_workdir,
-    session_is_attach,
+    build_docker_volume_args, build_skill_volume_args, docker_mount_path, refuse_home_workspace,
+    session_docker_workdir, session_is_attach,
 };
 use super::DockerStepReporter;
 
@@ -78,6 +78,8 @@ pub(super) async fn ensure_bash_image_contract(
         }
         return ensure_supported_shell(session_id, container_name).await;
     }
+
+    refuse_home_workspace(host_workspace, dirs::home_dir().as_deref())?;
 
     let mut container_exists = docker_container_exists(container_name).await?;
     if container_exists {
