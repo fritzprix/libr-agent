@@ -66,12 +66,33 @@ pub(super) const WAKE_HOST_LABEL: &str = "com.libragent.wake_host";
 /// Label set on containers created with the root-exec hardening (see `hardening_run_args`).
 pub(super) const ROOT_HARDENING_LABEL: &str = "com.libragent.root_hardening";
 
+/// Value of [`ROOT_HARDENING_LABEL`] for the current hardening. Increase it when
+/// `hardening_run_args` changes, so that older containers are recreated.
+pub(super) const ROOT_HARDENING_VERSION: &str = "2";
+
 /// True when the container carries `label=1`. Containers created before a label existed lack
 /// it and must be recreated.
 pub(super) async fn docker_container_has_label(
     container_name: &str,
     label: &str,
 ) -> RuntimeResult<bool> {
+    Ok(docker_container_label_value(container_name, label).await? == "1")
+}
+
+/// True when the container was created with the current root-exec hardening.
+pub(super) async fn docker_container_has_root_hardening(
+    container_name: &str,
+) -> RuntimeResult<bool> {
+    Ok(is_current_root_hardening(
+        &docker_container_label_value(container_name, ROOT_HARDENING_LABEL).await?,
+    ))
+}
+
+pub(super) fn is_current_root_hardening(label_value: &str) -> bool {
+    label_value == ROOT_HARDENING_VERSION
+}
+
+async fn docker_container_label_value(container_name: &str, label: &str) -> RuntimeResult<String> {
     let value = docker_output([
         "inspect",
         "-f",
@@ -79,7 +100,7 @@ pub(super) async fn docker_container_has_label(
         container_name,
     ])
     .await?;
-    Ok(value.trim() == "1")
+    Ok(value.trim().to_string())
 }
 
 /// Destinations of the container's read-write mounts, one per line of `docker inspect`.

@@ -2,7 +2,7 @@
 //!
 //! The container runs as the host user, and the workspace is a host bind mount. A root command
 //! can write there as host root: a root-owned setuid file in the workspace would give the host
-//! user root on the host. The container is created without `SETFCAP`/`MKNOD` and with
+//! user root on the host. The container is created without `SETFCAP`/`MKNOD`/`NET_RAW` and with
 //! `no-new-privileges` (see `container::hardening_run_args`). After each root command,
 //! [`RootExecLease::finish`] stops every process that is not the host user and gives the
 //! read-write mounts back to the host user: device nodes are deleted, setuid/setgid bits are
@@ -17,8 +17,8 @@ use tokio::sync::{Mutex, OwnedMutexGuard};
 use crate::repositories::SessionMetadata;
 
 use super::docker_cli::{
-    current_uid_gid, docker_container_has_label, docker_output_slice, docker_rw_mount_destinations,
-    run_docker_status, ROOT_HARDENING_LABEL,
+    current_uid_gid, docker_container_has_root_hardening, docker_output_slice,
+    docker_rw_mount_destinations, run_docker_status,
 };
 use super::error::{RuntimeResult, WorkspaceRuntimeError};
 use super::session_config::docker_container_name;
@@ -139,7 +139,7 @@ impl WorkspaceRuntimeManager {
 /// the cleanup tools must exist.
 pub(super) async fn verify_root_exec_ready(session: &SessionMetadata) -> RuntimeResult<()> {
     let container = docker_container_name(session)?;
-    if !docker_container_has_label(&container, ROOT_HARDENING_LABEL).await? {
+    if !docker_container_has_root_hardening(&container).await? {
         return Err(WorkspaceRuntimeError::InvalidConfig(format!(
             "Container '{container}' was created without the protection that asRoot needs. \
              Restart the session so that LibrAgent creates the container again."

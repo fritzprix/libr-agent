@@ -7,10 +7,13 @@ use crate::services::skill_service;
 use crate::session_isolation::{ShellType, CONTAINER_SYSTEM_SKILLS_DIR, CONTAINER_USER_SKILLS_DIR};
 use tokio::process::Command as AsyncCommand;
 
+#[cfg(test)]
+use super::docker_cli::is_current_root_hardening;
 use super::docker_cli::{
     apply_docker_cli_env, current_uid_gid, docker_container_exists, docker_container_has_label,
-    docker_container_running, run_docker_status, run_status_command, verify_container_label,
-    ROOT_HARDENING_LABEL, WAKE_HOST_LABEL,
+    docker_container_has_root_hardening, docker_container_running, run_docker_status,
+    run_status_command, verify_container_label, ROOT_HARDENING_LABEL, ROOT_HARDENING_VERSION,
+    WAKE_HOST_LABEL,
 };
 use super::error::{RuntimeResult, WorkspaceRuntimeError};
 use super::session_config::{
@@ -38,9 +41,10 @@ fn wake_host_run_args() -> [String; 3] {
 /// - `no-new-privileges`: a setuid file cannot give root to a later non-root command.
 /// - no `SETFCAP`: root cannot put file capabilities on a file in a host bind mount.
 /// - no `MKNOD`: root cannot create a device node in a host bind mount.
+/// - no `NET_RAW`: root cannot open raw sockets (packet crafting or sniffing on the host network).
 ///
 /// A setuid bit and root ownership are still possible; `RootExecLease::finish` removes them.
-pub(super) fn hardening_run_args() -> [String; 8] {
+pub(super) fn hardening_run_args() -> [String; 10] {
     [
         "--security-opt".to_string(),
         "no-new-privileges".to_string(),
@@ -48,8 +52,10 @@ pub(super) fn hardening_run_args() -> [String; 8] {
         "SETFCAP".to_string(),
         "--cap-drop".to_string(),
         "MKNOD".to_string(),
+        "--cap-drop".to_string(),
+        "NET_RAW".to_string(),
         "--label".to_string(),
-        format!("{ROOT_HARDENING_LABEL}=1"),
+        format!("{ROOT_HARDENING_LABEL}={ROOT_HARDENING_VERSION}"),
     ]
 }
 
@@ -83,10 +89,10 @@ pub(super) async fn ensure_bash_image_contract(
     if container_exists {
         verify_container_label(container_name, session_id).await?;
         if !docker_container_has_label(container_name, WAKE_HOST_LABEL).await?
-            || !docker_container_has_label(container_name, ROOT_HARDENING_LABEL).await?
+            || !docker_container_has_root_hardening(container_name).await?
         {
-            // Created before the host mapping (wake callbacks cannot reach the host) or before
-            // the root-exec hardening existed.
+            // Created before the host mapping (wake callbacks cannot reach the host) or with an
+            // older root-exec hardening.
             if let Some(reporter) = reporter {
                 reporter("Recreating container");
             }
@@ -403,7 +409,7 @@ mod wake_host_tests {
     }
 
     #[test]
-    fn hardening_blocks_new_privileges_file_capabilities_and_device_nodes() {
+    fn hardening_blocks_new_privileges_file_capabilities_device_nodes_and_raw_sockets() {
         assert_eq!(
             hardening_run_args(),
             [
@@ -413,10 +419,21 @@ mod wake_host_tests {
                 "SETFCAP",
                 "--cap-drop",
                 "MKNOD",
+                "--cap-drop",
+                "NET_RAW",
                 "--label",
-                "com.libragent.root_hardening=1"
+                "com.libragent.root_hardening=2"
             ]
         );
+    }
+
+    #[test]
+    fn a_container_with_an_older_or_no_hardening_label_is_recreated() {
+        assert!(is_current_root_hardening(ROOT_HARDENING_VERSION));
+        // "1": created before NET_RAW was dropped; "": created before the hardening existed.
+        for old in ["1", ""] {
+            assert!(!is_current_root_hardening(old), "{old:?}");
+        }
     }
 }
 
