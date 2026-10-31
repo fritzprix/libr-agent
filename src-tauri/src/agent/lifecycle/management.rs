@@ -376,7 +376,7 @@ pub async fn promote_queued_session_to_busy_with_dispatcher(
     dispatcher: &dyn AgentEventDispatcher,
     session_id: &str,
 ) -> Result<bool, String> {
-    let promoted = apply_session_status(
+    apply_session_status(
         session_repo,
         active_sessions,
         dispatcher,
@@ -385,16 +385,7 @@ pub async fn promote_queued_session_to_busy_with_dispatcher(
         None,
         TransitionGuard::OnlyFromQueued,
     )
-    .await?;
-    if !promoted {
-        let mut active = active_sessions.write().await;
-        if let Some(session) = active.get_mut(session_id) {
-            if session.metadata.status != SessionStatus::Busy {
-                session.active_permit.take();
-            }
-        }
-    }
-    Ok(promoted)
+    .await
 }
 
 /// Condition that [`apply_session_status`] checks under the session's transition lock.
@@ -403,7 +394,8 @@ enum TransitionGuard {
     Always,
     /// A `Busy` session keeps its status and permit.
     UnlessBusy,
-    /// Only a `Queued` session changes.
+    /// Only a `Queued` session changes. Otherwise the permit of a session that is not `Busy`
+    /// is given back.
     OnlyFromQueued,
 }
 
@@ -467,6 +459,14 @@ async fn apply_session_status(
         TransitionGuard::OnlyFromQueued => prev_status == SessionStatus::Queued,
     };
     if !allowed {
+        if guard == TransitionGuard::OnlyFromQueued && prev_status != SessionStatus::Busy {
+            // Take the permit while the transition lock is held: the status cannot go back to
+            // `Queued` meanwhile, and a start task stores a permit only on a `Queued` session.
+            let mut active = active_sessions.write().await;
+            if let Some(session) = active.get_mut(session_id) {
+                session.active_permit.take();
+            }
+        }
         *transition_handle.write().await = None;
         log::info!(
             "Session {} is {:?}; not changing its status to {:?}",
@@ -783,8 +783,39 @@ mod tests {
         let (repo, active_sessions) =
             queued_session_holding_its_permit("queued-session", &gate).await;
         let reason = "Docker runtime unavailable: No such container: libr-gone";
+        let transition_lock = {
+            let active = active_sessions.read().await;
+            Arc::clone(
+                &active
+                    .get("queued-session")
+                    .expect("loaded session")
+                    .transition_lock,
+            )
+        };
+        let held = transition_lock.lock().await;
 
-        // A failed resume writes Error between the start task's check and its Busy write.
+        let dispatcher = Arc::new(RecordingDispatcher::default());
+        let promotion = tokio::spawn({
+            let repo = Arc::clone(&repo);
+            let active_sessions = Arc::clone(&active_sessions);
+            let dispatcher = Arc::clone(&dispatcher);
+            async move {
+                promote_queued_session_to_busy_with_dispatcher(
+                    &repo,
+                    &active_sessions,
+                    dispatcher.as_ref(),
+                    "queued-session",
+                )
+                .await
+            }
+        });
+        // The promotion has read `Queued` and now waits for the transition lock.
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        assert!(!promotion.is_finished());
+
+        // A failed resume writes Error before the Busy write.
         repo.update_status("queued-session", SessionStatus::Error, Some(reason))
             .await
             .expect("write error");
@@ -794,16 +825,9 @@ mod tests {
             session.metadata.status = SessionStatus::Error;
             session.metadata.status_reason = Some(reason.to_string());
         }
+        drop(held);
 
-        let dispatcher = RecordingDispatcher::default();
-        let promoted = promote_queued_session_to_busy_with_dispatcher(
-            &repo,
-            &active_sessions,
-            &dispatcher,
-            "queued-session",
-        )
-        .await
-        .expect("promote");
+        let promoted = promotion.await.expect("join").expect("promote");
 
         assert!(!promoted, "the work must not start");
         let stored = repo

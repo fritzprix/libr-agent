@@ -96,7 +96,8 @@ pub const ROOT_EXECUTION_NEEDS_APPROVAL: &str =
 
 /// The refusal for a root request that `session` can never run (a host session or an attached
 /// container), so the user is not asked to approve it. `None` when `decision` does not ask for
-/// root or the session uses a LibrAgent-managed container.
+/// root or the session uses a LibrAgent-managed container. A `session` of `None` (the session is
+/// not loaded in memory) is refused as a host session.
 pub fn root_execution_refusal(
     decision: &ToolExecutionPolicyDecision,
     session: Option<&crate::repositories::SessionMetadata>,

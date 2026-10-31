@@ -591,6 +591,7 @@ pub async fn execute_tool_calls(
             continue;
         }
 
+        // Only the in-memory metadata is read: a session that is not loaded gets the host refusal.
         let root_refusal = {
             let active = active_sessions.read().await;
             crate::agent::tool_approvals::root_execution_refusal(
