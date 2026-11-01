@@ -54,7 +54,7 @@ pub fn should_discard_workflow_before_continuation(
 }
 
 /// Drop every pending approval waiter so `request_approval` unblocks on cancel.
-async fn abort_pending_tool_approvals(
+pub async fn abort_pending_tool_approvals(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     session_id: &str,
 ) {
@@ -74,6 +74,13 @@ async fn abort_pending_tool_approvals(
     // Dropping senders yields ChannelClosed in execute_tool_calls, which injects
     // cancel tombstones for the waiting tool call.
     approvals.clear();
+}
+
+/// Determines whether workflow continuation should proceed after an approval channel was closed.
+/// Returns true only when the session remains in active_sessions and has Busy status (e.g. cancel_workflow).
+/// Returns false when the session is terminated (Idle) or removed/deleted, cleanly discarding the workflow.
+pub fn should_continue_after_approval_channel_closed(status: Option<&SessionStatus>) -> bool {
+    matches!(status, Some(SessionStatus::Busy))
 }
 
 /// Cancel is a no-op when the session is already inactive — no workflow to stop.
@@ -154,6 +161,8 @@ pub async fn terminate_session(
             false
         }
     };
+
+    abort_pending_tool_approvals(active_sessions, &session_id).await;
 
     // 2. Destroy proxy for this session - ALWAYS do this!
     // This prevents resource leaks (MCP processes) even if the session wasn't active
