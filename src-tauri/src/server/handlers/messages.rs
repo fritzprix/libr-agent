@@ -1,5 +1,6 @@
 use crate::agent::AgentSessionManager;
 use crate::models::chat::MessageSource;
+use crate::repositories::{SessionMetadata, SessionStatus};
 use std::sync::Arc;
 use warp::{http::StatusCode, Rejection, Reply};
 
@@ -70,6 +71,15 @@ pub async fn send_message(
         Err((status, error)) => return Ok(resolve_error_reply(status, error)),
     };
 
+    if let Ok(Some(session)) = manager.get_session(&id).await {
+        if let Some(error) = setup_failure_error(&session) {
+            return Ok(warp::reply::with_status(
+                warp::reply::json(&ErrorResponse { error }),
+                StatusCode::CONFLICT,
+            ));
+        }
+    }
+
     match crate::services::AgentService::send_message_to_session(
         &manager,
         &id,
@@ -96,5 +106,38 @@ pub async fn send_message(
             }),
             StatusCode::INTERNAL_SERVER_ERROR,
         )),
+    }
+}
+
+/// Only a failed setup (Docker provisioning) stores a reason with `error`; a session in
+/// `error` after a workflow failure has no reason and still accepts a retry message.
+fn setup_failure_error(session: &SessionMetadata) -> Option<String> {
+    match (&session.status, session.status_reason.as_deref()) {
+        (SessionStatus::Error, Some(reason)) => Some(format!(
+            "Session status is 'error' and it cannot run messages: {reason}"
+        )),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_a_setup_failure_refuses_messages() {
+        let mut session = SessionMetadata::test_fixture("setup-failure-session");
+        assert!(setup_failure_error(&session).is_none());
+
+        session.status = SessionStatus::Error;
+        assert!(
+            setup_failure_error(&session).is_none(),
+            "a workflow error without a reason accepts a retry"
+        );
+
+        session.status_reason = Some("Invalid Docker workspace config: home".to_string());
+        let error = setup_failure_error(&session).expect("setup failure refuses messages");
+        assert!(error.contains("'error'"));
+        assert!(error.contains("Invalid Docker workspace config: home"));
     }
 }

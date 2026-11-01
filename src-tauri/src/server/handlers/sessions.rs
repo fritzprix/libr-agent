@@ -26,6 +26,7 @@ fn classify_spawn_error(err: &str) -> (StatusCode, String) {
         || err.contains("must be a directory")
         || err.contains("not accessible")
         || err.contains("Invalid assistant configuration")
+        || err.contains("Invalid Docker workspace config")
     {
         (StatusCode::BAD_REQUEST, err.to_string())
     } else {
@@ -246,6 +247,15 @@ mod tests {
             .await
             .expect("migrations should run");
         Arc::new(SqliteSessionRepository::new(db))
+    }
+
+    #[test]
+    fn a_refused_docker_workspace_is_a_bad_request() {
+        let (status, error) = classify_spawn_error(
+            "Invalid Docker workspace config: The workspace '/home/user' is your home directory or contains it.",
+        );
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(error.contains("home directory"));
     }
 
     async fn get_session_json(

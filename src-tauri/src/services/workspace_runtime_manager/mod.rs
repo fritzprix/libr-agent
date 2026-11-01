@@ -234,7 +234,7 @@ pub use error::{
 };
 pub use root_exec::{as_root_requested, RootExecLease};
 pub use session_config::build_docker_volume_args;
-pub(crate) use session_config::session_docker_workdir;
+pub(crate) use session_config::{refuse_home_workspace, session_docker_workdir};
 
 // ── Manager ──────────────────────────────────────────────────────────────────
 
