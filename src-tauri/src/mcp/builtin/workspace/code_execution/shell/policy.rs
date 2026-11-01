@@ -665,6 +665,10 @@ fn token_uses_unresolved_path_variable(
 ) -> bool {
     let trimmed = token.trim_matches(|ch| matches!(ch, '"' | '\'' | ',' | ';' | '(' | ')'));
 
+    if contains_positional_parameter(trimmed) {
+        return true;
+    }
+
     if let Some(var_name) = trimmed
         .strip_prefix("${")
         .and_then(|rest| rest.split('}').next())
@@ -833,18 +837,30 @@ fn candidate_targets_sensitive_path(
 }
 
 fn token_contains_glob(token: &str) -> bool {
-    let mut chars = token.chars();
+    let mut chars = token.chars().peekable();
     while let Some(ch) = chars.next() {
         match ch {
-            // The character after `$` names a parameter (`$?`, `$*`, `$$`), so it is not a glob.
+            // Only the one character after `$` is skipped, and only when it names a special
+            // parameter (`$?`, `$*`, `$$`). Positional parameters in paths are checked by
+            // `contains_positional_parameter`.
             '$' => {
-                chars.next();
+                chars.next_if(|next| matches!(next, '?' | '*' | '@' | '$' | '!' | '#' | '-'));
             }
             '*' | '?' | '[' => return true,
             _ => {}
         }
     }
     false
+}
+
+/// `$*`, `$@`, and `$0`-`$9` (also `${*}`, `${1}`) expand to the script arguments: any path,
+/// or nothing at all.
+fn contains_positional_parameter(token: &str) -> bool {
+    token.match_indices('$').any(|(index, _)| {
+        let rest = &token[index + 1..];
+        let rest = rest.strip_prefix('{').unwrap_or(rest);
+        rest.starts_with(|ch: char| ch == '*' || ch == '@' || ch.is_ascii_digit())
+    })
 }
 
 fn expand_home_token(token: &str) -> Option<PathBuf> {

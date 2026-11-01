@@ -348,6 +348,12 @@ fn shell_policy_allows_special_shell_parameters() {
 fn shell_policy_keeps_hard_approval_for_unresolved_path_and_real_globs() {
     for (command, reason) in [
         ("rm -rf $UNSET/x", "unresolved shell variable"),
+        ("rm -rf \"$HOME/$*\"", "unresolved shell variable"),
+        ("rm -rf \"$HOME/$@\"", "unresolved shell variable"),
+        ("rm -rf \"$HOME/$1\"", "unresolved shell variable"),
+        ("rm -rf \"$HOME/${1}\"", "unresolved shell variable"),
+        ("rm -rf ./$*", "unresolved shell variable"),
+        ("cat ~/.ssh$*", "unresolved shell variable"),
         ("ls src/*.rs", "dynamic glob expansion"),
         ("ls $$*", "dynamic glob expansion"),
     ] {
@@ -364,6 +370,14 @@ fn shell_policy_keeps_hard_approval_for_unresolved_path_and_real_globs() {
             decision.reason
         );
     }
+
+    let decision = shell_policy_for("rm -rf ~/.ssh$*");
+    assert_ne!(
+        decision.action,
+        ShellPolicyAction::Allow,
+        "{}",
+        decision.reason
+    );
 }
 
 #[tokio::test]
