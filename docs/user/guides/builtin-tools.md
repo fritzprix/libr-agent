@@ -15,11 +15,11 @@ LibrAgent는 별도의 외부 도구 설치 없이도 코딩, 파일 조작, 웹
 
 에이전트의 도구 실행은 사용자의 통제 하에 안전하게 이루어집니다:
 
-| 도구 분류              | 안전 정책                          | 주요 대상 작업                                                                  |
-| ---------------------- | ---------------------------------- | ------------------------------------------------------------------------------- |
-| **일반 읽기 도구**     | 자동 실행                          | 파일 내용 읽기, 웹페이지 텍스트 조회, 대화 기록 검색                            |
-| **시스템 변경 도구**   | **사용자 승인 요청** (Normal 모드) | 셸 명령어 실행(`runShell`, `runPowerShell`), 파일 생성 및 수정                  |
-| **데스크톱 제어 도구** | **사용자 승인 필수**               | 데스크톱 화면 캡처(`captureScreen`), 마우스/키보드 직접 제어(`computerControl`) |
+| 도구 분류              | 안전 정책                                                                 | 주요 대상 작업                                                                  |
+| ---------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| **일반 읽기 도구**     | 자동 실행                                                                 | 파일 내용 읽기, 웹페이지 텍스트 조회, 대화 기록 검색                            |
+| **시스템 변경 도구**   | **사용자 승인 요청** (Normal 모드)                                        | 셸 명령어 실행(`runShell`, `runPowerShell`), 파일 생성 및 수정                  |
+| **데스크톱 제어 도구** | **사용자 승인 요청** (Normal 모드; YOLO·Unsafe 모드에서는 승인 없이 실행) | 데스크톱 화면 캡처(`captureScreen`), 마우스/키보드 직접 제어(`computerControl`) |
 
 > [!TIP]
 > 백그라운드 무인 자동화(예: Scheduled Tasks)나 신뢰할 수 있는 세션에서는 실행 모드를 **YOLO** 또는 **Unsafe**로 설정하여 승인 팝업 없이 즉시 작업을 완료하도록 할 수 있습니다.
@@ -48,7 +48,7 @@ LibrAgent는 별도의 외부 도구 설치 없이도 코딩, 파일 조작, 웹
 시각적 분석과 운영체제 직접 제어가 필요할 때 사용됩니다.
 
 - **화면 캡처**: 현재 모니터 화면을 캡처하여 오류 화면이나 UI 상태를 AI가 직접 확인합니다.
-- **마우스 & 키보드 시뮬레이션**: GUI 앱 조작 등 마우스 클릭과 단축키 입력을 직접 시뮬레이션합니다. _(항상 사용자 승인 팝업이 표시됩니다)_
+- **마우스 & 키보드 시뮬레이션**: GUI 앱 조작 등 마우스 클릭과 단축키 입력을 직접 시뮬레이션합니다. _(Normal 모드에서는 사용자 승인이 필요하며, YOLO·Unsafe 모드에서는 승인 없이 실행됩니다)_
 
 ### 4. 계획 및 예약 작업
 
@@ -73,27 +73,27 @@ LibrAgent는 별도의 외부 도구 설치 없이도 코딩, 파일 조작, 웹
 
 파워 유저 및 프롬프트 작성을 위한 주요 내장 도구의 정확한 식별자 목록입니다:
 
-| 서버 그룹            | 도구 식별자                                                         | 설명                                                         | 기본 활성            |
-| -------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------ | -------------------- |
-| **`workspace`**      | `workspace__readFile`                                               | 파일 범위 읽기                                               | Core (기본)          |
-|                      | `workspace__writeFile`                                              | 새 파일 생성 또는 덮어쓰기                                   | Core (기본)          |
-|                      | `workspace__strReplace`                                             | 파일 내 문자열 정밀 치환                                     | Core (기본)          |
-|                      | `workspace__editObject`                                             | JSON 파일 구조화 편집                                        | Core (기본)          |
-|                      | `workspace__listDirectory`                                          | 디렉토리 파일 목록 조회                                      | Core (기본)          |
-|                      | `workspace__runShell`                                               | 터미널 셸 명령어 실행 (비동기 지원, Unix 호스트·Docker)      | Core (기본)          |
-|                      | `workspace__runPowerShell` / `workspace__runInPersistentPowerShell` | PowerShell 명령어 실행 (영구 세션 포함, Windows 호스트 전용) | Core (기본)          |
-| **`browser`**        | `browser__navigateToUrl`                                            | 대상 웹페이지 URL 이동 및 로딩                               | Optional (선택)      |
-|                      | `browser__takeScreenshot`                                           | 웹 화면 PNG 스크린샷 캡처                                    | Optional (선택)      |
-|                      | `browser__getPageContent`                                           | 웹페이지 텍스트 및 DOM 구조 추출                             | Optional (선택)      |
-|                      | `browser__clickElement`                                             | 웹페이지 요소 클릭                                           | Optional (선택)      |
-| **`desktop`**        | `desktop__computerControl`                                          | 마우스 클릭/이동, 키보드 타이핑 OS 제어                      | Optional (승인 필요) |
-| **`media`**          | `media__captureScreen`                                              | 데스크톱 모니터 전체/영역 캡처                               | Optional (승인 필요) |
-|                      | `media__seeContent`                                                 | 이미지·영상 **시각** 분석                                    | Optional (선택)      |
-|                      | `media__listenContent`                                              | 오디오·영상 **청각** 분석                                    | Optional (선택)      |
-| **`planning`**       | `planning__createGoal`                                              | 다단계 목표 수립 및 Todo 관리                                | Optional (선택)      |
-|                      | `planning__updateGoal`                                              | 목표 진행 상태 갱신                                          | Optional (선택)      |
-| **`scheduled_task`** | `scheduled_task__createScheduledTask`                               | 백그라운드 예약 작업 등록                                    | Core (기본)          |
-|                      | `scheduled_task__listScheduledTasks`                                | 등록된 예약 작업 목록 조회                                   | Core (기본)          |
+| 서버 그룹            | 도구 식별자                                                         | 설명                                                         | 기본 활성                                               |
+| -------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------- |
+| **`workspace`**      | `workspace__readFile`                                               | 파일 범위 읽기                                               | Core (기본)                                             |
+|                      | `workspace__writeFile`                                              | 새 파일 생성 또는 덮어쓰기                                   | Core (기본)                                             |
+|                      | `workspace__strReplace`                                             | 파일 내 문자열 정밀 치환                                     | Core (기본)                                             |
+|                      | `workspace__editObject`                                             | JSON 파일 구조화 편집                                        | Core (기본)                                             |
+|                      | `workspace__listDirectory`                                          | 디렉토리 파일 목록 조회                                      | Core (기본)                                             |
+|                      | `workspace__runShell`                                               | 터미널 셸 명령어 실행 (비동기 지원, Unix 호스트·Docker)      | Core (기본)                                             |
+|                      | `workspace__runPowerShell` / `workspace__runInPersistentPowerShell` | PowerShell 명령어 실행 (영구 세션 포함, Windows 호스트 전용) | Core (기본)                                             |
+| **`browser`**        | `browser__navigateToUrl`                                            | 대상 웹페이지 URL 이동 및 로딩                               | Optional (선택)                                         |
+|                      | `browser__takeScreenshot`                                           | 웹 화면 PNG 스크린샷 캡처                                    | Optional (선택)                                         |
+|                      | `browser__getPageContent`                                           | 웹페이지 텍스트 및 DOM 구조 추출                             | Optional (선택)                                         |
+|                      | `browser__clickElement`                                             | 웹페이지 요소 클릭                                           | Optional (선택)                                         |
+| **`desktop`**        | `desktop__computerControl`                                          | 마우스 클릭/이동, 키보드 타이핑 OS 제어                      | Optional (Normal 모드 승인 필요, YOLO·Unsafe 자동 실행) |
+| **`media`**          | `media__captureScreen`                                              | 데스크톱 모니터 전체/영역 캡처                               | Optional (Normal 모드 승인 필요, YOLO·Unsafe 자동 실행) |
+|                      | `media__seeContent`                                                 | 이미지·영상 **시각** 분석                                    | Optional (선택)                                         |
+|                      | `media__listenContent`                                              | 오디오·영상 **청각** 분석                                    | Optional (선택)                                         |
+| **`planning`**       | `planning__createGoal`                                              | 다단계 목표 수립 및 Todo 관리                                | Optional (선택)                                         |
+|                      | `planning__updateGoal`                                              | 목표 진행 상태 갱신                                          | Optional (선택)                                         |
+| **`scheduled_task`** | `scheduled_task__createScheduledTask`                               | 백그라운드 예약 작업 등록                                    | Core (기본)                                             |
+|                      | `scheduled_task__listScheduledTasks`                                | 등록된 예약 작업 목록 조회                                   | Core (기본)                                             |
 
 > [!NOTE]
 > 위 식별자는 프롬프트·디버깅용 참고입니다. 일반 사용에서는 어시스턴트 **Tools** 탭에서 켜고 끄면 됩니다.
