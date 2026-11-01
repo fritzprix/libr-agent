@@ -646,8 +646,10 @@ fn detect_unresolved_path_variable_usage(
         }
 
         let trimmed = word.trim_matches(|ch| matches!(ch, '"' | '\'' | ',' | ';' | '(' | ')'));
-        if resolve_candidate_path(trimmed, cwd, shell_variables).is_none()
-            && (trimmed.contains('/') || trimmed.contains('\\'))
+        let resolves = resolve_candidate_path(trimmed, cwd, shell_variables).is_some();
+        // `$HOME$*` has no separator but resolves through `$HOME`, so it is still a path.
+        if (!resolves && (trimmed.contains('/') || trimmed.contains('\\')))
+            || (resolves && contains_positional_parameter(trimmed))
         {
             return Some(format!(
                 "command uses unresolved shell variable in path-like token '{}'",

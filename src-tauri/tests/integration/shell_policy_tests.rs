@@ -354,6 +354,9 @@ fn shell_policy_keeps_hard_approval_for_unresolved_path_and_real_globs() {
         ("rm -rf \"$HOME/${1}\"", "unresolved shell variable"),
         ("rm -rf ./$*", "unresolved shell variable"),
         ("cat ~/.ssh$*", "unresolved shell variable"),
+        ("rm -rf \"$HOME\"$*", "unresolved shell variable"),
+        ("rm -r -f \"$HOME$@\"", "unresolved shell variable"),
+        ("mv \"$HOME\"$1 /tmp/x", "unresolved shell variable"),
         ("ls src/*.rs", "dynamic glob expansion"),
         ("ls $$*", "dynamic glob expansion"),
     ] {
