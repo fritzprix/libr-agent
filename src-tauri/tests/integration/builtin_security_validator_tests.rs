@@ -236,11 +236,11 @@ fn test_scoped_validator_blocks_absolute_paths_outside_base_dir() {
 
     assert!(matches!(
         validator.validate_path_for_read(&outside_file.to_string_lossy()),
-        Err(SecurityError::PathTraversal(_))
+        Err(SecurityError::OutsideWorkspaceRoot(_))
     ));
     assert!(matches!(
         validator.validate_path_for_write(&outside_file.to_string_lossy()),
-        Err(SecurityError::PathTraversal(_))
+        Err(SecurityError::OutsideWorkspaceRoot(_))
     ));
 }
 

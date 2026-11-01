@@ -311,6 +311,12 @@ pub(crate) fn path_validation_failure_guidance(error: &str, fallback: Vec<String
             "Do not write through @workspace-skills / @user-skills / @assistant-skills / @system-skills — those aliases are read/list only.".to_string(),
             "After writing under `.libragent/skills/`, verify with workspace__readFile on the matching @workspace-skills/... alias.".to_string(),
         ]
+    } else if error.contains(crate::mcp::builtin::utils::OUTSIDE_WORKSPACE_ROOT_MARKER) {
+        vec![
+            "Path is outside the workspace root and access is denied.".to_string(),
+            "Do not retry with workspace file tools on paths outside the workspace root."
+                .to_string(),
+        ]
     } else {
         fallback
     }
@@ -437,6 +443,24 @@ mod guidance_tests {
             .any(|line| line.contains(".libragent/skills")));
         assert!(guidance.iter().any(|line| line.contains("read/list only")));
         assert!(guidance.iter().all(|line| !line.contains("listDirectory")));
+    }
+
+    #[test]
+    fn outside_workspace_root_guidance_denies_access_without_list_directory_hint() {
+        let err = format!(
+            "Security error: {} Access denied: Path '/tmp/outside' is outside the allowed base directory",
+            crate::mcp::builtin::utils::OUTSIDE_WORKSPACE_ROOT_MARKER
+        );
+        let guidance = path_validation_failure_guidance(
+            &err,
+            vec!["Use workspace__listDirectory to see available paths".to_string()],
+        );
+        assert!(guidance.iter().any(|line| {
+            line.contains("outside the workspace root") && line.contains("access is denied")
+        }));
+        assert!(guidance
+            .iter()
+            .all(|line| !line.contains("workspace__listDirectory")));
     }
 
     #[test]
