@@ -4,10 +4,14 @@ use path_clean::PathClean;
 use std::path::{Component, Path, PathBuf};
 use thiserror::Error;
 
+pub const OUTSIDE_WORKSPACE_ROOT_MARKER: &str = "Outside workspace root:";
+
 #[derive(Error, Debug)]
 pub enum SecurityError {
     #[error("Path traversal attempt detected: {0}")]
     PathTraversal(String),
+    #[error("Outside workspace root: {0}")]
+    OutsideWorkspaceRoot(String),
     #[error("Access denied: {0}")]
     #[allow(dead_code)]
     AccessDenied(String),
@@ -127,8 +131,14 @@ impl SecurityValidator {
             .canonicalize()
             .unwrap_or_else(|_| absolute_path.clone());
 
-        if enforce_base_containment && !path_starts_with(&early_containment_path, &self.base_dir) {
-            return Err(SecurityError::PathTraversal(format!(
+        // Only paths whose raw and canonical forms both lie outside `base_dir` are direct
+        // external paths (`OutsideWorkspaceRoot`); paths inside `base_dir` that resolve outside
+        // via symlinks are rejected as `PathTraversal` by the canonical checks below.
+        if enforce_base_containment
+            && !path_starts_with(&absolute_path, &self.base_dir)
+            && !path_starts_with(&early_containment_path, &self.base_dir)
+        {
+            return Err(SecurityError::OutsideWorkspaceRoot(format!(
                 "Access denied: Path '{user_path}' is outside the allowed base directory"
             )));
         }
