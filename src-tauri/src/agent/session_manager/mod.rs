@@ -17,13 +17,15 @@ use std::time::Duration;
 use tauri::AppHandle;
 use tokio::sync::RwLock;
 
-mod approvals;
+pub mod approvals;
 mod channel;
 mod compact;
 pub mod execution_mode;
 mod message_injection;
 mod reload;
 mod reset;
+
+pub use approvals::PendingApprovalSummary;
 
 pub use channel::format_channel_payload_for_test;
 pub use compact::build_compaction_hard_fallback_summary_for_testing;
@@ -122,6 +124,16 @@ impl AgentSessionManager {
     /// Access the injected repository bundle.
     pub fn repositories(&self) -> &AgentRepositories {
         &self.repositories
+    }
+
+    /// Access the active sessions map for read/write handlers.
+    pub(crate) fn active_sessions(&self) -> &Arc<RwLock<HashMap<String, AgentSession>>> {
+        &self.active_sessions
+    }
+
+    /// Access the Tauri app handle.
+    pub(crate) fn app_handle(&self) -> &AppHandle {
+        &self.app_handle
     }
 
     /// Resolve message repository: returns injected repository or falls back to global state.
@@ -597,6 +609,13 @@ impl AgentSessionManager {
         approved: bool,
     ) -> Result<String, String> {
         approvals::respond_channel_permission(self, session_id, request_id, approved).await
+    }
+
+    pub async fn list_pending_approvals(
+        &self,
+        session_id: &str,
+    ) -> Vec<approvals::PendingApprovalSummary> {
+        approvals::list_pending_approvals_in(&self.active_sessions, session_id).await
     }
 
     pub async fn get_execution_mode(&self, session_id: &str) -> ExecutionMode {
