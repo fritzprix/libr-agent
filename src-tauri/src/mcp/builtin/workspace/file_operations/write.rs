@@ -218,10 +218,32 @@ impl WorkspaceServer {
         };
 
         // 4. Determine write mode (defaults to 'create')
-        let mode = args
-            .get("mode")
-            .and_then(|v| v.as_str())
-            .unwrap_or("create");
+        let mode = match args.get("mode") {
+            None | Some(Value::Null) => "create",
+            Some(Value::String(m)) if matches!(m.as_str(), "create" | "overwrite" | "append") => {
+                m.as_str()
+            }
+            Some(other) => {
+                let invalid_mode = other
+                    .as_str()
+                    .map(str::to_string)
+                    .unwrap_or_else(|| other.to_string());
+                return Ok(guided_error(
+                    ErrorCategory::InvalidInput,
+                    format!(
+                        "Invalid mode '{}': must be 'create', 'overwrite', or 'append'",
+                        invalid_mode
+                    ),
+                    ToolGroup::Workspace,
+                )
+                .guidance(vec![
+                    "Use \"mode\": \"create\" (or omit mode) to create a new file without overwriting existing files".to_string(),
+                    "Use \"mode\": \"overwrite\" to replace an existing file's entire contents".to_string(),
+                    "Use \"mode\": \"append\" to append content to the end of an existing file".to_string(),
+                ])
+                .to_mcp_result());
+            }
+        };
 
         // Validate path security — blocks Windows reserved filenames on creation
         let target_session_id = session_id
@@ -698,4 +720,99 @@ fn truncated_content_preview(
         ),
         true,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mcp::types::MCPContent;
+    use crate::session::SessionManager;
+    use std::sync::Arc;
+    use tempfile::tempdir;
+
+    fn extract_text(result: &MCPResult) -> String {
+        result
+            .content
+            .as_ref()
+            .expect("content expected")
+            .iter()
+            .filter_map(|item| match item {
+                MCPContent::Text { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[tokio::test]
+    async fn handle_write_file_rejects_unknown_mode_and_preserves_existing_file() {
+        let temp_dir = tempdir().expect("temp dir");
+        let session_id = "write-file-invalid-mode-test";
+        let session_manager =
+            SessionManager::new_with_base_dir(temp_dir.path().to_path_buf()).expect("session mgr");
+        let server = WorkspaceServer::new(session_id.to_string(), Arc::new(session_manager));
+        let workspace_dir = server.get_workspace_dir(session_id);
+        let target_file = workspace_dir.join("existing.txt");
+        std::fs::write(&target_file, "original content\n").expect("seed existing file");
+
+        let result = server
+            .handle_write_file(
+                json!({
+                    "path": "existing.txt",
+                    "content": "clobbered content\n",
+                    "mode": "write"
+                }),
+                Some(session_id.to_string()),
+            )
+            .await
+            .expect("handle_write_file should return Ok(MCPResult)");
+
+        assert_eq!(result.is_error, Some(true));
+        let text = extract_text(&result);
+        assert!(
+            text.contains("Invalid mode 'write': must be 'create', 'overwrite', or 'append'"),
+            "unexpected error text: {text}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&target_file).expect("read existing file"),
+            "original content\n",
+            "existing file must remain unchanged on invalid mode"
+        );
+    }
+
+    #[tokio::test]
+    async fn handle_write_file_rejects_non_string_mode_and_preserves_existing_file() {
+        let temp_dir = tempdir().expect("temp dir");
+        let session_id = "write-file-non-string-mode-test";
+        let session_manager =
+            SessionManager::new_with_base_dir(temp_dir.path().to_path_buf()).expect("session mgr");
+        let server = WorkspaceServer::new(session_id.to_string(), Arc::new(session_manager));
+        let workspace_dir = server.get_workspace_dir(session_id);
+        let target_file = workspace_dir.join("existing.txt");
+        std::fs::write(&target_file, "original content\n").expect("seed existing file");
+
+        let result = server
+            .handle_write_file(
+                json!({
+                    "path": "existing.txt",
+                    "content": "clobbered content\n",
+                    "mode": 42
+                }),
+                Some(session_id.to_string()),
+            )
+            .await
+            .expect("handle_write_file should return Ok(MCPResult)");
+
+        assert_eq!(result.is_error, Some(true));
+        let text = extract_text(&result);
+        assert!(
+            text.contains("Invalid mode '42': must be 'create', 'overwrite', or 'append'"),
+            "unexpected error text: {text}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&target_file).expect("read existing file"),
+            "original content\n",
+            "existing file must remain unchanged on non-string mode"
+        );
+    }
 }
