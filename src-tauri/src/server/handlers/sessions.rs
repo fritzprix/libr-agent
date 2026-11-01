@@ -15,7 +15,6 @@ use super::types::{
     PatchSessionResponse, SessionStatusResponse,
 };
 use crate::agent::session_manager::approvals::list_pending_approvals_in;
-#[cfg(test)]
 use crate::agent::session_manager::execution_mode::set_execution_mode_in;
 use crate::agent::state::AgentSession;
 use crate::execution_mode::ExecutionMode;
@@ -131,35 +130,16 @@ pub async fn patch_session(
     manager: Arc<AgentSessionManager>,
     body: PatchSessionRequest,
 ) -> Result<impl Reply, Rejection> {
-    let id = match resolve_session_ref_in(manager.repositories().session.as_ref(), &id).await {
-        Ok(id) => id,
-        Err((status, error)) => return Ok(resolve_error_reply(status, error)),
-    };
-
-    let mode = match body.execution_mode.parse::<ExecutionMode>() {
-        Ok(mode) => mode,
-        Err(error) => {
-            return Ok(resolve_error_reply(StatusCode::BAD_REQUEST, error));
-        }
-    };
-
-    match manager.set_execution_mode(&id, mode).await {
-        Ok(resolved_approval_ids) => Ok(warp::reply::with_status(
-            warp::reply::json(&PatchSessionResponse {
-                id: display_session_id(&id),
-                execution_mode: mode,
-                resolved_approval_ids,
-            }),
-            StatusCode::OK,
-        )),
-        Err(error) => Ok(resolve_error_reply(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            error,
-        )),
-    }
+    Ok(patch_session_reply(
+        &id,
+        body,
+        manager.active_sessions().as_ref(),
+        &manager.repositories().session,
+        Some(manager.app_handle()),
+    )
+    .await)
 }
 
-#[cfg(test)]
 async fn patch_session_reply(
     id: &str,
     body: PatchSessionRequest,

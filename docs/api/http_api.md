@@ -100,9 +100,12 @@ Creates a new isolated agent session and starts an initial workflow.
 
 | Execution Mode | Standard Approval Tools | Hard Approval Tools |
 | :--- | :--- | :--- |
-| `normal` (default) | **Requires approval** (`workspace__writeFile`, `workspace__strReplace`, `workspace__editFile`, `workspace__editObject`, `workspace__runShell`, `workspace__runInPersistentShell`, `workspace__spawnProcess`, `workspace__runPowerShell`, `workspace__runInPersistentPowerShell`, `workspace__runCmd`, `workspace__runInPersistentCmd`, `workspace__stopProcess`, `scheduled_task__*` write tools, `media__captureScreen`, `desktop__computerControl`) | **Requires hard approval** (`tool__registerServer` except unauthenticated curated catalog presets, `tool__updateServer`, `media__deployAssistPlugin`, and high-risk shell patterns such as command substitution `$(...)` / backticks, `eval` / `source` / `.`, remote pipe-to-shell, outside-workspace redirects, and sensitive path access) |
+| `normal` (default) | **Requires approval** (`workspace__writeFile`, `workspace__strReplace`, `workspace__editFile`, `workspace__editObject`, `workspace__runShell`, `workspace__runInPersistentShell`, `workspace__spawnProcess`, `workspace__runPowerShell`, `workspace__runInPersistentPowerShell`, `workspace__runCmd`, `workspace__runInPersistentCmd`, `workspace__stopProcess`, `scheduled_task__*` write tools, `media__captureScreen`, `desktop__computerControl`) | **Requires hard approval** (`tool__registerServer` except unauthenticated curated catalog presets, `tool__updateServer`, `media__deployAssistPlugin`, and dynamic shell evaluation: `$(...)`, backticks, `<(...)`, `>(...)`, `eval`, and `source`) |
 | `yolo` | **Auto-approved** | **Requires hard approval** (waits for explicit approval or a raise to `unsafe`) |
 | `unsafe` | **Auto-approved** | **Auto-approved** |
+
+> [!NOTE]
+> Destructive commands and sensitive or protected paths (such as `~/.ssh`, `~/.aws`, application database, and restricted system directories) are **blocked** in every execution mode, not routed to hard approval.
 
 > [!NOTE]
 > When `request` is omitted or blank, the session is created in `idle` status and no workflow is started. This is useful for API smoke checks that only need to verify configuration (for example `executionMode`) without burning an LLM turn.
