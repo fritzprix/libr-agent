@@ -6,11 +6,34 @@ use warp::{http::StatusCode, Rejection, Reply};
 use super::helpers::{map_message_for_http, resolve_error_reply, resolve_http_session_ref};
 use super::types::{ErrorResponse, GetMessagesQuery, SendMessageRequest, SendMessageResponse};
 
+const DEFAULT_MESSAGES_LIMIT: u64 = 50;
+const MAX_MESSAGES_LIMIT: u64 = 1000;
+
+fn resolve_messages_limit(limit: Option<u64>) -> Result<u64, (StatusCode, String)> {
+    let limit = limit.unwrap_or(DEFAULT_MESSAGES_LIMIT);
+    if (1..=MAX_MESSAGES_LIMIT).contains(&limit) {
+        Ok(limit)
+    } else {
+        Err((
+            StatusCode::BAD_REQUEST,
+            format!(
+                "Invalid limit {}: must be between 1 and {}",
+                limit, MAX_MESSAGES_LIMIT
+            ),
+        ))
+    }
+}
+
 pub async fn get_messages(
     id: String,
     query: GetMessagesQuery,
     manager: Arc<AgentSessionManager>,
 ) -> Result<impl Reply, Rejection> {
+    let limit = match resolve_messages_limit(query.limit) {
+        Ok(limit) => limit,
+        Err((status, error)) => return Ok(resolve_error_reply(status, error)),
+    };
+
     let id = match resolve_http_session_ref(&id).await {
         Ok(id) => id,
         Err((status, error)) => return Ok(resolve_error_reply(status, error)),
@@ -41,7 +64,6 @@ pub async fn get_messages(
 
     let repo = crate::state::get_message_repository();
     use crate::repositories::message_repository::MessageRepository;
-    let limit = query.limit.unwrap_or(50);
 
     match repo.get_messages_by_session(&id, limit).await {
         Ok(messages) => {
@@ -96,5 +118,32 @@ pub async fn send_message(
             }),
             StatusCode::INTERNAL_SERVER_ERROR,
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_messages_limit_defaults_to_50_and_accepts_bounds() {
+        assert_eq!(resolve_messages_limit(None), Ok(50));
+        assert_eq!(resolve_messages_limit(Some(1)), Ok(1));
+        assert_eq!(resolve_messages_limit(Some(500)), Ok(500));
+        assert_eq!(resolve_messages_limit(Some(1000)), Ok(1000));
+    }
+
+    #[test]
+    fn resolve_messages_limit_rejects_zero_and_values_above_1000() {
+        let (status, err) = resolve_messages_limit(Some(0)).unwrap_err();
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(err.contains("between 1 and 1000"));
+
+        let (status, err) = resolve_messages_limit(Some(1001)).unwrap_err();
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(err.contains("between 1 and 1000"));
+
+        let (status, _) = resolve_messages_limit(Some(u64::MAX)).unwrap_err();
+        assert_eq!(status, StatusCode::BAD_REQUEST);
     }
 }
