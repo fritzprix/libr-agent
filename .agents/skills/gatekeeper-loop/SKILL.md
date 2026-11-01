@@ -52,7 +52,7 @@ The script output is already sorted: priority 0 first (worker response, new head
 
 Other statuses:
 
-- `await-ci` — a `verdict=clean` marker exists for this head; waiting only for CI completion. If CI turned green, post `approve`; if failed, diagnose failure and post `changes-requested`.
+- `await-ci` — a `verdict=clean` marker exists for this head; waiting only for CI completion. Remove any stale `gatekeeper:changes-requested` label (`gh pr edit N --remove-label gatekeeper:changes-requested`). If CI turned green, post `approve` (and remove any stale `gatekeeper:changes-requested`: `gh pr edit N --add-label gatekeeper:approved --remove-label gatekeeper:changes-requested`); if failed, diagnose failure and post `changes-requested`.
 - `wait-worker` — worker's turn (changes requested at current head without response, or merge conflicts).
 - `approved` — nothing to do; make sure the label is `gatekeeper:approved`. For any PR with `staleApprovedLabel: true` (status no longer `approved`), swap the label right away (`gatekeeper:changes-requested` if CI is failing, otherwise remove `gatekeeper:approved`) before reviewing, so a stale approve is never visible. The script already turns an approve back into `review` when the head changed (a push after an approve **always requires re-review**), CI fails, the base changed (e.g. stacked PR retargeted), or the owner commented.
 - `escalate` — post an `escalate` verdict if none exists yet and swap the label to `gatekeeper:escalated`. Note: An owner comment on an escalated PR resets status to `review` so the gatekeeper can incorporate owner direction.
@@ -99,13 +99,20 @@ Decide:
   - **Required `Checked` section**: must include a non-empty `### Checked` section in the comment mapping every linked issue acceptance criterion **and** every previous-round finding (on round ≥ 2, citing at least one finding verified as fixed in the diff) and owner concern to concrete code evidence (`file:line`). An approve verdict without this section is invalid and must not be posted.
   - **Per-OS CI evidence**: when the diff adds or changes tests or code touching paths, shell, processes or other OS behavior, `### Checked` must name the result of each OS job (ubuntu / windows / macos) for the reviewed head. A skipped or cancelled job is not green. Do not approve on one OS's green.
   - **Stacked PRs**: if the PR targets a non-dev branch, CI does not run; approve directly with the explicit note _"CI requires verification after retargeting"_.
-- **clean, await CI** — code review completed with zero open required findings, but CI checks are still running (`ciPending` not empty on dev-targeted PR). Post a `verdict=clean head=<sha>` marker comment (no label change, does not count as a round), optionally mirror it in state, and move on to the next PR. On a later tick the script reports `await-ci`; once CI completes it reports `review` again: do not re-review the diff, just post `approve` if green or diagnose the failure.
+- **clean, await CI** — code review completed with zero open required findings, but CI checks are still running (`ciPending` not empty on dev-targeted PR). Post a `verdict=clean head=<sha>` marker comment, remove any stale `gatekeeper:changes-requested` label (`gh pr edit N --remove-label gatekeeper:changes-requested`; does not count as a round), optionally mirror it in state, and move on to the next PR. On a later tick the script reports `await-ci`; once CI completes it reports `review` again: do not re-review the diff, just post `approve` (with `gh pr edit N --add-label gatekeeper:approved --remove-label gatekeeper:changes-requested`) if green or diagnose the failure.
 - **escalate** — round limit (5) reached, a repeated dispute, or the right answer is a product/security/data decision for the user.
 
 Post the verdict with `gh pr comment N --body-file <tmp>` using the exact marker format (`head=` is the full `headSha` you reviewed, `base=` the PR's current base branch), then swap labels:
 
 ```bash
+# changes-requested:
 gh pr edit N --add-label gatekeeper:changes-requested --remove-label gatekeeper:approved,gatekeeper:escalated
+
+# approve:
+gh pr edit N --add-label gatekeeper:approved --remove-label gatekeeper:changes-requested,gatekeeper:escalated
+
+# clean, await CI:
+gh pr edit N --remove-label gatekeeper:changes-requested
 ```
 
 ### 4. Validate one producer issue
@@ -142,7 +149,7 @@ cd .agents/skills/gatekeeper-loop/scripts && python3 -m unittest discover
 ## Hard rules
 
 - **Never wait for or poll CI in a tick**: do not use `gh pr checks --watch`, `sleep`, or polling loops waiting for CI.
-- **Record clean-awaiting-CI on GitHub and move on**: post the `verdict=clean` marker, then continue with the next PR. Never idle or leave a tick empty when other PRs have reviewable work.
+- **Record clean-awaiting-CI on GitHub and move on**: post the `verdict=clean` marker, remove any stale `gatekeeper:changes-requested` label (`gh pr edit N --remove-label gatekeeper:changes-requested`), then continue with the next PR. Never idle or leave a tick empty when other PRs have reviewable work.
 - **Do not re-review diff in await-ci**: for an `await-ci` PR, verify only whether the head changed or CI completed. If green, approve.
 - **A push after an approve requires re-review.** An approve only covers the head, base and CI state it was issued for.
 - **Approve requires Checked section**: every approve verdict must contain a non-empty `### Checked` section citing `file:line` for all acceptance criteria.
