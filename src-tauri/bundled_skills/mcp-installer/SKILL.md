@@ -79,7 +79,7 @@ Installation is not done until the server is verified.
 1. Call `tool__verifyServer` with the server name.
 2. On success, report the tools it exposes, then go to Step 3a. Saving a server does not make it callable in any session yet.
 3. On failure, report the real error and the next step:
-   - `command not found` / missing `node`, `npx`, `uv`, `python` → run **setup-wizard**, then verify again.
+   - `command not found` / missing `node`, `npx`, `uv`, `python` → run **setup-wizard** or install the runtime, then call `tool__updateServer` for the saved server, and then verify.
    - Missing or wrong API key / env variable → ask the user for the value, then `tool__updateServer`.
    - Package not found or crashes on start → show the error output; do not report success.
 
