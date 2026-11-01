@@ -5,6 +5,14 @@ use crate::server::mcp_handler;
 use std::sync::Arc;
 use warp::Filter;
 
+/// Maximum JSON request body size (10 MB) for Session API endpoints.
+pub const SESSION_API_JSON_BODY_LIMIT: u64 = 10 * 1024 * 1024;
+
+pub fn json_body<T: serde::de::DeserializeOwned + Send>(
+) -> impl Filter<Extract = (T,), Error = warp::Rejection> + Clone {
+    warp::body::content_length_limit(SESSION_API_JSON_BODY_LIMIT).and(warp::body::json())
+}
+
 /// `POST /api/sessions/:id/wake/:token` — process-completion callback.
 ///
 /// Shared by the main Session API server and the wake-only listener, so both
@@ -41,7 +49,7 @@ pub fn get_routes(
         .and(warp::path("sessions"))
         .and(warp::path::end())
         .and(agent_manager.clone())
-        .and(warp::body::json())
+        .and(json_body())
         .and_then(handlers::create_session);
 
     // GET /api/sessions/:id
@@ -82,7 +90,7 @@ pub fn get_routes(
         .and(warp::path("messages"))
         .and(warp::path::end())
         .and(agent_manager.clone())
-        .and(warp::body::json())
+        .and(json_body())
         .and_then(handlers::send_message);
 
     // Authorized by its per-session token alone, so it sits outside the API key guard.
@@ -110,7 +118,7 @@ pub fn get_routes(
         .and(warp::path("channel"))
         .and(warp::path::end())
         .and(agent_manager.clone())
-        .and(warp::body::json())
+        .and(json_body())
         .and_then(handlers::inject_channel_message);
 
     // POST /api/channel
@@ -119,7 +127,7 @@ pub fn get_routes(
         .and(warp::path("channel"))
         .and(warp::path::end())
         .and(agent_manager.clone())
-        .and(warp::body::json())
+        .and(json_body())
         .and_then(handlers::inject_channel_message_auto);
 
     // POST /api/sessions/:id/channel/permission
@@ -131,7 +139,7 @@ pub fn get_routes(
         .and(warp::path("permission"))
         .and(warp::path::end())
         .and(agent_manager.clone())
-        .and(warp::body::json())
+        .and(json_body())
         .and_then(handlers::respond_channel_permission);
 
     // POST /api/sessions/:id/resume
@@ -216,7 +224,7 @@ pub fn get_routes(
         .and(warp::path("settings"))
         .and(warp::path("complexityModelMapping"))
         .and(warp::path::end())
-        .and(warp::body::json())
+        .and(json_body())
         .and_then(handlers::put_complexity_model_mapping);
 
     // POST /mcp/:session_id — MCP JSON-RPC endpoint (gated by mcp_enabled flag)
@@ -230,7 +238,7 @@ pub fn get_routes(
         .and(warp::path::end())
         .and(mcp_enabled_filter)
         .and(app_control_enabled_filter)
-        .and(warp::body::json())
+        .and(json_body())
         .and_then(mcp_handler::mcp_control_rpc);
 
     let mcp_route = warp::post()
@@ -238,7 +246,7 @@ pub fn get_routes(
         .and(warp::path::param::<String>())
         .and(warp::path::end())
         .and(mcp_enabled_filter)
-        .and(warp::body::json())
+        .and(json_body())
         .and_then(mcp_handler::mcp_rpc_gated);
 
     // POST /mcp — sessionless endpoint: auto-selects the first active session
@@ -246,7 +254,7 @@ pub fn get_routes(
         .and(warp::path("mcp"))
         .and(warp::path::end())
         .and(mcp_enabled_filter)
-        .and(warp::body::json())
+        .and(json_body())
         .and_then(mcp_handler::mcp_rpc_auto);
 
     let api = create_session
