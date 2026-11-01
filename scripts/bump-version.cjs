@@ -138,6 +138,7 @@ function updateReadmeReleaseLinks(version) {
     const readme = fs.readFileSync(readmePath, 'utf8');
     const replacement = [
       '<!-- RELEASE_DOWNLOADS_START -->',
+      '',
       ...lines,
       '<!-- RELEASE_DOWNLOADS_END -->',
     ].join('\n');
