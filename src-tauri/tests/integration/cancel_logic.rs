@@ -13,7 +13,7 @@ use tauri_mcp_agent_lib::agent::workflow::{
     should_discard_workflow_before_continuation, CancelStrategy,
 };
 use tauri_mcp_agent_lib::mcp::service_proxy_manager::MCPServiceProxyManager;
-use tauri_mcp_agent_lib::repositories::SessionStatus;
+use tauri_mcp_agent_lib::repositories::{SessionMetadata, SessionStatus};
 use tauri_mcp_agent_lib::session::SessionManager;
 use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
@@ -363,4 +363,125 @@ async fn test_process_cancel_retry_state_survives_unrelated_batch_tool() {
             .await,
         "the same cancelled tool must be blocked after its retry"
     );
+}
+
+// -----------------------------------------------------------------------
+// Approval channel closure continuation decision
+// -----------------------------------------------------------------------
+
+#[test]
+fn test_should_continue_after_approval_channel_closed_cases() {
+    use tauri_mcp_agent_lib::agent::workflow::should_continue_after_approval_channel_closed;
+
+    // Soft cancel: session is still active and busy in memory -> continuation tombstones call and pauses.
+    assert!(should_continue_after_approval_channel_closed(Some(
+        &SessionStatus::Busy
+    )));
+
+    // Terminated / deleted / inactive session -> continuation is discarded to prevent missing-session error cascades.
+    assert!(!should_continue_after_approval_channel_closed(Some(
+        &SessionStatus::Idle
+    )));
+    assert!(!should_continue_after_approval_channel_closed(Some(
+        &SessionStatus::Paused
+    )));
+    assert!(!should_continue_after_approval_channel_closed(Some(
+        &SessionStatus::Error
+    )));
+    assert!(!should_continue_after_approval_channel_closed(None));
+}
+
+fn sample_cancel_metadata(session_id: &str, status: SessionStatus) -> SessionMetadata {
+    SessionMetadata {
+        id: session_id.to_string(),
+        name: None,
+        status,
+        model: "gpt-4".to_string(),
+        provider: "openai".to_string(),
+        assistant_id: None,
+        parent_session_id: None,
+        lineage_id: None,
+        depth: None,
+        max_depth: None,
+        max_fanout: None,
+        org_id: None,
+        org_name: None,
+        org_root_session_id: None,
+        created_at: 0,
+        updated_at: 0,
+        last_viewed_at: None,
+        last_message_at: None,
+        last_attention_at: None,
+        last_attention_reason: None,
+        is_bookmarked: false,
+        execution_mode: tauri_mcp_agent_lib::execution_mode::ExecutionMode::Normal,
+        workspace_override: None,
+        workspace_isolation:
+            tauri_mcp_agent_lib::models::workspace_isolation::WorkspaceIsolationMode::Host,
+        docker_config: None,
+        docker_container_name: None,
+        docker_host_workspace_path: None,
+        status_reason: None,
+    }
+}
+
+#[tokio::test]
+async fn test_abort_pending_tool_approvals_clears_and_drops_sender() {
+    use std::collections::HashMap;
+    use tauri_mcp_agent_lib::agent::context::registry::ContextRegistry;
+    use tauri_mcp_agent_lib::agent::state::{
+        AgentSession, PendingApprovalData, PendingApprovalKind,
+    };
+    use tauri_mcp_agent_lib::agent::workflow::abort_pending_tool_approvals;
+    use tokio::sync::{oneshot, RwLock};
+
+    let active_sessions = Arc::new(RwLock::new(HashMap::new()));
+    let session_id = "test-session-abort-approvals".to_string();
+
+    let session = AgentSession::new(
+        sample_cancel_metadata(&session_id, SessionStatus::Busy),
+        Arc::new(ContextRegistry::new()),
+        None,
+    );
+
+    let (tx, rx) = oneshot::channel();
+    let approval_data = PendingApprovalData {
+        sender: tx,
+        tool_name: "test_tool".to_string(),
+        arguments: "{}".to_string(),
+        approval_kind: PendingApprovalKind::Standard,
+        request_id: None,
+        description: Some("needs approval".to_string()),
+        input_preview: Some("echo 1".to_string()),
+    };
+    session
+        .pending_approvals
+        .write()
+        .await
+        .insert("call-1".to_string(), approval_data);
+
+    active_sessions
+        .write()
+        .await
+        .insert(session_id.clone(), session);
+
+    // Verify approval exists before abort
+    {
+        let sessions = active_sessions.read().await;
+        let s = sessions.get(&session_id).unwrap();
+        assert_eq!(s.pending_approvals.read().await.len(), 1);
+    }
+
+    // Abort pending approvals (as called by cancel/terminate)
+    abort_pending_tool_approvals(&active_sessions, &session_id).await;
+
+    // Approvals map must now be cleared
+    {
+        let sessions = active_sessions.read().await;
+        let s = sessions.get(&session_id).unwrap();
+        assert!(s.pending_approvals.read().await.is_empty());
+    }
+
+    // Sender was dropped, so receiver must receive RecvError (channel closed)
+    assert!(rx.await.is_err());
 }

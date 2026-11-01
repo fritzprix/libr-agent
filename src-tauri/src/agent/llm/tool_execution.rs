@@ -95,11 +95,20 @@ impl ToolExecutionContext<'_> {
         )
         .await
         {
-            log::error!(
-                "Error continuing workflow after {}: {}",
-                error_context,
-                error
-            );
+            if error == "Workflow was cancelled" || error.starts_with("Session not found") {
+                log::info!(
+                    "Workflow continuation skipped for session {} ({}): {}",
+                    self.session_id,
+                    error_context,
+                    error
+                );
+            } else {
+                log::error!(
+                    "Error continuing workflow after {}: {}",
+                    error_context,
+                    error
+                );
+            }
         }
     }
 
@@ -647,8 +656,25 @@ pub async fn execute_tool_calls(
                     break;
                 }
                 ApprovalOutcome::ChannelClosed => {
-                    // Cancel/terminate dropped the approval waiter. Close this call
-                    // and let the cancel check at the top tombstone any remainder.
+                    let session_status = {
+                        let active = context.active_sessions.read().await;
+                        active
+                            .get(context.session_id)
+                            .map(|s| s.metadata.status.clone())
+                    };
+                    if !crate::agent::workflow::should_continue_after_approval_channel_closed(
+                        session_status.as_ref(),
+                    ) {
+                        log::info!(
+                            "Session {} is no longer active and busy ({:?}) after approval channel closure; cleanly discarding workflow continuation",
+                            context.session_id,
+                            session_status
+                        );
+                        break;
+                    }
+
+                    // Cancel/terminate dropped the approval waiter while the session is still active and busy.
+                    // Close this call and let the cancel check at the top tombstone any remainder.
                     context
                         .continue_after_tool(
                             tool_call_id,
