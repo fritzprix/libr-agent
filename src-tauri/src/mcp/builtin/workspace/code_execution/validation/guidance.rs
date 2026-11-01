@@ -194,14 +194,21 @@ pub fn shell_command_failure_guidance(
     }
 
     match exit_code {
-        Some(1) => with_rewrite_loop_hint(
-            vec![
-                "General command failure - review error output above".to_string(),
-                "Verify command syntax and required files exist".to_string(),
-                "Use workspace__listDirectory to check file paths".to_string(),
-            ],
-            command,
-        ),
+        Some(1) => {
+            let first = if stdout.is_empty() && stderr.is_empty() {
+                "General command failure - the command printed no output"
+            } else {
+                "General command failure - review error output above"
+            };
+            with_rewrite_loop_hint(
+                vec![
+                    first.to_string(),
+                    "Verify command syntax and required files exist".to_string(),
+                    "Use workspace__listDirectory to check file paths".to_string(),
+                ],
+                command,
+            )
+        }
         Some(2) => with_rewrite_loop_hint(
             vec![
                 "Misuse of shell command or invalid arguments".to_string(),
@@ -224,7 +231,8 @@ pub fn shell_command_failure_guidance(
             "Verify the file is a valid executable".to_string(),
         ],
         Some(code) if is_signal_interrupt_exit(code) => shell_signal_interrupt_guidance(code),
-        // The shell executors report -1 when the process ended without an exit status.
+        // The shell executors report -1 when the process ended without an exit status. No
+        // rewrite-loop hint: a killed process says nothing about whether the script is wrong.
         Some(-1) | None => no_exit_status_guidance(stdout, stderr),
         Some(code) => {
             let mut guidance = vec![format!("Command failed with exit code: {code}")];
@@ -239,7 +247,7 @@ pub fn shell_command_failure_guidance(
 
 fn no_exit_status_guidance(stdout: &str, stderr: &str) -> Vec<String> {
     let mut guidance = vec![
-        "Exit code -1 means the process ended without an exit status: it timed out, was killed, or was stopped by a signal."
+        "Exit code -1 (or no exit code) means the process ended without an exit status: it timed out, was killed, or was stopped by a signal."
             .to_string(),
     ];
     if stdout.is_empty() && stderr.is_empty() {
@@ -532,12 +540,22 @@ mod tests {
 
     #[test]
     fn other_exit_codes_only_point_at_error_output_when_some_was_captured() {
-        let empty = shell_command_failure_guidance(Some(42), "", "", "foo", false).join("\n");
-        assert!(!empty.contains("Review error output above"), "{empty}");
+        for exit_code in [1, 42] {
+            let empty =
+                shell_command_failure_guidance(Some(exit_code), "", "", "grep -q x f", false)
+                    .join("\n")
+                    .to_ascii_lowercase();
+            assert!(!empty.contains("review error output above"), "{empty}");
 
-        let with_stderr =
-            shell_command_failure_guidance(Some(42), "", "boom", "foo", false).join("\n");
-        assert!(with_stderr.contains("Review error output above"));
+            let with_stderr =
+                shell_command_failure_guidance(Some(exit_code), "", "boom", "grep -q x f", false)
+                    .join("\n")
+                    .to_ascii_lowercase();
+            assert!(
+                with_stderr.contains("review error output above"),
+                "{with_stderr}"
+            );
+        }
     }
 
     #[test]
