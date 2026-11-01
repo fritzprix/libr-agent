@@ -9,6 +9,70 @@ use tracing::info;
 
 use super::workspace_server::WorkspaceServer;
 
+const MAX_LOGGED_STRING_BYTES: usize = 128;
+
+const REDACTED_ARG_KEYS: &[&str] = &[
+    "content",
+    "old_string",
+    "new_string",
+    "new_value",
+    "edits",
+    "ops",
+    "value",
+    "command",
+    "script",
+    "input",
+    "env",
+];
+
+fn summarize_redacted_value(value: &Value) -> Value {
+    match value {
+        Value::String(s) => Value::String(format!("<redacted: {} bytes>", s.len())),
+        Value::Array(arr) => Value::String(format!("<redacted: {} items>", arr.len())),
+        Value::Object(obj) => Value::String(format!("<redacted: {} keys>", obj.len())),
+        Value::Null => Value::Null,
+        _ => Value::String("<redacted>".to_string()),
+    }
+}
+
+fn summarize_value_for_log(value: &Value) -> Value {
+    match value {
+        Value::String(s) if s.len() > MAX_LOGGED_STRING_BYTES => {
+            let end = s
+                .char_indices()
+                .map(|(i, _)| i)
+                .take_while(|&i| i <= MAX_LOGGED_STRING_BYTES)
+                .last()
+                .unwrap_or(0);
+            Value::String(format!("{}... ({} bytes)", &s[..end], s.len()))
+        }
+        Value::Array(arr) => Value::Array(arr.iter().map(summarize_value_for_log).collect()),
+        Value::Object(map) => {
+            let summarized = map
+                .iter()
+                .map(|(k, v)| {
+                    let next = if REDACTED_ARG_KEYS.contains(&k.as_str()) {
+                        summarize_redacted_value(v)
+                    } else {
+                        summarize_value_for_log(v)
+                    };
+                    (k.clone(), next)
+                })
+                .collect();
+            Value::Object(summarized)
+        }
+        _ => value.clone(),
+    }
+}
+
+fn summarize_args_for_log(tool_name: &str, args: &Value) -> Value {
+    if tool_name == SUBMIT_INTERACTIVE_SHELL_INPUT_INTERNAL {
+        serde_json::json!({ "redacted": true })
+    } else {
+        summarize_value_for_log(args)
+    }
+}
+
 impl WorkspaceServer {
     fn shell_tool_unavailable_result(&self, tool_name: &str) -> MCPResult {
         let (reason, guidance) = match self.workspace_isolation {
@@ -55,11 +119,7 @@ impl WorkspaceServer {
         args: Value,
         session_id: Option<String>,
     ) -> Result<MCPResult, String> {
-        let logged_args = if tool_name == SUBMIT_INTERACTIVE_SHELL_INPUT_INTERNAL {
-            serde_json::json!({ "redacted": true })
-        } else {
-            args.clone()
-        };
+        let logged_args = summarize_args_for_log(tool_name, &args);
         info!(
             "Workspace tool called: {} with args: {:?}",
             tool_name, logged_args
@@ -160,5 +220,75 @@ impl WorkspaceServer {
             }
             Ok(guided_error(ErrorCategory::InternalError, e, ToolGroup::Workspace).to_mcp_result())
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn summarize_args_redacts_interactive_shell_input() {
+        let args = json!({ "input": "super-secret-password" });
+        let logged = summarize_args_for_log(SUBMIT_INTERACTIVE_SHELL_INPUT_INTERNAL, &args);
+        assert_eq!(logged, json!({ "redacted": true }));
+    }
+
+    #[test]
+    fn summarize_args_redacts_file_content_and_keeps_metadata() {
+        let secret = "API_KEY=sk-live-secret-value\n";
+        let args = json!({
+            "path": ".env",
+            "mode": "overwrite",
+            "content": secret,
+        });
+        let logged = summarize_args_for_log("writeFile", &args);
+        assert_eq!(
+            logged,
+            json!({
+                "path": ".env",
+                "mode": "overwrite",
+                "content": format!("<redacted: {} bytes>", secret.len()),
+            })
+        );
+        let serialized = logged.to_string();
+        assert!(!serialized.contains("sk-live-secret-value"));
+    }
+
+    #[test]
+    fn summarize_args_redacts_edit_and_shell_payloads() {
+        let args = json!({
+            "path": "config.json",
+            "old_string": "old-secret",
+            "new_string": "new-secret",
+            "ops": [{"op": "set", "path": "/token", "value": "tok_123"}],
+            "edits": [{"line": 1, "new_value": "secret"}],
+            "command": "echo $SECRET_TOKEN",
+            "script": "export TOKEN=abc\ncurl ...",
+            "env": {"TOKEN": "abc"}
+        });
+        let logged = summarize_args_for_log("strReplace", &args);
+        assert_eq!(logged["path"], json!("config.json"));
+        assert_eq!(logged["old_string"], json!("<redacted: 10 bytes>"));
+        assert_eq!(logged["new_string"], json!("<redacted: 10 bytes>"));
+        assert_eq!(logged["ops"], json!("<redacted: 1 items>"));
+        assert_eq!(logged["edits"], json!("<redacted: 1 items>"));
+        assert_eq!(logged["command"], json!("<redacted: 18 bytes>"));
+        assert_eq!(logged["script"], json!("<redacted: 25 bytes>"));
+        assert_eq!(logged["env"], json!("<redacted: 1 keys>"));
+    }
+
+    #[test]
+    fn summarize_args_truncates_large_non_sensitive_strings_on_char_boundary() {
+        let long_pattern = "가".repeat(60); // 180 bytes in UTF-8
+        let args = json!({
+            "path": "src/main.rs",
+            "pattern": long_pattern,
+        });
+        let logged = summarize_args_for_log("grepFiles", &args);
+        let pattern_logged = logged["pattern"].as_str().expect("string summary");
+        assert!(pattern_logged.ends_with("... (180 bytes)"));
+        assert!(pattern_logged.len() < long_pattern.len());
     }
 }
