@@ -13,7 +13,7 @@ LibrAgent provides a robust HTTP API for remote management of AI agents, session
 - **Authentication**:
   - Bearer token authentication supported via `Authorization: Bearer <token>` (`libr_...`).
   - Keys can be injected via `LIBRAGENT_SESSION_API_KEY` or `LIBRAGENT_SESSION_API_KEY_FILE`, or issued dynamically via the interactive agent pairing flow (`POST /api/pairings`).
-  - Authentication is required when an API key is configured or when managed Docker sessions exist.
+  - Authentication is required only when an API key is set.
 - **CORS**: Cross-origin browser access is not enabled (no `Access-Control-Allow-Origin`).
 
 ---
