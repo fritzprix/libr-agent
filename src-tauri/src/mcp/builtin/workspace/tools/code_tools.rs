@@ -27,7 +27,7 @@ pub fn create_run_shell_tool(allow_root: bool) -> MCPTool {
             Some(1),
             Some(RUN_SHELL_SCRIPT_MAX_CHARS),
             Some(
-                "Multi-line bash script run verbatim (no quote escaping needed; newlines separate commands). Use instead of command for loops, nested quotes, or $(...). Provide exactly one of command or script.",
+                "Multi-line bash script run verbatim (no quote escaping needed; newlines separate commands). Use instead of command for loops or nested quotes; command substitution ($(...) and backticks) still requires user approval. Provide exactly one of command or script.",
             ),
         ),
     );
