@@ -162,8 +162,6 @@ pub async fn terminate_session(
         }
     };
 
-    abort_pending_tool_approvals(active_sessions, &session_id).await;
-
     // 2. Destroy proxy for this session - ALWAYS do this!
     // This prevents resource leaks (MCP processes) even if the session wasn't active
     // (e.g. failed resume or already closed in memory but proxy still exists).
@@ -202,6 +200,11 @@ pub async fn terminate_session(
             }
         }
     }
+
+    // Abort pending approvals AFTER status is Idle and pending_execution is cleared.
+    // The woken waiter must observe Idle in active_sessions so should_continue_after_approval_channel_closed
+    // discards continuation instead of racing into a boundary pause or another LLM turn.
+    abort_pending_tool_approvals(active_sessions, &session_id).await;
 
     // Hard terminate drops waiting prompts; soft cancel preserves them.
     discard_pending_events(active_sessions, &session_id).await;
