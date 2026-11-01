@@ -236,10 +236,16 @@ def main() -> None:
     try:
         if args.update:
             state = load_state(state_path)
-            fp = compute_fingerprint()
-            state["lastFingerprint"] = fp
+            tick_start_fp = state.pop("tickStartFingerprint", None)
+            if tick_start_fp:
+                state["lastFingerprint"] = tick_start_fp
+                print(f"UPDATED: {tick_start_fp[:12]}")
             save_state(state_path, state)
-            print(f"UPDATED: {fp[:12]}")
+        elif args.unlock:
+            state = load_state(state_path)
+            if "tickStartFingerprint" in state:
+                del state["tickStartFingerprint"]
+                save_state(state_path, state)
 
         if args.update or args.unlock:
             sys.exit(EXIT_RUN)
@@ -268,6 +274,8 @@ def main() -> None:
         # lastFingerprint must be saved only after a successful tick via --update.
         if args.lock:
             acquire_lock(lock_path, pid=args.pid)
+            state["tickStartFingerprint"] = fp
+            save_state(state_path, state)
         print(f"RUN (changes detected: {fp[:12]})")
         sys.exit(EXIT_RUN)
 
