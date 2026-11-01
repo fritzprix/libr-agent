@@ -317,6 +317,8 @@
     "rootLabel": "根会话",
     "updatedLabel": "已更新",
     "resumeRoot": "恢复根会话",
+    "exportBundle": "导出组织",
+    "importBundle": "导入组织",
     "delete": "删除组织",
     "deleteConfirm": {
       "title": "删除组织？",
@@ -324,7 +326,12 @@
     },
     "toasts": {
       "deleted": "组织已删除",
-      "deleteFailed": "删除组织失败"
+      "deleteFailed": "删除组织失败",
+      "exported": "组织包已导出",
+      "exportFailed": "导出组织失败",
+      "imported": "组织包已导入。Teamwork 文件：{{path}}",
+      "importFailed": "导入组织包失败",
+      "importPasswordRequired": "此组织包已加密。此界面尚不支持带密码的导入，请使用未加密的导出或迁移工具。"
     },
     "emptyState": {
       "title": "还没有组织血统",
@@ -931,6 +938,23 @@
         "title": "在工具结果中显示循环警告 (旧版)",
         "description": "开启后，将在工具错误中显示循环警告提示，而不是自动重试。"
       }
+    },
+    "sessionApi": {
+      "title": "Session API 密钥",
+      "description": "通过配对颁发给外部 AI 代理的 API 密钥。只要存在任何密钥，没有有效密钥的请求都会以 401 拒绝。没有密钥时，允许来自 localhost 的请求无需密钥。",
+      "emptyList": "尚未颁发 API 密钥。请在聊天中使用“集成到代理会话”来配对外部代理。",
+      "fetchError": "加载 Session API 密钥失败",
+      "errorTitle": "加载 Session API 密钥失败",
+      "errorHelp": "密钥文件可能已损坏或权限不正确。在问题解决之前，密钥验证将保持锁定（fail-closed）。",
+      "deleteSuccess": "已删除 {{name}} 的 API 密钥",
+      "deleteError": "删除 API 密钥失败",
+      "active": "有效",
+      "created": "创建时间",
+      "pairingTitle": "代理配对请求",
+      "pairingDescription": "外部代理“{{name}}”正在请求访问 Session API。请输入代理屏幕上显示的 6 位代码以授权。",
+      "pairingCodeLabel": "配对代码 (xxx-yyy)",
+      "pairingSuccess": "已成功与 {{name}} 配对",
+      "pairingRejected": "已拒绝配对请求"
     }
   },
   "mcpServer": {
@@ -1292,7 +1316,11 @@
       "renameCancelAria": "取消编辑会话标题",
       "renameSuccess": "会话标题已更新",
       "renameError": "更新会话标题失败",
-      "renameEmptyError": "会话标题不能为空"
+      "renameEmptyError": "会话标题不能为空",
+      "integrateExternalAgentAria": "集成到代理会话（复制说明）",
+      "integrateExternalAgentTooltip": "集成到代理会话（复制说明）",
+      "integrationInstructionCopied": "集成说明已复制到剪贴板。请将其粘贴到您的外部 AI 代理中。",
+      "integrationInstructionCopyFailed": "无法将集成说明复制到剪贴板"
     },
     "sessionExport": {
       "menuAria": "导出会话",
@@ -1382,6 +1410,11 @@
       "reasoningBudgetRetry": "推理时间过长。正在以新回合重试…",
       "thinkingLoopRetry": "检测到思考循环。正在以新回合重试…",
       "textLoopRetry": "检测到重复文本循环。正在以新回合重试…"
+    },
+    "interactiveForm": {
+      "submitSuccess": "答案已提交，代理正在继续。",
+      "submitNotReady": "会话尚未就绪。请稍后再次提交。",
+      "duplicateSubmit": "您的答案正在提交中。"
     },
     "statusBar": {
       "retryError": "重试消息失败",
