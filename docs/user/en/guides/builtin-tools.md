@@ -78,6 +78,7 @@ For power users and prompt engineering, below is the primary built-in tools inve
 | **`workspace`**      | `workspace__readFile`                 | Slice and read file contents                | Core (Default)               |
 |                      | `workspace__writeFile`                | Create or overwrite files                   | Core (Default)               |
 |                      | `workspace__strReplace`               | Exact string replacement in file            | Core (Default)               |
+|                      | `workspace__editObject`               | Structured edits in JSON files              | Core (Default)               |
 |                      | `workspace__listDirectory`            | List files and directories                  | Core (Default)               |
 |                      | `workspace__runShell`                 | Execute shell command (async supported)     | Core (Default)               |
 | **`browser`**        | `browser__navigateToUrl`              | Navigate to URL and wait for load           | Optional                     |
