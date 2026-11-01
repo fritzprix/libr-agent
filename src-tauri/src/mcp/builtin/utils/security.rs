@@ -131,6 +131,9 @@ impl SecurityValidator {
             .canonicalize()
             .unwrap_or_else(|_| absolute_path.clone());
 
+        // Only paths whose raw and canonical forms both lie outside `base_dir` are direct
+        // external paths (`OutsideWorkspaceRoot`); paths inside `base_dir` that resolve outside
+        // via symlinks are rejected as `PathTraversal` by the canonical checks below.
         if enforce_base_containment
             && !path_starts_with(&absolute_path, &self.base_dir)
             && !path_starts_with(&early_containment_path, &self.base_dir)
