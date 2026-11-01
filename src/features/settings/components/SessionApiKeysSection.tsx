@@ -18,6 +18,7 @@ import {
 import { getLogger } from '@/lib/logger';
 
 const logger = getLogger('SessionApiKeysSection');
+const CONFIRM_REVOKE_TIMEOUT_MS = 3000;
 
 function SessionApiKeysSectionComponent() {
   const { t } = useTranslation('common');
@@ -25,6 +26,17 @@ function SessionApiKeysSectionComponent() {
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!confirmDeleteId) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setConfirmDeleteId(null);
+    }, CONFIRM_REVOKE_TIMEOUT_MS);
+    return () => window.clearTimeout(timer);
+  }, [confirmDeleteId]);
 
   const fetchKeys = useCallback(async () => {
     setIsLoading(true);
@@ -136,6 +148,7 @@ function SessionApiKeysSectionComponent() {
         <div className="divide-y divide-border/50 rounded-lg border border-border/60 overflow-hidden">
           {keys.map((k) => {
             const isBusy = deletingId === k.id;
+            const isConfirming = confirmDeleteId === k.id;
             return (
               <div
                 key={k.id}
@@ -160,17 +173,57 @@ function SessionApiKeysSectionComponent() {
                   </div>
                 </div>
 
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={isBusy}
-                  onClick={() => void handleDelete(k.id, k.name)}
-                  className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive shrink-0 gap-1"
-                >
-                  <Trash2 className="h-3 w-3" />
-                  {t('common.delete', 'Delete')}
-                </Button>
+                {isConfirming ? (
+                  <div
+                    className="flex items-center gap-1.5 shrink-0"
+                    onBlur={(e) => {
+                      if (
+                        !e.currentTarget.contains(
+                          e.relatedTarget as Node | null,
+                        )
+                      ) {
+                        setConfirmDeleteId(null);
+                      }
+                    }}
+                  >
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={isBusy}
+                      onClick={() => setConfirmDeleteId(null)}
+                      className="h-7 text-xs px-2"
+                    >
+                      {t('common.cancel', 'Cancel')}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      disabled={isBusy}
+                      onClick={() => {
+                        setConfirmDeleteId(null);
+                        void handleDelete(k.id, k.name);
+                      }}
+                      className="h-7 text-xs gap-1"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      {t('settings.sessionApi.confirmRevoke', 'Confirm revoke')}
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isBusy}
+                    onClick={() => setConfirmDeleteId(k.id)}
+                    className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive shrink-0 gap-1"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                    {t('common.delete', 'Delete')}
+                  </Button>
+                )}
               </div>
             );
           })}
