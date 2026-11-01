@@ -18,7 +18,7 @@ Tool execution remains strictly under user supervision:
 | Tool Category                 | Safety Policy                     | Key Operations                                                                              |
 | ----------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------- |
 | **Read-Only Tools**           | Automatic execution               | Reading files, viewing web pages, searching session history                                 |
-| **System Modification Tools** | **Approval Dialog** (Normal mode) | Running shell commands (`runShell`), creating or modifying files                            |
+| **System Modification Tools** | **Approval Dialog** (Normal mode) | Running shell commands (`runShell`, `runPowerShell`), creating or modifying files           |
 | **Desktop Control Tools**     | **Explicit Approval Required**    | Taking desktop screenshots (`captureScreen`), simulating mouse/keyboard (`computerControl`) |
 
 > [!TIP]
@@ -73,26 +73,27 @@ Enabling every tool in all sessions increases the context tokens the LLM must co
 
 For power users and prompt engineering, below is the primary built-in tools inventory:
 
-| Server               | Tool Identifier                       | Description                                 | Default Status               |
-| -------------------- | ------------------------------------- | ------------------------------------------- | ---------------------------- |
-| **`workspace`**      | `workspace__readFile`                 | Slice and read file contents                | Core (Default)               |
-|                      | `workspace__writeFile`                | Create or overwrite files                   | Core (Default)               |
-|                      | `workspace__strReplace`               | Exact string replacement in file            | Core (Default)               |
-|                      | `workspace__editObject`               | Structured edits in JSON files              | Core (Default)               |
-|                      | `workspace__listDirectory`            | List files and directories                  | Core (Default)               |
-|                      | `workspace__runShell`                 | Execute shell command (async supported)     | Core (Default)               |
-| **`browser`**        | `browser__navigateToUrl`              | Navigate to URL and wait for load           | Optional                     |
-|                      | `browser__takeScreenshot`             | Capture viewport or full page screenshot    | Optional                     |
-|                      | `browser__getPageContent`             | Extract webpage text & DOM structure        | Optional                     |
-|                      | `browser__clickElement`               | Click DOM element                           | Optional                     |
-| **`desktop`**        | `desktop__computerControl`            | Mouse clicks, movement, and keyboard typing | Optional (Approval required) |
-| **`media`**          | `media__captureScreen`                | Capture desktop display or area             | Optional (Approval required) |
-|                      | `media__seeContent`                   | Analyze **visual** image/video content      | Optional                     |
-|                      | `media__listenContent`                | Analyze **audio**/video soundtrack          | Optional                     |
-| **`planning`**       | `planning__createGoal`                | Create multi-step goals & todos             | Optional                     |
-|                      | `planning__updateGoal`                | Update goal & step progress                 | Optional                     |
-| **`scheduled_task`** | `scheduled_task__createScheduledTask` | Register recurring background task          | Core (Default)               |
-|                      | `scheduled_task__listScheduledTasks`  | List registered scheduled tasks             | Core (Default)               |
+| Server               | Tool Identifier                                                     | Description                                                                  | Default Status               |
+| -------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ---------------------------- |
+| **`workspace`**      | `workspace__readFile`                                               | Slice and read file contents                                                 | Core (Default)               |
+|                      | `workspace__writeFile`                                              | Create or overwrite files                                                    | Core (Default)               |
+|                      | `workspace__strReplace`                                             | Exact string replacement in file                                             | Core (Default)               |
+|                      | `workspace__editObject`                                             | Structured edits in JSON files                                               | Core (Default)               |
+|                      | `workspace__listDirectory`                                          | List files and directories                                                   | Core (Default)               |
+|                      | `workspace__runShell`                                               | Execute shell command (async supported; Unix host and Docker)                | Core (Default)               |
+|                      | `workspace__runPowerShell` / `workspace__runInPersistentPowerShell` | Execute PowerShell command, including persistent session (Windows host only) | Core (Default)               |
+| **`browser`**        | `browser__navigateToUrl`                                            | Navigate to URL and wait for load                                            | Optional                     |
+|                      | `browser__takeScreenshot`                                           | Capture viewport or full page screenshot                                     | Optional                     |
+|                      | `browser__getPageContent`                                           | Extract webpage text & DOM structure                                         | Optional                     |
+|                      | `browser__clickElement`                                             | Click DOM element                                                            | Optional                     |
+| **`desktop`**        | `desktop__computerControl`                                          | Mouse clicks, movement, and keyboard typing                                  | Optional (Approval required) |
+| **`media`**          | `media__captureScreen`                                              | Capture desktop display or area                                              | Optional (Approval required) |
+|                      | `media__seeContent`                                                 | Analyze **visual** image/video content                                       | Optional                     |
+|                      | `media__listenContent`                                              | Analyze **audio**/video soundtrack                                           | Optional                     |
+| **`planning`**       | `planning__createGoal`                                              | Create multi-step goals & todos                                              | Optional                     |
+|                      | `planning__updateGoal`                                              | Update goal & step progress                                                  | Optional                     |
+| **`scheduled_task`** | `scheduled_task__createScheduledTask`                               | Register recurring background task                                           | Core (Default)               |
+|                      | `scheduled_task__listScheduledTasks`                                | List registered scheduled tasks                                              | Core (Default)               |
 
 > [!NOTE]
 > These identifiers are for power users and debugging. For everyday use, turn tools on or off in the assistant **Tools** tab.
