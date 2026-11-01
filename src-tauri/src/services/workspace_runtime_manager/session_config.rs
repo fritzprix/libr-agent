@@ -24,6 +24,27 @@ pub(super) fn docker_host_workspace_path(session: &SessionMetadata) -> RuntimeRe
         .ok_or_else(|| WorkspaceRuntimeError::MissingHostWorkspacePath(session.id.clone()))
 }
 
+/// Refuses a managed workspace that is the user's home directory or an ancestor of it. A root
+/// command in the container could then change dotfiles and other files of the whole home.
+/// Symlinks are resolved when the paths exist.
+pub(super) fn refuse_home_workspace(
+    host_workspace: &Path,
+    home: Option<&Path>,
+) -> RuntimeResult<()> {
+    let Some(home) = home else {
+        return Ok(());
+    };
+    let resolve = |path: &Path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    if resolve(home).starts_with(resolve(host_workspace)) {
+        return Err(WorkspaceRuntimeError::InvalidConfig(format!(
+            "The workspace '{}' is your home directory or contains it. A container workspace \
+             must not include your home directory. Select a project folder as the workspace.",
+            host_workspace.display()
+        )));
+    }
+    Ok(())
+}
+
 pub(super) fn session_is_attach(session: &SessionMetadata) -> bool {
     session
         .docker_config
@@ -114,6 +135,35 @@ pub fn build_skill_volume_args(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_home_directory_and_its_ancestors_are_refused_as_a_managed_workspace() {
+        let root = tempfile::tempdir().expect("root");
+        let home = root.path().join("users").join("alice");
+        let project = home.join("projects").join("app");
+        std::fs::create_dir_all(&project).expect("dirs");
+
+        for workspace in [home.as_path(), home.parent().expect("users"), root.path()] {
+            let error = refuse_home_workspace(workspace, Some(&home))
+                .expect_err("home or an ancestor must be refused")
+                .to_string();
+            assert!(error.contains("Select a project folder"), "{error}");
+        }
+        assert!(refuse_home_workspace(&project, Some(&home)).is_ok());
+        assert!(refuse_home_workspace(&root.path().join("other"), Some(&home)).is_ok());
+        assert!(refuse_home_workspace(&home, None).is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_to_the_home_directory_is_refused() {
+        let root = tempfile::tempdir().expect("root");
+        let home = root.path().join("alice");
+        std::fs::create_dir_all(&home).expect("home");
+        let link = root.path().join("ws");
+        std::os::unix::fs::symlink(&home, &link).expect("symlink");
+        assert!(refuse_home_workspace(&link, Some(&home)).is_err());
+    }
 
     #[test]
     fn skill_volume_args_mount_system_and_user_read_only() {
