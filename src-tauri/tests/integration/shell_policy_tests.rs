@@ -312,6 +312,60 @@ fn shell_policy_requires_approval_for_unresolved_variable_path() {
     );
 }
 
+fn shell_policy_for(
+    command: &str,
+) -> tauri_mcp_agent_lib::mcp::builtin::workspace::code_execution::shell::policy::ShellPolicyDecision
+{
+    let workspace = tempdir().expect("temp dir");
+    evaluate_shell_policy(ShellPolicyContext {
+        tool_name: "runShell",
+        command,
+        workspace_dir: Some(workspace.path()),
+        current_dir: None,
+        environment: None,
+        force_approval: false,
+    })
+}
+
+#[test]
+fn shell_policy_allows_special_shell_parameters() {
+    for command in [
+        "echo $?",
+        "true; echo \"exit=$?\"",
+        "echo $$ $! $# $0 $- $@ $* $1 $9",
+    ] {
+        let decision = shell_policy_for(command);
+        assert_eq!(
+            decision.action,
+            ShellPolicyAction::Allow,
+            "{command}: {}",
+            decision.reason
+        );
+    }
+}
+
+#[test]
+fn shell_policy_keeps_hard_approval_for_unresolved_path_and_real_globs() {
+    for (command, reason) in [
+        ("rm -rf $UNSET/x", "unresolved shell variable"),
+        ("ls src/*.rs", "dynamic glob expansion"),
+        ("ls $$*", "dynamic glob expansion"),
+    ] {
+        let decision = shell_policy_for(command);
+        assert_eq!(
+            decision.action,
+            ShellPolicyAction::RequireHardApproval,
+            "{command}: {}",
+            decision.reason
+        );
+        assert!(
+            decision.reason.contains(reason),
+            "{command}: {}",
+            decision.reason
+        );
+    }
+}
+
 #[tokio::test]
 async fn tool_policy_requires_hard_approval_for_unresolved_variable_path() {
     let decision = evaluate_tool_execution_policy(

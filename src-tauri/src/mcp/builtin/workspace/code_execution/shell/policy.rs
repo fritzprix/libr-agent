@@ -833,7 +833,18 @@ fn candidate_targets_sensitive_path(
 }
 
 fn token_contains_glob(token: &str) -> bool {
-    token.contains('*') || token.contains('?') || token.contains('[')
+    let mut chars = token.chars();
+    while let Some(ch) = chars.next() {
+        match ch {
+            // The character after `$` names a parameter (`$?`, `$*`, `$$`), so it is not a glob.
+            '$' => {
+                chars.next();
+            }
+            '*' | '?' | '[' => return true,
+            _ => {}
+        }
+    }
+    false
 }
 
 fn expand_home_token(token: &str) -> Option<PathBuf> {
