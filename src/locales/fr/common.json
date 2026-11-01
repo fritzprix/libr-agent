@@ -317,6 +317,8 @@
     "rootLabel": "Session racine",
     "updatedLabel": "Mis à jour",
     "resumeRoot": "Reprendre la session racine",
+    "exportBundle": "Exporter l'organisation",
+    "importBundle": "Importer une organisation",
     "delete": "Supprimer l'organisation",
     "deleteConfirm": {
       "title": "Supprimer l'organisation ?",
@@ -324,7 +326,12 @@
     },
     "toasts": {
       "deleted": "Organisation supprimée",
-      "deleteFailed": "Échec de la suppression de l'organisation"
+      "deleteFailed": "Échec de la suppression de l'organisation",
+      "exported": "Paquet d'organisation exporté",
+      "exportFailed": "Échec de l'exportation de l'organisation",
+      "imported": "Paquet d'organisation importé. Fichiers Teamwork : {{path}}",
+      "importFailed": "Échec de l'importation du paquet d'organisation",
+      "importPasswordRequired": "Ce paquet d'organisation est chiffré. L'importation protégée par mot de passe n'est pas encore disponible dans cette interface — utilisez une exportation non chiffrée ou les outils de migration."
     },
     "emptyState": {
       "title": "Aucune lignée d'organisation pour le moment",
@@ -931,6 +938,23 @@
         "title": "Afficher les avertissements de boucle dans les résultats d'outils (hérité)",
         "description": "Si activé, affiche des avertissements dans les messages d'erreur au lieu de réessayer automatiquement."
       }
+    },
+    "sessionApi": {
+      "title": "Clés de la Session API",
+      "description": "Clés d'API délivrées aux agents d'IA externes par appairage. Dès qu'une clé existe, les requêtes sans clé valide sont refusées avec une erreur 401. Sans aucune clé, les requêtes provenant de localhost sont autorisées sans clé.",
+      "emptyList": "Aucune clé d'API délivrée pour l'instant. Utilisez « Intégrer à la session de l'agent » dans le chat pour appairer un agent externe.",
+      "fetchError": "Échec du chargement des clés de la Session API",
+      "errorTitle": "Échec du chargement des clés de la Session API",
+      "errorHelp": "Le fichier de clés est peut-être endommagé ou ses autorisations sont incorrectes. La vérification des clés reste verrouillée (fail-closed) jusqu'à la résolution du problème.",
+      "deleteSuccess": "Clé d'API de {{name}} supprimée",
+      "deleteError": "Échec de la suppression de la clé d'API",
+      "active": "Active",
+      "created": "Créée",
+      "pairingTitle": "Demande d'appairage d'un agent",
+      "pairingDescription": "L'agent externe « {{name}} » demande l'accès à la Session API. Saisissez le code à 6 caractères affiché sur l'écran de l'agent pour l'autoriser.",
+      "pairingCodeLabel": "Code d'appairage (xxx-yyy)",
+      "pairingSuccess": "Appairage réussi avec {{name}}",
+      "pairingRejected": "Demande d'appairage refusée"
     }
   },
   "mcpServer": {
@@ -1292,7 +1316,11 @@
       "renameCancelAria": "Annuler la modification du titre de la session",
       "renameSuccess": "Titre de la session mis à jour",
       "renameError": "Échec de la mise à jour du titre de la session",
-      "renameEmptyError": "Le titre de la session ne peut pas être vide"
+      "renameEmptyError": "Le titre de la session ne peut pas être vide",
+      "integrateExternalAgentAria": "Intégrer à la session de l'agent (copier les instructions)",
+      "integrateExternalAgentTooltip": "Intégrer à la session de l'agent (copier les instructions)",
+      "integrationInstructionCopied": "Instructions d'intégration copiées dans le presse-papiers. Collez-les dans votre agent d'IA externe.",
+      "integrationInstructionCopyFailed": "Échec de la copie des instructions d'intégration dans le presse-papiers"
     },
     "sessionExport": {
       "menuAria": "Exporter la session",
@@ -1382,6 +1410,11 @@
       "reasoningBudgetRetry": "Le raisonnement a duré trop longtemps. Nouvel essai avec un tour frais…",
       "thinkingLoopRetry": "Boucle de réflexion détectée. Nouvel essai avec un tour frais…",
       "textLoopRetry": "Boucle de texte répété détectée. Nouvel essai avec un tour frais…"
+    },
+    "interactiveForm": {
+      "submitSuccess": "Réponse envoyée — l'agent poursuit.",
+      "submitNotReady": "La session n'était pas encore prête. Veuillez renvoyer dans un instant.",
+      "duplicateSubmit": "Votre réponse est déjà en cours d'envoi."
     },
     "statusBar": {
       "retryError": "Échec de la nouvelle tentative du message",

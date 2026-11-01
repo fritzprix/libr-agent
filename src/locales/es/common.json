@@ -317,6 +317,8 @@
     "rootLabel": "Sesión raíz",
     "updatedLabel": "Actualizado",
     "resumeRoot": "Reanudar sesión raíz",
+    "exportBundle": "Exportar organización",
+    "importBundle": "Importar organización",
     "delete": "Eliminar organización",
     "deleteConfirm": {
       "title": "¿Eliminar organización?",
@@ -324,7 +326,12 @@
     },
     "toasts": {
       "deleted": "Organización eliminada",
-      "deleteFailed": "Error al eliminar la organización"
+      "deleteFailed": "Error al eliminar la organización",
+      "exported": "Paquete de organización exportado",
+      "exportFailed": "No se pudo exportar la organización",
+      "imported": "Paquete de organización importado. Archivos de Teamwork: {{path}}",
+      "importFailed": "No se pudo importar el paquete de organización",
+      "importPasswordRequired": "Este paquete de organización está cifrado. La importación con contraseña aún no está disponible en esta interfaz: use una exportación sin cifrar o las herramientas de migración."
     },
     "emptyState": {
       "title": "Aún no hay linajes de organización",
@@ -931,6 +938,23 @@
         "title": "Mostrar avisos de bucle en resultados de herramientas (heredado)",
         "description": "Si está activo, muestra avisos de bucle como errores de herramienta en lugar de reintentar en silencio."
       }
+    },
+    "sessionApi": {
+      "title": "Claves de la Session API",
+      "description": "Claves de API emitidas a agentes de IA externos mediante vinculación. Si existe alguna clave, las solicitudes sin una clave válida se rechazan con 401. Si no existe ninguna clave, se permiten las solicitudes de localhost sin clave.",
+      "emptyList": "Aún no se ha emitido ninguna clave de API. Use «Integrar en la sesión del agente» en el chat para vincular un agente externo.",
+      "fetchError": "No se pudieron cargar las claves de la Session API",
+      "errorTitle": "No se pudieron cargar las claves de la Session API",
+      "errorHelp": "Es posible que el archivo de claves esté dañado o tenga permisos incorrectos. La verificación de claves permanece bloqueada (fail-closed) hasta que se resuelva el problema.",
+      "deleteSuccess": "Se eliminó la clave de API de {{name}}",
+      "deleteError": "No se pudo eliminar la clave de API",
+      "active": "Activa",
+      "created": "Creada",
+      "pairingTitle": "Solicitud de vinculación de agente",
+      "pairingDescription": "El agente externo «{{name}}» solicita acceso a la Session API. Introduzca el código de 6 caracteres que se muestra en la pantalla del agente para autorizarlo.",
+      "pairingCodeLabel": "Código de vinculación (xxx-yyy)",
+      "pairingSuccess": "Vinculado correctamente con {{name}}",
+      "pairingRejected": "Solicitud de vinculación rechazada"
     }
   },
   "mcpServer": {
@@ -1292,7 +1316,11 @@
       "renameCancelAria": "Cancelar edición del título de la sesión",
       "renameSuccess": "Título de la sesión actualizado",
       "renameError": "No se pudo actualizar el título de la sesión",
-      "renameEmptyError": "El título de la sesión no puede estar vacío"
+      "renameEmptyError": "El título de la sesión no puede estar vacío",
+      "integrateExternalAgentAria": "Integrar en la sesión del agente (copiar instrucciones)",
+      "integrateExternalAgentTooltip": "Integrar en la sesión del agente (copiar instrucciones)",
+      "integrationInstructionCopied": "Instrucciones de integración copiadas al portapapeles. Péguelas en su agente de IA externo.",
+      "integrationInstructionCopyFailed": "No se pudieron copiar las instrucciones de integración al portapapeles"
     },
     "sessionExport": {
       "menuAria": "Exportar sesión",
@@ -1382,6 +1410,11 @@
       "reasoningBudgetRetry": "El razonamiento duró demasiado. Reintentando con un turno nuevo…",
       "thinkingLoopRetry": "Se detectó un bucle de pensamiento. Reintentando con un turno nuevo…",
       "textLoopRetry": "Se detectó un bucle de texto repetido. Reintentando con un turno nuevo…"
+    },
+    "interactiveForm": {
+      "submitSuccess": "Respuesta enviada: el agente continúa.",
+      "submitNotReady": "La sesión aún no estaba lista. Vuelva a enviar en un momento.",
+      "duplicateSubmit": "Su respuesta ya se está enviando."
     },
     "statusBar": {
       "retryError": "Error al reintentar el mensaje",

@@ -317,6 +317,8 @@
     "rootLabel": "Wurzelsitzung",
     "updatedLabel": "Aktualisiert",
     "resumeRoot": "Wurzelsitzung fortsetzen",
+    "exportBundle": "Org exportieren",
+    "importBundle": "Org importieren",
     "delete": "Organisation löschen",
     "deleteConfirm": {
       "title": "Organisation löschen?",
@@ -324,7 +326,12 @@
     },
     "toasts": {
       "deleted": "Organisation gelöscht",
-      "deleteFailed": "Organisation konnte nicht gelöscht werden"
+      "deleteFailed": "Organisation konnte nicht gelöscht werden",
+      "exported": "Organisationspaket exportiert",
+      "exportFailed": "Organisation konnte nicht exportiert werden",
+      "imported": "Organisationspaket importiert. Teamwork-Dateien: {{path}}",
+      "importFailed": "Organisationspaket konnte nicht importiert werden",
+      "importPasswordRequired": "Dieses Org-Paket ist verschlüsselt. Der Import mit Passwort ist in dieser Oberfläche noch nicht verfügbar — verwenden Sie einen unverschlüsselten Export oder die Migrationswerkzeuge."
     },
     "emptyState": {
       "title": "Noch keine Organisations-Abstammungslinien",
@@ -931,6 +938,23 @@
         "title": "Schleifenwarnungen in Werkzeugergebnissen anzeigen (Legacy)",
         "description": "Fügt bei Aktivierung Schleifenwarnungen in Fehlermeldungen ein, statt automatisch neu zu starten."
       }
+    },
+    "sessionApi": {
+      "title": "Session-API-Schlüssel",
+      "description": "API-Schlüssel, die externen KI-Agenten durch Kopplung ausgestellt wurden. Sobald ein Schlüssel existiert, werden Anfragen ohne gültigen Schlüssel mit 401 abgelehnt. Wenn keine Schlüssel existieren, sind Anfragen von localhost ohne Schlüssel erlaubt.",
+      "emptyList": "Noch keine API-Schlüssel ausgestellt. Verwenden Sie im Chat „In Agent-Sitzung integrieren“, um einen externen Agenten zu koppeln.",
+      "fetchError": "Session-API-Schlüssel konnten nicht geladen werden",
+      "errorTitle": "Session-API-Schlüssel konnten nicht geladen werden",
+      "errorHelp": "Die Schlüsseldatei ist möglicherweise beschädigt oder hat falsche Berechtigungen. Die Schlüsselprüfung bleibt gesperrt (fail-closed), bis das Problem behoben ist.",
+      "deleteSuccess": "API-Schlüssel für {{name}} gelöscht",
+      "deleteError": "API-Schlüssel konnte nicht gelöscht werden",
+      "active": "Aktiv",
+      "created": "Erstellt",
+      "pairingTitle": "Kopplungsanfrage eines Agenten",
+      "pairingDescription": "Der externe Agent „{{name}}“ fordert Zugriff auf die Session API an. Geben Sie zur Freigabe den 6-stelligen Code ein, der auf dem Bildschirm des Agenten angezeigt wird.",
+      "pairingCodeLabel": "Kopplungscode (xxx-yyy)",
+      "pairingSuccess": "Erfolgreich mit {{name}} gekoppelt",
+      "pairingRejected": "Kopplungsanfrage abgelehnt"
     }
   },
   "mcpServer": {
@@ -1292,7 +1316,11 @@
       "renameCancelAria": "Bearbeiten des Sitzungstitels abbrechen",
       "renameSuccess": "Sitzungstitel aktualisiert",
       "renameError": "Sitzungstitel konnte nicht aktualisiert werden",
-      "renameEmptyError": "Der Sitzungstitel darf nicht leer sein"
+      "renameEmptyError": "Der Sitzungstitel darf nicht leer sein",
+      "integrateExternalAgentAria": "In Agent-Sitzung integrieren (Anleitung kopieren)",
+      "integrateExternalAgentTooltip": "In Agent-Sitzung integrieren (Anleitung kopieren)",
+      "integrationInstructionCopied": "Integrationsanleitung in die Zwischenablage kopiert. Fügen Sie sie in Ihren externen KI-Agenten ein.",
+      "integrationInstructionCopyFailed": "Integrationsanleitung konnte nicht in die Zwischenablage kopiert werden"
     },
     "sessionExport": {
       "menuAria": "Sitzung exportieren",
@@ -1382,6 +1410,11 @@
       "reasoningBudgetRetry": "Das Reasoning dauerte zu lange. Neuer Versuch mit einem frischen Turn…",
       "thinkingLoopRetry": "Denkschleife erkannt. Neuer Versuch mit einem frischen Turn…",
       "textLoopRetry": "Wiederholte-Text-Schleife erkannt. Neuer Versuch mit einem frischen Turn…"
+    },
+    "interactiveForm": {
+      "submitSuccess": "Antwort gesendet — der Agent arbeitet weiter.",
+      "submitNotReady": "Die Sitzung war noch nicht bereit. Bitte senden Sie gleich noch einmal.",
+      "duplicateSubmit": "Ihre Antwort wird bereits gesendet."
     },
     "statusBar": {
       "retryError": "Fehler beim erneuten Senden der Nachricht",

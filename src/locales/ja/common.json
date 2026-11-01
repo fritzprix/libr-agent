@@ -317,6 +317,8 @@
     "rootLabel": "ルートセッション",
     "updatedLabel": "更新日",
     "resumeRoot": "ルートセッションを再開",
+    "exportBundle": "組織をエクスポート",
+    "importBundle": "組織をインポート",
     "delete": "組織を削除",
     "deleteConfirm": {
       "title": "組織を削除しますか？",
@@ -324,7 +326,12 @@
     },
     "toasts": {
       "deleted": "組織を削除しました",
-      "deleteFailed": "組織の削除に失敗しました"
+      "deleteFailed": "組織の削除に失敗しました",
+      "exported": "組織バンドルをエクスポートしました",
+      "exportFailed": "組織をエクスポートできませんでした",
+      "imported": "組織バンドルをインポートしました。Teamwork ファイル: {{path}}",
+      "importFailed": "組織バンドルをインポートできませんでした",
+      "importPasswordRequired": "この組織バンドルは暗号化されています。この画面ではパスワード付きのインポートにまだ対応していません。暗号化されていないエクスポートか移行ツールを使用してください。"
     },
     "emptyState": {
       "title": "Org 系統はまだありません",
@@ -931,6 +938,23 @@
         "title": "ツール結果にループ警告を表示 (レガシー)",
         "description": "有効にすると、自動で再試行する代わりにエラーメッセージとしてループ警告を表示します。"
       }
+    },
+    "sessionApi": {
+      "title": "Session API キー",
+      "description": "ペアリングによって外部 AI エージェントに発行された API キーです。キーが 1 つでもある場合、有効なキーのないリクエストは 401 で拒否されます。キーがない場合、localhost からのリクエストはキーなしで許可されます。",
+      "emptyList": "まだ API キーは発行されていません。チャットの「エージェントセッションに統合」を使用して外部エージェントをペアリングしてください。",
+      "fetchError": "Session API キーを読み込めませんでした",
+      "errorTitle": "Session API キーを読み込めませんでした",
+      "errorHelp": "キーファイルが破損しているか、権限が正しくない可能性があります。問題が解決するまでキーの検証はロックされます（fail-closed）。",
+      "deleteSuccess": "{{name}} の API キーを削除しました",
+      "deleteError": "API キーを削除できませんでした",
+      "active": "有効",
+      "created": "作成日",
+      "pairingTitle": "エージェントのペアリング要求",
+      "pairingDescription": "外部エージェント「{{name}}」が Session API へのアクセスを要求しています。許可するには、エージェントの画面に表示された 6 文字のコードを入力してください。",
+      "pairingCodeLabel": "ペアリングコード (xxx-yyy)",
+      "pairingSuccess": "{{name}} とのペアリングに成功しました",
+      "pairingRejected": "ペアリング要求を拒否しました"
     }
   },
   "mcpServer": {
@@ -1292,7 +1316,11 @@
       "renameCancelAria": "セッションタイトルの編集をキャンセル",
       "renameSuccess": "セッションタイトルを更新しました",
       "renameError": "セッションタイトルの更新に失敗しました",
-      "renameEmptyError": "セッションタイトルは空にできません"
+      "renameEmptyError": "セッションタイトルは空にできません",
+      "integrateExternalAgentAria": "エージェントセッションに統合（手順をコピー）",
+      "integrateExternalAgentTooltip": "エージェントセッションに統合（手順をコピー）",
+      "integrationInstructionCopied": "統合手順をクリップボードにコピーしました。外部 AI エージェントに貼り付けてください。",
+      "integrationInstructionCopyFailed": "統合手順をクリップボードにコピーできませんでした"
     },
     "sessionExport": {
       "menuAria": "セッションをエクスポート",
@@ -1382,6 +1410,11 @@
       "reasoningBudgetRetry": "推論が長すぎました。新しいターンで再試行します…",
       "thinkingLoopRetry": "思考ループを検出しました。新しいターンで再試行します…",
       "textLoopRetry": "繰り返しテキストのループを検出しました。新しいターンで再試行します…"
+    },
+    "interactiveForm": {
+      "submitSuccess": "回答を送信しました。エージェントが処理を続けています。",
+      "submitNotReady": "セッションの準備がまだできていませんでした。少し待ってからもう一度送信してください。",
+      "duplicateSubmit": "回答はすでに送信中です。"
     },
     "statusBar": {
       "retryError": "メッセージの再試行に失敗しました",

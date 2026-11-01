@@ -317,6 +317,8 @@
     "rootLabel": "Sessão raiz",
     "updatedLabel": "Atualizado",
     "resumeRoot": "Retomar sessão raiz",
+    "exportBundle": "Exportar organização",
+    "importBundle": "Importar organização",
     "delete": "Excluir organização",
     "deleteConfirm": {
       "title": "Excluir organização?",
@@ -324,7 +326,12 @@
     },
     "toasts": {
       "deleted": "Organização excluída",
-      "deleteFailed": "Falha ao excluir organização"
+      "deleteFailed": "Falha ao excluir organização",
+      "exported": "Pacote da organização exportado",
+      "exportFailed": "Falha ao exportar a organização",
+      "imported": "Pacote da organização importado. Arquivos do Teamwork: {{path}}",
+      "importFailed": "Falha ao importar o pacote da organização",
+      "importPasswordRequired": "Este pacote da organização está criptografado. A importação com senha ainda não está disponível nesta interface — use uma exportação sem criptografia ou as ferramentas de migração."
     },
     "emptyState": {
       "title": "Ainda não há linhagens de organização",
@@ -931,6 +938,23 @@
         "title": "Exibir avisos de loop nos resultados da ferramenta (legado)",
         "description": "Se ativado, adiciona avisos de loop nas mensagens de erro em vez de tentar novamente em silêncio."
       }
+    },
+    "sessionApi": {
+      "title": "Chaves da Session API",
+      "description": "Chaves de API emitidas para agentes de IA externos por pareamento. Quando existe alguma chave, solicitações sem uma chave válida são rejeitadas com 401. Quando não existem chaves, solicitações de localhost são permitidas sem chave.",
+      "emptyList": "Nenhuma chave de API emitida ainda. Use \"Integrar à sessão do agente\" no chat para parear um agente externo.",
+      "fetchError": "Falha ao carregar as chaves da Session API",
+      "errorTitle": "Falha ao carregar as chaves da Session API",
+      "errorHelp": "O arquivo de chaves pode estar danificado ou ter permissões incorretas. A verificação de chaves fica bloqueada (fail-closed) até que o problema seja resolvido.",
+      "deleteSuccess": "Chave de API de {{name}} excluída",
+      "deleteError": "Falha ao excluir a chave de API",
+      "active": "Ativa",
+      "created": "Criada",
+      "pairingTitle": "Solicitação de pareamento de agente",
+      "pairingDescription": "O agente externo \"{{name}}\" está solicitando acesso à Session API. Digite o código de 6 caracteres exibido na tela do agente para autorizar.",
+      "pairingCodeLabel": "Código de pareamento (xxx-yyy)",
+      "pairingSuccess": "Pareado com {{name}} com sucesso",
+      "pairingRejected": "Solicitação de pareamento rejeitada"
     }
   },
   "mcpServer": {
@@ -1292,7 +1316,11 @@
       "renameCancelAria": "Cancelar edição do título da sessão",
       "renameSuccess": "Título da sessão atualizado",
       "renameError": "Falha ao atualizar o título da sessão",
-      "renameEmptyError": "O título da sessão não pode ficar vazio"
+      "renameEmptyError": "O título da sessão não pode ficar vazio",
+      "integrateExternalAgentAria": "Integrar à sessão do agente (copiar instruções)",
+      "integrateExternalAgentTooltip": "Integrar à sessão do agente (copiar instruções)",
+      "integrationInstructionCopied": "Instruções de integração copiadas para a área de transferência. Cole-as no seu agente de IA externo.",
+      "integrationInstructionCopyFailed": "Falha ao copiar as instruções de integração para a área de transferência"
     },
     "sessionExport": {
       "menuAria": "Exportar sessão",
@@ -1382,6 +1410,11 @@
       "reasoningBudgetRetry": "O raciocínio demorou demais. Tentando novamente com um turno novo…",
       "thinkingLoopRetry": "Loop de pensamento detectado. Tentando novamente com um turno novo…",
       "textLoopRetry": "Loop de texto repetido detectado. Tentando novamente com um turno novo…"
+    },
+    "interactiveForm": {
+      "submitSuccess": "Resposta enviada — o agente está continuando.",
+      "submitNotReady": "A sessão ainda não estava pronta. Envie novamente em instantes.",
+      "duplicateSubmit": "Sua resposta já está sendo enviada."
     },
     "statusBar": {
       "retryError": "Falha ao tentar novamente a mensagem",
