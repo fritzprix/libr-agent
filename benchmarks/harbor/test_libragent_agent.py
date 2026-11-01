@@ -15,6 +15,7 @@ from benchmarks.harbor.libragent_agent import (
     DEFAULT_EXECUTION_MODE,
     EmptyAgentWorkError,
     LibrAgentHarborAdapter,
+    TRAJECTORY_MESSAGE_LIMIT,
     TrajectoryTelemetry,
     build_atif_trajectory,
     build_compaction_telemetry_document,
@@ -1288,3 +1289,9 @@ def test_wake_message_reaches_the_trajectory_as_a_user_step() -> None:
     assert woken and steps[woken[0]]["source"] == "user"
     after = [c for s in steps[woken[0] + 1 :] for c in s.get("tool_calls") or []]
     assert any("m-5c1e" in json.dumps(c["arguments"]) for c in after)
+
+
+def test_trajectory_message_limit_stays_within_server_cap() -> None:
+    assert 1 <= TRAJECTORY_MESSAGE_LIMIT <= 1_000
+    assert TRAJECTORY_MESSAGE_LIMIT == 1_000
+
