@@ -194,14 +194,21 @@ pub fn shell_command_failure_guidance(
     }
 
     match exit_code {
-        Some(1) => with_rewrite_loop_hint(
-            vec![
-                "General command failure - review error output above".to_string(),
-                "Verify command syntax and required files exist".to_string(),
-                "Use workspace__listDirectory to check file paths".to_string(),
-            ],
-            command,
-        ),
+        Some(1) => {
+            let first = if stdout.is_empty() && stderr.is_empty() {
+                "General command failure - the command printed no output"
+            } else {
+                "General command failure - review error output above"
+            };
+            with_rewrite_loop_hint(
+                vec![
+                    first.to_string(),
+                    "Verify command syntax and required files exist".to_string(),
+                    "Use workspace__listDirectory to check file paths".to_string(),
+                ],
+                command,
+            )
+        }
         Some(2) => with_rewrite_loop_hint(
             vec![
                 "Misuse of shell command or invalid arguments".to_string(),
@@ -224,23 +231,38 @@ pub fn shell_command_failure_guidance(
             "Verify the file is a valid executable".to_string(),
         ],
         Some(code) if is_signal_interrupt_exit(code) => shell_signal_interrupt_guidance(code),
-        Some(code) => with_rewrite_loop_hint(
-            vec![
-                format!("Command failed with exit code: {code}"),
-                "Review error output above for specific failure reasons".to_string(),
-                "Verify command syntax and required dependencies".to_string(),
-            ],
-            command,
-        ),
-        None => with_rewrite_loop_hint(
-            vec![
-                "Command failed without an exit code".to_string(),
-                "Review error output above for specific failure reasons".to_string(),
-                "Verify command syntax and required dependencies".to_string(),
-            ],
-            command,
-        ),
+        // The shell executors report -1 when the process ended without an exit status. No
+        // rewrite-loop hint: a killed process says nothing about whether the script is wrong.
+        Some(-1) | None => no_exit_status_guidance(stdout, stderr),
+        Some(code) => {
+            let mut guidance = vec![format!("Command failed with exit code: {code}")];
+            if !(stdout.is_empty() && stderr.is_empty()) {
+                guidance.push("Review error output above for specific failure reasons".to_string());
+            }
+            guidance.push("Verify command syntax and required dependencies".to_string());
+            with_rewrite_loop_hint(guidance, command)
+        }
     }
+}
+
+fn no_exit_status_guidance(stdout: &str, stderr: &str) -> Vec<String> {
+    let mut guidance = vec![
+        "Exit code -1 (or no exit code) means the process ended without an exit status: it timed out, was killed, or was stopped by a signal."
+            .to_string(),
+    ];
+    if stdout.is_empty() && stderr.is_empty() {
+        guidance.push("No output was captured, so there is no error output to review.".to_string());
+    } else {
+        guidance.push(
+            "Review the output above to find the last step that ran before the process stopped."
+                .to_string(),
+        );
+    }
+    guidance.push(
+        "Do not retry the same command unchanged. Check whether it was stopped on purpose, ran out of memory, or waits for input that it cannot get."
+            .to_string(),
+    );
+    guidance
 }
 
 /// Exit codes that mean the process was stopped by a common termination signal
@@ -499,6 +521,41 @@ mod tests {
         assert!(joined.contains("often expected"));
         assert!(joined.contains("Inspect stdout/stderr"));
         assert!(!joined.contains("General command failure"));
+    }
+
+    #[test]
+    fn exit_minus_one_without_output_does_not_point_at_error_output() {
+        for exit_code in [Some(-1), None] {
+            let joined =
+                shell_command_failure_guidance(exit_code, "", "", "sleep 999", false).join("\n");
+            assert!(joined.contains("timed out, was killed, or was stopped by a signal"));
+            assert!(joined.contains("No output was captured"));
+            assert!(!joined.contains("Review error output above"), "{joined}");
+        }
+
+        let with_output =
+            shell_command_failure_guidance(Some(-1), "step 3 of 5", "", "make", false).join("\n");
+        assert!(with_output.contains("Review the output above"));
+    }
+
+    #[test]
+    fn other_exit_codes_only_point_at_error_output_when_some_was_captured() {
+        for exit_code in [1, 42] {
+            let empty =
+                shell_command_failure_guidance(Some(exit_code), "", "", "grep -q x f", false)
+                    .join("\n")
+                    .to_ascii_lowercase();
+            assert!(!empty.contains("review error output above"), "{empty}");
+
+            let with_stderr =
+                shell_command_failure_guidance(Some(exit_code), "", "boom", "grep -q x f", false)
+                    .join("\n")
+                    .to_ascii_lowercase();
+            assert!(
+                with_stderr.contains("review error output above"),
+                "{with_stderr}"
+            );
+        }
     }
 
     #[test]
