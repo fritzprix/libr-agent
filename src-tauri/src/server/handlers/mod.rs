@@ -20,8 +20,8 @@ pub use health::health;
 pub use messages::{get_messages, send_message};
 pub use pairing::handle_pairing_request;
 pub use sessions::{
-    create_session, delete_session, get_child_sessions, get_session, resume_session_workflow,
-    terminate_session,
+    create_session, delete_session, get_child_sessions, get_session, patch_session,
+    resume_session_workflow, terminate_session,
 };
 pub use settings::{
     get_complexity_model_mapping, get_preferred_model, put_complexity_model_mapping,

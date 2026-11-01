@@ -1,5 +1,10 @@
 use super::AgentSessionManager;
+use crate::agent::state::AgentSession;
 use crate::execution_mode::ExecutionMode;
+use crate::repositories::SessionRepository;
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 /// Compare-and-restore helper for a failed persist after an optimistic in-memory write.
 ///
@@ -41,8 +46,25 @@ pub async fn set_execution_mode(
     session_id: &str,
     mode: ExecutionMode,
 ) -> Result<Vec<String>, String> {
+    set_execution_mode_in(
+        &manager.active_sessions,
+        &manager.session_repo,
+        Some(&manager.app_handle),
+        session_id,
+        mode,
+    )
+    .await
+}
+
+pub async fn set_execution_mode_in(
+    active_sessions: &RwLock<HashMap<String, AgentSession>>,
+    session_repo: &Arc<dyn SessionRepository>,
+    app_handle: Option<&tauri::AppHandle>,
+    session_id: &str,
+    mode: ExecutionMode,
+) -> Result<Vec<String>, String> {
     let previous_mode = {
-        let mut active = manager.active_sessions.write().await;
+        let mut active = active_sessions.write().await;
         if let Some(session) = active.get_mut(session_id) {
             let previous = session.metadata.execution_mode;
             session.metadata.execution_mode = mode;
@@ -52,13 +74,9 @@ pub async fn set_execution_mode(
         }
     };
 
-    if let Err(error) = manager
-        .session_repo
-        .update_execution_mode(session_id, mode)
-        .await
-    {
+    if let Err(error) = session_repo.update_execution_mode(session_id, mode).await {
         if let Some(previous) = previous_mode {
-            let mut active = manager.active_sessions.write().await;
+            let mut active = active_sessions.write().await;
             if let Some(session) = active.get_mut(session_id) {
                 session.metadata.execution_mode =
                     revert_mode_if_unchanged(session.metadata.execution_mode, mode, previous);
@@ -91,8 +109,9 @@ pub async fn set_execution_mode(
             // concurrent manual approve/reject cannot interleave between snapshot
             // and resolve. Event emit stays best-effort; the frontend reconciles
             // widgets from the command's resolved IDs (with a local fallback).
-            match super::approvals::approve_all_pending_tool_approvals(
-                manager,
+            match super::approvals::approve_all_pending_tool_approvals_in(
+                active_sessions,
+                app_handle,
                 session_id,
                 include_hard_approvals,
             )
