@@ -61,13 +61,6 @@ impl Unauthorized {
 
 impl Reject for Unauthorized {}
 
-/// Rejection while no key is injected but a Docker session exists: a container can reach
-/// host loopback on some platforms (Docker Desktop), so loopback alone is not enough.
-#[derive(Debug)]
-pub struct KeyRequired;
-
-impl Reject for KeyRequired {}
-
 fn base62_encode_fixed(bytes: &[u8]) -> String {
     let mut digits = Vec::with_capacity(KEY_CHARS);
     let mut number = bytes.to_vec();
@@ -250,23 +243,17 @@ pub fn is_configured() -> bool {
     ENV_KEY_STATE.get().is_some()
 }
 
-/// `docker_sessions` reports whether a Docker session (managed or attached) exists; it is
-/// asked only while no key is injected or issued.
-fn guard<F, Fut, H, A>(
+fn guard<H, A>(
     expected: Option<KeyState>,
-    docker_sessions: F,
     has_issued_keys: H,
     accept_issued_key: A,
 ) -> impl Filter<Extract = (), Error = Rejection> + Clone
 where
-    F: Fn() -> Fut + Clone + Send + Sync + 'static,
-    Fut: std::future::Future<Output = bool> + Send,
     H: Fn() -> Result<bool, String> + Clone + Send + Sync + 'static,
     A: Fn(&str) -> bool + Clone + Send + Sync + 'static,
 {
     warp::header::headers_cloned()
         .and_then(move |headers: HeaderMap| {
-            let docker_sessions = docker_sessions.clone();
             let has_issued_keys = has_issued_keys.clone();
             let accept_issued_key = accept_issued_key.clone();
             async move {
@@ -286,10 +273,6 @@ where
                     }));
                 }
                 let has_issued = issued_result.unwrap_or(false);
-                let has_any_key = expected.is_some() || has_issued;
-                if !has_any_key && docker_sessions().await {
-                    return Err(warp::reject::custom(KeyRequired));
-                }
                 check_bearer(&headers, expected, has_issued, accept_issued_key)
                     .map_err(warp::reject::custom)
             }
@@ -297,23 +280,11 @@ where
         .untuple_one()
 }
 
-/// Whether any Docker session (managed or attached) exists; a failed read counts as yes (fail closed).
-async fn docker_sessions_exist() -> bool {
-    use crate::repositories::session_repository::SessionRepository;
-
-    match crate::state::try_get_session_repository() {
-        Some(repo) => repo.has_docker_sessions().await.unwrap_or(true),
-        None => false,
-    }
-}
-
-/// Requires the injected key on every request. Without one, requests pass unless a Docker
-/// session (managed or attached) exists; then they are refused. The key is never given to
-/// containers.
+/// Requires a matching Bearer token while an injected or issued key exists. Without a key,
+/// every request passes. The key is never given to containers.
 pub fn api_key_guard() -> impl Filter<Extract = (), Error = Rejection> + Clone {
     guard(
         ENV_KEY_STATE.get().copied(),
-        docker_sessions_exist,
         super::pairing::has_any_active_issued_key,
         super::pairing::is_token_accepted_by_issued_keys,
     )
@@ -344,15 +315,10 @@ mod tests {
         check_bearer(headers, expected, false, |_| false)
     }
 
-    fn guard_env_only<F, Fut>(
+    fn guard_env_only(
         expected: Option<KeyState>,
-        docker_sessions: F,
-    ) -> impl Filter<Extract = (), Error = Rejection> + Clone
-    where
-        F: Fn() -> Fut + Clone + Send + Sync + 'static,
-        Fut: std::future::Future<Output = bool> + Send,
-    {
-        guard(expected, docker_sessions, || Ok(false), |_| false)
+    ) -> impl Filter<Extract = (), Error = Rejection> + Clone {
+        guard(expected, || Ok(false), |_| false)
     }
 
     #[test]
@@ -507,7 +473,7 @@ mod tests {
 
     #[tokio::test]
     async fn guard_answers_401_with_www_authenticate() {
-        let routes = guard_env_only(key_state("libr_secret"), docker_sessions)
+        let routes = guard_env_only(key_state("libr_secret"))
             .map(|| "ok")
             .recover(handle_rejection);
 
@@ -534,7 +500,7 @@ mod tests {
 
     #[tokio::test]
     async fn deny_all_guard_rejects_through_the_real_handler() {
-        let routes = guard_env_only(Some(KeyState::DenyAll), docker_sessions)
+        let routes = guard_env_only(Some(KeyState::DenyAll))
             .map(|| "ok")
             .recover(handle_rejection);
         let reply = warp::test::request()
@@ -544,54 +510,19 @@ mod tests {
         assert_eq!(reply.status(), 401);
     }
 
-    async fn docker_sessions() -> bool {
-        true
-    }
-
-    async fn no_docker_sessions() -> bool {
-        false
-    }
-
     #[tokio::test]
     async fn guard_is_a_no_op_without_an_injected_key() {
-        let routes = guard_env_only(None, no_docker_sessions)
-            .map(|| "ok")
-            .recover(handle_rejection);
-        assert_eq!(warp::test::request().reply(&routes).await.status(), 200);
-    }
-
-    #[tokio::test]
-    async fn without_a_key_docker_sessions_sessions_close_the_api() {
-        let routes = guard_env_only(None, docker_sessions)
-            .map(|| "ok")
-            .recover(handle_rejection);
+        let routes = guard_env_only(None).map(|| "ok").recover(handle_rejection);
         for request in [
             warp::test::request(),
-            // A container can spoof Host and send any token; neither helps.
-            warp::test::request().header("host", "127.0.0.1:3030"),
             warp::test::request().header("authorization", "Bearer libr_anything"),
         ] {
-            let reply = request.reply(&routes).await;
-            assert_eq!(reply.status(), 401);
-            assert!(String::from_utf8_lossy(reply.body()).contains("Docker sessions exist"));
+            assert_eq!(request.reply(&routes).await.status(), 200);
         }
     }
 
     #[tokio::test]
-    async fn with_a_key_docker_sessions_sessions_change_nothing() {
-        let routes = guard_env_only(key_state("libr_secret"), docker_sessions)
-            .map(|| "ok")
-            .recover(handle_rejection);
-        let ok = warp::test::request()
-            .header("authorization", "Bearer libr_secret")
-            .reply(&routes)
-            .await;
-        assert_eq!(ok.status(), 200);
-        assert_eq!(warp::test::request().reply(&routes).await.status(), 401);
-    }
-
-    #[tokio::test]
-    async fn guard_with_issued_key_and_docker_sessions_permits_valid_and_rejects_revoked() {
+    async fn guard_with_issued_key_permits_valid_and_opens_after_the_last_revoke() {
         use crate::server::pairing;
 
         let temp_dir = tempfile::tempdir().unwrap();
@@ -608,35 +539,28 @@ mod tests {
         };
         pairing::save_issued_keys_all(&[issued]).unwrap();
 
-        // No env key (None), but docker_sessions returns true
         let routes = guard(
             None,
-            docker_sessions,
             pairing::has_any_active_issued_key,
             pairing::is_token_accepted_by_issued_keys,
         )
         .map(|| "ok")
         .recover(handle_rejection);
 
-        // 1. Valid issued key with docker sessions -> 200 OK
+        // 1. Valid issued key -> 200 OK
         let ok = warp::test::request()
             .header("authorization", format!("Bearer {raw_key}"))
             .reply(&routes)
             .await;
         assert_eq!(ok.status(), 200);
 
-        // 2. Missing authorization with docker sessions -> 401 Unauthorized
+        // 2. Missing authorization -> 401 Unauthorized
         let missing = warp::test::request().reply(&routes).await;
         assert_eq!(missing.status(), 401);
 
-        // 3. Revoke key -> no active keys left -> returns 401 KeyRequired
+        // 3. Revoke the last key -> no key left -> the API opens
         pairing::revoke_issued_key("key-1").unwrap();
-        let revoked = warp::test::request()
-            .header("authorization", format!("Bearer {raw_key}"))
-            .reply(&routes)
-            .await;
-        assert_eq!(revoked.status(), 401);
-        assert!(String::from_utf8_lossy(revoked.body()).contains("Docker sessions exist"));
+        assert_eq!(warp::test::request().reply(&routes).await.status(), 200);
     }
 
     #[tokio::test]
@@ -651,7 +575,6 @@ mod tests {
 
         let routes = guard(
             None,
-            no_docker_sessions,
             pairing::has_any_active_issued_key,
             pairing::is_token_accepted_by_issued_keys,
         )
@@ -672,7 +595,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn guard_with_missing_key_file_allows_unauthenticated_and_rejects_on_docker_sessions() {
+    async fn guard_with_missing_key_file_allows_unauthenticated() {
         use crate::server::pairing;
 
         let temp_dir = tempfile::tempdir().unwrap();
@@ -681,36 +604,18 @@ mod tests {
         let file_path = pairing::keys_file_path();
         assert!(!file_path.exists(), "key file must not exist initially");
 
-        // Guard with no docker sessions
-        let routes_no_docker = guard(
+        let routes = guard(
             None,
-            no_docker_sessions,
             pairing::has_any_active_issued_key,
             pairing::is_token_accepted_by_issued_keys,
         )
         .map(|| "ok")
         .recover(handle_rejection);
 
-        // (a) Request without a token -> 200 OK
-        let reply_ok = warp::test::request().reply(&routes_no_docker).await;
-        assert_eq!(reply_ok.status(), 200);
+        // Request without a token -> 200 OK
+        assert_eq!(warp::test::request().reply(&routes).await.status(), 200);
 
-        // Guard with docker sessions
-        let routes_with_docker = guard(
-            None,
-            docker_sessions,
-            pairing::has_any_active_issued_key,
-            pairing::is_token_accepted_by_issued_keys,
-        )
-        .map(|| "ok")
-        .recover(handle_rejection);
-
-        // (b) Request with docker sessions -> 401 KeyRequired
-        let reply_docker = warp::test::request().reply(&routes_with_docker).await;
-        assert_eq!(reply_docker.status(), 401);
-        assert!(String::from_utf8_lossy(reply_docker.body()).contains("Docker sessions exist"));
-
-        // (c) The file still does not exist afterwards (the guard does not create it)
+        // The file still does not exist afterwards (the guard does not create it)
         assert!(!file_path.exists(), "guard must not create key file");
     }
 
@@ -729,7 +634,6 @@ mod tests {
 
         let routes = guard(
             Some(env_key_state),
-            no_docker_sessions,
             pairing::has_any_active_issued_key,
             pairing::is_token_accepted_by_issued_keys,
         )
@@ -771,7 +675,6 @@ mod tests {
 
         let routes = guard(
             None,
-            no_docker_sessions,
             pairing::has_any_active_issued_key,
             pairing::is_token_accepted_by_issued_keys,
         )
@@ -818,7 +721,6 @@ mod tests {
 
         let routes = guard(
             None,
-            no_docker_sessions,
             pairing::has_any_active_issued_key,
             pairing::is_token_accepted_by_issued_keys,
         )
