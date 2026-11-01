@@ -142,6 +142,17 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
                 .get_session_workspace_dir_by_id(&session_id)
         };
 
+        let is_attach = docker_config
+            .as_ref()
+            .is_some_and(DockerWorkspaceConfig::is_attach);
+        if existing_session.is_none() && !is_attach {
+            crate::services::workspace_runtime_manager::refuse_home_workspace(
+                &host_workspace,
+                dirs::home_dir().as_deref(),
+            )
+            .map_err(|e| e.to_string())?;
+        }
+
         Some(host_workspace.to_string_lossy().to_string())
     } else {
         None

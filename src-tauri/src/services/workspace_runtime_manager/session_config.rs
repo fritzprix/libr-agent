@@ -27,7 +27,7 @@ pub(super) fn docker_host_workspace_path(session: &SessionMetadata) -> RuntimeRe
 /// Refuses a managed workspace that is the user's home directory or an ancestor of it. A root
 /// command in the container could then change dotfiles and other files of the whole home.
 /// Symlinks are resolved when the paths exist.
-pub(super) fn refuse_home_workspace(
+pub(crate) fn refuse_home_workspace(
     host_workspace: &Path,
     home: Option<&Path>,
 ) -> RuntimeResult<()> {
