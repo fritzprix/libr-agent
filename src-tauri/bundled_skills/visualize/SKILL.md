@@ -7,7 +7,7 @@ description: |
   chart a spreadsheet, or explain with equations.
   Triggers on: "시각화", "다이어그램", "마인드맵", "flowchart", "mermaid", "차트 만들어줘",
   "plot this", "dashboard from CSV", "수식 그려줘", "visualize this".
-  Not for document editing (docx/pptx) or raw format conversion (to-md).
+  Not for document authoring or format conversion (use the docs skill).
 ---
 
 # Visualize
@@ -38,8 +38,7 @@ LibrAgent already renders Mermaid and LaTeX in chat, `ui__reportResult`, `ui__pr
 
 | Skill | Use for |
 | --- | --- |
-| **to-md** | Extract text from PDF/XLSX without charting |
-| **docx** / **pptx** | Author formatted documents |
+| **docs** | Convert to or from PDF, DOCX, PPTX, Markdown |
 | **deep-research** | Narrative research reports |
 | **workspace-indexer** | Batch markdown index for a repo |
 

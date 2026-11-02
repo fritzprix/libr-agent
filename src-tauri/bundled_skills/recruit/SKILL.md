@@ -29,7 +29,7 @@ Instead of passively asking the user what domain they want or waiting for exact 
 | **Core builtins** | `workspace`, `agent`, `tool`, `skills`, `scratchpad`, … | Always on — do not list redundantly |
 | **Optional builtins** | `planning`, `browser`, `knowledge`, `setup-wizard`, `media`, `history` | `builtinCapabilities` — restricts/enables optional services |
 | **External MCP** | GitHub, search, filesystem servers | `externalMcpServers` — **server IDs** from `tool__listServers`, not display names |
-| **Bundled skills** | `docx`, `deep-research` | **Not** via `agent__createAgent` — suggest `@skill:name` separately |
+| **Bundled skills** | `docs`, `deep-research` | **Not** via `agent__createAgent` — suggest `@skill:name` separately |
 
 ---
 
