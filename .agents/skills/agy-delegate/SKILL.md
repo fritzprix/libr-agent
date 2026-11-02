@@ -48,8 +48,7 @@ default id failed as unknown/stale.
 5. Follow-ups: new `-p` with fuller context, or `--conversation <id>` /
    `--continue` when resuming the same thread — **same model as the first turn**
 6. Optional: `--output-format json` when you need `status` / `response` fields
-7. **No git push/commit**: agy must not run `git commit`, `git push`, or `gh pr create`. The caller makes commits and PRs
-8. **Temporary files**: Write temporary task files in `.libragent/tmp/`, never in the skill folder (`.agents/skills/agy-delegate/`)
+7. **Temporary files**: Write temporary task files in `.libragent/tmp/`, never in the skill folder (`.agents/skills/agy-delegate/`)
 
 Recipes: `references/cli.md`. Handoff / isolation: `references/handoff.md`.
 Optional wrappers: `scripts/run.sh` (Bash) or `scripts/run.ps1` (PowerShell).
@@ -123,13 +122,11 @@ The agy session is not a clone of this Cursor chat:
 - Default cwd is whatever shell cwd you launch with — set it, or pass absolute
   `--add-dir`
 - Put objective, scope, paths, and output format in the `-p` prompt
-- Tell agy not to run `git commit`, `git push`, or `gh pr create` (the caller makes the commit and the PR)
 - Require deliverables in **stdout** (final assistant text / JSON `response`)
 - Do not assume Cursor files, notes, or skills are visible inside agy
 
 ## Anti-patterns
 
-- Letting agy push or commit (`git commit`, `git push`, `gh pr create`) — caller owns VCS state
 - Writing temporary task files in the skill folder — write them to `.libragent/tmp/`
 - Calling nonexistent MCP tools (`agy__*`, `spawnAgy`, …)
 - Vague prompts that rely on Cursor thread context

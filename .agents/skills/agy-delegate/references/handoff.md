@@ -21,7 +21,6 @@ Goal:
 Scope:
 - Only [paths / modules]
 - Do not [forbidden actions]
-- Do not run `git commit`, `git push`, or `gh pr create` (caller reviews, commits, and opens PRs)
 
 Workspace:
 - Work under [absolute path] (must match --add-dir / shell cwd)
@@ -52,6 +51,5 @@ Do not treat “done” prose without evidence as success.
 - Forgot permissions flag on tool-heavy tasks → blocked waiting for approval
 - Using LibrAgent HTTP endpoints here → wrong skill (`libr-delegate`)
 - Unquoted task variable on Windows → causes CLI argument splitting; always quote or use Here-Strings (`@' ... '@`)
-- Delegated agent pushed or committed → explicitly forbid `git commit`, `git push`, and `gh pr create` in the prompt; caller owns git operations
 - Temporary files written in skill folder → always write temporary task files in `.libragent/tmp/`, never in the skill folder
 - Fabricating ad-hoc wrapper scripts (.bat/.py/.js) when encountering quoting errors → use `scripts/run.ps1` or a single Here-String invocation instead
