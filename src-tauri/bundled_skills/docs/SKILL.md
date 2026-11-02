@@ -54,6 +54,6 @@ Then run document conversion using the interpreter reported under `VenvPython:`.
 ## Output Contract & Verification
 
 The script enforces an explicit output contract on every execution:
-- On success, it prints the absolute output path, the size in bytes, `ExitCode: 0`, and `OK`.
+- On success, it prints the absolute output path, `ExitCode: 0`, and `OK`. Every format also prints its size as `Bytes: <n>` (`--to pdf` adds `Pages: <n>`).
 - On failure (including syntax/argument errors, missing files, or pending sub-issue engines), it prints the error description, `ExitCode: <n>`, a single `NEXT:` line guiding the next action, and exits non-zero without printing `OK`.
 - **No OK line, no success report**: Never claim conversion succeeded unless `convert.py` printed `ExitCode: 0` and `OK`, and the output file exists with non-zero size.

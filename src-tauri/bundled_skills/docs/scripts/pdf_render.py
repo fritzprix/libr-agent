@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import pathlib
 import re
+import sys
 
 from markdown_it import MarkdownIt
 from reportlab.lib import colors
@@ -64,30 +65,43 @@ TEMPLATES = {
 
 DEFAULT_TEMPLATE = "report"
 
-# Emoji and pictographs have no glyph in Noto Sans KR, so ReportLab would draw a
-# blank box. Replace them with readable ASCII markers instead (requirement 5).
+# Every character is decided by the bundled font's cmap, never by Unicode range:
+# Noto Sans KR does cover many symbols that look like emoji (U+2605 ★, U+2665 ♥,
+# U+2713 ✓, U+26A0 ⚠) and does not cover others (U+2705 ✅, U+2B50 ⭐, U+2B55 ⭕).
+# A range rule deletes the first group and lets the second become a .notdef box.
+#
+# Fallbacks apply only to characters the font cannot draw. Any other undrawable
+# character becomes MISSING_MARKER so the page never shows a blank box.
 EMOJI_FALLBACKS = {
     "\u2705": "[OK]",      # white heavy check mark
     "\u2714": "[v]",       # heavy check mark
-    "\u2611": "[v]",
+    "\u2717": "[x]",       # ballot x
     "\u274c": "[X]",       # cross mark
-    "\u2716": "[X]",
-    "\u26a0": "[!]",       # warning sign
-    "\u2757": "[!]",
+    "\u2716": "[X]",       # heavy multiplication x
+    "\u2757": "[!]",       # heavy exclamation
+    "\u2139": "[i]",       # information
     "\u2b50": "[*]",       # star
-    "\u2b06": "[up]",
-    "\u2b07": "[down]",
-    "\u27a1": "[->]",
-    "\u2b05": "[<-]",
-    "\u2022": "-",
-    "\u25cf": "-",
-    "\u25a0": "-",
+    "\u2b55": "[o]",       # heavy circle
+    "\u274e": "[X]",
 }
 
-# Remaining pictographs (often followed by U+FE0F variation selectors) are dropped.
-_EMOJI_RANGES = re.compile(
-    "[\U0001f000-\U0001faff\U00002600-\U000027bf\U0001f1e6-\U0001f1ff\ufe0f\u20e3]"
-)
+MISSING_MARKER = "[?]"
+
+# Joiners and variation selectors carry no glyph of their own. Dropping them keeps
+# sequences such as U+26A0 U+FE0F (⚠️) drawable with the base character.
+_INVISIBLE = frozenset("\ufe0f\ufe0e\u200d\u200b\u20e3\ufe0e")
+
+_warned_missing: set[str] = set()
+_char_to_glyph: dict[int, int] | None = None
+
+
+def _font_glyph_map() -> dict[int, int]:
+    """Return the cmap of the bundled font, registering it on first use."""
+    global _char_to_glyph
+    if _char_to_glyph is None:
+        load_font()
+        _char_to_glyph = pdfmetrics.getFont(FONT_NAME).face.charToGlyph
+    return _char_to_glyph
 
 
 def load_font() -> str:
@@ -107,10 +121,69 @@ def load_font() -> str:
 
 
 def sanitize_text(text: str) -> str:
-    """Replace unsupported glyphs with fallback text."""
-    for src, dst in EMOJI_FALLBACKS.items():
-        text = text.replace(src, dst)
-    return _EMOJI_RANGES.sub("", text)
+    """Make text drawable with the bundled font.
+
+    Characters the font covers are kept as they are. Characters it cannot draw
+    are replaced by an ASCII fallback when one exists, and by MISSING_MARKER
+    otherwise, so a gap is visible on the page instead of a blank box.
+    """
+    if not text:
+        return text
+    cmap = _font_glyph_map()
+    out: list[str] = []
+    for char in text:
+        if char in _INVISIBLE:
+            continue
+        if ord(char) in cmap:
+            out.append(char)
+            continue
+        fallback = EMOJI_FALLBACKS.get(char)
+        if fallback is not None:
+            out.append(fallback)
+            continue
+        if char not in _warned_missing:
+            _warned_missing.add(char)
+            print(
+                f"Warning: no glyph for U+{ord(char):04X} '{char}' in {FONT_NAME}; "
+                f"rendering {MISSING_MARKER}.",
+                file=sys.stderr,
+            )
+        out.append(MISSING_MARKER)
+    return "".join(out)
+
+
+def wrap_code(code: str, max_width: float, font_size: float) -> str:
+    """Wrap code lines to max_width points.
+
+    Preformatted never wraps, so a long command line would be clipped at the
+    frame edge. Measuring each line with the code font keeps the block inside
+    the margins and preserves indentation on continuation lines.
+    """
+    if max_width <= 0:
+        return code
+    wrapped: list[str] = []
+    for line in code.split("\n"):
+        expanded = line.expandtabs(4)
+        indent = expanded[: len(expanded) - len(expanded.lstrip(" "))]
+        rest = expanded[len(indent):]
+        if pdfmetrics.stringWidth(expanded, FONT_NAME, font_size) <= max_width:
+            wrapped.append(expanded)
+            continue
+        while rest:
+            # Longest prefix that fits, then back off to the last space.
+            cut = len(rest)
+            while cut > 1 and pdfmetrics.stringWidth(
+                indent + rest[:cut], FONT_NAME, font_size
+            ) > max_width:
+                cut -= 1
+            head, rest = rest[:cut], rest[cut:]
+            if rest and " " in head:
+                split_at = head.rindex(" ")
+                if split_at > 0:
+                    rest = head[split_at + 1:] + rest
+                    head = head[:split_at]
+            wrapped.append(indent + head.rstrip())
+    return "\n".join(wrapped)
 
 
 def escape_markup(text: str) -> str:
@@ -191,6 +264,7 @@ def build_styles(accent: str) -> dict[str, ParagraphStyle]:
             bulletIndent=4, spaceAfter=3, textColor=ink,
             bulletFontName=FONT_NAME, bulletFontSize=10.5, **base
         ),
+        # Preformatted does not wrap, so wrap_code() breaks long lines first.
         "code": ParagraphStyle(
             "DocsCode", fontName=FONT_NAME, fontSize=8.5, leading=11.5,
             leftIndent=10, spaceBefore=4, spaceAfter=8,
@@ -283,7 +357,10 @@ class MarkdownPdfRenderer:
         """Walk the token stream once and emit one flowable per block element."""
         tokens = self.parser.parse(markdown)
         story: list = []
-        list_stack: list[list] = []  # [is_ordered, counter]
+        # Each frame is [is_ordered, counter, pending_marker]. The marker is
+        # consumed by the first paragraph of the item, so a loose item with two
+        # paragraphs is numbered once, not twice.
+        list_stack: list[list] = []
         index = 0
         total = len(tokens)
 
@@ -311,13 +388,8 @@ class MarkdownPdfRenderer:
                 markup = inline_text(inline).strip()
                 if markup:
                     if list_stack:
-                        is_ordered, counter = list_stack[-1]
-                        if is_ordered:
-                            counter += 1
-                            list_stack[-1][1] = counter
-                            marker = f"{counter}."
-                        else:
-                            marker = "\u2022"
+                        marker = list_stack[-1][2]
+                        list_stack[-1][2] = ""
                         depth = max(1, len(list_stack))
                         style = self.styles["bullet"]
                         if depth > 1:
@@ -328,7 +400,11 @@ class MarkdownPdfRenderer:
                                 leftIndent=16 + (depth - 1) * 14,
                                 bulletIndent=4 + (depth - 1) * 14,
                             )
-                        story.append(Paragraph(markup, style, bulletText=marker))
+                        if marker:
+                            story.append(Paragraph(markup, style, bulletText=marker))
+                        else:
+                            # Continuation paragraph of the same item.
+                            story.append(Paragraph(markup, style))
                     else:
                         story.append(Paragraph(markup, self.styles["body"]))
                 index += 3
@@ -337,7 +413,14 @@ class MarkdownPdfRenderer:
             if kind == "fence" or kind == "code_block":
                 code = sanitize_text(token.content.rstrip("\n"))
                 if code:
-                    story.append(Preformatted(code, self.styles["code"]))
+                    code_style = self.styles["code"]
+                    # The block is inset by leftIndent plus borderPadding on each side.
+                    code_width = available_width - code_style.leftIndent - 2 * code_style.borderPadding
+                    story.append(
+                        Preformatted(
+                            wrap_code(code, code_width, code_style.fontSize), code_style
+                        )
+                    )
                 index += 1
                 continue
 
@@ -348,7 +431,22 @@ class MarkdownPdfRenderer:
                 continue
 
             if kind in ("bullet_list_open", "ordered_list_open"):
-                list_stack.append([kind == "ordered_list_open", 0])
+                ordered = kind == "ordered_list_open"
+                # A list written as `3.` starts at three.
+                start = 1
+                if ordered:
+                    raw = token.attrGet("start")
+                    if raw:
+                        start = int(raw)
+                list_stack.append([ordered, start - 1, ""])
+            elif kind == "list_item_open":
+                if list_stack:
+                    frame = list_stack[-1]
+                    if frame[0]:
+                        frame[1] += 1
+                        frame[2] = f"{frame[1]}."
+                    else:
+                        frame[2] = "\u2022"
             elif kind in ("bullet_list_close", "ordered_list_close"):
                 if list_stack:
                     list_stack.pop()
@@ -403,14 +501,24 @@ class MarkdownPdfRenderer:
         accent = colors.HexColor(self.config["accent"])
 
         def decorate(canvas, doc) -> None:
+            """Draw the header and footer, and leave the cover page clean."""
             canvas.saveState()
             canvas.setFont(FONT_NAME, 8)
             canvas.setFillColor(colors.HexColor("#5A6069"))
-            footer = f"{doc_title}"
-            canvas.drawString(margin, 1.25 * cm, sanitize_text(footer))
-            canvas.drawRightString(A4[0] - margin, 1.25 * cm, f"{doc.page}")
             canvas.setStrokeColor(accent)
             canvas.setLineWidth(0.6)
+
+            # The cover already shows the title, so a header there would repeat it.
+            is_cover = bool(self.config["cover"]) and canvas.getPageNumber() == 1
+            if not is_cover:
+                header_y = A4[1] - margin + 0.75 * cm
+                canvas.drawString(margin, header_y, sanitize_text(doc_title))
+                canvas.line(
+                    margin, header_y - 0.3 * cm, A4[0] - margin, header_y - 0.3 * cm
+                )
+
+            canvas.drawString(margin, 1.25 * cm, sanitize_text(doc_title))
+            canvas.drawRightString(A4[0] - margin, 1.25 * cm, f"{doc.page}")
             canvas.line(margin, 1.55 * cm, A4[0] - margin, 1.55 * cm)
             canvas.restoreState()
 
@@ -430,6 +538,13 @@ class MarkdownPdfRenderer:
         template.addPageTemplates(
             [PageTemplate(id="main", frames=[frame], onPage=decorate)]
         )
+
+        available_width = A4[0] - 2 * margin
+        # Judge emptiness on the body alone: the cover and table of contents are
+        # always emitted, so testing the combined story would never fail.
+        body_story = self.build_story(markdown, doc_title, available_width)
+        if not body_story:
+            raise ValueError("Markdown produced no renderable content")
 
         story: list = []
         if self.config["cover"]:
@@ -464,11 +579,7 @@ class MarkdownPdfRenderer:
             story.append(toc)
             story.append(PageBreak())
 
-        available_width = A4[0] - 2 * margin
-        story.extend(self.build_story(markdown, doc_title, available_width))
-
-        if not story:
-            raise ValueError("Markdown produced no renderable content")
+        story.extend(body_story)
 
         template.multiBuild(story)
         # BaseDocTemplate.page is the last page number it painted.

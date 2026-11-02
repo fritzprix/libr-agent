@@ -387,7 +387,8 @@ def convert_to_pdf(input_path: pathlib.Path, output_path: pathlib.Path, template
 
     print(f"Output: {output_path}")
     print(f"Pages: {pages}")
-    print(f"Size: {size}")
+    # Same size key as succeed(), so every --to value prints one contract.
+    print(f"Bytes: {size}")
     print("ExitCode: 0")
     print("OK")
     return 0

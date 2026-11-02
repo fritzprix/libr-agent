@@ -35,6 +35,59 @@ SUBSTITUTION_FONTS = ("zapfdingbats", "symbol")
 
 BROKEN_GLYPHS = {"\ufffd", "\u0000"}
 
+# The renderer is expected to draw every character with the bundled font, so a
+# character outside that font's cmap is a .notdef box on the page. pdfplumber
+# still extracts the original character, so the gap needs the cmap to detect.
+SKILL_DIR = pathlib.Path(__file__).resolve().parent.parent
+FONT_PATH = SKILL_DIR / "fonts" / "NotoSansKR-Regular.ttf"
+FONT_NAME = "NotoSansKR"
+
+_char_to_glyph: dict[int, int] | None = None
+
+
+def font_cmap() -> dict[int, int] | None:
+    """Return the bundled font cmap, or None when ReportLab is unavailable."""
+    global _char_to_glyph
+    if _char_to_glyph is not None:
+        return _char_to_glyph
+    try:
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+    except ImportError:
+        return None
+    if not FONT_PATH.exists():
+        return None
+    if FONT_NAME not in pdfmetrics.getRegisteredFontNames():
+        pdfmetrics.registerFont(TTFont(FONT_NAME, str(FONT_PATH)))
+    _char_to_glyph = pdfmetrics.getFont(FONT_NAME).face.charToGlyph
+    return _char_to_glyph
+
+
+def uses_document_font(fontname: str | None) -> bool:
+    """Match the bundled font, ignoring the subset prefix a PDF writer adds."""
+    # ReportLab writes a six-letter subset tag before the name, e.g.
+    # 'AAAAAA+NotoSansKR-Thin', so an exact or prefix match on the bare name fails.
+    lowered = (fontname or "").lower()
+    if "+" in lowered:
+        lowered = lowered.split("+", 1)[1]
+    return lowered.startswith(FONT_NAME.lower())
+
+
+def check_undrawable_chars(page, cmap: dict[int, int] | None) -> list[str]:
+    """Find characters the document font cannot draw at all."""
+    if cmap is None:
+        return []
+    for char in page.chars:
+        text = char.get("text") or ""
+        if not text or not uses_document_font(char.get("fontname")):
+            continue
+        if any(ord(item) not in cmap for item in text):
+            return [
+                f"page {page.page_number}: '{text}' has no glyph in {FONT_NAME} "
+                f"and would print as a blank box"
+            ]
+    return []
+
 
 def fail(msg: str, next_hint: str, code: int = 1) -> int:
     """Print uniform failure output conforming to the docs skill contract."""
@@ -174,8 +227,10 @@ def run_check(pdf_path: pathlib.Path) -> int:
                     f"PDF has no pages: {pdf_path}",
                     "Re-run convert.py with non-empty Markdown input.",
                 )
+            cmap = font_cmap()
             for page in pdf.pages:
                 problems.extend(check_broken_glyphs(page))
+                problems.extend(check_undrawable_chars(page, cmap))
                 problems.extend(check_table_rows(page))
     except Exception as exc:
         return fail(

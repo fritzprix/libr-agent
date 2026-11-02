@@ -219,6 +219,69 @@ try {
   }
   Remove-Item $emptyOut -Force -ErrorAction SilentlyContinue
   Write-Host "Test 4 passed: check.py rejected the 0-byte PDF."
+
+  # ---------------------------------------------------------
+  # Test 5: symbols are decided by the font cmap, not by Unicode range
+  # ---------------------------------------------------------
+  Write-Host "`n[Test 5] Symbols the font can draw are kept; others become markers..."
+  $symMd = Join-Path $tempRoot "symbols_$(Get-Random).md"
+  $symOut = Join-Path $tempRoot "symbols_$(Get-Random).pdf"
+  $symSource = @'
+# 기호
+
+평점 ★★★☆☆ 그리고 ♥ ☎ ✓
+
+결과 ✅ 이고 위험 ⭕ 는 없습니다.
+'@
+  Set-Content -Path $symMd -Value $symSource -Encoding UTF8
+  $symOutput = & $venvPython $convertPy --in $symMd --to pdf --template minutes --out $symOut 2>&1
+  $symExit = $LASTEXITCODE
+  if ($symExit -ne 0) {
+    Write-Error "Test 5 failed: symbol conversion exited with $symExit`n$(($symOutput -join "`n").Trim())"
+    exit 1
+  }
+  # Read the text back: pdfplumber reports the drawn characters.
+  $symDump = & $venvPython -c "import pdfplumber,sys; print(''.join((p.extract_text() or '') for p in pdfplumber.open(sys.argv[1]).pages))" $symOut
+  $symText = $symDump -join "`n"
+  foreach ($kept in @([char]0x2605, [char]0x2665, [char]0x260E, [char]0x2713)) {
+    if (-not $symText.Contains($kept)) {
+      Write-Error "Test 5 failed: the font covers $kept but the rendered PDF dropped it."
+      exit 1
+    }
+  }
+  foreach ($marker in @('[OK]', '[o]')) {
+    if (-not $symText.Contains($marker)) {
+      Write-Error "Test 5 failed: expected fallback marker $marker in the rendered PDF."
+      exit 1
+    }
+  }
+  Remove-Item $symMd, $symOut -Force -ErrorAction SilentlyContinue
+  Write-Host "Test 5 passed: drawable symbols kept, undrawable ones replaced by markers."
+
+  # ---------------------------------------------------------
+  # Test 6: empty Markdown fails instead of producing an empty document
+  # ---------------------------------------------------------
+  Write-Host "`n[Test 6] Empty Markdown fails with a NEXT hint..."
+  $blankMd = Join-Path $tempRoot "blank_$(Get-Random).md"
+  $blankOut = Join-Path $tempRoot "blank_$(Get-Random).pdf"
+  Set-Content -Path $blankMd -Value "   `n`n" -NoNewline
+  $blankOutput = & $venvPython $convertPy --in $blankMd --to pdf --template report --out $blankOut 2>&1
+  $blankExit = $LASTEXITCODE
+  $blankText = $blankOutput -join "`n"
+  if ($blankExit -eq 0) {
+    Write-Error "Test 6 failed: empty Markdown must not succeed."
+    exit 1
+  }
+  if ($blankText -notmatch 'NEXT:') {
+    Write-Error "Test 6 failed: empty Markdown must print a NEXT: hint."
+    exit 1
+  }
+  if ($blankText -match '(^|\r?\n)OK(\s|$)') {
+    Write-Error "Test 6 failed: empty Markdown must not print OK."
+    exit 1
+  }
+  Remove-Item $blankMd, $blankOut -Force -ErrorAction SilentlyContinue
+  Write-Host "Test 6 passed: empty Markdown failed with a NEXT hint and no OK line."
 } finally {
   if (Test-Path $testScript) { Remove-Item $testScript -Force -ErrorAction SilentlyContinue }
   if (Test-Path $testMd) { Remove-Item $testMd -Force -ErrorAction SilentlyContinue }
