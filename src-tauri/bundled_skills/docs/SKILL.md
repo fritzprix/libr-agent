@@ -49,6 +49,7 @@ Then run document conversion using the interpreter reported under `VenvPython:`.
 ```powershell
 & "<venv-python-from-doctor>" "<skill-base-dir>/scripts/convert.py" --in "<abs.md>" --to pdf --template report --out "<abs.pdf>"
 ```
+*(On Linux/macOS: `"<venv-python-from-doctor>" "<skill-base-dir>/scripts/convert.py" --in "<abs.md>" --to pdf --template report --out "<abs.pdf>"`)*
 
 ## Output Contract & Verification
 

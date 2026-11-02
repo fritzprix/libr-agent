@@ -5,7 +5,7 @@ Converts structured Markdown files to presentation slides using python-pptx.
 ## Command Form
 
 ```powershell
-python "<skill-base-dir>/scripts/convert.py" --in "<abs-source.md>" --to pptx --template slides --out "<abs-target.pptx>"
+& "<venv-python-from-doctor>" "<skill-base-dir>/scripts/convert.py" --in "<abs-source.md>" --to pptx --template slides --out "<abs-target.pptx>"
 ```
 
 ## Available Templates

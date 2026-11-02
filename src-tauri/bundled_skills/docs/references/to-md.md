@@ -5,7 +5,7 @@ Extracts content from existing documents (PDF, DOCX, PPTX, XLSX, HTML, images) i
 ## Command Form
 
 ```powershell
-python "<skill-base-dir>/scripts/convert.py" --in "<abs-source-doc>" --to md --out "<abs-target.md>"
+& "<venv-python-from-doctor>" "<skill-base-dir>/scripts/convert.py" --in "<abs-source-doc>" --to md --out "<abs-target.md>"
 ```
 
 ## Supported Source Formats

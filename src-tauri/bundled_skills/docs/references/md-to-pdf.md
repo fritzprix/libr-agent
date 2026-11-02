@@ -5,7 +5,7 @@ Converts structured Markdown files to professional PDF documents using ReportLab
 ## Command Form
 
 ```powershell
-python "<skill-base-dir>/scripts/convert.py" --in "<abs-source.md>" --to pdf --template report --out "<abs-target.pdf>"
+& "<venv-python-from-doctor>" "<skill-base-dir>/scripts/convert.py" --in "<abs-source.md>" --to pdf --template report --out "<abs-target.pdf>"
 ```
 
 ## Available Templates

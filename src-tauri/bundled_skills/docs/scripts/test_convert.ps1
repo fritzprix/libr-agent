@@ -121,8 +121,23 @@ if (-not $venvPython -or -not (Test-Path $venvPython)) {
 }
 Write-Host "Using VenvPython: $venvPython"
 
-# Write the exact documented command form to a script file and run with powershell.exe
-$documentedCommand = "& `"$venvPython`" `"$convertPy`" --in `"$testMd`" --to pdf --template report --out `"$testOut`""
+# S3.1: Read the documented command directly from SKILL.md and substitute placeholders
+$skillMdPath = Join-Path $skillDir "SKILL.md"
+$skillMdContent = Get-Content -Raw $skillMdPath
+if ($skillMdContent -match '(?m)^```powershell\r?\n(&\s*"<venv-python-from-doctor>".+?)\r?\n```') {
+  $documentedTemplate = $Matches[1].Trim()
+} else {
+  Write-Error 'Test 3 failed: Could not find documented conversion command starting with call operator in SKILL.md'
+  exit 1
+}
+
+$documentedCommand = $documentedTemplate `
+  -replace '<venv-python-from-doctor>', $venvPython `
+  -replace '<skill-base-dir>', $skillDir `
+  -replace '<abs\.md>', $testMd `
+  -replace '<abs\.pdf>', $testOut
+
+Write-Host "Documented command: $documentedCommand"
 Set-Content -Path $testScript -Value "$documentedCommand`r`nexit `$LASTEXITCODE"
 
 try {

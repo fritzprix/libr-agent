@@ -5,7 +5,7 @@ Converts structured Markdown files to Microsoft Word (.docx) documents using pyt
 ## Command Form
 
 ```powershell
-python "<skill-base-dir>/scripts/convert.py" --in "<abs-source.md>" --to docx --template standard --out "<abs-target.docx>"
+& "<venv-python-from-doctor>" "<skill-base-dir>/scripts/convert.py" --in "<abs-source.md>" --to docx --template standard --out "<abs-target.docx>"
 ```
 
 ## Available Templates
