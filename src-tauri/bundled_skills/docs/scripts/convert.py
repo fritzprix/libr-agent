@@ -311,8 +311,8 @@ def convert_to_markdown(input_path: pathlib.Path, output_path: pathlib.Path) -> 
     return succeed(output_path)
 
 
-def run_check(pdf_path: pathlib.Path) -> int:
-    """Run check.py against a rendered PDF and forward its verdict."""
+def run_check(output_path: pathlib.Path, kind: str = "pdf") -> int:
+    """Run check.py against a rendered file and forward its verdict."""
     check_script = pathlib.Path(__file__).resolve().parent / "check.py"
     if not check_script.exists():
         return fail(
@@ -320,7 +320,7 @@ def run_check(pdf_path: pathlib.Path) -> int:
             "Reinstall the docs skill; check.py must sit next to convert.py.",
         )
     proc = subprocess.run(
-        [sys.executable, str(check_script), "--pdf", str(pdf_path)],
+        [sys.executable, str(check_script), f"--{kind}", str(output_path)],
         capture_output=True,
         text=True,
     )
@@ -394,6 +394,79 @@ def convert_to_pdf(input_path: pathlib.Path, output_path: pathlib.Path, template
     return 0
 
 
+def convert_to_office(
+    input_path: pathlib.Path, output_path: pathlib.Path, template: str, target: str
+) -> int:
+    """Render Markdown to DOCX or PPTX, then verify the result.
+
+    target is "docx" or "pptx". Both writers share the md_blocks outline, so the
+    only differences here are the module and the count label.
+    """
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+    if target == "docx":
+        module_name, unit_label = "docx_render", "Sections"
+    else:
+        module_name, unit_label = "pptx_render", "Slides"
+
+    try:
+        module = __import__(module_name)
+    except ImportError as exc:
+        package = "python-docx" if target == "docx" else "python-pptx"
+        return fail(
+            f"{target.upper()} dependencies are unavailable: {exc}",
+            f"Run the doctor command to install {package} and markdown-it-py.",
+        )
+
+    # Reject an unknown template before touching the filesystem, so the caller
+    # gets the template list rather than a generic rendering error.
+    if template not in module.TEMPLATES:
+        available = ", ".join(sorted(module.TEMPLATES))
+        return fail(
+            f"Unknown template '{template}'.",
+            f"Use --template with one of: {available}.",
+        )
+
+    markdown = input_path.read_text(encoding="utf-8-sig")
+
+    renderer = module.DocxRenderer if target == "docx" else module.PptxRenderer
+    try:
+        count = renderer(template).render(markdown, output_path)
+    except ValueError as exc:
+        return fail(
+            f"{target.upper()} rendering rejected the request: {exc}",
+            "Check that the Markdown file has a heading and some body content.",
+        )
+    except Exception as exc:
+        return fail(
+            f"{target.upper()} rendering failed: {type(exc).__name__}: {exc}",
+            "Check the Markdown source and re-run the command.",
+        )
+
+    if not output_path.exists():
+        return fail(
+            f"Renderer finished but wrote no file: {output_path}",
+            "Confirm the --out directory is writable, then re-run.",
+        )
+
+    size = output_path.stat().st_size
+    if size == 0:
+        return fail(
+            f"Renderer wrote a 0-byte file: {output_path}",
+            "Re-run the command; the Markdown may have no renderable content.",
+        )
+
+    check_code = run_check(output_path, target)
+    if check_code != 0:
+        return check_code
+
+    print(f"Output: {output_path}")
+    print(f"{unit_label}: {count}")
+    print(f"Bytes: {size}")
+    print("ExitCode: 0")
+    print("OK")
+    return 0
+
+
 class DocsArgumentParser(argparse.ArgumentParser):
     def error(self, message: str) -> None:
         fail(message, "Check command-line arguments using -h/--help.", code=2)
@@ -453,16 +526,14 @@ def main() -> int:
     if target_format == "md":
         return convert_to_markdown(input_path, output_path)
 
-    # Remaining format engines are implemented under sub-issue #2500.
-    # The skeleton must NOT create dummy output or claim success.
-    sub_issues = {
-        "pptx": "#2500",
-        "docx": "#2500",
-    }
-    sub_issue = sub_issues.get(target_format, "#2495")
+    if target_format in ("docx", "pptx"):
+        return convert_to_office(input_path, output_path, args.template, target_format)
+
+    # Every supported format is handled above, so this is unreachable; it stays
+    # as a hard stop rather than a silent success.
     return fail(
-        f"Format '{target_format}' conversion engine is not implemented yet in this skeleton.",
-        f"Format '{target_format}' engine will be delivered under sub-issue {sub_issue}.",
+        f"Unsupported format '{target_format}'.",
+        "Choose one of the supported target formats: pdf, pptx, docx, md.",
         code=1,
     )
 

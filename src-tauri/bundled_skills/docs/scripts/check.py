@@ -1,19 +1,33 @@
 #!/usr/bin/env python3
-"""Verify a rendered PDF for the docs skill.
+"""Verify a rendered document for the docs skill.
 
-Reads text positions with pdfplumber (MIT) and rejects the three defects that a
-bad layout produces: an empty file, table rows that overlap each other, and cell
-text that spills outside its cell. Also rejects text drawn with a base-14 font
-when the character is non-ASCII, because that font has no Korean glyph and the
-page would show a blank box or a notdef.
+Every format is checked for the defects a bad render produces, using only the
+library that already backs it:
 
-Prints `OK <abs path> <pages>` only when every check passes.
+* PDF (pdfplumber, MIT): empty file, table rows that overlap, cell text that
+  spills outside its cell, text drawn with a substitution font, and characters
+  the document font has no glyph for.
+* DOCX (python-docx, MIT): empty file, no paragraphs and no tables, a Hangul run
+  with no w:eastAsia font (Word then draws boxes), and a table whose rows
+  disagree on column count.
+* PPTX (python-pptx, MIT): empty file, no slides, a slide with no shapes, body
+  text or a table that runs past the slide bottom, a shape past the slide right
+  edge, and a table whose rows disagree on column count.
+
+A repeated paragraph is not a defect: two identical list items are legitimate
+Markdown, so DOCX has no duplicate-text rule.
+
+Prints `OK <abs path> <pages or slides>` only when every check passes.
 """
 from __future__ import annotations
 
 import argparse
 import pathlib
 import sys
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+
+import layout_metrics
 
 BASE14_FONTS = (
     "helvetica",
@@ -195,6 +209,280 @@ def check_table_rows(page) -> list[str]:
     return problems
 
 
+HANGUL_RANGES = (
+    (0xAC00, 0xD7A3),  # Hangul syllables
+    (0x1100, 0x11FF),  # Hangul Jamo
+    (0x3130, 0x318F),  # Hangul compatibility Jamo
+    (0xA960, 0xA97F),  # Hangul Jamo Extended-A
+    (0xD7B0, 0xD7FF),  # Hangul Jamo Extended-B
+)
+
+
+def _has_hangul(text: str) -> bool:
+    """Return True when text contains a Hangul character."""
+    for character in text:
+        point = ord(character)
+        for low, high in HANGUL_RANGES:
+            if low <= point <= high:
+                return True
+    return False
+
+
+def _run_east_asian_font(run) -> str | None:
+    """Return the run's own w:eastAsia font, or None when the run sets none."""
+    from docx.oxml.ns import qn
+
+    rpr = run._element.rPr
+    if rpr is None:
+        return None
+    fonts = rpr.find(qn("w:rFonts"))
+    if fonts is None:
+        return None
+    return fonts.get(qn("w:eastAsia"))
+
+
+def check_docx(path: pathlib.Path) -> tuple[list[str], int]:
+    """Return (problems, section count) for a DOCX file.
+
+    Word decides pagination when the file is opened, so there is no page count to
+    report. The section count is used instead, which keeps this line and the
+    `Sections:` line convert.py prints in agreement.
+    """
+    try:
+        import docx
+    except ImportError:
+        return (["python-docx is not installed in this interpreter."], 0)
+
+    try:
+        document = docx.Document(str(path))
+    except Exception as exc:
+        return ([f"python-docx could not read the file: {exc}"], 0)
+
+    problems: list[str] = []
+    paragraphs = list(document.paragraphs)
+
+    # Word picks a Hangul-capable font for a run only when the run names one in
+    # w:eastAsia. Without it Word asks the Latin font for Hangul glyphs, and a
+    # Latin face has none, so the text renders as boxes for a reader on any
+    # platform. A style-level font does not count: Word resolves a run's own
+    # rPr first and only falls back to the style when the run says nothing, and
+    # the style fallback is exactly what renders badly here.
+    #
+    # Table cells hold their own paragraphs, which document.paragraphs does not
+    # reach, and the writer sets the font on those runs too. Checking only the
+    # body would pass a document whose table renders as boxes.
+    cell_paragraphs = [
+        paragraph
+        for table in document.tables
+        for row in table.rows
+        for cell in row.cells
+        for paragraph in cell.paragraphs
+    ]
+    for paragraph in paragraphs + cell_paragraphs:
+        for run in paragraph.runs:
+            text = run.text
+            if not text or not _has_hangul(text):
+                continue
+            if _run_east_asian_font(run):
+                continue
+            problems.append(
+                _truncate("Hangul run has no w:eastAsia font", text)
+            )
+            break
+        else:
+            continue
+        break
+
+    for table_index, table in enumerate(document.tables, start=1):
+        counts = {len(row.cells) for row in table.rows}
+        if len(counts) > 1:
+            problems.append(
+                f"table {table_index}: rows disagree on column count {sorted(counts)}"
+            )
+
+    if not paragraphs and not document.tables:
+        problems.append("document has no paragraphs and no tables")
+
+    return (problems, len(document.sections))
+
+
+def _truncate(label: str, text: str, width: int = 60) -> str:
+    """Return a short single-line excerpt for an error message."""
+    flat = " ".join(text.split())
+    if len(flat) > width:
+        flat = flat[:width] + "..."
+    return f"{label}: '{flat}'"
+
+
+def check_pptx(path: pathlib.Path) -> tuple[list[str], int]:
+    """Return (problems, slide count) for a PPTX file."""
+    try:
+        from pptx import Presentation
+        from pptx.util import Emu
+    except ImportError:
+        return (["python-pptx is not installed in this interpreter."], 0)
+
+    try:
+        presentation = Presentation(str(path))
+    except Exception as exc:
+        return ([f"python-pptx could not read the file: {exc}"], 0)
+
+    problems: list[str] = []
+    slides = list(presentation.slides)
+    if not slides:
+        return (["presentation has no slides"], 0)
+
+    slide_width = presentation.slide_width
+    slide_height_pt = layout_metrics.emu_to_points(presentation.slide_height)
+
+    for number, slide in enumerate(slides, start=1):
+        shapes = list(slide.shapes)
+        if not shapes:
+            problems.append(f"slide {number}: has no shapes")
+            continue
+
+        for shape in shapes:
+            # A shape placed past the slide edge is clipped when presented.
+            if shape.left is None or shape.width is None:
+                continue
+            right = shape.left + shape.width
+            if right > slide_width + Emu(9525):
+                problems.append(
+                    f"slide {number}: a shape runs past the slide edge "
+                    f"(right {Emu(right).inches:.2f}in > "
+                    f"{Emu(slide_width).inches:.2f}in)"
+                )
+                break
+
+            if getattr(shape, "has_table", False):
+                table = shape.table
+                counts = {len(row.cells) for row in table.rows}
+                if len(counts) > 1:
+                    problems.append(
+                        f"slide {number}: table rows disagree on column count "
+                        f"{sorted(counts)}"
+                    )
+                needed = _table_needed_pt(table)
+                label = "table"
+            elif getattr(shape, "has_text_frame", False) and shape.text_frame.text.strip():
+                widths_pt = layout_metrics.emu_to_points(shape.width)
+                needed = _frame_needed_pt(shape.text_frame, widths_pt)
+                label = "text box"
+            else:
+                continue
+
+            # PowerPoint grows a shape whose content needs more room than the
+            # shape declares, so the declared box can fit the slide while the
+            # drawn text still runs off the bottom edge.
+            bottom = layout_metrics.emu_to_points(shape.top) + needed
+            if bottom > slide_height_pt + OVERFLOW_TOL:
+                problems.append(
+                    f"slide {number}: {label} runs past the slide bottom "
+                    f"({bottom:.0f}pt > {slide_height_pt:.0f}pt)"
+                )
+                break
+
+    return (problems, len(slides))
+
+
+def _frame_needed_pt(frame, width_pt: float) -> float:
+    """Return the height a text frame needs for its paragraphs."""
+    paragraphs = []
+    for paragraph in frame.paragraphs:
+        text = paragraph.text
+        if not text.strip():
+            continue
+        size = _paragraph_size(paragraph)
+        space_after = (
+            layout_metrics.emu_to_points(paragraph.space_after)
+            if paragraph.space_after is not None
+            else 0.0
+        )
+        paragraphs.append((text, size, space_after))
+    if not paragraphs:
+        return 0.0
+    body = sum(
+        layout_metrics.paragraph_height_pt(text, size, width_pt, after)
+        for text, size, after in paragraphs
+    )
+    return body + 2 * layout_metrics.INSET_Y_PT
+
+
+def _paragraph_size(paragraph) -> float:
+    """Return the largest font size any run in the paragraph asks for.
+
+    Runs are measured together because a paragraph whose runs disagree is as
+    tall as its biggest one, and the estimate must not come in under.
+    """
+    sizes = [
+        layout_metrics.emu_to_points(run.font.size)
+        for run in paragraph.runs
+        if run.font.size is not None
+    ]
+    return max(sizes) if sizes else 12.0
+
+
+def _table_needed_pt(table) -> float:
+    """Return the height a table needs, read from its own column widths."""
+    widths_pt = [layout_metrics.emu_to_points(column.width) for column in table.columns]
+    total = 0.0
+    for row in table.rows:
+        tallest = 0.0
+        for index, cell in enumerate(row.cells):
+            width = widths_pt[min(index, len(widths_pt) - 1)] if widths_pt else 0.0
+            tallest = max(tallest, _cell_needed_pt(cell.text_frame, width))
+        total += tallest
+    return total
+
+
+def _cell_needed_pt(frame, width_pt: float) -> float:
+    """Return the height a table cell needs for its paragraphs."""
+    body = 0.0
+    for paragraph in frame.paragraphs:
+        if not paragraph.text.strip():
+            continue
+        body += layout_metrics.paragraph_height_pt(
+            paragraph.text, _paragraph_size(paragraph), width_pt
+        )
+    if body == 0.0:
+        body = layout_metrics.paragraph_height_pt("", 12.0, width_pt)
+    return body + 2 * layout_metrics.INSET_Y_PT
+
+
+def run_format_check(path: pathlib.Path, kind: str) -> int:
+    """Validate a DOCX or PPTX file and print the success line or failures."""
+    if not path.exists():
+        return fail(
+            f"Output file does not exist: {path}",
+            "Re-run convert.py and confirm the --out path is writable.",
+        )
+
+    if path.stat().st_size == 0:
+        return fail(
+            f"Output file is 0 bytes: {path}",
+            "Re-run convert.py; a 0-byte file means the writer saved nothing.",
+        )
+
+    if kind == "docx":
+        problems, count = check_docx(path)
+    else:
+        problems, count = check_pptx(path)
+
+    if problems:
+        print(f"Error: {kind.upper()} verification failed for {path}", file=sys.stderr)
+        for problem in problems[:10]:
+            print(f"  - {problem}", file=sys.stderr)
+        print("ExitCode: 1")
+        print(
+            f"NEXT: Fix the layout defect or pick another template, then re-run convert.py.",
+            file=sys.stderr,
+        )
+        return 1
+
+    print(f"OK {path} {count}")
+    return 0
+
+
 def run_check(pdf_path: pathlib.Path) -> int:
     """Validate pdf_path and print the success line or a failure report."""
     if not pdf_path.exists():
@@ -255,9 +543,11 @@ def run_check(pdf_path: pathlib.Path) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Verify a docs-skill PDF output", add_help=False
+        description="Verify a docs-skill rendered document", add_help=False
     )
     parser.add_argument("--pdf", dest="pdf_file", type=str, help="PDF path to verify")
+    parser.add_argument("--docx", dest="docx_file", type=str, help="DOCX path to verify")
+    parser.add_argument("--pptx", dest="pptx_file", type=str, help="PPTX path to verify")
     parser.add_argument("-h", "--help", action="store_true", help="Show help")
     args = parser.parse_args()
 
@@ -266,14 +556,29 @@ def main() -> int:
         print("ExitCode: 0")
         return 0
 
-    if not args.pdf_file:
+    chosen = [
+        ("pdf", args.pdf_file),
+        ("docx", args.docx_file),
+        ("pptx", args.pptx_file),
+    ]
+    given = [(kind, value) for kind, value in chosen if value]
+    if not given:
         return fail(
-            "Missing required argument '--pdf'.",
-            "Specify the rendered PDF via --pdf '<abs-path>'.",
+            "Missing required argument: one of --pdf, --docx, --pptx.",
+            "Specify the rendered file, e.g. --pdf '<abs-path>'.",
+            code=2,
+        )
+    if len(given) > 1:
+        return fail(
+            "Only one of --pdf, --docx, --pptx may be given.",
+            "Pass exactly one file to verify.",
             code=2,
         )
 
-    return run_check(pathlib.Path(args.pdf_file).resolve())
+    kind, value = given[0]
+    if kind == "pdf":
+        return run_check(pathlib.Path(value).resolve())
+    return run_format_check(pathlib.Path(value).resolve(), kind)
 
 
 if __name__ == "__main__":

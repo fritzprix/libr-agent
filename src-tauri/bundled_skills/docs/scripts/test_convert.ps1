@@ -282,6 +282,490 @@ try {
   }
   Remove-Item $blankMd, $blankOut -Force -ErrorAction SilentlyContinue
   Write-Host "Test 6 passed: empty Markdown failed with a NEXT hint and no OK line."
+  # ---------------------------------------------------------
+  # Test 7: each ordered list gets its own Word numbering
+  # ---------------------------------------------------------
+  Write-Host "`n[Test 7] Separate ordered lists restart their numbering..."
+  $numMd = Join-Path $tempRoot "numbering_$(Get-Random).md"
+  $numOut = Join-Path $tempRoot "numbering_$(Get-Random).docx"
+  $numSource = @'
+# 번호
+
+## 첫 목록
+
+1. 하나
+2. 둘
+
+## 둘째 목록
+
+5. 다섯
+6. 여섯
+
+## 셋째 목록
+
+1. 다시 하나
+'@
+  Set-Content -Path $numMd -Value $numSource -Encoding UTF8
+  $numOutput = & $venvPython $convertPy --in $numMd --to docx --template report --out $numOut 2>&1
+  $numExit = $LASTEXITCODE
+  if ($numExit -ne 0) {
+    Write-Error "Test 7 failed: DOCX numbering conversion exited with $numExit`n$(($numOutput -join "`n").Trim())"
+    exit 1
+  }
+  # Each separate Markdown list must own a distinct numId, and the list that
+  # starts at 5 must carry that start value.
+  $numProbe = & $venvPython -c @"
+import sys
+from docx import Document
+from docx.oxml.ns import qn
+doc = Document(sys.argv[1])
+numbering = doc.part.numbering_part.element
+seen = []
+for para in doc.paragraphs:
+    if para.style.name != 'List Number':
+        continue
+    num_pr = para._p.pPr.find(qn('w:numPr'))
+    if num_pr is None:
+        print('MISSING_NUMPR'); sys.exit(0)
+    seen.append(num_pr.find(qn('w:numId')).get(qn('w:val')))
+starts = {}
+for num in numbering.findall(qn('w:num')):
+    override = num.find(qn('w:lvlOverride'))
+    if override is not None:
+        starts[num.get(qn('w:numId'))] = override.find(qn('w:startOverride')).get(qn('w:val'))
+distinct = []
+for item in seen:
+    if item not in distinct:
+        distinct.append(item)
+print('PARAS=' + ','.join(seen))
+print('DISTINCT=' + ','.join(distinct))
+print('STARTS=' + ','.join(str(starts.get(item, '?')) for item in distinct))
+"@ $numOut
+  $numText = $numProbe -join "`n"
+  if ($numText -match 'MISSING_NUMPR') {
+    Write-Error "Test 7 failed: an ordered paragraph has no w:numPr."
+    exit 1
+  }
+  $distinctLine = ($numProbe | Where-Object { $_ -like 'DISTINCT=*' }) -replace '^DISTINCT=', ''
+  $distinctIds = $distinctLine -split ','
+  if ($distinctIds.Count -ne 3) {
+    Write-Error "Test 7 failed: expected 3 independent lists, got $($distinctIds.Count) ($distinctLine)."
+    exit 1
+  }
+  $startsLine = ($numProbe | Where-Object { $_ -like 'STARTS=*' }) -replace '^STARTS=', ''
+  $startValues = $startsLine -split ','
+  if ($startValues[0] -ne '1' -or $startValues[1] -ne '5' -or $startValues[2] -ne '1') {
+    Write-Error "Test 7 failed: expected list starts 1,5,1 but got $startsLine."
+    exit 1
+  }
+  Remove-Item $numMd, $numOut -Force -ErrorAction SilentlyContinue
+  Write-Host "Test 7 passed: 3 separate lists with independent counters and a 5 start."
+
+  # ---------------------------------------------------------
+  # Test 8: a long bullet list splits across slides
+  # ---------------------------------------------------------
+  Write-Host "`n[Test 8] Long bullet lists split across slides..."
+  $manyMd = Join-Path $tempRoot "many_$(Get-Random).md"
+  $manyOut = Join-Path $tempRoot "many_$(Get-Random).pptx"
+  $manyLines = @('# 다량 항목', '', '## 많은 목록', '')
+  foreach ($n in 1..12) { $manyLines += "- 항목 $n" }
+  Set-Content -Path $manyMd -Value ($manyLines -join "`n") -Encoding UTF8
+  $manyOutput = & $venvPython $convertPy --in $manyMd --to pptx --template report --out $manyOut 2>&1
+  $manyExit = $LASTEXITCODE
+  if ($manyExit -ne 0) {
+    Write-Error "Test 8 failed: PPTX conversion exited with $manyExit`n$(($manyOutput -join "`n").Trim())"
+    exit 1
+  }
+  $manyProbe = & $venvPython -c "import sys; from pptx import Presentation; p=Presentation(sys.argv[1]); print('SLIDES='+str(len(p.slides))); print('|'.join(sh.text_frame.text.replace(chr(10),' ') for s in p.slides for sh in s.shapes if sh.has_text_frame))" $manyOut
+  $manyText = $manyProbe -join "`n"
+  if ($manyText -notmatch 'SLIDES=3') {
+    Write-Error "Test 8 failed: expected 3 slides (cover, list, continued), got $($manyText -split "`n" | Select-Object -First 1)."
+    exit 1
+  }
+  if ($manyText -notmatch '\(continued\)') {
+    Write-Error "Test 8 failed: the overflow slide title must end with (continued)."
+    exit 1
+  }
+  Remove-Item $manyMd, $manyOut -Force -ErrorAction SilentlyContinue
+  Write-Host "Test 8 passed: 12 bullets split over 2 content slides with a (continued) title."
+
+  # ---------------------------------------------------------
+  # Test 9: identical list items are valid and must convert (G1.2)
+  # Repeated items such as '- TBD' are ordinary Markdown, so the checker must
+  # not treat them as a duplicated-paragraph layout defect.
+  # ---------------------------------------------------------
+  Write-Host "`n[Test 9] Identical list items convert with OK..."
+  $dupMd = Join-Path $tempRoot "dup_$(Get-Random).md"
+  $dupOut = Join-Path $tempRoot "dup_$(Get-Random).docx"
+  $dupSource = @'
+# 확인
+
+## 점검
+
+- TBD
+- TBD
+- TBD
+'@
+  Set-Content -Path $dupMd -Value $dupSource -Encoding UTF8
+  $dupOutput = & $venvPython $convertPy --in $dupMd --to docx --template report --out $dupOut 2>&1
+  $dupExit = $LASTEXITCODE
+  if ($dupExit -ne 0) {
+    Write-Error "Test 9 failed: identical list items must convert, exit $dupExit`n$(($dupOutput -join "`n").Trim())"
+    exit 1
+  }
+  $dupCheck = & $venvPython $checkPy --docx $dupOut 2>&1
+  $dupCheckExit = $LASTEXITCODE
+  $dupCheckText = ($dupCheck -join "`n").Trim()
+  if ($dupCheckExit -ne 0 -or $dupCheckText -notmatch 'OK') {
+    Write-Error "Test 9 failed: check.py must accept identical list items`n$dupCheckText"
+    exit 1
+  }
+  Remove-Item $dupMd, $dupOut -Force -ErrorAction SilentlyContinue
+  Write-Host "Test 9 passed: three identical '- TBD' items convert with OK."
+
+  # ---------------------------------------------------------
+  # Test 10: a Hangul run without w:eastAsia is rejected (G1.1a)
+  # Word asks the Latin font for Hangul glyphs when a run names no east-Asian
+  # face, which is the missing-glyph cause check_docx must catch.
+  # ---------------------------------------------------------
+  Write-Host "`n[Test 10] check.py rejects a Hangul run with no w:eastAsia font..."
+  $noEastOut = Join-Path $tempRoot "noeast_$(Get-Random).docx"
+  $noEastProbe = & $venvPython -c @'
+import sys
+
+import docx
+from docx.shared import Pt
+
+document = docx.Document()
+paragraph = document.add_paragraph()
+run = paragraph.add_run("\ud55c\uae00 \ud14d\uc2a4\ud2b8\uc785\ub2c8\ub2e4")
+run.font.name = "Malgun Gothic"
+run.font.size = Pt(12)
+document.save(sys.argv[1])
+print("WROTE")
+'@ $noEastOut
+  if (($noEastProbe -join "`n") -notmatch 'WROTE') {
+    Write-Error "Test 10 failed: could not build the negative DOCX fixture`n$(($noEastProbe -join "`n").Trim())"
+    exit 1
+  }
+  $noEastCheck = & $venvPython $checkPy --docx $noEastOut 2>&1
+  $noEastExit = $LASTEXITCODE
+  $noEastText = ($noEastCheck -join "`n").Trim()
+  if ($noEastExit -eq 0) {
+    Write-Error "Test 10 failed: a Hangul run without w:eastAsia must not pass`n$noEastText"
+    exit 1
+  }
+  if ($noEastText -notmatch 'w:eastAsia') {
+    Write-Error "Test 10 failed: the failure must name w:eastAsia`n$noEastText"
+    exit 1
+  }
+  Remove-Item $noEastOut -Force -ErrorAction SilentlyContinue
+  Write-Host "Test 10 passed: missing east-Asian font reported as a failure."
+
+  # ---------------------------------------------------------
+  # Test 11: content that runs past the slide bottom is rejected (G1.1b)
+  # PowerPoint grows a table row or a text box that needs more room than it
+  # declares, so a declared shape can fit while the drawn text does not.
+  # ---------------------------------------------------------
+  Write-Host "`n[Test 11] check.py rejects content past the slide bottom..."
+  $tallTableOut = Join-Path $tempRoot "talltable_$(Get-Random).pptx"
+  $tallTextOut = Join-Path $tempRoot "talltext_$(Get-Random).pptx"
+  $tallProbe = & $venvPython -c @'
+import sys
+
+from pptx import Presentation
+from pptx.util import Inches, Pt
+
+table_path, text_path = sys.argv[1], sys.argv[2]
+
+presentation = Presentation()
+presentation.slide_width = Inches(13.333)
+presentation.slide_height = Inches(7.5)
+slide = presentation.slides.add_slide(presentation.slide_layouts[5])
+slide.shapes.title.text = "Tall table"
+table = slide.shapes.add_table(
+    21, 3, Inches(0.8), Inches(1.4), Inches(11.5), Inches(4.0)
+).table
+for row in range(21):
+    for column in range(3):
+        table.cell(row, column).text = "cell %d-%d" % (row, column)
+presentation.save(table_path)
+
+deck = Presentation()
+deck.slide_width = Inches(13.333)
+deck.slide_height = Inches(7.5)
+body = deck.slides.add_slide(deck.slide_layouts[6])
+box = body.shapes.add_textbox(Inches(0.8), Inches(1.2), Inches(11.5), Inches(1.0))
+frame = box.text_frame
+for line in range(40):
+    paragraph = frame.paragraphs[0] if line == 0 else frame.add_paragraph()
+    paragraph.text = "code line %d" % line
+    paragraph.font.size = Pt(14)
+deck.save(text_path)
+
+print("WROTE")
+'@ $tallTableOut $tallTextOut
+  if (($tallProbe -join "`n") -notmatch 'WROTE') {
+    Write-Error "Test 11 failed: could not build the overflow fixtures`n$(($tallProbe -join "`n").Trim())"
+    exit 1
+  }
+  foreach ($tallCase in @(
+    @{ Path = $tallTableOut; Label = 'table' },
+    @{ Path = $tallTextOut; Label = 'text box' }
+  )) {
+    $tallCheck = & $venvPython $checkPy --pptx $tallCase.Path 2>&1
+    $tallExit = $LASTEXITCODE
+    $tallCheckText = ($tallCheck -join "`n").Trim()
+    if ($tallExit -eq 0) {
+      Write-Error "Test 11 failed: an oversized $($tallCase.Label) must not pass`n$tallCheckText"
+      exit 1
+    }
+    if ($tallCheckText -notmatch 'past the slide bottom') {
+      Write-Error "Test 11 failed: the failure must name the slide bottom`n$tallCheckText"
+      exit 1
+    }
+    if ($tallCheckText -notmatch [regex]::Escape($tallCase.Label)) {
+      Write-Error "Test 11 failed: the failure must name the $($tallCase.Label)`n$tallCheckText"
+      exit 1
+    }
+  }
+  Remove-Item $tallTableOut, $tallTextOut -Force -ErrorAction SilentlyContinue
+  Write-Host "Test 11 passed: both an oversized table and an oversized text box are rejected."
+
+  # ---------------------------------------------------------
+  # Test 12: a 20-row table and a 40-line code block stay inside the slides (G1.3)
+  # Both split by vertical budget instead of block count, and the table repeats
+  # its header row on the continuation slide.
+  # ---------------------------------------------------------
+  Write-Host "`n[Test 12] A tall table and a long code block split across slides..."
+  $bigDeckMd = Join-Path $tempRoot "bigdeck_$(Get-Random).md"
+  $bigDeckOut = Join-Path $tempRoot "bigdeck_$(Get-Random).pptx"
+  $bigDeckLines = @('# Big Deck', '', '## Table', '', '| Item | Owner | Status |', '| --- | --- | --- |')
+  foreach ($n in 1..20) { $bigDeckLines += "| Item $n | Owner $n | Status $n |" }
+  $bigDeckLines += @('', '## Code', '', '```python')
+  foreach ($n in 1..40) { $bigDeckLines += "value_$n = compute($n)" }
+  $bigDeckLines += '```'
+  Set-Content -Path $bigDeckMd -Value ($bigDeckLines -join "`n") -Encoding UTF8
+  $bigDeckOutput = & $venvPython $convertPy --in $bigDeckMd --to pptx --template report --out $bigDeckOut 2>&1
+  $bigDeckExit = $LASTEXITCODE
+  if ($bigDeckExit -ne 0) {
+    Write-Error "Test 12 failed: oversized deck conversion exited with $bigDeckExit`n$(($bigDeckOutput -join "`n").Trim())"
+    exit 1
+  }
+  $bigDeckCheck = & $venvPython $checkPy --pptx $bigDeckOut 2>&1
+  $bigDeckCheckExit = $LASTEXITCODE
+  $bigDeckCheckText = ($bigDeckCheck -join "`n").Trim()
+  if ($bigDeckCheckExit -ne 0) {
+    Write-Error "Test 12 failed: check.py rejected the oversized deck`n$bigDeckCheckText"
+    exit 1
+  }
+  $bigDeckProbe = & $venvPython -c @'
+import sys
+
+from pptx import Presentation
+
+presentation = Presentation(sys.argv[1])
+slides = list(presentation.slides)
+table_slides = 0
+continued = 0
+for slide in slides:
+    texts = [
+        shape.text_frame.text.strip()
+        for shape in slide.shapes
+        if shape.has_text_frame
+    ]
+    if any(getattr(shape, "has_table", False) for shape in slide.shapes):
+        table_slides += 1
+    if any(text.endswith("(continued)") for text in texts):
+        continued += 1
+print("SLIDES=%d" % len(slides))
+print("TABLESLIDES=%d" % table_slides)
+print("CONTINUED=%d" % continued)
+'@ $bigDeckOut
+  $bigDeckText = ($bigDeckProbe -join "`n").Trim()
+  if ($bigDeckText -notmatch 'TABLESLIDES=(\d+)') {
+    Write-Error "Test 12 failed: could not read the table slide count`n$bigDeckText"
+    exit 1
+  }
+  $tableSlides = [int]$Matches[1]
+  if ($tableSlides -lt 2) {
+    Write-Error "Test 12 failed: the 20-row table must split over 2 or more slides`n$bigDeckText"
+    exit 1
+  }
+  if ($bigDeckText -notmatch 'CONTINUED=(\d+)') {
+    Write-Error "Test 12 failed: could not read the continuation slide count`n$bigDeckText"
+    exit 1
+  }
+  if ([int]$Matches[1] -lt 2) {
+    Write-Error "Test 12 failed: both the table and the code block need a (continued) slide`n$bigDeckText"
+    exit 1
+  }
+  $bigDeckRows = & $venvPython -c @'
+import sys
+
+from pptx import Presentation
+
+presentation = Presentation(sys.argv[1])
+print(",".join(
+    str(len(shape.table.rows))
+    for slide in presentation.slides
+    for shape in slide.shapes
+    if getattr(shape, "has_table", False)
+))
+'@ $bigDeckOut
+  $rowCounts = (($bigDeckRows -join "").Trim()) -split ','
+  if ($rowCounts.Count -ne $tableSlides) {
+    Write-Error "Test 12 failed: expected $tableSlides table slides, saw $($rowCounts -join ',')."
+    exit 1
+  }
+  foreach ($count in $rowCounts) {
+    if ([int]$count -gt 21) {
+      Write-Error "Test 12 failed: a table slide still holds $count rows, so it did not split."
+      exit 1
+    }
+  }
+  Remove-Item $bigDeckMd, $bigDeckOut -Force -ErrorAction SilentlyContinue
+  Write-Host "Test 12 passed: 20-row table and 40-line code split by vertical budget."
+
+  # ---------------------------------------------------------
+  # Test 13: report and proposal open with an agenda, and every slide after the
+  # cover carries a footer with the deck title beside the number; minutes get
+  # neither (G1.4)
+  # ---------------------------------------------------------
+  Write-Host "`n[Test 13] Agenda slide and footer text follow the template..."
+  $deckMd = Join-Path $tempRoot "agenda_$(Get-Random).md"
+  $deckSource = @'
+# 분기 보고
+
+## 개요
+
+본문입니다.
+
+## 결과
+
+본문입니다.
+'@
+  Set-Content -Path $deckMd -Value $deckSource -Encoding UTF8
+  foreach ($deckCase in @(
+    @{ Template = 'report'; Agenda = 1; Footers = 3 },
+    @{ Template = 'minutes'; Agenda = 0; Footers = 2 }
+  )) {
+    $deckName = $deckCase.Template
+    $deckOut = Join-Path $tempRoot "agenda_${deckName}_$(Get-Random).pptx"
+    $deckOutput = & $venvPython $convertPy --in $deckMd --to pptx --template $deckName --out $deckOut 2>&1
+    $deckExit = $LASTEXITCODE
+    if ($deckExit -ne 0) {
+      Write-Error "Test 13 failed: $deckName conversion exited with $deckExit`n$(($deckOutput -join "`n").Trim())"
+      exit 1
+    }
+    $deckProbe = & $venvPython -c @'
+import sys
+
+from pptx import Presentation
+from pptx.util import Inches
+
+presentation = Presentation(sys.argv[1])
+slides = list(presentation.slides)
+agenda = 0
+footers = 0
+for slide in slides:
+    texts = [
+        shape.text_frame.text.strip()
+        for shape in slide.shapes
+        if shape.has_text_frame and shape.top is not None
+    ]
+    if any(text.startswith("Agenda") for text in texts):
+        agenda += 1
+    low = [
+        shape.text_frame.text.strip()
+        for shape in slide.shapes
+        if shape.has_text_frame and shape.top is not None and shape.top >= Inches(6.9)
+    ]
+    named = any(text and not text.isdigit() for text in low)
+    numbered = any(text.isdigit() for text in low)
+    if named and numbered:
+        footers += 1
+print("AGENDA=%d" % agenda)
+print("FOOTERS=%d" % footers)
+'@ $deckOut
+    $deckText = ($deckProbe -join "`n").Trim()
+    $deckLines = $deckText -split "`r?`n"
+    if ($deckLines -notcontains "AGENDA=$($deckCase.Agenda)") {
+      Write-Error "Test 13 failed: $deckName needs AGENDA=$($deckCase.Agenda)`n$deckText"
+      exit 1
+    }
+    if ($deckLines -notcontains "FOOTERS=$($deckCase.Footers)") {
+      Write-Error "Test 13 failed: $deckName needs FOOTERS=$($deckCase.Footers)`n$deckText"
+      exit 1
+    }
+    Remove-Item $deckOut -Force -ErrorAction SilentlyContinue
+    Write-Host "Test 13 ($deckName) passed: AGENDA=$($deckCase.Agenda), FOOTERS=$($deckCase.Footers)."
+  }
+  Remove-Item $deckMd -Force -ErrorAction SilentlyContinue
+
+  # ---------------------------------------------------------
+  # Test 14: Korean text is measured per character, not at a Latin average (G2.1)
+  # A Hangul syllable advances about one em, a Latin letter about half that. When
+  # one figure covered both, this deck estimated 3 lines per paragraph, so the
+  # writer packed two paragraphs onto one slide and check.py still printed OK
+  # because both used the same wrong number. The deck must now span more slides
+  # and every slide must still pass check.py.
+  # The fixture is written by Python so this file stays ASCII, which Windows
+  # PowerShell 5.1 reads the same way whatever the console code page is.
+  # ---------------------------------------------------------
+  Write-Host "`n[Test 14] Korean paragraphs are measured per character (G2.1)..."
+  $koreanMd = Join-Path $tempRoot "korean_$(Get-Random).md"
+  $koreanOut = Join-Path $tempRoot "korean_$(Get-Random).pptx"
+  $koreanProbe = & $venvPython -c @'
+import sys
+
+paragraph = "\uAC00\uB098\uB2E4\uB77C\uB9C8\uBC14\uC0AC\uC544\uC790\uCC28\uCE74\uD0C0\uD30C\uD558" * 12
+lines = ["# \uD55C\uAD6D\uC5B4 \uBB38\uC11C", "", "## \uAE34 \uBB38\uB2E8", ""]
+for _ in range(4):
+    lines.extend([paragraph, ""])
+with open(sys.argv[1], "w", encoding="utf-8") as handle:
+    handle.write("\n".join(lines))
+print("WROTE")
+'@ $koreanMd
+  if (($koreanProbe -join "`n") -notmatch 'WROTE') {
+    Write-Error "Test 14 failed: could not build the Korean fixture`n$(($koreanProbe -join "`n").Trim())"
+    exit 1
+  }
+  $koreanOutput = & $venvPython $convertPy --in $koreanMd --to pptx --template report --out $koreanOut 2>&1
+  $koreanExit = $LASTEXITCODE
+  if ($koreanExit -ne 0) {
+    Write-Error "Test 14 failed: Korean conversion exited with $koreanExit`n$(($koreanOutput -join "`n").Trim())"
+    exit 1
+  }
+  $koreanSlides = & $venvPython -c @'
+import sys
+
+from pptx import Presentation
+
+print(len(list(Presentation(sys.argv[1]).slides)))
+'@ $koreanOut
+  $koreanCount = [int](($koreanSlides -join "").Trim())
+  # The Latin-average estimate put this deck on 2 slides. One em per Hangul
+  # syllable puts the same text on 3 or more.
+  if ($koreanCount -lt 3) {
+    Write-Error "Test 14 failed: Korean text must span 3 or more slides, got $koreanCount"
+    exit 1
+  }
+  $koreanCheck = & $venvPython $checkPy --pptx $koreanOut 2>&1
+  $koreanCheckExit = $LASTEXITCODE
+  $koreanCheckText = ($koreanCheck -join "`n").Trim()
+  if ($koreanCheckExit -ne 0) {
+    Write-Error "Test 14 failed: the Korean deck must still pass check.py`n$koreanCheckText"
+    exit 1
+  }
+  if ($koreanCheckText -notmatch 'OK') {
+    Write-Error "Test 14 failed: check.py must print OK for the Korean deck`n$koreanCheckText"
+    exit 1
+  }
+  Remove-Item $koreanMd -Force -ErrorAction SilentlyContinue
+  Remove-Item $koreanOut -Force -ErrorAction SilentlyContinue
+  Write-Host "Test 14 passed: Korean deck spans $koreanCount slides and passes check.py."
+
 } finally {
   if (Test-Path $testScript) { Remove-Item $testScript -Force -ErrorAction SilentlyContinue }
   if (Test-Path $testMd) { Remove-Item $testMd -Force -ErrorAction SilentlyContinue }
