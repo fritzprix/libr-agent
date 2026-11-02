@@ -41,8 +41,10 @@ const CLEANUP_TOOLS_CHECK: &str = "command -v find >/dev/null && command -v chow
      && command -v chmod >/dev/null && command -v rm >/dev/null";
 
 /// Stops every process whose real or effective uid is not `$1`, except PID 1, this shell and
-/// its children. Only a root command can start such a process in a managed container.
+/// its children, and prints how many it stopped. Only a root command can start such a process
+/// in a managed container.
 const STOP_FOREIGN_PROCESSES_SCRIPT: &str = r#"me=$$
+n=0
 for d in /proc/[0-9]*; do
   p=${d#/proc/}
   case "$p" in "$me"|1) continue ;; esac
@@ -55,8 +57,11 @@ for d in /proc/[0-9]*; do
   done 2>/dev/null < "$d/status"
   [ -n "$ruid" ] || continue
   [ "$ppid" = "$me" ] && continue
-  if [ "$ruid" != "$1" ] || [ "$euid" != "$1" ]; then kill -9 "$p" 2>/dev/null; fi
+  if [ "$ruid" != "$1" ] || [ "$euid" != "$1" ]; then
+    kill -9 "$p" 2>/dev/null && n=$((n + 1))
+  fi
 done
+echo "$n"
 exit 0"#;
 
 /// For each mount in `$3...`: deletes device nodes, removes setuid/setgid bits from files and
@@ -80,20 +85,21 @@ pub struct RootExecLease {
 
 impl RootExecLease {
     /// Stops processes left by the root command and gives the read-write mounts back to the
-    /// host user. Does nothing when the host user is unknown (no Unix host) or is root.
-    pub async fn finish(self) -> RuntimeResult<()> {
+    /// host user. Returns how many processes were stopped. Does nothing when the host user is
+    /// unknown (no Unix host) or is root.
+    pub async fn finish(self) -> RuntimeResult<usize> {
         let Some((uid, gid)) = host_uid_gid().await else {
-            return Ok(());
+            return Ok(0);
         };
         if uid == "0" {
-            return Ok(());
+            return Ok(0);
         }
         let container = self.container.as_str();
         let stop = async {
             let stop_args = stop_foreign_processes_args(container, &uid);
             docker_output_slice(&as_str_args(&stop_args))
                 .await
-                .map(|_| ())
+                .map(|output| stopped_count(&output))
         };
         let restore = async {
             let mounts = docker_rw_mount_destinations(container).await?;
@@ -113,9 +119,9 @@ impl RootExecLease {
 /// the workspace whether or not its processes could be stopped. A restore error comes first,
 /// because it leaves the host exposed.
 async fn stop_then_restore(
-    stop: impl std::future::Future<Output = RuntimeResult<()>>,
+    stop: impl std::future::Future<Output = RuntimeResult<usize>>,
     restore: impl std::future::Future<Output = RuntimeResult<()>>,
-) -> RuntimeResult<()> {
+) -> RuntimeResult<usize> {
     let stop_result = stop.await;
     let restore_result = restore.await;
     match (stop_result, restore_result) {
@@ -125,8 +131,24 @@ async fn stop_then_restore(
         (Err(error), Ok(())) => Err(WorkspaceRuntimeError::Io(format!(
             "Could not stop the processes of the root command: {error}"
         ))),
-        (Ok(()), Ok(())) => Ok(()),
+        (Ok(stopped), Ok(())) => Ok(stopped),
     }
+}
+
+/// The count that [`STOP_FOREIGN_PROCESSES_SCRIPT`] prints on its last line; 0 when missing.
+fn stopped_count(output: &str) -> usize {
+    output
+        .lines()
+        .last()
+        .and_then(|line| line.trim().parse().ok())
+        .unwrap_or(0)
+}
+
+/// Line added to the output of a root command whose cleanup stopped processes, so the agent
+/// does not expect a daemon it started with asRoot to keep running.
+pub fn stopped_processes_note(stopped: usize) -> Option<String> {
+    (stopped > 0)
+        .then(|| format!("LibrAgent: {stopped} process(es) left by the root command were stopped."))
 }
 
 impl WorkspaceRuntimeManager {
@@ -337,10 +359,51 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stop_and_restore_success_is_ok() {
-        assert!(stop_then_restore(async { Ok(()) }, async { Ok(()) })
-            .await
-            .is_ok());
+    async fn stop_and_restore_success_reports_the_stopped_count() {
+        let stopped = stop_then_restore(async { Ok(2) }, async { Ok(()) }).await;
+        assert_eq!(stopped.expect("both steps succeed"), 2);
+    }
+
+    #[test]
+    fn stopped_count_reads_the_last_line_of_the_stop_script() {
+        assert_eq!(stopped_count("3"), 3);
+        assert_eq!(stopped_count("noise\n0"), 0);
+        assert_eq!(stopped_count(""), 0);
+        assert_eq!(stopped_count("not a number"), 0);
+        assert!(STOP_FOREIGN_PROCESSES_SCRIPT.contains("echo \"$n\""));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn stop_script_prints_how_many_processes_it_stopped() {
+        let mut target = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .expect("spawn sleep");
+        // `kill` is shadowed so that the script can stop only the sleep started here; every
+        // other process counts as foreign (no uid matches) but cannot be touched.
+        let script = format!(
+            "kill() {{ [ \"$2\" = \"$TARGET\" ] && command kill \"$@\"; }}\n{STOP_FOREIGN_PROCESSES_SCRIPT}"
+        );
+        let output = std::process::Command::new("sh")
+            .args(["-c", &script, "sh", "4294967294"])
+            .env("TARGET", target.id().to_string())
+            .output()
+            .expect("run stop script");
+        let status = target.wait().expect("wait sleep");
+
+        assert!(output.status.success(), "{output:?}");
+        assert_eq!(stopped_count(&String::from_utf8_lossy(&output.stdout)), 1);
+        assert!(!status.success(), "the sleep must have been killed");
+    }
+
+    #[test]
+    fn stop_notice_names_only_the_count_and_only_when_something_stopped() {
+        assert_eq!(stopped_processes_note(0), None);
+        assert_eq!(
+            stopped_processes_note(1).as_deref(),
+            Some("LibrAgent: 1 process(es) left by the root command were stopped.")
+        );
     }
 
     #[cfg(unix)]

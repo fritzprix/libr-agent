@@ -268,13 +268,25 @@ impl WorkspaceServer {
             .await;
 
             // The workspace must belong to the host user again before the result is visible.
-            let restore_error = match root_lease {
-                Some(lease) => lease.finish().await.err(),
-                None => None,
+            let (restore_error, stop_note) = match root_lease {
+                Some(lease) => match lease.finish().await {
+                    Ok(stopped) => (None, crate::services::stopped_processes_note(stopped)),
+                    Err(error) => (Some(error), None),
+                },
+                None => (None, None),
             };
-            if let Some(error) = &restore_error {
-                error!("Root command {} cleanup failed: {}", pid_copy, error);
-                let note = format!("\nLibrAgent: {error}\n");
+            if let Some(note) = &stop_note {
+                info!("Root command {}: {}", pid_copy, note);
+            }
+            let note = match &restore_error {
+                Some(error) => {
+                    error!("Root command {} cleanup failed: {}", pid_copy, error);
+                    Some(format!("LibrAgent: {error}"))
+                }
+                None => stop_note,
+            };
+            if let Some(note) = note {
+                let note = format!("\n{note}\n");
                 if let Ok(mut file) = tokio::fs::OpenOptions::new()
                     .append(true)
                     .create(true)
