@@ -57,7 +57,6 @@ if (-not $agyBin -or -not (Test-Path $agyBin)) {
 $outputFormat = if ($Json) { 'json' } else { 'text' }
 
 $agyArgs = @(
-  '-p', $Task,
   '--model', $Model,
   '--print-timeout', $Timeout,
   '--output-format', $outputFormat
@@ -73,5 +72,15 @@ foreach ($d in $Dir) {
   }
 }
 
-& $agyBin @agyArgs
+$prevOutputEncoding = $OutputEncoding
+$prevConsoleOutputEncoding = [Console]::OutputEncoding
+try {
+  $utf8 = [System.Text.UTF8Encoding]::new($false)
+  $OutputEncoding = $utf8
+  [Console]::OutputEncoding = $utf8
+  $Task | & $agyBin @agyArgs
+} finally {
+  $OutputEncoding = $prevOutputEncoding
+  [Console]::OutputEncoding = $prevConsoleOutputEncoding
+}
 exit $LASTEXITCODE
