@@ -39,6 +39,7 @@ pub use secure_file_manager::SecureFileManager;
 pub use session_cleanup_service::SessionCleanupService;
 pub use session_directory_service::SessionDirectoryService;
 pub use workspace_runtime_manager::{
-    as_root_requested, RootExecBlocker, RootExecLease, WorkspaceRuntimeManager,
+    as_root_requested, stopped_processes_note, RootExecBlocker, RootExecLease,
+    WorkspaceRuntimeManager,
 };
 pub use workspace_service::{WorkspaceFileContentResponse, WorkspaceFileItem, WorkspaceService};

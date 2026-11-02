@@ -58,7 +58,7 @@ pub fn create_run_shell_tool(allow_root: bool) -> MCPTool {
             boolean_prop_with_default(
                 false,
                 Some(
-                    "Run this call as root in the session container. Use it only to install system packages (for example: apt-get update && apt-get install -y nodejs npm). Files that a root command writes in the workspace belong to root. Not available for an attached container.",
+                    "Run this call as root in the session container. Use it only to install system packages (for example: apt-get update && apt-get install -y nodejs npm). When the call ends, every process it left running (background jobs, daemons) is stopped, so start long-running services in a call without asRoot. Workspace files it writes are given back to the host user afterwards. Not available for an attached container.",
                 ),
             ),
         );
@@ -510,5 +510,21 @@ mod tests {
         };
         assert!(has_as_root(create_run_shell_tool(true)));
         assert!(!has_as_root(create_run_shell_tool(false)));
+    }
+
+    #[test]
+    fn as_root_description_states_the_cleanup_after_the_call() {
+        let schema = serde_json::to_value(create_run_shell_tool(true).input_schema).unwrap();
+        let text = schema
+            .pointer("/properties/asRoot/description")
+            .and_then(|value| value.as_str())
+            .expect("asRoot description");
+        assert!(text.contains("every process it left running"), "{text}");
+        assert!(
+            text.contains("long-running services in a call without asRoot"),
+            "{text}"
+        );
+        assert!(text.contains("given back to the host user"), "{text}");
+        assert!(!text.contains("belong to root"), "{text}");
     }
 }
