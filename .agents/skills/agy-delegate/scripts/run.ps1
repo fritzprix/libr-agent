@@ -82,13 +82,49 @@ if ($Task -and $Task.Length -gt 0 -and [int]$Task[0] -eq 0xFEFF) {
 
 $prevOutputEncoding = $OutputEncoding
 $prevConsoleOutputEncoding = [Console]::OutputEncoding
+$prevErrorActionPreference = $ErrorActionPreference
+$exitCode = 0
 try {
   $utf8 = [System.Text.UTF8Encoding]::new($false)
   $OutputEncoding = $utf8
   [Console]::OutputEncoding = $utf8
-  $Task | agy @agyArgs
+  # Allow native command stderr redirection without PowerShell NativeCommandError termination
+  $ErrorActionPreference = 'Continue'
+
+  # Run agy with piped stdin.
+  # If agy exits 2 with "unexpected argument ... agy.exe" due to a daemon restart glitch,
+  # retry once with the same prompt.
+  $attempt = 1
+  while ($true) {
+    $errFile = [System.IO.Path]::GetTempFileName()
+    try {
+      $Task | agy @agyArgs 2>$errFile
+      $exitCode = $LASTEXITCODE
+
+      $errText = ""
+      if (Test-Path $errFile) {
+        $errText = [System.IO.File]::ReadAllText($errFile)
+      }
+
+      $isAgyArgGlitch = ($exitCode -eq 2) -and ($errText -match 'unexpected argument.*agy(?:\.exe)?')
+      if ($isAgyArgGlitch -and $attempt -eq 1) {
+        $attempt++
+        continue
+      }
+
+      if ($errText) {
+        [Console]::Error.Write($errText)
+      }
+      break
+    } finally {
+      if (Test-Path $errFile) {
+        Remove-Item -Force $errFile -ErrorAction SilentlyContinue
+      }
+    }
+  }
 } finally {
   $OutputEncoding = $prevOutputEncoding
   [Console]::OutputEncoding = $prevConsoleOutputEncoding
+  $ErrorActionPreference = $prevErrorActionPreference
 }
-exit $LASTEXITCODE
+exit $exitCode

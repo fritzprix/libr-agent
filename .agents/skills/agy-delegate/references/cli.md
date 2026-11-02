@@ -145,6 +145,6 @@ per stdin line → one turn each. Prefer single `-p` unless batching turns.
 - JSON with `status` other than `SUCCESS` → fail
 - Empty `response` / empty stdout after “success” → re-prompt or escalate
 - `agy: command not found` → install/path issue; do not fall back silently to another provider
-- `Error: unexpected argument "..."` on Windows → Unquoted `$TASK` caused PowerShell to split prompt words into CLI positional flags. Wrap prompt in `@' ... '@` Here-String or use `scripts/run.ps1`.
+- `Error: unexpected argument "..."` on Windows → Unquoted `$TASK` caused PowerShell to split prompt words into CLI positional flags. Wrap prompt in `@' ... '@` Here-String or use `scripts/run.ps1`. If the unexpected argument matches `<path>\agy.exe` (exit code 2), `scripts/run.ps1` detects the daemon restart glitch and automatically retries once with the same piped stdin.
 - `Error: -p took "--model" as its prompt` → `-p` was invoked without a prompt string value before other flags. Ensure prompt string directly follows `-p`.
 - `Program 'agy.exe' failed to run: 액세스가 거부되었습니다 (Access is denied)` → Stale/background agy process or file lock. Kill lingering background tasks or verify binary path permission.

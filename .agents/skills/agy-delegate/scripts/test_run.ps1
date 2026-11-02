@@ -8,7 +8,7 @@ $ErrorActionPreference = 'Stop'
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $runPs1 = Join-Path $scriptDir 'run.ps1'
 
-$koreanWord = [string][char[]]@(0xD55C, 0xAD6D, 0xC5B4)
+$koreanWord = -join [char[]]@(0xD55C, 0xAD6D, 0xC5B4)
 $testPrompt = "Reply with EXACTLY: `"items-center`" and ``code`` and $koreanWord. Do not add any extra words."
 
 Write-Host "Running agy-delegate test prompt with double quotes, backticks, and Korean text..."
