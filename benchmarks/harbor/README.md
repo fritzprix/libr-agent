@@ -226,6 +226,9 @@ Environment overrides:
   Official Terminal-Bench submissions must not modify timeouts or resources; `pnpm bench:*`
   omits these flags unless you set the env vars or pass CLI options.
 - `LIBRAGENT_POLL_TIMEOUT_SEC` — optional adapter wall-clock poll budget; omit to wait until Harbor cancels
+- `LIBRAGENT_SESSION_API_KEY_FILE` / `LIBRAGENT_SESSION_API_KEY` — Session API key for a
+  run without `--isolated`: set the same one the app was started with (the file wins). An
+  `--isolated` run reads the key from the bench instance instead.
 
 ## Isolated bench instance (clean state per job)
 

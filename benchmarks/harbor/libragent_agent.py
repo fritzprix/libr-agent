@@ -59,10 +59,12 @@ from benchmarks.harbor.isolated_instance import (
     INSTANCE_ROOT_ENV,
     INSTANCE_SANDBOX_ENV,
     SANDBOX_WORKDIR,
+    BenchAuthError,
     InstanceLayout,
     auth_headers,
     instance_running,
     relaunch,
+    resolve_env_auth_headers,
     safe_print,
 )
 
@@ -76,6 +78,12 @@ TRAJECTORY_MESSAGE_LIMIT = 1_000
 PACKAGE_JSON_PATH = Path(__file__).resolve().parents[2] / "package.json"
 BENCHMARK_CONTRACT_SCHEMA_VERSION = 1
 COMPACTION_TELEMETRY_SCHEMA_VERSION = "compaction-telemetry/v1"
+# Said once, wherever a 401 is reported, so the fix is one line to read.
+API_KEY_HINT = (
+    "The LibrAgent Session API rejected the request (401). Give the bench the key "
+    "that app was started with: set LIBRAGENT_SESSION_API_KEY, or "
+    "LIBRAGENT_SESSION_API_KEY_FILE to a readable file that holds it."
+)
 
 # Provisional session maxInputContext for compaction-* tasks.
 # Keys are family slugs (matched as ``compaction-<slug>`` with optional ``-vN``).
@@ -1746,6 +1754,10 @@ class LibrAgentHarborAdapter(BaseAgent):
             session_started_at_utc = datetime.now(timezone.utc).isoformat()
             safe_print(f"[{self.name()}] Creating session ({mode_desc})...")
             res = await client.post(f"{self.api_url}/sessions", json=payload)
+            if res.status_code == 401:
+                raise RuntimeError(
+                    f"LibrAgent session creation was unauthorized (401). {API_KEY_HINT}"
+                )
             if res.status_code != 201:
                 raise RuntimeError(
                     f"LibrAgent session creation failed ({res.status_code}): {res.text}"
@@ -2176,10 +2188,22 @@ class LibrAgentHarborAdapter(BaseAgent):
             await asyncio.sleep(poll_interval)
 
     def _api_headers(self) -> dict[str, str]:
-        """Session API key of the current bench instance (it changes per launch); none
-        without --isolated, where the API is external."""
+        """Session API key for the LibrAgent instance under test.
+
+        ``--isolated`` relaunches the app before every trial, so its key changes each
+        launch and only the instance layout knows it (that file stays authoritative).
+        A non-isolated run talks to an app that outlives the bench, so the key comes
+        from the environment the app was given: LIBRAGENT_SESSION_API_KEY or
+        LIBRAGENT_SESSION_API_KEY_FILE. Without either, an app that has a key answers
+        401 and this returns no header, as before.
+        """
         trial_reset = resolve_trial_instance_reset(dict(os.environ))
-        return auth_headers(trial_reset.layout) if trial_reset is not None else {}
+        if trial_reset is not None:
+            return auth_headers(trial_reset.layout)
+        try:
+            return resolve_env_auth_headers(os.environ)
+        except BenchAuthError as exc:
+            raise RuntimeError(f"{exc} {API_KEY_HINT}") from exc
 
     async def _fetch_session_messages_best_effort(self, session_id: str) -> list[Any]:
         """GET session messages on a short-lived client; never raise."""
