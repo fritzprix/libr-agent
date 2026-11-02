@@ -26,11 +26,14 @@ All tools and runtime dependencies used by this skill are permissively licensed:
 
 Select the conversion guide matching the desired direction:
 
-| Direction | Guide Reference | Supported Outputs / Templates |
-|-----------|-----------------|-------------------------------|
-| Markdown -> PDF | [references/md-to-pdf.md](references/md-to-pdf.md) | `report`, `proposal`, `minutes` |
-| Markdown -> PPTX | [references/md-to-pptx.md](references/md-to-pptx.md) | `slides`, `dark`, `minimal` |
-| Markdown -> DOCX | [references/md-to-docx.md](references/md-to-docx.md) | `standard`, `clean` |
+All three output formats share the same templates, so one `--template` value
+means the same document identity everywhere: `report`, `proposal`, `minutes`.
+
+| Direction | Guide Reference | Outputs |
+|-----------|-----------------|---------|
+| Markdown -> PDF | [references/md-to-pdf.md](references/md-to-pdf.md) | `.pdf` |
+| Markdown -> DOCX | [references/md-to-docx.md](references/md-to-docx.md) | `.docx` |
+| Markdown -> PPTX | [references/md-to-pptx.md](references/md-to-pptx.md) | `.pptx` |
 | Document -> Markdown | [references/to-md.md](references/to-md.md) | Text extraction via MarkItDown |
 
 ## Fixed Command Form
@@ -54,6 +57,6 @@ Then run document conversion using the interpreter reported under `VenvPython:`.
 ## Output Contract & Verification
 
 The script enforces an explicit output contract on every execution:
-- On success, it prints the absolute output path, `ExitCode: 0`, and `OK`. Every format also prints its size as `Bytes: <n>` (`--to pdf` adds `Pages: <n>`).
+- On success, it prints the absolute output path, `ExitCode: 0`, and `OK`. Every format also prints its size as `Bytes: <n>`, plus one count for the format: `Pages:` for pdf, `Sections:` for docx, `Slides:` for pptx. Word and PowerPoint lay out pages themselves when the file is opened, so only PDF reports a page count.
 - On failure (including syntax/argument errors, missing files, or pending sub-issue engines), it prints the error description, `ExitCode: <n>`, a single `NEXT:` line guiding the next action, and exits non-zero without printing `OK`.
 - **No OK line, no success report**: Never claim conversion succeeded unless `convert.py` printed `ExitCode: 0` and `OK`, and the output file exists with non-zero size.

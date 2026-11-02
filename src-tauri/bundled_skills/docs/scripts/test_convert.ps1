@@ -282,6 +282,113 @@ try {
   }
   Remove-Item $blankMd, $blankOut -Force -ErrorAction SilentlyContinue
   Write-Host "Test 6 passed: empty Markdown failed with a NEXT hint and no OK line."
+  # ---------------------------------------------------------
+  # Test 7: each ordered list gets its own Word numbering
+  # ---------------------------------------------------------
+  Write-Host "`n[Test 7] Separate ordered lists restart their numbering..."
+  $numMd = Join-Path $tempRoot "numbering_$(Get-Random).md"
+  $numOut = Join-Path $tempRoot "numbering_$(Get-Random).docx"
+  $numSource = @'
+# 번호
+
+## 첫 목록
+
+1. 하나
+2. 둘
+
+## 둘째 목록
+
+5. 다섯
+6. 여섯
+
+## 셋째 목록
+
+1. 다시 하나
+'@
+  Set-Content -Path $numMd -Value $numSource -Encoding UTF8
+  $numOutput = & $venvPython $convertPy --in $numMd --to docx --template report --out $numOut 2>&1
+  $numExit = $LASTEXITCODE
+  if ($numExit -ne 0) {
+    Write-Error "Test 7 failed: DOCX numbering conversion exited with $numExit`n$(($numOutput -join "`n").Trim())"
+    exit 1
+  }
+  # Each separate Markdown list must own a distinct numId, and the list that
+  # starts at 5 must carry that start value.
+  $numProbe = & $venvPython -c @"
+import sys
+from docx import Document
+from docx.oxml.ns import qn
+doc = Document(sys.argv[1])
+numbering = doc.part.numbering_part.element
+seen = []
+for para in doc.paragraphs:
+    if para.style.name != 'List Number':
+        continue
+    num_pr = para._p.pPr.find(qn('w:numPr'))
+    if num_pr is None:
+        print('MISSING_NUMPR'); sys.exit(0)
+    seen.append(num_pr.find(qn('w:numId')).get(qn('w:val')))
+starts = {}
+for num in numbering.findall(qn('w:num')):
+    override = num.find(qn('w:lvlOverride'))
+    if override is not None:
+        starts[num.get(qn('w:numId'))] = override.find(qn('w:startOverride')).get(qn('w:val'))
+distinct = []
+for item in seen:
+    if item not in distinct:
+        distinct.append(item)
+print('PARAS=' + ','.join(seen))
+print('DISTINCT=' + ','.join(distinct))
+print('STARTS=' + ','.join(str(starts.get(item, '?')) for item in distinct))
+"@ $numOut
+  $numText = $numProbe -join "`n"
+  if ($numText -match 'MISSING_NUMPR') {
+    Write-Error "Test 7 failed: an ordered paragraph has no w:numPr."
+    exit 1
+  }
+  $distinctLine = ($numProbe | Where-Object { $_ -like 'DISTINCT=*' }) -replace '^DISTINCT=', ''
+  $distinctIds = $distinctLine -split ','
+  if ($distinctIds.Count -ne 3) {
+    Write-Error "Test 7 failed: expected 3 independent lists, got $($distinctIds.Count) ($distinctLine)."
+    exit 1
+  }
+  $startsLine = ($numProbe | Where-Object { $_ -like 'STARTS=*' }) -replace '^STARTS=', ''
+  $startValues = $startsLine -split ','
+  if ($startValues[0] -ne '1' -or $startValues[1] -ne '5' -or $startValues[2] -ne '1') {
+    Write-Error "Test 7 failed: expected list starts 1,5,1 but got $startsLine."
+    exit 1
+  }
+  Remove-Item $numMd, $numOut -Force -ErrorAction SilentlyContinue
+  Write-Host "Test 7 passed: 3 separate lists with independent counters and a 5 start."
+
+  # ---------------------------------------------------------
+  # Test 8: a long bullet list splits across slides
+  # ---------------------------------------------------------
+  Write-Host "`n[Test 8] Long bullet lists split across slides..."
+  $manyMd = Join-Path $tempRoot "many_$(Get-Random).md"
+  $manyOut = Join-Path $tempRoot "many_$(Get-Random).pptx"
+  $manyLines = @('# 다량 항목', '', '## 많은 목록', '')
+  foreach ($n in 1..12) { $manyLines += "- 항목 $n" }
+  Set-Content -Path $manyMd -Value ($manyLines -join "`n") -Encoding UTF8
+  $manyOutput = & $venvPython $convertPy --in $manyMd --to pptx --template report --out $manyOut 2>&1
+  $manyExit = $LASTEXITCODE
+  if ($manyExit -ne 0) {
+    Write-Error "Test 8 failed: PPTX conversion exited with $manyExit`n$(($manyOutput -join "`n").Trim())"
+    exit 1
+  }
+  $manyProbe = & $venvPython -c "import sys; from pptx import Presentation; p=Presentation(sys.argv[1]); print('SLIDES='+str(len(p.slides))); print('|'.join(sh.text_frame.text.replace(chr(10),' ') for s in p.slides for sh in s.shapes if sh.has_text_frame))" $manyOut
+  $manyText = $manyProbe -join "`n"
+  if ($manyText -notmatch 'SLIDES=3') {
+    Write-Error "Test 8 failed: expected 3 slides (cover, list, continued), got $($manyText -split "`n" | Select-Object -First 1)."
+    exit 1
+  }
+  if ($manyText -notmatch '\(continued\)') {
+    Write-Error "Test 8 failed: the overflow slide title must end with (continued)."
+    exit 1
+  }
+  Remove-Item $manyMd, $manyOut -Force -ErrorAction SilentlyContinue
+  Write-Host "Test 8 passed: 12 bullets split over 2 content slides with a (continued) title."
+
 } finally {
   if (Test-Path $testScript) { Remove-Item $testScript -Force -ErrorAction SilentlyContinue }
   if (Test-Path $testMd) { Remove-Item $testMd -Force -ErrorAction SilentlyContinue }

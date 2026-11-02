@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
-"""Verify a rendered PDF for the docs skill.
+"""Verify a rendered document for the docs skill.
 
-Reads text positions with pdfplumber (MIT) and rejects the three defects that a
-bad layout produces: an empty file, table rows that overlap each other, and cell
-text that spills outside its cell. Also rejects text drawn with a base-14 font
-when the character is non-ASCII, because that font has no Korean glyph and the
-page would show a blank box or a notdef.
+Every format is checked for the defects a bad render produces, using only the
+library that already backs it:
 
-Prints `OK <abs path> <pages>` only when every check passes.
+* PDF (pdfplumber, MIT): empty file, table rows that overlap, cell text that
+  spills outside its cell, text drawn with a substitution font, and characters
+  the document font has no glyph for.
+* DOCX (python-docx, MIT): empty file, no paragraphs and no tables, a paragraph
+  that repeats the same run verbatim (a duplicated render), and a table whose
+  rows disagree on column count.
+* PPTX (python-pptx, MIT): empty file, no slides, a slide with no shapes, body
+  text that runs past the slide edge, and a table whose rows disagree on column
+  count.
+
+Prints `OK <abs path> <pages or slides>` only when every check passes.
 """
 from __future__ import annotations
 
@@ -195,6 +202,142 @@ def check_table_rows(page) -> list[str]:
     return problems
 
 
+def check_docx(path: pathlib.Path) -> tuple[list[str], int]:
+    """Return (problems, section count) for a DOCX file.
+
+    Word decides pagination when the file is opened, so there is no page count to
+    report. The section count is used instead, which keeps this line and the
+    `Sections:` line convert.py prints in agreement.
+    """
+    try:
+        import docx
+    except ImportError:
+        return (["python-docx is not installed in this interpreter."], 0)
+
+    try:
+        document = docx.Document(str(path))
+    except Exception as exc:
+        return ([f"python-docx could not read the file: {exc}"], 0)
+
+    problems: list[str] = []
+    paragraphs = list(document.paragraphs)
+
+    # A duplicated render shows up as the same paragraph emitted twice in a row.
+    previous = None
+    for paragraph in paragraphs:
+        text = paragraph.text
+        if text and text == previous:
+            problems.append(_truncate("duplicate paragraph", text))
+            break
+        previous = text
+
+    for table_index, table in enumerate(document.tables, start=1):
+        counts = {len(row.cells) for row in table.rows}
+        if len(counts) > 1:
+            problems.append(
+                f"table {table_index}: rows disagree on column count {sorted(counts)}"
+            )
+
+    if not paragraphs and not document.tables:
+        problems.append("document has no paragraphs and no tables")
+
+    return (problems, len(document.sections))
+
+
+def _truncate(label: str, text: str, width: int = 60) -> str:
+    """Return a short single-line excerpt for an error message."""
+    flat = " ".join(text.split())
+    if len(flat) > width:
+        flat = flat[:width] + "..."
+    return f"{label}: '{flat}'"
+
+
+def check_pptx(path: pathlib.Path) -> tuple[list[str], int]:
+    """Return (problems, slide count) for a PPTX file."""
+    try:
+        from pptx import Presentation
+        from pptx.util import Emu
+    except ImportError:
+        return (["python-pptx is not installed in this interpreter."], 0)
+
+    try:
+        presentation = Presentation(str(path))
+    except Exception as exc:
+        return ([f"python-pptx could not read the file: {exc}"], 0)
+
+    problems: list[str] = []
+    slides = list(presentation.slides)
+    if not slides:
+        return (["presentation has no slides"], 0)
+
+    slide_width = presentation.slide_width
+
+    for number, slide in enumerate(slides, start=1):
+        shapes = list(slide.shapes)
+        if not shapes:
+            problems.append(f"slide {number}: has no shapes")
+            continue
+
+        for shape in shapes:
+            # A shape placed past the slide edge is clipped when presented.
+            if shape.left is None or shape.width is None:
+                continue
+            right = shape.left + shape.width
+            if right > slide_width + Emu(9525):
+                problems.append(
+                    f"slide {number}: a shape runs past the slide edge "
+                    f"(right {Emu(right).inches:.2f}in > "
+                    f"{Emu(slide_width).inches:.2f}in)"
+                )
+                break
+
+            if not getattr(shape, "has_table", False):
+                continue
+            table = shape.table
+            counts = {len(row.cells) for row in table.rows}
+            if len(counts) > 1:
+                problems.append(
+                    f"slide {number}: table rows disagree on column count "
+                    f"{sorted(counts)}"
+                )
+
+    return (problems, len(slides))
+
+
+def run_format_check(path: pathlib.Path, kind: str) -> int:
+    """Validate a DOCX or PPTX file and print the success line or failures."""
+    if not path.exists():
+        return fail(
+            f"Output file does not exist: {path}",
+            "Re-run convert.py and confirm the --out path is writable.",
+        )
+
+    if path.stat().st_size == 0:
+        return fail(
+            f"Output file is 0 bytes: {path}",
+            "Re-run convert.py; a 0-byte file means the writer saved nothing.",
+        )
+
+    if kind == "docx":
+        problems, count = check_docx(path)
+    else:
+        problems, count = check_pptx(path)
+
+    if problems:
+        print(f"Error: {kind.upper()} verification failed for {path}", file=sys.stderr)
+        for problem in problems[:10]:
+            print(f"  - {problem}", file=sys.stderr)
+        print("ExitCode: 1")
+        print(
+            f"NEXT: Fix the layout defect or pick another template, then re-run convert.py.",
+            file=sys.stderr,
+        )
+        return 1
+
+    print(f"OK {path} {count}")
+    return 0
+
+
 def run_check(pdf_path: pathlib.Path) -> int:
     """Validate pdf_path and print the success line or a failure report."""
     if not pdf_path.exists():
@@ -255,9 +398,11 @@ def run_check(pdf_path: pathlib.Path) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Verify a docs-skill PDF output", add_help=False
+        description="Verify a docs-skill rendered document", add_help=False
     )
     parser.add_argument("--pdf", dest="pdf_file", type=str, help="PDF path to verify")
+    parser.add_argument("--docx", dest="docx_file", type=str, help="DOCX path to verify")
+    parser.add_argument("--pptx", dest="pptx_file", type=str, help="PPTX path to verify")
     parser.add_argument("-h", "--help", action="store_true", help="Show help")
     args = parser.parse_args()
 
@@ -266,14 +411,29 @@ def main() -> int:
         print("ExitCode: 0")
         return 0
 
-    if not args.pdf_file:
+    chosen = [
+        ("pdf", args.pdf_file),
+        ("docx", args.docx_file),
+        ("pptx", args.pptx_file),
+    ]
+    given = [(kind, value) for kind, value in chosen if value]
+    if not given:
         return fail(
-            "Missing required argument '--pdf'.",
-            "Specify the rendered PDF via --pdf '<abs-path>'.",
+            "Missing required argument: one of --pdf, --docx, --pptx.",
+            "Specify the rendered file, e.g. --pdf '<abs-path>'.",
+            code=2,
+        )
+    if len(given) > 1:
+        return fail(
+            "Only one of --pdf, --docx, --pptx may be given.",
+            "Pass exactly one file to verify.",
             code=2,
         )
 
-    return run_check(pathlib.Path(args.pdf_file).resolve())
+    kind, value = given[0]
+    if kind == "pdf":
+        return run_check(pathlib.Path(value).resolve())
+    return run_format_check(pathlib.Path(value).resolve(), kind)
 
 
 if __name__ == "__main__":
