@@ -766,6 +766,80 @@ print(len(list(Presentation(sys.argv[1]).slides)))
   Remove-Item $koreanOut -Force -ErrorAction SilentlyContinue
   Write-Host "Test 14 passed: Korean deck spans $koreanCount slides and passes check.py."
 
+  # Test 15: --to md reads a .docx built by python-docx (#2504)
+  # The doctor used to install bare `markitdown` and probe only `import markitdown`,
+  # so it printed OK while this command failed with MissingDependencyException: the
+  # Word converter sits behind the [docx] extra. The fixture is written with
+  # python-docx, which the doctor always installs, so this test exercises only the
+  # MarkItDown extras and not the docx writer engine.
+  # ---------------------------------------------------------
+  Write-Host "`n[Test 15] MarkItDown reads a .docx through the doctor extras (#2504)..."
+  $extractDocx = Join-Path $tempRoot "extract_$(Get-Random).docx"
+  $extractMd = Join-Path $tempRoot "extract_$(Get-Random).md"
+  $extractFixture = & $venvPython -c @'
+import sys
+
+from docx import Document
+
+document = Document()
+document.add_heading("Report", level=1)
+document.add_paragraph("Body text with a table.")
+table = document.add_table(rows=2, cols=2)
+table.cell(0, 0).text = "Item"
+table.cell(0, 1).text = "Value"
+table.cell(1, 0).text = "First"
+table.cell(1, 1).text = "1"
+document.save(sys.argv[1])
+print("WROTE")
+'@ $extractDocx
+  if (($extractFixture -join "`n") -notmatch 'WROTE') {
+    Write-Error "Test 15 failed: could not build the docx fixture`n$(($extractFixture -join "`n").Trim())"
+    exit 1
+  }
+  $extractOut = & $venvPython $convertPy --in $extractDocx --to md --out $extractMd 2>&1
+  $extractExit = $LASTEXITCODE
+  $extractText = ($extractOut -join "`n").Trim()
+  if ($extractExit -ne 0) {
+    Write-Error "Test 15 failed: docx to markdown exited with $extractExit`n$extractText"
+    exit 1
+  }
+  if ($extractText -notmatch 'OK') {
+    Write-Error "Test 15 failed: docx to markdown must print OK`n$extractText"
+    exit 1
+  }
+  if (-not (Test-Path $extractMd)) {
+    Write-Error "Test 15 failed: docx to markdown produced no output file"
+    exit 1
+  }
+
+  # The probe must be able to report an absent module, otherwise a green doctor
+  # proves nothing about the converter extras.
+  $probeReport = & $venvPython -c @'
+import pathlib
+import sys
+
+sys.path.insert(0, str(pathlib.Path(sys.argv[1]).parent))
+import convert
+
+python_exe = pathlib.Path(sys.argv[2])
+absent = convert.missing_modules(python_exe, ("libr_agent_absent_module_probe",))
+unmet = convert.unmet_dependencies(python_exe)
+print("ABSENT_REPORTED=%d" % len(absent))
+print("UNMET_COUNT=%d" % len(unmet))
+'@ $convertPy $venvPython
+  $probeText = ($probeReport -join "`n").Trim()
+  $probeLines = $probeText -split "`r?`n"
+  if ($probeLines -notcontains "ABSENT_REPORTED=1") {
+    Write-Error "Test 15 failed: the dependency probe must report an absent module`n$probeText"
+    exit 1
+  }
+  if ($probeLines -notcontains "UNMET_COUNT=0") {
+    Write-Error "Test 15 failed: the doctor venv must satisfy every dependency spec`n$probeText"
+    exit 1
+  }
+  Remove-Item $extractDocx -Force -ErrorAction SilentlyContinue
+  Remove-Item $extractMd -Force -ErrorAction SilentlyContinue
+  Write-Host "Test 15 passed: docx extraction works and the dependency probe detects missing modules."
 } finally {
   if (Test-Path $testScript) { Remove-Item $testScript -Force -ErrorAction SilentlyContinue }
   if (Test-Path $testMd) { Remove-Item $testMd -Force -ErrorAction SilentlyContinue }
