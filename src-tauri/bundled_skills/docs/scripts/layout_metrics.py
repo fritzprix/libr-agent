@@ -15,7 +15,7 @@ clip the last line, which is the defect this module exists to prevent.
 """
 from __future__ import annotations
 
-import math
+import unicodedata
 
 EMU_PER_POINT = 12700
 POINTS_PER_INCH = 72.0
@@ -27,10 +27,17 @@ LINE_SPACING = 1.2
 INSET_X_PT = 0.1 * POINTS_PER_INCH
 INSET_Y_PT = 0.1 * POINTS_PER_INCH
 
-# Mean glyph advance as a fraction of the font size. Hangul advances about one
-# em per character and Latin much less; these decks mix both, so this figure
-# leans wide.
-GLYPH_WIDTH = 0.55
+# Glyph advance as a fraction of the font size. A Hangul syllable, like any other
+# East Asian Wide or Fullwidth character, advances about one em; a Latin letter
+# averages much less. One shared figure cannot describe both: applying a Latin
+# average to Korean text predicts about half the real line count, so a Korean
+# deck overflows while the estimate says it fits. Each character is therefore
+# measured by its own width.
+LATIN_GLYPH_WIDTH = 0.55
+WIDE_GLYPH_WIDTH = 1.0
+
+# Characters of these East Asian width classes advance about one em.
+WIDE_EAST_ASIAN_WIDTHS = ("W", "F")
 
 
 def emu_to_points(value) -> float:
@@ -43,11 +50,50 @@ def points_to_emu(value: float) -> int:
     return int(round(value * EMU_PER_POINT))
 
 
+def char_width_em(character: str) -> float:
+    """Return the advance of one character, in em."""
+    if unicodedata.east_asian_width(character) in WIDE_EAST_ASIAN_WIDTHS:
+        return WIDE_GLYPH_WIDTH
+    return LATIN_GLYPH_WIDTH
+
+
+def text_width_pt(text: str, size_pt: float) -> float:
+    """Return the advance of a whole string, in points."""
+    return sum(char_width_em(character) for character in str(text)) * max(size_pt, 1.0)
+
+
+def _take_prefix(text: str, size_pt: float, usable_pt: float) -> tuple[str, str]:
+    """Split text into the longest head that fits usable_pt and the rest.
+
+    The head always holds at least one character, so a single glyph wider than
+    the line still advances the split instead of looping forever.
+    """
+    used = 0.0
+    index = 0
+    while index < len(text):
+        advance = char_width_em(text[index]) * max(size_pt, 1.0)
+        if index and used + advance > usable_pt:
+            break
+        used += advance
+        index += 1
+    return (text[:index], text[index:])
+
+
 def wrapped_lines(text: str, size_pt: float, width_pt: float) -> int:
     """Return how many lines text occupies in a box width_pt wide."""
     usable = max(1.0, width_pt - 2 * INSET_X_PT)
-    per_line = max(1, int(usable / max(size_pt * GLYPH_WIDTH, 1.0)))
-    return max(1, math.ceil(len(text) / per_line))
+    text = str(text)
+    if not text:
+        return 1
+    used = 0.0
+    lines = 1
+    for character in text:
+        advance = char_width_em(character) * max(size_pt, 1.0)
+        if used > 0 and used + advance > usable:
+            lines += 1
+            used = 0.0
+        used += advance
+    return max(1, lines)
 
 
 def paragraph_height_pt(
@@ -112,18 +158,32 @@ def split_rows(rows, widths_pt, size_pt: float, budget_pt: float,
 
 
 def wrap_words(text: str, size_pt: float, width_pt: float):
-    """Break text at spaces into lines that fit width_pt."""
+    """Break text at spaces into lines that fit width_pt.
+
+    A word that only fits on a line of its own pushes the line already collected
+    before it, which is what the docstring promises. Only a word too wide for an
+    empty line is cut mid-word, and its continuation keeps the remaining text so
+    no character is dropped or duplicated.
+    """
     usable = max(1.0, width_pt - 2 * INSET_X_PT)
-    per_line = max(1, int(usable / max(size_pt * GLYPH_WIDTH, 1.0)))
-    lines = []
+    lines: list[str] = []
     current = ""
     for word in str(text).split(" "):
-        candidate = f"{current} {word}".strip() if current else word
-        while len(candidate) > per_line:
-            head = candidate[:per_line]
+        candidate = f"{current} {word}" if current else word
+        if text_width_pt(candidate, size_pt) <= usable:
+            current = candidate
+            continue
+        if current:
+            lines.append(current)
+            current = ""
+        # The word still overflows on a line of its own, so cut it and keep the
+        # remainder for the next line.
+        while text_width_pt(word, size_pt) > usable:
+            head, word = _take_prefix(word, size_pt, usable)
+            if not head:
+                head, word = word[:1], word[1:]
             lines.append(head)
-            candidate = candidate[per_line:]
-        current = candidate
+        current = word
     if current:
         lines.append(current)
     return lines or [""]

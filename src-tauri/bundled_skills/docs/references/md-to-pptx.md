@@ -52,6 +52,11 @@ it, and starts a new slide when the next item would pass the bottom edge:
 - A tall table splits into groups of rows. The header row is repeated at the top
   of each group, so the continuation slide still says what the columns mean.
 
+Each character is measured by its own width: a Hangul syllable or any other East
+Asian wide character takes about one em, a Latin letter about half that. A single
+average would undercount Korean text by nearly half, which is the case that used
+to let a Korean paragraph run off the slide while the estimate said it fit.
+
 The same estimate is used by `check.py`, so a deck that the writer accepted does
 not then fail the check on a false overflow.
 

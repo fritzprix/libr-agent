@@ -267,7 +267,18 @@ def check_docx(path: pathlib.Path) -> tuple[list[str], int]:
     # platform. A style-level font does not count: Word resolves a run's own
     # rPr first and only falls back to the style when the run says nothing, and
     # the style fallback is exactly what renders badly here.
-    for paragraph in paragraphs:
+    #
+    # Table cells hold their own paragraphs, which document.paragraphs does not
+    # reach, and the writer sets the font on those runs too. Checking only the
+    # body would pass a document whose table renders as boxes.
+    cell_paragraphs = [
+        paragraph
+        for table in document.tables
+        for row in table.rows
+        for cell in row.cells
+        for paragraph in cell.paragraphs
+    ]
+    for paragraph in paragraphs + cell_paragraphs:
         for run in paragraph.runs:
             text = run.text
             if not text or not _has_hangul(text):
@@ -398,12 +409,17 @@ def _frame_needed_pt(frame, width_pt: float) -> float:
 
 
 def _paragraph_size(paragraph) -> float:
-    """Return the largest font size any run in the paragraph asks for."""
-    for run in paragraph.runs:
-        size = run.font.size
-        if size is not None:
-            return layout_metrics.emu_to_points(size)
-    return 12.0
+    """Return the largest font size any run in the paragraph asks for.
+
+    Runs are measured together because a paragraph whose runs disagree is as
+    tall as its biggest one, and the estimate must not come in under.
+    """
+    sizes = [
+        layout_metrics.emu_to_points(run.font.size)
+        for run in paragraph.runs
+        if run.font.size is not None
+    ]
+    return max(sizes) if sizes else 12.0
 
 
 def _table_needed_pt(table) -> float:

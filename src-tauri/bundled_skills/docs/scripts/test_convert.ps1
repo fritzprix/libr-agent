@@ -703,6 +703,69 @@ print("FOOTERS=%d" % footers)
   }
   Remove-Item $deckMd -Force -ErrorAction SilentlyContinue
 
+  # ---------------------------------------------------------
+  # Test 14: Korean text is measured per character, not at a Latin average (G2.1)
+  # A Hangul syllable advances about one em, a Latin letter about half that. When
+  # one figure covered both, this deck estimated 3 lines per paragraph, so the
+  # writer packed two paragraphs onto one slide and check.py still printed OK
+  # because both used the same wrong number. The deck must now span more slides
+  # and every slide must still pass check.py.
+  # The fixture is written by Python so this file stays ASCII, which Windows
+  # PowerShell 5.1 reads the same way whatever the console code page is.
+  # ---------------------------------------------------------
+  Write-Host "`n[Test 14] Korean paragraphs are measured per character (G2.1)..."
+  $koreanMd = Join-Path $tempRoot "korean_$(Get-Random).md"
+  $koreanOut = Join-Path $tempRoot "korean_$(Get-Random).pptx"
+  $koreanProbe = & $venvPython -c @'
+import sys
+
+paragraph = "\uAC00\uB098\uB2E4\uB77C\uB9C8\uBC14\uC0AC\uC544\uC790\uCC28\uCE74\uD0C0\uD30C\uD558" * 12
+lines = ["# \uD55C\uAD6D\uC5B4 \uBB38\uC11C", "", "## \uAE34 \uBB38\uB2E8", ""]
+for _ in range(4):
+    lines.extend([paragraph, ""])
+with open(sys.argv[1], "w", encoding="utf-8") as handle:
+    handle.write("\n".join(lines))
+print("WROTE")
+'@ $koreanMd
+  if (($koreanProbe -join "`n") -notmatch 'WROTE') {
+    Write-Error "Test 14 failed: could not build the Korean fixture`n$(($koreanProbe -join "`n").Trim())"
+    exit 1
+  }
+  $koreanOutput = & $venvPython $convertPy --in $koreanMd --to pptx --template report --out $koreanOut 2>&1
+  $koreanExit = $LASTEXITCODE
+  if ($koreanExit -ne 0) {
+    Write-Error "Test 14 failed: Korean conversion exited with $koreanExit`n$(($koreanOutput -join "`n").Trim())"
+    exit 1
+  }
+  $koreanSlides = & $venvPython -c @'
+import sys
+
+from pptx import Presentation
+
+print(len(list(Presentation(sys.argv[1]).slides)))
+'@ $koreanOut
+  $koreanCount = [int](($koreanSlides -join "").Trim())
+  # The Latin-average estimate put this deck on 2 slides. One em per Hangul
+  # syllable puts the same text on 3 or more.
+  if ($koreanCount -lt 3) {
+    Write-Error "Test 14 failed: Korean text must span 3 or more slides, got $koreanCount"
+    exit 1
+  }
+  $koreanCheck = & $venvPython $checkPy --pptx $koreanOut 2>&1
+  $koreanCheckExit = $LASTEXITCODE
+  $koreanCheckText = ($koreanCheck -join "`n").Trim()
+  if ($koreanCheckExit -ne 0) {
+    Write-Error "Test 14 failed: the Korean deck must still pass check.py`n$koreanCheckText"
+    exit 1
+  }
+  if ($koreanCheckText -notmatch 'OK') {
+    Write-Error "Test 14 failed: check.py must print OK for the Korean deck`n$koreanCheckText"
+    exit 1
+  }
+  Remove-Item $koreanMd -Force -ErrorAction SilentlyContinue
+  Remove-Item $koreanOut -Force -ErrorAction SilentlyContinue
+  Write-Host "Test 14 passed: Korean deck spans $koreanCount slides and passes check.py."
+
 } finally {
   if (Test-Path $testScript) { Remove-Item $testScript -Force -ErrorAction SilentlyContinue }
   if (Test-Path $testMd) { Remove-Item $testMd -Force -ErrorAction SilentlyContinue }
