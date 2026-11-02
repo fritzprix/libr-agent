@@ -16,7 +16,14 @@ import sys
 
 SKILL_DIR = pathlib.Path(__file__).resolve().parent.parent
 FONTS_DIR = SKILL_DIR / "fonts"
-REQUIRED_PACKAGES = ["reportlab", "python-docx", "python-pptx", "markitdown"]
+REQUIRED_PACKAGES = [
+    "reportlab",
+    "markdown-it-py",
+    "pdfplumber",
+    "python-docx",
+    "python-pptx",
+    "markitdown",
+]
 
 
 def get_user_venv_dir() -> pathlib.Path:
@@ -208,7 +215,11 @@ def run_doctor() -> int:
     # Verify or install required packages
     missing_pkgs: list[str] = []
     for pkg in REQUIRED_PACKAGES:
-        module_name = "docx" if pkg == "python-docx" else ("pptx" if pkg == "python-pptx" else pkg)
+        module_name = {
+            "python-docx": "docx",
+            "python-pptx": "pptx",
+            "markdown-it-py": "markdown_it",
+        }.get(pkg, pkg)
         check = subprocess.run(
             [str(venv_py), "-c", f"import {module_name}"],
             capture_output=True,
@@ -300,6 +311,89 @@ def convert_to_markdown(input_path: pathlib.Path, output_path: pathlib.Path) -> 
     return succeed(output_path)
 
 
+def run_check(pdf_path: pathlib.Path) -> int:
+    """Run check.py against a rendered PDF and forward its verdict."""
+    check_script = pathlib.Path(__file__).resolve().parent / "check.py"
+    if not check_script.exists():
+        return fail(
+            f"Verification script is missing: {check_script}",
+            "Reinstall the docs skill; check.py must sit next to convert.py.",
+        )
+    proc = subprocess.run(
+        [sys.executable, str(check_script), "--pdf", str(pdf_path)],
+        capture_output=True,
+        text=True,
+    )
+    if proc.stdout:
+        sys.stdout.write(proc.stdout)
+    if proc.returncode != 0:
+        if proc.stderr:
+            sys.stderr.write(proc.stderr)
+        return proc.returncode
+    return 0
+
+
+def convert_to_pdf(input_path: pathlib.Path, output_path: pathlib.Path, template: str) -> int:
+    """Render Markdown to PDF with the bundled renderer, then verify the result."""
+    # Import lazily so doctor and the other formats do not need reportlab.
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+    try:
+        import pdf_render
+    except ImportError as exc:
+        return fail(
+            f"PDF dependencies are unavailable: {exc}",
+            "Run the doctor command to install reportlab and markdown-it-py.",
+        )
+
+    # Reject an unknown template before touching the filesystem, so the caller
+    # gets the template list rather than a generic rendering error.
+    if template not in pdf_render.TEMPLATES:
+        available = ", ".join(sorted(pdf_render.TEMPLATES))
+        return fail(
+            f"Unknown template '{template}'.",
+            f"Use --template with one of: {available}.",
+        )
+
+    markdown = input_path.read_text(encoding="utf-8-sig")
+    try:
+        pages = pdf_render.render_markdown_to_pdf(markdown, output_path, template)
+    except ValueError as exc:
+        return fail(
+            f"PDF rendering rejected the request: {exc}",
+            "Check that the Markdown file has a heading and some body content.",
+        )
+    except Exception as exc:
+        return fail(
+            f"PDF rendering failed: {type(exc).__name__}: {exc}",
+            "Check the Markdown source and re-run the command.",
+        )
+
+    if not output_path.exists():
+        return fail(
+            f"Renderer finished but wrote no file: {output_path}",
+            "Confirm the --out directory is writable, then re-run.",
+        )
+
+    size = output_path.stat().st_size
+    if size == 0:
+        return fail(
+            f"Renderer wrote a 0-byte file: {output_path}",
+            "Re-run the command; the Markdown may have no renderable content.",
+        )
+
+    check_code = run_check(output_path)
+    if check_code != 0:
+        return check_code
+
+    print(f"Output: {output_path}")
+    print(f"Pages: {pages}")
+    # Same size key as succeed(), so every --to value prints one contract.
+    print(f"Bytes: {size}")
+    print("ExitCode: 0")
+    print("OK")
+    return 0
+
+
 class DocsArgumentParser(argparse.ArgumentParser):
     def error(self, message: str) -> None:
         fail(message, "Check command-line arguments using -h/--help.", code=2)
@@ -353,13 +447,15 @@ def main() -> int:
 
     output_path = pathlib.Path(args.output_file).resolve()
 
+    if target_format == "pdf":
+        return convert_to_pdf(input_path, output_path, args.template)
+
     if target_format == "md":
         return convert_to_markdown(input_path, output_path)
 
-    # G1.1: Remaining format engines are implemented in sub-issues (#2498, #2500).
+    # Remaining format engines are implemented under sub-issue #2500.
     # The skeleton must NOT create dummy output or claim success.
     sub_issues = {
-        "pdf": "#2498",
         "pptx": "#2500",
         "docx": "#2500",
     }
