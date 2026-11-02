@@ -171,10 +171,12 @@ describe('useSettingsForm', () => {
     const { result } = renderHook(() => useSettingsForm());
 
     act(() => {
-      result.current.updateDisplay('metricDisplayMode', 'tooltip');
+      result.current.updateDisplay('prefillDisplayFormat', 'tokensPerSecond');
     });
 
-    expect(result.current.formState.display.metricDisplayMode).toBe('tooltip');
+    expect(result.current.formState.display.prefillDisplayFormat).toBe(
+      'tokensPerSecond',
+    );
     expect(result.current.isDirty).toBe(true);
   });
 

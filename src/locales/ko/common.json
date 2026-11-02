@@ -347,6 +347,7 @@
     "saved": "설정이 저장되었습니다",
     "saving": "저장 중...",
     "saveFailed": "설정 저장에 실패했습니다",
+    "restartRequiredNotice": "저장한 설정 중 일부는 앱을 다시 시작한 뒤 적용됩니다.",
     "applyChanges": "변경사항 적용",
     "language": {
       "label": "언어",
@@ -382,9 +383,6 @@
     "decreaseToolCallCount": "도구 호출 수 줄이기",
     "increaseToolCallCount": "도구 호출 수 늘리기",
     "general": {
-      "skillsDirectory": "스킬 디렉토리",
-      "skillsDirectorySelectTitle": "스킬 디렉토리 선택",
-      "skillsDirectoryPlaceholder": "로컬 스킬 디렉토리를 선택하세요...",
       "browse": "찾아보기",
       "browseAriaLabel": "스킬 디렉토리 찾아보기",
       "openInExplorer": "탐색기에서 열기",
@@ -392,8 +390,7 @@
       "error": "오류: {{message}}",
       "skillsFound_one": "{{count}}개의 스킬을 찾았습니다",
       "skillsFound_other": "{{count}}개의 스킬을 찾았습니다",
-      "invalidDirectory": "유효하지 않은 디렉토리",
-      "skillsDirectoryDescription": "에이전트 스킬이 포함된 디렉토리(SKILL.md가 있는 폴더). 새로운 스킬은 자동으로 발견됩니다."
+      "invalidDirectory": "유효하지 않은 디렉토리"
     },
     "aiModels": {
       "apiKeys": "공급자 API 키",
@@ -490,10 +487,6 @@
         "d2coding": "D2Coding (개발자용 고정폭)"
       },
       "metricsTitle": "성능 지표",
-      "metricDisplayMode": "지표 표시 방식",
-      "inline": "인라인 (메시지에 표시)",
-      "tooltip": "툴팁 (호버 시 표시)",
-      "metricDisplayModeDescription": "채팅 메시지에 토큰 지표가 표시되는 방식을 선택하세요",
       "prefillDisplayFormat": "첫 응답 반응 속도 형식",
       "time": "첫 응답까지의 시간 (예: 245ms)",
       "tokensPerSecond": "초당 토큰 수 (예: 520 tok/s)",
@@ -563,11 +556,16 @@
       "toolResultInlineLimitDescription": "채팅 화면에 직접 표시할 도구 출력물의 최대 크기입니다. 초과분은 파일로 저장되며, 낮을수록 대화 기억 공간을 절약합니다.",
       "shellIsolation": "셸 격리 수준",
       "shellIsolationModes": {
-        "basic": "기본 - 전체 PATH 접근 (보안 낮음)",
-        "medium": "중간 - 제한된 PATH (균형)",
-        "high": "높음 - 샌드박스 (보안 높음)"
+        "basic": "기본",
+        "medium": "중간",
+        "high": "높음 - OS 샌드박스"
       },
-      "shellIsolationDescription": "셸 명령에 대한 환경 격리를 제어합니다. '기본'은 사용자가 설치한 도구를 허용하고, '높음'은 최대 보안을 제공합니다.",
+      "shellIsolationDescription": "로컬 세션의 일회성 셸 명령과 백그라운드 프로세스에 적용됩니다. 영구 셸과 Docker 세션은 이 설정을 사용하지 않습니다.",
+      "shellIsolationHelp": {
+        "basic": "작업 공간에서 환경 변수를 비운 상태로 명령을 실행합니다. PATH와 일부 기본 변수(HOME, USER, 로케일, 프록시 등)만 전달되며 API 키 같은 호스트 비밀 값은 전달되지 않습니다. 파일과 네트워크 접근은 제한하지 않습니다.",
+        "medium": "기본과 같으며, 명령이 별도 프로세스 그룹에서 실행됩니다. 파일과 네트워크 접근은 제한하지 않습니다.",
+        "high": "Linux: 별도의 사용자·PID·마운트 네임스페이스(unshare)에서 실행됩니다. 파일과 네트워크 접근은 제한하지 않습니다. macOS: sandbox-exec로 실행되며 파일 쓰기는 작업 공간과 /tmp, /var/tmp에서만 가능하고 네트워크 접근은 허용됩니다. Windows: 중간과 같습니다. 샌드박스를 사용할 수 없으면 중간으로 실행됩니다."
+      },
       "shellRuntimeBootstrap": "셸 런타임 부트스트랩",
       "shellRuntimeBootstrapDescription": "터미널 실행 시 파이썬과 Node 환경 경로만 빠르게 로드하여 명령 실행 속도를 높입니다.",
       "performance": "성능 & 동시성",

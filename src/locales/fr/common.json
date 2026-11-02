@@ -347,6 +347,7 @@
     "saved": "Paramètres enregistrés avec succès",
     "saving": "Enregistrement...",
     "saveFailed": "Échec de l'enregistrement des paramètres",
+    "restartRequiredNotice": "Certains des paramètres enregistrés sont appliqués après le redémarrage de l'application.",
     "applyChanges": "Appliquer les modifications",
     "language": {
       "label": "Langue",
@@ -382,9 +383,6 @@
     "decreaseToolCallCount": "Réduire le nombre d'appels d'outils",
     "increaseToolCallCount": "Augmenter le nombre d'appels d'outils",
     "general": {
-      "skillsDirectory": "Répertoire des compétences",
-      "skillsDirectorySelectTitle": "Sélectionner le répertoire des compétences",
-      "skillsDirectoryPlaceholder": "Sélectionnez un répertoire pour les compétences locales...",
       "browse": "Parcourir",
       "browseAriaLabel": "Parcourir le répertoire des compétences",
       "openInExplorer": "Ouvrir dans l'explorateur",
@@ -392,8 +390,7 @@
       "error": "Erreur : {{message}}",
       "skillsFound_one": "{{count}} compétence trouvée",
       "skillsFound_other": "{{count}} compétences trouvées",
-      "invalidDirectory": "Répertoire invalide",
-      "skillsDirectoryDescription": "Répertoire contenant les compétences de l'agent (dossiers avec SKILL.md). Les nouvelles compétences seront découvertes automatiquement."
+      "invalidDirectory": "Répertoire invalide"
     },
     "aiModels": {
       "apiKeys": "Clés API des fournisseurs",
@@ -490,10 +487,6 @@
         "d2coding": "D2Coding (mono pour développeurs)"
       },
       "metricsTitle": "Mesures de performance",
-      "metricDisplayMode": "Mode d'affichage des mesures",
-      "inline": "En ligne (afficher dans le message)",
-      "tooltip": "Infobulle (survoler pour voir)",
-      "metricDisplayModeDescription": "Choisissez comment les mesures de tokens sont affichées dans les messages de chat",
       "prefillDisplayFormat": "Format du délai de première réponse",
       "time": "Délai de première réponse (ex. 245 ms)",
       "tokensPerSecond": "Tokens par seconde (ex: 520 tok/s)",
@@ -563,11 +556,16 @@
       "toolResultInlineLimitDescription": "Taille maximale des résultats d'outils affichés directement dans le chat avant enregistrement dans un fichier.",
       "shellIsolation": "Niveau d'isolation du Shell",
       "shellIsolationModes": {
-        "basic": "Basique - Accès complet au PATH (moins sécurisé)",
-        "medium": "Moyen - PATH restreint (équilibré)",
-        "high": "Élevé - Bac à sable (le plus sécurisé)"
+        "basic": "Basique",
+        "medium": "Moyen",
+        "high": "Élevé - sandbox du système"
       },
-      "shellIsolationDescription": "Contrôle l'isolation de l'environnement pour les commandes shell. Basique permet les outils installés par l'utilisateur, Élevé offre une sécurité maximale.",
+      "shellIsolationDescription": "S'applique aux commandes shell ponctuelles et aux processus en arrière-plan des sessions locales. Le shell persistant et les sessions Docker n'utilisent pas ce paramètre.",
+      "shellIsolationHelp": {
+        "basic": "Exécute la commande dans l'espace de travail avec un environnement vidé : seuls PATH et quelques variables de base (comme HOME, USER, la langue et le proxy) sont transmis, donc les secrets de l'hôte comme les clés d'API ne le sont pas. L'accès aux fichiers et au réseau n'est pas restreint.",
+        "medium": "Identique à Basique, et la commande s'exécute dans son propre groupe de processus. L'accès aux fichiers et au réseau n'est pas restreint.",
+        "high": "Linux : s'exécute dans des espaces de noms utilisateur, PID et montage séparés (unshare) ; l'accès aux fichiers et au réseau n'est pas restreint. macOS : s'exécute sous sandbox-exec ; les fichiers ne peuvent être écrits que dans l'espace de travail et /tmp, /var/tmp, et l'accès au réseau est autorisé. Windows : identique à Moyen. Si la sandbox n'est pas disponible, Moyen est utilisé."
+      },
       "shellRuntimeBootstrap": "Amorçage de l'environnement de shell",
       "shellRuntimeBootstrapDescription": "Charge uniquement les chemins Python et Node dans le terminal pour démarrer les commandes plus rapidement.",
       "performance": "Performance et concurrence",

@@ -347,6 +347,7 @@
     "saved": "设置保存成功",
     "saving": "正在保存...",
     "saveFailed": "保存设置失败",
+    "restartRequiredNotice": "部分已保存的设置需要重启应用后才会生效。",
     "applyChanges": "应用更改",
     "language": {
       "label": "语言",
@@ -382,9 +383,6 @@
     "decreaseToolCallCount": "减少工具调用数量",
     "increaseToolCallCount": "增加工具调用数量",
     "general": {
-      "skillsDirectory": "技能目录",
-      "skillsDirectorySelectTitle": "选择技能目录",
-      "skillsDirectoryPlaceholder": "为本地技能选择一个目录...",
       "browse": "浏览",
       "browseAriaLabel": "浏览技能目录",
       "openInExplorer": "在资源管理器中打开",
@@ -392,8 +390,7 @@
       "error": "错误: {{message}}",
       "skillsFound_one": "找到 {{count}} 个技能",
       "skillsFound_other": "找到 {{count}} 个技能",
-      "invalidDirectory": "无效目录",
-      "skillsDirectoryDescription": "包含代理技能的目录（带有 SKILL.md 的文件夹）。新技能将自动被发现。"
+      "invalidDirectory": "无效目录"
     },
     "aiModels": {
       "apiKeys": "提供商 API 密钥",
@@ -490,10 +487,6 @@
         "d2coding": "D2Coding（开发者等宽）"
       },
       "metricsTitle": "性能指标",
-      "metricDisplayMode": "指标显示模式",
-      "inline": "内联（在消息中显示）",
-      "tooltip": "提示框（悬停查看）",
-      "metricDisplayModeDescription": "选择聊天消息中 token 指标的显示方式",
       "prefillDisplayFormat": "初始响应速度格式",
       "time": "首次响应时间（如：245ms）",
       "tokensPerSecond": "每秒 Token 数 (例如：520 tok/s)",
@@ -563,11 +556,16 @@
       "toolResultInlineLimitDescription": "直接在聊天中显示的工具输出最大大小。超出部分将保存为文件，较小的值有助于节省上下文空间。",
       "shellIsolation": "Shell 隔离级别",
       "shellIsolationModes": {
-        "basic": "基础 - 完全 PATH 访问（安全性较低）",
-        "medium": "中等 - 受限 PATH（均衡）",
-        "high": "高等 - 沙箱（最安全）"
+        "basic": "基本",
+        "medium": "中",
+        "high": "高 - 系统沙箱"
       },
-      "shellIsolationDescription": "控制 shell 命令的环境隔离。基础级别允许用户安装的工具，高等提供最大安全性。",
+      "shellIsolationDescription": "适用于本地会话中的一次性 Shell 命令和后台进程。持久 Shell 和 Docker 会话不使用此设置。",
+      "shellIsolationHelp": {
+        "basic": "在工作区中以清空的环境变量运行命令：只传递 PATH 和少量基本变量（如 HOME、USER、区域设置和代理），不会传递 API 密钥等主机机密。不限制文件和网络访问。",
+        "medium": "与基本相同，并且命令在独立的进程组中运行。不限制文件和网络访问。",
+        "high": "Linux：在独立的用户、PID 和挂载命名空间（unshare）中运行；不限制文件和网络访问。macOS：通过 sandbox-exec 运行，只能在工作区和 /tmp, /var/tmp 中写入文件，允许网络访问。Windows：与中相同。沙箱不可用时按中运行。"
+      },
       "shellRuntimeBootstrap": "Shell 运行时引导",
       "shellRuntimeBootstrapDescription": "在终端中仅快速加载 Python 和 Node 环境路径，从而加快命令启动速度。",
       "performance": "性能与并发",

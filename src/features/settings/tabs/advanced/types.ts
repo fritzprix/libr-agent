@@ -14,9 +14,9 @@ export interface AdvancedSettingsSectionProps {
 export interface AdvancedSystemSettingsProps {
   localSystemSettings: SystemSettings;
   networkSettingsChanged: boolean;
-  onChange: (
-    key: keyof SystemSettings,
-    value: number | string | boolean,
+  onChange: <K extends keyof SystemSettings>(
+    key: K,
+    value: SystemSettings[K],
   ) => void;
 }
 

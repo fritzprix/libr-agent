@@ -9,7 +9,7 @@ mcpToolTimeoutSeconds: number, searchIndexFrequencyMinutes: number,
 /**
  * `0` means no minimum.
  */
-scheduledTaskMinimumIntervalMinutes: number, shellIsolationLevel: IsolationLevel, shellRuntimeBootstrap: boolean, skillsDirectory: string, 
+scheduledTaskMinimumIntervalMinutes: number, shellIsolationLevel: IsolationLevel, shellRuntimeBootstrap: boolean, 
 /**
  * Inhibit idle sleep while LibrAgent is running. Does not keep the display on.
  */

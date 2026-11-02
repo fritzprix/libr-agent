@@ -347,6 +347,7 @@
     "saved": "Configuración guardada correctamente",
     "saving": "Guardando...",
     "saveFailed": "Error al guardar la configuración",
+    "restartRequiredNotice": "Algunos de los ajustes guardados se aplican después de reiniciar la aplicación.",
     "applyChanges": "Aplicar cambios",
     "language": {
       "label": "Idioma",
@@ -382,9 +383,6 @@
     "decreaseToolCallCount": "Disminuir cantidad de llamadas de herramientas",
     "increaseToolCallCount": "Aumentar cantidad de llamadas de herramientas",
     "general": {
-      "skillsDirectory": "Directorio de habilidades",
-      "skillsDirectorySelectTitle": "Seleccionar directorio de habilidades",
-      "skillsDirectoryPlaceholder": "Seleccione un directorio para habilidades locales...",
       "browse": "Buscar",
       "browseAriaLabel": "Buscar directorio de habilidades",
       "openInExplorer": "Abrir en el explorador",
@@ -392,8 +390,7 @@
       "error": "Error: {{message}}",
       "skillsFound_one": "Se encontró {{count}} habilidad",
       "skillsFound_other": "Se encontraron {{count}} habilidades",
-      "invalidDirectory": "Directorio no válido",
-      "skillsDirectoryDescription": "Directorio que contiene las habilidades del agente (carpetas con SKILL.md). Las nuevas habilidades se descubrirán automáticamente."
+      "invalidDirectory": "Directorio no válido"
     },
     "aiModels": {
       "apiKeys": "Claves API del proveedor",
@@ -490,10 +487,6 @@
         "d2coding": "D2Coding (monoespaciada para desarrolladores)"
       },
       "metricsTitle": "Métricas de rendimiento",
-      "metricDisplayMode": "Modo de visualización de métricas",
-      "inline": "En línea (mostrar en el mensaje)",
-      "tooltip": "Información (pasar el ratón para ver)",
-      "metricDisplayModeDescription": "Elija cómo se muestran las métricas de tokens en los mensajes de chat",
       "prefillDisplayFormat": "Formato del tiempo de primera respuesta",
       "time": "Tiempo hasta la primera respuesta (ej. 245 ms)",
       "tokensPerSecond": "Tokens por segundo (ej., 520 tok/s)",
@@ -563,11 +556,16 @@
       "toolResultInlineLimitDescription": "Tamaño máximo del resultado visible en el chat antes de guardarse en un archivo. Valores menores ahorran memoria.",
       "shellIsolation": "Nivel de aislamiento de Shell",
       "shellIsolationModes": {
-        "basic": "Básico - Acceso completo al PATH (menos seguro)",
-        "medium": "Medio - PATH restringido (equilibrado)",
-        "high": "Alto - Aislado (más seguro)"
+        "basic": "Básico",
+        "medium": "Medio",
+        "high": "Alto - sandbox del SO"
       },
-      "shellIsolationDescription": "Controla el aislamiento del entorno para los comandos de shell. Básico permite herramientas instaladas por el usuario, Alto proporciona la máxima seguridad.",
+      "shellIsolationDescription": "Se aplica a los comandos de shell puntuales y a los procesos en segundo plano en sesiones locales. El shell persistente y las sesiones de Docker no usan este ajuste.",
+      "shellIsolationHelp": {
+        "basic": "Ejecuta el comando en el espacio de trabajo con el entorno vaciado: solo se pasan PATH y algunas variables básicas (como HOME, USER, configuración regional y proxy), por lo que no se pasan secretos del host como las claves de API. No se restringe el acceso a archivos ni a la red.",
+        "medium": "Igual que Básico, y además el comando se ejecuta en su propio grupo de procesos. No se restringe el acceso a archivos ni a la red.",
+        "high": "Linux: se ejecuta en espacios de nombres de usuario, PID y montaje separados (unshare); no se restringe el acceso a archivos ni a la red. macOS: se ejecuta con sandbox-exec; solo se pueden escribir archivos en el espacio de trabajo y en /tmp, /var/tmp, y se permite el acceso a la red. Windows: igual que Medio. Si el sandbox no está disponible, se usa Medio."
+      },
       "shellRuntimeBootstrap": "Inicialización del entorno de shell",
       "shellRuntimeBootstrapDescription": "Carga solo las rutas de Python y Node en la consola para iniciar comandos más rápido.",
       "performance": "Rendimiento y concurrencia",
