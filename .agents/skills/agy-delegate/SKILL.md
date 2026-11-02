@@ -43,7 +43,7 @@ default id failed as unknown/stale.
 1. Write a **self-contained** handoff (agy does **not** see this Cursor chat)
 2. Use this skill’s **default** `--model` (below). Do **not** pick a different
    model for “harder” work, cost, or preference
-3. Run print mode (`-p` / `--print`) from the relevant cwd or pass `--add-dir`
+3. Run print mode (piped stdin or `run.ps1` on Windows, `-p` on Bash) from the relevant cwd or pass `--add-dir`
 4. Read stdout as the result; on failure check exit code and stderr
 5. Follow-ups: new `-p` with fuller context, or `--conversation <id>` /
    `--continue` when resuming the same thread — **same model as the first turn**
@@ -84,7 +84,7 @@ Goal: ...
 Scope: ...
 '@
 
-& agy -p "$TASK" `
+$TASK | & agy `
   --model gemini-3.8-flash-high `
   --dangerously-skip-permissions `
   --print-timeout 300s `

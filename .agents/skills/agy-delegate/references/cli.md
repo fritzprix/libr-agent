@@ -41,7 +41,7 @@ Goal: ...
 Scope: ...
 '@
 
-& agy -p "$TASK" `
+$TASK | & agy `
   --model gemini-3.8-flash-high `
   --dangerously-skip-permissions `
   --print-timeout 300s `
@@ -72,7 +72,7 @@ agy -p "$TASK" \
 ### PowerShell
 
 ```powershell
-& agy -p "$TASK" `
+$TASK | & agy `
   --model gemini-3.8-flash-high `
   --dangerously-skip-permissions `
   --output-format json `

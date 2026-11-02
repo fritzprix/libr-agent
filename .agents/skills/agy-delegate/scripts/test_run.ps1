@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
   [string]$Model = 'gemini-3.8-flash-high'
 )
@@ -8,15 +8,27 @@ $ErrorActionPreference = 'Stop'
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $runPs1 = Join-Path $scriptDir 'run.ps1'
 
-$testPrompt = @'
-Reply with EXACTLY: "items-center" and `code` and 한국어. Do not add any extra words.
-'@
+$koreanWord = [string][char[]]@(0xD55C, 0xAD6D, 0xC5B4)
+$testPrompt = "Reply with EXACTLY: `"items-center`" and ``code`` and $koreanWord. Do not add any extra words."
 
 Write-Host "Running agy-delegate test prompt with double quotes, backticks, and Korean text..."
 $output = & $runPs1 -Task $testPrompt -Model $Model -Timeout '60s'
-Write-Host "Output: $output"
+$exitCode = $LASTEXITCODE
 
-if ($output -notmatch 'items-center' -or $output -notmatch 'code' -or $output -notmatch '한국어') {
+if ($exitCode -ne 0) {
+  Write-Error "Test prompt failed: run.ps1 exited with code $exitCode"
+  exit $exitCode
+}
+
+$text = ($output -join "`n").Trim()
+Write-Host "Output: $text"
+
+if (-not $text) {
+  Write-Error "Test prompt failed: output was empty."
+  exit 1
+}
+
+if ($text -notmatch 'items-center' -or $text -notmatch 'code' -or $text -notmatch $koreanWord) {
   Write-Error "Test prompt failed: output did not contain expected strings."
   exit 1
 }

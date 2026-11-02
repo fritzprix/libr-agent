@@ -36,20 +36,23 @@ if (-not $Timeout) {
   $Timeout = '300s'
 }
 
-# Resolve agy binary
-$agyBin = $env:AGY_BIN
-if (-not $agyBin) {
-  $cmd = Get-Command agy -ErrorAction SilentlyContinue
-  if ($cmd) {
-    $agyBin = $cmd.Source
-  } elseif (Test-Path "$env:LOCALAPPDATA\agy\bin\agy.exe") {
-    $agyBin = "$env:LOCALAPPDATA\agy\bin\agy.exe"
-  } elseif (Test-Path "$env:USERPROFILE\.local\bin\agy.exe") {
-    $agyBin = "$env:USERPROFILE\.local\bin\agy.exe"
+# Ensure agy directory is on PATH if in standard install locations
+if ($env:AGY_BIN) {
+  $customDir = Split-Path -Parent (Resolve-Path $env:AGY_BIN)
+  if ($customDir) {
+    $env:PATH = "$customDir;$env:PATH"
   }
 }
 
-if (-not $agyBin -or -not (Test-Path $agyBin)) {
+if (-not (Get-Command agy -ErrorAction SilentlyContinue)) {
+  if (Test-Path "$env:LOCALAPPDATA\agy\bin\agy.exe") {
+    $env:PATH = "$env:LOCALAPPDATA\agy\bin;$env:PATH"
+  } elseif (Test-Path "$env:USERPROFILE\.local\bin\agy.exe") {
+    $env:PATH = "$env:USERPROFILE\.local\bin;$env:PATH"
+  }
+}
+
+if (-not (Get-Command agy -ErrorAction SilentlyContinue)) {
   Write-Error "agy binary not found on PATH or default locations. Set AGY_BIN."
   exit 1
 }
@@ -72,13 +75,18 @@ foreach ($d in $Dir) {
   }
 }
 
+# Strip leading UTF-8 BOM if present on $Task
+if ($Task -and $Task.Length -gt 0 -and [int]$Task[0] -eq 0xFEFF) {
+  $Task = $Task.Substring(1)
+}
+
 $prevOutputEncoding = $OutputEncoding
 $prevConsoleOutputEncoding = [Console]::OutputEncoding
 try {
   $utf8 = [System.Text.UTF8Encoding]::new($false)
   $OutputEncoding = $utf8
   [Console]::OutputEncoding = $utf8
-  $Task | & $agyBin @agyArgs
+  $Task | agy @agyArgs
 } finally {
   $OutputEncoding = $prevOutputEncoding
   [Console]::OutputEncoding = $prevConsoleOutputEncoding
