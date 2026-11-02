@@ -45,7 +45,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "<skill-base-dir>/scripts/do
 ```
 *(On Linux/macOS: `uv run --no-project --python 3.12 "<skill-base-dir>/scripts/convert.py" --doctor`)*
 
-The doctor discovers a working Python environment, provisions a persistent virtualenv outside the managed skill directory (at `~/.libragent/skills/docs/venv`), verifies dependencies, and prints `Doctor: OK` along with the `VenvPython:` executable path.
+The doctor discovers a working Python environment, provisions a persistent virtualenv outside the managed skill directory (at `~/.libragent/skills/docs/venv`), verifies dependencies, and prints `Doctor: OK` along with the `VenvPython:` executable path. It installs the Word, PowerPoint and Excel converters too, so `--to md` works on `.docx`, `.pptx` and `.xlsx` files after a single doctor run.
 
 Then run document conversion using the interpreter reported under `VenvPython:`. Always use the fixed command form. Give file paths only. Do not use inline code. Do not use pipes. The command must run in Windows PowerShell 5.1:
 

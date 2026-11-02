@@ -16,14 +16,33 @@ import sys
 
 SKILL_DIR = pathlib.Path(__file__).resolve().parent.parent
 FONTS_DIR = SKILL_DIR / "fonts"
-REQUIRED_PACKAGES = [
-    "reportlab",
-    "markdown-it-py",
-    "pdfplumber",
-    "python-docx",
-    "python-pptx",
-    "markitdown",
+# Each entry pairs the spec handed to the installer with the modules that must import
+# afterwards. A bare "markitdown" is not enough: its Word, PowerPoint and Excel converters
+# sit behind extras, so a doctor that installs and probes only the base package reports OK
+# while --to md on those formats fails. Keep a spec and its probes together so they cannot
+# drift apart.
+REQUIRED_DEPENDENCIES = [
+    ("reportlab", ("reportlab",)),
+    ("markdown-it-py", ("markdown_it",)),
+    ("pdfplumber", ("pdfplumber",)),
+    ("python-docx", ("docx",)),
+    ("python-pptx", ("pptx",)),
+    ("markitdown[docx,pptx,xlsx]", ("markitdown", "mammoth", "pptx", "pandas", "openpyxl")),
 ]
+
+# Reports the names of the requested modules that fail to import in the target interpreter.
+PROBE_SCRIPT = """\
+import importlib
+import sys
+
+missing = []
+for name in sys.argv[1:]:
+    try:
+        importlib.import_module(name)
+    except Exception:
+        missing.append(name)
+print(" ".join(missing))
+"""
 
 
 def get_user_venv_dir() -> pathlib.Path:
@@ -166,6 +185,27 @@ def find_working_python() -> pathlib.Path | None:
     return None
 
 
+def missing_modules(python_exe: pathlib.Path, modules: tuple[str, ...]) -> list[str]:
+    """Return the modules that the given interpreter cannot import."""
+    proc = subprocess.run(
+        [str(python_exe), "-c", PROBE_SCRIPT, *modules],
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        return list(modules)
+    return proc.stdout.split()
+
+
+def unmet_dependencies(python_exe: pathlib.Path) -> list[str]:
+    """Return the install specs whose required modules do not import yet."""
+    return [
+        spec
+        for spec, modules in REQUIRED_DEPENDENCIES
+        if missing_modules(python_exe, modules)
+    ]
+
+
 def run_doctor() -> int:
     """Run environment and dependency doctor check."""
     working_py = find_working_python()
@@ -212,32 +252,36 @@ def run_doctor() -> int:
             code=1,
         )
 
-    # Verify or install required packages
-    missing_pkgs: list[str] = []
-    for pkg in REQUIRED_PACKAGES:
-        module_name = {
-            "python-docx": "docx",
-            "python-pptx": "pptx",
-            "markdown-it-py": "markdown_it",
-        }.get(pkg, pkg)
-        check = subprocess.run(
-            [str(venv_py), "-c", f"import {module_name}"],
-            capture_output=True,
-        )
-        if check.returncode != 0:
-            missing_pkgs.append(pkg)
-
-    if missing_pkgs:
+    # Verify or install required dependencies, one install spec at a time
+    missing_specs = unmet_dependencies(venv_py)
+    if missing_specs:
         if uv_bin:
-            install_cmd = [uv_bin, "pip", "install", "--python", str(venv_py)] + missing_pkgs
+            install_cmd = [uv_bin, "pip", "install", "--python", str(venv_py)] + missing_specs
         else:
-            install_cmd = [str(venv_py), "-m", "pip", "install"] + missing_pkgs
+            install_cmd = [str(venv_py), "-m", "pip", "install"] + missing_specs
 
         proc = subprocess.run(install_cmd, capture_output=True, text=True)
         if proc.returncode != 0:
             return fail(
                 f"Failed to install dependencies into user venv: {proc.stderr}",
-                f"Run 'uv pip install --python \"{venv_py}\" {' '.join(missing_pkgs)}' to install packages.",
+                f"Run 'uv pip install --python \"{venv_py}\" {' '.join(missing_specs)}' to install packages.",
+                code=1,
+            )
+
+        # An install can succeed while a converter extra stays unusable. Re-probe so the
+        # doctor never reports OK for a documented conversion path that is still broken.
+        still_missing = unmet_dependencies(venv_py)
+        if still_missing:
+            probes = dict(REQUIRED_DEPENDENCIES)
+            broken = [
+                name
+                for spec in still_missing
+                for name in missing_modules(venv_py, probes[spec])
+            ]
+            return fail(
+                f"Installed {', '.join(still_missing)} but these modules still fail to import: {', '.join(broken)}",
+                f"Reinstall them explicitly: 'uv pip install --python \"{venv_py}\" "
+                f"{' '.join(still_missing)}', then run the doctor again.",
                 code=1,
             )
 
@@ -255,7 +299,7 @@ def run_doctor() -> int:
     print(f"Python: {working_py}")
     print(f"Venv: {VENV_DIR}")
     print(f"VenvPython: {venv_py}")
-    print(f"Dependencies: {' '.join(REQUIRED_PACKAGES)} installed")
+    print(f"Dependencies: {' '.join(spec for spec, _ in REQUIRED_DEPENDENCIES)} installed")
     if font_file:
         print(f"Font: {font_file}")
     print("ExitCode: 0")
@@ -284,8 +328,17 @@ def convert_to_markdown(input_path: pathlib.Path, output_path: pathlib.Path) -> 
     try:
         result = MarkItDown().convert(str(input_path))
     except Exception as exc:  # MarkItDown raises library-specific errors.
+        detail = str(exc)
+        # A converter extra that is not installed looks like a broken file. Say what it is,
+        # so the next step is the doctor rather than a hunt for a corrupt document.
+        if "MissingDependencyException" in detail or "optional dependency" in detail:
+            return fail(
+                f"MarkItDown cannot read '{input_path}' without an optional converter dependency: {detail}",
+                "Run the doctor to install the docx, pptx and xlsx converters, then run the same command again.",
+                code=1,
+            )
         return fail(
-            f"MarkItDown could not read '{input_path}': {exc}",
+            f"MarkItDown could not read '{input_path}': {detail}",
             "Confirm the file is a supported document (pdf, docx, pptx, xlsx, html, txt, csv, json) and is not encrypted.",
             code=1,
         )
