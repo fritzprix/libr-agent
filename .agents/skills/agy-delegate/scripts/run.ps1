@@ -36,20 +36,23 @@ if (-not $Timeout) {
   $Timeout = '300s'
 }
 
-# Resolve agy binary
-$agyBin = $env:AGY_BIN
-if (-not $agyBin) {
-  $cmd = Get-Command agy -ErrorAction SilentlyContinue
-  if ($cmd) {
-    $agyBin = $cmd.Source
-  } elseif (Test-Path "$env:LOCALAPPDATA\agy\bin\agy.exe") {
-    $agyBin = "$env:LOCALAPPDATA\agy\bin\agy.exe"
-  } elseif (Test-Path "$env:USERPROFILE\.local\bin\agy.exe") {
-    $agyBin = "$env:USERPROFILE\.local\bin\agy.exe"
+# Ensure agy directory is on PATH if in standard install locations
+if ($env:AGY_BIN) {
+  $customDir = Split-Path -Parent (Resolve-Path $env:AGY_BIN)
+  if ($customDir) {
+    $env:PATH = "$customDir;$env:PATH"
   }
 }
 
-if (-not $agyBin -or -not (Test-Path $agyBin)) {
+if (-not (Get-Command agy -ErrorAction SilentlyContinue)) {
+  if (Test-Path "$env:LOCALAPPDATA\agy\bin\agy.exe") {
+    $env:PATH = "$env:LOCALAPPDATA\agy\bin;$env:PATH"
+  } elseif (Test-Path "$env:USERPROFILE\.local\bin\agy.exe") {
+    $env:PATH = "$env:USERPROFILE\.local\bin;$env:PATH"
+  }
+}
+
+if (-not (Get-Command agy -ErrorAction SilentlyContinue)) {
   Write-Error "agy binary not found on PATH or default locations. Set AGY_BIN."
   exit 1
 }
@@ -57,7 +60,6 @@ if (-not $agyBin -or -not (Test-Path $agyBin)) {
 $outputFormat = if ($Json) { 'json' } else { 'text' }
 
 $agyArgs = @(
-  '-p', $Task,
   '--model', $Model,
   '--print-timeout', $Timeout,
   '--output-format', $outputFormat
@@ -73,5 +75,56 @@ foreach ($d in $Dir) {
   }
 }
 
-& $agyBin @agyArgs
-exit $LASTEXITCODE
+# Strip leading UTF-8 BOM if present on $Task
+if ($Task -and $Task.Length -gt 0 -and [int]$Task[0] -eq 0xFEFF) {
+  $Task = $Task.Substring(1)
+}
+
+$prevOutputEncoding = $OutputEncoding
+$prevConsoleOutputEncoding = [Console]::OutputEncoding
+$prevErrorActionPreference = $ErrorActionPreference
+$exitCode = 0
+try {
+  $utf8 = [System.Text.UTF8Encoding]::new($false)
+  $OutputEncoding = $utf8
+  [Console]::OutputEncoding = $utf8
+  # Allow native command stderr redirection without PowerShell NativeCommandError termination
+  $ErrorActionPreference = 'Continue'
+
+  # Run agy with piped stdin.
+  # If agy exits 2 with "unexpected argument ... agy.exe" due to a daemon restart glitch,
+  # retry once with the same prompt.
+  $attempt = 1
+  while ($true) {
+    $errFile = [System.IO.Path]::GetTempFileName()
+    try {
+      $Task | agy @agyArgs 2>$errFile
+      $exitCode = $LASTEXITCODE
+
+      $errText = ""
+      if (Test-Path $errFile) {
+        $errText = [System.IO.File]::ReadAllText($errFile)
+      }
+
+      $isAgyArgGlitch = ($exitCode -eq 2) -and ($errText -match 'unexpected argument.*agy(?:\.exe)?')
+      if ($isAgyArgGlitch -and $attempt -eq 1) {
+        $attempt++
+        continue
+      }
+
+      if ($errText) {
+        [Console]::Error.Write($errText)
+      }
+      break
+    } finally {
+      if (Test-Path $errFile) {
+        Remove-Item -Force $errFile -ErrorAction SilentlyContinue
+      }
+    }
+  }
+} finally {
+  $OutputEncoding = $prevOutputEncoding
+  [Console]::OutputEncoding = $prevConsoleOutputEncoding
+  $ErrorActionPreference = $prevErrorActionPreference
+}
+exit $exitCode
