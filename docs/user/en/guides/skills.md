@@ -130,6 +130,8 @@ How to split work across child sessions: [Sub-agents & orchestration](sub-agents
 
 `science-search` — Search scholarly papers, look up DOIs, similar works, and citations (free, no API key)
 
+`docs` — Turn Markdown into PDF, Word (DOCX), or PowerPoint (PPTX) with report, proposal, and minutes templates, and extract existing PDF, DOCX, or PPTX files back to Markdown
+
 ### Development and integrations
 
 `git-workflow`, `bench`, `fine-tune`, `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`, `ig-cli`, `skill-creator`, `skill-deployer`, `tool-creator`, `playbook-creator`
@@ -145,6 +147,7 @@ How to split work across child sessions: [Sub-agents & orchestration](sub-agents
 | Child sessions / teams         | [Sub-agents guide](sub-agents.md)                       |
 | Recover pre-compaction context | `@skill:context-recall`                                 |
 | Papers / DOIs                  | `@skill:science-search`                                 |
+| Make a PDF, Word, or PPT file  | `@skill:docs`                                           |
 | Email                          | `@skill:email-integration`                              |
 | Assistants                     | [Assistants](assistants.md)                             |
 | Recurring work                 | [Playbooks](playbooks.md) · [Automation](automation.md) |

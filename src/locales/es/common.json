@@ -2042,6 +2042,11 @@
         "title": "Ajustar el tamaño de la interfaz",
         "body": "Escala toda la interfaz en Ajustes → General o con los atajos Ctrl/Cmd +, - y 0 en cualquier momento.",
         "cta": "Abrir General"
+      },
+      "docsExport": {
+        "title": "Recibe respuestas en PDF, Word o PowerPoint",
+        "body": "Escribe @skill:docs y pide un informe, una propuesta o un acta: el agente guarda un archivo PDF, DOCX o PPTX listo para compartir.",
+        "cta": "Probar en el chat"
       }
     }
   }

@@ -2042,6 +2042,11 @@
         "title": "UI の表示サイズを調整できます",
         "body": "設定 → General またはショートカット Ctrl/Cmd +、-、0 でインターフェース全体をすぐに拡大・縮小できます。",
         "cta": "General 設定を開く"
+      },
+      "docsExport": {
+        "title": "回答を PDF・Word・PowerPoint で受け取れます",
+        "body": "@skill:docs と入力して報告書・提案書・議事録を依頼すると、そのまま共有できる PDF、DOCX、PPTX ファイルとして保存します。",
+        "cta": "チャットで試す"
       }
     }
   }

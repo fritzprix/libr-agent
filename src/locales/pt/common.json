@@ -2042,6 +2042,11 @@
         "title": "Ajustar o tamanho da interface",
         "body": "Redimensione toda a interface em Configurações → General ou use os atalhos Ctrl/Cmd +, - e 0 a qualquer momento.",
         "cta": "Abrir General"
+      },
+      "docsExport": {
+        "title": "Receba respostas em PDF, Word ou PowerPoint",
+        "body": "Digite @skill:docs e peça um relatório, uma proposta ou uma ata: o agente salva um arquivo PDF, DOCX ou PPTX pronto para compartilhar.",
+        "cta": "Experimentar no chat"
       }
     }
   }

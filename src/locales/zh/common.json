@@ -2042,6 +2042,11 @@
         "title": "调节界面显示大小",
         "body": "在 设置 → General 中调节，或随时按 Ctrl/Cmd +、-、0 缩放整个界面。",
         "cta": "打开 General 设置"
+      },
+      "docsExport": {
+        "title": "以 PDF、Word 或 PowerPoint 获取回答",
+        "body": "输入 @skill:docs 并请求报告、提案或会议纪要，助手会保存可直接分享的 PDF、DOCX 或 PPTX 文件。",
+        "cta": "在聊天中试试"
       }
     }
   }

@@ -2042,6 +2042,11 @@
         "title": "Oberflächengröße anpassen",
         "body": "Skalieren Sie die gesamte Oberfläche unter Einstellungen → General oder jederzeit mit Strg/Cmd +, - und 0.",
         "cta": "General öffnen"
+      },
+      "docsExport": {
+        "title": "Antworten als PDF, Word oder PowerPoint",
+        "body": "Geben Sie @skill:docs ein und bitten Sie um einen Bericht, ein Angebot oder ein Protokoll – der Agent speichert eine teilbare PDF-, DOCX- oder PPTX-Datei.",
+        "cta": "Im Chat ausprobieren"
       }
     }
   }

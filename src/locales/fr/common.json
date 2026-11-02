@@ -2042,6 +2042,11 @@
         "title": "Ajuster la taille de l'interface",
         "body": "Redimensionnez toute l'interface dans Paramètres → General ou avec les raccourcis Ctrl/Cmd +, - et 0.",
         "cta": "Ouvrir General"
+      },
+      "docsExport": {
+        "title": "Recevez vos réponses en PDF, Word ou PowerPoint",
+        "body": "Tapez @skill:docs et demandez un rapport, une proposition ou un compte rendu : l'agent enregistre un fichier PDF, DOCX ou PPTX prêt à partager.",
+        "cta": "Essayer dans le chat"
       }
     }
   }

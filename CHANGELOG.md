@@ -1,3 +1,31 @@
+## [0.9.30] - 2026-11-03
+
+### 🚀 Features & Capabilities
+
+- **`docs` skill — PDF, Word & PowerPoint output**: A new bundled `docs` skill renders Markdown to PDF (ReportLab), DOCX, and PPTX with shared `report` / `proposal` / `minutes` templates, Korean font support, and real-overflow checks for slides; it also extracts existing documents back to Markdown via MarkItDown. It replaces the older `docx`, `pptx`, and `to-md` skills (#2497, #2498, #2499, #2500, #2504).
+- **Install system packages in Docker sessions**: `runShell` with `asRoot` can install system packages inside a managed Docker session container, always behind a hard approval card (#2408, #2513).
+- **Docker sessions run MCP servers in the container**: Stdio MCP servers now run inside the Docker session container, and a default session image ships common MCP runtimes (#2401, #2402).
+- **Notification bell actions**: Mark all notifications as read, or dismiss a single row, from the bell menu (#2507).
+- **App log retention**: New **Keep App Logs (Days)** setting under **Settings → System** (default 30). Archived logs are pruned automatically so the log folder no longer grows without bound.
+- **Session API execution mode & approvals**: External clients can change a session's `executionMode` and resolve pending tool approvals through the Session API.
+
+### 🐛 Fixes & Hardening
+
+- **MCP retry backoff**: Failed MCP servers are retried with backoff and a retry limit, and only a missing image or container counts as a permanent failure (#2407).
+- **Docker session reliability**: Provisioning failures are saved and shown as the session status reason, failed Docker setups are retried on the next message, home-directory workspaces are refused, `NET_RAW` is dropped in managed containers, and the prompt shows the container workdir as the workspace root (#2409, #2514).
+- **Workspace tool guidance**: Distinct errors and `@teamwork` guidance for paths outside the workspace root, clearer exit code `-1` / silent exit `1` messages, and `writeFile` rejects invalid `mode` values.
+- **Settings cleanup**: Removed unused settings, the restart notice now covers every startup-only setting, shell isolation levels explain what they actually do per platform, and revoking a Session API key asks for inline confirmation (#2508).
+- **Session API hardening**: 10 MB body limit on JSON routes, range-checked `limit` on the messages endpoint, and sensitive payloads redacted from dispatch logs.
+- **Pairing dialog**: Fixed countdown timer churn and added accessibility attributes (#2445, #2446).
+- **i18n**: Added 29 missing keys to the de, es, fr, ja, pt, and zh locales.
+
+### 🔧 Performance & Internal
+
+- **Maintainer loop skills**: Added the `producer-loop` issue filer and `harness-eval-loop` skills, and hardened `worker-loop` / `gatekeeper-loop` (#2418, #2423).
+- **Modular splits**: Split `background_discovery.rs`, history `handlers.rs`, and `stream_recovery.rs` into focused modules.
+- **Harbor benchmark**: Session API key handling for non-isolated runs, with the key kept out of process arguments (#2510).
+- **Dependency bumps**: Updated `uuid` (1.29.0) and `ignore` (0.4.34).
+
 ## [0.9.29] - 2026-10-30
 
 ### 🚀 Features & Capabilities

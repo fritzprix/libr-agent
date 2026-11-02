@@ -2042,6 +2042,11 @@
         "title": "Adjust the UI size",
         "body": "Scale the whole interface from Settings → General or press Ctrl/Cmd +, -, and 0 at any time.",
         "cta": "Open General settings"
+      },
+      "docsExport": {
+        "title": "Get answers as PDF, Word, or PowerPoint",
+        "body": "Type @skill:docs and ask for a report, proposal, or meeting minutes — the agent saves a ready-to-share PDF, DOCX, or PPTX file.",
+        "cta": "Try it in chat"
       }
     }
   }
