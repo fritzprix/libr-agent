@@ -1,6 +1,6 @@
 ---
 name: docs
-description: "Convert Markdown to PDF, PPTX, DOCX, or extract documents to Markdown. Uses fixed CLI commands with bundled scripts and ReportLab/MarkItDown. Do not write custom renderers."
+description: "Use when the user needs to convert Markdown to PDF, PPTX, DOCX, or extract documents to Markdown. Uses fixed CLI commands with bundled scripts and ReportLab/MarkItDown. Do not write custom renderers."
 ---
 
 # Docs
