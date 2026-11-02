@@ -34,6 +34,34 @@ fn get_session_workspace_dir(session_id: &str) -> Option<std::path::PathBuf> {
     }
 }
 
+/// Absolute workspace root as this session's tools see it. Docker sessions run
+/// shell commands in the container, so the host directory does not exist there
+/// and the container workdir is shown instead.
+async fn session_workspace_root(session_id: &str) -> Option<String> {
+    let (is_docker, docker_root) =
+        crate::mcp::builtin::workspace::utils::session_docker_root(session_id).await;
+    let host_workspace = get_session_workspace_dir(session_id)?;
+    Some(workspace_root_for_prompt(
+        is_docker,
+        &host_workspace,
+        &docker_root,
+    ))
+}
+
+fn workspace_root_for_prompt(
+    is_docker: bool,
+    host_workspace: &std::path::Path,
+    docker_root: &str,
+) -> String {
+    if !is_docker {
+        return host_workspace.display().to_string();
+    }
+    match docker_root.trim_end_matches('/') {
+        "" => "/".to_string(),
+        root => root.to_string(),
+    }
+}
+
 async fn load_first_instruction_file(
     workspace: &std::path::Path,
     candidates: &[&str],
@@ -234,9 +262,16 @@ async fn build_and_cache_stable_prefix(
 
     let soul_instruction = load_soul_instruction(session_id).await;
     let workspace_instructions = load_workspace_agent_instructions(session_id).await;
+    // Placeholder ids (e.g. build_system_prompt without a real session) stay path-free.
+    let workspace_root = if session_id.starts_with('(') {
+        None
+    } else {
+        session_workspace_root(session_id).await
+    };
     let mut stable = build_stable_prefix(
         agent_config,
         session_id,
+        workspace_root.as_deref(),
         soul_instruction,
         workspace_instructions,
     );
@@ -293,6 +328,7 @@ pub async fn build_system_prompt(
     let stable = build_stable_prefix(
         agent_config,
         "(unknown-session)",
+        None,
         soul_instruction,
         workspace_instructions,
     );
@@ -318,6 +354,7 @@ pub async fn build_system_prompt(
 fn build_stable_prefix(
     agent_config: &crate::agent::AgentConfig,
     session_id: &str,
+    workspace_root: Option<&str>,
     soul_instruction: Option<(String, String)>,
     workspace_instructions: Vec<(String, String)>,
 ) -> String {
@@ -350,16 +387,13 @@ fn build_stable_prefix(
             display_session
         );
 
-        // Real sessions only — placeholder ids used by build_system_prompt tests stay path-free.
-        if !session_id.starts_with('(') {
-            if let Some(workspace) = get_session_workspace_dir(session_id) {
-                identity.push_str(&format!(
-                    "\n- Workspace root (absolute): {}\n\
-                    - Share this workspace with a child: agent__spawnSession(..., workspaceOverride=\"current\") \
-                    (also accepts \".\" or \"inherit\"). Plain children are isolated unless you set this.",
-                    workspace.display()
-                ));
-            }
+        if let Some(workspace) = workspace_root {
+            identity.push_str(&format!(
+                "\n- Workspace root (absolute): {}\n\
+                - Share this workspace with a child: agent__spawnSession(..., workspaceOverride=\"current\") \
+                (also accepts \".\" or \"inherit\"). Plain children are isolated unless you set this.",
+                workspace
+            ));
         }
 
         if let Some(ref parent_id) = agent_config.parent_session_id {
@@ -589,6 +623,38 @@ mod tests {
         assert!(!prompt.contains("## Session Context Handling"));
         assert!(!prompt.contains("## Workspace Instructions"));
         assert!(!prompt.contains("## Available Tools & Current State"));
+    }
+
+    fn identity_with_workspace(workspace_root: Option<&str>) -> String {
+        let agent_config = crate::agent::AgentConfig {
+            id: Some("a".to_string()),
+            name: "Agent".to_string(),
+            ..Default::default()
+        };
+        build_stable_prefix(&agent_config, "s-1", workspace_root, None, vec![])
+    }
+
+    #[test]
+    fn docker_session_shows_the_container_workdir_as_workspace_root() {
+        let host = std::path::Path::new("/home/user/.libragent/workspaces/s-1");
+        let root = workspace_root_for_prompt(true, host, "/app/");
+        assert_eq!(root, "/app");
+
+        let prompt = identity_with_workspace(Some(&root));
+        assert!(prompt.contains("- Workspace root (absolute): /app\n"));
+        assert!(!prompt.contains("/home/user/.libragent"));
+        assert!(prompt.contains("workspaceOverride=\"current\""));
+        assert_eq!(workspace_root_for_prompt(true, host, "/"), "/");
+    }
+
+    #[test]
+    fn host_session_keeps_the_host_workspace_root() {
+        let host = std::path::Path::new("/home/user/.libragent/workspaces/s-1");
+        let root = workspace_root_for_prompt(false, host, "/workspace");
+        assert_eq!(root, host.display().to_string());
+        assert!(identity_with_workspace(Some(&root))
+            .contains("- Workspace root (absolute): /home/user/.libragent/workspaces/s-1\n"));
+        assert!(!identity_with_workspace(None).contains("Workspace root"));
     }
 
     #[test]
