@@ -146,7 +146,9 @@
     "recurringStop": "반복 중지",
     "pendingApprovals_one": "승인 {{count}}건",
     "pendingApprovals_other": "승인 {{count}}건",
-    "viewSession": "세션 {{name}} 열기"
+    "viewSession": "세션 {{name}} 열기",
+    "markAllRead": "모두 읽음으로 표시",
+    "dismiss": "닫기"
   },
   "sidebar": {
     "mobileTitle": "사이드바",

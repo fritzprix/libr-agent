@@ -146,7 +146,9 @@
     "recurringStop": "定期停止",
     "pendingApprovals_one": "{{count}} 件の承認",
     "pendingApprovals_other": "{{count}} 件の承認",
-    "viewSession": "セッション {{name}} を開く"
+    "viewSession": "セッション {{name}} を開く",
+    "markAllRead": "すべて既読にする",
+    "dismiss": "閉じる"
   },
   "sidebar": {
     "mobileTitle": "サイドバー",

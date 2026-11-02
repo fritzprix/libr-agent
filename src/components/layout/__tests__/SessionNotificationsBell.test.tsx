@@ -1,3 +1,4 @@
+import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -7,8 +8,9 @@ import type { AgentSession } from '@/models/agent';
 
 const mockNavigate = vi.fn();
 const mockMarkSessionViewed = vi.fn().mockResolvedValue(undefined);
+const mockMarkAllNotificationsViewed = vi.fn().mockResolvedValue(undefined);
 
-const notificationSession: AgentSession = {
+const notificationSession1: AgentSession = {
   id: 'session-target',
   name: 'Target Session',
   status: 'idle',
@@ -20,8 +22,28 @@ const notificationSession: AgentSession = {
   executionMode: 'normal',
   lastAttentionAt: new Date('2026-03-22T00:10:00.000Z'),
   lastAttentionReason: 'recurringStop',
-  pendingApprovalCount: 1,
+  pendingApprovalCount: 0,
 };
+
+const notificationSession2: AgentSession = {
+  id: 'session-approval',
+  name: 'Approval Session',
+  status: 'idle',
+  model: 'gpt-5.4',
+  provider: 'openai',
+  createdAt: new Date('2026-03-22T00:00:00.000Z'),
+  updatedAt: new Date('2026-03-22T00:10:00.000Z'),
+  assistant: undefined,
+  executionMode: 'normal',
+  lastAttentionAt: new Date('2026-03-22T00:10:00.000Z'),
+  lastAttentionReason: 'recurringStop',
+  pendingApprovalCount: 2,
+};
+
+let mockNotificationSessions: AgentSession[] = [
+  notificationSession1,
+  notificationSession2,
+];
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -42,9 +64,12 @@ vi.mock('@/components/ui/dropdown-menu', () => ({
   DropdownMenu: ({ children }: { children: React.ReactNode }) => (
     <div>{children}</div>
   ),
-  DropdownMenuTrigger: ({ children }: { children: React.ReactNode }) => (
-    <div>{children}</div>
-  ),
+  DropdownMenuTrigger: React.forwardRef(function DropdownMenuTrigger(
+    { children }: { children: React.ReactNode },
+    ref: React.Ref<HTMLDivElement>,
+  ) {
+    return <div ref={ref}>{children}</div>;
+  }),
   DropdownMenuContent: ({ children }: { children: React.ReactNode }) => (
     <div role="menu">{children}</div>
   ),
@@ -59,28 +84,30 @@ vi.mock('@/components/ui/dropdown-menu', () => ({
     children: React.ReactNode;
     onSelect?: (event: Event) => void;
   }) => (
-    <button
-      type="button"
+    <div
       role="menuitem"
-      onClick={() =>
-        onSelect?.({
-          preventDefault() {},
-          stopPropagation() {},
-        } as Event)
-      }
+      onClick={(event) => {
+        if (!event.defaultPrevented) {
+          onSelect?.({
+            preventDefault() {},
+            stopPropagation() {},
+          } as Event);
+        }
+      }}
     >
       {children}
-    </button>
+    </div>
   ),
 }));
 
 vi.mock('@/context/AgentSessionListContext', () => ({
   useAgentSessionListActions: () => ({
     markSessionViewed: mockMarkSessionViewed,
+    markAllNotificationsViewed: mockMarkAllNotificationsViewed,
   }),
   useAgentSessionListState: () => ({
-    notificationSessions: [notificationSession],
-    unreadNotificationCount: 1,
+    notificationSessions: mockNotificationSessions,
+    unreadNotificationCount: mockNotificationSessions.length,
   }),
 }));
 
@@ -95,6 +122,9 @@ describe('SessionNotificationsBell', () => {
     mockNavigate.mockClear();
     mockMarkSessionViewed.mockClear();
     mockMarkSessionViewed.mockResolvedValue(undefined);
+    mockMarkAllNotificationsViewed.mockClear();
+    mockMarkAllNotificationsViewed.mockResolvedValue(undefined);
+    mockNotificationSessions = [notificationSession1, notificationSession2];
   });
 
   it('navigates to the clicked notification session', async () => {
@@ -113,5 +143,63 @@ describe('SessionNotificationsBell', () => {
     await waitFor(() => {
       expect(mockNavigate).toHaveBeenCalledWith('/agent/session-target');
     });
+  });
+
+  it('dismisses a single notification without navigation', async () => {
+    render(<SessionNotificationsBell />);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'notifications.open' }),
+    );
+
+    const dismissButtons = screen.getAllByRole('button', {
+      name: 'notifications.dismiss',
+    });
+    expect(dismissButtons).toHaveLength(2);
+
+    fireEvent.click(dismissButtons[0]);
+
+    expect(mockMarkSessionViewed).toHaveBeenCalledWith('session-target');
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('calls markAllNotificationsViewed when "Mark all read" is clicked and skips pending approval sessions', async () => {
+    mockMarkAllNotificationsViewed.mockImplementation(async () => {
+      const targets = mockNotificationSessions.filter(
+        (session) => (session.pendingApprovalCount ?? 0) <= 0,
+      );
+      await Promise.allSettled(
+        targets.map((session) => mockMarkSessionViewed(session.id)),
+      );
+    });
+
+    render(<SessionNotificationsBell />);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'notifications.open' }),
+    );
+
+    const markAllReadButton = screen.getByRole('button', {
+      name: 'notifications.markAllRead',
+    });
+    fireEvent.click(markAllReadButton);
+
+    expect(mockMarkAllNotificationsViewed).toHaveBeenCalledTimes(1);
+    expect(mockMarkSessionViewed).toHaveBeenCalledWith('session-target');
+    expect(mockMarkSessionViewed).not.toHaveBeenCalledWith('session-approval');
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('does not show "Mark all read" when notification list is empty', async () => {
+    mockNotificationSessions = [];
+    render(<SessionNotificationsBell />);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'notifications.open' }),
+    );
+
+    expect(
+      screen.queryByRole('button', { name: 'notifications.markAllRead' }),
+    ).not.toBeInTheDocument();
   });
 });

@@ -323,6 +323,18 @@ export function useSessionListMutations({
     [applySessionUpdate],
   );
 
+  const markAllNotificationsViewed = useCallback(async () => {
+    const targets = notificationSessionsRef.current.filter(
+      (session) => (session.pendingApprovalCount ?? 0) <= 0,
+    );
+    if (targets.length === 0) {
+      return;
+    }
+    await Promise.allSettled(
+      targets.map((session) => markSessionViewed(session.id)),
+    );
+  }, [markSessionViewed, notificationSessionsRef]);
+
   const clearPendingApproval = useCallback(
     (sessionId: string, toolCallId: string) => {
       const pendingApprovalKey = `${sessionId}:${toolCallId}`;
@@ -348,6 +360,7 @@ export function useSessionListMutations({
     toggleBookmark,
     renameSession,
     markSessionViewed,
+    markAllNotificationsViewed,
     clearPendingApproval,
   };
 }

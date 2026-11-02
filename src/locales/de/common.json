@@ -146,7 +146,9 @@
     "recurringStop": "Wiederkehrender Stopp",
     "pendingApprovals_one": "{{count}} Genehmigung",
     "pendingApprovals_other": "{{count}} Genehmigungen",
-    "viewSession": "Sitzung {{name}} öffnen"
+    "viewSession": "Sitzung {{name}} öffnen",
+    "markAllRead": "Alle als gelesen markieren",
+    "dismiss": "Schließen"
   },
   "sidebar": {
     "mobileTitle": "Seitenleiste",
