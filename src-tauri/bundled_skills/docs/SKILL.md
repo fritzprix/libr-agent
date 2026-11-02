@@ -35,21 +35,24 @@ Select the conversion guide matching the desired direction:
 
 ## Fixed Command Form
 
-Always use the fixed command form. Give file paths only. Do not use inline code. Do not use pipes. The command must run in Windows PowerShell 5.1.
-
-```powershell
-python "<skill-base-dir>/scripts/convert.py" --in "<abs.md>" --to pdf --template report --out "<abs.pdf>"
-```
-
 Before first conversion or when troubleshooting dependencies, run the doctor command:
 
 ```powershell
-python "<skill-base-dir>/scripts/convert.py" --doctor
+powershell -NoProfile -ExecutionPolicy Bypass -File "<skill-base-dir>/scripts/doctor.ps1"
+```
+*(On Linux/macOS: `uv run --no-project --python 3.12 "<skill-base-dir>/scripts/convert.py" --doctor`)*
+
+The doctor discovers a working Python environment, provisions a persistent virtualenv outside the managed skill directory (at `~/.libragent/skills/docs/venv`), verifies dependencies, and prints `Doctor: OK` along with the `VenvPython:` executable path.
+
+Then run document conversion using the interpreter reported under `VenvPython:`. Always use the fixed command form. Give file paths only. Do not use inline code. Do not use pipes. The command must run in Windows PowerShell 5.1:
+
+```powershell
+"<venv-python-from-doctor>" "<skill-base-dir>/scripts/convert.py" --in "<abs.md>" --to pdf --template report --out "<abs.pdf>"
 ```
 
 ## Output Contract & Verification
 
-The script enforces an explicit output contract:
-- On success, it prints the absolute output path, the size in bytes, and `ExitCode: 0`.
-- On failure, it prints the error description, a single `NEXT:` line guiding the next action, and exits with a non-zero exit code.
-- **No OK line, no success report**: Never claim conversion succeeded unless `convert.py` printed `ExitCode: 0` and the output file exists with non-zero size.
+The script enforces an explicit output contract on every execution:
+- On success, it prints the absolute output path, the size in bytes, `ExitCode: 0`, and `OK`.
+- On failure (including syntax/argument errors, missing files, or pending sub-issue engines), it prints the error description, `ExitCode: <n>`, a single `NEXT:` line guiding the next action, and exits non-zero without printing `OK`.
+- **No OK line, no success report**: Never claim conversion succeeded unless `convert.py` printed `ExitCode: 0` and `OK`, and the output file exists with non-zero size.

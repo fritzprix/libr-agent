@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """
 LibrAgent docs skill conversion script.
 Provides unified document conversion and dependency management.
@@ -14,9 +15,27 @@ import sys
 
 
 SKILL_DIR = pathlib.Path(__file__).resolve().parent.parent
-VENV_DIR = SKILL_DIR / ".venv"
 FONTS_DIR = SKILL_DIR / "fonts"
 REQUIRED_PACKAGES = ["reportlab", "python-docx", "python-pptx", "markitdown"]
+
+
+def get_user_venv_dir() -> pathlib.Path:
+    """Return persistent user venv directory outside the managed skill folder."""
+    custom_dir = os.environ.get("LIBRAGENT_DOCS_VENV")
+    if custom_dir:
+        return pathlib.Path(custom_dir).resolve()
+    return (pathlib.Path.home() / ".libragent" / "skills" / "docs" / "venv").resolve()
+
+
+VENV_DIR = get_user_venv_dir()
+
+
+def fail(msg: str, next_hint: str, code: int = 1) -> int:
+    """Print uniform failure output conforming to requirement 7 contract."""
+    print(f"Error: {msg}", file=sys.stderr)
+    print(f"ExitCode: {code}")
+    print(f"NEXT: {next_hint}", file=sys.stderr)
+    return code
 
 
 def get_venv_python(venv_dir: pathlib.Path) -> pathlib.Path:
@@ -71,7 +90,7 @@ def find_working_python() -> pathlib.Path | None:
         except Exception:
             pass
 
-    # 2. Existing local venv python
+    # 2. Existing persistent venv python
     local_venv_py = get_venv_python(VENV_DIR)
     if local_venv_py.exists():
         candidates.append(local_venv_py)
@@ -134,15 +153,11 @@ def run_doctor() -> int:
     """Run environment and dependency doctor check."""
     working_py = find_working_python()
     if not working_py:
-        print(
-            "Error: No functional Python interpreter found. Candidates on PATH failed to run.",
-            file=sys.stderr,
+        return fail(
+            "No functional Python interpreter found. Candidates on PATH failed to run.",
+            "Install Python 3.11+ or uv (run setup-wizard skill: 'uv python install').",
+            code=1,
         )
-        print(
-            "NEXT: Install Python 3.11+ or uv (run setup-wizard skill: 'uv python install').",
-            file=sys.stderr,
-        )
-        return 1
 
     uv_bin = shutil.which("uv")
     if not uv_bin and os.name == "nt":
@@ -155,7 +170,7 @@ def run_doctor() -> int:
                 uv_bin = str(possible_uv)
                 break
 
-    # Setup skill-local venv
+    # Setup persistent user venv outside skill folder
     venv_py = get_venv_python(VENV_DIR)
     if not venv_py.exists():
         VENV_DIR.parent.mkdir(parents=True, exist_ok=True)
@@ -166,15 +181,19 @@ def run_doctor() -> int:
 
         proc = subprocess.run(cmd, capture_output=True, text=True)
         if proc.returncode != 0:
-            print(f"Error: Failed to create skill virtualenv: {proc.stderr}", file=sys.stderr)
-            print(f"NEXT: Check permissions on '{SKILL_DIR}' and retry 'convert.py --doctor'.", file=sys.stderr)
-            return 1
+            return fail(
+                f"Failed to create user virtualenv at '{VENV_DIR}': {proc.stderr}",
+                f"Check permissions on '{VENV_DIR.parent}' and retry doctor.",
+                code=1,
+            )
 
     venv_py = get_venv_python(VENV_DIR)
     if not is_working_python(venv_py):
-        print(f"Error: Virtualenv python at '{venv_py}' is not functional.", file=sys.stderr)
-        print("NEXT: Remove .venv directory and re-run 'convert.py --doctor'.", file=sys.stderr)
-        return 1
+        return fail(
+            f"Virtualenv python at '{venv_py}' is not functional.",
+            f"Remove '{VENV_DIR}' and re-run doctor.",
+            code=1,
+        )
 
     # Verify or install required packages
     missing_pkgs: list[str] = []
@@ -195,15 +214,11 @@ def run_doctor() -> int:
 
         proc = subprocess.run(install_cmd, capture_output=True, text=True)
         if proc.returncode != 0:
-            print(
-                f"Error: Failed to install dependencies into skill venv: {proc.stderr}",
-                file=sys.stderr,
+            return fail(
+                f"Failed to install dependencies into user venv: {proc.stderr}",
+                f"Run 'uv pip install --python \"{venv_py}\" {' '.join(missing_pkgs)}' to install packages.",
+                code=1,
             )
-            print(
-                f"NEXT: Run 'uv pip install --python \"{venv_py}\" {' '.join(missing_pkgs)}' to install packages.",
-                file=sys.stderr,
-            )
-            return 1
 
     # Check font
     font_file = None
@@ -226,8 +241,14 @@ def run_doctor() -> int:
     return 0
 
 
+class DocsArgumentParser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:
+        fail(message, "Check command-line arguments using -h/--help.", code=2)
+        sys.exit(2)
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="LibrAgent docs conversion tool", add_help=False)
+    parser = DocsArgumentParser(description="LibrAgent docs conversion tool", add_help=False)
     parser.add_argument("--doctor", action="store_true", help="Check and configure environment dependencies")
     parser.add_argument("--in", dest="input_file", type=str, help="Source input file path")
     parser.add_argument("--to", dest="target_format", type=str, help="Target format (pdf, pptx, docx, md)")
@@ -235,10 +256,11 @@ def main() -> int:
     parser.add_argument("--out", dest="output_file", type=str, help="Target output file path")
     parser.add_argument("-h", "--help", action="store_true", help="Show help")
 
-    args, unknown = parser.parse_known_args()
+    args = parser.parse_args()
 
     if args.help:
         parser.print_help()
+        print("ExitCode: 0")
         return 0
 
     if args.doctor:
@@ -246,51 +268,46 @@ def main() -> int:
 
     # Conversion validation
     if not args.input_file:
-        print("Error: Missing required argument '--in'.", file=sys.stderr)
-        print("NEXT: Specify input source path via --in '<abs-path>'.", file=sys.stderr)
-        return 1
+        return fail("Missing required argument '--in'.", "Specify input source path via --in '<abs-path>'.", code=1)
 
     input_path = pathlib.Path(args.input_file).resolve()
     if not input_path.exists():
-        print(f"Error: Input file does not exist: {input_path}", file=sys.stderr)
-        print(f"NEXT: Check input path and verify file exists at '{input_path}'.", file=sys.stderr)
-        return 1
+        return fail(
+            f"Input file does not exist: {input_path}",
+            f"Check input path and verify file exists at '{input_path}'.",
+            code=1,
+        )
 
     if not args.target_format:
-        print("Error: Missing required argument '--to'.", file=sys.stderr)
-        print("NEXT: Specify target format via --to (pdf, pptx, docx, md).", file=sys.stderr)
-        return 1
+        return fail("Missing required argument '--to'.", "Specify target format via --to (pdf, pptx, docx, md).", code=1)
 
     target_format = args.target_format.lower()
     if target_format not in ["pdf", "pptx", "docx", "md"]:
-        print(f"Error: Unsupported format '{target_format}'. Supported formats: pdf, pptx, docx, md.", file=sys.stderr)
-        print("NEXT: Choose one of the supported target formats: pdf, pptx, docx, md.", file=sys.stderr)
-        return 1
+        return fail(
+            f"Unsupported format '{target_format}'. Supported formats: pdf, pptx, docx, md.",
+            "Choose one of the supported target formats: pdf, pptx, docx, md.",
+            code=1,
+        )
 
     if not args.output_file:
-        print("Error: Missing required argument '--out'.", file=sys.stderr)
-        print("NEXT: Specify target output path via --out '<abs-path>'.", file=sys.stderr)
-        return 1
+        return fail("Missing required argument '--out'.", "Specify target output path via --out '<abs-path>'.", code=1)
 
     output_path = pathlib.Path(args.output_file).resolve()
-    output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Skeleton conversion handler: format engines are implemented in #2498, #2500, #2499.
-    # Write initial skeleton output for end-to-end verification.
-    try:
-        content = input_path.read_text(encoding="utf-8")
-        output_path.write_text(content, encoding="utf-8")
-    except Exception as exc:
-        print(f"Error: Failed to process document conversion: {exc}", file=sys.stderr)
-        print("NEXT: Run convert.py --doctor to verify environment dependencies.", file=sys.stderr)
-        return 1
-
-    size = output_path.stat().st_size
-    print(f"Output: {output_path}")
-    print(f"Size: {size} bytes")
-    print("ExitCode: 0")
-    print("OK")
-    return 0
+    # G1.1: Format engines are implemented in sub-issues (#2498, #2500, #2499).
+    # The skeleton must NOT create dummy output or claim success.
+    sub_issues = {
+        "pdf": "#2498",
+        "pptx": "#2500",
+        "docx": "#2500",
+        "md": "#2499",
+    }
+    sub_issue = sub_issues.get(target_format, "#2495")
+    return fail(
+        f"Format '{target_format}' conversion engine is not implemented yet in this skeleton.",
+        f"Format '{target_format}' engine will be delivered under sub-issue {sub_issue}.",
+        code=1,
+    )
 
 
 if __name__ == "__main__":

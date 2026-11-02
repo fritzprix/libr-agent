@@ -6,12 +6,13 @@ $ErrorActionPreference = 'Continue'
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $skillDir = Split-Path -Parent $scriptDir
 $convertPy = Join-Path $scriptDir 'convert.py'
+$doctorPs1 = Join-Path $scriptDir 'doctor.ps1'
 
 Write-Host "=== Testing docs skill convert.py ==="
 
 # ---------------------------------------------------------
-# Acceptance Criterion 2: Forced failure (missing input file)
-# Must exit non-zero, print NEXT: line, print no OK line.
+# Test 1: Forced failure on missing input file (G1.4)
+# Must exit non-zero, print ExitCode: 1, print NEXT: line, print no OK line.
 # ---------------------------------------------------------
 Write-Host "`n[Test 1] Forced failure on missing input file..."
 $missingFile = Join-Path ([System.IO.Path]::GetTempPath()) "nonexistent_$(Get-Random).md"
@@ -29,6 +30,11 @@ if ($exitCode -eq 0) {
   exit 1
 }
 
+if ($allText -notmatch 'ExitCode:\s*1') {
+  Write-Error "Test 1 failed: Expected output to contain 'ExitCode: 1'"
+  exit 1
+}
+
 if ($allText -notmatch 'NEXT:') {
   Write-Error "Test 1 failed: Expected output to contain 'NEXT:' hint line"
   exit 1
@@ -38,13 +44,13 @@ if ($allText -match '(^|\r?\n)OK($|\r?\n)') {
   Write-Error "Test 1 failed: Output must NOT contain 'OK' on failure"
   exit 1
 }
-Write-Host "✓ Test 1 passed: Forced failure exited non-zero with NEXT: and no OK."
+Write-Host "Test 1 passed: Forced failure exited non-zero with ExitCode: 1, NEXT: and no OK."
 
 # ---------------------------------------------------------
-# Acceptance Criterion 1: convert.py --doctor succeeds when
-# python on PATH fails with exit code -1073741515.
+# Test 2: Documented doctor command with broken python on PATH (-1073741515) (G1.2)
+# Runs EXACTLY the documented doctor command with fake python.cmd first on PATH.
 # ---------------------------------------------------------
-Write-Host "`n[Test 2] convert.py --doctor with broken python on PATH (-1073741515)..."
+Write-Host "`n[Test 2] Documented doctor command with broken python on PATH (-1073741515)..."
 
 $fakeDir = Join-Path ([System.IO.Path]::GetTempPath()) "fake_python_$(Get-Random)"
 New-Item -ItemType Directory -Path $fakeDir -Force | Out-Null
@@ -52,6 +58,7 @@ $fakePythonCmd = Join-Path $fakeDir "python.cmd"
 Set-Content -Path $fakePythonCmd -Value "@exit /b -1073741515"
 
 $origPath = $env:PATH
+$doctorText = ""
 try {
   # Prepend broken python to PATH
   $env:PATH = "$fakeDir;$origPath"
@@ -61,23 +68,8 @@ try {
   $brokenCode = $LASTEXITCODE
   Write-Host "Simulated broken python exit code: $brokenCode"
 
-  # Run convert.py --doctor using a known functional python launcher / runner
-  $doctorLauncher = $null
-  if (Get-Command uv -ErrorAction SilentlyContinue) {
-    $doctorLauncher = 'uv'
-  } elseif (Get-Command py -ErrorAction SilentlyContinue) {
-    $doctorLauncher = 'py'
-  }
-
-  if ($doctorLauncher -eq 'uv') {
-    $doctorOutput = & uv run --no-project python $convertPy --doctor 2>&1
-  } elseif ($doctorLauncher -eq 'py') {
-    $doctorOutput = & py -3 $convertPy --doctor 2>&1
-  } else {
-    # If no launcher, resolve real python outside fakeDir
-    $realPy = (Get-Command -Name python.exe -All | Where-Object { $_.Source -notlike "$fakeDir*" } | Select-Object -First 1).Source
-    $doctorOutput = & $realPy $convertPy --doctor 2>&1
-  }
+  # Run exactly the documented doctor command
+  $doctorOutput = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $doctorPs1 2>&1
   $doctorExit = $LASTEXITCODE
 
   $doctorText = ($doctorOutput -join "`n").Trim()
@@ -85,15 +77,20 @@ try {
   Write-Host "Doctor exit code: $doctorExit"
 
   if ($doctorExit -ne 0) {
-    Write-Error "Test 2 failed: convert.py --doctor exited with code $doctorExit"
+    Write-Error "Test 2 failed: Documented doctor command exited with code $doctorExit"
     exit 1
   }
 
-  if ($doctorText -notmatch 'Doctor: OK' -or $doctorText -notmatch 'Venv:') {
-    Write-Error "Test 2 failed: Doctor output missing 'Doctor: OK' or 'Venv:'"
+  if ($doctorText -notmatch 'Doctor:\s*OK' -or $doctorText -notmatch 'Venv:\s*(.+)' -or $doctorText -notmatch 'VenvPython:\s*(.+)') {
+    Write-Error "Test 2 failed: Doctor output missing 'Doctor: OK', 'Venv:', or 'VenvPython:'"
     exit 1
   }
-  Write-Host "✓ Test 2 passed: convert.py --doctor succeeded with broken PATH python."
+
+  if ($doctorText -notmatch 'ExitCode:\s*0') {
+    Write-Error "Test 2 failed: Doctor output missing 'ExitCode: 0'"
+    exit 1
+  }
+  Write-Host "Test 2 passed: Documented doctor command succeeded with broken PATH python."
 } finally {
   $env:PATH = $origPath
   if (Test-Path $fakeDir) {
@@ -102,36 +99,60 @@ try {
 }
 
 # ---------------------------------------------------------
-# Test 3: End-to-end basic conversion command form
+# Test 3: Skeleton conversion command form with doctor VenvPython (G1.1)
+# Must exit non-zero, print ExitCode: 1, print NEXT: naming #2498, and print no OK.
 # ---------------------------------------------------------
-Write-Host "`n[Test 3] End-to-end conversion command form..."
+Write-Host "`n[Test 3] Skeleton conversion command form with doctor VenvPython (pending engine)..."
 $testMd = Join-Path ([System.IO.Path]::GetTempPath()) "test_doc_$(Get-Random).md"
 $testOut = Join-Path ([System.IO.Path]::GetTempPath()) "test_out_$(Get-Random).pdf"
 Set-Content -Path $testMd -Value "# Test Document`n`nSample content for conversion."
 
+$venvPython = $null
+foreach ($line in ($doctorText -split "`r?`n")) {
+  if ($line -match '^VenvPython:\s*(.+)$') {
+    $venvPython = $Matches[1].Trim()
+    break
+  }
+}
+if (-not $venvPython -or -not (Test-Path $venvPython)) {
+  $venvPython = 'python'
+}
+Write-Host "Using VenvPython: $venvPython"
+
 try {
-  $convOutput = & python $convertPy --in $testMd --to pdf --template report --out $testOut 2>&1
+  $convOutput = & $venvPython $convertPy --in $testMd --to pdf --template report --out $testOut 2>&1
   $convExit = $LASTEXITCODE
   $convText = ($convOutput -join "`n").Trim()
 
   Write-Host "Conversion exit code: $convExit"
   Write-Host "Conversion output:`n$convText"
 
-  if ($convExit -ne 0) {
-    Write-Error "Test 3 failed: Conversion exited with code $convExit"
+  if ($convExit -eq 0) {
+    Write-Error "Test 3 failed: Skeleton conversion must NOT exit 0 before format engine is implemented"
     exit 1
   }
 
-  if (-not (Test-Path $testOut)) {
-    Write-Error "Test 3 failed: Output file was not created: $testOut"
+  if ($convText -notmatch 'ExitCode:\s*1') {
+    Write-Error "Test 3 failed: Expected output to contain 'ExitCode: 1'"
     exit 1
   }
 
-  if ($convText -notmatch 'Output:' -or $convText -notmatch 'Size:' -or $convText -notmatch 'ExitCode: 0' -or $convText -notmatch '(^|\r?\n)OK($|\r?\n)') {
-    Write-Error "Test 3 failed: Output contract missing required fields (Output, Size, ExitCode, OK)"
+  if ($convText -notmatch 'NEXT:.*#2498') {
+    Write-Error "Test 3 failed: Expected NEXT: line to reference sub-issue #2498"
     exit 1
   }
-  Write-Host "✓ Test 3 passed: Conversion output contract met."
+
+  if ($convText -match '(^|\r?\n)OK($|\r?\n)') {
+    Write-Error "Test 3 failed: Output must NOT contain 'OK' for unimplemented skeleton conversion"
+    exit 1
+  }
+
+  if (Test-Path $testOut) {
+    Write-Error "Test 3 failed: Output file must NOT be created for unimplemented conversion: $testOut"
+    exit 1
+  }
+
+  Write-Host "Test 3 passed: Skeleton conversion correctly exited non-zero with ExitCode: 1, NEXT: #2498, and no OK."
 } finally {
   if (Test-Path $testMd) { Remove-Item $testMd -Force -ErrorAction SilentlyContinue }
   if (Test-Path $testOut) { Remove-Item $testOut -Force -ErrorAction SilentlyContinue }
