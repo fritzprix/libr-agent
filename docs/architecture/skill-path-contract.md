@@ -30,13 +30,13 @@ LibrAgent는 스킬 저장소를 4가지 격리 계층(System, User, Assistant, 
    - 시스템 프롬프트의 `<available_skills>` 블록에 스킬 목록이 제공되며, `<location>` 태그에 선호 경로로 별칭이 명시됩니다.
      ```xml
      <skill source="global" origin="system">
-       <name>docx</name>
-       <description>Word document manipulation...</description>
-       <location>@system-skills/docx/SKILL.md</location>
+       <name>docs</name>
+       <description>Document conversion...</description>
+       <location>@system-skills/docs/SKILL.md</location>
      </skill>
      ```
 2. **도구 호출**:
-   - 에이전트는 `workspace__readFile(path: "@system-skills/docx/SKILL.md")` 또는 `workspace__listDirectory(path: "@workspace-skills")`를 호출합니다.
+   - 에이전트는 `workspace__readFile(path: "@system-skills/docs/SKILL.md")` 또는 `workspace__listDirectory(path: "@workspace-skills")`를 호출합니다.
 3. **런타임 변환**:
    - Rust 백엔드(`src-tauri/src/mcp/builtin/workspace/workspace_server/path_validation.rs`의 `validate_read_path_with_skill_access`)에서 별칭 접두사를 감지하여 세션에 바인딩된 실제 물리 디렉토리로 안전하게 변환합니다.
 4. **경로 정규화 허용**:

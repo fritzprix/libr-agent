@@ -10,13 +10,13 @@ description: |
 # Workspace Indexer
 
 > **Not this skill**: Wiki linking, catalog.json, backlinks, and `[[slug]]` management → use **repo-wiki**.
-> **Not this skill**: Single-file text extraction → use **to-md**.
+> **Not this skill**: Single-file text extraction → use **docs** (`--to md`).
 
 ## Overview
 
 This skill provides two core capabilities:
 
-1. **Binary → Markdown conversion** — Batch-convert PDF, PPTX, DOCX, and XLSX via **MarkItDown** (see **to-md** skill policy)
+1. **Binary → Markdown conversion** — Batch-convert PDF, PPTX, DOCX, and XLSX via **MarkItDown** (same engine as the **docs** skill)
 2. **Index generation** — Build a workspace file inventory and keyword map in `index.md`
 
 ## Path conventions
@@ -74,7 +74,7 @@ python <skill-base-dir>/scripts/convert_binary_docs.py --root . --out ./converte
 python <skill-base-dir>/scripts/convert_binary_docs.py --root . --overwrite
 ```
 
-**Conversion engine:** All formats use **MarkItDown** (`convert_with_markitdown` in `convert_binary_docs.py`). Output structure (headings, tables, slides) is determined by MarkItDown — see the **to-md** skill for details.
+**Conversion engine:** All formats use **MarkItDown** (`convert_with_markitdown` in `convert_binary_docs.py`). Output structure (headings, tables, slides) is determined by MarkItDown — see the **docs** skill for details.
 
 ---
 
@@ -159,5 +159,5 @@ python <skill-base-dir>/scripts/check_status.py --root . --export conversion_sta
 
 - `.git`, `__pycache__`, `node_modules`, `.github`, and `venv` directories are ignored by default
 - Existing converted files are not regenerated unless `--overwrite` is set
-- Scanned PDFs (image-only) require `markitdown[all]` for OCR support (see **to-md** skill)
+- Scanned PDFs (image-only) require `markitdown[all]` for OCR support (see **docs** skill)
 - For very large workspaces, use `--max-keyword-files` to cap oversized keyword maps

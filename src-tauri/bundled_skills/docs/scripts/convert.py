@@ -38,6 +38,16 @@ def fail(msg: str, next_hint: str, code: int = 1) -> int:
     return code
 
 
+def succeed(output_path: pathlib.Path) -> int:
+    """Print uniform success output conforming to the SKILL.md output contract."""
+    size = output_path.stat().st_size
+    print(f"Output: {output_path}")
+    print(f"Bytes: {size}")
+    print("ExitCode: 0")
+    print("OK")
+    return 0
+
+
 def get_venv_python(venv_dir: pathlib.Path) -> pathlib.Path:
     """Return path to python binary inside a virtualenv."""
     if os.name == "nt":
@@ -241,6 +251,55 @@ def run_doctor() -> int:
     return 0
 
 
+def convert_to_markdown(input_path: pathlib.Path, output_path: pathlib.Path) -> int:
+    """Extract a document into Markdown with MarkItDown.
+
+    MarkItDown keeps the source document structure (headings, tables, lists) and never
+    summarizes. The engine runs entirely in this interpreter, so the agent never writes
+    its own extraction script.
+    """
+    try:
+        from markitdown import MarkItDown
+    except ImportError:
+        return fail(
+            "MarkItDown is not installed in the interpreter running convert.py.",
+            "Run the doctor first to provision the venv. Windows PowerShell: "
+            'powershell -NoProfile -ExecutionPolicy Bypass -File "<skill-base-dir>/scripts/doctor.ps1". '
+            "Linux/macOS: "
+            f"uv run --no-project --python 3.12 '{pathlib.Path(__file__).resolve()}' --doctor",
+            code=1,
+        )
+
+    try:
+        result = MarkItDown().convert(str(input_path))
+    except Exception as exc:  # MarkItDown raises library-specific errors.
+        return fail(
+            f"MarkItDown could not read '{input_path}': {exc}",
+            "Confirm the file is a supported document (pdf, docx, pptx, xlsx, html, txt, csv, json) and is not encrypted.",
+            code=1,
+        )
+
+    markdown = (result.text_content or "").strip()
+    if not markdown:
+        return fail(
+            f"MarkItDown extracted no text from '{input_path}'.",
+            "The document may be a scan without a text layer. Check the source file, or convert it to Markdown by hand.",
+            code=1,
+        )
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        output_path.write_text(markdown + "\n", encoding="utf-8")
+    except OSError as exc:
+        return fail(
+            f"Could not write '{output_path}': {exc}",
+            "Check that the output directory exists and is writable.",
+            code=1,
+        )
+
+    return succeed(output_path)
+
+
 class DocsArgumentParser(argparse.ArgumentParser):
     def error(self, message: str) -> None:
         fail(message, "Check command-line arguments using -h/--help.", code=2)
@@ -294,13 +353,15 @@ def main() -> int:
 
     output_path = pathlib.Path(args.output_file).resolve()
 
-    # G1.1: Format engines are implemented in sub-issues (#2498, #2500, #2499).
+    if target_format == "md":
+        return convert_to_markdown(input_path, output_path)
+
+    # G1.1: Remaining format engines are implemented in sub-issues (#2498, #2500).
     # The skeleton must NOT create dummy output or claim success.
     sub_issues = {
         "pdf": "#2498",
         "pptx": "#2500",
         "docx": "#2500",
-        "md": "#2499",
     }
     sub_issue = sub_issues.get(target_format, "#2495")
     return fail(

@@ -126,7 +126,7 @@ How to split work across child sessions: [Sub-agents & orchestration](sub-agents
 
 ### Research and documents
 
-`deep-research`, `science-search`, `knowledge-distiller`, `to-md`, `docx`, `pptx`, `visualize`, `workspace-indexer`, `repo-wiki`, `soul-awakening`
+`deep-research`, `science-search`, `knowledge-distiller`, `docs`, `visualize`, `workspace-indexer`, `repo-wiki`, `soul-awakening`
 
 `science-search` — Search scholarly papers, look up DOIs, similar works, and citations (free, no API key)
 

@@ -215,6 +215,20 @@ impl WorkspaceServer {
             Ok(mut chunk) => {
                 info!("Successfully read file: {}", path_str);
 
+                let docker_session =
+                    crate::mcp::builtin::workspace::utils::is_session_docker_isolated(
+                        session_id.as_deref().unwrap_or(&self.session_id),
+                    )
+                    .await;
+                // Resolve `<skill-base-dir>` in skill files read through an alias, so the
+                // agent gets runnable commands instead of a placeholder it must translate.
+                let placeholder_resolved = skill_base::substitute_skill_base_dir(
+                    path_str,
+                    &safe_path,
+                    docker_session,
+                    &mut chunk.content,
+                );
+
                 // Get file metadata for stats
                 let total_size = fs::metadata(&safe_path)
                     .await
@@ -336,10 +350,8 @@ impl WorkspaceServer {
                 let text_message = match skill_base::skill_base_directory_note(
                     path_str,
                     &safe_path,
-                    crate::mcp::builtin::workspace::utils::is_session_docker_isolated(
-                        session_id.as_deref().unwrap_or(&self.session_id),
-                    )
-                    .await,
+                    docker_session,
+                    placeholder_resolved,
                 ) {
                     Some(note) => format!("{text_message}\n\n{note}"),
                     None => text_message,
