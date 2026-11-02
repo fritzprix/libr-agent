@@ -345,6 +345,7 @@
     "saved": "Settings saved successfully",
     "saving": "Saving...",
     "saveFailed": "Failed to save settings",
+    "restartRequiredNotice": "Some of the saved settings are applied after restarting the app.",
     "applyChanges": "Apply Changes",
     "language": {
       "label": "Language",
@@ -380,9 +381,6 @@
     "decreaseToolCallCount": "Decrease tool call count",
     "increaseToolCallCount": "Increase tool call count",
     "general": {
-      "skillsDirectory": "Skills Directory",
-      "skillsDirectorySelectTitle": "Select Skills Directory",
-      "skillsDirectoryPlaceholder": "Select a directory for local skills...",
       "browse": "Browse",
       "browseAriaLabel": "Browse skills directory",
       "openInExplorer": "Open in Explorer",
@@ -390,8 +388,7 @@
       "error": "Error: {{message}}",
       "skillsFound_one": "Found {{count}} skill",
       "skillsFound_other": "Found {{count}} skills",
-      "invalidDirectory": "Invalid directory",
-      "skillsDirectoryDescription": "Directory containing Agent Skills (folders with SKILL.md). New skills will be discovered automatically."
+      "invalidDirectory": "Invalid directory"
     },
     "aiModels": {
       "apiKeys": "Provider API Keys",
@@ -488,10 +485,6 @@
         "d2coding": "D2Coding (Developer Mono)"
       },
       "metricsTitle": "Performance Metrics",
-      "metricDisplayMode": "Metric Display Mode",
-      "inline": "Inline (show in message)",
-      "tooltip": "Tooltip (hover to see)",
-      "metricDisplayModeDescription": "Choose how token metrics are displayed in chat messages",
       "prefillDisplayFormat": "Initial Response Speed Format",
       "time": "Time to first response (e.g., 245ms)",
       "tokensPerSecond": "Tokens Per Second (e.g., 520 tok/s)",
@@ -561,11 +554,16 @@
       "toolResultInlineLimitDescription": "Maximum tool output size displayed directly in chat before saving to a file. Lower values keep conversation memory lean.",
       "shellIsolation": "Shell Isolation Level",
       "shellIsolationModes": {
-        "basic": "Basic - Full PATH access (less secure)",
-        "medium": "Medium - Restricted PATH (balanced)",
-        "high": "High - Sandboxed (most secure)"
+        "basic": "Basic",
+        "medium": "Medium",
+        "high": "High - OS sandbox"
       },
-      "shellIsolationDescription": "Controls environment isolation for shell commands. Basic allows user-installed tools, High provides maximum security.",
+      "shellIsolationDescription": "Applies to one-shot shell commands and background processes in local sessions. The persistent shell and Docker sessions do not use this setting.",
+      "shellIsolationHelp": {
+        "basic": "Runs the command in the workspace with a cleared environment: only PATH and a few basic variables (such as HOME, USER, locale and proxy) are passed, so host secrets such as API keys are not. File and network access are not restricted.",
+        "medium": "Same as Basic, and the command runs in its own process group. File and network access are not restricted.",
+        "high": "Linux: runs in separate user, PID and mount namespaces (unshare); file and network access are not restricted. macOS: runs under sandbox-exec; files can be written only in the workspace and /tmp, /var/tmp, and network access is allowed. Windows: same as Medium. If the sandbox is not available, Medium is used."
+      },
       "shellRuntimeBootstrap": "Shell runtime bootstrap",
       "shellRuntimeBootstrapDescription": "Loads only Python and Node paths in the terminal to start commands faster.",
       "performance": "Performance & Concurrency",

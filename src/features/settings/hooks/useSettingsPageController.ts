@@ -16,6 +16,10 @@ import { applyUiScale } from '@/lib/ui-scale';
 import { dbUtils } from '@/lib/db/service';
 import { restartApp } from '@/lib/backend';
 import { factoryReset as backendFactoryReset } from '@/lib/backend/sessions';
+import {
+  networkSettingsChanged as hasNetworkSettingsChanged,
+  restartRequiredSettingsChanged as hasRestartRequiredSettingsChanged,
+} from './restart-required-settings';
 import { useSettingsForm } from './useSettingsForm';
 
 const logger = getLogger('useSettingsPageController');
@@ -99,17 +103,13 @@ export function useSettingsPageController() {
   }, [searchParams]);
 
   const networkSettingsChanged = useMemo(
-    () =>
-      formState.system.httpServerPort !==
-        globalSettings.system.httpServerPort ||
-      formState.system.httpServerExpose !==
-        globalSettings.system.httpServerExpose,
-    [
-      formState.system.httpServerExpose,
-      formState.system.httpServerPort,
-      globalSettings.system.httpServerExpose,
-      globalSettings.system.httpServerPort,
-    ],
+    () => hasNetworkSettingsChanged(formState, globalSettings),
+    [formState, globalSettings],
+  );
+
+  const restartRequiredSettingsChanged = useMemo(
+    () => hasRestartRequiredSettingsChanged(formState, globalSettings),
+    [formState, globalSettings],
   );
 
   const changedSectionCount = useMemo(
@@ -226,11 +226,11 @@ export function useSettingsPageController() {
       await save();
       await invalidateModelCaches();
 
-      if (networkSettingsChanged) {
+      if (restartRequiredSettingsChanged) {
         toast.info(
           t(
-            'settings.system.networkRestartNotice',
-            'Changes to HTTP server network settings are applied after restarting the app.',
+            'settings.restartRequiredNotice',
+            'Some of the saved settings are applied after restarting the app.',
           ),
           {
             action: {
@@ -253,7 +253,7 @@ export function useSettingsPageController() {
     formState.uiLanguage,
     globalSettings.uiLanguage,
     isDirty,
-    networkSettingsChanged,
+    restartRequiredSettingsChanged,
     save,
     t,
     triggerAppRestart,
@@ -464,7 +464,7 @@ export function useSettingsPageController() {
     isDiscardDialogOpen,
     isLeaveDialogOpen,
     isSaving,
-    networkSettingsChanged,
+    restartRequiredSettingsChanged,
     setIsDiscardDialogOpen,
     setIsLeaveDialogOpen,
     systemSettingsProps,

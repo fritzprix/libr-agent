@@ -64,7 +64,6 @@ function getChatInterfaceComparableState(settings: SettingsFormState) {
 
 function getSystemComparableState(settings: SettingsFormState) {
   return {
-    skillsDirectory: settings.system.skillsDirectory,
     maxFileUploadSizeMB: settings.system.maxFileUploadSizeMB,
     searchIndexFrequencyMinutes: settings.system.searchIndexFrequencyMinutes,
     webActionTimeoutSeconds: settings.system.webActionTimeoutSeconds,

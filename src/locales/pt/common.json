@@ -345,6 +345,7 @@
     "saved": "Configurações salvas com sucesso",
     "saving": "Salvando...",
     "saveFailed": "Falha ao salvar configurações",
+    "restartRequiredNotice": "Algumas das configurações salvas são aplicadas após reiniciar o aplicativo.",
     "applyChanges": "Aplicar Alterações",
     "language": {
       "label": "Idioma",
@@ -380,9 +381,6 @@
     "decreaseToolCallCount": "Diminuir contagem de chamadas de ferramenta",
     "increaseToolCallCount": "Aumentar contagem de chamadas de ferramenta",
     "general": {
-      "skillsDirectory": "Diretório de Habilidades",
-      "skillsDirectorySelectTitle": "Selecionar Diretório de Habilidades",
-      "skillsDirectoryPlaceholder": "Selecione um diretório para habilidades locais...",
       "browse": "Procurar",
       "browseAriaLabel": "Procurar diretório de habilidades",
       "openInExplorer": "Abrir no Explorador",
@@ -390,8 +388,7 @@
       "error": "Erro: {{message}}",
       "skillsFound_one": "Encontrada {{count}} habilidade",
       "skillsFound_other": "Encontradas {{count}} habilidades",
-      "invalidDirectory": "Diretório inválido",
-      "skillsDirectoryDescription": "Diretório contendo Habilidades do Agente (pastas com SKILL.md). Novas habilidades serão descobertas automaticamente."
+      "invalidDirectory": "Diretório inválido"
     },
     "aiModels": {
       "apiKeys": "Chaves de API do Provedor",
@@ -488,10 +485,6 @@
         "d2coding": "D2Coding (mono para desenvolvedores)"
       },
       "metricsTitle": "Métricas de Desempenho",
-      "metricDisplayMode": "Modo de Exibição de Métricas",
-      "inline": "Em linha (mostrar na mensagem)",
-      "tooltip": "Dica (passe o mouse para ver)",
-      "metricDisplayModeDescription": "Escolha como as métricas de tokens são exibidas nas mensagens de chat",
       "prefillDisplayFormat": "Formato de tempo da primeira resposta",
       "time": "Tempo até a primeira resposta (ex. 245 ms)",
       "tokensPerSecond": "Tokens por Segundo (ex: 520 tok/s)",
@@ -561,11 +554,16 @@
       "toolResultInlineLimitDescription": "Tamanho máximo da saída da ferramenta exibida no chat antes de salvar em arquivo.",
       "shellIsolation": "Nível de Isolamento do Shell",
       "shellIsolationModes": {
-        "basic": "Básico - Acesso total ao PATH (menos seguro)",
-        "medium": "Médio - PATH restrito (equilibrado)",
-        "high": "Alto - Sandbox (mais seguro)"
+        "basic": "Básico",
+        "medium": "Médio",
+        "high": "Alto - sandbox do SO"
       },
-      "shellIsolationDescription": "Controla o isolamento do ambiente para comandos shell. O Básico permite ferramentas instaladas pelo usuário, o Alto oferece segurança máxima.",
+      "shellIsolationDescription": "Aplica-se a comandos de shell avulsos e a processos em segundo plano em sessões locais. O shell persistente e as sessões Docker não usam esta configuração.",
+      "shellIsolationHelp": {
+        "basic": "Executa o comando no espaço de trabalho com o ambiente limpo: apenas PATH e algumas variáveis básicas (como HOME, USER, localidade e proxy) são repassadas, então segredos do host como chaves de API não são. O acesso a arquivos e à rede não é restrito.",
+        "medium": "Igual ao Básico, e o comando é executado em seu próprio grupo de processos. O acesso a arquivos e à rede não é restrito.",
+        "high": "Linux: é executado em namespaces de usuário, PID e montagem separados (unshare); o acesso a arquivos e à rede não é restrito. macOS: é executado com sandbox-exec; arquivos só podem ser gravados no espaço de trabalho e em /tmp, /var/tmp, e o acesso à rede é permitido. Windows: igual ao Médio. Se o sandbox não estiver disponível, o Médio é usado."
+      },
       "shellRuntimeBootstrap": "Inicialização do ambiente de shell",
       "shellRuntimeBootstrapDescription": "Carrega apenas os caminhos do Python e Node no terminal para iniciar comandos mais rapidamente.",
       "performance": "Desempenho e concorrência",

@@ -11,9 +11,9 @@ interface SystemTabProps {
   systemSettingsProps: {
     localSystemSettings: SystemSettings;
     networkSettingsChanged: boolean;
-    onChange: (
-      key: keyof SystemSettings,
-      value: string | number | boolean,
+    onChange: <K extends keyof SystemSettings>(
+      key: K,
+      value: SystemSettings[K],
     ) => void;
   };
 }

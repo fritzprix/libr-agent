@@ -4,6 +4,16 @@ import { Switch } from '@/components/ui/switch';
 import { IsolationLevel } from '@/lib/services/settings-service';
 import type { AdvancedSystemSettingsProps } from './types';
 
+// Behavior per level: src-tauri/src/session_isolation/platforms/ (unix.rs,
+// linux.rs, macos.rs, windows.rs). Keep this text in sync with that code.
+const ISOLATION_LEVEL_HELP: Record<IsolationLevel, string> = {
+  basic:
+    'Runs the command in the workspace with a cleared environment: only PATH and a few basic variables (such as HOME, USER, locale and proxy) are passed, so host secrets such as API keys are not. File and network access are not restricted.',
+  medium:
+    'Same as Basic, and the command runs in its own process group. File and network access are not restricted.',
+  high: 'Linux: runs in separate user, PID and mount namespaces (unshare); file and network access are not restricted. macOS: runs under sandbox-exec; files can be written only in the workspace and /tmp, /var/tmp, and network access is allowed. Windows: same as Medium. If the sandbox is not available, Medium is used.',
+};
+
 interface AdvancedShellIsolationSectionProps {
   systemSettingsProps: AdvancedSystemSettingsProps;
 }
@@ -12,15 +22,22 @@ function AdvancedShellIsolationSectionComponent({
   systemSettingsProps,
 }: AdvancedShellIsolationSectionProps) {
   const { t } = useTranslation('common');
+  const isolationLevel =
+    systemSettingsProps.localSystemSettings.shellIsolationLevel;
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <div className="rounded-xl border border-border/70 p-4">
-        <label className="mb-2 block text-muted-foreground font-medium">
+        <label
+          htmlFor="shell-isolation-level"
+          className="mb-2 block text-muted-foreground font-medium"
+        >
           {t('settings.advanced.shellIsolation', 'Shell Isolation Level')}
         </label>
         <select
-          value={systemSettingsProps.localSystemSettings.shellIsolationLevel}
+          id="shell-isolation-level"
+          aria-describedby="shell-isolation-level-help"
+          value={isolationLevel}
           onChange={(event) =>
             systemSettingsProps.onChange(
               'shellIsolationLevel',
@@ -30,28 +47,31 @@ function AdvancedShellIsolationSectionComponent({
           className="bg-background border text-foreground w-full max-w-xs rounded p-2"
         >
           <option value="basic">
-            {t(
-              'settings.advanced.shellIsolationModes.basic',
-              'Basic - Full PATH access (less secure)',
-            )}
+            {t('settings.advanced.shellIsolationModes.basic', 'Basic')}
           </option>
           <option value="medium">
-            {t(
-              'settings.advanced.shellIsolationModes.medium',
-              'Medium - Restricted PATH (balanced)',
-            )}
+            {t('settings.advanced.shellIsolationModes.medium', 'Medium')}
           </option>
           <option value="high">
             {t(
               'settings.advanced.shellIsolationModes.high',
-              'High - Sandboxed (most secure)',
+              'High - OS sandbox',
             )}
           </option>
         </select>
+        <p
+          id="shell-isolation-level-help"
+          className="mt-2 text-xs text-foreground"
+        >
+          {t(
+            `settings.advanced.shellIsolationHelp.${isolationLevel}`,
+            ISOLATION_LEVEL_HELP[isolationLevel],
+          )}
+        </p>
         <p className="mt-1 text-xs text-muted-foreground">
           {t(
             'settings.advanced.shellIsolationDescription',
-            'Controls environment isolation for shell commands. Basic allows user-installed tools, High provides maximum security.',
+            'Applies to one-shot shell commands and background processes in local sessions. The persistent shell and Docker sessions do not use this setting.',
           )}
         </p>
       </div>

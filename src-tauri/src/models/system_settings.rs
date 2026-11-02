@@ -50,7 +50,6 @@ pub struct SystemSettings {
     pub scheduled_task_minimum_interval_minutes: u64,
     pub shell_isolation_level: IsolationLevel,
     pub shell_runtime_bootstrap: bool,
-    pub skills_directory: String,
     /// Inhibit idle sleep while LibrAgent is running. Does not keep the display on.
     pub prevent_sleep_during_agent_work: bool,
     /// Archived app logs older than this are deleted. `0` means no age limit.
@@ -70,7 +69,6 @@ impl Default for SystemSettings {
             scheduled_task_minimum_interval_minutes: 0,
             shell_isolation_level: IsolationLevel::Medium,
             shell_runtime_bootstrap: false,
-            skills_directory: String::new(),
             prevent_sleep_during_agent_work: true,
             log_retention_days: 30,
         }
@@ -135,7 +133,6 @@ impl SystemSettings {
                 "shellRuntimeBootstrap",
                 defaults.shell_runtime_bootstrap,
             ),
-            skills_directory: parsed(&map, "skillsDirectory", defaults.skills_directory),
             prevent_sleep_during_agent_work: parsed(
                 &map,
                 "preventSleepDuringAgentWork",
@@ -197,7 +194,7 @@ mod tests {
     fn wrong_typed_fields_fall_back_individually() {
         let settings = SystemSettings::from_stored(Some(
             r#"{"httpServerPort":70000,"httpServerExpose":"yes","shellIsolationLevel":"max",
-                "webActionTimeoutSeconds":-1,"shellRuntimeBootstrap":true,"skillsDirectory":3}"#,
+                "webActionTimeoutSeconds":-1,"shellRuntimeBootstrap":true,"skillsDirectory":"/old"}"#,
         ));
         let defaults = SystemSettings::default();
         assert_eq!(settings.http_server_port, defaults.http_server_port);
@@ -210,7 +207,6 @@ mod tests {
             settings.web_action_timeout_seconds,
             defaults.web_action_timeout_seconds
         );
-        assert_eq!(settings.skills_directory, "");
         assert!(settings.shell_runtime_bootstrap);
     }
 
@@ -221,7 +217,8 @@ mod tests {
         assert!(keys.contains_key("maxFileUploadSizeMB"));
         assert!(keys.contains_key("mcpServerStartupTimeoutSeconds"));
         assert!(keys.contains_key("logRetentionDays"));
-        assert_eq!(keys.len(), 13);
+        assert!(!keys.contains_key("skillsDirectory"));
+        assert_eq!(keys.len(), 12);
         assert_eq!(
             SystemSettings::from_stored(Some(&value.to_string())),
             SystemSettings::default()

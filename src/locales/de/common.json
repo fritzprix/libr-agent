@@ -345,6 +345,7 @@
     "saved": "Einstellungen erfolgreich gespeichert",
     "saving": "Speichervorgang...",
     "saveFailed": "Einstellungen konnten nicht gespeichert werden",
+    "restartRequiredNotice": "Einige der gespeicherten Einstellungen werden erst nach einem Neustart der App wirksam.",
     "applyChanges": "Änderungen übernehmen",
     "language": {
       "label": "Sprache",
@@ -380,9 +381,6 @@
     "decreaseToolCallCount": "Anzahl der Tool-Aufrufe verringern",
     "increaseToolCallCount": "Anzahl der Tool-Aufrufe erhöhen",
     "general": {
-      "skillsDirectory": "Skills-Verzeichnis",
-      "skillsDirectorySelectTitle": "Skills-Verzeichnis auswählen",
-      "skillsDirectoryPlaceholder": "Verzeichnis für lokale Skills auswählen...",
       "browse": "Durchsuchen",
       "browseAriaLabel": "Skills-Verzeichnis durchsuchen",
       "openInExplorer": "Im Explorer öffnen",
@@ -390,8 +388,7 @@
       "error": "Fehler: {{message}}",
       "skillsFound_one": "{{count}} Skill gefunden",
       "skillsFound_other": "{{count}} Skills gefunden",
-      "invalidDirectory": "Ungültiges Verzeichnis",
-      "skillsDirectoryDescription": "Verzeichnis mit Agent-Skills (Ordner mit SKILL.md). Neue Skills werden automatisch erkannt."
+      "invalidDirectory": "Ungültiges Verzeichnis"
     },
     "aiModels": {
       "apiKeys": "Anbieter-API-Schlüssel",
@@ -488,10 +485,6 @@
         "d2coding": "D2Coding (Entwickler-Mono)"
       },
       "metricsTitle": "Leistungskennzahlen",
-      "metricDisplayMode": "Anzeigemodus für Kennzahlen",
-      "inline": "Inline (in der Nachricht anzeigen)",
-      "tooltip": "Tooltip (zum Anzeigen mit der Maus darüberfahren)",
-      "metricDisplayModeDescription": "Wählen Sie aus, wie Token-Kennzahlen in Chat-Nachrichten angezeigt werden",
       "prefillDisplayFormat": "Format der ersten Antwortzeit",
       "time": "Zeit bis zur ersten Antwort (z. B. 245 ms)",
       "tokensPerSecond": "Token pro Sekunde (z.B. 520 tok/s)",
@@ -561,11 +554,16 @@
       "toolResultInlineLimitDescription": "Maximale Größe der Werkzeugausgabe im Chat, bevor sie als Datei gespeichert wird. Kleinere Werte sparen Speicher.",
       "shellIsolation": "Shell-Isolationsstufe",
       "shellIsolationModes": {
-        "basic": "Basis - Voller PATH-Zugriff (weniger sicher)",
-        "medium": "Mittel - Eingeschränkter PATH (ausgewogen)",
-        "high": "Hoch - Sandbox (am sichersten)"
+        "basic": "Basis",
+        "medium": "Mittel",
+        "high": "Hoch - OS-Sandbox"
       },
-      "shellIsolationDescription": "Steuert die Umgebungsisolation für Shell-Befehle. Basis erlaubt vom Benutzer installierte Werkzeuge, Hoch bietet maximale Sicherheit.",
+      "shellIsolationDescription": "Gilt für einmalige Shell-Befehle und Hintergrundprozesse in lokalen Sitzungen. Die persistente Shell und Docker-Sitzungen verwenden diese Einstellung nicht.",
+      "shellIsolationHelp": {
+        "basic": "Führt den Befehl im Arbeitsbereich mit geleerter Umgebung aus: Nur PATH und einige Basisvariablen (z. B. HOME, USER, Gebietsschema und Proxy) werden übergeben, Host-Geheimnisse wie API-Schlüssel nicht. Datei- und Netzwerkzugriff werden nicht eingeschränkt.",
+        "medium": "Wie Basis; zusätzlich läuft der Befehl in einer eigenen Prozessgruppe. Datei- und Netzwerkzugriff werden nicht eingeschränkt.",
+        "high": "Linux: läuft in eigenen User-, PID- und Mount-Namespaces (unshare); Datei- und Netzwerkzugriff werden nicht eingeschränkt. macOS: läuft unter sandbox-exec; Dateien können nur im Arbeitsbereich und in /tmp, /var/tmp geschrieben werden, Netzwerkzugriff ist erlaubt. Windows: wie Mittel. Ist die Sandbox nicht verfügbar, wird Mittel verwendet."
+      },
       "shellRuntimeBootstrap": "Shell-Laufzeit-Bootstrap",
       "shellRuntimeBootstrapDescription": "Lädt nur Python- und Node-Pfade im Terminal, um Befehle schneller zu starten.",
       "performance": "Leistung und Parallelität",

@@ -120,9 +120,9 @@ describe('SkillsContext', () => {
       expect(mockInvoke).not.toHaveBeenCalled();
     });
 
-    it('uses managed skills overview regardless of skillsDirectory setting', async () => {
+    it('uses the managed skills overview', async () => {
       mockUseSettings.mockReturnValue({
-        value: { system: { skillsDirectory: '' } },
+        value: { system: {} },
         isLoading: false,
       } as ReturnType<typeof useSettings>);
 
@@ -133,24 +133,12 @@ describe('SkillsContext', () => {
       });
     });
 
-    it('ignores configured skillsDirectory values and stays managed', async () => {
-      mockUseSettings.mockReturnValue({
-        value: { system: { skillsDirectory: '/custom/skills/path' } },
-        isLoading: false,
-      } as ReturnType<typeof useSettings>);
-
-      renderHook(() => useSkills(), { wrapper });
-
-      await waitFor(() => {
-        expect(mockInvoke).toHaveBeenCalledWith('get_managed_skills_overview');
-      });
-    });
   });
 
   describe('State management', () => {
     it('exposes scanned skills in context', async () => {
       mockUseSettings.mockReturnValue({
-        value: { system: { skillsDirectory: '/some/path' } },
+        value: { system: {} },
         isLoading: false,
       } as ReturnType<typeof useSettings>);
       mockInvoke.mockResolvedValue({ effectiveSkills: MOCK_SKILLS });
@@ -164,7 +152,7 @@ describe('SkillsContext', () => {
 
     it('sets error state on scan failure', async () => {
       mockUseSettings.mockReturnValue({
-        value: { system: { skillsDirectory: '/bad/path' } },
+        value: { system: {} },
         isLoading: false,
       } as ReturnType<typeof useSettings>);
       mockInvoke.mockRejectedValueOnce(new Error('Directory not found'));
@@ -195,7 +183,7 @@ describe('SkillsContext', () => {
   describe('refreshSkills', () => {
     it('re-invokes scan on refreshSkills()', async () => {
       mockUseSettings.mockReturnValue({
-        value: { system: { skillsDirectory: '/my/skills' } },
+        value: { system: {} },
         isLoading: false,
       } as ReturnType<typeof useSettings>);
 

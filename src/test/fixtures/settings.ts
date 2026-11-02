@@ -33,7 +33,6 @@ export const TEST_ADVANCED_SETTINGS: AdvancedSettings = {
 
 /** Test data only: Rust owns `display` (`get_display_settings`). */
 export const TEST_DISPLAY_SETTINGS: DisplaySettings = {
-  metricDisplayMode: 'inline',
   prefillDisplayFormat: 'time',
   showTokenSpeed: true,
   compactMetrics: false,
@@ -64,7 +63,6 @@ export const TEST_SYSTEM_SETTINGS: SystemSettings = {
   scheduledTaskMinimumIntervalMinutes: 0,
   shellIsolationLevel: 'medium',
   shellRuntimeBootstrap: false,
-  skillsDirectory: '',
   preventSleepDuringAgentWork: true,
   logRetentionDays: 30,
 };

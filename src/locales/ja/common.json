@@ -345,6 +345,7 @@
     "saved": "設定を保存しました",
     "saving": "保存中...",
     "saveFailed": "設定の保存に失敗しました",
+    "restartRequiredNotice": "保存した設定の一部は、アプリの再起動後に適用されます。",
     "applyChanges": "変更を適用",
     "language": {
       "label": "言語",
@@ -380,9 +381,6 @@
     "decreaseToolCallCount": "表示するツール呼び出し数を減らす",
     "increaseToolCallCount": "表示するツール呼び出し数を増やす",
     "general": {
-      "skillsDirectory": "スキルディレクトリ",
-      "skillsDirectorySelectTitle": "スキルディレクトリを選択",
-      "skillsDirectoryPlaceholder": "ローカルスキルのディレクトリを選択...",
       "browse": "参照",
       "browseAriaLabel": "スキルディレクトリを参照",
       "openInExplorer": "エクスプローラーで開く",
@@ -390,8 +388,7 @@
       "error": "エラー: {{message}}",
       "skillsFound_one": "{{count}} 個のスキルが見つかりました",
       "skillsFound_other": "{{count}} 個のスキルが見つかりました",
-      "invalidDirectory": "無効なディレクトリ",
-      "skillsDirectoryDescription": "エージェントスキル（SKILL.mdを含むフォルダ）を含むディレクトリ。新しいスキルは自動的に検出されます。"
+      "invalidDirectory": "無効なディレクトリ"
     },
     "aiModels": {
       "apiKeys": "プロバイダーAPIキー",
@@ -488,10 +485,6 @@
         "d2coding": "D2Coding (開発者向け等幅)"
       },
       "metricsTitle": "パフォーマンス指標",
-      "metricDisplayMode": "指標表示モード",
-      "inline": "インライン（メッセージ内に表示）",
-      "tooltip": "ツールチップ（ホバーして表示）",
-      "metricDisplayModeDescription": "チャットメッセージでのトークン指標の表示方法を選択",
       "prefillDisplayFormat": "初期応答速度の形式",
       "time": "最初の応答までの時間（例: 245ms）",
       "tokensPerSecond": "秒間トークン数 (例: 520 tok/s)",
@@ -561,11 +554,16 @@
       "toolResultInlineLimitDescription": "チャットに直接表示するツール出力の最大サイズです。超過分はファイルに保存され、小さくするほどメモリを節約します。",
       "shellIsolation": "シェル分離レベル",
       "shellIsolationModes": {
-        "basic": "基本 - すべてのPATHへのアクセス（安全性が低い）",
-        "medium": "中 - 制限されたPATH（バランス）",
-        "high": "高 - サンドボックス化（最も安全）"
+        "basic": "基本",
+        "medium": "中",
+        "high": "高 - OS サンドボックス"
       },
-      "shellIsolationDescription": "シェルコマンドの環境分離を制御します。基本はユーザーがインストールしたツールを許可し、高は最大のセキュリティを提供します。",
+      "shellIsolationDescription": "ローカルセッションの単発シェルコマンドとバックグラウンドプロセスに適用されます。永続シェルと Docker セッションはこの設定を使用しません。",
+      "shellIsolationHelp": {
+        "basic": "環境変数をクリアした状態でワークスペース内でコマンドを実行します。PATH と一部の基本変数（HOME、USER、ロケール、プロキシなど）のみが渡され、API キーなどのホストの秘密情報は渡されません。ファイルとネットワークへのアクセスは制限されません。",
+        "medium": "基本と同じで、コマンドは独立したプロセスグループで実行されます。ファイルとネットワークへのアクセスは制限されません。",
+        "high": "Linux: 独立したユーザー・PID・マウント名前空間（unshare）で実行されます。ファイルとネットワークへのアクセスは制限されません。macOS: sandbox-exec で実行され、ファイルの書き込みはワークスペースと /tmp, /var/tmp のみ、ネットワークアクセスは許可されます。Windows: 中と同じです。サンドボックスが使えない場合は中で実行されます。"
+      },
       "shellRuntimeBootstrap": "シェルランタイムブートストラップ",
       "shellRuntimeBootstrapDescription": "ターミナル起動時にPythonおよびNodeの環境パスのみを高速に読み込み、コマンド実行を高速化します。",
       "performance": "パフォーマンスと並行実行",
