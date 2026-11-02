@@ -28,7 +28,7 @@ Select the conversion guide matching the desired direction:
 
 | Direction | Guide Reference | Supported Outputs / Templates |
 |-----------|-----------------|-------------------------------|
-| Markdown -> PDF | [references/md-to-pdf.md](references/md-to-pdf.md) | `report`, `brief`, `memo` |
+| Markdown -> PDF | [references/md-to-pdf.md](references/md-to-pdf.md) | `report`, `proposal`, `minutes` |
 | Markdown -> PPTX | [references/md-to-pptx.md](references/md-to-pptx.md) | `slides`, `dark`, `minimal` |
 | Markdown -> DOCX | [references/md-to-docx.md](references/md-to-docx.md) | `standard`, `clean` |
 | Document -> Markdown | [references/to-md.md](references/to-md.md) | Text extraction via MarkItDown |

@@ -99,15 +99,36 @@ try {
 }
 
 # ---------------------------------------------------------
-# Test 3: Skeleton conversion command form with doctor VenvPython (G1.1 & G2.1)
-# Must run exact documented command with leading '&', exit non-zero,
-# print ExitCode: 1, print NEXT: naming #2498, and print no OK.
+# Test 3: Markdown to PDF with doctor VenvPython (G2.1)
+# Must run the exact documented command with leading '&', exit 0,
+# print ExitCode: 0 and an OK line, and create a real PDF.
 # ---------------------------------------------------------
-Write-Host "`n[Test 3] Skeleton conversion command form with doctor VenvPython (pending engine)..."
-$testMd = Join-Path ([System.IO.Path]::GetTempPath()) "test_doc_$(Get-Random).md"
-$testOut = Join-Path ([System.IO.Path]::GetTempPath()) "test_out_$(Get-Random).pdf"
-$testScript = Join-Path ([System.IO.Path]::GetTempPath()) "test_doc_cmd_$(Get-Random).ps1"
-Set-Content -Path $testMd -Value "# Test Document`n`nSample content for conversion."
+Write-Host "`n[Test 3] Markdown to PDF with doctor VenvPython..."
+
+$tempRoot = [System.IO.Path]::GetTempPath()
+$testMd = Join-Path $tempRoot "test_doc_$(Get-Random).md"
+$testOut = Join-Path $tempRoot "test_out_$(Get-Random).pdf"
+$testScript = Join-Path $tempRoot "test_doc_cmd_$(Get-Random).ps1"
+
+# Korean wide table: 7 columns with long cells. This is the acceptance case.
+$koreanMd = @'
+# 분기 운영 점검 보고서
+
+본 문서는 분기 운영 결과를 정리한 보고서입니다. ✅ 전 항목 정상입니다.
+
+## 1. 상세 지표
+
+| 구분 | 세부 항목 | 계획 | 실적 | 달성률 | 담당 부서 | 담당자 |
+|---|---|---|---|---|---|---|
+| 영업 | 국내 기업 고객 신규 계약 체결 건수 | 120건 | 141건 | 118% | 영업기획팀 | 김민수 |
+| 재무 | 인건비 및 복리후생 예산 집행률 | 45억 | 44억 | 98% | 경영지원팀 | 박준호 |
+| 품질 | 서비스 운영 중 발생 결함률 관리 | 0.5% | 0.3% | 60% | 품질보증팀 | 정하늘 |
+
+## 2. 결론
+
+⭐ 전반적으로 목표를 달성했습니다.
+'@
+Set-Content -Path $testMd -Value $koreanMd -Encoding UTF8
 
 $venvPython = $null
 foreach ($line in ($doctorText -split "`r?`n")) {
@@ -121,10 +142,10 @@ if (-not $venvPython -or -not (Test-Path $venvPython)) {
 }
 Write-Host "Using VenvPython: $venvPython"
 
-# S3.1: Read the documented command directly from SKILL.md and substitute placeholders
+# Read the documented command directly from SKILL.md and substitute placeholders
 $skillMdPath = Join-Path $skillDir "SKILL.md"
 $skillMdContent = Get-Content -Raw $skillMdPath
-if ($skillMdContent -match '(?m)^```powershell\r?\n(&\s*"<venv-python-from-doctor>".+?)\r?\n```') {
+if ($skillMdContent -match '(?ms)^```powershell\r?\n(&\s*"<venv-python-from-doctor>".*?)\r?\n```') {
   $documentedTemplate = $Matches[1].Trim()
 } else {
   Write-Error 'Test 3 failed: Could not find documented conversion command starting with call operator in SKILL.md'
@@ -148,36 +169,59 @@ try {
   Write-Host "Conversion exit code: $convExit"
   Write-Host "Conversion output:`n$convText"
 
-  if ($convExit -eq 0) {
-    Write-Error "Test 3 failed: Skeleton conversion must NOT exit 0 before format engine is implemented"
+  if ($convExit -ne 0) {
+    Write-Error "Test 3 failed: PDF conversion must exit 0, got $convExit"
     exit 1
   }
 
-  if ($convText -notmatch 'ExitCode:\s*1') {
-    Write-Error "Test 3 failed: Expected output to contain 'ExitCode: 1'"
+  if ($convText -notmatch 'ExitCode:\s*0') {
+    Write-Error "Test 3 failed: Expected output to contain 'ExitCode: 0'"
     exit 1
   }
 
-  if ($convText -notmatch 'NEXT:.*#2498') {
-    Write-Error "Test 3 failed: Expected NEXT: line to reference sub-issue #2498"
+  if ($convText -notmatch '(^|\r?\n)OK(\s|$)') {
+    Write-Error "Test 3 failed: Expected an OK line on success"
     exit 1
   }
 
-  if ($convText -match '(^|\r?\n)OK($|\r?\n)') {
-    Write-Error "Test 3 failed: Output must NOT contain 'OK' for unimplemented skeleton conversion"
+  if (-not (Test-Path $testOut)) {
+    Write-Error "Test 3 failed: Output PDF was not created: $testOut"
     exit 1
   }
 
-  if (Test-Path $testOut) {
-    Write-Error "Test 3 failed: Output file must NOT be created for unimplemented conversion: $testOut"
+  $pdfSize = (Get-Item $testOut).Length
+  if ($pdfSize -le 0) {
+    Write-Error "Test 3 failed: Output PDF is 0 bytes"
     exit 1
   }
+  Write-Host "Test 3 passed: Korean wide-table Markdown rendered to a $pdfSize byte PDF with ExitCode: 0 and OK."
 
-  Write-Host "Test 3 passed: Documented command '& `"<venv>`" `"<convert>`" ...' executed successfully via PowerShell script and correctly exited non-zero with ExitCode: 1, NEXT: #2498, and no OK."
+  # ---------------------------------------------------------
+  # Test 4: check.py rejects a 0-byte PDF
+  # ---------------------------------------------------------
+  Write-Host "`n[Test 4] check.py rejects a 0-byte PDF..."
+  $checkPy = Join-Path $scriptDir 'check.py'
+  $emptyOut = Join-Path $tempRoot "empty_$(Get-Random).pdf"
+  Set-Content -Path $emptyOut -Value '' -NoNewline
+
+  $checkOutput = & $venvPython $checkPy --pdf $emptyOut 2>&1
+  $checkExit = $LASTEXITCODE
+  Write-Host "check.py exit code: $checkExit"
+  Write-Host "check.py output:`n$(($checkOutput -join "`n").Trim())"
+
+  if ($checkExit -eq 0) {
+    Write-Error "Test 4 failed: check.py must reject a 0-byte PDF"
+    exit 1
+  }
+  if ((($checkOutput -join "`n") -match '(^|\r?\n)OK(\s|$)')) {
+    Write-Error "Test 4 failed: check.py must not print OK for a 0-byte PDF"
+    exit 1
+  }
+  Remove-Item $emptyOut -Force -ErrorAction SilentlyContinue
+  Write-Host "Test 4 passed: check.py rejected the 0-byte PDF."
 } finally {
   if (Test-Path $testScript) { Remove-Item $testScript -Force -ErrorAction SilentlyContinue }
   if (Test-Path $testMd) { Remove-Item $testMd -Force -ErrorAction SilentlyContinue }
-  if (Test-Path $testOut) { Remove-Item $testOut -Force -ErrorAction SilentlyContinue }
 }
 
 Write-Host "`n=== All docs skill tests passed successfully! ==="
