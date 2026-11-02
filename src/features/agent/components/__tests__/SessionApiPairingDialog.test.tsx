@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import { SessionApiPairingDialog } from '../SessionApiPairingDialog';
 import * as sessionApiBackend from '@/lib/backend/session-api-keys';
 
@@ -91,5 +91,68 @@ describe('SessionApiPairingDialog', () => {
     fireEvent.click(rejectButton);
 
     expect(rejectSpy).toHaveBeenCalled();
+  });
+
+  it('sets aria attributes on input and alert role on error message container', async () => {
+    vi.spyOn(sessionApiBackend, 'getPendingSessionApiPairing').mockResolvedValue({
+      id: 'req-3',
+      name: 'Agent Error Test',
+      expiresInSeconds: 120,
+    });
+    vi.spyOn(sessionApiBackend, 'approveSessionApiPairing').mockRejectedValue(
+      new Error('Invalid pairing code'),
+    );
+
+    render(<SessionApiPairingDialog />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Agent Error Test/i)).toBeInTheDocument();
+    });
+
+    const input = screen.getByPlaceholderText(/abc-123/i);
+    expect(input).toHaveAttribute('aria-invalid', 'false');
+    expect(input).not.toHaveAttribute('aria-describedby');
+
+    fireEvent.change(input, { target: { value: 'bad-cod' } });
+    const approveButton = screen.getByRole('button', { name: /Approve/i });
+    fireEvent.click(approveButton);
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeInTheDocument();
+    });
+
+    const errorContainer = screen.getByRole('alert');
+    expect(errorContainer).toHaveAttribute('id', 'pairing-code-error');
+    expect(errorContainer).toHaveTextContent('Invalid pairing code');
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    expect(input).toHaveAttribute('aria-describedby', 'pairing-code-error');
+  });
+
+  it('clears pending request when countdown timer reaches zero', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.spyOn(sessionApiBackend, 'getPendingSessionApiPairing').mockResolvedValue({
+        id: 'req-4',
+        name: 'Expiring Agent',
+        expiresInSeconds: 2,
+      });
+
+      render(<SessionApiPairingDialog />);
+
+      await vi.waitFor(() => {
+        expect(screen.getByText(/Expiring Agent/i)).toBeInTheDocument();
+      });
+
+      // Advance timers by 2 seconds
+      act(() => {
+        vi.advanceTimersByTime(2000);
+      });
+
+      await vi.waitFor(() => {
+        expect(screen.queryByText(/Expiring Agent/i)).not.toBeInTheDocument();
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

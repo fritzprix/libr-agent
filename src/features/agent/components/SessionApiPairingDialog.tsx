@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { listen } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
@@ -31,12 +31,14 @@ export function SessionApiPairingDialog() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [timeLeft, setTimeLeft] = useState<number>(0);
+  const expiresAtRef = useRef<number | null>(null);
 
   // Check on mount
   useEffect(() => {
     let mounted = true;
     void getPendingSessionApiPairing().then((info) => {
       if (mounted && info) {
+        expiresAtRef.current = Date.now() + info.expiresInSeconds * 1000;
         setPending(info);
         setTimeLeft(info.expiresInSeconds);
       }
@@ -46,6 +48,8 @@ export function SessionApiPairingDialog() {
       'session_api_pairing_requested',
       (event) => {
         if (!mounted) return;
+        expiresAtRef.current =
+          Date.now() + event.payload.expiresInSeconds * 1000;
         setPending(event.payload);
         setTimeLeft(event.payload.expiresInSeconds);
         setCode('');
@@ -61,18 +65,36 @@ export function SessionApiPairingDialog() {
 
   // Countdown timer
   useEffect(() => {
-    if (!pending || timeLeft <= 0) return;
+    if (!pending) return;
+
+    const expiresAt =
+      expiresAtRef.current ?? Date.now() + pending.expiresInSeconds * 1000;
+    expiresAtRef.current = expiresAt;
+
+    const initialRemaining = Math.max(
+      0,
+      Math.ceil((expiresAt - Date.now()) / 1000),
+    );
+    if (initialRemaining <= 0) {
+      setPending(null);
+      expiresAtRef.current = null;
+      return;
+    }
+
     const interval = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          setPending(null);
-          return 0;
-        }
-        return prev - 1;
-      });
+      const remaining = Math.max(
+        0,
+        Math.ceil((expiresAt - Date.now()) / 1000),
+      );
+      setTimeLeft(remaining);
+      if (remaining <= 0) {
+        setPending(null);
+        expiresAtRef.current = null;
+      }
     }, 1000);
+
     return () => clearInterval(interval);
-  }, [pending, timeLeft]);
+  }, [pending]);
 
   const handleApprove = useCallback(
     async (e?: React.FormEvent) => {
@@ -91,6 +113,7 @@ export function SessionApiPairingDialog() {
           ),
         );
         setPending(null);
+        expiresAtRef.current = null;
         setCode('');
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -98,6 +121,7 @@ export function SessionApiPairingDialog() {
         setErrorMessage(message);
         if (message.includes('cancelled') || message.includes('expired')) {
           setPending(null);
+          expiresAtRef.current = null;
         }
       } finally {
         setIsSubmitting(false);
@@ -119,6 +143,7 @@ export function SessionApiPairingDialog() {
     } finally {
       setIsSubmitting(false);
       setPending(null);
+      expiresAtRef.current = null;
       setCode('');
       setErrorMessage(null);
     }
@@ -185,11 +210,19 @@ export function SessionApiPairingDialog() {
                 disabled={isSubmitting}
                 className="font-mono text-center text-lg tracking-widest uppercase"
                 maxLength={7}
+                aria-invalid={Boolean(errorMessage)}
+                aria-describedby={
+                  errorMessage ? 'pairing-code-error' : undefined
+                }
               />
             </div>
 
             {errorMessage && (
-              <div className="flex items-center gap-2 rounded-md bg-destructive/10 p-2 text-xs text-destructive">
+              <div
+                id="pairing-code-error"
+                role="alert"
+                className="flex items-center gap-2 rounded-md bg-destructive/10 p-2 text-xs text-destructive"
+              >
                 <AlertCircle className="h-4 w-4 shrink-0" />
                 <span>{errorMessage}</span>
               </div>
