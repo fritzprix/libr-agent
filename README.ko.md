@@ -151,10 +151,11 @@ LibrAgent는 이러한 작업을 간소화한 **완성형 데스크톱 제품**�
 **[Releases 페이지](https://github.com/fritzprix/libr-agent/releases/latest)**에서 최신 설치 파일을 다운로드하십시오.
 
 <!-- RELEASE_DOWNLOADS_START -->
-- **Windows:** [`LibrAgent_0.9.29_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.29/LibrAgent_0.9.29_x64-setup.exe) · [`LibrAgent_0.9.29_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.29/LibrAgent_0.9.29_x64_en-US.msi)
-- **macOS (Apple Silicon):** [`LibrAgent_0.9.29_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.29/LibrAgent_0.9.29_aarch64.dmg)
-- **Linux:** [`LibrAgent_0.9.29_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.29/LibrAgent_0.9.29_amd64.AppImage) · [`LibrAgent_0.9.29_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.29/LibrAgent_0.9.29_amd64.deb) · [`LibrAgent-0.9.29-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.29/LibrAgent-0.9.29-1.x86_64.rpm)
-- **전체 릴리스 자산:** [릴리스 페이지](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.29)
+
+- **Windows:** [`LibrAgent_0.9.30_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.30/LibrAgent_0.9.30_x64-setup.exe) · [`LibrAgent_0.9.30_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.30/LibrAgent_0.9.30_x64_en-US.msi)
+- **macOS (Apple Silicon):** [`LibrAgent_0.9.30_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.30/LibrAgent_0.9.30_aarch64.dmg)
+- **Linux:** [`LibrAgent_0.9.30_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.30/LibrAgent_0.9.30_amd64.AppImage) · [`LibrAgent_0.9.30_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.30/LibrAgent_0.9.30_amd64.deb) · [`LibrAgent-0.9.30-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.30/LibrAgent-0.9.30-1.x86_64.rpm)
+- **전체 릴리스 자산:** [릴리스 페이지](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.30)
 <!-- RELEASE_DOWNLOADS_END -->
 
 ### 5분 온보딩 경로

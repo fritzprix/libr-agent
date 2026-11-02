@@ -268,8 +268,8 @@ To run these integration examples, you need the desktop application running loca
 
 <!-- RELEASE_DOWNLOADS_START -->
 
-- **Windows:** [`LibrAgent_0.9.29_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.29/LibrAgent_0.9.29_x64-setup.exe) · [`LibrAgent_0.9.29_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.29/LibrAgent_0.9.29_x64_en-US.msi)
-- **macOS (Apple Silicon):** [`LibrAgent_0.9.29_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.29/LibrAgent_0.9.29_aarch64.dmg)
-- **Linux:** [`LibrAgent_0.9.29_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.29/LibrAgent_0.9.29_amd64.AppImage) · [`LibrAgent_0.9.29_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.29/LibrAgent_0.9.29_amd64.deb) · [`LibrAgent-0.9.29-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.29/LibrAgent-0.9.29-1.x86_64.rpm)
-- **All release assets:** [Releases page](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.29)
+- **Windows:** [`LibrAgent_0.9.30_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.30/LibrAgent_0.9.30_x64-setup.exe) · [`LibrAgent_0.9.30_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.30/LibrAgent_0.9.30_x64_en-US.msi)
+- **macOS (Apple Silicon):** [`LibrAgent_0.9.30_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.30/LibrAgent_0.9.30_aarch64.dmg)
+- **Linux:** [`LibrAgent_0.9.30_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.30/LibrAgent_0.9.30_amd64.AppImage) · [`LibrAgent_0.9.30_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.30/LibrAgent_0.9.30_amd64.deb) · [`LibrAgent-0.9.30-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.30/LibrAgent-0.9.30-1.x86_64.rpm)
+- **All release assets:** [Releases page](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.30)
 <!-- RELEASE_DOWNLOADS_END -->

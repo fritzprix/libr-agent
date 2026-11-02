@@ -151,10 +151,11 @@ La compression automatique de contexte, les disjoncteurs antiboucle et la valida
 Téléchargez le dernier programme d'installation depuis la **[Page des versions (Releases)](https://github.com/fritzprix/libr-agent/releases/latest)**.
 
 <!-- RELEASE_DOWNLOADS_START -->
-- **Windows :** [`LibrAgent_0.9.29_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.29/LibrAgent_0.9.29_x64-setup.exe) · [`LibrAgent_0.9.29_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.29/LibrAgent_0.9.29_x64_en-US.msi)
-- **macOS (Apple Silicon) :** [`LibrAgent_0.9.29_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.29/LibrAgent_0.9.29_aarch64.dmg)
-- **Linux :** [`LibrAgent_0.9.29_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.29/LibrAgent_0.9.29_amd64.AppImage) · [`LibrAgent_0.9.29_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.29/LibrAgent_0.9.29_amd64.deb) · [`LibrAgent-0.9.29-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.29/LibrAgent-0.9.29-1.x86_64.rpm)
-- **Tous les fichiers de release :** [page des Releases](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.29)
+
+- **Windows :** [`LibrAgent_0.9.30_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.30/LibrAgent_0.9.30_x64-setup.exe) · [`LibrAgent_0.9.30_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.30/LibrAgent_0.9.30_x64_en-US.msi)
+- **macOS (Apple Silicon) :** [`LibrAgent_0.9.30_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.30/LibrAgent_0.9.30_aarch64.dmg)
+- **Linux :** [`LibrAgent_0.9.30_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.30/LibrAgent_0.9.30_amd64.AppImage) · [`LibrAgent_0.9.30_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.30/LibrAgent_0.9.30_amd64.deb) · [`LibrAgent-0.9.30-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.30/LibrAgent-0.9.30-1.x86_64.rpm)
+- **Tous les fichiers de release :** [page des Releases](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.30)
 <!-- RELEASE_DOWNLOADS_END -->
 
 ### Guide de démarrage en 5 minutes
