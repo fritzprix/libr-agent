@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from benchmarks.harbor.isolated_instance import (
+    BenchAuthError,
     InstanceError,
     InstanceLayout,
     _owns_pid,
@@ -17,7 +18,9 @@ from benchmarks.harbor.isolated_instance import (
     instance_env,
     issue_api_key,
     instance_running,
+    read_env_api_key,
     reset_run_dir,
+    resolve_env_auth_headers,
     safe_print,
     sandbox_command,
     stop,
@@ -321,6 +324,52 @@ def test_instance_running_follows_the_launched_process(tmp_path: Path) -> None:
     finally:
         child.kill()
         child.returncode = 0  # already reaped by instance_running
+
+
+def test_read_env_api_key_prefers_the_file_like_the_app_does(tmp_path: Path) -> None:
+    key_file = tmp_path / "key"
+    key_file.write_text("from-file\n", encoding="utf-8")
+    env = {
+        "LIBRAGENT_SESSION_API_KEY": "from-env",
+        "LIBRAGENT_SESSION_API_KEY_FILE": str(key_file),
+    }
+    assert read_env_api_key(env) == "from-file"
+
+
+def test_read_env_api_key_reads_the_env_var_on_its_own() -> None:
+    assert read_env_api_key({"LIBRAGENT_SESSION_API_KEY": "  from-env  "}) == "from-env"
+
+
+def test_read_env_api_key_does_not_consume_the_key_file(tmp_path: Path) -> None:
+    key_file = tmp_path / "key"
+    key_file.write_text("from-file", encoding="utf-8")
+    env = {"LIBRAGENT_SESSION_API_KEY_FILE": str(key_file)}
+
+    assert read_env_api_key(env) == "from-file"
+    assert key_file.read_text(encoding="utf-8") == "from-file"
+
+
+def test_read_env_api_key_reports_an_unreadable_key_file(tmp_path: Path) -> None:
+    missing = tmp_path / "missing"
+    with pytest.raises(BenchAuthError, match="could not be read"):
+        read_env_api_key({"LIBRAGENT_SESSION_API_KEY_FILE": str(missing)})
+
+
+def test_read_env_api_key_rejects_an_empty_key_file(tmp_path: Path) -> None:
+    key_file = tmp_path / "key"
+    key_file.write_text("\n", encoding="utf-8")
+    with pytest.raises(BenchAuthError, match="is empty"):
+        read_env_api_key({"LIBRAGENT_SESSION_API_KEY_FILE": str(key_file)})
+
+
+def test_resolve_env_auth_headers_without_a_key_is_empty() -> None:
+    assert resolve_env_auth_headers({}) == {}
+
+
+def test_resolve_env_auth_headers_builds_a_bearer_header() -> None:
+    assert resolve_env_auth_headers({"LIBRAGENT_SESSION_API_KEY": "abc"}) == {
+        "Authorization": "Bearer abc"
+    }
 
 
 def test_each_launch_issues_a_private_api_key(tmp_path: Path) -> None:

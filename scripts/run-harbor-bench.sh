@@ -242,13 +242,23 @@ resolve_assistant_id() {
     return
   fi
   echo "==> Resolving assistant '$ASSISTANT_NAME'" >&2
-  "$PYTHON" - "$API_URL" "$ASSISTANT_NAME" <<'PY'
-import json, os, sys, urllib.request
+  "$PYTHON" - "$API_URL" "$ASSISTANT_NAME" "$SESSION_API_KEY" <<'PY'
+import json, sys, urllib.error, urllib.request
 api, name = sys.argv[1], sys.argv[2]
-key_file = os.path.join(os.environ.get("LIBRAGENT_BENCH_INSTANCE_ROOT", ""), "session_api_key")
-headers = {"Authorization": f"Bearer {open(key_file).read().strip()}"} if os.path.isfile(key_file) else {}
-with urllib.request.urlopen(urllib.request.Request(f"{api}/assistants", headers=headers), timeout=15) as resp:
-    payload = json.load(resp)
+headers = {}
+if len(sys.argv) > 3 and sys.argv[3]:
+    headers = {"Authorization": f"Bearer {sys.argv[3]}"}
+try:
+    with urllib.request.urlopen(urllib.request.Request(f"{api}/assistants", headers=headers), timeout=15) as resp:
+        payload = json.load(resp)
+except urllib.error.HTTPError as error:
+    if error.code != 401:
+        raise SystemExit(f"Failed to list assistants from {api}/assistants (HTTP {error.code}).")
+    raise SystemExit(
+        f"{api}/assistants returned 401: this LibrAgent instance requires a Session API key. "
+        "Set LIBRAGENT_SESSION_API_KEY, or LIBRAGENT_SESSION_API_KEY_FILE to a file that holds "
+        "the key the app was started with."
+    ) from error
 assistants = payload if isinstance(payload, list) else payload.get("assistants", [])
 match = next((a for a in assistants if a.get("name") == name), None)
 if match is None:
@@ -265,18 +275,25 @@ resolve_harbor_model() {
     return
   fi
   echo "==> Resolving Harbor -m from LibrAgent global preferredModel" >&2
-  "$PYTHON" - "$API_URL" <<'PY'
-import json, os, sys, urllib.error, urllib.request
+  "$PYTHON" - "$API_URL" "$SESSION_API_KEY" <<'PY'
+import json, sys, urllib.error, urllib.request
 
 api = sys.argv[1].rstrip("/")
 url = f"{api}/settings/preferredModel"
-key_file = os.path.join(os.environ.get("LIBRAGENT_BENCH_INSTANCE_ROOT", ""), "session_api_key")
-headers = {"Authorization": f"Bearer {open(key_file).read().strip()}"} if os.path.isfile(key_file) else {}
+headers = {}
+if len(sys.argv) > 2 and sys.argv[2]:
+    headers = {"Authorization": f"Bearer {sys.argv[2]}"}
 try:
     with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=15) as resp:
         payload = json.load(resp)
 except urllib.error.HTTPError as e:
     body = e.read().decode("utf-8", errors="replace")
+    if e.code == 401:
+        raise SystemExit(
+            f"Failed to read preferredModel from {url} (HTTP 401): this LibrAgent instance "
+            "requires a Session API key. Set LIBRAGENT_SESSION_API_KEY, or "
+            "LIBRAGENT_SESSION_API_KEY_FILE to a file that holds the key the app was started with."
+        ) from e
     raise SystemExit(
         f"Failed to read preferredModel from {url} (HTTP {e.code}): {body}\n"
         "Restart LibrAgent (pnpm tauri dev) so GET /api/settings/preferredModel is available, "
@@ -318,11 +335,37 @@ fi
 
 if [[ "$AGENT" == "libragent" || "$AGENT" == "benchmarks.harbor.libragent_agent:LibrAgentHarborAdapter" ]]; then
   need curl
-  # The isolated bench instance requires its per-launch Session API key. `-H @file`
-  # keeps the key out of the process list.
+  # The Bench API key for the requests below. `--isolated` records the key of the
+  # per-launch instance; a non-isolated run talks to an app it did not start, so fall
+  # back to the variables that app was given. The app reads LIBRAGENT_SESSION_API_KEY_FILE
+  # and deletes it at startup, so the bench only reads that path.
   CURL_AUTH=()
-  if [[ -n "${LIBRAGENT_BENCH_INSTANCE_ROOT:-}" && -f "$LIBRAGENT_BENCH_INSTANCE_ROOT/session_api_header" ]]; then
-    CURL_AUTH=(-H "@$LIBRAGENT_BENCH_INSTANCE_ROOT/session_api_header")
+  SESSION_API_KEY=""
+  if [[ -n "${LIBRAGENT_BENCH_INSTANCE_ROOT:-}" && -f "$LIBRAGENT_BENCH_INSTANCE_ROOT/session_api_key" ]]; then
+    SESSION_API_KEY="$(<"$LIBRAGENT_BENCH_INSTANCE_ROOT/session_api_key")"
+  fi
+  if [[ -z "$SESSION_API_KEY" && -n "${LIBRAGENT_SESSION_API_KEY_FILE:-}" ]]; then
+    if [[ ! -r "$LIBRAGENT_SESSION_API_KEY_FILE" ]]; then
+      echo "LIBRAGENT_SESSION_API_KEY_FILE points at $LIBRAGENT_SESSION_API_KEY_FILE, which cannot be read." >&2
+      echo "Set it to a readable file that holds the key, or set LIBRAGENT_SESSION_API_KEY instead." >&2
+      exit 1
+    fi
+    SESSION_API_KEY="$(<"$LIBRAGENT_SESSION_API_KEY_FILE")"
+  fi
+  if [[ -z "$SESSION_API_KEY" ]]; then
+    SESSION_API_KEY="${LIBRAGENT_SESSION_API_KEY:-}"
+  fi
+  # Trim surrounding whitespace so a trailing newline cannot corrupt the header.
+  SESSION_API_KEY="${SESSION_API_KEY#"${SESSION_API_KEY%%[![:space:]]*}"}"
+  SESSION_API_KEY="${SESSION_API_KEY%"${SESSION_API_KEY##*[![:space:]]}"}"
+  KEY_HEADER_FILE=""
+  if [[ -n "$SESSION_API_KEY" ]]; then
+    # `-H @file` keeps the key out of the process list, as it did for --isolated.
+    KEY_HEADER_FILE="$(mktemp "${TMPDIR:-/tmp}/libragent-bench-auth.XXXXXX")"
+    chmod 600 "$KEY_HEADER_FILE"
+    printf 'Authorization: Bearer %s\n' "$SESSION_API_KEY" >"$KEY_HEADER_FILE"
+    CURL_AUTH=(-H "@$KEY_HEADER_FILE")
+    trap 'rm -f "${KEY_HEADER_FILE:-}"' EXIT
   fi
   ASSISTANT_ID="$(resolve_assistant_id)"
   echo "Using assistantId=$ASSISTANT_ID"
@@ -350,6 +393,7 @@ PY
     cleanup_smoke() {
       curl -fsS "${CURL_AUTH[@]}" -X DELETE "$API_URL/sessions/$SID" >/dev/null 2>&1 || true
       echo "  smoke session deleted ($SID)"
+      rm -f "${KEY_HEADER_FILE:-}"
     }
     trap cleanup_smoke EXIT
     SESSION_JSON=$(curl -fsS "${CURL_AUTH[@]}" "$API_URL/sessions/$SID")
