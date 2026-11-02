@@ -73,7 +73,7 @@ export function SessionApiPairingDialog() {
 
     const initialRemaining = Math.max(
       0,
-      Math.round((expiresAt - Date.now()) / 1000),
+      Math.ceil((expiresAt - Date.now()) / 1000),
     );
     if (initialRemaining <= 0) {
       setPending(null);
@@ -84,7 +84,7 @@ export function SessionApiPairingDialog() {
     const interval = setInterval(() => {
       const remaining = Math.max(
         0,
-        Math.round((expiresAt - Date.now()) / 1000),
+        Math.ceil((expiresAt - Date.now()) / 1000),
       );
       setTimeLeft(remaining);
       if (remaining <= 0) {
@@ -113,6 +113,7 @@ export function SessionApiPairingDialog() {
           ),
         );
         setPending(null);
+        expiresAtRef.current = null;
         setCode('');
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -120,6 +121,7 @@ export function SessionApiPairingDialog() {
         setErrorMessage(message);
         if (message.includes('cancelled') || message.includes('expired')) {
           setPending(null);
+          expiresAtRef.current = null;
         }
       } finally {
         setIsSubmitting(false);
@@ -141,6 +143,7 @@ export function SessionApiPairingDialog() {
     } finally {
       setIsSubmitting(false);
       setPending(null);
+      expiresAtRef.current = null;
       setCode('');
       setErrorMessage(null);
     }

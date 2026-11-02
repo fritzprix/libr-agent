@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import { SessionApiPairingDialog } from '../SessionApiPairingDialog';
 import * as sessionApiBackend from '@/lib/backend/session-api-keys';
 
@@ -137,17 +137,19 @@ describe('SessionApiPairingDialog', () => {
         expiresInSeconds: 2,
       });
 
-      const { container } = render(<SessionApiPairingDialog />);
+      render(<SessionApiPairingDialog />);
 
       await vi.waitFor(() => {
         expect(screen.getByText(/Expiring Agent/i)).toBeInTheDocument();
       });
 
       // Advance timers by 2 seconds
-      vi.advanceTimersByTime(2000);
+      act(() => {
+        vi.advanceTimersByTime(2000);
+      });
 
       await vi.waitFor(() => {
-        expect(container).toBeEmptyDOMElement();
+        expect(screen.queryByText(/Expiring Agent/i)).not.toBeInTheDocument();
       });
     } finally {
       vi.useRealTimers();
