@@ -77,27 +77,51 @@ vi.mock('@/components/ui/dropdown-menu', () => ({
     <div>{children}</div>
   ),
   DropdownMenuSeparator: () => <hr />,
+  // Mirrors @radix-ui/react-menu MenuItem (2.1.15). The real item records
+  // `isPointerDownRef` in its own onPointerDown and, in onPointerUp, synthesizes
+  // a click on itself when the matching pointerdown never reached it. That
+  // synthesis is the regression this suite must guard against, so the mock has
+  // to reproduce it instead of being a bare onClick div.
   DropdownMenuItem: ({
     children,
     onSelect,
+    onPointerDown,
+    onPointerUp,
+    onClick,
   }: {
     children: React.ReactNode;
     onSelect?: (event: Event) => void;
-  }) => (
-    <div
-      role="menuitem"
-      onClick={(event) => {
-        if (!event.defaultPrevented) {
-          onSelect?.({
-            preventDefault() {},
-            stopPropagation() {},
-          } as Event);
-        }
-      }}
-    >
-      {children}
-    </div>
-  ),
+    onPointerDown?: React.PointerEventHandler<HTMLDivElement>;
+    onPointerUp?: React.PointerEventHandler<HTMLDivElement>;
+    onClick?: React.MouseEventHandler<HTMLDivElement>;
+  }) => {
+    const isPointerDownRef = React.useRef(false);
+    const itemRef = React.useRef<HTMLDivElement>(null);
+
+    return (
+      <div
+        ref={itemRef}
+        role="menuitem"
+        onPointerDown={(event) => {
+          onPointerDown?.(event);
+          isPointerDownRef.current = true;
+        }}
+        onPointerUp={(event) => {
+          onPointerUp?.(event);
+          if (!isPointerDownRef.current) itemRef.current?.click();
+        }}
+        onClick={(event) => {
+          onClick?.(event);
+          if (event.defaultPrevented) return;
+          onSelect?.(
+            new Event('menu.itemSelect', { bubbles: true, cancelable: true }),
+          );
+        }}
+      >
+        {children}
+      </div>
+    );
+  },
 }));
 
 vi.mock('@/context/AgentSessionListContext', () => ({
@@ -145,7 +169,7 @@ describe('SessionNotificationsBell', () => {
     });
   });
 
-  it('dismisses a single notification without navigation', async () => {
+  it('dismisses a single notification without navigating on a real pointer click', async () => {
     render(<SessionNotificationsBell />);
 
     fireEvent.click(
@@ -157,8 +181,15 @@ describe('SessionNotificationsBell', () => {
     });
     expect(dismissButtons).toHaveLength(2);
 
+    // A real mouse click is pointerdown -> pointerup -> click. Radix MenuItem
+    // synthesizes its own click on the row in onPointerUp when the pointerdown
+    // never reached it, so a bare fireEvent.click cannot detect the regression
+    // in #2507 (dismiss must not open the session).
+    fireEvent.pointerDown(dismissButtons[0]);
+    fireEvent.pointerUp(dismissButtons[0]);
     fireEvent.click(dismissButtons[0]);
 
+    expect(mockMarkSessionViewed).toHaveBeenCalledTimes(1);
     expect(mockMarkSessionViewed).toHaveBeenCalledWith('session-target');
     expect(mockNavigate).not.toHaveBeenCalled();
   });

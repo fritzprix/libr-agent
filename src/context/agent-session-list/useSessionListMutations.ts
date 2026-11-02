@@ -330,9 +330,17 @@ export function useSessionListMutations({
     if (targets.length === 0) {
       return;
     }
-    await Promise.allSettled(
+    const results = await Promise.allSettled(
       targets.map((session) => markSessionViewed(session.id)),
     );
+    results.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        logger.warn('Failed to mark session notification as viewed', {
+          sessionId: targets[index]?.id,
+          error: result.reason,
+        });
+      }
+    });
   }, [markSessionViewed, notificationSessionsRef]);
 
   const clearPendingApproval = useCallback(

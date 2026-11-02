@@ -141,6 +141,16 @@ export function SessionNotificationsBell() {
                   className="text-muted-foreground hover:text-foreground -mr-1 h-6 w-6 shrink-0"
                   aria-label={t('notifications.dismiss')}
                   onPointerDown={(event) => {
+                    // Keep the row's DropdownMenuItem from recording the
+                    // pointer, so it never treats this as a row click.
+                    event.stopPropagation();
+                  }}
+                  onPointerUp={(event) => {
+                    // DropdownMenuItem's onPointerUp runs `currentTarget.click()`
+                    // when it did not see the pointerdown. Since the dismiss
+                    // button swallows pointerdown, an unstopped pointerup makes
+                    // the item synthesize a click on the row -> onSelect ->
+                    // navigate to the session. Stop it here too.
                     event.stopPropagation();
                   }}
                   onKeyDown={(event) => {
