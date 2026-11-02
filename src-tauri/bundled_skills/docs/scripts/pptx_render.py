@@ -8,15 +8,21 @@ cut into slides at heading boundaries:
 * a level-2 heading inside that section starts a new slide,
 * content before the first level-2 heading shares the section-opening slide.
 
-A table always gets a slide of its own, because a table needs real cells. When
-one slide still holds more bullets than fit, the remainder continues onto an
-extra slide rather than shrinking the text until it cannot be read.
+A table always gets a slide of its own, because a table needs real cells. A table
+taller than one slide continues onto another with its header row repeated.
+
+A text slide closes on whichever limit it reaches first: `MAX_BLOCKS` separate
+blocks, or the vertical room its text actually needs (see layout_metrics). A
+forty-line code block is one block but far more than one slide of text, so the
+block count alone cannot decide. The remainder continues onto an extra slide
+titled "(continued)" rather than shrinking the text until it cannot be read.
 
 Templates mirror pdf_render.TEMPLATES, so one --template value means the same
 document identity in every output format.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 import pathlib
 
 from pptx import Presentation
@@ -24,6 +30,7 @@ from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
 from pptx.util import Emu, Inches, Pt
 
+import layout_metrics
 import md_blocks
 
 TEMPLATES = {
@@ -31,16 +38,21 @@ TEMPLATES = {
         "accent": "#1F4E79",
         "title": "Report",
         "dark": False,
+        # A report and a proposal are read as arguments, so they open with an
+        # agenda. Minutes are read after the fact and do not.
+        "toc": True,
     },
     "proposal": {
         "accent": "#2E6B4F",
         "title": "Proposal",
         "dark": False,
+        "toc": True,
     },
     "minutes": {
         "accent": "#444444",
         "title": "Minutes",
         "dark": True,
+        "toc": False,
     },
 }
 
@@ -49,14 +61,57 @@ DEFAULT_TEMPLATE = "report"
 SLIDE_WIDTH = Inches(13.333)  # 16:9
 SLIDE_HEIGHT = Inches(7.5)
 
-# Slide bodies shrink the font as the bullet count grows, then split.
-MAX_BULLETS = 8
-BULLET_SIZES = ((4, 20), (6, 18), (MAX_BULLETS, 16))
-MIN_BULLET_SIZE = 15
+# Body geometry. Text stays above BODY_BOTTOM so the footer drawn below it never
+# collides with the last line.
+BODY_LEFT = Inches(0.9)
+BODY_TOP = Inches(2.0)
+BODY_WIDTH = Inches(11.5)
+BODY_BOTTOM = Inches(6.85)
+
+FOOTER_TOP = Inches(6.95)
+FOOTER_HEIGHT = Inches(0.4)
+
+TABLE_LEFT = Inches(0.6)
+TABLE_TOP = Inches(1.95)
+TABLE_WIDTH = Inches(12.1)
+TABLE_BOTTOM = Inches(6.75)
+
+# A slide closes on this many separate blocks, or when their text runs out of
+# vertical room, whichever comes first.
+MAX_BLOCKS = 8
+
+BODY_SIZE = 18
+SUB_HEADING_SIZE = 20
+CODE_SIZE = 12
+TABLE_SIZE = 12
+TABLE_HEADER_SIZE = 13
+BULLET_SPACE_AFTER = 9
+AGENDA_SIZE = 18
+AGENDA_MIN_SIZE = 14
+FOOTER_SIZE = 10
+
+BODY_BUDGET_PT = (
+    layout_metrics.emu_to_points(BODY_BOTTOM - BODY_TOP)
+    - 2 * layout_metrics.INSET_Y_PT
+)
+TABLE_BUDGET_PT = layout_metrics.emu_to_points(TABLE_BOTTOM - TABLE_TOP)
+AGENDA_BUDGET_PT = BODY_BUDGET_PT
+BODY_WIDTH_PT = layout_metrics.emu_to_points(BODY_WIDTH)
 
 # Malgun Gothic covers Hangul on Windows and PowerPoint substitutes a
 # Hangul-capable face elsewhere.
 FONT = "Malgun Gothic"
+
+
+@dataclass
+class Paragraph:
+    """One paragraph the deck will draw, with the size it needs."""
+
+    text: str
+    size: float
+    bold: bool = False
+    color: RGBColor | None = None
+    space_after: float = 0.0
 
 
 class PptxRenderer:
@@ -70,6 +125,7 @@ class PptxRenderer:
             )
         self.template = template
         self.config = TEMPLATES[template]
+        self.deck_title = self.config["title"]
         self.accent = RGBColor.from_string(self.config["accent"].lstrip("#"))
         self.background = (
             RGBColor(0x1E, 0x1E, 0x1E)
@@ -117,6 +173,18 @@ class PptxRenderer:
         run.font.name = FONT
         run.font.color.rgb = color or self.body_color
 
+    def _draw_paragraphs(self, slide, specs):
+        """Draw paragraph specs into one body text box on slide."""
+        _, body = self._textbox(
+            slide, BODY_LEFT, BODY_TOP, BODY_WIDTH, BODY_BOTTOM - BODY_TOP
+        )
+        for index, spec in enumerate(specs):
+            paragraph = body.paragraphs[0] if index == 0 else body.add_paragraph()
+            paragraph.space_after = Pt(spec.space_after)
+            self._set_run(
+                paragraph, spec.text, spec.size, bold=spec.bold, color=spec.color
+            )
+
     def _title_slide(self, presentation, title: str) -> None:
         slide = self._blank(presentation)
         _, frame = self._textbox(
@@ -131,7 +199,7 @@ class PptxRenderer:
             footer.paragraphs[0], self.config["title"], 14, color=self.muted_color
         )
 
-    def _heading_slide(self, presentation, title: str) -> None:
+    def _heading_slide(self, presentation, title: str):
         """Start a slide and draw its title, returning the slide."""
         slide = self._blank(presentation)
         _, frame = self._textbox(
@@ -141,113 +209,295 @@ class PptxRenderer:
         self._accent_rule(slide, Inches(0.8), Inches(1.72), Inches(1.9))
         return slide
 
-    def _text_slide(self, presentation, title: str, blocks: list) -> None:
-        """Render text blocks, continuing onto extra slides when they overflow."""
-        chunks = [
-            blocks[index : index + MAX_BULLETS]
-            for index in range(0, len(blocks), MAX_BULLETS)
-        ] or [[]]
+    def _block_paragraphs(self, block):
+        """Flatten one outline block into the paragraphs that draw it.
 
-        for chunk_index, chunk in enumerate(chunks):
-            heading = title if chunk_index == 0 else f"{title} (continued)"
-            slide = self._heading_slide(presentation, heading)
-            if not chunk:
+        A code block becomes one paragraph per line so the slide budget can
+        break it anywhere; a forty-line code block is one Markdown block but far
+        more than one slide of text.
+        """
+        indent = "    " * (block.depth - 1)
+        if block.kind == "bullet":
+            marker = "\u2022" if block.depth == 1 else "\u2013"
+            return [
+                Paragraph(
+                    f"{indent}{marker} {block.text}",
+                    BODY_SIZE,
+                    color=self.body_color,
+                    space_after=BULLET_SPACE_AFTER,
+                )
+            ]
+        if block.kind == "ordered":
+            # A loose list continues an item in a paragraph of its own, and the
+            # outline carries no number for it. Keep the number's indent and
+            # draw no marker rather than repeat a wrong "1.".
+            lead = f"{indent}{block.marker} " if block.marker else indent
+            return [
+                Paragraph(
+                    f"{lead}{block.text}",
+                    BODY_SIZE,
+                    color=self.body_color,
+                    space_after=BULLET_SPACE_AFTER,
+                )
+            ]
+        if block.kind == "code":
+            return [
+                Paragraph(line, CODE_SIZE, color=self.muted_color)
+                for line in block.text.splitlines()
+            ]
+        if block.kind == "heading":
+            return [
+                Paragraph(
+                    block.text,
+                    SUB_HEADING_SIZE,
+                    bold=True,
+                    color=self.accent,
+                    space_after=BULLET_SPACE_AFTER,
+                )
+            ]
+        if block.kind == "rule":
+            return [
+                Paragraph(
+                    "",
+                    BODY_SIZE,
+                    color=self.body_color,
+                    space_after=BULLET_SPACE_AFTER,
+                )
+            ]
+        return [
+            Paragraph(
+                block.text,
+                BODY_SIZE,
+                color=self.body_color,
+                space_after=BULLET_SPACE_AFTER,
+            )
+        ]
+
+    def _pack(self, specs, budget_pt: float):
+        """Cut paragraph specs into groups that fit one slide's budget."""
+        expanded = []
+        for spec in specs:
+            expanded.extend(self._fit(spec, budget_pt))
+
+        chunks = []
+        current = []
+        used = 0.0
+        for spec in expanded:
+            height = layout_metrics.paragraph_height_pt(
+                spec.text, spec.size, BODY_WIDTH_PT, spec.space_after
+            )
+            if current and used + height > budget_pt:
+                chunks.append(current)
+                current, used = [], 0.0
+            current.append(spec)
+            used += height
+        if current:
+            chunks.append(current)
+        return chunks or [[]]
+
+    def _fit(self, spec, budget_pt: float):
+        """Break a paragraph that cannot fit one whole slide.
+
+        A single paragraph longer than a slide would overflow wherever the slide
+        broke, so it is wrapped here instead and each wrapped line becomes its
+        own paragraph. Continuation lines keep the marker's indent, and only the
+        last line carries the paragraph's trailing space.
+        """
+        lines = layout_metrics.wrap_words(spec.text, spec.size, BODY_WIDTH_PT)
+        fits = layout_metrics.lines_that_fit(spec.size, budget_pt)
+        if len(lines) <= 1 or len(lines) <= fits:
+            return [spec]
+
+        marker = ""
+        for candidate in ("\u2022 ", "\u2013 "):
+            position = spec.text.find(candidate)
+            if 0 <= position <= 8:
+                marker = spec.text[: position + len(candidate)]
+                break
+
+        pieces = []
+        for index, line in enumerate(lines):
+            text = line if index == 0 else " " * len(marker) + line
+            last = index == len(lines) - 1
+            pieces.append(
+                Paragraph(
+                    text,
+                    spec.size,
+                    bold=spec.bold,
+                    color=spec.color,
+                    space_after=spec.space_after if last else 0.0,
+                )
+            )
+        return pieces
+
+    def _chunk_blocks(self, blocks):
+        """Group outline blocks for one slide title, honouring MAX_BLOCKS.
+
+        A code block counts once, however many lines it holds, which is why the
+        vertical budget in _pack has the final say.
+        """
+        chunks = []
+        current = []
+        for block in blocks:
+            if current and len(current) >= MAX_BLOCKS:
+                chunks.append(current)
+                current = []
+            current.append(block)
+        if current:
+            chunks.append(current)
+        return chunks or [[]]
+
+    def _text_slide(self, presentation, title: str, blocks) -> None:
+        """Render text blocks, continuing onto extra slides when they overflow."""
+        opened = 0
+        for chunk in self._chunk_blocks(blocks):
+            specs = []
+            for block in chunk:
+                specs.extend(self._block_paragraphs(block))
+
+            if not specs:
+                heading = title if opened == 0 else f"{title} (continued)"
+                self._heading_slide(presentation, heading)
+                opened += 1
                 continue
 
-            size = MIN_BULLET_SIZE
-            for limit, candidate in BULLET_SIZES:
-                if len(chunk) <= limit:
-                    size = candidate
-                    break
+            for part in self._pack(specs, BODY_BUDGET_PT):
+                heading = title if opened == 0 else f"{title} (continued)"
+                slide = self._heading_slide(presentation, heading)
+                self._draw_paragraphs(slide, part)
+                opened += 1
 
-            _, body = self._textbox(
-                slide, Inches(0.9), Inches(2.0), Inches(11.5), Inches(4.9)
-            )
-            first = True
-            for block in chunk:
-                paragraph = body.paragraphs[0] if first else body.add_paragraph()
-                first = False
-                paragraph.space_after = Pt(9)
+    def _table_slide(self, presentation, title: str, rows) -> None:
+        """Render a Markdown table, continuing onto extra slides when tall.
 
-                if block.kind == "bullet":
-                    prefix = "    " * (block.depth - 1)
-                    marker = "•" if block.depth == 1 else "–"
-                    self._set_run(paragraph, f"{prefix}{marker} {block.text}", size)
-                elif block.kind == "ordered":
-                    prefix = "    " * (block.depth - 1)
-                    self._set_run(
-                        paragraph, f"{prefix}{block.marker or '1.'} {block.text}", size
-                    )
-                elif block.kind == "code":
-                    for line_index, line in enumerate(block.text.splitlines()):
-                        target = paragraph if line_index == 0 else body.add_paragraph()
-                        target.space_after = Pt(0)
-                        self._set_run(
-                            target,
-                            line,
-                            max(MIN_BULLET_SIZE - 3, 11),
-                            color=self.muted_color,
-                        )
-                elif block.kind == "heading":
-                    self._set_run(paragraph, block.text, size + 2, bold=True,
-                                  color=self.accent)
-                elif block.kind == "rule":
-                    self._set_run(paragraph, "", size)
-                else:
-                    self._set_run(paragraph, block.text, size)
-
-    def _table_slide(self, presentation, title: str, rows: list) -> None:
-        """Render a Markdown table as a real PowerPoint table."""
-        slide = self._heading_slide(presentation, title)
-
+        A table taller than the slide is cut into groups and the header row is
+        repeated on each one; PowerPoint would otherwise draw rows past the
+        bottom edge with no column labels on the visible part.
+        """
         columns = max(len(row) for row in rows)
-        shape = slide.shapes.add_table(
-            len(rows), columns, Inches(0.6), Inches(1.95), Inches(12.1), Inches(4.5)
+        column_pt = layout_metrics.emu_to_points(TABLE_WIDTH) / columns
+        widths_pt = [column_pt] * columns
+
+        groups = layout_metrics.split_rows(
+            rows, widths_pt, TABLE_SIZE, TABLE_BUDGET_PT, TABLE_HEADER_SIZE
         )
-        table = shape.table
 
-        for row_index, row in enumerate(rows):
-            for column_index in range(columns):
-                text = row[column_index] if column_index < len(row) else ""
-                cell = table.cell(row_index, column_index)
-                cell.text = ""
-                paragraph = cell.text_frame.paragraphs[0]
-                self._set_run(
-                    paragraph,
-                    text,
-                    12 if row_index else 13,
-                    bold=row_index == 0,
-                    color=(
-                        RGBColor(0xFF, 0xFF, 0xFF)
-                        if row_index == 0
-                        else self.body_color
-                    ),
+        for index, group in enumerate(groups):
+            heading = title if index == 0 else f"{title} (continued)"
+            slide = self._heading_slide(presentation, heading)
+
+            heights = [
+                layout_metrics.row_height_pt(
+                    row,
+                    widths_pt,
+                    TABLE_HEADER_SIZE if row_index == 0 else TABLE_SIZE,
                 )
-                if row_index == 0:
-                    fill = cell.fill
-                    fill.solid()
-                    fill.fore_color.rgb = self.accent
+                for row_index, row in enumerate(group)
+            ]
 
-    def _slide_number(self, slide, number: int) -> None:
+            shape = slide.shapes.add_table(
+                len(group),
+                columns,
+                TABLE_LEFT,
+                TABLE_TOP,
+                TABLE_WIDTH,
+                layout_metrics.points_to_emu(sum(heights)),
+            )
+            table = shape.table
+
+            for column_index in range(columns):
+                table.columns[column_index].width = layout_metrics.points_to_emu(
+                    column_pt
+                )
+            for row_index, height in enumerate(heights):
+                table.rows[row_index].height = layout_metrics.points_to_emu(height)
+
+            for row_index, row in enumerate(group):
+                header = row_index == 0
+                size = TABLE_HEADER_SIZE if header else TABLE_SIZE
+                for column_index in range(columns):
+                    text = row[column_index] if column_index < len(row) else ""
+                    cell = table.cell(row_index, column_index)
+                    cell.text = ""
+                    self._set_run(
+                        cell.text_frame.paragraphs[0],
+                        text,
+                        size,
+                        bold=header,
+                        color=(
+                            RGBColor(0xFF, 0xFF, 0xFF)
+                            if header
+                            else self.body_color
+                        ),
+                    )
+                    if header:
+                        fill = cell.fill
+                        fill.solid()
+                        fill.fore_color.rgb = self.accent
+
+    def _agenda_slide(self, presentation, titles) -> None:
+        """List the section titles so the reader knows the deck's shape."""
+        size = AGENDA_SIZE
+        while size > AGENDA_MIN_SIZE:
+            needed = sum(
+                layout_metrics.paragraph_height_pt(
+                    title, size, BODY_WIDTH_PT, BULLET_SPACE_AFTER
+                )
+                for title in titles
+            )
+            if needed <= AGENDA_BUDGET_PT:
+                break
+            size -= 2
+
+        specs = [
+            Paragraph(
+                f"{index + 1}. {title}",
+                size,
+                color=self.body_color,
+                space_after=BULLET_SPACE_AFTER,
+            )
+            for index, title in enumerate(titles)
+        ]
+
+        for index, chunk in enumerate(self._pack(specs, AGENDA_BUDGET_PT)):
+            heading = "Agenda" if index == 0 else "Agenda (continued)"
+            slide = self._heading_slide(presentation, heading)
+            self._draw_paragraphs(slide, chunk)
+
+    def _footer(self, slide, number: int) -> None:
+        """Draw the deck title beside the slide number."""
         _, frame = self._textbox(
-            slide, Inches(12.0), Inches(6.95), Inches(0.9), Inches(0.35)
+            slide, BODY_LEFT, FOOTER_TOP, Inches(10.0), FOOTER_HEIGHT
         )
         paragraph = frame.paragraphs[0]
-        paragraph.alignment = PP_ALIGN.RIGHT
-        self._set_run(paragraph, str(number), 11, color=self.muted_color)
+        paragraph.alignment = PP_ALIGN.LEFT
+        self._set_run(
+            paragraph, self.deck_title, FOOTER_SIZE, color=self.muted_color
+        )
+
+        _, counter = self._textbox(
+            slide, Inches(12.0), FOOTER_TOP, Inches(0.7), FOOTER_HEIGHT
+        )
+        counter.paragraphs[0].alignment = PP_ALIGN.RIGHT
+        self._set_run(
+            counter.paragraphs[0],
+            str(number),
+            FOOTER_SIZE,
+            color=self.muted_color,
+        )
 
     @staticmethod
-    def _sections(blocks: list) -> list[tuple[str, list]]:
+    def _sections(blocks):
         """Cut the outline into (title, blocks) slide groups, in document order.
 
         A heading that nothing follows contributes no group: a level-1 heading
         used only to group level-2 sections would otherwise become an empty
         slide between the cover and the real content.
         """
-        groups: list[tuple[str, list]] = []
+        groups = []
         # The pending title is the heading the next block belongs under.
-        pending: str | None = None
-        buffer: list = []
+        pending = None
+        buffer = []
 
         for block in blocks:
             if block.kind == "heading" and block.level <= 2:
@@ -275,16 +525,22 @@ class PptxRenderer:
             raise ValueError("Markdown produced no renderable content")
 
         title = md_blocks.document_title(blocks)
-        deck_title = title or self.config["title"]
+        self.deck_title = title or self.config["title"]
 
         presentation = Presentation()
         presentation.slide_width = SLIDE_WIDTH
         presentation.slide_height = SLIDE_HEIGHT
 
-        self._title_slide(presentation, deck_title)
+        self._title_slide(presentation, self.deck_title)
 
-        for group_title, group_blocks in self._sections(blocks):
-            heading = group_title or deck_title
+        sections = self._sections(blocks)
+        # An agenda needs something to list; a one-section deck has none.
+        agenda_titles = [name for name, _ in sections if name]
+        if self.config["toc"] and len(agenda_titles) >= 2:
+            self._agenda_slide(presentation, agenda_titles)
+
+        for group_title, group_blocks in sections:
+            heading = group_title or self.deck_title
             # A table cannot share a slide with flowing text.
             text_blocks = [b for b in group_blocks if b.kind != "table"]
             table_blocks = [b for b in group_blocks if b.kind == "table"]
@@ -297,9 +553,10 @@ class PptxRenderer:
             if not text_blocks and not table_blocks:
                 self._text_slide(presentation, heading, [])
 
+        # The cover already shows the deck title, so numbering starts at 2.
         for index, slide in enumerate(presentation.slides, start=1):
             if index > 1:
-                self._slide_number(slide, index)
+                self._footer(slide, index)
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
         presentation.save(str(output_path))

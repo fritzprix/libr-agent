@@ -57,6 +57,7 @@ Then run document conversion using the interpreter reported under `VenvPython:`.
 ## Output Contract & Verification
 
 The script enforces an explicit output contract on every execution:
-- On success, it prints the absolute output path, `ExitCode: 0`, and `OK`. Every format also prints its size as `Bytes: <n>`, plus one count for the format: `Pages:` for pdf, `Sections:` for docx, `Slides:` for pptx. Word and PowerPoint lay out pages themselves when the file is opened, so only PDF reports a page count.
+- On success, it prints the absolute output path, `ExitCode: 0`, and `OK`. Every format also prints its size as `Bytes: <n>`, plus one count for the format: `Pages:` for pdf, `Sections:` for docx, `Slides:` for pptx.
+- Only the PDF count is a page count. Word and PowerPoint lay out pages when the file is opened, so they cannot be counted here. `Sections:` is always `1` because the writer creates one Word section: read it as a signature that the DOCX was written, not as a measurement. Use `--to pdf` when you need a page count.
 - On failure (including syntax/argument errors, missing files, or pending sub-issue engines), it prints the error description, `ExitCode: <n>`, a single `NEXT:` line guiding the next action, and exits non-zero without printing `OK`.
 - **No OK line, no success report**: Never claim conversion succeeded unless `convert.py` printed `ExitCode: 0` and `OK`, and the output file exists with non-zero size.

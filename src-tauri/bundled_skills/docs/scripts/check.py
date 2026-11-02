@@ -7,12 +7,15 @@ library that already backs it:
 * PDF (pdfplumber, MIT): empty file, table rows that overlap, cell text that
   spills outside its cell, text drawn with a substitution font, and characters
   the document font has no glyph for.
-* DOCX (python-docx, MIT): empty file, no paragraphs and no tables, a paragraph
-  that repeats the same run verbatim (a duplicated render), and a table whose
-  rows disagree on column count.
+* DOCX (python-docx, MIT): empty file, no paragraphs and no tables, a Hangul run
+  with no w:eastAsia font (Word then draws boxes), and a table whose rows
+  disagree on column count.
 * PPTX (python-pptx, MIT): empty file, no slides, a slide with no shapes, body
-  text that runs past the slide edge, and a table whose rows disagree on column
-  count.
+  text or a table that runs past the slide bottom, a shape past the slide right
+  edge, and a table whose rows disagree on column count.
+
+A repeated paragraph is not a defect: two identical list items are legitimate
+Markdown, so DOCX has no duplicate-text rule.
 
 Prints `OK <abs path> <pages or slides>` only when every check passes.
 """
@@ -21,6 +24,10 @@ from __future__ import annotations
 import argparse
 import pathlib
 import sys
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+
+import layout_metrics
 
 BASE14_FONTS = (
     "helvetica",
@@ -202,6 +209,38 @@ def check_table_rows(page) -> list[str]:
     return problems
 
 
+HANGUL_RANGES = (
+    (0xAC00, 0xD7A3),  # Hangul syllables
+    (0x1100, 0x11FF),  # Hangul Jamo
+    (0x3130, 0x318F),  # Hangul compatibility Jamo
+    (0xA960, 0xA97F),  # Hangul Jamo Extended-A
+    (0xD7B0, 0xD7FF),  # Hangul Jamo Extended-B
+)
+
+
+def _has_hangul(text: str) -> bool:
+    """Return True when text contains a Hangul character."""
+    for character in text:
+        point = ord(character)
+        for low, high in HANGUL_RANGES:
+            if low <= point <= high:
+                return True
+    return False
+
+
+def _run_east_asian_font(run) -> str | None:
+    """Return the run's own w:eastAsia font, or None when the run sets none."""
+    from docx.oxml.ns import qn
+
+    rpr = run._element.rPr
+    if rpr is None:
+        return None
+    fonts = rpr.find(qn("w:rFonts"))
+    if fonts is None:
+        return None
+    return fonts.get(qn("w:eastAsia"))
+
+
 def check_docx(path: pathlib.Path) -> tuple[list[str], int]:
     """Return (problems, section count) for a DOCX file.
 
@@ -222,14 +261,26 @@ def check_docx(path: pathlib.Path) -> tuple[list[str], int]:
     problems: list[str] = []
     paragraphs = list(document.paragraphs)
 
-    # A duplicated render shows up as the same paragraph emitted twice in a row.
-    previous = None
+    # Word picks a Hangul-capable font for a run only when the run names one in
+    # w:eastAsia. Without it Word asks the Latin font for Hangul glyphs, and a
+    # Latin face has none, so the text renders as boxes for a reader on any
+    # platform. A style-level font does not count: Word resolves a run's own
+    # rPr first and only falls back to the style when the run says nothing, and
+    # the style fallback is exactly what renders badly here.
     for paragraph in paragraphs:
-        text = paragraph.text
-        if text and text == previous:
-            problems.append(_truncate("duplicate paragraph", text))
+        for run in paragraph.runs:
+            text = run.text
+            if not text or not _has_hangul(text):
+                continue
+            if _run_east_asian_font(run):
+                continue
+            problems.append(
+                _truncate("Hangul run has no w:eastAsia font", text)
+            )
             break
-        previous = text
+        else:
+            continue
+        break
 
     for table_index, table in enumerate(document.tables, start=1):
         counts = {len(row.cells) for row in table.rows}
@@ -271,6 +322,7 @@ def check_pptx(path: pathlib.Path) -> tuple[list[str], int]:
         return (["presentation has no slides"], 0)
 
     slide_width = presentation.slide_width
+    slide_height_pt = layout_metrics.emu_to_points(presentation.slide_height)
 
     for number, slide in enumerate(slides, start=1):
         shapes = list(slide.shapes)
@@ -291,17 +343,94 @@ def check_pptx(path: pathlib.Path) -> tuple[list[str], int]:
                 )
                 break
 
-            if not getattr(shape, "has_table", False):
+            if getattr(shape, "has_table", False):
+                table = shape.table
+                counts = {len(row.cells) for row in table.rows}
+                if len(counts) > 1:
+                    problems.append(
+                        f"slide {number}: table rows disagree on column count "
+                        f"{sorted(counts)}"
+                    )
+                needed = _table_needed_pt(table)
+                label = "table"
+            elif getattr(shape, "has_text_frame", False) and shape.text_frame.text.strip():
+                widths_pt = layout_metrics.emu_to_points(shape.width)
+                needed = _frame_needed_pt(shape.text_frame, widths_pt)
+                label = "text box"
+            else:
                 continue
-            table = shape.table
-            counts = {len(row.cells) for row in table.rows}
-            if len(counts) > 1:
+
+            # PowerPoint grows a shape whose content needs more room than the
+            # shape declares, so the declared box can fit the slide while the
+            # drawn text still runs off the bottom edge.
+            bottom = layout_metrics.emu_to_points(shape.top) + needed
+            if bottom > slide_height_pt + OVERFLOW_TOL:
                 problems.append(
-                    f"slide {number}: table rows disagree on column count "
-                    f"{sorted(counts)}"
+                    f"slide {number}: {label} runs past the slide bottom "
+                    f"({bottom:.0f}pt > {slide_height_pt:.0f}pt)"
                 )
+                break
 
     return (problems, len(slides))
+
+
+def _frame_needed_pt(frame, width_pt: float) -> float:
+    """Return the height a text frame needs for its paragraphs."""
+    paragraphs = []
+    for paragraph in frame.paragraphs:
+        text = paragraph.text
+        if not text.strip():
+            continue
+        size = _paragraph_size(paragraph)
+        space_after = (
+            layout_metrics.emu_to_points(paragraph.space_after)
+            if paragraph.space_after is not None
+            else 0.0
+        )
+        paragraphs.append((text, size, space_after))
+    if not paragraphs:
+        return 0.0
+    body = sum(
+        layout_metrics.paragraph_height_pt(text, size, width_pt, after)
+        for text, size, after in paragraphs
+    )
+    return body + 2 * layout_metrics.INSET_Y_PT
+
+
+def _paragraph_size(paragraph) -> float:
+    """Return the largest font size any run in the paragraph asks for."""
+    for run in paragraph.runs:
+        size = run.font.size
+        if size is not None:
+            return layout_metrics.emu_to_points(size)
+    return 12.0
+
+
+def _table_needed_pt(table) -> float:
+    """Return the height a table needs, read from its own column widths."""
+    widths_pt = [layout_metrics.emu_to_points(column.width) for column in table.columns]
+    total = 0.0
+    for row in table.rows:
+        tallest = 0.0
+        for index, cell in enumerate(row.cells):
+            width = widths_pt[min(index, len(widths_pt) - 1)] if widths_pt else 0.0
+            tallest = max(tallest, _cell_needed_pt(cell.text_frame, width))
+        total += tallest
+    return total
+
+
+def _cell_needed_pt(frame, width_pt: float) -> float:
+    """Return the height a table cell needs for its paragraphs."""
+    body = 0.0
+    for paragraph in frame.paragraphs:
+        if not paragraph.text.strip():
+            continue
+        body += layout_metrics.paragraph_height_pt(
+            paragraph.text, _paragraph_size(paragraph), width_pt
+        )
+    if body == 0.0:
+        body = layout_metrics.paragraph_height_pt("", 12.0, width_pt)
+    return body + 2 * layout_metrics.INSET_Y_PT
 
 
 def run_format_check(path: pathlib.Path, kind: str) -> int:

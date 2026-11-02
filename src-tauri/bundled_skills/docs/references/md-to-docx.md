@@ -43,11 +43,17 @@ and each level uses its own counter.
 ## Word counts pages itself
 
 Word decides pagination when the file is opened, so no page count is printed.
-`convert.py` prints `Sections:` instead, which is the number of Word sections.
+`convert.py` prints `Sections:` instead. The writer creates exactly one Word
+section, so this value is always `1` and means "one continuous section". Read it
+as a signature that the file was written, not as a measurement: check the
+appearance in Word for real layout. Use `--to pdf` when you need a page count.
 
 ## Rules
 - Heading levels map to Word Heading styles. Do not expect fixed page breaks;
   Word reflows the document when it is opened.
-- Korean text is written into the Word east-Asian font slot. If a reader shows
-  boxes instead of Hangul, that reader has no Malgun Gothic or equivalent face.
+- Korean text is written into the Word east-Asian font slot and names Malgun
+  Gothic. That font is not bundled. Windows has it; macOS and Linux do not, so
+  Word, Pages and LibreOffice substitute another Hangul face there. The text
+  stays readable, but it looks different from the PDF, which draws its own
+  bundled font. Set the font in Word after opening if the exact face matters.
 - Always run `convert.py`. Do not write a custom python-docx script.
