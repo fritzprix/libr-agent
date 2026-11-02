@@ -242,12 +242,13 @@ resolve_assistant_id() {
     return
   fi
   echo "==> Resolving assistant '$ASSISTANT_NAME'" >&2
-  "$PYTHON" - "$API_URL" "$ASSISTANT_NAME" "$SESSION_API_KEY" <<'PY'
-import json, sys, urllib.error, urllib.request
+  # The key goes through the child's environment, never argv: argv is visible to
+  # every local user (ps, /proc/<pid>/cmdline); the environment only to this user.
+  LIBRAGENT_BENCH_AUTH="$SESSION_API_KEY" "$PYTHON" - "$API_URL" "$ASSISTANT_NAME" <<'PY'
+import json, os, sys, urllib.error, urllib.request
 api, name = sys.argv[1], sys.argv[2]
-headers = {}
-if len(sys.argv) > 3 and sys.argv[3]:
-    headers = {"Authorization": f"Bearer {sys.argv[3]}"}
+key = os.environ.get("LIBRAGENT_BENCH_AUTH", "")
+headers = {"Authorization": f"Bearer {key}"} if key else {}
 try:
     with urllib.request.urlopen(urllib.request.Request(f"{api}/assistants", headers=headers), timeout=15) as resp:
         payload = json.load(resp)
@@ -275,14 +276,14 @@ resolve_harbor_model() {
     return
   fi
   echo "==> Resolving Harbor -m from LibrAgent global preferredModel" >&2
-  "$PYTHON" - "$API_URL" "$SESSION_API_KEY" <<'PY'
-import json, sys, urllib.error, urllib.request
+  # Key via the child's environment, never argv (see resolve_assistant_id).
+  LIBRAGENT_BENCH_AUTH="$SESSION_API_KEY" "$PYTHON" - "$API_URL" <<'PY'
+import json, os, sys, urllib.error, urllib.request
 
 api = sys.argv[1].rstrip("/")
 url = f"{api}/settings/preferredModel"
-headers = {}
-if len(sys.argv) > 2 and sys.argv[2]:
-    headers = {"Authorization": f"Bearer {sys.argv[2]}"}
+key = os.environ.get("LIBRAGENT_BENCH_AUTH", "")
+headers = {"Authorization": f"Bearer {key}"} if key else {}
 try:
     with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=15) as resp:
         payload = json.load(resp)
