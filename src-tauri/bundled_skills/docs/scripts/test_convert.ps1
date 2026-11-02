@@ -99,12 +99,14 @@ try {
 }
 
 # ---------------------------------------------------------
-# Test 3: Skeleton conversion command form with doctor VenvPython (G1.1)
-# Must exit non-zero, print ExitCode: 1, print NEXT: naming #2498, and print no OK.
+# Test 3: Skeleton conversion command form with doctor VenvPython (G1.1 & G2.1)
+# Must run exact documented command with leading '&', exit non-zero,
+# print ExitCode: 1, print NEXT: naming #2498, and print no OK.
 # ---------------------------------------------------------
 Write-Host "`n[Test 3] Skeleton conversion command form with doctor VenvPython (pending engine)..."
 $testMd = Join-Path ([System.IO.Path]::GetTempPath()) "test_doc_$(Get-Random).md"
 $testOut = Join-Path ([System.IO.Path]::GetTempPath()) "test_out_$(Get-Random).pdf"
+$testScript = Join-Path ([System.IO.Path]::GetTempPath()) "test_doc_cmd_$(Get-Random).ps1"
 Set-Content -Path $testMd -Value "# Test Document`n`nSample content for conversion."
 
 $venvPython = $null
@@ -119,8 +121,12 @@ if (-not $venvPython -or -not (Test-Path $venvPython)) {
 }
 Write-Host "Using VenvPython: $venvPython"
 
+# Write the exact documented command form to a script file and run with powershell.exe
+$documentedCommand = "& `"$venvPython`" `"$convertPy`" --in `"$testMd`" --to pdf --template report --out `"$testOut`""
+Set-Content -Path $testScript -Value "$documentedCommand`r`nexit `$LASTEXITCODE"
+
 try {
-  $convOutput = & $venvPython $convertPy --in $testMd --to pdf --template report --out $testOut 2>&1
+  $convOutput = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $testScript 2>&1
   $convExit = $LASTEXITCODE
   $convText = ($convOutput -join "`n").Trim()
 
@@ -152,8 +158,9 @@ try {
     exit 1
   }
 
-  Write-Host "Test 3 passed: Skeleton conversion correctly exited non-zero with ExitCode: 1, NEXT: #2498, and no OK."
+  Write-Host "Test 3 passed: Documented command '& `"<venv>`" `"<convert>`" ...' executed successfully via PowerShell script and correctly exited non-zero with ExitCode: 1, NEXT: #2498, and no OK."
 } finally {
+  if (Test-Path $testScript) { Remove-Item $testScript -Force -ErrorAction SilentlyContinue }
   if (Test-Path $testMd) { Remove-Item $testMd -Force -ErrorAction SilentlyContinue }
   if (Test-Path $testOut) { Remove-Item $testOut -Force -ErrorAction SilentlyContinue }
 }

@@ -56,8 +56,8 @@ if (-not $workingRunner) {
     }
 
     foreach ($pat in $searchPatterns) {
-        $matches = Resolve-Path $pat -ErrorAction SilentlyContinue
-        foreach ($m in $matches) {
+        $resolved = Resolve-Path $pat -ErrorAction SilentlyContinue
+        foreach ($m in $resolved) {
             $candidate = $m.Path
             if (Test-PythonExecutable $candidate) {
                 $workingRunner = $candidate

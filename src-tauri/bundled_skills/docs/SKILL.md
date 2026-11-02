@@ -47,7 +47,7 @@ The doctor discovers a working Python environment, provisions a persistent virtu
 Then run document conversion using the interpreter reported under `VenvPython:`. Always use the fixed command form. Give file paths only. Do not use inline code. Do not use pipes. The command must run in Windows PowerShell 5.1:
 
 ```powershell
-"<venv-python-from-doctor>" "<skill-base-dir>/scripts/convert.py" --in "<abs.md>" --to pdf --template report --out "<abs.pdf>"
+& "<venv-python-from-doctor>" "<skill-base-dir>/scripts/convert.py" --in "<abs.md>" --to pdf --template report --out "<abs.pdf>"
 ```
 
 ## Output Contract & Verification

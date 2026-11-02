@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-from __future__ import annotations
 """
 LibrAgent docs skill conversion script.
 Provides unified document conversion and dependency management.
 """
+from __future__ import annotations
 
 import argparse
 import glob
