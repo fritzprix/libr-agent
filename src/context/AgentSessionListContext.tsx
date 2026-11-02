@@ -55,6 +55,7 @@ export function AgentSessionListProvider({
     toggleBookmark,
     renameSession,
     markSessionViewed,
+    markAllNotificationsViewed,
     clearPendingApproval,
   } = useSessionListMutations(store);
 
@@ -97,6 +98,7 @@ export function AgentSessionListProvider({
       toggleBookmark,
       renameSession,
       markSessionViewed,
+      markAllNotificationsViewed,
       clearPendingApproval,
     }),
     [
@@ -109,6 +111,7 @@ export function AgentSessionListProvider({
       toggleBookmark,
       renameSession,
       markSessionViewed,
+      markAllNotificationsViewed,
       clearPendingApproval,
     ],
   );

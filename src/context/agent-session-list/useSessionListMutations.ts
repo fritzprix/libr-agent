@@ -323,6 +323,26 @@ export function useSessionListMutations({
     [applySessionUpdate],
   );
 
+  const markAllNotificationsViewed = useCallback(async () => {
+    const targets = notificationSessionsRef.current.filter(
+      (session) => (session.pendingApprovalCount ?? 0) <= 0,
+    );
+    if (targets.length === 0) {
+      return;
+    }
+    const results = await Promise.allSettled(
+      targets.map((session) => markSessionViewed(session.id)),
+    );
+    results.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        logger.warn('Failed to mark session notification as viewed', {
+          sessionId: targets[index]?.id,
+          error: result.reason,
+        });
+      }
+    });
+  }, [markSessionViewed, notificationSessionsRef]);
+
   const clearPendingApproval = useCallback(
     (sessionId: string, toolCallId: string) => {
       const pendingApprovalKey = `${sessionId}:${toolCallId}`;
@@ -348,6 +368,7 @@ export function useSessionListMutations({
     toggleBookmark,
     renameSession,
     markSessionViewed,
+    markAllNotificationsViewed,
     clearPendingApproval,
   };
 }

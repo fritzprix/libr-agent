@@ -146,7 +146,9 @@
     "recurringStop": "Detención recurrente",
     "pendingApprovals_one": "{{count}} aprobación",
     "pendingApprovals_other": "{{count}} aprobaciones",
-    "viewSession": "Abrir sesión {{name}}"
+    "viewSession": "Abrir sesión {{name}}",
+    "markAllRead": "Marcar todo como leído",
+    "dismiss": "Cerrar"
   },
   "sidebar": {
     "mobileTitle": "Barra lateral",

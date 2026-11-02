@@ -146,7 +146,9 @@
     "recurringStop": "Recurring stop",
     "pendingApprovals_one": "{{count}} approval",
     "pendingApprovals_other": "{{count}} approvals",
-    "viewSession": "Open session {{name}}"
+    "viewSession": "Open session {{name}}",
+    "markAllRead": "Mark all read",
+    "dismiss": "Dismiss"
   },
   "sidebar": {
     "mobileTitle": "Sidebar",

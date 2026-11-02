@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Bell } from 'lucide-react';
+import { Bell, X } from 'lucide-react';
 import type { DropdownMenuItemProps } from '@radix-ui/react-dropdown-menu';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
@@ -30,7 +30,8 @@ export function SessionNotificationsBell() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
-  const { markSessionViewed } = useAgentSessionListActions();
+  const { markSessionViewed, markAllNotificationsViewed } =
+    useAgentSessionListActions();
   const { notificationSessions, unreadNotificationCount } =
     useAgentSessionListState();
 
@@ -76,7 +77,23 @@ export function SessionNotificationsBell() {
       </Tooltip>
 
       <DropdownMenuContent align="end" className="w-80">
-        <DropdownMenuLabel>{t('notifications.title')}</DropdownMenuLabel>
+        <div className="flex items-center justify-between pr-2">
+          <DropdownMenuLabel>{t('notifications.title')}</DropdownMenuLabel>
+          {notificationSessions.length > 0 ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:text-foreground h-auto px-2 py-1 text-xs"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                void markAllNotificationsViewed();
+              }}
+            >
+              {t('notifications.markAllRead')}
+            </Button>
+          ) : null}
+        </div>
         <DropdownMenuSeparator />
 
         {notificationSessions.length === 0 ? (
@@ -118,6 +135,35 @@ export function SessionNotificationsBell() {
                     ) : null}
                   </div>
                 </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-muted-foreground hover:text-foreground -mr-1 h-6 w-6 shrink-0"
+                  aria-label={t('notifications.dismiss')}
+                  onPointerDown={(event) => {
+                    // Keep the row's DropdownMenuItem from recording the
+                    // pointer, so it never treats this as a row click.
+                    event.stopPropagation();
+                  }}
+                  onPointerUp={(event) => {
+                    // DropdownMenuItem's onPointerUp runs `currentTarget.click()`
+                    // when it did not see the pointerdown. Since the dismiss
+                    // button swallows pointerdown, an unstopped pointerup makes
+                    // the item synthesize a click on the row -> onSelect ->
+                    // navigate to the session. Stop it here too.
+                    event.stopPropagation();
+                  }}
+                  onKeyDown={(event) => {
+                    event.stopPropagation();
+                  }}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    void markSessionViewed(session.id);
+                  }}
+                >
+                  <X size={14} />
+                </Button>
               </DropdownMenuItem>
             );
           })

@@ -146,7 +146,9 @@
     "recurringStop": "Arrêt récurrent",
     "pendingApprovals_one": "{{count}} approbation",
     "pendingApprovals_other": "{{count}} approbations",
-    "viewSession": "Ouvrir la session {{name}}"
+    "viewSession": "Ouvrir la session {{name}}",
+    "markAllRead": "Tout marquer comme lu",
+    "dismiss": "Fermer"
   },
   "sidebar": {
     "mobileTitle": "Barre latérale",

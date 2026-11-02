@@ -65,6 +65,11 @@ export interface AgentSessionListActionsContextValue {
   markSessionViewed: (sessionId: string, viewedAt?: Date) => Promise<void>;
 
   /**
+   * Mark all notification sessions as viewed, skipping sessions with pending approvals.
+   */
+  markAllNotificationsViewed: () => Promise<void>;
+
+  /**
    * Remove one pending approval from the session after a response.
    */
   clearPendingApproval: (sessionId: string, toolCallId: string) => void;
