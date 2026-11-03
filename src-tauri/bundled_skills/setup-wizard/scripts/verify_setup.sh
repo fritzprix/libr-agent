@@ -4,6 +4,9 @@
 
 set +e  # Don't exit on errors
 
+# Absolute paths so the hints work from any current folder.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
 echo "========================================"
 echo "  System Setup Verification for MCP"
 echo "========================================"
@@ -26,7 +29,7 @@ if command -v python3 &> /dev/null; then
     fi
 else
     echo "  ✗ Python not found"
-    echo "    Install with: ./scripts/install_python.sh"
+    echo "    Install with: bash \"$SCRIPT_DIR/install_python.sh\""
     all_good=false
 fi
 
@@ -48,7 +51,7 @@ if command -v node &> /dev/null; then
     fi
 else
     echo "  ✗ Node.js not found"
-    echo "    Install with: ./scripts/install_node.sh"
+    echo "    Install with: bash \"$SCRIPT_DIR/install_node.sh\""
     all_good=false
 fi
 
@@ -61,7 +64,7 @@ if command -v uv &> /dev/null; then
     echo "  ✓ uv: $UV_VERSION"
 else
     echo "  ✗ uv not found"
-    echo "    Install with: ./scripts/install_uv.sh"
+    echo "    Install with: bash \"$SCRIPT_DIR/install_uv.sh\""
     all_good=false
 fi
 
@@ -81,12 +84,12 @@ else
     echo "✗ Some components are missing"
     echo ""
     echo "Please install missing components:"
-    echo "  • Python:  ./scripts/install_python.sh"
-    echo "  • Node.js: ./scripts/install_node.sh"
-    echo "  • uv:      ./scripts/install_uv.sh"
+    echo "  • Python:  bash \"$SCRIPT_DIR/install_python.sh\""
+    echo "  • Node.js: bash \"$SCRIPT_DIR/install_node.sh\""
+    echo "  • uv:      bash \"$SCRIPT_DIR/install_uv.sh\""
     echo ""
     echo "Or install all at once:"
-    echo "  ./scripts/install_python.sh && ./scripts/install_node.sh && ./scripts/install_uv.sh"
+    echo "  bash \"$SCRIPT_DIR/install_python.sh\" && bash \"$SCRIPT_DIR/install_node.sh\" && bash \"$SCRIPT_DIR/install_uv.sh\""
     echo ""
 fi
 

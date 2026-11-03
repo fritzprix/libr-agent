@@ -1,96 +1,85 @@
 # Python Installation Script for Windows
-# Run as Administrator for system-wide installation
+# Non-interactive and user scope: no prompts and no administrator rights.
+# Order: uv-managed Python (`uv python install`), then winget --scope user.
 
 param(
-    [switch]$UserInstall = $false,
-    [string]$Version = "3.12"
+    [string]$Version = "3.12",
+    [switch]$Force = $false
 )
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 
 Write-Host "=== Python Installation Script ===" -ForegroundColor Cyan
 Write-Host "Target Version: Python $Version" -ForegroundColor Green
 Write-Host ""
 
-# Check if Python is already installed
+function Test-RedirectionGuard($text) {
+    return ($text -match 'os error 448|WinError 448|ERROR_UNTRUSTED_MOUNT_POINT|untrusted mount point')
+}
+
+function Stop-RedirectionGuard($text) {
+    Write-Host "✗ Windows RedirectionGuard blocked the uv Python junction (os error 448, ERROR_UNTRUSTED_MOUNT_POINT)." -ForegroundColor Red
+    Write-Host "  $text"
+    Write-Host "NEXT: Report this error to the user. Do not reinstall." -ForegroundColor Yellow
+    exit 1
+}
+
+# A working Python is enough; the WindowsApps alias fails to run, so it does not count.
 $pythonCmd = Get-Command python -ErrorAction SilentlyContinue
-if ($pythonCmd) {
-    $currentVersion = python --version 2>&1
-    Write-Host "Python already installed: $currentVersion" -ForegroundColor Yellow
-    $continue = Read-Host "Do you want to continue with installation? (y/n)"
-    if ($continue -ne 'y') {
-        Write-Host "Installation cancelled." -ForegroundColor Red
+if ($pythonCmd -and -not $Force) {
+    $currentVersion = (& python --version 2>&1) -join " "
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "Python already installed: $currentVersion" -ForegroundColor Yellow
+        Write-Host "Nothing to do. Use -Force to install Python $Version anyway."
         exit 0
     }
 }
 
-# Install using winget (recommended)
-Write-Host "Installing Python using winget..." -ForegroundColor Cyan
-try {
-    if ($UserInstall) {
-        winget install --id Python.Python.3.12 --scope user --silent
+$installed = $false
+
+# 1. uv-managed Python (user scope, no PATH change needed: use `uv run --python`).
+if (Get-Command uv -ErrorAction SilentlyContinue) {
+    Write-Host "Installing Python $Version with uv..." -ForegroundColor Cyan
+    $uvOutput = (& uv python install $Version 2>&1) -join "`n"
+    $uvExit = $LASTEXITCODE
+    if (Test-RedirectionGuard $uvOutput) { Stop-RedirectionGuard $uvOutput }
+    if ($uvExit -eq 0) {
+        $found = (& uv python find $Version 2>&1) -join "`n"
+        $findExit = $LASTEXITCODE
+        if (Test-RedirectionGuard $found) { Stop-RedirectionGuard $found }
+        if ($findExit -eq 0) {
+            Write-Host "✓ Python $Version (uv): $found" -ForegroundColor Green
+            Write-Host "Run scripts with: uv run --python $Version <script.py>"
+            $installed = $true
+        }
     } else {
-        winget install --id Python.Python.3.12 --scope machine --silent
+        Write-Host "uv python install failed: $uvOutput" -ForegroundColor Yellow
     }
-    Write-Host "Python installed successfully!" -ForegroundColor Green
-} catch {
-    Write-Host "winget installation failed. Trying alternative method..." -ForegroundColor Yellow
-    
-    # Fallback: Download and install manually
-    $downloadUrl = "https://www.python.org/ftp/python/3.12.0/python-3.12.0-amd64.exe"
-    $installerPath = "$env:TEMP\python-installer.exe"
-    
-    Write-Host "Downloading Python installer..." -ForegroundColor Cyan
-    Invoke-WebRequest -Uri $downloadUrl -OutFile $installerPath
-    
-    Write-Host "Running installer..." -ForegroundColor Cyan
-    if ($UserInstall) {
-        Start-Process -FilePath $installerPath -ArgumentList "/quiet", "InstallAllUsers=0", "PrependPath=1" -Wait
-    } else {
-        Start-Process -FilePath $installerPath -ArgumentList "/quiet", "InstallAllUsers=1", "PrependPath=1" -Wait
-    }
-    
-    Remove-Item $installerPath -Force
-    Write-Host "Python installed successfully!" -ForegroundColor Green
 }
 
-# Refresh environment variables
-$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+# 2. winget, user scope only.
+if (-not $installed -and (Get-Command winget -ErrorAction SilentlyContinue)) {
+    Write-Host "Installing Python $Version with winget (user scope)..." -ForegroundColor Cyan
+    & winget install --id "Python.Python.$Version" --scope user --silent `
+        --accept-package-agreements --accept-source-agreements
+    if ($LASTEXITCODE -eq 0) {
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
+            [System.Environment]::GetEnvironmentVariable("Path", "User")
+        $pythonVersion = (& python --version 2>&1) -join " "
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "✓ Python: $pythonVersion" -ForegroundColor Green
+            $installed = $true
+        }
+    }
+}
 
-# Verify installation
-Write-Host ""
-Write-Host "Verifying installation..." -ForegroundColor Cyan
-Start-Sleep -Seconds 2
-
-try {
-    $pythonVersion = python --version 2>&1
-    $pipVersion = pip --version 2>&1
-    
-    Write-Host "✓ Python: $pythonVersion" -ForegroundColor Green
-    Write-Host "✓ pip: $pipVersion" -ForegroundColor Green
-    
-    Write-Host ""
-    Write-Host "Python installation completed successfully!" -ForegroundColor Green
-    Write-Host "Please restart your terminal to ensure PATH is updated." -ForegroundColor Yellow
-} catch {
-    Write-Host "✗ Verification failed. Please restart your terminal and try again." -ForegroundColor Red
-    Write-Host "If the problem persists, check PATH configuration." -ForegroundColor Yellow
+if (-not $installed) {
+    Write-Host "✗ Python $Version could not be installed without administrator rights." -ForegroundColor Red
+    Write-Host "NEXT: Report this to the user. Ask them to install uv (install_uv.ps1) or Python $Version, then run verify_setup.ps1 again." -ForegroundColor Yellow
     exit 1
-}
-
-# Upgrade pip
-Write-Host ""
-Write-Host "Upgrading pip to latest version..." -ForegroundColor Cyan
-try {
-    python -m pip install --upgrade pip
-    Write-Host "✓ pip upgraded successfully!" -ForegroundColor Green
-} catch {
-    Write-Host "⚠ Failed to upgrade pip. You may need to upgrade manually later." -ForegroundColor Yellow
 }
 
 Write-Host ""
 Write-Host "=== Installation Complete ===" -ForegroundColor Cyan
-Write-Host "Next steps:" -ForegroundColor Yellow
-Write-Host "1. Restart your terminal (or reboot if needed)"
-Write-Host "2. Run: python --version"
-Write-Host "3. Install uv: pip install uv"
+Write-Host "Next step: run verify_setup.ps1 to confirm."
+exit 0

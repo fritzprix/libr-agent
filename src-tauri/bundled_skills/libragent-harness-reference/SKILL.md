@@ -8,7 +8,8 @@ description: >
   or what belongs in assistant systemPrompt vs workspace agents.md vs skills.
   Triggers: harness, system prompt layers, agents.md vs SOUL, session workspace,
   sub-agent isolation, tool naming, bootstrap workspace guidelines,
-  external inject, wake session, $LIBRAGENT_WAKE_URL.
+  external inject, wake session, $LIBRAGENT_WAKE_URL, command not found,
+  exit code 127, missing Python/Node version, broken venv, os error 448.
 ---
 
 # LibrAgent Harness Reference
@@ -44,7 +45,7 @@ Do **not** dump long operating doctrine into every assistant `systemPrompt`. Pre
 ## Cold-start routing
 
 - Empty / new workspace and the task needs durable project rules → offer or run **agent-init** (do not invent a fat default `agents.md` silently unless the user wants guidelines).
-- First run on a new machine, missing OS/Python/Node/uv, or MCP `command not found` → **setup-wizard**.
+- First run, missing Python/Node/uv, `command not found` / exit 127, or a broken venv → **setup-wizard**: user-scope tool first (`uv run --python <v>`), no `sudo` (only `sudo -n`), one install attempt, then report; on os error 448 report, do not reinstall.
 - Need sub-agent handoff rules → **delegate** (and `references/session-isolation.md` here for the matrix).
 - Need generator–evaluator / proof-before-done on a child → **delegation-eval-loop** (after `delegate` mechanics).
 - Install/update/remove request → GitHub repo or subpath with `SKILL.md` → **skill-deployer**; npm/PyPI MCP package, MCP server repo, server URL, or MCP config JSON → **mcp-installer**; GitHub URL you cannot classify → inspect the repo first. MCP registration always pauses for user approval; finish with `tool__verifyServer`.

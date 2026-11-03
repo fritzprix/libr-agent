@@ -1,37 +1,35 @@
 # Node.js Installation Script for Windows
-# Run as Administrator for system-wide installation
+# Non-interactive and user scope by default. Pass -MachineInstall (needs an
+# elevated shell) for a system-wide install.
 
 param(
-    [switch]$UserInstall = $false,
+    [switch]$MachineInstall = $false,
+    [switch]$Force = $false,
     [string]$Version = "LTS"
 )
 
 $ErrorActionPreference = "Stop"
+$UserInstall = -not $MachineInstall
 
 Write-Host "=== Node.js Installation Script ===" -ForegroundColor Cyan
 Write-Host "Target Version: $Version" -ForegroundColor Green
 Write-Host ""
 
-# Check if Node.js is already installed
+# A working Node.js is enough unless -Force is given.
 $nodeCmd = Get-Command node -ErrorAction SilentlyContinue
-if ($nodeCmd) {
+if ($nodeCmd -and -not $Force) {
     $currentVersion = node --version 2>&1
     Write-Host "Node.js already installed: $currentVersion" -ForegroundColor Yellow
-    $continue = Read-Host "Do you want to continue with installation? (y/n)"
-    if ($continue -ne 'y') {
-        Write-Host "Installation cancelled." -ForegroundColor Red
-        exit 0
-    }
+    Write-Host "Nothing to do. Use -Force to reinstall."
+    exit 0
 }
 
 # Install using winget (recommended)
 Write-Host "Installing Node.js using winget..." -ForegroundColor Cyan
 try {
-    if ($UserInstall) {
-        winget install --id OpenJS.NodeJS.LTS --scope user --silent
-    } else {
-        winget install --id OpenJS.NodeJS.LTS --scope machine --silent
-    }
+    $scope = if ($UserInstall) { "user" } else { "machine" }
+    winget install --id OpenJS.NodeJS.LTS --scope $scope --silent `
+        --accept-package-agreements --accept-source-agreements
     Write-Host "Node.js installed successfully!" -ForegroundColor Green
 } catch {
     Write-Host "winget installation failed. Please install manually from nodejs.org" -ForegroundColor Red
