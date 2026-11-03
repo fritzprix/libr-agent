@@ -5,6 +5,8 @@
 
 set -u
 
+VERSION_GIVEN=0
+[ $# -ge 1 ] && VERSION_GIVEN=1
 VERSION="${1:-3.12}"
 FORCE="${2:-}"
 
@@ -12,9 +14,26 @@ echo "=== Python Installation Script ==="
 echo "Target Version: Python $VERSION"
 echo ""
 
-# A working Python is enough unless --force is given.
-if [ "$FORCE" != "--force" ] && command -v python3 > /dev/null 2>&1 && python3 --version > /dev/null 2>&1; then
-    echo "Python already installed: $(python3 --version)"
+# With an explicit version, only that version counts (python3.9, or uv's 3.9).
+# With no argument, any working python3 is enough.
+has_requested_python() {
+    if [ "$VERSION_GIVEN" -eq 1 ]; then
+        if command -v "python$VERSION" > /dev/null 2>&1 && "python$VERSION" --version > /dev/null 2>&1; then
+            return 0
+        fi
+        command -v uv > /dev/null 2>&1 && uv python find "$VERSION" > /dev/null 2>&1
+        return
+    fi
+    command -v python3 > /dev/null 2>&1 && python3 --version > /dev/null 2>&1
+}
+
+if [ "$FORCE" != "--force" ] && has_requested_python; then
+    if [ "$VERSION_GIVEN" -eq 1 ]; then
+        echo "Python $VERSION already available."
+        echo "Run scripts with: uv run --python $VERSION <script.py> (or python$VERSION)"
+    else
+        echo "Python already installed: $(python3 --version)"
+    fi
     echo "Nothing to do. Pass '$VERSION --force' to install Python $VERSION anyway."
     exit 0
 fi
@@ -36,7 +55,7 @@ if [ "$(id -u)" -ne 0 ]; then
     if command -v sudo > /dev/null 2>&1 && sudo -n true 2> /dev/null; then
         SUDO="sudo -n"
     else
-        echo "✗ No uv and no root or passwordless sudo, so Python cannot be installed here."
+        echo "✗ uv is missing or failed, and there is no root or passwordless sudo, so Python cannot be installed here."
         echo "NEXT: Report this to the user. Ask them to install uv (install_uv.sh) or Python $VERSION, then run verify_setup.sh again."
         exit 1
     fi
@@ -63,10 +82,17 @@ case $OS in
         exit 1 ;;
 esac
 
-if command -v python3 > /dev/null 2>&1 && python3 --version > /dev/null 2>&1; then
+# The distribution package is its default python3, which may not be the version asked for.
+if has_requested_python; then
     echo "✓ Python: $(python3 --version)"
     echo "Next step: run verify_setup.sh to confirm."
     exit 0
+fi
+
+if [ "$VERSION_GIVEN" -eq 1 ]; then
+    echo "✗ The package manager installed the distribution's python3, not Python $VERSION."
+    echo "NEXT: Report this to the user. Python $VERSION needs uv (install_uv.sh, then uv python install $VERSION)."
+    exit 1
 fi
 
 echo "✗ Python installation did not produce a working python3."

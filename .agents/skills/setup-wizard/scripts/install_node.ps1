@@ -30,6 +30,8 @@ try {
     $scope = if ($UserInstall) { "user" } else { "machine" }
     winget install --id OpenJS.NodeJS.LTS --scope $scope --silent `
         --accept-package-agreements --accept-source-agreements
+    # winget is a native command: a failure sets $LASTEXITCODE but does not throw.
+    if ($LASTEXITCODE -ne 0) { throw "winget exited with code $LASTEXITCODE" }
     Write-Host "Node.js installed successfully!" -ForegroundColor Green
 } catch {
     Write-Host "winget installation failed. Please install manually from nodejs.org" -ForegroundColor Red

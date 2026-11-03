@@ -24,15 +24,37 @@ function Stop-RedirectionGuard($text) {
     exit 1
 }
 
-# A working Python is enough; the WindowsApps alias fails to run, so it does not count.
-$pythonCmd = Get-Command python -ErrorAction SilentlyContinue
-if ($pythonCmd -and -not $Force) {
-    $currentVersion = (& python --version 2>&1) -join " "
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "Python already installed: $currentVersion" -ForegroundColor Yellow
-        Write-Host "Nothing to do. Use -Force to install Python $Version anyway."
-        exit 0
+$versionGiven = $PSBoundParameters.ContainsKey('Version')
+
+# With an explicit -Version, only that version counts (py -3.9, uv's 3.9, or a matching
+# python). With no -Version, any working Python is enough. The WindowsApps alias fails
+# to run, so it never counts.
+function Test-RequestedPython {
+    if ($versionGiven) {
+        if (Get-Command py -ErrorAction SilentlyContinue) {
+            $null = & py "-$Version" --version 2>&1
+            if ($LASTEXITCODE -eq 0) { return $true }
+        }
+        if (Get-Command uv -ErrorAction SilentlyContinue) {
+            $found = (& uv python find $Version 2>&1) -join "`n"
+            if (Test-RedirectionGuard $found) { Stop-RedirectionGuard $found }
+            if ($LASTEXITCODE -eq 0) { return $true }
+        }
     }
+    if (Get-Command python -ErrorAction SilentlyContinue) {
+        $current = (& python --version 2>&1) -join " "
+        if ($LASTEXITCODE -eq 0) {
+            return (-not $versionGiven) -or ($current -match "Python $([regex]::Escape($Version))(\.|$)")
+        }
+    }
+    return $false
+}
+
+if (-not $Force -and (Test-RequestedPython)) {
+    $label = if ($versionGiven) { "Python $Version" } else { "A working Python" }
+    Write-Host "$label is already available." -ForegroundColor Yellow
+    Write-Host "Nothing to do. Use -Force to install Python $Version anyway."
+    exit 0
 }
 
 $installed = $false
@@ -65,9 +87,8 @@ if (-not $installed -and (Get-Command winget -ErrorAction SilentlyContinue)) {
     if ($LASTEXITCODE -eq 0) {
         $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
             [System.Environment]::GetEnvironmentVariable("Path", "User")
-        $pythonVersion = (& python --version 2>&1) -join " "
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "✓ Python: $pythonVersion" -ForegroundColor Green
+        if (Test-RequestedPython) {
+            Write-Host "✓ Python $Version installed with winget." -ForegroundColor Green
             $installed = $true
         }
     }
