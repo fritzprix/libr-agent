@@ -4,6 +4,48 @@ use tracing::{error, info};
 
 use crate::mcp::builtin::utils::SecurityValidator;
 
+/// Phrase in the error for a parent path that runs through an existing file.
+/// `writeFile` keys its recovery hint on it.
+pub const ANCESTOR_IS_FILE: &str = "is an existing file, not a directory";
+
+/// English, locale-independent error for a failed `create_dir_all(parent)`.
+///
+/// The OS error text follows the host locale (Korean on a Korean host), so it
+/// goes to the log only. When the first existing ancestor of `parent` is a
+/// regular file, the message names that file, because no permission change can
+/// turn it into a directory.
+fn parent_dir_error(parent: &std::path::Path, err: &std::io::Error) -> String {
+    error!("Failed to create parent directory {:?}: {}", parent, err);
+    let mut ancestor = Some(parent);
+    while let Some(dir) = ancestor {
+        if dir.exists() {
+            if dir.is_file() {
+                return format!(
+                    "Cannot create '{}': '{}' {ANCESTOR_IS_FILE}. Choose a path whose parent is a directory.",
+                    display_path(parent),
+                    display_path(dir)
+                );
+            }
+            break;
+        }
+        ancestor = dir.parent();
+    }
+    format!(
+        "Failed to create parent directory '{}': {}",
+        display_path(parent),
+        err.kind()
+    )
+}
+
+/// Path text for messages, without the Windows verbatim prefix (`\\?\`) that
+/// canonicalized paths carry.
+fn display_path(path: &std::path::Path) -> String {
+    let text = path.display().to_string();
+    text.strip_prefix(r"\\?\")
+        .map(str::to_string)
+        .unwrap_or(text)
+}
+
 /// Provides secure file system operations with path validation and optional
 /// base-directory scoping depending on how the manager is constructed.
 pub struct SecureFileManager {
@@ -111,8 +153,7 @@ impl SecureFileManager {
         // Create parent directory if it doesn't exist
         if let Some(parent) = safe_path.parent() {
             if let Err(e) = fs::create_dir_all(parent).await {
-                error!("Failed to create parent directory {:?}: {}", parent, e);
-                return Err(format!("Failed to create parent directory: {e}"));
+                return Err(parent_dir_error(parent, &e));
             }
         }
 
@@ -290,8 +331,7 @@ impl SecureFileManager {
         // Create parent directory if it doesn't exist
         if let Some(parent) = dest_path.parent() {
             if let Err(e) = fs::create_dir_all(parent).await {
-                error!("Failed to create parent directory {:?}: {}", parent, e);
-                return Err(format!("Failed to create parent directory: {e}"));
+                return Err(parent_dir_error(parent, &e));
             }
         }
 
@@ -312,5 +352,65 @@ impl SecureFileManager {
     /// Returns a reference to the internal `SecurityValidator`.
     pub fn get_security_validator(&self) -> &SecurityValidator {
         &self.security
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_names_file_segment(message: &str, file: &std::path::Path) {
+        // The validator canonicalizes (\\?\ on Windows, /private/var on macOS).
+        let named = display_path(&std::fs::canonicalize(file).unwrap());
+        assert!(message.contains(ANCESTOR_IS_FILE), "{message}");
+        assert!(message.contains(&named), "{message}");
+        assert!(!message.contains(r"\\?\"), "{message}");
+        assert!(!message.contains("os error"), "{message}");
+    }
+
+    #[tokio::test]
+    async fn write_file_under_an_existing_file_names_that_file() {
+        let root = tempfile::tempdir().unwrap();
+        let blocker = root.path().join("server.py");
+        std::fs::write(&blocker, "print(1)\n").unwrap();
+        let manager = SecureFileManager::new_scoped_with_base_dir(root.path().to_path_buf());
+
+        let message = manager
+            .write_file("server.py/config.json", b"{}")
+            .await
+            .unwrap_err();
+        assert_names_file_segment(&message, &blocker);
+    }
+
+    #[tokio::test]
+    async fn copy_file_under_an_existing_file_names_that_file() {
+        let root = tempfile::tempdir().unwrap();
+        let blocker = root.path().join("server.py");
+        std::fs::write(&blocker, "print(1)\n").unwrap();
+        let source = root.path().join("source.txt");
+        std::fs::write(&source, "data").unwrap();
+        let manager = SecureFileManager::new_scoped_with_base_dir(root.path().to_path_buf());
+
+        let message = manager
+            .copy_file_from_external(&source, "server.py/nested/copy.txt")
+            .await
+            .unwrap_err();
+        assert_names_file_segment(&message, &blocker);
+    }
+
+    /// The OS text follows the host locale; the message must not carry it.
+    #[test]
+    fn other_failures_use_english_kind_text_not_the_localized_os_text() {
+        let root = tempfile::tempdir().unwrap();
+        let parent = root.path().join("missing").join("dir");
+        let localized = std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "\u{AD8C}\u{D55C}\u{C774} \u{AC70}\u{BD80}\u{B418}\u{C5C8}\u{C2B5}\u{B2C8}\u{B2E4}",
+        );
+
+        let message = parent_dir_error(&parent, &localized);
+        assert!(message.contains(&parent.display().to_string()), "{message}");
+        assert!(message.contains("permission denied"), "{message}");
+        assert!(!message.contains('\u{AD8C}'), "{message}");
     }
 }

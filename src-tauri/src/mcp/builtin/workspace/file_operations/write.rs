@@ -664,7 +664,20 @@ impl WorkspaceServer {
                 error!("Failed to write file {}: {}", write_display_path, e);
                 let is_permission = e.to_string().contains("Permission denied")
                     || e.to_string().contains("permission");
-                if is_permission {
+                if e.to_string()
+                    .contains(crate::services::secure_file_manager::ANCESTOR_IS_FILE)
+                {
+                    // No permission change helps when a path segment is a file.
+                    Ok(guided_error(
+                        ErrorCategory::OperationFailed,
+                        e.to_string(),
+                        ToolGroup::Workspace,
+                    )
+                    .guidance(vec![
+                        "Choose a different path, or check the named file with workspace__listDirectory".to_string(),
+                    ])
+                    .to_mcp_result())
+                } else if is_permission {
                     Ok(permission_denied_error(
                         &write_display_path,
                         ToolGroup::Workspace,
