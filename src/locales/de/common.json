@@ -947,6 +947,7 @@
       "errorTitle": "Session-API-Schlüssel konnten nicht geladen werden",
       "errorHelp": "Die Schlüsseldatei ist möglicherweise beschädigt oder hat falsche Berechtigungen. Die Schlüsselprüfung bleibt gesperrt (fail-closed), bis das Problem behoben ist.",
       "confirmRevoke": "Widerruf bestätigen",
+      "confirmRevokePrompt": "API-Schlüssel für {{name}} widerrufen? Wählen Sie „Widerruf bestätigen“ oder „Abbrechen“.",
       "deleteSuccess": "API-Schlüssel für {{name}} gelöscht",
       "deleteError": "API-Schlüssel konnte nicht gelöscht werden",
       "active": "Aktiv",

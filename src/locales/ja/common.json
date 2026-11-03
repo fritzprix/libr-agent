@@ -947,6 +947,7 @@
       "errorTitle": "Session API キーを読み込めませんでした",
       "errorHelp": "キーファイルが破損しているか、権限が正しくない可能性があります。問題が解決するまでキーの検証はロックされます（fail-closed）。",
       "confirmRevoke": "失効を確認",
+      "confirmRevokePrompt": "{{name}} の API キーを失効させますか？「失効を確認」または「キャンセル」を選んでください。",
       "deleteSuccess": "{{name}} の API キーを削除しました",
       "deleteError": "API キーを削除できませんでした",
       "active": "有効",

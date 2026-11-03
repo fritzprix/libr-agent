@@ -947,6 +947,7 @@
       "errorTitle": "加载 Session API 密钥失败",
       "errorHelp": "密钥文件可能已损坏或权限不正确。在问题解决之前，密钥验证将保持锁定（fail-closed）。",
       "confirmRevoke": "确认撤销",
+      "confirmRevokePrompt": "要撤销 {{name}} 的 API 密钥吗？请选择“确认撤销”或“取消”。",
       "deleteSuccess": "已删除 {{name}} 的 API 密钥",
       "deleteError": "删除 API 密钥失败",
       "active": "有效",

@@ -947,6 +947,7 @@
       "errorTitle": "Falha ao carregar as chaves da Session API",
       "errorHelp": "O arquivo de chaves pode estar danificado ou ter permissões incorretas. A verificação de chaves fica bloqueada (fail-closed) até que o problema seja resolvido.",
       "confirmRevoke": "Confirmar revogação",
+      "confirmRevokePrompt": "Revogar a chave de API de {{name}}? Escolha Confirmar revogação ou Cancelar.",
       "deleteSuccess": "Chave de API de {{name}} excluída",
       "deleteError": "Falha ao excluir a chave de API",
       "active": "Ativa",
