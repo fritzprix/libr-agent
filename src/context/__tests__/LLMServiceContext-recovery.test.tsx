@@ -10,6 +10,7 @@ import { TestSettingsProvider } from '@/test/fixtures/TestSettingsProvider';
 import type { ReactNode } from 'react';
 import type { AIServiceProvider } from '@/lib/ai-service';
 import { TEST_SETTINGS } from '@/test/fixtures/settings';
+import { sleep } from '@/lib/retry-utils';
 
 // Mock Tauri APIs
 vi.mock('@tauri-apps/api/event', () => ({
@@ -282,5 +283,120 @@ describe('LLMServiceContext – SP4 Retry & Fallback Recovery', () => {
 
     // Only 1 attempt — no retries on abort
     expect(mockStreamChat).toHaveBeenCalledTimes(1);
+  });
+
+  describe('cancel between attempts', () => {
+    const fallbackSettings = {
+      ...TEST_SETTINGS,
+      fallbackModel: {
+        provider: 'anthropic' as AIServiceProvider,
+        model: 'claude-3-5-sonnet-20241022',
+      },
+    };
+
+    function WrapperWithFallback({ children }: { children: ReactNode }) {
+      return (
+        <SettingsContext.Provider
+          value={{ value: fallbackSettings, update: vi.fn(), isLoading: false, error: null }}
+        >
+          <LLMServiceProvider>{children}</LLMServiceProvider>
+        </SettingsContext.Provider>
+      );
+    }
+
+    const triggerWithResponseId = () =>
+      eventHandler?.({
+        payload: {
+          sessionId: 'sp4-session',
+          responseMessageId: 'resp-1',
+          messages: [
+            {
+              id: 'u1',
+              sessionId: 'sp4-session',
+              role: 'user',
+              content: [{ type: 'text', text: 'hello' }],
+              createdAt: new Date(),
+            },
+          ],
+          model: 'test-model',
+          provider: 'openai',
+          apiKey: 'test-key',
+        },
+      });
+
+    const usedFallbackProvider = () =>
+      (AIServiceFactory.getService as ReturnType<typeof vi.fn>).mock.calls.some(
+        ([provider]) => provider === 'anthropic',
+      );
+
+    it('Rust cancel during the retry wait stops retries and the fallback', async () => {
+      let cancelHandler: ((event: unknown) => void) | undefined;
+      (listen as ReturnType<typeof vi.fn>).mockImplementation(
+        async (eventName, handler) => {
+          if (eventName === 'llm:completion-request') {
+            eventHandler = handler as (event: unknown) => Promise<void>;
+          }
+          if (eventName === 'llm:completion-cancel') {
+            cancelHandler = handler as (event: unknown) => void;
+          }
+          return mockUnlisten;
+        },
+      );
+      mockStreamChat.mockImplementation(async function* () {
+        yield;
+        throw new Error('api err');
+      });
+      vi.mocked(sleep).mockImplementationOnce(async () => {
+        cancelHandler?.({
+          payload: {
+            sessionId: 'sp4-session',
+            responseMessageId: 'resp-1',
+            reason: 'user',
+          },
+        });
+      });
+
+      renderHook(() => useLLMService(), { wrapper: WrapperWithFallback });
+      await waitFor(() => {
+        expect(eventHandler).toBeDefined();
+        expect(cancelHandler).toBeDefined();
+      });
+
+      await act(async () => {
+        await triggerWithResponseId();
+      });
+
+      expect(mockStreamChat).toHaveBeenCalledTimes(1);
+      expect(usedFallbackProvider()).toBe(false);
+      expect(agentCommands.handleLLMResponse).not.toHaveBeenCalled();
+      expect(agentCommands.handleLLMError).not.toHaveBeenCalled();
+    });
+
+    it('UI stop just before the fallback starts prevents the fallback call', async () => {
+      const { result } = renderHook(() => useLLMService(), {
+        wrapper: WrapperWithFallback,
+      });
+      await waitFor(() => expect(eventHandler).toBeDefined());
+
+      let primaryAttempts = 0;
+      mockStreamChat.mockImplementation(async function* () {
+        yield;
+        primaryAttempts += 1;
+        if (primaryAttempts === 4) {
+          // Last primary attempt: user stops, then the attempt fails.
+          result.current.cancelCompletionRequest('sp4-session');
+        }
+        throw new Error('api err');
+      });
+
+      await act(async () => {
+        await triggerWithResponseId();
+      });
+
+      expect(mockStreamChat).toHaveBeenCalledTimes(4);
+      expect(usedFallbackProvider()).toBe(false);
+      expect(agentCommands.handleLLMResponse).not.toHaveBeenCalled();
+      expect(agentCommands.handleLLMError).not.toHaveBeenCalled();
+    });
   });
 });

@@ -133,6 +133,8 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
   const {
     executeCompletionRequest,
     cancelCompletionRequest,
+    startListenerRequest,
+    finishListenerRequest,
     isCompacting,
     isAwaitingCompact,
     getCompactedRange,
@@ -166,6 +168,8 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
     settingsRef,
     executeCompletionRequest,
     cancelCompletionRequest,
+    startListenerRequest,
+    finishListenerRequest,
     setStreamingMessages,
     setCompactingFromEvent: setCompacting,
     setCompactedRangeForSession: setCompactedRange,
