@@ -36,6 +36,9 @@ pub async fn get_aggregated_skills(
         )
         .await?;
 
+    // UI callers (e.g. @skill: autocomplete) must see skill folders added on disk
+    // since the last scan. Runtime paths that call resolve_skills keep the cache.
+    skill_service::clear_skill_scan_cache_entries();
     skill_service::resolve_skills(system_dir, user_dir, assistant_dir, workspace_dir).await
 }
 
@@ -59,4 +62,35 @@ pub async fn get_skill_content(
     workspace_path: Option<String>,
 ) -> Result<String, String> {
     skill_service::get_skill_content(skill_path, assistant_id, session_id, workspace_path).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[tokio::test]
+    async fn get_aggregated_skills_sees_skill_folder_added_after_first_call() {
+        let workspace = tempfile::tempdir().unwrap();
+        let workspace_path = workspace.path().to_string_lossy().to_string();
+
+        let before = get_aggregated_skills(None, None, Some(workspace_path.clone()))
+            .await
+            .unwrap();
+        assert!(!before.iter().any(|skill| skill.name == "late-added-skill"));
+
+        let skill_dir = skill_service::get_workspace_skills_directory_from_path(workspace.path())
+            .join("late-added-skill");
+        fs::create_dir_all(&skill_dir).unwrap();
+        fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: late-added-skill\ndescription: added on disk\n---\n# Late\n",
+        )
+        .unwrap();
+
+        let after = get_aggregated_skills(None, None, Some(workspace_path))
+            .await
+            .unwrap();
+        assert!(after.iter().any(|skill| skill.name == "late-added-skill"));
+    }
 }
