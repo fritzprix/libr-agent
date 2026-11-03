@@ -548,7 +548,7 @@ describe('AgentSessionContext – Event Handling', () => {
                         type: 'userPromptResolved',
                         sessionId: TEST_SESSION_ID,
                         requestId: 'req-1',
-                        outcome: 'timed_out',
+                        outcome: 'timeout',
                     },
                 });
             });

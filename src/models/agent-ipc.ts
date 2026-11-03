@@ -384,6 +384,9 @@ export type UserPromptPayload =
       body?: string;
     };
 
+/** How a user prompt ended; Stop reports `cancelled` (#2543). */
+export type UserPromptOutcome = 'answered' | 'cancelled' | 'timeout' | 'restart';
+
 /** The prompt waiting for a session. No field can carry a secret value. */
 export interface PendingUserPromptSummary {
   requestId: string;

@@ -8,6 +8,7 @@ import type {
   PreflightTokenMetrics,
   SessionRuntimeState,
   SessionWorkflowStatus,
+  UserPromptOutcome,
   UserPromptPayload,
   WorkflowCompletionReason,
 } from '@/models/agent-ipc';
@@ -104,8 +105,7 @@ export type AgentEventPayload =
       type: 'userPromptResolved';
       sessionId: string;
       requestId: string;
-      /** `answered` | `cancelled` | `stopped` | `timed_out` | `restarted` */
-      outcome: string;
+      outcome: UserPromptOutcome;
     }
   | {
       type: 'resourceUpdated';

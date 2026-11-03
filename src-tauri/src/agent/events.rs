@@ -192,7 +192,7 @@ pub enum AgentEvent {
     UserPromptResolved {
         session_id: String,
         request_id: String,
-        /// `answered` | `cancelled` | `stopped` | `timed_out` | `restarted`
+        /// `answered` | `cancelled` | `timeout` | `restart`
         outcome: String,
     },
 

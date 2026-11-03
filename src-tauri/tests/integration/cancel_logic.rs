@@ -485,3 +485,100 @@ async fn test_abort_pending_tool_approvals_clears_and_drops_sender() {
     // Sender was dropped, so receiver must receive RecvError (channel closed)
     assert!(rx.await.is_err());
 }
+
+/// #2543 requirement 13: a live persistent shell makes Stop a process-only
+/// cancel, which returns before the workflow-level cleanup. Stop must still end
+/// an open user prompt at once.
+#[tokio::test]
+async fn test_stop_with_live_shell_still_ends_the_user_prompt_wait() {
+    use std::collections::HashMap;
+    use std::time::Duration;
+    use tauri_mcp_agent_lib::agent::concurrency::{
+        ConcurrencyGate, DEFAULT_MAX_ACTIVE_AGENTS, DEFAULT_MAX_ACTIVE_PROCESSES,
+        DEFAULT_MAX_SUSPENDED_AGENTS, DEFAULT_MAX_SUSPENDED_PROCESSES,
+    };
+    use tauri_mcp_agent_lib::agent::context::registry::ContextRegistry;
+    use tauri_mcp_agent_lib::agent::session_bus::SessionBus;
+    use tauri_mcp_agent_lib::agent::state::{
+        admit_user_prompt, await_user_prompt_with_timeout, pending_user_prompt_summary,
+        AgentSession, UserPromptOutcome, UserPromptPayload,
+    };
+    use tauri_mcp_agent_lib::agent::workflow::stop_user_prompt_and_session_processes;
+    use tauri_mcp_agent_lib::lifecycle::repositories::init_repositories;
+    use tauri_mcp_agent_lib::mcp::builtin::workspace::PERSISTENT_SHELL_TOOL;
+    use tauri_mcp_agent_lib::{init_concurrency_gate, init_session_bus};
+    use tokio::sync::RwLock;
+
+    let db = Arc::new(crate::common::setup_test_db_with_migrations().await);
+    init_repositories(&db).await;
+    init_session_bus(SessionBus::new());
+    init_concurrency_gate(ConcurrencyGate::new(
+        DEFAULT_MAX_ACTIVE_AGENTS,
+        DEFAULT_MAX_SUSPENDED_AGENTS,
+        DEFAULT_MAX_ACTIVE_PROCESSES,
+        DEFAULT_MAX_SUSPENDED_PROCESSES,
+    ));
+
+    let session_root = TempDir::new().expect("session root");
+    let session_manager = Arc::new(
+        SessionManager::new_with_base_dir(session_root.path().join("sessions"))
+            .expect("session manager"),
+    );
+    let proxy_manager = Arc::new(MCPServiceProxyManager::new(db, session_manager));
+    let session_id = "test-stop-live-shell-user-prompt".to_string();
+
+    proxy_manager
+        .create_proxy(
+            session_id.clone(),
+            vec!["workspace".to_string()],
+            Vec::new(),
+            None,
+        )
+        .await
+        .expect("workspace proxy");
+    proxy_manager
+        .call_tool(
+            &session_id,
+            &format!("workspace__{PERSISTENT_SHELL_TOOL}"),
+            serde_json::json!({ "command": "echo ready" }),
+        )
+        .await
+        .expect("persistent shell starts");
+
+    let session = AgentSession::new(
+        sample_cancel_metadata(&session_id, SessionStatus::Busy),
+        Arc::new(ContextRegistry::new()),
+        None,
+    );
+    let slot = session.pending_user_prompt.clone();
+    let (_request_id, receiver) = admit_user_prompt(
+        &slot,
+        UserPromptPayload::Question {
+            title: "Continue?".to_string(),
+            body: None,
+        },
+    )
+    .await
+    .expect("prompt admitted");
+    let active_sessions = Arc::new(RwLock::new(HashMap::new()));
+    active_sessions
+        .write()
+        .await
+        .insert(session_id.clone(), session);
+
+    let killed =
+        stop_user_prompt_and_session_processes(&active_sessions, &proxy_manager, &session_id).await;
+
+    assert!(
+        killed > 0,
+        "the live shell must make this the process-only cancel path"
+    );
+    assert!(
+        classify_cancel_strategy(false, killed > 0) == CancelStrategy::CancelProcessThenContinue
+    );
+    // A generous timeout proves Stop closed the channel; the clock did not run out.
+    let outcome = await_user_prompt_with_timeout(receiver, Duration::from_secs(30)).await;
+    assert_eq!(outcome, UserPromptOutcome::Stopped);
+    assert_eq!(outcome.as_event_str(), "cancelled");
+    assert!(pending_user_prompt_summary(&slot).await.is_none());
+}

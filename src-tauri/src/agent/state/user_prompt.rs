@@ -100,14 +100,15 @@ impl UserPromptOutcome {
         }
     }
 
-    /// The lowercase string the resolved event carries.
+    /// The outcome string the resolved event carries (#2543 requirement 3).
+    ///
+    /// Stop reports `cancelled` like a user cancel (requirement 6).
     pub fn as_event_str(&self) -> &'static str {
         match self {
             Self::Answered(_) => "answered",
-            Self::Cancelled => "cancelled",
-            Self::Stopped => "stopped",
-            Self::TimedOut => "timed_out",
-            Self::Restarted => "restarted",
+            Self::Cancelled | Self::Stopped => "cancelled",
+            Self::TimedOut => "timeout",
+            Self::Restarted => "restart",
         }
     }
 
@@ -657,9 +658,9 @@ mod tests {
             "answered"
         );
         assert_eq!(UserPromptOutcome::Cancelled.as_event_str(), "cancelled");
-        assert_eq!(UserPromptOutcome::Stopped.as_event_str(), "stopped");
-        assert_eq!(UserPromptOutcome::TimedOut.as_event_str(), "timed_out");
-        assert_eq!(UserPromptOutcome::Restarted.as_event_str(), "restarted");
+        assert_eq!(UserPromptOutcome::Stopped.as_event_str(), "cancelled");
+        assert_eq!(UserPromptOutcome::TimedOut.as_event_str(), "timeout");
+        assert_eq!(UserPromptOutcome::Restarted.as_event_str(), "restart");
     }
 
     #[test]

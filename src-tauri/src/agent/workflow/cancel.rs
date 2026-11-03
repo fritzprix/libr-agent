@@ -102,6 +102,30 @@ pub async fn abort_pending_user_prompt(
     true
 }
 
+/// First step of Stop: close the open user prompt, then kill the session's
+/// workspace resources and return how many were killed.
+///
+/// The prompt goes first because a live persistent shell makes Stop a
+/// process-only cancel that returns before the workflow-level cleanup runs.
+pub async fn stop_user_prompt_and_session_processes(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    proxy_manager: &Arc<MCPServiceProxyManager>,
+    session_id: &str,
+) -> usize {
+    abort_pending_user_prompt(active_sessions, session_id).await;
+    match proxy_manager.kill_session_processes(session_id).await {
+        Ok(count) => count,
+        Err(error) => {
+            log::warn!(
+                "Failed to clean up resources for cancelled session {}: {}",
+                session_id,
+                error
+            );
+            0
+        }
+    }
+}
+
 /// Determines whether workflow continuation should proceed after an approval channel was closed.
 /// Returns true only when the session remains in active_sessions and has Busy status (e.g. cancel_workflow).
 /// Returns false when the session is terminated (Idle) or removed/deleted, cleanly discarding the workflow.
@@ -305,20 +329,8 @@ pub async fn cancel_workflow(
         });
     }
 
-    // Stop session-owned workspace resources first. If a process was active,
-    // this is a process-only cancel: let its failed result return to the
-    // workflow instead of cancelling the workflow token.
-    let killed_resources = match proxy_manager.kill_session_processes(&session_id).await {
-        Ok(count) => count,
-        Err(error) => {
-            log::warn!(
-                "Failed to clean up resources for cancelled session {}: {}",
-                session_id,
-                error
-            );
-            0
-        }
-    };
+    let killed_resources =
+        stop_user_prompt_and_session_processes(active_sessions, proxy_manager, &session_id).await;
 
     if classify_cancel_strategy(has_pending_execution, killed_resources > 0)
         == CancelStrategy::CancelProcessThenContinue
@@ -348,7 +360,6 @@ pub async fn cancel_workflow(
     }
 
     abort_pending_tool_approvals(active_sessions, &session_id).await;
-    abort_pending_user_prompt(active_sessions, &session_id).await;
 
     // SP6: wake awaitAgent/pollProcess waiters suspended in this session's tools.
     crate::state::get_session_bus().notify_status_change(&session_id);
