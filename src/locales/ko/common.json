@@ -947,6 +947,7 @@
       "errorTitle": "Session API 키 파일을 불러오지 못했습니다",
       "errorHelp": "키 파일이 손상되었거나 접근 권한이 올바르지 않습니다. 문제가 해결될 때까지 요청이 거부(fail-closed)됩니다.",
       "confirmRevoke": "폐기 확인",
+      "confirmRevokePrompt": "{{name}}의 API 키를 폐기할까요? 폐기 확인 또는 취소를 선택하세요.",
       "deleteSuccess": "{{name}}의 API 키가 삭제되었습니다",
       "deleteError": "API 키 삭제에 실패했습니다",
       "active": "정상",

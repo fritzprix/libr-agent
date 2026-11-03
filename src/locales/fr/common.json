@@ -947,6 +947,7 @@
       "errorTitle": "Échec du chargement des clés de la Session API",
       "errorHelp": "Le fichier de clés est peut-être endommagé ou ses autorisations sont incorrectes. La vérification des clés reste verrouillée (fail-closed) jusqu'à la résolution du problème.",
       "confirmRevoke": "Confirmer la révocation",
+      "confirmRevokePrompt": "Révoquer la clé d'API de {{name}} ? Choisissez Confirmer la révocation ou Annuler.",
       "deleteSuccess": "Clé d'API de {{name}} supprimée",
       "deleteError": "Échec de la suppression de la clé d'API",
       "active": "Active",

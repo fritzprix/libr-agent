@@ -947,6 +947,7 @@
       "errorTitle": "Failed to load Session API keys",
       "errorHelp": "The key file may be damaged or have incorrect permissions. Key verification is locked (fail-closed) until the issue is resolved.",
       "confirmRevoke": "Confirm revoke",
+      "confirmRevokePrompt": "Revoke the API key for {{name}}? Choose Confirm revoke or Cancel.",
       "deleteSuccess": "Deleted API key for {{name}}",
       "deleteError": "Failed to delete API key",
       "active": "Active",

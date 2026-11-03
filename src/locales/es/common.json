@@ -947,6 +947,7 @@
       "errorTitle": "No se pudieron cargar las claves de la Session API",
       "errorHelp": "Es posible que el archivo de claves esté dañado o tenga permisos incorrectos. La verificación de claves permanece bloqueada (fail-closed) hasta que se resuelva el problema.",
       "confirmRevoke": "Confirmar revocación",
+      "confirmRevokePrompt": "¿Revocar la clave de API de {{name}}? Elija Confirmar revocación o Cancelar.",
       "deleteSuccess": "Se eliminó la clave de API de {{name}}",
       "deleteError": "No se pudo eliminar la clave de API",
       "active": "Activa",

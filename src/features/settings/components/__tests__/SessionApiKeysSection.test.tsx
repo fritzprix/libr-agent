@@ -79,7 +79,7 @@ describe('SessionApiKeysSection', () => {
     });
   });
 
-  it('resets confirmation state on cancel, blur, or timeout without revoking', async () => {
+  it('resets confirmation state on cancel or blur, and never on a timer', async () => {
     vi.spyOn(sessionApiBackend, 'listSessionApiKeys').mockResolvedValue([
       {
         id: 'key-1',
@@ -115,20 +115,68 @@ describe('SessionApiKeysSection', () => {
     expect(screen.getByRole('button', { name: /Delete/i })).toBeInTheDocument();
     expect(deleteSpy).not.toHaveBeenCalled();
 
-    // 3. Timeout resets to Delete
+    // 3. No time limit (WCAG 2.2.1): the confirm step stays until the user acts.
     vi.useFakeTimers();
     fireEvent.click(screen.getByRole('button', { name: /Delete/i }));
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
     expect(
       screen.getByRole('button', { name: /Confirm revoke/i }),
     ).toBeInTheDocument();
-    act(() => {
-      vi.advanceTimersByTime(3000);
+    expect(deleteSpy).not.toHaveBeenCalled();
+  });
+
+  it('lets a keyboard-only user cancel and revoke a key', async () => {
+    vi.spyOn(sessionApiBackend, 'listSessionApiKeys').mockResolvedValue([
+      {
+        id: 'key-1',
+        name: 'Cursor Agent',
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+    const deleteSpy = vi
+      .spyOn(sessionApiBackend, 'revokeSessionApiKey')
+      .mockResolvedValue();
+
+    render(<SessionApiKeysSection />);
+    await waitFor(() => {
+      expect(screen.getByText('Cursor Agent')).toBeInTheDocument();
     });
+
+    // Delete -> focus moves into the confirm step, which is announced.
+    const deleteButton = screen.getByRole('button', { name: /Delete/i });
+    deleteButton.focus();
+    fireEvent.click(deleteButton);
+    const cancelButton = screen.getByRole('button', { name: /Cancel/i });
+    expect(cancelButton).toHaveFocus();
+    expect(screen.getByRole('status')).toHaveTextContent(/Revoke the API key/i);
+    expect(screen.getByRole('group')).toBeInTheDocument();
+
+    // Escape cancels and returns focus to Delete.
+    fireEvent.keyDown(cancelButton, { key: 'Escape' });
     expect(
       screen.queryByRole('button', { name: /Confirm revoke/i }),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Delete/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Delete/i })).toHaveFocus();
+
+    // Cancel also returns focus to Delete.
+    fireEvent.click(screen.getByRole('button', { name: /Delete/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Cancel/i }));
+    expect(screen.getByRole('button', { name: /Delete/i })).toHaveFocus();
     expect(deleteSpy).not.toHaveBeenCalled();
+
+    // Delete, move focus to Confirm revoke inside the group, activate it.
+    fireEvent.click(screen.getByRole('button', { name: /Delete/i }));
+    const confirmButton = screen.getByRole('button', { name: /Confirm revoke/i });
+    confirmButton.focus();
+    expect(
+      screen.getByRole('button', { name: /Confirm revoke/i }),
+    ).toBeInTheDocument();
+    fireEvent.click(confirmButton);
+    await waitFor(() => {
+      expect(deleteSpy).toHaveBeenCalledWith('key-1');
+    });
   });
 
   it('renders error state when loading keys fails', async () => {
