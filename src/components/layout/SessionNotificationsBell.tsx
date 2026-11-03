@@ -26,6 +26,24 @@ function formatSessionName(
   return sessionName || `Session ${sessionId.slice(0, 8)}`;
 }
 
+/**
+ * Dismissing a row removes the focused menu item. Move focus to the item now at
+ * the same position (or the menu itself) so keyboard users stay in the menu.
+ */
+function keepMenuFocusAfterRemoval(item: EventTarget | null) {
+  if (!(item instanceof HTMLElement)) return;
+  const menu = item.closest<HTMLElement>('[role="menu"]');
+  if (!menu) return;
+  const menuItems = () =>
+    Array.from(menu.querySelectorAll<HTMLElement>('[role="menuitem"]'));
+  const index = menuItems().indexOf(item);
+  requestAnimationFrame(() => {
+    if (menu.contains(document.activeElement)) return;
+    const remaining = menuItems();
+    (remaining[Math.min(index, remaining.length - 1)] ?? menu).focus();
+  });
+}
+
 export function SessionNotificationsBell() {
   const navigate = useNavigate();
   const { t } = useTranslation();
@@ -77,21 +95,21 @@ export function SessionNotificationsBell() {
       </Tooltip>
 
       <DropdownMenuContent align="end" className="w-80">
-        <div className="flex items-center justify-between pr-2">
+        {/* Every control is a menu item (no button nested in a menuitem), so
+            arrow keys reach "Mark all read" and each row's dismiss (#2537). */}
+        <div className="flex items-center justify-between">
           <DropdownMenuLabel>{t('notifications.title')}</DropdownMenuLabel>
           {notificationSessions.length > 0 ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-muted-foreground hover:text-foreground h-auto px-2 py-1 text-xs"
-              onClick={(event) => {
+            <DropdownMenuItem
+              className="text-muted-foreground focus:text-foreground px-2 py-1 text-xs"
+              onSelect={(event) => {
+                // Keep the menu open so the user sees the list update.
                 event.preventDefault();
-                event.stopPropagation();
                 void markAllNotificationsViewed();
               }}
             >
               {t('notifications.markAllRead')}
-            </Button>
+            </DropdownMenuItem>
           ) : null}
         </div>
         <DropdownMenuSeparator />
@@ -113,58 +131,43 @@ export function SessionNotificationsBell() {
             );
 
             return (
-              <DropdownMenuItem
-                key={session.id}
-                className="items-start py-2"
-                onSelect={handleSessionSelect(session.id)}
-              >
-                <div className="flex min-w-0 flex-1 flex-col gap-1">
-                  <div className="truncate font-medium">{name}</div>
-                  <div className="flex flex-wrap gap-1">
-                    {hasRecurringStopAttention ? (
-                      <Badge variant="secondary">
-                        {t('notifications.recurringStop')}
-                      </Badge>
-                    ) : null}
-                    {pendingApprovalCount > 0 ? (
-                      <Badge variant="destructive">
-                        {t('notifications.pendingApprovals', {
-                          count: pendingApprovalCount,
-                        })}
-                      </Badge>
-                    ) : null}
+              <div key={session.id} className="flex items-start gap-1">
+                <DropdownMenuItem
+                  className="min-w-0 flex-1 items-start py-2"
+                  onSelect={handleSessionSelect(session.id)}
+                >
+                  <div className="flex min-w-0 flex-1 flex-col gap-1">
+                    <div className="truncate font-medium">{name}</div>
+                    <div className="flex flex-wrap gap-1">
+                      {hasRecurringStopAttention ? (
+                        <Badge variant="secondary">
+                          {t('notifications.recurringStop')}
+                        </Badge>
+                      ) : null}
+                      {pendingApprovalCount > 0 ? (
+                        <Badge variant="destructive">
+                          {t('notifications.pendingApprovals', {
+                            count: pendingApprovalCount,
+                          })}
+                        </Badge>
+                      ) : null}
+                    </div>
                   </div>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="text-muted-foreground hover:text-foreground -mr-1 h-6 w-6 shrink-0"
+                </DropdownMenuItem>
+                {/* A sibling item, not a button inside the row: the row's
+                  pointer handling never sees it, so it cannot open the session. */}
+                <DropdownMenuItem
+                  className="text-muted-foreground focus:text-foreground mt-1 h-7 w-7 shrink-0 justify-center p-0"
                   aria-label={t('notifications.dismiss')}
-                  onPointerDown={(event) => {
-                    // Keep the row's DropdownMenuItem from recording the
-                    // pointer, so it never treats this as a row click.
-                    event.stopPropagation();
-                  }}
-                  onPointerUp={(event) => {
-                    // DropdownMenuItem's onPointerUp runs `currentTarget.click()`
-                    // when it did not see the pointerdown. Since the dismiss
-                    // button swallows pointerdown, an unstopped pointerup makes
-                    // the item synthesize a click on the row -> onSelect ->
-                    // navigate to the session. Stop it here too.
-                    event.stopPropagation();
-                  }}
-                  onKeyDown={(event) => {
-                    event.stopPropagation();
-                  }}
-                  onClick={(event) => {
+                  onSelect={(event) => {
                     event.preventDefault();
-                    event.stopPropagation();
+                    keepMenuFocusAfterRemoval(event.target);
                     void markSessionViewed(session.id);
                   }}
                 >
                   <X size={14} />
-                </Button>
-              </DropdownMenuItem>
+                </DropdownMenuItem>
+              </div>
             );
           })
         )}
