@@ -99,6 +99,26 @@ pub struct RespondChannelPermissionRequest {
     pub behavior: String,
 }
 
+/// Answer an open user prompt (#2543).
+///
+/// `value` carries the typed text for both kinds: the password for a `secret`,
+/// the reply for a `question`. It is never logged or echoed back.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubmitUserPromptRequest {
+    pub session_id: String,
+    pub request_id: String,
+    pub value: String,
+}
+
+/// Cancel an open user prompt without answering it (#2543).
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CancelUserPromptRequest {
+    pub session_id: String,
+    pub request_id: String,
+}
+
 /// Request to update session model/provider binding for a session
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -143,6 +163,10 @@ pub struct AgentOpenSessionResponse {
     pub messages: MessageSlice,
     #[serde(default)]
     pub pending_approvals: Vec<PendingApprovalSnapshot>,
+    /// The prompt still waiting for this session, so a reload shows it again
+    /// (#2543 requirement 7). Never carries a secret value.
+    #[serde(default)]
+    pub pending_user_prompt: Option<crate::agent::state::PendingUserPromptSummary>,
     #[serde(default)]
     pub runtime_state: crate::agent::runtime_state::SessionRuntimeState,
 }

@@ -24,6 +24,9 @@ pub const USER_PROMPT_CANCELLED_MESSAGE: &str = "User cancelled the prompt.";
 /// Requirement 2: one prompt at a time per session.
 pub const USER_PROMPT_ALREADY_PENDING_MESSAGE: &str = "A prompt is already waiting for the user.";
 
+/// Requirement 4: submit or cancel found no entry with that request id.
+pub const USER_PROMPT_GONE_MESSAGE: &str = "This prompt is no longer waiting.";
+
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize,
 )]
@@ -36,7 +39,7 @@ pub enum UserPromptKind {
 /// What the user is asked. The `Secret` variant carries no value: the value
 /// exists only in the answer sent back through the channel.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum UserPromptPayload {
     Secret {
         variable_name: String,
@@ -311,6 +314,21 @@ mod tests {
             title: "Which branch?".to_string(),
             body: None,
         }
+    }
+
+    /// Requirement 3: the payload is tagged with its kind, and the fields are
+    /// camelCase, so one dialog switches on `payload.kind` without a second
+    /// guess from a separate field.
+    #[test]
+    fn the_requested_event_payload_is_tagged_with_its_kind() {
+        let secret = serde_json::to_value(secret_payload()).expect("serializes");
+        assert_eq!(secret["kind"], serde_json::json!("secret"));
+        assert_eq!(secret["variableName"], serde_json::json!("SUDO_PASSWORD"));
+        assert_eq!(secret["label"], serde_json::json!("System password"));
+
+        let question = serde_json::to_value(question_payload()).expect("serializes");
+        assert_eq!(question["kind"], serde_json::json!("question"));
+        assert_eq!(question["title"], serde_json::json!("Which branch?"));
     }
 
     #[test]
@@ -608,6 +626,31 @@ mod tests {
             waiter.await.expect("waiter finishes"),
             UserPromptOutcome::Cancelled
         );
+    }
+
+    /// Requirement 4: a submit or cancel for a request id that is no longer
+    /// pending reports one fixed message, so the frontend can close the dialog
+    /// and the caller is not left waiting.
+    #[tokio::test]
+    async fn a_stale_request_id_reports_the_gone_message() {
+        let slot = new_user_prompt_slot();
+        let (request_id, _receiver) = admit_user_prompt(&slot, secret_payload())
+            .await
+            .expect("prompt admitted");
+
+        // Not the pending id, so the entry must stay untouched.
+        assert!(
+            take_pending_user_prompt(&slot, "some-other-request").await.is_none(),
+            "a stale id must not take the pending entry"
+        );
+        assert!(
+            pending_user_prompt_summary(&slot).await.is_some(),
+            "the real prompt is still waiting"
+        );
+
+        // The real id takes it.
+        assert!(take_pending_user_prompt(&slot, &request_id).await.is_some());
+        assert_eq!(USER_PROMPT_GONE_MESSAGE, "This prompt is no longer waiting.");
     }
 
     #[test]

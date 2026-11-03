@@ -1,8 +1,9 @@
 use super::contracts::{
-    AgentOpenSessionResponse, AgentResponse, AgentSessionListResponse, CreateAgentSessionRequest,
-    CreateAgentSessionWithMessageRequest, ListAgentSessionsRequest, PendingApprovalSnapshot,
-    UpdateAgentConfigRequest,
+    AgentOpenSessionResponse, AgentResponse, AgentSessionListResponse, CancelUserPromptRequest,
+    CreateAgentSessionRequest, CreateAgentSessionWithMessageRequest, ListAgentSessionsRequest,
+    PendingApprovalSnapshot, SubmitUserPromptRequest, UpdateAgentConfigRequest,
 };
+use crate::agent::state::USER_PROMPT_GONE_MESSAGE;
 use crate::agent::{AgentSessionManager, ExecutionMode};
 use crate::mcp::types::{MCPTool, ServiceContext};
 use crate::repositories::message_repository::MessageRepository;
@@ -154,7 +155,7 @@ async fn build_open_session_response(
     // - IDs already on the live active message stack (promoted / Idle path)
     // - Idle/Paused incomplete-turn tip (session-start request must stay on stack)
     let active = manager.active_sessions_arc();
-    let (mut protect_ids, pending_approvals) = {
+    let (mut protect_ids, pending_approvals, pending_user_prompt) = {
         let sessions = active.read().await;
         if let Some(active_session) = sessions.get(session_id) {
             let protect_ids = {
@@ -174,9 +175,15 @@ async fn build_open_session_response(
                     input_preview: data.input_preview.clone(),
                 })
                 .collect();
-            (protect_ids, pending_approvals)
+            drop(approvals);
+            let pending_user_prompt =
+                crate::agent::state::pending_user_prompt_summary(
+                    &active_session.pending_user_prompt,
+                )
+                .await;
+            (protect_ids, pending_approvals, pending_user_prompt)
         } else {
-            (std::collections::HashSet::new(), Vec::new())
+            (std::collections::HashSet::new(), Vec::new(), None)
         }
     };
 
@@ -203,6 +210,7 @@ async fn build_open_session_response(
         session,
         messages: message_slice.into(),
         pending_approvals,
+        pending_user_prompt,
         runtime_state,
     })
 }
@@ -607,4 +615,73 @@ pub async fn agent_get_descendant_session_ids(
     session_id: String,
 ) -> Result<Vec<String>, String> {
     crate::services::SessionCleanupService::collect_descendant_ids(&session_id).await
+}
+
+/// Answer the user prompt waiting for this session (#2543 requirement 4).
+///
+/// The value is delivered to the waiting caller only. It is never logged,
+/// stored in the message history, or included in an event.
+#[command]
+pub async fn agent_submit_user_prompt(
+    manager: State<'_, AgentSessionManager>,
+    request: SubmitUserPromptRequest,
+) -> Result<AgentResponse, String> {
+    let pending =
+        crate::agent::session_manager::pending_user_prompt_in(manager.inner(), &request.session_id)
+            .await
+            .ok_or_else(|| USER_PROMPT_GONE_MESSAGE.to_string())?;
+
+    if pending.request_id != request.request_id {
+        return Err(USER_PROMPT_GONE_MESSAGE.to_string());
+    }
+
+    let answer = match pending.kind {
+        crate::agent::state::UserPromptKind::Secret => {
+            crate::agent::state::UserPromptAnswer::Secret(request.value)
+        }
+        crate::agent::state::UserPromptKind::Question => {
+            crate::agent::state::UserPromptAnswer::Question(request.value)
+        }
+    };
+
+    let delivered = manager
+        .answer_user_prompt(&request.session_id, &request.request_id, answer)
+        .await?;
+
+    Ok(AgentResponse {
+        success: delivered,
+        message: if delivered {
+            "Answer delivered to the waiting caller".to_string()
+        } else {
+            "The caller already stopped waiting".to_string()
+        },
+        data: Some(serde_json::json!({ "delivered": delivered })),
+    })
+}
+
+/// Stop waiting for the user prompt without answering it (#2543).
+#[command]
+pub async fn agent_cancel_user_prompt(
+    manager: State<'_, AgentSessionManager>,
+    request: CancelUserPromptRequest,
+) -> Result<AgentResponse, String> {
+    let delivered = manager
+        .cancel_user_prompt(&request.session_id, &request.request_id)
+        .await?;
+
+    Ok(AgentResponse {
+        success: true,
+        message: "Prompt cancelled".to_string(),
+        data: Some(serde_json::json!({ "delivered": delivered })),
+    })
+}
+
+/// The prompt waiting for a session, for recovery after a reload
+/// (#2543 requirement 7). A session with no open prompt is not an error.
+#[command]
+pub async fn agent_get_user_prompt(
+    manager: State<'_, AgentSessionManager>,
+    session_id: String,
+) -> Result<Option<crate::agent::state::PendingUserPromptSummary>, String> {
+    Ok(crate::agent::session_manager::pending_user_prompt_in(manager.inner(), &session_id).await)
 }

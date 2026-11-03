@@ -183,7 +183,7 @@ pub enum AgentEvent {
     UserPromptRequested {
         session_id: String,
         request_id: String,
-        kind: crate::agent::state::UserPromptKind,
+        /// Tagged with `kind`, so the dialog switches on `payload.kind` alone.
         payload: crate::agent::state::UserPromptPayload,
     },
 
@@ -347,10 +347,9 @@ pub(crate) fn summarize_agent_event(event: &AgentEvent) -> String {
         AgentEvent::UserPromptRequested {
             session_id,
             request_id,
-            kind,
             payload,
         } => format!(
-            "UserPromptRequested(session={session_id}, request_id={request_id}, kind={kind:?}, {})",
+            "UserPromptRequested(session={session_id}, request_id={request_id}, {})",
             payload.describe()
         ),
         AgentEvent::UserPromptResolved {

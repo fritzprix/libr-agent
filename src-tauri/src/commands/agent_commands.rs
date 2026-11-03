@@ -26,10 +26,12 @@ pub use session_commands::{
     agent_delete_session_only, agent_execute_command, agent_factory_reset, agent_get_all_sessions,
     agent_get_available_tools, agent_get_child_session_ids, agent_get_child_sessions,
     agent_get_descendant_session_ids, agent_get_service_contexts, agent_get_session,
-    agent_get_tools, agent_init_session_with_messages, agent_list_attention_sessions,
+    agent_get_tools, agent_get_user_prompt, agent_init_session_with_messages,
+    agent_list_attention_sessions,
     agent_list_sessions, agent_mark_session_viewed, agent_open_session, agent_resume_session,
-    agent_set_execution_mode, agent_toggle_session_bookmark, agent_update_session_config,
-    agent_update_session_name,
+    agent_cancel_user_prompt, agent_set_execution_mode, agent_submit_user_prompt,
+    agent_toggle_session_bookmark,
+    agent_update_session_config, agent_update_session_name,
 };
 pub use ui_actions::agent_execute_ui_tauri_action;
 pub use workflow_commands::{

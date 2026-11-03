@@ -67,7 +67,6 @@ impl AgentSessionManager {
             AgentEvent::UserPromptRequested {
                 session_id: session_id.to_string(),
                 request_id: request_id.clone(),
-                kind: payload.kind(),
                 payload,
             },
         ) {
@@ -118,7 +117,7 @@ impl AgentSessionManager {
 
         let prompt = take_pending_user_prompt(&slot, request_id)
             .await
-            .ok_or_else(|| format!("No pending prompt '{}' for this session", request_id))?;
+            .ok_or_else(|| crate::agent::state::USER_PROMPT_GONE_MESSAGE.to_string())?;
 
         log::info!(
             "Delivering answer for prompt on session {} (request_id={}, kind={:?})",
