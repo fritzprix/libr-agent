@@ -179,7 +179,6 @@ impl WorkspaceServer {
     }
 }
 
-/// A password prompt is a masked `secret`; any other input is a `question`.
 /// The tool result when the user gave no answer. A timeout is an error
 /// (#2543 requirement 5); cancel and Stop stay informational, as before.
 fn unanswered_shell_result(
@@ -206,6 +205,7 @@ fn unanswered_shell_result(
         .to_mcp_result()
 }
 
+/// A password prompt is a masked `secret`; any other input is a `question`.
 fn shell_prompt_payload(
     input_type: InteractiveShellInputType,
     variable_name: &str,
