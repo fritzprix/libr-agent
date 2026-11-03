@@ -175,6 +175,27 @@ pub enum AgentEvent {
         outcome: String,
     },
 
+    /// A `secret` or `question` prompt is waiting for the local user (#2543).
+    ///
+    /// The payload never carries a secret value: only the variable name and the
+    /// label. The answer returns through the backend channel, not this event.
+    #[serde(rename_all = "camelCase")]
+    UserPromptRequested {
+        session_id: String,
+        request_id: String,
+        /// Tagged with `kind`, so the dialog switches on `payload.kind` alone.
+        payload: crate::agent::state::UserPromptPayload,
+    },
+
+    /// A user prompt was answered, cancelled, timed out, or dropped by Stop.
+    #[serde(rename_all = "camelCase")]
+    UserPromptResolved {
+        session_id: String,
+        request_id: String,
+        /// `answered` | `cancelled` | `timeout` | `restart`
+        outcome: String,
+    },
+
     /// Resource updated (assistants, MCP servers, playbooks, etc.)
     /// Emitted when builtin tools modify global resources
     #[serde(rename_all = "camelCase")]
@@ -322,6 +343,21 @@ pub(crate) fn summarize_agent_event(event: &AgentEvent) -> String {
             outcome,
         } => format!(
             "InteractiveShellInputResolved(session={session_id}, execution_id={execution_id}, outcome={outcome})"
+        ),
+        AgentEvent::UserPromptRequested {
+            session_id,
+            request_id,
+            payload,
+        } => format!(
+            "UserPromptRequested(session={session_id}, request_id={request_id}, {})",
+            payload.describe()
+        ),
+        AgentEvent::UserPromptResolved {
+            session_id,
+            request_id,
+            outcome,
+        } => format!(
+            "UserPromptResolved(session={session_id}, request_id={request_id}, outcome={outcome})"
         ),
         AgentEvent::ResourceUpdated {
             resource_type,

@@ -85,6 +85,7 @@ fn build_active_session(session_id: &str, messages: Vec<Message>) -> AgentSessio
         malformed_tool_markup_retry_count: Arc::new(RwLock::new(0)),
         pending_events: Arc::new(RwLock::new(PendingEventManager::new())),
         pending_approvals: Arc::new(RwLock::new(HashMap::new())),
+        pending_user_prompt: tauri_mcp_agent_lib::agent::state::new_user_prompt_slot(),
         context_registry: Arc::new(ContextRegistry::new()),
         compact_context: Arc::new(RwLock::new(None)),
         compaction: CompactionRuntimeState::new(),

@@ -103,10 +103,26 @@ async fn get_session_reply(
                 Some(active) => list_pending_approvals_in(active, &id).await,
                 None => Vec::new(),
             };
+            let pending_user_prompt = match active_sessions {
+                Some(active) => {
+                    let active = active.read().await;
+                    match active.get(&id) {
+                        Some(agent_session) => {
+                            crate::agent::state::pending_user_prompt_summary(
+                                &agent_session.pending_user_prompt,
+                            )
+                            .await
+                        }
+                        None => None,
+                    }
+                }
+                None => None,
+            };
             warp::reply::with_status(
                 warp::reply::json(&SessionStatusResponse {
                     session: map_session_metadata_for_http(session),
                     pending_approvals,
+                    pending_user_prompt,
                 }),
                 StatusCode::OK,
             )

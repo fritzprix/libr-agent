@@ -76,6 +76,56 @@ pub async fn abort_pending_tool_approvals(
     approvals.clear();
 }
 
+/// Drop the pending user prompt so its waiter ends at once (#2543 requirement 6).
+///
+/// Stop, terminate, and delete all route here, next to
+/// `abort_pending_tool_approvals`. Dropping the entry closes the oneshot channel,
+/// so the caller observes `UserPromptOutcome::Stopped` immediately instead of
+/// waiting out the 300 s timeout.
+pub async fn abort_pending_user_prompt(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+) -> bool {
+    let active = active_sessions.read().await;
+    let Some(session) = active.get(session_id) else {
+        return false;
+    };
+    let Some(prompt) = session.pending_user_prompt.write().await.take() else {
+        return false;
+    };
+    log::info!(
+        "Aborted pending user prompt for cancelled session {} (request_id={}, {})",
+        session_id,
+        prompt.request_id,
+        prompt.payload.describe()
+    );
+    true
+}
+
+/// First step of Stop: close the open user prompt, then kill the session's
+/// workspace resources and return how many were killed.
+///
+/// The prompt goes first because a live persistent shell makes Stop a
+/// process-only cancel that returns before the workflow-level cleanup runs.
+pub async fn stop_user_prompt_and_session_processes(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    proxy_manager: &Arc<MCPServiceProxyManager>,
+    session_id: &str,
+) -> usize {
+    abort_pending_user_prompt(active_sessions, session_id).await;
+    match proxy_manager.kill_session_processes(session_id).await {
+        Ok(count) => count,
+        Err(error) => {
+            log::warn!(
+                "Failed to clean up resources for cancelled session {}: {}",
+                session_id,
+                error
+            );
+            0
+        }
+    }
+}
+
 /// Determines whether workflow continuation should proceed after an approval channel was closed.
 /// Returns true only when the session remains in active_sessions and has Busy status (e.g. cancel_workflow).
 /// Returns false when the session is terminated (Idle) or removed/deleted, cleanly discarding the workflow.
@@ -206,6 +256,9 @@ pub async fn terminate_session(
     // discards continuation instead of racing into a boundary pause or another LLM turn.
     abort_pending_tool_approvals(active_sessions, &session_id).await;
 
+    // The user prompt blocks the turn, so terminate drops it like approvals.
+    abort_pending_user_prompt(active_sessions, &session_id).await;
+
     // Hard terminate drops waiting prompts; soft cancel preserves them.
     discard_pending_events(active_sessions, &session_id).await;
 
@@ -276,20 +329,8 @@ pub async fn cancel_workflow(
         });
     }
 
-    // Stop session-owned workspace resources first. If a process was active,
-    // this is a process-only cancel: let its failed result return to the
-    // workflow instead of cancelling the workflow token.
-    let killed_resources = match proxy_manager.kill_session_processes(&session_id).await {
-        Ok(count) => count,
-        Err(error) => {
-            log::warn!(
-                "Failed to clean up resources for cancelled session {}: {}",
-                session_id,
-                error
-            );
-            0
-        }
-    };
+    let killed_resources =
+        stop_user_prompt_and_session_processes(active_sessions, proxy_manager, &session_id).await;
 
     if classify_cancel_strategy(has_pending_execution, killed_resources > 0)
         == CancelStrategy::CancelProcessThenContinue

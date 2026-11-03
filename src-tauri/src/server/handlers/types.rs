@@ -57,6 +57,10 @@ pub struct SessionStatusResponse {
     #[serde(flatten)]
     pub session: SessionMetadata,
     pub pending_approvals: Vec<PendingApprovalSummary>,
+    /// The prompt still waiting for this session (#2543 requirement 7).
+    /// Never carries a secret value.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pending_user_prompt: Option<crate::agent::state::PendingUserPromptSummary>,
 }
 
 #[derive(Debug, Serialize)]
