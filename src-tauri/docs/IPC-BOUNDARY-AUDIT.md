@@ -390,7 +390,6 @@ app_handle.emit("oauth-callback", url_str).ok();  // ← Error silently ignored
 | `import_migration` | 🔴 High | DB backup before import, transactional writes, format compatibility check |
 | `agent_factory_reset` | 🔴 High | Irreversible — destroys all session data |
 | `set_workspace_override` | 🟡 Medium | Allows arbitrary filesystem path — could access sensitive directories |
-| `submit_interactive_shell_input` | 🟡 Medium | Shell execution — potential for command injection if params are unsanitized |
 | `workspace_write_file` | 🟡 Medium | File write to workspace — path traversal risk if workspace path is not validated |
 | `delete_mcp_server_config` | 🟢 Low | Requires ID — no auth boundary (single-user desktop app) |
 

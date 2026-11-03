@@ -1,5 +1,5 @@
 use super::{clear_context_cache, WorkspaceServer};
-use crate::mcp::builtin::workspace::{terminal_manager, types::PendingShellInputResolution};
+use crate::mcp::builtin::workspace::terminal_manager;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
 use tracing::info;
@@ -120,12 +120,6 @@ impl WorkspaceServer {
             }
         }
 
-        for pending in self.pending_executions.remove_for_session(session_id) {
-            if let Some(response_tx) = pending.response_tx {
-                let _ = response_tx.send(PendingShellInputResolution::Cancelled);
-            }
-        }
-
         let persistent_shell_killed = match self.shell_manager.force_kill_shell(session_id).await {
             Ok(killed) => killed,
             Err(error) => {
@@ -212,12 +206,6 @@ impl WorkspaceServer {
             "Cleaned up {} processes for session {}",
             process_count, session_id
         );
-
-        for pending in self.pending_executions.remove_for_session(session_id) {
-            if let Some(response_tx) = pending.response_tx {
-                let _ = response_tx.send(PendingShellInputResolution::Cancelled);
-            }
-        }
 
         if let Err(e) = self.shell_manager.terminate_shell(session_id).await {
             tracing::warn!(

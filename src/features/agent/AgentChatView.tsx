@@ -62,9 +62,6 @@ import { recordUiToolInvocation } from './lib/recordUiToolInvocation';
 
 const logger = getLogger('AgentChatView');
 
-const InteractiveShellPromptDialog = lazy(
-  () => import('./components/InteractiveShellPromptDialog'),
-);
 
 const UserPromptDialog = lazy(() => import('./components/UserPromptDialog'));
 
@@ -238,8 +235,7 @@ function AgentChatInner() {
   } = usePanelWidth();
 
   const [searchParams, setSearchParams] = useSearchParams();
-  const { pendingInteractiveShellPrompt, pendingUserPrompt, session } =
-    useAgentSessionState();
+  const { pendingUserPrompt, session } = useAgentSessionState();
   const { appendToolMessages, submit } = useAgentChatActions();
   const hasExecutedPlaybookRef = useRef(false);
   const hasOpenedShellRef = useRef(!isMobile && showSidePanel);
@@ -343,14 +339,6 @@ function AgentChatInner() {
 
   return (
     <>
-      {sessionId && pendingInteractiveShellPrompt ? (
-        <Suspense fallback={null}>
-          <InteractiveShellPromptDialog
-            sessionId={sessionId}
-            promptState={pendingInteractiveShellPrompt}
-          />
-        </Suspense>
-      ) : null}
       {sessionId && pendingUserPrompt ? (
         <Suspense fallback={null}>
           <UserPromptDialog

@@ -251,44 +251,6 @@ export async function agentCallBuiltinTool<T = unknown>(
   });
 }
 
-export async function submitInteractiveShellInput(
-  sessionId: string,
-  executionId: string,
-  input: string,
-): Promise<void> {
-  await safeInvoke(
-    'submit_interactive_shell_input',
-    {
-      request: {
-        sessionId,
-        executionId,
-        input,
-      },
-    },
-    {
-      loggedArgs: {
-        request: {
-          sessionId,
-          executionId,
-          redacted: true,
-        },
-      },
-    },
-  );
-}
-
-export async function cancelInteractiveShellInput(
-  sessionId: string,
-  executionId: string,
-): Promise<void> {
-  await safeInvoke('cancel_interactive_shell_input', {
-    request: {
-      sessionId,
-      executionId,
-    },
-  });
-}
-
 /**
  * Answer the user prompt waiting for a session (#2543).
  *

@@ -12,7 +12,6 @@ pub(crate) use path_validation::{
 use super::persistent_shell;
 use super::terminal_manager;
 use super::tools;
-use super::types::PendingExecutions;
 use super::utils;
 use crate::mcp::MCPTool;
 use crate::models::workspace_isolation::WorkspaceIsolationMode;
@@ -39,7 +38,6 @@ pub struct WorkspaceServer {
     pub(crate) workspace_isolation: WorkspaceIsolationMode,
     pub(crate) isolation_manager: crate::session_isolation::SessionIsolationManager,
     pub(crate) process_registry: terminal_manager::ProcessRegistry,
-    pub(crate) pending_executions: Arc<PendingExecutions>,
     pub(crate) shell_manager: Arc<persistent_shell::PersistentShellManager>,
     pub(crate) context_cache: ContextCache,
     cleanup_shutdown: Arc<std::sync::atomic::AtomicBool>,
@@ -63,7 +61,6 @@ impl WorkspaceServer {
             session_id, workspace_isolation
         );
         let process_registry = terminal_manager::create_process_registry();
-        let pending_executions = Arc::new(PendingExecutions::new());
         let cleanup_shutdown = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
         let process_cleanup_task =
@@ -75,7 +72,6 @@ impl WorkspaceServer {
             workspace_isolation,
             isolation_manager: crate::session_isolation::SessionIsolationManager::new(),
             process_registry,
-            pending_executions,
             shell_manager: Arc::new(persistent_shell::PersistentShellManager::new()),
             context_cache: Arc::new(tokio::sync::RwLock::new(None)),
             cleanup_shutdown,

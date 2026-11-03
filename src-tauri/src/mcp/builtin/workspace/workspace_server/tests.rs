@@ -1,8 +1,5 @@
 use super::WorkspaceServer;
-use crate::mcp::builtin::workspace::{
-    persistent_shell, terminal_manager, InteractiveShellInputType, PendingShellExecution,
-    PendingShellInputResolution, StdinDelivery,
-};
+use crate::mcp::builtin::workspace::{persistent_shell, terminal_manager};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -44,7 +41,6 @@ async fn kill_session_processes_marks_only_owned_processes_and_retains_output() 
         };
 
     let other_output = temp_dir.path().join("other").join("stdout.log");
-    let (response_tx, response_rx) = tokio::sync::oneshot::channel();
     {
         let mut registry = server.process_registry.write().await;
         registry.entries.insert(
@@ -61,20 +57,6 @@ async fn kill_session_processes_marks_only_owned_processes_and_retains_output() 
             process_entry("foreign-process", other_session_id, &other_output),
         );
     }
-    server.pending_executions.insert(PendingShellExecution {
-        execution_id: "interactive-1".to_string(),
-        session_id: session_id.to_string(),
-        executable_command: "read-host".to_string(),
-        display_command: "read-host".to_string(),
-        run_mode: "sync".to_string(),
-        timeout: 30,
-        created_at: chrono::Utc::now(),
-        prompt: "Input".to_string(),
-        input_type: InteractiveShellInputType::Text,
-        stdin_delivery: StdinDelivery::Host,
-        response_tx: Some(response_tx),
-    });
-
     assert_eq!(
         server
             .kill_session_processes(session_id)
@@ -109,10 +91,6 @@ async fn kill_session_processes_marks_only_owned_processes_and_retains_output() 
     drop(registry);
 
     assert!(retained_output.exists());
-    assert!(matches!(
-        response_rx.await.expect("pending response"),
-        PendingShellInputResolution::Cancelled
-    ));
 }
 
 #[tokio::test]

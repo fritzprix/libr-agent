@@ -389,26 +389,6 @@ export function useAgentSessionEvents(
                 break;
               }
 
-              case 'interactiveShellInputRequested': {
-                setters.setPendingInteractiveShellPrompt({
-                  executionId: payload.executionId,
-                  prompt: payload.prompt,
-                  inputType: payload.inputType,
-                  command: payload.command,
-                });
-                setters.setWorkflowPhase('using_tools');
-                break;
-              }
-
-              case 'interactiveShellInputResolved': {
-                setters.setPendingInteractiveShellPrompt((currentPrompt) =>
-                  currentPrompt?.executionId === payload.executionId
-                    ? null
-                    : currentPrompt,
-                );
-                break;
-              }
-
               case 'userPromptRequested': {
                 liveMutationEpoch += 1;
                 setters.setPendingUserPrompt({
@@ -504,7 +484,6 @@ export function useAgentSessionEvents(
                   prev ? { ...prev, status: nextStatus } : null,
                 );
                 setters.setWorkflowPhase('idle');
-                setters.setPendingInteractiveShellPrompt(null);
                 setters.setPendingUserPrompt(null);
                 clearStreamingOnInactive();
                 logger.info('Workflow phase: idle', {
