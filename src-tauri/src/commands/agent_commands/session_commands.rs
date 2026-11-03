@@ -176,11 +176,10 @@ async fn build_open_session_response(
                 })
                 .collect();
             drop(approvals);
-            let pending_user_prompt =
-                crate::agent::state::pending_user_prompt_summary(
-                    &active_session.pending_user_prompt,
-                )
-                .await;
+            let pending_user_prompt = crate::agent::state::pending_user_prompt_summary(
+                &active_session.pending_user_prompt,
+            )
+            .await;
             (protect_ids, pending_approvals, pending_user_prompt)
         } else {
             (std::collections::HashSet::new(), Vec::new(), None)

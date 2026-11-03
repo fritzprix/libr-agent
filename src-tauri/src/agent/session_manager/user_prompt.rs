@@ -11,9 +11,8 @@
 use super::AgentSessionManager;
 use crate::agent::events::AgentEvent;
 use crate::agent::state::{
-    admit_user_prompt, pending_user_prompt_summary, take_pending_user_prompt,
-    wait_for_user_prompt, PendingUserPromptSummary, UserPromptAnswer, UserPromptOutcome,
-    UserPromptPayload,
+    admit_user_prompt, pending_user_prompt_summary, take_pending_user_prompt, wait_for_user_prompt,
+    PendingUserPromptSummary, UserPromptAnswer, UserPromptOutcome, UserPromptPayload,
 };
 use crate::agent::tauri_events::emit_agent_event;
 

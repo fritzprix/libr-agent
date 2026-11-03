@@ -27,9 +27,7 @@ pub const USER_PROMPT_ALREADY_PENDING_MESSAGE: &str = "A prompt is already waiti
 /// Requirement 4: submit or cancel found no entry with that request id.
 pub const USER_PROMPT_GONE_MESSAGE: &str = "This prompt is no longer waiting.";
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UserPromptKind {
     Secret,
@@ -39,7 +37,11 @@ pub enum UserPromptKind {
 /// What the user is asked. The `Secret` variant carries no value: the value
 /// exists only in the answer sent back through the channel.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum UserPromptPayload {
     Secret {
         variable_name: String,
@@ -216,11 +218,7 @@ pub async fn admit_user_prompt(
 
     let request_id = uuid::Uuid::new_v4().to_string();
     let (sender, receiver) = oneshot::channel();
-    *guard = Some(PendingUserPrompt::new(
-        request_id.clone(),
-        payload,
-        sender,
-    ));
+    *guard = Some(PendingUserPrompt::new(request_id.clone(), payload, sender));
     Ok((request_id, receiver))
 }
 
@@ -249,7 +247,10 @@ pub async fn take_any_pending_user_prompt(slot: &UserPromptSlot) -> Option<Pendi
 pub async fn pending_user_prompt_summary(
     slot: &UserPromptSlot,
 ) -> Option<PendingUserPromptSummary> {
-    slot.read().await.as_ref().map(PendingUserPromptSummary::from)
+    slot.read()
+        .await
+        .as_ref()
+        .map(PendingUserPromptSummary::from)
 }
 
 /// Wait for the answer under the shared 300 s timeout.
@@ -478,10 +479,7 @@ mod tests {
         assert!(prompt.answer(UserPromptAnswer::Secret("hunter2".to_string())));
 
         let outcome = waiter.await.expect("waiter finishes");
-        assert_eq!(
-            outcome,
-            UserPromptOutcome::Answered("hunter2".to_string())
-        );
+        assert_eq!(outcome, UserPromptOutcome::Answered("hunter2".to_string()));
         assert!(pending_user_prompt_summary(&slot).await.is_none());
     }
 
@@ -510,8 +508,7 @@ mod tests {
 
         // A generous timeout proves the wait ended because the channel closed,
         // not because the clock ran out.
-        let outcome =
-            await_user_prompt_with_timeout(receiver, Duration::from_secs(30)).await;
+        let outcome = await_user_prompt_with_timeout(receiver, Duration::from_secs(30)).await;
         assert_eq!(outcome, UserPromptOutcome::Stopped);
         assert!(pending_user_prompt_summary(&slot).await.is_none());
     }
@@ -523,8 +520,7 @@ mod tests {
             .await
             .expect("prompt admitted");
 
-        let outcome =
-            await_user_prompt_with_timeout(receiver, Duration::from_millis(20)).await;
+        let outcome = await_user_prompt_with_timeout(receiver, Duration::from_millis(20)).await;
 
         assert_eq!(outcome, UserPromptOutcome::TimedOut);
         assert_eq!(
@@ -548,8 +544,7 @@ mod tests {
             let slot = Arc::clone(&slot);
             async move {
                 let outcome =
-                    await_user_prompt_with_timeout(receiver, Duration::from_millis(20))
-                        .await;
+                    await_user_prompt_with_timeout(receiver, Duration::from_millis(20)).await;
                 let _ = take_pending_user_prompt(&slot, &request_id).await;
                 outcome
             }
@@ -579,11 +574,8 @@ mod tests {
             let slot = Arc::clone(&slot);
             let request_id = request_id.clone();
             async move {
-                let outcome = await_user_prompt_with_timeout(
-                    receiver,
-                    Duration::from_secs(5),
-                )
-                .await;
+                let outcome =
+                    await_user_prompt_with_timeout(receiver, Duration::from_secs(5)).await;
                 let _ = take_pending_user_prompt(&slot, &request_id).await;
                 outcome
             }
@@ -640,7 +632,9 @@ mod tests {
 
         // Not the pending id, so the entry must stay untouched.
         assert!(
-            take_pending_user_prompt(&slot, "some-other-request").await.is_none(),
+            take_pending_user_prompt(&slot, "some-other-request")
+                .await
+                .is_none(),
             "a stale id must not take the pending entry"
         );
         assert!(
@@ -650,7 +644,10 @@ mod tests {
 
         // The real id takes it.
         assert!(take_pending_user_prompt(&slot, &request_id).await.is_some());
-        assert_eq!(USER_PROMPT_GONE_MESSAGE, "This prompt is no longer waiting.");
+        assert_eq!(
+            USER_PROMPT_GONE_MESSAGE,
+            "This prompt is no longer waiting."
+        );
     }
 
     #[test]
