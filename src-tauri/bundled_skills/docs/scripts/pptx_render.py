@@ -564,17 +564,18 @@ class PptxRenderer:
             heading = group_title or self.deck_title
             # A table or a picture cannot share a slide with flowing text.
             text_blocks = [b for b in group_blocks if b.kind not in ("table", "image")]
-            table_blocks = [b for b in group_blocks if b.kind == "table"]
-            image_blocks = [b for b in group_blocks if b.kind == "image"]
+            own_slide_blocks = [b for b in group_blocks if b.kind in ("table", "image")]
 
             if text_blocks:
                 self._text_slide(presentation, heading, text_blocks)
-            for table_block in table_blocks:
-                table_title = heading if not text_blocks else f"{heading} (table)"
-                self._table_slide(presentation, table_title, table_block.rows)
-            for image_block in image_blocks:
-                self._image_slide(presentation, image_block.text or heading, image_block)
-            if not text_blocks and not table_blocks and not image_blocks:
+            # One pass keeps tables and pictures in source order.
+            for block in own_slide_blocks:
+                if block.kind == "table":
+                    table_title = heading if not text_blocks else f"{heading} (table)"
+                    self._table_slide(presentation, table_title, block.rows)
+                else:
+                    self._image_slide(presentation, block.text or heading, block)
+            if not text_blocks and not own_slide_blocks:
                 self._text_slide(presentation, heading, [])
 
         # The cover already shows the deck title, so numbering starts at 2.
