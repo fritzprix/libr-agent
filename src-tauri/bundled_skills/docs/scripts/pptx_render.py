@@ -241,7 +241,12 @@ class PptxRenderer:
                 )
             ]
         if block.kind == "code":
-            return [
+            label = (
+                [Paragraph(block.label, CODE_SIZE, bold=True, color=self.accent)]
+                if block.label
+                else []
+            )
+            return label + [
                 Paragraph(line, CODE_SIZE, color=self.muted_color)
                 for line in block.text.splitlines()
             ]
@@ -435,6 +440,17 @@ class PptxRenderer:
                         fill.solid()
                         fill.fore_color.rgb = self.accent
 
+    def _image_slide(self, presentation, title: str, block) -> None:
+        """Draw one picture fitted inside the body area, centred horizontally."""
+        slide = self._heading_slide(presentation, title)
+        width, height = md_blocks.fit_size(
+            block.image_size, BODY_WIDTH, BODY_BOTTOM - BODY_TOP
+        )
+        left = BODY_LEFT + int((BODY_WIDTH - width) / 2)
+        slide.shapes.add_picture(
+            block.image_path, left, BODY_TOP, Emu(int(width)), Emu(int(height))
+        )
+
     def _agenda_slide(self, presentation, titles) -> None:
         """List the section titles so the reader knows the deck's shape."""
         size = AGENDA_SIZE
@@ -518,9 +534,14 @@ class PptxRenderer:
             groups.append(("", blocks))
         return groups
 
-    def render(self, markdown: str, output_path: pathlib.Path) -> int:
+    def render(
+        self,
+        markdown: str,
+        output_path: pathlib.Path,
+        base_dir: pathlib.Path | None = None,
+    ) -> int:
         """Write the PPTX and return the slide count."""
-        blocks = md_blocks.parse_blocks(markdown)
+        blocks = md_blocks.parse_blocks(markdown, base_dir)
         if not blocks:
             raise ValueError("Markdown produced no renderable content")
 
@@ -541,16 +562,19 @@ class PptxRenderer:
 
         for group_title, group_blocks in sections:
             heading = group_title or self.deck_title
-            # A table cannot share a slide with flowing text.
-            text_blocks = [b for b in group_blocks if b.kind != "table"]
+            # A table or a picture cannot share a slide with flowing text.
+            text_blocks = [b for b in group_blocks if b.kind not in ("table", "image")]
             table_blocks = [b for b in group_blocks if b.kind == "table"]
+            image_blocks = [b for b in group_blocks if b.kind == "image"]
 
             if text_blocks:
                 self._text_slide(presentation, heading, text_blocks)
             for table_block in table_blocks:
                 table_title = heading if not text_blocks else f"{heading} (table)"
                 self._table_slide(presentation, table_title, table_block.rows)
-            if not text_blocks and not table_blocks:
+            for image_block in image_blocks:
+                self._image_slide(presentation, image_block.text or heading, image_block)
+            if not text_blocks and not table_blocks and not image_blocks:
                 self._text_slide(presentation, heading, [])
 
         # The cover already shows the deck title, so numbering starts at 2.
@@ -564,7 +588,10 @@ class PptxRenderer:
 
 
 def render_markdown_to_pptx(
-    markdown: str, output_path: pathlib.Path, template: str
+    markdown: str,
+    output_path: pathlib.Path,
+    template: str,
+    base_dir: pathlib.Path | None = None,
 ) -> int:
     """Convenience wrapper returning the rendered slide count."""
-    return PptxRenderer(template).render(markdown, output_path)
+    return PptxRenderer(template).render(markdown, output_path, base_dir)

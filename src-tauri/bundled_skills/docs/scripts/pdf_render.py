@@ -24,6 +24,7 @@ from reportlab.platypus import (
     BaseDocTemplate,
     Frame,
     HRFlowable,
+    Image,
     PageBreak,
     PageTemplate,
     Paragraph,
@@ -33,6 +34,8 @@ from reportlab.platypus import (
     TableStyle,
 )
 from reportlab.platypus.tableofcontents import TableOfContents
+
+import md_blocks
 
 SKILL_DIR = pathlib.Path(__file__).resolve().parent.parent
 FONT_PATH = SKILL_DIR / "fonts" / "NotoSansKR-Regular.ttf"
@@ -200,7 +203,10 @@ def inline_text(token) -> str:
 
     out: list[str] = []
     for child in token.children:
-        if child.type in ("text", "html_inline", "code_inline"):
+        if child.type == "html_inline":
+            # Raw HTML is removed, never shown as escaped text (see md_blocks).
+            continue
+        if child.type in ("text", "code_inline"):
             out.append(escape_markup(sanitize_text(child.content)))
         elif child.type == "strong_open":
             out.append("<b>")
@@ -353,9 +359,20 @@ class MarkdownPdfRenderer:
         )
         return table
 
-    def build_story(self, markdown: str, doc_title: str, available_width: float) -> list:
+    def build_story(
+        self,
+        markdown: str,
+        doc_title: str,
+        available_width: float,
+        base_dir: pathlib.Path | None = None,
+    ) -> list:
         """Walk the token stream once and emit one flowable per block element."""
         tokens = self.parser.parse(markdown)
+        base_dir = base_dir or pathlib.Path.cwd()
+        notes = md_blocks.ContentNotes()
+        md_blocks.scan_degraded_content(tokens, notes)
+        # Leave room for the paragraph spacing around an image on a full page.
+        max_image_height = A4[1] - 2 * self.config["margin"] - 1 * cm
         story: list = []
         # Each frame is [is_ordered, counter, pending_marker]. The marker is
         # consumed by the first paragraph of the item, so a loose item with two
@@ -406,13 +423,31 @@ class MarkdownPdfRenderer:
                             # Continuation paragraph of the same item.
                             story.append(Paragraph(markup, style))
                     else:
-                        story.append(Paragraph(markup, self.styles["body"]))
+                        image = md_blocks.image_only(inline)
+                        resolved = (
+                            md_blocks.resolve_image(image[0], base_dir, notes)
+                            if image
+                            else None
+                        )
+                        if resolved:
+                            path, size = resolved
+                            width, height = md_blocks.fit_size(
+                                size, available_width, max_image_height
+                            )
+                            story.append(Image(str(path), width=width, height=height))
+                            story.append(Spacer(1, 7))
+                        else:
+                            story.append(Paragraph(markup, self.styles["body"]))
                 index += 3
                 continue
 
             if kind == "fence" or kind == "code_block":
                 code = sanitize_text(token.content.rstrip("\n"))
                 if code:
+                    if md_blocks.is_mermaid(token):
+                        story.append(
+                            Paragraph(f"<i>{md_blocks.MERMAID_LABEL}</i>", self.styles["body"])
+                        )
                     code_style = self.styles["code"]
                     # The block is inset by leftIndent plus borderPadding on each side.
                     code_width = available_width - code_style.leftIndent - 2 * code_style.borderPadding
@@ -491,8 +526,16 @@ class MarkdownPdfRenderer:
 
     # -- document assembly ----------------------------------------------------
 
-    def render(self, markdown: str, output_path: pathlib.Path) -> int:
-        """Render markdown into output_path and return the page count."""
+    def render(
+        self,
+        markdown: str,
+        output_path: pathlib.Path,
+        base_dir: pathlib.Path | None = None,
+    ) -> int:
+        """Render markdown into output_path and return the page count.
+
+        Relative image paths resolve from base_dir, the input Markdown folder.
+        """
         load_font()
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -542,7 +585,7 @@ class MarkdownPdfRenderer:
         available_width = A4[0] - 2 * margin
         # Judge emptiness on the body alone: the cover and table of contents are
         # always emitted, so testing the combined story would never fail.
-        body_story = self.build_story(markdown, doc_title, available_width)
+        body_story = self.build_story(markdown, doc_title, available_width, base_dir)
         if not body_story:
             raise ValueError("Markdown produced no renderable content")
 
@@ -594,6 +637,11 @@ class MarkdownPdfRenderer:
         return None
 
 
-def render_markdown_to_pdf(markdown: str, output_path: pathlib.Path, template: str) -> int:
+def render_markdown_to_pdf(
+    markdown: str,
+    output_path: pathlib.Path,
+    template: str,
+    base_dir: pathlib.Path | None = None,
+) -> int:
     """Convenience wrapper returning the rendered page count."""
-    return MarkdownPdfRenderer(template).render(markdown, output_path)
+    return MarkdownPdfRenderer(template).render(markdown, output_path, base_dir)

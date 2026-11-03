@@ -29,6 +29,8 @@ REQUIRED_DEPENDENCIES = [
     ("python-docx", ("docx",)),
     ("python-pptx", ("pptx",)),
     ("markitdown[docx,pptx,xlsx]", ("markitdown", "mammoth", "pptx", "pandas", "openpyxl")),
+    # Charts are drawn as PNG by a small script run with the docs venv Python.
+    ("matplotlib", ("matplotlib",)),
 ]
 
 # Reports the names of the requested modules that fail to import in the target interpreter.
@@ -572,7 +574,9 @@ def convert_to_pdf(input_path: pathlib.Path, output_path: pathlib.Path, template
 
     markdown = input_path.read_text(encoding="utf-8-sig")
     try:
-        pages = pdf_render.render_markdown_to_pdf(markdown, output_path, template)
+        pages = pdf_render.render_markdown_to_pdf(
+            markdown, output_path, template, input_path.parent
+        )
     except ValueError as exc:
         return fail(
             f"PDF rendering rejected the request: {exc}",
@@ -646,7 +650,7 @@ def convert_to_office(
 
     renderer = module.DocxRenderer if target == "docx" else module.PptxRenderer
     try:
-        count = renderer(template).render(markdown, output_path)
+        count = renderer(template).render(markdown, output_path, input_path.parent)
     except ValueError as exc:
         return fail(
             f"{target.upper()} rendering rejected the request: {exc}",
