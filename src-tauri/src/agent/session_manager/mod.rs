@@ -24,8 +24,10 @@ pub mod execution_mode;
 mod message_injection;
 mod reload;
 mod reset;
+pub mod user_prompt;
 
 pub use approvals::PendingApprovalSummary;
+pub use user_prompt::pending_user_prompt_in;
 
 pub use channel::format_channel_payload_for_test;
 pub use compact::build_compaction_hard_fallback_summary_for_testing;

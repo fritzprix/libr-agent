@@ -534,6 +534,7 @@ mod tests {
             cancellation_token: CancellationToken::new(),
             cancel_pending: Arc::new(AtomicBool::new(false)),
             pending_execution: None,
+            pending_user_prompt: crate::agent::state::new_user_prompt_slot(),
             messages: Arc::new(RwLock::new(Vec::new())),
             cache_initialized: Arc::new(AtomicBool::new(true)),
             last_synced_at: Arc::new(RwLock::new(None)),

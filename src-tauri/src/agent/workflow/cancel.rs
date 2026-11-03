@@ -76,6 +76,32 @@ pub async fn abort_pending_tool_approvals(
     approvals.clear();
 }
 
+/// Drop the pending user prompt so its waiter ends at once (#2543 requirement 6).
+///
+/// Stop, terminate, and delete all route here, next to
+/// `abort_pending_tool_approvals`. Dropping the entry closes the oneshot channel,
+/// so the caller observes `UserPromptOutcome::Stopped` immediately instead of
+/// waiting out the 300 s timeout.
+pub async fn abort_pending_user_prompt(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+) -> bool {
+    let active = active_sessions.read().await;
+    let Some(session) = active.get(session_id) else {
+        return false;
+    };
+    let Some(prompt) = session.pending_user_prompt.write().await.take() else {
+        return false;
+    };
+    log::info!(
+        "Aborted pending user prompt for cancelled session {} (request_id={}, {})",
+        session_id,
+        prompt.request_id,
+        prompt.payload.describe()
+    );
+    true
+}
+
 /// Determines whether workflow continuation should proceed after an approval channel was closed.
 /// Returns true only when the session remains in active_sessions and has Busy status (e.g. cancel_workflow).
 /// Returns false when the session is terminated (Idle) or removed/deleted, cleanly discarding the workflow.
@@ -206,6 +232,9 @@ pub async fn terminate_session(
     // discards continuation instead of racing into a boundary pause or another LLM turn.
     abort_pending_tool_approvals(active_sessions, &session_id).await;
 
+    // The user prompt blocks the turn, so terminate drops it like approvals.
+    abort_pending_user_prompt(active_sessions, &session_id).await;
+
     // Hard terminate drops waiting prompts; soft cancel preserves them.
     discard_pending_events(active_sessions, &session_id).await;
 
@@ -319,6 +348,7 @@ pub async fn cancel_workflow(
     }
 
     abort_pending_tool_approvals(active_sessions, &session_id).await;
+    abort_pending_user_prompt(active_sessions, &session_id).await;
 
     // SP6: wake awaitAgent/pollProcess waiters suspended in this session's tools.
     crate::state::get_session_bus().notify_status_change(&session_id);
