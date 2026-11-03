@@ -191,13 +191,164 @@ pub fn contains_unquoted_andand(input: &str) -> bool {
     false
 }
 
+/// Commands that prompt for a password when they run.
+#[cfg(unix)]
+const PRIVILEGE_COMMANDS: [&str; 4] = ["sudo", "su", "doas", "pkexec"];
+
+/// Shells whose `-c` argument holds a nested command line.
+#[cfg(unix)]
+const SHELL_COMMANDS: [&str; 6] = ["bash", "sh", "zsh", "dash", "ksh", "ash"];
+
+/// Guard against pathological nesting such as `bash -c 'sh -c ...'` chains.
+#[cfg(unix)]
+const MAX_NESTING_DEPTH: usize = 4;
+
 /// Platform-specific privilege detection for Unix systems
 /// Detects commands that require elevated privileges (sudo, su, doas, pkexec)
+///
+/// Detection must stay in sync with `normalization::inject_sudo_stdin_flag`,
+/// which appends `-S` to every unquoted `sudo` in the command line. If that
+/// rewrite fires while this check does not, sudo reads the shell's own stdin
+/// and the call blocks until timeout (#2534, seen as the 5 minute hang in
+/// #2532). So a privilege command counts wherever it starts a command
+/// segment: after `&&`, `||`, `;`, `|`, newlines, parentheses, braces or
+/// backticks, and inside a shell's `-c` string. A privilege word that is only
+/// an argument (`echo sudo`) or quoted data (`echo 'sudo x'`) does not count,
+/// because no password dialog is warranted there.
 #[cfg(unix)]
 pub fn detect_privilege_escalation(command: &str) -> bool {
-    let trimmed = command.trim_start();
-    let patterns = ["sudo ", "su ", "doas ", "pkexec "];
-    patterns.iter().any(|p| trimmed.starts_with(p))
+    detect_privilege_escalation_inner(command, 0)
+}
+
+#[cfg(unix)]
+fn detect_privilege_escalation_inner(command: &str, depth: usize) -> bool {
+    split_command_segments(command).into_iter().any(|segment| {
+        let Some((start, end)) = first_word_span(segment) else {
+            return false;
+        };
+        let word = &segment[start..end];
+
+        if PRIVILEGE_COMMANDS.contains(&word) {
+            return true;
+        }
+
+        if SHELL_COMMANDS.contains(&word) && depth < MAX_NESTING_DEPTH {
+            if let Some(inner) = shell_inner_command(&segment[end..]) {
+                return detect_privilege_escalation_inner(inner, depth + 1);
+            }
+        }
+
+        false
+    })
+}
+
+/// Split a command line at unquoted command separators.
+///
+/// Escaped and quoted separators stay inside their segment so that data such
+/// as `echo 'a; b'` is not mistaken for a command chain.
+#[cfg(unix)]
+fn split_command_segments(command: &str) -> Vec<&str> {
+    let mut segments = Vec::new();
+    let mut start = 0usize;
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut escaped = false;
+
+    for (index, ch) in command.char_indices() {
+        if in_single_quote {
+            if ch == '\'' {
+                in_single_quote = false;
+            }
+            continue;
+        }
+
+        if in_double_quote {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_double_quote = false;
+            }
+            continue;
+        }
+
+        if escaped {
+            escaped = false;
+            continue;
+        }
+
+        match ch {
+            '\\' => escaped = true,
+            '\'' => in_single_quote = true,
+            '"' => in_double_quote = true,
+            ';' | '&' | '|' | '\n' | '(' | ')' | '{' | '}' | '`' => {
+                segments.push(&command[start..index]);
+                start = index + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+
+    segments.push(&command[start..]);
+    segments
+}
+
+/// Byte span of the first word in `segment`, ignoring leading whitespace and
+/// opening quotes so that `'sudo true'` still reports `sudo`.
+#[cfg(unix)]
+fn first_word_span(segment: &str) -> Option<(usize, usize)> {
+    let trimmed = segment.len() - segment.trim_start().len();
+    let unquoted = segment[trimmed..].trim_start_matches(['\'', '"']);
+    let word_start = segment.len() - unquoted.len();
+    let word_len = unquoted
+        .find(|c: char| c.is_whitespace() || c == '\'' || c == '"')
+        .unwrap_or(unquoted.len());
+
+    (word_len > 0).then_some((word_start, word_start + word_len))
+}
+
+/// Remove one layer of matching surrounding quotes.
+#[cfg(unix)]
+fn strip_wrapping_quotes(text: &str) -> &str {
+    let mut chars = text.chars();
+    let Some(open) = chars.next() else {
+        return text;
+    };
+    let close = match open {
+        '\'' => '\'',
+        '"' => '"',
+        _ => return text,
+    };
+
+    if text.len() >= 2 && text.ends_with(close) {
+        &text[open.len_utf8()..text.len() - close.len_utf8()]
+    } else {
+        text
+    }
+}
+
+/// Extract the command string passed to a shell's `-c` flag, if any.
+#[cfg(unix)]
+fn shell_inner_command(args: &str) -> Option<&str> {
+    let mut rest = args.trim_start();
+
+    while rest.starts_with('-') && !rest.starts_with("--") {
+        let flag_end = rest.find(char::is_whitespace).unwrap_or(rest.len());
+        let flag = &rest[..flag_end];
+        let inner = rest[flag_end..].trim_start();
+
+        if flag.len() > 1 && flag[1..].contains('c') {
+            // The shell consumes the quoting, so `sh -c 'a && sudo b'` runs
+            // `a && sudo b`. Unwrap that layer before looking inside it.
+            let payload = strip_wrapping_quotes(inner);
+            return (!payload.is_empty()).then_some(payload);
+        }
+
+        rest = inner;
+    }
+
+    None
 }
 
 /// Platform-specific privilege detection for Windows
@@ -337,5 +488,73 @@ mod tests {
             resolve_stdin_delivery("$env:LIBRAGENT_TELEGRAM_CODE = Read-Host", &args),
             StdinDelivery::Child
         );
+    }
+
+    /// Regression for #2534: `cd x && sudo ...` was invisible to the prefix
+    /// check, so `sudo -S` was still injected by `normalization.rs` while no
+    /// password dialog opened. sudo then read the shell's own stdin and the
+    /// call blocked until timeout (the 5 minute hang in #2532).
+    #[test]
+    #[cfg(unix)]
+    fn test_detect_privilege_escalation_finds_chained_commands() {
+        for command in [
+            "cd /tmp && sudo true",
+            "echo x; sudo true",
+            "ls | sudo tee out.txt",
+            "ls || sudo true",
+            "(cd /tmp && sudo true)",
+            "{ sudo true; }",
+            "echo x\ndoas true",
+            "true&&sudo true",
+            "bash -c 'sudo true'",
+            "bash -c \"sudo true\"",
+            "sh -lc 'cd /tmp && sudo true'",
+        ] {
+            assert!(
+                detect_privilege_escalation(command),
+                "expected privilege detection for chained command: {command:?}"
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_detect_privilege_escalation_keeps_prefix_detection() {
+        for command in [
+            "sudo apt update",
+            "   sudo apt update",
+            "su - root",
+            "doas true",
+            "pkexec ls",
+        ] {
+            assert!(
+                detect_privilege_escalation(command),
+                "expected privilege detection for: {command:?}"
+            );
+        }
+    }
+
+    /// A false positive opens a password dialog nobody asked for, so plain
+    /// arguments and quoted text must not count as escalation.
+    #[test]
+    #[cfg(unix)]
+    fn test_detect_privilege_escalation_ignores_arguments_and_quotes() {
+        for command in [
+            "ls -la",
+            "echo sudo",
+            "echo test; echo sudo",
+            "cat sudoers",
+            "sudoku --version",
+            "echo 'sudo apt install'",
+            "echo \"sudo apt install\"",
+            "printf '%s' su",
+            "bash -c 'echo sudo'",
+            "bash build.sh",
+        ] {
+            assert!(
+                !detect_privilege_escalation(command),
+                "unexpected privilege detection for: {command:?}"
+            );
+        }
     }
 }
