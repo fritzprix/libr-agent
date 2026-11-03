@@ -106,16 +106,12 @@ impl WorkspaceServer {
         };
 
         let UserPromptOutcome::Answered(user_input) = outcome else {
-            let message = match input_type {
-                InteractiveShellInputType::Password => {
-                    secret_outcome_message(&outcome, variable_name)
-                }
-                InteractiveShellInputType::Text => outcome.caller_message(),
-            };
-            return Ok(MCPResult::informational(&format!(
-                "Interactive command not executed. {}\n\nCommand: {}",
-                message, request.display_command
-            )));
+            return Ok(unanswered_shell_result(
+                &outcome,
+                input_type,
+                variable_name,
+                &request.display_command,
+            ));
         };
 
         if user_input.len() > INTERACTIVE_SHELL_INPUT_MAX_BYTES {
@@ -184,6 +180,32 @@ impl WorkspaceServer {
 }
 
 /// A password prompt is a masked `secret`; any other input is a `question`.
+/// The tool result when the user gave no answer. A timeout is an error
+/// (#2543 requirement 5); cancel and Stop stay informational, as before.
+fn unanswered_shell_result(
+    outcome: &UserPromptOutcome,
+    input_type: InteractiveShellInputType,
+    variable_name: &str,
+    display_command: &str,
+) -> MCPResult {
+    let message = match input_type {
+        InteractiveShellInputType::Password => secret_outcome_message(outcome, variable_name),
+        InteractiveShellInputType::Text => outcome.caller_message(),
+    };
+    let text = format!("Interactive command not executed. {message}\n\nCommand: {display_command}");
+    if *outcome != UserPromptOutcome::TimedOut {
+        return MCPResult::informational(&text);
+    }
+    // `ErrorCategory::Timeout` renders a non-error notice; the prompt timeout
+    // must be an error result.
+    guided_error(ErrorCategory::OperationFailed, text, ToolGroup::Workspace)
+        .guidance(vec![
+            "Do not retry the command; the user did not answer the prompt".to_string(),
+            "Ask the user in chat whether to run it again".to_string(),
+        ])
+        .to_mcp_result()
+}
+
 fn shell_prompt_payload(
     input_type: InteractiveShellInputType,
     variable_name: &str,
@@ -221,6 +243,35 @@ fn shell_input_variable_name(command: &str) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_timed_out_prompt_is_an_error_result() {
+        for input_type in [
+            InteractiveShellInputType::Password,
+            InteractiveShellInputType::Text,
+        ] {
+            let result = unanswered_shell_result(
+                &UserPromptOutcome::TimedOut,
+                input_type,
+                "SUDO_PASSWORD",
+                "sudo apt update",
+            );
+            assert_eq!(result.is_error, Some(true));
+        }
+    }
+
+    #[test]
+    fn a_cancelled_or_stopped_prompt_is_not_an_error_result() {
+        for outcome in [UserPromptOutcome::Cancelled, UserPromptOutcome::Stopped] {
+            let result = unanswered_shell_result(
+                &outcome,
+                InteractiveShellInputType::Password,
+                "SUDO_PASSWORD",
+                "sudo apt update",
+            );
+            assert_ne!(result.is_error, Some(true));
+        }
+    }
 
     #[test]
     fn sudo_password_becomes_a_secret_prompt() {
