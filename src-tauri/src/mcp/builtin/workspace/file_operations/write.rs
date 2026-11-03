@@ -12,6 +12,7 @@ use crate::mcp::builtin::workspace::edit_mode::{
     PRIMARY_EDIT_TOOL,
 };
 use crate::mcp::types::MCPResult;
+use crate::services::secure_file_manager::PARENT_IS_FILE_MARKER;
 use crate::services::SecureFileManager;
 use serde_json::{json, Value};
 use std::collections::VecDeque;
@@ -670,17 +671,23 @@ impl WorkspaceServer {
                         ToolGroup::Workspace,
                     ))
                 } else {
-                    Ok(guided_error(
-                        ErrorCategory::OperationFailed,
-                        e.to_string(),
-                        ToolGroup::Workspace,
+                    let guidance = if e.contains(PARENT_IS_FILE_MARKER) {
+                        vec![
+                            "Choose a different path, or check the existing file with workspace__listDirectory".to_string(),
+                        ]
+                    } else {
+                        vec![
+                            "Check that the directory exists with workspace__listDirectory"
+                                .to_string(),
+                            "Verify you have write permissions".to_string(),
+                            "Ensure the path is valid and within allowed directories".to_string(),
+                        ]
+                    };
+                    Ok(
+                        guided_error(ErrorCategory::OperationFailed, e, ToolGroup::Workspace)
+                            .guidance(guidance)
+                            .to_mcp_result(),
                     )
-                    .guidance(vec![
-                        "Check that the directory exists with workspace__listDirectory".to_string(),
-                        "Verify you have write permissions".to_string(),
-                        "Ensure the path is valid and within allowed directories".to_string(),
-                    ])
-                    .to_mcp_result())
                 }
             }
         }
@@ -813,6 +820,40 @@ mod tests {
             std::fs::read_to_string(&target_file).expect("read existing file"),
             "original content\n",
             "existing file must remain unchanged on non-string mode"
+        );
+    }
+
+    #[tokio::test]
+    async fn handle_write_file_under_existing_file_names_the_file_without_permission_hint() {
+        let temp_dir = tempdir().expect("temp dir");
+        let session_id = "write-file-parent-is-file-test";
+        let session_manager =
+            SessionManager::new_with_base_dir(temp_dir.path().to_path_buf()).expect("session mgr");
+        let server = WorkspaceServer::new(session_id.to_string(), Arc::new(session_manager));
+        let workspace_dir = server.get_workspace_dir(session_id);
+        std::fs::write(workspace_dir.join("server.py"), "print()\n").expect("seed file");
+
+        let result = server
+            .handle_write_file(
+                json!({ "path": "server.py/config.json", "content": "{}" }),
+                Some(session_id.to_string()),
+            )
+            .await
+            .expect("handle_write_file should return Ok(MCPResult)");
+
+        assert_eq!(result.is_error, Some(true));
+        let text = extract_text(&result);
+        assert!(
+            text.contains(PARENT_IS_FILE_MARKER),
+            "unexpected error text: {text}"
+        );
+        assert!(
+            text.contains("server.py'"),
+            "file segment not named: {text}"
+        );
+        assert!(
+            !text.contains("permission"),
+            "permission hint shown: {text}"
         );
     }
 }
