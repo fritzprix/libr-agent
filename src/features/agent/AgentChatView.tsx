@@ -66,6 +66,8 @@ const InteractiveShellPromptDialog = lazy(
   () => import('./components/InteractiveShellPromptDialog'),
 );
 
+const UserPromptDialog = lazy(() => import('./components/UserPromptDialog'));
+
 const AGENT_CHAT_COMPOSER_OVERLAP_STYLE = {
   '--agent-chat-composer-overlap': '64px',
 } as CSSProperties;
@@ -236,7 +238,8 @@ function AgentChatInner() {
   } = usePanelWidth();
 
   const [searchParams, setSearchParams] = useSearchParams();
-  const { pendingInteractiveShellPrompt, session } = useAgentSessionState();
+  const { pendingInteractiveShellPrompt, pendingUserPrompt, session } =
+    useAgentSessionState();
   const { appendToolMessages, submit } = useAgentChatActions();
   const hasExecutedPlaybookRef = useRef(false);
   const hasOpenedShellRef = useRef(!isMobile && showSidePanel);
@@ -345,6 +348,14 @@ function AgentChatInner() {
           <InteractiveShellPromptDialog
             sessionId={sessionId}
             promptState={pendingInteractiveShellPrompt}
+          />
+        </Suspense>
+      ) : null}
+      {sessionId && pendingUserPrompt ? (
+        <Suspense fallback={null}>
+          <UserPromptDialog
+            sessionId={sessionId}
+            promptState={pendingUserPrompt}
           />
         </Suspense>
       ) : null}

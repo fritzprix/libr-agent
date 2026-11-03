@@ -100,6 +100,7 @@ export function AgentSessionProvider({
       pendingApprovals: stateProps.state.pendingApprovals,
       pendingInteractiveShellPrompt:
         stateProps.state.pendingInteractiveShellPrompt,
+      pendingUserPrompt: stateProps.state.pendingUserPrompt,
       executionMode: stateProps.state.executionMode,
     }),
     [
@@ -118,6 +119,7 @@ export function AgentSessionProvider({
       stateProps.state.initializationStep,
       stateProps.state.pendingApprovals,
       stateProps.state.pendingInteractiveShellPrompt,
+      stateProps.state.pendingUserPrompt,
       stateProps.state.executionMode,
     ],
   );

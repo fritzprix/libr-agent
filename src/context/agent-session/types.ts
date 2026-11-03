@@ -4,10 +4,17 @@ import type {
   AgentRuntimeError,
   PendingApprovalKind,
   PendingApprovalSnapshot,
+  PendingUserPromptSummary,
   PreflightTokenMetrics,
   SessionRuntimeState,
   SessionWorkflowStatus,
+  UserPromptPayload,
   WorkflowCompletionReason,
+} from '@/models/agent-ipc';
+
+export type {
+  PendingUserPromptSummary,
+  UserPromptPayload,
 } from '@/models/agent-ipc';
 
 /** Why a session pane learned its session no longer exists. */
@@ -88,6 +95,19 @@ export type AgentEventPayload =
       outcome: string;
     }
   | {
+      type: 'userPromptRequested';
+      sessionId: string;
+      requestId: string;
+      payload: UserPromptPayload;
+    }
+  | {
+      type: 'userPromptResolved';
+      sessionId: string;
+      requestId: string;
+      /** `answered` | `cancelled` | `stopped` | `timed_out` | `restarted` */
+      outcome: string;
+    }
+  | {
       type: 'resourceUpdated';
       resourceType: string;
       action: string;
@@ -158,6 +178,8 @@ export interface AgentSessionStateContextValue {
   } | null;
   pendingApprovals: PendingApproval[];
   pendingInteractiveShellPrompt: PendingInteractiveShellPrompt | null;
+  /** A `secret` or `question` prompt waiting for the local user (#2543). */
+  pendingUserPrompt: PendingUserPromptSummary | null;
   executionMode: ExecutionMode;
 }
 

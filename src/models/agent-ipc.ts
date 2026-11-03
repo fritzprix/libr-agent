@@ -366,9 +366,37 @@ export interface PendingApprovalSnapshot {
   inputPreview?: string;
 }
 
+/**
+ * What a waiting user prompt asks for (#2543). Serde-tagged with `kind`, so the
+ * dialog switches on `kind` alone. A `secret` prompt never carries a value.
+ */
+export type UserPromptPayload =
+  | {
+      kind: 'secret';
+      variableName: string;
+      label: string;
+      /** Optional line telling the user the value is reused for the session. */
+      reuseNote?: string;
+    }
+  | {
+      kind: 'question';
+      title: string;
+      body?: string;
+    };
+
+/** The prompt waiting for a session. No field can carry a secret value. */
+export interface PendingUserPromptSummary {
+  requestId: string;
+  kind: 'secret' | 'question';
+  payload: UserPromptPayload;
+  createdAt: string;
+}
+
 export interface AgentOpenSessionResponse {
   session: AgentSessionMetadata;
   messages: MessageSlice<RustMessage>;
   pendingApprovals: PendingApprovalSnapshot[];
+  /** The prompt still waiting when this session was opened (#2543). */
+  pendingUserPrompt?: PendingUserPromptSummary | null;
   runtimeState: SessionRuntimeState;
 }

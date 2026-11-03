@@ -117,6 +117,13 @@ function applyOpenSessionPayload(
     setters.setPendingApprovals(incomingApprovals);
   }
 
+  // A prompt may have arrived (or been resolved) while open() was in flight, so
+  // a merged open must not clear a prompt the events already set.
+  const incomingUserPrompt = response.pendingUserPrompt ?? null;
+  if (!options.mergeWithLiveState || incomingUserPrompt !== null) {
+    setters.setPendingUserPrompt(incomingUserPrompt);
+  }
+
   if (isInactiveWorkflowStatus(sessionData.status)) {
     options.clearStreamingOnInactive();
   }
@@ -402,6 +409,36 @@ export function useAgentSessionEvents(
                 break;
               }
 
+              case 'userPromptRequested': {
+                liveMutationEpoch += 1;
+                setters.setPendingUserPrompt({
+                  requestId: payload.requestId,
+                  kind: payload.payload.kind,
+                  payload: payload.payload,
+                  createdAt: new Date().toISOString(),
+                });
+                setters.setWorkflowPhase('waiting_approval');
+                logger.info('User prompt requested', {
+                  requestId: payload.requestId,
+                  kind: payload.payload.kind,
+                });
+                break;
+              }
+
+              case 'userPromptResolved': {
+                liveMutationEpoch += 1;
+                setters.setPendingUserPrompt((currentPrompt) =>
+                  currentPrompt?.requestId === payload.requestId
+                    ? null
+                    : currentPrompt,
+                );
+                logger.info('User prompt resolved', {
+                  requestId: payload.requestId,
+                  outcome: payload.outcome,
+                });
+                break;
+              }
+
               case 'channelPermissionRequest': {
                 liveMutationEpoch += 1;
                 setters.setWorkflowPhase('waiting_approval');
@@ -468,6 +505,7 @@ export function useAgentSessionEvents(
                 );
                 setters.setWorkflowPhase('idle');
                 setters.setPendingInteractiveShellPrompt(null);
+                setters.setPendingUserPrompt(null);
                 clearStreamingOnInactive();
                 logger.info('Workflow phase: idle', {
                   sessionId,

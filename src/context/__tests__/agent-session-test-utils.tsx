@@ -128,6 +128,7 @@ export function createOpenSessionResponse(
     hasMoreBefore?: boolean;
     oldestCursor?: OpenAgentSessionResponse['messages']['oldestCursor'];
     pendingApprovals?: OpenAgentSessionResponse['pendingApprovals'];
+    pendingUserPrompt?: OpenAgentSessionResponse['pendingUserPrompt'];
     runtimeState?: RuntimeState;
   } = {},
 ): OpenAgentSessionResponse {
@@ -152,6 +153,7 @@ export function createOpenSessionResponse(
       oldestCursor: overrides.oldestCursor ?? null,
     },
     pendingApprovals: overrides.pendingApprovals ?? [],
+    pendingUserPrompt: overrides.pendingUserPrompt ?? null,
     runtimeState: overrides.runtimeState ?? READY_RUNTIME_STATE,
   };
 }

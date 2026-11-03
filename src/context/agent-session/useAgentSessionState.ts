@@ -4,6 +4,7 @@ import type { Message, MessageError } from '@/models/chat';
 import type {
   AgentRuntimeError,
   MessageCursor,
+  PendingUserPromptSummary,
   PreflightTokenMetrics,
   SessionRuntimeState,
   SessionWorkflowStatus,
@@ -53,6 +54,8 @@ export function useAgentSessionState() {
   );
   const [pendingInteractiveShellPrompt, setPendingInteractiveShellPrompt] =
     useState<PendingInteractiveShellPrompt | null>(null);
+  const [pendingUserPrompt, setPendingUserPrompt] =
+    useState<PendingUserPromptSummary | null>(null);
   const [executionMode, setExecutionMode] = useState<ExecutionMode>('normal');
 
   const workflowPhaseRef = useRef(workflowPhase);
@@ -84,6 +87,7 @@ export function useAgentSessionState() {
     setOldestMessageCursor(null);
     setPendingApprovals([]);
     setPendingInteractiveShellPrompt(null);
+    setPendingUserPrompt(null);
     setErrorState(null);
     setLlmError(null);
     setWorkflowStatus('idle');
@@ -133,6 +137,7 @@ export function useAgentSessionState() {
       setPreflightTokenMetrics,
       setPendingApprovals,
       setPendingInteractiveShellPrompt,
+      setPendingUserPrompt,
       setExecutionMode,
       applyLocalViewedAt,
       addMessage,
@@ -154,6 +159,7 @@ export function useAgentSessionState() {
       setPreflightTokenMetrics,
       setPendingApprovals,
       setPendingInteractiveShellPrompt,
+      setPendingUserPrompt,
       setExecutionMode,
       applyLocalViewedAt,
       addMessage,
@@ -203,6 +209,7 @@ export function useAgentSessionState() {
       initializationStep,
       pendingApprovals,
       pendingInteractiveShellPrompt,
+      pendingUserPrompt,
       executionMode,
     },
     refs: {
