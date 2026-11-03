@@ -357,13 +357,19 @@ def run_doctor() -> int:
                 uv_bin = str(possible_uv)
                 break
 
-    # Build the venv from the real base interpreter so pyvenv.cfg 'home' has no junction.
-    base_py = base_python_path(working_py)
+    # On Windows, build the venv from the real base interpreter so pyvenv.cfg 'home' has
+    # no junction. POSIX keeps the interpreter as found: resolving a uv or Homebrew
+    # symlink there would pin the venv to a patch folder that an upgrade removes.
+    base_py = base_python_path(working_py) if os.name == "nt" else working_py
 
     # A venv built earlier through a junction cannot start under RedirectionGuard; rebuild it.
     venv_py = get_venv_python(VENV_DIR)
     home = venv_home(VENV_DIR)
     if os.name == "nt" and venv_py.exists() and home and first_link(home) is not None:
+        print(
+            f"Rebuilding '{VENV_DIR}': its pyvenv.cfg home '{home}' goes through a junction.",
+            file=sys.stderr,
+        )
         shutil.rmtree(VENV_DIR, ignore_errors=True)
 
     # Setup persistent user venv outside skill folder
