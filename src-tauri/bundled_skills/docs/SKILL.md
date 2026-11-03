@@ -20,6 +20,7 @@ All tools and runtime dependencies used by this skill are permissively licensed:
 - **python-docx** (DOCX generation): MIT
 - **python-pptx** (PPTX generation): MIT
 - **MarkItDown** (document to Markdown extraction): MIT
+- **matplotlib** (charts saved as PNG): Matplotlib License (BSD-style)
 - **Noto Sans KR** (bundled Korean font): SIL OFL 1.1
 
 ## Routing by Direction
@@ -53,6 +54,14 @@ Then run document conversion using the interpreter reported under `VenvPython:`.
 & "<venv-python-from-doctor>" "<skill-base-dir>/scripts/convert.py" --in "<abs.md>" --to pdf --template report --out "<abs.pdf>"
 ```
 *(On Linux/macOS: `"<venv-python-from-doctor>" "<skill-base-dir>/scripts/convert.py" --in "<abs.md>" --to pdf --template report --out "<abs.pdf>"`)*
+
+## Images, Charts and Diagrams
+
+- **No raw HTML.** HTML is removed from every output, with a warning. Use Markdown tables and text.
+- **Images**: put `![caption](file.png)` alone in its own paragraph. Use a local PNG or JPEG. A relative path is read from the folder of the `.md` file. The image is scaled to the page or slide width. A missing file shows its caption instead, with a warning.
+- **Charts**: write a small matplotlib script **file** and run it with the doctor's `VenvPython:`. Save the chart as PNG next to the `.md` file and reference it with `![caption](chart.png)`.
+- **Mermaid** stays a code block labeled "Diagram (Mermaid)". To show a diagram as a picture, draw it as a PNG and use image syntax.
+- Check the image references before converting: `& "<venv-python-from-doctor>" "<skill-base-dir>/scripts/check.py" --md "<abs.md>"`. This reports missing or empty images.
 
 ## Output Contract & Verification
 

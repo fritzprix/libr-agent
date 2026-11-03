@@ -892,6 +892,27 @@ print("VENV_HOME_CLEAN=%d" % (home is not None and convert.first_link(home) is N
     Remove-Item -Recurse -Force $junctionRoot -ErrorAction SilentlyContinue
   }
   Write-Host "Test 16 passed: junctions resolve to their target and the doctor venv home has no junction."
+
+  # ---------------------------------------------------------
+  # Test 17: images, mermaid and raw HTML in every target (#2530)
+  # test_media.py holds the checks so test_convert.sh runs the same ones on
+  # Linux/macOS. It prints NAME=1/0 per check and exits 1 when any fails.
+  # ---------------------------------------------------------
+  Write-Host "`n[Test 17] PNG image, missing image, mermaid and raw HTML in pdf/docx/pptx (#2530)..."
+  $mediaDir = Join-Path $tempRoot "media_$(Get-Random)"
+  New-Item -ItemType Directory -Path $mediaDir -Force | Out-Null
+  try {
+    $mediaOut = & $venvPython (Join-Path $scriptDir 'test_media.py') $mediaDir $convertPy 2>&1
+    $mediaExit = $LASTEXITCODE
+    $mediaText = ($mediaOut -join "`n").Trim()
+    if ($mediaExit -ne 0) {
+      Write-Error "Test 17 failed: test_media.py exited $mediaExit`n$mediaText"
+      exit 1
+    }
+  } finally {
+    Remove-Item -Recurse -Force $mediaDir -ErrorAction SilentlyContinue
+  }
+  Write-Host "Test 17 passed: image embedded in all targets, mermaid labeled, HTML removed, warnings printed."
 } finally {
   if (Test-Path $testScript) { Remove-Item $testScript -Force -ErrorAction SilentlyContinue }
   if (Test-Path $testMd) { Remove-Item $testMd -Force -ErrorAction SilentlyContinue }

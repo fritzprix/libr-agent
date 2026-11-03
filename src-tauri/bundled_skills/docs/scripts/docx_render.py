@@ -21,7 +21,7 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Cm, Pt, RGBColor
+from docx.shared import Cm, Emu, Pt, RGBColor
 
 import md_blocks
 
@@ -324,8 +324,22 @@ class DocxRenderer:
 
         document.add_paragraph()
 
-    def _code(self, document, code: str) -> None:
+    def _image(self, document, block: md_blocks.Block) -> None:
+        """Picture scaled to the text width, keeping its aspect ratio."""
+        section = document.sections[-1]
+        max_width = section.page_width - section.left_margin - section.right_margin
+        # Leave room for the spacing around the picture on a full page.
+        max_height = section.page_height - section.top_margin - section.bottom_margin - Cm(1)
+        width, height = md_blocks.fit_size(block.image_size, max_width, max_height)
+        document.add_picture(block.image_path, width=Emu(int(width)), height=Emu(int(height)))
+
+    def _code(self, document, code: str, label: str = "") -> None:
         """Code block in a monospaced face with a light shaded background."""
+        if label:
+            caption = document.add_paragraph()
+            run = caption.add_run(label)
+            run.italic = True
+            _set_east_asian_font(run._element.get_or_add_rPr(), BODY_FONT)
         paragraph = document.add_paragraph()
         paragraph.paragraph_format.space_after = Pt(6)
         run = paragraph.add_run(code)
@@ -339,9 +353,14 @@ class DocxRenderer:
         shaded.set(qn("w:fill"), "F2F2F2")
         properties.append(shaded)
 
-    def render(self, markdown: str, output_path: pathlib.Path) -> int:
+    def render(
+        self,
+        markdown: str,
+        output_path: pathlib.Path,
+        base_dir: pathlib.Path | None = None,
+    ) -> int:
         """Write the DOCX and return the section count."""
-        blocks = md_blocks.parse_blocks(markdown)
+        blocks = md_blocks.parse_blocks(markdown, base_dir)
         if not blocks:
             raise ValueError("Markdown produced no renderable content")
 
@@ -397,7 +416,9 @@ class DocxRenderer:
             elif block.kind == "table":
                 self._table(document, block.rows)
             elif block.kind == "code":
-                self._code(document, block.text)
+                self._code(document, block.text, block.label)
+            elif block.kind == "image":
+                self._image(document, block)
             elif block.kind == "rule":
                 rule = document.add_paragraph()
                 _bottom_border(rule, self.config["accent"], size=6)
@@ -408,7 +429,10 @@ class DocxRenderer:
 
 
 def render_markdown_to_docx(
-    markdown: str, output_path: pathlib.Path, template: str
+    markdown: str,
+    output_path: pathlib.Path,
+    template: str,
+    base_dir: pathlib.Path | None = None,
 ) -> int:
     """Convenience wrapper returning the rendered section count."""
-    return DocxRenderer(template).render(markdown, output_path)
+    return DocxRenderer(template).render(markdown, output_path, base_dir)

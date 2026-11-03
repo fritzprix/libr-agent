@@ -13,6 +13,8 @@ library that already backs it:
 * PPTX (python-pptx, MIT): empty file, no slides, a slide with no shapes, body
   text or a table that runs past the slide bottom, a shape past the slide right
   edge, and a table whose rows disagree on column count.
+* Markdown source (--md): referenced images that are missing, empty, or remote.
+  The renderers show alt text for such an image, so the render itself passes.
 
 A repeated paragraph is not a defect: two identical list items are legitimate
 Markdown, so DOCX has no duplicate-text rule.
@@ -541,10 +543,58 @@ def run_check(pdf_path: pathlib.Path) -> int:
     return 0
 
 
+def run_markdown_check(md_path: pathlib.Path) -> int:
+    """Report images referenced by md_path that cannot be embedded."""
+    if not md_path.is_file():
+        return fail(
+            f"Markdown file does not exist: {md_path}",
+            "Pass the source .md file given to convert.py --in.",
+        )
+    try:
+        from markdown_it import MarkdownIt
+
+        import md_blocks
+    except ImportError:
+        return fail(
+            "markdown-it-py is not installed in this interpreter.",
+            "Run the doctor command to install the docs skill dependencies.",
+        )
+
+    tokens = MarkdownIt("commonmark").enable("table").parse(
+        md_path.read_text(encoding="utf-8-sig")
+    )
+    problems: list[str] = []
+    images = 0
+    for token in tokens:
+        for child in token.children or []:
+            if child.type != "image":
+                continue
+            images += 1
+            src = child.attrGet("src") or ""
+            reason = md_blocks.image_problem(src, md_path.parent)
+            if reason:
+                problems.append(f"image '{src}': {reason}")
+
+    if problems:
+        print(f"Error: Markdown image check failed for {md_path}", file=sys.stderr)
+        for problem in problems[:10]:
+            print(f"  - {problem}", file=sys.stderr)
+        print("ExitCode: 1")
+        print(
+            "NEXT: Save each image as PNG next to the .md file and fix its path, then re-run convert.py.",
+            file=sys.stderr,
+        )
+        return 1
+
+    print(f"OK {md_path} {images}")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Verify a docs-skill rendered document", add_help=False
     )
+    parser.add_argument("--md", dest="md_file", type=str, help="Markdown source to check for images")
     parser.add_argument("--pdf", dest="pdf_file", type=str, help="PDF path to verify")
     parser.add_argument("--docx", dest="docx_file", type=str, help="DOCX path to verify")
     parser.add_argument("--pptx", dest="pptx_file", type=str, help="PPTX path to verify")
@@ -557,6 +607,7 @@ def main() -> int:
         return 0
 
     chosen = [
+        ("md", args.md_file),
         ("pdf", args.pdf_file),
         ("docx", args.docx_file),
         ("pptx", args.pptx_file),
@@ -564,18 +615,20 @@ def main() -> int:
     given = [(kind, value) for kind, value in chosen if value]
     if not given:
         return fail(
-            "Missing required argument: one of --pdf, --docx, --pptx.",
-            "Specify the rendered file, e.g. --pdf '<abs-path>'.",
+            "Missing required argument: one of --md, --pdf, --docx, --pptx.",
+            "Specify the file to check, e.g. --pdf '<abs-path>'.",
             code=2,
         )
     if len(given) > 1:
         return fail(
-            "Only one of --pdf, --docx, --pptx may be given.",
+            "Only one of --md, --pdf, --docx, --pptx may be given.",
             "Pass exactly one file to verify.",
             code=2,
         )
 
     kind, value = given[0]
+    if kind == "md":
+        return run_markdown_check(pathlib.Path(value).resolve())
     if kind == "pdf":
         return run_check(pathlib.Path(value).resolve())
     return run_format_check(pathlib.Path(value).resolve(), kind)
