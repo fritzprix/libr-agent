@@ -9,6 +9,7 @@ import argparse
 import glob
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -81,17 +82,146 @@ def get_venv_python(venv_dir: pathlib.Path) -> pathlib.Path:
     return venv_dir / "bin" / "python"
 
 
-def is_working_python(candidate: str | pathlib.Path) -> bool:
-    """Check if candidate python executable executes successfully."""
+def python_probe_error(candidate: str | pathlib.Path) -> str | None:
+    """Run candidate python once; return None when it works, else the failure text."""
     try:
         proc = subprocess.run(
             [str(candidate), "-c", "import sys; sys.exit(0)"],
             capture_output=True,
+            text=True,
             timeout=10,
         )
-        return proc.returncode == 0
+    except Exception as exc:
+        return str(exc)
+    if proc.returncode == 0:
+        return None
+    return (proc.stderr or proc.stdout or f"exit code {proc.returncode}").strip()
+
+
+def is_working_python(candidate: str | pathlib.Path) -> bool:
+    """Check if candidate python executable executes successfully."""
+    return python_probe_error(candidate) is None
+
+
+# Windows RedirectionGuard (ProcessRedirectionTrustPolicy) refuses to follow junctions
+# that a normal user created, such as uv's cpython-3.1x-windows-x86_64-none links, with
+# ERROR_UNTRUSTED_MOUNT_POINT (448). LibrAgent shell children inherit this policy.
+REDIRECTION_GUARD_PATTERN = re.compile(
+    r"os error 448|WinError 448|untrusted mount point", re.IGNORECASE
+)
+
+
+def is_redirection_guard_error(text: str) -> bool:
+    """Return True when text reports ERROR_UNTRUSTED_MOUNT_POINT (os error 448)."""
+    return bool(REDIRECTION_GUARD_PATTERN.search(text or ""))
+
+
+def _read_link(path: str) -> str | None:
+    """Return the target of a symlink or junction, or None for an ordinary entry.
+
+    os.readlink reads the reparse data of the link itself, so it works where
+    RedirectionGuard blocks opening a path through the link.
+    """
+    try:
+        target = os.readlink(path)
+    except (OSError, ValueError, NotImplementedError):
+        return None
+    if target.startswith("\\\\?\\UNC\\"):
+        return "\\\\" + target[8:]
+    if target.startswith("\\\\?\\"):
+        return target[4:]
+    return target
+
+
+def resolve_links(path: str | pathlib.Path) -> pathlib.Path:
+    """Replace every symlink and junction in path with its target, component by component.
+
+    pathlib.Path.resolve() and os.path.realpath() open the path through each link,
+    which fails with os error 448 under RedirectionGuard, so they cannot be used here.
+    """
+    current = os.path.abspath(str(path))
+    for _ in range(40):  # bound for link cycles
+        drive, rest = os.path.splitdrive(current)
+        parts = [part for part in re.split(r"[\\/]+", rest) if part]
+        prefix = drive + os.sep
+        changed = False
+        for index, part in enumerate(parts):
+            candidate = os.path.join(prefix, part)
+            target = _read_link(candidate)
+            if target is not None:
+                if not os.path.isabs(target):
+                    target = os.path.join(prefix, target)
+                current = os.path.normpath(os.path.join(target, *parts[index + 1:]))
+                changed = True
+                break
+            prefix = candidate
+        if not changed:
+            return pathlib.Path(os.path.normpath(current))
+    return pathlib.Path(os.path.normpath(current))
+
+
+def first_link(path: str | pathlib.Path) -> pathlib.Path | None:
+    """Return the first symlink or junction component of path, if any."""
+    current = os.path.abspath(str(path))
+    drive, rest = os.path.splitdrive(current)
+    prefix = drive + os.sep
+    for part in [part for part in re.split(r"[\\/]+", rest) if part]:
+        prefix = os.path.join(prefix, part)
+        if _read_link(prefix) is not None:
+            return pathlib.Path(prefix)
+    return None
+
+
+def base_python_path(python_exe: pathlib.Path) -> pathlib.Path:
+    """Return the link-free base interpreter behind python_exe.
+
+    A venv python or a uv trampoline reports its base interpreter through
+    sys._base_executable. Building the venv from the resolved path keeps junctions
+    out of pyvenv.cfg 'home'.
+    """
+    base = str(python_exe)
+    try:
+        proc = subprocess.run(
+            [
+                str(python_exe),
+                "-c",
+                "import sys; print(getattr(sys, '_base_executable', None) or sys.executable)",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if proc.returncode == 0 and proc.stdout.strip():
+            base = proc.stdout.strip().splitlines()[-1].strip()
     except Exception:
-        return False
+        pass
+    resolved = resolve_links(base)
+    return resolved if is_working_python(resolved) else python_exe
+
+
+def venv_home(venv_dir: pathlib.Path) -> str | None:
+    """Return the 'home' value from the venv pyvenv.cfg, if present."""
+    try:
+        text = (venv_dir / "pyvenv.cfg").read_text(encoding="utf-8")
+    except OSError:
+        return None
+    for line in text.splitlines():
+        key, sep, value = line.partition("=")
+        if sep and key.strip().lower() == "home":
+            return value.strip()
+    return None
+
+
+def redirection_guard_failure(subject: str, link: pathlib.Path | None) -> int:
+    """Report a RedirectionGuard block with the one hint that cannot loop."""
+    where = f"the junction '{link}'" if link else "a junction in the Python path"
+    return fail(
+        f"{subject} cannot start: Windows RedirectionGuard blocked access through {where} "
+        "(os error 448, ERROR_UNTRUSTED_MOUNT_POINT). The LibrAgent shell inherits this "
+        "mitigation, so a Python reached through a user-created junction cannot run here.",
+        "Report this error to the user. Do not retry.",
+        code=1,
+    )
 
 
 def find_working_python() -> pathlib.Path | None:
@@ -227,17 +357,37 @@ def run_doctor() -> int:
                 uv_bin = str(possible_uv)
                 break
 
+    # Build the venv from the real base interpreter so pyvenv.cfg 'home' has no junction.
+    base_py = base_python_path(working_py)
+
+    # A venv built earlier through a junction cannot start under RedirectionGuard; rebuild it.
+    venv_py = get_venv_python(VENV_DIR)
+    home = venv_home(VENV_DIR)
+    if os.name == "nt" and venv_py.exists() and home and first_link(home) is not None:
+        shutil.rmtree(VENV_DIR, ignore_errors=True)
+
     # Setup persistent user venv outside skill folder
     venv_py = get_venv_python(VENV_DIR)
     if not venv_py.exists():
         VENV_DIR.parent.mkdir(parents=True, exist_ok=True)
-        if uv_bin:
-            cmd = [uv_bin, "venv", str(VENV_DIR), "--python", str(working_py)]
+        stdlib_cmd = [str(base_py), "-m", "venv", str(VENV_DIR)]
+        if not uv_bin:
+            commands = [stdlib_cmd]
+        elif os.name == "nt":
+            # uv can write its minor-version junction into pyvenv.cfg 'home'. The stdlib
+            # venv records the real folder of base_py, so try it first on Windows.
+            commands = [stdlib_cmd, [uv_bin, "venv", str(VENV_DIR), "--python", str(base_py)]]
         else:
-            cmd = [str(working_py), "-m", "venv", str(VENV_DIR)]
+            commands = [[uv_bin, "venv", str(VENV_DIR), "--python", str(base_py)]]
 
-        proc = subprocess.run(cmd, capture_output=True, text=True)
+        for cmd in commands:
+            proc = subprocess.run(cmd, capture_output=True, text=True)
+            if proc.returncode == 0:
+                break
+            shutil.rmtree(VENV_DIR, ignore_errors=True)
         if proc.returncode != 0:
+            if is_redirection_guard_error(proc.stderr):
+                return redirection_guard_failure("The base Python", first_link(base_py))
             return fail(
                 f"Failed to create user virtualenv at '{VENV_DIR}': {proc.stderr}",
                 f"Check permissions on '{VENV_DIR.parent}' and retry doctor.",
@@ -245,7 +395,14 @@ def run_doctor() -> int:
             )
 
     venv_py = get_venv_python(VENV_DIR)
-    if not is_working_python(venv_py):
+    probe_error = python_probe_error(venv_py)
+    if probe_error is not None:
+        if is_redirection_guard_error(probe_error):
+            home = venv_home(VENV_DIR)
+            return redirection_guard_failure(
+                f"Virtualenv python at '{venv_py}'",
+                first_link(home) if home else first_link(venv_py),
+            )
         return fail(
             f"Virtualenv python at '{venv_py}' is not functional.",
             f"Remove '{VENV_DIR}' and re-run doctor.",
@@ -296,7 +453,7 @@ def run_doctor() -> int:
         print(f"Warning: Bundled Noto Sans KR font not found in '{FONTS_DIR}'.", file=sys.stderr)
 
     print("Doctor: OK")
-    print(f"Python: {working_py}")
+    print(f"Python: {base_py}")
     print(f"Venv: {VENV_DIR}")
     print(f"VenvPython: {venv_py}")
     print(f"Dependencies: {' '.join(spec for spec, _ in REQUIRED_DEPENDENCIES)} installed")

@@ -840,6 +840,58 @@ print("UNMET_COUNT=%d" % len(unmet))
   Remove-Item $extractDocx -Force -ErrorAction SilentlyContinue
   Remove-Item $extractMd -Force -ErrorAction SilentlyContinue
   Write-Host "Test 15 passed: docx extraction works and the dependency probe detects missing modules."
+
+  # ---------------------------------------------------------
+  # Test 16: the base Python path is resolved past junctions (#2527)
+  # Under RedirectionGuard a shell child cannot traverse a user-created junction
+  # (os error 448), so the doctor must build the venv from the junction target and
+  # pyvenv.cfg 'home' must name no junction.
+  # ---------------------------------------------------------
+  Write-Host "`n[Test 16] Junctions are resolved out of the base Python path (#2527)..."
+  $junctionRoot = Join-Path $tempRoot "junction_$(Get-Random)"
+  $realDir = Join-Path $junctionRoot 'cpython-3.12.14-windows-x86_64-none'
+  $linkDir = Join-Path $junctionRoot 'cpython-3.12-windows-x86_64-none'
+  New-Item -ItemType Directory -Path $realDir -Force | Out-Null
+  Set-Content -Path (Join-Path $realDir 'python.exe') -Value ''
+  New-Item -ItemType Junction -Path $linkDir -Target $realDir | Out-Null
+  try {
+    $junctionProbe = & $venvPython -c @'
+import os
+import pathlib
+import sys
+
+sys.path.insert(0, str(pathlib.Path(sys.argv[1]).parent))
+import convert
+
+link_dir, real_dir = sys.argv[2], sys.argv[3]
+resolved = convert.resolve_links(os.path.join(link_dir, "python.exe"))
+expected = os.path.join(real_dir, "python.exe")
+print("RESOLVED_OK=%d" % (os.path.normcase(str(resolved)) == os.path.normcase(expected)))
+found = convert.first_link(os.path.join(link_dir, "python.exe"))
+print("LINK_FOUND=%d" % (found is not None and os.path.normcase(str(found)) == os.path.normcase(link_dir)))
+print("REAL_HAS_NO_LINK=%d" % (convert.first_link(expected) is None))
+print("GUARD_448=%d" % convert.is_redirection_guard_error(
+    "failed to query metadata of python.exe (os error 448)"))
+print("GUARD_OTHER=%d" % convert.is_redirection_guard_error("entity not found (os error 2)"))
+home = convert.venv_home(convert.VENV_DIR)
+print("VENV_HOME_CLEAN=%d" % (home is not None and convert.first_link(home) is None))
+'@ $convertPy $linkDir $realDir
+    $junctionText = ($junctionProbe -join "`n").Trim()
+    $junctionLines = $junctionText -split "`r?`n"
+    foreach ($expectedLine in @(
+      'RESOLVED_OK=1', 'LINK_FOUND=1', 'REAL_HAS_NO_LINK=1',
+      'GUARD_448=1', 'GUARD_OTHER=0', 'VENV_HOME_CLEAN=1'
+    )) {
+      if ($junctionLines -notcontains $expectedLine) {
+        Write-Error "Test 16 failed: expected $expectedLine`n$junctionText"
+        exit 1
+      }
+    }
+  } finally {
+    if (Test-Path $linkDir) { cmd /c rmdir "$linkDir" | Out-Null }
+    Remove-Item -Recurse -Force $junctionRoot -ErrorAction SilentlyContinue
+  }
+  Write-Host "Test 16 passed: junctions resolve to their target and the doctor venv home has no junction."
 } finally {
   if (Test-Path $testScript) { Remove-Item $testScript -Force -ErrorAction SilentlyContinue }
   if (Test-Path $testMd) { Remove-Item $testMd -Force -ErrorAction SilentlyContinue }
