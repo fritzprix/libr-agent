@@ -1,20 +1,25 @@
 # uv Installation Script for Windows
+# Non-interactive. User scope only: uv installs under the user profile, so
+# this script never needs an elevated shell.
+
+param(
+    [switch]$Force = $false
+)
 
 $ErrorActionPreference = "Stop"
+# Absolute paths so the hints work from any current folder.
+$scriptDir = $PSScriptRoot
 
 Write-Host "=== uv Installation Script ===" -ForegroundColor Cyan
 Write-Host ""
 
-# Check if uv is already installed
+# A working uv is enough unless -Force is given.
 $uvCmd = Get-Command uv -ErrorAction SilentlyContinue
-if ($uvCmd) {
+if ($uvCmd -and -not $Force) {
     $currentVersion = uv --version 2>&1
     Write-Host "uv already installed: $currentVersion" -ForegroundColor Yellow
-    $continue = Read-Host "Do you want to continue with installation? (y/n)"
-    if ($continue -ne 'y') {
-        Write-Host "Installation cancelled." -ForegroundColor Red
-        exit 0
-    }
+    Write-Host "Nothing to do. Use -Force to reinstall."
+    exit 0
 }
 
 # Method 1: Using standalone installer (recommended)
@@ -29,7 +34,7 @@ try {
     $pythonCmd = Get-Command python -ErrorAction SilentlyContinue
     if (-not $pythonCmd) {
         Write-Host "✗ Python not found. Please install Python first." -ForegroundColor Red
-        Write-Host "Run: .\install_python.ps1" -ForegroundColor Yellow
+        Write-Host "Run: & `"$scriptDir\install_python.ps1`"" -ForegroundColor Yellow
         exit 1
     }
     
