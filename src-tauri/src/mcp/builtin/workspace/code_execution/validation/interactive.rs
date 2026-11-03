@@ -203,18 +203,43 @@ const SHELL_COMMANDS: [&str; 6] = ["bash", "sh", "zsh", "dash", "ksh", "ash"];
 #[cfg(unix)]
 const MAX_NESTING_DEPTH: usize = 4;
 
+/// Leading words that do not change which program runs, so a privilege
+/// command after them still needs the same password dialog.
+#[cfg(unix)]
+const TRANSPARENT_WRAPPERS: [&str; 9] = [
+    "env", "command", "exec", "nohup", "time", "nice", "stdbuf", "timeout", "xargs",
+];
+
+/// Shell words that can introduce a command inside the same segment without
+/// being the command themselves.
+#[cfg(unix)]
+const SHELL_KEYWORDS: [&str; 13] = [
+    "!", "then", "do", "else", "elif", "if", "while", "until", "fi", "done", "esac", "{", "}",
+];
+
 /// Platform-specific privilege detection for Unix systems
 /// Detects commands that require elevated privileges (sudo, su, doas, pkexec)
 ///
 /// Detection must stay in sync with `normalization::inject_sudo_stdin_flag`,
-/// which appends `-S` to every unquoted `sudo` in the command line. If that
-/// rewrite fires while this check does not, sudo reads the shell's own stdin
-/// and the call blocks until timeout (#2534, seen as the 5 minute hang in
-/// #2532). So a privilege command counts wherever it starts a command
-/// segment: after `&&`, `||`, `;`, `|`, newlines, parentheses, braces or
-/// backticks, and inside a shell's `-c` string. A privilege word that is only
-/// an argument (`echo sudo`) or quoted data (`echo 'sudo x'`) does not count,
-/// because no password dialog is warranted there.
+/// which is the only thing that makes a password dialog usable: it appends
+/// `-S` to every unquoted `sudo`. If that rewrite fires while this check does
+/// not, `handlers.rs` never suspends for input, sudo reads the shell's own
+/// stdin and the call blocks until timeout (#2534, seen as the 5 minute hang
+/// in #2532). So a privilege command counts wherever a command can start:
+/// after `&&`, `||`, `;`, `|`, newlines, parentheses, braces or backticks,
+/// inside a shell's `-c` string, behind leading `NAME=value` assignments and
+/// transparent wrappers (`env`, `command`, `exec`, `nohup`, `time`, `nice`,
+/// `stdbuf`, `timeout`, `xargs`), and spelled with a path (`/usr/bin/sudo`).
+/// A privilege word that is only an argument (`echo sudo`) or quoted data
+/// (`echo 'sudo x'`) does not count, because no password dialog is warranted
+/// there.
+///
+/// Known gap: a dialog cannot always deliver the password. When the privilege
+/// command reads stdin from a pipe (`cat log | sudo tee out`), the flag lands
+/// on the pipe consumer instead of the value the user types, and a quoted or
+/// `-c` payload (`"sudo" true`, `bash -c "sudo true"`) is not rewritten at
+/// all. Those shapes may still prompt and time out; they are reported here
+/// only when the wrappers above reveal them.
 #[cfg(unix)]
 pub fn detect_privilege_escalation(command: &str) -> bool {
     detect_privilege_escalation_inner(command, 0)
@@ -223,23 +248,75 @@ pub fn detect_privilege_escalation(command: &str) -> bool {
 #[cfg(unix)]
 fn detect_privilege_escalation_inner(command: &str, depth: usize) -> bool {
     split_command_segments(command).into_iter().any(|segment| {
-        let Some((start, end)) = first_word_span(segment) else {
-            return false;
-        };
-        let word = &segment[start..end];
+        let mut cursor = 0usize;
+        let mut after_prefix = false;
 
-        if PRIVILEGE_COMMANDS.contains(&word) {
-            return true;
-        }
+        while let Some((start, end)) = next_word_span(segment, cursor) {
+            let word = &segment[start..end];
+            let base = word.rsplit('/').next().unwrap_or(word);
 
-        if SHELL_COMMANDS.contains(&word) && depth < MAX_NESTING_DEPTH {
-            if let Some(inner) = shell_inner_command(&segment[end..]) {
-                return detect_privilege_escalation_inner(inner, depth + 1);
+            if PRIVILEGE_COMMANDS.contains(&base) {
+                return true;
             }
+
+            if SHELL_COMMANDS.contains(&base) && depth < MAX_NESTING_DEPTH {
+                if let Some(inner) = shell_inner_command(&segment[end..]) {
+                    return detect_privilege_escalation_inner(inner, depth + 1);
+                }
+                return false;
+            }
+
+            if !is_transparent_prefix(word, after_prefix) {
+                return false;
+            }
+
+            after_prefix = true;
+            cursor = end;
         }
 
         false
     })
+}
+
+/// Whether `word` can precede the real command in a segment without changing
+/// which program runs: a wrapper option (`-i`, `-n`, `-oL`), a shell keyword
+/// (`then`, `!`), a transparent wrapper name, a `NAME=value` assignment, or a
+/// bare wrapper operand such as the `60` in `timeout 60 sudo ...`. A plain
+/// operand only counts once a wrapper was seen, so `cat sudo` stays
+/// undetected.
+#[cfg(unix)]
+fn is_transparent_prefix(word: &str, after_prefix: bool) -> bool {
+    if word.starts_with('-') {
+        return true;
+    }
+
+    if SHELL_KEYWORDS.contains(&word) || TRANSPARENT_WRAPPERS.contains(&word) {
+        return true;
+    }
+
+    if is_shell_assignment(word) {
+        return true;
+    }
+
+    after_prefix
+        && word
+            .chars()
+            .next()
+            .is_some_and(|first| first.is_ascii_digit())
+}
+
+/// `DEBIAN_FRONTEND=noninteractive` and friends.
+#[cfg(unix)]
+fn is_shell_assignment(word: &str) -> bool {
+    let Some((name, _)) = word.split_once('=') else {
+        return false;
+    };
+
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
+        && chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
 }
 
 /// Split a command line at unquoted command separators.
@@ -306,6 +383,13 @@ fn first_word_span(segment: &str) -> Option<(usize, usize)> {
         .unwrap_or(unquoted.len());
 
     (word_len > 0).then_some((word_start, word_start + word_len))
+}
+
+/// Byte span of the next shell word at or after `from`, using the same
+/// leading-quote handling as `first_word_span`.
+#[cfg(unix)]
+fn next_word_span(segment: &str, from: usize) -> Option<(usize, usize)> {
+    first_word_span(&segment[from..]).map(|(start, end)| (from + start, from + end))
 }
 
 /// Remove one layer of matching surrounding quotes.
@@ -509,6 +593,25 @@ mod tests {
             "bash -c 'sudo true'",
             "bash -c \"sudo true\"",
             "sh -lc 'cd /tmp && sudo true'",
+            // G1.1: the privilege command is not the first word of its
+            // segment, yet `normalization::inject_sudo_stdin_flag` still
+            // appends `-S` to it. Missing these is what made the #2532
+            // install hang.
+            "DEBIAN_FRONTEND=noninteractive sudo apt-get install -y python3.9",
+            "FOO=1 sudo true",
+            "env sudo true",
+            "env -i PATH=/usr/bin sudo true",
+            "command sudo true",
+            "exec sudo true",
+            "nohup sudo true",
+            "time sudo true",
+            "nice -n 5 sudo true",
+            "stdbuf -oL sudo true",
+            "timeout 60 sudo true",
+            "xargs sudo rm",
+            "/usr/bin/sudo true",
+            "if true; then sudo true; fi",
+            "! sudo true",
         ] {
             assert!(
                 detect_privilege_escalation(command),
@@ -555,6 +658,38 @@ mod tests {
                 !detect_privilege_escalation(command),
                 "unexpected privilege detection for: {command:?}"
             );
+        }
+    }
+
+    /// `normalization::inject_sudo_stdin_flag` rewrites every non-Windows
+    /// command line, so whenever it appends `-S` this detector must report
+    /// escalation. Otherwise sudo waits on stdin with no dialog to answer it
+    /// and the call blocks until timeout (#2534).
+    #[test]
+    #[cfg(unix)]
+    fn test_privilege_detection_tracks_sudo_stdin_injection() {
+        use crate::mcp::builtin::workspace::code_execution::normalization::inject_sudo_stdin_flag;
+
+        for command in [
+            "sudo apt update",
+            "sudo -u root ls",
+            "   sudo true",
+            "cd /tmp && sudo true",
+            "echo x; sudo true",
+            "ls | sudo tee out.txt",
+            "DEBIAN_FRONTEND=noninteractive sudo apt-get install -y python3.9",
+            "env -i PATH=/usr/bin sudo true",
+            "nice -n 5 sudo true",
+            "timeout 60 sudo true",
+            "xargs sudo rm",
+            "bash -c 'cd /tmp && sudo true'",
+        ] {
+            if inject_sudo_stdin_flag(command) != command {
+                assert!(
+                    detect_privilege_escalation(command),
+                    "sudo -S was injected without detecting escalation for {command:?}"
+                );
+            }
         }
     }
 }
