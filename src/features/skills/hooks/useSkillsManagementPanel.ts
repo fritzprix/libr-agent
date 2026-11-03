@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
+import { useSWRConfig } from 'swr';
 import { useDnDContext } from '@/context/DnDContext';
 import { safeInvoke } from '@/lib/backend/core';
 import {
@@ -13,6 +14,7 @@ import {
 } from '@/lib/backend/skills';
 import { getLogger } from '@/lib/logger';
 import { useSkillsDirectory } from '@/features/settings/hooks/useSkillsDirectory';
+import { isScopedSkillsKey } from '@/features/agent/hooks/useScopedSkills';
 import {
   formatImportSuccess,
   getSkillsStatusMessage,
@@ -35,8 +37,14 @@ export function useSkillsManagementPanel() {
     systemDirectory,
     userDirectory,
     errorMessage,
-    refresh,
+    refresh: refreshOverview,
   } = useSkillsDirectory();
+  const { mutate } = useSWRConfig();
+
+  // Skill changes must also reach @skill: autocomplete lists that are already open.
+  const refresh = useCallback(async () => {
+    await Promise.all([refreshOverview(), mutate(isScopedSkillsKey)]);
+  }, [refreshOverview, mutate]);
 
   const dropZoneRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);

@@ -6,6 +6,13 @@ import type { SkillMetadata } from '@/types/skills';
 
 const logger = getLogger('useScopedSkills');
 
+const SCOPED_SKILLS_KEY = 'scoped-skills';
+
+/** SWR key filter matching every `useScopedSkills` cache entry. */
+export function isScopedSkillsKey(key: unknown): boolean {
+  return Array.isArray(key) && key[0] === SCOPED_SKILLS_KEY;
+}
+
 interface ScopedSkillsOptions {
   assistantId?: string;
   workspacePath?: string | null;
@@ -35,7 +42,7 @@ export function useScopedSkills(
       ? assistantIdOrOptions.sessionId
       : undefined;
   const swrKey = [
-    'scoped-skills',
+    SCOPED_SKILLS_KEY,
     assistantId ?? '',
     resolvedWorkspacePath ?? '',
     sessionId ?? '',
