@@ -88,8 +88,10 @@ vi.mock('@/components/ui/dropdown-menu', () => ({
     onPointerDown,
     onPointerUp,
     onClick,
+    'aria-label': ariaLabel,
   }: {
     children: React.ReactNode;
+    'aria-label'?: string;
     onSelect?: (event: Event) => void;
     onPointerDown?: React.PointerEventHandler<HTMLDivElement>;
     onPointerUp?: React.PointerEventHandler<HTMLDivElement>;
@@ -102,6 +104,7 @@ vi.mock('@/components/ui/dropdown-menu', () => ({
       <div
         ref={itemRef}
         role="menuitem"
+        aria-label={ariaLabel}
         onPointerDown={(event) => {
           onPointerDown?.(event);
           isPointerDownRef.current = true;
@@ -176,7 +179,7 @@ describe('SessionNotificationsBell', () => {
       screen.getByRole('button', { name: 'notifications.open' }),
     );
 
-    const dismissButtons = screen.getAllByRole('button', {
+    const dismissButtons = screen.getAllByRole('menuitem', {
       name: 'notifications.dismiss',
     });
     expect(dismissButtons).toHaveLength(2);
@@ -210,7 +213,7 @@ describe('SessionNotificationsBell', () => {
       screen.getByRole('button', { name: 'notifications.open' }),
     );
 
-    const markAllReadButton = screen.getByRole('button', {
+    const markAllReadButton = screen.getByRole('menuitem', {
       name: 'notifications.markAllRead',
     });
     fireEvent.click(markAllReadButton);
@@ -230,7 +233,7 @@ describe('SessionNotificationsBell', () => {
     );
 
     expect(
-      screen.queryByRole('button', { name: 'notifications.markAllRead' }),
+      screen.queryByRole('menuitem', { name: 'notifications.markAllRead' }),
     ).not.toBeInTheDocument();
   });
 });
