@@ -111,6 +111,82 @@ mod tests {
         }
     }
 
+    fn result_text(result: &crate::mcp::types::MCPResult) -> String {
+        match &result.content.as_ref().expect("no content")[0] {
+            crate::mcp::types::MCPContent::Text { text, .. } => text.clone(),
+            _ => panic!("Expected text content"),
+        }
+    }
+
+    #[test]
+    fn test_immediate_exit_result_reports_exit_code_stderr_and_process_id() {
+        let result = super::super::code_execution::shell::async_exec::immediate_exit_result(
+            "proc-123",
+            "nginx -g 'daemon on;'",
+            Some(3),
+            &["open() \"/run/nginx.pid\" failed (13: Permission denied)".to_string()],
+        );
+        let text = result_text(&result);
+        assert!(
+            text.contains("Process exited immediately with code 3"),
+            "{text}"
+        );
+        assert!(text.contains("proc-123"), "{text}");
+        assert!(text.contains("Permission denied"), "{text}");
+        assert!(!text.contains("failed to start"), "{text}");
+
+        let data = result.structured_content.expect("No structured_content");
+        assert_eq!(data["process_id"], "proc-123");
+        assert_eq!(data["exit_code"], 3);
+        assert_eq!(
+            data["stderr_tail"][0],
+            "open() \"/run/nginx.pid\" failed (13: Permission denied)"
+        );
+    }
+
+    #[test]
+    fn test_immediate_exit_result_spawn_error_keeps_failed_to_start_with_cause() {
+        let result = super::super::code_execution::shell::async_exec::immediate_exit_result(
+            "proc-456",
+            "does-not-matter",
+            None,
+            &[
+                "LibrAgent: process error: Failed to spawn process: No such file or directory"
+                    .to_string(),
+            ],
+        );
+        let text = result_text(&result);
+        assert!(text.contains("Process failed to start"), "{text}");
+        assert!(text.contains("No such file or directory"), "{text}");
+        let data = result.structured_content.expect("No structured_content");
+        assert!(data["exit_code"].is_null());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_spawn_process_fast_nonzero_exit_returns_details() {
+        let harness = create_server().await;
+        let server = &harness.server;
+
+        let result = server
+            .handle_spawn_process(
+                json!({ "command": "echo boom-stderr 1>&2; exit 3" }),
+                "test-session",
+            )
+            .await
+            .expect("Execution failed");
+        let text = result_text(&result);
+        assert!(
+            text.contains("Process exited immediately with code 3"),
+            "{text}"
+        );
+        assert!(text.contains("boom-stderr"), "{text}");
+
+        let data = result.structured_content.expect("No structured_content");
+        assert_eq!(data["exit_code"], 3);
+        assert!(data["process_id"].as_str().is_some_and(|id| !id.is_empty()));
+    }
+
     #[tokio::test]
     async fn test_poll_process_tail_visibility() {
         let harness = create_server().await;
