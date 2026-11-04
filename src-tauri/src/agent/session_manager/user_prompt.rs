@@ -13,6 +13,7 @@ use crate::agent::events::AgentEvent;
 use crate::agent::state::{
     admit_user_prompt, pending_user_prompt_summary, take_pending_user_prompt, wait_for_user_prompt,
     PendingUserPromptSummary, UserPromptAnswer, UserPromptOutcome, UserPromptPayload,
+    WaitingToolCallRecord,
 };
 use crate::agent::tauri_events::emit_agent_event;
 
@@ -60,6 +61,9 @@ impl AgentSessionManager {
         }
 
         let (request_id, receiver) = admit_user_prompt(&slot, payload.clone()).await?;
+        let settings = crate::state::try_get_settings_repository()
+            .map(|repo| repo as &dyn crate::repositories::SettingsRepository);
+        let waiting_record = WaitingToolCallRecord::open(settings, session_id).await;
 
         if let Err(error) = emit_agent_event(
             &self.app_handle,
@@ -71,6 +75,7 @@ impl AgentSessionManager {
         ) {
             // Nobody saw the dialog, so nobody can answer it.
             let _ = take_pending_user_prompt(&slot, &request_id).await;
+            waiting_record.close().await;
             return Err(format!("Failed to open the user prompt: {}", error));
         }
 
@@ -81,6 +86,7 @@ impl AgentSessionManager {
         );
 
         let outcome = wait_for_user_prompt(&slot, &request_id, receiver).await;
+        waiting_record.close().await;
 
         log::info!(
             "User prompt resolved on session {} (request_id={}, outcome={})",

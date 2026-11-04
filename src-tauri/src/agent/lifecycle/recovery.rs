@@ -1,6 +1,8 @@
 use crate::agent::context::registry::ContextRegistry;
 use crate::agent::events::{AgentEvent, AgentEventDispatcher};
-use crate::agent::state::{AgentSession, MAX_CACHED_MESSAGES};
+use crate::agent::state::{
+    take_waiting_tool_call, AgentSession, MAX_CACHED_MESSAGES, USER_PROMPT_RESTART_MESSAGE,
+};
 use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::models::chat::MessageSource;
 use crate::repositories::message_repository::MessageRepository as MessageRepositoryTrait;
@@ -14,12 +16,19 @@ use tokio::sync::RwLock;
 
 use super::management::update_session_status_with_dispatcher;
 
+const CRASH_TOMBSTONE_TEXT: &str =
+    "[system] Tool call did not complete (session recovered after crash).";
+
 /// Close orphaned tool calls for a recovered session by injecting synthetic error responses.
 /// Prevents the UI from showing stuck running spinners after a crash recovery.
+///
+/// `prompt_tool_call_id` names the call that waited on a user prompt when the
+/// app stopped; it gets the restart message instead of the crash text.
 async fn close_orphaned_tool_calls(
     session_id: &str,
     dispatcher: &dyn AgentEventDispatcher,
     message_repo: Option<&Arc<dyn MessageRepositoryTrait>>,
+    prompt_tool_call_id: Option<&str>,
 ) -> Result<(), String> {
     let repo_holder: Option<Arc<dyn MessageRepositoryTrait>> = match message_repo {
         Some(repo) => Some(repo.clone()),
@@ -72,14 +81,18 @@ async fn close_orphaned_tool_calls(
             if resolved_ids.contains(&tc.id) {
                 continue;
             }
+            let text = if prompt_tool_call_id == Some(tc.id.as_str()) {
+                USER_PROMPT_RESTART_MESSAGE
+            } else {
+                CRASH_TOMBSTONE_TEXT
+            };
             // Inject a synthetic error result tombstone so the UI can unblock
             tombstones.push(crate::models::chat::Message {
                 id: uuid::Uuid::new_v4().to_string(),
                 session_id: session_id.to_string(),
                 role: "tool".to_string(),
                 content: vec![crate::mcp::types::MCPContent::Text {
-                    text: "[system] Tool call did not complete (session recovered after crash)."
-                        .to_string(),
+                    text: text.to_string(),
                 }],
                 tool_calls: None,
                 tool_call_id: Some(tc.id.clone()),
@@ -232,8 +245,17 @@ pub async fn recover_sessions_with_dispatcher_and_message_repo(
 
             if matches!(session.status, SessionStatus::Busy) {
                 // Close any orphaned tool calls that never got a result (crash tombstones)
-                if let Err(e) =
-                    close_orphaned_tool_calls(&session.id, dispatcher, message_repo).await
+                let prompt_tool_call_id = match crate::state::try_get_settings_repository() {
+                    Some(settings) => take_waiting_tool_call(settings, &session.id).await,
+                    None => None,
+                };
+                if let Err(e) = close_orphaned_tool_calls(
+                    &session.id,
+                    dispatcher,
+                    message_repo,
+                    prompt_tool_call_id.as_deref(),
+                )
+                .await
                 {
                     log::warn!(
                         "Failed to close orphaned tool calls for session '{}': {}",
