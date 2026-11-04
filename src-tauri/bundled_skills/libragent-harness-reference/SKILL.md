@@ -45,7 +45,7 @@ Do **not** dump long operating doctrine into every assistant `systemPrompt`. Pre
 ## Cold-start routing
 
 - Empty / new workspace and the task needs durable project rules → offer or run **agent-init** (do not invent a fat default `agents.md` silently unless the user wants guidelines).
-- First run, missing Python/Node/uv, `command not found` / exit 127, or a broken venv → **setup-wizard**: user-scope tool first (`uv run --python <v>`), no `sudo` (only `sudo -n`), one install attempt, then report; on os error 448 report, do not reinstall.
+- First run, missing Python/Node/uv, `command not found` / exit 127, or a broken venv → **setup-wizard**: user-scope tool first (`uv run --python <v>`); if a step needs root, ask once for `SUDO_PASSWORD` (`requireUserInput=true`, `inputType=password`, `storeAs=SUDO_PASSWORD`) and use plain `sudo`, never `sudo -n`, `sudo -S`, `su`, or `pkexec`; one install attempt, then report; on os error 448 report, do not reinstall.
 - Need sub-agent handoff rules → **delegate** (and `references/session-isolation.md` here for the matrix).
 - Need generator–evaluator / proof-before-done on a child → **delegation-eval-loop** (after `delegate` mechanics).
 - Install/update/remove request → GitHub repo or subpath with `SKILL.md` → **skill-deployer**; npm/PyPI MCP package, MCP server repo, server URL, or MCP config JSON → **mcp-installer**; GitHub URL you cannot classify → inspect the repo first. MCP registration always pauses for user approval; finish with `tool__verifyServer`.

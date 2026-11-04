@@ -18,7 +18,7 @@ Use this when a command fails with `command not found`, exit code 127, a missing
 
 1. Look for a user-scope tool first: `uv`, conda, nvm (`Get-Command uv` / `command -v uv conda`; nvm is a shell function, so check `$NVM_DIR`).
 2. For Python, use `uv run --python <version> <script.py>` or `uv python install <version>`.
-3. Do **not** use `sudo` or a system package manager (`apt`, `dnf`, `winget --scope machine`). If a step really needs root, use only `sudo -n`. If `sudo -n` fails, report to the user.
+3. Prefer a user-scope install. If a step needs root, ask for the password once with `workspace__runInPersistentShell` and `requireUserInput=true`, `inputType=password`, `storeAs=SUDO_PASSWORD`, then use plain `sudo`. Do not use `sudo -n`, `sudo -S`, `su`, or `pkexec`.
 4. After **one** install attempt, run the check again. If it still fails, report the error to the user and stop.
 
 If the output contains `os error 448` or `ERROR_UNTRUSTED_MOUNT_POINT`, stop and report: Windows RedirectionGuard blocks the uv Python junction (#2527). Do not reinstall.
