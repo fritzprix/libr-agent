@@ -13,6 +13,8 @@ import re
 import subprocess
 import sys
 
+import worker_state
+
 EXCLUDED_LABELS = {"wontfix", "duplicate", "invalid", "question"}
 # Issues filed by producer-loop need a human `approved` label; `validated` alone is not enough.
 PRODUCER_LABEL = "auto:producer"
@@ -23,6 +25,9 @@ EXTERNAL_REF_PATTERN = re.compile(r"\b[\w.-]+/[\w.-]+#\d+\b")
 CLOSING_PATTERN = re.compile(r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)\b", re.I)
 BLOCKED_PATTERN = re.compile(r"\b(blocked by|depends on|waiting (?:for|on)|after #\d+ (?:merges|lands))\b", re.I)
 UMBRELLA_PATTERN = re.compile(r"\b(umbrella|tracking issue|epic)\b", re.I)
+# "Depends on #N" / "Blocked by #N" clause; refs are read only up to the end of the sentence so
+# "Depends on #1. It does not depend on #2." yields [1]. Negated forms ("does not depend on") never match.
+DEPENDS_PATTERN = re.compile(r"\b(?:depends on|blocked by)\b:?(?P<refs>[^\n.]*)", re.I)
 
 
 def gh(*args: str) -> str:
@@ -32,14 +37,47 @@ def gh(*args: str) -> str:
     return result.stdout
 
 
+def depends_on(body: str, number: int) -> list[int]:
+    """Issue/PR numbers named in this issue's own `Depends on` / `Blocked by` clauses."""
+    refs: set[int] = set()
+    for match in DEPENDS_PATTERN.finditer(body):
+        refs |= {int(n) for n in REF_PATTERN.findall(match.group("refs"))}
+    refs.discard(number)
+    return sorted(refs)
+
+
+def open_dependencies(
+    deps: list[int],
+    open_issue_numbers: set[int],
+    open_pr_numbers: set[int],
+    closed_by_merged_pr: set[int],
+) -> list[int]:
+    """Dependencies still unresolved. A closed issue, a merged/closed PR, or an open issue whose
+    closing PR has merged (merges into dev/* do not auto-close issues) counts as resolved."""
+    return [
+        d for d in deps
+        if d in open_pr_numbers or (d in open_issue_numbers and d not in closed_by_merged_pr)
+    ]
+
+
+def closing_refs(pr: dict) -> set[int]:
+    text = f"{pr['title']} {pr.get('body') or ''}"
+    refs = {int(n) for n in CLOSING_PATTERN.findall(text)}
+    refs |= {int(n) for n in re.findall(r"-(\d{3,})\b", pr["headRefName"])}
+    return refs
+
+
 def exclusion_reason(
     number: int,
     labels: set[str],
     assignees: list[str],
     me: str,
     closing_pr: dict[int, list[int]],
+    claimed_by: str | None = None,
 ) -> str | None:
     """Why an open issue is not a candidate, or None when it is."""
+    if claimed_by:
+        return f"claimed by {claimed_by}"
     if labels & EXCLUDED_LABELS:
         return f"label: {', '.join(sorted(labels & EXCLUDED_LABELS))}"
     if PRODUCER_LABEL in labels and APPROVED_LABEL not in labels:
@@ -55,8 +93,11 @@ def exclusion_reason(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--limit", type=int, default=100, help="Candidate issues limit (default: 100)")
+    parser.add_argument("--worker", default=None, help="Worker name (default: $WORKER_ID or 'worker')")
     args = parser.parse_args()
 
+    worker = worker_state.worker_name(args.worker)
+    claims = worker_state.load_claims()
     me = gh("api", "user", "--jq", ".login").strip()
     issues = json.loads(
         gh("issue", "list", "--state", "open", "--limit", str(args.limit), "--json",
@@ -65,15 +106,18 @@ def main() -> None:
     open_prs = json.loads(
         gh("pr", "list", "--state", "open", "--limit", "100", "--json", "number,title,body,headRefName")
     )
+    merged_prs = json.loads(
+        gh("pr", "list", "--state", "merged", "--limit", "100", "--json", "number,title,body,headRefName")
+    )
     open_issue_numbers = {i["number"] for i in issues}
     open_pr_numbers = {p["number"] for p in open_prs}
+    closed_by_merged_pr = set().union(*(closing_refs(pr) for pr in merged_prs))
 
     closing_pr: dict[int, list[int]] = {}
     mentioned_by_pr: dict[int, list[int]] = {}
     for pr in open_prs:
         text = f"{pr['title']} {pr.get('body') or ''}"
-        closes = {int(n) for n in CLOSING_PATTERN.findall(text)}
-        closes |= {int(n) for n in re.findall(r"-(\d{3,})\b", pr["headRefName"])}
+        closes = closing_refs(pr)
         for ref in closes:
             closing_pr.setdefault(ref, []).append(pr["number"])
         for ref in {int(n) for n in REF_PATTERN.findall(text)} - closes:
@@ -88,7 +132,12 @@ def main() -> None:
         refs = sorted({int(n) for n in REF_PATTERN.findall(body)} - {number})
         checkboxes = re.findall(r"^\s*[-*] \[( |x|X)\]", body, re.M)
 
-        reason = exclusion_reason(number, labels, assignees, me, closing_pr)
+        reason = exclusion_reason(
+            number, labels, assignees, me, closing_pr,
+            claimed_by=worker_state.claimed_by_other(claims, f"issue:{number}", worker),
+        )
+        deps = depends_on(body, number)
+        unresolved = open_dependencies(deps, open_issue_numbers, open_pr_numbers, closed_by_merged_pr)
 
         entry = {
             "number": number,
@@ -98,6 +147,14 @@ def main() -> None:
             "assignedToMe": me in assignees,
             "checkboxes": {"total": len(checkboxes), "done": sum(c.lower() == "x" for c in checkboxes)},
             "bodyChars": len(body),
+            "dependsOn": deps,
+            "openDependencies": unresolved,
+            # Open PRs implementing an unresolved dependency: stack on one of them instead of skipping.
+            "stackOn": sorted(
+                {p for d in unresolved for p in closing_pr.get(d, [])}
+                | {d for d in unresolved if d in open_pr_numbers}
+            ),
+            "startable": not unresolved,
             "refsOpenIssues": [r for r in refs if r in open_issue_numbers],
             "refsOpenPRs": [r for r in refs if r in open_pr_numbers],
             "mentionedByOpenPRs": mentioned_by_pr.get(number, []),
@@ -114,6 +171,7 @@ def main() -> None:
     def rank(entry: dict) -> tuple:
         return (
             not entry["assignedToMe"],
+            not entry["startable"],
             entry["blockedHint"],
             entry["umbrellaHint"],
             bool(entry["refsOpenPRs"] or entry["externalRefs"]),

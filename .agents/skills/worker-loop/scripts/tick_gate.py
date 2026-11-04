@@ -27,6 +27,8 @@ import sys
 import time
 from pathlib import Path
 
+import worker_state
+
 EXIT_RUN = 0
 EXIT_NOOP = 1
 EXIT_BUSY = 2
@@ -83,36 +85,17 @@ class GhError(RuntimeError):
     """Raised when GitHub CLI execution fails."""
 
 
-def default_state_path() -> Path:
-    env = os.environ.get("LOOP_STATE_DIR")
-    if env:
-        p = Path(env)
-        base = p.parent if p.name == "state.json" else p
-        return (base if base.name == "worker-loop" else base / "worker-loop") / "state.json"
-    try:
-        out = subprocess.run(
-            ["git", "rev-parse", "--git-common-dir"],
-            capture_output=True, text=True, check=True
-        ).stdout.strip()
-        common = Path(out).resolve()
-        repo_root = common.parent if common.name == ".git" else common
-        return repo_root / ".libragent" / "work" / "worker-loop" / "state.json"
-    except Exception:
-        return Path(".libragent/work/worker-loop/state.json")
+def default_state_path(worker: str) -> Path:
+    """Each worker has its own state file and lock, so workers never block each other."""
+    return worker_state.worker_dir(worker) / "state.json"
 
 
 def load_state(path: Path) -> dict:
-    if path.is_file():
-        try:
-            return json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
-            return {}
-    return {}
+    return worker_state.read_json(path)
 
 
 def save_state(path: Path, state: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    worker_state.atomic_write_json(path, state)
 
 
 def gh(*args: str) -> str:
@@ -223,6 +206,7 @@ def compute_fingerprint() -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--worker", default=None, help="Worker name (default: $WORKER_ID or 'worker')")
     parser.add_argument("--state-file", type=Path, default=None, help="Path to state.json")
     parser.add_argument("--update", action="store_true", help="Update lastFingerprint in state.json after a successful tick")
     parser.add_argument("--lock", action="store_true", help="Acquire tick.lock before exiting 0")
@@ -230,7 +214,7 @@ def main() -> None:
     parser.add_argument("--unlock", action="store_true", help="Release tick.lock")
     args = parser.parse_args()
 
-    state_path = args.state_file or default_state_path()
+    state_path = args.state_file or default_state_path(worker_state.worker_name(args.worker))
     lock_path = state_path.parent / "tick.lock"
 
     try:
