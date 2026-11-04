@@ -57,7 +57,13 @@ impl SecretStore for LayeredSecretStore<'_> {
         value: &str,
     ) -> Result<Option<String>, String> {
         if self.primary.available() {
-            self.primary.set(server_id, name, value).await
+            let notice = self.primary.set(server_id, name, value).await?;
+            // An older fallback copy would be read instead if the keychain later becomes
+            // unavailable. Failing to remove it must not undo the keychain save.
+            if let Err(e) = self.fallback.delete(server_id, name).await {
+                log::warn!("Could not remove the fallback copy of secret '{name}' for MCP server '{server_id}': {e}");
+            }
+            Ok(notice)
         } else {
             self.fallback.set(server_id, name, value).await
         }
@@ -291,6 +297,51 @@ fn write_private_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
         .map_err(|e| format!("Failed to write {}: {e}", path.display()))
 }
 
+/// The current process user's SID in string form (for example `S-1-5-21-...`).
+#[cfg(windows)]
+fn current_user_sid() -> Result<String, String> {
+    use windows_sys::Win32::Foundation::{CloseHandle, LocalFree, HANDLE};
+    use windows_sys::Win32::Security::Authorization::ConvertSidToStringSidW;
+    use windows_sys::Win32::Security::{GetTokenInformation, TokenUser, TOKEN_QUERY, TOKEN_USER};
+    use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+
+    let os_error = |what: &str| format!("{what}: {}", std::io::Error::last_os_error());
+    // SAFETY: the token handle is closed once on every path after it is opened. The
+    // TOKEN_USER buffer is u64-aligned and as large as GetTokenInformation asked for, and
+    // the SID string allocated by ConvertSidToStringSidW is read up to its NUL and freed
+    // once with LocalFree.
+    unsafe {
+        let mut token: HANDLE = std::ptr::null_mut();
+        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) == 0 {
+            return Err(os_error("Failed to open the process token"));
+        }
+        let mut needed = 0u32;
+        GetTokenInformation(token, TokenUser, std::ptr::null_mut(), 0, &mut needed);
+        let mut buffer = vec![0u64; (needed as usize).div_ceil(8)];
+        let read = GetTokenInformation(
+            token,
+            TokenUser,
+            buffer.as_mut_ptr().cast(),
+            needed,
+            &mut needed,
+        );
+        let read_error = os_error("Failed to read the process user");
+        CloseHandle(token);
+        if read == 0 {
+            return Err(read_error);
+        }
+        let user = &*buffer.as_ptr().cast::<TOKEN_USER>();
+        let mut sid_string: *mut u16 = std::ptr::null_mut();
+        if ConvertSidToStringSidW(user.User.Sid, &mut sid_string) == 0 {
+            return Err(os_error("Failed to format the process user SID"));
+        }
+        let len = (0..).take_while(|&i| *sid_string.add(i) != 0).count();
+        let sid = String::from_utf16_lossy(std::slice::from_raw_parts(sid_string, len));
+        LocalFree(sid_string.cast());
+        Ok(sid)
+    }
+}
+
 #[cfg(windows)]
 fn restrict_to_current_user(path: &Path) -> Result<(), String> {
     use std::os::windows::ffi::OsStrExt;
@@ -303,8 +354,13 @@ fn restrict_to_current_user(path: &Path) -> Result<(), String> {
         PSECURITY_DESCRIPTOR,
     };
 
-    // Protected DACL: full access for the owner (the current user), nothing inherited.
-    let sddl: Vec<u16> = "D:P(A;;FA;;;OW)".encode_utf16().chain(Some(0)).collect();
+    // Protected DACL: full access for the current user's SID, nothing inherited. The owner
+    // alias (OW) is not used: under an elevated token the owner is Administrators, and a
+    // later non-elevated run would lose access to the key.
+    let sddl: Vec<u16> = format!("D:P(A;;FA;;;{})", current_user_sid()?)
+        .encode_utf16()
+        .chain(Some(0))
+        .collect();
     let wide_path: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
     let mut descriptor: PSECURITY_DESCRIPTOR = std::ptr::null_mut();
     // SAFETY: both strings are NUL-terminated UTF-16 buffers that outlive the calls, and
@@ -502,5 +558,30 @@ mod tests {
             None
         );
         assert!(!dir.path().join(KEY_FILE_NAME).exists());
+    }
+
+    #[tokio::test]
+    async fn a_keychain_save_removes_the_older_fallback_copy() {
+        let repo = repo().await;
+        let id = server(&repo).await;
+        let dir = tempfile::tempdir().unwrap();
+        let key_path = dir.path().join(KEY_FILE_NAME);
+        let fallback = FileSecretStore::new(&repo, key_path.clone());
+        fallback.set(&id, "A_KEY", "old").await.unwrap();
+        fallback.set(&id, "B_KEY", "kept").await.unwrap();
+
+        let keychain = MemorySecretStore::default();
+        let store = LayeredSecretStore::new(&keychain, FileSecretStore::new(&repo, key_path));
+        store.set(&id, "A_KEY", "new").await.unwrap();
+
+        assert_eq!(
+            keychain.get(&id, "A_KEY").await.unwrap().as_deref(),
+            Some("new")
+        );
+        assert_eq!(fallback.get(&id, "A_KEY").await.unwrap(), None);
+        assert_eq!(
+            fallback.get(&id, "B_KEY").await.unwrap().as_deref(),
+            Some("kept")
+        );
     }
 }

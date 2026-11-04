@@ -36,13 +36,19 @@ pub fn secret_store() -> &'static dyn SecretStore {
         use crate::mcp::secret_fallback::{app_key_path, FileSecretStore, LayeredSecretStore};
         static KEYCHAIN: crate::mcp::keychain::KeychainSecretStore =
             crate::mcp::keychain::KeychainSecretStore;
-        static STORE: Lazy<LayeredSecretStore<'static>> = Lazy::new(|| {
-            LayeredSecretStore::new(
-                &KEYCHAIN,
-                FileSecretStore::new(crate::state::get_mcp_server_repository(), app_key_path()),
-            )
-        });
-        &*STORE
+        static STORE: once_cell::sync::OnceCell<LayeredSecretStore<'static>> =
+            once_cell::sync::OnceCell::new();
+        if let Some(store) = STORE.get() {
+            return store;
+        }
+        // Before the repository is set there is no row to hold fallback values; do not
+        // cache a keychain-only store, so the fallback is used once the repository exists.
+        match crate::state::try_get_mcp_server_repository() {
+            Some(repo) => STORE.get_or_init(|| {
+                LayeredSecretStore::new(&KEYCHAIN, FileSecretStore::new(repo, app_key_path()))
+            }),
+            None => &KEYCHAIN,
+        }
     }
     #[cfg(test)]
     {
