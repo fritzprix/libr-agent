@@ -273,6 +273,8 @@ mod tests {
         }
     }
 
+    // Windows has no sudo detection (`detect_privilege_escalation` is always false there).
+    #[cfg(not(windows))]
     #[test]
     fn sudo_password_becomes_a_secret_prompt() {
         let payload = shell_prompt_payload(
