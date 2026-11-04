@@ -538,6 +538,7 @@ pub(crate) async fn import_mcp_data(
                 cached_tools: Set(r.cached_tools),
                 verification_status: Set(r.verification_status),
                 last_verification_error: Set(r.last_verification_error),
+                secret_names: Set(None),
                 created_at: Set(r.created_at),
                 updated_at: Set(now),
             };

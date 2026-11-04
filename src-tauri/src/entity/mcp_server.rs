@@ -16,6 +16,7 @@ pub struct Model {
     pub cached_tools: Option<String>, // JSON array of {name, description} (from last verify)
     pub verification_status: Option<String>, // pending | success | error
     pub last_verification_error: Option<String>,
+    pub secret_names: Option<String>, // JSON array of secret names in the keychain; never values
     pub created_at: i64,
     pub updated_at: i64,
 }

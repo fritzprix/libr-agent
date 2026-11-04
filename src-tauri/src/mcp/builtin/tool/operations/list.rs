@@ -197,7 +197,9 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
             // Determine tool source: live (forceVerify) or cached
             let tools_json_str: Option<String> = if force_verify {
                 if let Some(ref config) = config_opt {
-                    match test_server_connection(config, &model.name, &verify_target).await {
+                    match test_server_connection(config, &model.id, &model.name, &verify_target)
+                        .await
+                    {
                         Ok((_, json_str)) => Some(json_str),
                         Err(e) => {
                             log::warn!("tool::list live verify failed for '{}': {}", model.name, e);

@@ -1,6 +1,7 @@
 use super::super::super::service_proxy::MCPServiceProxy;
 use super::super::super::session_isolation::HttpSessionManager;
 use super::super::persist_tool_cache_for_server;
+use super::super::proxy_config::mask_server_secrets;
 use super::super::retry_policy::FailureKind;
 use super::super::runtime_updates::{
     apply_server_connecting, apply_server_discovering, apply_server_ready,
@@ -180,12 +181,17 @@ pub(super) async fn load_http_tools(
                         }
                     }
                     Err(failure) => {
-                        log::error!("[bg] ❌ {}", failure.message);
+                        let message = mask_server_secrets(
+                            &task_context.secret_values,
+                            &server_name,
+                            &failure.message,
+                        );
+                        log::error!("[bg] ❌ {}", message);
                         mark_server_failed(
                             &task_context,
                             &server_name,
                             SessionRuntimeTransport::Http,
-                            failure.message,
+                            message,
                             failure.kind,
                         )
                         .await;
@@ -218,6 +224,7 @@ pub(super) async fn load_http_tools(
                 server_name,
                 panic_error: Some(error),
             }) => {
+                let error = mask_server_secrets(&context.secret_values, &server_name, &error);
                 log::error!("[bg] ❌ {}", error);
                 mark_server_failed(
                     &context,

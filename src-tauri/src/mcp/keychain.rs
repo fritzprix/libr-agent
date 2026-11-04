@@ -71,6 +71,42 @@ pub async fn delete_token(server_id: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// MCP server secret values (`{{secret:NAME}}` templates) in the OS keychain,
+/// under the account `<server_id>:<NAME>`.
+pub struct KeychainSecretStore;
+
+impl KeychainSecretStore {
+    fn entry(server_id: &str, name: &str) -> Result<Entry, String> {
+        Entry::new(SERVICE_NAME, &format!("{server_id}:{name}"))
+            .map_err(|e| format!("Failed to create keychain entry: {e}"))
+    }
+}
+
+impl crate::mcp::secret_templates::SecretStore for KeychainSecretStore {
+    fn get(&self, server_id: &str, name: &str) -> Result<Option<String>, String> {
+        match Self::entry(server_id, name)?.get_password() {
+            Ok(value) => Ok(Some(value)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(e) => Err(format!("Failed to read secret '{name}' from keychain: {e}")),
+        }
+    }
+
+    fn set(&self, server_id: &str, name: &str, value: &str) -> Result<(), String> {
+        Self::entry(server_id, name)?
+            .set_password(value)
+            .map_err(|e| format!("Failed to store secret '{name}' in keychain: {e}"))
+    }
+
+    fn delete(&self, server_id: &str, name: &str) -> Result<(), String> {
+        match Self::entry(server_id, name)?.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(e) => Err(format!(
+                "Failed to delete secret '{name}' from keychain: {e}"
+            )),
+        }
+    }
+}
+
 /// Checks if a token exists in the keychain without retrieving it
 ///
 /// # Arguments

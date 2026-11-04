@@ -8,6 +8,7 @@ use crate::mcp::types::{
 };
 use crate::repositories::AssistantRepository;
 use serde_json::{json, Value};
+use std::collections::BTreeSet;
 
 use super::super::queries::{find_server_model, get_server_config};
 use super::super::ToolServer;
@@ -204,11 +205,7 @@ pub async fn register_server(
         Err(result) => return Ok(result),
     };
 
-    let SavedServer {
-        id,
-        name,
-        container_check,
-    } = match save_server_config(&config, &target).await {
+    let saved = match save_server_config(&config, &target, session_id, &BTreeSet::new()).await {
         Ok(saved) => saved,
         Err(e) => {
             return Ok(guided_error(
@@ -223,6 +220,13 @@ pub async fn register_server(
             .to_mcp_result());
         }
     };
+    let secrets_line = saved.secrets_line();
+    let SavedServer {
+        id,
+        name,
+        container_check,
+        ..
+    } = saved;
 
     // Note: Session Isolation means we cannot auto-start via global manager
     // External servers are now created per-session through MCPServiceProxyManager
@@ -247,8 +251,8 @@ pub async fn register_server(
 
     let hint = SuccessHint::new(
         format!(
-            "✓ Server configuration saved\n\n• Server Name: {}\n• Server ID: {}\n{}\n\nStatus: {}",
-            name, id, source_line, status
+            "✓ Server configuration saved\n\n• Server Name: {}\n• Server ID: {}\n{}{}\n\nStatus: {}",
+            name, id, source_line, secrets_line, status
         ),
         vec![
             "Use tool__listServers({\"availability\":\"inventory\"}) to confirm the registered server.".to_string(),
@@ -459,12 +463,20 @@ pub async fn update_server(
         Err(result) => return Ok(result),
     };
 
+    let reenter: BTreeSet<String> = args
+        .get("reenterSecrets")
+        .and_then(Value::as_array)
+        .map(|names| {
+            names
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+
     // Update config and get ID
-    let SavedServer {
-        id,
-        name,
-        container_check,
-    } = match save_server_config(&config, &target).await {
+    let saved = match save_server_config(&config, &target, session_id, &reenter).await {
         Ok(saved) => saved,
         Err(e) => {
             return Ok(guided_error(
@@ -476,6 +488,13 @@ pub async fn update_server(
             .to_mcp_result());
         }
     };
+    let secrets_line = saved.secrets_line();
+    let SavedServer {
+        id,
+        name,
+        container_check,
+        ..
+    } = saved;
 
     // Note: Session Isolation means we cannot restart via global manager
     // Configuration updates take effect when servers are next started in a session
@@ -500,8 +519,8 @@ pub async fn update_server(
 
     let hint = SuccessHint::new(
         format!(
-            "✓ Server configuration updated for '{}' (ID: {})\n{}{}",
-            name, id, source_line, status
+            "✓ Server configuration updated for '{}' (ID: {})\n{}{}{}",
+            name, id, source_line, secrets_line, status
         ),
         vec!["Use tool__listServers({\"availability\":\"inventory\",\"query\":\"<server-name>\"}) to verify changes".to_string()],
     );

@@ -1,4 +1,7 @@
 use crate::mcp::builtin::service_id::BuiltinServiceId;
+use crate::mcp::secret_templates::{
+    fill_secrets, parse_secret_names, secret_names_column, secret_store, template_names,
+};
 use crate::mcp::session_isolation::exec_target::StdioExecTarget;
 use crate::mcp::session_isolation::{SessionMCPError, SessionMCPManager};
 use crate::mcp::session_isolation_config::SessionIsolationConfig;
@@ -135,16 +138,22 @@ impl McpServerService {
 
     /// Verifies `config` where `target` runs stdio servers. A Docker session tests a stdio
     /// server in its container; everything else uses [`Self::verify_config`].
+    ///
+    /// `{{secret:NAME}}` templates are filled in from the keychain entries of `server_id`
+    /// for this start only, and the values are masked in the error.
     pub async fn verify_config_at(
         config: crate::mcp::types::MCPServerConfig,
         target: &StdioExecTarget,
+        server_id: &str,
     ) -> Result<Vec<MCPTool>, String> {
-        match (target.container_session(), &config.transport) {
+        let filled = fill_secrets(secret_store(), server_id, &config)?;
+        let result = match (target.container_session(), &filled.config.transport) {
             (Some(session), TransportConfig::Stdio { .. }) => {
-                Self::verify_stdio_in_container(config, session).await
+                Self::verify_stdio_in_container(filled.config.clone(), session).await
             }
-            _ => Self::verify_config(config).await,
-        }
+            _ => Self::verify_config(filled.config.clone()).await,
+        };
+        result.map_err(|error| filled.mask(&error))
     }
 
     /// Starts the server through a short-lived session manager, so the test uses the same
@@ -257,7 +266,7 @@ impl McpServerService {
         config.name = Some(server_name.clone());
 
         // 3. Verify config
-        let verify_result = Self::verify_config(config).await;
+        let verify_result = Self::verify_config_at(config, &StdioExecTarget::Host, server_id).await;
 
         match verify_result {
             Ok(tools) => {
@@ -385,14 +394,16 @@ impl McpServerService {
             None => existing_config_val.clone(),
         };
 
-        // Validate config shape when provided
+        // Validate config shape when provided; secrets the new config no longer uses are
+        // removed from the keychain (agent and UI edits alike).
+        let mut unused_secrets = Vec::new();
+        let stored_secrets = parse_secret_names(existing.secret_names.as_deref());
         if config.is_some() {
-            let mut mcp_config: crate::mcp::types::MCPServerConfig =
+            let mcp_config: crate::mcp::types::MCPServerConfig =
                 serde_json::from_value(final_config_val.clone())
                     .map_err(|e| format!("Invalid MCP server configuration: {}", e))?;
-            let final_name = name.clone().unwrap_or_else(|| existing.name.clone());
-            mcp_config.name = Some(final_name);
-            let _ = mcp_config;
+            let used = template_names(&mcp_config.transport)?;
+            unused_secrets = stored_secrets.difference(&used).cloned().collect();
         }
 
         let requires_reverification =
@@ -402,6 +413,27 @@ impl McpServerService {
             .update(&id, name.as_deref(), config)
             .await
             .map_err(|e| format!("Failed to update MCP server config: {}", e))?;
+
+        if !unused_secrets.is_empty() {
+            for secret in &unused_secrets {
+                if let Err(e) = secret_store().delete(&id, secret) {
+                    log::warn!(
+                        "Failed to delete secret '{}' of server '{}': {}",
+                        secret,
+                        id,
+                        e
+                    );
+                }
+            }
+            let kept = stored_secrets
+                .iter()
+                .filter(|name| !unused_secrets.contains(name))
+                .cloned()
+                .collect();
+            repo.set_secret_names(&id, secret_names_column(&kept))
+                .await
+                .map_err(|e| format!("Failed to update secret names: {}", e))?;
+        }
 
         if requires_reverification {
             match verification {
@@ -437,6 +469,19 @@ impl McpServerService {
                 id,
                 e
             );
+        }
+
+        if let Ok(Some(model)) = repo.get(id).await {
+            for secret in parse_secret_names(model.secret_names.as_deref()) {
+                if let Err(e) = secret_store().delete(id, &secret) {
+                    log::warn!(
+                        "Failed to delete secret '{}' of server '{}': {}",
+                        secret,
+                        id,
+                        e
+                    );
+                }
+            }
         }
 
         repo.delete(id)

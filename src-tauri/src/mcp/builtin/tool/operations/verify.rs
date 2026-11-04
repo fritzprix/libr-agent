@@ -61,7 +61,7 @@ pub async fn verify_server(
 
     // Test connection and list tools
     let start_time = Instant::now();
-    let verification_result = test_server_connection(&config, name, &target).await;
+    let verification_result = test_server_connection(&config, &id, name, &target).await;
     let latency_ms = start_time.elapsed().as_millis();
 
     // Emit resource updated event for frontend cache revalidation
@@ -182,6 +182,7 @@ pub(super) fn container_stdio_guidance() -> Vec<String> {
 /// `{"name": "...", "description": "..."}` entries for caching.
 pub(super) async fn test_server_connection(
     config: &crate::mcp::types::MCPServerConfig,
+    server_id: &str,
     server_name: &str,
     target: &StdioExecTarget,
 ) -> Result<(usize, String), String> {
@@ -190,9 +191,10 @@ pub(super) async fn test_server_connection(
         cloned.name = Some(server_name.to_string());
     }
 
-    let tools =
-        crate::services::mcp_server_service::McpServerService::verify_config_at(cloned, target)
-            .await?;
+    let tools = crate::services::mcp_server_service::McpServerService::verify_config_at(
+        cloned, target, server_id,
+    )
+    .await?;
     let tools_json = crate::mcp::utils::serialize_mcp_tools(&tools);
     Ok((tools.len(), tools_json))
 }

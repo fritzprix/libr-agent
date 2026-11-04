@@ -1,9 +1,14 @@
+use crate::agent::state::{secret_outcome_message, UserPromptOutcome, UserPromptPayload};
+use crate::mcp::secret_templates::{
+    parse_secret_names, same_target, secret_names_column, secret_store, template_names, SecretStore,
+};
 use crate::mcp::session_isolation::exec_target::StdioExecTarget;
 use crate::mcp::types::{MCPServerConfig, TransportConfig};
 use crate::mcp::utils::sanitize_mcp_server_name;
 use crate::repositories::mcp_server_repository::MCPServerRepository;
 use crate::services::{McpServerService, SaveVerification};
 use crate::state::get_mcp_server_repository;
+use std::collections::BTreeSet;
 
 /// Result of testing a saved stdio server in the container of a Docker session.
 pub(super) enum ContainerCheck {
@@ -17,11 +22,127 @@ pub(super) struct SavedServer {
     pub name: String,
     /// Set when the save was tested in a session container instead of the global probe.
     pub container_check: Option<ContainerCheck>,
+    /// Names of the `{{secret:NAME}}` values the user entered, and of those reused.
+    pub entered_secrets: Vec<String>,
+    pub reused_secrets: Vec<String>,
+}
+
+impl SavedServer {
+    /// Result line listing the secret names only, never a value.
+    pub fn secrets_line(&self) -> String {
+        let mut parts = Vec::new();
+        if !self.entered_secrets.is_empty() {
+            parts.push(format!("entered {}", self.entered_secrets.join(", ")));
+        }
+        if !self.reused_secrets.is_empty() {
+            parts.push(format!("reused {}", self.reused_secrets.join(", ")));
+        }
+        if parts.is_empty() {
+            String::new()
+        } else {
+            format!("\n• Secrets (OS keychain): {}", parts.join("; "))
+        }
+    }
+}
+
+/// Which template names reuse a stored value and which the user must enter.
+///
+/// A value is reused only for the same server and name, when the target is unchanged
+/// ([`same_target`]) and the call does not ask to enter it again.
+fn plan_secrets(
+    store: &dyn SecretStore,
+    config: &MCPServerConfig,
+    existing: Option<&crate::entity::mcp_server::Model>,
+    reenter: &BTreeSet<String>,
+) -> Result<(Vec<String>, Vec<String>), String> {
+    let names = template_names(&config.transport)?;
+    let mut ask = Vec::new();
+    let mut reuse = Vec::new();
+    for name in names {
+        let reusable = match existing {
+            Some(model) if !reenter.contains(&name) => {
+                let old_target_same = serde_json::from_str::<MCPServerConfig>(&model.config)
+                    .is_ok_and(|old| same_target(&old.transport, &config.transport));
+                old_target_same
+                    && parse_secret_names(model.secret_names.as_deref()).contains(&name)
+                    && store.get(&model.id, &name)?.is_some()
+            }
+            _ => false,
+        };
+        if reusable {
+            reuse.push(name);
+        } else {
+            ask.push(name);
+        }
+    }
+    Ok((ask, reuse))
+}
+
+/// Ask the user for one secret through the shared prompt (#2543). Cancel, Stop, and
+/// timeout return an error, so nothing is saved.
+async fn ask_secret(session_id: Option<&str>, name: &str, server: &str) -> Result<String, String> {
+    let session_id = session_id.ok_or_else(|| {
+        format!("The secret '{name}' must be entered by the user, but this call has no session to ask in. Nothing was saved.")
+    })?;
+    let manager = crate::state::try_get_channel_dispatch_agent()
+        .ok_or_else(|| "The user prompt is not available yet. Nothing was saved.".to_string())?;
+    let outcome = manager
+        .request_user_prompt(
+            session_id,
+            UserPromptPayload::Secret {
+                variable_name: name.to_string(),
+                label: format!("{name} for MCP server '{server}'"),
+                reuse_note: None,
+            },
+        )
+        .await?;
+    match outcome {
+        UserPromptOutcome::Answered(value) => clean_secret(&value, name),
+        other => Err(secret_outcome_message(&other, name)),
+    }
+}
+
+/// Trim a pasted value. A value with a control character inside (for example a line
+/// break) would be dropped as an invalid header, so it is refused.
+fn clean_secret(value: &str, name: &str) -> Result<String, String> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Err(format!("The secret '{name}' was empty. Nothing was saved."));
+    }
+    if value.chars().any(char::is_control) {
+        return Err(format!(
+            "The secret '{name}' contains a line break or another control character. Nothing was saved."
+        ));
+    }
+    Ok(value.to_string())
+}
+
+/// Write the entered values to the store and record every used name on the row.
+async fn store_secrets(
+    repo: &dyn MCPServerRepository,
+    store: &dyn SecretStore,
+    id: &str,
+    entered: &[(String, String)],
+    reused: &[String],
+) -> Result<(), String> {
+    for (name, value) in entered {
+        store.set(id, name, value)?;
+    }
+    let names: BTreeSet<String> = entered
+        .iter()
+        .map(|(name, _)| name.clone())
+        .chain(reused.iter().cloned())
+        .collect();
+    repo.set_secret_names(id, secret_names_column(&names))
+        .await
+        .map_err(|e| format!("Failed to save secret names: {}", e))
 }
 
 pub(super) async fn save_server_config(
     config: &MCPServerConfig,
     target: &StdioExecTarget,
+    session_id: Option<&str>,
+    reenter: &BTreeSet<String>,
 ) -> Result<SavedServer, String> {
     let repo = get_mcp_server_repository();
     let raw_name = config
@@ -42,6 +163,19 @@ pub(super) async fn save_server_config(
         Ok(None) => None,
         Err(e) => return Err(format!("DB query error while saving server config: {}", e)),
     };
+
+    // Collect every value before any write, so a cancel or timeout saves nothing.
+    let store = secret_store();
+    let (to_ask, reused_secrets) = plan_secrets(store, config, existing.as_ref(), reenter)?;
+    let label_name = existing
+        .as_ref()
+        .map_or(sanitized_name.as_str(), |model| model.name.as_str());
+    let mut entered = Vec::with_capacity(to_ask.len());
+    for name in to_ask {
+        let value = ask_secret(session_id, &name, label_name).await?;
+        entered.push((name, value));
+    }
+    let is_new = existing.is_none();
 
     let verification = if tests_in_container(target, config) {
         SaveVerification::Unverified
@@ -88,6 +222,17 @@ pub(super) async fn save_server_config(
         }
     };
 
+    if !entered.is_empty() || !reused_secrets.is_empty() {
+        if let Err(error) = store_secrets(repo, store, &id, &entered, &reused_secrets).await {
+            if is_new {
+                let _ = McpServerService::delete_server_config(repo, &id).await;
+            }
+            return Err(error);
+        }
+    }
+    // A new value must reach the server even when the stored transport is unchanged.
+    let needs_probe = needs_probe || !entered.is_empty();
+
     let container_check = match verification_plan(needs_probe, target, config) {
         VerificationPlan::None => None,
         VerificationPlan::BackgroundProbe => {
@@ -97,7 +242,7 @@ pub(super) async fn save_server_config(
         VerificationPlan::SessionContainer => {
             let mut probe_config = config.clone();
             probe_config.name = Some(stored_name.clone());
-            let verify = McpServerService::verify_config_at(probe_config, target);
+            let verify = McpServerService::verify_config_at(probe_config, target, &id);
             Some(check_in_container(repo, &id, &stored_name, verify).await?)
         }
     };
@@ -106,6 +251,8 @@ pub(super) async fn save_server_config(
         id,
         name: stored_name,
         container_check,
+        entered_secrets: entered.into_iter().map(|(name, _)| name).collect(),
+        reused_secrets,
     })
 }
 
@@ -229,6 +376,16 @@ mod tests {
     }
 
     #[test]
+    fn a_pasted_secret_is_trimmed_and_control_characters_are_refused() {
+        assert_eq!(
+            clean_secret("  ghp_abc\r\n", "GITHUB_PAT").unwrap(),
+            "ghp_abc"
+        );
+        assert!(clean_secret(" \n", "GITHUB_PAT").is_err());
+        assert!(clean_secret("ghp_\nabc", "GITHUB_PAT").is_err());
+    }
+
+    #[test]
     fn docker_session_register_tests_in_container_not_background_probe() {
         let config = stdio_config();
         assert_eq!(
@@ -330,5 +487,132 @@ mod tests {
         assert_eq!(stored.last_verification_error, None);
         assert_eq!(stored.cached_tools, None);
         assert_eq!(stored.tool_count, None);
+    }
+
+    fn exa_config(url: &str) -> MCPServerConfig {
+        serde_json::from_value(serde_json::json!({
+            "name": "exa",
+            "transport": { "type": "http", "url": url }
+        }))
+        .expect("config")
+    }
+
+    const EXA_URL: &str = "https://mcp.exa.ai/mcp?exaApiKey={{secret:EXA_API_KEY}}";
+
+    /// Save like `save_server_config` does after the prompt: template row, then values.
+    async fn saved_exa(repo: &SqliteMCPServerRepository) -> crate::entity::mcp_server::Model {
+        let created = McpServerService::create_server_config(
+            repo,
+            "exa".to_string(),
+            serde_json::to_value(exa_config(EXA_URL)).unwrap(),
+            SaveVerification::Pending,
+        )
+        .await
+        .expect("create");
+        let entered = vec![("EXA_API_KEY".to_string(), "exa-secret-value".to_string())];
+        store_secrets(repo, secret_store(), &created.id, &entered, &[])
+            .await
+            .expect("store");
+        repo.get(&created.id).await.unwrap().expect("record")
+    }
+
+    #[tokio::test]
+    async fn the_row_and_the_list_hold_the_template_and_names_not_the_value() {
+        let repo = repo().await;
+        let model = saved_exa(&repo).await;
+
+        assert!(model.config.contains("{{secret:EXA_API_KEY}}"));
+        assert_eq!(model.secret_names.as_deref(), Some(r#"["EXA_API_KEY"]"#));
+        let listed = McpServerService::list_server_configs(&repo).await.unwrap();
+        let row = format!("{:?}", listed);
+        assert!(!row.contains("exa-secret-value"));
+        assert_eq!(
+            secret_store()
+                .get(&model.id, "EXA_API_KEY")
+                .unwrap()
+                .as_deref(),
+            Some("exa-secret-value")
+        );
+    }
+
+    #[tokio::test]
+    async fn update_reuses_a_value_only_for_the_same_target_without_reentry() {
+        let repo = repo().await;
+        let model = saved_exa(&repo).await;
+        let none = BTreeSet::new();
+
+        let same_host = exa_config("https://mcp.exa.ai/mcp?exaApiKey={{secret:EXA_API_KEY}}&x=1");
+        let (ask, reuse) = plan_secrets(secret_store(), &same_host, Some(&model), &none).unwrap();
+        assert!(ask.is_empty());
+        assert_eq!(reuse, vec!["EXA_API_KEY".to_string()]);
+
+        let reenter = BTreeSet::from(["EXA_API_KEY".to_string()]);
+        let (ask, reuse) =
+            plan_secrets(secret_store(), &same_host, Some(&model), &reenter).unwrap();
+        assert_eq!(ask, vec!["EXA_API_KEY".to_string()]);
+        assert!(reuse.is_empty());
+
+        for moved in [
+            "http://mcp.exa.ai/mcp?exaApiKey={{secret:EXA_API_KEY}}",
+            "https://evil.example/mcp?exaApiKey={{secret:EXA_API_KEY}}",
+            "https://mcp.exa.ai:8443/mcp?exaApiKey={{secret:EXA_API_KEY}}",
+        ] {
+            let (ask, reuse) =
+                plan_secrets(secret_store(), &exa_config(moved), Some(&model), &none).unwrap();
+            assert_eq!(ask, vec!["EXA_API_KEY".to_string()], "{moved}");
+            assert!(reuse.is_empty(), "{moved}");
+        }
+
+        let (ask, _) = plan_secrets(secret_store(), &exa_config(EXA_URL), None, &none).unwrap();
+        assert_eq!(ask, vec!["EXA_API_KEY".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn a_ui_edit_to_a_plain_value_removes_the_stored_secret() {
+        let repo = repo().await;
+        let model = saved_exa(&repo).await;
+
+        let plain =
+            serde_json::to_value(exa_config("https://mcp.exa.ai/mcp?exaApiKey=plain")).unwrap();
+        McpServerService::update_server_config(
+            &repo,
+            model.id.clone(),
+            None,
+            Some(plain),
+            SaveVerification::Pending,
+        )
+        .await
+        .expect("update");
+
+        let updated = repo.get(&model.id).await.unwrap().expect("record");
+        assert_eq!(updated.secret_names, None);
+        assert_eq!(secret_store().get(&model.id, "EXA_API_KEY").unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn delete_removes_the_stored_secrets() {
+        let repo = repo().await;
+        let model = saved_exa(&repo).await;
+
+        McpServerService::delete_server_config(&repo, &model.id)
+            .await
+            .expect("delete");
+
+        assert_eq!(secret_store().get(&model.id, "EXA_API_KEY").unwrap(), None);
+    }
+
+    #[test]
+    fn the_result_line_lists_names_only() {
+        let saved = SavedServer {
+            id: "id".to_string(),
+            name: "exa".to_string(),
+            container_check: None,
+            entered_secrets: vec!["EXA_API_KEY".to_string()],
+            reused_secrets: vec!["OTHER".to_string()],
+        };
+        assert_eq!(
+            saved.secrets_line(),
+            "\n• Secrets (OS keychain): entered EXA_API_KEY; reused OTHER"
+        );
     }
 }

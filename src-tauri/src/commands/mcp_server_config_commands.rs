@@ -105,6 +105,7 @@ mod tests {
             cached_tools: None,
             verification_status: Some("success".to_string()),
             last_verification_error: None,
+            secret_names: None,
             created_at: 1000,
             updated_at: 2000,
         };
@@ -126,6 +127,7 @@ mod tests {
             cached_tools: None,
             verification_status: Some("error".to_string()),
             last_verification_error: Some("Parse error".to_string()),
+            secret_names: None,
             created_at: 1000,
             updated_at: 2000,
         };

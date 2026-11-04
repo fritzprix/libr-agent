@@ -295,6 +295,7 @@ impl MCPServiceProxyManager {
                 stdio_configs: retry_stdio,
                 http_configs: retry_http,
                 server_name_to_id: loaded.server_name_to_id.clone(),
+                secret_values: loaded.secret_values.clone(),
                 tool_discovery_timeout,
                 app_handle: app_handle.cloned(),
             },
