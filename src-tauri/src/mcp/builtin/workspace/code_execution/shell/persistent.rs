@@ -386,3 +386,38 @@ fn display_relative_path(relative_cwd: &std::path::Path) -> String {
         format!(".{}{}", std::path::MAIN_SEPARATOR, relative_cwd)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn texts(result: &MCPResult) -> Vec<String> {
+        result
+            .content
+            .iter()
+            .flatten()
+            .filter_map(|item| match item {
+                MCPContent::Text { text } => Some(text.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn note_goes_in_front_of_the_first_text_block() {
+        let mut result = MCPResult::success("output");
+        prepend_result_note(&mut result, "note");
+        assert_eq!(texts(&result), vec!["note\n\noutput".to_string()]);
+    }
+
+    #[test]
+    fn note_becomes_the_only_block_when_there_is_no_content() {
+        let mut result = MCPResult {
+            content: None,
+            structured_content: None,
+            is_error: None,
+        };
+        prepend_result_note(&mut result, "note");
+        assert_eq!(texts(&result), vec!["note".to_string()]);
+    }
+}

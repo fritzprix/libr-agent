@@ -143,11 +143,7 @@ impl PersistentShell {
         // Apply environment isolation to prevent leaking host secrets
         // We do this BEFORE platform-specific environment adjustments (like Unix PATH fix)
         // to ensure whitelisted variables are isolated but specialized ones are preserved.
-        cmd.env_clear();
-        cmd.envs(secrets);
-        for (k, v) in crate::utils::env::get_isolated_env() {
-            cmd.env(k, v);
-        }
+        apply_shell_env(&mut cmd, secrets, crate::utils::env::get_isolated_env());
 
         #[cfg(unix)]
         {
@@ -745,5 +741,41 @@ impl std::fmt::Debug for PersistentShell {
             .field("session_id", &self.session_id)
             .field("pid", &self.child.id())
             .finish_non_exhaustive()
+    }
+}
+
+/// Clears the host environment, then sets secrets before the app's own variables,
+/// so a secret can never override a variable the app sets.
+fn apply_shell_env(cmd: &mut Command, secrets: &SecretMap, app_env: Vec<(String, String)>) {
+    cmd.env_clear();
+    cmd.envs(secrets);
+    cmd.envs(app_env);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsStr;
+
+    #[test]
+    fn app_variables_win_over_secrets_with_the_same_name() {
+        let mut cmd = Command::new("shell");
+        let secrets = SecretMap::from([
+            ("APP_VAR".to_string(), "from-secret".to_string()),
+            ("API_TOKEN".to_string(), "t0ken".to_string()),
+        ]);
+        apply_shell_env(
+            &mut cmd,
+            &secrets,
+            vec![("APP_VAR".to_string(), "from-app".to_string())],
+        );
+        let envs: Vec<_> = cmd.as_std().get_envs().collect();
+        let value_of = |key: &str| {
+            envs.iter()
+                .find(|(k, _)| *k == OsStr::new(key))
+                .and_then(|(_, v)| *v)
+        };
+        assert_eq!(value_of("APP_VAR"), Some(OsStr::new("from-app")));
+        assert_eq!(value_of("API_TOKEN"), Some(OsStr::new("t0ken")));
     }
 }

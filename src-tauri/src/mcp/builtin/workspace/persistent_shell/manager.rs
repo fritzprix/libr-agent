@@ -92,12 +92,16 @@ impl PersistentShellManager {
         let cwd = self.get_shell_cwd(session_id).await;
         let result = self.terminate_shell(session_id).await;
         if let Some(cwd) = cwd {
-            let mut states = self.session_states.lock().await;
-            let state = states.entry(session_id.to_string()).or_default();
-            state.restart_cwd = Some(cwd);
-            state.restart_notice = true;
+            self.mark_restarted(session_id, cwd).await;
         }
         result
+    }
+
+    async fn mark_restarted(&self, session_id: &str, cwd: String) {
+        let mut states = self.session_states.lock().await;
+        let state = states.entry(session_id.to_string()).or_default();
+        state.restart_cwd = Some(cwd);
+        state.restart_notice = true;
     }
 
     /// Returns whether the shell was restarted since the last call, and clears the flag.
@@ -523,5 +527,52 @@ impl PersistentShellManager {
 impl Default for PersistentShellManager {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn restart_keeps_cwd_and_notifies_once() {
+        let manager = PersistentShellManager::new();
+        manager.mark_restarted("s1", "/work/sub".to_string()).await;
+
+        let restart_cwd = manager
+            .session_states
+            .lock()
+            .await
+            .get("s1")
+            .and_then(|state| state.restart_cwd.clone());
+        assert_eq!(restart_cwd.as_deref(), Some("/work/sub"));
+        assert!(manager.take_restart_notice("s1").await);
+        assert!(!manager.take_restart_notice("s1").await);
+    }
+
+    #[tokio::test]
+    async fn storing_a_secret_without_a_shell_sets_no_notice() {
+        let manager = PersistentShellManager::new();
+        manager
+            .store_secret("s1", "API_TOKEN", "t0ken".to_string())
+            .await
+            .unwrap();
+        assert!(!manager.take_restart_notice("s1").await);
+        assert_eq!(
+            manager.session_secrets("s1").await.get("API_TOKEN"),
+            Some(&"t0ken".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn clearing_session_state_drops_secrets() {
+        let manager = PersistentShellManager::new();
+        manager
+            .store_secret("s1", "API_TOKEN", "t0ken".to_string())
+            .await
+            .unwrap();
+        manager.clear_session_state("s1").await;
+        assert!(manager.session_secrets("s1").await.is_empty());
+        assert!(!manager.take_restart_notice("s1").await);
     }
 }

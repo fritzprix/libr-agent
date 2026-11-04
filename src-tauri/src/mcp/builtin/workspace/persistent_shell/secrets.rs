@@ -23,6 +23,9 @@ const RESERVED_NAMES: &[&str] = &[
     "HOME",
     "PROMPT_COMMAND",
     "IFS",
+    "SHELLOPTS",
+    "BASHOPTS",
+    "PS4",
     "SHELL",
     "NODE_OPTIONS",
     "PYTHONSTARTUP",
@@ -54,6 +57,12 @@ pub fn validate_secret_name(name: &str) -> Result<(), String> {
     if name.starts_with("LD_") || name.starts_with("DYLD_") {
         return Err(format!(
             "storeAs name '{name}' is reserved: names that start with LD_ or DYLD_ change how programs load"
+        ));
+    }
+    // Docker shells also set secrets in the docker CLI's own environment.
+    if name.starts_with("DOCKER_") {
+        return Err(format!(
+            "storeAs name '{name}' is reserved: names that start with DOCKER_ change which Docker daemon the shell uses"
         ));
     }
     if RESERVED_NAMES.contains(&name) || crate::utils::env::is_isolated_env_name(name) {
@@ -98,6 +107,14 @@ mod tests {
         for name in [
             "LD_AUDIT",
             "DYLD_INSERT_LIBRARIES",
+            "DOCKER_HOST",
+            "DOCKER_CONTEXT",
+            "DOCKER_CONFIG",
+            "DOCKER_CERT_PATH",
+            "DOCKER_TLS_VERIFY",
+            "SHELLOPTS",
+            "BASHOPTS",
+            "PS4",
             "LIBRAGENT_WAKE_URL",
             "LANG",
             "LC_ALL",
