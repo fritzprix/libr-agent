@@ -5,8 +5,9 @@ use super::super::super::utils::{
     read_complexity, read_required_string, resolve_model_for_complexity,
 };
 use crate::mcp::builtin::error_guidance::{
-    missing_agent_config_error, session_id_passed_as_agent_config_error, SuccessHint,
+    missing_agent_config_error, session_id_passed_as_agent_config_error, SuccessHint, ToolGroup,
 };
+use crate::mcp::builtin::utils::read_bool_arg;
 use crate::mcp::types::MCPResult;
 use crate::repositories::{AssistantRepository, SessionRepository};
 
@@ -24,6 +25,29 @@ async fn spawn_session_impl(
     args: Value,
     caller_session_id: &str,
     tool_name: &str,
+) -> Result<MCPResult, String> {
+    let wait_for_result = match read_bool_arg(&args, "waitForResult", false, ToolGroup::Agent) {
+        Ok(arg) => arg,
+        Err(result) => return Ok(result),
+    };
+
+    let result = spawn_session_impl_inner(
+        server,
+        args,
+        caller_session_id,
+        tool_name,
+        wait_for_result.value,
+    )
+    .await?;
+    Ok(wait_for_result.annotate(result))
+}
+
+async fn spawn_session_impl_inner(
+    server: &AgentServer,
+    args: Value,
+    caller_session_id: &str,
+    tool_name: &str,
+    wait_for_result: bool,
 ) -> Result<MCPResult, String> {
     let assistant_id = match read_required_string(&args, "configId") {
         Ok(value) => value,
@@ -115,11 +139,6 @@ async fn spawn_session_impl(
 
     let body: crate::agent::types::CreateSessionRequest = serde_json::from_value(body_json)
         .map_err(|e| format!("Invalid arguments for {}: {}", tool_name, e))?;
-
-    let wait_for_result = args
-        .get("waitForResult")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
 
     let response = match crate::services::AgentService::spawn_agent(manager, body).await {
         Ok(res) => res,

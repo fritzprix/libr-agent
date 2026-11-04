@@ -7,7 +7,9 @@ mod security;
 mod sensitive_path_policy;
 mod session_access;
 
-pub use args::{read_bool_arg, BoolArg};
+#[cfg(test)]
+pub(crate) use args::result_text;
+pub use args::{annotate_warnings, parse_bool_value, read_bool_arg, BoolArg};
 pub use paths::{
     display_workspace_path, normalize_user_path, path_starts_with, relative_path_under_base,
     strip_windows_verbatim_prefix, workspace_paths_equivalent,

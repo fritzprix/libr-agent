@@ -107,3 +107,35 @@ fn without(args: &Value, key: &str) -> Value {
     }
     args
 }
+
+#[tokio::test]
+async fn check_session_accepts_a_string_wait_with_a_warning() {
+    use crate::mcp::builtin::utils::result_text;
+    let server = server().await;
+
+    let result = check_session(&server, json!({ "wait": "true" }), CALLER)
+        .await
+        .unwrap();
+    let text = result_text(&result);
+    assert!(text.contains("'sessionId'"), "{text}");
+    assert!(
+        text.contains("Warning: wait was the string \"true\"; pass a JSON boolean (true/false)."),
+        "{text}"
+    );
+
+    let result = check_session(&server, json!({ "wait": "soon" }), CALLER)
+        .await
+        .unwrap();
+    assert_eq!(result.is_error, Some(true));
+    assert!(result_text(&result).contains("wait must be a JSON boolean"));
+}
+
+#[test]
+fn message_wait_config_reads_a_string_boolean() {
+    let (wait, timeout) =
+        super::parse_message_to_session_wait_config(&json!({ "waitForResponse": "false" }))
+            .unwrap();
+    assert!(!wait.value);
+    assert!(wait.warning.is_some());
+    assert_eq!(timeout, None);
+}

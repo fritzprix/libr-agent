@@ -15,17 +15,23 @@ pub struct BoolArg {
 
 impl BoolArg {
     /// Append the string-boolean warning, if any, to a tool result.
-    pub fn annotate(&self, mut result: MCPResult) -> MCPResult {
-        if let Some(warning) = &self.warning {
-            result
-                .content
-                .get_or_insert_with(Vec::new)
-                .push(MCPContent::Text {
-                    text: warning.clone(),
-                });
-        }
-        result
+    pub fn annotate(&self, result: MCPResult) -> MCPResult {
+        annotate_warnings(result, self.warning.iter().cloned())
     }
+}
+
+/// Append argument warnings to the text content of a tool result.
+pub fn annotate_warnings(
+    mut result: MCPResult,
+    warnings: impl IntoIterator<Item = String>,
+) -> MCPResult {
+    for warning in warnings {
+        result
+            .content
+            .get_or_insert_with(Vec::new)
+            .push(MCPContent::Text { text: warning });
+    }
+    result
 }
 
 /// Read boolean argument `name`. A missing or null value gives `default`.
@@ -37,7 +43,21 @@ pub fn read_bool_arg(
     default: bool,
     tool_group: ToolGroup,
 ) -> Result<BoolArg, MCPResult> {
-    let parsed = match args.get(name) {
+    parse_bool_value(args.get(name), name, default).map_err(|message| {
+        guided_error(ErrorCategory::InvalidInput, message, tool_group)
+            .guidance(vec![format!("Pass \"{name}\": true or \"{name}\": false.")])
+            .to_mcp_result()
+    })
+}
+
+/// [`read_bool_arg`] for a value that is not at the top level of the arguments.
+/// The error is the message only.
+pub fn parse_bool_value(
+    value: Option<&Value>,
+    name: &str,
+    default: bool,
+) -> Result<BoolArg, String> {
+    let parsed = match value {
         None | Some(Value::Null) => Some((default, None)),
         Some(Value::Bool(value)) => Some((*value, None)),
         Some(Value::String(text)) => {
@@ -58,15 +78,22 @@ pub fn read_bool_arg(
 
     parsed
         .map(|(value, warning)| BoolArg { value, warning })
-        .ok_or_else(|| {
-            guided_error(
-                ErrorCategory::InvalidInput,
-                format!("{name} must be a JSON boolean (true or false)"),
-                tool_group,
-            )
-            .guidance(vec![format!("Pass \"{name}\": true or \"{name}\": false.")])
-            .to_mcp_result()
+        .ok_or_else(|| format!("{name} must be a JSON boolean (true or false)"))
+}
+
+/// All text content of a tool result, for tests.
+#[cfg(test)]
+pub(crate) fn result_text(result: &MCPResult) -> String {
+    result
+        .content
+        .iter()
+        .flatten()
+        .filter_map(|item| match item {
+            MCPContent::Text { text } => Some(text.as_str()),
+            _ => None,
         })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[cfg(test)]
