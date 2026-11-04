@@ -198,15 +198,13 @@ impl WorkspaceServer {
             return Ok(result);
         }
 
-        // Check for requireUserInput parameter or auto-detect privilege escalation
         let require_input = args
             .get("requireUserInput")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
-        let auto_detect = validation::detect_privilege_escalation(raw_command);
 
         // If user input is required, suspend the same synchronous tool call until the UI submits it.
-        if require_input || auto_detect {
+        if require_input {
             return self
                 .handle_interactive_shell(raw_command, &args, session_id)
                 .await;
@@ -379,7 +377,7 @@ impl WorkspaceServer {
                     PERSISTENT_SHELL_TOOL
                 ),
                 format!(
-                    "{} supports requireUserInput for sudo/interactive commands",
+                    "{} supports requireUserInput with storeAs for passwords and tokens",
                     PERSISTENT_SHELL_TOOL
                 ),
                 "Async processes run in the background without user interaction".to_string(),

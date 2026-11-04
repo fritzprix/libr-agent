@@ -4,9 +4,8 @@
 /// so they run in CI via `cargo test --tests`.
 use anyhow::Result;
 use tauri_mcp_agent_lib::mcp::builtin::workspace::persistent_shell::{
-    PersistentShell, PersistentShellManager,
+    sudo_shims, PersistentShell, PersistentShellManager,
 };
-use tauri_mcp_agent_lib::mcp::builtin::workspace::StdinDelivery;
 use tauri_mcp_agent_lib::session_isolation::types::ShellType;
 
 // ── PersistentShell tests ────────────────────────────────────────────────────
@@ -118,44 +117,6 @@ async fn test_environment_variable_persistence() -> Result<()> {
         let (stdout, _, exit_code, _) = shell.execute("echo $env:MY_VAR").await?;
         assert_eq!(exit_code, 0);
         assert!(stdout.contains("TestValue"));
-    }
-
-    shell.terminate().await?;
-    let _ = std::fs::remove_dir_all(&temp_dir);
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_input_injection_safety() -> Result<()> {
-    let temp_dir = std::env::temp_dir().join("ps_test_input_safety");
-    std::fs::create_dir_all(&temp_dir)?;
-
-    #[cfg(unix)]
-    let mut shell =
-        PersistentShell::new("test-safety".to_string(), temp_dir.clone(), ShellType::Bash).await?;
-    #[cfg(windows)]
-    let mut shell = PersistentShell::new(
-        "test-safety".to_string(),
-        temp_dir.clone(),
-        ShellType::PowerShell,
-    )
-    .await?;
-
-    let injected_file = temp_dir.join("injected_file");
-    if injected_file.exists() {
-        std::fs::remove_file(&injected_file)?;
-    }
-
-    #[cfg(unix)]
-    {
-        let command = "echo 'ignoring input'";
-        let dangerous_input = "touch injected_file\nexit 1";
-        let (stdout, _, exit_code, _) = shell
-            .execute_with_input(command, dangerous_input, StdinDelivery::Host)
-            .await?;
-        assert_eq!(exit_code, 0);
-        assert!(stdout.contains("ignoring input"));
-        assert!(!injected_file.exists(), "Injected command was executed!");
     }
 
     shell.terminate().await?;
@@ -453,38 +414,28 @@ async fn test_cleanup_all() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_child_stdin_delivery_pipes_input_to_python() -> Result<()> {
-    let temp_dir = std::env::temp_dir().join("ps_test_child_stdin");
+#[cfg(unix)]
+async fn test_shell_installs_askpass_and_blocks_su_wrappers() -> Result<()> {
+    let temp_dir = std::env::temp_dir().join("ps_test_sudo_shims");
     std::fs::create_dir_all(&temp_dir)?;
-
-    #[cfg(unix)]
     let mut shell = PersistentShell::new(
-        "test-child-stdin".to_string(),
+        "test-sudo-shims".to_string(),
         temp_dir.clone(),
         ShellType::Bash,
     )
     .await?;
-    #[cfg(windows)]
-    let mut shell = PersistentShell::new(
-        "test-child-stdin".to_string(),
-        temp_dir.clone(),
-        ShellType::PowerShell,
-    )
-    .await?;
-
-    #[cfg(unix)]
-    let command = "python3 -c \"import sys; data=sys.stdin.buffer.readline(); assert not data.startswith(b'\\xef\\xbb\\xbf'), data; print(data.decode().strip())\"";
-    #[cfg(windows)]
-    let command = "python -c \"import sys; data=sys.stdin.buffer.readline(); assert not data.startswith(b'\\xef\\xbb\\xbf'), data; print(data.decode().strip())\"";
 
     let (stdout, _, exit_code, _) = shell
-        .execute_with_input(command, "hello-child-stdin", StdinDelivery::Child)
+        .execute("test -x \"$SUDO_ASKPASS\" && echo askpass-ok")
         .await?;
+    assert_eq!(exit_code, 0);
+    assert!(stdout.contains("askpass-ok"), "stdout: {stdout}");
 
-    assert_eq!(exit_code, 0, "child stdin pipe should succeed");
+    let (_, stderr, exit_code, _) = shell.execute("pkexec true").await?;
+    assert_eq!(exit_code, 1);
     assert!(
-        stdout.contains("hello-child-stdin"),
-        "stdout should contain piped input, got: {stdout}"
+        stderr.contains(sudo_shims::PASSWORD_PROMPT_HINT),
+        "stderr: {stderr}"
     );
 
     shell.terminate().await?;

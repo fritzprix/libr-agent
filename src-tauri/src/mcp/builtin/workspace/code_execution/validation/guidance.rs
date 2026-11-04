@@ -180,6 +180,11 @@ pub fn shell_command_failure_guidance(
     command: &str,
     docker_session: bool,
 ) -> Vec<String> {
+    if let Some(hint) =
+        crate::mcp::builtin::workspace::persistent_shell::sudo_shims::password_hint(stdout, stderr)
+    {
+        return vec![hint.to_string()];
+    }
     if looks_like_shell_quote_parse_error(stdout, stderr) {
         return write_file_then_shell_guidance();
     }
@@ -562,5 +567,28 @@ mod tests {
     fn test_shell_command_failure_guidance_routes_sigint() {
         let guidance = shell_command_failure_guidance(Some(130), "", "", "python app.py", false);
         assert!(guidance.iter().any(|step| step.contains("SIGINT")));
+    }
+
+    #[test]
+    fn sudo_password_failures_get_the_store_as_hint() {
+        use crate::mcp::builtin::workspace::persistent_shell::sudo_shims::{
+            PASSWORD_PROMPT_HINT, WRONG_SUDO_PASSWORD_HINT,
+        };
+        let no_tty = shell_command_failure_guidance(
+            Some(1),
+            "",
+            "sudo: a terminal is required to read the password",
+            "sudo apt update",
+            false,
+        );
+        assert_eq!(no_tty, vec![PASSWORD_PROMPT_HINT.to_string()]);
+        let wrong = shell_command_failure_guidance(
+            Some(1),
+            "",
+            "sudo: 1 incorrect password attempt",
+            "sudo apt update",
+            false,
+        );
+        assert_eq!(wrong, vec![WRONG_SUDO_PASSWORD_HINT.to_string()]);
     }
 }

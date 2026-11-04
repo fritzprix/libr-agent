@@ -1,18 +1,12 @@
 use serde_json::Value;
-use std::collections::HashMap;
 use tauri::Manager;
 
-use crate::agent::state::{
-    secret_outcome_message, UserPromptKind, UserPromptOutcome, UserPromptPayload, UserQuestion,
-};
+use crate::agent::state::{secret_outcome_message, UserPromptOutcome, UserPromptPayload};
 use crate::agent::AgentSessionManager;
-use crate::mcp::builtin::workspace::code_execution::shell::persistent::{
-    prepend_result_note, SHELL_RESTARTED_NOTE,
-};
+use crate::mcp::builtin::workspace::code_execution::shell::persistent::prepend_result_note;
 use crate::mcp::builtin::workspace::persistent_shell::secrets::validate_secret_name;
 use crate::mcp::builtin::workspace::{
-    InteractiveShellInputType, InteractiveShellRequest, WorkspaceServer,
-    INTERACTIVE_SHELL_INPUT_MAX_BYTES, PERSISTENT_SHELL_TOOL,
+    WorkspaceServer, INTERACTIVE_SHELL_INPUT_MAX_BYTES, PERSISTENT_SHELL_TOOL,
 };
 use crate::mcp::builtin::{
     error_guidance::{guided_error, ErrorCategory, ToolGroup},
@@ -20,10 +14,11 @@ use crate::mcp::builtin::{
 };
 use crate::mcp::types::MCPResult;
 
-use super::super::validation;
-
 impl WorkspaceServer {
-    /// Start an interactive shell execution and wait for the local user to provide input.
+    /// Ask the local user for a value, store it as a session secret, then run the command.
+    ///
+    /// The shell has no terminal, so user input is never written to it. The command
+    /// reads the stored value from `$<storeAs>` instead.
     pub(crate) async fn handle_interactive_shell(
         &self,
         command: &str,
@@ -33,13 +28,8 @@ impl WorkspaceServer {
         use crate::mcp::builtin::workspace::utils::sanitize_command_for_logging;
 
         let session_id = session_id.to_string();
-        let sanitized_command = sanitize_command_for_logging(command);
+        let display_command = sanitize_command_for_logging(command);
 
-        let run_mode = args
-            .get("run_mode")
-            .and_then(|value| value.as_str())
-            .unwrap_or("sync")
-            .to_string();
         let requested_timeout = args.get("timeout").and_then(|value| value.as_u64());
         let timeout = match utils::resolve_sync_timeout(requested_timeout) {
             Ok(timeout) => timeout,
@@ -69,18 +59,18 @@ impl WorkspaceServer {
             }
         };
 
-        let store_as = args.get("storeAs").and_then(|value| value.as_str());
-        if let Some(name) = store_as {
-            if let Err(message) = validate_secret_name(name) {
-                return Ok(
-                    guided_error(ErrorCategory::InvalidInput, message, ToolGroup::Workspace)
-                        .guidance(vec![
-                            "Pick an uppercase name such as API_TOKEN that the app and the shell do not use"
-                                .to_string(),
-                        ])
-                        .to_mcp_result(),
-                );
-            }
+        let Some(name) = args.get("storeAs").and_then(|value| value.as_str()) else {
+            return Ok(missing_store_as_error());
+        };
+        if let Err(message) = validate_secret_name(name) {
+            return Ok(
+                guided_error(ErrorCategory::InvalidInput, message, ToolGroup::Workspace)
+                    .guidance(vec![
+                        "Pick an uppercase name such as API_TOKEN that the app and the shell do not use"
+                            .to_string(),
+                    ])
+                    .to_mcp_result(),
+            );
         }
 
         let Some(app_handle) = crate::state::get_app_handle() else {
@@ -96,33 +86,13 @@ impl WorkspaceServer {
             .to_mcp_result());
         };
 
-        let (prompt, input_type) = match store_as {
-            Some(name) => (
-                prompt_override(args).unwrap_or_else(|| format!("Enter the value for {name}:")),
-                InteractiveShellInputType::Password,
-            ),
-            None => self.get_prompt_config(command, args),
-        };
-        let request = InteractiveShellRequest {
-            session_id: session_id.clone(),
-            executable_command: command.to_string(),
-            display_command: sanitized_command,
-            run_mode,
-            timeout,
-            input_type,
-            stdin_delivery: validation::resolve_stdin_delivery(command, args),
-        };
-        let variable_name = store_as.unwrap_or_else(|| shell_input_variable_name(command));
-        let payload = match store_as {
-            Some(name) => stored_secret_payload(name, prompt),
-            None => {
-                shell_prompt_payload(input_type, variable_name, prompt, &request.display_command)
-            }
-        };
-        let payload_kind = payload.kind();
-
+        let prompt =
+            prompt_override(args).unwrap_or_else(|| format!("Enter the value for {name}:"));
         let manager = app_handle.state::<AgentSessionManager>();
-        let outcome = match manager.request_user_prompt(&session_id, payload).await {
+        let outcome = match manager
+            .request_user_prompt(&session_id, stored_secret_payload(name, prompt))
+            .await
+        {
             Ok(outcome) => outcome,
             Err(error) => {
                 return Ok(
@@ -138,12 +108,7 @@ impl WorkspaceServer {
         };
 
         let UserPromptOutcome::Answered(user_input) = outcome else {
-            return Ok(unanswered_shell_result(
-                &outcome,
-                input_type,
-                variable_name,
-                &request.display_command,
-            ));
+            return Ok(unanswered_shell_result(&outcome, name, &display_command));
         };
 
         if user_input.len() > INTERACTIVE_SHELL_INPUT_MAX_BYTES {
@@ -161,23 +126,6 @@ impl WorkspaceServer {
             .to_mcp_result());
         }
 
-        let user_input = if matches!(payload_kind, UserPromptKind::Question) {
-            match text_answer(&user_input) {
-                Some(answer) => answer,
-                None => {
-                    return Ok(guided_error(
-                        ErrorCategory::InvalidInput,
-                        "Interactive input answer is malformed".to_string(),
-                        ToolGroup::Workspace,
-                    )
-                    .guidance(vec!["Run the command again and submit one line".to_string()])
-                    .to_mcp_result());
-                }
-            }
-        } else {
-            user_input
-        };
-
         let Some(user_input) = single_line_answer(&user_input) else {
             return Ok(guided_error(
                 ErrorCategory::InvalidInput,
@@ -188,81 +136,53 @@ impl WorkspaceServer {
             .to_mcp_result());
         };
 
-        if let Some(name) = store_as {
-            if let Err(error) = self
-                .shell_manager
-                .store_secret(&session_id, name, user_input.to_string())
-                .await
-            {
-                tracing::warn!(
-                    "Shell restart after storing {} failed for session {}: {}",
-                    name,
-                    session_id,
-                    error
-                );
-            }
-            let mut result = self
-                .execute_shell_persistent(command, PERSISTENT_SHELL_TOOL, timeout, &session_id)
-                .await?;
-            prepend_result_note(
-                &mut result,
-                &format!("Stored the value as ${name} for this session."),
+        if let Err(error) = self
+            .shell_manager
+            .store_secret(&session_id, name, user_input.to_string())
+            .await
+        {
+            tracing::warn!(
+                "Shell restart after storing {} failed for session {}: {}",
+                name,
+                session_id,
+                error
             );
-            return Ok(result);
         }
-
         let mut result = self
-            .execute_interactive_shell_with_input(request, user_input.to_string())
+            .execute_shell_persistent(command, PERSISTENT_SHELL_TOOL, timeout, &session_id)
             .await?;
-        if self.shell_manager.take_restart_notice(&session_id).await {
-            prepend_result_note(&mut result, SHELL_RESTARTED_NOTE);
-        }
+        prepend_result_note(
+            &mut result,
+            &format!("Stored the value as ${name} for this session."),
+        );
         Ok(result)
     }
+}
 
-    /// Get platform-aware prompt configuration for user input.
-    fn get_prompt_config(
-        &self,
-        command: &str,
-        args: &Value,
-    ) -> (String, InteractiveShellInputType) {
-        let is_privilege_cmd = validation::detect_privilege_escalation(command);
-
-        if is_privilege_cmd {
-            (
-                "Enter your sudo password:".to_string(),
-                InteractiveShellInputType::Password,
-            )
-        } else {
-            let prompt = prompt_override(args).unwrap_or_else(|| "Enter input:".to_string());
-            let input_type = match args
-                .get("inputType")
-                .or_else(|| args.get("input_type"))
-                .and_then(|value| value.as_str())
-                .unwrap_or("text")
-                .to_ascii_lowercase()
-                .as_str()
-            {
-                "password" => InteractiveShellInputType::Password,
-                _ => InteractiveShellInputType::Text,
-            };
-            (prompt, input_type)
-        }
-    }
+/// `requireUserInput` without `storeAs`: the shell cannot receive typed input.
+fn missing_store_as_error() -> MCPResult {
+    guided_error(
+        ErrorCategory::InvalidInput,
+        "requireUserInput needs storeAs. The shell cannot send input to a command".to_string(),
+        ToolGroup::Workspace,
+    )
+    .guidance(vec![
+        "Set storeAs=NAME so the user's value is stored as $NAME, then read $NAME in the command"
+            .to_string(),
+        "For sudo, use inputType=password and storeAs=SUDO_PASSWORD, then run plain `sudo`"
+            .to_string(),
+    ])
+    .to_mcp_result()
 }
 
 /// The tool result when the user gave no answer. A timeout is an error
 /// (#2543 requirement 5); cancel and Stop stay informational, as before.
 fn unanswered_shell_result(
     outcome: &UserPromptOutcome,
-    input_type: InteractiveShellInputType,
     variable_name: &str,
     display_command: &str,
 ) -> MCPResult {
-    let message = match input_type {
-        InteractiveShellInputType::Password => secret_outcome_message(outcome, variable_name),
-        InteractiveShellInputType::Text => outcome.caller_message(),
-    };
+    let message = secret_outcome_message(outcome, variable_name);
     let text = format!("Interactive command not executed. {message}\n\nCommand: {display_command}");
     if *outcome != UserPromptOutcome::TimedOut {
         return MCPResult::informational(&text);
@@ -293,54 +213,10 @@ fn stored_secret_payload(name: &str, label: String) -> UserPromptPayload {
     }
 }
 
-/// A password prompt is a masked `secret`; any other input is a `question`.
-fn shell_prompt_payload(
-    input_type: InteractiveShellInputType,
-    variable_name: &str,
-    prompt: String,
-    display_command: &str,
-) -> UserPromptPayload {
-    match input_type {
-        InteractiveShellInputType::Password => UserPromptPayload::Secret {
-            variable_name: variable_name.to_string(),
-            label: prompt,
-            reuse_note: None,
-        },
-        InteractiveShellInputType::Text => UserPromptPayload::Question {
-            questions: vec![UserQuestion {
-                id: SHELL_INPUT_QUESTION_ID.to_string(),
-                question: prompt,
-                description: Some(display_command.to_string()),
-                options: None,
-                multi_select: false,
-                allow_custom: false,
-            }],
-        },
-    }
-}
-
-/// Id of the one free-text question a shell text prompt asks.
-const SHELL_INPUT_QUESTION_ID: &str = "input";
-
-/// The question form answers with an object keyed by question id; the shell needs the line.
-fn text_answer(raw: &str) -> Option<String> {
-    let mut answers: HashMap<String, String> = serde_json::from_str(raw).ok()?;
-    answers.remove(SHELL_INPUT_QUESTION_ID)
-}
-
-/// The shell reads one line, so a multi-line answer is refused.
+/// A stored value is one line, so a multi-line answer is refused.
 fn single_line_answer(answer: &str) -> Option<&str> {
     let line = answer.trim_end_matches(['\r', '\n']);
     (!line.contains(['\r', '\n'])).then_some(line)
-}
-
-/// Name shown in the secret prompt; the shell has no variable of its own.
-fn shell_input_variable_name(command: &str) -> &'static str {
-    if validation::detect_privilege_escalation(command) {
-        "SUDO_PASSWORD"
-    } else {
-        "SHELL_INPUT"
-    }
 }
 
 #[cfg(test)]
@@ -349,82 +225,25 @@ mod tests {
 
     #[test]
     fn a_timed_out_prompt_is_an_error_result() {
-        for input_type in [
-            InteractiveShellInputType::Password,
-            InteractiveShellInputType::Text,
-        ] {
-            let result = unanswered_shell_result(
-                &UserPromptOutcome::TimedOut,
-                input_type,
-                "SUDO_PASSWORD",
-                "sudo apt update",
-            );
-            assert_eq!(result.is_error, Some(true));
-        }
+        let result = unanswered_shell_result(
+            &UserPromptOutcome::TimedOut,
+            "SUDO_PASSWORD",
+            "sudo apt update",
+        );
+        assert_eq!(result.is_error, Some(true));
     }
 
     #[test]
     fn a_cancelled_or_stopped_prompt_is_not_an_error_result() {
         for outcome in [UserPromptOutcome::Cancelled, UserPromptOutcome::Stopped] {
-            let result = unanswered_shell_result(
-                &outcome,
-                InteractiveShellInputType::Password,
-                "SUDO_PASSWORD",
-                "sudo apt update",
-            );
+            let result = unanswered_shell_result(&outcome, "SUDO_PASSWORD", "sudo apt update");
             assert_ne!(result.is_error, Some(true));
         }
     }
 
-    // Windows has no sudo detection (`detect_privilege_escalation` is always false there).
-    #[cfg(not(windows))]
     #[test]
-    fn sudo_password_becomes_a_secret_prompt() {
-        let payload = shell_prompt_payload(
-            InteractiveShellInputType::Password,
-            shell_input_variable_name("sudo apt update"),
-            "Enter your sudo password:".to_string(),
-            "sudo apt update",
-        );
-        assert_eq!(
-            payload,
-            UserPromptPayload::Secret {
-                variable_name: "SUDO_PASSWORD".to_string(),
-                label: "Enter your sudo password:".to_string(),
-                reuse_note: None,
-            }
-        );
-    }
-
-    #[test]
-    fn text_input_becomes_a_question_showing_the_command() {
-        let payload = shell_prompt_payload(
-            InteractiveShellInputType::Text,
-            shell_input_variable_name("read name"),
-            "Enter input:".to_string(),
-            "read name",
-        );
-        assert_eq!(
-            payload,
-            UserPromptPayload::Question {
-                questions: vec![UserQuestion {
-                    id: "input".to_string(),
-                    question: "Enter input:".to_string(),
-                    description: Some("read name".to_string()),
-                    options: None,
-                    multi_select: false,
-                    allow_custom: false,
-                }],
-            }
-        );
-    }
-
-    #[test]
-    fn a_text_answer_is_decoded_back_to_the_line() {
-        assert_eq!(text_answer(r#"{"input":"libr"}"#).as_deref(), Some("libr"));
-        assert_eq!(text_answer(r#"{"other":"libr"}"#), None);
-        assert_eq!(text_answer(r#"{"input":["a","b"]}"#), None);
-        assert_eq!(text_answer("libr"), None);
+    fn require_user_input_without_store_as_is_an_error() {
+        assert_eq!(missing_store_as_error().is_error, Some(true));
     }
 
     #[test]

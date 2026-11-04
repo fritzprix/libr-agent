@@ -547,7 +547,7 @@ impl WorkspaceServer {
                     return Ok(SuccessHint::new(
                         enhanced_message,
                         vec![format!(
-                            "Rerun with {}(requireUserInput: true)",
+                            "Rerun with a non-interactive flag, or store the value with {}(requireUserInput: true, storeAs: NAME) and read $NAME",
                             PERSISTENT_SHELL_TOOL
                         )],
                     )
@@ -602,7 +602,7 @@ impl WorkspaceServer {
                     next_actions.insert(
                         0,
                         format!(
-                            "If the command needed input, rerun it with {} and requireUserInput: true",
+                            "If the command needed input, store it with {}(requireUserInput: true, storeAs: NAME) and read $NAME",
                             PERSISTENT_SHELL_TOOL
                         ),
                     );

@@ -9,7 +9,6 @@ use crate::repositories::SessionRepository;
 use crate::session_isolation::PathMappingLayer;
 
 use super::super::super::{utils, WorkspaceServer, PERSISTENT_SHELL_TOOL};
-use super::super::normalization;
 use super::input::ShellInput;
 use super::{format_command_io_message, format_duration_ms, truncate_sync_shell_stream};
 
@@ -56,9 +55,6 @@ impl WorkspaceServer {
             return Ok(result);
         }
 
-        // Normalize command
-        let normalized_command = normalization::normalize_shell_command(command);
-
         // Track execution time
         let execution_start = std::time::Instant::now();
         let cancellation_generation = self
@@ -71,11 +67,8 @@ impl WorkspaceServer {
 
         let execution_result = tokio::time::timeout(
             timeout_duration,
-            self.shell_manager.execute(
-                session_id.clone(),
-                workspace_path.clone(),
-                &normalized_command,
-            ),
+            self.shell_manager
+                .execute(session_id.clone(), workspace_path.clone(), command),
         )
         .await;
 

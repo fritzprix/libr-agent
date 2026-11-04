@@ -1,11 +1,9 @@
-use super::super::normalization;
-
 /// What the caller asked the isolated shell to run.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum ShellInput<'a> {
-    /// One-line command passed to `bash -c` after quote normalization.
+    /// One-line command passed to `bash -c` as written.
     Command(&'a str),
-    /// Multi-line script run verbatim (no normalization, no escaping by the caller).
+    /// Multi-line script run verbatim (no escaping by the caller).
     Script(&'a str),
 }
 
@@ -20,7 +18,7 @@ impl<'a> ShellInput<'a> {
     /// Command line handed to the platform shell.
     pub(crate) fn executable(&self) -> String {
         match self {
-            Self::Command(command) => normalization::normalize_shell_command(command),
+            Self::Command(command) => command.to_string(),
             Self::Script(script) => wrap_script_for_bash(script),
         }
     }

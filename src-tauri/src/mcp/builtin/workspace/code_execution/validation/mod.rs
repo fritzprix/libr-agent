@@ -17,9 +17,7 @@ pub use guidance::{
     shell_command_failure_guidance, shell_signal_interrupt_guidance, signal_interrupt_label,
     write_file_then_shell_guidance,
 };
-pub use interactive::{
-    detect_privilege_escalation, is_likely_interactive_command, resolve_stdin_delivery,
-};
+pub use interactive::{detect_privilege_escalation, is_likely_interactive_command};
 pub use syntax::{check_bash_syntax, BashSyntaxError};
 
 #[cfg(windows)]
