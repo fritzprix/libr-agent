@@ -141,9 +141,9 @@ pub fn redact_url(url: &str) -> String {
     }
 }
 
-/// The URL as typed, with user info, every query value, and the fragment shown as `***`.
-/// A value that is exactly one `{{secret:NAME}}` stays, so a preview shows which secret
-/// goes where but never a value.
+/// The URL as typed, with user info, every query value, a query part without `=`, and
+/// the fragment shown as `***`. A value that is exactly one `{{secret:NAME}}` stays, so a
+/// preview shows which secret goes where but never a value. Path segments are not masked.
 pub fn mask_url_secrets(url: &str) -> String {
     let (rest, fragment) = match url.split_once('#') {
         Some((rest, _)) => (rest, "#***"),
@@ -171,7 +171,9 @@ pub fn mask_url_secrets(url: &str) -> String {
                 Some((key, value)) if !value.is_empty() && !is_single_template(value) => {
                     format!("{key}=***")
                 }
-                _ => pair.to_string(),
+                Some(_) => pair.to_string(),
+                None if pair.is_empty() => String::new(),
+                None => "***".to_string(),
             })
             .collect::<Vec<_>>();
         masked.push('?');
@@ -359,7 +361,11 @@ mod tests {
         );
         assert_eq!(
             mask_url_secrets("https://mcp.exa.ai/mcp?exaApiKey={{secret:EXA_API_KEY}}&debug"),
-            "https://mcp.exa.ai/mcp?exaApiKey={{secret:EXA_API_KEY}}&debug"
+            "https://mcp.exa.ai/mcp?exaApiKey={{secret:EXA_API_KEY}}&***"
+        );
+        assert_eq!(
+            mask_url_secrets("https://host.example/mcp?sk-live-abc123"),
+            "https://host.example/mcp?***"
         );
         assert_eq!(
             mask_url_secrets("https://user:pw@host.example/p?k=&t=v#token"),

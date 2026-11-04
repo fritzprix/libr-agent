@@ -68,6 +68,8 @@ pub(crate) async fn secrets_reused_by(args: &Value) -> Vec<String> {
     ) else {
         return Vec::new();
     };
+    // `plan_secrets` reads templates from the transport only; revisit if
+    // `authentication` ever holds one.
     let config = MCPServerConfig {
         name: Some(name.to_string()),
         transport,
