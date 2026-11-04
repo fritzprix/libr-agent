@@ -8,7 +8,6 @@ pub fn normalize_shell_command(raw_command: &str) -> String {
         // Windows: PowerShell handles both single and double quotes correctly
         // No normalization needed - pass command as-is to avoid breaking nested quotes
         // in Python/Node.js inline commands like: python -c "print('Hello')"
-        tracing::info!("Windows command (no normalization): {}", raw_command);
         raw_command.to_string()
     }
 

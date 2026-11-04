@@ -209,6 +209,7 @@ impl WorkspaceServer {
             command: normalized_command.clone(),
             args: vec![],
             env_vars,
+            secrets: self.shell_manager.session_secrets(&session_id).await,
             isolation_level,
             shell_type: None, // Default to platform default shell
             // `asRoot` is refused in dispatch for spawnProcess.

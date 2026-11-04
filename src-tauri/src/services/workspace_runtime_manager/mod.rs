@@ -158,6 +158,7 @@ fn build_docker_exec_command(
     shell: ShellType,
     command: &str,
     env_vars: &std::collections::HashMap<String, String>,
+    secrets: &BTreeMap<String, String>,
     cwd_override: Option<&str>,
     run_as_root: bool,
 ) -> RuntimeResult<AsyncCommand> {
@@ -185,6 +186,8 @@ fn build_docker_exec_command(
         merged_env.insert(key.clone(), value.clone());
     }
 
+    // Later `-e` flags win, so secrets go first.
+    apply_secret_exec_env(&mut cmd, secrets)?;
     apply_exec_env(&mut cmd, merged_env)?;
 
     cmd.arg(container_name);
@@ -328,6 +331,7 @@ impl WorkspaceRuntimeManager {
         session: &SessionMetadata,
         command: &str,
         env_vars: &std::collections::HashMap<String, String>,
+        secrets: &BTreeMap<String, String>,
         cwd_override: Option<&str>,
         run_as_root: bool,
     ) -> RuntimeResult<AsyncCommand> {
@@ -342,7 +346,15 @@ impl WorkspaceRuntimeManager {
         if run_as_root {
             root_exec::verify_root_exec_ready(session).await?;
         }
-        build_docker_exec_command(session, shell, command, env_vars, cwd_override, run_as_root)
+        build_docker_exec_command(
+            session,
+            shell,
+            command,
+            env_vars,
+            secrets,
+            cwd_override,
+            run_as_root,
+        )
     }
 
     /// Why a shell command of this session cannot run as root, or `None` when it can.
@@ -858,6 +870,7 @@ mod exec_env_tests {
             ShellType::Bash,
             "apt-get update",
             &env,
+            &BTreeMap::new(),
             None,
             true,
         )
@@ -879,10 +892,50 @@ mod exec_env_tests {
             ]
         );
 
-        let user =
-            build_docker_exec_command(&session, ShellType::Bash, "id", &env, None, false).unwrap();
+        let user = build_docker_exec_command(
+            &session,
+            ShellType::Bash,
+            "id",
+            &env,
+            &BTreeMap::new(),
+            None,
+            false,
+        )
+        .unwrap();
         let (args, _) = command_parts(&user);
         assert!(!args.iter().any(|arg| arg == "-u"));
+    }
+
+    #[test]
+    fn shell_command_secrets_stay_out_of_the_docker_exec_arguments() {
+        let session = docker_session(vec![]);
+        let secrets = BTreeMap::from([("API_TOKEN".to_string(), "tok-s3cr3t".to_string())]);
+        let env = std::collections::HashMap::from([(
+            crate::server::wake::WAKE_URL_ENV.to_string(),
+            "http://host.docker.internal:1/wake".to_string(),
+        )]);
+
+        let cmd = build_docker_exec_command(
+            &session,
+            ShellType::Bash,
+            "echo $API_TOKEN",
+            &env,
+            &secrets,
+            None,
+            false,
+        )
+        .unwrap();
+        let (args, envs) = command_parts(&cmd);
+        assert!(args.iter().all(|arg| !arg.contains("tok-s3cr3t")));
+        let secret_flag = args.iter().position(|arg| arg == "API_TOKEN").unwrap();
+        let wake_flag = args
+            .iter()
+            .position(|arg| arg == crate::server::wake::WAKE_URL_ENV)
+            .unwrap();
+        assert!(secret_flag < wake_flag, "app variables come after secrets");
+        assert!(envs
+            .iter()
+            .any(|(key, value)| key == "API_TOKEN" && value.as_deref() == Some("tok-s3cr3t")));
     }
 
     #[test]

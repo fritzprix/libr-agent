@@ -7,6 +7,8 @@
 
 use std::collections::BTreeMap;
 
+use crate::mcp::types::{MCPContent, MCPResult};
+
 /// `name -> value` for one session.
 pub type SecretMap = BTreeMap<String, String>;
 
@@ -92,6 +94,39 @@ pub fn mask_secrets(text: &str, secrets: &SecretMap) -> String {
     masked
 }
 
+/// Masks stored values in the text content and in every string of the structured content.
+pub fn mask_result(mut result: MCPResult, secrets: &SecretMap) -> MCPResult {
+    if secrets.is_empty() {
+        return result;
+    }
+    for item in result.content.iter_mut().flatten() {
+        if let MCPContent::Text { text } = item {
+            *text = mask_secrets(text, secrets);
+        }
+    }
+    if let Some(value) = result.structured_content.as_mut() {
+        mask_json_strings(value, secrets);
+    }
+    result
+}
+
+fn mask_json_strings(value: &mut serde_json::Value, secrets: &SecretMap) {
+    match value {
+        serde_json::Value::String(text) => *text = mask_secrets(text, secrets),
+        serde_json::Value::Array(items) => {
+            for item in items {
+                mask_json_strings(item, secrets);
+            }
+        }
+        serde_json::Value::Object(fields) => {
+            for field in fields.values_mut() {
+                mask_json_strings(field, secrets);
+            }
+        }
+        _ => {}
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -156,6 +191,34 @@ mod tests {
         assert_eq!(
             mask_secrets("abc s3cr3t s3cr3t-and-more", &secrets),
             "abc *** ***"
+        );
+    }
+
+    #[test]
+    fn a_tool_result_is_masked_in_text_and_structured_content() {
+        let secrets = SecretMap::from([("TOKEN".to_string(), "s3cr3t".to_string())]);
+        let result = MCPResult {
+            content: Some(vec![MCPContent::Text {
+                text: "Output:\ns3cr3t".to_string(),
+            }]),
+            structured_content: Some(serde_json::json!({
+                "stdout": "token=s3cr3t",
+                "lines": ["s3cr3t"],
+                "exit_code": 0
+            })),
+            is_error: None,
+        };
+
+        let masked = mask_result(result, &secrets);
+        let serialized = serde_json::to_string(&masked).unwrap();
+        assert!(!serialized.contains("s3cr3t"));
+        assert_eq!(
+            masked.structured_content,
+            Some(serde_json::json!({
+                "stdout": "token=***",
+                "lines": ["***"],
+                "exit_code": 0
+            }))
         );
     }
 }

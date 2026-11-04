@@ -54,6 +54,7 @@ impl SessionIsolationManager {
                             &session,
                             &config.command,
                             &config.env_vars,
+                            &config.secrets,
                             config
                                 .working_directory
                                 .as_ref()
@@ -145,6 +146,7 @@ mod tests {
             command: "id -u".to_string(),
             args: vec![],
             env_vars: std::collections::HashMap::new(),
+            secrets: Default::default(),
             isolation_level: IsolationLevel::Basic,
             shell_type: None,
             run_as_root: true,
@@ -158,5 +160,47 @@ mod tests {
             error,
             crate::services::RootExecBlocker::HostSession.message()
         );
+    }
+
+    #[tokio::test]
+    async fn a_host_command_gets_session_secrets_and_call_env_wins() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let config = IsolatedProcessConfig {
+            session_id: "isolation-secret-host-session".to_string(),
+            workspace_path: workspace.path().to_path_buf(),
+            working_directory: None,
+            command: "echo ok".to_string(),
+            args: vec![],
+            env_vars: std::collections::HashMap::from([(
+                "SHARED_NAME".to_string(),
+                "from-call".to_string(),
+            )]),
+            secrets: std::collections::BTreeMap::from([
+                ("API_TOKEN".to_string(), "tok-s3cr3t".to_string()),
+                ("SHARED_NAME".to_string(), "from-secret".to_string()),
+            ]),
+            isolation_level: IsolationLevel::Basic,
+            shell_type: None,
+            run_as_root: false,
+        };
+        assert!(!format!("{config:?}").contains("tok-s3cr3t"));
+
+        let cmd = SessionIsolationManager::new()
+            .create_isolated_command(config)
+            .await
+            .expect("host command");
+        let env_value = |name: &str| {
+            cmd.as_std()
+                .get_envs()
+                .find(|(key, _)| *key == name)
+                .and_then(|(_, value)| value)
+                .map(|value| value.to_string_lossy().into_owned())
+        };
+        assert_eq!(env_value("API_TOKEN").as_deref(), Some("tok-s3cr3t"));
+        assert_eq!(env_value("SHARED_NAME").as_deref(), Some("from-call"));
+        assert!(cmd
+            .as_std()
+            .get_args()
+            .all(|arg| !arg.to_string_lossy().contains("tok-s3cr3t")));
     }
 }

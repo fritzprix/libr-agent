@@ -53,6 +53,7 @@ pub async fn create_basic_isolated_command(
 
     // Apply environment isolation: clear all inherited environment variables
     cmd.env_clear();
+    cmd.envs(&config.secrets);
 
     // Re-apply whitelisted essential system variables.
     // PATH is rebuilt via registry User/Machine Path + discovered

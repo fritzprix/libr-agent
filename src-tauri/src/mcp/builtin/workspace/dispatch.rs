@@ -4,9 +4,24 @@ use crate::models::workspace_isolation::WorkspaceIsolationMode;
 use serde_json::Value;
 use tracing::info;
 
+use super::persistent_shell::secrets::mask_result;
 use super::workspace_server::WorkspaceServer;
 
 const MAX_LOGGED_STRING_BYTES: usize = 128;
+
+/// Tools whose results can hold shell output or command text; session secrets are masked in them.
+const SHELL_OUTPUT_TOOLS: &[&str] = &[
+    "runShell",
+    "runPowerShell",
+    "runInPersistentShell",
+    "runInPersistentPowerShell",
+    "spawnProcess",
+    "readProcessOutput",
+    "listProcesses",
+    "stopProcess",
+    "waitForProcess",
+    "pollProcess",
+];
 
 const REDACTED_ARG_KEYS: &[&str] = &[
     "content",
@@ -134,6 +149,23 @@ impl WorkspaceServer {
             return Ok(self.shell_tool_unavailable_result(tool_name));
         }
 
+        let result = self
+            .dispatch_tool(tool_name, args, session_id, &target_session_id)
+            .await;
+        if !SHELL_OUTPUT_TOOLS.contains(&tool_name) {
+            return result;
+        }
+        let secrets = self.shell_manager.session_secrets(&target_session_id).await;
+        result.map(|result| mask_result(result, &secrets))
+    }
+
+    async fn dispatch_tool(
+        &self,
+        tool_name: &str,
+        args: Value,
+        session_id: Option<String>,
+        target_session_id: &str,
+    ) -> Result<MCPResult, String> {
         match tool_name {
             // ── File operation tools ──────────────────────────────────────────
             "readFile" => self.handle_read_file(args, session_id).await,
@@ -160,34 +192,34 @@ impl WorkspaceServer {
             // ── Code execution tools ──────────────────────────────────────────
             // PRIMARY isolated shell execution tools (recommended)
             "runShell" | "runPowerShell" => {
-                self.handle_run_shell(args, &target_session_id, tool_name)
+                self.handle_run_shell(args, target_session_id, tool_name)
                     .await
             }
             // ADVANCED persistent shell execution tools (for state preservation)
             "runInPersistentShell" | "runInPersistentPowerShell" => {
-                self.handle_execute_shell(args, &target_session_id, tool_name)
+                self.handle_execute_shell(args, target_session_id, tool_name)
                     .await
             }
             // Background process execution (platform-agnostic)
-            "spawnProcess" => self.handle_spawn_process(args, &target_session_id).await,
+            "spawnProcess" => self.handle_spawn_process(args, target_session_id).await,
 
             // ── Export tools ──────────────────────────────────────────────────
             "export" => self.handle_export(args, session_id).await,
 
             // ── Terminal / Process management tools ───────────────────────────
             "readProcessOutput" => {
-                self.handle_read_process_output(args, &target_session_id)
+                self.handle_read_process_output(args, target_session_id)
                     .await
             }
-            "listProcesses" => self.handle_list_processes(args, &target_session_id).await,
-            "stopProcess" => self.handle_stop_process(args, &target_session_id).await,
-            "waitForProcess" => self.handle_wait_for_process(args, &target_session_id).await,
+            "listProcesses" => self.handle_list_processes(args, target_session_id).await,
+            "stopProcess" => self.handle_stop_process(args, target_session_id).await,
+            "waitForProcess" => self.handle_wait_for_process(args, target_session_id).await,
             // Backward-compat alias: pollProcess was the old name for non-blocking status check.
             // Always inject timeout=0 so semantics are preserved.
             "pollProcess" => {
                 let mut poll_args = args.clone();
                 poll_args["timeout"] = serde_json::json!(0);
-                self.handle_wait_for_process(poll_args, &target_session_id)
+                self.handle_wait_for_process(poll_args, target_session_id)
                     .await
             }
 

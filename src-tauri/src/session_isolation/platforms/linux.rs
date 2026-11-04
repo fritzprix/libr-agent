@@ -51,6 +51,8 @@ pub async fn create_high_isolated_command(
 
     // Apply environment isolation
     crate::utils::env::apply_isolated_env_async(&mut cmd);
+    // Allowlisted names are reserved, so secrets cannot replace one of them.
+    cmd.envs(&config.secrets);
 
     // Always ensure PATH is present so GUI-launched sessions can still find user-installed tools.
     cmd.env("PATH", crate::utils::env::get_effective_path_os());
