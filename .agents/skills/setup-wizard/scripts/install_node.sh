@@ -1,9 +1,9 @@
 #!/bin/bash
 # Node.js Installation Script for Linux
 #
-# Uses the system package manager only when running as root or when sudo works
-# without a password. Otherwise installs the official Node.js LTS binary tarball
-# under ~/.local (no root needed). Never blocks on interactive input.
+# Uses the system package manager when running as root, or with plain sudo when
+# SUDO_PASSWORD is stored or sudo needs no password. Otherwise installs the official
+# Node.js LTS binary tarball under ~/.local (no root needed). Never blocks on input.
 #
 # Usage: install_node.sh [--force]   (--force reinstalls even if node exists)
 
@@ -35,12 +35,12 @@ if [ "$(uname -s)" != "Linux" ]; then
     exit 1
 fi
 
-# Decide how to get privileges: root, passwordless sudo, or none (user-local install)
+# Decide how to get privileges: root, plain sudo, or none (user-local install)
 SUDO=""
 USE_SYSTEM_PM=0
 if [ "$(id -u)" -eq 0 ]; then
     USE_SYSTEM_PM=1
-elif command -v sudo &> /dev/null && sudo -n true 2> /dev/null; then
+elif command -v sudo &> /dev/null && { [ -n "${SUDO_PASSWORD:-}" ] || sudo -n true 2> /dev/null; }; then
     SUDO="sudo"
     USE_SYSTEM_PM=1
 fi

@@ -1,7 +1,8 @@
 #!/bin/bash
 # Python Installation Script for Linux
 # Non-interactive. Order: uv-managed Python (user scope), then the system package
-# manager only as root or with passwordless sudo (sudo -n). Never waits for a password.
+# manager as root, or with plain sudo when SUDO_PASSWORD is stored or sudo needs no
+# password. Otherwise it asks the agent to store SUDO_PASSWORD and run it again.
 
 set -u
 
@@ -49,14 +50,18 @@ if command -v uv > /dev/null 2>&1; then
     echo "uv python install failed."
 fi
 
-# 2. System package manager: only as root or with passwordless sudo.
+# 2. System package manager: as root, or with plain sudo.
 SUDO=""
 if [ "$(id -u)" -ne 0 ]; then
-    if command -v sudo > /dev/null 2>&1 && sudo -n true 2> /dev/null; then
-        SUDO="sudo -n"
-    else
-        echo "✗ uv is missing or failed, and there is no root or passwordless sudo, so Python cannot be installed here."
+    if ! command -v sudo > /dev/null 2>&1; then
+        echo "✗ uv is missing or failed, and sudo is not available, so Python cannot be installed here."
         echo "NEXT: Report this to the user. Ask them to install uv (install_uv.sh) or Python $VERSION, then run verify_setup.sh again."
+        exit 1
+    elif [ -n "${SUDO_PASSWORD:-}" ] || sudo -n true 2> /dev/null; then
+        SUDO="sudo"
+    else
+        echo "✗ uv is missing or failed, and the system package manager needs root."
+        echo "NEXT: ask once with requireUserInput=true, inputType=password, storeAs=SUDO_PASSWORD, then run this script again."
         exit 1
     fi
 fi
