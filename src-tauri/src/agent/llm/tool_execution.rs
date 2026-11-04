@@ -708,7 +708,11 @@ pub async fn execute_tool_calls(
             break;
         }
 
-        let mut result = context.execute_tool(tool_name, args).await;
+        let mut result = crate::agent::state::with_tool_call_id(
+            tool_call_id.clone(),
+            context.execute_tool(tool_name, args),
+        )
+        .await;
         let process_was_cancelled = proxy_manager.take_process_cancel_pending(&session_id).await;
         if process_was_cancelled {
             process_was_cancelled_in_batch = true;

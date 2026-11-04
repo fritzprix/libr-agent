@@ -5,6 +5,7 @@ mod message_cache;
 mod pending;
 mod session;
 mod user_prompt;
+mod user_prompt_marker;
 
 pub use compaction::{
     CompactionBeginOutcome, CompactionKind, CompactionPhase, CompactionRecoveryPhase,
@@ -27,4 +28,7 @@ pub use user_prompt::{
     UserQuestion, USER_PROMPT_ALREADY_PENDING_MESSAGE, USER_PROMPT_CANCELLED_MESSAGE,
     USER_PROMPT_GONE_MESSAGE, USER_PROMPT_RESTART_MESSAGE, USER_PROMPT_TIMEOUT_MESSAGE,
     USER_PROMPT_TIMEOUT_SECS,
+};
+pub use user_prompt_marker::{
+    persist_waiting_tool_call, take_waiting_tool_call, with_tool_call_id, WaitingToolCallRecord,
 };
