@@ -23,6 +23,6 @@ Files to create in each directory:
 - `scripts/x_cli.py`: Actions dispatcher.
 
 ## Security Considerations
-- Username, email, and password will be parsed through hidden stdin prompts during interactive setup.
+- Username and email are passed as options. The password, TOTP secret, and cookies are stored with LibrAgent `storeAs` and read through `--*-env` options.
 - Session cookies will be saved in `~/.libragent/x_cookies.json` to prevent repeatedly logging in and triggering security flags or account locks.
 - Config is kept separate and private in `~/.libragent/x_config.json`.
