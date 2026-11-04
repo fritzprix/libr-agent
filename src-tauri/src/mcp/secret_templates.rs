@@ -67,15 +67,6 @@ fn template_slots(transport: &TransportConfig) -> Vec<&String> {
     }
 }
 
-fn template_slots_mut(transport: &mut TransportConfig) -> Vec<&mut String> {
-    match transport {
-        TransportConfig::Stdio { env, .. } => env.values_mut().collect(),
-        TransportConfig::Http { url, headers, .. } => std::iter::once(url)
-            .chain(headers.iter_mut().flat_map(|h| h.values_mut()))
-            .collect(),
-    }
-}
-
 /// The secret names the transport uses. Fails on a name that is not `^[A-Z][A-Z0-9_]*$`.
 pub fn template_names(transport: &TransportConfig) -> Result<BTreeSet<String>, String> {
     let mut names = BTreeSet::new();
@@ -185,17 +176,66 @@ pub fn fill_secrets(
 
     let mut filled = config.clone();
     if !values.is_empty() {
-        for slot in template_slots_mut(&mut filled.transport) {
-            let replaced = TEMPLATE_RE.replace_all(slot, |capture: &regex::Captures| {
-                values[&capture[1]].clone()
-            });
-            *slot = replaced.into_owned();
+        match &mut filled.transport {
+            TransportConfig::Stdio { env, .. } => {
+                for value in env.values_mut() {
+                    *value = fill_text(value, &values);
+                }
+            }
+            TransportConfig::Http { url, headers, .. } => {
+                *url = fill_url(url, &values);
+                for value in headers.iter_mut().flat_map(|h| h.values_mut()) {
+                    *value = fill_text(value, &values);
+                }
+            }
         }
+    }
+    let mut masked: Vec<String> = Vec::with_capacity(values.len() * 2);
+    for value in values.into_values() {
+        let encoded = encode_query_value(&value);
+        if encoded != value {
+            masked.push(encoded);
+        }
+        masked.push(value);
     }
     Ok(FilledConfig {
         config: filled,
-        values: values.into_values().collect(),
+        values: masked,
     })
+}
+
+fn fill_text(text: &str, values: &HashMap<String, String>) -> String {
+    TEMPLATE_RE
+        .replace_all(text, |capture: &regex::Captures| {
+            values[&capture[1]].clone()
+        })
+        .into_owned()
+}
+
+/// Like [`fill_text`], but a value filled into the query is percent-encoded, so a `&`,
+/// `#`, `+`, `%`, or space stays inside its one query parameter.
+fn fill_url(url: &str, values: &HashMap<String, String>) -> String {
+    let query_start = url.find('?');
+    let query_end = url.find('#').unwrap_or(url.len());
+    TEMPLATE_RE
+        .replace_all(url, |capture: &regex::Captures| {
+            let value = &values[&capture[1]];
+            let at = capture.get(0).map_or(0, |m| m.start());
+            if query_start.is_some_and(|start| at > start && at < query_end) {
+                encode_query_value(value)
+            } else {
+                value.clone()
+            }
+        })
+        .into_owned()
+}
+
+/// Percent-encode a query component. A space becomes `%20`, not `+`, so servers that
+/// only percent-decode get the same value.
+fn encode_query_value(value: &str) -> String {
+    url::form_urlencoded::byte_serialize(value.as_bytes())
+        .collect::<String>()
+        .replace('+', "%20")
 }
 
 /// Whether an update keeps the same target, so stored values may be reused:
@@ -300,6 +340,94 @@ mod tests {
         assert!(stored.contains("{{secret:GITHUB_PAT}}"));
         assert!(!stored.contains("ghp_value"));
         assert_eq!(filled.mask("401 for token ghp_value"), "401 for token ***");
+    }
+
+    const SPECIAL: &str = "k&y=1#a+b%2 c";
+
+    fn special_store(id: &str) -> MemorySecretStore {
+        let store = MemorySecretStore::default();
+        store.set(id, "KEY", SPECIAL).unwrap();
+        store
+    }
+
+    #[test]
+    fn a_query_value_is_encoded_into_exactly_one_parameter() {
+        let store = special_store("id-q");
+        let source = config(serde_json::json!({
+            "type": "http",
+            "url": "https://mcp.exa.ai/mcp?exaApiKey={{secret:KEY}}&x=1#frag"
+        }));
+
+        let filled = fill_secrets(&store, "id-q", &source).expect("filled");
+
+        let TransportConfig::Http { url, .. } = &filled.config.transport else {
+            panic!("http");
+        };
+        let parsed = url::Url::parse(url).expect("valid url");
+        let pairs: Vec<(String, String)> = parsed.query_pairs().into_owned().collect();
+        assert_eq!(
+            pairs,
+            vec![
+                ("exaApiKey".to_string(), SPECIAL.to_string()),
+                ("x".to_string(), "1".to_string())
+            ]
+        );
+        assert_eq!(parsed.fragment(), Some("frag"));
+        assert!(!url.contains('+'), "{url}");
+    }
+
+    #[test]
+    fn env_header_and_non_query_url_values_are_not_encoded() {
+        let store = special_store("id-raw");
+        let http = config(serde_json::json!({
+            "type": "http",
+            "url": "https://example.com/{{secret:KEY}}/mcp",
+            "headers": { "Authorization": "Bearer {{secret:KEY}}" }
+        }));
+        let stdio = config(serde_json::json!({
+            "type": "stdio", "command": "npx", "env": { "TOKEN": "{{secret:KEY}}" }
+        }));
+
+        let filled = fill_secrets(&store, "id-raw", &http).expect("filled");
+        let TransportConfig::Http { url, headers, .. } = &filled.config.transport else {
+            panic!("http");
+        };
+        assert_eq!(url, &format!("https://example.com/{SPECIAL}/mcp"));
+        assert_eq!(
+            headers.as_ref().unwrap()["Authorization"],
+            format!("Bearer {SPECIAL}")
+        );
+
+        let filled = fill_secrets(&store, "id-raw", &stdio).expect("filled");
+        let TransportConfig::Stdio { env, .. } = &filled.config.transport else {
+            panic!("stdio");
+        };
+        assert_eq!(env["TOKEN"], SPECIAL);
+    }
+
+    #[test]
+    fn a_failed_connect_with_an_encoded_query_value_shows_no_value() {
+        let store = special_store("id-err");
+        let source = config(serde_json::json!({
+            "type": "http",
+            "url": "https://mcp.exa.ai/mcp?exaApiKey={{secret:KEY}}"
+        }));
+        let filled = fill_secrets(&store, "id-err", &source).expect("filled");
+        let TransportConfig::Http { url, .. } = &filled.config.transport else {
+            panic!("http");
+        };
+        let encoded = encode_query_value(SPECIAL);
+        assert!(url.contains(&encoded), "{url}");
+
+        let client_error = format!("error sending request for url ({url})");
+        let log_line = redact_url_in(&client_error, url);
+        assert!(!log_line.contains(&encoded), "{log_line}");
+        assert!(!log_line.contains(SPECIAL), "{log_line}");
+
+        let server_error = format!("401: key {encoded} rejected, raw {SPECIAL}");
+        let masked = filled.mask(&server_error);
+        assert!(!masked.contains(&encoded), "{masked}");
+        assert!(!masked.contains(SPECIAL), "{masked}");
     }
 
     #[test]

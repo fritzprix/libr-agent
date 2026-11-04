@@ -117,6 +117,17 @@ fn clean_secret(value: &str, name: &str) -> Result<String, String> {
     Ok(value.to_string())
 }
 
+fn store_values(
+    store: &dyn SecretStore,
+    id: &str,
+    entered: &[(String, String)],
+) -> Result<(), String> {
+    for (name, value) in entered {
+        store.set(id, name, value)?;
+    }
+    Ok(())
+}
+
 /// Write the entered values to the store and record every used name on the row.
 async fn store_secrets(
     repo: &dyn MCPServerRepository,
@@ -125,9 +136,16 @@ async fn store_secrets(
     entered: &[(String, String)],
     reused: &[String],
 ) -> Result<(), String> {
-    for (name, value) in entered {
-        store.set(id, name, value)?;
-    }
+    store_values(store, id, entered)?;
+    record_secret_names(repo, id, entered, reused).await
+}
+
+async fn record_secret_names(
+    repo: &dyn MCPServerRepository,
+    id: &str,
+    entered: &[(String, String)],
+    reused: &[String],
+) -> Result<(), String> {
     let names: BTreeSet<String> = entered
         .iter()
         .map(|(name, _)| name.clone())
@@ -136,6 +154,101 @@ async fn store_secrets(
     repo.set_secret_names(id, secret_names_column(&names))
         .await
         .map_err(|e| format!("Failed to save secret names: {}", e))
+}
+
+/// Write the row and the secrets. Returns the id, the stored name, and whether the
+/// target changed. On failure a new row is removed, and an existing row keeps its
+/// previous config and secret names.
+async fn write_server(
+    repo: &dyn MCPServerRepository,
+    store: &dyn SecretStore,
+    existing: Option<crate::entity::mcp_server::Model>,
+    config: &MCPServerConfig,
+    verification: SaveVerification,
+    entered: &[(String, String)],
+    reused: &[String],
+) -> Result<(String, String, bool), String> {
+    let has_secrets = !entered.is_empty() || !reused.is_empty();
+    match existing {
+        Some(existing) => {
+            // Values before the row: a keychain failure must leave the row unchanged, and
+            // the update below deletes the values the new config no longer uses.
+            store_values(store, &existing.id, entered)?;
+
+            // Keep legacy display names (including whitespace) intact.
+            let mut config = config.clone();
+            config.name = Some(existing.name.clone());
+            let config_value = serde_json::to_value(&config).map_err(|e| e.to_string())?;
+
+            let existing_config_val: serde_json::Value = serde_json::from_str(&existing.config)
+                .map_err(|e| format!("Failed to parse existing config from DB: {}", e))?;
+            let requires_reverification = existing_config_val.get("transport")
+                != config_value.get("transport")
+                || existing_config_val.get("authentication") != config_value.get("authentication");
+
+            let updated = McpServerService::update_server_config(
+                repo,
+                existing.id.clone(),
+                None,
+                Some(config_value),
+                verification,
+            )
+            .await?;
+
+            if has_secrets {
+                if let Err(error) = record_secret_names(repo, &updated.id, entered, reused).await {
+                    restore_row(repo, &existing, existing_config_val).await;
+                    return Err(error);
+                }
+            }
+            Ok((updated.id, existing.name, requires_reverification))
+        }
+        None => {
+            let sanitized_name = sanitize_mcp_server_name(config.name.as_deref().unwrap_or(""));
+            let mut config = config.clone();
+            config.name = Some(sanitized_name.clone());
+            let config_value = serde_json::to_value(&config).map_err(|e| e.to_string())?;
+            let created = McpServerService::create_server_config(
+                repo,
+                sanitized_name,
+                config_value,
+                verification,
+            )
+            .await?;
+            if has_secrets {
+                if let Err(error) = store_secrets(repo, store, &created.id, entered, reused).await {
+                    let _ = McpServerService::delete_server_config(repo, &created.id).await;
+                    return Err(error);
+                }
+            }
+            Ok((created.id, created.name, true))
+        }
+    }
+}
+
+/// Put back the config and secret names that a failed update replaced.
+async fn restore_row(
+    repo: &dyn MCPServerRepository,
+    previous: &crate::entity::mcp_server::Model,
+    previous_config: serde_json::Value,
+) {
+    if let Err(e) = repo.update(&previous.id, None, Some(previous_config)).await {
+        log::warn!(
+            "Failed to restore config of MCP server '{}': {}",
+            previous.id,
+            e
+        );
+    }
+    if let Err(e) = repo
+        .set_secret_names(&previous.id, previous.secret_names.clone())
+        .await
+    {
+        log::warn!(
+            "Failed to restore secret names of MCP server '{}': {}",
+            previous.id,
+            e
+        );
+    }
 }
 
 pub(super) async fn save_server_config(
@@ -175,61 +288,22 @@ pub(super) async fn save_server_config(
         let value = ask_secret(session_id, &name, label_name).await?;
         entered.push((name, value));
     }
-    let is_new = existing.is_none();
-
     let verification = if tests_in_container(target, config) {
         SaveVerification::Unverified
     } else {
         SaveVerification::Pending
     };
 
-    let (id, stored_name, needs_probe) = match existing {
-        Some(existing) => {
-            // Keep legacy display names (including whitespace) intact.
-            let mut config = config.clone();
-            config.name = Some(existing.name.clone());
-            let config_value = serde_json::to_value(&config).map_err(|e| e.to_string())?;
-
-            let existing_config_val: serde_json::Value = serde_json::from_str(&existing.config)
-                .map_err(|e| format!("Failed to parse existing config from DB: {}", e))?;
-            let requires_reverification = existing_config_val.get("transport")
-                != config_value.get("transport")
-                || existing_config_val.get("authentication") != config_value.get("authentication");
-
-            let updated = McpServerService::update_server_config(
-                repo,
-                existing.id.clone(),
-                None,
-                Some(config_value),
-                verification,
-            )
-            .await?;
-
-            (updated.id, existing.name, requires_reverification)
-        }
-        None => {
-            let mut config = config.clone();
-            config.name = Some(sanitized_name.clone());
-            let config_value = serde_json::to_value(&config).map_err(|e| e.to_string())?;
-            let created = McpServerService::create_server_config(
-                repo,
-                sanitized_name,
-                config_value,
-                verification,
-            )
-            .await?;
-            (created.id, created.name, true)
-        }
-    };
-
-    if !entered.is_empty() || !reused_secrets.is_empty() {
-        if let Err(error) = store_secrets(repo, store, &id, &entered, &reused_secrets).await {
-            if is_new {
-                let _ = McpServerService::delete_server_config(repo, &id).await;
-            }
-            return Err(error);
-        }
-    }
+    let (id, stored_name, needs_probe) = write_server(
+        repo,
+        store,
+        existing,
+        config,
+        verification,
+        &entered,
+        &reused_secrets,
+    )
+    .await?;
     // A new value must reach the server even when the stored transport is unchanged.
     let needs_probe = needs_probe || !entered.is_empty();
 
@@ -599,6 +673,72 @@ mod tests {
             .expect("delete");
 
         assert_eq!(secret_store().get(&model.id, "EXA_API_KEY").unwrap(), None);
+    }
+
+    struct SetFailsStore;
+    impl SecretStore for SetFailsStore {
+        fn get(&self, _: &str, _: &str) -> Result<Option<String>, String> {
+            Ok(None)
+        }
+        fn set(&self, _: &str, _: &str, _: &str) -> Result<(), String> {
+            Err("keychain is locked".to_string())
+        }
+        fn delete(&self, _: &str, _: &str) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn a_failed_keychain_write_on_update_leaves_the_row_as_it_was() {
+        let repo = repo().await;
+        let model = saved_exa(&repo).await;
+        let entered = vec![("OTHER_KEY".to_string(), "new-value".to_string())];
+        let new_config = exa_config("https://mcp.exa.ai/v2?otherKey={{secret:OTHER_KEY}}");
+
+        let error = write_server(
+            &repo,
+            &SetFailsStore,
+            Some(model.clone()),
+            &new_config,
+            SaveVerification::Pending,
+            &entered,
+            &[],
+        )
+        .await
+        .err()
+        .expect("write fails");
+
+        assert!(error.contains("keychain is locked"), "{error}");
+        let stored = repo.get(&model.id).await.unwrap().expect("record");
+        assert_eq!(stored.config, model.config);
+        assert_eq!(stored.secret_names, model.secret_names);
+        assert_eq!(
+            secret_store()
+                .get(&model.id, "EXA_API_KEY")
+                .unwrap()
+                .as_deref(),
+            Some("exa-secret-value")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_failed_keychain_write_on_create_removes_the_new_row() {
+        let repo = repo().await;
+        let entered = vec![("EXA_API_KEY".to_string(), "value".to_string())];
+
+        let result = write_server(
+            &repo,
+            &SetFailsStore,
+            None,
+            &exa_config(EXA_URL),
+            SaveVerification::Pending,
+            &entered,
+            &[],
+        )
+        .await;
+
+        assert!(result.is_err());
+        assert!(repo.get_by_name("exa").await.unwrap().is_none());
     }
 
     #[test]
