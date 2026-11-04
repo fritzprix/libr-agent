@@ -9,20 +9,6 @@ use super::workspace_server::WorkspaceServer;
 
 const MAX_LOGGED_STRING_BYTES: usize = 128;
 
-/// Tools whose results can hold shell output or command text; session secrets are masked in them.
-const SHELL_OUTPUT_TOOLS: &[&str] = &[
-    "runShell",
-    "runPowerShell",
-    "runInPersistentShell",
-    "runInPersistentPowerShell",
-    "spawnProcess",
-    "readProcessOutput",
-    "listProcesses",
-    "stopProcess",
-    "waitForProcess",
-    "pollProcess",
-];
-
 const REDACTED_ARG_KEYS: &[&str] = &[
     "content",
     "old_string",
@@ -152,9 +138,8 @@ impl WorkspaceServer {
         let result = self
             .dispatch_tool(tool_name, args, session_id, &target_session_id)
             .await;
-        if !SHELL_OUTPUT_TOOLS.contains(&tool_name) {
-            return result;
-        }
+        // Every tool, not only the shell ones: a command can write a value into a file
+        // (including its own output files under `.libragent/tmp`) that `readFile` returns.
         let secrets = self.shell_manager.session_secrets(&target_session_id).await;
         result.map(|result| mask_result(result, &secrets))
     }
@@ -237,7 +222,51 @@ impl WorkspaceServer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mcp::types::MCPContent;
+    use crate::session::SessionManager;
     use serde_json::json;
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn a_stored_value_is_masked_in_a_read_file_result() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let session_id = "dispatch-mask-read-file";
+        let session_manager =
+            SessionManager::new_with_base_dir(temp_dir.path().to_path_buf()).expect("session mgr");
+        let server = WorkspaceServer::new(session_id.to_string(), Arc::new(session_manager));
+        let output_dir = server
+            .get_workspace_dir(session_id)
+            .join(".libragent/tmp/process_1");
+        std::fs::create_dir_all(&output_dir).expect("output dir");
+        std::fs::write(output_dir.join("stdout"), "token=tok-s3cr3t\n").expect("seed stdout");
+        server
+            .shell_manager
+            .store_secret(session_id, "API_TOKEN", "tok-s3cr3t".to_string())
+            .await
+            .expect("store secret");
+
+        let result = server
+            .call_tool(
+                "readFile",
+                json!({ "path": ".libragent/tmp/process_1/stdout" }),
+                Some(session_id.to_string()),
+            )
+            .await
+            .expect("readFile result");
+
+        let text: String = result
+            .content
+            .iter()
+            .flatten()
+            .filter_map(|item| match item {
+                MCPContent::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(text.contains("token=***"), "unexpected text: {text}");
+        let serialized = serde_json::to_string(&result).expect("serialize result");
+        assert!(!serialized.contains("tok-s3cr3t"));
+    }
 
     #[test]
     fn summarize_args_redacts_file_content_and_keeps_metadata() {
