@@ -26,6 +26,8 @@ import producer_gate
 MAX_NEW_ISSUES_PER_RUN = 3
 PRODUCER_LABEL = "auto:producer"
 MARKER_PREFIX = "producer-loop:fingerprint="
+# Tasks whose issues use another task label. e2e-plan files checklists that the e2e task runs.
+TASK_LABELS = {"e2e-plan": "auto:e2e"}
 
 # Issue bodies are public. Refuse text that looks like a secret or a private path.
 _PRIVATE_PATTERNS = (
@@ -96,7 +98,7 @@ def file_findings(task: str, findings: list[dict], state: dict, create: bool,
     list still holds the issues created before a later gh call raised.
     """
     cap = cap_for(state, task)
-    labels = [PRODUCER_LABEL, f"auto:{task}"]
+    labels = [PRODUCER_LABEL, TASK_LABELS.get(task, f"auto:{task}")]
     known = state.setdefault("fingerprints", {})
     results = [] if results is None else results
     created = 0

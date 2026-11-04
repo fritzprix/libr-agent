@@ -28,13 +28,16 @@ EXIT_NOOP = 1
 EXIT_BUSY = 2
 EXIT_ERROR = 3
 
-TASKS = ("security", "e2e", "uiux", "regression", "usage-logs", "doc-drift", "cleanup")
+TASKS = ("security", "e2e", "uiux", "regression", "usage-logs", "doc-drift", "cleanup", "e2e-plan")
 DEFAULT_PERIOD_SECONDS = 24 * 60 * 60  # one day; override per task in state.json "periods"
 
 _TICK_GATE_PATH = Path(__file__).resolve().parents[2] / "worker-loop" / "scripts" / "tick_gate.py"
 
 
 def _load_tick_gate():
+    # tick_gate imports its sibling worker_state module.
+    if str(_TICK_GATE_PATH.parent) not in sys.path:
+        sys.path.insert(0, str(_TICK_GATE_PATH.parent))
     spec = importlib.util.spec_from_file_location("tick_gate", _TICK_GATE_PATH)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -45,8 +48,8 @@ tick_gate = _load_tick_gate()
 
 
 def default_state_path() -> Path:
-    """Same resolution as tick_gate.default_state_path, for the producer-loop directory."""
-    return tick_gate.default_state_path().parent.parent / "producer-loop" / "state.json"
+    """`.producer-loop/state.json` next to the shared `.worker-loop` state root."""
+    return tick_gate.worker_state.state_root().parent / ".producer-loop" / "state.json"
 
 
 def period_seconds(state: dict, task: str) -> int:

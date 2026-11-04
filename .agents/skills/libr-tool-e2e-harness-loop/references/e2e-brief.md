@@ -40,6 +40,32 @@ PASS | FAIL | PARTIAL
 YES/NO + evidence (wrong browser=/session identity)
 ```
 
+## One-item brief (issue checklist mode)
+
+One session per `[auto]` item. Copy the item text as written. Do not add steps.
+
+```text
+Goal:
+Check one E2E item from issue #<N> and report the observed result.
+
+Item <ID>: <precondition → steps → expected result>
+
+Hard rules:
+- Work only in the current workspace (a scratch directory).
+- Use dummy values only, for example dummy-token-abcd. Never print real keys or tokens.
+- Do not use sudo. Do not read or write the OS keychain.
+- If a step needs a user answer, stop and report BLOCKED.
+- Do NOT dig the repo / rewrite code.
+
+Deliverable — FINAL assistant text ONLY:
+
+## Verdict
+PASS | FAIL | BLOCKED
+
+## Evidence
+- Quote the tool result text (at most 3 lines) that proves the verdict.
+```
+
 ## Brief quality bar
 
 - Every matrix row must be observable from a tool result, not inferred.
