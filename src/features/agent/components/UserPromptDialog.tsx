@@ -17,7 +17,11 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import {
+  AskUserQuestions,
+  buildAskUserAnswers,
+  type QuestionDraft,
+} from './AskUserQuestions';
 
 const logger = getLogger('UserPromptDialog');
 
@@ -28,23 +32,35 @@ export interface UserPromptDialogProps {
 
 /**
  * One dialog for both prompt kinds (#2543). The payload is tagged with `kind`,
- * so the form switches on it: a `secret` masks the input, a `question` shows a
- * free-text area. The typed value is sent to the backend only — never stored in
- * the transcript, an event, or a log.
+ * so the form switches on it: a `secret` masks the input, a `question` shows
+ * one section per `ui__askUser` question. The typed value is sent to the
+ * backend only — never stored in the transcript, an event, or a log.
  */
 export default function UserPromptDialog({
   sessionId,
   promptState,
 }: UserPromptDialogProps) {
   const [value, setValue] = useState('');
+  const [drafts, setDrafts] = useState<Record<string, QuestionDraft>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const requestId = promptState?.requestId ?? null;
+  const payload = promptState?.payload ?? null;
+  let submitValue: string | null = value;
+  if (payload?.kind === 'question') {
+    const answers = buildAskUserAnswers(payload.questions, drafts);
+    submitValue = answers ? JSON.stringify(answers) : null;
+  }
 
   useEffect(() => {
     setValue('');
+    setDrafts({});
     setIsSubmitting(false);
   }, [requestId]);
+
+  const handleDraftChange = useCallback((id: string, draft: QuestionDraft) => {
+    setDrafts((current) => ({ ...current, [id]: draft }));
+  }, []);
 
   const handleCancel = useCallback(async () => {
     if (!requestId || isSubmitting) {
@@ -66,13 +82,13 @@ export default function UserPromptDialog({
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
 
-      if (!requestId || isSubmitting) {
+      if (!requestId || isSubmitting || submitValue === null) {
         return;
       }
 
       setIsSubmitting(true);
       try {
-        await submitUserPrompt(sessionId, requestId, value);
+        await submitUserPrompt(sessionId, requestId, submitValue);
         setValue('');
       } catch (error) {
         logger.error('Failed to submit user prompt', error);
@@ -81,11 +97,8 @@ export default function UserPromptDialog({
         setIsSubmitting(false);
       }
     },
-    [isSubmitting, requestId, sessionId, value],
+    [isSubmitting, requestId, sessionId, submitValue],
   );
-
-  const payload = promptState?.payload ?? null;
-  const isQuestion = payload?.kind === 'question';
 
   return (
     <Dialog
@@ -110,37 +123,29 @@ export default function UserPromptDialog({
           <DialogTitle>
             {payload?.kind === 'secret'
               ? 'A password is needed'
-              : (payload?.title ?? 'Your answer is needed')}
+              : 'Your answer is needed'}
           </DialogTitle>
-          {payload?.kind === 'secret' ? (
-            <DialogDescription>{payload.label}</DialogDescription>
-          ) : payload?.body ? (
-            <DialogDescription>{payload.body}</DialogDescription>
-          ) : (
-            <DialogDescription>
-              The agent is waiting for your answer.
-            </DialogDescription>
-          )}
+          <DialogDescription>
+            {payload?.kind === 'secret'
+              ? payload.label
+              : 'The agent is waiting for your answer.'}
+          </DialogDescription>
         </DialogHeader>
 
         {promptState && payload ? (
           <form className="space-y-4" onSubmit={handleSubmit}>
-            <div className="space-y-2">
-              <Label htmlFor="user-prompt-input">
-                {payload.kind === 'secret'
-                  ? payload.variableName
-                  : 'Your answer'}
-              </Label>
-              {isQuestion ? (
-                <Textarea
-                  autoFocus
-                  id="user-prompt-input"
-                  value={value}
-                  onChange={(event) => setValue(event.target.value)}
-                  disabled={isSubmitting}
-                  rows={4}
-                />
-              ) : (
+            {payload.kind === 'question' ? (
+              <AskUserQuestions
+                questions={payload.questions}
+                drafts={drafts}
+                disabled={isSubmitting}
+                onChange={handleDraftChange}
+              />
+            ) : (
+              <div className="space-y-2">
+                <Label htmlFor="user-prompt-input">
+                  {payload.variableName}
+                </Label>
                 <Input
                   autoFocus
                   id="user-prompt-input"
@@ -151,13 +156,13 @@ export default function UserPromptDialog({
                   spellCheck={false}
                   disabled={isSubmitting}
                 />
-              )}
-              {payload.kind === 'secret' && payload.reuseNote ? (
-                <p className="text-muted-foreground text-xs">
-                  {payload.reuseNote}
-                </p>
-              ) : null}
-            </div>
+                {payload.reuseNote ? (
+                  <p className="text-muted-foreground text-xs">
+                    {payload.reuseNote}
+                  </p>
+                ) : null}
+              </div>
+            )}
 
             <DialogFooter>
               <Button
@@ -168,7 +173,10 @@ export default function UserPromptDialog({
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={isSubmitting}>
+              <Button
+                type="submit"
+                disabled={isSubmitting || submitValue === null}
+              >
                 Submit
               </Button>
             </DialogFooter>

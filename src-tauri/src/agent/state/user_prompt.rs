@@ -50,12 +50,23 @@ pub enum UserPromptPayload {
         #[serde(skip_serializing_if = "Option::is_none")]
         reuse_note: Option<String>,
     },
-    /// The question form delivered by #2547.
-    Question {
-        title: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        body: Option<String>,
-    },
+    /// The `ui__askUser` form (#2547): every question needs an answer.
+    Question { questions: Vec<UserQuestion> },
+}
+
+/// One `ui__askUser` question. Without `options` it is a free-text question.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserQuestion {
+    pub id: String,
+    pub question: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub options: Option<Vec<String>>,
+    pub multi_select: bool,
+    /// Adds an "Other" free-text choice; only meaningful with `options`.
+    pub allow_custom: bool,
 }
 
 impl UserPromptPayload {
@@ -74,7 +85,10 @@ impl UserPromptPayload {
                 label,
                 ..
             } => format!("Secret(variable={variable_name}, label={label})"),
-            Self::Question { title, .. } => format!("Question(title={title})"),
+            Self::Question { questions } => {
+                let ids: Vec<&str> = questions.iter().map(|q| q.id.as_str()).collect();
+                format!("Question(ids={})", ids.join(","))
+            }
         }
     }
 }
@@ -337,8 +351,14 @@ mod tests {
 
     fn question_payload() -> UserPromptPayload {
         UserPromptPayload::Question {
-            title: "Which branch?".to_string(),
-            body: None,
+            questions: vec![UserQuestion {
+                id: "branch".to_string(),
+                question: "Which branch?".to_string(),
+                description: None,
+                options: None,
+                multi_select: false,
+                allow_custom: false,
+            }],
         }
     }
 
@@ -354,7 +374,14 @@ mod tests {
 
         let question = serde_json::to_value(question_payload()).expect("serializes");
         assert_eq!(question["kind"], serde_json::json!("question"));
-        assert_eq!(question["title"], serde_json::json!("Which branch?"));
+        assert_eq!(
+            question["questions"][0]["question"],
+            serde_json::json!("Which branch?")
+        );
+        assert_eq!(
+            question["questions"][0]["multiSelect"],
+            serde_json::json!(false)
+        );
     }
 
     #[test]
@@ -710,9 +737,6 @@ mod tests {
             secret_payload().describe(),
             "Secret(variable=SUDO_PASSWORD, label=System password)"
         );
-        assert_eq!(
-            question_payload().describe(),
-            "Question(title=Which branch?)"
-        );
+        assert_eq!(question_payload().describe(), "Question(ids=branch)");
     }
 }

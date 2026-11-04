@@ -501,7 +501,7 @@ async fn test_stop_with_live_shell_still_ends_the_user_prompt_wait() {
     use tauri_mcp_agent_lib::agent::session_bus::SessionBus;
     use tauri_mcp_agent_lib::agent::state::{
         admit_user_prompt, await_user_prompt_with_timeout, pending_user_prompt_summary,
-        AgentSession, UserPromptOutcome, UserPromptPayload,
+        AgentSession, UserPromptOutcome, UserPromptPayload, UserQuestion,
     };
     use tauri_mcp_agent_lib::agent::workflow::stop_user_prompt_and_session_processes;
     use tauri_mcp_agent_lib::lifecycle::repositories::init_repositories;
@@ -554,8 +554,14 @@ async fn test_stop_with_live_shell_still_ends_the_user_prompt_wait() {
     let (_request_id, receiver) = admit_user_prompt(
         &slot,
         UserPromptPayload::Question {
-            title: "Continue?".to_string(),
-            body: None,
+            questions: vec![UserQuestion {
+                id: "continue".to_string(),
+                question: "Continue?".to_string(),
+                description: None,
+                options: None,
+                multi_select: false,
+                allow_custom: false,
+            }],
         },
     )
     .await

@@ -380,9 +380,19 @@ export type UserPromptPayload =
     }
   | {
       kind: 'question';
-      title: string;
-      body?: string;
+      questions: UserQuestion[];
     };
+
+/** One `ui__askUser` question (#2547). Without `options` it is free text. */
+export interface UserQuestion {
+  id: string;
+  question: string;
+  description?: string;
+  options?: string[];
+  multiSelect: boolean;
+  /** Adds an "Other" free-text choice to `options`. */
+  allowCustom: boolean;
+}
 
 /** How a user prompt ended; Stop reports `cancelled` (#2543). */
 export type UserPromptOutcome = 'answered' | 'cancelled' | 'timeout' | 'restart';

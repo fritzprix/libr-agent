@@ -1,6 +1,6 @@
 # Diagrams & math (chat / UI markdown)
 
-Use these in assistant replies, `ui__presentInteractive` (`format: "markdown"` / `auto`), or `ui__reportResult`. No skill script required.
+Use these in assistant replies or `ui__reportResult`. No skill script required.
 
 ## Mermaid
 

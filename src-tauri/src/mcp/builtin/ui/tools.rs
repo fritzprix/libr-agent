@@ -2,77 +2,73 @@ use crate::mcp::builtin::tool_description::tool_description;
 use crate::mcp::types::MCPTool;
 use crate::mcp::utils::schema_builder::*;
 
-/// Render arbitrary content (HTML or Markdown) with interactive elements
-pub fn present_interactive_tool() -> MCPTool {
-    let interaction_schema = object_prop(
+/// Ask the user one or more questions and wait for all answers.
+pub fn ask_user_tool() -> MCPTool {
+    let question_schema = object_prop(
         vec![
             (
-                "type".to_string(),
-                enum_prop_required(
-                    vec!["text", "select", "multiselect"],
-                    "Type of interaction UI to display",
-                ),
+                "id".to_string(),
+                string_prop_required("Unique key for this question in the call"),
             ),
             (
-                "prompt".to_string(),
-                string_prop_required("The question or instruction to show the user"),
+                "question".to_string(),
+                string_prop_required("The question to show the user"),
+            ),
+            (
+                "description".to_string(),
+                string_prop(None, None, Some("Optional detail shown under the question")),
             ),
             (
                 "options".to_string(),
                 array_schema(
                     string_prop(None, None, None),
-                    Some("Options for select/multiselect (required for those types)"),
+                    Some("Choices. Omit for a free-text question"),
+                ),
+            ),
+            (
+                "multiSelect".to_string(),
+                boolean_prop_with_default(false, Some("Allow more than one choice; needs options")),
+            ),
+            (
+                "allowCustom".to_string(),
+                boolean_prop_with_default(
+                    true,
+                    Some("Add an \"Other\" free-text choice to options"),
                 ),
             ),
         ],
-        vec!["type".to_string(), "prompt".to_string()],
-        Some(
-            "Optional user interaction after rendering content. Omit for display-only UI. Use type=text for free-form answers; select/multiselect require options.",
-        ),
+        vec!["id".to_string(), "question".to_string()],
+        None,
     );
 
     MCPTool {
-        name: "presentInteractive".to_string(),
-        title: Some("Present Interactive Content".to_string()),
+        name: "askUser".to_string(),
+        title: Some("Ask User".to_string()),
         description: tool_description(
-            "Render HTML or Markdown in the chat UI, optionally asking the user a follow-up question.",
+            "Ask the user 1-5 questions in one dialog and wait for all answers.",
             &[
-                "Use when you still need the user to see content and/or answer something.",
-                "If the task is fully done and you only need to deliver a final result, use ui__reportResult instead.",
+                "Use when you cannot continue without a decision or fact only the user has.",
+                "Do not use it to show content: write Markdown in chat, or use ui__reportResult for the final result.",
             ],
             &[
-                "For display-only content, omit `interaction`.",
-                "For a user response after the content, include `interaction` (text / select / multiselect).",
-                "HTML mode supports a safe subset only: basic text, tables, and links. JavaScript, CSS, event handlers, images, and arbitrary embeds are stripped.",
+                "Every question is required. With `options` it is a choice; without, free text.",
+                "Never ask for passwords or secrets here: use workspace__runShell with requireUserInput=true, inputType=password, and storeAs.",
             ],
             &[
-                "If the user must reply, wait for their UI response before continuing.",
-                "When no further work remains, call ui__reportResult and then stop.",
+                "The call returns one JSON object keyed by question id: {\"<id>\": {\"question\": ..., \"answer\": ...}}.",
+                "If the user cancels or does not answer, continue with your best judgment or stop; do not ask the same thing again at once.",
             ],
         ),
-        // Field order is intentional: format → title → interaction → content.
-        // Models often emit arguments in schema order; keep large HTML/Markdown last.
         input_schema: object_prop(
-            vec![
-                (
-                    "format".to_string(),
-                    enum_prop(
-                        vec!["html", "markdown", "auto"],
-                        "auto",
-                        Some("Content format. 'auto' defaults to Markdown; use 'html' for raw HTML rendering"),
-                    ),
+            vec![(
+                "questions".to_string(),
+                array_schema_with_max_items(
+                    question_schema,
+                    Some(5),
+                    Some("1 to 5 questions"),
                 ),
-                (
-                    "title".to_string(),
-                    string_prop(None, None, Some("Optional title displayed above the content")),
-                ),
-                ("interaction".to_string(), interaction_schema),
-                (
-                    "content".to_string(),
-                    string_prop_required("The content string to render (HTML or Markdown)"),
-                ),
-            ],
-            vec!["content".to_string()],
+            )],
+            vec!["questions".to_string()],
             None,
         ),
         output_schema: None,
@@ -106,7 +102,7 @@ pub fn report_result_tool() -> MCPTool {
                 "After a successful return: stop. Do not call any more tools. End your turn with at most a one-sentence confirmation.",
             ],
             &[
-                "If you still need user input, use ui__presentInteractive with `interaction` instead.",
+                "If you still need user input, use ui__askUser instead.",
                 "If work remains, continue with tools — do not call reportResult early.",
             ],
         ),
@@ -186,5 +182,5 @@ pub fn report_result_tool() -> MCPTool {
 /// Note: Internal callback tools (getUserAnswer, circuitBreak, resumeCircuitBreak)
 /// are NOT included here to prevent the AI from hallucinating calls to them.
 pub fn all_tools() -> Vec<MCPTool> {
-    vec![present_interactive_tool(), report_result_tool()]
+    vec![ask_user_tool(), report_result_tool()]
 }

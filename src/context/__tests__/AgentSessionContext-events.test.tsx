@@ -516,7 +516,14 @@ describe('AgentSessionContext – Event Handling', () => {
                         requestId: 'req-1',
                         payload: {
                             kind: 'question',
-                            title: 'Which branch?',
+                            questions: [
+                                {
+                                    id: 'branch',
+                                    question: 'Which branch?',
+                                    multiSelect: false,
+                                    allowCustom: false,
+                                },
+                            ],
                         },
                     },
                 });

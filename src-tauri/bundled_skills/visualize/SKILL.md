@@ -20,12 +20,11 @@ One skill for **showing** things. Prefer in-chat/UI renderers for diagrams and m
 | --- | --- | --- |
 | Mindmap, flowchart, sequence, ER, state | **Chat / UI markdown** | `` ```mermaid `` fence. See [diagrams.md](references/diagrams.md). |
 | Equations | **Chat / UI markdown** | `$inline$` / `$$display$$` (KaTeX). See [diagrams.md](references/diagrams.md). |
-| Diagram + user input | **`ui__presentInteractive`** | `format: "markdown"` (or `auto`) + `interaction`. |
+| Diagram + user input | **Chat markdown + `ui__askUser`** | Show the Mermaid fence in the reply, then ask the choice with `ui__askUser`. |
 | Final report with visuals | **`ui__reportResult`** | Same Mermaid/LaTeX fences in markdown. |
 | Charts/dashboards from **tabular** data | **This skill’s scripts** | CSV/Excel/JSON → HTML. See [charts.md](references/charts.md). |
-| Custom interactive HTML widget | **`ui__presentInteractive` `format: "html"`** | Only when markdown Mermaid/charts cannot express it. |
 
-LibrAgent already renders Mermaid and LaTeX in chat, `ui__reportResult`, `ui__presentInteractive` (markdown), and PDF export — do not invent a separate renderer.
+LibrAgent already renders Mermaid and LaTeX in chat, `ui__reportResult`, and PDF export — do not invent a separate renderer.
 
 ## Default workflow
 

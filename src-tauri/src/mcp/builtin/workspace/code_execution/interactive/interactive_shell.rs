@@ -1,7 +1,10 @@
 use serde_json::Value;
+use std::collections::HashMap;
 use tauri::Manager;
 
-use crate::agent::state::{secret_outcome_message, UserPromptOutcome, UserPromptPayload};
+use crate::agent::state::{
+    secret_outcome_message, UserPromptKind, UserPromptOutcome, UserPromptPayload, UserQuestion,
+};
 use crate::agent::AgentSessionManager;
 use crate::mcp::builtin::workspace::code_execution::shell::persistent::{
     prepend_result_note, SHELL_RESTARTED_NOTE,
@@ -116,6 +119,7 @@ impl WorkspaceServer {
                 shell_prompt_payload(input_type, variable_name, prompt, &request.display_command)
             }
         };
+        let payload_kind = payload.kind();
 
         let manager = app_handle.state::<AgentSessionManager>();
         let outcome = match manager.request_user_prompt(&session_id, payload).await {
@@ -156,6 +160,23 @@ impl WorkspaceServer {
             ])
             .to_mcp_result());
         }
+
+        let user_input = if matches!(payload_kind, UserPromptKind::Question) {
+            match text_answer(&user_input) {
+                Some(answer) => answer,
+                None => {
+                    return Ok(guided_error(
+                        ErrorCategory::InvalidInput,
+                        "Interactive input answer is malformed".to_string(),
+                        ToolGroup::Workspace,
+                    )
+                    .guidance(vec!["Run the command again and submit one line".to_string()])
+                    .to_mcp_result());
+                }
+            }
+        } else {
+            user_input
+        };
 
         let Some(user_input) = single_line_answer(&user_input) else {
             return Ok(guided_error(
@@ -286,10 +307,25 @@ fn shell_prompt_payload(
             reuse_note: None,
         },
         InteractiveShellInputType::Text => UserPromptPayload::Question {
-            title: prompt,
-            body: Some(display_command.to_string()),
+            questions: vec![UserQuestion {
+                id: SHELL_INPUT_QUESTION_ID.to_string(),
+                question: prompt,
+                description: Some(display_command.to_string()),
+                options: None,
+                multi_select: false,
+                allow_custom: false,
+            }],
         },
     }
+}
+
+/// Id of the one free-text question a shell text prompt asks.
+const SHELL_INPUT_QUESTION_ID: &str = "input";
+
+/// The question form answers with an object keyed by question id; the shell needs the line.
+fn text_answer(raw: &str) -> Option<String> {
+    let mut answers: HashMap<String, String> = serde_json::from_str(raw).ok()?;
+    answers.remove(SHELL_INPUT_QUESTION_ID)
 }
 
 /// The shell reads one line, so a multi-line answer is refused.
@@ -371,10 +407,24 @@ mod tests {
         assert_eq!(
             payload,
             UserPromptPayload::Question {
-                title: "Enter input:".to_string(),
-                body: Some("read name".to_string()),
+                questions: vec![UserQuestion {
+                    id: "input".to_string(),
+                    question: "Enter input:".to_string(),
+                    description: Some("read name".to_string()),
+                    options: None,
+                    multi_select: false,
+                    allow_custom: false,
+                }],
             }
         );
+    }
+
+    #[test]
+    fn a_text_answer_is_decoded_back_to_the_line() {
+        assert_eq!(text_answer(r#"{"input":"libr"}"#).as_deref(), Some("libr"));
+        assert_eq!(text_answer(r#"{"other":"libr"}"#), None);
+        assert_eq!(text_answer(r#"{"input":["a","b"]}"#), None);
+        assert_eq!(text_answer("libr"), None);
     }
 
     #[test]

@@ -47,8 +47,29 @@ const questionPrompt: PendingUserPromptSummary = {
   kind: 'question',
   payload: {
     kind: 'question',
-    title: 'Which branch?',
-    body: 'Pick the branch to deploy.',
+    questions: [
+      {
+        id: 'name',
+        question: 'Release name?',
+        description: 'Shown in the changelog.',
+        multiSelect: false,
+        allowCustom: false,
+      },
+      {
+        id: 'branch',
+        question: 'Which branch?',
+        options: ['main', 'dev'],
+        multiSelect: false,
+        allowCustom: true,
+      },
+      {
+        id: 'targets',
+        question: 'Which targets?',
+        options: ['linux', 'mac', 'win'],
+        multiSelect: true,
+        allowCustom: false,
+      },
+    ],
   },
   createdAt: '2026-11-04T00:00:00.000Z',
 };
@@ -85,27 +106,54 @@ describe('UserPromptDialog', () => {
     });
   });
 
-  it('renders a free-text area for a question prompt', async () => {
+  it('submits all question answers together once each is answered', async () => {
     render(
       <UserPromptDialog sessionId="session-1" promptState={questionPrompt} />,
     );
 
-    expect(screen.getByText('Which branch?')).toBeInTheDocument();
-    expect(screen.getByText('Pick the branch to deploy.')).toBeInTheDocument();
+    expect(screen.getByText('Shown in the changelog.')).toBeInTheDocument();
+    const submit = screen.getByRole('button', { name: 'Submit' });
+    expect(submit).toBeDisabled();
 
-    const input = screen.getByLabelText('Your answer');
-    expect(input.tagName).toBe('TEXTAREA');
+    fireEvent.change(screen.getByLabelText('Release name?'), {
+      target: { value: 'v0.9.1' },
+    });
+    fireEvent.click(screen.getByLabelText('Other'));
+    fireEvent.change(screen.getByLabelText('Which branch? (other)'), {
+      target: { value: 'release/0.9' },
+    });
+    expect(submit).toBeDisabled();
 
-    fireEvent.change(input, { target: { value: 'release/0.9' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
+    fireEvent.click(screen.getByLabelText('linux'));
+    fireEvent.click(screen.getByLabelText('win'));
+    expect(submit).toBeEnabled();
+    fireEvent.click(submit);
 
     await waitFor(() => {
-      expect(mocks.submitUserPrompt).toHaveBeenCalledWith(
-        'session-1',
-        'req-question',
-        'release/0.9',
-      );
+      expect(mocks.submitUserPrompt).toHaveBeenCalledTimes(1);
     });
+    const [sessionId, requestId, value] = mocks.submitUserPrompt.mock.calls[0];
+    expect(sessionId).toBe('session-1');
+    expect(requestId).toBe('req-question');
+    expect(JSON.parse(String(value))).toEqual({
+      name: 'v0.9.1',
+      branch: 'release/0.9',
+      targets: ['linux', 'win'],
+    });
+  });
+
+  it('hides the Other text field when a single choice moves to an option', () => {
+    render(
+      <UserPromptDialog sessionId="session-1" promptState={questionPrompt} />,
+    );
+
+    fireEvent.click(screen.getByLabelText('Other'));
+    expect(screen.getByLabelText('Which branch? (other)')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText('main'));
+    expect(
+      screen.queryByLabelText('Which branch? (other)'),
+    ).not.toBeInTheDocument();
   });
 
   it('cancels through the backend instead of dismissing silently', async () => {

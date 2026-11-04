@@ -67,11 +67,11 @@ fn edit_variant_property_keys(
 }
 
 #[test]
-fn present_interactive_schema_property_order_is_format_title_interaction_content() {
-    use tauri_mcp_agent_lib::mcp::builtin::ui::tools::present_interactive_tool;
+fn ask_user_schema_has_only_questions() {
+    use tauri_mcp_agent_lib::mcp::builtin::ui::tools::ask_user_tool;
 
-    let tool = present_interactive_tool();
-    assert_property_order(&tool, &["format", "title", "interaction", "content"]);
+    let tool = ask_user_tool();
+    assert_property_order(&tool, &["questions"]);
 }
 
 #[test]
