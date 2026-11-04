@@ -115,6 +115,13 @@ class FileIssueTest(unittest.TestCase):
         self.assertEqual(state["fingerprints"][fp], results[0]["issue"])
         self.assertIn(("label", "create", "auto:uiux", "--description", "Created by producer-loop"), fake.calls)
 
+    def test_e2e_plan_issues_use_the_e2e_label(self):
+        fake = FakeGh()
+        self.run_findings(fake, "e2e-plan", [finding("e2e-plan:1-2")])
+        (call,) = fake.created()
+        labels = [call[i + 1] for i, arg in enumerate(call) if arg == "--label"]
+        self.assertEqual(labels, ["auto:producer", "auto:e2e"])
+
     def test_existing_labels_are_not_recreated(self):
         fake = FakeGh(labels=["auto:producer", "auto:uiux"])
         self.run_findings(fake, "uiux", [finding("a")])

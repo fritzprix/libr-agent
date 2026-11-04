@@ -4,6 +4,7 @@ import contextlib
 import io
 import json
 import os
+import sys
 import tempfile
 import time
 import unittest
@@ -75,6 +76,7 @@ class ProducerGateTest(unittest.TestCase):
         self.lock_file.write_text(json.dumps({"time": old, "pid": os.getpid()}))
         self.assertEqual(self.run_gate("--lock")[1], "RUN security")
 
+    @unittest.skipIf(sys.platform == "win32", "tick_gate checks lock PIDs only on POSIX")
     def test_dead_pid_lock_is_ignored(self):
         self.lock_file.write_text(json.dumps({"time": int(time.time()), "pid": 9999999}))
         self.assertEqual(self.run_gate()[1], "RUN security")
@@ -90,7 +92,7 @@ class ProducerGateTest(unittest.TestCase):
         self.assertEqual(self.run_gate()[1], "RUN e2e")
 
     def test_state_path_uses_producer_loop_directory(self):
-        self.assertEqual(producer_gate.default_state_path().parts[-2:], ("producer-loop", "state.json"))
+        self.assertEqual(producer_gate.default_state_path().parts[-2:], (".producer-loop", "state.json"))
 
 
 if __name__ == "__main__":

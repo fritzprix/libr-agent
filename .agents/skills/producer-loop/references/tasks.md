@@ -13,6 +13,7 @@ A task reuses an existing skill for the method. It must not copy that skill's lo
 | `usage-logs` | `trace-analyzer` |
 | `doc-drift` | `audit-docs` |
 | `cleanup` | `code-audit-expert` |
+| `e2e-plan` | `scripts/e2e_plan.py` (no skill; files `auto:e2e` checklists for `e2e`) |
 
 ## security
 
@@ -23,10 +24,26 @@ A task reuses an existing skill for the method. It must not copy that skill's lo
 
 ## e2e
 
-- **Inputs**: the builtin tools and the E2E harness from `libr-tool-e2e-harness-loop`.
-- **Checks**: run the harness and list tools whose real-session behavior fails or differs from its documented behavior.
-- **Fingerprint key**: `<tool>:<scenario>`.
-- **Rules**: Linux only. Run `unsafe` sessions only in a scratch directory outside the repository. Do not touch the user's workspace.
+- **Inputs**: open issues with the label `auto:e2e`, whoever opened them (including issues that a person opened), oldest first, one issue per run.
+- **Checks**: run the issue in the **Issue checklist mode** of `libr-tool-e2e-harness-loop`. Only `[auto]` items run. `[manual]`, `[blocked: #N]`, and untagged items are recorded as untouched.
+- **Output**: one results comment per issue (marker `<!-- e2e-harness:results issue=<N> -->`), created or updated. This is the only write. It files no findings, so skip `file_issue.py`.
+- **Rules**: Linux only. Run `unsafe` sessions only in a scratch directory outside the repository. Do not touch the user's workspace. If `GET /api/health` fails, print `NOOP`; never start LibrAgent. Never close an issue, edit its body, change labels, or patch code.
+
+## e2e-plan
+
+Opens one `auto:e2e` checklist issue for the product PRs merged into `dev/0.9.x` since the last plan. The `e2e` task runs it later.
+
+1. Collect: `python3 .agents/skills/producer-loop/scripts/e2e_plan.py collect > <scratch>/collected.json`.
+   - The cursor is `state["e2ePlanCursor"]` (default `2026-11-04T07:13:48Z`, the #2561 merge time).
+   - The script drops PRs that change only skills, bench scripts, docs, or tests (`NON_PRODUCT_PATTERNS`), and PRs already in the Scope section of an open `auto:e2e` issue. A `- Pending ...` Scope line does not count.
+   - `"action": "noop"`: no product PRs, or an open issue already plans the same range. File nothing. Do not move the cursor. Finish with `--done e2e-plan --unlock`.
+2. Write `<scratch>/items.json` from each PR body, its linked issue requirements and acceptance criteria (`linkedIssues`), and its changed files. Follow [e2e-plan-template.md](e2e-plan-template.md).
+3. Render: `e2e_plan.py render --collected <scratch>/collected.json --items <scratch>/items.json --out <scratch>/findings.json`. It prints the body, checks tags and sources, and refuses secrets.
+4. File: `file_issue.py --task e2e-plan --findings <scratch>/findings.json`, then the same with `--create`. The issue gets the labels `auto:producer` and `auto:e2e`.
+5. Only after the issue is created: `e2e_plan.py advance --to <cursorAfter from collected.json>`.
+
+- **Fingerprint key**: `e2e-plan:<firstPR>-<lastPR>`. The body also holds `<!-- producer-loop:e2e-plan=<firstPR>-<lastPR> -->`.
+- **Rules**: dummy secrets only (for example `dummy-token-abcd`). Never approve, close, merge, or change labels. Only a human adds `approved`.
 
 ## uiux
 

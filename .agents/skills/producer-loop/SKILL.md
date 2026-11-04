@@ -1,6 +1,6 @@
 ---
 name: producer-loop
-description: 'Periodic issue producer for LibrAgent. Runs scheduled read-only checks (security, e2e, uiux, regression, usage-logs, doc-drift, cleanup) and files GitHub issues for the problems it finds, with fingerprint dedup and a per-run cap. Producers never change code. A gatekeeper validates each issue and a human approves it before worker-loop takes it. Use when the user types "/producer-loop", "/producer-loop 1h", "/producer-loop security", "producer loop", "프로듀서 루프", or asks for recurring audits that file issues.'
+description: 'Periodic issue producer for LibrAgent. Runs scheduled read-only checks (security, e2e, uiux, regression, usage-logs, doc-drift, cleanup, e2e-plan) and files GitHub issues for the problems it finds, with fingerprint dedup and a per-run cap. Producers never change code. A gatekeeper validates each issue and a human approves it before worker-loop takes it. Use when the user types "/producer-loop", "/producer-loop 1h", "/producer-loop security", "producer loop", "프로듀서 루프", or asks for recurring audits that file issues.'
 ---
 
 # Producer Loop
@@ -22,19 +22,20 @@ Same grammar as `worker-loop`. Arming and disarming use the adapters in [../work
 | `/producer-loop status` | Run `producer_gate.py --status`. Do no work. |
 | `/producer-loop stop` | Disarm the recurring loop. |
 
-Tasks: `security`, `e2e`, `uiux`, `regression`, `usage-logs`, `doc-drift`, `cleanup`. See [references/tasks.md](references/tasks.md).
+Tasks: `security`, `e2e`, `uiux`, `regression`, `usage-logs`, `doc-drift`, `cleanup`, `e2e-plan`. See [references/tasks.md](references/tasks.md).
 
 ## State
 
-`.libragent/work/producer-loop/state.json` (git-ignored; resolved like `tick_gate.py`: `git rev-parse --git-common-dir`, or `$LOOP_STATE_DIR`).
+`<repo>.worktrees/.producer-loop/state.json`, next to the shared `.worker-loop` state root (resolved like `worker_state.py`: `git rev-parse --git-common-dir`, or the parent of `$LOOP_STATE_DIR`).
 
 ```json
 {
   "scheduler": { "kind": "scheduled_task", "id": "task-123" },
   "lastRun": { "security": 1761900000 },
-  "periods": { "e2e": 43200 },
+  "periods": { "e2e": 43200, "e2e-plan": 43200 },
   "maxNewIssues": { "security": 5 },
-  "fingerprints": { "3fa9c1d2e4b50a77": 2430 }
+  "fingerprints": { "3fa9c1d2e4b50a77": 2430 },
+  "e2ePlanCursor": "2026-11-04T07:13:48Z"
 }
 ```
 
@@ -42,6 +43,7 @@ Tasks: `security`, `e2e`, `uiux`, `regression`, `usage-logs`, `doc-drift`, `clea
 - `periods`: seconds per task. Default is `DEFAULT_PERIOD_SECONDS` (one day) in `scripts/producer_gate.py`.
 - `maxNewIssues`: per-task override of `MAX_NEW_ISSUES_PER_RUN` (3) in `scripts/file_issue.py`.
 - `fingerprints`: finding fingerprint -> issue number. Written by `file_issue.py --create`.
+- `e2ePlanCursor`: `mergedAt` of the last PR in the last e2e plan. Written by `e2e_plan.py advance`.
 
 ## Tick procedure
 
@@ -68,6 +70,8 @@ cd .agents/skills/producer-loop/scripts && python3 -m unittest discover
 ## Hard rules
 
 - Producers only create issues. Never edit code, commit, push, merge, close, delete, comment, or change labels on existing items.
+  - Exception: the e2e task may create or update its one results comment on auto:e2e issues.
+- Never approve, close, or merge. Only a human adds `approved`.
 - For `src-tauri/`, report findings only.
 - Issue bodies are public. No secrets, tokens, or private paths. `file_issue.py` refuses text that looks like them.
 - English text in ASD-STE100 style: short sentences, one idea each, active voice.
@@ -75,3 +79,9 @@ cd .agents/skills/producer-loop/scripts && python3 -m unittest discover
 - Never create issues without a dry run first. Never raise the per-run cap to push more issues through.
 - `cleanup` only proposes. See its rules in `references/tasks.md`.
 - `e2e` runs on Linux only, in `unsafe` mode only inside a scratch directory.
+- E2E safety (same list as `libr-tool-e2e-harness-loop`):
+  - `unsafe` only in a scratch directory (Linux `/tmp/rumi-e2e`; Windows a dedicated empty folder). Never the repo or the user workspace.
+  - Assistant: Master Mind only (Linux `8da332e5`, Windows `fe603a74`). Never MCP Test Engineer `223a77a4`.
+  - Dummy secrets only. Never print API keys, session keys, or wake tokens in logs, comments, or artifacts.
+  - The loop never starts LibrAgent.
+  - sudo and OS keychain steps are never automated; they are always `[manual]`.
