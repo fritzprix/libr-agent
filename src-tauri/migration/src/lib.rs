@@ -49,6 +49,7 @@ mod m20261005_000044_add_missing_persistence_indexes;
 mod m20261018_000045_add_knowledge_performance_indexes;
 mod m20261018_000046_add_sessions_status_index;
 mod m20261030_000047_add_status_reason_to_sessions;
+mod m20261104_000048_add_secret_names_to_mcp_servers;
 
 pub struct Migrator;
 
@@ -103,6 +104,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261018_000045_add_knowledge_performance_indexes::Migration),
             Box::new(m20261018_000046_add_sessions_status_index::Migration),
             Box::new(m20261030_000047_add_status_reason_to_sessions::Migration),
+            Box::new(m20261104_000048_add_secret_names_to_mcp_servers::Migration),
         ]
     }
 }

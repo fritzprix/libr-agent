@@ -2,6 +2,7 @@ use super::super::session_isolation_config::SessionIsolationConfig;
 use crate::agent::runtime_state::{
     SessionRuntimeServerState, SessionRuntimeServerStatus, SessionRuntimeTransport,
 };
+use crate::mcp::secret_templates::{fill_secrets, secret_store};
 use crate::mcp::utils::unique_session_server_name;
 use crate::repositories::mcp_server_repository::MCPServerRepository;
 use crate::state::get_mcp_server_repository;
@@ -105,8 +106,14 @@ pub(super) async fn load_requested_server_configs(
                         continue;
                     }
 
-                    match serde_json::from_str::<crate::mcp::types::MCPServerConfig>(&model.config)
-                    {
+                    let parsed =
+                        serde_json::from_str::<crate::mcp::types::MCPServerConfig>(&model.config)
+                            .map_err(|error| error.to_string())
+                            .and_then(|config| {
+                                fill_secrets(secret_store(), &model.id, &config)
+                                    .map(|filled| filled.config)
+                            });
+                    match parsed {
                         Ok(mut config) => {
                             let raw_name = config.name.unwrap_or_else(|| model.name.clone());
                             let server_name = unique_session_server_name(
@@ -147,7 +154,7 @@ pub(super) async fn load_requested_server_configs(
                         }
                         Err(error) => {
                             log::warn!(
-                                "Failed to parse config for MCP server '{}' (ID: {}): {}",
+                                "Failed to load config for MCP server '{}' (ID: {}): {}",
                                 model.name,
                                 model.id,
                                 error

@@ -252,6 +252,7 @@ async fn test_mcp_server_crud_operations() {
         cached_tools: Set(None),
         verification_status: Set(None),
         last_verification_error: Set(None),
+        secret_names: Set(None),
         created_at: Set(1000),
         updated_at: Set(1000),
     };
@@ -273,6 +274,7 @@ async fn test_mcp_server_crud_operations() {
         cached_tools: Set(None),
         verification_status: Set(None),
         last_verification_error: Set(None),
+        secret_names: Set(None),
         created_at: Set(1000),
         updated_at: Set(2000),
     };

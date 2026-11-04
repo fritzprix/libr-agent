@@ -62,6 +62,9 @@ pub trait MCPServerRepository: Send + Sync {
     /// Remove the verification status, error and cached tools (the UI shows the server as
     /// not verified).
     async fn clear_verification(&self, id: &str) -> Result<(), DbError>;
+
+    /// Set the JSON array of secret names stored in the keychain (`None` clears it).
+    async fn set_secret_names(&self, id: &str, names: Option<String>) -> Result<(), DbError>;
 }
 
 /// SQLite implementation of MCPServerRepository using SeaORM
@@ -112,6 +115,7 @@ impl MCPServerRepository for SqliteMCPServerRepository {
             cached_tools: Set(None), // NULL initially - populated after verifyServer or probe
             verification_status: Set(pending.then(|| "pending".to_string())),
             last_verification_error: Set(None),
+            secret_names: Set(None),
             created_at: Set(now),
             updated_at: Set(now),
         };
@@ -276,6 +280,19 @@ impl MCPServerRepository for SqliteMCPServerRepository {
             active.tool_count = Set(None);
             active.cached_tools = Set(None);
             active.updated_at = Set(now);
+            active.update(&self.db).await?;
+            Ok(())
+        } else {
+            Err(DbError::NotFound(format!("Server '{}' not found", id)))
+        }
+    }
+
+    async fn set_secret_names(&self, id: &str, names: Option<String>) -> Result<(), DbError> {
+        let existing = mcp_server::Entity::find_by_id(id).one(&self.db).await?;
+
+        if let Some(model) = existing {
+            let mut active: mcp_server::ActiveModel = model.into();
+            active.secret_names = Set(names);
             active.update(&self.db).await?;
             Ok(())
         } else {
