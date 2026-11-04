@@ -4,7 +4,7 @@ description: |
   Python CLI wrapper for Instagram interaction using instagrapi.
   Use when the user wants to: (1) post photos/reels with captions, (2) reply to comments,
   (3) view feed/posts, (4) like/unlike posts, (5) follow/unfollow users, (6) view profile info.
-  On first use, guide the user through credential setup (username + password via hidden prompt).
+  On first use, guide the user through credential setup (username + password stored with a storeAs prompt).
   Store config in ~/.libragent/ig_config.json and session settings in ~/.libragent/ig_session.json.
   Subsequent requests use the stored session without re-authentication.
   Triggers on requests like: "인스타 올리줘", "인스타그램 포스트", "ig post", "instagram post", "댓글 달아줘".
@@ -27,7 +27,8 @@ Paths in this skill are relative to the directory containing this `SKILL.md`, no
 - **NEVER** ask for password in plain chat.
 - **NEVER** display or repeat the contents of `~/.libragent/ig_config.json` or `~/.libragent/ig_session.json`.
 - **NEVER** write the password to disk (no `ig_password.tmp` or similar). Session refresh requires re-running setup.
-- Collect password exclusively through interactive hidden shell prompts (`requireUserInput=true`, `inputType=password`).
+- **NEVER** put the password in a command line.
+- Collect the password exclusively through `workspace__runInPersistentShell` with `requireUserInput=true`, `inputType=password`, and `storeAs: "IG_PASSWORD"`. LibrAgent stores the value for this session and gives it to the command as `$IG_PASSWORD`. Pass only the name to `setup.py` (`--password-env IG_PASSWORD`).
 - **ALWAYS** use `setup.py` to persist config and session. Files are created with `0o600` permissions.
 
 ---
@@ -68,17 +69,19 @@ python "<skill-base-dir>/scripts/check_config.py"
 
 ## Step 2: Account Setup (First Time or Reset)
 
-Execute `workspace__runInPersistentShell` (or `workspace__runInPersistentPowerShell`) with:
+Execute one `workspace__runInPersistentShell` call (replace the username with the one the user gave):
 
-- `requireUserInput=true`
-- `inputType=password`
-- `inputPrompt=Instagram 비밀번호를 입력하세요:`
-- Command (replace username with user-supplied one):
-  ```bash
-  python "<skill-base-dir>/scripts/setup.py" \
-    --username "your_instagram_username" \
-    --password-stdin
-  ```
+```json
+{
+  "command": "python \"<skill-base-dir>/scripts/setup.py\" --username \"your_instagram_username\" --password-env IG_PASSWORD",
+  "requireUserInput": true,
+  "inputType": "password",
+  "inputPrompt": "Instagram 비밀번호를 입력하세요:",
+  "storeAs": "IG_PASSWORD"
+}
+```
+
+If `IG_PASSWORD` is already stored in this session, you can run the same command without `requireUserInput`.
 
 ### Setup output contract
 
@@ -86,7 +89,7 @@ Execute `workspace__runInPersistentShell` (or `workspace__runInPersistentPowerSh
 
 - Exit code `0` — session settings and config were saved (`0o600`).
 - Exit code `1` — authentication failed; partial files are removed.
-- Exit code `3` — missing required input (password).
+- Exit code `3` — `IG_PASSWORD` is empty or unset. Ask for it with `requireUserInput=true` and `storeAs: "IG_PASSWORD"`, then run setup again.
 
 On success, `status` is always `"ok"`.
 
@@ -228,9 +231,9 @@ python "<skill-base-dir>/scripts/ig_cli.py" --action reply_comment \
 
 ### Encoding
 
-On Windows, prefer UTF-8 without BOM for any files written for captions. LibrAgent persistent shells already set encoding + `PYTHONUTF8=1`. `setup.py` strips a leading UTF-8 BOM from `--password-stdin` secrets.
+On Windows, prefer UTF-8 without BOM for any files written for captions. LibrAgent persistent shells already set encoding + `PYTHONUTF8=1`.
 
-Do not put the Instagram password in PowerShell command lines or history — always use `requireUserInput=true` + `--password-stdin`.
+Do not put the Instagram password in PowerShell command lines or history — always use `requireUserInput=true` + `storeAs: "IG_PASSWORD"` + `--password-env IG_PASSWORD`.
 
 ### Media paths
 

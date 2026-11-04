@@ -53,16 +53,28 @@ def harden_private_file(path: Path) -> None:
 
 
 def sanitize_secret(value: str) -> str:
-    """Strip whitespace and leading UTF-8 BOM injected by Windows pipes.
-
-    PowerShell 5.1 `$OutputEncoding = [System.Text.Encoding]::UTF8` prepends
-    U+FEFF to native stdin. str.strip() does not remove U+FEFF, so secrets
-    hashed or stored with a leading BOM are rejected by upstream services.
-    """
+    """Strip whitespace and any leading UTF-8 BOM (str.strip() keeps U+FEFF)."""
     cleaned = value.strip()
     while cleaned.startswith("\ufeff"):
         cleaned = cleaned.lstrip("\ufeff").strip()
     return cleaned
+
+
+def read_env_secret(env_name: str) -> str:
+    """
+    Read the password from the environment variable named by --password-env.
+
+    LibrAgent stores a value with `storeAs: "<NAME>"`, so the agent passes only the name.
+    Raises ValueError when the variable is empty or unset.
+    """
+    value = sanitize_secret(os.environ.get(env_name, ""))
+    if not value:
+        raise ValueError(
+            f"Environment variable '{env_name}' is empty or unset. "
+            f"Ask for the Instagram password with requireUserInput=true and "
+            f"storeAs=\"{env_name}\", then run this command again."
+        )
+    return value
 
 
 def cleanup_auth_files() -> None:
@@ -156,36 +168,25 @@ def run_setup(username: str, password: str) -> int:
         return 1
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Instagram account setup script")
+def build_parser() -> argparse.ArgumentParser:
+    # allow_abbrev=False: a removed option such as `--password <secret>` must not match `--password-env`.
+    parser = argparse.ArgumentParser(description="Instagram account setup script", allow_abbrev=False)
     parser.add_argument("--username", required=True, help="Instagram username")
     parser.add_argument(
-        "--password-stdin",
-        action="store_true",
-        help="Read password from stdin (preferred; use with hidden shell prompt)",
+        "--password-env",
+        required=True,
+        help="Environment variable name holding the Instagram password",
     )
-    parser.add_argument(
-        "--password",
-        help="Instagram password (avoid when possible; prefer --password-stdin)",
-    )
-    args = parser.parse_args()
+    return parser
 
-    password = args.password
-    if args.password_stdin:
-        password = sys.stdin.readline()
-    if password:
-        password = sanitize_secret(password)
 
-    if not password:
-        print(
-            json.dumps(
-                {
-                    "status": "error",
-                    "message": "Password is required. Use --password-stdin with a hidden prompt.",
-                }
-            ),
-            file=sys.stderr,
-        )
+def main() -> int:
+    args = build_parser().parse_args()
+
+    try:
+        password = read_env_secret(args.password_env)
+    except ValueError as e:
+        print(json.dumps({"status": "error", "message": str(e)}), file=sys.stderr)
         return 3
 
     return run_setup(args.username, password)
