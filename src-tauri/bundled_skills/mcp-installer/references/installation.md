@@ -85,3 +85,5 @@ Always check if the MCP server requires:
 - API Keys (e.g., `GITHUB_PERSONAL_ACCESS_TOKEN`)
 - Local paths (e.g., `DB_PATH`)
 - Configuration flags
+
+Write a secret (API key, token, password) as `{{secret:NAME}}`, e.g. `"env": {"GITHUB_PERSONAL_ACCESS_TOKEN": "{{secret:GITHUB_PAT}}"}`. The user enters the value in a secure prompt at registration. Never ask for a secret in chat, and do not repeat one that the user sends in chat. Ask in chat only for non-secret values such as paths and flags.
