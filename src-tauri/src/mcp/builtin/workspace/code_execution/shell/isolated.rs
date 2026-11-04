@@ -9,6 +9,7 @@ use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHi
 use crate::mcp::types::MCPResult;
 use crate::session_isolation::{IsolatedProcessConfig, IsolationLevel};
 
+use super::super::super::persistent_shell::secrets::mask_secrets;
 use super::super::super::{
     terminal_manager, utils, workspace_server, WorkspaceServer, PERSISTENT_SHELL_TOOL,
 };
@@ -49,6 +50,8 @@ impl WorkspaceServer {
             return Ok(result);
         }
         utils::add_wake_url_env(&session_id, &mut env_vars).await;
+        let secrets = self.shell_manager.session_secrets(&session_id).await;
+        let logged_command = mask_secrets(command, &secrets);
 
         // Preserve for response JSON before moving into IsolatedProcessConfig.
         let reported_cwd = working_directory
@@ -143,6 +146,7 @@ impl WorkspaceServer {
             command: normalized_command,
             args: vec![],
             env_vars,
+            secrets,
             isolation_level,
             shell_type: None, // Default to platform default shell
             run_as_root,
@@ -477,7 +481,7 @@ impl WorkspaceServer {
 
                 info!(
                     "Isolated shell command executed: {} (session: {}, status: {:?}, exit: {:?}, duration: {}ms)",
-                    command, session_id, entry.status, entry.exit_code, duration_ms
+                    logged_command, session_id, entry.status, entry.exit_code, duration_ms
                 );
 
                 if interrupted {
@@ -569,7 +573,7 @@ impl WorkspaceServer {
 
                 warn!(
                     "Isolated shell command '{}' exceeded sync timeout after {} seconds; handing off to background process {}",
-                    command, timeout_secs, process_id
+                    logged_command, timeout_secs, process_id
                 );
 
                 let might_be_interactive = validation::is_likely_interactive_command(command);

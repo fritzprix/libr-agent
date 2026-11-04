@@ -27,6 +27,7 @@ pub async fn create_basic_isolated_command(
     // the isolated shell process. We then explicitly re-add only a small, trusted
     // whitelist of system variables required for basic shell and terminal behavior.
     cmd.env_clear();
+    cmd.envs(&config.secrets);
 
     // Whitelist essential variables from parent environment.
     // DISPLAY and XAUTHORITY are intentionally excluded to prevent GUI/X11 access

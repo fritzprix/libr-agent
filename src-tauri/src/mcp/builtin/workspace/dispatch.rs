@@ -4,6 +4,7 @@ use crate::models::workspace_isolation::WorkspaceIsolationMode;
 use serde_json::Value;
 use tracing::info;
 
+use super::persistent_shell::secrets::mask_result;
 use super::workspace_server::WorkspaceServer;
 
 const MAX_LOGGED_STRING_BYTES: usize = 128;
@@ -134,6 +135,22 @@ impl WorkspaceServer {
             return Ok(self.shell_tool_unavailable_result(tool_name));
         }
 
+        let result = self
+            .dispatch_tool(tool_name, args, session_id, &target_session_id)
+            .await;
+        // Every tool, not only the shell ones: a command can write a value into a file
+        // (including its own output files under `.libragent/tmp`) that `readFile` returns.
+        let secrets = self.shell_manager.session_secrets(&target_session_id).await;
+        result.map(|result| mask_result(result, &secrets))
+    }
+
+    async fn dispatch_tool(
+        &self,
+        tool_name: &str,
+        args: Value,
+        session_id: Option<String>,
+        target_session_id: &str,
+    ) -> Result<MCPResult, String> {
         match tool_name {
             // ── File operation tools ──────────────────────────────────────────
             "readFile" => self.handle_read_file(args, session_id).await,
@@ -160,34 +177,34 @@ impl WorkspaceServer {
             // ── Code execution tools ──────────────────────────────────────────
             // PRIMARY isolated shell execution tools (recommended)
             "runShell" | "runPowerShell" => {
-                self.handle_run_shell(args, &target_session_id, tool_name)
+                self.handle_run_shell(args, target_session_id, tool_name)
                     .await
             }
             // ADVANCED persistent shell execution tools (for state preservation)
             "runInPersistentShell" | "runInPersistentPowerShell" => {
-                self.handle_execute_shell(args, &target_session_id, tool_name)
+                self.handle_execute_shell(args, target_session_id, tool_name)
                     .await
             }
             // Background process execution (platform-agnostic)
-            "spawnProcess" => self.handle_spawn_process(args, &target_session_id).await,
+            "spawnProcess" => self.handle_spawn_process(args, target_session_id).await,
 
             // ── Export tools ──────────────────────────────────────────────────
             "export" => self.handle_export(args, session_id).await,
 
             // ── Terminal / Process management tools ───────────────────────────
             "readProcessOutput" => {
-                self.handle_read_process_output(args, &target_session_id)
+                self.handle_read_process_output(args, target_session_id)
                     .await
             }
-            "listProcesses" => self.handle_list_processes(args, &target_session_id).await,
-            "stopProcess" => self.handle_stop_process(args, &target_session_id).await,
-            "waitForProcess" => self.handle_wait_for_process(args, &target_session_id).await,
+            "listProcesses" => self.handle_list_processes(args, target_session_id).await,
+            "stopProcess" => self.handle_stop_process(args, target_session_id).await,
+            "waitForProcess" => self.handle_wait_for_process(args, target_session_id).await,
             // Backward-compat alias: pollProcess was the old name for non-blocking status check.
             // Always inject timeout=0 so semantics are preserved.
             "pollProcess" => {
                 let mut poll_args = args.clone();
                 poll_args["timeout"] = serde_json::json!(0);
-                self.handle_wait_for_process(poll_args, &target_session_id)
+                self.handle_wait_for_process(poll_args, target_session_id)
                     .await
             }
 
@@ -205,7 +222,51 @@ impl WorkspaceServer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mcp::types::MCPContent;
+    use crate::session::SessionManager;
     use serde_json::json;
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn a_stored_value_is_masked_in_a_read_file_result() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let session_id = "dispatch-mask-read-file";
+        let session_manager =
+            SessionManager::new_with_base_dir(temp_dir.path().to_path_buf()).expect("session mgr");
+        let server = WorkspaceServer::new(session_id.to_string(), Arc::new(session_manager));
+        let output_dir = server
+            .get_workspace_dir(session_id)
+            .join(".libragent/tmp/process_1");
+        std::fs::create_dir_all(&output_dir).expect("output dir");
+        std::fs::write(output_dir.join("stdout"), "token=tok-s3cr3t\n").expect("seed stdout");
+        server
+            .shell_manager
+            .store_secret(session_id, "API_TOKEN", "tok-s3cr3t".to_string())
+            .await
+            .expect("store secret");
+
+        let result = server
+            .call_tool(
+                "readFile",
+                json!({ "path": ".libragent/tmp/process_1/stdout" }),
+                Some(session_id.to_string()),
+            )
+            .await
+            .expect("readFile result");
+
+        let text: String = result
+            .content
+            .iter()
+            .flatten()
+            .filter_map(|item| match item {
+                MCPContent::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(text.contains("token=***"), "unexpected text: {text}");
+        let serialized = serde_json::to_string(&result).expect("serialize result");
+        assert!(!serialized.contains("tok-s3cr3t"));
+    }
 
     #[test]
     fn summarize_args_redacts_file_content_and_keeps_metadata() {

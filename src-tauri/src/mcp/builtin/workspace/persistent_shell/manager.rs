@@ -118,13 +118,20 @@ impl PersistentShellManager {
         self.session_states.lock().await.remove(session_id);
     }
 
-    async fn session_secrets(&self, session_id: &str) -> SecretMap {
+    /// The session's `storeAs` values, for the env of a shell this session spawns.
+    pub async fn session_secrets(&self, session_id: &str) -> SecretMap {
         self.session_states
             .lock()
             .await
             .get(session_id)
             .map(|state| state.secrets.clone())
             .unwrap_or_default()
+    }
+
+    /// Replaces each stored value of the session in `text` with `***`.
+    pub async fn mask_for_session(&self, session_id: &str, text: &str) -> String {
+        let secrets = self.session_secrets(session_id).await;
+        mask_secrets(text, &secrets)
     }
 
     async fn mask_output(

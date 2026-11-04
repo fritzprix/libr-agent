@@ -373,9 +373,11 @@ impl PersistentShell {
     pub async fn execute(&mut self, command: &str) -> Result<(String, String, i32, String)> {
         let sentinel = generate_sentinel();
 
+        // Command text can hold a pasted secret, so only its size is logged.
         debug!(
-            "Executing command in session {}: {}",
-            self.session_id, command
+            "Executing command in session {} ({} bytes)",
+            self.session_id,
+            command.len()
         );
 
         if self.uses_host_powershell_protocol() {
@@ -598,8 +600,8 @@ impl PersistentShell {
                 format_powershell_stdin_literal(user_input)
             );
             debug!(
-                "Executing child-stdin piped command in session {}: {}",
-                self.session_id, piped_command
+                "Executing child-stdin piped command in session {}",
+                self.session_id
             );
             return self.execute(&piped_command).await;
         }
@@ -607,8 +609,9 @@ impl PersistentShell {
         let sentinel = generate_sentinel();
 
         debug!(
-            "Executing command with host stdin in session {}: {}",
-            self.session_id, command
+            "Executing command with host stdin in session {} ({} bytes)",
+            self.session_id,
+            command.len()
         );
 
         if self.uses_host_powershell_protocol() {

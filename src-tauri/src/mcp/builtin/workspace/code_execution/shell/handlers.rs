@@ -259,10 +259,7 @@ impl WorkspaceServer {
 
         // Check for interactive patterns but allow execution (removed blocking heuristic)
         if validation::is_likely_interactive_command(raw_command) {
-            tracing::debug!(
-                "Command '{}' matches interactive patterns but execution is allowed",
-                raw_command
-            );
+            tracing::debug!("Command matches interactive patterns but execution is allowed");
         }
 
         // Parse optional environment variables
@@ -392,10 +389,7 @@ impl WorkspaceServer {
 
         // Async mode does not support interactive input validation (heuristic removed)
         if validation::is_likely_interactive_command(raw_command) {
-            tracing::warn!(
-                "Async command likely interactive: {} (execution allowed)",
-                raw_command
-            );
+            tracing::warn!("Async command likely interactive (execution allowed)");
         }
 
         // Policy + cwd resolve live in execute_shell_async (cwd must be known first).
