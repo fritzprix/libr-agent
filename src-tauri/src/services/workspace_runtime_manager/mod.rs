@@ -4,7 +4,7 @@ mod error;
 mod root_exec;
 mod session_config;
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Instant;
@@ -367,8 +367,11 @@ impl WorkspaceRuntimeManager {
             .map(|_| ())
     }
 
+    /// `secrets` are passed as `-e KEY` with the value in the docker CLI env, so no value
+    /// appears in the host process list.
     pub async fn spawn_docker_persistent_shell(
         session: &SessionMetadata,
+        secrets: &BTreeMap<String, String>,
     ) -> RuntimeResult<SpawnedShell> {
         let shell = prepare_docker_runtime(session, false, false, None).await?;
 
@@ -378,6 +381,13 @@ impl WorkspaceRuntimeManager {
         let mut cmd = AsyncCommand::new("docker");
         apply_docker_cli_env(&mut cmd);
         cmd.args(["exec", "-i", "-w", &workdir]);
+
+        for (key, value) in secrets {
+            validate_env_key(key).map_err(WorkspaceRuntimeError::InvalidConfig)?;
+            validate_env_value(key, value).map_err(WorkspaceRuntimeError::InvalidConfig)?;
+            cmd.arg("-e").arg(key);
+            cmd.env(key, value);
+        }
 
         if let Some(config) = &session.docker_config {
             for (key, value) in &config.env {

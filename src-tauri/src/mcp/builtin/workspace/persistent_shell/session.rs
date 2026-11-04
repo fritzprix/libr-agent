@@ -19,6 +19,7 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU32, Ordering};
 
+use super::secrets::SecretMap;
 use crate::mcp::builtin::workspace::StdinDelivery;
 use crate::session_isolation::{PathMappingLayer, ShellType, SpawnedShell};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -92,7 +93,20 @@ impl PersistentShell {
     pub async fn new(
         session_id: String,
         workspace_path: PathBuf,
+        shell_type: ShellType,
+    ) -> Result<Self> {
+        Self::new_with_env(session_id, workspace_path, shell_type, &SecretMap::new()).await
+    }
+
+    /// Like [`Self::new`], with session secrets in the shell environment.
+    ///
+    /// Secrets are applied before the variables the app sets, so they never
+    /// override one of them.
+    pub async fn new_with_env(
+        session_id: String,
+        workspace_path: PathBuf,
         #[cfg_attr(unix, allow(unused_variables))] shell_type: ShellType,
+        secrets: &SecretMap,
     ) -> Result<Self> {
         #[cfg(unix)]
         let mut cmd = {
@@ -130,6 +144,7 @@ impl PersistentShell {
         // We do this BEFORE platform-specific environment adjustments (like Unix PATH fix)
         // to ensure whitelisted variables are isolated but specialized ones are preserved.
         cmd.env_clear();
+        cmd.envs(secrets);
         for (k, v) in crate::utils::env::get_isolated_env() {
             cmd.env(k, v);
         }
@@ -302,6 +317,23 @@ impl PersistentShell {
     /// Get current working directory of the shell
     pub fn get_cwd(&self) -> &str {
         &self.last_known_cwd
+    }
+
+    /// Moves the shell to `dir`, for example the directory of a shell that was restarted.
+    pub async fn change_directory(&mut self, dir: &str) -> Result<()> {
+        let command = if self.uses_host_powershell_protocol() {
+            format!("Set-Location -LiteralPath '{}'", dir.replace('\'', "''"))
+        } else {
+            format!("cd -- '{}'", dir.replace('\'', r"'\''"))
+        };
+        let (_, stderr, exit_code, _) = self.execute(&command).await?;
+        if exit_code != 0 {
+            return Err(anyhow::anyhow!(
+                "Failed to restore working directory {dir}: {}",
+                stderr.trim()
+            ));
+        }
+        Ok(())
     }
 
     pub fn path_mapper(&self) -> Option<&PathMappingLayer> {

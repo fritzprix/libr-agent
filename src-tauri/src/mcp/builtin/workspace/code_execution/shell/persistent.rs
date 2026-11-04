@@ -3,7 +3,7 @@ use std::time::Duration;
 use tracing::{error, info, warn};
 
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHint, ToolGroup};
-use crate::mcp::types::MCPResult;
+use crate::mcp::types::{MCPContent, MCPResult};
 use crate::models::workspace_isolation::WorkspaceIsolationMode;
 use crate::repositories::SessionRepository;
 use crate::session_isolation::PathMappingLayer;
@@ -19,6 +19,22 @@ impl WorkspaceServer {
     /// This method provides state preservation across commands (cd, export, venv)
     /// by reusing a single shell process per session.
     pub(crate) async fn execute_shell_persistent(
+        &self,
+        command: &str,
+        tool_name: &str,
+        timeout_secs: u64,
+        session_id: &str,
+    ) -> Result<MCPResult, String> {
+        let mut result = self
+            .execute_shell_persistent_once(command, tool_name, timeout_secs, session_id)
+            .await?;
+        if self.shell_manager.take_restart_notice(session_id).await {
+            prepend_result_note(&mut result, SHELL_RESTARTED_NOTE);
+        }
+        Ok(result)
+    }
+
+    async fn execute_shell_persistent_once(
         &self,
         command: &str,
         tool_name: &str,
@@ -255,7 +271,7 @@ impl WorkspaceServer {
                 );
 
                 // Cleanup: Terminate the stuck shell
-                if let Err(e) = self.shell_manager.terminate_shell(&session_id).await {
+                if let Err(e) = self.shell_manager.restart_shell(&session_id).await {
                     error!(
                         "Failed to terminate stuck shell for session {}: {}",
                         session_id, e
@@ -276,6 +292,28 @@ impl WorkspaceServer {
                 .to_mcp_result())
             }
         }
+    }
+}
+
+pub(crate) const SHELL_RESTARTED_NOTE: &str =
+    "The shell restarted. Shell state such as an activated venv or exported variables is lost.";
+
+/// Puts `note` in front of the first text block of `result`.
+pub(crate) fn prepend_result_note(result: &mut MCPResult, note: &str) {
+    let first_text = result.content.as_mut().and_then(|content| {
+        content.iter_mut().find_map(|item| match item {
+            MCPContent::Text { text } => Some(text),
+            _ => None,
+        })
+    });
+    match first_text {
+        Some(text) => *text = format!("{note}\n\n{text}"),
+        None => result.content.get_or_insert_with(Vec::new).insert(
+            0,
+            MCPContent::Text {
+                text: note.to_string(),
+            },
+        ),
     }
 }
 

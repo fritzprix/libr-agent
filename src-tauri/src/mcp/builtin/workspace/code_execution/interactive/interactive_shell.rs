@@ -3,6 +3,10 @@ use tauri::Manager;
 
 use crate::agent::state::{secret_outcome_message, UserPromptOutcome, UserPromptPayload};
 use crate::agent::AgentSessionManager;
+use crate::mcp::builtin::workspace::code_execution::shell::persistent::{
+    prepend_result_note, SHELL_RESTARTED_NOTE,
+};
+use crate::mcp::builtin::workspace::persistent_shell::secrets::validate_secret_name;
 use crate::mcp::builtin::workspace::{
     InteractiveShellInputType, InteractiveShellRequest, WorkspaceServer,
     INTERACTIVE_SHELL_INPUT_MAX_BYTES, PERSISTENT_SHELL_TOOL,
@@ -62,6 +66,20 @@ impl WorkspaceServer {
             }
         };
 
+        let store_as = args.get("storeAs").and_then(|value| value.as_str());
+        if let Some(name) = store_as {
+            if let Err(message) = validate_secret_name(name) {
+                return Ok(
+                    guided_error(ErrorCategory::InvalidInput, message, ToolGroup::Workspace)
+                        .guidance(vec![
+                            "Pick an uppercase name such as API_TOKEN that the app and the shell do not use"
+                                .to_string(),
+                        ])
+                        .to_mcp_result(),
+                );
+            }
+        }
+
         let Some(app_handle) = crate::state::get_app_handle() else {
             return Ok(guided_error(
                 ErrorCategory::InternalError,
@@ -75,7 +93,13 @@ impl WorkspaceServer {
             .to_mcp_result());
         };
 
-        let (prompt, input_type) = self.get_prompt_config(command, args);
+        let (prompt, input_type) = match store_as {
+            Some(name) => (
+                prompt_override(args).unwrap_or_else(|| format!("Enter the value for {name}:")),
+                InteractiveShellInputType::Password,
+            ),
+            None => self.get_prompt_config(command, args),
+        };
         let request = InteractiveShellRequest {
             session_id: session_id.clone(),
             executable_command: command.to_string(),
@@ -85,9 +109,13 @@ impl WorkspaceServer {
             input_type,
             stdin_delivery: validation::resolve_stdin_delivery(command, args),
         };
-        let variable_name = shell_input_variable_name(command);
-        let payload =
-            shell_prompt_payload(input_type, variable_name, prompt, &request.display_command);
+        let variable_name = store_as.unwrap_or_else(|| shell_input_variable_name(command));
+        let payload = match store_as {
+            Some(name) => stored_secret_payload(name, prompt),
+            None => {
+                shell_prompt_payload(input_type, variable_name, prompt, &request.display_command)
+            }
+        };
 
         let manager = app_handle.state::<AgentSessionManager>();
         let outcome = match manager.request_user_prompt(&session_id, payload).await {
@@ -139,8 +167,36 @@ impl WorkspaceServer {
             .to_mcp_result());
         };
 
-        self.execute_interactive_shell_with_input(request, user_input.to_string())
-            .await
+        if let Some(name) = store_as {
+            if let Err(error) = self
+                .shell_manager
+                .store_secret(&session_id, name, user_input.to_string())
+                .await
+            {
+                tracing::warn!(
+                    "Shell restart after storing {} failed for session {}: {}",
+                    name,
+                    session_id,
+                    error
+                );
+            }
+            let mut result = self
+                .execute_shell_persistent(command, PERSISTENT_SHELL_TOOL, timeout, &session_id)
+                .await?;
+            prepend_result_note(
+                &mut result,
+                &format!("Stored the value as ${name} for this session."),
+            );
+            return Ok(result);
+        }
+
+        let mut result = self
+            .execute_interactive_shell_with_input(request, user_input.to_string())
+            .await?;
+        if self.shell_manager.take_restart_notice(&session_id).await {
+            prepend_result_note(&mut result, SHELL_RESTARTED_NOTE);
+        }
+        Ok(result)
     }
 
     /// Get platform-aware prompt configuration for user input.
@@ -157,12 +213,7 @@ impl WorkspaceServer {
                 InteractiveShellInputType::Password,
             )
         } else {
-            let prompt = args
-                .get("inputPrompt")
-                .or_else(|| args.get("input_prompt"))
-                .and_then(|value| value.as_str())
-                .unwrap_or("Enter input:")
-                .to_string();
+            let prompt = prompt_override(args).unwrap_or_else(|| "Enter input:".to_string());
             let input_type = match args
                 .get("inputType")
                 .or_else(|| args.get("input_type"))
@@ -203,6 +254,22 @@ fn unanswered_shell_result(
             "Ask the user in chat whether to run it again".to_string(),
         ])
         .to_mcp_result()
+}
+
+fn prompt_override(args: &Value) -> Option<String> {
+    args.get("inputPrompt")
+        .or_else(|| args.get("input_prompt"))
+        .and_then(|value| value.as_str())
+        .map(str::to_string)
+}
+
+/// A `storeAs` prompt: a masked secret that the session keeps.
+fn stored_secret_payload(name: &str, label: String) -> UserPromptPayload {
+    UserPromptPayload::Secret {
+        variable_name: name.to_string(),
+        label,
+        reuse_note: Some("This value is reused for this session.".to_string()),
+    }
 }
 
 /// A password prompt is a masked `secret`; any other input is a `question`.
@@ -306,6 +373,18 @@ mod tests {
             UserPromptPayload::Question {
                 title: "Enter input:".to_string(),
                 body: Some("read name".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn store_as_becomes_a_secret_prompt_with_the_reuse_note() {
+        assert_eq!(
+            stored_secret_payload("API_TOKEN", "Enter the value for API_TOKEN:".to_string()),
+            UserPromptPayload::Secret {
+                variable_name: "API_TOKEN".to_string(),
+                label: "Enter the value for API_TOKEN:".to_string(),
+                reuse_note: Some("This value is reused for this session.".to_string()),
             }
         );
     }

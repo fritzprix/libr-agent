@@ -214,5 +214,6 @@ impl WorkspaceServer {
                 e
             );
         }
+        self.shell_manager.clear_session_state(session_id).await;
     }
 }
