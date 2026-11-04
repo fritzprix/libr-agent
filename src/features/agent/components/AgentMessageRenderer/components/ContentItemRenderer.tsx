@@ -14,6 +14,7 @@ import {
 } from './MediaContentRenderer';
 import { MarkdownText } from './MarkdownText';
 import { applyThemeToUiResource } from '../utils/injectUiResourceTheme';
+import { disableLegacyInteractiveForm } from '../utils/disableLegacyInteractiveForm';
 import { isSafeExternalUrl } from '../utils/url';
 
 const logger = getLogger('AgentMessageRenderer');
@@ -167,7 +168,7 @@ export function ContentItemRenderer({
       }
 
       const themedResource = applyThemeToUiResource(
-        resourceItem.resource,
+        disableLegacyInteractiveForm(resourceItem.resource),
         themeStyleTag,
       );
 

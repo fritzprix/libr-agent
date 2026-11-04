@@ -392,7 +392,6 @@ These cases should stay visible to the agent, but they are **not** unsuccessful 
 
 - builtin proxy execution timeouts
 - builtin internal exceptions wrapped through `guided_error(...)`
-- user-driven cancellation flows such as `ui / getUserAnswer(cancelled=true)`
 
 #### Implemented code paths
 

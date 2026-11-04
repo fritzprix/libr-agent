@@ -73,9 +73,9 @@ describe('detectRepeatedThinkingLoop', () => {
 
   it('fires during streaming once a fourth repetition begins', () => {
     const repeatedBlock =
-      ('I will use the `ui__presentInteractive` tool.\n' +
+      ('I will use the `ui__askUser` tool.\n' +
       'I will use `workspace__readFile` to get the content.\n' +
-      'I will use `ui__presentInteractive` to display it.\n' +
+      'I will use `ui__askUser` to display it.\n' +
       'I will ask for feedback.\n' +
       'I will be ready to implement after approval.\n').repeat(2);
     const sample = `intro\n${repeatedBlock.repeat(4)}tail`;

@@ -8,7 +8,7 @@ This document outlines the core design principles and anti-patterns to avoid whe
 
 AI agents operate within strict context limits and can suffer from "cognitive overload" when presented with too many options or overly verbose descriptions.
 
-- **Hide Internal Callbacks:** Never expose tools to the LLM that are meant strictly for internal system use or frontend UI callbacks (e.g., `resumeFromWait`, `getUserAnswer`). The backend router can handle these internally without polluting the `all_tools()` export.
+- **Hide Internal Callbacks:** Never expose tools to the LLM that are meant strictly for internal system use or frontend UI callbacks (e.g., `resumeFromWait`, `resumeCircuitBreak`). The backend router can handle these internally without polluting the `all_tools()` export.
 - **Concise Descriptions:** Tool descriptions should be brief and focused on _when_ and _how_ to use the tool. Avoid repeating information already present in the JSON schema properties.
 
 * **Smart Defaults over Verbosity:** Do not provide paragraphs of error-handling advice or prerequisites in the tool description. Let the tool fail gracefully with a descriptive error message and guidance string instead.

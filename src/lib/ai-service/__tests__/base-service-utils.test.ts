@@ -93,9 +93,9 @@ describe('normalizeAvailableTools', () => {
     ]);
   });
 
-  it('preserves presentInteractive and recordKnowledge property order', () => {
-    const presentInteractive: MCPTool = {
-      name: 'presentInteractive',
+  it('preserves renderContent and recordKnowledge property order', () => {
+    const renderContent: MCPTool = {
+      name: 'renderContent',
       description: 'Render content',
       inputSchema: {
         type: 'object',
@@ -130,13 +130,13 @@ describe('normalizeAvailableTools', () => {
     };
 
     const normalized = normalizeAvailableTools([
-      presentInteractive,
+      renderContent,
       recordKnowledge,
     ]);
 
     expect(
       Object.keys(
-        normalized.find((tool) => tool.name === 'presentInteractive')
+        normalized.find((tool) => tool.name === 'renderContent')
           ?.inputSchema.properties ?? {},
       ),
     ).toEqual(['format', 'title', 'interaction', 'content']);
