@@ -153,35 +153,22 @@ def save_config(api_id: int, api_hash: str, phone: str, phone_code_hash: str = "
 
 
 def sanitize_secret(value: str) -> str:
-    """Strip whitespace and leading UTF-8 BOM injected by Windows pipes.
-
-    PowerShell 5.1 `$OutputEncoding = [System.Text.Encoding]::UTF8` prepends
-    U+FEFF to native stdin. str.strip() does not remove U+FEFF, so secrets
-    hashed or stored with a leading BOM are rejected by upstream services.
-    """
+    """Strip whitespace and any leading UTF-8 BOM (str.strip() keeps U+FEFF)."""
     cleaned = value.strip()
     while cleaned.startswith("\ufeff"):
         cleaned = cleaned.lstrip("\ufeff").strip()
     return cleaned
 
 
-def read_stdin_line() -> str:
-    """Read a single line from stdin (safe for pipes and interactive injection)."""
-    line = sys.stdin.readline()
-    if not line:
-        return ""
-    return sanitize_secret(line)
-
-
 def resolve_secret(
     direct_value: str | None,
     env_name: str | None,
-    use_stdin: bool,
     secret_label: str,
 ) -> tuple[str, int | None]:
     """
-    Resolve a secret from --value, --env, or --stdin.
+    Resolve a secret from --*-value or the environment variable named by --*-env.
 
+    LibrAgent stores a value with `storeAs: "<NAME>"`, so the agent passes only the name.
     Returns (value, error_exit_code). error_exit_code is None on success.
     """
     if direct_value:
@@ -195,16 +182,14 @@ def resolve_secret(
                     "status": "error",
                     "message": (
                         f"Environment variable '{env_name}' is empty or unset. "
-                        f"Store the {secret_label} in the environment variable first, then run sign_in."
+                        f"Ask for the {secret_label} with requireUserInput=true and "
+                        f"storeAs=\"{env_name}\", then run this command again."
                     ),
                 }),
                 file=sys.stderr,
             )
             return "", 1
         return value, None
-
-    if use_stdin:
-        return read_stdin_line(), None
 
     return "", None
 
@@ -222,8 +207,10 @@ def load_config() -> dict:
 def action_send_code(args: argparse.Namespace) -> int:
     """Send verification code to the phone number."""
     api_id = args.api_id
-    api_hash = args.api_hash
     phone = args.phone
+    api_hash, api_hash_error = resolve_secret(args.api_hash, args.api_hash_env, "API hash")
+    if api_hash_error is not None:
+        return api_hash_error
 
     if not api_id or not api_hash or not phone:
         config = load_config()
@@ -233,7 +220,7 @@ def action_send_code(args: argparse.Namespace) -> int:
 
     if not api_id or not api_hash or not phone:
         print(
-            json.dumps({"status": "error", "message": "Missing required arguments: --api-id, --api-hash, and --phone are required."}),
+            json.dumps({"status": "error", "message": "Missing required arguments: --api-id, --api-hash-env, and --phone are required."}),
             file=sys.stderr,
         )
         return 1
@@ -295,7 +282,10 @@ def action_sign_in(args: argparse.Namespace) -> int:
     """Complete authorization using code and optionally 2FA password."""
     config = load_config()
     api_id = args.api_id or config.get("api_id")
-    api_hash = args.api_hash or config.get("api_hash")
+    api_hash, api_hash_error = resolve_secret(args.api_hash, args.api_hash_env, "API hash")
+    if api_hash_error is not None:
+        return api_hash_error
+    api_hash = api_hash or config.get("api_hash")
     phone = args.phone or config.get("phone")
     phone_code_hash = config.get("phone_code_hash")
 
@@ -306,20 +296,12 @@ def action_sign_in(args: argparse.Namespace) -> int:
         )
         return 1
 
-    code, code_error = resolve_secret(
-        args.code_value,
-        args.code_env,
-        args.code_stdin,
-        "verification code",
-    )
+    code, code_error = resolve_secret(args.code_value, args.code_env, "verification code")
     if code_error is not None:
         return code_error
 
     password, password_error = resolve_secret(
-        args.password_value,
-        args.password_env,
-        args.password_stdin,
-        "2FA password",
+        args.password_value, args.password_env, "2FA password"
     )
     if password_error is not None:
         return password_error
@@ -411,34 +393,31 @@ def action_sign_in(args: argparse.Namespace) -> int:
         disconnect_client(client)
 
 
-def main() -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Telegram setup script")
     parser.add_argument("--action", required=True, choices=["send_code", "sign_in"], help="Action to perform")
     parser.add_argument("--api-id", type=int, help="Telegram API ID")
-    parser.add_argument("--api-hash", help="Telegram API Hash")
+    parser.add_argument(
+        "--api-hash",
+        help="Telegram API Hash (compatibility only: it shows in the process list; use --api-hash-env)",
+    )
+    parser.add_argument("--api-hash-env", help="Environment variable name holding the API hash")
     parser.add_argument("--phone", help="Telegram phone number with country code")
     parser.add_argument(
         "--code-value",
-        help="Verification code (prefer --code-stdin with LibrAgent requireUserInput)",
+        help="Verification code (compatibility only: it shows in the process list; use --code-env)",
     )
     parser.add_argument(
         "--password-value",
-        help="2FA password (prefer --password-stdin with LibrAgent requireUserInput)",
+        help="2FA password (compatibility only: it shows in the process list; use --password-env)",
     )
     parser.add_argument("--code-env", help="Environment variable name holding the verification code")
     parser.add_argument("--password-env", help="Environment variable name holding the 2FA password")
-    parser.add_argument(
-        "--code-stdin",
-        action="store_true",
-        help="Read verification code from stdin (LibrAgent auto-pipes requireUserInput here)",
-    )
-    parser.add_argument(
-        "--password-stdin",
-        action="store_true",
-        help="Read 2FA password from stdin (LibrAgent auto-pipes requireUserInput here)",
-    )
+    return parser
 
-    args = parser.parse_args()
+
+def main() -> int:
+    args = build_parser().parse_args()
 
     if args.action == "send_code":
         return action_send_code(args)

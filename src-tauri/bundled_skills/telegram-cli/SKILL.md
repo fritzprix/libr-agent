@@ -24,13 +24,13 @@ LibrAgent organizes skill resources using canonical `@` aliases across all platf
 
 ## ⚠️ Security Rules (Mandatory)
 
-- **NEVER** ask for 2FA passwords, verification codes, or other transient secrets in chat.
+- **NEVER** ask for the API hash, 2FA passwords, verification codes, or other secrets in chat.
 - **NEVER** display or repeat the contents of `~/.libragent/telegram_config.json`.
-- **NEVER pass `--password-value` or `--code-value` as command-line arguments**. Command-line arguments leak into system process tables (`ps aux`, `Get-Process`), shell histories, and execution logs.
-- Collect transient secrets (verification codes, 2FA passwords) **exclusively** through `requireUserInput=true` with `--code-stdin` / `--password-stdin` via `workspace__runInPersistentShell`.
+- **NEVER pass `--api-hash`, `--password-value`, or `--code-value` as command-line arguments**. Command-line arguments leak into system process tables (`ps aux`, `Get-Process`), shell histories, and execution logs.
+- Collect secrets **exclusively** through `workspace__runInPersistentShell` with `requireUserInput=true` and `storeAs`. LibrAgent stores the value for this session and gives it to the command as `$NAME`. Pass only the name to `setup.py` (`--api-hash-env`, `--code-env`, `--password-env`).
 - If the user accidentally sends a password or code in chat:
   1. Acknowledge receipt without echoing or repeating the secret text.
-  2. Use `--password-env` with an environment variable or run the setup tool with stdin.
+  2. Ask for it again with `requireUserInput=true` and `storeAs`. Do not put the chat text in a command.
   3. NEVER echo the secret in output.
 - **ALWAYS** use `setup.py` to persist credentials and session.
 
@@ -41,7 +41,7 @@ LibrAgent organizes skill resources using canonical `@` aliases across all platf
 Telegram integration involves these steps:
 
 1. **Detect environment & config** — verify Python and run `check_config.py` to check if account is configured
-2. **Setup (first time only)** — gather API ID/Hash, phone number, then run `setup.py` with hidden prompts for code/password
+2. **Setup (first time only)** — gather API ID and phone number in chat, collect the API hash, code, and password with `storeAs` prompts, then run `setup.py`
 3. **Dispatch action** — classify the user's request and call `telegram_cli.py` with the right action
 4. **Present results** — format and summarize the output for the user
 
@@ -114,63 +114,58 @@ If the user doesn't have API credentials, guide them to:
 
 ### 2.2: Two-Step Authentication Flow
 
-#### 1. Collect API credentials in chat
+#### 1. Collect non-secret values in chat
 
 Ask the user for:
 - `api_id` (integer)
-- `api_hash` (string)
 - `phone` (international format, e.g., `+821012345678`)
+
+Do **not** ask for `api_hash` in chat. Step A collects it with a secret prompt.
 
 #### 2. Interactive setup commands
 
-**Step A — Send verification code:**
+Each step below is one `workspace__runInPersistentShell` call with `requireUserInput: true` and `storeAs`. LibrAgent shows a prompt, stores the value for this session as `$NAME`, and runs the command. The value never appears in the command, the chat, or the result.
 
-```bash
-# Windows (PowerShell)
-python "<skill-base-dir>/scripts/setup.py" --api-id 12345678 --api-hash "abcdef0123456789..." --phone "+821012345678" --action send_code
-
-# Linux / macOS (Bash)
-python3 "<skill-base-dir>/scripts/setup.py" --api-id 12345678 --api-hash "abcdef0123456789..." --phone "+821012345678" --action send_code
-```
-
-This outputs a JSON confirmation that the code was sent. On `AuthRestartError`, the script clears the partial session and retries once. If it still fails, you get `"status": "auth_restart_needed"` — run `send_code` again.
-
-**Step B — Sign in with verification code:**
-
-Execute `workspace__runInPersistentShell` tool call with:
-- `command`: `python "<skill-base-dir>/scripts/setup.py" --action sign_in --code-stdin`
-- `requireUserInput`: `true`
-- `inputType`: `"text"`
-- `inputPrompt`: `"텔레그램 인증 코드를 입력하세요:"`
+**Step A — Store the API hash and send the verification code:**
 
 ```json
 {
-  "command": "python \"<skill-base-dir>/scripts/setup.py\" --action sign_in --code-stdin",
+  "command": "python \"<skill-base-dir>/scripts/setup.py\" --api-id 12345678 --api-hash-env TELEGRAM_API_HASH --phone \"+821012345678\" --action send_code",
   "requireUserInput": true,
-  "inputType": "text",
-  "inputPrompt": "텔레그램 인증 코드를 입력하세요:"
+  "inputType": "password",
+  "inputPrompt": "텔레그램 API hash를 입력하세요:",
+  "storeAs": "TELEGRAM_API_HASH"
 }
 ```
 
-LibrAgent auto-detects `--code-stdin` and pipes the UI input into Python stdin (`stdinDelivery=child`).
+This outputs a JSON confirmation that the code was sent. On `AuthRestartError`, the script clears the partial session and retries once. If it still fails, you get `"status": "auth_restart_needed"` — run `send_code` again. If `TELEGRAM_API_HASH` is already stored in this session, you can run the same command without `requireUserInput`.
 
-> [!NOTE]
-> Do not use `Read-Host` inside LibrAgent persistent PowerShell. Those sessions run `-NonInteractive`, so `Read-Host` raises `PSInvalidOperationException`. The `--code-stdin` / `--password-stdin` path is the supported contract across Windows, macOS, and Linux.
-
-**Step C — Handle 2FA (if Step B returns `"password_needed"`):**
-
-Execute `workspace__runInPersistentShell` tool call with:
-- `command`: `python "<skill-base-dir>/scripts/setup.py" --action sign_in --password-stdin`
-- `requireUserInput`: `true`
-- `inputType`: `"password"`
-- `inputPrompt`: `"텔레그램 2FA 비밀번호를 입력하세요:"`
+**Step B — Sign in with the verification code:**
 
 ```json
 {
-  "command": "python \"<skill-base-dir>/scripts/setup.py\" --action sign_in --password-stdin",
+  "command": "python \"<skill-base-dir>/scripts/setup.py\" --action sign_in --code-env TELEGRAM_CODE",
+  "requireUserInput": true,
+  "inputType": "text",
+  "inputPrompt": "텔레그램 인증 코드를 입력하세요:",
+  "storeAs": "TELEGRAM_CODE"
+}
+```
+
+A verification code works only once. Ask for `TELEGRAM_CODE` again every time you run `sign_in` after a new `send_code`.
+
+> [!NOTE]
+> Do not use `Read-Host` inside LibrAgent persistent PowerShell. Those sessions run `-NonInteractive`, so `Read-Host` raises `PSInvalidOperationException`. The `storeAs` flow is the supported contract across Windows, macOS, and Linux.
+
+**Step C — Handle 2FA (if Step B returns `"password_needed"`):**
+
+```json
+{
+  "command": "python \"<skill-base-dir>/scripts/setup.py\" --action sign_in --password-env TELEGRAM_2FA",
   "requireUserInput": true,
   "inputType": "password",
-  "inputPrompt": "텔레그램 2FA 비밀번호를 입력하세요:"
+  "inputPrompt": "텔레그램 2FA 비밀번호를 입력하세요:",
+  "storeAs": "TELEGRAM_2FA"
 }
 ```
 
@@ -219,7 +214,7 @@ When `--output` is set, stdout prints a compact summary (`status`, `output` path
 All CLI output uses UTF-8 (`ensure_ascii=False`). Errors go to stderr as UTF-8 JSON.
 
 ### Output handling (Windows 필수)
-On Windows, always set these before invoking any CLI command. Use UTF-8 **without BOM** — `[System.Text.Encoding]::UTF8` prepends U+FEFF to native stdin and will corrupt `--code-stdin` / `--password-stdin` secrets:
+On Windows, always set these before invoking any CLI command:
 
 ```powershell
 $utf8 = New-Object System.Text.UTF8Encoding $false
@@ -227,7 +222,7 @@ $utf8 = New-Object System.Text.UTF8Encoding $false
 $env:PYTHONUTF8 = "1"
 ```
 
-LibrAgent persistent shells already apply this encoding and `PYTHONUTF8=1`. `setup.py` also strips any leading UTF-8 BOM from stdin secrets as defense in depth.
+LibrAgent persistent shells already apply this encoding and `PYTHONUTF8=1`.
 
 ### Input encoding & PowerShell escaping (Windows / Unicode / Literal $ workaround)
 
