@@ -14,7 +14,7 @@ One-time setup per user. Same model as Telegram API credentials — **the user b
 5. **APIs & Services → Credentials → Create credentials → OAuth client ID**
    - Application type: **Desktop app**
    - Copy **Client ID** (safe to paste in chat)
-   - Copy **Client secret** (never paste in chat — use hidden prompt only)
+   - Copy **Client secret** (never paste in chat — LibrAgent asks for it with a secret prompt)
 
 ## LibrAgent handoff
 
@@ -22,8 +22,7 @@ After step 5:
 
 1. Tell the user the Desktop client is required (not Web application).
 2. Collect **client_id** in chat.
-3. Run hidden password prompt for **client_secret**.
-4. Execute `setup.py --client-id ... --client-secret-env LIBRAGENT_GOOGLE_CLIENT_SECRET --oauth`.
+3. Execute `setup.py --client-id ... --client-secret-env LIBRAGENT_GOOGLE_CLIENT_SECRET --oauth` in one call with `requireUserInput=true`, `inputType=password`, and `storeAs: "LIBRAGENT_GOOGLE_CLIENT_SECRET"` (see [setup-flow.md](setup-flow.md)).
 
 ## Common issues
 

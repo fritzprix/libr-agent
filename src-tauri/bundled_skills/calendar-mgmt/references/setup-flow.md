@@ -1,54 +1,37 @@
 # Calendar Setup Flow
 
-Do **not** ask for `client_secret` in chat. Follow the two-step pattern used by `email-integration`.
+Do **not** ask for `client_secret` in chat. Collect it with one `workspace__runInPersistentShell` call that has `requireUserInput=true`, `inputType=password`, and `storeAs: "LIBRAGENT_GOOGLE_CLIENT_SECRET"`. LibrAgent asks for the value, stores it for this session, and gives it to the command as `$LIBRAGENT_GOOGLE_CLIENT_SECRET`. The secret never appears in the command, the chat, or the result. No cleanup step is needed.
 
-## PowerShell (LibrAgent)
+## First-time connect
 
-### First-time connect
+Collect `client_id` in chat (it is not secret), then run:
 
-1. Hidden prompt (`requireUserInput=true`, `inputType=password`):
-
-```powershell
-$env:LIBRAGENT_GOOGLE_CLIENT_SECRET = Read-Host "Google OAuth client secret"
+```json
+{
+  "command": "python \"<skill-base-dir>/scripts/setup.py\" --client-id \"YOUR_CLIENT_ID.apps.googleusercontent.com\" --client-secret-env LIBRAGENT_GOOGLE_CLIENT_SECRET --oauth",
+  "requireUserInput": true,
+  "inputType": "password",
+  "inputPrompt": "Google OAuth client secret을 입력하세요:",
+  "storeAs": "LIBRAGENT_GOOGLE_CLIENT_SECRET"
+}
 ```
 
-2. Visible setup + OAuth:
+## Re-auth (tokens expired / revoked)
 
-```powershell
-python "<skill-base-dir>/scripts/setup.py" `
-  --client-id "YOUR_CLIENT_ID.apps.googleusercontent.com" `
-  --client-secret-env LIBRAGENT_GOOGLE_CLIENT_SECRET `
-  --oauth
+If `validate_config.py` returns `action: oauth` and client credentials are already saved, no secret prompt is needed:
+
+```bash
+python "<skill-base-dir>/scripts/setup.py" --oauth
 ```
 
-3. Cleanup:
+## Full reset
 
-```powershell
-Remove-Item Env:LIBRAGENT_GOOGLE_CLIENT_SECRET -ErrorAction SilentlyContinue
+Use the same call shape as first-time connect with this command:
+
+```text
+python "<skill-base-dir>/scripts/setup.py" --reset --client-id "YOUR_CLIENT_ID.apps.googleusercontent.com" --client-secret-env LIBRAGENT_GOOGLE_CLIENT_SECRET --oauth
 ```
 
-### Re-auth (tokens expired / revoked)
-
-If `validate_config.py` returns `action: oauth` and client credentials are already saved:
-
-```powershell
-$env:LIBRAGENT_GOOGLE_CLIENT_SECRET = Read-Host "Google OAuth client secret"
-python "<skill-base-dir>/scripts/setup.py" --oauth --client-secret-env LIBRAGENT_GOOGLE_CLIENT_SECRET
-Remove-Item Env:LIBRAGENT_GOOGLE_CLIENT_SECRET -ErrorAction SilentlyContinue
-```
-
-### Full reset
-
-```powershell
-$env:LIBRAGENT_GOOGLE_CLIENT_SECRET = Read-Host "Google OAuth client secret"
-python "<skill-base-dir>/scripts/setup.py" `
-  --reset `
-  --client-id "YOUR_CLIENT_ID.apps.googleusercontent.com" `
-  --client-secret-env LIBRAGENT_GOOGLE_CLIENT_SECRET `
-  --oauth
-Remove-Item Env:LIBRAGENT_GOOGLE_CLIENT_SECRET -ErrorAction SilentlyContinue
-```
+If `LIBRAGENT_GOOGLE_CLIENT_SECRET` is already stored in this session and is correct, you can run the command without `requireUserInput`.
 
 Replace `<skill-base-dir>` with this skill's absolute Base Directory.
-
-On bash, use the same env-var pattern or export before running `setup.py`.
