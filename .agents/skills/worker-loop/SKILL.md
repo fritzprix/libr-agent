@@ -113,7 +113,7 @@ Candidates come pre-ranked. Issues labeled `auto:producer` (filed by `producer-l
   - `Related`, out-of-scope, and other mentions of an issue are not dependencies (`refsOpenIssues` lists every mention); only `dependsOn` counts.
   - Never idle while any candidate can start. Do not mark a group of related issues blocked as a group; check each one.
 - **Decided**: owner `Decision` or recommendation present. Use `needsUser` only when options are given with no recommendation and choice alters implementation.
-- **Sized for one PR**: reviewable diff (<= 400 changed lines, <= 10 files). Large issues: implement one checklist item and state so in PR body.
+- **One PR per issue**: one PR delivers the whole issue with `Fixes #N`. Split it only when the issue body says so.
 
 Record skips in `skipped` with `{ "reason": "...", "updatedAt": "<issue.updatedAt>", "evidence": "<quoted lines if owner-share>" }`.
 The `updatedAt` comes from issue metadata (via `issue_candidates.py`), and `evidence` quotes specific lines showing what remaining step requires the owner (benchmarks, baselines, publishing). Storing this evidence ensures subsequent idle checks do not re-read the issue body or comments unless `updatedAt` changes.
