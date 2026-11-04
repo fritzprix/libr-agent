@@ -251,6 +251,44 @@ async fn restore_row(
     }
 }
 
+/// The stored row for `raw_name`. Prefers the sanitized name; falls back to the raw name
+/// for legacy rows that still contain spaces.
+async fn find_existing(
+    repo: &dyn MCPServerRepository,
+    raw_name: &str,
+) -> Result<Option<crate::entity::mcp_server::Model>, String> {
+    let sanitized_name = sanitize_mcp_server_name(raw_name);
+    let query_error = |e| format!("DB query error while saving server config: {}", e);
+    match repo
+        .get_by_name(&sanitized_name)
+        .await
+        .map_err(query_error)?
+    {
+        Some(model) => Ok(Some(model)),
+        None if sanitized_name != raw_name => repo.get_by_name(raw_name).await.map_err(query_error),
+        None => Ok(None),
+    }
+}
+
+/// Names of the stored secrets that saving `config` would reuse without asking, by the
+/// same rule as [`save_server_config`]. Empty when the lookup fails.
+pub(super) async fn reused_secret_names(
+    repo: &dyn MCPServerRepository,
+    store: &dyn SecretStore,
+    config: &MCPServerConfig,
+    reenter: &BTreeSet<String>,
+) -> Vec<String> {
+    let Some(raw_name) = config.name.as_deref() else {
+        return Vec::new();
+    };
+    let Ok(existing) = find_existing(repo, raw_name).await else {
+        return Vec::new();
+    };
+    plan_secrets(store, config, existing.as_ref(), reenter)
+        .map(|(_, reused)| reused)
+        .unwrap_or_default()
+}
+
 pub(super) async fn save_server_config(
     config: &MCPServerConfig,
     target: &StdioExecTarget,
@@ -266,16 +304,7 @@ pub(super) async fn save_server_config(
 
     // Save-first (pending). Connectivity runs asynchronously so registration is not blocked
     // by cold npx/uvx downloads. Callers can use tool__verifyServer for an explicit check.
-    // Prefer sanitized name; fall back to raw for legacy rows that still contain spaces.
-    let existing = match repo.get_by_name(&sanitized_name).await {
-        Ok(Some(model)) => Some(model),
-        Ok(None) if sanitized_name != *raw_name => repo
-            .get_by_name(raw_name)
-            .await
-            .map_err(|e| format!("DB query error while saving server config: {}", e))?,
-        Ok(None) => None,
-        Err(e) => return Err(format!("DB query error while saving server config: {}", e)),
-    };
+    let existing = find_existing(repo, raw_name).await?;
 
     // Collect every value before any write, so a cancel or timeout saves nothing.
     let store = secret_store();
@@ -639,6 +668,21 @@ mod tests {
 
         let (ask, _) = plan_secrets(secret_store(), &exa_config(EXA_URL), None, &none).unwrap();
         assert_eq!(ask, vec!["EXA_API_KEY".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn the_preview_lookup_names_the_secrets_an_update_reuses() {
+        let repo = repo().await;
+        saved_exa(&repo).await;
+        let none = BTreeSet::new();
+
+        let reused = reused_secret_names(&repo, secret_store(), &exa_config(EXA_URL), &none).await;
+        assert_eq!(reused, vec!["EXA_API_KEY".to_string()]);
+
+        let moved = exa_config("https://evil.example/mcp?exaApiKey={{secret:EXA_API_KEY}}");
+        assert!(reused_secret_names(&repo, secret_store(), &moved, &none)
+            .await
+            .is_empty());
     }
 
     #[tokio::test]

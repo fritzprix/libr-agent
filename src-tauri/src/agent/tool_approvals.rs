@@ -186,8 +186,13 @@ pub async fn evaluate_tool_execution_policy(
     }
 
     if requires_hard_approval && !is_catalog_preset_install(tool_name, args) {
-        let arguments = args.to_string();
-        let preview_source = mcp_server_transport_summary(tool_name, args).unwrap_or(arguments);
+        let reused = if is_mcp_server_mutation(tool_name) {
+            crate::mcp::builtin::tool::secrets_reused_by(args).await
+        } else {
+            Vec::new()
+        };
+        let preview_source = mcp_server_transport_summary(tool_name, args, &reused)
+            .unwrap_or_else(|| args.to_string());
         return ToolExecutionPolicyDecision::RequireHardApproval(ToolApprovalRequest {
             description: build_channel_permission_description(tool_name, &preview_source),
             input_preview: build_channel_permission_input_preview(&preview_source),
@@ -315,9 +320,14 @@ fn invalid_mcp_server_transport(tool_name: &str, args: &serde_json::Value) -> Op
 }
 
 /// Leads with the launch command or URL so truncated relay previews still show
-/// what will run. Env and header values are omitted because previews can be
-/// forwarded to external channels.
-fn mcp_server_transport_summary(tool_name: &str, args: &serde_json::Value) -> Option<String> {
+/// what will run. Env and header values and URL query values are omitted because
+/// previews can be forwarded to external channels; `reused` names the stored secrets
+/// the call sends without asking.
+fn mcp_server_transport_summary(
+    tool_name: &str,
+    args: &serde_json::Value,
+    reused: &[String],
+) -> Option<String> {
     if !is_mcp_server_mutation(tool_name) {
         return None;
     }
@@ -366,6 +376,7 @@ fn mcp_server_transport_summary(tool_name: &str, args: &serde_json::Value) -> Op
         line
     } else {
         let url = transport.get("url").and_then(|v| v.as_str()).unwrap_or("");
+        let url = crate::mcp::secret_templates::mask_url_secrets(url);
         let mut line = format!("[{name}] {transport_type}: {url}");
         if let Some(header_keys) = object_keys("headers") {
             line.push_str(&format!(" | header keys: {header_keys}"));
@@ -373,7 +384,14 @@ fn mcp_server_transport_summary(tool_name: &str, args: &serde_json::Value) -> Op
         line
     };
 
-    Some(summary)
+    if reused.is_empty() {
+        Some(summary)
+    } else {
+        Some(format!(
+            "{summary} | reuses stored secrets: {}",
+            reused.join(",")
+        ))
+    }
 }
 
 pub fn generate_channel_permission_request_id() -> String {
@@ -694,6 +712,51 @@ mod tests {
         assert_eq!(
             request.input_preview,
             "[remote] http: https://mcp.example.com/mcp | header keys: Authorization"
+        );
+    }
+
+    #[tokio::test]
+    async fn update_server_http_preview_masks_query_values() {
+        let decision = evaluate_tool_execution_policy(
+            "tool__updateServer",
+            &serde_json::json!({
+                "name": "exa",
+                "transport": {
+                    "type": "http",
+                    "url": "https://mcp.exa.ai/mcp?exaApiKey=exa-secret-value"
+                }
+            }),
+        )
+        .await;
+
+        let ToolExecutionPolicyDecision::RequireHardApproval(request) = decision else {
+            panic!("expected hard approval, got {decision:?}");
+        };
+        assert_eq!(
+            request.input_preview,
+            "[exa] http: https://mcp.exa.ai/mcp?exaApiKey=***"
+        );
+    }
+
+    #[test]
+    fn transport_summary_lists_reused_secret_names() {
+        let args = serde_json::json!({
+            "name": "exa",
+            "transport": {
+                "type": "http",
+                "url": "https://mcp.exa.ai/mcp?exaApiKey={{secret:EXA_API_KEY}}"
+            }
+        });
+        assert_eq!(
+            mcp_server_transport_summary(
+                "tool__updateServer",
+                &args,
+                &["EXA_API_KEY".to_string()]
+            )
+            .as_deref(),
+            Some(
+                "[exa] http: https://mcp.exa.ai/mcp?exaApiKey={{secret:EXA_API_KEY}} | reuses stored secrets: EXA_API_KEY"
+            )
         );
     }
 
