@@ -26,7 +26,8 @@ Paths in this skill are relative to the directory containing this `SKILL.md`, no
 
 - **NEVER** ask for password, TOTP secrets, or browser cookies in plain chat.
 - **NEVER** display or repeat the contents of `~/.libragent/x_config.json` or `~/.libragent/x_cookies.json`.
-- Collect password and other sensitive information exclusively through interactive hidden shell prompts (`requireUserInput=true`, `inputType=password`).
+- **NEVER** put a password, TOTP secret, or cookie value in a command line.
+- Collect every secret exclusively through `workspace__runInPersistentShell` with `requireUserInput=true`, `inputType=password`, and `storeAs`. LibrAgent stores the value for this session and gives it to the command as `$NAME`. Pass only the name to `setup.py` (`--auth-token-env`, `--ct0-env`, `--password-env`, `--totp-secret-env`).
 - **ALWAYS** use `setup.py` to persist credentials and session.
 
 ---
@@ -73,32 +74,52 @@ Because X frequently blocks automated credentials-based login with a `404 (code 
 
 1. Log in to [x.com](https://x.com) in your web browser.
 2. Open Developer Tools (F12) -> **Application** (or **Storage**) -> **Cookies** -> `https://x.com`.
-3. Copy the values of `auth_token` and `ct0`.
-4. Run the terminal cookie wizard:
-   ```bash
-   python "<skill-base-dir>/scripts/setup.py" \
-     --username "your_username" \
-     --email "your_email@domain.com" \
-     --cookie-login
+3. Tell the user to copy the values of `auth_token` and `ct0`. Do not ask for them in chat.
+4. Store `auth_token` with one `workspace__runInPersistentShell` call:
+   ```json
+   {
+     "command": "echo X_AUTH_TOKEN stored",
+     "requireUserInput": true,
+     "inputType": "password",
+     "inputPrompt": "X auth_token 쿠키 값을 입력하세요:",
+     "storeAs": "X_AUTH_TOKEN"
+   }
    ```
-5. When prompted in the terminal, paste `auth_token` and `ct0`. The inputs are hidden and are not echoed back.
-
-If the user already has the cookie values ready and explicitly prefers a one-shot command, `--auth-token` and `--ct0` still work, but the wizard is the default recommendation because it keeps secrets out of shell history.
+5. Store `ct0` and run setup (replace username and email with the values the user gave):
+   ```json
+   {
+     "command": "python \"<skill-base-dir>/scripts/setup.py\" --username \"your_username\" --email \"your_email@domain.com\" --auth-token-env X_AUTH_TOKEN --ct0-env X_CT0",
+     "requireUserInput": true,
+     "inputType": "password",
+     "inputPrompt": "X ct0 쿠키 값을 입력하세요:",
+     "storeAs": "X_CT0"
+   }
+   ```
 
 ### Option B: Credentials-based Setup (Fallback)
 
-Execute `workspace__runInPersistentShell` (or `workspace__runInPersistentPowerShell`) with:
+1. If the account uses an authenticator app (TOTP), store its secret first:
+   ```json
+   {
+     "command": "echo X_TOTP_SECRET stored",
+     "requireUserInput": true,
+     "inputType": "password",
+     "inputPrompt": "X 2FA TOTP secret key를 입력하세요:",
+     "storeAs": "X_TOTP_SECRET"
+   }
+   ```
+2. Store the password and run setup. Add `--totp-secret-env X_TOTP_SECRET` only if you did step 1:
+   ```json
+   {
+     "command": "python \"<skill-base-dir>/scripts/setup.py\" --username \"your_username\" --email \"your_email@domain.com\" --password-env X_PASSWORD",
+     "requireUserInput": true,
+     "inputType": "password",
+     "inputPrompt": "X 비밀번호를 입력하세요:",
+     "storeAs": "X_PASSWORD"
+   }
+   ```
 
-- `requireUserInput=true`
-- `inputType=password`
-- `inputPrompt=X 비밀번호를 입력하세요:`
-- Command (replace username and email with user-supplied ones):
-  ```bash
-  python "<skill-base-dir>/scripts/setup.py" \
-    --username "your_username" \
-    --email "your_email@domain.com" \
-    --password-stdin
-  ```
+If a stored name is already set in this session, you can run the setup command again without `requireUserInput`.
 
 ### Setup output contract
 
@@ -106,7 +127,7 @@ Execute `workspace__runInPersistentShell` (or `workspace__runInPersistentPowerSh
 
 - Exit code `0` — session cookies and config were saved.
 - Exit code `1` — authentication failed; partial files are removed.
-- Exit code `3` — missing required input (for example password).
+- Exit code `3` — a `--*-env` variable is empty or unset. Ask for it with `requireUserInput=true` and the `storeAs` name in the message, then run setup again.
 
 On success, `status` is always `"ok"`. An optional `warning` field means the session was saved but the post-save timeline probe failed (often a Twikit/X API parsing issue, not necessarily invalid cookies). Treat setup as successful, inform the user about the warning, and proceed to Step 3. If later `x_cli.py` calls fail, recommend re-copying browser cookies and re-running setup.
 
@@ -118,7 +139,7 @@ On success, `status` is always `"ok"`. An optional `warning` field means the ses
 
 Call `x_cli.py` to execute X actions:
 
-If credentials login returns `404` with `code 34`, stop retrying passwords and switch to Option A immediately. Always give the user the concrete next step: open browser cookies, then run the cookie wizard command.
+If credentials login returns `404` with `code 34`, stop retrying passwords and switch to Option A immediately. Always give the user the concrete next step: open browser cookies, then follow Option A.
 
 ### Action: `post_tweet` — Post a new tweet
 
@@ -207,7 +228,7 @@ On Windows, large or Unicode payloads can break under `cp949`. Prefer:
 1. Write tweet text with `workspace__writeFile` as UTF-8, then use `--message-file`.
 2. Avoid embedding `$` / backticks in PowerShell double-quoted strings — use `--message-file` instead.
 
-LibrAgent persistent shells set UTF-8 without BOM and `PYTHONUTF8=1`. `setup.py` also strips a leading UTF-8 BOM from stdin secrets (`sanitize_secret`).
+LibrAgent persistent shells set UTF-8 without BOM and `PYTHONUTF8=1`.
 
 ### Timeouts
 
