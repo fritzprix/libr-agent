@@ -89,12 +89,12 @@ async fn session_exec_target(session_id: Option<&str>) -> Result<StdioExecTarget
 }
 
 /// The container test failed: the record is saved, but only this response reports the failure.
-fn container_check_failed(name: &str, id: &str, error: &str) -> MCPResult {
+fn container_check_failed(name: &str, id: &str, error: &str, secrets_line: &str) -> MCPResult {
     guided_error(
         ErrorCategory::OperationFailed,
         format!(
-            "Server '{}' (ID: {}) was saved, but it did not start in the session container.\n\n{}",
-            name, id, error
+            "Server '{}' (ID: {}) was saved, but it did not start in the session container.{}\n\n{}",
+            name, id, secrets_line, error
         ),
         ToolGroup::Tool,
     )
@@ -280,7 +280,7 @@ pub async fn register_server(
 
     let status = match container_check {
         Some(ContainerCheck::Failed(error)) => {
-            return Ok(container_check_failed(&name, &id, &error))
+            return Ok(container_check_failed(&name, &id, &error, &secrets_line))
         }
         Some(ContainerCheck::Passed { tool_count }) => format!(
             "Saved and verified in the session container ({} tools)",
@@ -537,7 +537,7 @@ pub async fn update_server(
 
     let status = match container_check {
         Some(ContainerCheck::Failed(error)) => {
-            return Ok(container_check_failed(&name, &id, &error))
+            return Ok(container_check_failed(&name, &id, &error, &secrets_line))
         }
         Some(ContainerCheck::Passed { tool_count }) => format!(
             "\nStatus: verified in the session container ({} tools)",

@@ -109,13 +109,14 @@ pub(super) async fn load_requested_server_configs(
                         continue;
                     }
 
-                    let parsed =
-                        serde_json::from_str::<crate::mcp::types::MCPServerConfig>(&model.config)
-                            .map_err(|error| error.to_string())
-                            .and_then(|config| {
-                                fill_secrets(secret_store(), &model.id, &config)
-                                    .map(FilledConfig::into_parts)
-                            });
+                    let parsed = match serde_json::from_str::<crate::mcp::types::MCPServerConfig>(
+                        &model.config,
+                    ) {
+                        Ok(config) => fill_secrets(secret_store(), &model.id, &config)
+                            .await
+                            .map(FilledConfig::into_parts),
+                        Err(error) => Err(error.to_string()),
+                    };
                     match parsed {
                         Ok((mut config, values)) => {
                             let raw_name = config.name.unwrap_or_else(|| model.name.clone());

@@ -65,6 +65,9 @@ pub trait MCPServerRepository: Send + Sync {
 
     /// Set the JSON array of secret names stored in the keychain (`None` clears it).
     async fn set_secret_names(&self, id: &str, names: Option<String>) -> Result<(), DbError>;
+
+    /// Set the encrypted `{NAME: value}` map of the keychain fallback (NULL clears it).
+    async fn set_encrypted_secrets(&self, id: &str, sealed: Option<String>) -> Result<(), DbError>;
 }
 
 /// SQLite implementation of MCPServerRepository using SeaORM
@@ -116,6 +119,7 @@ impl MCPServerRepository for SqliteMCPServerRepository {
             verification_status: Set(pending.then(|| "pending".to_string())),
             last_verification_error: Set(None),
             secret_names: Set(None),
+            encrypted_secrets: Set(None),
             created_at: Set(now),
             updated_at: Set(now),
         };
@@ -293,6 +297,19 @@ impl MCPServerRepository for SqliteMCPServerRepository {
         if let Some(model) = existing {
             let mut active: mcp_server::ActiveModel = model.into();
             active.secret_names = Set(names);
+            active.update(&self.db).await?;
+            Ok(())
+        } else {
+            Err(DbError::NotFound(format!("Server '{}' not found", id)))
+        }
+    }
+
+    async fn set_encrypted_secrets(&self, id: &str, sealed: Option<String>) -> Result<(), DbError> {
+        let existing = mcp_server::Entity::find_by_id(id).one(&self.db).await?;
+
+        if let Some(model) = existing {
+            let mut active: mcp_server::ActiveModel = model.into();
+            active.encrypted_secrets = Set(sealed);
             active.update(&self.db).await?;
             Ok(())
         } else {

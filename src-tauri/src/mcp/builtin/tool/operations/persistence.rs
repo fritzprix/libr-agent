@@ -25,6 +25,8 @@ pub(super) struct SavedServer {
     /// Names of the `{{secret:NAME}}` values the user entered, and of those reused.
     pub entered_secrets: Vec<String>,
     pub reused_secrets: Vec<String>,
+    /// Set when the values were stored without the OS keychain.
+    pub storage_warning: Option<String>,
 }
 
 impl SavedServer {
@@ -37,11 +39,15 @@ impl SavedServer {
         if !self.reused_secrets.is_empty() {
             parts.push(format!("reused {}", self.reused_secrets.join(", ")));
         }
-        if parts.is_empty() {
+        let mut line = if parts.is_empty() {
             String::new()
         } else {
-            format!("\n• Secrets (OS keychain): {}", parts.join("; "))
+            format!("\n• Secrets: {}", parts.join("; "))
+        };
+        if let Some(warning) = &self.storage_warning {
+            line.push_str(&format!("\n• Warning: {warning}"));
         }
+        line
     }
 }
 
@@ -49,7 +55,7 @@ impl SavedServer {
 ///
 /// A value is reused only for the same server and name, when the target is unchanged
 /// ([`same_target`]) and the call does not ask to enter it again.
-fn plan_secrets(
+async fn plan_secrets(
     store: &dyn SecretStore,
     config: &MCPServerConfig,
     existing: Option<&crate::entity::mcp_server::Model>,
@@ -65,7 +71,7 @@ fn plan_secrets(
                     .is_ok_and(|old| same_target(&old.transport, &config.transport));
                 old_target_same
                     && parse_secret_names(model.secret_names.as_deref()).contains(&name)
-                    && store.get(&model.id, &name)?.is_some()
+                    && store.get(&model.id, &name).await?.is_some()
             }
             _ => false,
         };
@@ -117,15 +123,19 @@ fn clean_secret(value: &str, name: &str) -> Result<String, String> {
     Ok(value.to_string())
 }
 
-fn store_values(
+/// Write the values. Returns the store's warning, if any.
+async fn store_values(
     store: &dyn SecretStore,
     id: &str,
     entered: &[(String, String)],
-) -> Result<(), String> {
+) -> Result<Option<String>, String> {
+    let mut warning = None;
     for (name, value) in entered {
-        store.set(id, name, value)?;
+        if let Some(notice) = store.set(id, name, value).await? {
+            warning = Some(notice);
+        }
     }
-    Ok(())
+    Ok(warning)
 }
 
 /// Write the entered values to the store and record every used name on the row.
@@ -135,9 +145,10 @@ async fn store_secrets(
     id: &str,
     entered: &[(String, String)],
     reused: &[String],
-) -> Result<(), String> {
-    store_values(store, id, entered)?;
-    record_secret_names(repo, id, entered, reused).await
+) -> Result<Option<String>, String> {
+    let warning = store_values(store, id, entered).await?;
+    record_secret_names(repo, id, entered, reused).await?;
+    Ok(warning)
 }
 
 async fn record_secret_names(
@@ -156,9 +167,15 @@ async fn record_secret_names(
         .map_err(|e| format!("Failed to save secret names: {}", e))
 }
 
-/// Write the row and the secrets. Returns the id, the stored name, and whether the
-/// target changed. On failure a new row is removed, and an existing row keeps its
-/// previous config and secret names.
+struct WrittenServer {
+    id: String,
+    name: String,
+    target_changed: bool,
+    storage_warning: Option<String>,
+}
+
+/// Write the row and the secrets. On failure a new row is removed, and an existing row
+/// keeps its previous config and secret names.
 async fn write_server(
     repo: &dyn MCPServerRepository,
     store: &dyn SecretStore,
@@ -167,13 +184,13 @@ async fn write_server(
     verification: SaveVerification,
     entered: &[(String, String)],
     reused: &[String],
-) -> Result<(String, String, bool), String> {
+) -> Result<WrittenServer, String> {
     let has_secrets = !entered.is_empty() || !reused.is_empty();
     match existing {
         Some(existing) => {
             // Values before the row: a keychain failure must leave the row unchanged, and
             // the update below deletes the values the new config no longer uses.
-            store_values(store, &existing.id, entered)?;
+            let storage_warning = store_values(store, &existing.id, entered).await?;
 
             // Keep legacy display names (including whitespace) intact.
             let mut config = config.clone();
@@ -186,8 +203,9 @@ async fn write_server(
                 != config_value.get("transport")
                 || existing_config_val.get("authentication") != config_value.get("authentication");
 
-            let updated = McpServerService::update_server_config(
+            let updated = McpServerService::update_server_config_with_store(
                 repo,
+                store,
                 existing.id.clone(),
                 None,
                 Some(config_value),
@@ -201,7 +219,12 @@ async fn write_server(
                     return Err(error);
                 }
             }
-            Ok((updated.id, existing.name, requires_reverification))
+            Ok(WrittenServer {
+                id: updated.id,
+                name: existing.name,
+                target_changed: requires_reverification,
+                storage_warning,
+            })
         }
         None => {
             let sanitized_name = sanitize_mcp_server_name(config.name.as_deref().unwrap_or(""));
@@ -215,13 +238,27 @@ async fn write_server(
                 verification,
             )
             .await?;
+            let mut storage_warning = None;
             if has_secrets {
-                if let Err(error) = store_secrets(repo, store, &created.id, entered, reused).await {
-                    let _ = McpServerService::delete_server_config(repo, &created.id).await;
-                    return Err(error);
+                match store_secrets(repo, store, &created.id, entered, reused).await {
+                    Ok(warning) => storage_warning = warning,
+                    Err(error) => {
+                        let _ = McpServerService::delete_server_config_with_store(
+                            repo,
+                            store,
+                            &created.id,
+                        )
+                        .await;
+                        return Err(error);
+                    }
                 }
             }
-            Ok((created.id, created.name, true))
+            Ok(WrittenServer {
+                id: created.id,
+                name: created.name,
+                target_changed: true,
+                storage_warning,
+            })
         }
     }
 }
@@ -285,6 +322,7 @@ pub(super) async fn reused_secret_names(
         return Vec::new();
     };
     plan_secrets(store, config, existing.as_ref(), reenter)
+        .await
         .map(|(_, reused)| reused)
         .unwrap_or_default()
 }
@@ -308,7 +346,7 @@ pub(super) async fn save_server_config(
 
     // Collect every value before any write, so a cancel or timeout saves nothing.
     let store = secret_store();
-    let (to_ask, reused_secrets) = plan_secrets(store, config, existing.as_ref(), reenter)?;
+    let (to_ask, reused_secrets) = plan_secrets(store, config, existing.as_ref(), reenter).await?;
     let label_name = existing
         .as_ref()
         .map_or(sanitized_name.as_str(), |model| model.name.as_str());
@@ -323,7 +361,12 @@ pub(super) async fn save_server_config(
         SaveVerification::Pending
     };
 
-    let (id, stored_name, needs_probe) = write_server(
+    let WrittenServer {
+        id,
+        name: stored_name,
+        target_changed: needs_probe,
+        storage_warning,
+    } = write_server(
         repo,
         store,
         existing,
@@ -356,6 +399,7 @@ pub(super) async fn save_server_config(
         container_check,
         entered_secrets: entered.into_iter().map(|(name, _)| name).collect(),
         reused_secrets,
+        storage_warning,
     })
 }
 
@@ -632,6 +676,7 @@ mod tests {
         assert_eq!(
             secret_store()
                 .get(&model.id, "EXA_API_KEY")
+                .await
                 .unwrap()
                 .as_deref(),
             Some("exa-secret-value")
@@ -645,13 +690,16 @@ mod tests {
         let none = BTreeSet::new();
 
         let same_host = exa_config("https://mcp.exa.ai/mcp?exaApiKey={{secret:EXA_API_KEY}}&x=1");
-        let (ask, reuse) = plan_secrets(secret_store(), &same_host, Some(&model), &none).unwrap();
+        let (ask, reuse) = plan_secrets(secret_store(), &same_host, Some(&model), &none)
+            .await
+            .unwrap();
         assert!(ask.is_empty());
         assert_eq!(reuse, vec!["EXA_API_KEY".to_string()]);
 
         let reenter = BTreeSet::from(["EXA_API_KEY".to_string()]);
-        let (ask, reuse) =
-            plan_secrets(secret_store(), &same_host, Some(&model), &reenter).unwrap();
+        let (ask, reuse) = plan_secrets(secret_store(), &same_host, Some(&model), &reenter)
+            .await
+            .unwrap();
         assert_eq!(ask, vec!["EXA_API_KEY".to_string()]);
         assert!(reuse.is_empty());
 
@@ -661,12 +709,16 @@ mod tests {
             "https://mcp.exa.ai:8443/mcp?exaApiKey={{secret:EXA_API_KEY}}",
         ] {
             let (ask, reuse) =
-                plan_secrets(secret_store(), &exa_config(moved), Some(&model), &none).unwrap();
+                plan_secrets(secret_store(), &exa_config(moved), Some(&model), &none)
+                    .await
+                    .unwrap();
             assert_eq!(ask, vec!["EXA_API_KEY".to_string()], "{moved}");
             assert!(reuse.is_empty(), "{moved}");
         }
 
-        let (ask, _) = plan_secrets(secret_store(), &exa_config(EXA_URL), None, &none).unwrap();
+        let (ask, _) = plan_secrets(secret_store(), &exa_config(EXA_URL), None, &none)
+            .await
+            .unwrap();
         assert_eq!(ask, vec!["EXA_API_KEY".to_string()]);
     }
 
@@ -704,7 +756,10 @@ mod tests {
 
         let updated = repo.get(&model.id).await.unwrap().expect("record");
         assert_eq!(updated.secret_names, None);
-        assert_eq!(secret_store().get(&model.id, "EXA_API_KEY").unwrap(), None);
+        assert_eq!(
+            secret_store().get(&model.id, "EXA_API_KEY").await.unwrap(),
+            None
+        );
     }
 
     #[tokio::test]
@@ -716,18 +771,22 @@ mod tests {
             .await
             .expect("delete");
 
-        assert_eq!(secret_store().get(&model.id, "EXA_API_KEY").unwrap(), None);
+        assert_eq!(
+            secret_store().get(&model.id, "EXA_API_KEY").await.unwrap(),
+            None
+        );
     }
 
     struct SetFailsStore;
+    #[async_trait::async_trait]
     impl SecretStore for SetFailsStore {
-        fn get(&self, _: &str, _: &str) -> Result<Option<String>, String> {
+        async fn get(&self, _: &str, _: &str) -> Result<Option<String>, String> {
             Ok(None)
         }
-        fn set(&self, _: &str, _: &str, _: &str) -> Result<(), String> {
+        async fn set(&self, _: &str, _: &str, _: &str) -> Result<Option<String>, String> {
             Err("keychain is locked".to_string())
         }
-        fn delete(&self, _: &str, _: &str) -> Result<(), String> {
+        async fn delete(&self, _: &str, _: &str) -> Result<(), String> {
             Ok(())
         }
     }
@@ -759,6 +818,7 @@ mod tests {
         assert_eq!(
             secret_store()
                 .get(&model.id, "EXA_API_KEY")
+                .await
                 .unwrap()
                 .as_deref(),
             Some("exa-secret-value")
@@ -785,6 +845,129 @@ mod tests {
         assert!(repo.get_by_name("exa").await.unwrap().is_none());
     }
 
+    fn value_at<'a>(config: &'a serde_json::Value, pointer: &str) -> &'a str {
+        config
+            .pointer(pointer)
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+    }
+
+    #[tokio::test]
+    async fn the_github_bearer_preset_saves_the_value_and_starts_with_it() {
+        let repo = repo().await;
+        let config: MCPServerConfig = serde_json::from_value(serde_json::json!({
+            "name": "github",
+            "transport": {
+                "type": "http",
+                "url": "https://api.githubcopilot.com/mcp/",
+                "headers": { "Authorization": "Bearer {{secret:GITHUB_PAT}}" }
+            }
+        }))
+        .expect("config");
+        let entered = vec![("GITHUB_PAT".to_string(), "ghp_value".to_string())];
+
+        let written = write_server(
+            &repo,
+            secret_store(),
+            None,
+            &config,
+            SaveVerification::Pending,
+            &entered,
+            &[],
+        )
+        .await
+        .expect("write");
+
+        let row = repo.get(&written.id).await.unwrap().expect("record");
+        assert!(row.config.contains("Bearer {{secret:GITHUB_PAT}}"));
+        assert!(!row.config.contains("ghp_value"));
+        let filled =
+            crate::mcp::secret_templates::fill_secrets(secret_store(), &written.id, &config)
+                .await
+                .expect("filled");
+        let started = serde_json::to_value(&filled.config).unwrap();
+        assert_eq!(
+            value_at(&started, "/transport/headers/Authorization"),
+            "Bearer ghp_value"
+        );
+    }
+
+    #[tokio::test]
+    async fn without_a_keychain_a_save_starts_and_updates_through_the_encrypted_column() {
+        use crate::mcp::secret_fallback::{
+            FileSecretStore, LayeredSecretStore, FALLBACK_WARNING, KEY_FILE_NAME,
+        };
+        use crate::mcp::secret_templates::{fill_secrets, MemorySecretStore};
+
+        let repo = repo().await;
+        let dir = tempfile::tempdir().unwrap();
+        let keychain = MemorySecretStore::unavailable();
+        let store = LayeredSecretStore::new(
+            &keychain,
+            FileSecretStore::new(&repo, dir.path().join(KEY_FILE_NAME)),
+        );
+        let entered = vec![("EXA_API_KEY".to_string(), "exa-secret-value".to_string())];
+        let write = |config: MCPServerConfig| {
+            let (store, repo, entered) = (&store, &repo, &entered);
+            async move {
+                write_server(
+                    repo,
+                    store,
+                    None,
+                    &config,
+                    SaveVerification::Pending,
+                    entered,
+                    &[],
+                )
+                .await
+                .expect("write")
+            }
+        };
+
+        let first = write(exa_config(EXA_URL)).await;
+        let mut other = exa_config(EXA_URL);
+        other.name = Some("exa2".to_string());
+        let second = write(other).await;
+
+        assert_eq!(first.storage_warning.as_deref(), Some(FALLBACK_WARNING));
+        assert_eq!(second.storage_warning, None, "the warning shows once");
+        let row = repo.get(&first.id).await.unwrap().expect("record");
+        let sealed = row.encrypted_secrets.clone().expect("encrypted_secrets");
+        assert!(!sealed.contains("exa-secret-value"));
+        assert!(!row.config.contains("exa-secret-value"));
+        assert_eq!(keychain.get(&first.id, "EXA_API_KEY").await.unwrap(), None);
+
+        let filled = fill_secrets(&store, &first.id, &exa_config(EXA_URL))
+            .await
+            .expect("start decrypts");
+        let started = serde_json::to_value(&filled.config).unwrap();
+        assert_eq!(
+            value_at(&started, "/transport/url"),
+            "https://mcp.exa.ai/mcp?exaApiKey=exa-secret-value"
+        );
+
+        let plain =
+            serde_json::to_value(exa_config("https://mcp.exa.ai/mcp?exaApiKey=plain")).unwrap();
+        McpServerService::update_server_config_with_store(
+            &repo,
+            &store,
+            first.id.clone(),
+            None,
+            Some(plain),
+            SaveVerification::Pending,
+        )
+        .await
+        .expect("update");
+        let updated = repo.get(&first.id).await.unwrap().expect("record");
+        assert_eq!(updated.encrypted_secrets, None);
+        assert_eq!(updated.secret_names, None);
+
+        McpServerService::delete_server_config_with_store(&repo, &store, &second.id)
+            .await
+            .expect("delete");
+        assert!(repo.get(&second.id).await.unwrap().is_none());
+    }
+
     #[test]
     fn the_result_line_lists_names_only() {
         let saved = SavedServer {
@@ -793,10 +976,19 @@ mod tests {
             container_check: None,
             entered_secrets: vec!["EXA_API_KEY".to_string()],
             reused_secrets: vec!["OTHER".to_string()],
+            storage_warning: None,
         };
         assert_eq!(
             saved.secrets_line(),
-            "\n• Secrets (OS keychain): entered EXA_API_KEY; reused OTHER"
+            "\n• Secrets: entered EXA_API_KEY; reused OTHER"
         );
+
+        let fallback = SavedServer {
+            storage_warning: Some("keychain is not available".to_string()),
+            ..saved
+        };
+        assert!(fallback
+            .secrets_line()
+            .ends_with("\n• Warning: keychain is not available"));
     }
 }

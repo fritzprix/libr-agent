@@ -662,6 +662,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn github_and_exa_presets_with_a_secret_template_need_no_hard_approval() {
+        let github = serde_json::json!({
+            "name": "github",
+            "transport": {
+                "type": "http",
+                "url": "https://api.githubcopilot.com/mcp/",
+                "headers": { "Authorization": "Bearer {{secret:GITHUB_PAT}}" }
+            }
+        });
+        let exa = serde_json::json!({
+            "name": "exa",
+            "transport": {
+                "type": "http",
+                "url": "https://mcp.exa.ai/mcp?exaApiKey={{secret:EXA_API_KEY}}"
+            }
+        });
+        for args in [github, exa] {
+            let decision = evaluate_tool_execution_policy("tool__registerServer", &args).await;
+            assert!(
+                !matches!(
+                    decision,
+                    ToolExecutionPolicyDecision::RequireHardApproval(_)
+                ),
+                "{args}: got {decision:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn register_server_with_malformed_transport_is_blocked_before_approval() {
         let missing_command = serde_json::json!({
             "name": "everything",

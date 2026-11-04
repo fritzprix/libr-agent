@@ -84,3 +84,34 @@ pub(crate) fn clean_assistants(
     }
     cleaned
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exported_servers_never_carry_stored_secrets() {
+        let model = mcp_server::Model {
+            id: "mcp-1".to_string(),
+            name: "exa".to_string(),
+            config: r#"{"transport":{"type":"http","url":"https://mcp.exa.ai/mcp?exaApiKey={{secret:EXA_API_KEY}}"}}"#
+                .to_string(),
+            tool_count: None,
+            cached_tools: None,
+            verification_status: None,
+            last_verification_error: None,
+            secret_names: Some(r#"["EXA_API_KEY"]"#.to_string()),
+            encrypted_secrets: Some("sealed-value-map".to_string()),
+            created_at: 1,
+            updated_at: 2,
+        };
+
+        for include_sensitive in [false, true] {
+            let exported =
+                serde_json::to_string(&clean_mcp_servers(&[model.clone()], include_sensitive))
+                    .unwrap();
+            assert!(!exported.contains("sealed-value-map"), "{exported}");
+            assert!(!exported.contains("encrypted_secrets"), "{exported}");
+        }
+    }
+}

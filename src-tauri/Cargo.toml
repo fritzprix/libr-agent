@@ -83,10 +83,13 @@ enigo = "0.6.1"
 jsonschema = "0.49"
 
 # Windows-only: ANSI code-page decode for stdio; ExpandEnvironmentStrings for registry PATH;
-# taskbar visibility styles (APPWINDOW / TOOLWINDOW) for minimize behavior.
+# taskbar visibility styles (APPWINDOW / TOOLWINDOW) for minimize behavior;
+# a current-user-only ACL on the MCP secret key file.
 windows-sys = { version = "0.59", features = [
   "Win32_Foundation",
   "Win32_Globalization",
+  "Win32_Security",
+  "Win32_Security_Authorization",
   "Win32_System_Environment",
   "Win32_System_Power",
   "Win32_System_Threading",
