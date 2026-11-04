@@ -120,6 +120,38 @@ impl FilledConfig {
     pub fn mask(&self, text: &str) -> String {
         mask_values(text, self.values.iter().map(String::as_str))
     }
+
+    /// The filled config and the values to mask in its errors.
+    pub fn into_parts(self) -> (MCPServerConfig, Vec<String>) {
+        (self.config, self.values)
+    }
+}
+
+/// The URL without user info, query, and fragment, so a log line never shows a value
+/// filled into it.
+pub fn redact_url(url: &str) -> String {
+    match url::Url::parse(url) {
+        Ok(mut parsed) => {
+            let _ = parsed.set_username("");
+            let _ = parsed.set_password(None);
+            parsed.set_query(None);
+            parsed.set_fragment(None);
+            parsed.to_string()
+        }
+        Err(_) => "<invalid URL>".to_string(),
+    }
+}
+
+/// Replace `url` in `text` (as given, and as the URL parser prints it, which is how
+/// HTTP client errors show it) with [`redact_url`].
+pub fn redact_url_in(text: &str, url: &str) -> String {
+    let redacted = redact_url(url);
+    let normalized = url::Url::parse(url).map(|parsed| parsed.to_string());
+    let text = text.replace(url, &redacted);
+    match normalized {
+        Ok(normalized) if normalized != url => text.replace(&normalized, &redacted),
+        _ => text,
+    }
 }
 
 pub fn mask_values<'a>(text: &str, values: impl IntoIterator<Item = &'a str>) -> String {

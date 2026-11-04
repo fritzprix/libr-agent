@@ -1,4 +1,5 @@
 use super::MCPServerManager;
+use crate::mcp::secret_templates::{redact_url, redact_url_in};
 use crate::mcp::types::{MCPConnection, MCPServerConfig, TransportConfig};
 use crate::repositories::mcp_server_repository::MCPServerRepository;
 use anyhow::Result;
@@ -118,6 +119,11 @@ async fn start_stdio_server(
 
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 
+/// Names the header only: its value may be a filled secret.
+fn invalid_header_message(name: &str) -> String {
+    format!("Invalid header ignored: {name} (the value is not a valid header value)")
+}
+
 async fn start_http_server(
     manager: &MCPServerManager,
     config: MCPServerConfig,
@@ -132,7 +138,7 @@ async fn start_http_server(
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("Server name is required"))?
         .clone();
-    info!("Starting HTTP MCP server: {name} at {url}");
+    info!("Starting HTTP MCP server: {name} at {}", redact_url(&url));
 
     // prepare headers
     let mut header_map = reqwest::header::HeaderMap::new();
@@ -146,7 +152,7 @@ async fn start_http_server(
             ) {
                 header_map.insert(k, v);
             } else {
-                error!("Invalid header ignored: {}: {}", k, v);
+                error!("{}", invalid_header_message(&k));
             }
         }
     }
@@ -206,8 +212,9 @@ async fn start_http_server(
 
     // Connect to the HTTP server
     let client = ().serve(transport).await.map_err(|e| {
-        error!("Failed to connect to HTTP MCP server {name}: {e}");
-        anyhow::anyhow!("HTTP connection failed: {e}")
+        let error = redact_url_in(&e.to_string(), &url);
+        error!("Failed to connect to HTTP MCP server {name}: {error}");
+        anyhow::anyhow!("HTTP connection failed: {error}")
     })?;
 
     info!("Successfully connected to HTTP MCP server: {name}");
@@ -222,7 +229,8 @@ async fn start_http_server(
     }
 
     Ok(format!(
-        "Started and connected to HTTP MCP server: {name} at {url}"
+        "Started and connected to HTTP MCP server: {name} at {}",
+        redact_url(&url)
     ))
 }
 
@@ -236,4 +244,28 @@ pub async fn stop_server(manager: &MCPServerManager, server_name: &str) -> Resul
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn log_lines_never_show_a_filled_url_query_or_header_value() {
+        let url = "https://mcp.exa.ai/mcp?exaApiKey=sk-live-123";
+        let start_line = format!("Starting HTTP MCP server: exa at {}", redact_url(url));
+        assert!(!start_line.contains("sk-live-123"), "{start_line}");
+        assert!(
+            start_line.contains("https://mcp.exa.ai/mcp"),
+            "{start_line}"
+        );
+
+        let header_line = invalid_header_message("Authorization");
+        assert!(header_line.contains("Authorization"), "{header_line}");
+        assert!(!header_line.contains("Bearer"), "{header_line}");
+
+        let client_error = format!("error sending request for url ({url})");
+        let masked = redact_url_in(&client_error, url);
+        assert!(!masked.contains("sk-live-123"), "{masked}");
+    }
 }

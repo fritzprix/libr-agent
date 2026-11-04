@@ -19,6 +19,8 @@ pub(super) struct DiscoveryContext {
     pub(super) app_handle: Option<AppHandle>,
     pub(super) runtime_states: RuntimeStateStore,
     pub(super) server_name_to_id: Arc<HashMap<String, String>>,
+    /// Filled secret values per server name; masked in failure messages.
+    pub(super) secret_values: Arc<HashMap<String, Vec<String>>>,
     /// How long the session waits before it carries on without pending servers.
     pub(super) tool_discovery_timeout: Duration,
     /// Safety cap for one server; a server is only given up on after this (or on exit/error).
@@ -60,6 +62,7 @@ pub(in super::super) struct BackgroundDiscoveryPlan {
     pub(in super::super) stdio_configs: HashMap<String, crate::mcp::types::MCPServerConfig>,
     pub(in super::super) http_configs: HashMap<String, crate::mcp::types::MCPServerConfig>,
     pub(in super::super) server_name_to_id: HashMap<String, String>,
+    pub(in super::super) secret_values: HashMap<String, Vec<String>>,
     pub(in super::super) tool_discovery_timeout: Duration,
     pub(in super::super) app_handle: Option<AppHandle>,
 }
@@ -91,6 +94,7 @@ pub(in super::super) struct RetryFailedServersParams {
     pub stdio_configs: HashMap<String, crate::mcp::types::MCPServerConfig>,
     pub http_configs: HashMap<String, crate::mcp::types::MCPServerConfig>,
     pub server_name_to_id: HashMap<String, String>,
+    pub secret_values: HashMap<String, Vec<String>>,
     pub tool_discovery_timeout: Duration,
     pub app_handle: Option<AppHandle>,
 }

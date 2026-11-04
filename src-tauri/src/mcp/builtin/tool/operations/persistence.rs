@@ -97,12 +97,24 @@ async fn ask_secret(session_id: Option<&str>, name: &str, server: &str) -> Resul
         )
         .await?;
     match outcome {
-        UserPromptOutcome::Answered(value) if !value.is_empty() => Ok(value),
-        UserPromptOutcome::Answered(_) => {
-            Err(format!("The secret '{name}' was empty. Nothing was saved."))
-        }
+        UserPromptOutcome::Answered(value) => clean_secret(&value, name),
         other => Err(secret_outcome_message(&other, name)),
     }
+}
+
+/// Trim a pasted value. A value with a control character inside (for example a line
+/// break) would be dropped as an invalid header, so it is refused.
+fn clean_secret(value: &str, name: &str) -> Result<String, String> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Err(format!("The secret '{name}' was empty. Nothing was saved."));
+    }
+    if value.chars().any(char::is_control) {
+        return Err(format!(
+            "The secret '{name}' contains a line break or another control character. Nothing was saved."
+        ));
+    }
+    Ok(value.to_string())
 }
 
 /// Write the entered values to the store and record every used name on the row.
@@ -361,6 +373,16 @@ mod tests {
             env: Default::default(),
             port_bindings: Vec::new(),
         }))
+    }
+
+    #[test]
+    fn a_pasted_secret_is_trimmed_and_control_characters_are_refused() {
+        assert_eq!(
+            clean_secret("  ghp_abc\r\n", "GITHUB_PAT").unwrap(),
+            "ghp_abc"
+        );
+        assert!(clean_secret(" \n", "GITHUB_PAT").is_err());
+        assert!(clean_secret("ghp_\nabc", "GITHUB_PAT").is_err());
     }
 
     #[test]
