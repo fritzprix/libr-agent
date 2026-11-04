@@ -10,7 +10,7 @@ use crate::mcp::types::MCPResult;
 use crate::session_isolation::IsolatedProcessConfig;
 
 use super::super::super::{terminal_manager, utils, workspace_server, WorkspaceServer};
-use super::super::{normalization, process};
+use super::super::process;
 
 /// Max stderr lines returned when a process ends during the startup check.
 const IMMEDIATE_EXIT_STDERR_TAIL_LINES: usize = 20;
@@ -195,9 +195,6 @@ impl WorkspaceServer {
         let stdout_path = process_tmp_dir.join("stdout");
         let stderr_path = process_tmp_dir.join("stderr");
 
-        // Normalize command
-        let normalized_command = normalization::normalize_shell_command(command);
-
         // Use configured isolation level
         let isolation_level = utils::get_shell_isolation_level().await;
 
@@ -206,7 +203,7 @@ impl WorkspaceServer {
             session_id: session_id.clone(),
             workspace_path: workspace_path.clone(),
             working_directory,
-            command: normalized_command.clone(),
+            command: command.to_string(),
             args: vec![],
             env_vars,
             secrets: self.shell_manager.session_secrets(&session_id).await,

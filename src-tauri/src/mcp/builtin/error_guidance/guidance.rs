@@ -461,7 +461,7 @@ impl SuccessHint {
             ("runShell" | "runPowerShell", ToolGroup::Workspace) => vec![],
             ("runInPersistentShell" | "runInPersistentPowerShell", ToolGroup::Workspace) => vec![
                 "Command state (CWD, env vars) is preserved for the next call".to_string(),
-                "With requireUserInput=true, the same synchronous call can pause for a human prompt and then resume to a final result".to_string(),
+                "With requireUserInput=true and storeAs=NAME, the call asks the user once, keeps the value as $NAME, then runs the command".to_string(),
                 "Use shell commands like `pwd` or `ls` in the next persistent-shell call to inspect the current shell directory".to_string(),
                 "workspace__readFile and workspace__listDirectory still use workspace root, not the shell CWD".to_string(),
             ],

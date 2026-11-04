@@ -24,10 +24,7 @@ pub mod workspace_server;
 
 // Re-exports for public API stability
 pub(crate) use types::INTERACTIVE_SHELL_INPUT_MAX_BYTES;
-pub use types::{
-    InteractiveShellInputType, InteractiveShellRequest, StdinDelivery, PERSISTENT_SHELL_TOOL,
-    RUN_SHELL_TOOL,
-};
+pub use types::{PERSISTENT_SHELL_TOOL, RUN_SHELL_TOOL};
 pub use workspace_server::WorkspaceServer;
 
 #[cfg(test)]

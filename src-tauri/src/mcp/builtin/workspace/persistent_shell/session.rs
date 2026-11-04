@@ -20,7 +20,6 @@ use std::process::Stdio;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use super::secrets::SecretMap;
-use crate::mcp::builtin::workspace::StdinDelivery;
 use crate::session_isolation::{PathMappingLayer, ShellType, SpawnedShell};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
@@ -172,6 +171,18 @@ impl PersistentShell {
                 }
             }
 
+            // A new session with no controlling terminal: sudo cannot open
+            // /dev/tty and wait on a prompt that nobody can answer.
+            // SAFETY: setsid is async-signal-safe and touches no Rust state.
+            unsafe {
+                cmd.pre_exec(|| {
+                    if libc::setsid() == -1 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    Ok(())
+                });
+            }
+
             debug!("Creating persistent bash shell for session: {}", session_id);
         }
 
@@ -261,6 +272,7 @@ impl PersistentShell {
         if crate::mcp::builtin::workspace::utils::get_shell_runtime_bootstrap_enabled().await {
             shell.apply_runtime_bootstrap().await;
         }
+        shell.install_sudo_shims().await;
 
         Ok(shell)
     }
@@ -306,6 +318,7 @@ impl PersistentShell {
         if crate::mcp::builtin::workspace::utils::get_shell_runtime_bootstrap_enabled().await {
             shell.apply_runtime_bootstrap().await;
         }
+        shell.install_sudo_shims().await;
 
         Ok(shell)
     }
@@ -572,129 +585,6 @@ impl PersistentShell {
         Ok((stdout, stderr, exit_code, cwd))
     }
 
-    /// Execute a command with user input (Two-Tool Pattern)
-    ///
-    /// Injects user input via stdin before executing the command.
-    /// This is used for interactive commands like sudo that require password input.
-    ///
-    /// # Arguments
-    /// * `command` - Shell command to execute
-    /// * `user_input` - Input to inject via stdin
-    /// * `stdin_delivery` - Whether input is for the host shell or a child process
-    ///
-    /// # Returns
-    /// Tuple of (stdout, stderr, exit_code, cwd)
-    ///
-    /// # Security
-    /// Host delivery keeps secrets off the command line. Child delivery pipes input into the command.
-    pub async fn execute_with_input(
-        &mut self,
-        command: &str,
-        user_input: &str,
-        #[cfg_attr(unix, allow(unused_variables))] stdin_delivery: StdinDelivery,
-    ) -> Result<(String, String, i32, String)> {
-        #[cfg(windows)]
-        if stdin_delivery == StdinDelivery::Child && self.uses_host_powershell_protocol() {
-            let piped_command = format!(
-                "{} | {command}",
-                format_powershell_stdin_literal(user_input)
-            );
-            debug!(
-                "Executing child-stdin piped command in session {}",
-                self.session_id
-            );
-            return self.execute(&piped_command).await;
-        }
-
-        let sentinel = generate_sentinel();
-
-        debug!(
-            "Executing command with host stdin in session {} ({} bytes)",
-            self.session_id,
-            command.len()
-        );
-
-        if self.uses_host_powershell_protocol() {
-            self.write_powershell_host_stdin_command(command, user_input, &sentinel)
-                .await?;
-        } else {
-            // Use a unique sentinel for the heredoc to avoid conflicts with input content
-            let input_sentinel = format!("INPUT_SENTINEL_{}", generate_sentinel());
-
-            // Wrap command in a block and feed input via heredoc
-            // Format: { command; } <<'SENTINEL'
-            // input
-            // SENTINEL
-            //
-            // We use single quotes around SENTINEL to prevent variable expansion in input
-            let heredoc_cmd =
-                format!("{{ {command}; }} <<'{input_sentinel}'\n{user_input}\n{input_sentinel}\n");
-
-            self.stdin.write_all(heredoc_cmd.as_bytes()).await?;
-
-            // Capture exit code BEFORE echoing sentinel (which would reset $?)
-            self.stdin
-                .write_all(
-                    format!(
-                        "__code=$?; echo '{sentinel}'; echo \"__CWD__$(pwd)\"; echo \"EXIT_CODE_$__code\"\n"
-                    )
-                    .as_bytes(),
-                )
-                .await?;
-        }
-
-        self.stdin.flush().await?;
-
-        let (stdout, stderr, exit_code, cwd) = self.read_until_sentinel(&sentinel).await?;
-
-        // Update cached CWD
-        self.last_known_cwd = cwd.clone();
-
-        Ok((stdout, stderr, exit_code, cwd))
-    }
-
-    #[cfg(windows)]
-    async fn write_powershell_host_stdin_command(
-        &mut self,
-        command: &str,
-        user_input: &str,
-        sentinel: &str,
-    ) -> Result<()> {
-        // Send command first
-        self.stdin.write_all(command.as_bytes()).await?;
-        self.stdin.write_all(b"\n").await?;
-
-        // Send user input (stdin injection)
-        self.stdin.write_all(user_input.as_bytes()).await?;
-        self.stdin.write_all(b"\n").await?;
-
-        // Send sentinel markers
-        self.stdin
-            .write_all(format!("Write-Output '{}'\n", sentinel).as_bytes())
-            .await?;
-
-        // Capture CWD
-        self.stdin
-            .write_all("Write-Output \"__CWD__$((Get-Location).Path)\"\n".as_bytes())
-            .await?;
-
-        // Robust exit code capture for PowerShell (PS 5.1 compatible)
-        self.stdin
-            .write_all("Write-Output \"EXIT_CODE_$(if ($LASTEXITCODE -ne 0 -or -not $?) { if ($LASTEXITCODE -eq 0) { 1 } else { $LASTEXITCODE } } else { 0 })\"\n".as_bytes())
-            .await?;
-        Ok(())
-    }
-
-    #[cfg(unix)]
-    async fn write_powershell_host_stdin_command(
-        &mut self,
-        _command: &str,
-        _user_input: &str,
-        _sentinel: &str,
-    ) -> Result<()> {
-        anyhow::bail!("PowerShell host-stdin framing is not available on Unix hosts")
-    }
-
     /// Get the session ID
     #[allow(dead_code)]
     pub fn session_id(&self) -> &str {
@@ -712,22 +602,6 @@ impl PersistentShell {
         self.child.kill().await?;
         Ok(())
     }
-}
-
-/// Format user input as a PowerShell literal suitable for piping into a child process.
-#[cfg(windows)]
-fn format_powershell_stdin_literal(value: &str) -> String {
-    let value = value.trim_start_matches('\u{feff}');
-    if !value.contains('\n') && !value.contains('\r') {
-        return format!("'{}'", value.replace('\'', "''"));
-    }
-
-    let mut delimiter = "LIBRAGENT_INPUT_EOF".to_string();
-    while value.contains(&delimiter) {
-        delimiter.push('_');
-    }
-
-    format!("@'{delimiter}'\n{value}\n{delimiter}")
 }
 
 impl Drop for PersistentShell {
