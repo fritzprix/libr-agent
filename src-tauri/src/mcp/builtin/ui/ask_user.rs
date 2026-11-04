@@ -103,6 +103,15 @@ pub fn parse_ask_user_args(args: &Value) -> Result<Vec<UserQuestion>, MCPResult>
                 &["Omit options for a free-text question."],
             ));
         }
+        if let Some(options) = &item.options {
+            let mut seen_options = HashSet::new();
+            if !options.iter().all(|option| seen_options.insert(option)) {
+                return Err(invalid(
+                    format!("Question '{id}' has duplicate options"),
+                    &["Give every option different text."],
+                ));
+            }
+        }
         let has_options = item.options.is_some();
         let multi_select = item.multi_select.unwrap_or(false);
         if multi_select && !has_options {
@@ -138,10 +147,18 @@ pub fn format_ask_user_answer(questions: &[UserQuestion], raw: &str) -> Result<S
         let answer = answers
             .get(&question.id)
             .ok_or_else(|| format!("Missing answer for question '{}'", question.id))?;
+        let is_allowed = |value: &String| {
+            !value.trim().is_empty()
+                && (question.allow_custom
+                    || question
+                        .options
+                        .as_ref()
+                        .is_none_or(|options| options.contains(value)))
+        };
         let answered = match (answer, question.multi_select) {
-            (AskUserAnswer::One(text), false) => !text.trim().is_empty(),
+            (AskUserAnswer::One(text), false) => is_allowed(text),
             (AskUserAnswer::Many(values), true) => {
-                !values.is_empty() && values.iter().all(|value| !value.trim().is_empty())
+                !values.is_empty() && values.iter().all(is_allowed)
             }
             _ => false,
         };
@@ -252,6 +269,7 @@ mod tests {
             json!({ "questions": [{ "id": "a", "question": "Q?", "type": "text" }] }),
             json!({ "questions": [{ "id": "a", "question": "Q?", "multiSelect": true }] }),
             json!({ "questions": [{ "id": "a", "question": "Q?", "options": [] }] }),
+            json!({ "questions": [{ "id": "a", "question": "Q?", "options": ["x", "x"] }] }),
             json!({ "questions": [{ "id": " ", "question": "Q?" }] }),
             json!({}),
         ] {
@@ -293,6 +311,7 @@ mod tests {
             json!({ "name": "", "lang": "Go", "targets": ["linux"] }).to_string(),
             json!({ "name": "libr", "lang": ["Go"], "targets": ["linux"] }).to_string(),
             json!({ "name": "libr", "lang": "Go", "targets": [] }).to_string(),
+            json!({ "name": "libr", "lang": "Go", "targets": ["bsd"] }).to_string(),
             "not json".to_string(),
         ] {
             assert!(format_ask_user_answer(&questions, &raw).is_err(), "{raw}");
