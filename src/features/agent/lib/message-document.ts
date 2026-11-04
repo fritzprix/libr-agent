@@ -90,6 +90,7 @@ function tryLegacyInteractiveDocument(
     }
     const html = resourceItem.resource.text;
     const uri = resourceItem.resource.uri ?? '';
+    // Every old template output had this URI or the raw-data block, so no tool-name check is needed.
     const isInteractive =
       uri.startsWith('ui://interactive/') ||
       html.includes("id='raw-data'") ||

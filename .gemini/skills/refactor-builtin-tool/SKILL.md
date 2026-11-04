@@ -20,7 +20,7 @@ Use this skill when:
 
 AI agents operate within strict context limits. Every exposed tool consumes tokens and attention.
 
-- **Hide Internal Callbacks:** Never expose internal system callbacks or UI triggers (e.g., `resumeFromWait`, `getUserAnswer`, `circuitBreak`) to the `all_tools()` export. The backend router (`call_tool`) can handle these without the AI needing to know they exist.
+- **Hide Internal Callbacks:** Never expose internal system callbacks or UI triggers (e.g., `resumeFromWait`, `resumeCircuitBreak`) to the `all_tools()` export. The backend router (`call_tool`) can handle these without the AI needing to know they exist.
 - **Concise Descriptions:** Keep tool descriptions brief. Avoid paragraphs of prerequisites or error-handling advice. The schema itself should document parameters.
 - **Progressive Disclosure:** For discovery tools (like `listTools`), provide a compact summary (names only) when queried broadly. Show detailed schemas only when a specific, narrowed query is provided.
 

@@ -30,7 +30,8 @@ export function disableLegacyInteractiveForm<T extends UiResourceLike>(
     return resource;
   }
 
-  const bodyClose = resource.text.search(/<\/body>/i);
+  // Last match: an embedded `#raw-data` JSON may contain the literal text.
+  const bodyClose = resource.text.toLowerCase().lastIndexOf('</body>');
   const text =
     bodyClose === -1
       ? resource.text + READONLY_BLOCK

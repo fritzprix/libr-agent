@@ -34,6 +34,15 @@ describe('disableLegacyInteractiveForm', () => {
     expect(disableLegacyInteractiveForm(result)).toBe(result);
   });
 
+  it('inserts before the real closing body tag, not one inside raw data', () => {
+    const html =
+      '<html><body><script id="raw-data" type="application/json">"</body>"</script><input id="a"></body></html>';
+    const text = disableLegacyInteractiveForm(legacy(html)).text ?? '';
+    expect(text.indexOf('data-libragent-readonly')).toBeGreaterThan(
+      text.indexOf('<input id="a">'),
+    );
+  });
+
   it('adds the block only once', () => {
     const once = disableLegacyInteractiveForm(legacy(FORM_HTML));
     expect(disableLegacyInteractiveForm(once)).toBe(once);
