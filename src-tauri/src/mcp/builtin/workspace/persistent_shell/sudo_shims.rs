@@ -4,8 +4,11 @@
 //! each POSIX shell (host bash or container sh) gets a private bin folder at the
 //! front of `PATH`:
 //!
-//! - `askpass` prints `$SUDO_PASSWORD` and is exported as `SUDO_ASKPASS`.
-//! - `sudo` runs the real sudo with `-A` when `$SUDO_PASSWORD` is set.
+//! - `askpass` prints `$SUDO_PASSWORD` (or exits 1 when it is empty) and is
+//!   exported as `SUDO_ASKPASS`.
+//! - `sudo` runs the real sudo with `-A` when `$SUDO_PASSWORD` is set. Without it,
+//!   `SUDO_ASKPASS` is unset first: with `DISPLAY` set and no tty, sudo would run
+//!   the askpass helper even without `-A`.
 //! - `pkexec`, `su`, `doas` fail at once with a hint instead of hanging.
 //!
 //! The agent stores the password with `requireUserInput` + `storeAs=SUDO_PASSWORD`.
@@ -27,8 +30,10 @@ const BLOCKED_COMMANDS: [&str; 3] = ["pkexec", "su", "doas"];
 pub(crate) fn build_install_script() -> String {
     let mut script = String::from(
         r#"if __lr_bin=$(mktemp -d "${TMPDIR:-/tmp}/libragent-bin.XXXXXX"); then
+trap "rm -rf '$__lr_bin'" EXIT
 cat > "$__lr_bin/askpass" <<'__LR_EOF'
 #!/bin/sh
+[ -n "$SUDO_PASSWORD" ] || exit 1
 printf '%s\n' "$SUDO_PASSWORD"
 __LR_EOF
 __lr_sudo=$(command -v sudo 2>/dev/null || true)
@@ -38,6 +43,7 @@ cat > "$__lr_bin/sudo" <<__LR_EOF
 if [ -n "\$SUDO_PASSWORD" ]; then
   exec "$__lr_sudo" -A "\$@"
 fi
+unset SUDO_ASKPASS
 exec "$__lr_sudo" "\$@"
 __LR_EOF
 fi
@@ -68,6 +74,7 @@ pub fn password_hint(stdout: &str, stderr: &str) -> Option<&'static str> {
     }
     let needs_prompt = output.contains("a terminal is required")
         || output.contains("no askpass program")
+        || output.contains("no password was provided")
         || output.contains(&PASSWORD_PROMPT_HINT.to_lowercase());
     needs_prompt.then_some(PASSWORD_PROMPT_HINT)
 }
@@ -114,6 +121,7 @@ mod tests {
         for stderr in [
             "sudo: a terminal is required to read the password",
             "sudo: no askpass program specified, try setting SUDO_ASKPASS",
+            "sudo: no password was provided",
         ] {
             assert_eq!(password_hint("", stderr), Some(PASSWORD_PROMPT_HINT));
         }
@@ -148,5 +156,40 @@ mod tests {
         assert!(stdout.contains("code=1"), "stdout: {stdout}");
         assert!(stdout.trim_end().ends_with("dummy"), "stdout: {stdout}");
         assert!(stderr.contains(PASSWORD_PROMPT_HINT), "stderr: {stderr}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sudo_wrapper_passes_askpass_only_with_a_stored_password() {
+        // A fake `sudo` first in PATH stands in for the real one the wrapper resolves.
+        let script = format!(
+            r#"__fake=$(mktemp -d)
+cat > "$__fake/sudo" <<'EOF'
+#!/bin/sh
+echo "args=$* askpass=${{SUDO_ASKPASS-unset}}"
+EOF
+chmod 700 "$__fake/sudo"
+PATH="$__fake:$PATH"
+{install}
+SUDO_PASSWORD=dummy sudo true
+SUDO_PASSWORD= sudo true
+SUDO_PASSWORD= "$SUDO_ASKPASS"; echo "askpass_code=$?"
+rm -rf "$__fake""#,
+            install = build_install_script()
+        );
+        let output = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(&script)
+            .output()
+            .expect("run sh");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let lines: Vec<&str> = stdout.lines().collect();
+        assert_eq!(lines.len(), 3, "stdout: {stdout}");
+        assert!(
+            lines[0].starts_with("args=-A true askpass=") && lines[0].contains("libragent-bin."),
+            "stdout: {stdout}"
+        );
+        assert_eq!(lines[1], "args=true askpass=unset", "stdout: {stdout}");
+        assert_eq!(lines[2], "askpass_code=1", "stdout: {stdout}");
     }
 }
