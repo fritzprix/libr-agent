@@ -198,8 +198,8 @@ class DetermineStatusTests(unittest.TestCase):
         )
         self.assertEqual(status, "review")
 
-    def test_stacked_pr_does_not_await_ci(self) -> None:
-        # Base is a feature branch -> CI does not trigger, never block on await-ci.
+    def test_stacked_pr_reviewed_clean_awaits_ci(self) -> None:
+        # Base is a feature branch -> CI never runs, so the PR stays clean until retargeted.
         status = determine_status(
             mergeable="MERGEABLE",
             head="head1",
@@ -213,7 +213,10 @@ class DetermineStatusTests(unittest.TestCase):
             pending_checks=["Any"],
             failing_checks=[],
         )
-        self.assertEqual(status, "review")
+        self.assertEqual(status, "await-ci")
+
+    def test_stacked_pr_not_reviewed_yet_is_review(self) -> None:
+        self.assertEqual(determine_status(**base_args(base="feat/x", ci_ran=False)), "review")
 
     def test_max_rounds_escalates(self) -> None:
         status = determine_status(
@@ -248,11 +251,36 @@ class GapTests(unittest.TestCase):
         self.assertEqual(status, "review")
         self.assertIn("CI failing", reason)
 
-    def test_approved_stacked_ignores_ci(self) -> None:
+    def test_approved_stacked_without_ci_is_review(self) -> None:
         verdict = {**self.approve, "base": "feat/x"}
+        status, reason, _ = classify(**base_args(
+            base="feat/x", last_verdict=verdict, total_verdicts=1, ci_ran=False))
+        self.assertEqual(status, "review")
+        self.assertIn("without green CI", reason)
+
+    def test_approve_with_no_ci_run_is_review(self) -> None:
+        status = determine_status(**base_args(last_verdict=self.approve, total_verdicts=1, ci_ran=False))
+        self.assertEqual(status, "review")
+
+    def test_approve_with_pending_ci_is_review(self) -> None:
         status = determine_status(**base_args(
-            base="feat/x", last_verdict=verdict, total_verdicts=1, failing_checks=["Test"]))
-        self.assertEqual(status, "approved")
+            last_verdict=self.approve, total_verdicts=1, pending_checks=["Test"]))
+        self.assertEqual(status, "review")
+
+    def test_clean_with_no_ci_run_awaits_ci(self) -> None:
+        status, reason, _ = classify(**base_args(clean_head="head1", ci_ran=False))
+        self.assertEqual(status, "await-ci")
+        self.assertIn("no CI run", reason)
+
+    def test_clean_on_stacked_pr_awaits_ci(self) -> None:
+        status, reason, _ = classify(**base_args(base="feat/x", clean_head="head1", ci_ran=False))
+        self.assertEqual(status, "await-ci")
+        self.assertIn("retargeted", reason)
+
+    def test_clean_with_green_ci_is_review_for_verdict(self) -> None:
+        status, reason, _ = classify(**base_args(clean_head="head1"))
+        self.assertEqual(status, "review")
+        self.assertIn("CI green", reason)
 
     def test_base_change_after_approve_is_review(self) -> None:
         verdict = {**self.approve, "base": "feat/x"}

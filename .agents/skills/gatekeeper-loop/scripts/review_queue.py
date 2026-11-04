@@ -10,12 +10,13 @@ status values:
   review     - needs review: new head/rebase/base change since last verdict, a
                worker response, an owner comment, never reviewed, CI failed
                (also after approve), or CI passed for a clean-marked PR.
-  await-ci   - current head has a `verdict=clean` marker (or state entry) and
-               only pending CI remains. Not reviewed again.
+  await-ci   - current head has a `verdict=clean` marker (or state entry) and CI
+               is not green yet: pending, not run, or a stacked PR (no CI until
+               retargeted). Not reviewed again.
   wait-worker- changes requested at the current head without response, or merge
                conflicts. Worker's turn to fix.
   approved   - approve verdict exists for the current head, base unchanged, CI
-               not failing, no newer owner comment.
+               green at the head, no newer owner comment.
   escalate   - round limit reached or unresolvable dispute; hand to the user.
   human-only - touches the gatekeeper's own skill; left to the human.
 
@@ -151,10 +152,16 @@ def classify(
     reviewed_base: str | None = None,
     rebased: bool = False,
     owner_comment: bool = False,
+    ci_ran: bool = True,
 ) -> tuple[str, str, int]:
-    """Return (status, one-line reason, priority). Lower priority number is handled first."""
+    """Return (status, one-line reason, priority). Lower priority number is handled first.
+
+    An approve needs green CI at the head. Stacked PRs (non-dev base) never run CI, so they
+    stay at `clean` until they are retargeted and CI passes.
+    """
     ci_applies = is_dev_base(base)
     ci_failed = ci_applies and bool(failing_checks)
+    ci_green = ci_applies and ci_ran and not failing_checks and not pending_checks
 
     if mergeable == "CONFLICTING":
         return "wait-worker", "merge conflict; worker must rebase", 9
@@ -173,6 +180,8 @@ def classify(
             return "review", f"base changed after approve ({reviewed_base} -> {base})", 0
         if ci_failed:
             return "review", "CI failing after approve", 0
+        if not ci_green:
+            return "review", "approve without green CI at this head; replace it with a clean marker", 0
         return "approved", "approved at current head", 9
 
     if at_head and last_verdict.get("verdict") == "changes-requested":
@@ -190,10 +199,16 @@ def classify(
     reviewed_clean = clean_head == head or (
         state_reviewed_head == head and state_pending_ci and not has_open_findings
     )
-    if reviewed_clean and ci_applies and pending_checks and not failing_checks:
+    if reviewed_clean and ci_green:
+        return "review", "reviewed clean; CI green at this head, issue the verdict", 1
+    if reviewed_clean and ci_failed:
+        return "review", "reviewed clean; CI failing, diagnose it", 1
+    if reviewed_clean and not ci_applies:
+        return "await-ci", "reviewed clean; stacked PR runs no CI until it is retargeted", 9
+    if reviewed_clean and pending_checks:
         return "await-ci", "reviewed clean; waiting for pending CI", 9
     if reviewed_clean:
-        return "review", "reviewed clean; CI done or not applicable, issue the verdict", 1
+        return "await-ci", "reviewed clean; no CI run at this head yet", 9
     if failing_checks and ci_applies:
         return "review", "not reviewed yet; CI failing", 1
     return "review", "not reviewed yet", 1
@@ -267,6 +282,7 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
         reviewed_base=(last or {}).get("base"),
         rebased=rebased,
         owner_comment=bool(owner),
+        ci_ran=bool(checks),
     )
     if own_skill:
         status, reason, priority = "human-only", "changes loop skill files; left to the human", 9

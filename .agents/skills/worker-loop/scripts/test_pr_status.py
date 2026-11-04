@@ -99,6 +99,17 @@ class SelectNextActionTest(unittest.TestCase):
             everything[key] = self.base[key]
         self.assertEqual(self.action(**everything), "none")
 
+    def test_merged_base_retargets_before_anything_else(self):
+        everything = dict(
+            conflicting=True, duplicates=["abc"], gatekeeper={"awaitingWorker": True},
+            has_comments=True, failing=["ci"], pending=["ci"],
+        )
+        self.assertEqual(self.action(base_merged=True, **everything), "retarget")
+
+    def test_dev_base_is_never_looked_up(self):
+        self.assertIsNone(pr_status.merged_base_pr("dev/0.9.x"))
+        self.assertIsNone(pr_status.merged_base_pr("main"))
+
 
 class MarkerAndGatekeeperStateTest(unittest.TestCase):
     def test_marker_must_be_at_comment_start(self):

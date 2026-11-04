@@ -20,7 +20,7 @@ Classify every finding. Code review and `changes-requested` verdicts proceed imm
 7. **PR hygiene** — Semantic title, base is the latest `dev/<version>`, body has `Fixes #N` (closes on merge into `dev/*` too; partial work must use `Refs #N`) and a test plan that matches what was run.
 8. **CI vs Code Review** — Check build and test results in CI; do not re-run heavy test suites locally. **However, CI does not replace code review (diff inspection, design analysis, acceptance criteria satisfaction, edge cases).** Perform code review directly regardless of CI status. Green CI is only a condition for issuing an approve verdict. If CI fails, analyze failure logs and include root cause and specific fix guidance in findings.
 9. **Cross-platform** — New or changed tests/code touching paths, separators, shell, processes or permissions must pass on every OS job in CI (ubuntu, windows, macos). Read each job's result for the reviewed head; cancelled/skipped is not a pass. Reason about Windows path and quoting behavior in the diff itself, since CI may not have finished yet.
-10. **Stacked PRs** — Stacked PRs whose base is not a dev branch (`dev/*`) do not trigger GitHub Actions CI. Ignore `ciPending` and perform code review normally. When approving, add the explicit condition: _"CI requires verification after retargeting"_.
+10. **Stacked PRs** — Stacked PRs whose base is not a dev branch (`dev/*`) do not trigger GitHub Actions CI. Review the code normally, but post at most `clean`; approve only after the PR is retargeted and CI is green at the head.
 
 ## Re-review discipline
 

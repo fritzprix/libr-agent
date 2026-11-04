@@ -6,6 +6,8 @@ and pending checks, unresolved review threads, and PR comments from others
 that arrived after the latest commit, plus the latest gatekeeper-loop verdict
 (own marker comments only). `duplicateCommits` lists head commits whose patch-id is
 already in the base (needs a prior `git fetch origin`); they yield `restack`.
+A stacked PR whose base branch was merged yields `retarget` (`retargetTo` names the
+new base). A PR claimed by another worker yields `claimed`.
 Bodies are truncated; fetch the full text only for items you act on.
 """
 from __future__ import annotations
@@ -15,6 +17,8 @@ import json
 import re
 import subprocess
 import sys
+
+import worker_state
 
 # Loop markers must appear at the very start of the comment (ignoring optional UTF-8 BOM and leading whitespace).
 # Quoted markers or mentions later in the comment are ignored.
@@ -99,8 +103,24 @@ def gatekeeper_state(comments: list[dict], me: str, head_sha: str) -> dict | Non
     return verdict
 
 
+def is_dev_base(base: str) -> bool:
+    """True if CI runs on PRs targeting this base branch."""
+    return base in ("main", "master") or base.startswith("dev/")
+
+
+def merged_base_pr(base: str) -> dict | None:
+    """For a stacked PR, the merged PR whose head is our base branch (then the stack is gone)."""
+    if is_dev_base(base):
+        return None
+    merged = json.loads(
+        gh("pr", "list", "--head", base, "--state", "merged", "--limit", "1", "--json", "number,baseRefName")
+    )
+    return merged[0] if merged else None
+
+
 def select_next_action(
     *,
+    base_merged: bool = False,
     conflicting: bool,
     duplicates: list[str],
     gatekeeper: dict | None,
@@ -108,6 +128,9 @@ def select_next_action(
     failing: list[str],
     pending: list[str],
 ) -> str:
+    # Conflicts and CI are meaningless against a merged base: retarget first.
+    if base_merged:
+        return "retarget"
     if conflicting:
         return "resolve-conflict"
     if duplicates:
@@ -123,7 +146,7 @@ def select_next_action(
     return "none"
 
 
-def summarize(number: int, owner: str, name: str, me: str) -> dict:
+def summarize(number: int, owner: str, name: str, me: str, claimed_by: str | None = None) -> dict:
     pr = json.loads(
         gh(
             "pr", "view", str(number), "--json",
@@ -185,8 +208,10 @@ def summarize(number: int, owner: str, name: str, me: str) -> dict:
             })
 
     duplicates = duplicate_commits(pr["baseRefName"], pr["headRefName"])
+    base_pr = merged_base_pr(pr["baseRefName"])
 
     next_action = select_next_action(
+        base_merged=base_pr is not None,
         conflicting=pr.get("mergeable") == "CONFLICTING",
         duplicates=duplicates,
         gatekeeper=gatekeeper,
@@ -194,6 +219,8 @@ def summarize(number: int, owner: str, name: str, me: str) -> dict:
         failing=failing,
         pending=pending,
     )
+    if claimed_by:
+        next_action = "claimed"
 
     return {
         "number": pr["number"],
@@ -211,6 +238,9 @@ def summarize(number: int, owner: str, name: str, me: str) -> dict:
         "newComments": new_comments,
         "gatekeeper": gatekeeper,
         "duplicateCommits": duplicates,
+        "baseMergedPR": base_pr["number"] if base_pr else None,
+        "retargetTo": base_pr["baseRefName"] if base_pr else None,
+        "claimedBy": claimed_by,
         "nextAction": next_action,
     }
 
@@ -218,7 +248,10 @@ def summarize(number: int, owner: str, name: str, me: str) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pr", type=int, help="Only this PR number")
+    parser.add_argument("--worker", default=None, help="Worker name (default: $WORKER_ID or 'worker')")
     args = parser.parse_args()
+    worker = worker_state.worker_name(args.worker)
+    claims = worker_state.load_claims()
 
     repo = json.loads(gh("repo", "view", "--json", "owner,name"))
     owner, name = repo["owner"]["login"], repo["name"]
@@ -230,7 +263,11 @@ def main() -> None:
         listed = json.loads(gh("pr", "list", "--author", "@me", "--state", "open", "--json", "number,isDraft"))
         numbers = [p["number"] for p in listed if not p.get("isDraft")]
 
-    print(json.dumps([summarize(n, owner, name, me) for n in numbers], ensure_ascii=False, indent=2))
+    summaries = [
+        summarize(n, owner, name, me, worker_state.claimed_by_other(claims, f"pr:{n}", worker))
+        for n in numbers
+    ]
+    print(json.dumps(summaries, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
