@@ -83,7 +83,7 @@ fn message_to_session_ignores_timeout_when_not_waiting() {
     }))
     .expect("timeout should be ignored when not waiting");
 
-    assert!(!wait_for_response);
+    assert!(!wait_for_response.value);
     assert_eq!(timeout_seconds, None);
 }
 
@@ -94,7 +94,7 @@ fn message_to_session_uses_default_timeout_when_waiting() {
     }))
     .expect("waiting path should supply a default timeout");
 
-    assert!(wait_for_response);
+    assert!(wait_for_response.value);
     assert_eq!(timeout_seconds, Some(3600));
 }
 
@@ -103,7 +103,7 @@ fn message_to_session_defaults_to_waiting_when_omitted() {
     let (wait_for_response, timeout_seconds) = parse_message_to_session_wait_config(&json!({}))
         .expect("waiting path should supply a default timeout when omitted");
 
-    assert!(wait_for_response);
+    assert!(wait_for_response.value);
     assert_eq!(timeout_seconds, Some(3600));
 }
 
