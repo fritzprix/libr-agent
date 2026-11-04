@@ -133,6 +133,14 @@ pub fn create_run_persistent_shell_tool() -> MCPTool {
         ),
     );
     props.insert(
+        "storeAs".to_string(),
+        string_prop(
+            Some(1),
+            Some(64),
+            Some("With requireUserInput=true: ask the user once for a secret and keep it as env var $NAME for this session (uppercase name, e.g. API_TOKEN). The value is never shown to you; the result names the variable only."),
+        ),
+    );
+    props.insert(
         "stdinDelivery".to_string(),
         enum_prop(
             vec!["host", "child"],
@@ -316,6 +324,14 @@ pub fn create_run_persistent_powershell_tool() -> MCPTool {
             vec!["password", "text"],
             "text",
             Some("Input type: 'password' (hidden) or 'text' (visible)"),
+        ),
+    );
+    props.insert(
+        "storeAs".to_string(),
+        string_prop(
+            Some(1),
+            Some(64),
+            Some("With requireUserInput=true: ask the user once for a secret and keep it as env var $NAME for this session (uppercase name, e.g. API_TOKEN). The value is never shown to you; the result names the variable only."),
         ),
     );
     props.insert(

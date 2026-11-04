@@ -4,7 +4,7 @@ mod error;
 mod root_exec;
 mod session_config;
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Instant;
@@ -73,6 +73,21 @@ fn apply_exec_env(
         } else {
             cmd.arg("-e").arg(format!("{key}={value}"));
         }
+    }
+    Ok(())
+}
+
+/// Passes session secrets to `docker exec` as `-e KEY`; each value goes only into the
+/// docker CLI's own environment, never into the host process list.
+fn apply_secret_exec_env(
+    cmd: &mut AsyncCommand,
+    secrets: &BTreeMap<String, String>,
+) -> RuntimeResult<()> {
+    for (key, value) in secrets {
+        validate_env_key(key).map_err(WorkspaceRuntimeError::InvalidConfig)?;
+        validate_env_value(key, value).map_err(WorkspaceRuntimeError::InvalidConfig)?;
+        cmd.arg("-e").arg(key);
+        cmd.env(key, value);
     }
     Ok(())
 }
@@ -367,8 +382,11 @@ impl WorkspaceRuntimeManager {
             .map(|_| ())
     }
 
+    /// `secrets` are passed as `-e KEY` with the value in the docker CLI env, so no value
+    /// appears in the host process list.
     pub async fn spawn_docker_persistent_shell(
         session: &SessionMetadata,
+        secrets: &BTreeMap<String, String>,
     ) -> RuntimeResult<SpawnedShell> {
         let shell = prepare_docker_runtime(session, false, false, None).await?;
 
@@ -378,6 +396,8 @@ impl WorkspaceRuntimeManager {
         let mut cmd = AsyncCommand::new("docker");
         apply_docker_cli_env(&mut cmd);
         cmd.args(["exec", "-i", "-w", &workdir]);
+
+        apply_secret_exec_env(&mut cmd, secrets)?;
 
         if let Some(config) = &session.docker_config {
             for (key, value) in &config.env {
@@ -623,6 +643,24 @@ mod exec_env_tests {
         assert!(args.contains(&"LIBRAGENT_WAKE_URL".to_string()));
         assert!(args.contains(&"PLAIN=1".to_string()));
         assert!(envs.contains(&("LIBRAGENT_WAKE_URL".to_string(), Some(url.to_string()))));
+    }
+
+    #[test]
+    fn secret_values_stay_out_of_the_docker_arguments() {
+        let mut cmd = AsyncCommand::new("docker");
+        let secrets = BTreeMap::from([("API_TOKEN".to_string(), "s3cretvalue".to_string())]);
+        apply_secret_exec_env(&mut cmd, &secrets).unwrap();
+        let std_cmd = cmd.as_std();
+        let args: Vec<String> = std_cmd
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(args, vec!["-e".to_string(), "API_TOKEN".to_string()]);
+        let value = std_cmd
+            .get_envs()
+            .find(|(k, _)| *k == std::ffi::OsStr::new("API_TOKEN"))
+            .and_then(|(_, v)| v);
+        assert_eq!(value, Some(std::ffi::OsStr::new("s3cretvalue")));
     }
 
     fn docker_session(env: Vec<(&str, &str)>) -> SessionMetadata {

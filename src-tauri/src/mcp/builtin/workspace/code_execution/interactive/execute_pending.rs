@@ -51,7 +51,7 @@ impl WorkspaceServer {
                     session_id
                 );
 
-                if let Err(error) = self.shell_manager.terminate_shell(&session_id).await {
+                if let Err(error) = self.shell_manager.restart_shell(&session_id).await {
                     error!(
                         "Failed to terminate timed out interactive shell for session {}: {}",
                         session_id, error
