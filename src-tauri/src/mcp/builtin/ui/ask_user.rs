@@ -326,7 +326,6 @@ mod tests {
         let server = UiServer::new();
         let names: Vec<String> = server.tools().into_iter().map(|tool| tool.name).collect();
         assert!(names.contains(&"askUser".to_string()));
-        assert!(!names.contains(&"presentInteractive".to_string()));
 
         let refused = server
             .call_tool(
@@ -347,11 +346,6 @@ mod tests {
             .await
             .expect("tool returns a result");
         assert_eq!(no_session.is_error, Some(true));
-
-        assert!(server
-            .call_tool("presentInteractive", json!({}), None)
-            .await
-            .is_err());
     }
 
     #[test]

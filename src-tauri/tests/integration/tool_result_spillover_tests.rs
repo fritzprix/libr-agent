@@ -142,7 +142,7 @@ async fn spillover_pointer_is_what_gets_persisted_to_repository() {
                 }),
                 service_info: ServiceInfo {
                     server_name: "builtin.ui".to_string(),
-                    tool_name: "presentInteractive".to_string(),
+                    tool_name: "reportResult".to_string(),
                     backend_type: "BuiltInRust".to_string(),
                 },
             },

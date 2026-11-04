@@ -262,7 +262,6 @@ mod tests {
     #[test]
     fn internal_ui_callback_tool_names_are_recognized() {
         assert!(is_internal_ui_callback_tool_name("ui__resumeCircuitBreak"));
-        assert!(!is_internal_ui_callback_tool_name("ui__presentInteractive"));
         assert!(!is_internal_ui_callback_tool_name("workspace__export"));
     }
 }

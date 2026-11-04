@@ -62,7 +62,7 @@ export interface MessageActionBarProps {
 
 /**
  * One copy payload for the bubble: UI document if present, else plain text.
- * Same rule for reportResult / presentInteractive and normal messages.
+ * Same rule for reportResult / old interactive forms and normal messages.
  */
 function resolveBubbleCopyBody(
   uiDocument: ReturnType<typeof resolveMessageDocument>,

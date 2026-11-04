@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Message } from '@/models/chat';
 import type { MCPContent } from '@/lib/mcp';
 import {
-  extractPresentInteractiveRawData,
+  extractLegacyInteractiveRawData,
   resolveMessageDocument,
 } from '../message-document';
 import {
@@ -21,7 +21,7 @@ function createMessage(overrides: Partial<Message> = {}): Message {
   };
 }
 
-function presentInteractiveResource(html: string): MCPContent {
+function legacyInteractiveResource(html: string): MCPContent {
   return {
     type: 'resource',
     resource: {
@@ -33,10 +33,10 @@ function presentInteractiveResource(html: string): MCPContent {
 }
 
 describe('message-document', () => {
-  it('extracts presentInteractive raw-data JSON', () => {
+  it('extracts old interactive form raw-data JSON', () => {
     const html =
       '<div id="content-title">Flow</div><script id="raw-data" type="application/json">"A --> B\\n"</script><div id="md-root"></div>';
-    expect(extractPresentInteractiveRawData(html)).toBe('A --> B\n');
+    expect(extractLegacyInteractiveRawData(html)).toBe('A --> B\n');
   });
 
   it('resolves reportResult structured content into composed markdown', () => {
@@ -60,18 +60,18 @@ describe('message-document', () => {
     expect(doc?.content).toBe('shipped\n');
   });
 
-  it('resolves presentInteractive HTML resource body', () => {
+  it('resolves an old interactive form HTML resource body', () => {
     const html = [
       '<div id="content-title">Diagram</div>',
       '<script id="raw-data" type="application/json">"# Hi\\n"</script>',
       '<div id="md-root"></div>',
     ].join('');
     const message = createMessage({
-      content: [presentInteractiveResource(html)],
+      content: [legacyInteractiveResource(html)],
     });
 
     const doc = resolveMessageDocument(message);
-    expect(doc?.source).toBe('presentInteractive');
+    expect(doc?.source).toBe('legacyInteractive');
     expect(doc?.exportKind).toBe('markdown');
     expect(doc?.fileBaseName).toBe('Diagram');
     expect(doc?.content).toContain('# Hi');

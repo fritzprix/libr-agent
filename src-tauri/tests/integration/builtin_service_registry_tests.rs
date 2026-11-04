@@ -294,10 +294,6 @@ fn ui_public_surface_exposes_ask_user_and_report_result_only() {
         "askUser must be on the public UI surface"
     );
     assert!(
-        !tool_names.contains(&"presentInteractive".to_string()),
-        "presentInteractive was replaced by askUser (#2547)"
-    );
-    assert!(
         tool_names.contains(&"reportResult".to_string()),
         "reportResult must be on the public UI surface for explicit task completion"
     );
