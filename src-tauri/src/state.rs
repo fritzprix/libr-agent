@@ -363,6 +363,11 @@ pub fn get_mcp_server_repository() -> &'static SqliteMCPServerRepository {
         .expect("MCP server repository not initialized. Call set_mcp_server_repository() first.")
 }
 
+/// Gets a reference to the global MCP server repository if it has been initialized.
+pub fn try_get_mcp_server_repository() -> Option<&'static SqliteMCPServerRepository> {
+    MCP_SERVER_REPOSITORY.get()
+}
+
 /// Sets the global MCP service proxy manager instance.
 ///
 /// # Panics

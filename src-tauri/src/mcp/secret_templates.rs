@@ -141,6 +141,46 @@ pub fn redact_url(url: &str) -> String {
     }
 }
 
+/// The URL as typed, with user info, every query value, and the fragment shown as `***`.
+/// A value that is exactly one `{{secret:NAME}}` stays, so a preview shows which secret
+/// goes where but never a value.
+pub fn mask_url_secrets(url: &str) -> String {
+    let (rest, fragment) = match url.split_once('#') {
+        Some((rest, _)) => (rest, "#***"),
+        None => (url, ""),
+    };
+    let (base, query) = match rest.split_once('?') {
+        Some((base, query)) => (base, Some(query)),
+        None => (rest, None),
+    };
+
+    let mut masked = match base.split_once("://") {
+        Some((scheme, after)) => {
+            let authority_end = after.find('/').unwrap_or(after.len());
+            match after[..authority_end].rsplit_once('@') {
+                Some((_, host)) => format!("{scheme}://***@{host}{}", &after[authority_end..]),
+                None => base.to_string(),
+            }
+        }
+        None => base.to_string(),
+    };
+    if let Some(query) = query {
+        let pairs = query
+            .split('&')
+            .map(|pair| match pair.split_once('=') {
+                Some((key, value)) if !value.is_empty() && !is_single_template(value) => {
+                    format!("{key}=***")
+                }
+                _ => pair.to_string(),
+            })
+            .collect::<Vec<_>>();
+        masked.push('?');
+        masked.push_str(&pairs.join("&"));
+    }
+    masked.push_str(fragment);
+    masked
+}
+
 /// Replace `url` in `text` (as given, and as the URL parser prints it, which is how
 /// HTTP client errors show it) with [`redact_url`].
 pub fn redact_url_in(text: &str, url: &str) -> String {
@@ -309,6 +349,26 @@ mod tests {
         ] {
             assert!(!is_single_template(value), "{value}");
         }
+    }
+
+    #[test]
+    fn masked_url_keeps_templates_and_hides_every_value() {
+        assert_eq!(
+            mask_url_secrets("https://mcp.exa.ai/mcp?exaApiKey=abc123&mode=x"),
+            "https://mcp.exa.ai/mcp?exaApiKey=***&mode=***"
+        );
+        assert_eq!(
+            mask_url_secrets("https://mcp.exa.ai/mcp?exaApiKey={{secret:EXA_API_KEY}}&debug"),
+            "https://mcp.exa.ai/mcp?exaApiKey={{secret:EXA_API_KEY}}&debug"
+        );
+        assert_eq!(
+            mask_url_secrets("https://user:pw@host.example/p?k=&t=v#token"),
+            "https://***@host.example/p?k=&t=***#***"
+        );
+        assert_eq!(
+            mask_url_secrets("https://host.example/mcp"),
+            "https://host.example/mcp"
+        );
     }
 
     #[test]

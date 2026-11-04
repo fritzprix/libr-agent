@@ -14,9 +14,10 @@ use super::super::queries::{find_server_model, get_server_config};
 use super::super::ToolServer;
 use super::catalog::matching_catalog_preset;
 use super::persistence::{
-    delete_server_config_db, save_server_config, ContainerCheck, SavedServer,
+    delete_server_config_db, reused_secret_names, save_server_config, ContainerCheck, SavedServer,
 };
 use super::verify::container_stdio_guidance;
+use crate::mcp::secret_templates::secret_store;
 use crate::mcp::session_isolation::exec_target::StdioExecTarget;
 
 /// Catalog only for an exact preset transport without custom OAuth; the same
@@ -38,6 +39,43 @@ pub(crate) fn install_provenance(
         preset,
         recorded_at: chrono::Utc::now().timestamp_millis(),
     }
+}
+
+fn reenter_names(args: &Value) -> BTreeSet<String> {
+    args.get("reenterSecrets")
+        .and_then(Value::as_array)
+        .map(|names| {
+            names
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Names of the stored secrets that a `tool__registerServer` or `tool__updateServer` call
+/// would reuse without asking, so its approval preview can list them.
+pub(crate) async fn secrets_reused_by(args: &Value) -> Vec<String> {
+    let name = args.get("name").and_then(Value::as_str);
+    let transport = args
+        .get("transport")
+        .and_then(|value| serde_json::from_value::<TransportConfig>(value.clone()).ok());
+    let (Some(name), Some(transport), Some(repo)) = (
+        name,
+        transport,
+        crate::state::try_get_mcp_server_repository(),
+    ) else {
+        return Vec::new();
+    };
+    let config = MCPServerConfig {
+        name: Some(name.to_string()),
+        transport,
+        authentication: None,
+        metadata: None,
+        provenance: None,
+    };
+    reused_secret_names(repo, secret_store(), &config, &reenter_names(args)).await
 }
 
 async fn session_exec_target(session_id: Option<&str>) -> Result<StdioExecTarget, MCPResult> {
@@ -463,20 +501,9 @@ pub async fn update_server(
         Err(result) => return Ok(result),
     };
 
-    let reenter: BTreeSet<String> = args
-        .get("reenterSecrets")
-        .and_then(Value::as_array)
-        .map(|names| {
-            names
-                .iter()
-                .filter_map(Value::as_str)
-                .map(str::to_string)
-                .collect()
-        })
-        .unwrap_or_default();
-
     // Update config and get ID
-    let saved = match save_server_config(&config, &target, session_id, &reenter).await {
+    let saved = match save_server_config(&config, &target, session_id, &reenter_names(&args)).await
+    {
         Ok(saved) => saved,
         Err(e) => {
             return Ok(guided_error(
