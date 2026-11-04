@@ -24,8 +24,8 @@ This skill registers MCP servers into the current LibrAgent session or the user'
 
 1. **Search the curated catalog** — Call `tool__listServers({"scope":"catalog","query":"<keyword>"})` with a short keyword from the request (e.g. `stock`, `slack`, `search`). Omit `query` to see every preset.
 2. **Pick a preset** — If one matches, use it as is: it comes from LibrAgent's official list. If it is marked `registered`, it is already installed; do not register it again (use `tool__updateServer` to change it).
-3. **Collect required inputs** — For each entry in `requiredVariables`, ask the user for the value and replace the matching placeholder (e.g. `YOUR_GITHUB_PAT`) in the preset's `transport`.
-4. **Register and verify** — Call `tool__registerServer` with the preset `name`, `description`, `transport` (and `authentication` when present), then run Step 3 of the direct install workflow. If you fill only secret inputs (API keys, tokens) and keep every other value as the preset gives it, the install needs no user approval. Changing a non-secret value (for example a server URL), the command, args, or URL, adding env/header keys, or passing `authentication` makes it a normal approval-gated install. Presets that track `@latest` run new upstream releases without asking again.
+3. **Collect required inputs** — For each entry in `requiredVariables`, replace the matching placeholder (e.g. `YOUR_GITHUB_PAT`) in the preset's `transport`. For a secret (API key, token, password), write `{{secret:NAME}}` (NAME in `UPPER_SNAKE_CASE`, e.g. `Bearer {{secret:GITHUB_PAT}}` or `?exaApiKey={{secret:EXA_API_KEY}}`); LibrAgent asks the user for the value in a secure prompt when you register. Never ask for a secret in chat. Ask in chat only for non-secret values.
+4. **Register and verify** — Call `tool__registerServer` with the preset `name`, `description`, `transport` (and `authentication` when present), then run Step 3 of the direct install workflow. If each secret input is a `{{secret:NAME}}` template and every other value stays as the preset gives it, the install needs no user approval. Changing a non-secret value (for example a server URL), the command, args, or URL, adding env/header keys, or passing `authentication` makes it a normal approval-gated install. Presets that track `@latest` run new upstream releases without asking again.
 5. **No match** — Only then search the web or npm for a package. Tell the user the source is not curated by LibrAgent before you register it.
 
 ### Import Workflow
@@ -80,7 +80,7 @@ Installation is not done until the server is verified.
 2. On success, report the tools it exposes, then go to Step 3a. Saving a server does not make it callable in any session yet.
 3. On failure, report the real error and the next step:
    - `command not found` / missing `node`, `npx`, `uv`, `python` → run **setup-wizard** or install the runtime, then call `tool__updateServer` for the saved server, and then verify.
-   - Missing or wrong API key / env variable → ask the user for the value, then `tool__updateServer`.
+   - Missing or wrong API key / env variable → call `tool__updateServer` with the secret as `{{secret:NAME}}` and `reenterSecrets: ["NAME"]`, so the user enters it again in the secure prompt. Do not ask for it in chat.
    - Package not found or crashes on start → show the error output; do not report success.
 
 #### 3a. Offer to attach (required after a successful verify)
@@ -102,7 +102,8 @@ If the user specifically asks to install it in Claude Desktop:
 
 - **Duplicate Prevention**: Do not register servers that already exist in LibrAgent with the same name and command.
 - **Naming**: Use lowercase slugs (e.g., `github`, `brave-search`).
-- **Safety**: Verify the source before execution. If it requires sensitive environment variables, ask the user to provide them or use the `workspace__runInPersistentPowerShell` tool if input is needed.
+- **Safety**: Verify the source before execution.
+- **Secrets**: Write every secret env value, header value, or URL query value as `{{secret:NAME}}`; the user enters it in a secure prompt and it is stored outside the config. Never ask for a secret in chat. If the user sends a secret in chat anyway, do not repeat it in your reply or in any tool call; use a `{{secret:NAME}}` template and let the prompt collect it.
 - **Dependencies**: Use [setup-wizard](../setup-wizard/SKILL.md) if `node`, `npm`, or `uv` are missing.
 - **Path Resolution**: Resolve environment variables before reading config files on any platform.
 
