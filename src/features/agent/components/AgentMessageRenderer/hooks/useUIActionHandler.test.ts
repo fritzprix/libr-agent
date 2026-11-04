@@ -9,7 +9,6 @@ const {
   executeUiTauriActionMock,
   handleUserToolCallMock,
   openExternalUrlMock,
-  exportMarkdownDocumentWithNotifyMock,
   toastErrorMock,
   toastSuccessMock,
   loggerInfoMock,
@@ -21,7 +20,6 @@ const {
   executeUiTauriActionMock: vi.fn(),
   handleUserToolCallMock: vi.fn(),
   openExternalUrlMock: vi.fn(),
-  exportMarkdownDocumentWithNotifyMock: vi.fn(),
   toastErrorMock: vi.fn(),
   toastSuccessMock: vi.fn(),
   loggerInfoMock: vi.fn(),
@@ -60,10 +58,6 @@ vi.mock('@/lib/backend', () => ({
   handleUserToolCall: handleUserToolCallMock,
 }));
 
-vi.mock('@/hooks/use-is-dark-mode', () => ({
-  useIsDarkMode: () => true,
-}));
-
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => key,
@@ -77,17 +71,6 @@ vi.mock('sonner', () => ({
     success: toastSuccessMock,
   },
 }));
-
-vi.mock('@/features/agent/lib/markdown-document-export', async (importOriginal) => {
-  const actual =
-    await importOriginal<
-      typeof import('@/features/agent/lib/markdown-document-export')
-    >();
-  return {
-    ...actual,
-    exportMarkdownDocumentWithNotify: exportMarkdownDocumentWithNotifyMock,
-  };
-});
 
 vi.mock('@/lib/logger', () => ({
   getLogger: () => ({
@@ -108,111 +91,12 @@ describe('useUIActionHandler', () => {
     executeUiTauriActionMock.mockReset();
     handleUserToolCallMock.mockReset();
     openExternalUrlMock.mockReset();
-    exportMarkdownDocumentWithNotifyMock.mockReset();
-    exportMarkdownDocumentWithNotifyMock.mockResolvedValue(undefined);
     toastErrorMock.mockReset();
     toastSuccessMock.mockReset();
     loggerInfoMock.mockReset();
     loggerWarnMock.mockReset();
     loggerErrorMock.mockReset();
     loggerDebugMock.mockReset();
-  });
-
-  it('exports markdown via frontend helper without tauri routing', async () => {
-    const contentRef = {
-      current: [] as MCPContent[],
-    };
-
-    const { result } = renderHook(() => useUIActionHandler(contentRef));
-
-    const action: UIActionResult = {
-      type: 'tool',
-      payload: {
-        toolName: 'tauri:exportMarkdownFile',
-        params: {
-          content: '# Hello\n',
-          fileBaseName: 'note',
-        },
-      },
-    };
-
-    await expect(result.current(action)).resolves.toEqual({
-      status: 'tauri-processed',
-      message: 'UI export executed: tauri:exportMarkdownFile',
-    });
-
-    expect(exportMarkdownDocumentWithNotifyMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        content: '# Hello\n',
-        kind: 'markdown',
-        fileBaseName: 'note',
-        isDark: true,
-      }),
-    );
-    expect(executeUiTauriActionMock).not.toHaveBeenCalled();
-  });
-
-  it('exports PDF via frontend helper with preprocess path', async () => {
-    const contentRef = {
-      current: [] as MCPContent[],
-    };
-
-    const { result } = renderHook(() => useUIActionHandler(contentRef));
-
-    const action: UIActionResult = {
-      type: 'tool',
-      payload: {
-        toolName: 'tauri:exportMarkdownPdf',
-        params: {
-          content: '```mermaid\nA-->B\n```\n',
-          fileBaseName: 'diagram',
-        },
-      },
-    };
-
-    await expect(result.current(action)).resolves.toEqual({
-      status: 'tauri-processed',
-      message: 'UI export executed: tauri:exportMarkdownPdf',
-    });
-
-    expect(exportMarkdownDocumentWithNotifyMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        kind: 'pdf',
-        fileBaseName: 'diagram',
-        isDark: true,
-      }),
-    );
-    expect(executeUiTauriActionMock).not.toHaveBeenCalled();
-  });
-
-  it('skips empty markdown export without calling the helper', async () => {
-    const contentRef = {
-      current: [] as MCPContent[],
-    };
-
-    const { result } = renderHook(() => useUIActionHandler(contentRef));
-
-    const action: UIActionResult = {
-      type: 'tool',
-      payload: {
-        toolName: 'tauri:exportMarkdownFile',
-        params: {
-          content: '   ',
-          fileBaseName: 'empty',
-        },
-      },
-    };
-
-    await expect(result.current(action)).resolves.toEqual({
-      status: 'tauri-processed',
-      message: 'UI export skipped (empty): tauri:exportMarkdownFile',
-    });
-
-    expect(exportMarkdownDocumentWithNotifyMock).not.toHaveBeenCalled();
-    expect(executeUiTauriActionMock).not.toHaveBeenCalled();
-    expect(toastErrorMock).toHaveBeenCalledWith(
-      'agent.bubble.actionBar.copyEmpty',
-    );
   });
 
   it('routes tauri tool actions through the backend command path', async () => {
@@ -308,7 +192,7 @@ describe('useUIActionHandler', () => {
     expect(submitMock).not.toHaveBeenCalled();
   });
 
-  it('surfaces orphaned getUserAnswer as a retryable error with toast feedback', async () => {
+  it('surfaces orphaned resumeCircuitBreak as a retryable error with toast feedback', async () => {
     handleUserToolCallMock.mockRejectedValue(
       new Error('UI tool result orphaned (workflow inactive)'),
     );
@@ -322,8 +206,8 @@ describe('useUIActionHandler', () => {
     const action: UIActionResult = {
       type: 'tool',
       payload: {
-        toolName: 'getUserAnswer',
-        params: { messageId: 'msg-1', answer: 'Option A' },
+        toolName: 'resumeCircuitBreak',
+        params: { messageId: 'msg-1', toolName: 'workspace__readFile' },
       },
     };
 
@@ -338,7 +222,7 @@ describe('useUIActionHandler', () => {
     expect(loggerErrorMock).not.toHaveBeenCalled();
   });
 
-  it('toasts success after getUserAnswer injection', async () => {
+  it('toasts success after resumeCircuitBreak injection', async () => {
     handleUserToolCallMock.mockResolvedValue(undefined);
 
     const contentRef = {
@@ -350,14 +234,14 @@ describe('useUIActionHandler', () => {
     const action: UIActionResult = {
       type: 'tool',
       payload: {
-        toolName: 'getUserAnswer',
-        params: { messageId: 'msg-2', answer: 'Option B' },
+        toolName: 'resumeCircuitBreak',
+        params: { messageId: 'msg-2', toolName: 'workspace__readFile' },
       },
     };
 
     await expect(result.current(action)).resolves.toEqual({
       status: 'tool-submitted',
-      tool: 'getUserAnswer',
+      tool: 'resumeCircuitBreak',
       message: 'agent.interactiveForm.submitSuccess',
     });
 
