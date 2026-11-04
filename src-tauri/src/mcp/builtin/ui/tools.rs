@@ -12,7 +12,9 @@ pub fn ask_user_tool() -> MCPTool {
             ),
             (
                 "question".to_string(),
-                string_prop_required("The question to show the user"),
+                string_prop_required(
+                    "The question to show the user. Never a password, token, or secret: the answer comes back to you in plain text.",
+                ),
             ),
             (
                 "description".to_string(),
