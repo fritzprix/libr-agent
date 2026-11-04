@@ -1,6 +1,3 @@
-use super::types::{
-    CANCEL_INTERACTIVE_SHELL_INPUT_INTERNAL, SUBMIT_INTERACTIVE_SHELL_INPUT_INTERNAL,
-};
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
 use crate::mcp::types::MCPResult;
 use crate::models::workspace_isolation::WorkspaceIsolationMode;
@@ -65,14 +62,6 @@ fn summarize_value_for_log(value: &Value) -> Value {
     }
 }
 
-fn summarize_args_for_log(tool_name: &str, args: &Value) -> Value {
-    if tool_name == SUBMIT_INTERACTIVE_SHELL_INPUT_INTERNAL {
-        serde_json::json!({ "redacted": true })
-    } else {
-        summarize_value_for_log(args)
-    }
-}
-
 impl WorkspaceServer {
     fn shell_tool_unavailable_result(&self, tool_name: &str) -> MCPResult {
         let (reason, guidance) = match self.workspace_isolation {
@@ -119,7 +108,7 @@ impl WorkspaceServer {
         args: Value,
         session_id: Option<String>,
     ) -> Result<MCPResult, String> {
-        let logged_args = summarize_args_for_log(tool_name, &args);
+        let logged_args = summarize_value_for_log(&args);
         info!(
             "Workspace tool called: {} with args: {:?}",
             tool_name, logged_args
@@ -182,16 +171,6 @@ impl WorkspaceServer {
             // Background process execution (platform-agnostic)
             "spawnProcess" => self.handle_spawn_process(args, &target_session_id).await,
 
-            // Interactive shell input
-            SUBMIT_INTERACTIVE_SHELL_INPUT_INTERNAL => {
-                self.handle_submit_interactive_shell_input(args, &target_session_id)
-                    .await
-            }
-            CANCEL_INTERACTIVE_SHELL_INPUT_INTERNAL => {
-                self.handle_cancel_pending_execution(args, &target_session_id)
-                    .await
-            }
-
             // ── Export tools ──────────────────────────────────────────────────
             "export" => self.handle_export(args, session_id).await,
 
@@ -229,13 +208,6 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn summarize_args_redacts_interactive_shell_input() {
-        let args = json!({ "input": "super-secret-password" });
-        let logged = summarize_args_for_log(SUBMIT_INTERACTIVE_SHELL_INPUT_INTERNAL, &args);
-        assert_eq!(logged, json!({ "redacted": true }));
-    }
-
-    #[test]
     fn summarize_args_redacts_file_content_and_keeps_metadata() {
         let secret = "API_KEY=sk-live-secret-value\n";
         let args = json!({
@@ -243,7 +215,7 @@ mod tests {
             "mode": "overwrite",
             "content": secret,
         });
-        let logged = summarize_args_for_log("writeFile", &args);
+        let logged = summarize_value_for_log(&args);
         assert_eq!(
             logged,
             json!({
@@ -268,7 +240,7 @@ mod tests {
             "script": "export TOKEN=abc\ncurl ...",
             "env": {"TOKEN": "abc"}
         });
-        let logged = summarize_args_for_log("strReplace", &args);
+        let logged = summarize_value_for_log(&args);
         assert_eq!(logged["path"], json!("config.json"));
         assert_eq!(logged["old_string"], json!("<redacted: 10 bytes>"));
         assert_eq!(logged["new_string"], json!("<redacted: 10 bytes>"));
@@ -286,7 +258,7 @@ mod tests {
             "path": "src/main.rs",
             "pattern": long_pattern,
         });
-        let logged = summarize_args_for_log("grepFiles", &args);
+        let logged = summarize_value_for_log(&args);
         let pattern_logged = logged["pattern"].as_str().expect("string summary");
         assert!(pattern_logged.ends_with("... (180 bytes)"));
         assert!(pattern_logged.len() < long_pattern.len());

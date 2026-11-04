@@ -80,7 +80,7 @@ impl UserPromptPayload {
 }
 
 /// How a pending prompt ended.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum UserPromptOutcome {
     Answered(String),
     Cancelled,
@@ -126,11 +126,35 @@ impl UserPromptOutcome {
 /// `Cancelled` travels the same channel as an answer so the wait has exactly one
 /// emitter. Closing the channel instead (Stop, terminate, delete) means
 /// [`UserPromptOutcome::Stopped`], which is a different cause.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum UserPromptAnswer {
     Secret(String),
     Question(String),
     Cancelled,
+}
+
+impl std::fmt::Debug for UserPromptOutcome {
+    /// Never prints the answer: it may be a secret (requirement 8).
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Answered(_) => f.write_str("Answered(<redacted>)"),
+            Self::Cancelled => f.write_str("Cancelled"),
+            Self::TimedOut => f.write_str("TimedOut"),
+            Self::Stopped => f.write_str("Stopped"),
+            Self::Restarted => f.write_str("Restarted"),
+        }
+    }
+}
+
+impl std::fmt::Debug for UserPromptAnswer {
+    /// Never prints the typed text: it may be a secret (requirement 8).
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Secret(_) => f.write_str("Secret(<redacted>)"),
+            Self::Question(_) => f.write_str("Question(<redacted>)"),
+            Self::Cancelled => f.write_str("Cancelled"),
+        }
+    }
 }
 
 pub struct PendingUserPrompt {
@@ -661,6 +685,17 @@ mod tests {
         assert_eq!(UserPromptOutcome::Stopped.as_event_str(), "cancelled");
         assert_eq!(UserPromptOutcome::TimedOut.as_event_str(), "timeout");
         assert_eq!(UserPromptOutcome::Restarted.as_event_str(), "restart");
+    }
+
+    #[test]
+    fn debug_output_never_contains_the_answer() {
+        let outcome = format!("{:?}", UserPromptOutcome::Answered("hunter2".to_string()));
+        let secret = format!("{:?}", UserPromptAnswer::Secret("hunter2".to_string()));
+        let question = format!("{:?}", UserPromptAnswer::Question("hunter2".to_string()));
+        for text in [outcome, secret, question] {
+            assert!(!text.contains("hunter2"), "{text}");
+            assert!(text.contains("<redacted>"), "{text}");
+        }
     }
 
     #[test]

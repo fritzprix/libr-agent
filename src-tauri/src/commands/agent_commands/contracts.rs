@@ -103,12 +103,22 @@ pub struct RespondChannelPermissionRequest {
 ///
 /// `value` carries the typed text for both kinds: the password for a `secret`,
 /// the reply for a `question`. It is never logged or echoed back.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SubmitUserPromptRequest {
     pub session_id: String,
     pub request_id: String,
     pub value: String,
+}
+
+impl std::fmt::Debug for SubmitUserPromptRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SubmitUserPromptRequest")
+            .field("session_id", &self.session_id)
+            .field("request_id", &self.request_id)
+            .field("value", &"<redacted>")
+            .finish()
+    }
 }
 
 /// Cancel an open user prompt without answering it (#2543).

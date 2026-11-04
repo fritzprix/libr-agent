@@ -13,7 +13,6 @@ import { applyViewedAtToSession } from '@/lib/session-utils';
 import type {
   ExecutionMode,
   PendingApproval,
-  PendingInteractiveShellPrompt,
   WorkflowPhase,
 } from './types';
 import { buildMessageError } from './utils';
@@ -52,8 +51,6 @@ export function useAgentSessionState() {
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>(
     [],
   );
-  const [pendingInteractiveShellPrompt, setPendingInteractiveShellPrompt] =
-    useState<PendingInteractiveShellPrompt | null>(null);
   const [pendingUserPrompt, setPendingUserPrompt] =
     useState<PendingUserPromptSummary | null>(null);
   const [executionMode, setExecutionMode] = useState<ExecutionMode>('normal');
@@ -86,7 +83,6 @@ export function useAgentSessionState() {
     setHasOlderMessages(false);
     setOldestMessageCursor(null);
     setPendingApprovals([]);
-    setPendingInteractiveShellPrompt(null);
     setPendingUserPrompt(null);
     setErrorState(null);
     setLlmError(null);
@@ -136,7 +132,6 @@ export function useAgentSessionState() {
       setRuntimeState,
       setPreflightTokenMetrics,
       setPendingApprovals,
-      setPendingInteractiveShellPrompt,
       setPendingUserPrompt,
       setExecutionMode,
       applyLocalViewedAt,
@@ -158,7 +153,6 @@ export function useAgentSessionState() {
       setRuntimeState,
       setPreflightTokenMetrics,
       setPendingApprovals,
-      setPendingInteractiveShellPrompt,
       setPendingUserPrompt,
       setExecutionMode,
       applyLocalViewedAt,
@@ -208,7 +202,6 @@ export function useAgentSessionState() {
       preflightTokenMetrics,
       initializationStep,
       pendingApprovals,
-      pendingInteractiveShellPrompt,
       pendingUserPrompt,
       executionMode,
     },

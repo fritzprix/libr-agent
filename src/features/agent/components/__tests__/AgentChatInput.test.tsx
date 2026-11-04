@@ -38,7 +38,7 @@ const mocks = vi.hoisted(() => ({
   isSessionLoading: false,
   isProxyReady: true,
   pendingApprovals: [] as Array<{ toolCallId: string }>,
-  pendingInteractiveShellPrompt: null as null | { executionId: string },
+  pendingUserPrompt: null as null | { requestId: string },
   isCompacting: vi.fn(() => false),
 }));
 
@@ -65,7 +65,7 @@ vi.mock('@/context/AgentSessionContext', () => ({
     messages: [],
     isProxyReady: mocks.isProxyReady,
     pendingApprovals: mocks.pendingApprovals,
-    pendingInteractiveShellPrompt: mocks.pendingInteractiveShellPrompt,
+    pendingUserPrompt: mocks.pendingUserPrompt,
     runtimeState: {
       servers: [],
     },
@@ -202,7 +202,7 @@ describe('AgentChatInput', () => {
     mocks.isSubmitting = false;
     mocks.isSessionLoading = false;
     mocks.pendingApprovals = [];
-    mocks.pendingInteractiveShellPrompt = null;
+    mocks.pendingUserPrompt = null;
     mocks.isCompacting.mockReturnValue(false);
     vi.mocked(toast.info).mockClear();
   });

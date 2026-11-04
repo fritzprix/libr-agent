@@ -1,11 +1,15 @@
 use serde_json::Value;
-use std::time::Duration;
+use tauri::Manager;
 
-use crate::agent::events::AgentEvent;
-use crate::agent::tauri_events::emit_agent_event;
+use crate::agent::state::{secret_outcome_message, UserPromptOutcome, UserPromptPayload};
+use crate::agent::AgentSessionManager;
+use crate::mcp::builtin::workspace::code_execution::shell::persistent::{
+    prepend_result_note, SHELL_RESTARTED_NOTE,
+};
+use crate::mcp::builtin::workspace::persistent_shell::secrets::validate_secret_name;
 use crate::mcp::builtin::workspace::{
-    InteractiveShellInputType, PendingShellExecution, PendingShellInputResolution, WorkspaceServer,
-    INTERACTIVE_SHELL_INPUT_TIMEOUT_SECS, PERSISTENT_SHELL_TOOL,
+    InteractiveShellInputType, InteractiveShellRequest, WorkspaceServer,
+    INTERACTIVE_SHELL_INPUT_MAX_BYTES, PERSISTENT_SHELL_TOOL,
 };
 use crate::mcp::builtin::{
     error_guidance::{guided_error, ErrorCategory, ToolGroup},
@@ -25,7 +29,6 @@ impl WorkspaceServer {
     ) -> Result<MCPResult, String> {
         use crate::mcp::builtin::workspace::utils::sanitize_command_for_logging;
 
-        let execution_id = uuid::Uuid::new_v4().to_string();
         let session_id = session_id.to_string();
         let sanitized_command = sanitize_command_for_logging(command);
 
@@ -63,6 +66,20 @@ impl WorkspaceServer {
             }
         };
 
+        let store_as = args.get("storeAs").and_then(|value| value.as_str());
+        if let Some(name) = store_as {
+            if let Err(message) = validate_secret_name(name) {
+                return Ok(
+                    guided_error(ErrorCategory::InvalidInput, message, ToolGroup::Workspace)
+                        .guidance(vec![
+                            "Pick an uppercase name such as API_TOKEN that the app and the shell do not use"
+                                .to_string(),
+                        ])
+                        .to_mcp_result(),
+                );
+            }
+        }
+
         let Some(app_handle) = crate::state::get_app_handle() else {
             return Ok(guided_error(
                 ErrorCategory::InternalError,
@@ -76,141 +93,110 @@ impl WorkspaceServer {
             .to_mcp_result());
         };
 
-        let (prompt, input_type) = self.get_prompt_config(command, args);
-        let stdin_delivery = validation::resolve_stdin_delivery(command, args);
-        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
-
-        let pending = PendingShellExecution {
-            execution_id: execution_id.clone(),
+        let (prompt, input_type) = match store_as {
+            Some(name) => (
+                prompt_override(args).unwrap_or_else(|| format!("Enter the value for {name}:")),
+                InteractiveShellInputType::Password,
+            ),
+            None => self.get_prompt_config(command, args),
+        };
+        let request = InteractiveShellRequest {
             session_id: session_id.clone(),
             executable_command: command.to_string(),
-            display_command: sanitized_command.clone(),
+            display_command: sanitized_command,
             run_mode,
             timeout,
-            created_at: chrono::Utc::now(),
-            prompt: prompt.clone(),
             input_type,
-            stdin_delivery,
-            response_tx: Some(response_tx),
+            stdin_delivery: validation::resolve_stdin_delivery(command, args),
+        };
+        let variable_name = store_as.unwrap_or_else(|| shell_input_variable_name(command));
+        let payload = match store_as {
+            Some(name) => stored_secret_payload(name, prompt),
+            None => {
+                shell_prompt_payload(input_type, variable_name, prompt, &request.display_command)
+            }
         };
 
-        self.pending_executions.insert(pending);
+        let manager = app_handle.state::<AgentSessionManager>();
+        let outcome = match manager.request_user_prompt(&session_id, payload).await {
+            Ok(outcome) => outcome,
+            Err(error) => {
+                return Ok(
+                    guided_error(ErrorCategory::InvalidState, error, ToolGroup::Workspace)
+                        .guidance(vec![
+                    "Wait for the open prompt to close before running another interactive command"
+                        .to_string(),
+                    "Use a non-interactive command when no local UI is available".to_string(),
+                ])
+                        .to_mcp_result(),
+                );
+            }
+        };
 
-        if let Err(error) = emit_agent_event(
-            app_handle,
-            AgentEvent::InteractiveShellInputRequested {
-                session_id: session_id.clone(),
-                execution_id: execution_id.clone(),
-                prompt,
+        let UserPromptOutcome::Answered(user_input) = outcome else {
+            return Ok(unanswered_shell_result(
+                &outcome,
                 input_type,
-                command: sanitized_command.clone(),
-            },
-        ) {
-            let _ = self.pending_executions.remove(&execution_id);
+                variable_name,
+                &request.display_command,
+            ));
+        };
+
+        if user_input.len() > INTERACTIVE_SHELL_INPUT_MAX_BYTES {
             return Ok(guided_error(
-                ErrorCategory::InternalError,
-                "Failed to open the interactive input prompt".to_string(),
+                ErrorCategory::InvalidInput,
+                format!(
+                    "Interactive input exceeds the {} byte limit",
+                    INTERACTIVE_SHELL_INPUT_MAX_BYTES
+                ),
                 ToolGroup::Workspace,
             )
             .guidance(vec![
-                "Try the command again after the session UI is fully loaded".to_string(),
-                format!("Internal error: {}", error),
+                "Run the command again and submit a shorter input".to_string()
             ])
             .to_mcp_result());
         }
 
-        let resolution = tokio::time::timeout(
-            Duration::from_secs(INTERACTIVE_SHELL_INPUT_TIMEOUT_SECS),
-            response_rx,
-        )
-        .await;
-
-        match resolution {
-            Ok(Ok(PendingShellInputResolution::Submitted(user_input))) => {
-                if let Some(pending) = self.pending_executions.remove(&execution_id) {
-                    self.execute_interactive_shell_with_input(pending, user_input)
-                        .await
-                } else {
-                    Ok(guided_error(
-                        ErrorCategory::ResourceNotFound,
-                        format!(
-                            "Interactive execution '{}' is no longer available",
-                            execution_id
-                        ),
-                        ToolGroup::Workspace,
-                    )
-                    .guidance(vec![
-                        "Run the original command again to open a fresh input prompt".to_string(),
-                        "Avoid submitting the same prompt from multiple windows".to_string(),
-                    ])
-                    .to_mcp_result())
-                }
-            }
-            Ok(Ok(PendingShellInputResolution::Cancelled)) => {
-                Ok(MCPResult::informational(&format!(
-                    "Interactive command cancelled before execution.\n\nCommand: {}",
-                    sanitized_command
-                )))
-            }
-            Ok(Err(_)) => {
-                let _ = self.pending_executions.remove(&execution_id);
-                Ok(guided_error(
-                    ErrorCategory::InternalError,
-                    "Interactive shell prompt closed unexpectedly".to_string(),
-                    ToolGroup::Workspace,
-                )
-                .guidance(vec![
-                    "Run the original command again to reopen the prompt".to_string(),
-                    "Keep the session window open while entering the requested input".to_string(),
-                ])
-                .to_mcp_result())
-            }
-            Err(_) => {
-                let _ = self.pending_executions.remove(&execution_id);
-                let _ = emit_agent_event(
-                    app_handle,
-                    AgentEvent::InteractiveShellInputResolved {
-                        session_id,
-                        execution_id,
-                        outcome: "expired".to_string(),
-                    },
-                );
-
-                Ok(guided_error(
-                    ErrorCategory::Timeout,
-                    format!(
-                        "Interactive input timed out after {} minutes",
-                        INTERACTIVE_SHELL_INPUT_TIMEOUT_SECS / 60
-                    ),
-                    ToolGroup::Workspace,
-                )
-                .guidance(vec![
-                    "Run the original command again to request a fresh prompt".to_string(),
-                    "Submit the requested input before the prompt expires".to_string(),
-                ])
-                .to_mcp_result())
-            }
-        }
-    }
-
-    pub(crate) fn emit_interactive_shell_resolution(
-        &self,
-        session_id: &str,
-        execution_id: &str,
-        outcome: &str,
-    ) -> Result<(), String> {
-        let Some(app_handle) = crate::state::get_app_handle() else {
-            return Err("AppHandle not available for interactive shell resolution".to_string());
+        let Some(user_input) = single_line_answer(&user_input) else {
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                "Interactive input must be a single line".to_string(),
+                ToolGroup::Workspace,
+            )
+            .guidance(vec!["Run the command again and submit one line".to_string()])
+            .to_mcp_result());
         };
 
-        emit_agent_event(
-            app_handle,
-            AgentEvent::InteractiveShellInputResolved {
-                session_id: session_id.to_string(),
-                execution_id: execution_id.to_string(),
-                outcome: outcome.to_string(),
-            },
-        )
+        if let Some(name) = store_as {
+            if let Err(error) = self
+                .shell_manager
+                .store_secret(&session_id, name, user_input.to_string())
+                .await
+            {
+                tracing::warn!(
+                    "Shell restart after storing {} failed for session {}: {}",
+                    name,
+                    session_id,
+                    error
+                );
+            }
+            let mut result = self
+                .execute_shell_persistent(command, PERSISTENT_SHELL_TOOL, timeout, &session_id)
+                .await?;
+            prepend_result_note(
+                &mut result,
+                &format!("Stored the value as ${name} for this session."),
+            );
+            return Ok(result);
+        }
+
+        let mut result = self
+            .execute_interactive_shell_with_input(request, user_input.to_string())
+            .await?;
+        if self.shell_manager.take_restart_notice(&session_id).await {
+            prepend_result_note(&mut result, SHELL_RESTARTED_NOTE);
+        }
+        Ok(result)
     }
 
     /// Get platform-aware prompt configuration for user input.
@@ -227,12 +213,7 @@ impl WorkspaceServer {
                 InteractiveShellInputType::Password,
             )
         } else {
-            let prompt = args
-                .get("inputPrompt")
-                .or_else(|| args.get("input_prompt"))
-                .and_then(|value| value.as_str())
-                .unwrap_or("Enter input:")
-                .to_string();
+            let prompt = prompt_override(args).unwrap_or_else(|| "Enter input:".to_string());
             let input_type = match args
                 .get("inputType")
                 .or_else(|| args.get("input_type"))
@@ -246,5 +227,172 @@ impl WorkspaceServer {
             };
             (prompt, input_type)
         }
+    }
+}
+
+/// The tool result when the user gave no answer. A timeout is an error
+/// (#2543 requirement 5); cancel and Stop stay informational, as before.
+fn unanswered_shell_result(
+    outcome: &UserPromptOutcome,
+    input_type: InteractiveShellInputType,
+    variable_name: &str,
+    display_command: &str,
+) -> MCPResult {
+    let message = match input_type {
+        InteractiveShellInputType::Password => secret_outcome_message(outcome, variable_name),
+        InteractiveShellInputType::Text => outcome.caller_message(),
+    };
+    let text = format!("Interactive command not executed. {message}\n\nCommand: {display_command}");
+    if *outcome != UserPromptOutcome::TimedOut {
+        return MCPResult::informational(&text);
+    }
+    // `ErrorCategory::Timeout` renders a non-error notice; the prompt timeout
+    // must be an error result.
+    guided_error(ErrorCategory::OperationFailed, text, ToolGroup::Workspace)
+        .guidance(vec![
+            "Do not retry the command; the user did not answer the prompt".to_string(),
+            "Ask the user in chat whether to run it again".to_string(),
+        ])
+        .to_mcp_result()
+}
+
+fn prompt_override(args: &Value) -> Option<String> {
+    args.get("inputPrompt")
+        .or_else(|| args.get("input_prompt"))
+        .and_then(|value| value.as_str())
+        .map(str::to_string)
+}
+
+/// A `storeAs` prompt: a masked secret that the session keeps.
+fn stored_secret_payload(name: &str, label: String) -> UserPromptPayload {
+    UserPromptPayload::Secret {
+        variable_name: name.to_string(),
+        label,
+        reuse_note: Some("This value is reused for this session.".to_string()),
+    }
+}
+
+/// A password prompt is a masked `secret`; any other input is a `question`.
+fn shell_prompt_payload(
+    input_type: InteractiveShellInputType,
+    variable_name: &str,
+    prompt: String,
+    display_command: &str,
+) -> UserPromptPayload {
+    match input_type {
+        InteractiveShellInputType::Password => UserPromptPayload::Secret {
+            variable_name: variable_name.to_string(),
+            label: prompt,
+            reuse_note: None,
+        },
+        InteractiveShellInputType::Text => UserPromptPayload::Question {
+            title: prompt,
+            body: Some(display_command.to_string()),
+        },
+    }
+}
+
+/// The shell reads one line, so a multi-line answer is refused.
+fn single_line_answer(answer: &str) -> Option<&str> {
+    let line = answer.trim_end_matches(['\r', '\n']);
+    (!line.contains(['\r', '\n'])).then_some(line)
+}
+
+/// Name shown in the secret prompt; the shell has no variable of its own.
+fn shell_input_variable_name(command: &str) -> &'static str {
+    if validation::detect_privilege_escalation(command) {
+        "SUDO_PASSWORD"
+    } else {
+        "SHELL_INPUT"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_timed_out_prompt_is_an_error_result() {
+        for input_type in [
+            InteractiveShellInputType::Password,
+            InteractiveShellInputType::Text,
+        ] {
+            let result = unanswered_shell_result(
+                &UserPromptOutcome::TimedOut,
+                input_type,
+                "SUDO_PASSWORD",
+                "sudo apt update",
+            );
+            assert_eq!(result.is_error, Some(true));
+        }
+    }
+
+    #[test]
+    fn a_cancelled_or_stopped_prompt_is_not_an_error_result() {
+        for outcome in [UserPromptOutcome::Cancelled, UserPromptOutcome::Stopped] {
+            let result = unanswered_shell_result(
+                &outcome,
+                InteractiveShellInputType::Password,
+                "SUDO_PASSWORD",
+                "sudo apt update",
+            );
+            assert_ne!(result.is_error, Some(true));
+        }
+    }
+
+    // Windows has no sudo detection (`detect_privilege_escalation` is always false there).
+    #[cfg(not(windows))]
+    #[test]
+    fn sudo_password_becomes_a_secret_prompt() {
+        let payload = shell_prompt_payload(
+            InteractiveShellInputType::Password,
+            shell_input_variable_name("sudo apt update"),
+            "Enter your sudo password:".to_string(),
+            "sudo apt update",
+        );
+        assert_eq!(
+            payload,
+            UserPromptPayload::Secret {
+                variable_name: "SUDO_PASSWORD".to_string(),
+                label: "Enter your sudo password:".to_string(),
+                reuse_note: None,
+            }
+        );
+    }
+
+    #[test]
+    fn text_input_becomes_a_question_showing_the_command() {
+        let payload = shell_prompt_payload(
+            InteractiveShellInputType::Text,
+            shell_input_variable_name("read name"),
+            "Enter input:".to_string(),
+            "read name",
+        );
+        assert_eq!(
+            payload,
+            UserPromptPayload::Question {
+                title: "Enter input:".to_string(),
+                body: Some("read name".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn store_as_becomes_a_secret_prompt_with_the_reuse_note() {
+        assert_eq!(
+            stored_secret_payload("API_TOKEN", "Enter the value for API_TOKEN:".to_string()),
+            UserPromptPayload::Secret {
+                variable_name: "API_TOKEN".to_string(),
+                label: "Enter the value for API_TOKEN:".to_string(),
+                reuse_note: Some("This value is reused for this session.".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn answers_must_be_one_line() {
+        assert_eq!(single_line_answer("secret"), Some("secret"));
+        assert_eq!(single_line_answer("secret\r\n"), Some("secret"));
+        assert_eq!(single_line_answer("a\nb"), None);
     }
 }

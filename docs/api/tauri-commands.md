@@ -23,7 +23,7 @@ import { invoke } from '@tauri-apps/api/core';
 | [8. Playbooks & Templates](#8-playbooks--templates)                                   | 6       | `create_playbook`, `update_playbook`, `get_playbook`, `list_playbooks`, `toggle_playbook_bookmark`, etc.                                                             |
 | [9. Downloads & Session Export](#9-downloads--session-export)                         | 6       | `download_media_file`, `download_text_pdf`, `export_session_file`, `export_and_download_zip`, etc.                                                                   |
 | [10. Knowledge Base](#10-knowledge-base)                                              | 4       | `list_global_knowledge`, `get_global_knowledge_detail`, `get_global_knowledge_graph`, `delete_global_knowledge`                                                      |
-| [11. Workspace & Filesystem](#11-workspace--filesystem)                               | 16      | `list_workspace_files`, `workspace_write_file`, `open_workspace_in_terminal`, `set_workspace_override`, `submit_interactive_shell_input`, etc.                       |
+| [11. Workspace & Filesystem](#11-workspace--filesystem)                               | 14      | `list_workspace_files`, `workspace_write_file`, `open_workspace_in_terminal`, `set_workspace_override`, etc.                                                         |
 | [12. OAuth 2.1 Authentication](#12-oauth-21-authentication)                           | 4       | `start_oauth_flow`, `get_oauth_token`, `has_oauth_token`, `revoke_oauth_token`                                                                                       |
 | [13. System Settings & Migration](#13-system-settings--migration)                     | 9       | `get_setting`, `set_setting`, `export_migration`, `import_migration`, `inspect_migration`, `reverify_mcp_servers`, etc.                                              |
 | [14. Diagnostics, Logs & Media Assist](#14-diagnostics-logs--media-assist)            | 18      | `media_assist_plugin_status`, `media_assist_run_plugin`, `probe_runtime_binaries`, `check_docker_health`, `log_batch`, `restart_app`, etc.                           |
@@ -263,8 +263,6 @@ Workspace file inspection, path overrides, and native OS app openers. Located in
 - `get_workspace_override`: Queries whether an active directory override is in effect.
 - `set_workspace_override`: Temporarily redirects session workspace to another directory.
 - `cancel_workspace_override`: Reverts workspace redirection.
-- `submit_interactive_shell_input`: Submits stdin to an interactive terminal session.
-- `cancel_interactive_shell_input`: Cancels a pending interactive shell session.
 
 ---
 

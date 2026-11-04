@@ -23,14 +23,10 @@ pub mod utils;
 pub mod workspace_server;
 
 // Re-exports for public API stability
+pub(crate) use types::INTERACTIVE_SHELL_INPUT_MAX_BYTES;
 pub use types::{
-    InteractiveShellInputType, PendingExecutionLookupError, PendingExecutions,
-    PendingShellExecution, PendingShellInputResolution, StdinDelivery, PERSISTENT_SHELL_TOOL,
+    InteractiveShellInputType, InteractiveShellRequest, StdinDelivery, PERSISTENT_SHELL_TOOL,
     RUN_SHELL_TOOL,
-};
-pub(crate) use types::{
-    CANCEL_INTERACTIVE_SHELL_INPUT_INTERNAL, INTERACTIVE_SHELL_INPUT_MAX_BYTES,
-    INTERACTIVE_SHELL_INPUT_TIMEOUT_SECS, SUBMIT_INTERACTIVE_SHELL_INPUT_INTERNAL,
 };
 pub use workspace_server::WorkspaceServer;
 

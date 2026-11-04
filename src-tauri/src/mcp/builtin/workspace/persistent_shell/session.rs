@@ -19,6 +19,7 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU32, Ordering};
 
+use super::secrets::SecretMap;
 use crate::mcp::builtin::workspace::StdinDelivery;
 use crate::session_isolation::{PathMappingLayer, ShellType, SpawnedShell};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -92,7 +93,20 @@ impl PersistentShell {
     pub async fn new(
         session_id: String,
         workspace_path: PathBuf,
+        shell_type: ShellType,
+    ) -> Result<Self> {
+        Self::new_with_env(session_id, workspace_path, shell_type, &SecretMap::new()).await
+    }
+
+    /// Like [`Self::new`], with session secrets in the shell environment.
+    ///
+    /// Secrets are applied before the variables the app sets, so they never
+    /// override one of them.
+    pub async fn new_with_env(
+        session_id: String,
+        workspace_path: PathBuf,
         #[cfg_attr(unix, allow(unused_variables))] shell_type: ShellType,
+        secrets: &SecretMap,
     ) -> Result<Self> {
         #[cfg(unix)]
         let mut cmd = {
@@ -129,10 +143,7 @@ impl PersistentShell {
         // Apply environment isolation to prevent leaking host secrets
         // We do this BEFORE platform-specific environment adjustments (like Unix PATH fix)
         // to ensure whitelisted variables are isolated but specialized ones are preserved.
-        cmd.env_clear();
-        for (k, v) in crate::utils::env::get_isolated_env() {
-            cmd.env(k, v);
-        }
+        apply_shell_env(&mut cmd, secrets, crate::utils::env::get_isolated_env());
 
         #[cfg(unix)]
         {
@@ -302,6 +313,23 @@ impl PersistentShell {
     /// Get current working directory of the shell
     pub fn get_cwd(&self) -> &str {
         &self.last_known_cwd
+    }
+
+    /// Moves the shell to `dir`, for example the directory of a shell that was restarted.
+    pub async fn change_directory(&mut self, dir: &str) -> Result<()> {
+        let command = if self.uses_host_powershell_protocol() {
+            format!("Set-Location -LiteralPath '{}'", dir.replace('\'', "''"))
+        } else {
+            format!("cd -- '{}'", dir.replace('\'', r"'\''"))
+        };
+        let (_, stderr, exit_code, _) = self.execute(&command).await?;
+        if exit_code != 0 {
+            return Err(anyhow::anyhow!(
+                "Failed to restore working directory {dir}: {}",
+                stderr.trim()
+            ));
+        }
+        Ok(())
     }
 
     pub fn path_mapper(&self) -> Option<&PathMappingLayer> {
@@ -713,5 +741,41 @@ impl std::fmt::Debug for PersistentShell {
             .field("session_id", &self.session_id)
             .field("pid", &self.child.id())
             .finish_non_exhaustive()
+    }
+}
+
+/// Clears the host environment, then sets secrets before the app's own variables,
+/// so a secret can never override a variable the app sets.
+fn apply_shell_env(cmd: &mut Command, secrets: &SecretMap, app_env: Vec<(String, String)>) {
+    cmd.env_clear();
+    cmd.envs(secrets);
+    cmd.envs(app_env);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsStr;
+
+    #[test]
+    fn app_variables_win_over_secrets_with_the_same_name() {
+        let mut cmd = Command::new("shell");
+        let secrets = SecretMap::from([
+            ("APP_VAR".to_string(), "from-secret".to_string()),
+            ("API_TOKEN".to_string(), "t0ken".to_string()),
+        ]);
+        apply_shell_env(
+            &mut cmd,
+            &secrets,
+            vec![("APP_VAR".to_string(), "from-app".to_string())],
+        );
+        let envs: Vec<_> = cmd.as_std().get_envs().collect();
+        let value_of = |key: &str| {
+            envs.iter()
+                .find(|(k, _)| *k == OsStr::new(key))
+                .and_then(|(_, v)| *v)
+        };
+        assert_eq!(value_of("APP_VAR"), Some(OsStr::new("from-app")));
+        assert_eq!(value_of("API_TOKEN"), Some(OsStr::new("t0ken")));
     }
 }

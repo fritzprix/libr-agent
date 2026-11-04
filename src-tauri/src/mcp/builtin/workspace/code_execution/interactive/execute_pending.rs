@@ -1,5 +1,3 @@
-use serde::Deserialize;
-use serde_json::Value;
 use std::time::Duration;
 use tracing::{error, warn};
 
@@ -12,114 +10,14 @@ use crate::mcp::builtin::workspace::code_execution::shell::{
 };
 use crate::mcp::builtin::workspace::code_execution::validation;
 use crate::mcp::builtin::workspace::{
-    InteractiveShellInputType, PendingExecutionLookupError, PendingShellExecution,
-    PendingShellInputResolution, WorkspaceServer, INTERACTIVE_SHELL_INPUT_MAX_BYTES,
-    PERSISTENT_SHELL_TOOL,
+    InteractiveShellInputType, InteractiveShellRequest, WorkspaceServer, PERSISTENT_SHELL_TOOL,
 };
 use crate::mcp::types::MCPResult;
 
-#[derive(Debug, Deserialize)]
-struct SubmitInteractiveShellInputArgs {
-    execution_id: String,
-    input: String,
-}
-
 impl WorkspaceServer {
-    pub(crate) async fn handle_submit_interactive_shell_input(
-        &self,
-        args: Value,
-        session_id: &str,
-    ) -> Result<MCPResult, String> {
-        let args: SubmitInteractiveShellInputArgs =
-            serde_json::from_value(args).map_err(|e| format!("Invalid arguments: {}", e))?;
-
-        if args.input.len() > INTERACTIVE_SHELL_INPUT_MAX_BYTES {
-            return Ok(guided_error(
-                ErrorCategory::InvalidInput,
-                format!(
-                    "Interactive input exceeds the {} byte limit",
-                    INTERACTIVE_SHELL_INPUT_MAX_BYTES
-                ),
-                ToolGroup::Workspace,
-            )
-            .guidance(vec![
-                "Submit a shorter input and retry".to_string(),
-                "If you are pasting a large secret blob, trim it to the actual prompt value"
-                    .to_string(),
-            ])
-            .to_mcp_result());
-        }
-
-        let mut pending = match self
-            .pending_executions
-            .remove_if_session_matches(&args.execution_id, session_id)
-        {
-            Ok(Some(pending)) => pending,
-            Err(PendingExecutionLookupError::SessionMismatch) => {
-                return Ok(guided_error(
-                    ErrorCategory::PermissionDenied,
-                    "Interactive execution belongs to a different session".to_string(),
-                    ToolGroup::Workspace,
-                )
-                .guidance(vec![
-                    "Submit the prompt from the same agent session that created it".to_string(),
-                    "Run the command again in the active session if needed".to_string(),
-                ])
-                .to_mcp_result());
-            }
-            Ok(None) => {
-                return Ok(guided_error(
-                    ErrorCategory::ResourceNotFound,
-                    format!("Interactive execution '{}' not found", args.execution_id),
-                    ToolGroup::Workspace,
-                )
-                .guidance(vec![
-                    "The prompt may have expired or already been resolved".to_string(),
-                    "Run the original command again to request a fresh prompt".to_string(),
-                ])
-                .to_mcp_result());
-            }
-        };
-
-        let Some(response_tx) = pending.response_tx.take() else {
-            self.pending_executions.insert(pending);
-            return Ok(guided_error(
-                ErrorCategory::InvalidState,
-                format!(
-                    "Interactive execution '{}' is already being resolved",
-                    args.execution_id
-                ),
-                ToolGroup::Workspace,
-            )
-            .guidance(vec![
-                "Wait for the current resolution to finish before retrying".to_string(),
-                "Run the original command again if the prompt appears stuck".to_string(),
-            ])
-            .to_mcp_result());
-        };
-
-        self.pending_executions.insert(pending);
-
-        if response_tx
-            .send(PendingShellInputResolution::Submitted(args.input))
-            .is_err()
-        {
-            let _ = self.pending_executions.remove(&args.execution_id);
-            return Ok(MCPResult::informational(
-                "Interactive shell prompt already expired or resolved.",
-            ));
-        }
-
-        let _ = self.emit_interactive_shell_resolution(session_id, &args.execution_id, "submitted");
-
-        Ok(MCPResult::informational(
-            "Interactive shell input submitted successfully.",
-        ))
-    }
-
     pub(crate) async fn execute_interactive_shell_with_input(
         &self,
-        pending: PendingShellExecution,
+        pending: InteractiveShellRequest,
         user_input: String,
     ) -> Result<MCPResult, String> {
         let session_id = pending.session_id.clone();
@@ -153,7 +51,7 @@ impl WorkspaceServer {
                     session_id
                 );
 
-                if let Err(error) = self.shell_manager.terminate_shell(&session_id).await {
+                if let Err(error) = self.shell_manager.restart_shell(&session_id).await {
                     error!(
                         "Failed to terminate timed out interactive shell for session {}: {}",
                         session_id, error
