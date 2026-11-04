@@ -119,7 +119,8 @@ fn preset_transport(preset: &MCPServerPreset) -> Value {
 const BEARER_HEADER: &str = "Authorization";
 
 /// Keys whose value the caller may choose freely for a given target
-/// (`env` for stdio env, `header` / `bearer-token` for HTTP headers): only
+/// (`env` for stdio env, `header` / `bearer-token` for HTTP headers,
+/// `url-param` for URL query parameters): only
 /// `password` variables (API keys / tokens). Their value does not change where
 /// data goes or what code runs. Every other key must keep the preset's value.
 fn secret_keys_for(preset: &MCPServerPreset, targets: &[&str]) -> HashSet<String> {
@@ -138,6 +139,34 @@ fn secret_keys_for(preset: &MCPServerPreset, targets: &[&str]) -> HashSet<String
             }
         })
         .collect()
+}
+
+/// The preset URL itself, or the preset URL plus a query whose every
+/// parameter is a `url-param` secret holding exactly one `{{secret:NAME}}`.
+/// A plain value is refused: it would put the secret in the stored URL.
+fn url_allowed(url: &str, preset_url: &str, url_param_keys: &HashSet<String>) -> bool {
+    let url = url.trim();
+    if url == preset_url {
+        return true;
+    }
+    if preset_url.contains('?') {
+        return false;
+    }
+    let Some(query) = url
+        .strip_prefix(preset_url)
+        .and_then(|rest| rest.strip_prefix('?'))
+    else {
+        return false;
+    };
+    let mut seen = HashSet::new();
+    !query.is_empty()
+        && query.split('&').all(|pair| {
+            pair.split_once('=').is_some_and(|(key, value)| {
+                url_param_keys.contains(key)
+                    && seen.insert(key)
+                    && crate::mcp::secret_templates::is_single_template(value)
+            })
+        })
 }
 
 fn values_allowed(
@@ -186,7 +215,7 @@ fn preset_matches_transport(preset: &MCPServerPreset, transport: &TransportConfi
             },
         ) => {
             let no_headers = HashMap::new();
-            url.trim() == preset_url
+            url_allowed(url, &preset_url, &secret_keys_for(preset, &["url-param"]))
                 && session_id.is_none()
                 && security.is_none()
                 && values_allowed(
@@ -564,6 +593,52 @@ mod tests {
         extra_header["headers"]["X-Forward-To"] = json!("https://evil.example");
         for transport in [other_url, extra_header] {
             assert_eq!(matching_catalog_preset(&transport), None, "{transport}");
+        }
+    }
+
+    #[test]
+    fn bearer_token_template_matches_the_github_preset() {
+        let templated = json!({
+            "type": "http",
+            "url": "https://api.githubcopilot.com/mcp/",
+            "headers": { "Authorization": "Bearer {{secret:GITHUB_PAT}}" }
+        });
+        assert_eq!(
+            matching_catalog_preset(&templated).as_deref(),
+            Some("github")
+        );
+    }
+
+    #[test]
+    fn url_param_template_matches_the_exa_preset() {
+        let exa = |url: &str| json!({ "type": "http", "url": url });
+        assert_eq!(
+            matching_catalog_preset(&exa(
+                "https://mcp.exa.ai/mcp?exaApiKey={{secret:EXA_API_KEY}}"
+            ))
+            .as_deref(),
+            Some("exa")
+        );
+        assert_eq!(
+            matching_catalog_preset(&exa("https://mcp.exa.ai/mcp")).as_deref(),
+            Some("exa")
+        );
+    }
+
+    #[test]
+    fn exa_url_query_accepts_only_a_secret_template_for_its_key() {
+        for url in [
+            "https://mcp.exa.ai/mcp?exaApiKey=plain-key",
+            "https://mcp.exa.ai/mcp?exaApiKey={{secret:exa_key}}",
+            "https://mcp.exa.ai/mcp?exaApiKey=x{{secret:EXA_API_KEY}}",
+            "https://mcp.exa.ai/mcp?other={{secret:EXA_API_KEY}}",
+            "https://mcp.exa.ai/mcp?exaApiKey={{secret:A}}&exaApiKey={{secret:B}}",
+            "https://mcp.exa.ai/mcp?exaApiKey={{secret:A}}&redirect=https://evil.example",
+            "https://mcp.exa.ai/mcp?",
+            "https://mcp.exa.ai/mcp/other?exaApiKey={{secret:EXA_API_KEY}}",
+        ] {
+            let transport = json!({ "type": "http", "url": url });
+            assert_eq!(matching_catalog_preset(&transport), None, "{url}");
         }
     }
 }

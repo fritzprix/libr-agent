@@ -84,6 +84,14 @@ pub fn template_names(transport: &TransportConfig) -> Result<BTreeSet<String>, S
     Ok(names)
 }
 
+/// True when `value` is exactly one `{{secret:NAME}}` with a valid name and nothing else.
+pub fn is_single_template(value: &str) -> bool {
+    value
+        .strip_prefix("{{secret:")
+        .and_then(|rest| rest.strip_suffix("}}"))
+        .is_some_and(|name| NAME_RE.is_match(name))
+}
+
 /// Parse the `secret_names` column. A missing or broken value means no stored names.
 pub fn parse_secret_names(column: Option<&str>) -> BTreeSet<String> {
     column
@@ -285,6 +293,22 @@ mod tests {
             "url": "https://api.githubcopilot.com/mcp/",
             "headers": { "Authorization": "Bearer {{secret:GITHUB_PAT}}" }
         }))
+    }
+
+    #[test]
+    fn single_template_is_the_whole_value_with_a_valid_name() {
+        assert!(is_single_template("{{secret:EXA_API_KEY}}"));
+        for value in [
+            "",
+            "plain",
+            "{{secret:exa}}",
+            "{{secret:}}",
+            "x{{secret:A}}",
+            "{{secret:A}}x",
+            "{{secret:A}}{{secret:B}}",
+        ] {
+            assert!(!is_single_template(value), "{value}");
+        }
     }
 
     #[test]
