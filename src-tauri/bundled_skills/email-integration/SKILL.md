@@ -3,7 +3,7 @@ name: email-integration
 description: |
   Integrates with any IMAP/SMTP mail server (Gmail, Outlook, Naver, Kakao, custom servers, etc.).
   Use when the user wants to read, send, search, reply to, or manage emails.
-  Primary path: validate_config + email_client.py (hidden password setup via setup_account.py).
+  Primary path: validate_config + email_client.py (password stored with storeAs, setup via setup_account.py).
   If Python/config/IMAP auth fails, fall back to browser webmail (Gmail/Outlook) via the sticky
   agent browser profile after the user has signed in inside LibrAgent’s agent browser.
   Triggers: "메일 보여줘", "이메일 확인", "send email", "받은 편지함", "메일 보내줘", "메일 검색".
@@ -23,8 +23,9 @@ Paths are relative to this skill's Base Directory. Replace `<skill-base-dir>` wi
 ## Security (mandatory)
 
 - **NEVER** ask for passwords in chat or display `~/.libragent/email_config`
-- Collect password only via a single hidden shell prompt; persist with `setup_account.py`
-- If the user pastes a secret in chat, do not echo it—run setup immediately
+- **NEVER** put the password in a command line
+- Collect the password only with `requireUserInput=true`, `inputType=password`, and `storeAs: "LIBRAGENT_EMAIL_PASSWORD"`; persist with `setup_account.py --password-env LIBRAGENT_EMAIL_PASSWORD`
+- If the user pastes a secret in chat, do not echo it—ask for it again with the `storeAs` prompt and run setup
 - Browser fallback uses LibrAgent’s sticky agent browser profile (not everyday Chrome). Ask the user to sign in inside that browser when needed.
 
 ## Decision tree
@@ -52,7 +53,7 @@ python "<skill-base-dir>/scripts/validate_config.py"
 
 ### 2. Setup (first time or reset)
 
-See [references/setup-flow.md](references/setup-flow.md) for the PowerShell two-step pattern and preset/custom domain commands.
+See [references/setup-flow.md](references/setup-flow.md) for the single `storeAs` tool call and the preset/custom domain commands.
 
 ### 3. Dispatch action
 
