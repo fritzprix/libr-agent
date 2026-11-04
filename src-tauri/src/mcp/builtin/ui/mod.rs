@@ -41,41 +41,6 @@ impl UiServer {
         }
     }
 
-    fn get_user_answer(&self, args: Value) -> Result<MCPResult, String> {
-        let _message_id = match args.get("messageId").and_then(|v| v.as_str()) {
-            Some(v) => v,
-            None => return Ok(missing_param_error("messageId", ToolGroup::UI)),
-        };
-
-        let answer = args.get("answer");
-        let cancelled = args
-            .get("cancelled")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-
-        if cancelled {
-            return Ok(MCPResult::informational("User cancelled the prompt."));
-        }
-
-        let answer_str = if let Some(ans) = answer {
-            if ans.is_null() {
-                "null".to_string()
-            } else {
-                serde_json::to_string(ans).unwrap_or_else(|_| "invalid".to_string())
-            }
-        } else {
-            "null".to_string()
-        };
-
-        Ok(MCPResult {
-            content: Some(vec![MCPContent::Text {
-                text: format!("User replied: {}", answer_str),
-            }]),
-            structured_content: None,
-            is_error: Some(false),
-        })
-    }
-
     fn circuit_break(&self, args: Value) -> Result<MCPResult, String> {
         let tool_name = match args.get("toolName").and_then(|v| v.as_str()) {
             Some(v) => v,
@@ -482,7 +447,6 @@ impl BuiltinMCPServer for UiServer {
         _session_id: Option<String>,
     ) -> Result<MCPResult, String> {
         match tool_name {
-            "getUserAnswer" => self.get_user_answer(args),
             "circuitBreak" => self.circuit_break(args),
             "resumeCircuitBreak" => self.resume_circuit_break(args),
             "askUser" => self.ask_user(args, _session_id).await,

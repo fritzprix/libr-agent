@@ -8,8 +8,6 @@ use tauri_mcp_agent_lib::mcp::builtin::error_guidance::{
     missing_param_error, not_found_error, operation_failed_error, permission_denied_error,
     session_id_passed_as_agent_config_error, ErrorCategory, ToolGroup,
 };
-use tauri_mcp_agent_lib::mcp::builtin::ui::UiServer;
-use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
 
 fn extract_text(result: &tauri_mcp_agent_lib::mcp::types::MCPResult) -> String {
@@ -356,27 +354,4 @@ async fn session_wait_timeout_is_converted_to_success_result() {
         .get("nextActions")
         .and_then(|v| v.as_array())
         .is_some_and(|actions| !actions.is_empty()));
-}
-
-#[tokio::test]
-async fn ui_cancel_returns_informational_result() {
-    let server = UiServer::new();
-
-    let result = server
-        .call_tool(
-            "getUserAnswer",
-            json!({
-                "messageId": "msg_123",
-                "cancelled": true
-            }),
-            None,
-        )
-        .await
-        .expect("ui tool call should succeed");
-
-    let text = extract_text(&result);
-
-    assert_eq!(result.is_error, Some(false));
-    assert_eq!(result.is_error, Some(false));
-    assert_eq!(text, "User cancelled the prompt.");
 }
