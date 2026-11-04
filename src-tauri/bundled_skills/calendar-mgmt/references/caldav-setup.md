@@ -22,6 +22,6 @@
 }
 ```
 
-Authentication will follow the `email-integration` hidden-password pattern (no OAuth).
+Authentication will follow the `email-integration` `storeAs` password pattern (no OAuth).
 
 Until CalDAV ships, Google Calendar users should use [google-setup.md](google-setup.md).

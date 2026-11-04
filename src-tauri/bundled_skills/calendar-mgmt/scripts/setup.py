@@ -3,7 +3,9 @@
 LibrAgent Google Calendar setup.
 
 Stores OAuth client credentials and runs a local loopback OAuth flow.
-Secrets must come from hidden shell prompts (env vars), never from chat.
+The client secret comes from the environment variable named by --client-secret-env.
+LibrAgent stores it with `requireUserInput=true` and `storeAs="LIBRAGENT_GOOGLE_CLIENT_SECRET"`;
+never from chat or a command-line value.
 
 Usage:
   python setup.py --client-id "xxx.apps.googleusercontent.com" --client-secret-env LIBRAGENT_GOOGLE_CLIENT_SECRET --oauth
@@ -141,7 +143,11 @@ def main() -> int:
             json.dumps(
                 {
                     "status": "error",
-                    "message": "client_secret missing. Pass --client-secret-env after a hidden password prompt.",
+                    "message": (
+                        "client_secret missing. Ask for it with requireUserInput=true and "
+                        "storeAs=\"LIBRAGENT_GOOGLE_CLIENT_SECRET\", then pass "
+                        "--client-secret-env LIBRAGENT_GOOGLE_CLIENT_SECRET."
+                    ),
                 }
             ),
             file=sys.stderr,

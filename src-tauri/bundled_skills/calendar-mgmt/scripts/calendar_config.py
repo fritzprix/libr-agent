@@ -46,10 +46,15 @@ def resolve_secret(
     if direct_value:
         return direct_value.strip()
     if env_name:
-        value = os.environ.get(env_name, "").strip()
+        value = os.environ.get(env_name, "").strip().lstrip("\ufeff").strip()
         if value:
             return value
-    raise ValueError(f"{secret_label} is required (use hidden prompt env var).")
+        raise ValueError(
+            f"Environment variable '{env_name}' is empty or unset. "
+            f"Ask for the {secret_label} with requireUserInput=true and "
+            f"storeAs=\"{env_name}\", then run this command again."
+        )
+    raise ValueError(f"{secret_label} is required.")
 
 
 def google_section_valid(google: dict[str, Any] | None) -> tuple[bool, str | None]:
