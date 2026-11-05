@@ -266,7 +266,7 @@ fn to_toml_value(op: &ObjectOp, json: &JsonValue) -> Result<Value, ApplyError> {
                 ))
             }
         },
-        JsonValue::String(text) => Value::from(text.as_str()),
+        JsonValue::String(text) => string_value(op, text)?,
         JsonValue::Array(items) => {
             let mut array = Array::new();
             for item in items {
@@ -392,6 +392,34 @@ fn split_line_head(text: &str) -> (&str, &str) {
         Some(newline) => text.split_at(newline),
         None => (text, ""),
     }
+}
+
+/// A TOML string value. Strings with line breaks are written as single-line
+/// escaped strings: `toml_edit` would use a `"""` string, whose literal newlines
+/// change the value when a CRLF file's line endings are restored.
+fn string_value(op: &ObjectOp, text: &str) -> Result<Value, ApplyError> {
+    if !text.contains(['\n', '\r']) {
+        return Ok(Value::from(text));
+    }
+    let mut escaped = String::with_capacity(text.len() + 2);
+    escaped.push('"');
+    for character in text.chars() {
+        match character {
+            '"' => escaped.push_str("\\\""),
+            '\\' => escaped.push_str("\\\\"),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            control if control.is_control() => {
+                escaped.push_str(&format!("\\u{:04X}", u32::from(control)));
+            }
+            other => escaped.push(other),
+        }
+    }
+    escaped.push('"');
+    escaped
+        .parse::<Value>()
+        .map_err(|error| logic_error(op, &format!("internal: string escape failed: {error}")))
 }
 
 fn into_table(op: &ObjectOp, value: Value, expected: &str) -> Result<Table, ApplyError> {
@@ -671,6 +699,20 @@ mod tests {
             ),
             "a = 1\ndeps = { k = 2 }\n"
         );
+    }
+
+    #[test]
+    fn multiline_strings_keep_their_value_in_crlf_files() {
+        for value in ["x\ny\nz", "x\r\ny", "tab\t\"quote\" back\\slash\n\u{1}"] {
+            let output = edit(
+                "a = 1\r\nb = 2\r\n",
+                json!([{"op":"set","path":"/s","value":value}]),
+            );
+            assert!(!output.contains("\"\"\""), "{output:?}");
+            let document = parse_toml(&output).expect("valid TOML");
+            assert_eq!(document["s"].as_str(), Some(value), "{output:?}");
+            assert!(output.ends_with("\r\n"), "{output:?}");
+        }
     }
 
     #[test]
