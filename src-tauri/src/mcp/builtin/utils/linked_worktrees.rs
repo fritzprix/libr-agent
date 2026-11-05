@@ -60,10 +60,24 @@ fn registered_worktree(admin: &Path) -> Option<PathBuf> {
     dot_git.parent()?.canonicalize().ok()
 }
 
-/// The canonical common git dir of the repository at `root`, when `root` is a main
-/// worktree or a registered linked worktree.
-pub fn git_common_dir(root: &Path) -> Option<PathBuf> {
-    common_dir(root).map(|(common, _)| common)
+/// The git dirs that git uses for the repository at `root`: the `.git` dir, or the
+/// `gitdir:` target of a `.git` file plus its `commondir` target. Unlike `common_dir`,
+/// nothing here is checked for trust, because this list is used to deny writes.
+pub fn git_metadata_dirs(root: &Path) -> Vec<PathBuf> {
+    let dot_git = root.join(".git");
+    let Ok(metadata) = std::fs::metadata(&dot_git) else {
+        return Vec::new();
+    };
+    if metadata.is_dir() {
+        return vec![dot_git];
+    }
+    let Some(gitdir) = read_gitdir_file(&dot_git) else {
+        return Vec::new();
+    };
+    let commondir = std::fs::read_to_string(gitdir.join("commondir"))
+        .ok()
+        .map(|common| resolve(&gitdir, common.trim()));
+    std::iter::once(gitdir).chain(commondir).collect()
 }
 
 /// Canonical roots of the other worktrees of the repository at `root`: its linked

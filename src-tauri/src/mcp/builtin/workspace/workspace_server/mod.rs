@@ -31,9 +31,7 @@ pub(crate) fn file_tool_manager(
     workspace_dir: std::path::PathBuf,
     allow_linked_worktrees: bool,
 ) -> SecureFileManager {
-    let git_dirs = crate::mcp::builtin::utils::git_common_dir(&workspace_dir)
-        .into_iter()
-        .collect();
+    let git_dirs = crate::mcp::builtin::utils::git_metadata_dirs(&workspace_dir);
     let manager = if allow_linked_worktrees {
         let roots = crate::mcp::builtin::utils::linked_worktree_roots(&workspace_dir);
         SecureFileManager::new_scoped_with_extra_roots(workspace_dir, roots)

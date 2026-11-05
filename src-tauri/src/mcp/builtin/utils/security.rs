@@ -43,11 +43,13 @@ fn canonicalize_existing_prefix(path: &Path) -> PathBuf {
     }
 }
 
-/// True when a component is `.git`. Case and trailing dots/spaces are ignored because
-/// Windows and macOS resolve those variants to the same entry.
+/// True when a component is `.git`. Case, trailing dots/spaces, and an NTFS stream
+/// suffix (`.git::$INDEX_ALLOCATION`) are ignored because Windows and macOS resolve
+/// those variants to the same entry.
 fn has_git_component(path: &Path) -> bool {
     path.components().any(|component| match component {
         Component::Normal(name) => name.to_str().is_some_and(|name| {
+            let name = name.split(':').next().unwrap_or(name);
             name.trim_end_matches([' ', '.'])
                 .eq_ignore_ascii_case(".git")
         }),
