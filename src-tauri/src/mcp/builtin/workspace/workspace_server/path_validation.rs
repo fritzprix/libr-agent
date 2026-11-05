@@ -63,7 +63,7 @@ impl WorkspaceServer {
             .map_docker_container_file_tool_path(path_str, &target_session_id)
             .await?;
         let effective_path = mapped_path.as_deref().unwrap_or(path_str);
-        let file_manager = self.get_file_manager(Some(target_session_id.clone()));
+        let file_manager = self.get_file_tool_manager(&target_session_id).await;
 
         match file_manager
             .get_security_validator()
@@ -205,8 +205,11 @@ impl WorkspaceServer {
             }
         }
 
-        let validated =
-            self.validate_path_with_error_for_write(effective_path, Some(target_session_id))?;
+        let file_manager = self.get_file_tool_manager(&target_session_id).await;
+        let validated = super::super::file_operations::utils::validate_path_with_error_for_write(
+            &file_manager,
+            effective_path,
+        )?;
         refuse_user_skills_write(&validated)?;
         Ok(validated)
     }
@@ -263,22 +266,6 @@ impl WorkspaceServer {
     ) -> Result<std::path::PathBuf, String> {
         let file_manager = self.get_file_manager(session_id);
         super::super::file_operations::utils::validate_path_with_error(&file_manager, path_str)
-    }
-
-    /// Validate path for write/create operations.
-    /// Blocks Windows reserved filenames in addition to standard security checks.
-    /// Delete operations should use `validate_path_with_error` instead so that
-    /// pre-existing reserved-name files can still be cleaned up.
-    pub fn validate_path_with_error_for_write(
-        &self,
-        path_str: &str,
-        session_id: Option<String>,
-    ) -> Result<std::path::PathBuf, String> {
-        let file_manager = self.get_file_manager(session_id);
-        super::super::file_operations::utils::validate_path_with_error_for_write(
-            &file_manager,
-            path_str,
-        )
     }
 }
 

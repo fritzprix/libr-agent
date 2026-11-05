@@ -568,6 +568,8 @@
       },
       "shellRuntimeBootstrap": "Inicialización del entorno de shell",
       "shellRuntimeBootstrapDescription": "Carga solo las rutas de Python y Node en la consola para iniciar comandos más rápido.",
+      "allowLinkedWorktrees": "Las herramientas de archivos pueden usar worktrees de git vinculados",
+      "allowLinkedWorktreesDescription": "Si el espacio de trabajo es un repositorio git, las herramientas de archivos también pueden leer y editar archivos en las otras carpetas de trabajo del mismo repositorio (worktrees de git). Desactívelo para permitir solo la carpeta del espacio de trabajo.",
       "performance": "Rendimiento y concurrencia",
       "performanceDescription": "Estos límites de ejecución controlan cuántos agentes y procesos del espacio de trabajo pueden ejecutarse al mismo tiempo.",
       "title": "Controles avanzados de ejecución",

@@ -93,6 +93,7 @@ function getAdvancedComparableState(settings: SettingsFormState) {
     ...advancedWithoutChatFields,
     shellIsolationLevel: settings.system.shellIsolationLevel,
     shellRuntimeBootstrap: settings.system.shellRuntimeBootstrap,
+    allowLinkedWorktrees: settings.system.allowLinkedWorktrees,
   };
 }
 

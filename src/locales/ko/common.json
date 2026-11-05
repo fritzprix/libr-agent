@@ -568,6 +568,8 @@
       },
       "shellRuntimeBootstrap": "셸 런타임 부트스트랩",
       "shellRuntimeBootstrapDescription": "터미널 실행 시 파이썬과 Node 환경 경로만 빠르게 로드하여 명령 실행 속도를 높입니다.",
+      "allowLinkedWorktrees": "파일 도구에서 연결된 git worktree 사용",
+      "allowLinkedWorktreesDescription": "워크스페이스가 git 저장소이면 파일 도구가 같은 저장소의 다른 작업 폴더(git worktree)에 있는 파일도 읽고 편집할 수 있습니다. 끄면 워크스페이스 폴더만 사용할 수 있습니다.",
       "performance": "성능 & 동시성",
       "performanceDescription": "이러한 런타임 제한은 한 번에 실행할 수 있는 에이전트 및 워크스페이스 프로세스 수를 제어합니다.",
       "title": "고급 런타임 제어",

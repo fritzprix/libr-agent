@@ -50,6 +50,9 @@ pub struct SystemSettings {
     pub scheduled_task_minimum_interval_minutes: u64,
     pub shell_isolation_level: IsolationLevel,
     pub shell_runtime_bootstrap: bool,
+    /// Workspace file tools also accept paths in linked git worktrees of the
+    /// repository at the session workspace root.
+    pub allow_linked_worktrees: bool,
     /// Inhibit idle sleep while LibrAgent is running. Does not keep the display on.
     pub prevent_sleep_during_agent_work: bool,
     /// Archived app logs older than this are deleted. `0` means no age limit.
@@ -69,6 +72,7 @@ impl Default for SystemSettings {
             scheduled_task_minimum_interval_minutes: 0,
             shell_isolation_level: IsolationLevel::Medium,
             shell_runtime_bootstrap: false,
+            allow_linked_worktrees: true,
             prevent_sleep_during_agent_work: true,
             log_retention_days: 30,
         }
@@ -132,6 +136,11 @@ impl SystemSettings {
                 &map,
                 "shellRuntimeBootstrap",
                 defaults.shell_runtime_bootstrap,
+            ),
+            allow_linked_worktrees: parsed(
+                &map,
+                "allowLinkedWorktrees",
+                defaults.allow_linked_worktrees,
             ),
             prevent_sleep_during_agent_work: parsed(
                 &map,
@@ -211,6 +220,19 @@ mod tests {
     }
 
     #[test]
+    fn allow_linked_worktrees_defaults_to_true_and_falls_back() {
+        assert!(SystemSettings::from_stored(Some("{}")).allow_linked_worktrees);
+        assert!(
+            SystemSettings::from_stored(Some(r#"{"allowLinkedWorktrees":"no"}"#))
+                .allow_linked_worktrees
+        );
+        assert!(
+            !SystemSettings::from_stored(Some(r#"{"allowLinkedWorktrees":false}"#))
+                .allow_linked_worktrees
+        );
+    }
+
+    #[test]
     fn serialized_keys_match_the_stored_names() {
         let value = serde_json::to_value(SystemSettings::default()).unwrap();
         let keys = value.as_object().unwrap();
@@ -218,7 +240,8 @@ mod tests {
         assert!(keys.contains_key("mcpServerStartupTimeoutSeconds"));
         assert!(keys.contains_key("logRetentionDays"));
         assert!(!keys.contains_key("skillsDirectory"));
-        assert_eq!(keys.len(), 12);
+        assert!(keys.contains_key("allowLinkedWorktrees"));
+        assert_eq!(keys.len(), 13);
         assert_eq!(
             SystemSettings::from_stored(Some(&value.to_string())),
             SystemSettings::default()

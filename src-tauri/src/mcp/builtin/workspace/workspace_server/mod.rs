@@ -1,4 +1,6 @@
 mod lifecycle;
+#[cfg(test)]
+mod linked_worktree_tests;
 mod path_validation;
 mod service_context;
 mod teamwork_paths;
@@ -23,6 +25,18 @@ use tracing::info;
 
 /// Cached workspace service-context prompt text (TTL-managed in get_service_context).
 pub(crate) type ContextCache = Arc<tokio::sync::RwLock<Option<(String, std::time::Instant)>>>;
+
+/// The file tool manager for `workspace_dir`; see `WorkspaceServer::get_file_tool_manager`.
+pub(crate) fn file_tool_manager(
+    workspace_dir: std::path::PathBuf,
+    allow_linked_worktrees: bool,
+) -> SecureFileManager {
+    if !allow_linked_worktrees {
+        return SecureFileManager::new_scoped_with_base_dir(workspace_dir);
+    }
+    let roots = crate::mcp::builtin::utils::linked_worktree_roots(&workspace_dir);
+    SecureFileManager::new_scoped_with_extra_roots(workspace_dir, roots)
+}
 
 /// Clear the workspace context cache. Safe to call from background process tasks.
 pub(crate) async fn clear_context_cache(cache: &ContextCache) {
@@ -97,6 +111,16 @@ impl WorkspaceServer {
         let target_session_id = session_id.unwrap_or_else(|| self.session_id.clone());
         let workspace_dir = self.get_workspace_dir(&target_session_id);
         Arc::new(SecureFileManager::new_scoped_with_base_dir(workspace_dir))
+    }
+
+    /// The scoped manager used to validate file tool paths: the workspace root plus,
+    /// when the `allowLinkedWorktrees` setting is on, the linked git worktrees of the
+    /// workspace repository.
+    pub(crate) async fn get_file_tool_manager(&self, session_id: &str) -> SecureFileManager {
+        let allow = crate::models::system_settings::SystemSettings::load_global()
+            .await
+            .allow_linked_worktrees;
+        file_tool_manager(self.get_workspace_dir(session_id), allow)
     }
 
     #[allow(dead_code)]

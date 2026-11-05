@@ -568,6 +568,8 @@
       },
       "shellRuntimeBootstrap": "Shell 运行时引导",
       "shellRuntimeBootstrapDescription": "在终端中仅快速加载 Python 和 Node 环境路径，从而加快命令启动速度。",
+      "allowLinkedWorktrees": "文件工具可使用关联的 git worktree",
+      "allowLinkedWorktreesDescription": "当工作区是 git 仓库时，文件工具也可以读取和编辑同一仓库其他工作文件夹（git worktree）中的文件。关闭后只能访问工作区文件夹。",
       "performance": "性能与并发",
       "performanceDescription": "这些运行时限制控制可同时运行的代理和工作区进程数量。",
       "title": "高级运行时控制",

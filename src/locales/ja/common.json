@@ -568,6 +568,8 @@
       },
       "shellRuntimeBootstrap": "シェルランタイムブートストラップ",
       "shellRuntimeBootstrapDescription": "ターミナル起動時にPythonおよびNodeの環境パスのみを高速に読み込み、コマンド実行を高速化します。",
+      "allowLinkedWorktrees": "ファイルツールでリンクされた git worktree を使用",
+      "allowLinkedWorktreesDescription": "ワークスペースが git リポジトリの場合、ファイルツールは同じリポジトリの他の作業フォルダー（git worktree）のファイルも読み取り・編集できます。オフにするとワークスペースフォルダーのみ使用できます。",
       "performance": "パフォーマンスと並行実行",
       "performanceDescription": "これらの実行時制限は、同時に実行できるエージェント数とワークスペースプロセス数を制御します。",
       "title": "高度な実行時制御",

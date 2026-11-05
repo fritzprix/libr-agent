@@ -55,6 +55,18 @@ impl SecureFileManager {
         }
     }
 
+    /// Like [`Self::new_scoped_with_base_dir`], but paths under `extra_roots` are also
+    /// accepted. Relative paths still resolve against `base_dir`.
+    pub fn new_scoped_with_extra_roots(
+        base_dir: std::path::PathBuf,
+        extra_roots: Vec<std::path::PathBuf>,
+    ) -> Self {
+        Self {
+            security: SecurityValidator::new_scoped_with_base_dir(base_dir)
+                .with_extra_roots(extra_roots),
+        }
+    }
+
     /// Securely reads the contents of a file as a byte vector.
     ///
     /// It performs security checks to validate the path and file size before reading.

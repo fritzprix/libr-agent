@@ -107,6 +107,38 @@ function AdvancedShellIsolationSectionComponent({
           />
         </div>
       </div>
+
+      <div className="rounded-xl border border-border/70 p-4">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <label
+              htmlFor="allow-linked-worktrees"
+              className="block text-muted-foreground font-medium"
+            >
+              {t(
+                'settings.advanced.allowLinkedWorktrees',
+                'File tools can use linked git worktrees',
+              )}
+            </label>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {t(
+                'settings.advanced.allowLinkedWorktreesDescription',
+                'When the workspace is a git repository, file tools can also read and edit files in the other working folders of the same repository (git worktrees). Turn off to allow the workspace folder only.',
+              )}
+            </p>
+          </div>
+          <Switch
+            id="allow-linked-worktrees"
+            checked={
+              systemSettingsProps.localSystemSettings.allowLinkedWorktrees ??
+              true
+            }
+            onCheckedChange={(checked) =>
+              systemSettingsProps.onChange('allowLinkedWorktrees', checked)
+            }
+          />
+        </div>
+      </div>
     </div>
   );
 }

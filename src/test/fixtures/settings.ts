@@ -63,6 +63,7 @@ export const TEST_SYSTEM_SETTINGS: SystemSettings = {
   scheduledTaskMinimumIntervalMinutes: 0,
   shellIsolationLevel: 'medium',
   shellRuntimeBootstrap: false,
+  allowLinkedWorktrees: true,
   preventSleepDuringAgentWork: true,
   logRetentionDays: 30,
 };
