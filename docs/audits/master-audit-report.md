@@ -201,13 +201,13 @@ docs/
 
 ## 📦 Sub-Agent Reports
 
-| 세션                               | 보고서                                | 파일 수 | 핵심 발견                              |
-| ---------------------------------- | ------------------------------------- | :-----: | -------------------------------------- |
-| Frontend Architect (65fba1d167)    | `docs/user/docs-audit-report.md`      |   50+   | 사용자 문서 2개만 존재 (4%)            |
-| QA Engineer (c6005ed777)           | `docs/audit/frontend-audit-report.md` |   40    | llm-services/ 8개 파일 SDK 복사본      |
-| Rust Backend Engineer (d2c3c4f4bd) | `docs/audit/backend-audit-report.md`  |   49    | migration_status_update_v2/v3 obsolete |
-| MCP Specialist (9c0145387e)        | —                                     |    —    | MCP 서버 연결 가이드 필요              |
-| Frontend Architect (54c72a15bc)    | —                                     |    —    | UI 리소스 전달 파이프라인 검증         |
+| 세션                               | 보고서                                 | 파일 수 | 핵심 발견                              |
+| ---------------------------------- | -------------------------------------- | :-----: | -------------------------------------- |
+| Frontend Architect (65fba1d167)    | `docs/user/docs-audit-report.md`       |   50+   | 사용자 문서 2개만 존재 (4%)            |
+| QA Engineer (c6005ed777)           | `docs/audits/frontend-audit-report.md` |   40    | llm-services/ 8개 파일 SDK 복사본      |
+| Rust Backend Engineer (d2c3c4f4bd) | `docs/audits/backend-audit-report.md`  |   49    | migration_status_update_v2/v3 obsolete |
+| MCP Specialist (9c0145387e)        | —                                      |    —    | MCP 서버 연결 가이드 필요              |
+| Frontend Architect (54c72a15bc)    | —                                      |    —    | UI 리소스 전달 파이프라인 검증         |
 
 ---
 
