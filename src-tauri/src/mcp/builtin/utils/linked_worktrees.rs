@@ -23,14 +23,24 @@ fn read_gitdir_file(dot_git: &Path) -> Option<PathBuf> {
 
 /// The canonical common git dir of the repository at `root`, and whether `root` is
 /// itself a linked worktree.
+///
+/// A linked root's `.git` file and `commondir` can be written by the file tools, so the
+/// common dir is trusted only when it registers `root`: the admin dir must be
+/// `<common>/worktrees/<name>` and must link back to `root`.
 fn common_dir(root: &Path) -> Option<(PathBuf, bool)> {
     let dot_git = root.join(".git");
     if std::fs::metadata(&dot_git).ok()?.is_dir() {
         return Some((dot_git.canonicalize().ok()?, false));
     }
-    let gitdir = read_gitdir_file(&dot_git)?;
-    let commondir = std::fs::read_to_string(gitdir.join("commondir")).ok()?;
-    let common = resolve(&gitdir, commondir.trim()).canonicalize().ok()?;
+    let admin = read_gitdir_file(&dot_git)?.canonicalize().ok()?;
+    let commondir = std::fs::read_to_string(admin.join("commondir")).ok()?;
+    let common = resolve(&admin, commondir.trim()).canonicalize().ok()?;
+    if admin.parent()? != common.join("worktrees") {
+        return None;
+    }
+    if registered_worktree(&admin)? != root.canonicalize().ok()? {
+        return None;
+    }
     Some((common, true))
 }
 
@@ -85,6 +95,7 @@ pub(crate) mod test_support {
     /// canonicalized so paths of files that do not exist yet use the same form as the
     /// canonical roots (Windows temp dirs may use 8.3 short names).
     pub fn main_repo(parent: &Path) -> PathBuf {
+        std::fs::create_dir_all(parent).unwrap();
         let repo = parent.canonicalize().unwrap().join("repo");
         std::fs::create_dir_all(repo.join(".git").join("worktrees")).unwrap();
         repo
@@ -162,6 +173,46 @@ mod tests {
         .unwrap();
 
         assert!(linked_worktree_roots(&repo).is_empty());
+    }
+
+    #[test]
+    fn a_forged_git_file_at_a_non_git_root_adds_no_other_repository() {
+        let dir = tempfile::tempdir().unwrap();
+        let other = main_repo(&dir.path().join("other"));
+        let root = dir.path().join("session");
+        let fake = root.join("fake");
+        std::fs::create_dir_all(&fake).unwrap();
+        std::fs::write(root.join(".git"), format!("gitdir: {}\n", fake.display())).unwrap();
+        std::fs::write(
+            fake.join("commondir"),
+            format!("{}\n", other.join(".git").display()),
+        )
+        .unwrap();
+
+        assert!(linked_worktree_roots(&root).is_empty());
+    }
+
+    #[test]
+    fn a_git_file_pointing_at_another_worktrees_admin_dir_adds_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let other = main_repo(&dir.path().join("other"));
+        add_worktree(&other, "theirs");
+        let root = dir.path().join("session");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join(".git"),
+            format!(
+                "gitdir: {}\n",
+                other
+                    .join(".git")
+                    .join("worktrees")
+                    .join("theirs")
+                    .display()
+            ),
+        )
+        .unwrap();
+
+        assert!(linked_worktree_roots(&root).is_empty());
     }
 
     #[test]

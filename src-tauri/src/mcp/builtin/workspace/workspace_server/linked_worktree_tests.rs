@@ -64,6 +64,61 @@ fn a_sibling_directory_that_is_not_a_worktree_is_rejected() {
     );
 }
 
+fn assert_outside(manager: &crate::services::SecureFileManager, path: &str) {
+    let validator = manager.get_security_validator();
+    for error in [
+        validator.validate_path_for_read(path).unwrap_err(),
+        validator.validate_path_for_write(path).unwrap_err(),
+    ] {
+        assert!(
+            matches!(error, SecurityError::OutsideWorkspaceRoot(_)),
+            "{error}"
+        );
+    }
+}
+
+#[test]
+fn a_forged_git_file_at_the_root_cannot_add_another_repository() {
+    let dir = tempfile::tempdir().unwrap();
+    let other = main_repo(&dir.path().join("other"));
+    let root = dir.path().canonicalize().unwrap().join("session");
+    let fake = root.join("fake");
+    std::fs::create_dir_all(&fake).unwrap();
+    std::fs::write(root.join(".git"), format!("gitdir: {}\n", fake.display())).unwrap();
+    std::fs::write(
+        fake.join("commondir"),
+        format!("{}\n", other.join(".git").display()),
+    )
+    .unwrap();
+
+    assert_outside(&file_tool_manager(root, true), &file_in(&other));
+}
+
+#[test]
+fn a_root_pointing_at_another_worktrees_admin_dir_cannot_add_that_repository() {
+    let dir = tempfile::tempdir().unwrap();
+    let other = main_repo(&dir.path().join("other"));
+    let theirs = add_worktree(&other, "theirs");
+    let root = dir.path().canonicalize().unwrap().join("session");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(
+        root.join(".git"),
+        format!(
+            "gitdir: {}\n",
+            other
+                .join(".git")
+                .join("worktrees")
+                .join("theirs")
+                .display()
+        ),
+    )
+    .unwrap();
+
+    let manager = file_tool_manager(root, true);
+    assert_outside(&manager, &file_in(&other));
+    assert_outside(&manager, &file_in(&theirs));
+}
+
 #[test]
 fn a_forged_git_file_that_fails_the_back_link_check_is_rejected() {
     let dir = tempfile::tempdir().unwrap();
