@@ -16,6 +16,7 @@ pub mod keychain;
 pub mod oauth;
 pub mod presets;
 pub mod schema;
+pub mod secret_fallback;
 pub mod secret_templates;
 pub mod server;
 pub mod server_utils;

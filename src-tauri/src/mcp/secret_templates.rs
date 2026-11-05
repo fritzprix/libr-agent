@@ -14,19 +14,44 @@ static NAME_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^[A-Z][A-Z0-9_]*$").expect("valid name regex"));
 
 /// Where secret values are kept, per server id and secret name.
+#[async_trait::async_trait]
 pub trait SecretStore: Send + Sync {
-    fn get(&self, server_id: &str, name: &str) -> Result<Option<String>, String>;
-    fn set(&self, server_id: &str, name: &str, value: &str) -> Result<(), String>;
-    fn delete(&self, server_id: &str, name: &str) -> Result<(), String>;
+    async fn get(&self, server_id: &str, name: &str) -> Result<Option<String>, String>;
+    /// Store a value. Returns a notice to show the user once (the keychain fallback
+    /// warning), or `None`.
+    async fn set(&self, server_id: &str, name: &str, value: &str)
+        -> Result<Option<String>, String>;
+    async fn delete(&self, server_id: &str, name: &str) -> Result<(), String>;
+    /// False when the store cannot be used at all (for example no OS keychain).
+    fn available(&self) -> bool {
+        true
+    }
+    /// Runs the pending-delete sweep at startup if any deletes are pending and the
+    /// store is available.
+    async fn sweep_pending_deletes_at_startup(&self) {}
 }
 
-/// The OS keychain in the app; an in-memory store in unit tests (CI has no keychain).
+/// The OS keychain, with the encrypted `encrypted_secrets` fallback when it is not
+/// available, in the app; an in-memory store in unit tests (CI has no keychain).
 pub fn secret_store() -> &'static dyn SecretStore {
     #[cfg(not(test))]
     {
-        static STORE: crate::mcp::keychain::KeychainSecretStore =
+        use crate::mcp::secret_fallback::{app_key_path, FileSecretStore, LayeredSecretStore};
+        static KEYCHAIN: crate::mcp::keychain::KeychainSecretStore =
             crate::mcp::keychain::KeychainSecretStore;
-        &STORE
+        static STORE: once_cell::sync::OnceCell<LayeredSecretStore<'static>> =
+            once_cell::sync::OnceCell::new();
+        if let Some(store) = STORE.get() {
+            return store;
+        }
+        // Before the repository is set there is no row to hold fallback values; do not
+        // cache a keychain-only store, so the fallback is used once the repository exists.
+        match crate::state::try_get_mcp_server_repository() {
+            Some(repo) => STORE.get_or_init(|| {
+                LayeredSecretStore::new(&KEYCHAIN, FileSecretStore::new(repo, app_key_path()))
+            }),
+            None => &KEYCHAIN,
+        }
     }
     #[cfg(test)]
     {
@@ -37,23 +62,53 @@ pub fn secret_store() -> &'static dyn SecretStore {
 
 #[cfg(test)]
 #[derive(Default)]
-pub struct MemorySecretStore(std::sync::Mutex<HashMap<(String, String), String>>);
+pub struct MemorySecretStore {
+    values: std::sync::Mutex<HashMap<(String, String), String>>,
+    unavailable: std::sync::atomic::AtomicBool,
+}
 
 #[cfg(test)]
+impl MemorySecretStore {
+    /// A store that reports itself unavailable, like a machine without an OS keychain.
+    pub fn unavailable() -> Self {
+        Self {
+            values: Default::default(),
+            unavailable: std::sync::atomic::AtomicBool::new(true),
+        }
+    }
+
+    /// Simulates a keychain outage (`false`) or its recovery (`true`). Stored values are
+    /// kept, like a real keychain.
+    pub fn set_available(&self, available: bool) {
+        self.unavailable
+            .store(!available, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+#[cfg(test)]
+#[async_trait::async_trait]
 impl SecretStore for MemorySecretStore {
-    fn get(&self, server_id: &str, name: &str) -> Result<Option<String>, String> {
-        let map = self.0.lock().map_err(|e| e.to_string())?;
+    async fn get(&self, server_id: &str, name: &str) -> Result<Option<String>, String> {
+        let map = self.values.lock().map_err(|e| e.to_string())?;
         Ok(map.get(&(server_id.to_string(), name.to_string())).cloned())
     }
-    fn set(&self, server_id: &str, name: &str, value: &str) -> Result<(), String> {
-        let mut map = self.0.lock().map_err(|e| e.to_string())?;
+    async fn set(
+        &self,
+        server_id: &str,
+        name: &str,
+        value: &str,
+    ) -> Result<Option<String>, String> {
+        let mut map = self.values.lock().map_err(|e| e.to_string())?;
         map.insert((server_id.to_string(), name.to_string()), value.to_string());
-        Ok(())
+        Ok(None)
     }
-    fn delete(&self, server_id: &str, name: &str) -> Result<(), String> {
-        let mut map = self.0.lock().map_err(|e| e.to_string())?;
+    async fn delete(&self, server_id: &str, name: &str) -> Result<(), String> {
+        let mut map = self.values.lock().map_err(|e| e.to_string())?;
         map.remove(&(server_id.to_string(), name.to_string()));
         Ok(())
+    }
+    fn available(&self) -> bool {
+        !self.unavailable.load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 
@@ -207,7 +262,7 @@ pub fn mask_values<'a>(text: &str, values: impl IntoIterator<Item = &'a str>) ->
 /// Replace every `{{secret:NAME}}` with the stored value of server `server_id`.
 ///
 /// A config without templates is returned unchanged and the store is not read.
-pub fn fill_secrets(
+pub async fn fill_secrets(
     store: &dyn SecretStore,
     server_id: &str,
     config: &MCPServerConfig,
@@ -215,7 +270,7 @@ pub fn fill_secrets(
     let names = template_names(&config.transport)?;
     let mut values = HashMap::new();
     for name in &names {
-        let value = store.get(server_id, name)?.ok_or_else(|| {
+        let value = store.get(server_id, name).await?.ok_or_else(|| {
             let server = config.name.as_deref().unwrap_or(server_id);
             format!(
                 "MCP server '{server}' needs the secret '{name}', but no value is stored. Run tool__updateServer for '{server}' with reenterSecrets: [\"{name}\"] to enter it again."
@@ -411,13 +466,13 @@ mod tests {
         }
     }
 
-    #[test]
-    fn fill_replaces_templates_and_leaves_the_source_unchanged() {
+    #[tokio::test]
+    async fn fill_replaces_templates_and_leaves_the_source_unchanged() {
         let store = MemorySecretStore::default();
-        store.set("id-1", "GITHUB_PAT", "ghp_value").unwrap();
+        store.set("id-1", "GITHUB_PAT", "ghp_value").await.unwrap();
         let source = github();
 
-        let filled = fill_secrets(&store, "id-1", &source).expect("filled");
+        let filled = fill_secrets(&store, "id-1", &source).await.expect("filled");
 
         let TransportConfig::Http { headers, .. } = &filled.config.transport else {
             panic!("http");
@@ -434,21 +489,21 @@ mod tests {
 
     const SPECIAL: &str = "k&y=1#a+b%2 c";
 
-    fn special_store(id: &str) -> MemorySecretStore {
+    async fn special_store(id: &str) -> MemorySecretStore {
         let store = MemorySecretStore::default();
-        store.set(id, "KEY", SPECIAL).unwrap();
+        store.set(id, "KEY", SPECIAL).await.unwrap();
         store
     }
 
-    #[test]
-    fn a_query_value_is_encoded_into_exactly_one_parameter() {
-        let store = special_store("id-q");
+    #[tokio::test]
+    async fn a_query_value_is_encoded_into_exactly_one_parameter() {
+        let store = special_store("id-q").await;
         let source = config(serde_json::json!({
             "type": "http",
             "url": "https://mcp.exa.ai/mcp?exaApiKey={{secret:KEY}}&x=1#frag"
         }));
 
-        let filled = fill_secrets(&store, "id-q", &source).expect("filled");
+        let filled = fill_secrets(&store, "id-q", &source).await.expect("filled");
 
         let TransportConfig::Http { url, .. } = &filled.config.transport else {
             panic!("http");
@@ -466,9 +521,9 @@ mod tests {
         assert!(!url.contains('+'), "{url}");
     }
 
-    #[test]
-    fn env_header_and_non_query_url_values_are_not_encoded() {
-        let store = special_store("id-raw");
+    #[tokio::test]
+    async fn env_header_and_non_query_url_values_are_not_encoded() {
+        let store = special_store("id-raw").await;
         let http = config(serde_json::json!({
             "type": "http",
             "url": "https://example.com/{{secret:KEY}}/mcp",
@@ -478,7 +533,7 @@ mod tests {
             "type": "stdio", "command": "npx", "env": { "TOKEN": "{{secret:KEY}}" }
         }));
 
-        let filled = fill_secrets(&store, "id-raw", &http).expect("filled");
+        let filled = fill_secrets(&store, "id-raw", &http).await.expect("filled");
         let TransportConfig::Http { url, headers, .. } = &filled.config.transport else {
             panic!("http");
         };
@@ -488,21 +543,25 @@ mod tests {
             format!("Bearer {SPECIAL}")
         );
 
-        let filled = fill_secrets(&store, "id-raw", &stdio).expect("filled");
+        let filled = fill_secrets(&store, "id-raw", &stdio)
+            .await
+            .expect("filled");
         let TransportConfig::Stdio { env, .. } = &filled.config.transport else {
             panic!("stdio");
         };
         assert_eq!(env["TOKEN"], SPECIAL);
     }
 
-    #[test]
-    fn a_failed_connect_with_an_encoded_query_value_shows_no_value() {
-        let store = special_store("id-err");
+    #[tokio::test]
+    async fn a_failed_connect_with_an_encoded_query_value_shows_no_value() {
+        let store = special_store("id-err").await;
         let source = config(serde_json::json!({
             "type": "http",
             "url": "https://mcp.exa.ai/mcp?exaApiKey={{secret:KEY}}"
         }));
-        let filled = fill_secrets(&store, "id-err", &source).expect("filled");
+        let filled = fill_secrets(&store, "id-err", &source)
+            .await
+            .expect("filled");
         let TransportConfig::Http { url, .. } = &filled.config.transport else {
             panic!("http");
         };
@@ -520,10 +579,11 @@ mod tests {
         assert!(!masked.contains(SPECIAL), "{masked}");
     }
 
-    #[test]
-    fn a_missing_value_names_the_variable_and_the_reentry_call() {
+    #[tokio::test]
+    async fn a_missing_value_names_the_variable_and_the_reentry_call() {
         let store = MemorySecretStore::default();
         let error = fill_secrets(&store, "id-2", &github())
+            .await
             .err()
             .expect("missing value fails");
         assert!(error.contains("'GITHUB_PAT'"));
@@ -531,24 +591,25 @@ mod tests {
         assert!(error.contains("reenterSecrets"));
     }
 
-    #[test]
-    fn a_config_without_templates_never_reads_the_store() {
+    #[tokio::test]
+    async fn a_config_without_templates_never_reads_the_store() {
         struct FailingStore;
+        #[async_trait::async_trait]
         impl SecretStore for FailingStore {
-            fn get(&self, _: &str, _: &str) -> Result<Option<String>, String> {
+            async fn get(&self, _: &str, _: &str) -> Result<Option<String>, String> {
                 Err("keychain must not be read".to_string())
             }
-            fn set(&self, _: &str, _: &str, _: &str) -> Result<(), String> {
+            async fn set(&self, _: &str, _: &str, _: &str) -> Result<Option<String>, String> {
                 unreachable!()
             }
-            fn delete(&self, _: &str, _: &str) -> Result<(), String> {
+            async fn delete(&self, _: &str, _: &str) -> Result<(), String> {
                 unreachable!()
             }
         }
         let plain = config(serde_json::json!({
             "type": "stdio", "command": "npx", "env": { "TOKEN": "plain" }
         }));
-        assert!(fill_secrets(&FailingStore, "id", &plain).is_ok());
+        assert!(fill_secrets(&FailingStore, "id", &plain).await.is_ok());
     }
 
     #[test]

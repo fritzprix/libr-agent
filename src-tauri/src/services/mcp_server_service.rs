@@ -1,6 +1,7 @@
 use crate::mcp::builtin::service_id::BuiltinServiceId;
 use crate::mcp::secret_templates::{
     fill_secrets, parse_secret_names, secret_names_column, secret_store, template_names,
+    SecretStore,
 };
 use crate::mcp::session_isolation::exec_target::StdioExecTarget;
 use crate::mcp::session_isolation::{SessionMCPError, SessionMCPManager};
@@ -146,7 +147,7 @@ impl McpServerService {
         target: &StdioExecTarget,
         server_id: &str,
     ) -> Result<Vec<MCPTool>, String> {
-        let filled = fill_secrets(secret_store(), server_id, &config)?;
+        let filled = fill_secrets(secret_store(), server_id, &config).await?;
         let result = match (target.container_session(), &filled.config.transport) {
             (Some(session), TransportConfig::Stdio { .. }) => {
                 Self::verify_stdio_in_container(filled.config.clone(), session).await
@@ -368,6 +369,19 @@ impl McpServerService {
         config: Option<Value>,
         verification: SaveVerification,
     ) -> Result<crate::entity::mcp_server::Model, String> {
+        Self::update_server_config_with_store(repo, secret_store(), id, name, config, verification)
+            .await
+    }
+
+    /// [`Self::update_server_config`] with the secret store passed in.
+    pub(crate) async fn update_server_config_with_store(
+        repo: &dyn MCPServerRepository,
+        store: &dyn SecretStore,
+        id: String,
+        name: Option<String>,
+        config: Option<Value>,
+        verification: SaveVerification,
+    ) -> Result<crate::entity::mcp_server::Model, String> {
         // Preserve legacy display names (including whitespace). Session load sanitizes
         // tool prefixes at runtime; do not rewrite existing DB rows on update.
         let name = name.map(|n| n.trim().to_string()).filter(|n| !n.is_empty());
@@ -416,7 +430,7 @@ impl McpServerService {
 
         if !unused_secrets.is_empty() {
             for secret in &unused_secrets {
-                if let Err(e) = secret_store().delete(&id, secret) {
+                if let Err(e) = store.delete(&id, secret).await {
                     log::warn!(
                         "Failed to delete secret '{}' of server '{}': {}",
                         secret,
@@ -462,6 +476,16 @@ impl McpServerService {
         repo: &dyn MCPServerRepository,
         id: &str,
     ) -> Result<(), String> {
+        Self::delete_server_config_with_store(repo, secret_store(), id).await
+    }
+
+    /// [`Self::delete_server_config`] with the secret store passed in. Deleting the row
+    /// also drops its `encrypted_secrets`.
+    pub(crate) async fn delete_server_config_with_store(
+        repo: &dyn MCPServerRepository,
+        store: &dyn SecretStore,
+        id: &str,
+    ) -> Result<(), String> {
         // Cleanup token from keychain if present
         if let Err(e) = crate::mcp::keychain::delete_token(id).await {
             log::warn!(
@@ -473,7 +497,7 @@ impl McpServerService {
 
         if let Ok(Some(model)) = repo.get(id).await {
             for secret in parse_secret_names(model.secret_names.as_deref()) {
-                if let Err(e) = secret_store().delete(id, &secret) {
+                if let Err(e) = store.delete(id, &secret).await {
                     log::warn!(
                         "Failed to delete secret '{}' of server '{}': {}",
                         secret,
@@ -535,5 +559,39 @@ impl McpServerService {
         }
 
         Ok(models)
+    }
+}
+
+#[cfg(all(test, unix))]
+mod verify_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn verify_starts_the_server_with_the_value_not_the_template() {
+        let dir = tempfile::tempdir().unwrap();
+        let seen = dir.path().join("token");
+        let id = "verify-fill-test";
+        secret_store()
+            .set(id, "TOKEN", "the-secret-value")
+            .await
+            .unwrap();
+        let config: crate::mcp::types::MCPServerConfig =
+            serde_json::from_value(serde_json::json!({
+                "name": "probe",
+                "transport": {
+                    "type": "stdio",
+                    "command": "sh",
+                    "args": ["-c", format!("printf %s \"$TOKEN\" > '{}'", seen.display())],
+                    "env": { "TOKEN": "{{secret:TOKEN}}" }
+                }
+            }))
+            .unwrap();
+
+        let error = McpServerService::verify_config_at(config, &StdioExecTarget::Host, id)
+            .await
+            .expect_err("sh is not an MCP server");
+
+        assert_eq!(std::fs::read_to_string(&seen).unwrap(), "the-secret-value");
+        assert!(!error.contains("the-secret-value"), "{error}");
     }
 }

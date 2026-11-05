@@ -17,6 +17,7 @@ pub struct Model {
     pub verification_status: Option<String>, // pending | success | error
     pub last_verification_error: Option<String>,
     pub secret_names: Option<String>, // JSON array of secret names in the keychain; never values
+    pub encrypted_secrets: Option<String>, // AES-GCM {NAME: value} map when the OS keychain is unavailable; never exported
     pub created_at: i64,
     pub updated_at: i64,
 }

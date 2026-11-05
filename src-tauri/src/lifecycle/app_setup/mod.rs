@@ -71,6 +71,11 @@ fn spawn_startup_maintenance_tasks(
     session_manager: crate::session::SessionManager,
     search_index_frequency_minutes: u64,
 ) {
+    // Sweep MCP secrets pending deletes if any exist from a keychain outage (#2588).
+    tauri::async_runtime::spawn(async move {
+        crate::mcp::secret_fallback::sweep_pending_deletes_at_startup().await;
+    });
+
     tauri::async_runtime::spawn(async move {
         match session_manager.cleanup_old_sessions(24, 5).await {
             Ok(count) => info!(
