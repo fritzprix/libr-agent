@@ -282,9 +282,6 @@ pub async fn cancel_workflow(
     if classify_cancel_strategy(has_pending_execution, killed_resources > 0)
         == CancelStrategy::CancelProcessThenContinue
     {
-        if has_pending_execution {
-            proxy_manager.mark_process_cancel_pending(&session_id).await;
-        }
         log::info!(
             "Cancelled {} active workspace resource(s) for session {}; workflow continues",
             killed_resources,

@@ -496,7 +496,6 @@ pub async fn execute_tool_calls(
     // tombstone `tool_calls[index..]` and break without consuming the iterator.
     // Every continue/success path must bump `index` before the next check.
     let mut index = 0;
-    let mut process_was_cancelled_in_batch = false;
     while index < tool_calls.len() {
         if session_cancel_requested(&active_sessions, &session_id, &cancellation_token).await {
             inject_cancel_tombstones_for_remaining(&context, &tool_calls[index..]).await;
@@ -626,41 +625,9 @@ pub async fn execute_tool_calls(
             }
         }
 
-        if !process_was_cancelled_in_batch
-            && proxy_manager
-                .process_cancel_retry_exhausted(&session_id, tool_name, args_str)
-                .await
-        {
-            let mut result = error_result(
-                "The same tool call was already cancelled once; stopping the workflow to avoid a retry loop.",
-            );
-            result.cancellation = Some(ToolCancellation::user());
-            cancellation_token.cancel();
-            if let Some(session) = active_sessions.write().await.get_mut(&session_id) {
-                session.cancel_pending.store(true, Ordering::Release);
-            }
-            context
-                .continue_after_tool(tool_call_id, result, "cancelled tool retry limit")
-                .await;
-            inject_cancel_tombstones_for_remaining(&context, &tool_calls[index + 1..]).await;
-            break;
-        }
-
+        let cancellation_state = proxy_manager.begin_tool_execution(&session_id).await;
         let mut result = context.execute_tool(tool_name, args).await;
-        let process_was_cancelled = proxy_manager.take_process_cancel_pending(&session_id).await;
-        if process_was_cancelled {
-            process_was_cancelled_in_batch = true;
-            proxy_manager
-                .record_process_cancelled_tool(&session_id, tool_name, args_str)
-                .await;
-        }
-        proxy_manager
-            .clear_process_cancel_retry_after_tool(
-                &session_id,
-                process_was_cancelled,
-                process_was_cancelled_in_batch,
-            )
-            .await;
+        let process_was_cancelled = cancellation_state.lock().await.take().unwrap_or(false);
         if result.is_error
             && (process_was_cancelled
                 || session_cancel_requested(&active_sessions, &session_id, &cancellation_token)

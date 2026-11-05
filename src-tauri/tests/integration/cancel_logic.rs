@@ -330,7 +330,7 @@ fn test_tool_batch_cancel_cancels_token_immediately() {
 }
 
 #[tokio::test]
-async fn test_process_cancel_retry_state_survives_unrelated_batch_tool() {
+async fn test_process_cancel_state_is_scoped_to_active_tool() {
     let db = Arc::new(crate::common::setup_test_db_with_migrations().await);
     let session_root = TempDir::new().expect("session root");
     let session_manager = Arc::new(
@@ -339,28 +339,10 @@ async fn test_process_cancel_retry_state_survives_unrelated_batch_tool() {
     );
     let manager = MCPServiceProxyManager::new(db, session_manager);
 
-    manager
-        .record_process_cancelled_tool("retry-session", "workspace__execute", "{}")
-        .await;
-    // The cancelled tool itself must retain its retry state.
-    manager
-        .clear_process_cancel_retry_after_tool("retry-session", true, true)
-        .await;
-    // A normal follow-up tool in the same batch must not clear it either.
-    manager
-        .clear_process_cancel_retry_after_tool("retry-session", false, true)
-        .await;
+    let first = manager.begin_tool_execution("retry-session").await;
+    *first.lock().await = true;
 
-    assert!(
-        !manager
-            .process_cancel_retry_exhausted("retry-session", "workspace__execute", "{}")
-            .await,
-        "the cancelled tool should receive its single retry"
-    );
-    assert!(
-        manager
-            .process_cancel_retry_exhausted("retry-session", "workspace__execute", "{}")
-            .await,
-        "the same cancelled tool must be blocked after its retry"
-    );
+    let second = manager.begin_tool_execution("retry-session").await;
+    assert!(std::sync::Arc::ptr_eq(&first, &second));
+    assert_eq!(*second.lock().await, Some(false));
 }
