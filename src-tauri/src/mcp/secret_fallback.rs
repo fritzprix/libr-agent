@@ -83,8 +83,9 @@ pub struct FileSecretStore<'a> {
     key_path: PathBuf,
     /// Serializes the read-modify-write of one row's value map.
     write_lock: tokio::sync::Mutex<()>,
-    /// Set once the fallback warning has been reported by this store.
-    warned: std::sync::atomic::AtomicBool,
+    /// Set when a save created the key file; the warning is reported by the first
+    /// successful write after that. A restart before that write may lose the warning.
+    pending_warning: std::sync::atomic::AtomicBool,
 }
 
 impl<'a> FileSecretStore<'a> {
@@ -93,7 +94,7 @@ impl<'a> FileSecretStore<'a> {
             repo,
             key_path,
             write_lock: tokio::sync::Mutex::new(()),
-            warned: std::sync::atomic::AtomicBool::new(false),
+            pending_warning: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -120,10 +121,14 @@ impl<'a> FileSecretStore<'a> {
         }
     }
 
-    /// The fallback warning, reported by the first successful write of this store: not by
-    /// the call that created the key file, which may be a call whose write failed.
+    /// The warning, shown once: the first successful write after the key file was
+    /// created. A write that fails between the creation and the next save delays the
+    /// warning instead of losing it.
     fn fallback_warning(&self) -> Option<String> {
-        if self.warned.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        if !self
+            .pending_warning
+            .swap(false, std::sync::atomic::Ordering::Relaxed)
+        {
             return None;
         }
         log::warn!("{FALLBACK_WARNING}");
@@ -155,7 +160,11 @@ impl SecretStore for FileSecretStore<'_> {
         value: &str,
     ) -> Result<Option<String>, String> {
         let _guard = self.write_lock.lock().await;
-        let key = load_or_create_key(&self.key_path)?;
+        let (key, created) = load_or_create_key(&self.key_path)?;
+        if created {
+            self.pending_warning
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+        }
         let mut values = match self.column(server_id).await? {
             // A lost or damaged key file leaves the stored values unreadable for good, so
             // the new value replaces them instead of failing on every retry.
@@ -291,9 +300,9 @@ fn read_key(path: &Path) -> Result<KeyFile, String> {
 ///
 /// The key is written to a private temporary file first and then hard-linked into
 /// place, so a reader never sees a partial key and two processes never both win.
-fn load_or_create_key(path: &Path) -> Result<[u8; KEY_LEN], String> {
+fn load_or_create_key(path: &Path) -> Result<([u8; KEY_LEN], bool), String> {
     match read_key(path)? {
-        KeyFile::Key(key) => return Ok(key),
+        KeyFile::Key(key) => return Ok((key, false)),
         KeyFile::Missing => {}
         KeyFile::Damaged => {
             log::warn!(
@@ -339,10 +348,10 @@ fn load_or_create_key(path: &Path) -> Result<[u8; KEY_LEN], String> {
     let _ = std::fs::remove_file(&temp);
     if linked? {
         log::info!("Created the MCP secret key file {}", path.display());
-        Ok(key)
+        Ok((key, true))
     } else {
         match read_key(path)? {
-            KeyFile::Key(key) => Ok(key),
+            KeyFile::Key(key) => Ok((key, false)),
             KeyFile::Missing | KeyFile::Damaged => Err(format!(
                 "The MCP secret key file {} was created by another process but cannot be read.",
                 path.display()
@@ -674,7 +683,16 @@ mod tests {
             "the old value is gone with the key file"
         );
 
-        assert_eq!(store.set(&id, "EXA_API_KEY", "new").await.unwrap(), None);
+        // The key file is recreated here, so the pending warning is armed again: the
+        // stored values of every row were replaced with unreadable ones.
+        assert_eq!(
+            store
+                .set(&id, "EXA_API_KEY", "new")
+                .await
+                .unwrap()
+                .as_deref(),
+            Some(FALLBACK_WARNING)
+        );
         assert_eq!(
             store.get(&id, "EXA_API_KEY").await.unwrap().as_deref(),
             Some("new")
@@ -717,5 +735,24 @@ mod tests {
 
         let error = store.set(&id, "EXA_API_KEY", "value").await.err();
         assert!(error.is_some(), "a real read error stops the write");
+    }
+
+    #[tokio::test]
+    async fn the_warning_shows_once_across_stores() {
+        let repo = repo().await;
+        let id = server(&repo).await;
+        let dir = tempfile::tempdir().unwrap();
+        let key_path = dir.path().join(KEY_FILE_NAME);
+
+        let first = FileSecretStore::new(&repo, key_path.clone());
+        assert_eq!(
+            first.set(&id, "A_KEY", "one").await.unwrap().as_deref(),
+            Some(FALLBACK_WARNING)
+        );
+
+        // A restarted app builds a new store on the same key file; the warning was
+        // already shown.
+        let reopened = FileSecretStore::new(&repo, key_path);
+        assert_eq!(reopened.set(&id, "B_KEY", "two").await.unwrap(), None);
     }
 }

@@ -64,7 +64,7 @@ async fn plan_secrets(
     let names = template_names(&config.transport)?;
     let mut ask = Vec::new();
     let mut reuse = Vec::new();
-    let mut unreadable = false;
+    let mut unreadable: Option<String> = None;
     for name in &names {
         let reusable = match existing {
             Some(model) if !reenter.contains(name) => {
@@ -77,10 +77,11 @@ async fn plan_secrets(
                 } else {
                     match store.get(&model.id, name).await {
                         Ok(value) => value.is_some(),
-                        // A value that cannot be read is not reused. The stored values of
-                        // a row are unreadable together, so every name must be entered.
-                        Err(_) => {
-                            unreadable = true;
+                        // A value that cannot be read is not reused. The cause (a lost
+                        // key file, a locked keychain, a database error) is reported
+                        // with the full name list below.
+                        Err(error) => {
+                            unreadable = Some(error);
                             false
                         }
                     }
@@ -94,10 +95,10 @@ async fn plan_secrets(
             ask.push(name.clone());
         }
     }
-    if unreadable {
+    if let Some(error) = unreadable {
         let server = config.name.as_deref().unwrap_or("unnamed");
         return Err(format!(
-            "The stored secret values of MCP server '{server}' cannot be read, so enter every secret again: {}. Call tool__updateServer with reenterSecrets listing all of them. Nothing was saved.",
+            "The stored secret values of MCP server '{server}' cannot be read, so enter every secret again: {}. Call tool__updateServer with reenterSecrets listing all of them. Nothing was saved. Cause: {error}",
             names.iter().cloned().collect::<Vec<_>>().join(", ")
         ));
     }
@@ -1024,6 +1025,7 @@ mod tests {
             .expect_err("the other name cannot be read");
         assert!(error.contains("EXA_API_KEY"), "{error}");
         assert!(error.contains("OTHER_KEY"), "{error}");
+        assert!(error.contains("The MCP secret key file"), "{error}");
 
         let both = BTreeSet::from(["EXA_API_KEY".to_string(), "OTHER_KEY".to_string()]);
         let (ask, reuse) = plan_secrets(&store, &config, Some(&model), &both)
