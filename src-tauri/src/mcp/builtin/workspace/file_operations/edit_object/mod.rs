@@ -1,11 +1,13 @@
 //! Structured object-file editing (`workspace__editObject`).
 //!
-//! JSON parse/serialize helpers live in [`format`]; mutations apply to
-//! `serde_json::Value`.
+//! Parse/serialize helpers live in [`format`]. JSON mutations apply to
+//! `serde_json::Value` ([`ops`]); TOML mutations apply to a `toml_edit` document
+//! ([`toml_ops`]) so comments and unedited keys are preserved.
 
 mod format;
 mod ops;
 mod pointer;
+mod toml_ops;
 
 use super::super::workspace_server::path_validation_failure_guidance;
 use super::super::WorkspaceServer;
@@ -14,8 +16,10 @@ use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, not_found_error, ErrorCategory, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
-use format::{ensure_json_path, parse_json, serialize_json, MAX_OPS};
-use ops::{apply_ops, parse_op, ApplyError, ObjectOp};
+use format::{
+    detect_format, parse_json, parse_toml, serialize_json, serialize_toml, ObjectFormat, MAX_OPS,
+};
+use ops::{apply_ops, parse_op, AppliedOp, ApplyError, ObjectOp};
 use serde_json::Value;
 use std::path::Path;
 use tokio::fs;
@@ -36,7 +40,7 @@ impl WorkspaceServer {
                     ToolGroup::Workspace,
                 )
                 .guidance(vec![
-                    "Provide a .json file path (relative paths resolve from the workspace)"
+                    "Provide a .json or .toml file path (relative paths resolve from the workspace)"
                         .to_string(),
                 ])
                 .to_mcp_result());
@@ -56,17 +60,21 @@ impl WorkspaceServer {
             .to_mcp_result());
         }
 
-        if let Err(message) = ensure_json_path(path_str) {
-            return Ok(
-                guided_error(ErrorCategory::InvalidInput, message, ToolGroup::Workspace)
-                    .guidance(vec![
-                "MVP supports .json only".to_string(),
-                "For YAML/TOML/source files use workspace__strReplace or workspace__writeFile"
-                    .to_string(),
-            ])
-                    .to_mcp_result(),
-            );
-        }
+        let format = match detect_format(path_str) {
+            Ok(format) => format,
+            Err(message) => {
+                return Ok(guided_error(
+                    ErrorCategory::InvalidInput,
+                    message,
+                    ToolGroup::Workspace,
+                )
+                .guidance(vec![
+                    "Use workspace__strReplace to edit this file.".to_string(),
+                    "Use workspace__writeFile to replace the whole file.".to_string(),
+                ])
+                .to_mcp_result());
+            }
+        };
 
         let ops_value = match args.get("ops") {
             Some(Value::Array(items)) => items,
@@ -170,38 +178,9 @@ impl WorkspaceServer {
             }
         };
 
-        let original_value = match parse_json(&original_content) {
-            Ok(value) => value,
-            Err(error) => {
-                return Ok(guided_error(
-                    ErrorCategory::InvalidInput,
-                    error,
-                    ToolGroup::Workspace,
-                )
-                .guidance(vec![
-                    "Repair the JSON with workspace__readFile + workspace__writeFile/strReplace, then retry editObject"
-                        .to_string(),
-                ])
-                .to_mcp_result());
-            }
-        };
-
-        let mut working = original_value;
-        let applied = match apply_ops(&mut working, &parsed_ops) {
-            Ok(applied) => applied,
-            Err(error) => return Ok(apply_error_result(error)),
-        };
-
-        let new_content = match serialize_json(&working) {
-            Ok(text) => text,
-            Err(error) => {
-                return Ok(guided_error(
-                    ErrorCategory::OperationFailed,
-                    error,
-                    ToolGroup::Workspace,
-                )
-                .to_mcp_result());
-            }
+        let (new_content, applied) = match edit_document(format, &original_content, &parsed_ops) {
+            Ok(edited) => edited,
+            Err(result) => return Ok(result),
         };
 
         if new_content.len() > crate::config::max_file_size() {
@@ -252,8 +231,11 @@ impl WorkspaceServer {
         }
         lines.push(String::new());
         lines.push(
-            "Wrote pretty-printed JSON (2-space indent, trailing newline). Key encounter order is preserved; whitespace is normalized."
-                .to_string(),
+            match format {
+                ObjectFormat::Json => "Wrote pretty-printed JSON (2-space indent, trailing newline). Key encounter order is preserved; whitespace is normalized.",
+                ObjectFormat::Toml => "Wrote TOML in place. Comments and formatting of keys that were not edited are preserved; new keys use the default TOML format.",
+            }
+            .to_string(),
         );
 
         let diff_output = format_file_diff(&original_content, &new_content, path_str);
@@ -284,6 +266,55 @@ impl WorkspaceServer {
             )),
         )
     }
+}
+
+/// Parse `original`, apply `ops`, and serialize. Errors are tool results; on error
+/// nothing has been written.
+fn edit_document(
+    format: ObjectFormat,
+    original: &str,
+    ops: &[ObjectOp],
+) -> Result<(String, Vec<AppliedOp>), MCPResult> {
+    let (name, edited) = match format {
+        ObjectFormat::Json => ("JSON", edit_json(original, ops)),
+        ObjectFormat::Toml => ("TOML", edit_toml(original, ops)),
+    };
+    edited.map_err(|error| match error {
+        EditError::Parse(message) => guided_error(
+            ErrorCategory::InvalidInput,
+            message,
+            ToolGroup::Workspace,
+        )
+        .guidance(vec![format!(
+            "Repair the {name} with workspace__readFile + workspace__writeFile/strReplace, then retry editObject"
+        )])
+        .to_mcp_result(),
+        EditError::Apply(error) => apply_error_result(error),
+        EditError::Serialize(message) => {
+            guided_error(ErrorCategory::OperationFailed, message, ToolGroup::Workspace)
+                .to_mcp_result()
+        }
+    })
+}
+
+enum EditError {
+    Parse(String),
+    Apply(ApplyError),
+    Serialize(String),
+}
+
+fn edit_json(original: &str, ops: &[ObjectOp]) -> Result<(String, Vec<AppliedOp>), EditError> {
+    let mut value = parse_json(original).map_err(EditError::Parse)?;
+    let applied = apply_ops(&mut value, ops).map_err(EditError::Apply)?;
+    let text = serialize_json(&value).map_err(EditError::Serialize)?;
+    Ok((text, applied))
+}
+
+fn edit_toml(original: &str, ops: &[ObjectOp]) -> Result<(String, Vec<AppliedOp>), EditError> {
+    let mut document = parse_toml(original).map_err(EditError::Parse)?;
+    let applied = toml_ops::apply_toml_ops(&mut document, ops).map_err(EditError::Apply)?;
+    let text = serialize_toml(&document).map_err(EditError::Serialize)?;
+    Ok((text, applied))
 }
 
 fn apply_error_result(error: ApplyError) -> MCPResult {

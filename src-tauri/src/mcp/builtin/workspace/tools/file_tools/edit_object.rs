@@ -43,7 +43,7 @@ pub fn create_edit_object_tool() -> MCPTool {
             Some(1),
             Some(1000),
             Some(
-                "Path to an existing .json file. Relative paths resolve from the workspace; absolute paths are also allowed unless protected. Skill aliases are read/list-only.",
+                "Path to an existing .json or .toml file. Relative paths resolve from the workspace; absolute paths are also allowed unless protected. Skill aliases are read/list-only.",
             ),
         ),
     );
@@ -60,16 +60,18 @@ pub fn create_edit_object_tool() -> MCPTool {
 
     MCPTool {
         name: "editObject".to_string(),
-        title: Some("Edit JSON Object File".to_string()),
-        description: "Edit an existing JSON file by path + typed operations (set/delete/append/remove).
+        title: Some("Edit JSON or TOML Object File".to_string()),
+        description: "Edit an existing .json or .toml file by path + typed operations (set/delete/append/remove). Applies all ops atomically in memory, then writes the file.
 
-Parses JSON, applies all ops atomically in memory, then writes pretty-printed JSON (2-space indent, trailing newline). Key encounter order is preserved; whitespace is normalized.
+JSON: writes pretty-printed JSON (2-space indent, trailing newline). Key encounter order is preserved; whitespace is normalized. Strict JSON only — comments/trailing commas (JSONC) are rejected; edit files like tsconfig.json with // comments using workspace__strReplace.
 
-Strict JSON only — comments/trailing commas (JSONC) are rejected. Prefer package.json and other pure JSON configs. Files like many tsconfig.json templates that contain // comments must be edited with workspace__strReplace first (or cleaned to strict JSON). Not for source code, YAML, or TOML.
+TOML (Cargo.toml, pyproject.toml, ...): comments and formatting of keys you do not edit are preserved. New keys use the default TOML format; object values become inline tables. TOML has no null.
 
-PREREQUISITE: file must already exist and be valid JSON.
+For other formats (YAML, source code) use workspace__strReplace.
+
+PREREQUISITE: file must already exist and be valid JSON or TOML.
 - set: create or replace value at JSON Pointer (path '/' replaces the whole document)
-- delete: remove an object key (e.g. /scripts/old)
+- delete: remove an object/table key (e.g. /scripts/old)
 - append: push value onto an array (path points to the array)
 - remove: delete an array element (path points to the element, e.g. /keywords/0)".to_string(),
         input_schema: object_schema(props, vec!["path".to_string(), "ops".to_string()]),
