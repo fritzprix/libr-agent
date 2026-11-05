@@ -16,6 +16,11 @@ fn skill_alias_write_rejected_error(alias_prefix: &str) -> String {
     )
 }
 
+/// Scoped manager for `@teamwork` / `@harness` writes; refuses writes into git metadata.
+fn alias_write_manager(root: PathBuf) -> SecureFileManager {
+    SecureFileManager::new_scoped_with_base_dir(root).with_git_metadata_write_guard(Vec::new())
+}
+
 impl WorkspaceServer {
     pub async fn validate_read_path_with_skill_access(
         &self,
@@ -126,7 +131,7 @@ impl WorkspaceServer {
 
         if let Some(teamwork_relative_path) = Self::extract_teamwork_alias_relative_path(path_str) {
             let teamwork_root = self.get_teamwork_artifact_root(&target_session_id).await?;
-            let teamwork_manager = SecureFileManager::new_scoped_with_base_dir(teamwork_root);
+            let teamwork_manager = alias_write_manager(teamwork_root);
             return teamwork_manager
                 .get_security_validator()
                 .validate_path_for_write(teamwork_relative_path)
@@ -143,7 +148,7 @@ impl WorkspaceServer {
                 &target_session_id,
             )
             .await?;
-            let harness_manager = SecureFileManager::new_scoped_with_base_dir(harness_root);
+            let harness_manager = alias_write_manager(harness_root);
             return harness_manager
                 .get_security_validator()
                 .validate_path_for_write(harness_relative_path)
@@ -173,8 +178,7 @@ impl WorkspaceServer {
                 if let Some(relative_path) =
                     Self::extract_absolute_teamwork_relative_path(&candidate_path, &teamwork_root)
                 {
-                    let teamwork_manager =
-                        SecureFileManager::new_scoped_with_base_dir(teamwork_root);
+                    let teamwork_manager = alias_write_manager(teamwork_root);
                     return teamwork_manager
                         .get_security_validator()
                         .validate_path_for_write(&relative_path)
@@ -196,7 +200,7 @@ impl WorkspaceServer {
                         &target_session_id,
                     )
                     .await?;
-                    let harness_manager = SecureFileManager::new_scoped_with_base_dir(harness_root);
+                    let harness_manager = alias_write_manager(harness_root);
                     return harness_manager
                         .get_security_validator()
                         .validate_path_for_write(&relative_path)

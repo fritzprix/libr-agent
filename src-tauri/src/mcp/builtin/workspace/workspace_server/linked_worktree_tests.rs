@@ -247,3 +247,126 @@ fn windows_verbatim_and_case_variants_of_a_worktree_path_are_accepted() {
         "{case_variant}"
     );
 }
+
+fn assert_git_write_refused(manager: &crate::SecureFileManager, path: &Path) {
+    let path = display_workspace_path(path);
+    let error = manager
+        .get_security_validator()
+        .validate_path_for_write(&path)
+        .unwrap_err();
+    assert!(matches!(error, SecurityError::AccessDenied(_)), "{error}");
+    assert!(error.to_string().contains("git metadata"), "{error}");
+}
+
+#[test]
+fn a_linked_worktree_session_cannot_write_main_git_hooks() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = main_repo(dir.path());
+    let worker = add_worktree(&repo, "worker");
+    let manager = file_tool_manager(worker.clone(), true);
+
+    assert_git_write_refused(&manager, &repo.join(".git").join("hooks").join("x"));
+    assert_git_write_refused(&manager, &repo.join(".git").join("config"));
+    assert_git_write_refused(&manager, &worker.join(".git"));
+    assert!(manager
+        .get_security_validator()
+        .validate_path_for_write(&file_in(&worker))
+        .is_ok());
+}
+
+#[test]
+fn the_workspace_root_git_config_cannot_be_written() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = main_repo(dir.path());
+    std::fs::write(repo.join(".git").join("config"), "[core]\n").unwrap();
+
+    for allow in [true, false] {
+        let manager = file_tool_manager(repo.clone(), allow);
+        assert_git_write_refused(&manager, &repo.join(".git").join("config"));
+        let relative_error = manager
+            .get_security_validator()
+            .validate_path_for_write(".git/config")
+            .unwrap_err();
+        assert!(matches!(relative_error, SecurityError::AccessDenied(_)));
+        assert!(manager
+            .get_security_validator()
+            .validate_path_for_read(".git/config")
+            .is_ok());
+        assert!(manager
+            .get_security_validator()
+            .validate_path_for_write("src/new.rs")
+            .is_ok());
+    }
+}
+
+#[test]
+fn a_worktree_admin_file_cannot_be_written() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = main_repo(dir.path());
+    add_worktree(&repo, "worker");
+    let manager = file_tool_manager(repo.clone(), true);
+
+    let gitdir = repo
+        .join(".git")
+        .join("worktrees")
+        .join("worker")
+        .join("gitdir");
+    assert_git_write_refused(&manager, &gitdir);
+    assert!(manager
+        .get_security_validator()
+        .validate_path_for_read(&display_workspace_path(&gitdir))
+        .is_ok());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symlink_into_git_metadata_is_refused_for_write() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = main_repo(dir.path());
+    let worker = add_worktree(&repo, "worker");
+    let hooks = repo.join(".git").join("hooks");
+    std::fs::create_dir_all(&hooks).unwrap();
+    std::fs::write(hooks.join("pre-commit"), "#!/bin/sh\n").unwrap();
+    std::os::unix::fs::symlink(&hooks, worker.join("hooks-link")).unwrap();
+    std::os::unix::fs::symlink(hooks.join("pre-commit"), worker.join("pre-commit-link")).unwrap();
+    let manager = file_tool_manager(worker.clone(), true);
+
+    assert_git_write_refused(&manager, &worker.join("hooks-link").join("post-checkout"));
+    assert_git_write_refused(&manager, &worker.join("hooks-link").join("pre-commit"));
+    assert_git_write_refused(&manager, &worker.join("pre-commit-link"));
+}
+
+#[test]
+fn a_separate_git_dir_inside_the_workspace_cannot_be_written() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap().join("repo");
+    let gitdata = root.join(".gitdata");
+    std::fs::create_dir_all(gitdata.join("hooks")).unwrap();
+    std::fs::write(gitdata.join("config"), "[core]\n").unwrap();
+    std::fs::write(root.join(".git"), "gitdir: .gitdata\n").unwrap();
+
+    for allow in [true, false] {
+        let manager = file_tool_manager(root.clone(), allow);
+        assert_git_write_refused(&manager, &gitdata.join("config"));
+        assert_git_write_refused(&manager, &gitdata.join("hooks").join("x"));
+        assert!(manager
+            .get_security_validator()
+            .validate_path_for_write("src/new.rs")
+            .is_ok());
+    }
+}
+
+#[test]
+fn files_named_like_git_metadata_stay_writable() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = main_repo(dir.path());
+    let manager = file_tool_manager(repo, true);
+    let validator = manager.get_security_validator();
+
+    for path in [".gitignore", ".gitattributes", ".github/workflows/x.yml"] {
+        assert!(validator.validate_path_for_write(path).is_ok(), "{path}");
+    }
+    assert!(validator
+        .validate_path_for_write(".git::$INDEX_ALLOCATION/hooks/x")
+        .is_err());
+}

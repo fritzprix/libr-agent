@@ -295,6 +295,23 @@ async fn test_absolute_path_write_under_teamwork_root() {
         "absolute and @teamwork writes must target the same path"
     );
 
+    // Git metadata under the teamwork root must not be writable (#2596).
+    for git_path in [
+        "@teamwork/.git/config".to_string(),
+        artifact_dir
+            .join(".git")
+            .join("hooks")
+            .join("x")
+            .to_string_lossy()
+            .to_string(),
+    ] {
+        let error = server
+            .validate_write_path_with_teamwork_access(&git_path, None)
+            .await
+            .expect_err("git metadata under the teamwork root must not be writable");
+        assert!(error.contains("git metadata"), "{error}");
+    }
+
     // Absolute path outside teamwork root must not be accepted by the teamwork write path.
     let outside = temp_dir.path().join("outside.md");
     let outside_str = outside.to_string_lossy().to_string();

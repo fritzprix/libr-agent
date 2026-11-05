@@ -67,6 +67,13 @@ impl SecureFileManager {
         }
     }
 
+    /// Refuses writes into git metadata; see
+    /// [`SecurityValidator::with_git_metadata_write_guard`].
+    pub fn with_git_metadata_write_guard(mut self, git_dirs: Vec<std::path::PathBuf>) -> Self {
+        self.security = self.security.with_git_metadata_write_guard(git_dirs);
+        self
+    }
+
     /// Securely reads the contents of a file as a byte vector.
     ///
     /// It performs security checks to validate the path and file size before reading.
