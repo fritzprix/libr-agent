@@ -18,10 +18,11 @@ The `approved` label is the only approval. Do the whole issue, including `src-ta
 
 ## Setup
 
-- Worker name: `--worker NAME` or `$WORKER_ID` (default `worker`). Pass it to every script.
+- **Worker slot:** You do not need to pick a name. On `--lock`, `tick_gate.py` checks in under `<repo>.worktrees/.worker-loop/checkins.json`, prints `WORKER <name>` (`worker`, `worker-2`, …), and holds that slot until `--unlock`. Export it for the tick: `export WORKER_ID=<name>` (or pass `--worker` on every script). Explicit `--worker` / `$WORKER_ID` still wins when set before lock.
 - Worktree `$WT` = `<repo>.worktrees/<worker>` (see [references/worktree-setup.md](references/worktree-setup.md)). Do all edits, builds, tests, commits, and pushes in `$WT`. In the user's checkout `$MAIN`, run only `git fetch` and `git worktree add`.
-- State: `<repo>.worktrees/.worker-loop/<worker>/state.json` with `scheduler`, `current`, `needsUser`, `ciAttempts`, `lastFingerprint`. Claims are in `claims.json` in the same root.
+- State: `<repo>.worktrees/.worker-loop/<worker>/state.json` with `scheduler`, `current`, `needsUser`, `ciAttempts`, `lastFingerprint`. Claims are in `claims.json`; check-ins are in `checkins.json` in the same root.
 - Claims: `scripts/worker_state.py claim|release --worker NAME --ref issue:N|pr:M`. Exit 1 = another worker has it. Do not touch it.
+- Long commands (for example `pnpm rust:test`): run `python3 .agents/skills/worker-loop/scripts/worker_state.py checkin heartbeat --worker "$WORKER_ID"` before and occasionally during the run so another session does not steal a stale slot.
 
 ## Full local validation
 
@@ -48,9 +49,10 @@ Never run raw `cargo test/build/clippy`. Never run bare `pnpm test` (it starts w
 
 ## Tick
 
-1. `python3 .agents/skills/worker-loop/scripts/tick_gate.py --worker NAME --lock`
+1. `python3 .agents/skills/worker-loop/scripts/tick_gate.py --lock`
+   - Read the `WORKER <name>` line; set `export WORKER_ID=<name>` and `WORKER=<name>` for this tick (unless you already set `$WORKER_ID` / `--worker` before lock).
    - `BUSY`: stop. Do not unlock.
-   - `NOOP`: print `Idle: no changes.` and stop.
+   - `NOOP`: print `Idle: no changes.` and stop (check-in is released automatically).
 2. `git -C "$MAIN" fetch origin --prune`. If `current` is set, continue it. Else `git -C "$WT" reset --hard && git -C "$WT" clean -fd`.
 3. **Fix PRs first.** Run `scripts/pr_status.py --worker NAME`. Ignore drafts and PRs claimed by other workers. Take the first PR that needs action, claim `pr:M`, and on its head branch:
    - Conflict: `git rebase origin/<base>`, fix, `git push --force-with-lease`. Never merge the base into the branch.

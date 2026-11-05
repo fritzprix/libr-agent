@@ -30,6 +30,9 @@ class TickGateTest(unittest.TestCase):
         self.tmp_dir = Path(self._tmp.name)
         self.state_file = self.tmp_dir / "state.json"
         self.lock_file = self.tmp_dir / "tick.lock"
+        self._loop_env = patch.dict(os.environ, {"LOOP_STATE_DIR": str(self.tmp_dir)})
+        self._loop_env.start()
+        self.addCleanup(self._loop_env.stop)
 
     def test_load_and_save_state(self):
         state = {"current": None, "lastFingerprint": "abc"}

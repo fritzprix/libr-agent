@@ -238,7 +238,11 @@ def compute_fingerprint() -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--worker", default=None, help="Worker name (default: $WORKER_ID or 'worker')")
+    parser.add_argument(
+        "--worker",
+        default=None,
+        help="Worker name (default: auto check-in on --lock, else $WORKER_ID or 'worker')",
+    )
     parser.add_argument("--state-file", type=Path, default=None, help="Path to state.json")
     parser.add_argument("--update", action="store_true", help="Update lastFingerprint in state.json after a successful tick")
     parser.add_argument("--lock", action="store_true", help="Acquire tick.lock before exiting 0")
@@ -246,9 +250,14 @@ def main() -> None:
     parser.add_argument("--unlock", action="store_true", help="Release tick.lock")
     args = parser.parse_args()
 
-    worker = worker_state.worker_name(args.worker)
+    if args.unlock and not args.worker and not os.environ.get("WORKER_ID"):
+        worker = worker_state.find_worker_by_pid() or worker_state.worker_name(None)
+    else:
+        worker = worker_state.worker_name(args.worker)
+
     state_path = args.state_file or default_state_path(worker)
     lock_path = state_path.parent / "tick.lock"
+    checked_in = False
 
     try:
         if args.update:
@@ -267,7 +276,20 @@ def main() -> None:
         if args.update or args.unlock:
             sys.exit(EXIT_RUN)
 
+        if args.lock:
+            try:
+                worker = worker_state.acquire_checkin(args.worker)
+                checked_in = True
+                print(f"WORKER {worker}")
+            except worker_state.CheckinError as e:
+                sys.stderr.write(f"tick_gate check-in error: {e}\n")
+                sys.exit(EXIT_BUSY)
+            state_path = args.state_file or default_state_path(worker)
+            lock_path = state_path.parent / "tick.lock"
+
         if check_lock(lock_path):
+            if checked_in:
+                worker_state.release_checkin(worker)
             print("BUSY (tick in progress)")
             sys.exit(EXIT_BUSY)
 
@@ -288,6 +310,8 @@ def main() -> None:
             # Nothing tracked moved, but an approved issue may still be waiting.
             pending = pending_approved_issue(worker)
             if pending is None:
+                if checked_in:
+                    worker_state.release_checkin(worker)
                 print("NOOP (no changes)")
                 sys.exit(EXIT_NOOP)
             message = f"RUN (approved issue pending: #{pending})"
@@ -310,6 +334,7 @@ def main() -> None:
     finally:
         if args.unlock:
             release_lock(lock_path)
+            worker_state.release_checkin(args.worker if args.worker else worker)
             print("UNLOCKED")
 
 

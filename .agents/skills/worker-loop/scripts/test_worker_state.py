@@ -1,13 +1,23 @@
 #!/usr/bin/env python3
-"""Tests for per-worker paths and shared claims."""
+"""Tests for per-worker paths, shared claims, and session check-ins."""
 import json
 import os
 import tempfile
+import multiprocessing
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 import worker_state
+
+
+def _acquire_in_child(root: str, out: multiprocessing.Queue) -> None:
+    try:
+        with patch.dict(os.environ, {"LOOP_STATE_DIR": root}, clear=False):
+            out.put(worker_state.acquire_checkin(None))
+    except Exception as e:
+        out.put(e)
 
 
 class WorkerStateTest(unittest.TestCase):
@@ -63,6 +73,61 @@ class WorkerStateTest(unittest.TestCase):
         os.utime(lock, (old, old))
         self.assertIsNone(worker_state.claim("worker", "issue:1", self.claims))
         self.assertFalse(lock.exists())
+
+
+class CheckinTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+        self.checkins = self.root / "checkins.json"
+
+    def test_explicit_name_is_respected(self):
+        with patch.dict(os.environ, {"LOOP_STATE_DIR": str(self.root)}, clear=False):
+            self.assertEqual(worker_state.acquire_checkin("worker-3", self.checkins), "worker-3")
+            data = worker_state.load_checkins(self.checkins)
+            self.assertIn("worker-3", data)
+            self.assertEqual(data["worker-3"]["pid"], os.getpid())
+
+    def test_release_frees_slot(self):
+        with patch.dict(os.environ, {"LOOP_STATE_DIR": str(self.root)}, clear=False):
+            worker_state.acquire_checkin("worker", self.checkins)
+            self.assertTrue(worker_state.release_checkin("worker", self.checkins))
+            self.assertEqual(worker_state.load_checkins(self.checkins), {})
+
+    def test_stale_slot_is_reused(self):
+        stale = worker_state.checkin_record(pid=999999, heartbeat=int(time.time()) - 9999)
+        worker_state.atomic_write_json(self.checkins, {"worker": stale})
+        with patch.dict(os.environ, {"LOOP_STATE_DIR": str(self.root)}, clear=False):
+            self.assertEqual(worker_state.acquire_checkin(None, self.checkins), "worker")
+            self.assertEqual(worker_state.load_checkins(self.checkins)["worker"]["pid"], os.getpid())
+
+    def test_concurrent_checkins_get_different_slots(self):
+        ctx = multiprocessing.get_context("spawn")
+        queue: multiprocessing.Queue = ctx.Queue()
+        root = str(self.root)
+        processes = [
+            ctx.Process(target=_acquire_in_child, args=(root, queue))
+            for _ in range(2)
+        ]
+        for proc in processes:
+            proc.start()
+        for proc in processes:
+            proc.join(timeout=15)
+            self.assertEqual(proc.exitcode, 0)
+        results = [queue.get(timeout=5) for _ in range(2)]
+        for item in results:
+            self.assertIsInstance(item, str)
+        self.assertNotEqual(results[0], results[1])
+
+    def test_heartbeat_refresh(self):
+        with patch.dict(os.environ, {"LOOP_STATE_DIR": str(self.root)}, clear=False):
+            worker_state.acquire_checkin("worker", self.checkins)
+            before = worker_state.load_checkins(self.checkins)["worker"]["heartbeat"]
+            time.sleep(1.1)
+            worker_state.refresh_checkin("worker", self.checkins)
+            after = worker_state.load_checkins(self.checkins)["worker"]["heartbeat"]
+            self.assertGreater(after, before)
 
 
 if __name__ == "__main__":
