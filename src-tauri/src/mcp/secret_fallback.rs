@@ -83,6 +83,8 @@ pub struct FileSecretStore<'a> {
     key_path: PathBuf,
     /// Serializes the read-modify-write of one row's value map.
     write_lock: tokio::sync::Mutex<()>,
+    /// Set once the fallback warning has been reported by this store.
+    warned: std::sync::atomic::AtomicBool,
 }
 
 impl<'a> FileSecretStore<'a> {
@@ -91,6 +93,7 @@ impl<'a> FileSecretStore<'a> {
             repo,
             key_path,
             write_lock: tokio::sync::Mutex::new(()),
+            warned: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -104,12 +107,27 @@ impl<'a> FileSecretStore<'a> {
     }
 
     fn existing_key(&self) -> Result<[u8; KEY_LEN], String> {
-        read_key(&self.key_path)?.ok_or_else(|| {
-            format!(
-                "The MCP secret key file {} is missing, so stored secret values cannot be read. Enter them again with tool__updateServer and reenterSecrets.",
+        match read_key(&self.key_path)? {
+            KeyFile::Key(key) => Ok(key),
+            KeyFile::Missing => Err(format!(
+                "The MCP secret key file {} is missing, so stored secret values cannot be read. Enter every secret again with tool__updateServer and reenterSecrets.",
                 self.key_path.display()
-            )
-        })
+            )),
+            KeyFile::Damaged => Err(format!(
+                "The MCP secret key file {} is damaged, so stored secret values cannot be read. Enter every secret again with tool__updateServer and reenterSecrets; a new key file is created.",
+                self.key_path.display()
+            )),
+        }
+    }
+
+    /// The fallback warning, reported by the first successful write of this store: not by
+    /// the call that created the key file, which may be a call whose write failed.
+    fn fallback_warning(&self) -> Option<String> {
+        if self.warned.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            return None;
+        }
+        log::warn!("{FALLBACK_WARNING}");
+        Some(FALLBACK_WARNING.to_string())
     }
 
     async fn write_column(&self, server_id: &str, column: Option<String>) -> Result<(), String> {
@@ -137,18 +155,22 @@ impl SecretStore for FileSecretStore<'_> {
         value: &str,
     ) -> Result<Option<String>, String> {
         let _guard = self.write_lock.lock().await;
-        let (key, created) = load_or_create_key(&self.key_path)?;
+        let key = load_or_create_key(&self.key_path)?;
         let mut values = match self.column(server_id).await? {
-            Some(column) => decrypt(&key, server_id, &column)?,
+            // A lost or damaged key file leaves the stored values unreadable for good, so
+            // the new value replaces them instead of failing on every retry.
+            Some(column) => decrypt(&key, server_id, &column).unwrap_or_else(|error| {
+                log::warn!(
+                    "Replacing the secret values of MCP server '{server_id}' that cannot be read: {error}"
+                );
+                BTreeMap::new()
+            }),
             None => BTreeMap::new(),
         };
         values.insert(name.to_string(), value.to_string());
         self.write_column(server_id, Some(encrypt(&key, server_id, &values)?))
             .await?;
-        if created {
-            log::warn!("{FALLBACK_WARNING}");
-        }
-        Ok(created.then(|| FALLBACK_WARNING.to_string()))
+        Ok(self.fallback_warning())
     }
 
     async fn delete(&self, server_id: &str, name: &str) -> Result<(), String> {
@@ -156,8 +178,26 @@ impl SecretStore for FileSecretStore<'_> {
         let Some(column) = self.column(server_id).await? else {
             return Ok(());
         };
-        let key = self.existing_key()?;
-        let mut values = decrypt(&key, server_id, &column)?;
+        // A column that cannot be read is dropped rather than blocking the delete.
+        let key = match read_key(&self.key_path)? {
+            KeyFile::Key(key) => key,
+            KeyFile::Missing | KeyFile::Damaged => {
+                log::warn!(
+                    "Clearing the secret values of MCP server '{server_id}': the key file {} cannot be used.",
+                    self.key_path.display()
+                );
+                return self.write_column(server_id, None).await;
+            }
+        };
+        let mut values = match decrypt(&key, server_id, &column) {
+            Ok(values) => values,
+            Err(error) => {
+                log::warn!(
+                    "Clearing the secret values of MCP server '{server_id}' that cannot be read: {error}"
+                );
+                return self.write_column(server_id, None).await;
+            }
+        };
         if values.remove(name).is_none() {
             return Ok(());
         }
@@ -222,12 +262,23 @@ fn decrypt(
     serde_json::from_slice(&plaintext).map_err(|_| unreadable())
 }
 
-fn read_key(path: &Path) -> Result<Option<[u8; KEY_LEN]>, String> {
+/// What the key file at `path` holds.
+enum KeyFile {
+    /// A usable app key.
+    Key([u8; KEY_LEN]),
+    /// No file: stored values cannot be read, but a new key may be created.
+    Missing,
+    /// A file that is not a key: stored values cannot be read again.
+    Damaged,
+}
+
+fn read_key(path: &Path) -> Result<KeyFile, String> {
     match std::fs::read(path) {
-        Ok(bytes) => <[u8; KEY_LEN]>::try_from(bytes.as_slice())
-            .map(Some)
-            .map_err(|_| format!("The MCP secret key file {} is damaged.", path.display())),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Ok(bytes) => Ok(match <[u8; KEY_LEN]>::try_from(bytes.as_slice()) {
+            Ok(key) => KeyFile::Key(key),
+            Err(_) => KeyFile::Damaged,
+        }),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(KeyFile::Missing),
         Err(e) => Err(format!(
             "Failed to read the MCP secret key file {}: {e}",
             path.display()
@@ -235,13 +286,31 @@ fn read_key(path: &Path) -> Result<Option<[u8; KEY_LEN]>, String> {
     }
 }
 
-/// The app key, created on first need. Returns `true` when this call created it.
+/// The app key, created when there is none. A damaged key file is replaced, because it
+/// can never decrypt the column.
 ///
 /// The key is written to a private temporary file first and then hard-linked into
 /// place, so a reader never sees a partial key and two processes never both win.
-fn load_or_create_key(path: &Path) -> Result<([u8; KEY_LEN], bool), String> {
-    if let Some(key) = read_key(path)? {
-        return Ok((key, false));
+fn load_or_create_key(path: &Path) -> Result<[u8; KEY_LEN], String> {
+    match read_key(path)? {
+        KeyFile::Key(key) => return Ok(key),
+        KeyFile::Missing => {}
+        KeyFile::Damaged => {
+            log::warn!(
+                "Replacing the damaged MCP secret key file {}; earlier secret values cannot be read.",
+                path.display()
+            );
+            match std::fs::remove_file(path) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => {
+                    return Err(format!(
+                        "Failed to replace the damaged MCP secret key file {}: {e}",
+                        path.display()
+                    ))
+                }
+            }
+        }
     }
     let dir = path
         .parent()
@@ -269,16 +338,21 @@ fn load_or_create_key(path: &Path) -> Result<([u8; KEY_LEN], bool), String> {
     });
     let _ = std::fs::remove_file(&temp);
     if linked? {
-        Ok((key, true))
+        log::info!("Created the MCP secret key file {}", path.display());
+        Ok(key)
     } else {
-        let key = read_key(path)?
-            .ok_or_else(|| format!("The MCP secret key file {} vanished.", path.display()))?;
-        Ok((key, false))
+        match read_key(path)? {
+            KeyFile::Key(key) => Ok(key),
+            KeyFile::Missing | KeyFile::Damaged => Err(format!(
+                "The MCP secret key file {} was created by another process but cannot be read.",
+                path.display()
+            )),
+        }
     }
 }
 
-/// Create `path` readable and writable by the current user only (Unix 0600; Windows a
-/// protected ACL for the owner), then write `bytes`.
+/// Create `path` readable and writable by the current user only (Unix 0600; on Windows a
+/// protected ACL that grants the current user's SID), then write `bytes`.
 fn write_private_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create_new(true);
@@ -583,5 +657,65 @@ mod tests {
             fallback.get(&id, "B_KEY").await.unwrap().as_deref(),
             Some("kept")
         );
+    }
+
+    #[tokio::test]
+    async fn a_lost_key_file_still_accepts_a_new_value() {
+        let repo = repo().await;
+        let id = server(&repo).await;
+        let dir = tempfile::tempdir().unwrap();
+        let key_path = dir.path().join(KEY_FILE_NAME);
+        let store = FileSecretStore::new(&repo, key_path.clone());
+        store.set(&id, "EXA_API_KEY", "old").await.unwrap();
+
+        std::fs::remove_file(&key_path).unwrap();
+        assert!(
+            store.get(&id, "EXA_API_KEY").await.is_err(),
+            "the old value is gone with the key file"
+        );
+
+        assert_eq!(store.set(&id, "EXA_API_KEY", "new").await.unwrap(), None);
+        assert_eq!(
+            store.get(&id, "EXA_API_KEY").await.unwrap().as_deref(),
+            Some("new")
+        );
+        assert_eq!(std::fs::read(&key_path).unwrap().len(), KEY_LEN);
+    }
+
+    #[tokio::test]
+    async fn a_damaged_key_file_is_replaced() {
+        let repo = repo().await;
+        let id = server(&repo).await;
+        let dir = tempfile::tempdir().unwrap();
+        let key_path = dir.path().join(KEY_FILE_NAME);
+        let store = FileSecretStore::new(&repo, key_path.clone());
+        store.set(&id, "EXA_API_KEY", "old").await.unwrap();
+        std::fs::write(&key_path, b"not-a-key").unwrap();
+
+        assert!(
+            store.get(&id, "EXA_API_KEY").await.is_err(),
+            "a damaged key cannot read the column"
+        );
+        store.set(&id, "EXA_API_KEY", "new").await.unwrap();
+        assert_eq!(
+            store.get(&id, "EXA_API_KEY").await.unwrap().as_deref(),
+            Some("new")
+        );
+        assert_eq!(std::fs::read(&key_path).unwrap().len(), KEY_LEN);
+    }
+
+    #[tokio::test]
+    async fn a_key_file_that_cannot_be_read_still_fails_the_write() {
+        let repo = repo().await;
+        let id = server(&repo).await;
+        let dir = tempfile::tempdir().unwrap();
+        let key_path = dir.path().join(KEY_FILE_NAME);
+        // A directory is never a key, and reading it fails with an error that is not
+        // NotFound. That must not be treated as a missing key file.
+        std::fs::create_dir(&key_path).unwrap();
+        let store = FileSecretStore::new(&repo, key_path);
+
+        let error = store.set(&id, "EXA_API_KEY", "value").await.err();
+        assert!(error.is_some(), "a real read error stops the write");
     }
 }

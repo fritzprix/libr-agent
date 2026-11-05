@@ -64,22 +64,42 @@ async fn plan_secrets(
     let names = template_names(&config.transport)?;
     let mut ask = Vec::new();
     let mut reuse = Vec::new();
-    for name in names {
+    let mut unreadable = false;
+    for name in &names {
         let reusable = match existing {
-            Some(model) if !reenter.contains(&name) => {
+            Some(model) if !reenter.contains(name) => {
                 let old_target_same = serde_json::from_str::<MCPServerConfig>(&model.config)
                     .is_ok_and(|old| same_target(&old.transport, &config.transport));
-                old_target_same
-                    && parse_secret_names(model.secret_names.as_deref()).contains(&name)
-                    && store.get(&model.id, &name).await?.is_some()
+                if !old_target_same
+                    || !parse_secret_names(model.secret_names.as_deref()).contains(name)
+                {
+                    false
+                } else {
+                    match store.get(&model.id, name).await {
+                        Ok(value) => value.is_some(),
+                        // A value that cannot be read is not reused. The stored values of
+                        // a row are unreadable together, so every name must be entered.
+                        Err(_) => {
+                            unreadable = true;
+                            false
+                        }
+                    }
+                }
             }
             _ => false,
         };
         if reusable {
-            reuse.push(name);
+            reuse.push(name.clone());
         } else {
-            ask.push(name);
+            ask.push(name.clone());
         }
+    }
+    if unreadable {
+        let server = config.name.as_deref().unwrap_or("unnamed");
+        return Err(format!(
+            "The stored secret values of MCP server '{server}' cannot be read, so enter every secret again: {}. Call tool__updateServer with reenterSecrets listing all of them. Nothing was saved.",
+            names.iter().cloned().collect::<Vec<_>>().join(", ")
+        ));
     }
     Ok((ask, reuse))
 }
@@ -966,6 +986,86 @@ mod tests {
             .await
             .expect("delete");
         assert!(repo.get(&second.id).await.unwrap().is_none());
+    }
+
+    /// A key file that is gone leaves every name of the row unreadable, so all of them must
+    /// be entered again, and doing that must recover the row.
+    #[tokio::test]
+    async fn a_lost_key_file_needs_every_name_entered_again() {
+        use crate::mcp::secret_fallback::{FileSecretStore, KEY_FILE_NAME};
+
+        let two_secrets = "https://mcp.exa.ai/mcp?a={{secret:EXA_API_KEY}}&b={{secret:OTHER_KEY}}";
+        let config = exa_config(two_secrets);
+        let repo = repo().await;
+        let dir = tempfile::tempdir().unwrap();
+        let key_path = dir.path().join(KEY_FILE_NAME);
+        let store = FileSecretStore::new(&repo, key_path.clone());
+        let created = McpServerService::create_server_config(
+            &repo,
+            "exa".to_string(),
+            serde_json::to_value(&config).unwrap(),
+            SaveVerification::Pending,
+        )
+        .await
+        .expect("create");
+        let entered = vec![
+            ("EXA_API_KEY".to_string(), "one".to_string()),
+            ("OTHER_KEY".to_string(), "two".to_string()),
+        ];
+        store_secrets(&repo, &store, &created.id, &entered, &[])
+            .await
+            .expect("store");
+        std::fs::remove_file(&key_path).unwrap();
+        let model = repo.get(&created.id).await.unwrap().expect("record");
+
+        let only_one = BTreeSet::from(["EXA_API_KEY".to_string()]);
+        let error = plan_secrets(&store, &config, Some(&model), &only_one)
+            .await
+            .expect_err("the other name cannot be read");
+        assert!(error.contains("EXA_API_KEY"), "{error}");
+        assert!(error.contains("OTHER_KEY"), "{error}");
+
+        let both = BTreeSet::from(["EXA_API_KEY".to_string(), "OTHER_KEY".to_string()]);
+        let (ask, reuse) = plan_secrets(&store, &config, Some(&model), &both)
+            .await
+            .expect("both names are entered again");
+        assert_eq!(
+            ask,
+            vec!["EXA_API_KEY".to_string(), "OTHER_KEY".to_string()]
+        );
+        assert!(reuse.is_empty());
+
+        let entered_again = vec![
+            ("EXA_API_KEY".to_string(), "one-new".to_string()),
+            ("OTHER_KEY".to_string(), "two-new".to_string()),
+        ];
+        write_server(
+            &repo,
+            &store,
+            Some(model),
+            &config,
+            SaveVerification::Pending,
+            &entered_again,
+            &[],
+        )
+        .await
+        .expect("write");
+        assert_eq!(
+            store
+                .get(&created.id, "EXA_API_KEY")
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("one-new")
+        );
+        assert_eq!(
+            store
+                .get(&created.id, "OTHER_KEY")
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("two-new")
+        );
     }
 
     #[test]
