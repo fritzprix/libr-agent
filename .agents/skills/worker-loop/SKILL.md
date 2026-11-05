@@ -18,11 +18,10 @@ The `approved` label is the only approval. Do the whole issue, including `src-ta
 
 ## Setup
 
-- **Worker slot:** You do not need to pick a name. On `--lock`, `tick_gate.py` checks in under `<repo>.worktrees/.worker-loop/checkins.json`, prints `WORKER <name>` (`worker`, `worker-2`, …), and holds that slot until `--unlock`. Export it for the tick: `export WORKER_ID=<name>` (or pass `--worker` on every script). Explicit `--worker` / `$WORKER_ID` still wins when set before lock.
+- **Worker slot:** You do not need to pick a name. On `--lock`, `tick_gate.py` checks in under `<repo>.worktrees/.worker-loop/checkins.json` (recording the agent session PID, not the short-lived script), prints `WORKER <name>` (`worker`, `worker-2`, …), and holds that slot until `--unlock`. Export it for the tick: `export WORKER_ID=<name>` (or pass `--worker` on every script). Explicit `--worker` / `$WORKER_ID` still wins when set before lock. Optional `tick_gate.py --pid N` / `$WORKER_LOOP_HOLDER_PID` overrides session PID detection.
 - Worktree `$WT` = `<repo>.worktrees/<worker>` (see [references/worktree-setup.md](references/worktree-setup.md)). Do all edits, builds, tests, commits, and pushes in `$WT`. In the user's checkout `$MAIN`, run only `git fetch` and `git worktree add`.
 - State: `<repo>.worktrees/.worker-loop/<worker>/state.json` with `scheduler`, `current`, `needsUser`, `ciAttempts`, `lastFingerprint`. Claims are in `claims.json`; check-ins are in `checkins.json` in the same root.
 - Claims: `scripts/worker_state.py claim|release --worker NAME --ref issue:N|pr:M`. Exit 1 = another worker has it. Do not touch it.
-- Long commands (for example `pnpm rust:test`): run `python3 .agents/skills/worker-loop/scripts/worker_state.py checkin heartbeat --worker "$WORKER_ID"` before and occasionally during the run so another session does not steal a stale slot.
 
 ## Full local validation
 

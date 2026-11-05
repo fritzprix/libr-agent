@@ -246,12 +246,22 @@ def main() -> None:
     parser.add_argument("--state-file", type=Path, default=None, help="Path to state.json")
     parser.add_argument("--update", action="store_true", help="Update lastFingerprint in state.json after a successful tick")
     parser.add_argument("--lock", action="store_true", help="Acquire tick.lock before exiting 0")
-    parser.add_argument("--pid", type=int, default=None, help="Process ID of the tick owner to store in tick.lock")
+    parser.add_argument(
+        "--pid",
+        type=int,
+        default=None,
+        help="PID of the agent session running the tick (check-in + tick.lock); auto-detected if omitted",
+    )
     parser.add_argument("--unlock", action="store_true", help="Release tick.lock")
     args = parser.parse_args()
 
+    holder_pid = worker_state.resolve_holder_pid(args.pid)
+
     if args.unlock and not args.worker and not os.environ.get("WORKER_ID"):
-        worker = worker_state.find_worker_by_pid() or worker_state.worker_name(None)
+        worker = (
+            worker_state.find_worker_by_holder_pid(holder_pid)
+            or worker_state.worker_name(None)
+        )
     else:
         worker = worker_state.worker_name(args.worker)
 
@@ -278,7 +288,7 @@ def main() -> None:
 
         if args.lock:
             try:
-                worker = worker_state.acquire_checkin(args.worker)
+                worker = worker_state.acquire_checkin(args.worker, holder_pid=holder_pid)
                 checked_in = True
                 print(f"WORKER {worker}")
             except worker_state.CheckinError as e:
@@ -289,7 +299,7 @@ def main() -> None:
 
         if check_lock(lock_path):
             if checked_in:
-                worker_state.release_checkin(worker)
+                worker_state.release_checkin(worker, holder_pid=holder_pid)
             print("BUSY (tick in progress)")
             sys.exit(EXIT_BUSY)
 
@@ -298,7 +308,7 @@ def main() -> None:
         # If currently implementing an issue or branch, always run
         if state.get("current"):
             if args.lock:
-                acquire_lock(lock_path, pid=args.pid)
+                acquire_lock(lock_path, pid=holder_pid)
             print("RUN (current work in progress)")
             sys.exit(EXIT_RUN)
 
@@ -311,7 +321,7 @@ def main() -> None:
             pending = pending_approved_issue(worker)
             if pending is None:
                 if checked_in:
-                    worker_state.release_checkin(worker)
+                    worker_state.release_checkin(worker, holder_pid=holder_pid)
                 print("NOOP (no changes)")
                 sys.exit(EXIT_NOOP)
             message = f"RUN (approved issue pending: #{pending})"
@@ -319,7 +329,7 @@ def main() -> None:
         # Acquire lock if requested, but DO NOT save lastFingerprint yet.
         # lastFingerprint must be saved only after a successful tick via --update.
         if args.lock:
-            acquire_lock(lock_path, pid=args.pid)
+            acquire_lock(lock_path, pid=holder_pid)
             state["tickStartFingerprint"] = fp
             save_state(state_path, state)
         print(message)
@@ -334,7 +344,10 @@ def main() -> None:
     finally:
         if args.unlock:
             release_lock(lock_path)
-            worker_state.release_checkin(args.worker if args.worker else worker)
+            worker_state.release_checkin(
+                args.worker if args.worker else worker,
+                holder_pid=holder_pid,
+            )
             print("UNLOCKED")
 
 
