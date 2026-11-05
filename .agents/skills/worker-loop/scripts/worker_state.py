@@ -7,8 +7,9 @@ worktree. Each worker has its own directory with `state.json` and `tick.lock`.
 owns it, so two workers never take the same issue or PR.
 
 When no `--worker` / $WORKER_ID is set, a session checks in under `checkins.json`
-and receives the first free slot (`worker`, `worker-2`, ...). The recorded `pid`
-is the long-lived tick holder (agent shell), not this short-lived script.
+and receives the first free slot (`worker`, `worker-2`, ...). When a long-lived
+holder PID is known (e.g. LibrAgent desktop), it is stored; otherwise the slot
+uses a TTL until `--unlock` (no bogus transient bash/node PID).
 
 State lives outside the user's checkout:
 `<repo>/../<repo-name>.worktrees/.worker-loop/` (override with $LOOP_STATE_DIR).
@@ -32,7 +33,9 @@ import sys
 import tempfile
 import time
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 DEFAULT_WORKER = "worker"
 WORKER_NAME = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
@@ -44,6 +47,8 @@ CLAIMS_LOCK_STALE_SECONDS = 60
 CHECKIN_TTL_SECONDS = 1800
 MAX_AUTO_SLOTS = 32
 _HOLDER_ENV = "WORKER_LOOP_HOLDER_PID"
+_TRANSIENT_SHELLS = frozenset({"bash", "sh", "zsh", "dash", "fish", "pwsh", "cmd"})
+_HOLDER_UNSET = object()
 
 
 class CheckinError(RuntimeError):
@@ -88,6 +93,17 @@ def _host() -> str:
         return "unknown"
 
 
+@dataclass(frozen=True)
+class ProcessInfo:
+    comm: str
+    cmdline: list[str]
+    ppid: int
+
+
+# Tests inject a pid → ProcessInfo map here (see test_worker_state.py).
+_process_info_lookup: Callable[[int], ProcessInfo | None] | None = None
+
+
 def _linux_ppid(pid: int) -> int:
     try:
         return int(Path(f"/proc/{pid}/stat").read_text().split()[3])
@@ -95,38 +111,79 @@ def _linux_ppid(pid: int) -> int:
         return 0
 
 
-def _proc_comm(pid: int) -> str:
+def _read_cmdline(pid: int) -> list[str]:
     try:
-        return Path(f"/proc/{pid}/comm").read_text().strip().lower()
+        raw = Path(f"/proc/{pid}/cmdline").read_bytes()
+        return [part.decode(errors="replace") for part in raw.split(b"\0") if part]
     except OSError:
-        return ""
+        return []
 
 
-def _is_script_runner(comm: str) -> bool:
-    return comm.startswith(("python", "node", "ruby"))
+def _process_info(pid: int) -> ProcessInfo | None:
+    if pid <= 0:
+        return None
+    if _process_info_lookup is not None:
+        return _process_info_lookup(pid)
+    try:
+        comm = Path(f"/proc/{pid}/comm").read_text().strip()
+    except OSError:
+        return None
+    return ProcessInfo(comm=comm, cmdline=_read_cmdline(pid), ppid=_linux_ppid(pid))
 
 
-def resolve_holder_pid(explicit: int | None = None) -> int:
-    """PID of the session running the tick (agent shell), not this helper process."""
+def _comm_base(comm: str) -> str:
+    return comm.rsplit("/", 1)[-1].lower()
+
+
+def _is_transient_shell(info: ProcessInfo) -> bool:
+    base = _comm_base(info.comm)
+    if base not in _TRANSIENT_SHELLS and not base.startswith("bash"):
+        return False
+    lowered = [arg.lower() for arg in info.cmdline]
+    return "-c" in info.cmdline or "/c" in lowered
+
+
+def _is_ephemeral_runner(info: ProcessInfo) -> bool:
+    base = _comm_base(info.comm)
+    joined = " ".join(info.cmdline).lower()
+    if base.startswith("python"):
+        return "tick_gate" in joined or "worker_state" in joined
+    if base.startswith("node"):
+        return True
+    return base.startswith("ruby")
+
+
+def _is_trusted_session_holder(info: ProcessInfo) -> bool:
+    joined = " ".join(info.cmdline).lower()
+    base = _comm_base(info.comm)
+    return "libragent" in joined or base == "libragent"
+
+
+def resolve_holder_pid(explicit: int | None = None) -> int | None:
+    """Long-lived session PID, or None → check-in uses TTL only (no pid field)."""
     if explicit is not None:
         return explicit
     env = os.environ.get(_HOLDER_ENV)
     if env:
         return int(env)
     if sys.platform == "win32":
-        return os.getppid()
+        return None
 
     pid = os.getppid()
-    for _ in range(30):
-        if pid <= 1:
+    for _ in range(40):
+        info = _process_info(pid)
+        if info is None:
             break
-        if not _is_script_runner(_proc_comm(pid)):
+        if _is_transient_shell(info):
+            pid = info.ppid
+            continue
+        if _is_ephemeral_runner(info):
+            pid = info.ppid
+            continue
+        if _is_trusted_session_holder(info):
             return pid
-        parent = _linux_ppid(pid)
-        if parent <= 1:
-            return pid
-        pid = parent
-    return os.getppid()
+        pid = info.ppid
+    return None
 
 
 def _pid_alive(pid: int | None) -> bool:
@@ -141,26 +198,37 @@ def _pid_alive(pid: int | None) -> bool:
         return False
 
 
-def checkin_record(holder_pid: int, *, started_at: int | None = None) -> dict:
+def checkin_record(holder_pid: int | None, *, started_at: int | None = None) -> dict:
     now = int(time.time())
-    return {
-        "pid": holder_pid,
+    record: dict = {
         "host": _host(),
         "startedAt": started_at if started_at is not None else now,
     }
+    if holder_pid is not None:
+        record["pid"] = holder_pid
+    return record
 
 
 def is_checkin_stale(record: dict | None) -> bool:
-    """True when the slot is free or the holder session is gone (or TTL on Windows)."""
+    """True when the slot is free, TTL expired, or (if recorded) holder PID is dead."""
     if not record or not isinstance(record, dict):
         return True
+    started = int(record.get("startedAt") or 0)
     pid = record.get("pid")
-    if sys.platform == "win32":
-        started = int(record.get("startedAt") or 0)
+    if pid is None:
         return time.time() - started > CHECKIN_TTL_SECONDS
-    if pid is not None and not _pid_alive(int(pid)):
+    if sys.platform == "win32":
+        return time.time() - started > CHECKIN_TTL_SECONDS
+    if not _pid_alive(int(pid)):
         return True
     return False
+
+
+def _same_checkin_holder(record: dict, holder: int | None) -> bool:
+    rec_pid = record.get("pid")
+    if holder is None:
+        return rec_pid is None
+    return rec_pid == holder
 
 
 def iter_slot_names(existing: dict | None = None) -> list[str]:
@@ -178,7 +246,9 @@ def load_checkins(path: Path | None = None) -> dict:
     return read_json(path or checkins_path())
 
 
-def find_worker_by_holder_pid(holder_pid: int, path: Path | None = None) -> str | None:
+def find_worker_by_holder_pid(holder_pid: int | None, path: Path | None = None) -> str | None:
+    if holder_pid is None:
+        return None
     for name, record in load_checkins(path).items():
         if isinstance(record, dict) and record.get("pid") == holder_pid:
             return name
@@ -194,11 +264,14 @@ def acquire_checkin(
     explicit: str | None = None,
     path: Path | None = None,
     *,
-    holder_pid: int | None = None,
+    holder: int | None | object = _HOLDER_UNSET,
 ) -> str:
     """Claim a worker slot. Explicit `--worker` / $WORKER_ID wins; else first free slot."""
     path = path or checkins_path()
-    holder = resolve_holder_pid(holder_pid)
+    if holder is _HOLDER_UNSET:
+        resolved: int | None = resolve_holder_pid(None)
+    else:
+        resolved = holder  # type: ignore[assignment]
     requested = explicit or os.environ.get("WORKER_ID")
     with exclusive(path.with_name(path.name + ".lock")):
         checkins = read_json(path)
@@ -206,28 +279,22 @@ def acquire_checkin(
         if requested:
             worker = worker_name(requested)
             current = checkins.get(worker)
-            if current and not is_checkin_stale(current) and current.get("pid") != holder:
+            if current and not is_checkin_stale(current) and not _same_checkin_holder(current, resolved):
                 other = current.get("pid")
                 raise CheckinError(f"slot {worker!r} busy (pid {other} on {current.get('host')})")
-            started = (current or {}).get("startedAt") if current and current.get("pid") == holder else None
-            _write_checkin(path, checkins, worker, checkin_record(holder, started_at=started))
+            started = (
+                (current or {}).get("startedAt")
+                if current and _same_checkin_holder(current, resolved)
+                else None
+            )
+            _write_checkin(path, checkins, worker, checkin_record(resolved, started_at=started))
             return worker
-
-        existing = find_worker_by_holder_pid(holder, path)
-        if existing:
-            record = checkins.get(existing) or checkin_record(holder)
-            if record.get("pid") != holder:
-                record = checkin_record(holder)
-            started = record.get("startedAt")
-            _write_checkin(path, checkins, existing, checkin_record(holder, started_at=started))
-            return existing
 
         for worker in iter_slot_names(checkins):
             current = checkins.get(worker)
-            if current and not is_checkin_stale(current) and current.get("pid") != holder:
+            if current and not is_checkin_stale(current):
                 continue
-            started = (current or {}).get("startedAt") if current and current.get("pid") == holder else None
-            _write_checkin(path, checkins, worker, checkin_record(holder, started_at=started))
+            _write_checkin(path, checkins, worker, checkin_record(resolved))
             return worker
 
     raise CheckinError("no free worker slot (all check-ins active)")
@@ -237,25 +304,37 @@ def release_checkin(
     worker: str | None = None,
     path: Path | None = None,
     *,
-    holder_pid: int | None = None,
+    holder: int | None | object = _HOLDER_UNSET,
 ) -> bool:
-    """Release a slot held by `holder_pid`. Returns True when an entry was removed."""
+    """Release a slot. TTL slots release by worker name; PID slots match `holder`."""
     path = path or checkins_path()
-    holder = resolve_holder_pid(holder_pid)
+    if holder is _HOLDER_UNSET:
+        resolved: int | None = resolve_holder_pid(None)
+    else:
+        resolved = holder  # type: ignore[assignment]
+
     if worker is None:
-        worker = find_worker_by_holder_pid(holder, path)
+        worker = find_worker_by_holder_pid(resolved, path)
         if worker is None:
             return False
     else:
         worker = worker_name(worker)
+
     with exclusive(path.with_name(path.name + ".lock")):
         checkins = read_json(path)
         record = checkins.get(worker)
-        if not record or record.get("pid") != holder:
+        if not record:
             return False
-        del checkins[worker]
-        atomic_write_json(path, checkins)
-    return True
+        rec_pid = record.get("pid")
+        if rec_pid is None:
+            del checkins[worker]
+            atomic_write_json(path, checkins)
+            return True
+        if resolved is not None and rec_pid == resolved:
+            del checkins[worker]
+            atomic_write_json(path, checkins)
+            return True
+    return False
 
 
 def atomic_write_json(path: Path, data: dict) -> None:
@@ -368,13 +447,14 @@ def main() -> None:
         if not args.checkin_action:
             sys.exit("checkin requires acquire or release")
         try:
+            resolved = resolve_holder_pid(args.holder_pid)
             if args.checkin_action == "acquire":
-                worker = acquire_checkin(args.worker, holder_pid=args.holder_pid)
+                worker = acquire_checkin(args.worker, holder=resolved)
                 print(f"WORKER {worker}")
             else:
                 print(
                     "RELEASED"
-                    if release_checkin(args.worker, holder_pid=args.holder_pid)
+                    if release_checkin(args.worker, holder=resolved)
                     else "NOT CHECKED IN"
                 )
         except CheckinError as e:

@@ -288,7 +288,7 @@ def main() -> None:
 
         if args.lock:
             try:
-                worker = worker_state.acquire_checkin(args.worker, holder_pid=holder_pid)
+                worker = worker_state.acquire_checkin(args.worker, holder=holder_pid)
                 checked_in = True
                 print(f"WORKER {worker}")
             except worker_state.CheckinError as e:
@@ -299,7 +299,7 @@ def main() -> None:
 
         if check_lock(lock_path):
             if checked_in:
-                worker_state.release_checkin(worker, holder_pid=holder_pid)
+                worker_state.release_checkin(worker, holder=holder_pid)
             print("BUSY (tick in progress)")
             sys.exit(EXIT_BUSY)
 
@@ -321,7 +321,7 @@ def main() -> None:
             pending = pending_approved_issue(worker)
             if pending is None:
                 if checked_in:
-                    worker_state.release_checkin(worker, holder_pid=holder_pid)
+                    worker_state.release_checkin(worker, holder=holder_pid)
                 print("NOOP (no changes)")
                 sys.exit(EXIT_NOOP)
             message = f"RUN (approved issue pending: #{pending})"
@@ -346,7 +346,7 @@ def main() -> None:
             release_lock(lock_path)
             worker_state.release_checkin(
                 args.worker if args.worker else worker,
-                holder_pid=holder_pid,
+                holder=holder_pid,
             )
             print("UNLOCKED")
 

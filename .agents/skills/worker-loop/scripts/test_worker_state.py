@@ -15,7 +15,7 @@ def _acquire_in_child(root: str, out: multiprocessing.Queue) -> None:
     try:
         holder = os.getpid()
         with patch.dict(os.environ, {"LOOP_STATE_DIR": root}, clear=False):
-            out.put(worker_state.acquire_checkin(None, holder_pid=holder))
+            out.put(worker_state.acquire_checkin(None, holder=holder))
     except Exception as e:
         out.put(e)
 
@@ -86,7 +86,7 @@ class CheckinTest(unittest.TestCase):
     def test_explicit_name_is_respected(self):
         with patch.dict(os.environ, {"LOOP_STATE_DIR": str(self.root)}, clear=False):
             self.assertEqual(
-                worker_state.acquire_checkin("worker-3", self.checkins, holder_pid=self.holder),
+                worker_state.acquire_checkin("worker-3", self.checkins, holder=self.holder),
                 "worker-3",
             )
             data = worker_state.load_checkins(self.checkins)
@@ -95,10 +95,8 @@ class CheckinTest(unittest.TestCase):
 
     def test_release_frees_slot(self):
         with patch.dict(os.environ, {"LOOP_STATE_DIR": str(self.root)}, clear=False):
-            worker_state.acquire_checkin("worker", self.checkins, holder_pid=self.holder)
-            self.assertTrue(
-                worker_state.release_checkin("worker", self.checkins, holder_pid=self.holder)
-            )
+            worker_state.acquire_checkin("worker", self.checkins, holder=self.holder)
+            self.assertTrue(worker_state.release_checkin("worker", self.checkins, holder=self.holder))
             self.assertEqual(worker_state.load_checkins(self.checkins), {})
 
     def test_holder_dead_frees_slot(self):
@@ -106,7 +104,7 @@ class CheckinTest(unittest.TestCase):
         worker_state.atomic_write_json(self.checkins, {"worker": stale})
         with patch.dict(os.environ, {"LOOP_STATE_DIR": str(self.root)}, clear=False):
             self.assertEqual(
-                worker_state.acquire_checkin(None, self.checkins, holder_pid=self.holder),
+                worker_state.acquire_checkin(None, self.checkins, holder=self.holder),
                 "worker",
             )
             self.assertEqual(worker_state.load_checkins(self.checkins)["worker"]["pid"], self.holder)
@@ -120,10 +118,10 @@ class CheckinTest(unittest.TestCase):
         with patch.dict(os.environ, {"LOOP_STATE_DIR": str(self.root)}, clear=False), patch.object(
             worker_state, "_pid_alive", side_effect=_alive
         ):
-            self.assertEqual(worker_state.acquire_checkin(None, self.checkins, holder_pid=100), "worker")
+            self.assertEqual(worker_state.acquire_checkin(None, self.checkins, holder=100), "worker")
             record = worker_state.load_checkins(self.checkins)["worker"]
             self.assertFalse(worker_state.is_checkin_stale(record))
-            self.assertEqual(worker_state.acquire_checkin(None, self.checkins, holder_pid=200), "worker-2")
+            self.assertEqual(worker_state.acquire_checkin(None, self.checkins, holder=200), "worker-2")
 
     def test_concurrent_checkins_get_different_slots(self):
         ctx = multiprocessing.get_context("spawn")
@@ -145,6 +143,71 @@ class CheckinTest(unittest.TestCase):
 
     def test_resolve_holder_pid_explicit(self):
         self.assertEqual(worker_state.resolve_holder_pid(4242), 4242)
+
+    def test_libragent_chain_skips_bash_c_and_returns_app_pid(self):
+        chain = {
+            501: worker_state.ProcessInfo("python3", ["python3", "tick_gate.py", "--lock"], 502),
+            502: worker_state.ProcessInfo("bash", ["bash", "-c", "python3 tick_gate.py --lock"], 19679),
+            19679: worker_state.ProcessInfo(
+                "libragent",
+                ["./src-tauri/target/release/libragent"],
+                1,
+            ),
+        }
+
+        def lookup(pid: int) -> worker_state.ProcessInfo | None:
+            return chain.get(pid)
+
+        with patch.object(worker_state, "_process_info_lookup", lookup), patch(
+            "os.getppid", return_value=501
+        ):
+            self.assertEqual(worker_state.resolve_holder_pid(), 19679)
+
+    def test_cursor_agent_chain_falls_back_to_ttl(self):
+        chain = {
+            601: worker_state.ProcessInfo("python3", ["python3", "tick_gate.py"], 602),
+            602: worker_state.ProcessInfo(
+                "node",
+                [
+                    "/home/me/.local/share/cursor-agent/versions/2026.03.20-abc/node",
+                    "run",
+                    "shell",
+                ],
+                603,
+            ),
+            603: worker_state.ProcessInfo("node", ["node", "cursor-agent"], 1),
+        }
+
+        def lookup(pid: int) -> worker_state.ProcessInfo | None:
+            return chain.get(pid)
+
+        with patch.object(worker_state, "_process_info_lookup", lookup), patch(
+            "os.getppid", return_value=601
+        ):
+            self.assertIsNone(worker_state.resolve_holder_pid())
+
+    def test_same_libragent_pid_can_hold_two_auto_slots(self):
+        def _alive(pid: int | None) -> bool:
+            return pid == 19679
+
+        with patch.dict(os.environ, {"LOOP_STATE_DIR": str(self.root)}, clear=False), patch.object(
+            worker_state, "_pid_alive", side_effect=_alive
+        ):
+            self.assertEqual(
+                worker_state.acquire_checkin(None, self.checkins, holder=19679),
+                "worker",
+            )
+            self.assertEqual(
+                worker_state.acquire_checkin(None, self.checkins, holder=19679),
+                "worker-2",
+            )
+
+    def test_ttl_checkin_has_no_pid_field(self):
+        with patch.dict(os.environ, {"LOOP_STATE_DIR": str(self.root)}, clear=False):
+            worker_state.acquire_checkin(None, self.checkins, holder=None)
+            record = worker_state.load_checkins(self.checkins)["worker"]
+            self.assertNotIn("pid", record)
+            self.assertTrue(worker_state.release_checkin("worker", self.checkins, holder=None))
 
 
 if __name__ == "__main__":
