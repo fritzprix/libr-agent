@@ -95,11 +95,22 @@ impl<'a> LayeredSecretStore<'a> {
         Ok(())
     }
 
-    /// After the keychain holds the newest state of `name`, a fallback copy would win
-    /// over it on a later read. Failing to remove it must not undo the keychain change.
-    async fn remove_fallback_copy(&self, server_id: &str, name: &str) {
+    /// After the keychain holds the newest value of `name`, a fallback copy would win
+    /// over it on a later read, and a pending delete that failed earlier would remove
+    /// it. Failing to clear either must not undo the keychain save.
+    async fn keychain_holds_newest(&self, server_id: &str, name: &str) {
         if let Err(e) = self.fallback.delete(server_id, name).await {
             log::warn!("Could not remove the fallback copy of secret '{name}' for MCP server '{server_id}': {e}");
+        }
+        let _guard = self.pending_lock.lock().await;
+        let removed = read_pending_deletes(&self.pending_deletes_path).and_then(|mut pending| {
+            if pending.remove(&(server_id.to_string(), name.to_string())) {
+                write_pending_deletes(&self.pending_deletes_path, &pending)?;
+            }
+            Ok(())
+        });
+        if let Err(e) = removed {
+            log::warn!("{e}");
         }
     }
 }
@@ -128,7 +139,7 @@ impl SecretStore for LayeredSecretStore<'_> {
         // The value is in hand; a keychain that rejects the write (for example locked)
         // keeps the fallback copy for a later try instead of failing the read.
         match self.primary.set(server_id, name, &value).await {
-            Ok(_) => self.remove_fallback_copy(server_id, name).await,
+            Ok(_) => self.keychain_holds_newest(server_id, name).await,
             Err(e) => log::warn!("Keeping the fallback copy of secret '{name}' for MCP server '{server_id}': the keychain save failed: {e}"),
         }
         Ok(Some(value))
@@ -143,7 +154,7 @@ impl SecretStore for LayeredSecretStore<'_> {
         if self.primary.available() {
             self.apply_pending_deletes().await;
             let notice = self.primary.set(server_id, name, value).await?;
-            self.remove_fallback_copy(server_id, name).await;
+            self.keychain_holds_newest(server_id, name).await;
             Ok(notice)
         } else {
             self.fallback.set(server_id, name, value).await
@@ -154,10 +165,13 @@ impl SecretStore for LayeredSecretStore<'_> {
         if self.primary.available() {
             self.apply_pending_deletes().await;
             self.primary.delete(server_id, name).await?;
-        } else {
-            self.add_pending_delete(server_id, name).await?;
+            return self.fallback.delete(server_id, name).await;
         }
-        self.fallback.delete(server_id, name).await
+        // The caller drops the name either way, so the fallback copy is removed even
+        // when the keychain delete cannot be recorded.
+        let recorded = self.add_pending_delete(server_id, name).await;
+        self.fallback.delete(server_id, name).await?;
+        recorded
     }
 }
 
@@ -1054,6 +1068,76 @@ mod tests {
         assert_eq!(
             keychain.get(&id, "EXA_API_KEY").await.unwrap().as_deref(),
             Some("new")
+        );
+    }
+
+    /// A keychain that saves values but cannot delete them.
+    #[derive(Default)]
+    struct UndeletableKeychain(MemorySecretStore);
+
+    #[async_trait::async_trait]
+    impl SecretStore for UndeletableKeychain {
+        async fn get(&self, server_id: &str, name: &str) -> Result<Option<String>, String> {
+            self.0.get(server_id, name).await
+        }
+        async fn set(
+            &self,
+            server_id: &str,
+            name: &str,
+            value: &str,
+        ) -> Result<Option<String>, String> {
+            self.0.set(server_id, name, value).await
+        }
+        async fn delete(&self, _: &str, _: &str) -> Result<(), String> {
+            Err("the keychain rejected the delete".to_string())
+        }
+    }
+
+    #[tokio::test]
+    async fn a_failed_pending_delete_does_not_remove_a_value_saved_later() {
+        let repo = repo().await;
+        let id = server(&repo).await;
+        let dir = tempfile::tempdir().unwrap();
+        let key_path = dir.path().join(KEY_FILE_NAME);
+        LayeredSecretStore::new(
+            &MemorySecretStore::unavailable(),
+            FileSecretStore::new(&repo, key_path.clone()),
+        )
+        .delete(&id, "EXA_API_KEY")
+        .await
+        .unwrap();
+
+        let keychain = UndeletableKeychain::default();
+        let store = LayeredSecretStore::new(&keychain, FileSecretStore::new(&repo, key_path));
+        store.set(&id, "EXA_API_KEY", "new").await.unwrap();
+
+        assert!(
+            !dir.path().join(PENDING_DELETES_FILE_NAME).exists(),
+            "the save drops the pending delete of the same name"
+        );
+        assert_eq!(
+            keychain.get(&id, "EXA_API_KEY").await.unwrap().as_deref(),
+            Some("new")
+        );
+    }
+
+    #[tokio::test]
+    async fn an_unreadable_pending_list_still_clears_the_fallback_copy() {
+        let repo = repo().await;
+        let id = server(&repo).await;
+        let dir = tempfile::tempdir().unwrap();
+        let keychain = MemorySecretStore::unavailable();
+        let store = LayeredSecretStore::new(
+            &keychain,
+            FileSecretStore::new(&repo, dir.path().join(KEY_FILE_NAME)),
+        );
+        store.set(&id, "EXA_API_KEY", "value").await.unwrap();
+        std::fs::write(dir.path().join(PENDING_DELETES_FILE_NAME), b"not json").unwrap();
+
+        assert!(store.delete(&id, "EXA_API_KEY").await.is_err());
+        assert_eq!(
+            repo.get(&id).await.unwrap().unwrap().encrypted_secrets,
+            None
         );
     }
 
