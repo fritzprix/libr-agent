@@ -6,13 +6,17 @@ Computes a fingerprint from a single GraphQL request covering:
     updatedAt, and last comment createdAt.
   - Candidate issues: updatedAt timestamps.
 
-If state.json has no 'current' and the fingerprint matches 'lastFingerprint', outputs
-'NOOP' and exits with code 1 so external schedulers (e.g., `python3 tick_gate.py && ...`)
-do not invoke the LLM.
+With no 'current' work and an unchanged fingerprint, it still returns RUN when an
+open `approved` issue is free to take and no open PR closes it, so an approved
+issue is never ignored just because the tracked state did not move.
+
+If state.json has no 'current' and nothing is pending and the fingerprint matches
+'lastFingerprint', outputs 'NOOP' and exits with code 1 so external schedulers
+(e.g., `python3 tick_gate.py && ...`) do not invoke the LLM.
 
 Exit codes:
   0 - RUN (actionable work or state changed)
-  1 - NOOP (state unchanged and idle)
+  1 - NOOP (state unchanged, idle, nothing pending)
   2 - BUSY (another tick is in progress with an active lock)
   3 - ERROR (authentication, network, or GraphQL failure; not NOOP)
 """
@@ -27,6 +31,7 @@ import sys
 import time
 from pathlib import Path
 
+import issue_candidates
 import worker_state
 
 EXIT_RUN = 0
@@ -148,6 +153,33 @@ def release_lock(lock_file: Path) -> None:
             pass
 
 
+def pending_approved_issue(worker: str) -> int | None:
+    """First open `approved` issue this worker can take, or None.
+
+    Uses `issue_candidates.exclusion_reason` so "no open PR closes it" means the
+    same thing here as in candidate selection.
+    """
+    claims = worker_state.load_claims()
+    me = gh("api", "user", "--jq", ".login").strip()
+    issues = json.loads(
+        gh("issue", "list", "--state", "open", "--limit", str(ISSUE_LIMIT), "--json",
+           "number,labels,assignees")
+    )
+    closing_pr = issue_candidates.closing_pr_map(issue_candidates.list_open_prs())
+
+    for issue in sorted(issues, key=lambda i: i["number"]):
+        number = issue["number"]
+        labels = {label["name"] for label in issue["labels"]}
+        assignees = [a["login"] for a in issue["assignees"]]
+        free = issue_candidates.exclusion_reason(
+            number, labels, assignees, me, closing_pr,
+            claimed_by=worker_state.claimed_by_other(claims, f"issue:{number}", worker),
+        )
+        if free is None:
+            return number
+    return None
+
+
 def compute_fingerprint() -> str:
     """Compute sha256 hash using a single GraphQL query for PRs and issues."""
     repo_raw = gh("repo", "view", "--json", "owner,name")
@@ -214,7 +246,8 @@ def main() -> None:
     parser.add_argument("--unlock", action="store_true", help="Release tick.lock")
     args = parser.parse_args()
 
-    state_path = args.state_file or default_state_path(worker_state.worker_name(args.worker))
+    worker = worker_state.worker_name(args.worker)
+    state_path = args.state_file or default_state_path(worker)
     lock_path = state_path.parent / "tick.lock"
 
     try:
@@ -250,17 +283,22 @@ def main() -> None:
         fp = compute_fingerprint()
         last_fp = state.get("lastFingerprint")
 
+        message = f"RUN (changes detected: {fp[:12]})"
         if last_fp and last_fp == fp:
-            print("NOOP (no changes)")
-            sys.exit(EXIT_NOOP)
+            # Nothing tracked moved, but an approved issue may still be waiting.
+            pending = pending_approved_issue(worker)
+            if pending is None:
+                print("NOOP (no changes)")
+                sys.exit(EXIT_NOOP)
+            message = f"RUN (approved issue pending: #{pending})"
 
-        # State changed: acquire lock if requested, but DO NOT save lastFingerprint yet.
+        # Acquire lock if requested, but DO NOT save lastFingerprint yet.
         # lastFingerprint must be saved only after a successful tick via --update.
         if args.lock:
             acquire_lock(lock_path, pid=args.pid)
             state["tickStartFingerprint"] = fp
             save_state(state_path, state)
-        print(f"RUN (changes detected: {fp[:12]})")
+        print(message)
         sys.exit(EXIT_RUN)
 
     except GhError as e:

@@ -6,7 +6,7 @@
 | --- | --- |
 | `/worker-loop` | Run one tick now. |
 | `/worker-loop 10m` | Arm recurring loop (10m interval), then run one tick now. |
-| `/worker-loop status` | Print state file summary (`current`, `needsUser`, `skipped`); do no work. |
+| `/worker-loop status` | Print `current` and `needsUser` from state. Do no work. |
 | `/worker-loop stop` | Disarm the recurring loop. |
 
 ## Runtimes
