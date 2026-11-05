@@ -421,6 +421,27 @@ impl WorkspaceServer {
                     let _ = tokio::fs::remove_dir_all(&process_tmp_dir).await;
                 }
 
+                if retain_killed_process {
+                    let response = serde_json::json!({
+                        "process_id": process_id,
+                        "command": command,
+                        "status": "killed",
+                        "exit_code": entry.exit_code,
+                        "stdout": stdout_result.as_ref().ok(),
+                        "stderr": stderr_result.as_ref().ok(),
+                        "stdout_read_error": stdout_result.as_ref().err(),
+                        "stderr_read_error": stderr_result.as_ref().err(),
+                        "duration_ms": duration_ms,
+                        "execution_type": "isolated"
+                    });
+                    return Ok(guided_error(
+                        ErrorCategory::OperationFailed,
+                        "Command was cancelled.".to_string(),
+                        ToolGroup::Workspace,
+                    )
+                    .to_mcp_result_with_data(Some(response)));
+                }
+
                 let stdout = match stdout_result {
                     Ok(stdout) => stdout,
                     Err(error) => {
