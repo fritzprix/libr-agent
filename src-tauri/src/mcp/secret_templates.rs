@@ -26,6 +26,9 @@ pub trait SecretStore: Send + Sync {
     fn available(&self) -> bool {
         true
     }
+    /// Runs the pending-delete sweep at startup if any deletes are pending and the
+    /// store is available.
+    async fn sweep_pending_deletes_at_startup(&self) {}
 }
 
 /// The OS keychain, with the encrypted `encrypted_secrets` fallback when it is not

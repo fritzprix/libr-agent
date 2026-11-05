@@ -26,6 +26,33 @@ pub fn app_key_path() -> PathBuf {
     crate::profile::data_dir(crate::profile::resolve_profile()).join(KEY_FILE_NAME)
 }
 
+/// The pending-deletes file in the app local data dir (next to the key file).
+pub fn app_pending_deletes_path() -> PathBuf {
+    app_key_path().with_file_name(PENDING_DELETES_FILE_NAME)
+}
+
+/// At app start, if `mcp-secrets-pending-deletes.json` exists and is not empty, run
+/// the pending-delete sweep once.
+pub async fn sweep_pending_deletes_at_startup() {
+    let path = app_pending_deletes_path();
+    if !path.is_file() {
+        return;
+    }
+    let is_empty = match std::fs::metadata(&path) {
+        Ok(m) if m.len() == 0 => true,
+        _ => match read_pending_deletes(&path) {
+            Ok(pending) => pending.is_empty(),
+            Err(_) => false,
+        },
+    };
+    if is_empty {
+        return;
+    }
+    crate::mcp::secret_templates::secret_store()
+        .sweep_pending_deletes_at_startup()
+        .await;
+}
+
 /// Keychain entries deleted while the keychain was unavailable, next to the key file.
 pub(crate) const PENDING_DELETES_FILE_NAME: &str = "mcp-secrets-pending-deletes.json";
 
@@ -113,6 +140,28 @@ impl<'a> LayeredSecretStore<'a> {
             log::warn!("{e}");
         }
     }
+
+    /// Runs the pending-delete sweep at startup if any deletes are pending and the
+    /// primary store is available.
+    pub async fn sweep_pending_deletes_at_startup(&self) {
+        if !self.pending_deletes_path.is_file() {
+            return;
+        }
+        let is_empty = match std::fs::metadata(&self.pending_deletes_path) {
+            Ok(m) if m.len() == 0 => true,
+            _ => match read_pending_deletes(&self.pending_deletes_path) {
+                Ok(pending) => pending.is_empty(),
+                Err(_) => false,
+            },
+        };
+        if is_empty {
+            return;
+        }
+        if !self.primary.available() {
+            return;
+        }
+        self.apply_pending_deletes().await;
+    }
 }
 
 #[async_trait::async_trait]
@@ -172,6 +221,10 @@ impl SecretStore for LayeredSecretStore<'_> {
         let recorded = self.add_pending_delete(server_id, name).await;
         self.fallback.delete(server_id, name).await?;
         recorded
+    }
+
+    async fn sweep_pending_deletes_at_startup(&self) {
+        LayeredSecretStore::sweep_pending_deletes_at_startup(self).await;
     }
 }
 
@@ -1156,6 +1209,90 @@ mod tests {
         let locked =
             LayeredSecretStore::new(&LockedKeychain, FileSecretStore::new(&repo, key_path));
         assert_eq!(locked.get(&id, "B_KEY").await.unwrap(), None);
+        assert!(dir.path().join(PENDING_DELETES_FILE_NAME).exists());
+    }
+
+    #[tokio::test]
+    async fn deleting_the_only_secret_server_during_an_outage_sweeps_keychain_on_startup() {
+        let repo = repo().await;
+        let id = server(&repo).await;
+        repo.set_secret_names(&id, Some(r#"["EXA_API_KEY"]"#.to_string()))
+            .await
+            .unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let key_path = dir.path().join(KEY_FILE_NAME);
+        let keychain = MemorySecretStore::default();
+        let store =
+            LayeredSecretStore::new(&keychain, FileSecretStore::new(&repo, key_path.clone()));
+        store.set(&id, "EXA_API_KEY", "secret-val").await.unwrap();
+        assert_eq!(
+            keychain.get(&id, "EXA_API_KEY").await.unwrap().as_deref(),
+            Some("secret-val")
+        );
+
+        keychain.set_available(false);
+        crate::services::McpServerService::delete_server_config_with_store(&repo, &store, &id)
+            .await
+            .expect("delete server during outage");
+
+        assert_eq!(repo.get(&id).await.unwrap(), None);
+        assert!(dir.path().join(PENDING_DELETES_FILE_NAME).exists());
+
+        keychain.set_available(true);
+        assert_eq!(
+            keychain.get(&id, "EXA_API_KEY").await.unwrap().as_deref(),
+            Some("secret-val")
+        );
+
+        let restarted = LayeredSecretStore::new(&keychain, FileSecretStore::new(&repo, key_path));
+        restarted.sweep_pending_deletes_at_startup().await;
+
+        assert_eq!(keychain.get(&id, "EXA_API_KEY").await.unwrap(), None);
+        assert!(!dir.path().join(PENDING_DELETES_FILE_NAME).exists());
+    }
+
+    #[tokio::test]
+    async fn startup_sweep_does_not_touch_keychain_when_no_pending_file() {
+        let repo = repo().await;
+        let dir = tempfile::tempdir().unwrap();
+        let key_path = dir.path().join(KEY_FILE_NAME);
+
+        struct PanickingStore;
+        #[async_trait::async_trait]
+        impl SecretStore for PanickingStore {
+            async fn get(&self, _: &str, _: &str) -> Result<Option<String>, String> {
+                panic!("should not be called");
+            }
+            async fn set(&self, _: &str, _: &str, _: &str) -> Result<Option<String>, String> {
+                panic!("should not be called");
+            }
+            async fn delete(&self, _: &str, _: &str) -> Result<(), String> {
+                panic!("should not be called");
+            }
+            fn available(&self) -> bool {
+                panic!("available() should not be called when pending deletes file does not exist");
+            }
+        }
+
+        let store = LayeredSecretStore::new(&PanickingStore, FileSecretStore::new(&repo, key_path));
+        store.sweep_pending_deletes_at_startup().await;
+    }
+
+    #[tokio::test]
+    async fn startup_sweep_keeps_entries_when_keychain_still_unavailable() {
+        let repo = repo().await;
+        let id = server(&repo).await;
+        let dir = tempfile::tempdir().unwrap();
+        let key_path = dir.path().join(KEY_FILE_NAME);
+        let keychain = MemorySecretStore::unavailable();
+        let store =
+            LayeredSecretStore::new(&keychain, FileSecretStore::new(&repo, key_path.clone()));
+
+        store.delete(&id, "EXA_API_KEY").await.unwrap();
+        assert!(dir.path().join(PENDING_DELETES_FILE_NAME).exists());
+
+        store.sweep_pending_deletes_at_startup().await;
+
         assert!(dir.path().join(PENDING_DELETES_FILE_NAME).exists());
     }
 }
