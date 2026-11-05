@@ -687,16 +687,15 @@ pub async fn execute_tool_calls(
             }
         }
 
-        // Only a process cancel that lands while this tool runs marks it cancelled.
-        proxy_manager
-            .clear_process_cancel_pending(&session_id)
+        let (mut result, process_was_cancelled) = proxy_manager
+            .run_with_process_cancel_scope(
+                &session_id,
+                crate::agent::state::with_tool_call_id(
+                    tool_call_id.clone(),
+                    context.execute_tool(tool_name, args),
+                ),
+            )
             .await;
-        let mut result = crate::agent::state::with_tool_call_id(
-            tool_call_id.clone(),
-            context.execute_tool(tool_name, args),
-        )
-        .await;
-        let process_was_cancelled = proxy_manager.take_process_cancel_pending(&session_id).await;
         if result.is_error
             && (process_was_cancelled
                 || session_cancel_requested(&active_sessions, &session_id, &cancellation_token)

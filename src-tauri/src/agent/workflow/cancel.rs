@@ -25,6 +25,30 @@ pub enum CancelStrategy {
     StopImmediately,
 }
 
+/// Stop session processes with the process-cancel marker already set.
+///
+/// A killed foreground tool can return before `stop` finishes, so the marker
+/// must exist before any process is signalled. It is removed again when
+/// nothing was stopped.
+pub async fn stop_processes_with_cancel_marker<F>(
+    proxy_manager: &MCPServiceProxyManager,
+    session_id: &str,
+    has_pending_execution: bool,
+    stop: F,
+) -> usize
+where
+    F: std::future::Future<Output = usize>,
+{
+    if has_pending_execution {
+        proxy_manager.mark_process_cancel_pending(session_id).await;
+    }
+    let killed_resources = stop.await;
+    if has_pending_execution && killed_resources == 0 {
+        proxy_manager.clear_process_cancel_pending(session_id).await;
+    }
+    killed_resources
+}
+
 pub fn classify_cancel_strategy(
     has_pending_execution: bool,
     has_active_processes: bool,
@@ -329,15 +353,17 @@ pub async fn cancel_workflow(
         });
     }
 
-    let killed_resources =
-        stop_user_prompt_and_session_processes(active_sessions, proxy_manager, &session_id).await;
+    let killed_resources = stop_processes_with_cancel_marker(
+        proxy_manager,
+        &session_id,
+        has_pending_execution,
+        stop_user_prompt_and_session_processes(active_sessions, proxy_manager, &session_id),
+    )
+    .await;
 
     if classify_cancel_strategy(has_pending_execution, killed_resources > 0)
         == CancelStrategy::CancelProcessThenContinue
     {
-        if has_pending_execution {
-            proxy_manager.mark_process_cancel_pending(&session_id).await;
-        }
         log::info!(
             "Cancelled {} active workspace resource(s) for session {}; workflow continues",
             killed_resources,

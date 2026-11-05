@@ -341,6 +341,18 @@ impl MCPServiceProxyManager {
         self.process_cancel_pending.lock().await.remove(session_id);
     }
 
+    /// Run one tool call and report whether a process cancel was marked while
+    /// it ran. A marker left from before the call does not count.
+    pub async fn run_with_process_cancel_scope<F, T>(&self, session_id: &str, tool: F) -> (T, bool)
+    where
+        F: std::future::Future<Output = T>,
+    {
+        self.clear_process_cancel_pending(session_id).await;
+        let output = tool.await;
+        let cancelled = self.take_process_cancel_pending(session_id).await;
+        (output, cancelled)
+    }
+
     /// Per-session creation mutex used by create / ensure_builtin / destroy.
     ///
     /// The outer `creation_guards` map lock is held only long enough to insert or look up
