@@ -84,8 +84,8 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: echo "PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig" >> $GITHUB_ENV
 
-      - name: Run tests (if available)
-        run: pnpm test || echo "No tests defined"
+      - name: Run frontend tests
+        run: pnpm test:run
 
       - name: Check TypeScript
         run: pnpm tsc --noEmit
