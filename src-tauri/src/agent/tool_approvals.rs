@@ -185,7 +185,14 @@ pub async fn evaluate_tool_execution_policy(
         });
     }
 
-    if requires_hard_approval && !is_catalog_preset_install(tool_name, args) {
+    let preset_install = is_catalog_preset_install(tool_name, args);
+    let requires_approval = if preset_install {
+        requires_approval_by_config(get_tool_approvals_config().await, tool_name)
+    } else {
+        requires_approval
+    };
+
+    if requires_hard_approval && !preset_install {
         let reused = if is_mcp_server_mutation(tool_name) {
             crate::mcp::builtin::tool::secrets_reused_by(args).await
         } else {
@@ -200,10 +207,12 @@ pub async fn evaluate_tool_execution_policy(
     }
 
     if requires_approval {
-        let arguments = args.to_string();
+        // A server transport may hold a plain secret, so its preview is the masked summary.
+        let preview_source =
+            mcp_server_transport_summary(tool_name, args, &[]).unwrap_or_else(|| args.to_string());
         return ToolExecutionPolicyDecision::RequireApproval(ToolApprovalRequest {
-            description: build_channel_permission_description(tool_name, &arguments),
-            input_preview: build_channel_permission_input_preview(&arguments),
+            description: build_channel_permission_description(tool_name, &preview_source),
+            input_preview: build_channel_permission_input_preview(&preview_source),
         });
     }
 
@@ -277,9 +286,10 @@ fn is_mcp_server_mutation(tool_name: &str) -> bool {
     tool_name == "tool__registerServer" || tool_name == "tool__updateServer"
 }
 
-/// Owner policy (#2180): registering a curated catalog preset with its exact
-/// transport needs no hard approval; any other source still does. Must agree
-/// with `install_provenance` so the stored provenance matches the gate taken.
+/// Owner policy (#2180, #2570): registering a curated catalog preset with its exact
+/// transport needs no approval, unless the user lists the tool for normal approval;
+/// any other source still needs hard approval. Must agree with `install_provenance`
+/// so the stored provenance matches the gate taken.
 fn is_catalog_preset_install(tool_name: &str, args: &serde_json::Value) -> bool {
     tool_name == "tool__registerServer"
         && args.get("authentication").is_none()
@@ -632,11 +642,8 @@ mod tests {
         });
         let decision = evaluate_tool_execution_policy("tool__registerServer", &catalog).await;
         assert!(
-            !matches!(
-                decision,
-                ToolExecutionPolicyDecision::RequireHardApproval(_)
-            ),
-            "catalog preset should not need hard approval, got {decision:?}"
+            matches!(decision, ToolExecutionPolicyDecision::Allow),
+            "catalog preset should need no approval, got {decision:?}"
         );
 
         let mut arbitrary = catalog.clone();
@@ -662,7 +669,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn github_and_exa_presets_with_a_secret_template_need_no_hard_approval() {
+    async fn github_and_exa_presets_with_a_secret_template_need_no_approval() {
         let github = serde_json::json!({
             "name": "github",
             "transport": {
@@ -681,13 +688,28 @@ mod tests {
         for args in [github, exa] {
             let decision = evaluate_tool_execution_policy("tool__registerServer", &args).await;
             assert!(
-                !matches!(
-                    decision,
-                    ToolExecutionPolicyDecision::RequireHardApproval(_)
-                ),
+                matches!(decision, ToolExecutionPolicyDecision::Allow),
                 "{args}: got {decision:?}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn a_preset_with_a_plain_token_shows_no_preview_of_it() {
+        let github = serde_json::json!({
+            "name": "github",
+            "transport": {
+                "type": "http",
+                "url": "https://api.githubcopilot.com/mcp/",
+                "headers": { "Authorization": "Bearer ghp_user" }
+            }
+        });
+        let decision = evaluate_tool_execution_policy("tool__registerServer", &github).await;
+        assert!(
+            matches!(decision, ToolExecutionPolicyDecision::Allow),
+            "got {decision:?}"
+        );
+        assert!(!format!("{decision:?}").contains("ghp_user"));
     }
 
     #[tokio::test]
