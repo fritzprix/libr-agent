@@ -11,6 +11,11 @@ mcpToolTimeoutSeconds: number, searchIndexFrequencyMinutes: number,
  */
 scheduledTaskMinimumIntervalMinutes: number, shellIsolationLevel: IsolationLevel, shellRuntimeBootstrap: boolean, 
 /**
+ * Workspace file tools also accept paths in linked git worktrees of the
+ * repository at the session workspace root.
+ */
+allowLinkedWorktrees: boolean, 
+/**
  * Inhibit idle sleep while LibrAgent is running. Does not keep the display on.
  */
 preventSleepDuringAgentWork: boolean, 

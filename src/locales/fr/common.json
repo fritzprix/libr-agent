@@ -568,6 +568,8 @@
       },
       "shellRuntimeBootstrap": "Amorçage de l'environnement de shell",
       "shellRuntimeBootstrapDescription": "Charge uniquement les chemins Python et Node dans le terminal pour démarrer les commandes plus rapidement.",
+      "allowLinkedWorktrees": "Les outils de fichiers peuvent utiliser les worktrees git liés",
+      "allowLinkedWorktreesDescription": "Si l'espace de travail est un dépôt git, les outils de fichiers peuvent aussi lire et modifier les fichiers des autres dossiers de travail du même dépôt (worktrees git). Désactivez pour n'autoriser que le dossier de l'espace de travail.",
       "performance": "Performance et concurrence",
       "performanceDescription": "Ces limites d'exécution contrôlent combien d'agents et de processus d'espace de travail peuvent tourner en même temps.",
       "title": "Contrôles d'exécution avancés",

@@ -24,6 +24,10 @@ pub enum SecurityError {
 /// Security utilities for built-in servers
 pub struct SecurityValidator {
     base_dir: PathBuf,
+    /// Canonical directories accepted in addition to `base_dir` by the containment
+    /// checks (linked git worktrees of the workspace repository). Relative paths still
+    /// resolve against `base_dir`.
+    extra_roots: Vec<PathBuf>,
     enforce_base_dir_containment: bool,
 }
 
@@ -54,8 +58,27 @@ impl SecurityValidator {
 
         Self {
             base_dir: canonical_base,
+            extra_roots: Vec::new(),
             enforce_base_dir_containment,
         }
+    }
+
+    /// Also accept paths under `roots` in the containment checks. Roots that cannot be
+    /// canonicalized are dropped.
+    pub fn with_extra_roots(mut self, roots: Vec<PathBuf>) -> Self {
+        self.extra_roots = roots
+            .into_iter()
+            .filter_map(|root| root.canonicalize().ok())
+            .collect();
+        self
+    }
+
+    fn is_within_allowed_roots(&self, path: &Path) -> bool {
+        path_starts_with(path, &self.base_dir)
+            || self
+                .extra_roots
+                .iter()
+                .any(|root| path_starts_with(path, root))
     }
 
     /// Validate and clean a file path to prevent directory traversal.
@@ -135,8 +158,8 @@ impl SecurityValidator {
         // external paths (`OutsideWorkspaceRoot`); paths inside `base_dir` that resolve outside
         // via symlinks are rejected as `PathTraversal` by the canonical checks below.
         if enforce_base_containment
-            && !path_starts_with(&absolute_path, &self.base_dir)
-            && !path_starts_with(&early_containment_path, &self.base_dir)
+            && !self.is_within_allowed_roots(&absolute_path)
+            && !self.is_within_allowed_roots(&early_containment_path)
         {
             return Err(SecurityError::OutsideWorkspaceRoot(format!(
                 "Access denied: Path '{user_path}' is outside the allowed base directory"
@@ -189,7 +212,7 @@ impl SecurityValidator {
                 }
 
                 if let Some(canon) = existing_canonical {
-                    if enforce_base_containment && !path_starts_with(&canon, &self.base_dir) {
+                    if enforce_base_containment && !self.is_within_allowed_roots(&canon) {
                         return Err(SecurityError::PathTraversal(format!(
                             "Access denied: Path '{user_path}' resolves outside the allowed base directory"
                         )));
@@ -205,7 +228,7 @@ impl SecurityValidator {
             }
         };
 
-        if enforce_base_containment && !path_starts_with(&canonical_path, &self.base_dir) {
+        if enforce_base_containment && !self.is_within_allowed_roots(&canonical_path) {
             return Err(SecurityError::PathTraversal(format!(
                 "Access denied: Path '{user_path}' resolves outside the allowed base directory"
             )));

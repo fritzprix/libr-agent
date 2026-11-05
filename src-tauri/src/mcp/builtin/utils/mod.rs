@@ -1,6 +1,7 @@
 //! Shared helpers for built-in MCP servers.
 
 mod args;
+pub(crate) mod linked_worktrees;
 mod paths;
 mod resource_response;
 mod security;
@@ -10,6 +11,7 @@ mod session_access;
 #[cfg(test)]
 pub(crate) use args::result_text;
 pub use args::{annotate_warnings, parse_bool_value, read_bool_arg, BoolArg};
+pub use linked_worktrees::linked_worktree_roots;
 pub use paths::{
     display_workspace_path, normalize_user_path, path_starts_with, relative_path_under_base,
     strip_windows_verbatim_prefix, workspace_paths_equivalent,

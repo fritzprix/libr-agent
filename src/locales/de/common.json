@@ -568,6 +568,8 @@
       },
       "shellRuntimeBootstrap": "Shell-Laufzeit-Bootstrap",
       "shellRuntimeBootstrapDescription": "Lädt nur Python- und Node-Pfade im Terminal, um Befehle schneller zu starten.",
+      "allowLinkedWorktrees": "Dateiwerkzeuge dürfen verknüpfte Git-Worktrees nutzen",
+      "allowLinkedWorktreesDescription": "Ist der Arbeitsbereich ein Git-Repository, können Dateiwerkzeuge auch Dateien in den anderen Arbeitsordnern desselben Repositorys (Git-Worktrees) lesen und bearbeiten. Ausschalten, um nur den Arbeitsbereichsordner zu erlauben.",
       "performance": "Leistung und Parallelität",
       "performanceDescription": "Diese Laufzeitlimits steuern, wie viele Agenten und Arbeitsbereichsprozesse gleichzeitig laufen können.",
       "title": "Erweiterte Laufzeitsteuerung",
