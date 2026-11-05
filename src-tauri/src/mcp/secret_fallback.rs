@@ -27,7 +27,11 @@ pub fn app_key_path() -> PathBuf {
 }
 
 /// Uses `primary` (the OS keychain) when it is available, and `fallback` otherwise.
-/// Values written while the keychain was unavailable stay readable after it comes back.
+///
+/// The fallback only holds changes made while the keychain was unavailable, so it is
+/// newer than the keychain by construction: when the keychain works again, a fallback
+/// value wins over the keychain copy and is moved to the keychain, and a delete made
+/// during the outage removes the keychain entry (#2588).
 pub struct LayeredSecretStore<'a> {
     primary: &'a dyn SecretStore,
     fallback: FileSecretStore<'a>,
@@ -42,12 +46,33 @@ impl<'a> LayeredSecretStore<'a> {
 #[async_trait::async_trait]
 impl SecretStore for LayeredSecretStore<'_> {
     async fn get(&self, server_id: &str, name: &str) -> Result<Option<String>, String> {
-        if self.primary.available() {
-            if let Some(value) = self.primary.get(server_id, name).await? {
-                return Ok(Some(value));
+        if !self.primary.available() {
+            return self.fallback.get(server_id, name).await;
+        }
+        let entry = match self.fallback.entry(server_id, name).await {
+            Ok(entry) => entry,
+            // The fallback values are lost (for example with the key file); the keychain
+            // copy is the newest value that can still be read.
+            Err(e) => {
+                log::warn!(
+                    "Using the keychain copy of secret '{name}' for MCP server '{server_id}': {e}"
+                );
+                FallbackEntry::Absent
+            }
+        };
+        match entry {
+            FallbackEntry::Absent => self.primary.get(server_id, name).await,
+            FallbackEntry::Value(value) => {
+                self.primary.set(server_id, name, &value).await?;
+                self.remove_fallback_copy(server_id, name).await;
+                Ok(Some(value))
+            }
+            FallbackEntry::Deleted => {
+                self.primary.delete(server_id, name).await?;
+                self.remove_fallback_copy(server_id, name).await;
+                Ok(None)
             }
         }
-        self.fallback.get(server_id, name).await
     }
 
     async fn set(
@@ -58,11 +83,7 @@ impl SecretStore for LayeredSecretStore<'_> {
     ) -> Result<Option<String>, String> {
         if self.primary.available() {
             let notice = self.primary.set(server_id, name, value).await?;
-            // An older fallback copy would be read instead if the keychain later becomes
-            // unavailable. Failing to remove it must not undo the keychain save.
-            if let Err(e) = self.fallback.delete(server_id, name).await {
-                log::warn!("Could not remove the fallback copy of secret '{name}' for MCP server '{server_id}': {e}");
-            }
+            self.remove_fallback_copy(server_id, name).await;
             Ok(notice)
         } else {
             self.fallback.set(server_id, name, value).await
@@ -72,10 +93,38 @@ impl SecretStore for LayeredSecretStore<'_> {
     async fn delete(&self, server_id: &str, name: &str) -> Result<(), String> {
         if self.primary.available() {
             self.primary.delete(server_id, name).await?;
+            self.fallback.delete(server_id, name).await
+        } else {
+            // The keychain entry cannot be removed now; the marker removes it once the
+            // keychain works again.
+            self.fallback.mark_deleted(server_id, name).await
         }
-        self.fallback.delete(server_id, name).await
     }
 }
+
+impl LayeredSecretStore<'_> {
+    /// After the keychain holds the newest state of `name`, a fallback copy would win
+    /// over it on a later read. Failing to remove it must not undo the keychain change.
+    async fn remove_fallback_copy(&self, server_id: &str, name: &str) {
+        if let Err(e) = self.fallback.delete(server_id, name).await {
+            log::warn!("Could not remove the fallback copy of secret '{name}' for MCP server '{server_id}': {e}");
+        }
+    }
+}
+
+/// What the fallback holds for one secret name.
+#[derive(Debug, PartialEq, Eq)]
+pub enum FallbackEntry {
+    /// Nothing was changed during a keychain outage.
+    Absent,
+    /// The value saved during a keychain outage.
+    Value(String),
+    /// Deleted during a keychain outage; the keychain entry must be removed too.
+    Deleted,
+}
+
+/// The decrypted value map of one row. `None` marks a name deleted during an outage.
+type ValueMap = BTreeMap<String, Option<String>>;
 
 /// Values in the `encrypted_secrets` column, encrypted with the app key file.
 pub struct FileSecretStore<'a> {
@@ -141,23 +190,33 @@ impl<'a> FileSecretStore<'a> {
             .await
             .map_err(|e| format!("Failed to save encrypted secrets: {e}"))
     }
-}
 
-#[async_trait::async_trait]
-impl SecretStore for FileSecretStore<'_> {
-    async fn get(&self, server_id: &str, name: &str) -> Result<Option<String>, String> {
+    /// What the row holds for `name`, including a delete made during an outage.
+    pub async fn entry(&self, server_id: &str, name: &str) -> Result<FallbackEntry, String> {
         let Some(column) = self.column(server_id).await? else {
-            return Ok(None);
+            return Ok(FallbackEntry::Absent);
         };
         let mut values = decrypt(&self.existing_key()?, server_id, &column)?;
-        Ok(values.remove(name))
+        Ok(match values.remove(name) {
+            None => FallbackEntry::Absent,
+            Some(Some(value)) => FallbackEntry::Value(value),
+            Some(None) => FallbackEntry::Deleted,
+        })
     }
 
-    async fn set(
+    /// Records that `name` was deleted while the keychain was unavailable, so the
+    /// keychain entry is removed once the keychain works again.
+    pub async fn mark_deleted(&self, server_id: &str, name: &str) -> Result<(), String> {
+        self.write_entry(server_id, name, None).await.map(|_| ())
+    }
+
+    /// Stores `value` for `name`, or the deleted marker for `None`. Returns the fallback
+    /// warning once.
+    async fn write_entry(
         &self,
         server_id: &str,
         name: &str,
-        value: &str,
+        value: Option<&str>,
     ) -> Result<Option<String>, String> {
         let _guard = self.write_lock.lock().await;
         let (key, created) = load_or_create_key(&self.key_path)?;
@@ -172,16 +231,36 @@ impl SecretStore for FileSecretStore<'_> {
                 log::warn!(
                     "Replacing the secret values of MCP server '{server_id}' that cannot be read: {error}"
                 );
-                BTreeMap::new()
+                ValueMap::new()
             }),
-            None => BTreeMap::new(),
+            None => ValueMap::new(),
         };
-        values.insert(name.to_string(), value.to_string());
+        values.insert(name.to_string(), value.map(str::to_string));
         self.write_column(server_id, Some(encrypt(&key, server_id, &values)?))
             .await?;
         Ok(self.fallback_warning())
     }
+}
 
+#[async_trait::async_trait]
+impl SecretStore for FileSecretStore<'_> {
+    async fn get(&self, server_id: &str, name: &str) -> Result<Option<String>, String> {
+        Ok(match self.entry(server_id, name).await? {
+            FallbackEntry::Value(value) => Some(value),
+            FallbackEntry::Absent | FallbackEntry::Deleted => None,
+        })
+    }
+
+    async fn set(
+        &self,
+        server_id: &str,
+        name: &str,
+        value: &str,
+    ) -> Result<Option<String>, String> {
+        self.write_entry(server_id, name, Some(value)).await
+    }
+
+    /// Removes the value or the deleted marker of `name`.
     async fn delete(&self, server_id: &str, name: &str) -> Result<(), String> {
         let _guard = self.write_lock.lock().await;
         let Some(column) = self.column(server_id).await? else {
@@ -221,11 +300,7 @@ impl SecretStore for FileSecretStore<'_> {
 
 /// base64 of nonce + ciphertext. The server id is the associated data, so a value map
 /// copied to another row does not decrypt.
-fn encrypt(
-    key: &[u8; KEY_LEN],
-    server_id: &str,
-    values: &BTreeMap<String, String>,
-) -> Result<String, String> {
+fn encrypt(key: &[u8; KEY_LEN], server_id: &str, values: &ValueMap) -> Result<String, String> {
     let cipher = Aes256Gcm::new_from_slice(key).map_err(|e| e.to_string())?;
     let mut nonce = [0u8; NONCE_LEN];
     OsRng.fill_bytes(&mut nonce);
@@ -245,11 +320,7 @@ fn encrypt(
     Ok(STANDARD.encode(sealed))
 }
 
-fn decrypt(
-    key: &[u8; KEY_LEN],
-    server_id: &str,
-    column: &str,
-) -> Result<BTreeMap<String, String>, String> {
+fn decrypt(key: &[u8; KEY_LEN], server_id: &str, column: &str) -> Result<ValueMap, String> {
     let unreadable = || {
         format!("The encrypted secrets of MCP server '{server_id}' cannot be read. Enter them again with tool__updateServer and reenterSecrets.")
     };
@@ -754,5 +825,106 @@ mod tests {
         // already shown.
         let reopened = FileSecretStore::new(&repo, key_path);
         assert_eq!(reopened.set(&id, "B_KEY", "two").await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn a_value_rotated_during_an_outage_wins_over_the_stale_keychain_copy() {
+        let repo = repo().await;
+        let id = server(&repo).await;
+        let dir = tempfile::tempdir().unwrap();
+        let key_path = dir.path().join(KEY_FILE_NAME);
+        let keychain = MemorySecretStore::default();
+        let store =
+            LayeredSecretStore::new(&keychain, FileSecretStore::new(&repo, key_path.clone()));
+        store.set(&id, "EXA_API_KEY", "old").await.unwrap();
+
+        keychain.set_available(false);
+        store.set(&id, "EXA_API_KEY", "rotated").await.unwrap();
+        assert_eq!(
+            keychain.get(&id, "EXA_API_KEY").await.unwrap().as_deref(),
+            Some("old"),
+            "the keychain still holds the stale value"
+        );
+
+        // A restart with the keychain back.
+        keychain.set_available(true);
+        let restarted = LayeredSecretStore::new(&keychain, FileSecretStore::new(&repo, key_path));
+        assert_eq!(
+            restarted.get(&id, "EXA_API_KEY").await.unwrap().as_deref(),
+            Some("rotated")
+        );
+        assert_eq!(
+            restarted.get(&id, "EXA_API_KEY").await.unwrap().as_deref(),
+            Some("rotated")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_fallback_value_is_moved_to_the_keychain_not_copied() {
+        let repo = repo().await;
+        let id = server(&repo).await;
+        let dir = tempfile::tempdir().unwrap();
+        let keychain = MemorySecretStore::unavailable();
+        let store = LayeredSecretStore::new(
+            &keychain,
+            FileSecretStore::new(&repo, dir.path().join(KEY_FILE_NAME)),
+        );
+        store.set(&id, "EXA_API_KEY", "value").await.unwrap();
+        assert!(repo
+            .get(&id)
+            .await
+            .unwrap()
+            .unwrap()
+            .encrypted_secrets
+            .is_some());
+
+        keychain.set_available(true);
+        assert_eq!(
+            store.get(&id, "EXA_API_KEY").await.unwrap().as_deref(),
+            Some("value")
+        );
+
+        assert_eq!(
+            keychain.get(&id, "EXA_API_KEY").await.unwrap().as_deref(),
+            Some("value")
+        );
+        assert_eq!(
+            repo.get(&id).await.unwrap().unwrap().encrypted_secrets,
+            None,
+            "the fallback copy is cleared"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_secret_deleted_during_an_outage_does_not_come_back() {
+        let repo = repo().await;
+        let id = server(&repo).await;
+        let dir = tempfile::tempdir().unwrap();
+        let key_path = dir.path().join(KEY_FILE_NAME);
+        let keychain = MemorySecretStore::default();
+        let store =
+            LayeredSecretStore::new(&keychain, FileSecretStore::new(&repo, key_path.clone()));
+        store.set(&id, "EXA_API_KEY", "value").await.unwrap();
+
+        keychain.set_available(false);
+        store.delete(&id, "EXA_API_KEY").await.unwrap();
+        assert_eq!(store.get(&id, "EXA_API_KEY").await.unwrap(), None);
+
+        keychain.set_available(true);
+        let restarted = LayeredSecretStore::new(&keychain, FileSecretStore::new(&repo, key_path));
+        assert_eq!(restarted.get(&id, "EXA_API_KEY").await.unwrap(), None);
+        assert_eq!(keychain.get(&id, "EXA_API_KEY").await.unwrap(), None);
+        assert_eq!(
+            repo.get(&id).await.unwrap().unwrap().encrypted_secrets,
+            None,
+            "the deleted marker is cleared"
+        );
+
+        // A later save is not affected by the cleared marker.
+        restarted.set(&id, "EXA_API_KEY", "new").await.unwrap();
+        assert_eq!(
+            restarted.get(&id, "EXA_API_KEY").await.unwrap().as_deref(),
+            Some("new")
+        );
     }
 }

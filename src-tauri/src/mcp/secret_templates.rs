@@ -61,7 +61,7 @@ pub fn secret_store() -> &'static dyn SecretStore {
 #[derive(Default)]
 pub struct MemorySecretStore {
     values: std::sync::Mutex<HashMap<(String, String), String>>,
-    unavailable: bool,
+    unavailable: std::sync::atomic::AtomicBool,
 }
 
 #[cfg(test)]
@@ -70,8 +70,15 @@ impl MemorySecretStore {
     pub fn unavailable() -> Self {
         Self {
             values: Default::default(),
-            unavailable: true,
+            unavailable: std::sync::atomic::AtomicBool::new(true),
         }
+    }
+
+    /// Simulates a keychain outage (`false`) or its recovery (`true`). Stored values are
+    /// kept, like a real keychain.
+    pub fn set_available(&self, available: bool) {
+        self.unavailable
+            .store(!available, std::sync::atomic::Ordering::Relaxed);
     }
 }
 
@@ -98,7 +105,7 @@ impl SecretStore for MemorySecretStore {
         Ok(())
     }
     fn available(&self) -> bool {
-        !self.unavailable
+        !self.unavailable.load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 
