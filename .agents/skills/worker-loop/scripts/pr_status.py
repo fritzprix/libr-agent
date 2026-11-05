@@ -4,10 +4,7 @@
 Prints JSON: one entry per open PR authored by @me with merge state, failing
 and pending checks, unresolved review threads, and PR comments from others
 that arrived after the latest commit, plus the latest gatekeeper-loop verdict
-(own marker comments only). `duplicateCommits` lists head commits whose patch-id is
-already in the base (needs a prior `git fetch origin`); they yield `restack`.
-A stacked PR whose base branch was merged yields `retarget` (`retargetTo` names the
-new base). A PR claimed by another worker yields `claimed`.
+(own marker comments only). A PR claimed by another worker yields `claimed`.
 Bodies are truncated; fetch the full text only for items you act on.
 """
 from __future__ import annotations
@@ -63,22 +60,6 @@ def check_state(check: dict) -> str:
     return (check.get("conclusion") or check.get("state") or check.get("status") or "").upper()
 
 
-def duplicate_commits(base: str, head: str, cwd: str | None = None) -> list[str]:
-    """Head commits whose patch-id also exists in base (`git cherry` marks them `-`).
-
-    These appear when the base was rebased or the commits were cherry-picked into it:
-    the PR still carries the old copies and needs a restack. Returns [] when either
-    ref is missing locally.
-    """
-    result = subprocess.run(
-        ["git", "cherry", f"origin/{base}", f"origin/{head}"],
-        capture_output=True, text=True, encoding="utf-8", cwd=cwd,
-    )
-    if result.returncode != 0:
-        return []
-    return [line[2:] for line in result.stdout.splitlines() if line.startswith("- ")]
-
-
 def gatekeeper_state(comments: list[dict], me: str, head_sha: str) -> dict | None:
     """Latest gatekeeper verdict (own comments only) and whether it awaits the worker."""
     verdict, responded_rounds = None, set()
@@ -103,38 +84,16 @@ def gatekeeper_state(comments: list[dict], me: str, head_sha: str) -> dict | Non
     return verdict
 
 
-def is_dev_base(base: str) -> bool:
-    """True if CI runs on PRs targeting this base branch."""
-    return base in ("main", "master") or base.startswith("dev/")
-
-
-def merged_base_pr(base: str) -> dict | None:
-    """For a stacked PR, the merged PR whose head is our base branch (then the stack is gone)."""
-    if is_dev_base(base):
-        return None
-    merged = json.loads(
-        gh("pr", "list", "--head", base, "--state", "merged", "--limit", "1", "--json", "number,baseRefName")
-    )
-    return merged[0] if merged else None
-
-
 def select_next_action(
     *,
-    base_merged: bool = False,
     conflicting: bool,
-    duplicates: list[str],
     gatekeeper: dict | None,
     has_comments: bool,
     failing: list[str],
     pending: list[str],
 ) -> str:
-    # Conflicts and CI are meaningless against a merged base: retarget first.
-    if base_merged:
-        return "retarget"
     if conflicting:
         return "resolve-conflict"
-    if duplicates:
-        return "restack"
     if gatekeeper and gatekeeper["awaitingWorker"]:
         return "address-gatekeeper"
     if has_comments:
@@ -207,13 +166,8 @@ def summarize(number: int, owner: str, name: str, me: str, claimed_by: str | Non
                 "url": c.get("url"),
             })
 
-    duplicates = duplicate_commits(pr["baseRefName"], pr["headRefName"])
-    base_pr = merged_base_pr(pr["baseRefName"])
-
     next_action = select_next_action(
-        base_merged=base_pr is not None,
         conflicting=pr.get("mergeable") == "CONFLICTING",
-        duplicates=duplicates,
         gatekeeper=gatekeeper,
         has_comments=bool(threads or new_comments),
         failing=failing,
@@ -237,9 +191,6 @@ def summarize(number: int, owner: str, name: str, me: str, claimed_by: str | Non
         "unresolvedThreads": threads,
         "newComments": new_comments,
         "gatekeeper": gatekeeper,
-        "duplicateCommits": duplicates,
-        "baseMergedPR": base_pr["number"] if base_pr else None,
-        "retargetTo": base_pr["baseRefName"] if base_pr else None,
         "claimedBy": claimed_by,
         "nextAction": next_action,
     }

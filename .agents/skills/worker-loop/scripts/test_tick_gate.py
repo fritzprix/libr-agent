@@ -1,14 +1,26 @@
 #!/usr/bin/env python3
 """Tests for tick_gate logic."""
+import io
 import json
 import os
+import sys
 import tempfile
 import time
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import issue_candidates
 import tick_gate
+
+
+def approvals_issue(number, labels=(), assignees=()):
+    return {
+        "number": number,
+        "labels": [{"name": name} for name in labels],
+        "assignees": [{"login": login} for login in assignees],
+    }
 
 
 class TickGateTest(unittest.TestCase):
@@ -37,9 +49,9 @@ class TickGateTest(unittest.TestCase):
         tick_gate.acquire_lock(self.lock_file, pid=os.getpid())
         self.assertTrue(tick_gate.check_lock(self.lock_file))
 
-        # Dead PID is recognized as stale
-        dead_pid = 9999999
-        tick_gate.acquire_lock(self.lock_file, pid=dead_pid)
+    @unittest.skipIf(sys.platform == "win32", "PID liveness probing is POSIX-only (os.kill(pid, 0))")
+    def test_dead_pid_is_a_stale_lock(self):
+        tick_gate.acquire_lock(self.lock_file, pid=9999999)
         self.assertFalse(tick_gate.check_lock(self.lock_file))
 
     def test_stale_lock_by_ttl(self):
@@ -102,7 +114,7 @@ class TickGateTest(unittest.TestCase):
             fp2 = tick_gate.compute_fingerprint()
             self.assertNotEqual(fp1, fp2)
 
-    def _create_mock_gh(self, graphql_responses):
+    def _create_mock_gh(self, graphql_responses, issues=(), prs=()):
         responses = list(graphql_responses)
         idx = [0]
 
@@ -115,9 +127,48 @@ class TickGateTest(unittest.TestCase):
                 resp = responses[idx[0]]
                 idx[0] += 1
                 return json.dumps(resp)
+            if args[:3] == ("issue", "list", "--state"):
+                return json.dumps(list(issues))
+            if args[:3] == ("pr", "list", "--state"):
+                return json.dumps(list(prs))
             raise ValueError(f"Unexpected gh call: {args}")
 
         return _gh
+
+    def test_unchanged_fingerprint_still_runs_when_an_approved_issue_is_free(self):
+        # An approved issue nobody has started must not be ignored just because the
+        # tracked snapshot did not move.
+        idle_graphql = {
+            "data": {
+                "search": {"nodes": []},
+                "repository": {"issues": {"nodes": [{"number": 10, "updatedAt": "2026-01-01T00:00:00Z"}]}},
+            }
+        }
+        mock_gh = self._create_mock_gh(
+            [idle_graphql, idle_graphql],
+            issues=[approvals_issue(12, ["approved"])],
+        )
+        with patch.object(tick_gate, "gh", side_effect=mock_gh), \
+             patch.object(tick_gate.worker_state, "load_claims", return_value={}):
+            with patch("sys.argv", ["tick_gate.py", "--state-file", str(self.state_file), "--lock"]), \
+                 self.assertRaises(SystemExit) as cm:
+                tick_gate.main()
+            self.assertEqual(cm.exception.code, tick_gate.EXIT_RUN)
+            self.assertIsNotNone(tick_gate.load_state(self.state_file).get("tickStartFingerprint"))
+
+            # Idle tick end persists the start-of-tick fingerprint.
+            with patch("sys.argv", ["tick_gate.py", "--state-file", str(self.state_file), "--update", "--unlock"]), \
+                 self.assertRaises(SystemExit) as cm:
+                tick_gate.main()
+            self.assertEqual(cm.exception.code, tick_gate.EXIT_RUN)
+
+            buffer = io.StringIO()
+            with redirect_stdout(buffer), \
+                 patch("sys.argv", ["tick_gate.py", "--state-file", str(self.state_file), "--lock"]), \
+                 self.assertRaises(SystemExit) as cm:
+                tick_gate.main()
+            self.assertEqual(cm.exception.code, tick_gate.EXIT_RUN)
+            self.assertIn("#12", buffer.getvalue())
 
     def test_update_takes_precedence_over_current(self):
         state = {"current": "some-feature-branch", "lastFingerprint": "old", "tickStartFingerprint": "new_fp_1234567890"}
@@ -219,6 +270,7 @@ class TickGateTest(unittest.TestCase):
 
     def test_idle_tick_unchanged_snapshot_gives_noop(self):
         # (b) after an idle tick with --update --unlock, an unchanged snapshot gives NOOP
+        #     because no `approved` issue is waiting.
         fake_graphql = {
             "data": {
                 "search": {"nodes": []},
@@ -226,7 +278,8 @@ class TickGateTest(unittest.TestCase):
             }
         }
         mock_gh = self._create_mock_gh([fake_graphql, fake_graphql])
-        with patch.object(tick_gate, "gh", side_effect=mock_gh):
+        with patch.object(tick_gate, "gh", side_effect=mock_gh), \
+             patch.object(tick_gate.worker_state, "load_claims", return_value={}):
             # Tick 1 start: gate runs with --lock
             with patch("sys.argv", ["tick_gate.py", "--state-file", str(self.state_file), "--lock"]), \
                  self.assertRaises(SystemExit) as cm:
@@ -248,7 +301,7 @@ class TickGateTest(unittest.TestCase):
             self.assertNotIn("tickStartFingerprint", state1_end)
             self.assertFalse(tick_gate.check_lock(self.lock_file))
 
-            # Tick 2 start: snapshot unchanged, gate gives NOOP (exit 1)
+            # Tick 2 start: snapshot unchanged and nothing approved, gate gives NOOP (exit 1)
             with patch("sys.argv", ["tick_gate.py", "--state-file", str(self.state_file), "--lock"]), \
                  self.assertRaises(SystemExit) as cm:
                 tick_gate.main()
@@ -290,6 +343,41 @@ class TickGateTest(unittest.TestCase):
                  self.assertRaises(SystemExit) as cm:
                 tick_gate.main()
             self.assertEqual(cm.exception.code, tick_gate.EXIT_RUN)
+
+
+class PendingApprovedIssueTest(unittest.TestCase):
+    def pending(self, issues, prs=(), claims=None, worker="worker"):
+        def _gh(*args):
+            if args[:2] == ("api", "user"):
+                return "me\n"
+            if args[:3] == ("issue", "list", "--state"):
+                return json.dumps(list(issues))
+            raise ValueError(f"Unexpected gh call: {args}")
+
+        # `list_open_prs` lives in issue_candidates and uses its own gh wrapper.
+        with patch.object(tick_gate, "gh", side_effect=_gh), \
+             patch.object(issue_candidates, "list_open_prs", return_value=list(prs)), \
+             patch.object(tick_gate.worker_state, "load_claims", return_value=claims or {}):
+            return tick_gate.pending_approved_issue(worker)
+
+    def test_returns_none_without_an_approved_issue(self):
+        self.assertIsNone(self.pending([approvals_issue(1, ["bug"]), approvals_issue(2, ["auto:producer", "validated"])]))
+
+    def test_returns_the_lowest_approved_issue_number(self):
+        self.assertEqual(self.pending([approvals_issue(9, ["approved"]), approvals_issue(3, ["approved"])]), 3)
+
+    def test_issue_covered_by_an_open_pr_is_skipped(self):
+        prs = [{"number": 7, "title": "Fixes #3", "body": "", "headRefName": "fix/slug-3"}]
+        self.assertEqual(self.pending([approvals_issue(3, ["approved"]), approvals_issue(5, ["approved"])], prs=prs), 5)
+
+    def test_issue_claimed_by_another_worker_is_skipped(self):
+        claims = {"issue:3": {"worker": "worker-2", "at": 0}}
+        self.assertEqual(
+            self.pending([approvals_issue(3, ["approved"]), approvals_issue(5, ["approved"])], claims=claims), 5
+        )
+
+    def test_issue_assigned_to_someone_else_is_skipped(self):
+        self.assertIsNone(self.pending([approvals_issue(3, ["approved"], ["other"])]))
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for issue_candidates exclusion rules."""
+"""Tests for issue_candidates: the `approved` gate and closing-PR detection."""
 import unittest
 
 import issue_candidates
@@ -9,73 +9,68 @@ def reason(labels, assignees=(), me="me", number=1, closing=None):
     return issue_candidates.exclusion_reason(number, set(labels), list(assignees), me, closing or {})
 
 
+def pr(number=1, title="", body="", head="fix/some-slug"):
+    return {"number": number, "title": title, "body": body, "headRefName": head}
+
+
 class ExclusionReasonTest(unittest.TestCase):
-    def test_plain_issue_is_a_candidate(self):
-        self.assertIsNone(reason(["bug"]))
+    def test_unapproved_issue_is_never_a_candidate(self):
+        for labels in (["bug"], ["auto:producer"], ["auto:producer", "validated"], ["enhancement"]):
+            self.assertEqual(reason(labels), "no 'approved' label", labels)
 
-    def test_producer_issue_without_approved_is_skipped(self):
-        for labels in (["auto:producer"], ["auto:producer", "auto:security"],
-                       ["auto:producer", "validated"], ["auto:producer", "rejected"]):
-            self.assertIn("approved", reason(labels), labels)
-
-    def test_reason_names_the_validation_state(self):
-        self.assertIn("(validated)", reason(["auto:producer", "validated"]))
-        self.assertIn("(rejected)", reason(["auto:producer", "rejected"]))
-        self.assertIn("not yet validated", reason(["auto:producer"]))
-
-    def test_validated_alone_is_not_enough_but_approved_is(self):
-        self.assertIsNotNone(reason(["auto:producer", "validated"]))
+    def test_approved_label_is_enough(self):
+        self.assertIsNone(reason(["approved"]))
+        self.assertIsNone(reason(["bug", "approved"]))
         self.assertIsNone(reason(["auto:producer", "validated", "approved"]))
 
-    def test_approved_label_alone_unlocks_a_producer_issue(self):
-        self.assertIsNone(reason(["auto:producer", "approved"]))
+    def test_validated_alone_is_not_approval(self):
+        self.assertIsNotNone(reason(["auto:producer", "validated"]))
 
-    def test_approved_label_does_not_affect_other_issues(self):
-        self.assertIsNone(reason(["approved"]))
-        self.assertIn("label: wontfix", reason(["auto:producer", "approved", "wontfix"]))
+    def test_closed_labels_still_apply_after_approval(self):
+        for label in sorted(issue_candidates.EXCLUDED_LABELS):
+            self.assertIn(label, reason(["approved", label]))
 
-    def test_existing_exclusions_still_apply_after_approval(self):
-        self.assertIn("assigned to other", reason(["auto:producer", "approved"], assignees=["other"]))
-        self.assertIsNone(reason(["auto:producer", "approved"], assignees=["me"]))
-        self.assertIn("#7", reason(["auto:producer", "approved"], number=3, closing={3: [7]}))
+    def test_assignment_rules(self):
+        self.assertIn("assigned to other", reason(["approved"], assignees=["other"]))
+        self.assertIsNone(reason(["approved"], assignees=["me"]))
+        self.assertIsNone(reason(["approved"], assignees=[]))
+
+    def test_issue_covered_by_open_pr_is_excluded(self):
+        found = reason(["approved"], number=3, closing={3: [7, 8]})
+        self.assertIn("#7", found)
+        self.assertIn("#8", found)
+        self.assertIsNone(reason(["approved"], number=3, closing={4: [7]}))
 
     def test_issue_claimed_by_another_worker_is_excluded(self):
-        r = issue_candidates.exclusion_reason(1, set(), [], "me", {}, claimed_by="worker-2")
-        self.assertEqual(r, "claimed by worker-2")
+        found = issue_candidates.exclusion_reason(1, {"approved"}, [], "me", {}, claimed_by="worker-2")
+        self.assertEqual(found, "claimed by worker-2")
 
 
-class DependsOnTest(unittest.TestCase):
-    def test_depends_on_line_is_parsed(self):
-        self.assertEqual(issue_candidates.depends_on("- Depends on #2543.", 2544), [2543])
+class ClosingRefsTest(unittest.TestCase):
+    def test_closing_keyword_in_title(self):
+        self.assertEqual(issue_candidates.closing_refs(pr(title="Fix #12 crash")), {12})
 
-    def test_related_mentions_are_not_dependencies(self):
-        body = "- Depends on #2543 (the shared user prompt mechanism).\n- Related: #2544 (secret input)."
-        self.assertEqual(issue_candidates.depends_on(body, 2547), [2543])
+    def test_closing_keywords_in_body(self):
+        body = "fixes #12\nFixed #13\nresolves #14\nclosed #15\nCloses #16"
+        self.assertEqual(issue_candidates.closing_refs(pr(body=body)), {12, 13, 14, 15, 16})
 
-    def test_negated_dependency_after_sentence_end_is_ignored(self):
-        body = "- Depends on #2543 (shared user prompt). It does not depend on #2544."
-        self.assertEqual(issue_candidates.depends_on(body, 2548), [2543])
+    def test_plain_mention_is_not_a_close(self):
+        self.assertEqual(issue_candidates.closing_refs(pr(body="Related to #12, see #13.")), set())
 
-    def test_multiple_dependencies_and_blocked_by(self):
-        body = "**Depends on:** #1, #2\nBlocked by #3"
-        self.assertEqual(issue_candidates.depends_on(body, 9), [1, 2, 3])
+    def test_branch_number_counts_as_a_close(self):
+        self.assertEqual(issue_candidates.closing_refs(pr(head="fix/keychain-fallback-stale-2588")), {2588})
 
-    def test_no_dependency(self):
-        self.assertEqual(issue_candidates.depends_on("See #5 for context.", 9), [])
+    def test_missing_body_is_safe(self):
+        self.assertEqual(issue_candidates.closing_refs(pr(title="Fixes #9", body=None)), {9})
 
 
-class OpenDependenciesTest(unittest.TestCase):
-    def unresolved(self, deps, open_issues=(), open_prs=(), merged_closes=()):
-        return issue_candidates.open_dependencies(deps, set(open_issues), set(open_prs), set(merged_closes))
+class ClosingPrMapTest(unittest.TestCase):
+    def test_maps_each_issue_to_its_closing_prs(self):
+        prs = [pr(7, title="Fixes #12"), pr(8, body="Closes #12 and fixes #13")]
+        self.assertEqual(issue_candidates.closing_pr_map(prs), {12: [7, 8], 13: [8]})
 
-    def test_closed_issue_or_merged_pr_is_resolved(self):
-        self.assertEqual(self.unresolved([10, 11]), [])
-
-    def test_open_issue_closed_by_merged_pr_is_resolved(self):
-        self.assertEqual(self.unresolved([2543], open_issues=[2543], merged_closes=[2543]), [])
-
-    def test_open_issue_or_open_pr_blocks(self):
-        self.assertEqual(self.unresolved([1, 2, 3], open_issues=[1], open_prs=[2]), [1, 2])
+    def test_no_prs_maps_to_nothing(self):
+        self.assertEqual(issue_candidates.closing_pr_map([]), {})
 
 
 if __name__ == "__main__":
