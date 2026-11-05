@@ -10,7 +10,7 @@ use crate::repositories::mcp_server_repository::MCPServerRepository;
 use aes_gcm::aead::{rand_core::RngCore, Aead, KeyInit, OsRng, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
 use base64::{engine::general_purpose::STANDARD, Engine};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -26,20 +26,81 @@ pub fn app_key_path() -> PathBuf {
     crate::profile::data_dir(crate::profile::resolve_profile()).join(KEY_FILE_NAME)
 }
 
+/// Keychain entries deleted while the keychain was unavailable, next to the key file.
+pub(crate) const PENDING_DELETES_FILE_NAME: &str = "mcp-secrets-pending-deletes.json";
+
+/// `(server_id, name)` pairs whose keychain entry must still be removed.
+type PendingDeletes = BTreeSet<(String, String)>;
+
 /// Uses `primary` (the OS keychain) when it is available, and `fallback` otherwise.
 ///
 /// The fallback only holds changes made while the keychain was unavailable, so it is
-/// newer than the keychain by construction: when the keychain works again, a fallback
-/// value wins over the keychain copy and is moved to the keychain, and a delete made
-/// during the outage removes the keychain entry (#2588).
+/// newer than the keychain by construction (#2588):
+/// - a fallback value wins over the keychain copy and is moved to the keychain;
+/// - a delete made during the outage is kept in a pending-deletes file, outside the
+///   server row, and applied to the keychain before the next operation that finds the
+///   keychain working. It does not need a read of the deleted name, and it survives the
+///   deletion of the row.
 pub struct LayeredSecretStore<'a> {
     primary: &'a dyn SecretStore,
     fallback: FileSecretStore<'a>,
+    pending_deletes_path: PathBuf,
+    /// Serializes the read-modify-write of the pending-deletes file.
+    pending_lock: tokio::sync::Mutex<()>,
 }
 
 impl<'a> LayeredSecretStore<'a> {
     pub fn new(primary: &'a dyn SecretStore, fallback: FileSecretStore<'a>) -> Self {
-        Self { primary, fallback }
+        let pending_deletes_path = fallback.key_path.with_file_name(PENDING_DELETES_FILE_NAME);
+        Self {
+            primary,
+            fallback,
+            pending_deletes_path,
+            pending_lock: tokio::sync::Mutex::new(()),
+        }
+    }
+
+    /// Removes the keychain entries deleted during an outage. Entries that fail stay
+    /// pending for the next try.
+    async fn apply_pending_deletes(&self) {
+        let _guard = self.pending_lock.lock().await;
+        let pending = match read_pending_deletes(&self.pending_deletes_path) {
+            Ok(pending) => pending,
+            Err(e) => {
+                log::warn!("{e}");
+                return;
+            }
+        };
+        if pending.is_empty() {
+            return;
+        }
+        let mut remaining = PendingDeletes::new();
+        for (server_id, name) in pending {
+            if let Err(e) = self.primary.delete(&server_id, &name).await {
+                log::warn!("Could not remove the keychain entry of secret '{name}' for MCP server '{server_id}' that was deleted during a keychain outage: {e}");
+                remaining.insert((server_id, name));
+            }
+        }
+        if let Err(e) = write_pending_deletes(&self.pending_deletes_path, &remaining) {
+            log::warn!("{e}");
+        }
+    }
+
+    async fn add_pending_delete(&self, server_id: &str, name: &str) -> Result<(), String> {
+        let _guard = self.pending_lock.lock().await;
+        let mut pending = read_pending_deletes(&self.pending_deletes_path)?;
+        if pending.insert((server_id.to_string(), name.to_string())) {
+            write_pending_deletes(&self.pending_deletes_path, &pending)?;
+        }
+        Ok(())
+    }
+
+    /// After the keychain holds the newest state of `name`, a fallback copy would win
+    /// over it on a later read. Failing to remove it must not undo the keychain change.
+    async fn remove_fallback_copy(&self, server_id: &str, name: &str) {
+        if let Err(e) = self.fallback.delete(server_id, name).await {
+            log::warn!("Could not remove the fallback copy of secret '{name}' for MCP server '{server_id}': {e}");
+        }
     }
 }
 
@@ -49,30 +110,28 @@ impl SecretStore for LayeredSecretStore<'_> {
         if !self.primary.available() {
             return self.fallback.get(server_id, name).await;
         }
-        let entry = match self.fallback.entry(server_id, name).await {
-            Ok(entry) => entry,
+        self.apply_pending_deletes().await;
+        let fallback_value = match self.fallback.get(server_id, name).await {
+            Ok(value) => value,
             // The fallback values are lost (for example with the key file); the keychain
             // copy is the newest value that can still be read.
             Err(e) => {
                 log::warn!(
                     "Using the keychain copy of secret '{name}' for MCP server '{server_id}': {e}"
                 );
-                FallbackEntry::Absent
+                None
             }
         };
-        match entry {
-            FallbackEntry::Absent => self.primary.get(server_id, name).await,
-            FallbackEntry::Value(value) => {
-                self.primary.set(server_id, name, &value).await?;
-                self.remove_fallback_copy(server_id, name).await;
-                Ok(Some(value))
-            }
-            FallbackEntry::Deleted => {
-                self.primary.delete(server_id, name).await?;
-                self.remove_fallback_copy(server_id, name).await;
-                Ok(None)
-            }
+        let Some(value) = fallback_value else {
+            return self.primary.get(server_id, name).await;
+        };
+        // The value is in hand; a keychain that rejects the write (for example locked)
+        // keeps the fallback copy for a later try instead of failing the read.
+        match self.primary.set(server_id, name, &value).await {
+            Ok(_) => self.remove_fallback_copy(server_id, name).await,
+            Err(e) => log::warn!("Keeping the fallback copy of secret '{name}' for MCP server '{server_id}': the keychain save failed: {e}"),
         }
+        Ok(Some(value))
     }
 
     async fn set(
@@ -82,6 +141,7 @@ impl SecretStore for LayeredSecretStore<'_> {
         value: &str,
     ) -> Result<Option<String>, String> {
         if self.primary.available() {
+            self.apply_pending_deletes().await;
             let notice = self.primary.set(server_id, name, value).await?;
             self.remove_fallback_copy(server_id, name).await;
             Ok(notice)
@@ -92,39 +152,54 @@ impl SecretStore for LayeredSecretStore<'_> {
 
     async fn delete(&self, server_id: &str, name: &str) -> Result<(), String> {
         if self.primary.available() {
+            self.apply_pending_deletes().await;
             self.primary.delete(server_id, name).await?;
-            self.fallback.delete(server_id, name).await
         } else {
-            // The keychain entry cannot be removed now; the marker removes it once the
-            // keychain works again.
-            self.fallback.mark_deleted(server_id, name).await
+            self.add_pending_delete(server_id, name).await?;
         }
+        self.fallback.delete(server_id, name).await
     }
 }
 
-impl LayeredSecretStore<'_> {
-    /// After the keychain holds the newest state of `name`, a fallback copy would win
-    /// over it on a later read. Failing to remove it must not undo the keychain change.
-    async fn remove_fallback_copy(&self, server_id: &str, name: &str) {
-        if let Err(e) = self.fallback.delete(server_id, name).await {
-            log::warn!("Could not remove the fallback copy of secret '{name}' for MCP server '{server_id}': {e}");
-        }
+fn read_pending_deletes(path: &Path) -> Result<PendingDeletes, String> {
+    let unreadable = |e: &dyn std::fmt::Display| {
+        format!(
+            "Failed to read the pending MCP secret deletes {}: {e}",
+            path.display()
+        )
+    };
+    match std::fs::read(path) {
+        Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| unreadable(&e)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(PendingDeletes::new()),
+        Err(e) => Err(unreadable(&e)),
     }
 }
 
-/// What the fallback holds for one secret name.
-#[derive(Debug, PartialEq, Eq)]
-pub enum FallbackEntry {
-    /// Nothing was changed during a keychain outage.
-    Absent,
-    /// The value saved during a keychain outage.
-    Value(String),
-    /// Deleted during a keychain outage; the keychain entry must be removed too.
-    Deleted,
+/// Replaces the file through a temporary file, so a reader never sees a partial list.
+/// An empty list removes the file.
+fn write_pending_deletes(path: &Path, pending: &PendingDeletes) -> Result<(), String> {
+    let failed = |e: &dyn std::fmt::Display| {
+        format!(
+            "Failed to save the pending MCP secret deletes {}: {e}",
+            path.display()
+        )
+    };
+    if pending.is_empty() {
+        return match std::fs::remove_file(path) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(failed(&e)),
+        };
+    }
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| failed(&e))?;
+    }
+    let json = serde_json::to_vec(pending).map_err(|e| failed(&e))?;
+    let temp = path.with_extension("json.tmp");
+    std::fs::write(&temp, json)
+        .and_then(|()| std::fs::rename(&temp, path))
+        .map_err(|e| failed(&e))
 }
-
-/// The decrypted value map of one row. `None` marks a name deleted during an outage.
-type ValueMap = BTreeMap<String, Option<String>>;
 
 /// Values in the `encrypted_secrets` column, encrypted with the app key file.
 pub struct FileSecretStore<'a> {
@@ -190,33 +265,23 @@ impl<'a> FileSecretStore<'a> {
             .await
             .map_err(|e| format!("Failed to save encrypted secrets: {e}"))
     }
+}
 
-    /// What the row holds for `name`, including a delete made during an outage.
-    pub async fn entry(&self, server_id: &str, name: &str) -> Result<FallbackEntry, String> {
+#[async_trait::async_trait]
+impl SecretStore for FileSecretStore<'_> {
+    async fn get(&self, server_id: &str, name: &str) -> Result<Option<String>, String> {
         let Some(column) = self.column(server_id).await? else {
-            return Ok(FallbackEntry::Absent);
+            return Ok(None);
         };
         let mut values = decrypt(&self.existing_key()?, server_id, &column)?;
-        Ok(match values.remove(name) {
-            None => FallbackEntry::Absent,
-            Some(Some(value)) => FallbackEntry::Value(value),
-            Some(None) => FallbackEntry::Deleted,
-        })
+        Ok(values.remove(name))
     }
 
-    /// Records that `name` was deleted while the keychain was unavailable, so the
-    /// keychain entry is removed once the keychain works again.
-    pub async fn mark_deleted(&self, server_id: &str, name: &str) -> Result<(), String> {
-        self.write_entry(server_id, name, None).await.map(|_| ())
-    }
-
-    /// Stores `value` for `name`, or the deleted marker for `None`. Returns the fallback
-    /// warning once.
-    async fn write_entry(
+    async fn set(
         &self,
         server_id: &str,
         name: &str,
-        value: Option<&str>,
+        value: &str,
     ) -> Result<Option<String>, String> {
         let _guard = self.write_lock.lock().await;
         let (key, created) = load_or_create_key(&self.key_path)?;
@@ -231,36 +296,16 @@ impl<'a> FileSecretStore<'a> {
                 log::warn!(
                     "Replacing the secret values of MCP server '{server_id}' that cannot be read: {error}"
                 );
-                ValueMap::new()
+                BTreeMap::new()
             }),
-            None => ValueMap::new(),
+            None => BTreeMap::new(),
         };
-        values.insert(name.to_string(), value.map(str::to_string));
+        values.insert(name.to_string(), value.to_string());
         self.write_column(server_id, Some(encrypt(&key, server_id, &values)?))
             .await?;
         Ok(self.fallback_warning())
     }
-}
 
-#[async_trait::async_trait]
-impl SecretStore for FileSecretStore<'_> {
-    async fn get(&self, server_id: &str, name: &str) -> Result<Option<String>, String> {
-        Ok(match self.entry(server_id, name).await? {
-            FallbackEntry::Value(value) => Some(value),
-            FallbackEntry::Absent | FallbackEntry::Deleted => None,
-        })
-    }
-
-    async fn set(
-        &self,
-        server_id: &str,
-        name: &str,
-        value: &str,
-    ) -> Result<Option<String>, String> {
-        self.write_entry(server_id, name, Some(value)).await
-    }
-
-    /// Removes the value or the deleted marker of `name`.
     async fn delete(&self, server_id: &str, name: &str) -> Result<(), String> {
         let _guard = self.write_lock.lock().await;
         let Some(column) = self.column(server_id).await? else {
@@ -300,7 +345,11 @@ impl SecretStore for FileSecretStore<'_> {
 
 /// base64 of nonce + ciphertext. The server id is the associated data, so a value map
 /// copied to another row does not decrypt.
-fn encrypt(key: &[u8; KEY_LEN], server_id: &str, values: &ValueMap) -> Result<String, String> {
+fn encrypt(
+    key: &[u8; KEY_LEN],
+    server_id: &str,
+    values: &BTreeMap<String, String>,
+) -> Result<String, String> {
     let cipher = Aes256Gcm::new_from_slice(key).map_err(|e| e.to_string())?;
     let mut nonce = [0u8; NONCE_LEN];
     OsRng.fill_bytes(&mut nonce);
@@ -320,7 +369,11 @@ fn encrypt(key: &[u8; KEY_LEN], server_id: &str, values: &ValueMap) -> Result<St
     Ok(STANDARD.encode(sealed))
 }
 
-fn decrypt(key: &[u8; KEY_LEN], server_id: &str, column: &str) -> Result<ValueMap, String> {
+fn decrypt(
+    key: &[u8; KEY_LEN],
+    server_id: &str,
+    column: &str,
+) -> Result<BTreeMap<String, String>, String> {
     let unreadable = || {
         format!("The encrypted secrets of MCP server '{server_id}' cannot be read. Enter them again with tool__updateServer and reenterSecrets.")
     };
@@ -870,13 +923,6 @@ mod tests {
             FileSecretStore::new(&repo, dir.path().join(KEY_FILE_NAME)),
         );
         store.set(&id, "EXA_API_KEY", "value").await.unwrap();
-        assert!(repo
-            .get(&id)
-            .await
-            .unwrap()
-            .unwrap()
-            .encrypted_secrets
-            .is_some());
 
         keychain.set_available(true);
         assert_eq!(
@@ -895,8 +941,71 @@ mod tests {
         );
     }
 
+    /// A keychain that reports itself available but rejects writes, like a locked one.
+    struct LockedKeychain;
+
+    #[async_trait::async_trait]
+    impl SecretStore for LockedKeychain {
+        async fn get(&self, _: &str, _: &str) -> Result<Option<String>, String> {
+            Ok(None)
+        }
+        async fn set(&self, _: &str, _: &str, _: &str) -> Result<Option<String>, String> {
+            Err("the keychain is locked".to_string())
+        }
+        async fn delete(&self, _: &str, _: &str) -> Result<(), String> {
+            Err("the keychain is locked".to_string())
+        }
+    }
+
     #[tokio::test]
-    async fn a_secret_deleted_during_an_outage_does_not_come_back() {
+    async fn a_keychain_that_rejects_the_move_keeps_the_fallback_copy() {
+        let repo = repo().await;
+        let id = server(&repo).await;
+        let dir = tempfile::tempdir().unwrap();
+        let key_path = dir.path().join(KEY_FILE_NAME);
+        FileSecretStore::new(&repo, key_path.clone())
+            .set(&id, "EXA_API_KEY", "value")
+            .await
+            .unwrap();
+
+        let store = LayeredSecretStore::new(&LockedKeychain, FileSecretStore::new(&repo, key_path));
+        assert_eq!(
+            store.get(&id, "EXA_API_KEY").await.unwrap().as_deref(),
+            Some("value"),
+            "the read still succeeds"
+        );
+        assert!(repo
+            .get(&id)
+            .await
+            .unwrap()
+            .unwrap()
+            .encrypted_secrets
+            .is_some());
+    }
+
+    #[tokio::test]
+    async fn without_a_keychain_deleting_the_last_value_clears_the_column_and_creates_no_key() {
+        let repo = repo().await;
+        let id = server(&repo).await;
+        let dir = tempfile::tempdir().unwrap();
+        let key_path = dir.path().join(KEY_FILE_NAME);
+        let keychain = MemorySecretStore::unavailable();
+        let store =
+            LayeredSecretStore::new(&keychain, FileSecretStore::new(&repo, key_path.clone()));
+
+        store.delete(&id, "EXA_API_KEY").await.unwrap();
+        assert!(!key_path.exists(), "a delete does not create the key file");
+
+        store.set(&id, "EXA_API_KEY", "value").await.unwrap();
+        store.delete(&id, "EXA_API_KEY").await.unwrap();
+        assert_eq!(
+            repo.get(&id).await.unwrap().unwrap().encrypted_secrets,
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn a_delete_during_an_outage_reaches_the_keychain_without_a_read_of_that_name() {
         let repo = repo().await;
         let id = server(&repo).await;
         let dir = tempfile::tempdir().unwrap();
@@ -909,22 +1018,60 @@ mod tests {
         keychain.set_available(false);
         store.delete(&id, "EXA_API_KEY").await.unwrap();
         assert_eq!(store.get(&id, "EXA_API_KEY").await.unwrap(), None);
+        // The row goes away with the server; the pending delete does not.
+        repo.delete(&id).await.unwrap();
 
+        // A restart with the keychain back; any operation applies the pending delete.
         keychain.set_available(true);
         let restarted = LayeredSecretStore::new(&keychain, FileSecretStore::new(&repo, key_path));
-        assert_eq!(restarted.get(&id, "EXA_API_KEY").await.unwrap(), None);
+        assert_eq!(restarted.get("other", "OTHER_KEY").await.unwrap(), None);
         assert_eq!(keychain.get(&id, "EXA_API_KEY").await.unwrap(), None);
-        assert_eq!(
-            repo.get(&id).await.unwrap().unwrap().encrypted_secrets,
-            None,
-            "the deleted marker is cleared"
-        );
+        assert!(!dir.path().join(PENDING_DELETES_FILE_NAME).exists());
+    }
 
-        // A later save is not affected by the cleared marker.
-        restarted.set(&id, "EXA_API_KEY", "new").await.unwrap();
+    #[tokio::test]
+    async fn a_value_saved_after_an_outage_delete_is_not_removed_by_it() {
+        let repo = repo().await;
+        let id = server(&repo).await;
+        let dir = tempfile::tempdir().unwrap();
+        let keychain = MemorySecretStore::default();
+        let store = LayeredSecretStore::new(
+            &keychain,
+            FileSecretStore::new(&repo, dir.path().join(KEY_FILE_NAME)),
+        );
+        store.set(&id, "EXA_API_KEY", "old").await.unwrap();
+
+        keychain.set_available(false);
+        store.delete(&id, "EXA_API_KEY").await.unwrap();
+        store.set(&id, "EXA_API_KEY", "new").await.unwrap();
+
+        keychain.set_available(true);
         assert_eq!(
-            restarted.get(&id, "EXA_API_KEY").await.unwrap().as_deref(),
+            store.get(&id, "EXA_API_KEY").await.unwrap().as_deref(),
             Some("new")
         );
+        store.set(&id, "B_KEY", "other").await.unwrap();
+        assert_eq!(
+            keychain.get(&id, "EXA_API_KEY").await.unwrap().as_deref(),
+            Some("new")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_pending_delete_that_fails_stays_for_the_next_try() {
+        let repo = repo().await;
+        let id = server(&repo).await;
+        let dir = tempfile::tempdir().unwrap();
+        let key_path = dir.path().join(KEY_FILE_NAME);
+        let keychain = MemorySecretStore::unavailable();
+        LayeredSecretStore::new(&keychain, FileSecretStore::new(&repo, key_path.clone()))
+            .delete(&id, "EXA_API_KEY")
+            .await
+            .unwrap();
+
+        let locked =
+            LayeredSecretStore::new(&LockedKeychain, FileSecretStore::new(&repo, key_path));
+        assert_eq!(locked.get(&id, "B_KEY").await.unwrap(), None);
+        assert!(dir.path().join(PENDING_DELETES_FILE_NAME).exists());
     }
 }

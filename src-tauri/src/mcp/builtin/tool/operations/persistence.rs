@@ -989,6 +989,88 @@ mod tests {
         assert!(repo.get(&second.id).await.unwrap().is_none());
     }
 
+    /// #2588: a secret removed by an update or by deleting the server during a keychain
+    /// outage is removed from the keychain once it works again, with no read of that name.
+    #[tokio::test]
+    async fn secrets_removed_during_a_keychain_outage_leave_the_keychain_once_it_returns() {
+        use crate::mcp::secret_fallback::{FileSecretStore, LayeredSecretStore, KEY_FILE_NAME};
+        use crate::mcp::secret_templates::MemorySecretStore;
+
+        let repo = repo().await;
+        let dir = tempfile::tempdir().unwrap();
+        let keychain = MemorySecretStore::default();
+        let store = LayeredSecretStore::new(
+            &keychain,
+            FileSecretStore::new(&repo, dir.path().join(KEY_FILE_NAME)),
+        );
+        let entered = vec![("EXA_API_KEY".to_string(), "exa-secret-value".to_string())];
+        let updated = write_server(
+            &repo,
+            &store,
+            None,
+            &exa_config(EXA_URL),
+            SaveVerification::Pending,
+            &entered,
+            &[],
+        )
+        .await
+        .expect("write");
+        let mut other = exa_config(EXA_URL);
+        other.name = Some("exa2".to_string());
+        let deleted = write_server(
+            &repo,
+            &store,
+            None,
+            &other,
+            SaveVerification::Pending,
+            &entered,
+            &[],
+        )
+        .await
+        .expect("write");
+
+        keychain.set_available(false);
+        let plain =
+            serde_json::to_value(exa_config("https://mcp.exa.ai/mcp?exaApiKey=plain")).unwrap();
+        McpServerService::update_server_config_with_store(
+            &repo,
+            &store,
+            updated.id.clone(),
+            None,
+            Some(plain),
+            SaveVerification::Pending,
+        )
+        .await
+        .expect("update");
+        McpServerService::delete_server_config_with_store(&repo, &store, &deleted.id)
+            .await
+            .expect("delete");
+        assert!(keychain
+            .get(&updated.id, "EXA_API_KEY")
+            .await
+            .unwrap()
+            .is_some());
+
+        keychain.set_available(true);
+        store.get("unrelated", "OTHER_KEY").await.unwrap();
+        assert_eq!(
+            keychain.get(&updated.id, "EXA_API_KEY").await.unwrap(),
+            None
+        );
+        assert_eq!(
+            keychain.get(&deleted.id, "EXA_API_KEY").await.unwrap(),
+            None
+        );
+        assert_eq!(
+            repo.get(&updated.id)
+                .await
+                .unwrap()
+                .unwrap()
+                .encrypted_secrets,
+            None
+        );
+    }
+
     /// A key file that is gone leaves every name of the row unreadable, so all of them must
     /// be entered again, and doing that must recover the row.
     #[tokio::test]
