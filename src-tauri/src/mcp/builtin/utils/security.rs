@@ -21,6 +21,40 @@ pub enum SecurityError {
     InvalidPath(String),
 }
 
+/// `path` with its longest existing prefix canonicalized, so symlinks in existing
+/// parents are resolved for a target that does not exist yet.
+fn canonicalize_existing_prefix(path: &Path) -> PathBuf {
+    let mut missing = Vec::new();
+    let mut current = path;
+    loop {
+        if let Ok(canonical) = current.canonicalize() {
+            return missing
+                .iter()
+                .rev()
+                .fold(canonical, |acc, name| acc.join(name));
+        }
+        match (current.parent(), current.file_name()) {
+            (Some(parent), Some(name)) => {
+                missing.push(name.to_os_string());
+                current = parent;
+            }
+            _ => return path.to_path_buf(),
+        }
+    }
+}
+
+/// True when a component is `.git`. Case and trailing dots/spaces are ignored because
+/// Windows and macOS resolve those variants to the same entry.
+fn has_git_component(path: &Path) -> bool {
+    path.components().any(|component| match component {
+        Component::Normal(name) => name.to_str().is_some_and(|name| {
+            name.trim_end_matches([' ', '.'])
+                .eq_ignore_ascii_case(".git")
+        }),
+        _ => false,
+    })
+}
+
 /// Security utilities for built-in servers
 pub struct SecurityValidator {
     base_dir: PathBuf,
@@ -29,6 +63,9 @@ pub struct SecurityValidator {
     /// resolve against `base_dir`.
     extra_roots: Vec<PathBuf>,
     enforce_base_dir_containment: bool,
+    /// When set, writes into git metadata are refused: any path with a `.git`
+    /// component, or a path under one of these canonical git dirs.
+    git_write_guard: Option<Vec<PathBuf>>,
 }
 
 impl SecurityValidator {
@@ -60,7 +97,21 @@ impl SecurityValidator {
             base_dir: canonical_base,
             extra_roots: Vec::new(),
             enforce_base_dir_containment,
+            git_write_guard: None,
         }
+    }
+
+    /// Refuse writes into git metadata (`.git` dirs and files, and `git_dirs`, normally the
+    /// common git dir of the workspace repository). Reads are not affected. Dirs that
+    /// cannot be canonicalized are dropped; the `.git` component check still applies.
+    pub fn with_git_metadata_write_guard(mut self, git_dirs: Vec<PathBuf>) -> Self {
+        self.git_write_guard = Some(
+            git_dirs
+                .into_iter()
+                .filter_map(|dir| dir.canonicalize().ok())
+                .collect(),
+        );
+        self
     }
 
     /// Also accept paths under `roots` in the containment checks. Roots that cannot be
@@ -292,7 +343,28 @@ impl SecurityValidator {
                 }
             }
         }
-        self.validate_path_internal(user_path, self.enforce_base_dir_containment)
+        let path = self.validate_path_internal(user_path, self.enforce_base_dir_containment)?;
+        self.ensure_not_git_metadata(&path, user_path)?;
+        Ok(path)
+    }
+
+    fn ensure_not_git_metadata(&self, path: &Path, user_path: &str) -> Result<(), SecurityError> {
+        let Some(git_dirs) = &self.git_write_guard else {
+            return Ok(());
+        };
+        let resolved = canonicalize_existing_prefix(path);
+        let in_git_metadata = |candidate: &Path| {
+            has_git_component(candidate)
+                || git_dirs.iter().any(|dir| path_starts_with(candidate, dir))
+        };
+        if in_git_metadata(path) || in_git_metadata(&resolved) {
+            return Err(SecurityError::AccessDenied(format!(
+                "Path '{user_path}' is inside git metadata ('{}'). Writes into git metadata \
+                 (.git directories and files) are not allowed.",
+                resolved.display()
+            )));
+        }
+        Ok(())
     }
 
     /// Validate a path for read-only operations.

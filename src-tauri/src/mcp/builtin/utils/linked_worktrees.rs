@@ -60,6 +60,12 @@ fn registered_worktree(admin: &Path) -> Option<PathBuf> {
     dot_git.parent()?.canonicalize().ok()
 }
 
+/// The canonical common git dir of the repository at `root`, when `root` is a main
+/// worktree or a registered linked worktree.
+pub fn git_common_dir(root: &Path) -> Option<PathBuf> {
+    common_dir(root).map(|(common, _)| common)
+}
+
 /// Canonical roots of the other worktrees of the repository at `root`: its linked
 /// worktrees and, when `root` is a linked worktree, the main worktree. Empty when
 /// `root` is not in a git repository.

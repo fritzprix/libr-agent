@@ -31,11 +31,16 @@ pub(crate) fn file_tool_manager(
     workspace_dir: std::path::PathBuf,
     allow_linked_worktrees: bool,
 ) -> SecureFileManager {
-    if !allow_linked_worktrees {
-        return SecureFileManager::new_scoped_with_base_dir(workspace_dir);
-    }
-    let roots = crate::mcp::builtin::utils::linked_worktree_roots(&workspace_dir);
-    SecureFileManager::new_scoped_with_extra_roots(workspace_dir, roots)
+    let git_dirs = crate::mcp::builtin::utils::git_common_dir(&workspace_dir)
+        .into_iter()
+        .collect();
+    let manager = if allow_linked_worktrees {
+        let roots = crate::mcp::builtin::utils::linked_worktree_roots(&workspace_dir);
+        SecureFileManager::new_scoped_with_extra_roots(workspace_dir, roots)
+    } else {
+        SecureFileManager::new_scoped_with_base_dir(workspace_dir)
+    };
+    manager.with_git_metadata_write_guard(git_dirs)
 }
 
 /// Clear the workspace context cache. Safe to call from background process tasks.
