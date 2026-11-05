@@ -113,10 +113,19 @@ fn apply_set(document: &mut DocumentMut, op: &ObjectOp) -> Result<String, ApplyE
             let after = compact_value(&value);
             if let Some(item) = table.get_mut(last).filter(|item| !item.is_none()) {
                 let before = compact_item(item);
-                if let Item::Value(old) = &*item {
+                let replaces_value = if let Item::Value(old) = &*item {
                     *value.decor_mut() = old.decor().clone();
-                }
+                    true
+                } else {
+                    false
+                };
                 *item = Item::Value(value);
+                if !replaces_value {
+                    // A `[table]` key has no spacing around `=`; use the default.
+                    if let Some(mut key) = table.key_mut(last) {
+                        key.leaf_decor_mut().clear();
+                    }
+                }
                 Ok(format!("set {before} → {after}"))
             } else {
                 table.insert(last, Item::Value(value));
@@ -178,7 +187,7 @@ fn apply_append(document: &mut DocumentMut, op: &ObjectOp) -> Result<String, App
     match resolve(document, op.path.tokens(), op)? {
         Node::Array(array) => {
             let summary = compact_value(&value);
-            push_keeping_closing_space(array, value);
+            push_keeping_layout(array, value);
             Ok(format!("appended {summary} (len={})", array.len()))
         }
         Node::Tables(tables) => {
@@ -275,48 +284,114 @@ fn to_toml_value(op: &ObjectOp, json: &JsonValue) -> Result<Value, ApplyError> {
     })
 }
 
-/// Push after the last element, moving that element's suffix (e.g. the space
-/// before `]`) to the new element so `[ "a" ]` becomes `[ "a", "b" ]`.
-fn push_keeping_closing_space(array: &mut Array, value: Value) {
-    let closing = array.iter_mut().last().and_then(|last| {
-        let suffix = raw_str(last.decor().suffix())?.to_string();
-        last.decor_mut().set_suffix("");
-        Some(suffix)
-    });
+// Array layout in `toml_edit`: the text between a comma and the next element is
+// that element's prefix, so an element's same-line comment (`"a", # note`) is the
+// head (text before the first newline) of the next element's prefix, or of the
+// array trailing text for the last element. Without a trailing comma, the last
+// element's comment is the head of its own suffix.
+
+/// Push after the last element. In a single-line array the space before `]`
+/// moves to the new element (`[ "a" ]` → `[ "a", "b" ]`). In a multi-line array
+/// the new element goes on its own line with the previous element's indent, and
+/// the previous element keeps its same-line comment.
+fn push_keeping_layout(array: &mut Array, value: Value) {
+    let trailing_comma = array.trailing_comma();
+    let trailing = array.trailing().as_str().unwrap_or("").to_string();
+    let Some(last) = array.iter_mut().last() else {
+        array.push(value);
+        return;
+    };
+    let last_prefix = decor_str(last.decor().prefix());
+    let (prefix, suffix, new_trailing) = match last_prefix.rfind('\n') {
+        None => {
+            let suffix = decor_str(last.decor().suffix());
+            last.decor_mut().set_suffix("");
+            (" ".to_string(), suffix, None)
+        }
+        Some(newline) => {
+            let indent = &last_prefix[newline + 1..];
+            if trailing_comma {
+                let (comment, rest) = split_line_head(&trailing);
+                (
+                    format!("{comment}\n{indent}"),
+                    String::new(),
+                    Some(rest.to_string()),
+                )
+            } else {
+                let last_suffix = decor_str(last.decor().suffix());
+                let (comment, rest) = split_line_head(&last_suffix);
+                let layout = (format!("{comment}\n{indent}"), rest.to_string(), None);
+                last.decor_mut().set_suffix("");
+                layout
+            }
+        }
+    };
+    if let Some(trailing) = new_trailing {
+        array.set_trailing(trailing);
+    }
     array.push(value);
-    if let (Some(suffix), Some(pushed)) = (closing, array.iter_mut().last()) {
+    if let Some(pushed) = array.iter_mut().last() {
+        pushed.decor_mut().set_prefix(prefix);
         pushed.decor_mut().set_suffix(suffix);
     }
 }
 
-/// Remove an element together with a comment on the same line after its comma.
-/// That comment is stored as the prefix of the next element (or as the array
-/// trailing text), so without this it would move to the next element.
+/// Remove an element. Comment lines directly above it go with it; its own
+/// same-line comment is dropped; the previous element's same-line comment
+/// (stored in the removed element's prefix) is kept.
 fn remove_with_line_comment(array: &mut Array, index: usize) -> Value {
+    let trailing_comma = array.trailing_comma();
     let removed = array.remove(index);
+    let removed_prefix = decor_str(removed.decor().prefix());
+    let (kept_head, _) = split_line_head(&removed_prefix);
+    let kept_head = kept_head.to_string();
+
     if let Some(next) = array.get_mut(index) {
-        if let Some(prefix) = strip_line_comment(raw_str(next.decor().prefix())) {
-            next.decor_mut().set_prefix(prefix);
-        }
-    } else if let Some(trailing) = strip_line_comment(array.trailing().as_str()) {
+        let next_prefix = decor_str(next.decor().prefix());
+        let (_, rest) = split_line_head(&next_prefix);
+        let prefix = format!("{kept_head}{rest}");
+        next.decor_mut().set_prefix(prefix);
+    } else if trailing_comma || array.is_empty() {
+        let tail = format!(
+            "{}{}",
+            if trailing_comma {
+                String::new()
+            } else {
+                decor_str(removed.decor().suffix())
+            },
+            array.trailing().as_str().unwrap_or("")
+        );
+        let (_, rest) = split_line_head(&tail);
+        let trailing = format!("{kept_head}{rest}");
         array.set_trailing(trailing);
+    } else {
+        let tail = format!(
+            "{}{}",
+            decor_str(removed.decor().suffix()),
+            array.trailing().as_str().unwrap_or("")
+        );
+        let (_, rest) = split_line_head(&tail);
+        let rest = rest.to_string();
+        array.set_trailing("");
+        if let Some(previous) = array.iter_mut().last() {
+            let suffix = format!("{}{kept_head}{rest}", decor_str(previous.decor().suffix()));
+            previous.decor_mut().set_suffix(suffix);
+        }
     }
     removed
 }
 
-fn raw_str(raw: Option<&toml_edit::RawString>) -> Option<&str> {
-    raw.and_then(|raw| raw.as_str())
+fn decor_str(raw: Option<&toml_edit::RawString>) -> String {
+    raw.and_then(|raw| raw.as_str()).unwrap_or("").to_string()
 }
 
-/// If `text` starts with a comment before its first newline, return the text
-/// from that newline on.
-fn strip_line_comment(text: Option<&str>) -> Option<String> {
-    let text = text?;
-    let newline = text.find('\n')?;
-    text[..newline]
-        .trim_start()
-        .starts_with('#')
-        .then(|| text[newline..].to_string())
+/// Split `text` at its first newline: (same-line head, rest from the newline).
+/// Without a newline the whole text is the head.
+fn split_line_head(text: &str) -> (&str, &str) {
+    match text.find('\n') {
+        Some(newline) => text.split_at(newline),
+        None => (text, ""),
+    }
 }
 
 fn into_table(op: &ObjectOp, value: Value, expected: &str) -> Result<Table, ApplyError> {
@@ -433,7 +508,7 @@ mod tests {
     fn edit(text: &str, raw_ops: Value) -> String {
         let mut document = parse_toml(text).expect("valid TOML");
         apply_toml_ops(&mut document, &ops(raw_ops)).expect("ops should apply");
-        serialize_toml(&document).expect("serializable")
+        serialize_toml(&document, text, false).expect("serializable")
     }
 
     fn edit_err(text: &str, raw_ops: Value) -> String {
@@ -457,7 +532,7 @@ mod tests {
         );
         assert_eq!(
             output,
-            "# Top comment\nname   =   \"demo\"   # trailing name comment\nversion = \"0.2.0\"\n\n[deps]\n# serde comment\nserde = \"1\"\n\n[tool]\nlist = [   \"b\", \"c\" ]\n"
+            "# Top comment\nname   =   \"demo\"   # trailing name comment\nversion = \"0.2.0\"\n\n[deps]\n# serde comment\nserde = \"1\"\n\n[tool]\nlist = [ \"b\", \"c\" ]\n"
         );
     }
 
@@ -512,7 +587,7 @@ mod tests {
                 {"op":"remove","path":"/list/0"}
             ]),
         );
-        assert_eq!(output, "list = [\n  \"b\", \"c\",\n]\n");
+        assert_eq!(output, "list = [\n  \"b\",\n  \"c\",\n]\n");
     }
 
     #[test]
@@ -530,6 +605,72 @@ mod tests {
             json!([{"op":"remove","path":"/list/0"}]),
         );
         assert_eq!(output, "list = [\n  # about b\n  \"b\",\n]\n");
+    }
+
+    #[test]
+    fn remove_keeps_previous_element_comment() {
+        let list = "list = [\n  \"a\", # keep a\n  \"b\", # drop b\n  \"c\", # keep c\n]\n";
+        assert_eq!(
+            edit(list, json!([{"op":"remove","path":"/list/1"}])),
+            "list = [\n  \"a\", # keep a\n  \"c\", # keep c\n]\n"
+        );
+        assert_eq!(
+            edit(list, json!([{"op":"remove","path":"/list/2"}])),
+            "list = [\n  \"a\", # keep a\n  \"b\", # drop b\n]\n"
+        );
+    }
+
+    #[test]
+    fn remove_last_without_trailing_comma_keeps_previous_comment() {
+        assert_eq!(
+            edit(
+                "list = [\n  \"a\", # keep a\n  \"b\" # drop b\n]\n",
+                json!([{"op":"remove","path":"/list/1"}])
+            ),
+            "list = [\n  \"a\" # keep a\n]\n"
+        );
+    }
+
+    #[test]
+    fn remove_in_single_line_array() {
+        let list = "list = [ \"a\", \"b\", \"c\" ]\n";
+        for (index, expected) in [
+            (0, "list = [ \"b\", \"c\" ]\n"),
+            (1, "list = [ \"a\", \"c\" ]\n"),
+            (2, "list = [ \"a\", \"b\" ]\n"),
+        ] {
+            let path = format!("/list/{index}");
+            assert_eq!(edit(list, json!([{"op":"remove","path":path}])), expected);
+        }
+    }
+
+    #[test]
+    fn append_in_multiline_array_uses_own_line() {
+        assert_eq!(
+            edit(
+                "list = [\n  \"a\",\n  \"b\", # b\n]\n",
+                json!([{"op":"append","path":"/list","value":"c"}])
+            ),
+            "list = [\n  \"a\",\n  \"b\", # b\n  \"c\",\n]\n"
+        );
+        assert_eq!(
+            edit(
+                "list = [\n  \"a\",\n  \"b\" # b\n]\n",
+                json!([{"op":"append","path":"/list","value":"c"}])
+            ),
+            "list = [\n  \"a\",\n  \"b\", # b\n  \"c\"\n]\n"
+        );
+    }
+
+    #[test]
+    fn replacing_table_with_value_uses_default_key_format() {
+        assert_eq!(
+            edit(
+                "a = 1\n\n[deps]\nk = 1\n",
+                json!([{"op":"set","path":"/deps","value":{"k":2}}])
+            ),
+            "a = 1\ndeps = { k = 2 }\n"
+        );
     }
 
     #[test]

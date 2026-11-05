@@ -168,8 +168,8 @@ impl WorkspaceServer {
             return Ok(not_found_error("file", path_str, ToolGroup::Workspace));
         }
 
-        let original_content = match read_validated_utf8_file(&safe_path).await {
-            Ok(content) => content,
+        let (original_content, utf8_bom) = match read_validated_utf8_file(&safe_path).await {
+            Ok(read) => read,
             Err(error) => {
                 return Ok(
                     guided_error(ErrorCategory::InvalidInput, error, ToolGroup::Workspace)
@@ -178,10 +178,11 @@ impl WorkspaceServer {
             }
         };
 
-        let (new_content, applied) = match edit_document(format, &original_content, &parsed_ops) {
-            Ok(edited) => edited,
-            Err(result) => return Ok(result),
-        };
+        let (new_content, applied) =
+            match edit_document(format, &original_content, utf8_bom, &parsed_ops) {
+                Ok(edited) => edited,
+                Err(result) => return Ok(result),
+            };
 
         if new_content.len() > crate::config::max_file_size() {
             return Ok(guided_error(
@@ -238,7 +239,8 @@ impl WorkspaceServer {
             .to_string(),
         );
 
-        let diff_output = format_file_diff(&original_content, &new_content, path_str);
+        let diff_new = new_content.strip_prefix('\u{feff}').unwrap_or(&new_content);
+        let diff_output = format_file_diff(&original_content, diff_new, path_str);
         if !diff_output.trim().is_empty() {
             lines.push(String::new());
             lines.push(diff_output.clone());
@@ -273,11 +275,12 @@ impl WorkspaceServer {
 fn edit_document(
     format: ObjectFormat,
     original: &str,
+    utf8_bom: bool,
     ops: &[ObjectOp],
 ) -> Result<(String, Vec<AppliedOp>), MCPResult> {
     let (name, edited) = match format {
         ObjectFormat::Json => ("JSON", edit_json(original, ops)),
-        ObjectFormat::Toml => ("TOML", edit_toml(original, ops)),
+        ObjectFormat::Toml => ("TOML", edit_toml(original, utf8_bom, ops)),
     };
     edited.map_err(|error| match error {
         EditError::Parse(message) => guided_error(
@@ -310,10 +313,14 @@ fn edit_json(original: &str, ops: &[ObjectOp]) -> Result<(String, Vec<AppliedOp>
     Ok((text, applied))
 }
 
-fn edit_toml(original: &str, ops: &[ObjectOp]) -> Result<(String, Vec<AppliedOp>), EditError> {
+fn edit_toml(
+    original: &str,
+    utf8_bom: bool,
+    ops: &[ObjectOp],
+) -> Result<(String, Vec<AppliedOp>), EditError> {
     let mut document = parse_toml(original).map_err(EditError::Parse)?;
     let applied = toml_ops::apply_toml_ops(&mut document, ops).map_err(EditError::Apply)?;
-    let text = serialize_toml(&document).map_err(EditError::Serialize)?;
+    let text = serialize_toml(&document, original, utf8_bom).map_err(EditError::Serialize)?;
     Ok((text, applied))
 }
 
@@ -330,7 +337,9 @@ fn apply_error_result(error: ApplyError) -> MCPResult {
     .to_mcp_result()
 }
 
-async fn read_validated_utf8_file(path: &Path) -> Result<String, String> {
+/// Read and decode the file. Returns the text (BOM stripped) and whether the file
+/// started with a UTF-8 BOM.
+async fn read_validated_utf8_file(path: &Path) -> Result<(String, bool), String> {
     use crate::mcp::builtin::workspace::text_encoding::{decode_text_bytes, DecodedText};
 
     let max_size = crate::config::max_file_size();
@@ -366,6 +375,6 @@ async fn read_validated_utf8_file(path: &Path) -> Result<String, String> {
         DecodedText::Binary => Err(
             "Failed to read file: content appears to be binary (embedded null bytes)".to_string(),
         ),
-        DecodedText::Text { text, .. } => Ok(text),
+        DecodedText::Text { text, .. } => Ok((text, buffer.starts_with(&[0xEF, 0xBB, 0xBF]))),
     }
 }

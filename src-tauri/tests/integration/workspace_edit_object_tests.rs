@@ -179,13 +179,13 @@ async fn edit_object_rejects_non_json_extension() {
     let server = build_workspace_server(temp_dir.path(), session_id);
 
     let workspace_dir = server.get_workspace_dir(session_id);
-    std::fs::write(workspace_dir.join("demo.yaml"), "a: 1\n").expect("seed file");
+    std::fs::write(workspace_dir.join("demo.yml"), "a: 1\n").expect("seed file");
 
     let result = server
         .call_tool(
             "editObject",
             json!({
-                "path": "demo.yaml",
+                "path": "demo.yml",
                 "ops": [{"op": "set", "path": "/a", "value": 2}]
             }),
             Some(session_id.to_string()),
@@ -196,7 +196,13 @@ async fn edit_object_rejects_non_json_extension() {
     assert!(result.is_error.unwrap_or(false));
     let text = extract_text_content(&result);
     assert!(text.contains(".json and .toml only"), "{text}");
-    assert!(text.contains("workspace__strReplace"), "{text}");
+    let str_replace = text
+        .find("workspace__strReplace")
+        .expect("strReplace guidance");
+    let write_file = text
+        .find("workspace__writeFile")
+        .expect("writeFile guidance");
+    assert!(str_replace < write_file, "{text}");
     assert!(!text.contains("MVP"), "{text}");
 }
 
@@ -267,6 +273,51 @@ async fn edit_object_edits_toml_and_keeps_comments() {
         "[package]\nname = \"demo\" # crate name\nversion = \"0.2.0\"\n\n[dependencies]\n# json support\nserde_json = \"1\"\ntoml_edit = \"0.25\"\n"
     );
     assert!(extract_text_content(&result).contains("TOML"));
+}
+
+#[tokio::test]
+async fn edit_object_toml_keeps_crlf_and_bom() {
+    let temp_dir = tempdir().expect("temp dir");
+    let session_id = "edit-object-toml-crlf";
+    let server = build_workspace_server(temp_dir.path(), session_id);
+
+    let workspace_dir = server.get_workspace_dir(session_id);
+    let crlf_path = workspace_dir.join("crlf.toml");
+    std::fs::write(
+        &crlf_path,
+        "# top\r\na = 1 # c\r\nb = 2\r\n\r\n[t]\r\nx = 1\r\n",
+    )
+    .expect("seed file");
+    let bom_path = workspace_dir.join("bom.toml");
+    std::fs::write(&bom_path, "\u{feff}a = 1\nb = 2\n").expect("seed file");
+
+    for path in ["crlf.toml", "bom.toml"] {
+        let result = server
+            .call_tool(
+                "editObject",
+                json!({
+                    "path": path,
+                    "ops": [{"op": "set", "path": "/a", "value": 2}]
+                }),
+                Some(session_id.to_string()),
+            )
+            .await
+            .expect("editObject should return");
+        assert!(
+            !result.is_error.unwrap_or(true),
+            "expected success: {}",
+            extract_text_content(&result)
+        );
+    }
+
+    assert_eq!(
+        std::fs::read_to_string(&crlf_path).expect("read back"),
+        "# top\r\na = 2 # c\r\nb = 2\r\n\r\n[t]\r\nx = 1\r\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&bom_path).expect("read back"),
+        "\u{feff}a = 2\nb = 2\n"
+    );
 }
 
 #[tokio::test]

@@ -65,7 +65,7 @@ pub fn create_edit_object_tool() -> MCPTool {
 
 JSON: writes pretty-printed JSON (2-space indent, trailing newline). Key encounter order is preserved; whitespace is normalized. Strict JSON only — comments/trailing commas (JSONC) are rejected; edit files like tsconfig.json with // comments using workspace__strReplace.
 
-TOML (Cargo.toml, pyproject.toml, ...): comments and formatting of keys you do not edit are preserved. New keys use the default TOML format; object values become inline tables. TOML has no null.
+TOML (Cargo.toml, pyproject.toml, ...): comments and formatting of keys you do not edit are preserved. New keys use the default TOML format; object values become inline tables. TOML has no null, and set cannot write a TOML datetime (a string value stays a quoted string); use workspace__strReplace for datetimes.
 
 For other formats (YAML, source code) use workspace__strReplace.
 
