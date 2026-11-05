@@ -6,6 +6,7 @@ use super::{
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, ErrorCategory, SuccessHint, ToolGroup,
 };
+use crate::mcp::builtin::utils::read_bool_arg;
 use crate::mcp::types::MCPResult;
 use crate::repositories::{DbError, KnowledgeV2Repository};
 use serde_json::{json, Value};
@@ -16,6 +17,21 @@ pub async fn record_knowledge(
     server: &KnowledgeServer,
     args: Value,
     assistant_id: &str,
+) -> Result<MCPResult, String> {
+    let auto_extract = match read_bool_arg(&args, "auto_extract", false, ToolGroup::Knowledge) {
+        Ok(arg) => arg,
+        Err(result) => return Ok(result),
+    };
+
+    let result = record_knowledge_inner(server, args, assistant_id, auto_extract.value).await?;
+    Ok(auto_extract.annotate(result))
+}
+
+async fn record_knowledge_inner(
+    server: &KnowledgeServer,
+    args: Value,
+    assistant_id: &str,
+    auto_extract: bool,
 ) -> Result<MCPResult, String> {
     let content = match args.get("content").and_then(|v| v.as_str()) {
         Some(v) => v,
@@ -95,10 +111,6 @@ pub async fn record_knowledge(
         }
     };
 
-    let auto_extract = args
-        .get("auto_extract")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
     let explicit_plan =
         match extraction::normalize_graph_plan(explicit_entities, explicit_relationships) {
             Ok(plan) => plan,
@@ -575,4 +587,35 @@ fn format_chunk_id_list(ids: &[i32]) -> String {
         .map(i32::to_string)
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mcp::builtin::utils::result_text;
+    use sea_orm::Database;
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn auto_extract_as_a_string_is_read_with_a_warning() {
+        let db = Database::connect("sqlite::memory:").await.unwrap();
+        let server = KnowledgeServer::new("assistant".to_string(), Arc::new(db))
+            .await
+            .unwrap();
+
+        let result = record_knowledge(&server, json!({ "auto_extract": "true" }), "assistant")
+            .await
+            .unwrap();
+        let text = result_text(&result);
+        assert!(text.contains("content"), "{text}");
+        assert!(
+            text.contains("Warning: auto_extract was the string"),
+            "{text}"
+        );
+
+        let result = record_knowledge(&server, json!({ "auto_extract": [] }), "assistant")
+            .await
+            .unwrap();
+        assert!(result_text(&result).contains("auto_extract must be a JSON boolean"));
+    }
 }

@@ -2,6 +2,7 @@ use crate::entity::playbook;
 use crate::mcp::builtin::error_guidance::{
     invalid_input_error, missing_param_error, not_found_error, operation_failed_error, ToolGroup,
 };
+use crate::mcp::builtin::utils::read_bool_arg;
 use crate::mcp::types::{MCPContent, MCPResult};
 use crate::repositories::{PaginationParams, PlaybookRepository, SessionRepository};
 use handlebars::Handlebars;
@@ -294,6 +295,22 @@ pub async fn list_playbooks(
     args: Value,
     render_ui_flag: bool,
 ) -> Result<MCPResult, String> {
+    let bookmark_first = match read_bool_arg(&args, "bookmarkFirst", false, ToolGroup::Playbook) {
+        Ok(arg) => arg,
+        Err(result) => return Ok(result),
+    };
+
+    let result =
+        list_playbooks_inner(assistant_id, args, render_ui_flag, bookmark_first.value).await?;
+    Ok(bookmark_first.annotate(result))
+}
+
+async fn list_playbooks_inner(
+    assistant_id: &str,
+    args: Value,
+    render_ui_flag: bool,
+    bookmark_first: bool,
+) -> Result<MCPResult, String> {
     let repo = crate::get_playbook_repository();
 
     let page = args
@@ -314,10 +331,6 @@ pub async fn list_playbooks(
         .get("sortOrder")
         .and_then(|v| v.as_str())
         .unwrap_or("desc");
-    let bookmark_first = args
-        .get("bookmarkFirst")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
 
     // Get all playbooks for assistant, then apply stable in-memory sorting/pagination
     let pagination = PaginationParams {
@@ -834,4 +847,19 @@ pub async fn update_playbook(
         })),
         is_error: Some(false),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mcp::builtin::utils::result_text;
+
+    #[tokio::test]
+    async fn bookmark_first_must_be_a_boolean_or_a_boolean_string() {
+        let result = list_playbooks("assistant", json!({ "bookmarkFirst": "maybe" }), false)
+            .await
+            .unwrap();
+        assert_eq!(result.is_error, Some(true));
+        assert!(result_text(&result).contains("bookmarkFirst must be a JSON boolean"));
+    }
 }

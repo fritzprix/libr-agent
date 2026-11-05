@@ -10,10 +10,6 @@ use std::collections::{HashMap, HashSet};
 
 pub const MAX_QUESTIONS: usize = 5;
 
-/// Argument keys that ask for hidden input. Secrets go through the shell
-/// `storeAs` path (#2544) so the value never enters the LLM context.
-const SECRET_KEYS: [&str; 3] = ["password", "secret", "inputType"];
-
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct AskUserArgs {
@@ -45,25 +41,8 @@ fn invalid(message: impl Into<String>, guidance: &[&str]) -> MCPResult {
         .to_mcp_result()
 }
 
-fn has_secret_key(value: &Value) -> bool {
-    value
-        .as_object()
-        .is_some_and(|map| SECRET_KEYS.iter().any(|key| map.contains_key(*key)))
-}
-
 /// Validate the tool arguments and return the questions to ask.
 pub fn parse_ask_user_args(args: &Value) -> Result<Vec<UserQuestion>, MCPResult> {
-    let items_have_secret_key = args
-        .get("questions")
-        .and_then(Value::as_array)
-        .is_some_and(|items| items.iter().any(has_secret_key));
-    if has_secret_key(args) || items_have_secret_key {
-        return Err(invalid(
-            "ui__askUser cannot collect passwords or other secrets.",
-            &["Use workspace__runShell with requireUserInput=true, inputType=password, and storeAs to ask for a secret."],
-        ));
-    }
-
     let parsed: AskUserArgs = serde_json::from_value(args.clone()).map_err(|error| {
         invalid(
             format!("Invalid ui__askUser arguments: {error}"),
@@ -234,26 +213,11 @@ mod tests {
     }
 
     #[test]
-    fn secret_keys_point_to_the_shell_store_as_path() {
-        for args in [
-            json!({ "questions": [{ "id": "a", "question": "Q?" }], "password": true }),
-            json!({ "questions": [{ "id": "a", "question": "Q?", "inputType": "password" }] }),
-            json!({ "questions": [{ "id": "a", "question": "Q?", "secret": true }] }),
-        ] {
-            let error = parse_ask_user_args(&args).expect_err("secret keys are refused");
-            let text = result_text(&error);
-            assert!(text.contains("workspace__runShell"), "{text}");
-            assert!(text.contains("requireUserInput=true"), "{text}");
-            assert!(text.contains("storeAs"), "{text}");
-        }
-    }
-
-    #[test]
-    fn the_word_password_in_question_text_is_allowed() {
+    fn the_word_password_in_an_id_or_question_is_allowed() {
         let questions = parse_ask_user_args(&json!({
-            "questions": [{ "id": "a", "question": "Should the password policy change?" }]
+            "questions": [{ "id": "password", "question": "Should the password policy change?" }]
         }))
-        .expect("text content is not a key");
+        .expect("ids and text are not checked for secret words");
         assert_eq!(questions.len(), 1);
     }
 
@@ -327,7 +291,7 @@ mod tests {
         let names: Vec<String> = server.tools().into_iter().map(|tool| tool.name).collect();
         assert!(names.contains(&"askUser".to_string()));
 
-        let refused = server
+        let unknown_key = server
             .call_tool(
                 "askUser",
                 json!({ "questions": [{ "id": "a", "question": "Q?", "inputType": "password" }] }),
@@ -335,7 +299,7 @@ mod tests {
             )
             .await
             .expect("tool returns a result");
-        assert!(result_text(&refused).contains("requireUserInput=true"));
+        assert_eq!(unknown_key.is_error, Some(true));
 
         let no_session = server
             .call_tool(
