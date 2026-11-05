@@ -10,19 +10,6 @@ use super::session_isolation::{HttpSessionManager, SessionMCPManager};
 use super::session_isolation_config::SessionIsolationConfig;
 use crate::agent::runtime_state::SessionRuntimeState;
 use crate::session::SessionManager;
-use sha2::{Digest, Sha256};
-
-const MAX_PROCESS_CANCEL_RETRIES: usize = 1;
-
-#[derive(Debug, Clone)]
-struct ProcessCancelRetryState {
-    tool_name: String,
-    arguments_digest: [u8; 32],
-}
-
-fn process_cancel_arguments_digest(arguments: &str) -> [u8; 32] {
-    Sha256::digest(arguments.as_bytes()).into()
-}
 
 mod background_discovery;
 mod caching;
@@ -97,15 +84,9 @@ pub struct MCPServiceProxyManager {
     /// Failure counts and backoff of failed servers, used to limit automatic retries.
     server_retry_states: retry_policy::RetryStateStore,
 
-    /// Sessions whose active process was stopped by a user cancel. The next
-    /// foreground tool result consumes this marker and continues the workflow.
+    /// Sessions whose active process was stopped by a user cancel while a tool
+    /// ran. That tool's result consumes this marker and the workflow continues.
     process_cancel_pending: Arc<Mutex<HashSet<String>>>,
-
-    /// Bounds repeated retries of the exact tool call that was cancelled.
-    process_cancel_retry_states: Arc<Mutex<HashMap<String, ProcessCancelRetryState>>>,
-
-    /// Session-wide safety net for retries that change tool arguments between attempts.
-    process_cancel_retry_counts: Arc<Mutex<HashMap<String, usize>>>,
 }
 
 impl std::fmt::Debug for MCPServiceProxyManager {
@@ -126,14 +107,6 @@ impl std::fmt::Debug for MCPServiceProxyManager {
             .field("runtime_states", &"<RwLock<HashMap>>")
             .field("server_retry_states", &self.server_retry_states)
             .field("process_cancel_pending", &"<Mutex<HashSet<String>>>")
-            .field(
-                "process_cancel_retry_states",
-                &"<Mutex<HashMap<String, ProcessCancelRetryState>>>",
-            )
-            .field(
-                "process_cancel_retry_counts",
-                &"<Mutex<HashMap<String, usize>>>",
-            )
             .finish()
     }
 }

@@ -329,40 +329,43 @@ fn test_tool_batch_cancel_cancels_token_immediately() {
     );
 }
 
-#[tokio::test]
-async fn test_process_cancel_retry_state_survives_unrelated_batch_tool() {
+async fn process_cancel_test_manager() -> (MCPServiceProxyManager, TempDir) {
     let db = Arc::new(crate::common::setup_test_db_with_migrations().await);
     let session_root = TempDir::new().expect("session root");
     let session_manager = Arc::new(
         SessionManager::new_with_base_dir(session_root.path().join("sessions"))
             .expect("session manager"),
     );
-    let manager = MCPServiceProxyManager::new(db, session_manager);
+    (
+        MCPServiceProxyManager::new(db, session_manager),
+        session_root,
+    )
+}
 
-    manager
-        .record_process_cancelled_tool("retry-session", "workspace__execute", "{}")
-        .await;
-    // The cancelled tool itself must retain its retry state.
-    manager
-        .clear_process_cancel_retry_after_tool("retry-session", true, true)
-        .await;
-    // A normal follow-up tool in the same batch must not clear it either.
-    manager
-        .clear_process_cancel_retry_after_tool("retry-session", false, true)
-        .await;
+#[tokio::test]
+async fn test_process_cancel_marks_only_the_running_tool() {
+    let (manager, _root) = process_cancel_test_manager().await;
 
-    assert!(
-        !manager
-            .process_cancel_retry_exhausted("retry-session", "workspace__execute", "{}")
-            .await,
-        "the cancelled tool should receive its single retry"
-    );
-    assert!(
-        manager
-            .process_cancel_retry_exhausted("retry-session", "workspace__execute", "{}")
-            .await,
-        "the same cancelled tool must be blocked after its retry"
-    );
+    // A cancel while the tool runs marks that tool's result.
+    manager.clear_process_cancel_pending("cancel-session").await;
+    manager.mark_process_cancel_pending("cancel-session").await;
+    assert!(manager.take_process_cancel_pending("cancel-session").await);
+
+    // The next tool call (same or different) runs unmarked; nothing blocks it.
+    manager.clear_process_cancel_pending("cancel-session").await;
+    assert!(!manager.take_process_cancel_pending("cancel-session").await);
+}
+
+#[tokio::test]
+async fn test_process_cancel_without_running_tool_does_not_mark_next_tool() {
+    let (manager, _root) = process_cancel_test_manager().await;
+
+    // Cancel stops a background process between tool calls.
+    manager.mark_process_cancel_pending("idle-session").await;
+
+    // The next tool call clears the stale marker before it runs.
+    manager.clear_process_cancel_pending("idle-session").await;
+    assert!(!manager.take_process_cancel_pending("idle-session").await);
 }
 
 // -----------------------------------------------------------------------
