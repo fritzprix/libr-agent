@@ -78,7 +78,7 @@ LibrAgent는 별도의 외부 도구 설치 없이도 코딩, 파일 조작, 웹
 | **`workspace`**      | `workspace__readFile`                                               | 파일 범위 읽기                                               | Core (기본)                                             |
 |                      | `workspace__writeFile`                                              | 새 파일 생성 또는 덮어쓰기                                   | Core (기본)                                             |
 |                      | `workspace__strReplace`                                             | 파일 내 문자열 정밀 치환                                     | Core (기본)                                             |
-|                      | `workspace__editObject`                                             | JSON 파일 구조화 편집                                        | Core (기본)                                             |
+|                      | `workspace__editObject`                                             | JSON 및 TOML 파일 구조화 편집                                | Core (기본)                                             |
 |                      | `workspace__listDirectory`                                          | 디렉토리 파일 목록 조회                                      | Core (기본)                                             |
 |                      | `workspace__runShell`                                               | 터미널 셸 명령어 실행 (비동기 지원, Unix 호스트·Docker)      | Core (기본)                                             |
 |                      | `workspace__runPowerShell` / `workspace__runInPersistentPowerShell` | PowerShell 명령어 실행 (영구 세션 포함, Windows 호스트 전용) | Core (기본)                                             |

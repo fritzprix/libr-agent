@@ -33,6 +33,7 @@ tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 serde_yaml = "0.9"
+toml_edit = "0.25"
 indexmap = { version = "2", features = ["serde"] }
 tokio = { version = "1.52", features = ["full"] }
 uuid = { version = "1.23", features = ["v4"] }
