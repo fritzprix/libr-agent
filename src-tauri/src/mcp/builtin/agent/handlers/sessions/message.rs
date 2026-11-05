@@ -5,6 +5,7 @@ use super::super::super::utils::{
     read_complexity, read_required_string, resolve_model_for_complexity,
 };
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHint, ToolGroup};
+use crate::mcp::builtin::utils::{annotate_warnings, read_bool_arg, BoolArg};
 use crate::mcp::types::MCPResult;
 use crate::models::chat::MessageSource;
 use crate::repositories::AssistantRepository;
@@ -18,14 +19,11 @@ use super::super::enrichment::{apply_check_session_enrichment, resolve_check_ses
 
 pub fn parse_message_to_session_wait_config(
     args: &Value,
-) -> Result<(bool, Option<u64>), MCPResult> {
-    let wait_for_response = args
-        .get("waitForResponse")
-        .and_then(|value| value.as_bool())
-        .unwrap_or(true);
+) -> Result<(BoolArg, Option<u64>), MCPResult> {
+    let wait_for_response = read_bool_arg(args, "waitForResponse", true, ToolGroup::Agent)?;
 
-    if !wait_for_response {
-        return Ok((false, None));
+    if !wait_for_response.value {
+        return Ok((wait_for_response, None));
     }
 
     let timeout_seconds = match args.get("timeout") {
@@ -47,7 +45,7 @@ pub fn parse_message_to_session_wait_config(
         },
     };
 
-    Ok((true, Some(timeout_seconds)))
+    Ok((wait_for_response, Some(timeout_seconds)))
 }
 
 /// messageToSession handler (from messageAgent)
@@ -55,6 +53,39 @@ pub async fn message_to_session(
     server: &AgentServer,
     args: Value,
     caller_session_id: &str,
+) -> Result<MCPResult, String> {
+    let reset = match read_bool_arg(&args, "reset", false, ToolGroup::Agent) {
+        Ok(arg) => arg,
+        Err(result) => return Ok(result),
+    };
+    let (wait_for_response, timeout_seconds) = match parse_message_to_session_wait_config(&args) {
+        Ok(config) => config,
+        Err(result) => return Ok(result),
+    };
+    let result = message_to_session_inner(
+        server,
+        args,
+        caller_session_id,
+        reset.value,
+        wait_for_response.value,
+        timeout_seconds,
+    )
+    .await?;
+    Ok(annotate_warnings(
+        result,
+        [reset.warning, wait_for_response.warning]
+            .into_iter()
+            .flatten(),
+    ))
+}
+
+async fn message_to_session_inner(
+    server: &AgentServer,
+    args: Value,
+    caller_session_id: &str,
+    reset: bool,
+    wait_for_response: bool,
+    timeout_seconds: Option<u64>,
 ) -> Result<MCPResult, String> {
     let session_ref = match read_required_string(&args, "sessionId") {
         Ok(value) => value,
@@ -71,11 +102,6 @@ pub async fn message_to_session(
     let manager = server
         .get_manager()
         .ok_or("AgentSessionManager not available")?;
-    let reset = args.get("reset").and_then(|v| v.as_bool()).unwrap_or(false);
-    let (wait_for_response, timeout_seconds) = match parse_message_to_session_wait_config(&args) {
-        Ok(config) => config,
-        Err(result) => return Ok(result),
-    };
     let target_session = match load_accessible_delegated_session(
         manager,
         caller_session_id,

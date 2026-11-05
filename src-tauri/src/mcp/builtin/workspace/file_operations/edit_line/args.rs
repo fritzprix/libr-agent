@@ -3,6 +3,7 @@ use super::super::super::tools::file_tools::{
 };
 use super::types::{EditAction, LineEdit};
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
+use crate::mcp::builtin::utils::parse_bool_value;
 use crate::mcp::types::MCPResult;
 use once_cell::sync::Lazy;
 use serde_json::{json, Map, Value};
@@ -16,12 +17,13 @@ fn normalize_edit_op_value(value: &str) -> String {
     }
 }
 
-fn infer_legacy_edit_op(edit_obj: &Map<String, Value>) -> Option<&'static str> {
-    if edit_obj
-        .get("insertAfter")
-        .and_then(|value| value.as_bool())
-        .unwrap_or(false)
-    {
+fn infer_legacy_edit_op(
+    edit_obj: &Map<String, Value>,
+    warnings: &mut Vec<String>,
+) -> Result<Option<&'static str>, String> {
+    let insert_after = parse_bool_value(edit_obj.get("insertAfter"), "insertAfter", false)?;
+    warnings.extend(insert_after.warning);
+    let op = if insert_after.value {
         Some("insert_after")
     } else if let Some(value) = edit_obj.get("new_value") {
         if value.as_str() == Some("") {
@@ -31,7 +33,8 @@ fn infer_legacy_edit_op(edit_obj: &Map<String, Value>) -> Option<&'static str> {
         }
     } else {
         None
-    }
+    };
+    Ok(op)
 }
 
 /// Parse `start` / `end` values copied from readFile output (`N:anchor`).
@@ -148,13 +151,13 @@ static EDIT_FILE_BATCH_VALIDATOR: Lazy<Result<jsonschema::Validator, String>> = 
         .map_err(|error| format!("Failed to build workspace__editFile batch validator: {error}"))
 });
 
-fn canonicalize_edit_object(edit: &Value) -> Result<Value, String> {
+fn canonicalize_edit_object(edit: &Value, warnings: &mut Vec<String>) -> Result<Value, String> {
     let Some(edit_obj) = edit.as_object() else {
         return Ok(edit.clone());
     };
 
     let mut canonical = Map::new();
-    let inferred_legacy_op = infer_legacy_edit_op(edit_obj);
+    let inferred_legacy_op = infer_legacy_edit_op(edit_obj, warnings)?;
 
     for (key, value) in edit_obj {
         match key.as_str() {
@@ -257,8 +260,11 @@ fn canonicalize_edit_object(edit: &Value) -> Result<Value, String> {
 ///
 /// Flat single-edit calls (`path` + `start`/`content`/…) are wrapped into a
 /// one-element `edits` array. Legacy `edits` arrays (hidden dispatch aliases)
-/// are preserved.
-pub(super) fn canonicalize_edit_file_args(args: &Value) -> Result<Value, String> {
+/// are preserved. String booleans are accepted; their warnings go to `warnings`.
+pub(super) fn canonicalize_edit_file_args(
+    args: &Value,
+    warnings: &mut Vec<String>,
+) -> Result<Value, String> {
     let Some(args_obj) = args.as_object() else {
         return Ok(args.clone());
     };
@@ -275,7 +281,7 @@ pub(super) fn canonicalize_edit_file_args(args: &Value) -> Result<Value, String>
         if let Some(edits_array) = edits.as_array() {
             let mut normalized = Vec::with_capacity(edits_array.len());
             for edit in edits_array {
-                normalized.push(canonicalize_edit_object(edit)?);
+                normalized.push(canonicalize_edit_object(edit, warnings)?);
             }
             canonical.insert("edits".to_string(), Value::Array(normalized));
         } else {
@@ -287,7 +293,7 @@ pub(super) fn canonicalize_edit_file_args(args: &Value) -> Result<Value, String>
 
     // Flat single-edit form advertised by the discovery schema.
     let path = args_obj.get("path").cloned().unwrap_or(Value::Null);
-    let edit = canonicalize_edit_object(&Value::Object(args_obj.clone()))?;
+    let edit = canonicalize_edit_object(&Value::Object(args_obj.clone()), warnings)?;
     Ok(json!({
         "path": path,
         "edits": [edit],
@@ -602,4 +608,37 @@ pub(super) fn parse_line_edit(
         end_anchor,
         action,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn legacy_insert_after_accepts_a_string_boolean_with_a_warning() {
+        let args = json!({
+            "path": "a.txt",
+            "edits": [{ "line": 1, "new_value": "x", "insertAfter": "true" }]
+        });
+        let mut warnings = Vec::new();
+        let canonical = canonicalize_edit_file_args(&args, &mut warnings).unwrap();
+        assert_eq!(canonical["edits"][0]["op"], "insert_after");
+        assert_eq!(
+            warnings,
+            vec![
+                "Warning: insertAfter was the string \"true\"; pass a JSON boolean (true/false)."
+                    .to_string()
+            ]
+        );
+
+        let bad = json!({
+            "path": "a.txt",
+            "edits": [{ "line": 1, "new_value": "x", "insertAfter": "yes" }]
+        });
+        let error = canonicalize_edit_file_args(&bad, &mut Vec::new()).unwrap_err();
+        assert!(
+            error.contains("insertAfter must be a JSON boolean"),
+            "{error}"
+        );
+    }
 }

@@ -2,6 +2,7 @@ use super::super::tools::file_tools::EDIT_FILE_MAX_EDITS;
 use super::super::workspace_server::path_validation_failure_guidance;
 use super::super::WorkspaceServer;
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
+use crate::mcp::builtin::utils::annotate_warnings;
 use crate::mcp::types::MCPResult;
 use crate::services::SecureFileManager;
 use serde_json::{json, Value};
@@ -363,7 +364,8 @@ impl WorkspaceServer {
         args: Value,
         session_id: Option<String>,
     ) -> Result<MCPResult, String> {
-        let canonical_args = match canonicalize_edit_file_args(&args) {
+        let mut warnings = Vec::new();
+        let canonical_args = match canonicalize_edit_file_args(&args, &mut warnings) {
             Ok(value) => value,
             Err(error) => {
                 return Ok(guided_error(
@@ -381,6 +383,18 @@ impl WorkspaceServer {
             }
         };
 
+        let result = self
+            .handle_canonical_edit_file(args, canonical_args, session_id)
+            .await?;
+        Ok(annotate_warnings(result, warnings))
+    }
+
+    async fn handle_canonical_edit_file(
+        &self,
+        args: Value,
+        canonical_args: Value,
+        session_id: Option<String>,
+    ) -> Result<MCPResult, String> {
         if let Err(validation_error) = validate_edit_file_arguments(&args, &canonical_args) {
             return Ok(guided_error(
                 ErrorCategory::InvalidInput,

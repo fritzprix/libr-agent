@@ -36,6 +36,23 @@ impl WorkspaceServer {
         args: Value,
         session_id: Option<String>,
     ) -> Result<MCPResult, String> {
+        let show_line_anchors = match parse_show_line_anchors(&args) {
+            Ok(arg) => arg,
+            Err(result) => return Ok(result),
+        };
+
+        let result = self
+            .handle_read_file_inner(args, session_id, show_line_anchors.value)
+            .await?;
+        Ok(show_line_anchors.annotate(result))
+    }
+
+    async fn handle_read_file_inner(
+        &self,
+        args: Value,
+        session_id: Option<String>,
+        show_line_anchors: bool,
+    ) -> Result<MCPResult, String> {
         // ✅ ENHANCED: Add proactive parameter validation before file operations
 
         // 1. Parameter existence and non-empty check
@@ -83,7 +100,6 @@ impl WorkspaceServer {
             Ok(size) => size,
             Err(result) => return Ok(result),
         };
-        let show_line_anchors = parse_show_line_anchors(&args);
 
         if let Some(sz) = size_opt {
             if sz == 0 {

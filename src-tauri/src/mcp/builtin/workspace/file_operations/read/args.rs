@@ -1,18 +1,20 @@
 //! Argument parsing for workspace__readFile.
 
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
+use crate::mcp::builtin::utils::{read_bool_arg, BoolArg};
 use crate::mcp::builtin::workspace::edit_mode::LINE_ANCHORS_ENABLED;
 use crate::mcp::types::MCPResult;
 use serde_json::Value;
 
-pub(super) fn parse_show_line_anchors(args: &Value) -> bool {
+pub(super) fn parse_show_line_anchors(args: &Value) -> Result<BoolArg, MCPResult> {
     if !LINE_ANCHORS_ENABLED {
-        return false;
+        return Ok(BoolArg {
+            value: false,
+            warning: None,
+        });
     }
 
-    args.get("showLineAnchors")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false)
+    read_bool_arg(args, "showLineAnchors", false, ToolGroup::Workspace)
 }
 
 pub(super) fn parse_offset_parameter(args: &Value) -> Result<Option<isize>, MCPResult> {

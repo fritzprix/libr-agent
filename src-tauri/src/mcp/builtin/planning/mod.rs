@@ -5,6 +5,7 @@ mod todos;
 mod tools;
 
 use crate::mcp::builtin::error_guidance::{missing_param_error, SuccessHint, ToolGroup};
+use crate::mcp::builtin::utils::read_bool_arg;
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{BuiltinServerMetadata, MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
@@ -112,20 +113,21 @@ impl BuiltinMCPServer for PlanningServer {
             }
             "getCurrentState" => {
                 // Extract optional include_checked param (defaults to true)
-                let include_checked = args
-                    .get("include_checked")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(true);
+                let include_checked =
+                    match read_bool_arg(&args, "include_checked", true, ToolGroup::Planning) {
+                        Ok(arg) => arg,
+                        Err(result) => return Ok(result),
+                    };
                 let context = context::get_service_context(
                     self.db.as_ref(),
                     &target_session_id,
-                    include_checked,
+                    include_checked.value,
                 )
                 .await;
-                Ok(MCPResult::success_with_data(
+                Ok(include_checked.annotate(MCPResult::success_with_data(
                     &context.context_prompt,
                     context.structured_state.clone().unwrap_or(json!({})),
-                ))
+                )))
             }
             "reflect" => {
                 let critique = match args.get("critique").and_then(|v| v.as_str()) {
@@ -159,5 +161,43 @@ impl BuiltinMCPServer for PlanningServer {
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
         // Service context always includes completed todos for full planning visibility
         context::get_service_context(self.db.as_ref(), &self.session_id, true).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mcp::builtin::utils::result_text;
+    use sea_orm::Database;
+    use sea_orm_migration::MigratorTrait;
+
+    #[tokio::test]
+    async fn get_current_state_reads_a_string_include_checked_with_a_warning() {
+        crate::lifecycle::database::register_sqlite_vec();
+        let db = Database::connect("sqlite::memory:").await.unwrap();
+        crate::migration::Migrator::up(&db, None).await.unwrap();
+        crate::state::set_planning_repository(crate::repositories::SqlitePlanningRepository::new(
+            db.clone(),
+        ));
+        let server = PlanningServer::new("planning-session".to_string(), Arc::new(db))
+            .await
+            .unwrap();
+
+        let result = server
+            .call_tool(
+                "getCurrentState",
+                json!({ "include_checked": "false" }),
+                None,
+            )
+            .await
+            .unwrap();
+        assert_ne!(result.is_error, Some(true));
+        assert!(result_text(&result).contains("Warning: include_checked was the string"));
+
+        let result = server
+            .call_tool("getCurrentState", json!({ "include_checked": 1 }), None)
+            .await
+            .unwrap();
+        assert_eq!(result.is_error, Some(true));
     }
 }

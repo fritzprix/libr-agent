@@ -4,6 +4,7 @@ use crate::execution_mode::ExecutionMode;
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, ErrorCategory, ToolGroup,
 };
+use crate::mcp::builtin::utils::read_bool_arg;
 use crate::mcp::types::MCPResult;
 
 use super::super::super::{utils, WorkspaceServer, PERSISTENT_SHELL_TOOL};
@@ -198,16 +199,18 @@ impl WorkspaceServer {
             return Ok(result);
         }
 
-        let require_input = args
-            .get("requireUserInput")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        let require_input =
+            match read_bool_arg(&args, "requireUserInput", false, ToolGroup::Workspace) {
+                Ok(arg) => arg,
+                Err(result) => return Ok(result),
+            };
 
         // If user input is required, suspend the same synchronous tool call until the UI submits it.
-        if require_input {
+        if require_input.value {
             return self
                 .handle_interactive_shell(raw_command, &args, session_id)
-                .await;
+                .await
+                .map(|result| require_input.annotate(result));
         }
 
         // Sync mode: persistent shell execution
@@ -217,13 +220,15 @@ impl WorkspaceServer {
             Err(max_timeout) => {
                 let attempted_timeout =
                     requested_timeout.unwrap_or_else(utils::default_sync_execution_timeout);
-                return Ok(self.sync_timeout_exceeded_result(attempted_timeout, max_timeout));
+                return Ok(require_input
+                    .annotate(self.sync_timeout_exceeded_result(attempted_timeout, max_timeout)));
             }
         };
 
         // Execute with persistent shell (state preservation)
         self.execute_shell_persistent(raw_command, tool_name, timeout_secs, session_id)
             .await
+            .map(|result| require_input.annotate(result))
     }
 
     /// Handle primary isolated shell execution (new tool)
@@ -360,12 +365,13 @@ impl WorkspaceServer {
         }
 
         // Async mode does not support interactive input
-        let require_input = args
-            .get("requireUserInput")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        let require_input =
+            match read_bool_arg(&args, "requireUserInput", false, ToolGroup::Workspace) {
+                Ok(arg) => arg,
+                Err(result) => return Ok(result),
+            };
 
-        if require_input {
+        if require_input.value {
             return Ok(guided_error(
                 ErrorCategory::InvalidInput,
                 "Background processes cannot prompt for interactive input".to_string(),
@@ -393,6 +399,7 @@ impl WorkspaceServer {
         // Policy + cwd resolve live in execute_shell_async (cwd must be known first).
         self.execute_shell_async(raw_command, &args, session_id)
             .await
+            .map(|result| require_input.annotate(result))
     }
 
     pub(crate) fn apply_shell_policy_block(

@@ -9,6 +9,7 @@ use crate::mcp::builtin::browser::{handle_browser_op_error, BrowserServer};
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, ErrorCategory, ErrorGuidance, SuccessHint, ToolGroup,
 };
+use crate::mcp::builtin::utils::{annotate_warnings, read_bool_arg, BoolArg};
 use crate::mcp::types::MCPResult;
 use crate::services::InteractiveBrowserServer;
 use chrono::Utc;
@@ -74,7 +75,34 @@ pub async fn smart_content(server: &BrowserServer, args: Value) -> Result<MCPRes
     read_web_content(server, args).await
 }
 
+/// `saveRawHtml` (default false) and `autoMerge` (default true) of extractContent.
+fn read_extract_flags(args: &Value) -> Result<(BoolArg, BoolArg), MCPResult> {
+    Ok((
+        read_bool_arg(args, "saveRawHtml", false, ToolGroup::Browser)?,
+        read_bool_arg(args, "autoMerge", true, ToolGroup::Browser)?,
+    ))
+}
+
 pub async fn extract_web_content(server: &BrowserServer, args: Value) -> Result<MCPResult, String> {
+    let (save_raw_html, auto_merge) = match read_extract_flags(&args) {
+        Ok(flags) => flags,
+        Err(result) => return Ok(result),
+    };
+
+    let result = extract_web_content_inner(server, save_raw_html.value, auto_merge.value).await?;
+    Ok(annotate_warnings(
+        result,
+        [save_raw_html.warning, auto_merge.warning]
+            .into_iter()
+            .flatten(),
+    ))
+}
+
+async fn extract_web_content_inner(
+    server: &BrowserServer,
+    save_raw_html: bool,
+    auto_merge: bool,
+) -> Result<MCPResult, String> {
     let service = server.get_browser_service()?;
 
     // Get browser session ID from server instance
@@ -102,16 +130,6 @@ pub async fn extract_web_content(server: &BrowserServer, args: Value) -> Result<
             .to_mcp_result());
         }
     };
-
-    let save_raw_html = args
-        .get("saveRawHtml")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-
-    let auto_merge = args
-        .get("autoMerge")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(true); // Default: true
 
     // Extract page title and URL
     let page_title = service
@@ -455,5 +473,18 @@ mod tests {
         assert!(!should_extract_before_cached_page_read(true, true, true));
         assert!(!should_extract_before_cached_page_read(false, true, false));
         assert!(!should_extract_before_cached_page_read(true, false, false));
+    }
+
+    #[test]
+    fn extract_flags_accept_string_booleans_with_a_warning() {
+        let (save_raw_html, auto_merge) =
+            read_extract_flags(&json!({ "saveRawHtml": "TRUE", "autoMerge": "false" })).unwrap();
+        assert!(save_raw_html.value);
+        assert!(!auto_merge.value);
+        assert!(save_raw_html.warning.is_some() && auto_merge.warning.is_some());
+
+        let (_, auto_merge) = read_extract_flags(&json!({})).unwrap();
+        assert!(auto_merge.value, "autoMerge defaults to true");
+        assert!(read_extract_flags(&json!({ "autoMerge": "maybe" })).is_err());
     }
 }
