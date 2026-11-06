@@ -82,7 +82,7 @@ export function ProcessOutputDialog({
         </DialogHeader>
 
         {loading ? (
-          <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+          <div className="flex flex-1 items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
             {t('agent.processes.loadingOutput', 'Loading output…')}
           </div>
