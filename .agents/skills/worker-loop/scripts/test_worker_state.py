@@ -6,18 +6,27 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import worker_state
 
 
-def _acquire_in_child(root: str, out: multiprocessing.Queue) -> None:
+def _acquire_in_child(
+    root: str,
+    started: multiprocessing.Queue,
+    release: multiprocessing.Queue,
+) -> None:
     try:
         holder = os.getpid()
         with patch.dict(os.environ, {"LOOP_STATE_DIR": root}, clear=False):
-            out.put(worker_state.acquire_checkin(None, holder=holder))
+            worker = worker_state.acquire_checkin(None, holder=holder)
+        started.put(worker)
+        # Stay alive until the parent has collected every check-in. The other
+        # child probes this PID during its own acquire; exiting first would
+        # look like a dead holder on Windows.
+        release.get()
     except Exception as e:
-        out.put(e)
+        started.put(e)
 
 
 class WorkerStateTest(unittest.TestCase):
@@ -65,6 +74,26 @@ class WorkerStateTest(unittest.TestCase):
         worker_state.atomic_write_json(self.claims, {"a": 1})
         self.assertEqual(json.loads(self.claims.read_text(encoding="utf-8")), {"a": 1})
         self.assertEqual([p.name for p in self.root.iterdir()], ["claims.json"])
+
+    def test_read_json_tolerates_utf8_bom(self):
+        payload = {"scheduler": {"kind": "scheduled_task", "id": "abc"}, "skipped": {"2390": "blocked"}}
+        self.claims.write_bytes(b"\xef\xbb\xbf" + json.dumps(payload).encode("utf-8"))
+        self.assertEqual(worker_state.read_json(self.claims), payload)
+
+    def test_read_json_raises_on_corrupt_existing_file(self):
+        # #2612: an existing file we cannot parse must raise, not return {} —
+        # otherwise the next save silently wipes it.
+        self.claims.write_text('{"current": "pr:1", broken', encoding="utf-8")
+        with self.assertRaises(worker_state.StateFileCorrupt):
+            worker_state.read_json(self.claims)
+
+    def test_read_json_raises_on_non_object_json(self):
+        self.claims.write_text("[1, 2]", encoding="utf-8")
+        with self.assertRaises(worker_state.StateFileCorrupt):
+            worker_state.read_json(self.claims)
+
+    def test_read_json_missing_file_is_empty(self):
+        self.assertEqual(worker_state.read_json(self.claims), {})
 
     def test_stale_claims_lock_is_broken(self):
         lock = self.claims.with_name("claims.json.lock")
@@ -125,21 +154,46 @@ class CheckinTest(unittest.TestCase):
 
     def test_concurrent_checkins_get_different_slots(self):
         ctx = multiprocessing.get_context("spawn")
-        queue: multiprocessing.Queue = ctx.Queue()
+        started: multiprocessing.Queue = ctx.Queue()
+        release: multiprocessing.Queue = ctx.Queue()
         root = str(self.root)
         processes = [
-            ctx.Process(target=_acquire_in_child, args=(root, queue))
+            ctx.Process(target=_acquire_in_child, args=(root, started, release))
             for _ in range(2)
         ]
         for proc in processes:
             proc.start()
+        try:
+            results = [started.get(timeout=15) for _ in range(2)]
+        finally:
+            for _ in processes:
+                release.put(None)
+            for proc in processes:
+                proc.join(timeout=15)
         for proc in processes:
-            proc.join(timeout=15)
             self.assertEqual(proc.exitcode, 0)
-        results = [queue.get(timeout=5) for _ in range(2)]
         for item in results:
             self.assertIsInstance(item, str)
         self.assertNotEqual(results[0], results[1])
+
+    def test_win_open_process_error_distinguishes_dead_from_denied(self):
+        import ctypes
+
+        cases = (
+            (87, False),  # ERROR_INVALID_PARAMETER: PID does not exist
+            (5, True),  # ERROR_ACCESS_DENIED: process exists, query refused
+        )
+        for code, expect_alive in cases:
+            with self.subTest(last_error=code):
+                kernel32 = MagicMock()
+                kernel32.OpenProcess.return_value = 0
+                with patch.object(ctypes, "WinDLL", return_value=kernel32), patch.object(
+                    ctypes, "get_last_error", return_value=code
+                ):
+                    self.assertEqual(worker_state._win_pid_alive(4242), expect_alive)
+                kernel32.OpenProcess.assert_called_once()
+                kernel32.GetExitCodeProcess.assert_not_called()
+                kernel32.CloseHandle.assert_not_called()
 
     def test_resolve_holder_pid_explicit(self):
         self.assertEqual(worker_state.resolve_holder_pid(4242), 4242)

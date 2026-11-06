@@ -100,6 +100,9 @@ def load_state(path: Path) -> dict:
 
 
 def save_state(path: Path, state: dict) -> None:
+    """Refuse to write over a state file we cannot read; that is the #2612 wipe."""
+    if path.is_file():
+        worker_state.read_json(path)
     worker_state.atomic_write_json(path, state)
 
 
@@ -118,7 +121,7 @@ def check_lock(lock_file: Path, ttl_seconds: int = LOCK_TTL_SECONDS) -> bool:
     if not lock_file.is_file():
         return False
     try:
-        data = json.loads(lock_file.read_text(encoding="utf-8"))
+        data = json.loads(lock_file.read_text(encoding="utf-8-sig"))
         locked_at = data.get("time", 0)
         now = time.time()
         # If lock expired by TTL, it is stale regardless of PID
@@ -126,12 +129,9 @@ def check_lock(lock_file: Path, ttl_seconds: int = LOCK_TTL_SECONDS) -> bool:
             return False
         # If PID was explicitly recorded, verify if process is still alive
         pid = data.get("pid")
-        if pid and sys.platform != "win32":
-            try:
-                os.kill(pid, 0)
-            except OSError:
-                # Process is dead, lock is stale
-                return False
+        if pid and not worker_state._pid_alive(int(pid)):
+            # Process is dead, lock is stale
+            return False
         return True
     except Exception:
         return False
@@ -337,6 +337,10 @@ def main() -> None:
 
     except GhError as e:
         sys.stderr.write(f"tick_gate GitHub CLI error: {e}\n")
+        sys.exit(EXIT_ERROR)
+    except worker_state.StateFileCorrupt as e:
+        # Never write over a state file we failed to read (#2612).
+        sys.stderr.write(f"tick_gate state file error: {e}\n")
         sys.exit(EXIT_ERROR)
     except Exception as e:
         sys.stderr.write(f"tick_gate unexpected error: {e}\n")

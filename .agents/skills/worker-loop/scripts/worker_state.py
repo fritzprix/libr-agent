@@ -43,16 +43,31 @@ REF_FORMAT = re.compile(r"^(issue|pr):\d+$")
 SLOT_NAME = re.compile(r"^worker(?:-\d+)?$")
 # A crashed writer must not block claims forever; claim updates take milliseconds.
 CLAIMS_LOCK_STALE_SECONDS = 60
-# Windows has no reliable pid liveness probe; match tick_gate LOCK_TTL_SECONDS.
+# Slots without a holder PID must not block forever (e.g. a killed tick);
+# match tick_gate LOCK_TTL_SECONDS. Slots with a PID use liveness probing.
 CHECKIN_TTL_SECONDS = 1800
 MAX_AUTO_SLOTS = 32
 _HOLDER_ENV = "WORKER_LOOP_HOLDER_PID"
 _TRANSIENT_SHELLS = frozenset({"bash", "sh", "zsh", "dash", "fish", "pwsh", "cmd"})
 _HOLDER_UNSET = object()
+# Windows process-termination query (PROCESS_QUERY_LIMITED_INFORMATION).
+_WIN_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+_WIN_STILL_ACTIVE = 259  # STILL_ACTIVE is 0x00000103, not 0x100
+# OpenProcess: this code means the PID does not exist. Any other error
+# (including ERROR_ACCESS_DENIED = 5) means the process is alive.
+_WIN_ERROR_INVALID_PARAMETER = 87
 
 
 class CheckinError(RuntimeError):
     """Could not acquire or release a worker check-in slot."""
+
+
+class StateFileCorrupt(RuntimeError):
+    """An existing state file could not be read or parsed.
+
+    Callers must stop rather than write: a state file we cannot read is still
+    data, and saving over it would wipe it (#2612).
+    """
 
 
 def worker_name(explicit: str | None = None) -> str:
@@ -160,14 +175,18 @@ def _is_trusted_session_holder(info: ProcessInfo) -> bool:
 
 
 def resolve_holder_pid(explicit: int | None = None) -> int | None:
-    """Long-lived session PID, or None → check-in uses TTL only (no pid field)."""
+    """Long-lived session PID, or None → check-in uses TTL only (no pid field).
+
+    The walk relies on `/proc`, which POSIX has and Windows does not: on
+    Windows `_process_info` finds nothing, so the walk stops at once and the
+    TTL fallback is returned. Tests inject a lookup and exercise the walk on
+    every platform.
+    """
     if explicit is not None:
         return explicit
     env = os.environ.get(_HOLDER_ENV)
     if env:
         return int(env)
-    if sys.platform == "win32":
-        return None
 
     pid = os.getppid()
     for _ in range(40):
@@ -186,11 +205,39 @@ def resolve_holder_pid(explicit: int | None = None) -> int | None:
     return None
 
 
+def _win_pid_alive(pid: int) -> bool:
+    """Windows PID liveness probe via kernel32 (there is no os.kill(pid, 0)).
+
+    A failed OpenProcess is not proof the PID is dead. ERROR_INVALID_PARAMETER
+    (87) means the PID does not exist. Any other error, including
+    ERROR_ACCESS_DENIED (5), means the process is alive but not queryable.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    kernel32.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+    handle = kernel32.OpenProcess(
+        _WIN_PROCESS_QUERY_LIMITED_INFORMATION, False, pid
+    )
+    if not handle:
+        return ctypes.get_last_error() != _WIN_ERROR_INVALID_PARAMETER
+    try:
+        exit_code = wintypes.DWORD()
+        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+            return True  # cannot query: assume alive, TTL will eventually free the slot
+        return exit_code.value == _WIN_STILL_ACTIVE
+    finally:
+        kernel32.CloseHandle(handle)
+
+
 def _pid_alive(pid: int | None) -> bool:
     if not pid:
         return False
     if sys.platform == "win32":
-        return True
+        return _win_pid_alive(int(pid))
     try:
         os.kill(pid, 0)
         return True
@@ -216,8 +263,6 @@ def is_checkin_stale(record: dict | None) -> bool:
     started = int(record.get("startedAt") or 0)
     pid = record.get("pid")
     if pid is None:
-        return time.time() - started > CHECKIN_TTL_SECONDS
-    if sys.platform == "win32":
         return time.time() - started > CHECKIN_TTL_SECONDS
     if not _pid_alive(int(pid)):
         return True
@@ -351,13 +396,22 @@ def atomic_write_json(path: Path, data: dict) -> None:
 
 
 def read_json(path: Path) -> dict:
+    """Read a JSON object file. A missing file is empty; an existing file that
+    cannot be read, parsed, or is not an object raises StateFileCorrupt so that
+    no caller ever saves over data it failed to understand (#2612).
+
+    utf-8-sig also strips a UTF-8 BOM, e.g. when the file was rewritten by
+    PowerShell 5.1 `Set-Content -Encoding UTF8`.
+    """
     if not path.is_file():
         return {}
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return data if isinstance(data, dict) else {}
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError) as e:
+        raise StateFileCorrupt(f"{path} is not readable JSON: {e}") from e
+    if not isinstance(data, dict):
+        raise StateFileCorrupt(f"{path} does not contain a JSON object")
+    return data
 
 
 @contextmanager
