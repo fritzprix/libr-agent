@@ -48,12 +48,6 @@ pub enum NonProductiveCompletionReason {
     ThinkingOnlyCompletion {
         assistant_message_id: String,
     },
-    MalformedToolCallArguments {
-        assistant_message_id: String,
-        tool_names: Vec<String>,
-        /// Primary failure kind from the first invalid tool call (for logging).
-        parse_kind: String,
-    },
     ReasoningBudgetExceeded {
         response_message_id: String,
         observed_tail_chars: usize,
@@ -65,13 +59,6 @@ pub enum NonProductiveCompletionReason {
         assistant_message_id: String,
         tool_name: String,
     },
-}
-
-/// Payload for a malformed/truncated tool-call-arguments recovery attempt.
-pub struct MalformedToolArgsIncident {
-    pub assistant_message_id: String,
-    pub tool_names: Vec<String>,
-    pub parse_kind: String,
 }
 
 pub(super) struct RecoveryContext<'a> {

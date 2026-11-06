@@ -15,8 +15,6 @@ pub async fn reset_session_execution_state(session: &mut AgentSession) {
     session.cancellation_token = CancellationToken::new();
     *session.repeated_thinking_retry_count.write().await = 0;
     *session.repeated_text_loop_retry_count.write().await = 0;
-    *session.bad_tool_args_retry_count.write().await = 0;
-    *session.bad_tool_args_incident_count.write().await = 0;
     *session.reasoning_budget_retry_count.write().await = 0;
     *session.malformed_tool_markup_retry_count.write().await = 0;
     // Drop any in-flight tool batch marker so a restarted turn cannot treat a

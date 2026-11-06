@@ -4,8 +4,8 @@ use super::handlers::{
     handle_non_productive_completion,
 };
 use super::types::{
-    MalformedToolArgsIncident, NonProductiveCompletionAction, NonProductiveCompletionReason,
-    RecoveryContext, StreamingIssueAction, StreamingIssueOutcome,
+    NonProductiveCompletionAction, NonProductiveCompletionReason, RecoveryContext,
+    StreamingIssueAction, StreamingIssueOutcome,
 };
 use crate::agent::llm::types::{CompletionCancelRequest, StreamingIssueKind, StreamingIssueReport};
 use crate::agent::state::AgentSession;
@@ -283,61 +283,6 @@ pub async fn handle_malformed_tool_markup_completion(
         NonProductiveCompletionReason::MalformedToolMarkup {
             assistant_message_id,
             tool_name,
-        },
-    )
-    .await
-}
-
-/// Retry (or fall through after budget) when a completion contains tool calls
-/// whose `function.arguments` are not valid JSON objects.
-///
-/// On `Retried`, the bad assistant message must **not** be cached — the caller
-/// invokes this before `cache_assistant_message`. On `FallThrough`, the caller
-/// continues with cache + guided tool-error close.
-pub async fn handle_malformed_tool_args_completion(
-    session_repo: &Arc<dyn SessionRepository>,
-    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
-    proxy_manager: &Arc<MCPServiceProxyManager>,
-    app_handle: &AppHandle,
-    session_id: String,
-    incident: MalformedToolArgsIncident,
-) -> Result<StreamingIssueOutcome, String> {
-    let counter = StreamingRecoveryCounter::BadToolArgs;
-
-    let (action, session_name) = {
-        let active = active_sessions.read().await;
-        let Some(session) = active.get(&session_id) else {
-            return Ok(StreamingIssueOutcome::Ignored);
-        };
-
-        let retry_count = counter.read_count(session).await;
-        let session_name = session
-            .metadata
-            .name
-            .clone()
-            .unwrap_or_else(|| session_id[..8.min(session_id.len())].to_string());
-
-        (
-            evaluate_non_productive_completion_action(retry_count, counter.max_retries()),
-            session_name,
-        )
-    };
-
-    handle_non_productive_completion(
-        RecoveryContext {
-            session_repo,
-            active_sessions,
-            proxy_manager,
-            app_handle,
-        },
-        session_id,
-        session_name,
-        counter,
-        action,
-        NonProductiveCompletionReason::MalformedToolCallArguments {
-            assistant_message_id: incident.assistant_message_id,
-            tool_names: incident.tool_names,
-            parse_kind: incident.parse_kind,
         },
     )
     .await

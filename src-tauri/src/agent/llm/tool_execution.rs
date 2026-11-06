@@ -300,20 +300,13 @@ use crate::agent::llm::tool_args_validation::{
     args_preview, inspect_tool_call_arguments, ArgsParseFailureKind,
 };
 
-fn is_think_tool(tool_name: &str) -> bool {
-    tool_name == "think"
-        || tool_name.ends_with("__think")
-        || tool_name.eq_ignore_ascii_case("scratchpad__think")
-}
-
 /// Build a guided tool-result for malformed / truncated tool-call arguments so the
 /// agent can recover on the next turn instead of retrying the same broken payload.
 ///
 /// This intentionally closes the tool call with an error result (via
 /// `continue_after_tool`). The existing loop-prevention circuit then treats
 /// repeated identical (tool, args) + error outcomes as a streak (default soft
-/// block at 3). Early bad-response retry lives in `stream_recovery`; this path
-/// is the fallthrough after that budget is exhausted (or if validation was skipped).
+/// block at 3).
 fn args_parse_error_result(
     tool_name: &str,
     args_str: &str,
@@ -321,60 +314,44 @@ fn args_parse_error_result(
     parse_error: &str,
     max_output_tokens: Option<u32>,
 ) -> ToolExecutionResult {
-    let args_bytes = args_str.len();
-    let budget_hint = max_output_tokens.map(|n| {
-        format!(
-            "This session's max output tokens is ~{n}; keep the whole tool-call JSON well under that budget (JSON overhead + other fields count too)."
-        )
-    });
+    let args_bytes = crate::agent::llm::tool_args_validation::parse_redacted_byte_length(args_str)
+        .unwrap_or(args_str.len());
 
-    let (headline, mut guidance) = match kind {
-        ArgsParseFailureKind::TruncatedString => (
-            format!(
-                "Failed to parse args for `{tool_name}`: JSON was truncated mid-string ({parse_error}). A string field was likely oversized and cut off before the closing quote."
-            ),
-            vec![
-                "Do NOT retry the identical oversized payload — it will truncate again".to_string(),
-                "Re-issue the tool call with complete, valid JSON and a much shorter string field"
-                    .to_string(),
-            ],
-        ),
-        ArgsParseFailureKind::TruncatedJson => (
-            format!(
-                "Failed to parse args for `{tool_name}`: JSON was truncated ({parse_error}). The argument blob was cut off before it was complete."
-            ),
-            vec![
-                "Do NOT retry the identical payload — it will truncate again".to_string(),
-                "Re-issue the tool call with a smaller, complete JSON object".to_string(),
-            ],
-        ),
-        ArgsParseFailureKind::MalformedJson => (
-            format!(
-                "Failed to parse args for `{tool_name}`: invalid JSON ({parse_error}). The tool was not executed."
-            ),
-            vec![
-                "Fix the JSON syntax (quotes, commas, braces, escapes) and call the same tool again"
-                    .to_string(),
-                "If a string field was huge, shrink it — oversized args often corrupt JSON encoding"
-                    .to_string(),
-            ],
-        ),
+    let budget_info = match max_output_tokens {
+        Some(tokens) => format!(" (max output tokens budget: ~{})", tokens),
+        None => String::new(),
     };
 
-    if let Some(hint) = budget_hint {
-        guidance.push(hint);
-    }
+    let (headline, mut guidance) = if kind.is_truncated() {
+        (
+            format!(
+                "Failed to parse arguments for `{tool_name}`: output budget exceeded{budget_info}, arguments truncated ({parse_error}). The tool call was not executed."
+            ),
+            vec![
+                "Output budget exceeded: arguments were truncated before JSON was complete".to_string(),
+                "The tool call was not executed".to_string(),
+                "Split the work into smaller tool calls with smaller payloads".to_string(),
+                "Do NOT retry the identical oversized payload — it will truncate again".to_string(),
+            ],
+        )
+    } else {
+        (
+            format!(
+                "Failed to parse arguments for `{tool_name}`: invalid JSON ({parse_error}). The tool call was not executed."
+            ),
+            vec![
+                "Fix the JSON syntax (quotes, commas, braces, escapes) and call the tool again".to_string(),
+                "The tool call was not executed".to_string(),
+                "If argument payloads are large, split the work into smaller tool calls".to_string(),
+            ],
+        )
+    };
 
-    if is_think_tool(tool_name) {
-        guidance.insert(
-            0,
-            "Call scratchpad__think again with a concise thought (decision + next step only) — do not paste full context"
-                .to_string(),
-        );
-        guidance.push(
-            "Then execute that next step with the appropriate domain tool — do not keep thinking in a loop"
-                .to_string(),
-        );
+    if let Some(tokens) = max_output_tokens {
+        guidance.push(format!(
+            "Session output budget is ~{} tokens; keep each tool call JSON well below this budget.",
+            tokens
+        ));
     }
 
     guidance.push(

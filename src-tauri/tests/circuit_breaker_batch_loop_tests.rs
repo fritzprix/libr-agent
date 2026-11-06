@@ -14,6 +14,7 @@ use tauri_mcp_agent_lib::agent::context::registry::ContextRegistry;
 use tauri_mcp_agent_lib::agent::llm::circuit_breaker::{
     batch_fingerprint, evaluate_batch_circuit_breaker, find_intra_batch_duplicates,
     normalize_tool_arguments, CircuitBreakerAction, WaitPreventionSettings,
+    TRUNCATED_OR_MALFORMED_ARGS_SIGNATURE,
 };
 use tauri_mcp_agent_lib::agent::llm::natural_recovery::{
     build_loop_prevention_guidance, LoopPreventionKind, LoopPreventionShortCircuit,
@@ -80,8 +81,6 @@ fn build_active_session(session_id: &str, messages: Vec<Message>) -> AgentSessio
         last_synced_at: Arc::new(RwLock::new(None)),
         repeated_thinking_retry_count: Arc::new(RwLock::new(0)),
         repeated_text_loop_retry_count: Arc::new(RwLock::new(0)),
-        bad_tool_args_retry_count: Arc::new(RwLock::new(0)),
-        bad_tool_args_incident_count: Arc::new(RwLock::new(0)),
         reasoning_budget_retry_count: Arc::new(RwLock::new(0)),
         malformed_tool_markup_retry_count: Arc::new(RwLock::new(0)),
         pending_events: Arc::new(RwLock::new(PendingEventManager::new())),
@@ -651,6 +650,39 @@ fn normalize_tool_arguments_is_stable_for_nested_objects() {
     assert_eq!(
         normalize_tool_arguments(left),
         normalize_tool_arguments(right)
+    );
+}
+
+#[test]
+fn normalize_tool_arguments_is_stable_for_truncated_and_redacted_args() {
+    let truncated_1 = r#"{"path":"foo.txt","content":"abcdef"#;
+    let truncated_2 = r#"{"path":"foo.txt","content":"abcdefghijklmnop"#;
+    assert_eq!(
+        normalize_tool_arguments(truncated_1),
+        TRUNCATED_OR_MALFORMED_ARGS_SIGNATURE
+    );
+    assert_eq!(
+        normalize_tool_arguments(truncated_2),
+        TRUNCATED_OR_MALFORMED_ARGS_SIGNATURE
+    );
+    assert_eq!(
+        normalize_tool_arguments(truncated_1),
+        normalize_tool_arguments(truncated_2)
+    );
+
+    let redacted_1 = "<redacted: 100 bytes, truncated>";
+    let redacted_2 = "<redacted: 5000 bytes, truncated>";
+    assert_eq!(
+        normalize_tool_arguments(redacted_1),
+        TRUNCATED_OR_MALFORMED_ARGS_SIGNATURE
+    );
+    assert_eq!(
+        normalize_tool_arguments(redacted_2),
+        TRUNCATED_OR_MALFORMED_ARGS_SIGNATURE
+    );
+    assert_eq!(
+        normalize_tool_arguments(redacted_1),
+        normalize_tool_arguments(redacted_2)
     );
 }
 
