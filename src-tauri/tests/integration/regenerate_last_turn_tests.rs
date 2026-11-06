@@ -114,8 +114,6 @@ fn build_agent_session(metadata: SessionMetadata, messages: Vec<Message>) -> Age
         last_synced_at: Arc::new(RwLock::new(Some(SystemTime::now()))),
         repeated_thinking_retry_count: Arc::new(RwLock::new(0)),
         repeated_text_loop_retry_count: Arc::new(RwLock::new(0)),
-        bad_tool_args_retry_count: Arc::new(RwLock::new(0)),
-        bad_tool_args_incident_count: Arc::new(RwLock::new(0)),
         reasoning_budget_retry_count: Arc::new(RwLock::new(0)),
         malformed_tool_markup_retry_count: Arc::new(RwLock::new(0)),
         pending_events: Arc::new(RwLock::new(PendingEventManager::new())),

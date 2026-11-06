@@ -1,4 +1,4 @@
-use super::constants::{BAD_TOOL_ARGS_MAX_INCIDENTS, MALFORMED_TOOL_MARKUP_NOTE};
+use super::constants::MALFORMED_TOOL_MARKUP_NOTE;
 use super::counter::StreamingRecoveryCounter;
 use super::types::{
     NonProductiveCompletionAction, NonProductiveCompletionReason, RecoveryContext,
@@ -104,21 +104,6 @@ pub(super) async fn handle_non_productive_completion(
                         max_retries
                     );
                 }
-                NonProductiveCompletionReason::MalformedToolCallArguments {
-                    assistant_message_id,
-                    tool_names,
-                    parse_kind,
-                } => {
-                    log::warn!(
-                        "Malformed/truncated tool-call arguments detected for session {} message {} (tools={:?}, kind={}). Retrying LLM turn ({}/{}).",
-                        session_id,
-                        assistant_message_id,
-                        tool_names,
-                        parse_kind,
-                        next_retry_count,
-                        max_retries
-                    );
-                }
                 NonProductiveCompletionReason::MalformedToolMarkup {
                     assistant_message_id,
                     tool_name,
@@ -152,39 +137,14 @@ pub(super) async fn handle_non_productive_completion(
                 }
             }
 
-            let recovery_result = request_llm_completion_with_recovery(
+            request_llm_completion_with_recovery(
                 context.session_repo,
                 context.active_sessions,
                 context.proxy_manager,
                 context.app_handle,
                 session_id.clone(),
             )
-            .await;
-
-            if let Err(error) = recovery_result {
-                // Malformed-args retries must still close tool calls if the
-                // replacement completion cannot start — fall through instead of
-                // aborting handle_llm_response with `?`.
-                if matches!(
-                    reason,
-                    NonProductiveCompletionReason::MalformedToolCallArguments { .. }
-                ) {
-                    log::warn!(
-                        "Bad-tool-args retry failed to start replacement completion for session {}: {}. Falling through to guided tool-error close.",
-                        session_id,
-                        error
-                    );
-                    return fallthrough_or_hard_fail_malformed_tool_args(
-                        &context,
-                        &session_id,
-                        &session_name,
-                        &reason,
-                        max_retries,
-                    )
-                    .await;
-                }
-                return Err(error);
-            }
+            .await?;
 
             Ok(StreamingIssueOutcome::Retried {
                 retry_count: next_retry_count,
@@ -202,20 +162,6 @@ pub(super) async fn handle_non_productive_completion(
                     session_id
                 );
                 return Ok(StreamingIssueOutcome::FallThrough);
-            }
-
-            if matches!(
-                reason,
-                NonProductiveCompletionReason::MalformedToolCallArguments { .. }
-            ) {
-                return fallthrough_or_hard_fail_malformed_tool_args(
-                    &context,
-                    &session_id,
-                    &session_name,
-                    &reason,
-                    max_retries,
-                )
-                .await;
             }
 
             {
@@ -277,9 +223,6 @@ pub(super) async fn handle_non_productive_completion(
                         "maxRetries": max_retries,
                     }),
                 ),
-                NonProductiveCompletionReason::MalformedToolCallArguments { .. } => {
-                    unreachable!("MalformedToolCallArguments Fail handled above")
-                }
                 NonProductiveCompletionReason::MalformedToolMarkup { .. } => {
                     unreachable!("MalformedToolMarkup Fail handled above")
                 }
@@ -318,81 +261,6 @@ pub(super) async fn handle_non_productive_completion(
             Ok(StreamingIssueOutcome::Failed)
         }
     }
-}
-
-/// Fall through to guided tool-error close, or hard-fail after too many incidents.
-///
-/// Does **not** reset `bad_tool_args_retry_count` — leaving it at the budget max
-/// prevents another 2 automatic retries on every subsequent truncated attempt.
-async fn fallthrough_or_hard_fail_malformed_tool_args(
-    context: &RecoveryContext<'_>,
-    session_id: &str,
-    session_name: &str,
-    reason: &NonProductiveCompletionReason,
-    max_retries: u32,
-) -> Result<StreamingIssueOutcome, String> {
-    let NonProductiveCompletionReason::MalformedToolCallArguments {
-        assistant_message_id,
-        tool_names,
-        parse_kind,
-    } = reason
-    else {
-        return Ok(StreamingIssueOutcome::FallThrough);
-    };
-
-    let incident_count = {
-        let active = context.active_sessions.read().await;
-        let Some(session) = active.get(session_id) else {
-            return Ok(StreamingIssueOutcome::FallThrough);
-        };
-        let mut incidents = session.bad_tool_args_incident_count.write().await;
-        *incidents = incidents.saturating_add(1);
-        *incidents
-    };
-
-    if incident_count > BAD_TOOL_ARGS_MAX_INCIDENTS {
-        log::warn!(
-            "Malformed/truncated tool-call arguments for session {} exceeded incident cap ({}/{}). Stopping workflow.",
-            session_id,
-            incident_count,
-            BAD_TOOL_ARGS_MAX_INCIDENTS
-        );
-        finalize_workflow_error_with_dispatcher(
-            context.session_repo,
-            context.active_sessions,
-            context.app_handle,
-            session_id.to_string(),
-            AgentRuntimeError::new(
-                AgentRuntimeErrorType::AiServiceError,
-                format!(
-                    "The model repeatedly produced invalid tool-call arguments in session '{}' and exceeded the automatic recovery limit. Workflow stopped to prevent an infinite loop.",
-                    session_name
-                ),
-            )
-            .with_code("MALFORMED_TOOL_ARGS_LOOP")
-            .with_original_error(serde_json::json!({
-                "assistantMessageId": assistant_message_id,
-                "toolNames": tool_names,
-                "parseKind": parse_kind,
-                "incidentCount": incident_count,
-                "maxIncidents": BAD_TOOL_ARGS_MAX_INCIDENTS,
-                "maxRetries": max_retries,
-            })),
-        )
-        .await?;
-        return Ok(StreamingIssueOutcome::Failed);
-    }
-
-    log::warn!(
-        "Malformed/truncated tool-call arguments for session {} message {} (tools={:?}, kind={}, incident {}/{}). Falling through to guided tool-error close.",
-        session_id,
-        assistant_message_id,
-        tool_names,
-        parse_kind,
-        incident_count,
-        BAD_TOOL_ARGS_MAX_INCIDENTS
-    );
-    Ok(StreamingIssueOutcome::FallThrough)
 }
 
 /// Appends a hidden recovery note (user role) to the history before a retry.

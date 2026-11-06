@@ -31,6 +31,7 @@ impl ArgsParseFailureKind {
 }
 
 /// One tool call whose arguments are not a valid JSON object.
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InvalidToolArgsIssue {
     pub tool_call_id: String,
@@ -50,6 +51,42 @@ pub fn classify_args_parse_failure(error: &serde_json::Error) -> ArgsParseFailur
     }
 }
 
+/// Redact any invalid or truncated arguments in a slice of tool calls in-place.
+pub fn redact_invalid_tool_call_args(tool_calls: &mut [ToolCall]) -> usize {
+    let mut count = 0;
+    for tool_call in tool_calls.iter_mut() {
+        if inspect_tool_call_arguments(&tool_call.function.arguments).is_err()
+            && !is_redacted_marker(&tool_call.function.arguments)
+        {
+            let raw_len = tool_call.function.arguments.len();
+            tool_call.function.arguments = redact_tool_call_arguments(raw_len);
+            count += 1;
+        }
+    }
+    count
+}
+
+pub fn redact_tool_call_arguments(raw_len: usize) -> String {
+    format!("<redacted: {} bytes, truncated>", raw_len)
+}
+
+pub fn is_redacted_marker(raw: &str) -> bool {
+    let trimmed = raw.trim();
+    trimmed.starts_with("<redacted:") && trimmed.ends_with(">")
+}
+
+pub fn parse_redacted_byte_length(raw: &str) -> Option<usize> {
+    let trimmed = raw.trim();
+    if trimmed.starts_with("<redacted:") && trimmed.ends_with(">") {
+        let inner = &trimmed[10..trimmed.len() - 1];
+        if let Some(bytes_pos) = inner.find("bytes") {
+            let num_str = inner[..bytes_pos].trim();
+            return num_str.parse::<usize>().ok();
+        }
+    }
+    None
+}
+
 /// Inspect a single arguments blob. Accepts only a JSON object (matches
 /// `inspectToolCallArguments` in `message-normalizer.ts`).
 ///
@@ -60,6 +97,13 @@ pub fn inspect_tool_call_arguments(
 ) -> Result<serde_json::Map<String, serde_json::Value>, (ArgsParseFailureKind, String)> {
     if raw_arguments.trim().is_empty() {
         return Ok(serde_json::Map::new());
+    }
+
+    if is_redacted_marker(raw_arguments) {
+        return Err((
+            ArgsParseFailureKind::TruncatedJson,
+            "tool-call arguments were truncated (output budget exceeded)".to_string(),
+        ));
     }
 
     match serde_json::from_str::<serde_json::Value>(raw_arguments) {
@@ -73,6 +117,7 @@ pub fn inspect_tool_call_arguments(
 }
 
 /// Collect every tool call in the batch whose arguments are invalid.
+#[allow(dead_code)]
 pub fn find_invalid_tool_call_args(tool_calls: &[ToolCall]) -> Vec<InvalidToolArgsIssue> {
     let mut issues = Vec::new();
     for tool_call in tool_calls {
@@ -174,5 +219,17 @@ mod tests {
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].tool_call_id, "bad");
         assert!(issues[0].kind.is_truncated());
+    }
+
+    #[test]
+    fn redact_and_parse_redacted_marker() {
+        let marker = redact_tool_call_arguments(4096);
+        assert_eq!(marker, "<redacted: 4096 bytes, truncated>");
+        assert!(is_redacted_marker(&marker));
+        assert_eq!(parse_redacted_byte_length(&marker), Some(4096));
+
+        let invalid = inspect_tool_call_arguments(&marker).unwrap_err();
+        assert_eq!(invalid.0, ArgsParseFailureKind::TruncatedJson);
+        assert!(invalid.1.contains("output budget exceeded"));
     }
 }

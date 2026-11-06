@@ -93,14 +93,22 @@ fn is_tool_error_message(message: &Message) -> bool {
     false
 }
 
+pub const TRUNCATED_OR_MALFORMED_ARGS_SIGNATURE: &str = "<truncated_or_malformed_args>";
+
 /// Canonicalize tool arguments so key-order differences do not evade signatures.
 ///
 /// `serde_json::from_str` already rejects nesting deeper than 128; we still pass an
 /// explicit depth budget as defense-in-depth for any future Value sources.
 pub fn normalize_tool_arguments(args: &str) -> String {
+    if args.trim().is_empty() {
+        return "{}".to_string();
+    }
+    if crate::agent::llm::tool_args_validation::is_redacted_marker(args) {
+        return TRUNCATED_OR_MALFORMED_ARGS_SIGNATURE.to_string();
+    }
     match serde_json::from_str::<Value>(args) {
         Ok(value) => canonical_json_value(&value, 0),
-        Err(_) => args.to_string(),
+        Err(_) => TRUNCATED_OR_MALFORMED_ARGS_SIGNATURE.to_string(),
     }
 }
 
@@ -136,6 +144,13 @@ fn canonical_json_value(value: &Value, depth: usize) -> String {
                 .collect::<Vec<_>>()
                 .join(",");
             format!("[{}]", body)
+        }
+        Value::String(s) => {
+            if crate::agent::llm::tool_args_validation::is_redacted_marker(s) {
+                format!("\"{}\"", TRUNCATED_OR_MALFORMED_ARGS_SIGNATURE)
+            } else {
+                serde_json::to_string(s).unwrap_or_else(|_| "\"\"".to_string())
+            }
         }
         other => other.to_string(),
     }

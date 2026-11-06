@@ -1,36 +1,9 @@
 use super::constants::{
-    BAD_TOOL_ARGS_MAX_INCIDENTS, BAD_TOOL_ARGS_MAX_RETRIES, MALFORMED_TOOL_MARKUP_MAX_RETRIES,
-    MALFORMED_TOOL_MARKUP_NOTE, REASONING_BUDGET_MAX_RETRIES,
+    MALFORMED_TOOL_MARKUP_MAX_RETRIES, MALFORMED_TOOL_MARKUP_NOTE, REASONING_BUDGET_MAX_RETRIES,
 };
 use super::counter::StreamingRecoveryCounter;
 use super::handlers::evaluate_non_productive_completion_action;
 use super::types::NonProductiveCompletionAction;
-
-#[test]
-fn bad_tool_args_retries_until_budget() {
-    assert_eq!(
-        evaluate_non_productive_completion_action(0, BAD_TOOL_ARGS_MAX_RETRIES),
-        NonProductiveCompletionAction::Retry {
-            next_retry_count: 1
-        }
-    );
-    assert_eq!(
-        evaluate_non_productive_completion_action(1, BAD_TOOL_ARGS_MAX_RETRIES),
-        NonProductiveCompletionAction::Retry {
-            next_retry_count: 2
-        }
-    );
-    assert_eq!(
-        evaluate_non_productive_completion_action(2, BAD_TOOL_ARGS_MAX_RETRIES),
-        NonProductiveCompletionAction::Fail
-    );
-}
-
-#[test]
-fn bad_tool_args_incident_cap_is_positive() {
-    assert!(BAD_TOOL_ARGS_MAX_INCIDENTS >= 1);
-    assert!(BAD_TOOL_ARGS_MAX_RETRIES >= 1);
-}
 
 #[test]
 fn malformed_tool_markup_retries_twice_then_gives_up() {

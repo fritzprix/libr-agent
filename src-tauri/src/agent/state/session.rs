@@ -57,15 +57,6 @@ pub struct AgentSession {
     /// Independent from `repeated_thinking_retry_count`.
     pub repeated_text_loop_retry_count: Arc<RwLock<u32>>,
 
-    /// Counts Rust-owned recovery retries after malformed/truncated tool-call
-    /// argument JSON in a completion. Independent from thinking/text counters.
-    /// Not reset on FallThrough — only on workflow start or a clean valid batch.
-    pub bad_tool_args_retry_count: Arc<RwLock<u32>>,
-
-    /// Counts FallThrough incidents for malformed tool args in the current
-    /// workflow. Hard-stops after a fixed cap to bound unbounded truncated loops.
-    pub bad_tool_args_incident_count: Arc<RwLock<u32>>,
-
     /// Counts Rust-owned recovery retries after client-side reasoning-budget
     /// aborts (thinking reached ~90% of max output tokens). Independent from
     /// repeated-thinking / text-loop counters. No prompt nudge is injected.
@@ -168,8 +159,6 @@ impl AgentSession {
             last_synced_at: Arc::new(RwLock::new(None)),
             repeated_thinking_retry_count: Arc::new(RwLock::new(0)),
             repeated_text_loop_retry_count: Arc::new(RwLock::new(0)),
-            bad_tool_args_retry_count: Arc::new(RwLock::new(0)),
-            bad_tool_args_incident_count: Arc::new(RwLock::new(0)),
             reasoning_budget_retry_count: Arc::new(RwLock::new(0)),
             malformed_tool_markup_retry_count: Arc::new(RwLock::new(0)),
             pending_events: Arc::new(RwLock::new(PendingEventManager::new())),
@@ -269,8 +258,6 @@ mod tests {
             last_synced_at: Arc::new(RwLock::new(None)),
             repeated_thinking_retry_count: Arc::new(RwLock::new(0)),
             repeated_text_loop_retry_count: Arc::new(RwLock::new(0)),
-            bad_tool_args_retry_count: Arc::new(RwLock::new(0)),
-            bad_tool_args_incident_count: Arc::new(RwLock::new(0)),
             reasoning_budget_retry_count: Arc::new(RwLock::new(0)),
             malformed_tool_markup_retry_count: Arc::new(RwLock::new(0)),
             pending_events: Arc::new(RwLock::new(PendingEventManager::new())),
