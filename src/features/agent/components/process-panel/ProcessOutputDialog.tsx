@@ -45,7 +45,6 @@ export function ProcessOutputDialog({
   onOpenChange,
 }: ProcessOutputDialogProps) {
   const { t } = useTranslation();
-  const bottomRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
 
@@ -62,16 +61,16 @@ export function ProcessOutputDialog({
     if (!stickToBottomRef.current) {
       return;
     }
-    const node = bottomRef.current;
-    if (node && typeof node.scrollIntoView === 'function') {
-      node.scrollIntoView({ block: 'end' });
+    const viewport = viewportRef.current;
+    if (viewport) {
+      viewport.scrollTop = viewport.scrollHeight;
     }
   }, [open, loading, result, error]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[85vh] w-[calc(100%-2rem)] max-w-2xl flex-col overflow-hidden">
-        <DialogHeader>
+      <DialogContent className="flex h-[85vh] max-h-[85vh] min-h-0 w-[calc(100%-2rem)] max-w-2xl flex-col overflow-hidden">
+        <DialogHeader className="shrink-0">
           <DialogTitle>
             {t('agent.processes.outputTitle', 'Process output')}
             {result?.process_id ? (
@@ -83,22 +82,24 @@ export function ProcessOutputDialog({
         </DialogHeader>
 
         {loading ? (
-          <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+          <div className="flex flex-1 items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
             {t('agent.processes.loadingOutput', 'Loading output…')}
           </div>
         ) : (
-          <ScrollArea className="min-h-0 flex-1 pr-3">
-            <div
-              ref={viewportRef}
-              className="space-y-4 pb-2"
-              onScroll={(event) => {
+          <ScrollArea
+            className="min-h-0 flex-1 pr-3"
+            viewportRef={viewportRef}
+            viewportProps={{
+              onScroll: (event) => {
                 const target = event.currentTarget;
                 const distanceFromBottom =
                   target.scrollHeight - target.scrollTop - target.clientHeight;
                 stickToBottomRef.current = distanceFromBottom < 48;
-              }}
-            >
+              },
+            }}
+          >
+            <div className="space-y-4 pb-2">
               {error ? (
                 <div
                   role="alert"
@@ -133,7 +134,6 @@ export function ProcessOutputDialog({
                   {t('agent.processes.noOutput', 'No output available')}
                 </p>
               ) : null}
-              <div ref={bottomRef} aria-hidden />
             </div>
           </ScrollArea>
         )}
