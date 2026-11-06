@@ -651,12 +651,21 @@ const MAX_ASSISTANT_BATCHES_TO_SCAN: usize = 32;
 /// non-empty tool_calls batch, a different complete batch outcome, or a user/system
 /// message ends the streak. This catches `[a,b,c] → [a,b,c]` which the per-tool
 /// result scan misses, while allowing progressive polling across repeated batches.
+///
+/// `min_scan` raises the scan floor so callers can reach their own hard break
+/// (e.g. a fast hard break at `threshold + hard_break_offset` above 32).
 pub fn count_consecutive_identical_batches(
     messages: &[Message],
     fingerprint: &str,
     wait: &WaitPreventionSettings,
+    min_scan: usize,
 ) -> (usize, usize, usize) {
-    batch_streak_stats(&group_trailing_tool_call_turns(messages), fingerprint, wait)
+    batch_streak_stats(
+        &group_trailing_tool_call_turns(messages),
+        fingerprint,
+        wait,
+        min_scan,
+    )
 }
 
 /// [`count_consecutive_identical_batches`] core over already-grouped turns
@@ -666,6 +675,7 @@ fn batch_streak_stats(
     turns: &[ToolCallTurn<'_>],
     fingerprint: &str,
     wait: &WaitPreventionSettings,
+    min_scan: usize,
 ) -> (usize, usize, usize) {
     let mut consecutive = 0;
     let mut repeated_batch_outcome: Option<String> = None;
@@ -676,8 +686,11 @@ fn batch_streak_stats(
     let mut pending_neutral: usize = 0;
     let mut wait_closed = false;
     // Scan far enough back to reach the wait hard break for any configured
-    // guide/break counts, not just the fixed floor (#2610 S1.2).
-    let scan_cap = MAX_ASSISTANT_BATCHES_TO_SCAN.max(wait.guide_count + wait.break_count + 1);
+    // guide/break counts (#2610 S1.2) and the caller's own hard break
+    // (`min_scan`, #2610 G4.1), not just the fixed floor.
+    let scan_cap = MAX_ASSISTANT_BATCHES_TO_SCAN
+        .max(wait.guide_count + wait.break_count + 1)
+        .max(min_scan);
 
     for turn in turns {
         let Some(tool_calls) = turn.assistant_message.tool_calls.as_ref() else {
@@ -776,8 +789,33 @@ fn turn_owned_by_batch_ladder(
     }
 
     let fingerprint = batch_fingerprint(tool_calls);
-    let (previous, slow_suffix, _) = batch_streak_stats(&turns[index + 1..], &fingerprint, wait);
+    let (previous, slow_suffix, _) = batch_streak_stats(&turns[index + 1..], &fingerprint, wait, 0);
+    batch_wait_ladder_owns(previous, slow_suffix)
+}
+
+/// Shared gate for [`is_wait_batch_streak`] and [`turn_owned_by_batch_ladder`]
+/// so the runtime check and the history replay cannot drift apart (#2610 S4.2).
+///
+/// G3.2: members are exempt only while the whole batch is actually repeating
+/// with an identical outcome. A single slow batch whose outcome differs from
+/// the turn before never forms a wait streak.
+fn batch_wait_ladder_owns(previous: usize, slow_suffix: usize) -> bool {
     previous >= 2 && slow_suffix > 0
+}
+
+/// Overall identical-(call, outcome) streak cap (#2610 G3.1, G4.1).
+///
+/// The wait ladder sees only its newest slow run and the fast ladder only its
+/// newest fast run, so a duration mix could restart both forever. The cap
+/// bounds the total streak. It is never lower than the fast ladder's own hard
+/// break, so a pure fast streak always follows the configured loop-prevention
+/// thresholds, whatever the wait settings are.
+fn overall_streak_cap(
+    threshold: usize,
+    hard_break_offset: usize,
+    wait: &WaitPreventionSettings,
+) -> usize {
+    (wait.guide_count + wait.break_count).max(threshold + hard_break_offset)
 }
 
 /// Collect later-in-batch duplicates of an earlier (name, args) signature.
@@ -843,19 +881,20 @@ pub fn evaluate_batch_circuit_breaker(
     }
 
     let fingerprint = batch_fingerprint(tool_calls);
-    let (previous, slow_suffix, fast_suffix) =
-        count_consecutive_identical_batches(messages, &fingerprint, wait);
+    let (previous, slow_suffix, fast_suffix) = count_consecutive_identical_batches(
+        messages,
+        &fingerprint,
+        wait,
+        threshold + hard_break_offset,
+    );
     if previous == 0 {
         return None;
     }
 
-    // Overall cap (#2610 G3.1): the wait ladder only sees its newest slow run
-    // and the fast ladder only its newest fast run, so a duration mix (e.g.
-    // alternating slow/fast batches with an identical outcome) would let each
-    // ladder restart forever. Once the total identical-(call, outcome) streak
-    // passes guide_count + break_count, hard-break regardless of duration mix.
+    // Overall cap (#2610 G3.1, G4.1): bounds duration-mixed streaks without
+    // ever firing before the fast ladder's configured hard break.
     let overall_total = previous + 1;
-    if overall_total > wait.guide_count + wait.break_count {
+    if overall_total > overall_streak_cap(threshold, hard_break_offset, wait) {
         return Some(CircuitBreakerAction::HardBreak {
             count: overall_total,
             tool_name: first.function.name.clone(),
@@ -936,13 +975,8 @@ pub fn is_wait_batch_streak(
 
     let fingerprint = batch_fingerprint(tool_calls);
     let (previous, slow_suffix, _) =
-        count_consecutive_identical_batches(messages, &fingerprint, wait);
-    // G3.2: exempt members only while the whole batch is actually *repeating*
-    // with an identical outcome. A single slow batch whose outcome differs
-    // from the turn before (e.g. one slow member whose result progresses
-    // every turn) never forms a wait streak — the fast member must keep its
-    // normal per-tool ladder.
-    previous >= 2 && slow_suffix > 0
+        count_consecutive_identical_batches(messages, &fingerprint, wait, 0);
+    batch_wait_ladder_owns(previous, slow_suffix)
 }
 
 pub fn evaluate_circuit_breaker_action(
@@ -970,13 +1004,11 @@ pub fn evaluate_circuit_breaker_action(
             wait,
         )
     {
-        // Overall cap (#2610 G3.1): the wait ladder only sees its newest slow
-        // run and the fast ladder only its newest fast run, so a duration mix
-        // (alternating slow/fast, or 9 slow + 1 fast repeating) restarts both
-        // forever. Once the total identical-(call, outcome) streak passes
-        // guide_count + break_count, hard-break regardless of duration mix.
+        // Overall cap (#2610 G3.1, G4.1): bounds duration-mixed streaks
+        // (alternating slow/fast, or 9 slow + 1 fast repeating) without ever
+        // firing before the fast ladder's configured hard break.
         let overall_total = total_matches + 1;
-        if overall_total > wait.guide_count + wait.break_count {
+        if overall_total > overall_streak_cap(threshold, hard_break_offset, wait) {
             return Some(CircuitBreakerAction::HardBreak {
                 count: overall_total,
                 tool_name: tool_name.clone(),

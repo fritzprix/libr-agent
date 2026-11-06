@@ -1217,6 +1217,100 @@ fn alternating_slow_fast_identical_calls_are_bounded_by_overall_cap() {
     );
 }
 
+// ---- Overall cap never overrides the fast ladder (#2610 G4.1) ----
+
+fn evaluate_with_settings(
+    messages: &[Message],
+    tool_call: &ToolCall,
+    threshold: usize,
+    hard_break_offset: usize,
+    wait: &WaitPreventionSettings,
+) -> Option<CircuitBreakerAction> {
+    let call_signature_by_id = build_tool_call_indices(messages);
+    evaluate_circuit_breaker_action(
+        messages,
+        tool_call,
+        &call_signature_by_id,
+        threshold,
+        hard_break_offset,
+        wait,
+    )
+}
+
+fn fast_wait_history(count: usize) -> Vec<Message> {
+    duration_mix_wait_history(count, |_| false)
+}
+
+#[test]
+fn pure_fast_calls_keep_configured_hard_break_above_wait_cap() {
+    // G4.1: threshold 20 + offset 20 configures the hard break at 40. The
+    // overall cap (guide 10 + break 10) must not hard-break this pure fast
+    // streak at 21.
+    let wait = WaitPreventionSettings::default();
+    assert_eq!(
+        evaluate_with_settings(&fast_wait_history(20), &wait_call(21), 20, 20, &wait),
+        Some(CircuitBreakerAction::NaturalRecoverySuccess {
+            count: 21,
+            tool_name: WAIT_TOOL.to_string(),
+            args: WAIT_ARGS.to_string(),
+        }),
+        "21st fast call soft-blocks; the wait cap must not hard-break it"
+    );
+    assert_eq!(
+        evaluate_with_settings(&fast_wait_history(38), &wait_call(39), 20, 20, &wait),
+        Some(CircuitBreakerAction::NaturalRecoverySuccess {
+            count: 39,
+            tool_name: WAIT_TOOL.to_string(),
+            args: WAIT_ARGS.to_string(),
+        }),
+    );
+    assert_eq!(
+        evaluate_with_settings(&fast_wait_history(39), &wait_call(40), 20, 20, &wait),
+        Some(CircuitBreakerAction::HardBreak {
+            count: 40,
+            tool_name: WAIT_TOOL.to_string(),
+            args: WAIT_ARGS.to_string(),
+        }),
+        "the configured fast hard break (threshold + offset) still trips"
+    );
+}
+
+#[test]
+fn pure_fast_calls_ignore_small_wait_counts() {
+    // G4.1: guide 1 + break 1 must not change fast behavior: soft-block at 3,
+    // hard break at 5 with default loop settings.
+    let wait = WaitPreventionSettings {
+        guide_count: 1,
+        break_count: 1,
+        ..WaitPreventionSettings::default()
+    };
+    for count in [3, 4] {
+        assert_eq!(
+            evaluate_with_settings(
+                &fast_wait_history(count - 1),
+                &wait_call(count),
+                3,
+                2,
+                &wait
+            ),
+            Some(CircuitBreakerAction::NaturalRecoverySuccess {
+                count,
+                tool_name: WAIT_TOOL.to_string(),
+                args: WAIT_ARGS.to_string(),
+            }),
+            "fast call {count} must soft-block, not hard-break"
+        );
+    }
+    assert_eq!(
+        evaluate_with_settings(&fast_wait_history(4), &wait_call(5), 3, 2, &wait),
+        Some(CircuitBreakerAction::HardBreak {
+            count: 5,
+            tool_name: WAIT_TOOL.to_string(),
+            args: WAIT_ARGS.to_string(),
+        }),
+    );
+}
+
 #[test]
 fn nine_slow_one_fast_identical_calls_are_bounded_by_overall_cap() {
     // G3.1: a 9-slow/1-fast cycle restarts the wait ladder every 10 calls while

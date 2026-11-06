@@ -1021,6 +1021,73 @@ fn alternating_slow_fast_identical_batches_are_bounded_by_overall_cap() {
     );
 }
 
+// ---- Overall cap never overrides the fast batch ladder (#2610 G4.1) ----
+
+const WAIT_BATCH_TOOL: &str = "workspace__waitForProcess";
+const WAIT_BATCH_ARGS: &str = r#"{"processId":"proc-1","timeout":10}"#;
+
+fn fast_batch_action(
+    history: usize,
+    threshold: usize,
+    hard_break_offset: usize,
+    wait: &WaitPreventionSettings,
+) -> Option<CircuitBreakerAction> {
+    evaluate_batch_circuit_breaker(
+        &duration_mix_batch_history(history, |_| false),
+        &current_wait_batch(&(history + 1).to_string()),
+        threshold,
+        hard_break_offset,
+        wait,
+    )
+}
+
+fn batch_sequence(count: usize) -> Option<CircuitBreakerAction> {
+    Some(CircuitBreakerAction::RepeatedBatchSequence {
+        count,
+        tool_name: WAIT_BATCH_TOOL.to_string(),
+        args: WAIT_BATCH_ARGS.to_string(),
+    })
+}
+
+fn batch_escalate(count: usize) -> Option<CircuitBreakerAction> {
+    Some(CircuitBreakerAction::RepeatedBatchSequenceEscalate {
+        count,
+        tool_name: WAIT_BATCH_TOOL.to_string(),
+        args: WAIT_BATCH_ARGS.to_string(),
+    })
+}
+
+fn batch_hard_break(count: usize) -> Option<CircuitBreakerAction> {
+    Some(CircuitBreakerAction::HardBreak {
+        count,
+        tool_name: WAIT_BATCH_TOOL.to_string(),
+        args: WAIT_BATCH_ARGS.to_string(),
+    })
+}
+
+#[test]
+fn pure_fast_batches_keep_configured_hard_break_above_wait_cap() {
+    // G4.1: threshold 20 + offset 20 configures the batch hard break at 40;
+    // the overall cap (guide 10 + break 10) must not cut it to 21.
+    let wait = WaitPreventionSettings::default();
+    assert_eq!(fast_batch_action(20, 20, 20, &wait), batch_sequence(21));
+    assert_eq!(fast_batch_action(38, 20, 20, &wait), batch_escalate(39));
+    assert_eq!(fast_batch_action(39, 20, 20, &wait), batch_hard_break(40));
+}
+
+#[test]
+fn pure_fast_batches_ignore_small_wait_counts() {
+    // G4.1: guide 1 + break 1 must not change fast batch behavior.
+    let wait = WaitPreventionSettings {
+        guide_count: 1,
+        break_count: 1,
+        ..WaitPreventionSettings::default()
+    };
+    assert_eq!(fast_batch_action(2, 3, 2, &wait), batch_sequence(3));
+    assert_eq!(fast_batch_action(3, 3, 2, &wait), batch_escalate(4));
+    assert_eq!(fast_batch_action(4, 3, 2, &wait), batch_hard_break(5));
+}
+
 #[test]
 fn nine_slow_one_fast_identical_batches_are_bounded_by_overall_cap() {
     // G3.1: a 9-slow/1-fast batch cycle restarts the wait ladder every 10
