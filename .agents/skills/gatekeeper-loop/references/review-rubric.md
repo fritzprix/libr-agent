@@ -2,6 +2,21 @@
 
 Classify every finding. Code review and `changes-requested` verdicts proceed immediately regardless of CI status. Only **blocker** and **major** become required `G` items; **minor** and **nit** become `S` suggestions and never block approval.
 
+## Code quality score (100 points, informational)
+
+Every gatekeeper verdict comment (including `changes-requested`, `approve`, `clean`, and `escalate`) must include a `### Code quality score (informational)` section. The **approve / changes-requested / escalate / clean** decision is unchanged: it depends only on open required `G` findings (and the existing CI/merge rules for approve). **Never** withhold approval or request changes because the score is below a threshold.
+
+| Category | Points | What to judge |
+| -------- | -----: | ------------- |
+| Correctness incl. boundary conditions | 30 | Behavior matches intent; null/empty/error/edge paths; no logic bugs in changed code |
+| Tests exercise the real production code path | 20 | Tests hit the same modules/APIs users get—not only hand-built fixtures, stubs, or duplicated logic in the test file |
+| Simplicity (KISS/YAGNI) | 15 | No needless layers, abstractions, or heuristics beyond what the issue needs |
+| Readability and naming | 15 | Names and structure make the diff easy to follow |
+| Error handling and robustness | 10 | Failures are visible or handled; no silent fallbacks that hide errors |
+| Scope discipline | 10 | Diff stays on-issue; no drive-by refactors, formatter-only churn, or unrelated files |
+
+For each row, assign a partial score (0–max) and one bullet with a **single-line rationale** that cites at least one `file:line` from the reviewed diff (or state clearly if the category is fully satisfied with no changed lines, e.g. scope-only doc tweak). Sum the six items for **Total X/100**. Do **not** score CI green/red or PR description quality.
+
 | Severity | Examples                                                                                                                                                                                                                                                                      |
 | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | blocker  | Wrong behavior, data loss, security/privacy leak, broken build, failing or deleted tests, migration without rollback path, diagnosed CI failure caused by the PR                                                                                                              |
