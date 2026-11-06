@@ -40,6 +40,15 @@ pub enum DatabaseError {
         found_hash: String,
     },
 
+    /// The database was migrated by a newer build and contains migrations
+    /// this build does not know. Startup must stop without touching the file.
+    SchemaTooNew {
+        db_path: String,
+        build_version: String,
+        latest_known_migration: String,
+        unknown_migrations: String,
+    },
+
     /// SeaORM error
     SeaOrmError(DbErr),
 
@@ -112,6 +121,22 @@ impl std::fmt::Display for DatabaseError {
                     f,
                     "Migration '{}' was modified after being applied! Expected: {}, Found: {}",
                     migration, expected_hash, found_hash
+                )
+            }
+            DatabaseError::SchemaTooNew {
+                db_path,
+                build_version,
+                latest_known_migration,
+                unknown_migrations,
+            } => {
+                write!(
+                    f,
+                    "Database schema is newer than this build. {} contains migrations \
+                     this app does not know ({}). This build (v{}) knows migrations only \
+                     up to '{}' and refuses to open or modify the database — update \
+                     LibrAgent to a version that supports the newer schema. The database \
+                     file was left untouched.",
+                    db_path, unknown_migrations, build_version, latest_known_migration
                 )
             }
             DatabaseError::SeaOrmError(e) => write!(f, "Database error: {}", e),

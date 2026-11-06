@@ -179,6 +179,63 @@ async fn count_rows_if_table_exists(
     }
 }
 
+/// Stop startup when the DB records migrations this build does not know.
+///
+/// An older app opening a newer-schema DB must not migrate it, back it up,
+/// rename it, or create a replacement — it must fail with a clear error so
+/// the user can update the app instead of losing access to their data.
+pub async fn ensure_schema_not_from_future(
+    db: &DatabaseConnection,
+    db_file_path: &str,
+) -> DatabaseResult<()> {
+    if !table_exists(db, "seaql_migrations").await? {
+        // Fresh database (or pre-migration table state): nothing from the future.
+        return Ok(());
+    }
+
+    let rows = db
+        .query_all(Statement::from_string(
+            DatabaseBackend::Sqlite,
+            "SELECT version FROM seaql_migrations".to_string(),
+        ))
+        .await?;
+
+    let known: std::collections::HashSet<String> = Migrator::migrations()
+        .iter()
+        .map(|m| m.name().to_string())
+        .collect();
+    let latest_known_migration = Migrator::migrations()
+        .last()
+        .map(|m| m.name().to_string())
+        .unwrap_or_else(|| "<none>".to_string());
+
+    let mut unknown: Vec<String> = Vec::new();
+    for (index, row) in rows.iter().enumerate() {
+        match row.try_get::<String>("", "version") {
+            Ok(version) => {
+                if !known.contains(&version) {
+                    unknown.push(version);
+                }
+            }
+            // An undecodable row is a schema anomaly, not proof that nothing
+            // comes from the future — surface it instead of skipping silently.
+            Err(e) => unknown.push(format!("<unreadable migration row #{index}: {e}>")),
+        }
+    }
+
+    if unknown.is_empty() {
+        return Ok(());
+    }
+
+    unknown.sort();
+    Err(DatabaseError::SchemaTooNew {
+        db_path: db_file_path.to_string(),
+        build_version: env!("CARGO_PKG_VERSION").to_string(),
+        latest_known_migration,
+        unknown_migrations: unknown.join(", "),
+    })
+}
+
 async fn integrity_check_ok(db_file_path: &str) -> DatabaseResult<bool> {
     let db = connect_existing_database(db_file_path).await?;
     let row = db
@@ -313,6 +370,10 @@ pub async fn init_database(db_url: &str) -> DatabaseResult<DatabaseConnection> {
 
     info!("✅ Database connected (WAL mode): {db_file_path}");
 
+    // Refuse a schema that this build does not know before any write happens
+    // (no backup, no rename, no new DB). See issue #2618.
+    ensure_schema_not_from_future(&migration_db, db_file_path).await?;
+
     // Pending migrations come from SeaORM's `seaql_migrations` tracking — not from
     // `schema_version` (which is a secondary bookkeeping table and can lag or drift).
     // Warm startups with zero pending migrations typically take ~0–1ms in Migrator::up;
@@ -339,17 +400,25 @@ pub async fn init_database(db_url: &str) -> DatabaseResult<DatabaseConnection> {
     let backup_path = if has_pending_migrations {
         info!("📦 Creating backup before migration...");
         let backup_start = Instant::now();
-        let path = backup_manager.create_backup(&migration_db).await.ok();
+        let path = match backup_manager.create_backup(&migration_db).await {
+            Ok(p) => {
+                info!("✅ Backup created: {}", p.display());
+                Some(p)
+            }
+            Err(e) => {
+                crate::state::log_startup_phase(
+                    "db_vacuum_backup",
+                    Some(backup_start.elapsed().as_millis()),
+                );
+                error!("❌ Backup failed before migration: {e}");
+                error!("❌ Aborting startup — migrating without a verified backup is unsafe.");
+                return Err(e);
+            }
+        };
         crate::state::log_startup_phase(
             "db_vacuum_backup",
             Some(backup_start.elapsed().as_millis()),
         );
-
-        if let Some(ref p) = path {
-            info!("✅ Backup created: {}", p.display());
-        } else {
-            warn!("⚠️ Backup skipped or failed (continuing startup)");
-        }
         path
     } else {
         info!("⏭️ Skipping VACUUM INTO backup (no pending migrations)");
