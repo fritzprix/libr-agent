@@ -825,3 +825,117 @@ fn identical_slow_wait_batches_guide_at_eleventh_and_break_at_twenty_first() {
         "continued guided wait batches must hard-break at the 21st"
     );
 }
+
+#[test]
+fn wait_batch_hard_break_reached_for_large_non_default_counts() {
+    // S1.2: guide 40 + break 30 → hard break at the 71st identical wait batch.
+    // With the old fixed 32-batch scan cap the streak under-counts to 33 and
+    // the ladder never trips; the scanner must scan far enough back.
+    let wait = WaitPreventionSettings {
+        wait_duration_ms: 10_000,
+        guide_count: 40,
+        break_count: 30,
+    };
+    assert_eq!(
+        evaluate_batch_circuit_breaker(
+            &slow_wait_batch_history(70),
+            &current_wait_batch("71"),
+            3,
+            2,
+            &wait,
+        ),
+        Some(CircuitBreakerAction::HardBreak {
+            count: 71,
+            tool_name: "workspace__waitForProcess".to_string(),
+            args: r#"{"processId":"proc-1","timeout":10}"#.to_string(),
+        }),
+        "the batch scanner must reach the hard break for non-default guide/break counts"
+    );
+}
+
+#[tokio::test]
+async fn preprocess_mixed_wait_batch_owned_by_batch_ladder_across_turns() {
+    // G1.2: a mixed batch (slow `waitForProcess` + fast `checkSession`) repeated
+    // across turns must be owned entirely by the batch wait ladder. The fast
+    // member must not be fast-blocked per-tool on turns 3..=10 (the old
+    // per-tool/batch disagreement), and the 11th batch guides both members.
+    let session_id = "mixed-wait-batch-ladder-session";
+    let active_sessions = ensure_active_sessions();
+    let mut history: Vec<Message> = Vec::new();
+
+    for turn in 0..=10 {
+        {
+            let mut sessions = active_sessions.write().await;
+            sessions.insert(
+                session_id.to_string(),
+                build_active_session(session_id, history.clone()),
+            );
+        }
+
+        let current = current_wait_batch(&format!("-{turn}"));
+        let mut assistant_message = test_message(
+            &format!("assistant-{turn}"),
+            "assistant",
+            Some(current.clone()),
+            None,
+            None,
+            "",
+            None,
+        );
+
+        let preprocess_result = preprocess_assistant_tool_calls_for_testing(
+            &active_sessions,
+            session_id,
+            &mut assistant_message,
+        )
+        .await;
+
+        assert!(preprocess_result.forced_stop.is_none());
+
+        if turn < 10 {
+            assert!(
+                preprocess_result.loop_prevention_short_circuits.is_empty(),
+                "turn {}: repeated wait-batch members must not be fast-blocked per-tool",
+                turn + 1,
+            );
+
+            // Feed this turn's results back: one slow wait + one fast identical poll.
+            history.push(assistant_message);
+            history.push(test_message(
+                &format!("tool-{turn}a"),
+                "tool",
+                None,
+                Some(&format!("tc-cur-{turn}a")),
+                Some(serde_json::json!({ "executionDurationMs": 12_000 })),
+                "Process proc-1: running",
+                Some(false),
+            ));
+            history.push(test_message(
+                &format!("tool-{turn}b"),
+                "tool",
+                None,
+                Some(&format!("tc-cur-{turn}b")),
+                None,
+                "Session s-1: running",
+                Some(false),
+            ));
+        } else {
+            assert_eq!(
+                preprocess_result.loop_prevention_short_circuits.len(),
+                2,
+                "the 11th identical wait batch must short-circuit both members",
+            );
+            // Batch guidance cites the batch's first call as representative
+            // for every member (same as RepeatedBatchSequence guidance).
+            for tool_call in &current {
+                let short_circuit = preprocess_result
+                    .loop_prevention_short_circuits
+                    .get(&tool_call.id)
+                    .unwrap_or_else(|| panic!("{} must be short-circuited", tool_call.id));
+                assert_eq!(short_circuit.kind, LoopPreventionKind::WaitGuidance);
+                assert_eq!(short_circuit.tool_name, "workspace__waitForProcess");
+                assert_eq!(short_circuit.count, 11);
+            }
+        }
+    }
+}

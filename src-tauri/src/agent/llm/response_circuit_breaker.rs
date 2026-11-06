@@ -279,7 +279,17 @@ pub(crate) async fn preprocess_assistant_tool_calls(
                         }
                     }
 
-                    if hard_break.is_none() && loop_prevention_short_circuits.is_empty() {
+                    // A repeated identical batch whose trailing run contains waits is
+                    // owned by the batch wait ladder — its members must not be
+                    // fast-blocked per-tool while the wait streak is active (#2610 G1.2).
+                    if hard_break.is_none()
+                        && loop_prevention_short_circuits.is_empty()
+                        && !circuit_breaker::is_wait_batch_streak(
+                            &messages,
+                            tool_calls,
+                            &wait_settings,
+                        )
+                    {
                         let intra_batch_duplicates =
                             circuit_breaker::find_intra_batch_duplicates(tool_calls);
 

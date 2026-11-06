@@ -1041,3 +1041,114 @@ fn fast_snapshot_polls_keep_using_fast_rule() {
         "fast identical polls must keep using the fast-loop ladder"
     );
 }
+
+#[test]
+fn ten_slow_waits_plus_ten_guidance_blocks_hard_break_at_twenty_one() {
+    // S1.4: after the 11th wait the guidance blocks themselves extend the
+    // streak (neutral turns folded into slow_suffix). 10 slow waits + 10 guided
+    // blocks + current = 21 → past guide 10 + break 10 → HardBreak(21).
+    let mut messages = slow_wait_history(10);
+    for i in 0..10 {
+        let id = format!("tc-guided-{i}");
+        messages.push(test_message(
+            &format!("assistant-guided-{i}"),
+            "assistant",
+            Some(vec![test_tool_call(&id, WAIT_TOOL, WAIT_ARGS)]),
+            None,
+            None,
+            "",
+            None,
+        ));
+        messages.push(test_message(
+            &format!("tool-guided-{i}"),
+            "tool",
+            None,
+            Some(&id),
+            Some(serde_json::json!({ "loopPrevention": true })),
+            "Loop prevention: stop polling and schedule a callback.",
+            Some(false),
+        ));
+    }
+
+    assert_eq!(
+        evaluate(&messages, &wait_call(21), 3),
+        Some(CircuitBreakerAction::HardBreak {
+            count: 21,
+            tool_name: WAIT_TOOL.to_string(),
+            args: WAIT_ARGS.to_string(),
+        }),
+        "10 slow waits + 10 guidance blocks must hard-break on the 21st identical wait"
+    );
+}
+
+#[test]
+fn one_trailing_fast_result_after_slow_waits_does_not_inherit_wait_streak() {
+    // G1.3: 9 identical slow waits + 1 identical FAST result (same outcome,
+    // below the wait threshold) + the next identical call. The fast ladder must
+    // count only the trailing fast run (1 + current = 2 < threshold 3) — the
+    // old behavior inherited all 10 attempts and hard-broke here.
+    let mut messages = slow_wait_history(9);
+    let id = "tc-fast-tail";
+    messages.push(test_message(
+        "assistant-fast-tail",
+        "assistant",
+        Some(vec![test_tool_call(id, WAIT_TOOL, WAIT_ARGS)]),
+        None,
+        None,
+        "",
+        None,
+    ));
+    messages.push(test_message(
+        "tool-fast-tail",
+        "tool",
+        None,
+        Some(id),
+        Some(serde_json::json!({ "executionDurationMs": 50 })),
+        WAIT_OUTCOME,
+        Some(false),
+    ));
+
+    assert_eq!(
+        evaluate(&messages, &wait_call(11), 3),
+        None,
+        "a single trailing fast identical result must not inherit the slow wait streak"
+    );
+}
+
+#[test]
+fn fast_ladder_still_fires_after_short_trailing_fast_run() {
+    // G1.3 regression guard: 3 identical FAST results + current = 4 → fast
+    // ladder trips exactly as before (trailing fast run is the whole streak).
+    let mut messages = Vec::new();
+    for i in 0..3 {
+        let id = format!("tc-{i}");
+        messages.push(test_message(
+            &format!("assistant-{i}"),
+            "assistant",
+            Some(vec![test_tool_call(&id, WAIT_TOOL, WAIT_ARGS)]),
+            None,
+            None,
+            "",
+            None,
+        ));
+        messages.push(test_message(
+            &format!("tool-{i}"),
+            "tool",
+            None,
+            Some(&id),
+            Some(serde_json::json!({ "executionDurationMs": 50 })),
+            WAIT_OUTCOME,
+            Some(false),
+        ));
+    }
+
+    assert_eq!(
+        evaluate(&messages, &wait_call(4), 3),
+        Some(CircuitBreakerAction::HardBreak {
+            count: 4,
+            tool_name: WAIT_TOOL.to_string(),
+            args: WAIT_ARGS.to_string(),
+        }),
+        "pure fast streaks must keep their existing fast-ladder behavior"
+    );
+}

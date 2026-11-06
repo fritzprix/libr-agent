@@ -110,7 +110,8 @@ pub fn build_loop_prevention_guidance(short_circuit: &LoopPreventionShortCircuit
             "Loop prevention: '{}' was called {} times with identical parameters, and each call waited a long time.\n\n\
             This call was blocked. Repeating the same wait call will only wait again with the same result — stop polling.\n\n\
             Instead, schedule one wake-up for later: call scheduled_task__scheduleCallback with `message` \
-            (what to do when woken) and `delaySeconds` (how long to wait), then end your turn. \
+            (what to do when woken) and exactly one of `delaySeconds` (1–86400, how long to wait) \
+            or `cronExpression` (for a fixed recurring check), then end your turn. \
             When woken, check the result once and continue. The call-me-back skill describes the same pattern. \
             If a single blocking wait would finish sooner, prefer that over many short waits.",
             short_circuit.tool_name, short_circuit.count
@@ -186,6 +187,8 @@ mod tests {
         assert!(guidance.contains("stop polling"));
         assert!(guidance.contains("scheduled_task__scheduleCallback"));
         assert!(guidance.contains("delaySeconds"));
+        assert!(guidance.contains("1–86400"));
+        assert!(guidance.contains("cronExpression"));
         assert!(guidance.contains("call-me-back"));
     }
 
