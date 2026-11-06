@@ -49,6 +49,11 @@ tauri-plugin-http = { version = "2", features = ["unsafe-headers"] }
 log = "0.4.30"
 fern = "0.7"
 tauri-plugin-dialog = "2"
+# Native message boxes for fatal startup errors (GUI launches have no stderr).
+# Version pinned to the rfd already in the graph via tauri-plugin-dialog; no
+# default features because rfd rejects `gtk3` (tauri-plugin-dialog's choice)
+# together with its default `xdg-portal`.
+rfd = { version = "0.16", default-features = false }
 tauri-plugin-updater = "2"
 # Block WebView browser shortcuts (F5 / Ctrl+R reload). platform-windows disables
 # WebView2 accelerator keys so F5 cannot bypass JS preventDefault on Windows.

@@ -45,6 +45,7 @@ pub enum DatabaseError {
     SchemaTooNew {
         db_path: String,
         build_version: String,
+        latest_known_migration: String,
         unknown_migrations: String,
     },
 
@@ -125,15 +126,17 @@ impl std::fmt::Display for DatabaseError {
             DatabaseError::SchemaTooNew {
                 db_path,
                 build_version,
+                latest_known_migration,
                 unknown_migrations,
             } => {
                 write!(
                     f,
                     "Database schema is newer than this build. {} contains migrations \
-                     this app does not know ({}). This build (v{}) refuses to open or \
-                     modify it — update LibrAgent to a version that supports the newer \
-                     schema. The database file was left untouched.",
-                    db_path, unknown_migrations, build_version
+                     this app does not know ({}). This build (v{}) knows migrations only \
+                     up to '{}' and refuses to open or modify the database — update \
+                     LibrAgent to a version that supports the newer schema. The database \
+                     file was left untouched.",
+                    db_path, unknown_migrations, build_version, latest_known_migration
                 )
             }
             DatabaseError::SeaOrmError(e) => write!(f, "Database error: {}", e),

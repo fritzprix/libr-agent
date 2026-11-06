@@ -30,6 +30,22 @@ pub fn should_quarantine_on_init_failure(error: &DatabaseError) -> bool {
     )
 }
 
+/// Surface a fatal database startup error where the user will actually see it.
+///
+/// Release Windows builds run without a console (`windows_subsystem = "windows"`)
+/// and macOS/Linux desktop launches have no terminal either, so stderr alone is
+/// invisible — the app would just fail to open with no message (issue #2618).
+/// The native message box is blocking on purpose: startup exits right after.
+fn show_fatal_database_error(title: &str, guidance: &str, error: &DatabaseError) {
+    log::error!("❌ {title}: {error}");
+    eprintln!("❌ {title}\n{guidance}\nDetails: {error}");
+    rfd::MessageDialog::new()
+        .set_title(title)
+        .set_description(format!("{guidance}\n\nDetails: {error}"))
+        .set_level(rfd::MessageLevel::Error)
+        .show();
+}
+
 /// A synchronous wrapper to initialize and run the application with SQLite support.
 pub fn run_with_sqlite_sync(db_url: String) {
     start_startup_timer();
@@ -65,10 +81,23 @@ pub fn run_with_sqlite_sync(db_url: String) {
                 log::error!("❌ Database init failed (attempt 1): {}", first_err);
 
                 if !should_quarantine_on_init_failure(&first_err) {
-                    eprintln!("❌ Database init failed: {}", first_err);
-                    eprintln!(
-                        "💡 Refusing to quarantine the existing database for a non-migration failure."
-                    );
+                    match &first_err {
+                        DatabaseError::SchemaTooNew { .. } => show_fatal_database_error(
+                            "Database is from a newer LibrAgent version",
+                            "Please update LibrAgent to a newer version to open this database. Your database file was left untouched.",
+                            &first_err,
+                        ),
+                        DatabaseError::BackupFailed { .. } => show_fatal_database_error(
+                            "Database backup failed",
+                            "Startup stopped before migrating to protect your data. Check free disk space and file permissions, then try again.",
+                            &first_err,
+                        ),
+                        _ => show_fatal_database_error(
+                            "Database init failed",
+                            "Startup stopped to avoid modifying your database.",
+                            &first_err,
+                        ),
+                    }
                     std::process::exit(1);
                 }
 
@@ -98,8 +127,11 @@ pub fn run_with_sqlite_sync(db_url: String) {
                     }
                     Err(second_err) => {
                         // Even fresh DB failed — something is very wrong (permissions, disk full, etc.)
-                        eprintln!("❌ Database init failed even with fresh DB: {}", second_err);
-                        eprintln!("💡 Check disk space and file permissions at: {}", db_file);
+                        show_fatal_database_error(
+                            "Database init failed even with a fresh database",
+                            &format!("Check disk space and file permissions at: {db_file}"),
+                            &second_err,
+                        );
                         std::process::exit(1);
                     }
                 }

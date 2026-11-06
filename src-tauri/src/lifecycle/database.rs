@@ -204,12 +204,24 @@ pub async fn ensure_schema_not_from_future(
         .iter()
         .map(|m| m.name().to_string())
         .collect();
+    let latest_known_migration = Migrator::migrations()
+        .last()
+        .map(|m| m.name().to_string())
+        .unwrap_or_else(|| "<none>".to_string());
 
-    let mut unknown: Vec<String> = rows
-        .iter()
-        .filter_map(|row| row.try_get::<String>("", "version").ok())
-        .filter(|version| !known.contains(version))
-        .collect();
+    let mut unknown: Vec<String> = Vec::new();
+    for (index, row) in rows.iter().enumerate() {
+        match row.try_get::<String>("", "version") {
+            Ok(version) => {
+                if !known.contains(&version) {
+                    unknown.push(version);
+                }
+            }
+            // An undecodable row is a schema anomaly, not proof that nothing
+            // comes from the future — surface it instead of skipping silently.
+            Err(e) => unknown.push(format!("<unreadable migration row #{index}: {e}>")),
+        }
+    }
 
     if unknown.is_empty() {
         return Ok(());
@@ -219,6 +231,7 @@ pub async fn ensure_schema_not_from_future(
     Err(DatabaseError::SchemaTooNew {
         db_path: db_file_path.to_string(),
         build_version: env!("CARGO_PKG_VERSION").to_string(),
+        latest_known_migration,
         unknown_migrations: unknown.join(", "),
     })
 }
