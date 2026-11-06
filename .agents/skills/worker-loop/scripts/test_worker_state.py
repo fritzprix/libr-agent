@@ -4,6 +4,7 @@ import json
 import multiprocessing
 import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -15,7 +16,12 @@ def _acquire_in_child(root: str, out: multiprocessing.Queue) -> None:
     try:
         holder = os.getpid()
         with patch.dict(os.environ, {"LOOP_STATE_DIR": root}, clear=False):
-            out.put(worker_state.acquire_checkin(None, holder=holder))
+            worker = worker_state.acquire_checkin(None, holder=holder)
+            # Hold the slot while the other child checks: on Linux an exited
+            # child is a zombie that os.kill still sees as alive, but Windows
+            # has no such retention, so the holder must be live for real.
+            time.sleep(3)
+            out.put(worker)
     except Exception as e:
         out.put(e)
 
@@ -70,6 +76,21 @@ class WorkerStateTest(unittest.TestCase):
         payload = {"scheduler": {"kind": "scheduled_task", "id": "abc"}, "skipped": {"2390": "blocked"}}
         self.claims.write_bytes(b"\xef\xbb\xbf" + json.dumps(payload).encode("utf-8"))
         self.assertEqual(worker_state.read_json(self.claims), payload)
+
+    def test_read_json_raises_on_corrupt_existing_file(self):
+        # #2612: an existing file we cannot parse must raise, not return {} —
+        # otherwise the next save silently wipes it.
+        self.claims.write_text('{"current": "pr:1", broken', encoding="utf-8")
+        with self.assertRaises(worker_state.StateFileCorrupt):
+            worker_state.read_json(self.claims)
+
+    def test_read_json_raises_on_non_object_json(self):
+        self.claims.write_text("[1, 2]", encoding="utf-8")
+        with self.assertRaises(worker_state.StateFileCorrupt):
+            worker_state.read_json(self.claims)
+
+    def test_read_json_missing_file_is_empty(self):
+        self.assertEqual(worker_state.read_json(self.claims), {})
 
     def test_stale_claims_lock_is_broken(self):
         lock = self.claims.with_name("claims.json.lock")

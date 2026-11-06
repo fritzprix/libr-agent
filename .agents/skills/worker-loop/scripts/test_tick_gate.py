@@ -7,7 +7,7 @@ import sys
 import tempfile
 import time
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -40,6 +40,21 @@ class TickGateTest(unittest.TestCase):
         loaded = tick_gate.load_state(self.state_file)
         self.assertEqual(loaded, state)
 
+    def test_corrupt_state_json_is_never_overwritten_by_lock(self):
+        # #2613 owner note: a corrupt existing state.json must make --lock fail
+        # hard, byte-identical, instead of silently rewriting it as {}.
+        corrupt = '{"current": "pr:1", broken'
+        self.state_file.write_text(corrupt, encoding="utf-8")
+        buffer = io.StringIO()
+        with redirect_stderr(buffer), \
+             patch("sys.argv", ["tick_gate.py", "--state-file", str(self.state_file), "--lock"]), \
+             self.assertRaises(SystemExit) as cm:
+            tick_gate.main()
+        self.assertEqual(cm.exception.code, tick_gate.EXIT_ERROR)
+        self.assertIn("state file error", buffer.getvalue())
+        self.assertEqual(self.state_file.read_bytes(), corrupt.encode("utf-8"))
+        self.assertFalse(self.lock_file.is_file())
+
     def test_lock_acquire_and_release(self):
         self.assertFalse(tick_gate.check_lock(self.lock_file))
         tick_gate.acquire_lock(self.lock_file)
@@ -52,7 +67,6 @@ class TickGateTest(unittest.TestCase):
         tick_gate.acquire_lock(self.lock_file, pid=os.getpid())
         self.assertTrue(tick_gate.check_lock(self.lock_file))
 
-    @unittest.skipIf(sys.platform == "win32", "PID liveness probing is POSIX-only (os.kill(pid, 0))")
     def test_dead_pid_is_a_stale_lock(self):
         tick_gate.acquire_lock(self.lock_file, pid=9999999)
         self.assertFalse(tick_gate.check_lock(self.lock_file))
