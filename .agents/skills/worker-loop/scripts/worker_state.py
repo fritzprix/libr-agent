@@ -53,6 +53,9 @@ _HOLDER_UNSET = object()
 # Windows process-termination query (PROCESS_QUERY_LIMITED_INFORMATION).
 _WIN_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 _WIN_STILL_ACTIVE = 259  # STILL_ACTIVE is 0x00000103, not 0x100
+# OpenProcess: this code means the PID does not exist. Any other error
+# (including ERROR_ACCESS_DENIED = 5) means the process is alive.
+_WIN_ERROR_INVALID_PARAMETER = 87
 
 
 class CheckinError(RuntimeError):
@@ -203,7 +206,12 @@ def resolve_holder_pid(explicit: int | None = None) -> int | None:
 
 
 def _win_pid_alive(pid: int) -> bool:
-    """Windows PID liveness probe via kernel32 (there is no os.kill(pid, 0))."""
+    """Windows PID liveness probe via kernel32 (there is no os.kill(pid, 0)).
+
+    A failed OpenProcess is not proof the PID is dead. ERROR_INVALID_PARAMETER
+    (87) means the PID does not exist. Any other error, including
+    ERROR_ACCESS_DENIED (5), means the process is alive but not queryable.
+    """
     import ctypes
     from ctypes import wintypes
 
@@ -215,7 +223,7 @@ def _win_pid_alive(pid: int) -> bool:
         _WIN_PROCESS_QUERY_LIMITED_INFORMATION, False, pid
     )
     if not handle:
-        return False
+        return ctypes.get_last_error() != _WIN_ERROR_INVALID_PARAMETER
     try:
         exit_code = wintypes.DWORD()
         if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):

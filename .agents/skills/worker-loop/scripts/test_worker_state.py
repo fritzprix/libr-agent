@@ -4,26 +4,29 @@ import json
 import multiprocessing
 import os
 import tempfile
-import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import worker_state
 
 
-def _acquire_in_child(root: str, out: multiprocessing.Queue) -> None:
+def _acquire_in_child(
+    root: str,
+    started: multiprocessing.Queue,
+    release: multiprocessing.Queue,
+) -> None:
     try:
         holder = os.getpid()
         with patch.dict(os.environ, {"LOOP_STATE_DIR": root}, clear=False):
             worker = worker_state.acquire_checkin(None, holder=holder)
-            # Hold the slot while the other child checks: on Linux an exited
-            # child is a zombie that os.kill still sees as alive, but Windows
-            # has no such retention, so the holder must be live for real.
-            time.sleep(3)
-            out.put(worker)
+        started.put(worker)
+        # Stay alive until the parent has collected every check-in. The other
+        # child probes this PID during its own acquire; exiting first would
+        # look like a dead holder on Windows.
+        release.get()
     except Exception as e:
-        out.put(e)
+        started.put(e)
 
 
 class WorkerStateTest(unittest.TestCase):
@@ -151,21 +154,46 @@ class CheckinTest(unittest.TestCase):
 
     def test_concurrent_checkins_get_different_slots(self):
         ctx = multiprocessing.get_context("spawn")
-        queue: multiprocessing.Queue = ctx.Queue()
+        started: multiprocessing.Queue = ctx.Queue()
+        release: multiprocessing.Queue = ctx.Queue()
         root = str(self.root)
         processes = [
-            ctx.Process(target=_acquire_in_child, args=(root, queue))
+            ctx.Process(target=_acquire_in_child, args=(root, started, release))
             for _ in range(2)
         ]
         for proc in processes:
             proc.start()
+        try:
+            results = [started.get(timeout=15) for _ in range(2)]
+        finally:
+            for _ in processes:
+                release.put(None)
+            for proc in processes:
+                proc.join(timeout=15)
         for proc in processes:
-            proc.join(timeout=15)
             self.assertEqual(proc.exitcode, 0)
-        results = [queue.get(timeout=5) for _ in range(2)]
         for item in results:
             self.assertIsInstance(item, str)
         self.assertNotEqual(results[0], results[1])
+
+    def test_win_open_process_error_distinguishes_dead_from_denied(self):
+        import ctypes
+
+        cases = (
+            (87, False),  # ERROR_INVALID_PARAMETER: PID does not exist
+            (5, True),  # ERROR_ACCESS_DENIED: process exists, query refused
+        )
+        for code, expect_alive in cases:
+            with self.subTest(last_error=code):
+                kernel32 = MagicMock()
+                kernel32.OpenProcess.return_value = 0
+                with patch.object(ctypes, "WinDLL", return_value=kernel32), patch.object(
+                    ctypes, "get_last_error", return_value=code
+                ):
+                    self.assertEqual(worker_state._win_pid_alive(4242), expect_alive)
+                kernel32.OpenProcess.assert_called_once()
+                kernel32.GetExitCodeProcess.assert_not_called()
+                kernel32.CloseHandle.assert_not_called()
 
     def test_resolve_holder_pid_explicit(self):
         self.assertEqual(worker_state.resolve_holder_pid(4242), 4242)
