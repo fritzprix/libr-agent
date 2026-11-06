@@ -79,7 +79,7 @@ export function AgentPlanningPanel({
           : 'w-full border-0',
       )}
     >
-      <CardHeader className="border-b border-border/40 px-4 py-3">
+      <CardHeader className="shrink-0 border-b border-border/40 px-4 py-3">
         <div className="space-y-3">
           {variant !== 'tab' ? (
             <PanelEyebrow icon={<ListChecks className="h-3.5 w-3.5" />}>
@@ -116,13 +116,13 @@ export function AgentPlanningPanel({
           <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
             {t('agent.planning.currentGoal')}
           </h4>
-          <div className="border-l border-border/60 pl-3 text-sm leading-relaxed text-foreground/90">
+          <div className="max-h-28 overflow-y-auto border-l border-border/60 pl-3 text-sm leading-relaxed text-foreground/90">
             {planningState?.goal || t('agent.planning.noGoal')}
           </div>
         </section>
 
         {/* Todos Section */}
-        <section className="flex min-h-0 flex-1 flex-col space-y-2">
+        <section className="flex min-h-[8rem] flex-1 flex-col space-y-2">
           <div className="flex items-center justify-between">
             <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
               {t('agent.planning.tasks')}
@@ -206,7 +206,7 @@ export function AgentPlanningPanel({
           </PanelListFrame>
         </section>
 
-        <section className="flex min-h-0 flex-1 flex-col space-y-2">
+        <section className="flex min-h-[8rem] flex-1 flex-col space-y-2">
           <div className="flex items-center justify-between">
             <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
               {t('agent.planning.scratchpad')}
