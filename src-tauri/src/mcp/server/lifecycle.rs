@@ -54,7 +54,7 @@ async fn start_stdio_server(
         .clone();
 
     // Prepare command with cross-platform handling
-    // On Windows, this wraps .cmd/.bat files with cmd.exe
+    // On Windows, this handles PowerShell scripts (.ps1) and resolves bare batch shims (.cmd)
     let (final_command, final_args) =
         crate::mcp::utils::command_helper::prepare_command(command, args);
 

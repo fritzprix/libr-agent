@@ -26,8 +26,11 @@ fn main() {
 
         #[cfg(windows)]
         {
-            let wrapped = final_cmd == "cmd.exe" || final_cmd == "powershell.exe";
-            println!("Wrapped: {}", if wrapped { "✅ YES" } else { "❌ NO" });
+            let wrapped = final_cmd == "powershell.exe" || final_cmd.ends_with(".cmd");
+            println!(
+                "Resolved/Wrapped: {}",
+                if wrapped { "✅ YES" } else { "❌ NO" }
+            );
         }
 
         #[cfg(not(windows))]
@@ -57,7 +60,7 @@ fn main() {
 
     println!("\n=== Summary ===");
     #[cfg(windows)]
-    println!("Windows: Node.js/Python tools automatically wrapped with cmd.exe");
+    println!("Windows: Direct execution without unsafe cmd.exe wrapping");
 
     #[cfg(not(windows))]
     println!("Unix/Linux: Commands pass through unchanged");
