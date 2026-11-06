@@ -19,15 +19,18 @@ fn main() {
 
     for (command, args) in test_cases {
         let args_vec: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-        let (final_cmd, final_args) = command_helper::prepare_command(command, &args_vec);
+        let (final_cmd, final_args) = command_helper::prepare_command(command, &args_vec, None);
 
         println!("Input:  {} {:?}", command, args);
         println!("Output: {} {:?}", final_cmd, final_args);
 
         #[cfg(windows)]
         {
-            let wrapped = final_cmd == "cmd.exe" || final_cmd == "powershell.exe";
-            println!("Wrapped: {}", if wrapped { "✅ YES" } else { "❌ NO" });
+            let wrapped = final_cmd == "powershell.exe" || final_cmd.ends_with(".cmd");
+            println!(
+                "Resolved/Wrapped: {}",
+                if wrapped { "✅ YES" } else { "❌ NO" }
+            );
         }
 
         #[cfg(not(windows))]
@@ -42,7 +45,7 @@ fn main() {
 
     // Test actual spawn with npx
     println!("Testing: npx --version");
-    let (cmd, args) = command_helper::prepare_command("npx", &["--version".to_string()]);
+    let (cmd, args) = command_helper::prepare_command("npx", &["--version".to_string()], None);
 
     match std::process::Command::new(&cmd).args(&args).output() {
         Ok(output) => {
@@ -57,7 +60,7 @@ fn main() {
 
     println!("\n=== Summary ===");
     #[cfg(windows)]
-    println!("Windows: Node.js/Python tools automatically wrapped with cmd.exe");
+    println!("Windows: Direct execution without unsafe cmd.exe wrapping");
 
     #[cfg(not(windows))]
     println!("Unix/Linux: Commands pass through unchanged");

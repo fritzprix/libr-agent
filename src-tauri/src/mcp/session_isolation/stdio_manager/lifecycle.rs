@@ -287,9 +287,14 @@ impl SessionMCPManager {
         args: &[String],
         env: &HashMap<String, String>,
     ) -> Result<Command, SessionMCPError> {
-        // On Windows, this wraps .cmd/.bat files with cmd.exe
-        let (final_command, final_args) =
-            crate::mcp::utils::command_helper::prepare_command(command, args);
+        // On Windows, this handles PowerShell scripts (.ps1) and resolves bare batch shims (.cmd)
+        // against the child process's effective PATH (isolated env + custom config env)
+        let child_path = crate::utils::env::get_child_path_from_config(env);
+        let (final_command, final_args) = crate::mcp::utils::command_helper::prepare_command(
+            command,
+            args,
+            Some(std::ffi::OsStr::new(&child_path)),
+        );
 
         let config_env_keys: Vec<&str> = env.keys().map(|k| k.as_str()).collect();
         info!(
