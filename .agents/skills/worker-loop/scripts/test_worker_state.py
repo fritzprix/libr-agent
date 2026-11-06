@@ -66,6 +66,11 @@ class WorkerStateTest(unittest.TestCase):
         self.assertEqual(json.loads(self.claims.read_text(encoding="utf-8")), {"a": 1})
         self.assertEqual([p.name for p in self.root.iterdir()], ["claims.json"])
 
+    def test_read_json_tolerates_utf8_bom(self):
+        payload = {"scheduler": {"kind": "scheduled_task", "id": "abc"}, "skipped": {"2390": "blocked"}}
+        self.claims.write_bytes(b"\xef\xbb\xbf" + json.dumps(payload).encode("utf-8"))
+        self.assertEqual(worker_state.read_json(self.claims), payload)
+
     def test_stale_claims_lock_is_broken(self):
         lock = self.claims.with_name("claims.json.lock")
         lock.write_text("")

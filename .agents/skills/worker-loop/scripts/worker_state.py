@@ -354,7 +354,10 @@ def read_json(path: Path) -> dict:
     if not path.is_file():
         return {}
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        # utf-8-sig also strips a UTF-8 BOM, e.g. when a state file was
+        # rewritten by PowerShell 5.1 `Set-Content -Encoding UTF8`. Returning
+        # {} on a readable file would let the next save wipe it (#2612).
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, ValueError):
         return {}
     return data if isinstance(data, dict) else {}

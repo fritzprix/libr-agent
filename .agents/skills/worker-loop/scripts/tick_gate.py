@@ -118,7 +118,7 @@ def check_lock(lock_file: Path, ttl_seconds: int = LOCK_TTL_SECONDS) -> bool:
     if not lock_file.is_file():
         return False
     try:
-        data = json.loads(lock_file.read_text(encoding="utf-8"))
+        data = json.loads(lock_file.read_text(encoding="utf-8-sig"))
         locked_at = data.get("time", 0)
         now = time.time()
         # If lock expired by TTL, it is stale regardless of PID
