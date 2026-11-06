@@ -278,6 +278,8 @@ export interface ToolExecutionResult {
   cancellation?: {
     cancelledBy: 'user' | 'timeout' | 'system';
   };
+  /** Wall-clock execution duration in ms, recorded for real tool executions only. */
+  executionDurationMs?: number;
 }
 
 export type SessionWorkflowStatus =

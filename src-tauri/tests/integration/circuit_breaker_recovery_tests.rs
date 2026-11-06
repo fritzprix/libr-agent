@@ -70,7 +70,14 @@ fn evaluate(
     threshold: usize,
 ) -> Option<CircuitBreakerAction> {
     let call_signature_by_id = build_tool_call_indices(messages);
-    evaluate_circuit_breaker_action(messages, tool_call, &call_signature_by_id, threshold, 1)
+    evaluate_circuit_breaker_action(
+        messages,
+        tool_call,
+        &call_signature_by_id,
+        threshold,
+        1,
+        &tauri_mcp_agent_lib::agent::llm::circuit_breaker::WaitPreventionSettings::default(),
+    )
 }
 
 // With default settings (threshold=3, offset=1) the soft NaturalRecoveryError fires at count=3.
@@ -448,7 +455,14 @@ fn hard_break_offset_allows_configurable_retries() {
     // Helper to evaluate with custom threshold and offset
     let eval_custom = |msgs: &[Message], call: &ToolCall| -> Option<CircuitBreakerAction> {
         let call_signature_by_id = build_tool_call_indices(msgs);
-        evaluate_circuit_breaker_action(msgs, call, &call_signature_by_id, threshold, offset)
+        evaluate_circuit_breaker_action(
+            msgs,
+            call,
+            &call_signature_by_id,
+            threshold,
+            offset,
+            &tauri_mcp_agent_lib::agent::llm::circuit_breaker::WaitPreventionSettings::default(),
+        )
     };
 
     let call_3 = test_tool_call("tc-3", "workspace__readFile", repeated_args);
@@ -602,7 +616,14 @@ fn hard_break_offset_correct_flow_with_different_args() {
 
     let eval_custom = |msgs: &[Message], call: &ToolCall| -> Option<CircuitBreakerAction> {
         let call_signature_by_id = build_tool_call_indices(msgs);
-        evaluate_circuit_breaker_action(msgs, call, &call_signature_by_id, threshold, offset)
+        evaluate_circuit_breaker_action(
+            msgs,
+            call,
+            &call_signature_by_id,
+            threshold,
+            offset,
+            &tauri_mcp_agent_lib::agent::llm::circuit_breaker::WaitPreventionSettings::default(),
+        )
     };
 
     let call_3 = test_tool_call("tc-3", "workspace__readFile", repeated_args);

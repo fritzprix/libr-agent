@@ -17,4 +17,17 @@ defaultSessionMaxDepth: number,
 /**
  * `0` means no default limit.
  */
-defaultSessionMaxFanout: number, maxConcurrentActiveSessions: number, maxSuspendedSessions: number, maxConcurrentActiveProcesses: number, maxSuspendedProcesses: number, loopPreventionThreshold: number, loopPreventionHardBreakOffset: number, thinkingLoopMinPatternLength: number, thinkingLoopMinRepetitions: number, maxRecentMediaMessages: number, thinkingEffort: ThinkingEffort, };
+defaultSessionMaxFanout: number, maxConcurrentActiveSessions: number, maxSuspendedSessions: number, maxConcurrentActiveProcesses: number, maxSuspendedProcesses: number, loopPreventionThreshold: number, loopPreventionHardBreakOffset: number, 
+/**
+ * A tool call whose execution time reaches this many seconds counts as a
+ * deliberate wait; identical waits use the wait ladder instead of the fast rule.
+ */
+toolWaitDurationSecs: number, 
+/**
+ * Consecutive identical wait calls tolerated before guidance to schedule a callback.
+ */
+toolWaitGuideCount: number, 
+/**
+ * Further identical wait calls after guidance before the hard break trips.
+ */
+toolWaitBreakCount: number, thinkingLoopMinPatternLength: number, thinkingLoopMinRepetitions: number, maxRecentMediaMessages: number, thinkingEffort: ThinkingEffort, };

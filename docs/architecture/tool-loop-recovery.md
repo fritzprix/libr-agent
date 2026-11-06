@@ -24,6 +24,58 @@ Advanced loop thresholds live under **Settings → Advanced**:
 
 - `loopPreventionThreshold` (default **3**)
 - `loopPreventionHardBreakOffset` (default **2**) → hard break at count **5**
+- `toolWaitDurationSecs` (default **10**) — a call that takes at least this long is a _wait_
+- `toolWaitGuideCount` (default **10**) — identical waits tolerated before guidance
+- `toolWaitBreakCount` (default **10**) — further identical waits before the hard break
+
+## Wait-aware ladder (#2610)
+
+Blocking waits (`waitForProcess(timeout=10)`, `checkSession(wait=true)`) legitimately
+return identical results over and over. The fast rule above would hard-break them at
+count 5, so slow calls take a separate ladder:
+
+1. The workflow executor records wall-clock duration on every tool result as
+   `metadata.executionDurationMs` (builtin and external MCP tools alike).
+2. A call whose duration reaches `toolWaitDurationSecs` counts as a **wait call**.
+3. Trailing identical wait calls **skip the fast ladder entirely**. After
+   `toolWaitGuideCount` consecutive identical waits, the next identical wait is
+   short-circuited with **WaitGuidance**: stop polling and schedule a single
+   `scheduled_task__scheduleCallback` (or the `call-me-back` skill) instead.
+4. If the model keeps polling past the guidance, the guidance blocks themselves
+   extend the streak; `toolWaitBreakCount` guided waits later the hard break trips.
+5. Any changed outcome resets the wait streak. Fast (sub-threshold) identical calls
+   keep using the fast ladder, so snapshot-poll prevention is unchanged.
+
+Each ladder counts only its own newest run: the wait ladder counts the trailing
+run of wait calls, and the fast ladder counts the trailing run of fast calls. A
+streak with mixed durations (for example slow and fast calls in turn, with the
+same outcome) would restart both ladders forever, so an **overall cap** also
+applies:
+
+- The cap counts every identical (call, outcome) attempt in the streak,
+  slow and fast together.
+- It hard-breaks when that total passes
+  `max(toolWaitGuideCount + toolWaitBreakCount, loopPreventionThreshold + loopPreventionHardBreakOffset)`.
+  At default settings this is a hard break at count **21**.
+- Because the cap is never lower than the fast hard break, a pure fast streak
+  always follows `loopPreventionThreshold` and `loopPreventionHardBreakOffset`.
+  Changing a wait setting never changes how fast calls behave.
+- The same cap applies to the per-tool scan and to the batch scan.
+
+For a repeated **wait batch** (e.g. `waitForProcess` + `checkSession` repeated
+every turn), the batch wait ladder owns **every** member of the batch: a fast
+member such as `checkSession` is not fast-blocked by the per-tool ladder while
+the wait streak is active, so the two ladders never disagree on the same batch.
+The batch ladder owns a turn when the same batch already repeated with an
+identical outcome at least twice before it, with a trailing wait run. Turns
+the batch ladder owned are left out of a member's per-tool fast and wait counts
+later: if the member is called alone again, its per-tool ladder starts fresh
+and does not inherit those turns as fast attempts. Owned turns still count
+toward the overall cap.
+The batch scanner looks back at least 32 batches — or far enough to reach the
+hard break for any configured `toolWaitGuideCount` + `toolWaitBreakCount`, and
+the fast hard break at `loopPreventionThreshold` + `loopPreventionHardBreakOffset`
+— so large non-default counts still trip.
 
 ## Detection layers
 

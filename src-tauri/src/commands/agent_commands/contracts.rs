@@ -208,6 +208,11 @@ pub struct ToolExecutionResult {
     pub is_error: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cancellation: Option<ToolCancellation>,
+    /// Wall-clock execution duration in milliseconds (call start → result).
+    /// Recorded by the workflow executor for real tool executions only; used by
+    /// the circuit breaker to classify long identical calls as waits (#2610).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_duration_ms: Option<u64>,
 }
 
 /// Describes why a tool result was cancelled.
