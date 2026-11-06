@@ -21,7 +21,7 @@ The `approved` label is the only approval. Do the whole issue, including `src-ta
 - **Worker slot:** You do not need to pick a name. On `--lock`, `tick_gate.py` checks in under `<repo>.worktrees/.worker-loop/checkins.json`, prints `WORKER <name>` (`worker`, `worker-2`, …), and holds that slot until `--unlock`. Export it for the tick: `export WORKER_ID=<name>`. Holder detection skips transient `bash -c` / command `node` parents; LibrAgent desktop records the `libragent` app PID. Cursor Agent and other hosts without a trusted long-lived PID use a TTL until `--unlock` (no heartbeat). Override with `tick_gate.py --pid N` / `$WORKER_LOOP_HOLDER_PID` if needed.
 - Worktree `$WT` = `<repo>.worktrees/<worker>` (see [references/worktree-setup.md](references/worktree-setup.md)). Do all edits, builds, tests, commits, and pushes in `$WT`. In the user's checkout `$MAIN`, run only `git fetch` and `git worktree add`.
 - State: `<repo>.worktrees/.worker-loop/<worker>/state.json` with `scheduler`, `current`, `needsUser`, `ciAttempts`, `lastFingerprint`. Claims are in `claims.json`; check-ins are in `checkins.json` in the same root.
-- Claims: `scripts/worker_state.py claim|release --worker NAME --ref issue:N|pr:M`. Exit 1 = another worker has it. Do not touch it.
+- Claims: `scripts/worker_state.py claim|release --worker NAME --ref issue:N|pr:M`. Exit 1 = another worker has it. Do not touch it. Stale claims for merged or closed refs drop on the next `tick_gate` fingerprint (same GraphQL snapshot). You may run `scripts/worker_state.py prune --issues ... --prs ...` to trim by open number lists.
 
 ## Full local validation
 

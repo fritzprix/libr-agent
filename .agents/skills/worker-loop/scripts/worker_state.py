@@ -18,6 +18,7 @@ CLI:
   worker_state.py claim   --worker W --ref issue:N   exit 0 claimed (or already ours), 1 held by another worker
   worker_state.py release --worker W --ref pr:N      release our own claim
   worker_state.py list                               print claims.json
+  worker_state.py prune --issues N... --prs M...     drop claims for issue or PR numbers not listed (same lock as claim)
   worker_state.py checkin acquire [--worker W] [--holder-pid P]   claim a slot; print WORKER line
   worker_state.py checkin release [--worker W] [--holder-pid P]     release our slot
 """
@@ -40,6 +41,7 @@ from typing import Callable
 DEFAULT_WORKER = "worker"
 WORKER_NAME = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
 REF_FORMAT = re.compile(r"^(issue|pr):\d+$")
+REF_PARSER = re.compile(r"^(issue|pr):(\d+)$")
 SLOT_NAME = re.compile(r"^worker(?:-\d+)?$")
 # A crashed writer must not block claims forever; claim updates take milliseconds.
 CLAIMS_LOCK_STALE_SECONDS = 60
@@ -471,6 +473,41 @@ def release(worker: str, ref: str, path: Path | None = None) -> bool:
     return True
 
 
+def prune_closed_claims(
+    open_issue_numbers: list[int],
+    open_pr_numbers: list[int],
+    path: Path | None = None,
+) -> int:
+    """Remove claims for issues or PRs that are not open.
+
+    Any worker may drop a stale claim. Uses the same mutex as ``claim`` / ``release``.
+    Returns how many entries were removed.
+    """
+    open_issues = set(open_issue_numbers)
+    open_prs = set(open_pr_numbers)
+    path = path or claims_path()
+    removed = 0
+    with exclusive(path.with_name(path.name + ".lock")):
+        claims = read_json(path)
+        stale: list[str] = []
+        for ref in list(claims):
+            m = REF_PARSER.match(ref)
+            if not m:
+                continue
+            kind, num_s = m.group(1), m.group(2)
+            num = int(num_s)
+            if kind == "issue" and num not in open_issues:
+                stale.append(ref)
+            elif kind == "pr" and num not in open_prs:
+                stale.append(ref)
+        for ref in stale:
+            del claims[ref]
+            removed += 1
+        if removed:
+            atomic_write_json(path, claims)
+    return removed
+
+
 def claimed_by_other(claims: dict, ref: str, worker: str) -> str | None:
     holder = (claims.get(ref) or {}).get("worker")
     return holder if holder and holder != worker else None
@@ -480,7 +517,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
         "command",
-        choices=["claim", "release", "list", "checkin"],
+        choices=["claim", "release", "list", "checkin", "prune"],
     )
     parser.add_argument(
         "checkin_action",
@@ -491,10 +528,29 @@ def main() -> None:
     parser.add_argument("--worker", default=None, help="Worker name (default: $WORKER_ID or auto check-in)")
     parser.add_argument("--holder-pid", type=int, default=None, help="PID of the tick session (default: auto-detect)")
     parser.add_argument("--ref", default=None, help="issue:N or pr:N")
+    parser.add_argument(
+        "--issues",
+        type=int,
+        nargs="*",
+        default=[],
+        help="With prune: issue numbers that stay open (drop other issue:N claims)",
+    )
+    parser.add_argument(
+        "--prs",
+        type=int,
+        nargs="*",
+        default=[],
+        help="With prune: PR numbers that stay open (drop other pr:N claims)",
+    )
     args = parser.parse_args()
 
     if args.command == "list":
         print(json.dumps(load_claims(), ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "prune":
+        n = prune_closed_claims(args.issues, args.prs)
+        print(f"PRUNED {n}")
         return
 
     if args.command == "checkin":

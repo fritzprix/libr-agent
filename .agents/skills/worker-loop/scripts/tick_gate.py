@@ -75,6 +75,11 @@ query($prQuery: String!, $prLimit: Int!, $owner: String!, $name: String!, $issue
     }
   }
   repository(owner: $owner, name: $name) {
+    pullRequests(first: $prLimit, states: [OPEN], orderBy: {field: UPDATED_AT, direction: DESC}) {
+      nodes {
+        number
+      }
+    }
     issues(first: $issueLimit, states: [OPEN], orderBy: {field: UPDATED_AT, direction: DESC}) {
       nodes {
         number
@@ -198,9 +203,19 @@ def compute_fingerprint() -> str:
         "-F", f"issueLimit={ISSUE_LIMIT}",
     )
     data = json.loads(query_raw).get("data", {})
-    repo_data = data.get("repository", {})
+    repo_data = data.get("repository") or {}
 
     pr_nodes = data.get("search", {}).get("nodes") or []
+    issue_nodes = (repo_data.get("issues") or {}).get("nodes") or []
+    repo_pr_nodes = (repo_data.get("pullRequests") or {}).get("nodes") or []
+    open_issue_nums = [n["number"] for n in issue_nodes if n]
+    open_pr_from_repo = [n["number"] for n in repo_pr_nodes if n]
+    open_pr_from_search = [
+        pr["number"] for pr in pr_nodes if pr and not pr.get("isDraft")
+    ]
+    open_pr_nums = sorted(set(open_pr_from_repo) | set(open_pr_from_search))
+    worker_state.prune_closed_claims(open_issue_nums, open_pr_nums)
+
     # Only PRs authored by @me and not draft
     prs_fingerprint = []
     for pr in pr_nodes:
@@ -228,7 +243,6 @@ def compute_fingerprint() -> str:
         ))
     prs_fingerprint.sort()
 
-    issue_nodes = repo_data.get("issues", {}).get("nodes") or []
     issues_fingerprint = sorted((i["number"], i.get("updatedAt")) for i in issue_nodes)
 
     hasher = hashlib.sha256()

@@ -3,6 +3,7 @@
 import json
 import multiprocessing
 import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -58,6 +59,25 @@ class WorkerStateTest(unittest.TestCase):
         self.assertFalse(worker_state.release("worker-2", "pr:5", self.claims))
         self.assertTrue(worker_state.release("worker", "pr:5", self.claims))
         self.assertIsNone(worker_state.claim("worker-2", "pr:5", self.claims))
+
+    def test_prune_drops_closed_issue_and_pr(self):
+        worker_state.claim("worker", "issue:1", self.claims)
+        worker_state.claim("worker-2", "issue:99", self.claims)
+        worker_state.claim("worker-3", "pr:2", self.claims)
+        n = worker_state.prune_closed_claims([1], [2], self.claims)
+        self.assertEqual(n, 1)
+        claims = worker_state.load_claims(self.claims)
+        self.assertEqual(set(claims), {"issue:1", "pr:2"})
+
+    def test_prune_keeps_open_refs(self):
+        worker_state.claim("worker", "issue:7", self.claims)
+        worker_state.claim("worker", "pr:5", self.claims)
+        self.assertEqual(worker_state.prune_closed_claims([7], [5], self.claims), 0)
+
+    def test_prune_drops_other_workers_closed_ref(self):
+        worker_state.claim("worker-2", "pr:9", self.claims)
+        self.assertEqual(worker_state.prune_closed_claims([], [], self.claims), 1)
+        self.assertEqual(worker_state.load_claims(self.claims), {})
 
     def test_claimed_by_other(self):
         worker_state.claim("worker", "issue:7", self.claims)
@@ -176,6 +196,7 @@ class CheckinTest(unittest.TestCase):
             self.assertIsInstance(item, str)
         self.assertNotEqual(results[0], results[1])
 
+    @unittest.skipUnless(sys.platform == "win32", "Windows OpenProcess semantics only")
     def test_win_open_process_error_distinguishes_dead_from_denied(self):
         import ctypes
 

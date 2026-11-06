@@ -102,11 +102,12 @@ class TickGateTest(unittest.TestCase):
                     ]
                 },
                 "repository": {
+                    "pullRequests": {"nodes": [{"number": 1}]},
                     "issues": {
                         "nodes": [
                             {"number": 10, "updatedAt": "2026-01-01T00:00:00Z"}
                         ]
-                    }
+                    },
                 }
             }
         }
@@ -130,6 +131,39 @@ class TickGateTest(unittest.TestCase):
             ]
             fp2 = tick_gate.compute_fingerprint()
             self.assertNotEqual(fp1, fp2)
+
+    def test_compute_fingerprint_prunes_stale_claims(self):
+        repo_json = json.dumps(
+            {
+                "pullRequests": {"nodes": [{"number": 2}]},
+                "issues": {"nodes": [{"number": 10, "updatedAt": "t"}]},
+            }
+        )
+        fake_graphql = {"data": {"search": {"nodes": []}, "repository": json.loads(repo_json)}}
+        claims_file = self.tmp_dir / "claims.json"
+        claims_file.write_text(
+            json.dumps(
+                {
+                    "issue:10": {"worker": "worker", "at": 0},
+                    "issue:999": {"worker": "worker-2", "at": 0},
+                    "pr:1": {"worker": "worker", "at": 0},
+                    "pr:2": {"worker": "worker-3", "at": 0},
+                }
+            ),
+            encoding="utf-8",
+        )
+        with patch.object(tick_gate, "gh") as mock_gh:
+            mock_gh.side_effect = [
+                json.dumps({"owner": {"login": "owner"}, "name": "repo"}),
+                "me\n",
+                json.dumps(fake_graphql),
+            ]
+            tick_gate.compute_fingerprint()
+        on_disk = json.loads(claims_file.read_text(encoding="utf-8"))
+        self.assertEqual(
+            set(on_disk),
+            {"issue:10", "pr:2"},
+        )
 
     def _create_mock_gh(self, graphql_responses, issues=(), prs=()):
         responses = list(graphql_responses)
@@ -158,7 +192,10 @@ class TickGateTest(unittest.TestCase):
         idle_graphql = {
             "data": {
                 "search": {"nodes": []},
-                "repository": {"issues": {"nodes": [{"number": 10, "updatedAt": "2026-01-01T00:00:00Z"}]}},
+                "repository": {
+                    "pullRequests": {"nodes": []},
+                    "issues": {"nodes": [{"number": 10, "updatedAt": "2026-01-01T00:00:00Z"}]},
+                },
             }
         }
         mock_gh = self._create_mock_gh(
@@ -243,13 +280,19 @@ class TickGateTest(unittest.TestCase):
         fake_graphql_start = {
             "data": {
                 "search": {"nodes": []},
-                "repository": {"issues": {"nodes": [{"number": 10, "updatedAt": "2026-01-01T00:00:00Z"}]}},
+                "repository": {
+                    "pullRequests": {"nodes": []},
+                    "issues": {"nodes": [{"number": 10, "updatedAt": "2026-01-01T00:00:00Z"}]},
+                },
             }
         }
         fake_graphql_during = {
             "data": {
                 "search": {"nodes": []},
-                "repository": {"issues": {"nodes": [{"number": 10, "updatedAt": "2026-01-01T02:00:00Z"}]}},
+                "repository": {
+                    "pullRequests": {"nodes": []},
+                    "issues": {"nodes": [{"number": 10, "updatedAt": "2026-01-01T02:00:00Z"}]},
+                },
             }
         }
         mock_gh = self._create_mock_gh([fake_graphql_start, fake_graphql_during])
@@ -291,7 +334,10 @@ class TickGateTest(unittest.TestCase):
         fake_graphql = {
             "data": {
                 "search": {"nodes": []},
-                "repository": {"issues": {"nodes": [{"number": 10, "updatedAt": "2026-01-01T00:00:00Z"}]}},
+                "repository": {
+                    "pullRequests": {"nodes": []},
+                    "issues": {"nodes": [{"number": 10, "updatedAt": "2026-01-01T00:00:00Z"}]},
+                },
             }
         }
         mock_gh = self._create_mock_gh([fake_graphql, fake_graphql])
@@ -329,7 +375,10 @@ class TickGateTest(unittest.TestCase):
         fake_graphql = {
             "data": {
                 "search": {"nodes": []},
-                "repository": {"issues": {"nodes": [{"number": 10, "updatedAt": "2026-01-01T00:00:00Z"}]}},
+                "repository": {
+                    "pullRequests": {"nodes": []},
+                    "issues": {"nodes": [{"number": 10, "updatedAt": "2026-01-01T00:00:00Z"}]},
+                },
             }
         }
         mock_gh = self._create_mock_gh([fake_graphql, fake_graphql])
