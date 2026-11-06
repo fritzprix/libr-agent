@@ -102,6 +102,8 @@ Decide:
 - **clean, await CI** — code review completed with zero open required findings, but CI is not green at the head yet (pending, not run, or a stacked PR). Post a `verdict=clean head=<sha>` marker comment, remove any stale `gatekeeper:changes-requested` label (`gh pr edit N --remove-label gatekeeper:changes-requested`; does not count as a round), optionally mirror it in state, and move on to the next PR. On a later tick the script reports `await-ci`; once CI completes it reports `review` again: do not re-review the diff, just post `approve` (with `gh pr edit N --add-label gatekeeper:approved --remove-label gatekeeper:changes-requested`) if green or diagnose the failure.
 - **escalate** — round limit (5) reached, a repeated dispute, or the right answer is a product/security/data decision for the user.
 
+Include the mandatory **informational** 100-point code-quality breakdown in every verdict comment (`### Code quality score (informational)` in [references/comment-format.md](references/comment-format.md), rubric in [references/review-rubric.md](references/review-rubric.md)). Per-item one-line rationales must cite `file:line` evidence. The score must **not** change how you choose approve vs changes-requested.
+
 Post the verdict with `gh pr comment N --body-file <tmp>` using the exact marker format (`head=` is the full `headSha` you reviewed, `base=` the PR's current base branch), then swap labels:
 
 ```bash
@@ -138,7 +140,7 @@ The script appends the reason to the issue body, adds the label, and counts the 
 
 ### 5. Report
 
-1–2 sentences per reviewed PR: PR link, round, verdict, and the count of required findings. When nothing is reviewed, give one line **per open PR** with its `status` and `reason` from the script so stalls are visible. Add one line for a validated or rejected producer issue (link and verdict).
+1–2 sentences per reviewed PR: PR link, round, verdict, the count of required findings, and the informational code-quality total (e.g. `72/100`). When nothing is reviewed, give one line **per open PR** with its `status` and `reason` from the script so stalls are visible. Add one line for a validated or rejected producer issue (link and verdict).
 
 ## Tests
 

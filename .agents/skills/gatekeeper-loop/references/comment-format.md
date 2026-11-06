@@ -26,6 +26,19 @@ Scope: <one line — what the PR claims and whether the diff matches it>
 ### Previous findings
 
 - G1.1 ✅ fixed in <short-sha> · G1.2 ✅ decline accepted (<reason>)
+
+### Code quality score (informational)
+
+Total **<sum>/100**. Does not affect the verdict above (decision is based on open required `G` items only).
+
+- **Correctness incl. boundary conditions (<n>/30)** — `<file>:<line>` — <one-line rationale with evidence>.
+- **Tests exercise the real production code path (<n>/20)** — `<file>:<line>` — <one-line rationale>.
+- **Simplicity (KISS/YAGNI) (<n>/15)** — `<file>:<line>` — <one-line rationale>.
+- **Readability and naming (<n>/15)** — `<file>:<line>` — <one-line rationale>.
+- **Error handling and robustness (<n>/10)** — `<file>:<line>` — <one-line rationale>.
+- **Scope discipline (<n>/10)** — `<file>:<line>` — <one-line rationale>.
+
+Do not score CI status or the PR body. See [review-rubric.md](review-rubric.md#code-quality-score-100-points-informational).
 ```
 
 Approve:
@@ -41,6 +54,17 @@ Approve:
 
 - `<acceptance criterion 1 from linked issue>` — verified in `<file>:<line>` (<brief explanation>).
 - `<acceptance criterion 2 from linked issue>` — verified in `<file>:<line>` (<brief explanation>).
+
+### Code quality score (informational)
+
+Total **<sum>/100**. Does not affect the verdict above.
+
+- **Correctness incl. boundary conditions (<n>/30)** — `<file>:<line>` — <one-line rationale>.
+- **Tests exercise the real production code path (<n>/20)** — `<file>:<line>` — <one-line rationale>.
+- **Simplicity (KISS/YAGNI) (<n>/15)** — `<file>:<line>` — <one-line rationale>.
+- **Readability and naming (<n>/15)** — `<file>:<line>` — <one-line rationale>.
+- **Error handling and robustness (<n>/10)** — `<file>:<line>` — <one-line rationale>.
+- **Scope discipline (<n>/10)** — `<file>:<line>` — <one-line rationale>.
 ```
 
 > [!IMPORTANT]
@@ -54,6 +78,17 @@ Clean, waiting for CI (no label change, not a round; lets any tick or machine se
 ## Gatekeeper · reviewed clean · waiting for CI
 
 <1–2 lines: what was reviewed, zero open required findings>
+
+### Code quality score (informational)
+
+Total **<sum>/100**. Does not affect the clean marker (awaiting CI only).
+
+- **Correctness incl. boundary conditions (<n>/30)** — `<file>:<line>` — <one-line rationale>.
+- **Tests exercise the real production code path (<n>/20)** — `<file>:<line>` — <one-line rationale>.
+- **Simplicity (KISS/YAGNI) (<n>/15)** — `<file>:<line>` — <one-line rationale>.
+- **Readability and naming (<n>/15)** — `<file>:<line>` — <one-line rationale>.
+- **Error handling and robustness (<n>/10)** — `<file>:<line>` — <one-line rationale>.
+- **Scope discipline (<n>/10)** — `<file>:<line>` — <one-line rationale>.
 ```
 
 Escalate (round limit or unresolved disagreement):
@@ -64,6 +99,17 @@ Escalate (round limit or unresolved disagreement):
 ## Gatekeeper · round 5 · Needs maintainer decision
 
 <the open disagreement, both positions, and the decision needed>
+
+### Code quality score (informational)
+
+Total **<sum>/100**. Does not affect escalation.
+
+- **Correctness incl. boundary conditions (<n>/30)** — `<file>:<line>` — <one-line rationale>.
+- **Tests exercise the real production code path (<n>/20)** — `<file>:<line>` — <one-line rationale>.
+- **Simplicity (KISS/YAGNI) (<n>/15)** — `<file>:<line>` — <one-line rationale>.
+- **Readability and naming (<n>/15)** — `<file>:<line>` — <one-line rationale>.
+- **Error handling and robustness (<n>/10)** — `<file>:<line>` — <one-line rationale>.
+- **Scope discipline (<n>/10)** — `<file>:<line>` — <one-line rationale>.
 ```
 
 ## Worker response

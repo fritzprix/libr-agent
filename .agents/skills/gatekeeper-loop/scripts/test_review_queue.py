@@ -347,6 +347,28 @@ class GapTests(unittest.TestCase):
         self.assertEqual(verdicts[0]["verdict"], "clean")
         self.assertEqual(verdicts[0]["head"], "abc")
 
+    def test_verdict_with_code_quality_section_parsed(self) -> None:
+        body = """<!-- gatekeeper-loop: round=1 verdict=changes-requested head=deadbeef base=dev/0.9.x -->
+
+## Gatekeeper · round 1 · Changes requested
+
+### Required
+
+- **G1.1** `src/lib.rs:10` — missing edge case.
+
+### Code quality score (informational)
+
+Total **58/100**. Does not affect the verdict above.
+
+- **Correctness incl. boundary conditions (18/30)** — `src/lib.rs:10` — empty input not handled.
+"""
+        comments = [{"author": {"login": "me"}, "createdAt": "t", "body": body}]
+        verdicts, _ = parse_markers(comments, "me")
+        self.assertEqual(len(verdicts), 1)
+        self.assertEqual(verdicts[0]["verdict"], "changes-requested")
+        self.assertEqual(verdicts[0]["round"], "1")
+        self.assertEqual(verdicts[0]["head"], "deadbeef")
+
     def test_protected_skill_prefixes(self) -> None:
         self.assertIn(".agents/skills/gatekeeper-loop/", PROTECTED_SKILL_PREFIXES)
         self.assertIn(".agents/skills/worker-loop/", PROTECTED_SKILL_PREFIXES)
