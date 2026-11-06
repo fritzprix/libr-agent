@@ -153,7 +153,7 @@ pub fn prepare_command(
         }
 
         let resolved = resolve_windows_command(command, child_path);
-        return (resolved, args.to_vec());
+        (resolved, args.to_vec())
     }
 
     #[cfg(not(windows))]
