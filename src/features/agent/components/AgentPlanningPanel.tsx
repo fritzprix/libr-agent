@@ -110,13 +110,13 @@ export function AgentPlanningPanel({
           </div>
         </div>
       </CardHeader>
-      <CardContent className="flex min-h-0 flex-1 flex-col gap-5 overflow-hidden px-4 py-4">
+      <CardContent className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 py-4">
         {/* Goal Section */}
         <section className="shrink-0 space-y-2">
           <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
             {t('agent.planning.currentGoal')}
           </h4>
-          <div className="max-h-28 overflow-y-auto border-l border-border/60 pl-3 text-sm leading-relaxed text-foreground/90">
+          <div className="max-h-28 overflow-y-auto break-words border-l border-border/60 pl-3 text-sm leading-relaxed text-foreground/90">
             {planningState?.goal || t('agent.planning.noGoal')}
           </div>
         </section>
