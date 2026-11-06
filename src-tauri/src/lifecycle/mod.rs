@@ -17,6 +17,10 @@ use crate::state::{set_sqlite_db_url, start_startup_timer};
 use database_error::DatabaseError;
 use log::info;
 
+/// Only structural failures of *this build's* schema justify quarantining the
+/// DB and starting fresh. A `SchemaTooNew` failure must never quarantine:
+/// the file belongs to a newer build, so renaming it and creating a new DB
+/// loses the user's data (issue #2618). Startup exits with the error instead.
 pub fn should_quarantine_on_init_failure(error: &DatabaseError) -> bool {
     matches!(
         error,

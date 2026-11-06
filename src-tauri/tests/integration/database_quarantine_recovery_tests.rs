@@ -6,7 +6,7 @@ use sea_orm::{ConnectionTrait, DatabaseBackend, SqlxSqliteConnector, Statement};
 use std::path::Path;
 use std::str::FromStr;
 use tauri_mcp_agent_lib::lifecycle::database::{
-    inspect_user_data_summary, maybe_restore_quarantined_database,
+    ensure_schema_not_from_future, inspect_user_data_summary, maybe_restore_quarantined_database,
 };
 use tauri_mcp_agent_lib::lifecycle::database_error::DatabaseError;
 use tauri_mcp_agent_lib::lifecycle::should_quarantine_on_init_failure;
@@ -110,8 +110,95 @@ async fn skips_quarantined_restore_when_active_db_already_has_user_data() {
     assert_eq!(session_id, "active-session");
 }
 
+#[tokio::test]
+async fn passes_future_schema_check_for_current_schema() {
+    let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
+    let db_path = temp_dir.path().join("libragent_v2.db");
+    let db = open_file_db(&db_path).await;
+
+    Migrator::up(&db, None)
+        .await
+        .expect("Migrations should succeed");
+
+    ensure_schema_not_from_future(&db, &db_path.to_string_lossy())
+        .await
+        .expect("Current schema must pass the future-schema check");
+}
+
+#[tokio::test]
+async fn refuses_database_with_future_schema() {
+    let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
+    let db_path = temp_dir.path().join("libragent_v2.db");
+    let db = open_file_db(&db_path).await;
+
+    Migrator::up(&db, None)
+        .await
+        .expect("Migrations should succeed");
+
+    // Simulate a DB migrated by a newer build: a recorded migration this
+    // build's Migrator does not know.
+    db.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Sqlite,
+        "INSERT INTO seaql_migrations (version, applied_at) VALUES (?, ?)",
+        [
+            "m20990101_000001_from_the_future".into(),
+            1_000_000_000_i64.into(),
+        ],
+    ))
+    .await
+    .expect("Should insert future migration row");
+
+    let error = ensure_schema_not_from_future(&db, &db_path.to_string_lossy())
+        .await
+        .expect_err("Future schema must be refused");
+
+    match &error {
+        DatabaseError::SchemaTooNew {
+            unknown_migrations, ..
+        } => {
+            assert!(
+                unknown_migrations.contains("m20990101_000001_from_the_future"),
+                "Error must name the unknown migration, got: {unknown_migrations}"
+            );
+        }
+        other => panic!("Expected SchemaTooNew, got: {other:?}"),
+    }
+
+    // The error message must name the DB path so the user knows which file to update for.
+    assert!(
+        error
+            .to_string()
+            .contains(&db_path.to_string_lossy().to_string()),
+        "Error message must name the DB path, got: {error}"
+    );
+
+    // Refusing must not touch the file: still a valid, queryable DB, and no
+    // quarantine copy was created.
+    let row = db
+        .query_one(Statement::from_string(
+            DatabaseBackend::Sqlite,
+            "SELECT COUNT(*) as c FROM seaql_migrations".to_string(),
+        ))
+        .await
+        .expect("DB must remain queryable after refusal");
+    let count: i64 = row
+        .unwrap()
+        .try_get("", "c")
+        .expect("Should read migration count");
+    assert!(count > 0);
+    assert!(!Path::new(&format!("{}.incompatible", db_path.to_string_lossy())).exists());
+}
+
 #[test]
 fn only_quarantines_for_structural_database_failures() {
+    assert!(!should_quarantine_on_init_failure(
+        &DatabaseError::SchemaTooNew {
+            db_path: "/data/libragent_v2.db".to_string(),
+            build_version: "0.9.0".to_string(),
+            unknown_migrations: "m20990101_000001_from_the_future".to_string(),
+        },
+    ));
+
     assert!(!should_quarantine_on_init_failure(
         &DatabaseError::ConnectionFailed("database is locked".to_string(),)
     ));

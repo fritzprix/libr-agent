@@ -70,9 +70,22 @@ impl BackupManager {
         let sql = format!("VACUUM INTO '{}'", safe_path);
         db.execute(Statement::from_string(DbBackend::Sqlite, sql))
             .await
-            .map_err(|e| DatabaseError::BackupFailed {
-                path: self.db_path.display().to_string(),
-                error: e.to_string(),
+            .map_err(|e| {
+                // A failed VACUUM INTO can leave a partial (often 0-byte) file.
+                // Remove it so startup never mistakes a broken backup for a real one.
+                if backup_path.exists() {
+                    if let Err(remove_err) = fs::remove_file(&backup_path) {
+                        warn!(
+                            "⚠️ Failed to remove incomplete backup {}: {}",
+                            backup_path.display(),
+                            remove_err
+                        );
+                    }
+                }
+                DatabaseError::BackupFailed {
+                    path: self.db_path.display().to_string(),
+                    error: e.to_string(),
+                }
             })?;
 
         info!("✅ Backup created successfully");
