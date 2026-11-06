@@ -513,12 +513,17 @@ fn fold_wait_state(
 /// not part of a wait streak (loop-prevention / missing results above an open
 /// wait streak count as fast). The fast-loop ladder must count only this
 /// suffix — a long wait streak followed by one fast identical result must not
-/// inherit the wait history as fast-loop attempts (#2610 G1.3).
+/// inherit the wait history as fast-loop attempts (#2610 G1.3). A turn whose
+/// batch contained a wait (any member slow, #2610 G3.3) is not a fast attempt
+/// either: it belongs to the batch wait ladder, not the per-tool fast ladder.
+///
+/// Finally, the **total** identical (call, outcome) streak length regardless
+/// of duration — the bound for the overall hard cap (#2610 G3.1).
 fn count_consecutive_identical_call_outcomes<F>(
     messages: &[Message],
     matcher: F,
     wait: &WaitPreventionSettings,
-) -> Option<(usize, usize, RepeatedOutcome)>
+) -> Option<(usize, usize, usize, RepeatedOutcome)>
 where
     F: Fn(&str) -> bool,
 {
@@ -532,7 +537,7 @@ where
     let mut pending_neutral: usize = 0;
     let mut wait_closed = false;
 
-    for turn in &turns {
+    for (turn_index, turn) in turns.iter().enumerate() {
         let mut matched_in_turn = false;
         let mut turn_outcome: Option<RepeatedOutcome> = None;
         let mut turn_wait_state = WaitState::Fast;
@@ -591,6 +596,15 @@ where
             consecutive_matches += 1;
         }
 
+        // A turn the batch wait ladder owned when it ran (#2610 G3.3) is
+        // invisible to this member's per-tool ladders: neither a fast attempt
+        // nor a wait of its own — the batch ladder accounted for it (and
+        // would have guided the whole batch together past the guide count).
+        // It still counts toward the overall total-streak cap above.
+        if turn_owned_by_batch_ladder(&turns, turn_index, wait) {
+            continue;
+        }
+
         if !wait_streak_seen {
             if turn_wait_state == WaitState::Slow {
                 wait_streak_seen = true;
@@ -614,7 +628,7 @@ where
     let outcome = repeated_outcome.unwrap_or_else(|| RepeatedOutcome::Error {
         signature: "__loop_prevention__".to_string(),
     });
-    Some((slow_suffix, fast_suffix, outcome))
+    Some((slow_suffix, fast_suffix, consecutive_matches, outcome))
 }
 
 /// Minimum trailing assistant tool_calls batches to inspect when computing a
@@ -642,7 +656,17 @@ pub fn count_consecutive_identical_batches(
     fingerprint: &str,
     wait: &WaitPreventionSettings,
 ) -> (usize, usize, usize) {
-    let turns = group_trailing_tool_call_turns(messages);
+    batch_streak_stats(&group_trailing_tool_call_turns(messages), fingerprint, wait)
+}
+
+/// [`count_consecutive_identical_batches`] core over already-grouped turns
+/// (newest first), so per-turn ownership checks can run on history slices
+/// without re-grouping (#2610 G3.3).
+fn batch_streak_stats(
+    turns: &[ToolCallTurn<'_>],
+    fingerprint: &str,
+    wait: &WaitPreventionSettings,
+) -> (usize, usize, usize) {
     let mut consecutive = 0;
     let mut repeated_batch_outcome: Option<String> = None;
     let mut assistant_batches_scanned = 0;
@@ -655,7 +679,7 @@ pub fn count_consecutive_identical_batches(
     // guide/break counts, not just the fixed floor (#2610 S1.2).
     let scan_cap = MAX_ASSISTANT_BATCHES_TO_SCAN.max(wait.guide_count + wait.break_count + 1);
 
-    for turn in &turns {
+    for turn in turns {
         let Some(tool_calls) = turn.assistant_message.tool_calls.as_ref() else {
             break;
         };
@@ -725,6 +749,37 @@ pub fn count_consecutive_identical_batches(
     (consecutive, slow_suffix, fast_suffix)
 }
 
+/// Whether the batch wait ladder owned this turn when it ran (#2610 G3.3).
+///
+/// Mirrors the runtime gate ([`is_wait_batch_streak`]) as it would have been
+/// evaluated *before* this turn executed: the same batch repeated with an
+/// identical outcome at least twice in the older history, with a trailing
+/// wait run. Turn members that the batch ladder already owned (and, when the
+/// streak crossed the guide count, guided together) must not feed a member's
+/// per-tool fast streak afterwards — the per-tool scan resuming later would
+/// otherwise inherit them as fast attempts and hard-break with no warning.
+fn turn_owned_by_batch_ladder(
+    turns: &[ToolCallTurn<'_>],
+    index: usize,
+    wait: &WaitPreventionSettings,
+) -> bool {
+    let Some(tool_calls) = turns[index].assistant_message.tool_calls.as_ref() else {
+        return false;
+    };
+    // Mirror `is_wait_batch_streak`'s exclusions exactly.
+    if tool_calls.len() < 2 {
+        return false;
+    }
+    let first = &tool_calls[0];
+    if first.function.name == "ui__circuitBreak" || first.function.name == "planning__reflect" {
+        return false;
+    }
+
+    let fingerprint = batch_fingerprint(tool_calls);
+    let (previous, slow_suffix, _) = batch_streak_stats(&turns[index + 1..], &fingerprint, wait);
+    previous >= 2 && slow_suffix > 0
+}
+
 /// Collect later-in-batch duplicates of an earlier (name, args) signature.
 ///
 /// Signatures are computed once per call (O(n)). The first occurrence of each
@@ -792,6 +847,20 @@ pub fn evaluate_batch_circuit_breaker(
         count_consecutive_identical_batches(messages, &fingerprint, wait);
     if previous == 0 {
         return None;
+    }
+
+    // Overall cap (#2610 G3.1): the wait ladder only sees its newest slow run
+    // and the fast ladder only its newest fast run, so a duration mix (e.g.
+    // alternating slow/fast batches with an identical outcome) would let each
+    // ladder restart forever. Once the total identical-(call, outcome) streak
+    // passes guide_count + break_count, hard-break regardless of duration mix.
+    let overall_total = previous + 1;
+    if overall_total > wait.guide_count + wait.break_count {
+        return Some(CircuitBreakerAction::HardBreak {
+            count: overall_total,
+            tool_name: first.function.name.clone(),
+            args: first.function.arguments.clone(),
+        });
     }
 
     // Wait ladder for repeated identical wait batches (see evaluate_circuit_breaker_action).
@@ -868,7 +937,12 @@ pub fn is_wait_batch_streak(
     let fingerprint = batch_fingerprint(tool_calls);
     let (previous, slow_suffix, _) =
         count_consecutive_identical_batches(messages, &fingerprint, wait);
-    previous > 0 && slow_suffix > 0
+    // G3.2: exempt members only while the whole batch is actually *repeating*
+    // with an identical outcome. A single slow batch whose outcome differs
+    // from the turn before (e.g. one slow member whose result progresses
+    // every turn) never forms a wait streak — the fast member must keep its
+    // normal per-tool ladder.
+    previous >= 2 && slow_suffix > 0
 }
 
 pub fn evaluate_circuit_breaker_action(
@@ -889,11 +963,27 @@ pub fn evaluate_circuit_breaker_action(
     }
 
     let current_signature = tool_call_signature(tool_call);
-    if let Some((slow_suffix, fast_suffix, outcome)) = count_consecutive_identical_call_outcomes(
-        messages,
-        |tool_call_id| call_signature_by_id.get(tool_call_id) == Some(&current_signature),
-        wait,
-    ) {
+    if let Some((slow_suffix, fast_suffix, total_matches, outcome)) =
+        count_consecutive_identical_call_outcomes(
+            messages,
+            |tool_call_id| call_signature_by_id.get(tool_call_id) == Some(&current_signature),
+            wait,
+        )
+    {
+        // Overall cap (#2610 G3.1): the wait ladder only sees its newest slow
+        // run and the fast ladder only its newest fast run, so a duration mix
+        // (alternating slow/fast, or 9 slow + 1 fast repeating) restarts both
+        // forever. Once the total identical-(call, outcome) streak passes
+        // guide_count + break_count, hard-break regardless of duration mix.
+        let overall_total = total_matches + 1;
+        if overall_total > wait.guide_count + wait.break_count {
+            return Some(CircuitBreakerAction::HardBreak {
+                count: overall_total,
+                tool_name: tool_name.clone(),
+                args: args.clone(),
+            });
+        }
+
         // Wait ladder: identical calls that each took a long time are the model
         // *waiting* for background work, not fast-looping. Snapshot polls (fast,
         // identical output) never enter here and keep using the fast rule.

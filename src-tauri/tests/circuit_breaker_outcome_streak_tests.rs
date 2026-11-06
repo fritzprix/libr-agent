@@ -1152,3 +1152,87 @@ fn fast_ladder_still_fires_after_short_trailing_fast_run() {
         "pure fast streaks must keep their existing fast-ladder behavior"
     );
 }
+
+// ---- Duration-mix overall cap (#2610 G3.1) ----
+
+const FAST_MS: u64 = 50;
+
+/// Alternating durations with an identical (call, outcome) streak: turn `i`
+/// (oldest first) is slow when `i` is even.
+fn alternating_duration_wait_history(count: usize) -> Vec<Message> {
+    duration_mix_wait_history(count, |i| i % 2 == 0)
+}
+
+/// Nine slow turns followed by one fast turn, repeating.
+fn burst_duration_wait_history(count: usize) -> Vec<Message> {
+    duration_mix_wait_history(count, |i| i % 10 != 9)
+}
+
+fn duration_mix_wait_history(count: usize, slow: impl Fn(usize) -> bool) -> Vec<Message> {
+    let mut messages = Vec::new();
+    for i in 0..count {
+        let id = format!("tc-mix-{i}");
+        let duration = if slow(i) { SLOW_MS } else { FAST_MS };
+        messages.push(test_message(
+            &format!("assistant-mix-{i}"),
+            "assistant",
+            Some(vec![test_tool_call(&id, WAIT_TOOL, WAIT_ARGS)]),
+            None,
+            None,
+            "",
+            None,
+        ));
+        messages.push(test_message(
+            &format!("tool-mix-{i}"),
+            "tool",
+            None,
+            Some(&id),
+            Some(serde_json::json!({ "executionDurationMs": duration })),
+            WAIT_OUTCOME,
+            Some(false),
+        ));
+    }
+    messages
+}
+
+#[test]
+fn alternating_slow_fast_identical_calls_are_bounded_by_overall_cap() {
+    // G3.1: alternating slow/fast identical calls restart both ladders forever —
+    // the wait ladder only sees its newest slow run (1) and the fast ladder only
+    // its newest fast run (1), so neither ever reaches its threshold. The
+    // overall identical-(call, outcome) streak must still be bounded.
+    assert_eq!(
+        evaluate(&alternating_duration_wait_history(19), &wait_call(20), 3),
+        None,
+        "20th identical call (guide 10 + break 10) must not trip yet"
+    );
+    assert_eq!(
+        evaluate(&alternating_duration_wait_history(20), &wait_call(21), 3),
+        Some(CircuitBreakerAction::HardBreak {
+            count: 21,
+            tool_name: WAIT_TOOL.to_string(),
+            args: WAIT_ARGS.to_string(),
+        }),
+        "21st identical call must hard-break regardless of duration mix"
+    );
+}
+
+#[test]
+fn nine_slow_one_fast_identical_calls_are_bounded_by_overall_cap() {
+    // G3.1: a 9-slow/1-fast cycle restarts the wait ladder every 10 calls while
+    // the newest turn is fast, so the fast ladder only ever sees 1 attempt.
+    assert_eq!(
+        evaluate(&burst_duration_wait_history(10), &wait_call(11), 3),
+        None,
+        "11th identical call stays below the overall cap"
+    );
+    assert_eq!(
+        evaluate(&burst_duration_wait_history(20), &wait_call(21), 3),
+        Some(CircuitBreakerAction::HardBreak {
+            count: 21,
+            tool_name: WAIT_TOOL.to_string(),
+            args: WAIT_ARGS.to_string(),
+        }),
+        "21st identical call must hard-break even with a repeating duration mix"
+    );
+}
