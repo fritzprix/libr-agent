@@ -197,7 +197,7 @@ mod tests {
         // Truncated call is redacted
         assert_eq!(
             calls[1].function.arguments,
-            "<redacted: 14 bytes, truncated>"
+            "<redacted: 12 bytes, truncated>"
         );
         assert!(is_redacted_marker(&calls[1].function.arguments));
 
