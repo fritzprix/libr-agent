@@ -246,6 +246,24 @@ pub fn get_isolated_env() -> Vec<(String, String)> {
     envs
 }
 
+/// Returns the effective PATH that will be passed to a child process,
+/// taking into account user configuration overrides and isolated system PATH.
+pub fn get_child_path_from_config(
+    custom_env: &std::collections::HashMap<String, String>,
+) -> String {
+    if let Some((_, custom_path)) = custom_env
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("PATH"))
+    {
+        return custom_path.clone();
+    }
+    get_isolated_env()
+        .into_iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("PATH"))
+        .map(|(_, v)| v)
+        .unwrap_or_default()
+}
+
 /// Whether `key` is a host variable that [`get_isolated_env`] passes to child processes.
 pub fn is_isolated_env_name(key: &str) -> bool {
     #[cfg(windows)]

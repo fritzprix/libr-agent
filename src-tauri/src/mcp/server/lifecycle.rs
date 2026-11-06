@@ -55,8 +55,13 @@ async fn start_stdio_server(
 
     // Prepare command with cross-platform handling
     // On Windows, this handles PowerShell scripts (.ps1) and resolves bare batch shims (.cmd)
-    let (final_command, final_args) =
-        crate::mcp::utils::command_helper::prepare_command(command, args);
+    // against the child process's effective PATH (isolated env + custom config env)
+    let child_path = crate::utils::env::get_child_path_from_config(env);
+    let (final_command, final_args) = crate::mcp::utils::command_helper::prepare_command(
+        command,
+        args,
+        Some(std::ffi::OsStr::new(&child_path)),
+    );
 
     log::info!(
         "Starting MCP server '{}': {} {:?} (env vars: {})",

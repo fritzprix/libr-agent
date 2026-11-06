@@ -19,7 +19,7 @@ fn main() {
 
     for (command, args) in test_cases {
         let args_vec: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-        let (final_cmd, final_args) = command_helper::prepare_command(command, &args_vec);
+        let (final_cmd, final_args) = command_helper::prepare_command(command, &args_vec, None);
 
         println!("Input:  {} {:?}", command, args);
         println!("Output: {} {:?}", final_cmd, final_args);
@@ -45,7 +45,7 @@ fn main() {
 
     // Test actual spawn with npx
     println!("Testing: npx --version");
-    let (cmd, args) = command_helper::prepare_command("npx", &["--version".to_string()]);
+    let (cmd, args) = command_helper::prepare_command("npx", &["--version".to_string()], None);
 
     match std::process::Command::new(&cmd).args(&args).output() {
         Ok(output) => {
