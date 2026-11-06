@@ -145,13 +145,7 @@ fn canonical_json_value(value: &Value, depth: usize) -> String {
                 .join(",");
             format!("[{}]", body)
         }
-        Value::String(s) => {
-            if crate::agent::llm::tool_args_validation::is_redacted_marker(s) {
-                format!("\"{}\"", TRUNCATED_OR_MALFORMED_ARGS_SIGNATURE)
-            } else {
-                serde_json::to_string(s).unwrap_or_else(|_| "\"\"".to_string())
-            }
-        }
+        Value::String(s) => serde_json::to_string(s).unwrap_or_else(|_| "\"\"".to_string()),
         other => other.to_string(),
     }
 }

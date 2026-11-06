@@ -256,3 +256,68 @@ fn test_repeated_failures_different_truncation_points_hit_loop_guard() {
         other => panic!("Expected HardBreak at count 4, got {:?}", other),
     }
 }
+
+// 6. Malformed (non-truncated) arguments are not redacted, and reports invalid JSON rather than budget exceeded.
+#[test]
+fn test_malformed_non_truncated_args_not_redacted_and_reports_invalid_json() {
+    let malformed_raw = r#"{"path":"test.txt", "content": "hello",}"#; // trailing comma
+    let mut tool_calls = vec![make_tool_call(
+        "tc-malformed",
+        "workspace__writeFile",
+        malformed_raw,
+    )];
+
+    // 1) redact_invalid_tool_call_args must leave malformed non-truncated arguments intact
+    let count = redact_invalid_tool_call_args(&mut tool_calls);
+    assert_eq!(
+        count, 0,
+        "malformed non-truncated arguments must not be redacted"
+    );
+    assert_eq!(tool_calls[0].function.arguments, malformed_raw);
+    assert!(!is_redacted_marker(&tool_calls[0].function.arguments));
+
+    // 2) inspect_tool_call_arguments classifies it as MalformedJson, not truncated
+    let inspection = inspect_tool_call_arguments(&tool_calls[0].function.arguments);
+    assert!(inspection.is_err());
+    let (kind, parse_error) = inspection.unwrap_err();
+    assert_eq!(kind, ArgsParseFailureKind::MalformedJson);
+    assert!(!kind.is_truncated());
+
+    // 3) Error path reporting check: reports invalid JSON syntax guidance, NOT budget exceeded
+    let tool_name = "workspace__writeFile";
+    let (headline, guidance) = if kind.is_truncated() {
+        (
+            format!(
+                "Failed to parse arguments for `{tool_name}`: output budget exceeded, arguments truncated ({parse_error}). The tool call was not executed."
+            ),
+            vec![
+                "Output budget exceeded: arguments were truncated before JSON was complete".to_string(),
+                "The tool call was not executed".to_string(),
+                "Split the work into smaller tool calls with smaller payloads".to_string(),
+            ],
+        )
+    } else {
+        (
+            format!(
+                "Failed to parse arguments for `{tool_name}`: invalid JSON ({parse_error}). The tool call was not executed."
+            ),
+            vec![
+                "Fix the JSON syntax (quotes, commas, braces, escapes) and call the tool again".to_string(),
+                "The tool call was not executed".to_string(),
+                "If argument payloads are large, split the work into smaller tool calls".to_string(),
+            ],
+        )
+    };
+
+    assert!(headline.contains("invalid JSON"));
+    assert!(!headline.contains("output budget exceeded"));
+    assert!(!headline.contains("arguments truncated"));
+    assert!(guidance[0].contains("Fix the JSON syntax"));
+
+    // 4) Model can inspect raw arguments preview to see the syntax error
+    let preview = tauri_mcp_agent_lib::agent::llm::tool_args_validation::args_preview(
+        &tool_calls[0].function.arguments,
+        240,
+    );
+    assert_eq!(preview, malformed_raw);
+}

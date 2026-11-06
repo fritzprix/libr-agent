@@ -30,16 +30,6 @@ impl ArgsParseFailureKind {
     }
 }
 
-/// One tool call whose arguments are not a valid JSON object.
-#[allow(dead_code)]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct InvalidToolArgsIssue {
-    pub tool_call_id: String,
-    pub tool_name: String,
-    pub kind: ArgsParseFailureKind,
-    pub parse_error: String,
-}
-
 /// Classify a `serde_json` parse error into truncated vs malformed.
 pub fn classify_args_parse_failure(error: &serde_json::Error) -> ArgsParseFailureKind {
     use serde_json::error::Category;
@@ -51,16 +41,19 @@ pub fn classify_args_parse_failure(error: &serde_json::Error) -> ArgsParseFailur
     }
 }
 
-/// Redact any invalid or truncated arguments in a slice of tool calls in-place.
+/// Redact truncated arguments in a slice of tool calls in-place.
+///
+/// Malformed (non-truncated) arguments are left intact because they are not oversized
+/// and retaining the raw payload allows the model to see its syntax error.
 pub fn redact_invalid_tool_call_args(tool_calls: &mut [ToolCall]) -> usize {
     let mut count = 0;
     for tool_call in tool_calls.iter_mut() {
-        if inspect_tool_call_arguments(&tool_call.function.arguments).is_err()
-            && !is_redacted_marker(&tool_call.function.arguments)
-        {
-            let raw_len = tool_call.function.arguments.len();
-            tool_call.function.arguments = redact_tool_call_arguments(raw_len);
-            count += 1;
+        if let Err((kind, _)) = inspect_tool_call_arguments(&tool_call.function.arguments) {
+            if kind.is_truncated() && !is_redacted_marker(&tool_call.function.arguments) {
+                let raw_len = tool_call.function.arguments.len();
+                tool_call.function.arguments = redact_tool_call_arguments(raw_len);
+                count += 1;
+            }
         }
     }
     count
@@ -116,24 +109,6 @@ pub fn inspect_tool_call_arguments(
     }
 }
 
-/// Collect every tool call in the batch whose arguments are invalid.
-#[allow(dead_code)]
-pub fn find_invalid_tool_call_args(tool_calls: &[ToolCall]) -> Vec<InvalidToolArgsIssue> {
-    let mut issues = Vec::new();
-    for tool_call in tool_calls {
-        if let Err((kind, parse_error)) = inspect_tool_call_arguments(&tool_call.function.arguments)
-        {
-            issues.push(InvalidToolArgsIssue {
-                tool_call_id: tool_call.id.clone(),
-                tool_name: tool_call.function.name.clone(),
-                kind,
-                parse_error,
-            });
-        }
-    }
-    issues
-}
-
 /// Short preview of a raw args string for error payloads / logs.
 pub fn args_preview(args_str: &str, max_chars: usize) -> String {
     let mut preview: String = args_str.chars().take(max_chars).collect();
@@ -163,16 +138,11 @@ mod tests {
     fn empty_arguments_are_empty_object() {
         assert!(inspect_tool_call_arguments("").is_ok());
         assert!(inspect_tool_call_arguments("   ").is_ok());
-        assert!(find_invalid_tool_call_args(&[tool_call("1", "ping", "")]).is_empty());
     }
 
     #[test]
     fn valid_object_args_pass() {
         assert!(inspect_tool_call_arguments(r#"{"path":"a.txt"}"#).is_ok());
-        assert!(
-            find_invalid_tool_call_args(&[tool_call("1", "readFile", r#"{"path":"a.txt"}"#)])
-                .is_empty()
-        );
     }
 
     #[test]
@@ -206,19 +176,44 @@ mod tests {
     fn non_object_json_is_malformed() {
         let err = inspect_tool_call_arguments(r#""just a string""#).unwrap_err();
         assert_eq!(err.0, ArgsParseFailureKind::MalformedJson);
+        assert!(!err.0.is_truncated());
         let err = inspect_tool_call_arguments("[1,2]").unwrap_err();
         assert_eq!(err.0, ArgsParseFailureKind::MalformedJson);
+        assert!(!err.0.is_truncated());
     }
 
     #[test]
-    fn find_invalid_collects_only_bad_calls() {
-        let issues = find_invalid_tool_call_args(&[
+    fn redact_only_redacts_truncated_args_leaving_malformed_intact() {
+        let mut calls = vec![
             tool_call("good", "listFiles", r#"{"path":"src"}"#),
-            tool_call("bad", "readFile", r#"{"path":"foo"#),
-        ]);
-        assert_eq!(issues.len(), 1);
-        assert_eq!(issues[0].tool_call_id, "bad");
-        assert!(issues[0].kind.is_truncated());
+            tool_call("trunc", "readFile", r#"{"path":"foo"#),
+            tool_call("malformed", "query", r#"{"a": 1,}"#),
+            tool_call("array", "batch", "[1, 2]"),
+        ];
+
+        let count = redact_invalid_tool_call_args(&mut calls);
+        assert_eq!(count, 1, "only truncated call should be redacted");
+
+        // Truncated call is redacted
+        assert_eq!(
+            calls[1].function.arguments,
+            "<redacted: 14 bytes, truncated>"
+        );
+        assert!(is_redacted_marker(&calls[1].function.arguments));
+
+        // Good and malformed calls retain raw arguments
+        assert_eq!(calls[0].function.arguments, r#"{"path":"src"}"#);
+        assert_eq!(calls[2].function.arguments, r#"{"a": 1,}"#);
+        assert_eq!(calls[3].function.arguments, "[1, 2]");
+
+        // Inspecting malformed calls still yields MalformedJson with is_truncated == false
+        let malformed_err = inspect_tool_call_arguments(&calls[2].function.arguments).unwrap_err();
+        assert_eq!(malformed_err.0, ArgsParseFailureKind::MalformedJson);
+        assert!(!malformed_err.0.is_truncated());
+
+        let array_err = inspect_tool_call_arguments(&calls[3].function.arguments).unwrap_err();
+        assert_eq!(array_err.0, ArgsParseFailureKind::MalformedJson);
+        assert!(!array_err.0.is_truncated());
     }
 
     #[test]
@@ -230,6 +225,7 @@ mod tests {
 
         let invalid = inspect_tool_call_arguments(&marker).unwrap_err();
         assert_eq!(invalid.0, ArgsParseFailureKind::TruncatedJson);
+        assert!(invalid.0.is_truncated());
         assert!(invalid.1.contains("output budget exceeded"));
     }
 }

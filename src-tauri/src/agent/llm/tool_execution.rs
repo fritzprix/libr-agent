@@ -322,9 +322,7 @@ fn args_parse_error_result(
         None => String::new(),
     };
 
-    let (headline, mut guidance) = if kind.is_truncated()
-        || crate::agent::llm::tool_args_validation::is_redacted_marker(args_str)
-    {
+    let (headline, mut guidance) = if kind.is_truncated() {
         (
             format!(
                 "Failed to parse arguments for `{tool_name}`: output budget exceeded{budget_info}, arguments truncated ({parse_error}). The tool call was not executed."
@@ -377,7 +375,7 @@ fn args_parse_error_result(
         "toolName": tool_name,
         "parseError": parse_error,
         "argsByteLength": args_bytes,
-        "likelyTruncated": kind.is_truncated() || crate::agent::llm::tool_args_validation::is_redacted_marker(args_str),
+        "likelyTruncated": kind.is_truncated(),
         "maxOutputTokens": max_output_tokens,
         "argsPreview": args_preview(args_str, 240),
         "nextActions": guidance,
