@@ -1,4 +1,4 @@
-{
+﻿{
   "appName": "LibrAgent",
   "assistant": {
     "nameLabel": "Nom de l'assistant *",
@@ -580,6 +580,15 @@
       "loopPreventionHardBreakOffset": "Décalage d'arrêt forcé",
       "loopPreventionHardBreakOffsetPlaceholder": "par ex. 2",
       "loopPreventionHardBreakOffsetDescription": "Tentatives supplémentaires autorisées après un avertissement avant l'arrêt complet de l'agent.",
+      "toolWaitDurationSecs": "Durée d'attente de l'outil (s)",
+      "toolWaitDurationSecsDescription": "Un appel répété qui dure au moins ce temps est considéré comme une attente de tâche en arrière-plan, pas comme une boucle.",
+      "toolWaitDurationSecsPlaceholder": "p. ex. 10",
+      "toolWaitGuideCount": "Seuil d'avertissement d'attente",
+      "toolWaitGuideCountDescription": "Après ce nombre d'attentes identiques, l'agent est invité à cesser de consulter et à programmer une seule réactivation ultérieure.",
+      "toolWaitGuideCountPlaceholder": "p. ex. 10",
+      "toolWaitBreakCount": "Seuil d'interruption d'attente",
+      "toolWaitBreakCountDescription": "Combien d'attentes identiques de plus, après l'avertissement, avant l'arrêt complet de l'agent.",
+      "toolWaitBreakCountPlaceholder": "p. ex. 10",
       "thinkingLoopMinPatternLength": "Longueur minimale du motif de boucle de pensée",
       "thinkingLoopMinPatternLengthDescription": "Longueur minimale de texte répété pour détecter une boucle. Des valeurs plus élevées évitent les fausses alertes.",
       "thinkingLoopMinPatternLengthPlaceholder": "ex. 256",

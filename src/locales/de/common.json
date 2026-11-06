@@ -1,4 +1,4 @@
-{
+﻿{
   "appName": "LibrAgent",
   "assistant": {
     "nameLabel": "Name des Assistenten *",
@@ -580,6 +580,15 @@
       "loopPreventionHardBreakOffset": "Hard-Break-Offset",
       "loopPreventionHardBreakOffsetPlaceholder": "z. B. 2",
       "loopPreventionHardBreakOffsetDescription": "Zusätzliche Versuche nach einer Schleifenwarnung, bevor der Agent vollständig stoppt.",
+      "toolWaitDurationSecs": "Tool-Wartezeit (Sekunden)",
+      "toolWaitDurationSecsDescription": "Ein wiederholter Tool-Aufruf, der mindestens so lange dauert, gilt als Warten auf Hintergrundarbeit, nicht als Schleife.",
+      "toolWaitDurationSecsPlaceholder": "z. B. 10",
+      "toolWaitGuideCount": "Hinweisschwelle für Wartezeiten",
+      "toolWaitGuideCountDescription": "Nach so vielen identischen langen Wartezeiten wird dem Agent empfohlen, nicht weiter abzufragen, sondern stattdessen einen einzigen späteren Prüfzeitpunkt zu planen.",
+      "toolWaitGuideCountPlaceholder": "z. B. 10",
+      "toolWaitBreakCount": "Abbruchschwelle für Wartezeiten",
+      "toolWaitBreakCountDescription": "Wie viele weitere identische lange Wartezeiten nach dem Hinweis, bevor der Agent vollständig stoppt.",
+      "toolWaitBreakCountPlaceholder": "z. B. 10",
       "thinkingLoopMinPatternLength": "Minimale Denkschleifen-Musterlänge",
       "thinkingLoopMinPatternLengthDescription": "Mindestlänge wiederholter Texte zur Erkennung von Denkschleifen. Höhere Werte vermeiden Fehlalarme.",
       "thinkingLoopMinPatternLengthPlaceholder": "z. B. 256",

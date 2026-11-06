@@ -1376,6 +1376,7 @@ async fn append_during_open_tool_batch_is_deferred_until_batch_completes() {
             error: None,
             is_error: false,
             cancellation: None,
+            execution_duration_ms: None,
         },
     )
     .await

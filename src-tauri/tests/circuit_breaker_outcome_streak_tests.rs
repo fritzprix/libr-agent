@@ -11,7 +11,7 @@ mod circuit_breaker_fixtures;
 use circuit_breaker_fixtures::{test_message, test_tool_call};
 use tauri_mcp_agent_lib::agent::llm::circuit_breaker::{
     build_tool_call_indices, evaluate_circuit_breaker_action,
-    sanitize_circuit_breaker_log_tool_name, CircuitBreakerAction,
+    sanitize_circuit_breaker_log_tool_name, CircuitBreakerAction, WaitPreventionSettings,
 };
 use tauri_mcp_agent_lib::agent::llm::natural_recovery::{
     build_loop_prevention_guidance, LoopPreventionKind, LoopPreventionShortCircuit,
@@ -25,7 +25,14 @@ fn evaluate(
     threshold: usize,
 ) -> Option<CircuitBreakerAction> {
     let call_signature_by_id = build_tool_call_indices(messages);
-    evaluate_circuit_breaker_action(messages, tool_call, &call_signature_by_id, threshold, 1)
+    evaluate_circuit_breaker_action(
+        messages,
+        tool_call,
+        &call_signature_by_id,
+        threshold,
+        1,
+        &WaitPreventionSettings::default(),
+    )
 }
 
 #[test]
@@ -387,7 +394,14 @@ fn soft_blocks_fill_offset_gap_until_hard_break() {
 
     let eval = |msgs: &[Message], call: &ToolCall| {
         let call_signature_by_id = build_tool_call_indices(msgs);
-        evaluate_circuit_breaker_action(msgs, call, &call_signature_by_id, threshold, offset)
+        evaluate_circuit_breaker_action(
+            msgs,
+            call,
+            &call_signature_by_id,
+            threshold,
+            offset,
+            &WaitPreventionSettings::default(),
+        )
     };
 
     let mut messages = vec![
@@ -840,5 +854,190 @@ fn shell_structured_duration_ms_still_breaks_streak_on_stdout_change() {
         evaluate(&messages, &current_call, 3),
         None,
         "distinct shell stdout must still break the trailing success streak"
+    );
+}
+
+// ---- Wait-aware loop prevention (#2610) ----
+//
+// Identical calls that each take >= the wait threshold are *waits* (e.g.
+// `waitForProcess(timeout=10)`), not fast loops. They skip the fast ladder and
+// follow guide_count/break_count from WaitPreventionSettings (default 10/10).
+
+const WAIT_TOOL: &str = "workspace__waitForProcess";
+const WAIT_ARGS: &str = r#"{"processId":"proc-1","timeout":10}"#;
+const WAIT_OUTCOME: &str = "Process proc-1: running";
+const SLOW_MS: u64 = 12_000;
+
+fn wait_call(n: usize) -> ToolCall {
+    test_tool_call(&format!("tc-current-{n}"), WAIT_TOOL, WAIT_ARGS)
+}
+
+/// `count` identical (call, outcome) pairs whose results each recorded `SLOW_MS`.
+fn slow_wait_history(count: usize) -> Vec<Message> {
+    let mut messages = Vec::new();
+    for i in 0..count {
+        let id = format!("tc-{i}");
+        messages.push(test_message(
+            &format!("assistant-{i}"),
+            "assistant",
+            Some(vec![test_tool_call(&id, WAIT_TOOL, WAIT_ARGS)]),
+            None,
+            None,
+            "",
+            None,
+        ));
+        messages.push(test_message(
+            &format!("tool-{i}"),
+            "tool",
+            None,
+            Some(&id),
+            Some(serde_json::json!({ "executionDurationMs": SLOW_MS })),
+            WAIT_OUTCOME,
+            Some(false),
+        ));
+    }
+    messages
+}
+
+#[test]
+fn ten_identical_slow_waits_do_not_trip_fast_rule() {
+    // 9 slow calls in history + current = 10th call: below guide_count (10).
+    // Without the wait ladder the fast rule (threshold 3) would hard-break here.
+    assert_eq!(
+        evaluate(&slow_wait_history(9), &wait_call(10), 3),
+        None,
+        "identical slow waits must not use the fast-loop ladder"
+    );
+}
+
+#[test]
+fn eleventh_identical_slow_wait_gets_wait_guidance() {
+    assert_eq!(
+        evaluate(&slow_wait_history(10), &wait_call(11), 3),
+        Some(CircuitBreakerAction::WaitGuidance {
+            count: 11,
+            tool_name: WAIT_TOOL.to_string(),
+            args: WAIT_ARGS.to_string(),
+        }),
+        "the 11th identical wait call must short-circuit with scheduleCallback guidance"
+    );
+}
+
+#[test]
+fn twenty_first_identical_slow_wait_hard_breaks() {
+    assert_eq!(
+        evaluate(&slow_wait_history(20), &wait_call(21), 3),
+        Some(CircuitBreakerAction::HardBreak {
+            count: 21,
+            tool_name: WAIT_TOOL.to_string(),
+            args: WAIT_ARGS.to_string(),
+        }),
+        "10 guided wait calls must hard-break on the 21st"
+    );
+}
+
+#[test]
+fn wait_guidance_block_extends_wait_streak() {
+    // A WaitGuidance short-circuit result has no duration of its own; it must
+    // keep the wait streak alive so continued polling still hard-breaks.
+    let mut messages = slow_wait_history(10);
+    let id = "tc-guided";
+    messages.push(test_message(
+        "assistant-guided",
+        "assistant",
+        Some(vec![test_tool_call(id, WAIT_TOOL, WAIT_ARGS)]),
+        None,
+        None,
+        "",
+        None,
+    ));
+    messages.push(test_message(
+        "tool-guided",
+        "tool",
+        None,
+        Some(id),
+        Some(serde_json::json!({ "loopPrevention": true })),
+        "Loop prevention: stop polling and schedule a callback.",
+        Some(false),
+    ));
+
+    assert_eq!(
+        evaluate(&messages, &wait_call(12), 3),
+        Some(CircuitBreakerAction::WaitGuidance {
+            count: 12,
+            tool_name: WAIT_TOOL.to_string(),
+            args: WAIT_ARGS.to_string(),
+        }),
+        "the guidance block itself must extend the wait streak (count 12)"
+    );
+}
+
+#[test]
+fn wait_streak_resets_when_outcome_changes() {
+    // Same slow call but the newest result differs (background work progressed):
+    // the trailing identical-outcome segment is only that one call → no guidance.
+    let mut messages = slow_wait_history(9);
+    let id = "tc-changed";
+    messages.push(test_message(
+        "assistant-changed",
+        "assistant",
+        Some(vec![test_tool_call(id, WAIT_TOOL, WAIT_ARGS)]),
+        None,
+        None,
+        "",
+        None,
+    ));
+    messages.push(test_message(
+        "tool-changed",
+        "tool",
+        None,
+        Some(id),
+        Some(serde_json::json!({ "executionDurationMs": SLOW_MS })),
+        "Process proc-1: finished (exit code: 0)",
+        Some(false),
+    ));
+
+    assert_eq!(
+        evaluate(&messages, &wait_call(11), 3),
+        None,
+        "a changed outcome must reset the wait streak"
+    );
+}
+
+#[test]
+fn fast_snapshot_polls_keep_using_fast_rule() {
+    // Recorded duration below the wait threshold: byte-identical snapshot polls
+    // keep the fast ladder (soft-block at threshold 3).
+    let mut messages = Vec::new();
+    for i in 0..2 {
+        let id = format!("tc-{i}");
+        messages.push(test_message(
+            &format!("assistant-{i}"),
+            "assistant",
+            Some(vec![test_tool_call(&id, WAIT_TOOL, WAIT_ARGS)]),
+            None,
+            None,
+            "",
+            None,
+        ));
+        messages.push(test_message(
+            &format!("tool-{i}"),
+            "tool",
+            None,
+            Some(&id),
+            Some(serde_json::json!({ "executionDurationMs": 50 })),
+            WAIT_OUTCOME,
+            Some(false),
+        ));
+    }
+
+    assert_eq!(
+        evaluate(&messages, &wait_call(3), 3),
+        Some(CircuitBreakerAction::NaturalRecoverySuccess {
+            count: 3,
+            tool_name: WAIT_TOOL.to_string(),
+            args: WAIT_ARGS.to_string(),
+        }),
+        "fast identical polls must keep using the fast-loop ladder"
     );
 }

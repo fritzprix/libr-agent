@@ -279,6 +279,7 @@ impl ToolExecutionContext<'_> {
                     is_error,
                     mcp_content,
                     cancellation: None,
+                    execution_duration_ms: None,
                 }
             }
             Err(error) => ToolExecutionResult {
@@ -289,6 +290,7 @@ impl ToolExecutionContext<'_> {
                 is_error: true,
                 mcp_content: None,
                 cancellation: None,
+                execution_duration_ms: None,
             },
         }
     }
@@ -413,6 +415,7 @@ fn args_parse_error_result(
         error: Some(message),
         is_error: true,
         cancellation: None,
+        execution_duration_ms: None,
     }
 }
 
@@ -429,6 +432,7 @@ fn tool_result_from_mcp_result(result: crate::mcp::types::MCPResult) -> ToolExec
             crate::mcp::types::MCPResponseResult::ToolCall(result),
         )),
         cancellation: None,
+        execution_duration_ms: None,
     }
 }
 
@@ -442,6 +446,7 @@ fn error_result(message: impl Into<String>) -> ToolExecutionResult {
         is_error: true,
         mcp_content: None,
         cancellation: None,
+        execution_duration_ms: None,
     }
 }
 
@@ -687,6 +692,7 @@ pub async fn execute_tool_calls(
             }
         }
 
+        let execution_started = std::time::Instant::now();
         let (mut result, process_was_cancelled) = proxy_manager
             .run_with_process_cancel_scope(
                 &session_id,
@@ -696,6 +702,7 @@ pub async fn execute_tool_calls(
                 ),
             )
             .await;
+        result.execution_duration_ms = Some(execution_started.elapsed().as_millis() as u64);
         if result.is_error
             && (process_was_cancelled
                 || session_cancel_requested(&active_sessions, &session_id, &cancellation_token)

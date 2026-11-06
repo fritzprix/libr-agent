@@ -24,6 +24,29 @@ Advanced loop thresholds live under **Settings → Advanced**:
 
 - `loopPreventionThreshold` (default **3**)
 - `loopPreventionHardBreakOffset` (default **2**) → hard break at count **5**
+- `toolWaitDurationSeconds` (default **10**) — a call that takes at least this long is a _wait_
+- `toolWaitGuideCount` (default **10**) — identical waits tolerated before guidance
+- `toolWaitBreakCount` (default **10**) — further identical waits before the hard break
+
+## Wait-aware ladder (#2610)
+
+Blocking waits (`waitForProcess(timeout=10)`, `checkSession(wait=true)`) legitimately
+return identical results over and over. The fast rule above would hard-break them at
+count 5, so slow calls take a separate ladder:
+
+1. The workflow executor records wall-clock duration on every tool result as
+   `metadata.executionDurationMs` (builtin and external MCP tools alike).
+2. A call whose duration reaches `toolWaitDurationSeconds` counts as a **wait call**.
+3. Trailing identical wait calls **skip the fast ladder entirely**. After
+   `toolWaitGuideCount` consecutive identical waits, the next identical wait is
+   short-circuited with **WaitGuidance**: stop polling and schedule a single
+   `scheduled_task__scheduleCallback` (or the `call-me-back` skill) instead.
+4. If the model keeps polling past the guidance, the guidance blocks themselves
+   extend the streak; `toolWaitBreakCount` guided waits later the hard break trips.
+5. Any changed outcome resets the wait streak. Fast (sub-threshold) identical calls
+   keep using the fast ladder, so snapshot-poll prevention is unchanged.
+
+The ladder applies to both the per-tool and batch scanners.
 
 ## Detection layers
 

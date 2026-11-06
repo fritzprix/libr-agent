@@ -1,4 +1,4 @@
-{
+﻿{
   "appName": "LibrAgent",
   "assistant": {
     "nameLabel": "アシスタント名 *",
@@ -580,6 +580,15 @@
       "loopPreventionHardBreakOffset": "ハードブレイクオフセット",
       "loopPreventionHardBreakOffsetPlaceholder": "例: 2",
       "loopPreventionHardBreakOffsetDescription": "ループ警告の後、エージェントが完全に停止するまでに許容される追加の試行回数です。",
+      "toolWaitDurationSecs": "ツール待機時間（秒）",
+      "toolWaitDurationSecsDescription": "この時間以上かかる同じツール呼び出しは、繰り返しではなくバックグラウンド作業の待機とみなされます。",
+      "toolWaitDurationSecsPlaceholder": "例: 10",
+      "toolWaitGuideCount": "待機案内の回数",
+      "toolWaitGuideCountDescription": "同じ長い待ちがこの回数を超えると、エージェントは確認を続けず、後で一度だけ起こされるよう予約するよう指示されます。",
+      "toolWaitGuideCountPlaceholder": "例: 10",
+      "toolWaitBreakCount": "待機中断の回数",
+      "toolWaitBreakCountDescription": "案内の後、同じ長い待ちがこの回数だけ続いても完全に停止します。",
+      "toolWaitBreakCountPlaceholder": "例: 10",
       "thinkingLoopMinPatternLength": "思考ループ最小パターン長",
       "thinkingLoopMinPatternLengthDescription": "思考プロセスでの繰り返しエラーを検知する最小の文字列長です。値を大きくすると誤検知を減らせます。",
       "thinkingLoopMinPatternLengthPlaceholder": "例: 256",

@@ -1,4 +1,4 @@
-{
+﻿{
   "appName": "LibrAgent",
   "assistant": {
     "nameLabel": "助手名称 *",
@@ -580,6 +580,15 @@
       "loopPreventionHardBreakOffset": "强制停止偏移量",
       "loopPreventionHardBreakOffsetPlaceholder": "例如 2",
       "loopPreventionHardBreakOffsetDescription": "在发出循环警告后，彻底停止智能体前允许的额外重试次数。",
+      "toolWaitDurationSecs": "工具等待时长（秒）",
+      "toolWaitDurationSecsDescription": "达到或超过此时间的相同工具调用会被视为在等待后台任务，而不是循环。",
+      "toolWaitDurationSecsPlaceholder": "例如：10",
+      "toolWaitGuideCount": "等待引导次数",
+      "toolWaitGuideCountDescription": "相同的长时间等待达到此次数后，将提示智能体停止轮询，改为安排一次唤醒。",
+      "toolWaitGuideCountPlaceholder": "例如：10",
+      "toolWaitBreakCount": "等待中断次数",
+      "toolWaitBreakCountDescription": "收到引导后，相同的长时间等待再持续此次数，智能体将完全停止。",
+      "toolWaitBreakCountPlaceholder": "例如：10",
       "thinkingLoopMinPatternLength": "思考循环最小模式长度",
       "thinkingLoopMinPatternLengthDescription": "在思考过程中检测循环重复的最小文本长度。较大的值可减少长推理中的误报。",
       "thinkingLoopMinPatternLengthPlaceholder": "例如 256",

@@ -13,6 +13,9 @@ pub enum LoopPreventionKind {
     RepeatedBatchSequence,
     /// Last soft batch intervention before hard break: nudge strategy reset via reflect.
     RepeatedBatchSequenceEscalate,
+    /// Repeated identical long-running calls: the agent is waiting for background
+    /// work; guide it to a scheduled callback instead of repeating the wait (#2610).
+    WaitGuidance,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -103,6 +106,15 @@ pub fn build_loop_prevention_guidance(short_circuit: &LoopPreventionShortCircuit
             and set one concrete nextAction that uses a different approach. Then proceed from that nextAction.",
             short_circuit.tool_name, short_circuit.count
         ),
+        LoopPreventionKind::WaitGuidance => format!(
+            "Loop prevention: '{}' was called {} times with identical parameters, and each call waited a long time.\n\n\
+            This call was blocked. Repeating the same wait call will only wait again with the same result — stop polling.\n\n\
+            Instead, schedule one wake-up for later: call scheduled_task__scheduleCallback with `message` \
+            (what to do when woken) and `delaySeconds` (how long to wait), then end your turn. \
+            When woken, check the result once and continue. The call-me-back skill describes the same pattern. \
+            If a single blocking wait would finish sooner, prefer that over many short waits.",
+            short_circuit.tool_name, short_circuit.count
+        ),
     }
 }
 
@@ -119,6 +131,7 @@ pub fn loop_prevention_tool_result(guidance: &str) -> ToolExecutionResult {
             text: guidance.to_string(),
         }]),
         cancellation: None,
+        execution_duration_ms: None,
     }
 }
 
@@ -156,6 +169,24 @@ mod tests {
         assert!(guidance.contains("planning__reflect"));
         assert!(guidance.contains("nextAction"));
         assert!(!guidance.contains("sleep"));
+    }
+
+    #[test]
+    fn wait_guidance_recommends_schedule_callback() {
+        let guidance = build_loop_prevention_guidance(&LoopPreventionShortCircuit {
+            kind: LoopPreventionKind::WaitGuidance,
+            tool_name: "agent__checkSession".to_string(),
+            args: r#"{"sessionId":"s1","wait":false}"#.to_string(),
+            count: 11,
+            duplicate_of_tool_call_id: None,
+        });
+
+        assert!(guidance.starts_with("Loop prevention:"));
+        assert!(guidance.contains("blocked"));
+        assert!(guidance.contains("stop polling"));
+        assert!(guidance.contains("scheduled_task__scheduleCallback"));
+        assert!(guidance.contains("delaySeconds"));
+        assert!(guidance.contains("call-me-back"));
     }
 
     #[test]

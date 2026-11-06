@@ -278,6 +278,8 @@ export interface ToolExecutionResult {
   cancellation?: {
     cancelledBy: 'user' | 'timeout' | 'system';
   };
+  /** Wall-clock execution duration in ms, recorded for real tool executions only. */
+  executionDurationMs?: number;
 }
 
 export type SessionWorkflowStatus =
@@ -395,7 +397,11 @@ export interface UserQuestion {
 }
 
 /** How a user prompt ended; Stop reports `cancelled` (#2543). */
-export type UserPromptOutcome = 'answered' | 'cancelled' | 'timeout' | 'restart';
+export type UserPromptOutcome =
+  | 'answered'
+  | 'cancelled'
+  | 'timeout'
+  | 'restart';
 
 /** The prompt waiting for a session. No field can carry a secret value. */
 export interface PendingUserPromptSummary {

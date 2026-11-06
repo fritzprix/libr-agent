@@ -55,6 +55,14 @@ pub enum CircuitBreakerAction {
         tool_name: String,
         args: String,
     },
+    /// Identical long-running calls: the model is waiting, not looping. Guide it to a
+    /// scheduled callback instead of repeating the wait; hard-break if it keeps polling
+    /// past the guidance (#2610).
+    WaitGuidance {
+        count: usize,
+        tool_name: String,
+        args: String,
+    },
     HardBreak {
         count: usize,
         tool_name: String,
@@ -192,9 +200,33 @@ pub fn build_tool_call_indices(messages: &[Message]) -> std::collections::HashMa
     call_signature_by_id
 }
 
+/// Wait-detection thresholds for slow identical calls (#2610).
+///
+/// A call whose recorded execution duration reaches `wait_duration_ms` is a **wait
+/// call**. Identical wait calls skip the fast-loop ladder entirely: instead, after
+/// `guide_count` consecutive identical wait calls the next call is short-circuited
+/// with `WaitGuidance`, and after `break_count` further identical wait calls the
+/// hard break trips.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WaitPreventionSettings {
+    pub wait_duration_ms: u64,
+    pub guide_count: usize,
+    pub break_count: usize,
+}
+
+impl Default for WaitPreventionSettings {
+    fn default() -> Self {
+        Self {
+            wait_duration_ms: 10_000,
+            guide_count: 10,
+            break_count: 10,
+        }
+    }
+}
+
 /// Load loop-prevention thresholds from advanced settings.
 ///
-/// Returns `(threshold, hard_break_offset)`:
+/// Returns `(threshold, hard_break_offset, wait_settings)`:
 /// - `threshold`: consecutive identical **(call, outcome)** streak length that
 ///   triggers soft natural recovery (default 3). Outcome text changes reset the
 ///   streak for both per-tool and multi-tool batch scanners.
@@ -202,11 +234,18 @@ pub fn build_tool_call_indices(messages: &[Message]) -> std::collections::HashMa
 ///   Soft blocks every count in `[threshold, hard_break)`. For repeated **errors**,
 ///   `NaturalRecoveryErrorEscalate` fires once at `hard_break - 1` when
 ///   `offset >= 2` (with offset=1 the escalate step is skipped: soft then hard).
-pub(crate) async fn load_loop_prevention_settings() -> (usize, usize) {
+/// - `wait_settings`: slow-call ladder that replaces the fast rule for identical
+///   long-running calls (see [`WaitPreventionSettings`], #2610).
+pub(crate) async fn load_loop_prevention_settings() -> (usize, usize, WaitPreventionSettings) {
     let settings = crate::models::advanced_settings::AdvancedSettings::load_global().await;
     (
         settings.loop_prevention_threshold,
         settings.loop_prevention_hard_break_offset,
+        WaitPreventionSettings {
+            wait_duration_ms: u64::from(settings.tool_wait_duration_secs).saturating_mul(1000),
+            guide_count: settings.tool_wait_guide_count,
+            break_count: settings.tool_wait_break_count,
+        },
     )
 }
 
@@ -413,6 +452,50 @@ fn build_batch_outcome_signature(
     Some(parts.join("\n"))
 }
 
+/// Recorded wall-clock execution duration (ms) on a persisted tool-result message.
+///
+/// Written by `handle_tool_result` as `metadata.executionDurationMs` for every
+/// tool — builtin and external MCP alike — so wait detection needs no per-tool
+/// knowledge (#2610).
+fn tool_result_duration_ms(message: &Message) -> Option<u64> {
+    message
+        .metadata
+        .as_ref()
+        .and_then(|metadata| metadata.get("executionDurationMs"))
+        .and_then(|value| value.as_u64())
+}
+
+/// Whether a trailing turn extends an identical-call wait streak (#2610).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum WaitState {
+    /// Result duration reached the wait threshold.
+    Slow,
+    /// Loop-prevention short-circuit or missing result: keeps an open wait
+    /// streak alive without starting one.
+    Neutral,
+    /// Fast result: closes the wait streak; the fast-loop rule owns it.
+    Fast,
+}
+
+fn fold_wait_state(
+    state: WaitState,
+    slow_suffix: &mut usize,
+    pending_neutral: &mut usize,
+    closed: &mut bool,
+) {
+    if *closed {
+        return;
+    }
+    match state {
+        WaitState::Slow => {
+            *slow_suffix += *pending_neutral + 1;
+            *pending_neutral = 0;
+        }
+        WaitState::Neutral => *pending_neutral += 1,
+        WaitState::Fast => *closed = true,
+    }
+}
+
 /// Count trailing tool results whose call signature matches `matcher`.
 ///
 /// Counts only the trailing streak of identical (call, outcome) pairs:
@@ -421,10 +504,15 @@ fn build_batch_outcome_signature(
 ///   polling where status progresses, e.g. running → completed).
 /// - Loop-prevention short-circuit results keep the streak (they must not look
 ///   like a “new outcome” that clears the counter).
+///
+/// Also returns the number of trailing **slow** (wait) calls: the longest
+/// suffix of the streak whose results are slow, counting loop-prevention /
+/// missing results only when they sit above an already-open wait streak.
 fn count_consecutive_identical_call_outcomes<F>(
     messages: &[Message],
     matcher: F,
-) -> Option<(usize, RepeatedOutcome)>
+    wait: &WaitPreventionSettings,
+) -> Option<(usize, usize, RepeatedOutcome)>
 where
     F: Fn(&str) -> bool,
 {
@@ -432,10 +520,14 @@ where
 
     let mut consecutive_matches = 0;
     let mut repeated_outcome: Option<RepeatedOutcome> = None;
+    let mut slow_suffix: usize = 0;
+    let mut pending_neutral: usize = 0;
+    let mut wait_closed = false;
 
     for turn in &turns {
         let mut matched_in_turn = false;
         let mut turn_outcome: Option<RepeatedOutcome> = None;
+        let mut turn_wait_state = WaitState::Fast;
 
         if let Some(tool_calls) = &turn.assistant_message.tool_calls {
             for tool_call in tool_calls {
@@ -446,7 +538,14 @@ where
                         .iter()
                         .find(|m| m.tool_call_id.as_deref() == Some(&tool_call.id))
                     {
-                        if !is_loop_prevention_message(tool_result_msg) {
+                        if is_loop_prevention_message(tool_result_msg) {
+                            turn_wait_state = WaitState::Neutral;
+                        } else {
+                            if tool_result_duration_ms(tool_result_msg)
+                                .is_some_and(|duration| duration >= wait.wait_duration_ms)
+                            {
+                                turn_wait_state = WaitState::Slow;
+                            }
                             let signature = build_tool_result_signature(tool_result_msg);
                             turn_outcome = Some(if is_tool_error_message(tool_result_msg) {
                                 RepeatedOutcome::Error { signature }
@@ -454,6 +553,8 @@ where
                                 RepeatedOutcome::Success { signature }
                             });
                         }
+                    } else {
+                        turn_wait_state = WaitState::Neutral;
                     }
                 }
             }
@@ -481,6 +582,13 @@ where
             // Loop-prevention or missing result: keep the streak alive.
             consecutive_matches += 1;
         }
+
+        fold_wait_state(
+            turn_wait_state,
+            &mut slow_suffix,
+            &mut pending_neutral,
+            &mut wait_closed,
+        );
     }
 
     if consecutive_matches == 0 {
@@ -490,7 +598,7 @@ where
     let outcome = repeated_outcome.unwrap_or_else(|| RepeatedOutcome::Error {
         signature: "__loop_prevention__".to_string(),
     });
-    Some((consecutive_matches, outcome))
+    Some((consecutive_matches, slow_suffix, outcome))
 }
 
 /// Maximum trailing assistant tool_calls batches to inspect when computing a
@@ -505,11 +613,18 @@ const MAX_ASSISTANT_BATCHES_TO_SCAN: usize = 32;
 /// non-empty tool_calls batch, a different complete batch outcome, or a user/system
 /// message ends the streak. This catches `[a,b,c] → [a,b,c]` which the per-tool
 /// result scan misses, while allowing progressive polling across repeated batches.
-pub fn count_consecutive_identical_batches(messages: &[Message], fingerprint: &str) -> usize {
+pub fn count_consecutive_identical_batches(
+    messages: &[Message],
+    fingerprint: &str,
+    wait: &WaitPreventionSettings,
+) -> (usize, usize) {
     let turns = group_trailing_tool_call_turns(messages);
     let mut consecutive = 0;
     let mut repeated_batch_outcome: Option<String> = None;
     let mut assistant_batches_scanned = 0;
+    let mut slow_suffix: usize = 0;
+    let mut pending_neutral: usize = 0;
+    let mut wait_closed = false;
 
     for turn in &turns {
         let Some(tool_calls) = turn.assistant_message.tool_calls.as_ref() else {
@@ -529,6 +644,15 @@ pub fn count_consecutive_identical_batches(messages: &[Message], fingerprint: &s
         }
 
         if let Some(outcome) = build_batch_outcome_signature(tool_calls, &turn.tool_results) {
+            // A batch counts as a wait when any of its results took the wait
+            // threshold: polling batches usually contain at least one blocking wait.
+            let wait_state = if turn.tool_results.iter().any(|result| {
+                tool_result_duration_ms(result).is_some_and(|d| d >= wait.wait_duration_ms)
+            }) {
+                WaitState::Slow
+            } else {
+                WaitState::Fast
+            };
             match &repeated_batch_outcome {
                 None => {
                     repeated_batch_outcome = Some(outcome);
@@ -541,13 +665,25 @@ pub fn count_consecutive_identical_batches(messages: &[Message], fingerprint: &s
                     break;
                 }
             }
+            fold_wait_state(
+                wait_state,
+                &mut slow_suffix,
+                &mut pending_neutral,
+                &mut wait_closed,
+            );
         } else {
             // Incomplete results or loop-prevention: keep the streak.
             consecutive += 1;
+            fold_wait_state(
+                WaitState::Neutral,
+                &mut slow_suffix,
+                &mut pending_neutral,
+                &mut wait_closed,
+            );
         }
     }
 
-    consecutive
+    (consecutive, slow_suffix)
 }
 
 /// Collect later-in-batch duplicates of an earlier (name, args) signature.
@@ -594,6 +730,7 @@ pub fn evaluate_batch_circuit_breaker(
     tool_calls: &[ToolCall],
     threshold: usize,
     hard_break_offset: usize,
+    wait: &WaitPreventionSettings,
 ) -> Option<CircuitBreakerAction> {
     if tool_calls.is_empty() {
         return None;
@@ -612,8 +749,28 @@ pub fn evaluate_batch_circuit_breaker(
     }
 
     let fingerprint = batch_fingerprint(tool_calls);
-    let previous = count_consecutive_identical_batches(messages, &fingerprint);
+    let (previous, slow_suffix) = count_consecutive_identical_batches(messages, &fingerprint, wait);
     if previous == 0 {
+        return None;
+    }
+
+    // Wait ladder for repeated identical wait batches (see evaluate_circuit_breaker_action).
+    if slow_suffix > 0 {
+        let wait_total = slow_suffix + 1;
+        if wait_total > wait.guide_count + wait.break_count {
+            return Some(CircuitBreakerAction::HardBreak {
+                count: wait_total,
+                tool_name: first.function.name.clone(),
+                args: first.function.arguments.clone(),
+            });
+        }
+        if wait_total > wait.guide_count {
+            return Some(CircuitBreakerAction::WaitGuidance {
+                count: wait_total,
+                tool_name: first.function.name.clone(),
+                args: first.function.arguments.clone(),
+            });
+        }
         return None;
     }
 
@@ -652,6 +809,7 @@ pub fn evaluate_circuit_breaker_action(
     call_signature_by_id: &std::collections::HashMap<String, String>,
     threshold: usize,
     hard_break_offset: usize,
+    wait: &WaitPreventionSettings,
 ) -> Option<CircuitBreakerAction> {
     let tool_name = &tool_call.function.name;
     let args = &tool_call.function.arguments;
@@ -663,11 +821,35 @@ pub fn evaluate_circuit_breaker_action(
     }
 
     let current_signature = tool_call_signature(tool_call);
-    if let Some((consecutive_identical_signature, outcome)) =
-        count_consecutive_identical_call_outcomes(messages, |tool_call_id| {
-            call_signature_by_id.get(tool_call_id) == Some(&current_signature)
-        })
+    if let Some((consecutive_identical_signature, slow_suffix, outcome)) =
+        count_consecutive_identical_call_outcomes(
+            messages,
+            |tool_call_id| call_signature_by_id.get(tool_call_id) == Some(&current_signature),
+            wait,
+        )
     {
+        // Wait ladder: identical calls that each took a long time are the model
+        // *waiting* for background work, not fast-looping. Snapshot polls (fast,
+        // identical output) never enter here and keep using the fast rule.
+        if slow_suffix > 0 {
+            let wait_total = slow_suffix + 1;
+            if wait_total > wait.guide_count + wait.break_count {
+                return Some(CircuitBreakerAction::HardBreak {
+                    count: wait_total,
+                    tool_name: tool_name.clone(),
+                    args: args.clone(),
+                });
+            }
+            if wait_total > wait.guide_count {
+                return Some(CircuitBreakerAction::WaitGuidance {
+                    count: wait_total,
+                    tool_name: tool_name.clone(),
+                    args: args.clone(),
+                });
+            }
+            return None;
+        }
+
         let total_count = consecutive_identical_signature + 1;
         let hard_break_at = threshold + hard_break_offset;
 
