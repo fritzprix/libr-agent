@@ -14,9 +14,18 @@ pub async fn spawn_create_proxy_for_session(
     tool_ids: Vec<String>,
     mcp_server_ids: Vec<String>,
 ) {
-    // Explicit lifecycle entry (session create / resume): a prior force-stop
-    // fence must not block this new lifecycle (issue #2633).
-    proxy_manager.clear_teardown_fence(&session_id).await;
+    // A force-stop fence is only lifted by explicit user/API entry points
+    // (create, the resume command, an explicit message, reload). This helper
+    // is shared by automatic wakes (e.g. the scheduled runner resuming an
+    // unloaded session), so it must never clear the fence; instead it skips
+    // proxy creation entirely for a fenced session (issue #2633 G2.2).
+    if proxy_manager.is_teardown_fenced(&session_id).await {
+        log::info!(
+            "Skipping MCP proxy (re)creation for force-terminated session {}; an explicit entry must clear the fence first",
+            session_id
+        );
+        return;
+    }
 
     // Surface an immediate hydrating state when no proxy is published yet so the
     // open response is not stuck on NotStarted while create_proxy is still queued.

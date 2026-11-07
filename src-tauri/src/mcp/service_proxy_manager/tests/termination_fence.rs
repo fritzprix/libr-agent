@@ -138,36 +138,144 @@ async fn soft_cancel_never_fences_the_session() {
 
 /// Automatic wakes (MCP channel notification, scheduled job, compaction
 /// continuation, background resume) all route through `ensure_proxy_ready` →
-/// `ensure_proxy_exists`, which refuses a fenced session. An explicit user or
-/// API message clears the fence first, so it is accepted.
+/// `ensure_proxy_exists`, which refuses a fenced session. This drives the real
+/// product entry point (no AppHandle needed) rather than the manager helper.
+/// An explicit user or API message clears the fence first, so it is accepted.
 #[tokio::test]
 async fn automatic_wake_is_rejected_until_an_explicit_message_clears_the_fence() {
+    use crate::agent::workflow::start::ensure_proxy_exists;
+
     let harness = create_test_harness().await;
     let manager = &harness.manager;
     let session_id = "wake-rejection";
 
     insert_test_session(manager, session_id).await;
 
-    // Not fenced yet: an ordinary wake passes.
-    manager
-        .reject_if_teardown_fenced(session_id)
+    // Not fenced yet: an ordinary wake passes and may create the proxy.
+    ensure_proxy_exists(manager, None, session_id)
         .await
         .expect("a live session must be wakeable");
 
+    // The real terminate path force-stops resources and then tears the proxy
+    // down; the fence stays set afterwards, so late wakes cannot revive it.
     manager.terminate_session_resources(session_id).await;
+    manager.destroy_proxy(session_id).await;
 
-    let error = manager
-        .reject_if_teardown_fenced(session_id)
+    let error = ensure_proxy_exists(manager, None, session_id)
         .await
         .expect_err("a terminated session must refuse automatic wakes");
     assert!(error.contains("terminated"), "unexpected error: {error}");
+    assert!(
+        crate::mcp::MCPServiceProxyManager::is_teardown_fence_rejection(&error),
+        "wake refusal must carry the fence rejection marker"
+    );
+    assert!(
+        manager.get_proxy(session_id).await.is_none(),
+        "a refused wake must not recreate the proxy"
+    );
 
     // The explicit message entry points clear the fence before starting work.
     manager.clear_teardown_fence(session_id).await;
-    manager
-        .reject_if_teardown_fenced(session_id)
+    ensure_proxy_exists(manager, None, session_id)
         .await
         .expect("an explicit later message must be accepted");
+}
+
+/// Deterministically parks one lazy builtin-proxy creation for `session_id`
+/// and starts a `call_tool` that reaches it. Waits until creation is parked
+/// inside the creation guard (after the double-check), then returns the
+/// dispatch task and the release signal, so the test can terminate while
+/// creation is in-flight (issue #2633 G2.1).
+async fn start_held_lazy_creation(
+    manager: &Arc<MCPServiceProxyManager>,
+    session_id: &'static str,
+) -> (
+    tokio::task::JoinHandle<Result<crate::mcp::types::MCPResponse, String>>,
+    tokio::sync::oneshot::Sender<()>,
+) {
+    let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+    let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+    manager
+        .lazy_creation_holds
+        .lock()
+        .await
+        .insert(session_id.to_string(), (ready_tx, release_rx));
+
+    let calling_manager = manager.clone();
+    let task = tokio::spawn(async move {
+        calling_manager
+            .call_tool(session_id, "playbook__listPlaybooks", json!({}))
+            .await
+    });
+    ready_rx.await.expect("creation must reach the hold");
+    (task, release_tx)
+}
+
+/// Issue #2633 G2.1: explicit terminate while a lazy proxy creation is
+/// in-flight must reject that dispatch when it resumes — the parked creation
+/// may not resurrect builtin instances after teardown.
+#[tokio::test]
+async fn terminate_during_inflight_lazy_creation_rejects_the_dispatch() {
+    let harness = create_test_harness().await;
+    let manager = &harness.manager;
+    let session_id = "terminate-during-creation";
+
+    insert_test_session(manager, session_id).await;
+
+    let (task, release) = start_held_lazy_creation(manager, session_id).await;
+
+    let killed = manager.terminate_session_resources(session_id).await;
+    assert_eq!(killed, 0, "no proxy finished yet, nothing to kill");
+    assert!(manager.is_teardown_fenced(session_id).await);
+
+    release.send(()).expect("release the parked creation");
+    let error = task
+        .await
+        .expect("creation task must not panic")
+        .expect_err("parked creation must be rejected after terminate");
+    assert!(
+        crate::mcp::MCPServiceProxyManager::is_teardown_fence_rejection(&error),
+        "rejection must carry the fence marker, got: {error}"
+    );
+    assert!(
+        manager.get_proxy(session_id).await.is_none(),
+        "a terminated session must not end up with a recreated proxy"
+    );
+}
+
+/// Issue #2633 G2.1: terminate followed by an explicit clear (resume/message)
+/// while creation is still parked must STILL reject that in-flight dispatch.
+/// Generation capture at entry detects the fence moving underneath it, so a
+/// later clear cannot validate a dispatch that started before teardown.
+#[tokio::test]
+async fn clear_after_terminate_still_rejects_inflight_dispatch_by_generation() {
+    let harness = create_test_harness().await;
+    let manager = &harness.manager;
+    let session_id = "clear-after-terminate-during-creation";
+
+    insert_test_session(manager, session_id).await;
+
+    let (task, release) = start_held_lazy_creation(manager, session_id).await;
+
+    manager.terminate_session_resources(session_id).await;
+    // An explicit lifecycle entry clears the fence before creation resumes.
+    manager.clear_teardown_fence(session_id).await;
+
+    release.send(()).expect("release the parked creation");
+    let error = task
+        .await
+        .expect("creation task must not panic")
+        .expect_err("dispatch that captured the pre-terminate generation must be rejected");
+    assert!(
+        crate::mcp::MCPServiceProxyManager::is_teardown_fence_rejection(&error),
+        "rejection must carry the fence marker, got: {error}"
+    );
+
+    // The session itself is usable again for NEW dispatches.
+    manager
+        .call_tool(session_id, "playbook__listPlaybooks", json!({}))
+        .await
+        .expect("new dispatch after explicit clear must succeed");
 }
 
 // ── Real process teardown (Linux) ───────────────────────────────────────────

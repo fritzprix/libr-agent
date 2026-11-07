@@ -210,7 +210,9 @@ impl MCPServiceProxyManager {
             session_server_configs: Arc::new(RwLock::new(HashMap::new())),
             server_retry_states: Default::default(),
             process_cancel_pending: Arc::new(Mutex::new(std::collections::HashSet::new())),
-            teardown_fenced: Arc::new(Mutex::new(std::collections::HashSet::new())),
+            teardown_fenced: Arc::new(Mutex::new(std::collections::HashMap::new())),
+            #[cfg(test)]
+            lazy_creation_holds: Arc::new(Mutex::new(std::collections::HashMap::new())),
         };
 
         manager.start_cleanup_task();

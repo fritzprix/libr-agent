@@ -89,6 +89,12 @@ pub async fn regenerate_last_turn(
         }
     }
 
+    // Regenerate is an explicit user action (UI "Regenerate"), so it is a
+    // valid entry point that lifts a force-stop fence — but only here, before
+    // any history is truncated. A fenced session that never reaches this
+    // point keeps every message intact (issue #2633 G2.3).
+    proxy_manager.clear_teardown_fence(&session_id).await;
+
     crate::agent::lifecycle::ensure_cache_initialized(active_sessions, &session_id).await?;
 
     let plan = {

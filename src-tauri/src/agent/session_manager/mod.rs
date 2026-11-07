@@ -303,10 +303,12 @@ impl AgentSessionManager {
     /// Re-open a force-terminated session for an explicit user or API message.
     ///
     /// The teardown fence (issue #2633) is cleared only here and at the other
-    /// explicit lifecycle entry points (session create/resume proxy bootstrap,
-    /// session reload). Automatic wakes — MCP channel notifications, scheduled
-    /// jobs, compaction continuation, background resume — must never call this,
-    /// so a terminated session cannot be resurrected by them.
+    /// explicit lifecycle entry points (the resume command, an explicit
+    /// user/API message, session create-and-start, session reload, and
+    /// regenerate). Background proxy bootstrap never clears it — it skips
+    /// creation while fenced. Automatic wakes — MCP channel notifications,
+    /// scheduled jobs, compaction continuation, background resume — must never
+    /// call this, so a terminated session cannot be resurrected by them.
     pub async fn allow_explicit_message_after_terminate(&self, session_id: &str) {
         self.proxy_manager.clear_teardown_fence(session_id).await;
     }

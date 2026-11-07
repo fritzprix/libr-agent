@@ -31,6 +31,13 @@ pub async fn inject_messages(
             && session.metadata.status != SessionStatus::Queued
             && !is_transitioning_to_busy_or_queued
             && !compaction_in_flight
+            // A force-terminated session accepts automatic messages (channel
+            // notifications, scheduled callbacks, agent-tool follow-ups) into
+            // its history, but they must never start a workflow. Only an
+            // explicit user/API entry clears the fence first, and that entry
+            // has already passed the fence check by the time it gets here
+            // (issue #2633 G2.3).
+            && !manager.proxy_manager.is_teardown_fenced(&session_id).await
     };
 
     // Delegate message persistence, caching, and event emission to MessageService
@@ -181,6 +188,22 @@ pub async fn inject_messages(
             )
             .await
             {
+                if crate::mcp::MCPServiceProxyManager::is_teardown_fence_rejection(&e) {
+                    // The session was force-terminated after this wake was
+                    // queued. The refusal is correct behavior, not a failure:
+                    // release the permit and leave the session status and
+                    // error stream untouched (issue #2633 G2.3).
+                    log::info!(
+                        "Background injection for session {} aborted by force-stop fence; no workflow error emitted",
+                        session_id_clone
+                    );
+                    let mut active = active_sessions.write().await;
+                    if let Some(session) = active.get_mut(&session_id_clone) {
+                        session.active_permit.take();
+                    }
+                    return;
+                }
+
                 log::error!(
                     "Proxy check failed during background injection for session {}: {}",
                     session_id_clone,

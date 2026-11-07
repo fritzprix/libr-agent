@@ -61,6 +61,23 @@ impl MCPServiceProxyManager {
             return Ok(existing);
         }
 
+        // Test-only hold: deterministic tests park creation here (inside the
+        // creation guard, after the double-check) to race terminate against an
+        // in-flight lazy creation (issue #2633 G2.1).
+        #[cfg(test)]
+        {
+            let hold = self.lazy_creation_holds.lock().await.remove(session_id);
+            if let Some((ready_tx, release_rx)) = hold {
+                let _ = ready_tx.send(());
+                let _ = release_rx.await;
+            }
+        }
+
+        // If an explicit terminate landed while this creation was queued or
+        // parked, this in-flight lazy creation must not resurrect builtin
+        // instances after teardown (issue #2633 G2.1).
+        self.reject_if_teardown_fenced(session_id).await?;
+
         log::debug!(
             "Lazily initialising builtin-only proxy for idle session: {}",
             session_id

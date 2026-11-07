@@ -340,9 +340,12 @@ pub async fn start_workflow(
 }
 
 /// Helper to ensure a proxy exists for the session before invoking LLM
+///
+/// `app_handle` is optional so product-code tests can drive this exact entry
+/// without a Tauri app; production callers always pass their handle.
 pub(crate) async fn ensure_proxy_exists(
     proxy_manager: &Arc<MCPServiceProxyManager>,
-    app_handle: &AppHandle,
+    app_handle: Option<&AppHandle>,
     session_id: &str,
 ) -> Result<(), String> {
     // This function is shared by every workflow entry, including automatic
@@ -362,7 +365,7 @@ pub(crate) async fn ensure_proxy_exists(
     );
 
     match proxy_manager
-        .ensure_configured_proxy(session_id, Some(app_handle.clone()))
+        .ensure_configured_proxy(session_id, app_handle.cloned())
         .await
     {
         Ok(_) => {
@@ -394,7 +397,7 @@ pub(crate) async fn ensure_proxy_ready(
     session_id: &str,
     timeout_secs: u64,
 ) -> Result<(), String> {
-    ensure_proxy_exists(proxy_manager, app_handle, session_id).await?;
+    ensure_proxy_exists(proxy_manager, Some(app_handle), session_id).await?;
     proxy_manager
         .wait_until_proxy_ready(session_id, timeout_secs)
         .await

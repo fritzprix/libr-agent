@@ -22,6 +22,14 @@ impl AgentService {
 
         let session = load_or_resume_session(manager, session_id).await?;
 
+        // Only an explicit user or external API message may lift a force-stop
+        // fence. Agent-tool messages (parent/child sessions), channel
+        // notifications, and scheduled callbacks are saved but never revive a
+        // terminated session (issue #2633 G2.2).
+        let may_reopen = source
+            .as_ref()
+            .is_some_and(MessageSource::may_reopen_terminated_session);
+
         let message = Message::new_user_message(
             session_id.to_string(),
             content,
@@ -30,10 +38,12 @@ impl AgentService {
         );
         let message_id = message.id.clone();
 
-        // Explicit API message: a previous force-stop fence ends here (issue #2633).
-        manager
-            .allow_explicit_message_after_terminate(session_id)
-            .await;
+        if may_reopen {
+            // Explicit user/API message: a previous force-stop fence ends here (issue #2633).
+            manager
+                .allow_explicit_message_after_terminate(session_id)
+                .await;
+        }
 
         let triggered = manager
             .inject_messages(session_id.to_string(), vec![message])

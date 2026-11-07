@@ -22,6 +22,20 @@ use factory::create_builtin_server;
 use routing::{route_tool, ToolRouting};
 pub use types::{ProxyConfig, SessionManagers, SharedManagers};
 
+/// Outcome of a force-stop sweep across every builtin server of one proxy.
+///
+/// The sweep always attempts every server; `killed` is the real total of
+/// resources killed and `failures` carries one entry per failing server, so
+/// partial cleanup is reported honestly instead of collapsing to zero
+/// (issue #2633 S2.1).
+#[derive(Debug, Default)]
+pub struct ForceStopReport {
+    /// Total resources really killed across all servers.
+    pub killed: usize,
+    /// Per-server failure descriptions (`server_id: error`).
+    pub failures: Vec<String>,
+}
+
 /// Session-specific MCP service proxy
 ///
 /// Each proxy instance is bound to a single agent session and holds dedicated
@@ -384,6 +398,23 @@ impl MCPServiceProxy {
     /// together with the number of resources that were really killed, so
     /// callers report partial cleanup honestly (issue #2633).
     pub async fn kill_session_processes(&self) -> Result<usize, String> {
+        let report = self.force_stop_session_resources().await;
+        if report.failures.is_empty() {
+            return Ok(report.killed);
+        }
+
+        Err(format!(
+            "partial force-stop for session {} ({} resource(s) killed): {}",
+            self.session_id,
+            report.killed,
+            report.failures.join("; ")
+        ))
+    }
+
+    /// Force-stop sweep that always completes across every builtin server and
+    /// reports the real killed count plus per-server failures, so callers
+    /// never lose partial-cleanup counts (issue #2633 S2.1).
+    pub async fn force_stop_session_resources(&self) -> ForceStopReport {
         let mut killed_count = 0;
         let mut failures: Vec<String> = Vec::new();
 
@@ -402,16 +433,10 @@ impl MCPServiceProxy {
             }
         }
 
-        if failures.is_empty() {
-            return Ok(killed_count);
+        ForceStopReport {
+            killed: killed_count,
+            failures,
         }
-
-        Err(format!(
-            "partial force-stop for session {} ({} resource(s) killed): {}",
-            self.session_id,
-            killed_count,
-            failures.join("; ")
-        ))
     }
 
     /// Get tools from a specific builtin server
