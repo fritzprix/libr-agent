@@ -203,6 +203,14 @@ impl WorkspaceServer {
 
         {
             let mut registry = self.process_registry.write().await;
+            // Re-check under the write lock: terminate marks the flag before it
+            // sweeps the registry, so a registered entry cannot slip past it.
+            if self.is_session_terminated() {
+                return Err(
+                    crate::mcp::builtin::workspace::persistent_shell::manager::SESSION_TERMINATED_MESSAGE
+                        .to_string(),
+                );
+            }
             registry.entries.insert(process_id.clone(), entry.clone());
             registry
                 .cancellation_tokens

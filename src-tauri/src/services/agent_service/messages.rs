@@ -30,6 +30,11 @@ impl AgentService {
         );
         let message_id = message.id.clone();
 
+        // Explicit API message: a previous force-stop fence ends here (issue #2633).
+        manager
+            .allow_explicit_message_after_terminate(session_id)
+            .await;
+
         let triggered = manager
             .inject_messages(session_id.to_string(), vec![message])
             .await?;

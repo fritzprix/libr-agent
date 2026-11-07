@@ -15,6 +15,31 @@ fn canonicalize_existing_path(path: &Path) -> PathBuf {
     std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
+/// Stdio spawn reads the *global* session repository to resolve workspace
+/// isolation, while other test suites reset that global state inside
+/// `state::lock_test_global_state()`. Spawning tests must hold the same lock
+/// and own a live `sessions` table, or a concurrent reset swaps the in-memory
+/// DB out from under them ("no such table: sessions").
+async fn lock_spawn_test_state() -> tokio::sync::MutexGuard<'static, ()> {
+    let guard = crate::state::lock_test_global_state().await;
+    crate::state::reset_state();
+
+    let db = sea_orm::Database::connect("sqlite::memory:")
+        .await
+        .expect("in-memory database for stdio spawn tests");
+    use sea_orm::ConnectionTrait;
+    let schema = sea_orm::Schema::new(db.get_database_backend());
+    db.execute(
+        db.get_database_backend()
+            .build(&schema.create_table_from_entity(crate::entity::session::Entity)),
+    )
+    .await
+    .expect("sessions table for stdio spawn tests");
+    crate::lifecycle::repositories::init_repositories(&db).await;
+
+    guard
+}
+
 /// Helper to create a test manager with a simple echo server config
 fn create_test_manager() -> SessionMCPManager {
     let mut configs = HashMap::new();
@@ -146,6 +171,7 @@ async fn test_lazy_spawn() {
         return;
     }
 
+    let _state = lock_spawn_test_state().await;
     let manager = create_integration_manager();
 
     // 1. Initial state: No processes
@@ -189,6 +215,7 @@ async fn test_multiple_spawn_attempts_are_serialized() {
         return;
     }
 
+    let _state = lock_spawn_test_state().await;
     let manager = create_integration_manager();
 
     // Spawn multiple tasks concurrently trying to start the same server
@@ -245,6 +272,7 @@ async fn test_spawn_uses_session_workspace_as_cwd() {
         std::fs::remove_file(&cwd_capture_file).unwrap();
     }
 
+    let _state = lock_spawn_test_state().await;
     let mut manager = create_integration_manager_with_workspace(workspace_dir.clone());
     if let Some(config) = manager.server_configs.get_mut("test-server") {
         match &mut config.transport {
@@ -527,6 +555,7 @@ fn create_dying_server_manager() -> SessionMCPManager {
 #[cfg(unix)]
 #[tokio::test]
 async fn a_failed_tool_listing_drops_the_process_so_a_retry_spawns_a_new_one() {
+    let _state = lock_spawn_test_state().await;
     let manager = create_dying_server_manager();
 
     let result = manager
@@ -541,6 +570,7 @@ async fn a_failed_tool_listing_drops_the_process_so_a_retry_spawns_a_new_one() {
 #[cfg(unix)]
 #[tokio::test]
 async fn tool_calls_keep_the_configured_startup_timeout() {
+    let _state = lock_spawn_test_state().await;
     let manager = create_silent_server_manager(1);
 
     // Discovery may wait longer than the session wait, but a tool call must not.
@@ -556,6 +586,7 @@ async fn tool_calls_keep_the_configured_startup_timeout() {
 #[cfg(unix)]
 #[tokio::test]
 async fn discovery_can_wait_longer_than_the_configured_startup_timeout() {
+    let _state = lock_spawn_test_state().await;
     let manager = create_silent_server_manager(1);
 
     // With a 1s configured timeout and a 3s discovery timeout, the wait is the longer one.
@@ -571,6 +602,7 @@ async fn discovery_can_wait_longer_than_the_configured_startup_timeout() {
 #[cfg(unix)]
 #[tokio::test]
 async fn shutdown_ends_a_pending_initialize() {
+    let _state = lock_spawn_test_state().await;
     let manager = create_silent_server_manager(600);
 
     let pending = {
@@ -598,6 +630,7 @@ async fn shutdown_ends_a_pending_initialize() {
 #[cfg(unix)]
 #[tokio::test]
 async fn tool_call_does_not_wait_on_discovery_holding_the_spawn_lock() {
+    let _state = lock_spawn_test_state().await;
     let manager = create_silent_server_manager(1);
 
     // Discovery holds the spawn lock while the slow server initializes.

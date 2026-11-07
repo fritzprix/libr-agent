@@ -214,6 +214,13 @@ pub async fn terminate_session(
 ) -> Result<(), String> {
     log::info!("Terminating workflow for session: {}", session_id);
 
+    // Revoke the session's external wake token first (issue #2633): a
+    // force-terminated session must not be woken by hooks/webhooks after
+    // teardown. This is the single revoke point for every terminate path,
+    // including the delete cascade in `lifecycle::deletion`, which calls
+    // this function for the target and all descendants. Idempotent.
+    crate::server::wake::revoke_wake_token(&session_id);
+
     // Abort frontend LLM first so late chunks cannot keep ThinkingBubble alive
     // after we flip the session to idle.
     cancel_frontend_completion_if_pending(
@@ -236,7 +243,19 @@ pub async fn terminate_session(
         }
     };
 
-    // 2. Destroy proxy for this session - ALWAYS do this!
+    // 2. Force-stop session-owned resources (persistent shell, spawnProcess
+    // trees) through the still-alive proxy BEFORE destroying it, so ownership
+    // is available until cleanup completes (issue #2633). The fence inserted
+    // here rejects late tool dispatches that would lazily recreate instances.
+    // Soft cancel keeps the proxy alive and uses kill_session_processes only.
+    let killed = proxy_manager.terminate_session_resources(&session_id).await;
+    log::info!(
+        "Force-stopped {} session-owned resource(s) before teardown for session: {}",
+        killed,
+        session_id
+    );
+
+    // Destroy proxy for this session - ALWAYS do this!
     // This prevents resource leaks (MCP processes) even if the session wasn't active
     // (e.g. failed resume or already closed in memory but proxy still exists).
     proxy_manager.destroy_proxy(&session_id).await;

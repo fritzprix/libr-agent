@@ -45,8 +45,12 @@ pub(crate) async fn reload_session(
         }
     }
 
-    // 3. Force MCP proxy recreate to pick up changed bindings or tool schemas
+    // 3. Force MCP proxy recreate to pick up changed bindings or tool schemas.
+    // Reload is not a force-stop and does not kill session processes, so an
+    // existing teardown fence (issue #2633) is cleared to let the reloaded
+    // session call tools again.
     manager.proxy_manager.destroy_proxy(session_id).await;
+    manager.proxy_manager.clear_teardown_fence(session_id).await;
     manager
         .proxy_manager
         .ensure_configured_proxy(session_id, Some(manager.app_handle.clone()))

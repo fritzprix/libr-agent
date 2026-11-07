@@ -300,6 +300,17 @@ impl AgentSessionManager {
         .await
     }
 
+    /// Re-open a force-terminated session for an explicit user or API message.
+    ///
+    /// The teardown fence (issue #2633) is cleared only here and at the other
+    /// explicit lifecycle entry points (session create/resume proxy bootstrap,
+    /// session reload). Automatic wakes — MCP channel notifications, scheduled
+    /// jobs, compaction continuation, background resume — must never call this,
+    /// so a terminated session cannot be resurrected by them.
+    pub async fn allow_explicit_message_after_terminate(&self, session_id: &str) {
+        self.proxy_manager.clear_teardown_fence(session_id).await;
+    }
+
     /// Handle an LLM response from the frontend
     pub async fn handle_llm_response(
         &self,
@@ -457,7 +468,6 @@ impl AgentSessionManager {
 
     /// Terminate a running workflow
     pub async fn terminate_session(&self, session_id: String) -> Result<(), String> {
-        crate::server::wake::revoke_wake_token(&session_id);
         crate::agent::workflow::terminate_session(
             &self.session_repo,
             &self.active_sessions,
@@ -706,7 +716,6 @@ impl AgentSessionManager {
     /// Use `delete_session_only` when descendants should remain as top-level
     /// sessions instead of being deleted.
     pub async fn delete_session(&self, session_id: String) -> Result<Vec<String>, String> {
-        crate::server::wake::revoke_wake_token(&session_id);
         let deleted_ids = crate::agent::lifecycle::delete_session(
             &self.session_repo,
             &self.active_sessions,
@@ -715,9 +724,6 @@ impl AgentSessionManager {
             session_id,
         )
         .await?;
-        for id in &deleted_ids {
-            crate::server::wake::revoke_wake_token(id);
-        }
         Ok(deleted_ids)
     }
 
@@ -726,7 +732,6 @@ impl AgentSessionManager {
         &self,
         session_id: String,
     ) -> Result<(String, Vec<String>), String> {
-        crate::server::wake::revoke_wake_token(&session_id);
         crate::agent::lifecycle::delete_session_only(
             &self.session_repo,
             &self.active_sessions,

@@ -345,6 +345,13 @@ pub(crate) async fn ensure_proxy_exists(
     app_handle: &AppHandle,
     session_id: &str,
 ) -> Result<(), String> {
+    // This function is shared by every workflow entry, including automatic
+    // wakes (MCP channel notification, scheduled job, compaction continuation,
+    // background resume). It must therefore never clear the force-stop fence:
+    // a terminated session is woken only by an explicit user or API message,
+    // which clears the fence at its own entry point (issue #2633).
+    proxy_manager.reject_if_teardown_fenced(session_id).await?;
+
     if proxy_manager.get_proxy(session_id).await.is_some() {
         return Ok(());
     }

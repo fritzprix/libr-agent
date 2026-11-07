@@ -102,6 +102,12 @@ pub trait BuiltinMCPServer: Send + Sync + std::fmt::Debug {
         Ok(0)
     }
 
+    /// Mark this server instance's session as force-terminated (explicit
+    /// terminate/delete). Called before `kill_session_processes` so late tool
+    /// dispatches cannot create new session-owned resources after the kill
+    /// sweep. Default: no-op for servers without owned processes.
+    fn mark_session_terminated(&self) {}
+
     /// Returns a markdown-formatted string describing the server's current status and context.
     ///
     /// If the returned context is marked `ContextVolatility::Stable`, its text must be

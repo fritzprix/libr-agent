@@ -11,6 +11,7 @@ mod builtin_lifecycle;
 mod concurrency;
 mod readiness;
 mod scenarios;
+mod termination_fence;
 
 pub(super) struct TestHarness {
     pub(super) _guard: tokio::sync::MutexGuard<'static, ()>,
