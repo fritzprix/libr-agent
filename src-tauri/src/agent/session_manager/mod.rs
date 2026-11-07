@@ -416,7 +416,14 @@ impl AgentSessionManager {
     /// Reload the session (this prepares the Docker runtime again, or fails when the container
     /// cannot be used) and then resume its workflow. Retry after an error must use this:
     /// [`Self::resume_workflow`] alone skips the runtime when the session is already in memory.
+    ///
+    /// Both callers (`agent_resume_workflow`, `POST /api/sessions/:id/resume`) are
+    /// explicit user/API actions, so this entry lifts a force-stop fence before
+    /// anything else — otherwise the bootstrap skip would refuse the resume and
+    /// leave the session in `Error` (issue #2633 G3.1).
     pub async fn resume_session_and_workflow(&self, session_id: &str) -> Result<(), String> {
+        self.allow_explicit_message_after_terminate(session_id)
+            .await;
         self.resume_session(session_id)
             .await
             .map_err(|e| format!("Failed to resume session: {}", e))?;

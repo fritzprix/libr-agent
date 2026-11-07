@@ -430,3 +430,78 @@ async fn terminate_does_not_kill_another_sessions_processes() {
         "cleanup terminate must remove the bystander process {bystander_pid}"
     );
 }
+
+/// Issue #2633 G3.1: `resume_session_and_workflow` (used by the explicit
+/// `agent_resume_workflow` command and `POST /api/sessions/:id/resume`) must
+/// lift a force-stop fence before resuming, so terminate followed by an
+/// explicit resume runs instead of being refused into `Error`. The runtime
+/// half — a fence refusal from `ensure_proxy_exists` that stops refusing once
+/// `clear_teardown_fence` (what `allow_explicit_message_after_terminate`
+/// calls) runs — is covered by
+/// [`automatic_wake_is_rejected_until_an_explicit_message_clears_the_fence`].
+/// A full `AgentSessionManager` harness needs a Tauri `AppHandle`, so the
+/// wiring itself is pinned at the source level.
+#[test]
+fn resume_session_and_workflow_lifts_the_fence_before_resuming() {
+    let source = include_str!("../../../agent/session_manager/mod.rs");
+    let signature = source
+        .find("pub async fn resume_session_and_workflow")
+        .expect("resume_session_and_workflow must exist");
+    let body = &source[signature..];
+    let body = match body["pub async fn resume_session_and_workflow".len()..].find("pub async fn ")
+    {
+        Some(offset) => &body[..offset + "pub async fn resume_session_and_workflow".len()],
+        None => body,
+    };
+
+    let clear = body
+        .find("allow_explicit_message_after_terminate")
+        .expect("resume_session_and_workflow must lift the force-stop fence (G3.1)");
+    let resume = body
+        .find("self.resume_session(")
+        .expect("resume_session_and_workflow must still resume the session");
+    assert!(
+        clear < resume,
+        "the fence must be lifted before resume starts, or the background \
+         resume races the refusal"
+    );
+}
+
+/// Issue #2633 G3.2: the background start (`start_workflow`) and background
+/// resume (`resume_workflow`) must treat a force-stop fence refusal as a
+/// correct outcome — same guard as background injection (G2.3) — instead of
+/// marking the session `Error` and emitting `WorkflowError`. The runtime half
+/// (the real refusal from `ensure_proxy_exists` carries the marker that
+/// `is_teardown_fence_rejection` matches) is covered by
+/// [`automatic_wake_is_rejected_until_an_explicit_message_clears_the_fence`];
+/// spawning the real background tasks needs an `AppHandle`, so the guard
+/// placement is pinned at the source level.
+#[test]
+fn background_start_and_resume_guard_fence_refusals_before_failing_the_session() {
+    let cases = [
+        (
+            "start.rs",
+            include_str!("../../../agent/workflow/start.rs"),
+            "Proxy check failed during background start",
+        ),
+        (
+            "pause_resume.rs",
+            include_str!("../../../agent/workflow/pause_resume.rs"),
+            "Proxy check failed during background resume",
+        ),
+    ];
+
+    for (name, source, failure_log) in cases {
+        let guard = source
+            .find("is_teardown_fence_rejection")
+            .unwrap_or_else(|| panic!("{name} must guard against fence refusals (G3.2)"));
+        let failure = source
+            .find(failure_log)
+            .unwrap_or_else(|| panic!("{name} must keep the background failure path"));
+        assert!(
+            guard < failure,
+            "{name}: the fence guard must run before the session is marked \
+             failed and a WorkflowError is emitted"
+        );
+    }
+}

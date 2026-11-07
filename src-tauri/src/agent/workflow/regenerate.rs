@@ -89,12 +89,6 @@ pub async fn regenerate_last_turn(
         }
     }
 
-    // Regenerate is an explicit user action (UI "Regenerate"), so it is a
-    // valid entry point that lifts a force-stop fence — but only here, before
-    // any history is truncated. A fenced session that never reaches this
-    // point keeps every message intact (issue #2633 G2.3).
-    proxy_manager.clear_teardown_fence(&session_id).await;
-
     crate::agent::lifecycle::ensure_cache_initialized(active_sessions, &session_id).await?;
 
     let plan = {
@@ -120,6 +114,12 @@ pub async fn regenerate_last_turn(
         }
         plan
     };
+
+    // Regenerate is an explicit user action (UI "Regenerate"), so it lifts a
+    // force-stop fence — but only after the truncation plan succeeds and just
+    // before any history is mutated. A rejected plan (e.g. no assistant turn)
+    // leaves the fence in place so automatic wakes stay refused (#2633 S3.1).
+    proxy_manager.clear_teardown_fence(&session_id).await;
 
     // Re-check Idle under write lock before mutating history (status race).
     {

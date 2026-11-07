@@ -172,6 +172,16 @@ pub async fn resume_workflow(
         )
         .await
         {
+            // A force-stop fence refusal is a correct outcome, not a failure:
+            // the session was terminated while this background resume waited.
+            // Leave its status alone and emit no WorkflowError (#2633 G3.2).
+            if crate::mcp::MCPServiceProxyManager::is_teardown_fence_rejection(&e) {
+                log::info!(
+                    "Background resume for session {} aborted by force-stop fence; no workflow error emitted",
+                    session_id_clone
+                );
+                return;
+            }
             log::error!(
                 "Proxy check failed during background resume for session {}: {}",
                 session_id_clone,
