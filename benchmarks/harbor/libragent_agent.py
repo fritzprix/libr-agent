@@ -53,6 +53,15 @@ try:
 except ImportError:  # pragma: no cover
     httpx = None  # type: ignore[assignment]
 
+from benchmarks.harbor.session_e2e.automation import (
+    load_session_e2e_spec,
+    resolve_pending_interactions,
+)
+from benchmarks.harbor.session_e2e.control import (
+    E2eControlClient,
+    e2e_control_configured,
+    read_capability_token,
+)
 from benchmarks.harbor.isolated_instance import (
     DEFAULT_ROOT as BENCH_INSTANCE_DEFAULT_ROOT,
     INSTANCE_APP_BIN_ENV,
@@ -1744,6 +1753,7 @@ class LibrAgentHarborAdapter(BaseAgent):
             payload["workspaceIsolation"] = "host"
 
         post_idle_event = load_post_idle_event(self.logs_dir)
+        session_e2e_spec = load_session_e2e_spec(self.logs_dir)
 
         async with httpx.AsyncClient(headers=self._api_headers(), timeout=600.0) as client:
             if managed_image is not None:
@@ -1894,6 +1904,21 @@ class LibrAgentHarborAdapter(BaseAgent):
                     if current_status not in TERMINAL_WORKFLOW_STATUSES:
                         seen_non_idle = True
 
+                    if session_e2e_spec is not None and bench_instance is not None:
+                        try:
+                            await resolve_pending_interactions(
+                                client,
+                                api_url=self.api_url,
+                                session_id=session_id,
+                                data_dir=bench_instance.layout.data_dir,
+                                spec=session_e2e_spec,
+                            )
+                        except Exception as exc:
+                            safe_print(
+                                f"[{self.name()}] Warning: session E2E control "
+                                f"action failed: {exc}"
+                            )
+
                     if current_status == "paused":
                         safe_print(
                             f"[{self.name()}] Session workflow was paused (or cancelled). "
@@ -2029,6 +2054,10 @@ class LibrAgentHarborAdapter(BaseAgent):
                 telemetry=telemetry,
             )
             await self._write_compaction_telemetry_best_effort(session_id=session_id)
+            if session_e2e_spec is not None:
+                await self._write_session_e2e_evidence_best_effort(
+                    client, session_id=session_id, messages=messages
+                )
 
             if telemetry.tool_calls_count == 0:
                 safe_print(
@@ -2204,6 +2233,48 @@ class LibrAgentHarborAdapter(BaseAgent):
             return resolve_env_auth_headers(os.environ)
         except BenchAuthError as exc:
             raise RuntimeError(f"{exc} {API_KEY_HINT}") from exc
+
+    async def _write_session_e2e_evidence_best_effort(
+        self,
+        client: httpx.AsyncClient,
+        *,
+        session_id: str,
+        messages: list[Any],
+    ) -> None:
+        trial_reset = resolve_trial_instance_reset(dict(os.environ))
+        if (
+            trial_reset is None
+            or not e2e_control_configured(trial_reset.layout.data_dir)
+        ):
+            return
+        token = read_capability_token(trial_reset.layout.data_dir)
+        if token is None:
+            return
+        path = self.logs_dir / "session_e2e_evidence.json"
+        payload: dict[str, Any] = {
+            "sessionId": session_id,
+            "messageCount": len(messages),
+            "messagesDigest": {
+                "toolNames": [
+                    tc.get("name")
+                    for msg in messages
+                    for tc in (msg.get("toolCalls") or msg.get("tool_calls") or [])
+                    if isinstance(tc, dict)
+                ],
+            },
+        }
+        try:
+            control = E2eControlClient(self.api_url, token=token)
+            payload["interactions"] = await control.interactions(client, session_id)
+        except Exception as exc:
+            payload["interactionsError"] = str(exc)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        except OSError as exc:
+            safe_print(
+                f"[{self.name()}] Warning: failed to write session E2E evidence: {exc}"
+            )
 
     async def _fetch_session_messages_best_effort(self, session_id: str) -> list[Any]:
         """GET session messages on a short-lived client; never raise."""

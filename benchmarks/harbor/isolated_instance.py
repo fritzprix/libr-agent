@@ -471,6 +471,9 @@ def instance_env(layout: InstanceLayout, base: dict[str, str] | None = None) -> 
         # Docker CLI resolves credentials and contexts from $HOME/.docker.
         env.setdefault("DOCKER_CONFIG", str(Path(real_home) / ".docker"))
         env["HOME"] = str(layout.home_dir.resolve())
+    if os.environ.get("LIBRAGENT_E2E_CONTROL") == "1":
+        env["LIBRAGENT_E2E_CONTROL"] = "1"
+
     env.update(
         {
             "LIBRAGENT_DATA_DIR": str(layout.data_dir.resolve()),

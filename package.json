@@ -115,6 +115,8 @@
     "bench:layman:host": "node scripts/run-harbor-bench.cjs --isolated --workspace-mode host --preset path --path benchmarks/harbor/libragent-layman-intent",
     "bench:layman:all": "node scripts/run-harbor-bench.cjs --isolated --workspace-mode all --preset path --path benchmarks/harbor/libragent-layman-intent",
     "bench:layman:n1": "node scripts/run-harbor-bench.cjs --isolated --preset path --path benchmarks/harbor/libragent-layman-intent --n-tasks 1",
+    "bench:session-e2e": "node scripts/run-harbor-bench.cjs --isolated --workspace-mode host --preset path --path benchmarks/harbor/libragent-session-e2e-matrix",
+    "bench:session-e2e:n1": "node scripts/run-harbor-bench.cjs --isolated --workspace-mode host --preset path --path benchmarks/harbor/libragent-session-e2e-matrix --n-tasks 1",
     "bench:instance:seed": "python -m benchmarks.harbor.isolated_instance seed --port 3031",
     "bench:instance:launch": "python -m benchmarks.harbor.isolated_instance launch --app-bin src-tauri/target/release/libragent",
     "bench:instance:stop": "python -m benchmarks.harbor.isolated_instance stop",
