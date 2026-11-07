@@ -267,6 +267,13 @@ pub fn get_routes(
         .and(json_body())
         .and_then(mcp_handler::mcp_rpc_auto);
 
+    #[cfg(debug_assertions)]
+    let e2e_control = if crate::server::e2e_control::e2e_control_enabled() {
+        Some(crate::server::e2e_control::e2e_control_routes(agent_manager.clone()))
+    } else {
+        None
+    };
+
     let api = create_session
         .or(get_session)
         .or(patch_session)
@@ -290,12 +297,24 @@ pub fn get_routes(
         .or(mcp_auto_route)
         .or(mcp_route);
 
+    #[cfg(debug_assertions)]
+    let e2e_routes = e2e_control.map(|route| {
+        access_guard(false)
+            .and(crate::server::access_guard::loopback_peer_guard())
+            .and(route)
+    });
+
+    let guarded_api = crate::server::api_key::api_key_guard().and(api);
+
     // No allow_any_origin CORS. CLI clients omit Origin; browsers with Origin are rejected.
-    access_guard(expose)
-        .and(
-            wake_session
-                .or(pairing_session)
-                .or(crate::server::api_key::api_key_guard().and(api)),
-        )
-        .recover(handle_rejection)
+    let core = wake_session.or(pairing_session).or(guarded_api);
+
+    #[cfg(debug_assertions)]
+    let core = if let Some(e2e) = e2e_routes {
+        core.or(e2e)
+    } else {
+        core
+    };
+
+    access_guard(expose).and(core).recover(handle_rejection)
 }
