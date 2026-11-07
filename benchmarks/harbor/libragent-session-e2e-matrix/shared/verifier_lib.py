@@ -69,6 +69,11 @@ def extract_run_powershell_results(steps: list[dict]) -> list[str]:
     return outputs
 
 
-def negative_control_stale_execution_must_fail() -> None:
-    """Deliberately wrong: claiming pass without session evidence is invalid."""
+def require_session_evidence() -> None:
+    """Baseline contract: a passing trial must have evidence with a sessionId.
+
+    (Formerly ``negative_control_stale_execution_must_fail``, which
+    overstated what this checks: no stale id is involved — it only proves the
+    verifier rejects a run that produced no session evidence at all.)
+    """
     assert load_evidence().get("sessionId"), "missing sessionId in E2E evidence"

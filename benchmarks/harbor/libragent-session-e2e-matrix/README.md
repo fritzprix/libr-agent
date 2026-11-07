@@ -3,38 +3,54 @@
 Unattended Harbor tasks for the [74-case matrix](https://github.com/fritzprix/libr-agent/issues/2565).
 Verifiers grade **API messages, workspace files, and harness evidence** — never assistant prose.
 
-## Prerequisites
+## Supported run path (Linux, isolated)
 
-1. **Debug** LibrAgent build (`pnpm tauri dev` or `pnpm tauri build --debug`).
-2. Opt in on the **disposable** instance only:
+The unattended path is the **isolated Linux runner**. `pnpm bench:session-e2e`
+already passes `--isolated --debug-app-bin`, so it launches the **debug**
+bench binary (the only build that contains the E2E control-plane routes) and
+enables the control plane on that disposable instance automatically.
+
+```bash
+# once: build the debug binary and seed the disposable bench instance
+(cd src-tauri && cargo build)
+pnpm bench:instance:seed --assistant-id <uuid>
+
+# run the matrix
+export LIBRAGENT_E2E_SYNTHETIC_SECRET="synthetic-e2e-fixture-only"
+pnpm bench:session-e2e:n1     # first task only
+pnpm bench:session-e2e        # full matrix
+```
+
+`--isolated` is Linux-only (stopping detached sidecars relies on
+`/proc/<pid>/environ`), and the release binary never contains these routes —
+so this is the only fully unattended combination today. If a task declares
+`[metadata.libragent_session_e2e]` but the control plane is not reachable,
+the trial log prints an explicit warning and the evidence file records
+`"controlPlaneConfigured": false` instead of silently passing or hanging.
+
+Release builds and default dev runs (without `LIBRAGENT_E2E_CONTROL`) keep
+E2E control **disabled** (404).
+
+## Windows (host-mode, manual)
+
+`--isolated` does not run on Windows. To exercise the matrix there, start a
+**debug desktop instance** yourself with the opt-in flags and run Harbor in
+host mode against it:
 
 ```powershell
 $env:LIBRAGENT_E2E_CONTROL = "1"
-$env:LIBRAGENT_E2E_SYNTHETIC_SECRET = "synthetic-e2e-fixture-only"
-pnpm bench:session-e2e:n1
+$env:LIBRAGENT_DATA_DIR = "C:\path\to\disposable\profile"
+pnpm tauri build --debug   # then launch that binary
 ```
 
-Release builds and default dev (without `LIBRAGENT_E2E_CONTROL`) keep E2E control **disabled** (404).
-
-## Windows native batch (primary)
-
-```powershell
-cd C:\path\to\libr-agent
-$env:LIBRAGENT_E2E_CONTROL = "1"
-$env:LIBRAGENT_E2E_SYNTHETIC_SECRET = "synthetic-e2e-fixture-only"
-pip install harbor httpx
-pnpm bench:session-e2e
-```
-
-Uses an **isolated** bench profile (`benchmarks/harbor/isolated_instance.py`) — not your production `%LOCALAPPDATA%` app data.
-
-## Cloud / Linux limitation
-
-These tasks exercise the real Session API and (on Windows) PowerShell workspace tools. Linux cloud agents can run **verifier unit tests** and the **fake control client** tests only; full matrix E2E requires a **Windows or Linux desktop debug instance** beside the harness.
+Caveat: the harness only answers prompts and approvals for **its own
+isolated instance**. Host-mode Windows runs therefore do not auto-resolve
+`requireUserInput` prompts yet — `e2e-interactive-echo` needs the isolated
+runner (Linux) until a Windows instance manager lands.
 
 ## Coverage manifest
 
-See [`coverage-manifest.json`](./coverage-manifest.json) for all **65 checklist IDs** from issue #2565 (`implemented` | `deferred` | `ui-only` | `platform-specific` | `needs-product`). The issue’s **74 result slots** are pass/fail/skip/open tallies, not extra checklist rows.
+See [`coverage-manifest.json`](./coverage-manifest.json) for all **65 checklist IDs** from issue #2565 (`implemented` | `deferred` | `ui-only` | `platform-specific` | `needs-product`). The issue's **74 result slots** are pass/fail/skip/open tallies, not extra checklist rows.
 
 ## In-app orchestration (preferred)
 

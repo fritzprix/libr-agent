@@ -81,22 +81,27 @@ def _load_verifier_lib():
     return mod
 
 
-def test_negative_stale_execution_rejected_by_contract(tmp_path):
-    """Empty evidence must fail the interactive-prompt contract."""
+def test_missing_evidence_fails_contract(tmp_path):
+    """Empty evidence must fail the session-evidence contract.
+
+    Honest scope: no stale id is involved here — the stale-requestId
+    rejection is covered by the Rust handler tests
+    (``e2e_control_token_tests``), not by this Python check.
+    """
     mod = _load_verifier_lib()
     mod.EVIDENCE = tmp_path / "missing-evidence.json"
     with pytest.raises(AssertionError, match="sessionId"):
-        mod.negative_control_stale_execution_must_fail()
+        mod.require_session_evidence()
 
 
-def test_real_execution_satisfies_contract(tmp_path):
+def test_session_evidence_satisfies_contract(tmp_path):
     """The same call must pass when evidence carries a real sessionId.
 
-    Paired with the negative test above so the negative control is not
-    vacuous — it discriminates between stale and real executions.
+    Paired with the negative test above so the check is not vacuous — it
+    discriminates between runs with no evidence and runs with real evidence.
     """
     mod = _load_verifier_lib()
     evidence = tmp_path / "evidence.json"
     evidence.write_text(json.dumps({"sessionId": "sess-real-123"}), encoding="utf-8")
     mod.EVIDENCE = evidence
-    mod.negative_control_stale_execution_must_fail()
+    mod.require_session_evidence()

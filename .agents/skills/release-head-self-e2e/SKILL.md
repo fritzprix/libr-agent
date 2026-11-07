@@ -133,6 +133,11 @@ Link confirmed product failures only within user-granted write scope.
   child briefs never receive token material.
 - `LIBRAGENT_E2E_SYNTHETIC_SECRET` for masked-value fixtures only.
 - Serialize: **one case at a time** on one app instance (queue file `queue.json`).
+- **Prompt resolution scope:** the only auto-resolver today is Harbor's trial
+  poll loop, which watches **its own** session. Executor children spawned via
+  `agent__spawnSession` have nothing answering their `requireUserInput`
+  prompts — route those cases (e.g. B-3 interactive echo) to the Harbor
+  runner, or mark them `blocked` with reason `no in-app prompt resolver`.
 
 **Parent (orchestrator)**
 

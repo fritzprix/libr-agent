@@ -270,12 +270,10 @@ pub fn get_routes(
     // E2E control plane: debug binaries only (module is cfg-gated). The routes
     // always mount in debug builds; the capability guard answers 404 when the
     // control plane is not enabled, so no runtime if/else filter wiring here.
+    // The full guard chain lives in `e2e_control_guarded_routes` so the
+    // integration tests pin the exact production wiring.
     #[cfg(debug_assertions)]
-    let e2e_routes = access_guard(false)
-        .and(crate::server::access_guard::loopback_peer_guard())
-        .and(crate::server::e2e_control::e2e_control_routes(
-            agent_manager.clone(),
-        ));
+    let e2e_routes = crate::server::e2e_control::e2e_control_guarded_routes(agent_manager.clone());
 
     let api = create_session
         .or(get_session)

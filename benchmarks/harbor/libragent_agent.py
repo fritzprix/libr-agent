@@ -1805,6 +1805,8 @@ class LibrAgentHarborAdapter(BaseAgent):
 
             poll_interval = self.poll_interval_sec
             bench_instance = resolve_trial_instance_reset(dict(os.environ))
+            session_e2e_actions: list[dict[str, Any]] = []
+            e2e_control_warned = False
             seen_non_idle = False
             completed = False
             last_status = "unknown"
@@ -1904,20 +1906,44 @@ class LibrAgentHarborAdapter(BaseAgent):
                     if current_status not in TERMINAL_WORKFLOW_STATUSES:
                         seen_non_idle = True
 
-                    if session_e2e_spec is not None and bench_instance is not None:
-                        try:
-                            await resolve_pending_interactions(
-                                client,
-                                api_url=self.api_url,
-                                session_id=session_id,
-                                data_dir=bench_instance.layout.data_dir,
-                                spec=session_e2e_spec,
-                            )
-                        except Exception as exc:
-                            safe_print(
-                                f"[{self.name()}] Warning: session E2E control "
-                                f"action failed: {exc}"
-                            )
+                    if session_e2e_spec is not None:
+                        if bench_instance is None:
+                            if not e2e_control_warned:
+                                e2e_control_warned = True
+                                safe_print(
+                                    f"[{self.name()}] Warning: task declares "
+                                    "[metadata.libragent_session_e2e] but no bench "
+                                    "instance is running, so the E2E control plane "
+                                    "is unreachable (run via --isolated)."
+                                )
+                        elif not e2e_control_configured(
+                            bench_instance.layout.data_dir
+                        ):
+                            if not e2e_control_warned:
+                                e2e_control_warned = True
+                                safe_print(
+                                    f"[{self.name()}] Warning: task declares "
+                                    "[metadata.libragent_session_e2e] but the "
+                                    "control plane is not configured for this "
+                                    "instance (debug build with "
+                                    "LIBRAGENT_E2E_CONTROL=1 required)."
+                                )
+                        else:
+                            try:
+                                session_e2e_actions.extend(
+                                    await resolve_pending_interactions(
+                                        client,
+                                        api_url=self.api_url,
+                                        session_id=session_id,
+                                        data_dir=bench_instance.layout.data_dir,
+                                        spec=session_e2e_spec,
+                                    )
+                                )
+                            except Exception as exc:
+                                safe_print(
+                                    f"[{self.name()}] Warning: session E2E control "
+                                    f"action failed: {exc}"
+                                )
 
                     if current_status == "paused":
                         safe_print(
@@ -2056,7 +2082,10 @@ class LibrAgentHarborAdapter(BaseAgent):
             await self._write_compaction_telemetry_best_effort(session_id=session_id)
             if session_e2e_spec is not None:
                 await self._write_session_e2e_evidence_best_effort(
-                    client, session_id=session_id, messages=messages
+                    client,
+                    session_id=session_id,
+                    messages=messages,
+                    resolved_interactions=session_e2e_actions,
                 )
 
             if telemetry.tool_calls_count == 0:
@@ -2240,20 +2269,25 @@ class LibrAgentHarborAdapter(BaseAgent):
         *,
         session_id: str,
         messages: list[Any],
+        resolved_interactions: list[dict[str, Any]],
     ) -> None:
+        """Persist session E2E evidence for the task verifier.
+
+        Always writes when a task declares the spec: a missing control plane
+        must show up in the evidence (``controlPlaneConfigured: false``)
+        instead of silently skipping the file and confusing the verifier.
+        """
         trial_reset = resolve_trial_instance_reset(dict(os.environ))
-        if (
-            trial_reset is None
-            or not e2e_control_configured(trial_reset.layout.data_dir)
-        ):
-            return
-        token = read_capability_token(trial_reset.layout.data_dir)
-        if token is None:
-            return
+        control_configured = bool(
+            trial_reset is not None
+            and e2e_control_configured(trial_reset.layout.data_dir)
+        )
         path = self.logs_dir / "session_e2e_evidence.json"
         payload: dict[str, Any] = {
             "sessionId": session_id,
             "messageCount": len(messages),
+            "controlPlaneConfigured": control_configured,
+            "resolvedInteractions": resolved_interactions,
             "messagesDigest": {
                 "toolNames": [
                     tc.get("name")
@@ -2263,11 +2297,19 @@ class LibrAgentHarborAdapter(BaseAgent):
                 ],
             },
         }
-        try:
-            control = E2eControlClient(self.api_url, token=token)
-            payload["interactions"] = await control.interactions(client, session_id)
-        except Exception as exc:
-            payload["interactionsError"] = str(exc)
+        token = (
+            read_capability_token(trial_reset.layout.data_dir)
+            if trial_reset is not None
+            else None
+        )
+        if control_configured and token is not None:
+            try:
+                control = E2eControlClient(self.api_url, token=token)
+                payload["interactions"] = await control.interactions(
+                    client, session_id
+                )
+            except Exception as exc:
+                payload["interactionsError"] = str(exc)
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")

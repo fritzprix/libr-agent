@@ -3,13 +3,13 @@ artifacts = []
 
 [task]
 name = "fritzprix/e2e-interactive-echo"
-description = "Unattended requireUserInput echo via E2E control (Windows / PowerShell)"
+description = "Unattended requireUserInput echo via E2E control (persistent shell)"
 keywords = ["libragent", "session-e2e", "interactive"]
 
 [metadata]
 difficulty = "medium"
 category = "session-api-e2e"
-tags = ["matrix", "B-3", "interactive", "platform-windows"]
+tags = ["matrix", "B-3", "interactive"]
 
 [metadata.libragent_session_e2e]
 matrix_id = "B-3-partial"

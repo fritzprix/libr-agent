@@ -13,13 +13,27 @@ def test_evidence_present():
 
 
 def test_interactive_prompt_was_resolved():
-    """The harvested snapshot must show the session id and nothing still pending.
+    """The harness must have answered at least one real prompt via the control plane.
 
-    Evidence is written after the workflow completes, so the control-plane
-    snapshot must carry a resolved session with no leftover blocking prompt.
+    ``resolvedInteractions`` records every action the harness took while the
+    session ran, so an empty list means no prompt was ever opened and answered
+    — which is exactly the false-pass this test used to allow.
     """
     data = json.loads(EVIDENCE.read_text(encoding="utf-8"))
     assert data.get("sessionId"), "evidence must record the resolved session id"
+    assert data.get("controlPlaneConfigured"), (
+        "the trial did not run against a debug binary with the E2E control "
+        "plane enabled (see run logs for the control-plane warning)"
+    )
+    answered = [
+        action
+        for action in data.get("resolvedInteractions") or []
+        if action.get("kind") == "userPrompt" and action.get("action") == "answer"
+    ]
+    assert answered, (
+        "the harness never answered a user prompt; the requireUserInput path "
+        f"was not exercised. Actions: {data.get('resolvedInteractions')!r}"
+    )
     interactions = data.get("interactions")
     assert isinstance(interactions, dict), f"missing interactions snapshot: {interactions!r}"
     assert "interactionsError" not in data, f"control call failed: {data['interactionsError']}"
@@ -32,10 +46,20 @@ def test_interactive_prompt_was_resolved():
     )
 
 
-def test_marker_in_trajectory_not_literal_secret():
+def test_marker_in_tool_results_not_literal_secret():
+    """The marker must appear in a tool result, not in the agent's own prose."""
     traj = json.loads(TRAJECTORY.read_text(encoding="utf-8"))
+    texts = []
+    for step in traj.get("steps") or []:
+        for call in step.get("tool_calls") or []:
+            result = call.get("result") or {}
+            for item in result.get("content") or []:
+                if isinstance(item, dict) and item.get("text"):
+                    texts.append(item["text"])
+    assert any("E2E_MARKER_OK" in t for t in texts), (
+        "E2E_MARKER_OK never appeared in any tool result"
+    )
     blob = json.dumps(traj)
-    assert "E2E_MARKER_OK" in blob
     assert LITERAL not in blob
 
 

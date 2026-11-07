@@ -58,20 +58,21 @@ async def resolve_pending_interactions(
     session_id: str,
     data_dir: Path,
     spec: SessionE2eAutomationSpec | None,
-) -> bool:
+) -> list[dict[str, Any]]:
     """Answer/cancel waiting prompts and approve/deny pending tool approvals.
 
     ``data_dir`` is the trial instance's own data directory; the capability
-    token is read only from there. Returns True when any action was taken.
+    token is read only from there. Returns one record per action taken, so
+    callers can persist the control activity as evidence.
     """
     if not e2e_control_configured(data_dir):
-        return False
+        return []
     token = read_capability_token(data_dir)
     if token is None:  # e2e_control_configured already checked this
-        return False
+        return []
     control = E2eControlClient(api_url, token=token)
     snapshot = await control.interactions(client, session_id)
-    acted = False
+    actions: list[dict[str, Any]] = []
 
     synthetic = ""
     if spec is not None:
@@ -88,7 +89,9 @@ async def resolve_pending_interactions(
                 action="answer",
                 value=synthetic or "e2e-synthetic-answer",
             )
-            acted = True
+            actions.append(
+                {"kind": "userPrompt", "requestId": request_id, "action": "answer"}
+            )
 
     for approval in snapshot.get("pendingApprovals") or []:
         tool_call_id = str(approval.get("toolCallId", ""))
@@ -104,5 +107,12 @@ async def resolve_pending_interactions(
         await control.respond_tool_approval(
             client, session_id, tool_call_id, approved=approved
         )
-        acted = True
-    return acted
+        actions.append(
+            {
+                "kind": "toolApproval",
+                "toolCallId": tool_call_id,
+                "approvalKind": kind,
+                "approved": approved,
+            }
+        )
+    return actions

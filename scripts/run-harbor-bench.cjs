@@ -140,6 +140,10 @@ function runStatus(command, args) {
 }
 
 const ISOLATED_FLAG = '--isolated';
+// Launch the debug bench binary instead of the release one. Debug builds are
+// the only ones that contain the debug-only E2E control-plane routes, so the
+// session-e2e matrix requires this flag.
+const DEBUG_APP_BIN_FLAG = '--debug-app-bin';
 const INSTANCE_MODULE = 'benchmarks.harbor.isolated_instance';
 const INSTANCE_ROOT = path.join(
   repoRoot,
@@ -153,6 +157,13 @@ const RELEASE_APP_BIN = path.join(
   'src-tauri',
   'target',
   'release',
+  'libragent',
+);
+const DEBUG_APP_BIN = path.join(
+  repoRoot,
+  'src-tauri',
+  'target',
+  'debug',
   'libragent',
 );
 
@@ -268,6 +279,16 @@ async function runIsolated(benchCommand, benchArgs) {
     return 1;
   }
   const { assistantId, port } = readSeedInfo();
+  const appBin = debugAppBin ? DEBUG_APP_BIN : RELEASE_APP_BIN;
+  if (!fs.existsSync(appBin)) {
+    console.error(
+      `Bench instance binary not found: ${appBin}\n` +
+        (debugAppBin
+          ? 'Build the debug binary first: (cd src-tauri && cargo build)'
+          : 'Build the release binary first: pnpm tauri build'),
+    );
+    return 1;
+  }
   const args = [...benchArgs];
   if (!args.includes('--api-url')) {
     args.push('--api-url', `http://localhost:${port}/api`);
@@ -281,14 +302,19 @@ async function runIsolated(benchCommand, benchArgs) {
     INSTANCE_MODULE,
     'launch',
     '--app-bin',
-    RELEASE_APP_BIN,
+    appBin,
   ]);
   if (launchStatus !== 0) {
     return launchStatus;
   }
 
   // The Harbor adapter relaunches the instance from the seed before each trial.
-  process.env.LIBRAGENT_BENCH_INSTANCE_APP_BIN = RELEASE_APP_BIN;
+  process.env.LIBRAGENT_BENCH_INSTANCE_APP_BIN = appBin;
+  if (debugAppBin) {
+    // The E2E control plane routes only exist in debug builds and are opt-in;
+    // the isolated instance forwards this flag into the app environment.
+    process.env.LIBRAGENT_E2E_CONTROL = '1';
+  }
   process.env.LIBRAGENT_BENCH_INSTANCE_ROOT = INSTANCE_ROOT;
   const containersBefore = snapshotContainers();
   try {
@@ -312,6 +338,7 @@ async function runIsolated(benchCommand, benchArgs) {
 
 const rawArgv = process.argv.slice(2);
 const isolated = rawArgv.includes(ISOLATED_FLAG);
+const debugAppBin = rawArgv.includes(DEBUG_APP_BIN_FLAG);
 
 /**
  * @param {string} mode
@@ -327,10 +354,14 @@ function applyWorkspaceMode(mode) {
 }
 
 const plan = planWorkspaceModes(
-  rawArgv.filter((arg) => arg !== ISOLATED_FLAG),
+  rawArgv.filter((arg) => arg !== ISOLATED_FLAG && arg !== DEBUG_APP_BIN_FLAG),
   isolated,
   process.env.LIBRAGENT_HARBOR_WORKSPACE_MODE,
 );
+if (debugAppBin && !isolated) {
+  console.error(`${DEBUG_APP_BIN_FLAG} only applies to ${ISOLATED_FLAG} runs.`);
+  process.exit(1);
+}
 if (plan.error !== null) {
   console.error(plan.error);
   process.exit(1);

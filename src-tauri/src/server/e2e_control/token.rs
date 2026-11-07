@@ -80,7 +80,12 @@ pub fn init_capability_token() {
         Err(error) => {
             // A stale or foreign cap file means another process owns this data
             // dir: stay disabled rather than sharing or replacing its token.
-            log::error!("E2E control disabled: cannot write capability file: {error}");
+            // Name the recovery so a `pnpm tauri dev` restart is self-explanatory.
+            log::error!(
+                "E2E control disabled: cannot write capability file {}/{E2E_CONTROL_CAPABILITY_FILE}: {error}. \
+                 If no other instance is running on this LIBRAGENT_DATA_DIR, delete the file and restart to re-enable.",
+                dir.display()
+            );
             let _ = CAPABILITY.set(None);
         }
     }

@@ -27,7 +27,9 @@ use crate::agent::session_manager::{
     approvals::{list_pending_approvals_in, respond_tool_approval},
     pending_user_prompt_in, PendingApprovalSummary,
 };
-use crate::agent::state::{UserPromptAnswer, UserPromptKind, USER_PROMPT_GONE_MESSAGE};
+use crate::agent::state::{
+    PendingUserPromptSummary, UserPromptAnswer, UserPromptKind, USER_PROMPT_GONE_MESSAGE,
+};
 use crate::agent::AgentSessionManager;
 use crate::server::access_guard::AccessDenied;
 use crate::server::e2e_control::token::{capability_token, header_matches};
@@ -66,8 +68,7 @@ pub struct E2eControlStatus {
 #[serde(rename_all = "camelCase")]
 pub struct SessionInteractionsSnapshot {
     pub session_id: String,
-    pub pending_user_prompt:
-        Option<crate::agent::state::PendingUserPromptSummary>,
+    pub pending_user_prompt: Option<PendingUserPromptSummary>,
     pub pending_approvals: Vec<PendingApprovalSummary>,
 }
 
@@ -119,7 +120,12 @@ async fn handle_get_interactions(
         Ok(id) => id,
         Err((status, error)) => return Ok(json_error(status, error)),
     };
-    if !manager.active_sessions().read().await.contains_key(&session_id) {
+    if !manager
+        .active_sessions()
+        .read()
+        .await
+        .contains_key(&session_id)
+    {
         return Ok(json_error(
             StatusCode::NOT_FOUND,
             format!("Session not found: {session_id}"),
@@ -133,6 +139,48 @@ async fn handle_get_interactions(
     Ok(json_ok(&snapshot))
 }
 
+/// What a validated user-prompt request asks the control plane to deliver.
+#[derive(Debug, PartialEq, Eq)]
+pub enum PlannedPromptAction {
+    Answer(UserPromptAnswer),
+    Cancel,
+}
+
+/// Pure dispatch decision behind [`handle_user_prompt`]: matches the waiting
+/// prompt against `requestId`, then maps `action`/`value` to the answer to
+/// deliver. Errors carry `(status, message)` exactly as the handler replies,
+/// so stale-requestId rejection, missing answer values, and unknown actions
+/// are testable without a live `AgentSessionManager`.
+pub fn plan_user_prompt_action(
+    pending: Option<&PendingUserPromptSummary>,
+    body: &UserPromptBody,
+) -> Result<PlannedPromptAction, (StatusCode, String)> {
+    let pending = match pending {
+        Some(pending) if pending.request_id == body.request_id => pending,
+        _ => return Err((StatusCode::NOT_FOUND, USER_PROMPT_GONE_MESSAGE.to_string())),
+    };
+    match body.action.as_str() {
+        "answer" => {
+            let Some(value) = body.value.clone() else {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    "Missing value for answer action".to_string(),
+                ));
+            };
+            let answer = match pending.kind {
+                UserPromptKind::Secret => UserPromptAnswer::Secret(value),
+                UserPromptKind::Question => UserPromptAnswer::Question(value),
+            };
+            Ok(PlannedPromptAction::Answer(answer))
+        }
+        "cancel" => Ok(PlannedPromptAction::Cancel),
+        other => Err((
+            StatusCode::BAD_REQUEST,
+            format!("Unknown user prompt action: {other}"),
+        )),
+    }
+}
+
 async fn handle_user_prompt(
     session_ref: String,
     manager: Arc<AgentSessionManager>,
@@ -143,23 +191,14 @@ async fn handle_user_prompt(
         Err((status, error)) => return Ok(json_error(status, error)),
     };
 
-    let pending = match pending_user_prompt_in(manager.as_ref(), &session_id).await {
-        Some(pending) if pending.request_id == body.request_id => pending,
-        _ => return Ok(json_error(StatusCode::NOT_FOUND, USER_PROMPT_GONE_MESSAGE)),
+    let pending = pending_user_prompt_in(manager.as_ref(), &session_id).await;
+    let planned = match plan_user_prompt_action(pending.as_ref(), &body) {
+        Ok(planned) => planned,
+        Err((status, error)) => return Ok(json_error(status, error)),
     };
 
-    let delivered = match body.action.as_str() {
-        "answer" => {
-            let Some(value) = body.value else {
-                return Ok(json_error(
-                    StatusCode::BAD_REQUEST,
-                    "Missing value for answer action",
-                ));
-            };
-            let answer = match pending.kind {
-                UserPromptKind::Secret => UserPromptAnswer::Secret(value),
-                UserPromptKind::Question => UserPromptAnswer::Question(value),
-            };
+    let delivered = match planned {
+        PlannedPromptAction::Answer(answer) => {
             match manager
                 .answer_user_prompt(&session_id, &body.request_id, answer)
                 .await
@@ -168,19 +207,28 @@ async fn handle_user_prompt(
                 Err(error) => return Ok(json_error(StatusCode::CONFLICT, error)),
             }
         }
-        "cancel" => match manager.cancel_user_prompt(&session_id, &body.request_id).await {
-            Ok(delivered) => delivered,
-            Err(error) => return Ok(json_error(StatusCode::CONFLICT, error)),
-        },
-        other => {
-            return Ok(json_error(
-                StatusCode::BAD_REQUEST,
-                format!("Unknown user prompt action: {other}"),
-            ))
+        PlannedPromptAction::Cancel => {
+            match manager
+                .cancel_user_prompt(&session_id, &body.request_id)
+                .await
+            {
+                Ok(delivered) => delivered,
+                Err(error) => return Ok(json_error(StatusCode::CONFLICT, error)),
+            }
         }
     };
 
     Ok(json_ok(&serde_json::json!({ "delivered": delivered })))
+}
+
+/// Map a tool-approval rejection message to the HTTP status the handler
+/// answers with. Extracted so the status mapping is covered by tests.
+pub fn tool_approval_error_status(message: &str) -> StatusCode {
+    if message.contains("not found") {
+        StatusCode::NOT_FOUND
+    } else {
+        StatusCode::BAD_REQUEST
+    }
 }
 
 async fn handle_tool_approval(
@@ -192,29 +240,36 @@ async fn handle_tool_approval(
         Ok(id) => id,
         Err((status, error)) => return Ok(json_error(status, error)),
     };
-    match respond_tool_approval(manager.as_ref(), &session_id, &body.tool_call_id, body.approved)
-        .await
+    match respond_tool_approval(
+        manager.as_ref(),
+        &session_id,
+        &body.tool_call_id,
+        body.approved,
+    )
+    .await
     {
         Ok(()) => Ok(json_ok(&serde_json::json!({ "ok": true }))),
-        Err(error) => {
-            let status = if error.contains("not found") {
-                StatusCode::NOT_FOUND
-            } else {
-                StatusCode::BAD_REQUEST
-            };
-            Ok(json_error(status, error))
-        }
+        Err(error) => Ok(json_error(tool_approval_error_status(&error), error)),
     }
 }
 
-/// Routes for the E2E control plane. The caller (routes wiring) additionally
-/// wraps these with the loopback Host guard and the loopback peer guard.
+/// Routes for the E2E control plane, using this process's capability token.
+/// Production wiring goes through
+/// [`e2e_control_guarded_routes`](super::e2e_control_guarded_routes), which
+/// adds the loopback Host guard and the loopback peer guard.
 pub fn e2e_control_routes(
-    agent_manager: impl Filter<Extract = (Arc<AgentSessionManager>,), Error = Infallible>
-        + Clone
-        + Send,
+    agent_manager: impl Filter<Extract = (Arc<AgentSessionManager>,), Error = Infallible> + Clone + Send,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-    let capability: Option<String> = capability_token().map(str::to_string);
+    e2e_control_routes_with_capability(capability_token().map(str::to_string), agent_manager)
+}
+
+/// Same routes with the capability passed in explicitly, so tests exercise
+/// the real route set (paths, guards, handlers) without touching the
+/// process-global token.
+pub fn e2e_control_routes_with_capability(
+    capability: Option<String>,
+    agent_manager: impl Filter<Extract = (Arc<AgentSessionManager>,), Error = Infallible> + Clone + Send,
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     let guarded = capability_guard(capability);
 
     // GET /api/e2e-control/status

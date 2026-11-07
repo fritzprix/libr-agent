@@ -1,20 +1,17 @@
-"""Independent graders for Session API E2E Harbor tasks."""
+"""Trajectory helpers for the O-10 verifier.
+
+Slim on purpose: only what ``test_outputs.py`` here needs. The fuller
+verifier library (evidence loading, approval extraction, baseline contract)
+lives in the dataset-level ``shared/verifier_lib.py`` and is not duplicated
+in this task.
+"""
 
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
-EVIDENCE = Path("/logs/agent/session_e2e_evidence.json")
 TRAJECTORY = Path("/logs/agent/trajectory.json")
-WORKSPACE = Path("/app")
-
-
-def load_evidence() -> dict:
-    if not EVIDENCE.is_file():
-        return {}
-    return json.loads(EVIDENCE.read_text(encoding="utf-8"))
 
 
 def load_trajectory() -> dict:
