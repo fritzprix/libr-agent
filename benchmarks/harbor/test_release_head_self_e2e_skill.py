@@ -10,7 +10,7 @@ import pytest
 REPO = Path(__file__).resolve().parents[2]
 SCRIPTS = (
     REPO
-    / "src-tauri/bundled_skills/release-head-self-e2e/scripts/pin_release_range.py"
+    / ".agents/skills/release-head-self-e2e/scripts/pin_release_range.py"
 )
 
 
@@ -51,7 +51,7 @@ def test_map_diff_script_runs():
         pytest.skip("no release tag ancestor in this checkout")
     map_script = (
         REPO
-        / "src-tauri/bundled_skills/release-head-self-e2e/scripts/map_diff_to_cases.py"
+        / ".agents/skills/release-head-self-e2e/scripts/map_diff_to_cases.py"
     )
     manifest = (
         REPO / "benchmarks/harbor/libragent-session-e2e-matrix/coverage-manifest.json"
@@ -77,10 +77,13 @@ def test_map_diff_script_runs():
     assert "caseHints" in data
 
 
-def test_bundled_skill_file_exists():
-    skill = REPO / "src-tauri/bundled_skills/release-head-self-e2e/SKILL.md"
+def test_repo_skill_file_exists():
+    skill = REPO / ".agents/skills/release-head-self-e2e/SKILL.md"
     assert skill.is_file()
     text = skill.read_text(encoding="utf-8")
     assert "name: release-head-self-e2e" in text
     assert "LIBRAGENT_E2E_CONTROL" in text
     assert "storeAs" in text
+    # G1.4: agent-facing skill docs must not carry token material or
+    # env-token fallback instructions.
+    assert "LIBRAGENT_E2E_CONTROL_TOKEN" not in text

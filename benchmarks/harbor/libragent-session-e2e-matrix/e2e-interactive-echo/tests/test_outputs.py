@@ -1,4 +1,4 @@
-"""Interactive shell path must complete via E2E control without leaking literals."""
+"""requireUserInput (secret user prompt) path completes via E2E control without leaking literals."""
 
 import json
 from pathlib import Path
@@ -13,10 +13,23 @@ def test_evidence_present():
 
 
 def test_interactive_prompt_was_resolved():
+    """The harvested snapshot must show the session id and nothing still pending.
+
+    Evidence is written after the workflow completes, so the control-plane
+    snapshot must carry a resolved session with no leftover blocking prompt.
+    """
     data = json.loads(EVIDENCE.read_text(encoding="utf-8"))
-    prompts = (data.get("interactions") or {}).get("interactiveShellPrompts") or []
-    # After completion, pending list should be empty; harvest records last snapshot
-    assert "interactions" in data
+    assert data.get("sessionId"), "evidence must record the resolved session id"
+    interactions = data.get("interactions")
+    assert isinstance(interactions, dict), f"missing interactions snapshot: {interactions!r}"
+    assert "interactionsError" not in data, f"control call failed: {data['interactionsError']}"
+    assert interactions.get("pendingUserPrompt") is None, (
+        "a user prompt was still pending at completion: "
+        f"{interactions['pendingUserPrompt']!r}"
+    )
+    assert interactions.get("pendingApprovals") == [], (
+        f"approvals still pending at completion: {interactions['pendingApprovals']!r}"
+    )
 
 
 def test_marker_in_trajectory_not_literal_secret():

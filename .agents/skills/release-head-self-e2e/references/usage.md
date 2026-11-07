@@ -10,10 +10,10 @@
 export RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)"
 mkdir -p ".libragent/work/release-head-self-e2e/${RUN_ID}"
 
-python3 src-tauri/bundled_skills/release-head-self-e2e/scripts/pin_release_range.py \
+python3 .agents/skills/release-head-self-e2e/scripts/pin_release_range.py \
   --repo . --json > ".libragent/work/release-head-self-e2e/${RUN_ID}/pins.json"
 
-python3 src-tauri/bundled_skills/release-head-self-e2e/scripts/map_diff_to_cases.py \
+python3 .agents/skills/release-head-self-e2e/scripts/map_diff_to_cases.py \
   --repo . \
   --baseline "$(python3 -c 'import json; print(json.load(open(".libragent/work/release-head-self-e2e/'"${RUN_ID}"'/pins.json"))["baselineTag"])')" \
   --manifest benchmarks/harbor/libragent-session-e2e-matrix/coverage-manifest.json \
@@ -32,11 +32,11 @@ $RunId = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ")
 $Root = ".libragent/work/release-head-self-e2e/$RunId"
 New-Item -ItemType Directory -Force -Path $Root | Out-Null
 
-python3 src-tauri/bundled_skills/release-head-self-e2e/scripts/pin_release_range.py `
+python3 .agents/skills/release-head-self-e2e/scripts/pin_release_range.py `
   --repo . --json | Set-Content -Encoding utf8 "$Root/pins.json"
 
 $tag = (Get-Content "$Root/pins.json" | ConvertFrom-Json).baselineTag
-python3 src-tauri/bundled_skills/release-head-self-e2e/scripts/map_diff_to_cases.py `
+python3 .agents/skills/release-head-self-e2e/scripts/map_diff_to_cases.py `
   --repo . --baseline $tag `
   --manifest benchmarks/harbor/libragent-session-e2e-matrix/coverage-manifest.json `
   --json | Set-Content -Encoding utf8 "$Root/case-hints.json"
@@ -64,7 +64,8 @@ In LibrAgent (Coding Expert or harness assistant), with repo workspace:
 Load @skill:release-head-self-e2e and @skill:delegate.
 Scope execute-e2e. Run-id <RUN_ID>. Serialize cases.
 Use references/executor-brief.md and references/verifier-brief.md for children.
-Blocked for storeAs/uiAskUser until E2E control exposes those prompts.
+Blocked only for native GUI paths outside the app window; storeAs/uiAskUser
+prompts are answered by the harness via the debug E2E control plane.
 ```
 
 Parent keeps running; harvest `GET /api/sessions/:id/messages?limit=500` before child delete when using Session API helpers from briefs.

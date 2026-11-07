@@ -1,18 +1,58 @@
+//! E2E control plane handlers (debug builds only).
+//!
+//! Routes let an unattended harness observe and answer the two blocking
+//! interactions a session can wait on:
+//!
+//! - the shared user prompt (#2543: `ui__askUser` / secret requests), and
+//! - pending tool-approval requests.
+//!
+//! Every route sits behind [`capability_guard`], a pure filter that takes the
+//! capability as a parameter — no env or process-global reads inside — so it
+//! is directly unit-testable with `warp::test::request`:
+//!
+//! - no capability (control plane disabled) → `404 not found`,
+//! - wrong or missing header → `403` via [`AccessDenied`].
+//!
+//! The route set itself only exists in debug binaries: `server/mod.rs` gates
+//! the whole module behind `#[cfg(debug_assertions)]`.
+
+use std::convert::Infallible;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use warp::http::StatusCode;
 use warp::{Filter, Rejection, Reply};
 
-use crate::agent::AgentSessionManager;
-use crate::mcp::builtin::workspace::{
-    LIST_PENDING_INTERACTIVE_SHELL_INPUT_INTERNAL, SUBMIT_INTERACTIVE_SHELL_INPUT_INTERNAL,
-    CANCEL_INTERACTIVE_SHELL_INPUT_INTERNAL,
+use crate::agent::session_manager::{
+    approvals::{list_pending_approvals_in, respond_tool_approval},
+    pending_user_prompt_in, PendingApprovalSummary,
 };
-use crate::server::e2e_control::token::{authorize, e2e_control_enabled};
+use crate::agent::state::{UserPromptAnswer, UserPromptKind, USER_PROMPT_GONE_MESSAGE};
+use crate::agent::AgentSessionManager;
+use crate::server::access_guard::AccessDenied;
+use crate::server::e2e_control::token::{capability_token, header_matches};
 use crate::server::handlers::helpers::resolve_http_session_ref;
-use crate::server::handlers::types::ErrorResponse;
-use crate::state::{get_app_handle, get_mcp_service_proxy_manager};
+
+/// Guard filter: 404 when the control plane is disabled, 403 when the
+/// capability header is missing or wrong. Pure — the capability is passed in.
+pub fn capability_guard(
+    capability: Option<String>,
+) -> impl Filter<Extract = (), Error = Rejection> + Clone {
+    warp::header::headers_cloned()
+        .and_then(move |headers: warp::http::HeaderMap| {
+            let capability = capability.clone();
+            async move {
+                match capability.as_deref() {
+                    None => Err(warp::reject::not_found()),
+                    Some(expected) if header_matches(&headers, expected) => Ok(()),
+                    Some(_) => Err(warp::reject::custom(AccessDenied {
+                        reason: "missing or invalid e2e control capability",
+                    })),
+                }
+            }
+        })
+        .untuple_one()
+}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -24,301 +64,169 @@ pub struct E2eControlStatus {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct InteractiveShellPromptSnapshot {
-    pub execution_id: String,
-    pub prompt: String,
-    pub input_type: String,
-    pub command_preview: String,
-    pub created_at: String,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PendingApprovalSnapshot {
-    pub tool_call_id: String,
-    pub tool_name: String,
-    pub approval_kind: String,
-    pub command_preview: Option<String>,
-    pub request_id: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct SessionInteractionsSnapshot {
     pub session_id: String,
-    pub interactive_shell_prompts: Vec<InteractiveShellPromptSnapshot>,
-    pub pending_approvals: Vec<PendingApprovalSnapshot>,
+    pub pending_user_prompt:
+        Option<crate::agent::state::PendingUserPromptSummary>,
+    pub pending_approvals: Vec<PendingApprovalSummary>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SubmitInteractiveShellBody {
-    pub execution_id: String,
+pub struct UserPromptBody {
+    pub request_id: String,
+    /// `answer` delivers `value`; `cancel` resolves the prompt unanswered.
     pub action: String,
     #[serde(default)]
-    pub input: Option<String>,
+    pub value: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SubmitToolApprovalBody {
+pub struct ToolApprovalBody {
     pub tool_call_id: String,
     pub approved: bool,
 }
 
-fn e2e_disabled_reply() -> warp::reply::WithStatus<warp::reply::Json> {
+type JsonReply = warp::reply::WithStatus<warp::reply::Json>;
+
+fn json_ok<T: Serialize>(body: &T) -> JsonReply {
+    warp::reply::with_status(warp::reply::json(body), StatusCode::OK)
+}
+
+fn json_error(status: StatusCode, error: impl Into<String>) -> JsonReply {
     warp::reply::with_status(
-        warp::reply::json(&ErrorResponse {
-            error: "E2E control is not enabled".to_string(),
-        }),
-        StatusCode::NOT_FOUND,
+        warp::reply::json(&serde_json::json!({ "error": error.into() })),
+        status,
     )
 }
 
-async fn guard_e2e(headers: warp::http::HeaderMap) -> Result<(), Rejection> {
-    if !e2e_control_enabled() {
-        return Err(warp::reject::not_found());
-    }
-    authorize(&headers).map_err(|reason| {
-        warp::reject::custom(crate::server::access_guard::AccessDenied { reason })
-    })
-}
-
-pub async fn get_interactions_snapshot(
-    manager: &AgentSessionManager,
-    session_id: &str,
-) -> Result<SessionInteractionsSnapshot, String> {
-    let session_id = resolve_http_session_ref(session_id)
-        .await
-        .map_err(|(_, err)| err)?;
-
-    let mut interactive_shell_prompts = Vec::new();
-    let proxy_manager = get_mcp_service_proxy_manager();
-    if let Some(proxy) = proxy_manager.get_proxy(&session_id).await {
-        let list = proxy
-            .call_builtin_internal(
-                "workspace",
-                LIST_PENDING_INTERACTIVE_SHELL_INPUT_INTERNAL,
-                serde_json::json!({}),
-            )
-            .await?;
-        if let Some(items) = list
-            .structured_content
-            .as_ref()
-            .and_then(|v| v.get("items"))
-            .and_then(|v| v.as_array())
-        {
-            for item in items {
-                if let (Some(execution_id), Some(prompt), Some(input_type)) = (
-                    item.get("executionId").and_then(|v| v.as_str()),
-                    item.get("prompt").and_then(|v| v.as_str()),
-                    item.get("inputType").and_then(|v| v.as_str()),
-                ) {
-                    interactive_shell_prompts.push(InteractiveShellPromptSnapshot {
-                        execution_id: execution_id.to_string(),
-                        prompt: prompt.to_string(),
-                        input_type: input_type.to_string(),
-                        command_preview: item
-                            .get("commandPreview")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string(),
-                        created_at: item
-                            .get("createdAt")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string(),
-                    });
-                }
-            }
-        }
-    }
-
-    let pending_approvals = {
-        let active = manager.active_sessions.read().await;
-        let Some(session) = active.get(&session_id) else {
-            return Err(format!("Session not found: {}", session_id));
-        };
-        let approvals = session.pending_approvals.read().await;
-        approvals
-            .iter()
-            .map(|(tool_call_id, data)| PendingApprovalSnapshot {
-                tool_call_id: tool_call_id.clone(),
-                tool_name: data.tool_name.clone(),
-                approval_kind: format!("{:?}", data.approval_kind),
-                command_preview: data.input_preview.clone(),
-                request_id: data.request_id.clone(),
-            })
-            .collect()
-    };
-
-    Ok(SessionInteractionsSnapshot {
-        session_id: crate::utils::session_id::display_session_id(&session_id),
-        interactive_shell_prompts,
-        pending_approvals,
-    })
-}
-
-pub async fn submit_interactive_shell(
-    session_id: &str,
-    body: SubmitInteractiveShellBody,
-) -> Result<(), String> {
-    let session_id = resolve_http_session_ref(session_id)
-        .await
-        .map_err(|(_, err)| err)?;
-
-    let proxy_manager = get_mcp_service_proxy_manager();
-    proxy_manager
-        .ensure_configured_proxy(&session_id, get_app_handle().cloned())
-        .await?;
-
-    let proxy = proxy_manager
-        .get_proxy(&session_id)
-        .await
-        .ok_or_else(|| format!("No proxy found for session: {}", session_id))?;
-
-    match body.action.as_str() {
-        "submit" => {
-            let input = body.input.ok_or_else(|| {
-                "Missing input for interactive shell submit action".to_string()
-            })?;
-            proxy
-                .call_builtin_internal(
-                    "workspace",
-                    SUBMIT_INTERACTIVE_SHELL_INPUT_INTERNAL,
-                    serde_json::json!({
-                        "execution_id": body.execution_id,
-                        "input": input,
-                    }),
-                )
-                .await?;
-        }
-        "cancel" => {
-            proxy
-                .call_builtin_internal(
-                    "workspace",
-                    CANCEL_INTERACTIVE_SHELL_INPUT_INTERNAL,
-                    serde_json::json!({
-                        "execution_id": body.execution_id,
-                    }),
-                )
-                .await?;
-        }
-        other => return Err(format!("Unknown interactive shell action: {other}")),
-    }
-    Ok(())
-}
-
-pub async fn submit_tool_approval(
-    manager: &AgentSessionManager,
-    session_id: &str,
-    body: SubmitToolApprovalBody,
-) -> Result<(), String> {
-    let session_id = resolve_http_session_ref(session_id)
-        .await
-        .map_err(|(_, err)| err)?;
-
-    manager
-        .respond_tool_approval(&session_id, &body.tool_call_id, body.approved)
-        .await
-}
-
-async fn handle_status(headers: warp::http::HeaderMap) -> Result<impl Reply, Rejection> {
-    if guard_e2e(headers).await.is_err() {
-        return Ok(e2e_disabled_reply());
-    }
-    Ok(warp::reply::json(&E2eControlStatus {
-        enabled: e2e_control_enabled(),
+async fn handle_status() -> Result<JsonReply, Infallible> {
+    // Reaching this handler means the capability guard passed, i.e. the
+    // control plane is enabled in this debug process.
+    Ok(json_ok(&E2eControlStatus {
+        enabled: true,
         debug_build: cfg!(debug_assertions),
         loopback_only: true,
     }))
 }
 
 async fn handle_get_interactions(
-    session_id: String,
-    headers: warp::http::HeaderMap,
+    session_ref: String,
     manager: Arc<AgentSessionManager>,
-) -> Result<impl Reply, Rejection> {
-    guard_e2e(headers).await?;
-    match get_interactions_snapshot(manager.as_ref(), &session_id).await {
-        Ok(snapshot) => Ok(warp::reply::with_status(
-            warp::reply::json(&snapshot),
-            StatusCode::OK,
-        )),
-        Err(error) => Ok(warp::reply::with_status(
-            warp::reply::json(&ErrorResponse { error }),
+) -> Result<JsonReply, Infallible> {
+    let session_id = match resolve_http_session_ref(&session_ref).await {
+        Ok(id) => id,
+        Err((status, error)) => return Ok(json_error(status, error)),
+    };
+    if !manager.active_sessions().read().await.contains_key(&session_id) {
+        return Ok(json_error(
             StatusCode::NOT_FOUND,
-        )),
+            format!("Session not found: {session_id}"),
+        ));
     }
+    let snapshot = SessionInteractionsSnapshot {
+        session_id: session_id.clone(),
+        pending_user_prompt: pending_user_prompt_in(manager.as_ref(), &session_id).await,
+        pending_approvals: list_pending_approvals_in(manager.active_sessions(), &session_id).await,
+    };
+    Ok(json_ok(&snapshot))
 }
 
-async fn handle_submit_interactive(
-    session_id: String,
-    headers: warp::http::HeaderMap,
-    body: SubmitInteractiveShellBody,
-) -> Result<impl Reply, Rejection> {
-    guard_e2e(headers).await?;
-    match submit_interactive_shell(&session_id, body).await {
-        Ok(()) => Ok(warp::reply::with_status(
-            warp::reply::json(&serde_json::json!({ "ok": true })),
-            StatusCode::OK,
-        )),
-        Err(error) => {
-            let status = if error.contains("not found") || error.contains("Session not found") {
-                StatusCode::NOT_FOUND
-            } else if error.contains("different session") {
-                StatusCode::CONFLICT
-            } else {
-                StatusCode::BAD_REQUEST
+async fn handle_user_prompt(
+    session_ref: String,
+    manager: Arc<AgentSessionManager>,
+    body: UserPromptBody,
+) -> Result<JsonReply, Infallible> {
+    let session_id = match resolve_http_session_ref(&session_ref).await {
+        Ok(id) => id,
+        Err((status, error)) => return Ok(json_error(status, error)),
+    };
+
+    let pending = match pending_user_prompt_in(manager.as_ref(), &session_id).await {
+        Some(pending) if pending.request_id == body.request_id => pending,
+        _ => return Ok(json_error(StatusCode::NOT_FOUND, USER_PROMPT_GONE_MESSAGE)),
+    };
+
+    let delivered = match body.action.as_str() {
+        "answer" => {
+            let Some(value) = body.value else {
+                return Ok(json_error(
+                    StatusCode::BAD_REQUEST,
+                    "Missing value for answer action",
+                ));
             };
-            Ok(warp::reply::with_status(
-                warp::reply::json(&ErrorResponse { error }),
-                status,
+            let answer = match pending.kind {
+                UserPromptKind::Secret => UserPromptAnswer::Secret(value),
+                UserPromptKind::Question => UserPromptAnswer::Question(value),
+            };
+            match manager
+                .answer_user_prompt(&session_id, &body.request_id, answer)
+                .await
+            {
+                Ok(delivered) => delivered,
+                Err(error) => return Ok(json_error(StatusCode::CONFLICT, error)),
+            }
+        }
+        "cancel" => match manager.cancel_user_prompt(&session_id, &body.request_id).await {
+            Ok(delivered) => delivered,
+            Err(error) => return Ok(json_error(StatusCode::CONFLICT, error)),
+        },
+        other => {
+            return Ok(json_error(
+                StatusCode::BAD_REQUEST,
+                format!("Unknown user prompt action: {other}"),
             ))
         }
-    }
+    };
+
+    Ok(json_ok(&serde_json::json!({ "delivered": delivered })))
 }
 
-async fn handle_submit_approval(
-    session_id: String,
-    headers: warp::http::HeaderMap,
+async fn handle_tool_approval(
+    session_ref: String,
     manager: Arc<AgentSessionManager>,
-    body: SubmitToolApprovalBody,
-) -> Result<impl Reply, Rejection> {
-    guard_e2e(headers).await?;
-    match submit_tool_approval(manager.as_ref(), &session_id, body).await {
-        Ok(()) => Ok(warp::reply::with_status(
-            warp::reply::json(&serde_json::json!({ "ok": true })),
-            StatusCode::OK,
-        )),
+    body: ToolApprovalBody,
+) -> Result<JsonReply, Infallible> {
+    let session_id = match resolve_http_session_ref(&session_ref).await {
+        Ok(id) => id,
+        Err((status, error)) => return Ok(json_error(status, error)),
+    };
+    match respond_tool_approval(manager.as_ref(), &session_id, &body.tool_call_id, body.approved)
+        .await
+    {
+        Ok(()) => Ok(json_ok(&serde_json::json!({ "ok": true }))),
         Err(error) => {
             let status = if error.contains("not found") {
                 StatusCode::NOT_FOUND
             } else {
                 StatusCode::BAD_REQUEST
             };
-            Ok(warp::reply::with_status(
-                warp::reply::json(&ErrorResponse { error }),
-                status,
-            ))
+            Ok(json_error(status, error))
         }
     }
 }
 
-/// Routes mounted only on loopback (never when `expose` is true without extra guard — we always loopback-guard).
+/// Routes for the E2E control plane. The caller (routes wiring) additionally
+/// wraps these with the loopback Host guard and the loopback peer guard.
 pub fn e2e_control_routes(
-    agent_manager: Arc<AgentSessionManager>,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    let manager = warp::any().map(move || agent_manager.clone());
+    agent_manager: impl Filter<Extract = (Arc<AgentSessionManager>,), Error = Infallible>
+        + Clone
+        + Send,
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+    let capability: Option<String> = capability_token().map(str::to_string);
+    let guarded = capability_guard(capability);
 
+    // GET /api/e2e-control/status
     let status = warp::get()
         .and(warp::path("api"))
         .and(warp::path("e2e-control"))
         .and(warp::path("status"))
         .and(warp::path::end())
-        .and(warp::header::headers_cloned())
+        .and(guarded.clone())
         .and_then(handle_status);
 
+    // GET /api/e2e-control/sessions/:ref/interactions
     let interactions = warp::get()
         .and(warp::path("api"))
         .and(warp::path("e2e-control"))
@@ -326,35 +234,35 @@ pub fn e2e_control_routes(
         .and(warp::path::param::<String>())
         .and(warp::path("interactions"))
         .and(warp::path::end())
-        .and(warp::header::headers_cloned())
-        .and(manager.clone())
+        .and(guarded.clone())
+        .and(agent_manager.clone())
         .and_then(handle_get_interactions);
 
-    let submit_shell = warp::post()
+    // POST /api/e2e-control/sessions/:ref/user-prompts
+    let user_prompt = warp::post()
         .and(warp::path("api"))
         .and(warp::path("e2e-control"))
         .and(warp::path("sessions"))
         .and(warp::path::param::<String>())
-        .and(warp::path("interactive-shell"))
+        .and(warp::path("user-prompts"))
         .and(warp::path::end())
-        .and(warp::header::headers_cloned())
-        .and(warp::body::json())
-        .and_then(handle_submit_interactive);
+        .and(guarded.clone())
+        .and(agent_manager.clone())
+        .and(super::super::routes::json_body())
+        .and_then(handle_user_prompt);
 
-    let submit_approval = warp::post()
+    // POST /api/e2e-control/sessions/:ref/tool-approvals
+    let tool_approval = warp::post()
         .and(warp::path("api"))
         .and(warp::path("e2e-control"))
         .and(warp::path("sessions"))
         .and(warp::path::param::<String>())
         .and(warp::path("tool-approvals"))
         .and(warp::path::end())
-        .and(warp::header::headers_cloned())
-        .and(manager)
-        .and(warp::body::json())
-        .and_then(handle_submit_approval);
+        .and(guarded)
+        .and(agent_manager)
+        .and(super::super::routes::json_body())
+        .and_then(handle_tool_approval);
 
-    status
-        .or(interactions)
-        .or(submit_shell)
-        .or(submit_approval)
+    status.or(interactions).or(user_prompt).or(tool_approval)
 }

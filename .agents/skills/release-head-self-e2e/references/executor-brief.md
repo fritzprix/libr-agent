@@ -8,10 +8,10 @@ You are the **executor** for matrix case **{{CASE_ID}}** (release→HEAD self-E2
 
 ## Rules
 
-- Unattended only. If the app needs a human-only UI path (storeAs dialog, ui__askUser) and E2E control cannot drive it, stop with verdict **blocked** and reason — not pass.
+- Unattended only. If the app needs a human-only path that the harness E2E control cannot drive (native GUI outside the app window), stop with verdict **blocked** and reason — not pass.
 - Use **synthetic** secret `LIBRAGENT_E2E_SYNTHETIC_SECRET` only; never real credentials.
 - Tools: exact builtins from your list (`workspace__*`, `agent__*` as needed). No invented HTTP tools except documented Session API paths when the brief requires curl.
-- Debug E2E control (if running): header `x-libragent-e2e-control` from disposable profile `e2e_control.cap`; loopback only.
+- If a secret input or approval dialog appears while you run, the **external harness** resolves it via the debug E2E control plane. Never ask for or handle capability tokens yourself.
 
 ## Objective
 
