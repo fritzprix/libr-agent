@@ -75,10 +75,18 @@ pub(super) fn path_mapper_for_session(
     PathMappingLayer::with_container_root(host_workspace, session_docker_workdir(session))
 }
 
+/// Docker host bind source (`-v` source or `docker cp` source).
+///
+/// Rust `canonicalize()` on Windows yields verbatim paths (`\\?\C:\...`), which
+/// Docker rejects as bind sources. Strip the prefix at this argument boundary so
+/// every bind source (workspace, teamwork, skills) is normalized consistently.
+/// Verbatim UNC (`\\?\UNC\...`) is left unchanged: network paths need the
+/// verbatim form, and LibrAgent bind sources are local drive paths today.
 pub(super) fn docker_mount_path(path: &Path) -> RuntimeResult<String> {
-    path.to_str()
-        .map(str::to_string)
-        .ok_or_else(|| WorkspaceRuntimeError::InvalidWorkspacePath(path.display().to_string()))
+    let raw = path
+        .to_str()
+        .ok_or_else(|| WorkspaceRuntimeError::InvalidWorkspacePath(path.display().to_string()))?;
+    Ok(crate::mcp::builtin::utils::strip_windows_verbatim_prefix(raw).to_string())
 }
 
 /// The host workspace is mounted at the session workdir, which is also the root
@@ -220,6 +228,73 @@ mod tests {
                 "/host/ws:/app",
                 "-v",
                 "/tw/123:/app/.libragent/teamwork"
+            ]
+        );
+    }
+
+    #[test]
+    fn docker_mount_path_strips_windows_verbatim_prefixes() {
+        assert_eq!(
+            docker_mount_path(Path::new(r"C:\Temp\ws")).unwrap(),
+            r"C:\Temp\ws"
+        );
+        assert_eq!(
+            docker_mount_path(Path::new(r"\\?\C:\Temp\ws")).unwrap(),
+            r"C:\Temp\ws"
+        );
+        assert_eq!(
+            docker_mount_path(Path::new("//?/C:/Temp/ws")).unwrap(),
+            "C:/Temp/ws"
+        );
+        // Verbatim UNC keeps the prefix: network paths need the verbatim form.
+        assert_eq!(
+            docker_mount_path(Path::new(r"\\?\UNC\server\share")).unwrap(),
+            r"\\?\UNC\server\share"
+        );
+    }
+
+    #[test]
+    fn volume_args_strip_verbatim_prefix_from_windows_bind_sources() {
+        let args = build_docker_volume_args(
+            Path::new(r"\\?\C:\Temp\Rumi-E2E\O2-docker"),
+            "/workspace",
+            Some(Path::new(r"\\?\C:\Users\dev\.libragent\teamwork")),
+        )
+        .unwrap();
+        assert_eq!(
+            args,
+            vec![
+                "-v",
+                r"C:\Temp\Rumi-E2E\O2-docker:/workspace",
+                "-v",
+                r"C:\Users\dev\.libragent\teamwork:/workspace/.libragent/teamwork",
+            ]
+        );
+    }
+
+    #[test]
+    fn volume_args_keep_spaces_in_windows_bind_sources() {
+        // Volume arguments go to docker as separate argv entries, so spaces stay literal.
+        let args =
+            build_docker_volume_args(Path::new(r"\\?\C:\Temp\My Workspace"), "/workspace", None)
+                .unwrap();
+        assert_eq!(args[1], r"C:\Temp\My Workspace:/workspace");
+    }
+
+    #[test]
+    fn skill_volume_args_strip_verbatim_prefix_from_bind_sources() {
+        let args = build_skill_volume_args(
+            Some(Path::new(r"\\?\C:\ProgramData\libragent\system_skills")),
+            Some(Path::new(r"\\?\C:\Users\dev\.libragent\user_skills")),
+        )
+        .unwrap();
+        assert_eq!(
+            args,
+            vec![
+                "-v",
+                r"C:\ProgramData\libragent\system_skills:/opt/libragent/skills/system:ro",
+                "-v",
+                r"C:\Users\dev\.libragent\user_skills:/opt/libragent/skills/user:ro",
             ]
         );
     }
