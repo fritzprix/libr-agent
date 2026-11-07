@@ -119,6 +119,14 @@ impl WorkspaceServer {
             .clone()
             .unwrap_or_else(|| self.session_id.clone());
 
+        // Issue #2633: a force-terminated session must not spawn any new processes.
+        if self.is_session_terminated() {
+            return Err(
+                crate::mcp::builtin::workspace::persistent_shell::manager::SESSION_TERMINATED_MESSAGE
+                    .to_string(),
+            );
+        }
+
         if tool_name != "runShell" && crate::services::as_root_requested(&args) {
             return Ok(guided_error(
                 ErrorCategory::InvalidInput,

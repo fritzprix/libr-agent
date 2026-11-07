@@ -87,6 +87,12 @@ pub struct MCPServiceProxyManager {
     /// Sessions whose active process was stopped by a user cancel while a tool
     /// ran. That tool's result consumes this marker and the workflow continues.
     process_cancel_pending: Arc<Mutex<HashSet<String>>>,
+
+    /// Sessions force-stopped by explicit terminate/delete. While fenced,
+    /// `call_tool` rejects late dispatches so lazy proxy recreation cannot
+    /// resurrect builtin instances. Cleared only at explicit lifecycle entry
+    /// points (proxy bootstrap, new workflow start, session reload).
+    teardown_fenced: Arc<Mutex<HashSet<String>>>,
 }
 
 impl std::fmt::Debug for MCPServiceProxyManager {
@@ -107,6 +113,7 @@ impl std::fmt::Debug for MCPServiceProxyManager {
             .field("runtime_states", &"<RwLock<HashMap>>")
             .field("server_retry_states", &self.server_retry_states)
             .field("process_cancel_pending", &"<Mutex<HashSet<String>>>")
+            .field("teardown_fenced", &"<Mutex<HashSet<String>>>")
             .finish()
     }
 }

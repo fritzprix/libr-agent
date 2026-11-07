@@ -14,6 +14,10 @@ pub async fn spawn_create_proxy_for_session(
     tool_ids: Vec<String>,
     mcp_server_ids: Vec<String>,
 ) {
+    // Explicit lifecycle entry (session create / resume): a prior force-stop
+    // fence must not block this new lifecycle (issue #2633).
+    proxy_manager.clear_teardown_fence(&session_id).await;
+
     // Surface an immediate hydrating state when no proxy is published yet so the
     // open response is not stuck on NotStarted while create_proxy is still queued.
     if proxy_manager.get_proxy(&session_id).await.is_none() {

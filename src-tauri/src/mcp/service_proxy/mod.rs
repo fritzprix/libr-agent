@@ -368,6 +368,15 @@ impl MCPServiceProxy {
         self.builtin_servers.len()
     }
 
+    /// Mark every builtin server in this proxy as force-terminated for the
+    /// bound session. Must run before [`Self::kill_session_processes`] so a
+    /// late tool dispatch cannot create resources after the kill sweep.
+    pub fn mark_session_terminated(&self) {
+        for server in self.builtin_servers.values() {
+            server.mark_session_terminated();
+        }
+    }
+
     /// Cancel session-owned resources in every builtin server for this proxy.
     pub async fn kill_session_processes(&self) -> Result<usize, String> {
         let mut killed_count = 0;

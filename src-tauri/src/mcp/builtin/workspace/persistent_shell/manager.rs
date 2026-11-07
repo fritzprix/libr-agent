@@ -30,7 +30,14 @@ pub struct PersistentShellManager {
     cancellation_generations: Arc<Mutex<HashMap<String, u64>>>,
     /// Per-session state that outlives a single shell process.
     session_states: Arc<Mutex<HashMap<String, SessionShellState>>>,
+    /// Set once the owning session is force-terminated (issue #2633).
+    /// A terminated manager refuses to create new shells.
+    terminated: Arc<std::sync::atomic::AtomicBool>,
 }
+
+/// Error returned when a tool call targets a force-terminated session (issue #2633).
+pub(crate) const SESSION_TERMINATED_MESSAGE: &str =
+    "Session was force-terminated; its tool session is closed. Start a new workflow (or resume) before calling tools.";
 
 #[derive(Default)]
 struct SessionShellState {
@@ -65,7 +72,22 @@ impl PersistentShellManager {
             shells: Arc::new(Mutex::new(HashMap::new())),
             cancellation_generations: Arc::new(Mutex::new(HashMap::new())),
             session_states: Arc::new(Mutex::new(HashMap::new())),
+            terminated: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
+    }
+
+    /// Bind this manager to the owning session's termination flag (issue #2633).
+    ///
+    /// The flag is set by `mark_session_terminated` during force terminate.
+    /// Once set, no new shells may be created for the session.
+    pub fn with_terminated_flag(mut self, terminated: Arc<std::sync::atomic::AtomicBool>) -> Self {
+        self.terminated = terminated;
+        self
+    }
+
+    /// Whether the owning session has been force-terminated.
+    pub fn is_session_terminated(&self) -> bool {
+        self.terminated.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// Stores a session secret and restarts the shell so the next call sees it as `$name`.
@@ -165,6 +187,9 @@ impl PersistentShellManager {
         session_id: String,
         workspace_path: std::path::PathBuf,
     ) -> Result<Arc<Mutex<PersistentShell>>, String> {
+        if self.is_session_terminated() {
+            return Err(SESSION_TERMINATED_MESSAGE.to_string());
+        }
         if let Some(shell) = self
             .shells
             .lock()
@@ -242,6 +267,15 @@ impl PersistentShellManager {
         let shell_arc = Arc::new(Mutex::new(shell));
         let shell_pid = shell_arc.lock().await.pid();
         let mut shells = self.shells.lock().await;
+        if self.is_session_terminated() {
+            // Terminate raced with shell creation. Drop the shell (its Drop impl
+            // kills the child) and refuse to register it.
+            debug!(
+                "Refusing to register a shell for terminated session: {}",
+                session_id
+            );
+            return Err(SESSION_TERMINATED_MESSAGE.to_string());
+        }
         if let Some(existing) = shells.get(&session_id) {
             let existing_shell = existing.shell.clone();
             drop(shells);

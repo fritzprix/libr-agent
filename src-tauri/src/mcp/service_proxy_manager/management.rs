@@ -321,6 +321,54 @@ impl MCPServiceProxyManager {
         proxy.kill_session_processes().await
     }
 
+    /// Force-stop cleanup for explicit terminate/delete (issue #2633).
+    ///
+    /// Fences the session against late tool dispatches, marks its builtin
+    /// servers terminated so no new session-owned resource can be created, and
+    /// kills the resources that already exist — all while the proxy is still
+    /// alive, so ownership is available until cleanup completes. Idempotent;
+    /// safe to call when no proxy exists. Returns the killed resource count.
+    pub async fn terminate_session_resources(&self, session_id: &str) -> usize {
+        self.teardown_fenced
+            .lock()
+            .await
+            .insert(session_id.to_string());
+
+        let Some(proxy) = self.get_proxy(session_id).await else {
+            log::debug!(
+                "No MCP proxy found while force-stopping resources for session {}",
+                session_id
+            );
+            return 0;
+        };
+
+        // Mark before kill: a dispatch that inserted its registry entry after
+        // the mark is caught by the per-server guard, and one that raced ahead
+        // of the mark is caught by the sweep below (or its late-pid killer).
+        proxy.mark_session_terminated();
+
+        match proxy.kill_session_processes().await {
+            Ok(killed) => killed,
+            Err(error) => {
+                log::warn!(
+                    "Partial force-stop cleanup failure for session {}: {}",
+                    session_id,
+                    error
+                );
+                0
+            }
+        }
+    }
+
+    /// Clear the force-stop fence for a session.
+    ///
+    /// Called only at explicit lifecycle entry points (proxy bootstrap for
+    /// create/resume, new workflow start, session reload) so a later valid
+    /// message can work again after an explicit terminate.
+    pub async fn clear_teardown_fence(&self, session_id: &str) {
+        self.teardown_fenced.lock().await.remove(session_id);
+    }
+
     /// Mark that a user cancel stopped a foreground process. The result of the
     /// running tool consumes this marker so the workflow can continue normally.
     pub async fn mark_process_cancel_pending(&self, session_id: &str) {
@@ -585,6 +633,15 @@ impl MCPServiceProxyManager {
         tool_name: &str,
         args: serde_json::Value,
     ) -> Result<MCPResponse, String> {
+        // Force-stop fence: a terminated session's late dispatches must not
+        // lazily recreate proxies or builtin instances (issue #2633).
+        if self.teardown_fenced.lock().await.contains(session_id) {
+            return Err(format!(
+                "Session '{}' was terminated; its tool session is closed. Start a new workflow (or resume) before calling tools.",
+                session_id
+            ));
+        }
+
         let is_builtin = tool_name
             .split_once("__")
             .map(|(server, _)| BuiltinServiceId::from_alias(server).is_some())

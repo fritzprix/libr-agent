@@ -345,6 +345,10 @@ pub(crate) async fn ensure_proxy_exists(
     app_handle: &AppHandle,
     session_id: &str,
 ) -> Result<(), String> {
+    // A new workflow start is an explicit lifecycle entry: a prior force-stop
+    // fence (issue #2633) ends here so a later valid message can work again.
+    proxy_manager.clear_teardown_fence(session_id).await;
+
     if proxy_manager.get_proxy(session_id).await.is_some() {
         return Ok(());
     }
