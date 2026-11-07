@@ -6,8 +6,8 @@
 | --- | --- |
 | `/worker-loop` | Run one tick now. |
 | `/worker-loop 10m` | Arm recurring loop (10m interval), then run one tick now. |
-| `/worker-loop status` | Print `current` and `needsUser` from state. Do no work. |
-| `/worker-loop stop` | Disarm the recurring loop. |
+| `/worker-loop status` | Print `scripts/worker_state.py status`: every worker, plus `needsUser` and schedules. Do no work. |
+| `/worker-loop stop` | Disarm every loop listed by `worker_state.py scheduler clear`. Running ticks finish normally. |
 
 ## Runtimes
 
@@ -20,8 +20,8 @@ Use the `scheduled_task` builtin toolset:
      - `cronExpression`: cron string matching interval (e.g. `*/10 * * * *` for 10m).
      - `prompt`: `"/worker-loop"`
      - `isDaemon`: `false` (or `true` if scheduled beyond current session scope).
-3. Record `taskId` in `state.json` under `scheduler: { "kind": "scheduled_task", "id": taskId }` (or legacy `loopTaskId`). Run the first tick immediately.
-4. To stop: `scheduled_task__deleteScheduledTask(taskId: "...")`.
+3. Record it: `worker_state.py scheduler add --kind scheduled_task --id <taskId>`. Schedules belong to the repo, not to a slot, because each tick may get a different slot. Run the first tick immediately.
+4. To stop: `worker_state.py scheduler clear`, then `scheduled_task__deleteScheduledTask(taskId: "...")` for each entry it prints.
 
 ### External IDE Harness (Cursor / Shell)
 1. Check for an existing loop process first.
@@ -34,6 +34,6 @@ Use the `scheduled_task` builtin toolset:
      ```powershell
      while ($true) { Start-Sleep -Seconds 600; Write-Output 'AGENT_LOOP_TICK_worker_loop {"prompt":"/worker-loop"}' }
      ```
-3. Record the shell PID in state under `scheduler: { "kind": "process", "id": pid }` (or legacy `loopPid`). Run the first tick immediately.
-4. On notification, run one tick. If a tick is in progress (`tick_gate.py --lock` returns BUSY), ignore notification.
-5. To stop: terminate the recorded PID.
+3. Record it: `worker_state.py scheduler add --kind process --id <pid>`. Run the first tick immediately.
+4. On notification, run one tick. `BUSY reason=same-session` means this session's previous tick is still running: ignore the notification. Without a stable session ID (see the Setup section of SKILL.md), a repeated notification cannot be told apart from a new session, and starts a second worker.
+5. To stop: `worker_state.py scheduler clear`, then terminate each PID it prints.

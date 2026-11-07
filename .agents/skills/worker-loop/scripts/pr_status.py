@@ -15,6 +15,7 @@ import re
 import subprocess
 import sys
 
+import worker_claims
 import worker_state
 
 # Loop markers must appear at the very start of the comment (ignoring optional UTF-8 BOM and leading whitespace).
@@ -202,7 +203,7 @@ def main() -> None:
     parser.add_argument("--worker", default=None, help="Worker name (default: $WORKER_ID or 'worker')")
     args = parser.parse_args()
     worker = worker_state.worker_name(args.worker)
-    claims = worker_state.load_claims()
+    claims = worker_claims.load_claims()
 
     repo = json.loads(gh("repo", "view", "--json", "owner,name"))
     owner, name = repo["owner"]["login"], repo["name"]
@@ -215,7 +216,7 @@ def main() -> None:
         numbers = [p["number"] for p in listed if not p.get("isDraft")]
 
     summaries = [
-        summarize(n, owner, name, me, worker_state.claimed_by_other(claims, f"pr:{n}", worker))
+        summarize(n, owner, name, me, worker_claims.claimed_by_other(claims, f"pr:{n}", worker))
         for n in numbers
     ]
     print(json.dumps(summaries, ensure_ascii=False, indent=2))

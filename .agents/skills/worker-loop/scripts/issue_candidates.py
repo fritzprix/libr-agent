@@ -15,6 +15,7 @@ import re
 import subprocess
 import sys
 
+import worker_claims
 import worker_state
 
 EXCLUDED_LABELS = {"wontfix", "duplicate", "invalid", "question"}
@@ -86,7 +87,7 @@ def main() -> None:
     args = parser.parse_args()
 
     worker = worker_state.worker_name(args.worker)
-    claims = worker_state.load_claims()
+    claims = worker_claims.load_claims()
     me = gh("api", "user", "--jq", ".login").strip()
     issues = json.loads(
         gh("issue", "list", "--state", "open", "--limit", str(args.limit), "--json",
@@ -102,7 +103,7 @@ def main() -> None:
 
         reason = exclusion_reason(
             number, labels, assignees, me, closing_pr,
-            claimed_by=worker_state.claimed_by_other(claims, f"issue:{number}", worker),
+            claimed_by=worker_claims.claimed_by_other(claims, f"issue:{number}", worker),
         )
         if reason:
             excluded.append({"number": number, "title": issue["title"], "reason": reason})
