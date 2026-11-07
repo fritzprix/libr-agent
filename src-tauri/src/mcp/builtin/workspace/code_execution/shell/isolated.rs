@@ -10,9 +10,7 @@ use crate::mcp::types::MCPResult;
 use crate::session_isolation::{IsolatedProcessConfig, IsolationLevel};
 
 use super::super::super::persistent_shell::secrets::mask_secrets;
-use super::super::super::{
-    terminal_manager, utils, workspace_server, WorkspaceServer, PERSISTENT_SHELL_TOOL,
-};
+use super::super::super::{terminal_manager, utils, workspace_server, WorkspaceServer};
 use super::super::{process, validation};
 use super::input::ShellInput;
 use super::{format_command_io_message, format_duration_ms, truncate_sync_shell_stream};
@@ -548,7 +546,7 @@ impl WorkspaceServer {
                         enhanced_message,
                         vec![format!(
                             "Rerun with a non-interactive flag, or store the value with {}(requireUserInput: true, storeAs: NAME) and read $NAME",
-                            PERSISTENT_SHELL_TOOL
+                            tool_name
                         )],
                     )
                     .to_mcp_result_with_data(Some(response)));
@@ -603,7 +601,7 @@ impl WorkspaceServer {
                         0,
                         format!(
                             "If the command needed input, store it with {}(requireUserInput: true, storeAs: NAME) and read $NAME",
-                            PERSISTENT_SHELL_TOOL
+                            tool_name
                         ),
                     );
                 }
