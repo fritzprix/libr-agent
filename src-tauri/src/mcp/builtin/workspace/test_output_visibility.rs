@@ -259,4 +259,45 @@ mod tests {
             _ => panic!("Expected text content"),
         }
     }
+
+    /// A value stored once reaches a later one-off shell as an env var, unchanged
+    /// and unexpanded, and stays masked in the tool result.
+    #[tokio::test]
+    async fn a_stored_value_reaches_a_one_off_shell_and_is_masked() {
+        let harness = create_server().await;
+        let server = &harness.server;
+        let value = "tok s3cr3t & # + ; \" $(whoami)";
+        server
+            .shell_manager
+            .store_secret("test-session", "API_TOKEN", value.to_string())
+            .await
+            .expect("store secret");
+
+        #[cfg(unix)]
+        let (tool, command) = (
+            "runShell",
+            r#"printf '%s' "$API_TOKEN" > token.txt; printf '%s' "$API_TOKEN""#,
+        );
+        #[cfg(windows)]
+        let (tool, command) = (
+            "runPowerShell",
+            "[IO.File]::WriteAllText(\"$PWD\\token.txt\", $env:API_TOKEN); Write-Output $env:API_TOKEN",
+        );
+
+        let result = server
+            .call_tool(
+                tool,
+                json!({ "command": command }),
+                Some("test-session".to_string()),
+            )
+            .await
+            .expect("run shell");
+
+        let token_file = server.get_workspace_dir("test-session").join("token.txt");
+        let written = std::fs::read_to_string(&token_file)
+            .unwrap_or_else(|error| panic!("token file: {error}; result: {result:?}"));
+        assert_eq!(written, value);
+        let serialized = serde_json::to_string(&result).expect("serialize result");
+        assert!(!serialized.contains("s3cr3t"), "{serialized}");
+    }
 }

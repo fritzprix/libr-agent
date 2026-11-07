@@ -98,6 +98,14 @@ For power users and prompt engineering, below is the primary built-in tools inve
 > [!NOTE]
 > These identifiers are for power users and debugging. For everyday use, turn tools on or off in the assistant **Tools** tab.
 
+### Passwords and keys for commands
+
+Some commands need a password or an access key. The assistant does not ask for it in chat. A small private box opens instead, and you type the value there.
+
+- The assistant never sees the value. It only knows the name of the value.
+- The value stays only for the current chat session. Later commands in the same session can use it. Other sessions cannot.
+- When the session ends, the app removes the value. Your computer settings do not change.
+
 ---
 
 ## 🧩 Need Additional Tools?

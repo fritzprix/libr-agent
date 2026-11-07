@@ -22,7 +22,7 @@ pub const WRONG_SUDO_PASSWORD_HINT: &str =
     "The stored SUDO_PASSWORD is wrong. Ask again with storeAs=SUDO_PASSWORD to replace it.";
 
 /// Hint for a command that waits on a password prompt the shell cannot answer.
-pub const PASSWORD_PROMPT_HINT: &str = "This command needs a password that the shell cannot ask for. Use plain `sudo` (not `/usr/bin/sudo`, `su`, `doas`, or `pkexec`). Ask for the password with requireUserInput=true, inputType=password, storeAs=SUDO_PASSWORD, then run the command again.";
+pub const PASSWORD_PROMPT_HINT: &str = "This command needs a password that the shell cannot ask for. Use plain `sudo` (not `/usr/bin/sudo`, `su`, `doas`, or `pkexec`). Ask for the password with requireUserInput=true, inputType=password, storeAs=SUDO_PASSWORD, then run the command again in workspace__runInPersistentShell (one-off shells have no sudo helper).";
 
 const BLOCKED_COMMANDS: [&str; 3] = ["pkexec", "su", "doas"];
 

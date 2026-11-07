@@ -24,12 +24,8 @@ impl WorkspaceServer {
         command: &str,
         args: &Value,
         session_id: &str,
+        tool_name: &str,
     ) -> Result<MCPResult, String> {
-        use crate::mcp::builtin::workspace::utils::sanitize_command_for_logging;
-
-        let session_id = session_id.to_string();
-        let display_command = sanitize_command_for_logging(command);
-
         let requested_timeout = args.get("timeout").and_then(|value| value.as_u64());
         let timeout = match utils::resolve_sync_timeout(requested_timeout) {
             Ok(timeout) => timeout,
@@ -59,11 +55,40 @@ impl WorkspaceServer {
             }
         };
 
+        let name = match self
+            .prompt_and_store_secret(command, args, session_id)
+            .await
+        {
+            Ok(name) => name,
+            Err(result) => return Ok(result),
+        };
+        let mut result = self
+            .execute_shell_persistent(command, PERSISTENT_SHELL_TOOL, timeout, session_id)
+            .await?;
+        prepend_stored_note(&mut result, &name, tool_name);
+        Ok(result)
+    }
+
+    /// Ask the local user for the `storeAs` value and keep it as a session secret.
+    ///
+    /// Every shell this session starts afterwards (one-off or persistent) gets it as
+    /// `$<storeAs>`. Returns the stored name, or the tool result to return when
+    /// nothing was stored (invalid name, no UI, cancel, timeout, bad answer).
+    pub(crate) async fn prompt_and_store_secret(
+        &self,
+        command: &str,
+        args: &Value,
+        session_id: &str,
+    ) -> Result<String, MCPResult> {
+        use crate::mcp::builtin::workspace::utils::sanitize_command_for_logging;
+
+        let display_command = sanitize_command_for_logging(command);
+
         let Some(name) = args.get("storeAs").and_then(|value| value.as_str()) else {
-            return Ok(missing_store_as_error());
+            return Err(missing_store_as_error());
         };
         if let Err(message) = validate_secret_name(name) {
-            return Ok(
+            return Err(
                 guided_error(ErrorCategory::InvalidInput, message, ToolGroup::Workspace)
                     .guidance(vec![
                         "Pick an uppercase name such as API_TOKEN that the app and the shell do not use"
@@ -74,7 +99,7 @@ impl WorkspaceServer {
         }
 
         let Some(app_handle) = crate::state::get_app_handle() else {
-            return Ok(guided_error(
+            return Err(guided_error(
                 ErrorCategory::InternalError,
                 "Interactive shell input requires the desktop UI runtime".to_string(),
                 ToolGroup::Workspace,
@@ -90,12 +115,12 @@ impl WorkspaceServer {
             prompt_override(args).unwrap_or_else(|| format!("Enter the value for {name}:"));
         let manager = app_handle.state::<AgentSessionManager>();
         let outcome = match manager
-            .request_user_prompt(&session_id, stored_secret_payload(name, prompt))
+            .request_user_prompt(session_id, stored_secret_payload(name, prompt))
             .await
         {
             Ok(outcome) => outcome,
             Err(error) => {
-                return Ok(
+                return Err(
                     guided_error(ErrorCategory::InvalidState, error, ToolGroup::Workspace)
                         .guidance(vec![
                     "Wait for the open prompt to close before running another interactive command"
@@ -108,11 +133,11 @@ impl WorkspaceServer {
         };
 
         let UserPromptOutcome::Answered(user_input) = outcome else {
-            return Ok(unanswered_shell_result(&outcome, name, &display_command));
+            return Err(unanswered_shell_result(&outcome, name, &display_command));
         };
 
         if user_input.len() > INTERACTIVE_SHELL_INPUT_MAX_BYTES {
-            return Ok(guided_error(
+            return Err(guided_error(
                 ErrorCategory::InvalidInput,
                 format!(
                     "Interactive input exceeds the {} byte limit",
@@ -127,7 +152,7 @@ impl WorkspaceServer {
         }
 
         let Some(user_input) = single_line_answer(&user_input) else {
-            return Ok(guided_error(
+            return Err(guided_error(
                 ErrorCategory::InvalidInput,
                 "Interactive input must be a single line".to_string(),
                 ToolGroup::Workspace,
@@ -138,7 +163,7 @@ impl WorkspaceServer {
 
         if let Err(error) = self
             .shell_manager
-            .store_secret(&session_id, name, user_input.to_string())
+            .store_secret(session_id, name, user_input.to_string())
             .await
         {
             tracing::warn!(
@@ -148,15 +173,46 @@ impl WorkspaceServer {
                 error
             );
         }
-        let mut result = self
-            .execute_shell_persistent(command, PERSISTENT_SHELL_TOOL, timeout, &session_id)
-            .await?;
-        prepend_result_note(
-            &mut result,
-            &format!("Stored the value as ${name} for this session."),
-        );
-        Ok(result)
+        Ok(name.to_string())
     }
+}
+
+/// How a command run by `tool_name` reads the env var `name`.
+pub(crate) fn env_var_ref(tool_name: &str, name: &str) -> String {
+    if tool_name.contains("PowerShell") {
+        format!("$env:{name}")
+    } else {
+        format!("${name}")
+    }
+}
+
+/// Tells the agent which variable now holds the value (never the value itself).
+pub(crate) fn prepend_stored_note(result: &mut MCPResult, name: &str, tool_name: &str) {
+    prepend_result_note(
+        result,
+        &format!(
+            "Stored the value as {} for this session.",
+            env_var_ref(tool_name, name)
+        ),
+    );
+}
+
+/// `storeAs` without `requireUserInput=true` would ask nothing and store nothing.
+pub(crate) fn store_as_without_prompt_error(args: &Value) -> Option<MCPResult> {
+    args.get("storeAs").filter(|value| !value.is_null())?;
+    Some(
+        guided_error(
+            ErrorCategory::InvalidInput,
+            "storeAs needs requireUserInput=true. Nothing was asked or stored, and the command did not run".to_string(),
+            ToolGroup::Workspace,
+        )
+        .guidance(vec![
+            "Set requireUserInput=true with storeAs=NAME to ask the user for the value".to_string(),
+            "A value stored earlier in this session is already available; drop storeAs to reuse it"
+                .to_string(),
+        ])
+        .to_mcp_result(),
+    )
 }
 
 /// `requireUserInput` without `storeAs`: the shell cannot receive typed input.
@@ -256,6 +312,24 @@ mod tests {
                 reuse_note: Some("This value is reused for this session.".to_string()),
             }
         );
+    }
+
+    #[test]
+    fn powershell_tools_name_the_env_drive_form() {
+        for tool in ["runPowerShell", "runInPersistentPowerShell"] {
+            assert_eq!(env_var_ref(tool, "API_TOKEN"), "$env:API_TOKEN");
+        }
+        for tool in ["runShell", "runInPersistentShell"] {
+            assert_eq!(env_var_ref(tool, "API_TOKEN"), "$API_TOKEN");
+        }
+    }
+
+    #[test]
+    fn store_as_alone_is_rejected_but_null_is_ignored() {
+        let rejected = store_as_without_prompt_error(&serde_json::json!({ "storeAs": "X" }));
+        assert_eq!(rejected.and_then(|result| result.is_error), Some(true));
+        assert!(store_as_without_prompt_error(&serde_json::json!({ "storeAs": null })).is_none());
+        assert!(store_as_without_prompt_error(&serde_json::json!({})).is_none());
     }
 
     #[test]
