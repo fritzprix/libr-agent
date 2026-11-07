@@ -6,16 +6,47 @@ use serde_json::json;
 /// Upper bound for `runShell.script`; longer logic belongs in a file run via `command`.
 pub const RUN_SHELL_SCRIPT_MAX_CHARS: u32 = 20_000;
 
+/// How a stored value is read in a shell, and what the tool says about sudo.
+#[derive(Clone, Copy)]
+enum StoredInputShell {
+    /// Has the `sudo` wrapper that reads `$SUDO_PASSWORD`.
+    PersistentBash,
+    /// Gets the value but not the `sudo` wrapper.
+    OneOffBash,
+    PowerShell,
+}
+
+impl StoredInputShell {
+    fn env_ref(self) -> &'static str {
+        match self {
+            Self::PowerShell => "$env:NAME",
+            Self::PersistentBash | Self::OneOffBash => "$NAME",
+        }
+    }
+
+    fn sudo_note(self) -> &'static str {
+        match self {
+            Self::PersistentBash => {
+                " For sudo: inputType=password, storeAs=SUDO_PASSWORD, then plain sudo."
+            }
+            Self::OneOffBash => {
+                " For sudo use runInPersistentShell: plain sudo with a stored password works only there."
+            }
+            Self::PowerShell => "",
+        }
+    }
+}
+
 /// `requireUserInput` / `inputPrompt` / `inputType` / `storeAs`, shared by every
 /// synchronous shell tool so a value can be stored from any of them.
-fn insert_stored_input_props(props: &mut SchemaProperties, bash: bool) {
-    let require_description = if bash {
-        "Ask the user for a value before execution. Requires storeAs: the value is kept as $NAME and the command reads it; the shell never sends input to a command. For sudo: inputType=password, storeAs=SUDO_PASSWORD, then plain sudo."
-    } else {
-        "Ask the user for a value before execution. Requires storeAs: the value is kept as $env:NAME and the command reads it; the shell never sends input to a command."
-    };
+fn insert_stored_input_props(props: &mut SchemaProperties, shell: StoredInputShell) {
+    let env_ref = shell.env_ref();
+    let require_description = format!(
+        "Ask the user for a value before execution. Requires storeAs: the value is kept as {env_ref} and the command reads it; the shell never sends input to a command.{}",
+        shell.sudo_note()
+    );
     props.insert("requireUserInput".to_string(), {
-        let mut schema = boolean_prop(Some(require_description));
+        let mut schema = boolean_prop(Some(&require_description));
         schema.default = Some(json!(false));
         schema
     });
@@ -36,7 +67,7 @@ fn insert_stored_input_props(props: &mut SchemaProperties, bash: bool) {
         string_prop(
             Some(1),
             Some(64),
-            Some("With requireUserInput=true: ask the user once for a secret and keep it as env var $NAME for this session (uppercase name, e.g. API_TOKEN). Every later shell call in this session (one-off or persistent) sees it. The value is never shown to you; the result names the variable only."),
+            Some(&format!("With requireUserInput=true: ask the user once for a secret and keep it as env var {env_ref} for this session (uppercase name, e.g. API_TOKEN). Every later shell call in this session (one-off or persistent) sees it. The value is never shown to you; the result names the variable only.")),
         ),
     );
 }
@@ -87,7 +118,7 @@ pub fn create_run_shell_tool(allow_root: bool) -> MCPTool {
             ),
         ),
     );
-    insert_stored_input_props(&mut props, true);
+    insert_stored_input_props(&mut props, StoredInputShell::OneOffBash);
     if allow_root {
         props.insert(
             "asRoot".to_string(),
@@ -109,7 +140,7 @@ pub fn create_run_shell_tool(allow_root: bool) -> MCPTool {
                        1) Finished within timeout (exit success or failure): this response already has stdout/stderr and exit code. No processId — do not call workspace__waitForProcess/workspace__readProcessOutput for this run.\n\
                        2) Still running after the sync timeout: response includes processId; only then use workspace__waitForProcess/workspace__readProcessOutput/workspace__stopProcess.\n\
                        For loops, nested quotes, or multi-step logic: pass script instead of command (runs verbatim, no escaping).\n\
-                       The shell has no terminal and never sends input to a command. For a password or token, set requireUserInput=true with storeAs=NAME: the UI asks once, the value is kept as $NAME for this session (later calls see it too), then the command runs. For sudo use storeAs=SUDO_PASSWORD and plain sudo.\n\
+                       The shell has no terminal and never sends input to a command. For a password or token, set requireUserInput=true with storeAs=NAME: the UI asks once, the value is kept as $NAME for this session (later calls see it too), then the command runs. Plain sudo with a stored password works only in runInPersistentShell.\n\
                        For persistent cd/env vars: runInPersistentShell. For explicitly non-blocking tasks: spawnProcess."
             .to_string(),
         input_schema: object_schema(props, Vec::new()),
@@ -145,7 +176,7 @@ pub fn create_run_persistent_shell_tool() -> MCPTool {
             Some("Timeout in seconds for synchronous execution."),
         ),
     );
-    insert_stored_input_props(&mut props, true);
+    insert_stored_input_props(&mut props, StoredInputShell::PersistentBash);
 
     MCPTool {
         name: "runInPersistentShell".to_string(),
@@ -254,7 +285,7 @@ pub fn create_run_powershell_tool() -> MCPTool {
             ),
         ),
     );
-    insert_stored_input_props(&mut props, false);
+    insert_stored_input_props(&mut props, StoredInputShell::PowerShell);
 
     MCPTool {
         name: "runPowerShell".to_string(),
@@ -304,7 +335,7 @@ pub fn create_run_persistent_powershell_tool() -> MCPTool {
             Some("Timeout in seconds for synchronous execution."),
         ),
     );
-    insert_stored_input_props(&mut props, false);
+    insert_stored_input_props(&mut props, StoredInputShell::PowerShell);
 
     MCPTool {
         name: "runInPersistentPowerShell".to_string(),
@@ -484,12 +515,36 @@ mod tests {
         let one_off = input_props(create_run_shell_tool(false));
         assert!(one_off.iter().all(Option::is_some));
         #[cfg(unix)]
-        assert_eq!(one_off, input_props(create_run_persistent_shell_tool()));
+        assert_eq!(
+            one_off[1..],
+            input_props(create_run_persistent_shell_tool())[1..]
+        );
         #[cfg(windows)]
         assert_eq!(
             input_props(create_run_powershell_tool()),
             input_props(create_run_persistent_powershell_tool())
         );
+    }
+
+    /// The `sudo` wrapper exists only in the persistent shell, so `runShell` must not
+    /// promise that plain sudo reads a stored password.
+    #[test]
+    fn only_the_persistent_shell_offers_sudo_with_a_stored_password() {
+        let tool_text = |tool: MCPTool| {
+            let schema = serde_json::to_value(&tool.input_schema).unwrap();
+            let require = schema
+                .pointer("/properties/requireUserInput/description")
+                .and_then(|value| value.as_str())
+                .unwrap()
+                .to_string();
+            format!("{} {require}", tool.description)
+        };
+        let one_off = tool_text(create_run_shell_tool(false));
+        assert!(!one_off.contains("then plain sudo"), "{one_off}");
+        assert!(!one_off.contains("For sudo use storeAs"), "{one_off}");
+        assert!(one_off.contains("runInPersistentShell"), "{one_off}");
+        let persistent = tool_text(create_run_persistent_shell_tool());
+        assert!(persistent.contains("then plain sudo"), "{persistent}");
     }
 
     #[test]

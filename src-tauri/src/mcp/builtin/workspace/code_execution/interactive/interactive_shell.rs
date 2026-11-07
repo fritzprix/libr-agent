@@ -24,6 +24,7 @@ impl WorkspaceServer {
         command: &str,
         args: &Value,
         session_id: &str,
+        tool_name: &str,
     ) -> Result<MCPResult, String> {
         let requested_timeout = args.get("timeout").and_then(|value| value.as_u64());
         let timeout = match utils::resolve_sync_timeout(requested_timeout) {
@@ -64,7 +65,7 @@ impl WorkspaceServer {
         let mut result = self
             .execute_shell_persistent(command, PERSISTENT_SHELL_TOOL, timeout, session_id)
             .await?;
-        prepend_stored_note(&mut result, &name);
+        prepend_stored_note(&mut result, &name, tool_name);
         Ok(result)
     }
 
@@ -176,12 +177,42 @@ impl WorkspaceServer {
     }
 }
 
+/// How a command run by `tool_name` reads the env var `name`.
+pub(crate) fn env_var_ref(tool_name: &str, name: &str) -> String {
+    if tool_name.contains("PowerShell") {
+        format!("$env:{name}")
+    } else {
+        format!("${name}")
+    }
+}
+
 /// Tells the agent which variable now holds the value (never the value itself).
-pub(crate) fn prepend_stored_note(result: &mut MCPResult, name: &str) {
+pub(crate) fn prepend_stored_note(result: &mut MCPResult, name: &str, tool_name: &str) {
     prepend_result_note(
         result,
-        &format!("Stored the value as ${name} for this session."),
+        &format!(
+            "Stored the value as {} for this session.",
+            env_var_ref(tool_name, name)
+        ),
     );
+}
+
+/// `storeAs` without `requireUserInput=true` would ask nothing and store nothing.
+pub(crate) fn store_as_without_prompt_error(args: &Value) -> Option<MCPResult> {
+    args.get("storeAs").filter(|value| !value.is_null())?;
+    Some(
+        guided_error(
+            ErrorCategory::InvalidInput,
+            "storeAs needs requireUserInput=true. Nothing was asked or stored, and the command did not run".to_string(),
+            ToolGroup::Workspace,
+        )
+        .guidance(vec![
+            "Set requireUserInput=true with storeAs=NAME to ask the user for the value".to_string(),
+            "A value stored earlier in this session is already available; drop storeAs to reuse it"
+                .to_string(),
+        ])
+        .to_mcp_result(),
+    )
 }
 
 /// `requireUserInput` without `storeAs`: the shell cannot receive typed input.
@@ -281,6 +312,24 @@ mod tests {
                 reuse_note: Some("This value is reused for this session.".to_string()),
             }
         );
+    }
+
+    #[test]
+    fn powershell_tools_name_the_env_drive_form() {
+        for tool in ["runPowerShell", "runInPersistentPowerShell"] {
+            assert_eq!(env_var_ref(tool, "API_TOKEN"), "$env:API_TOKEN");
+        }
+        for tool in ["runShell", "runInPersistentShell"] {
+            assert_eq!(env_var_ref(tool, "API_TOKEN"), "$API_TOKEN");
+        }
+    }
+
+    #[test]
+    fn store_as_alone_is_rejected_but_null_is_ignored() {
+        let rejected = store_as_without_prompt_error(&serde_json::json!({ "storeAs": "X" }));
+        assert_eq!(rejected.and_then(|result| result.is_error), Some(true));
+        assert!(store_as_without_prompt_error(&serde_json::json!({ "storeAs": null })).is_none());
+        assert!(store_as_without_prompt_error(&serde_json::json!({})).is_none());
     }
 
     #[test]

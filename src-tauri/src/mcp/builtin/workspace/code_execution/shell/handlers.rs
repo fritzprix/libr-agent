@@ -8,7 +8,9 @@ use crate::mcp::builtin::utils::read_bool_arg;
 use crate::mcp::types::MCPResult;
 
 use super::super::super::{utils, WorkspaceServer, PERSISTENT_SHELL_TOOL};
-use super::super::interactive::interactive_shell::prepend_stored_note;
+use super::super::interactive::interactive_shell::{
+    prepend_stored_note, store_as_without_prompt_error,
+};
 use super::super::validation;
 use super::input::ShellInput;
 use super::policy::{evaluate_shell_policy, ShellPolicyAction, ShellPolicyContext};
@@ -206,10 +208,16 @@ impl WorkspaceServer {
                 Err(result) => return Ok(result),
             };
 
+        if !require_input.value {
+            if let Some(result) = store_as_without_prompt_error(&args) {
+                return Ok(require_input.annotate(result));
+            }
+        }
+
         // If user input is required, suspend the same synchronous tool call until the UI submits it.
         if require_input.value {
             return self
-                .handle_interactive_shell(raw_command, &args, session_id)
+                .handle_interactive_shell(raw_command, &args, session_id, tool_name)
                 .await
                 .map(|result| require_input.annotate(result));
         }
@@ -250,6 +258,11 @@ impl WorkspaceServer {
                 Ok(arg) => arg,
                 Err(result) => return Ok(result),
             };
+        if !require_input.value {
+            if let Some(result) = store_as_without_prompt_error(&args) {
+                return Ok(require_input.annotate(result));
+            }
+        }
 
         let run_as_root = crate::services::as_root_requested(&args);
         if run_as_root {
@@ -365,7 +378,7 @@ impl WorkspaceServer {
             install_skill_outbox(workspace_path).await;
         }
         if let (Ok(result), Some(name)) = (result.as_mut(), stored_name.as_deref()) {
-            prepend_stored_note(result, name);
+            prepend_stored_note(result, name, tool_name);
         }
         result.map(|result| require_input.annotate(result))
     }
@@ -754,6 +767,10 @@ mod tests {
             (
                 serde_json::json!({ "command": "echo hi > ran.txt", "requireUserInput": true, "storeAs": "lower_case" }),
                 "is not valid",
+            ),
+            (
+                serde_json::json!({ "command": "echo hi > ran.txt", "storeAs": "API_TOKEN" }),
+                "storeAs needs requireUserInput=true",
             ),
         ];
         for (args, expected) in cases {
