@@ -1,14 +1,19 @@
-"""Resolve pending UI-backed interactions via the E2E control plane."""
+"""Resolve pending blocking interactions via the E2E control plane."""
 
 from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import httpx
 
-from benchmarks.harbor.session_e2e.control import E2eControlClient, e2e_control_configured
+from benchmarks.harbor.session_e2e.control import (
+    E2eControlClient,
+    e2e_control_configured,
+    read_capability_token,
+)
 
 
 @dataclass(frozen=True)
@@ -51,32 +56,40 @@ async def resolve_pending_interactions(
     *,
     api_url: str,
     session_id: str,
+    data_dir: Path,
     spec: SessionE2eAutomationSpec | None,
 ) -> bool:
-    """Return True when any control action was taken."""
-    if not e2e_control_configured():
+    """Answer/cancel waiting prompts and approve/deny pending tool approvals.
+
+    ``data_dir`` is the trial instance's own data directory; the capability
+    token is read only from there. Returns True when any action was taken.
+    """
+    if not e2e_control_configured(data_dir):
         return False
-    control = E2eControlClient(api_url)
+    token = read_capability_token(data_dir)
+    if token is None:  # e2e_control_configured already checked this
+        return False
+    control = E2eControlClient(api_url, token=token)
     snapshot = await control.interactions(client, session_id)
     acted = False
+
     synthetic = ""
     if spec is not None:
         synthetic = os.environ.get(spec.synthetic_secret_env, "").strip()
-    for prompt in snapshot.get("interactiveShellPrompts") or []:
-        if spec is not None and not spec.auto_answer_interactive:
-            continue
-        execution_id = str(prompt.get("executionId", ""))
-        if not execution_id:
-            continue
-        answer = synthetic or "e2e-synthetic-answer"
-        await control.submit_interactive(
-            client,
-            session_id,
-            execution_id,
-            action="submit",
-            value=answer,
-        )
-        acted = True
+
+    prompt = snapshot.get("pendingUserPrompt")
+    if isinstance(prompt, dict) and (spec is None or spec.auto_answer_interactive):
+        request_id = str(prompt.get("requestId", ""))
+        if request_id:
+            await control.respond_user_prompt(
+                client,
+                session_id,
+                request_id,
+                action="answer",
+                value=synthetic or "e2e-synthetic-answer",
+            )
+            acted = True
+
     for approval in snapshot.get("pendingApprovals") or []:
         tool_call_id = str(approval.get("toolCallId", ""))
         if not tool_call_id:
@@ -84,11 +97,11 @@ async def resolve_pending_interactions(
         kind = str(approval.get("approvalKind", ""))
         approved = True
         if spec is not None:
-            if spec.reject_hard_approvals and "Hard" in kind:
+            if spec.reject_hard_approvals and kind == "hard":
                 approved = False
-            elif not spec.approve_standard_tools and "Standard" in kind:
+            elif not spec.approve_standard_tools and kind == "standard":
                 approved = False
-        await control.submit_approval(
+        await control.respond_tool_approval(
             client, session_id, tool_call_id, approved=approved
         )
         acted = True

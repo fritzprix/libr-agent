@@ -267,12 +267,15 @@ pub fn get_routes(
         .and(json_body())
         .and_then(mcp_handler::mcp_rpc_auto);
 
+    // E2E control plane: debug binaries only (module is cfg-gated). The routes
+    // always mount in debug builds; the capability guard answers 404 when the
+    // control plane is not enabled, so no runtime if/else filter wiring here.
     #[cfg(debug_assertions)]
-    let e2e_control = if crate::server::e2e_control::e2e_control_enabled() {
-        Some(crate::server::e2e_control::e2e_control_routes(agent_manager.clone()))
-    } else {
-        None
-    };
+    let e2e_routes = access_guard(false)
+        .and(crate::server::access_guard::loopback_peer_guard())
+        .and(crate::server::e2e_control::e2e_control_routes(
+            agent_manager.clone(),
+        ));
 
     let api = create_session
         .or(get_session)
@@ -297,24 +300,13 @@ pub fn get_routes(
         .or(mcp_auto_route)
         .or(mcp_route);
 
-    #[cfg(debug_assertions)]
-    let e2e_routes = e2e_control.map(|route| {
-        access_guard(false)
-            .and(crate::server::access_guard::loopback_peer_guard())
-            .and(route)
-    });
-
     let guarded_api = crate::server::api_key::api_key_guard().and(api);
 
     // No allow_any_origin CORS. CLI clients omit Origin; browsers with Origin are rejected.
     let core = wake_session.or(pairing_session).or(guarded_api);
 
     #[cfg(debug_assertions)]
-    let core = if let Some(e2e) = e2e_routes {
-        core.or(e2e)
-    } else {
-        core
-    };
+    let core = core.or(e2e_routes);
 
     access_guard(expose).and(core).recover(handle_rejection)
 }

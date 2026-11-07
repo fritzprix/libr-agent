@@ -38,7 +38,7 @@ See [`coverage-manifest.json`](./coverage-manifest.json) for all **65 checklist 
 
 ## In-app orchestration (preferred)
 
-For **last release → HEAD** planning and **internal delegate self-E2E** (not Harbor-only), use bundled skill `@skill:release-head-self-e2e` (`src-tauri/bundled_skills/release-head-self-e2e/`). Harbor tasks remain the verifier-backed case library this skill pulls from.
+For **last release → HEAD** planning and **internal delegate self-E2E** (not Harbor-only), use the repo skill `release-head-self-e2e` (`.agents/skills/release-head-self-e2e/`). Harbor tasks remain the verifier-backed case library this skill pulls from.
 
 ## B-6 logging contract (#2631)
 

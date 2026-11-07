@@ -57,7 +57,11 @@ from benchmarks.harbor.session_e2e.automation import (
     load_session_e2e_spec,
     resolve_pending_interactions,
 )
-from benchmarks.harbor.session_e2e.control import E2eControlClient, e2e_control_configured
+from benchmarks.harbor.session_e2e.control import (
+    E2eControlClient,
+    e2e_control_configured,
+    read_capability_token,
+)
 from benchmarks.harbor.isolated_instance import (
     DEFAULT_ROOT as BENCH_INSTANCE_DEFAULT_ROOT,
     INSTANCE_APP_BIN_ENV,
@@ -1900,13 +1904,19 @@ class LibrAgentHarborAdapter(BaseAgent):
                     if current_status not in TERMINAL_WORKFLOW_STATUSES:
                         seen_non_idle = True
 
-                    if session_e2e_spec is not None:
-                        with contextlib.suppress(Exception):
+                    if session_e2e_spec is not None and bench_instance is not None:
+                        try:
                             await resolve_pending_interactions(
                                 client,
                                 api_url=self.api_url,
                                 session_id=session_id,
+                                data_dir=bench_instance.layout.data_dir,
                                 spec=session_e2e_spec,
+                            )
+                        except Exception as exc:
+                            safe_print(
+                                f"[{self.name()}] Warning: session E2E control "
+                                f"action failed: {exc}"
                             )
 
                     if current_status == "paused":
@@ -2231,7 +2241,14 @@ class LibrAgentHarborAdapter(BaseAgent):
         session_id: str,
         messages: list[Any],
     ) -> None:
-        if not e2e_control_configured():
+        trial_reset = resolve_trial_instance_reset(dict(os.environ))
+        if (
+            trial_reset is None
+            or not e2e_control_configured(trial_reset.layout.data_dir)
+        ):
+            return
+        token = read_capability_token(trial_reset.layout.data_dir)
+        if token is None:
             return
         path = self.logs_dir / "session_e2e_evidence.json"
         payload: dict[str, Any] = {
@@ -2247,7 +2264,7 @@ class LibrAgentHarborAdapter(BaseAgent):
             },
         }
         try:
-            control = E2eControlClient(self.api_url)
+            control = E2eControlClient(self.api_url, token=token)
             payload["interactions"] = await control.interactions(client, session_id)
         except Exception as exc:
             payload["interactionsError"] = str(exc)

@@ -9,46 +9,42 @@ from typing import Any
 import httpx
 
 E2E_HEADER = "x-libragent-e2e-control"
+CAPABILITY_FILE = "e2e_control.cap"
 
 
-def read_capability_token() -> str | None:
-    env = os.environ.get("LIBRAGENT_E2E_CONTROL_TOKEN", "").strip()
-    if env:
-        return env
-    data_dir = os.environ.get("LIBRAGENT_DATA_DIR", "").strip()
-    bases: list[Path] = []
-    if data_dir:
-        bases.append(Path(data_dir))
-    home = os.environ.get("HOME") or os.environ.get("USERPROFILE")
-    if home:
-        bases.append(Path(home) / "AppData" / "Local" / "com.fritzprix.libragent")
-        bases.append(Path(home) / ".local" / "share" / "com.fritzprix.libragent")
-    for base in bases:
-        cap = base / "e2e_control.cap"
-        if cap.is_file():
-            return cap.read_text(encoding="utf-8").strip()
+def read_capability_token(data_dir: Path) -> str | None:
+    """Read the capability token a debug LibrAgent instance wrote to its own data dir.
+
+    Only the trial instance's data dir is consulted. There is no env-var token
+    and no fallback to a production profile directory: the token must belong to
+    the disposable instance under test.
+    """
+    cap = Path(data_dir) / CAPABILITY_FILE
+    if cap.is_file():
+        token = cap.read_text(encoding="utf-8").strip()
+        if token:
+            return token
     return None
 
 
-def e2e_control_configured() -> bool:
-    return os.environ.get("LIBRAGENT_E2E_CONTROL") == "1" and bool(read_capability_token())
+def e2e_control_configured(data_dir: Path) -> bool:
+    """True when opt-in env is set and the instance data dir carries a token."""
+    return (
+        os.environ.get("LIBRAGENT_E2E_CONTROL") == "1"
+        and read_capability_token(data_dir) is not None
+    )
 
 
 class E2eControlClient:
-    def __init__(self, api_url: str, *, token: str | None = None) -> None:
+    def __init__(self, api_url: str, *, token: str) -> None:
         self.api_url = api_url.rstrip("/")
-        self.token = token or read_capability_token()
-        if not self.token:
-            raise RuntimeError("E2E control capability token missing")
+        self.token = token
 
     def _headers(self) -> dict[str, str]:
-        return {E2E_HEADER: self.token or ""}
+        return {E2E_HEADER: self.token}
 
     async def status(self, client: httpx.AsyncClient) -> dict[str, Any]:
-        res = await client.get(
-            f"{self.api_url}/e2e-control/status",
-            headers=self._headers(),
-        )
+        res = await client.get(f"{self.api_url}/e2e-control/status", headers=self._headers())
         res.raise_for_status()
         return res.json()
 
@@ -60,36 +56,39 @@ class E2eControlClient:
         res.raise_for_status()
         return res.json()
 
-    async def submit_interactive(
+    async def respond_user_prompt(
         self,
         client: httpx.AsyncClient,
         session_id: str,
-        execution_id: str,
+        request_id: str,
         *,
-        action: str,
+        action: str = "answer",
         value: str | None = None,
-    ) -> None:
-        body: dict[str, Any] = {"executionId": execution_id, "action": action}
+    ) -> dict[str, Any]:
+        """Answer or cancel the session's waiting user prompt (#2543)."""
+        body: dict[str, Any] = {"requestId": request_id, "action": action}
         if value is not None:
-            body["input"] = value
+            body["value"] = value
         res = await client.post(
-            f"{self.api_url}/e2e-control/sessions/{session_id}/interactive-shell",
+            f"{self.api_url}/e2e-control/sessions/{session_id}/user-prompts",
             headers=self._headers(),
             json=body,
         )
         res.raise_for_status()
+        return res.json()
 
-    async def submit_approval(
+    async def respond_tool_approval(
         self,
         client: httpx.AsyncClient,
         session_id: str,
         tool_call_id: str,
         *,
         approved: bool,
-    ) -> None:
+    ) -> dict[str, Any]:
         res = await client.post(
             f"{self.api_url}/e2e-control/sessions/{session_id}/tool-approvals",
             headers=self._headers(),
             json={"toolCallId": tool_call_id, "approved": approved},
         )
         res.raise_for_status()
+        return res.json()
