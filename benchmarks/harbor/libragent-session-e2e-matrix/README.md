@@ -36,6 +36,10 @@ These tasks exercise the real Session API and (on Windows) PowerShell workspace 
 
 See [`coverage-manifest.json`](./coverage-manifest.json) for all **65 checklist IDs** from issue #2565 (`implemented` | `deferred` | `ui-only` | `platform-specific` | `needs-product`). The issue’s **74 result slots** are pass/fail/skip/open tallies, not extra checklist rows.
 
+## In-app orchestration (preferred)
+
+For **last release → HEAD** planning and **internal delegate self-E2E** (not Harbor-only), use bundled skill `@skill:release-head-self-e2e` (`src-tauri/bundled_skills/release-head-self-e2e/`). Harbor tasks remain the verifier-backed case library this skill pulls from.
+
 ## B-6 logging contract (#2631)
 
 Task `e2e-b6-log-variable-ref` keeps the known **variable-reference vs literal** conflict visible; it does not redefine B-6 as pass when command text containing `$env:VAR` appears in logs.
