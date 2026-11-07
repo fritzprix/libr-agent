@@ -2,6 +2,8 @@
 """Tests for paths, JSON files, the mutex, claims, slots, and session identity."""
 import json
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -210,6 +212,22 @@ class WindowsProbeTest(unittest.TestCase):
                 kernel32.OpenProcess.assert_called_once()
                 kernel32.GetExitCodeProcess.assert_not_called()
                 kernel32.CloseHandle.assert_not_called()
+
+    def test_own_start_time_is_readable_and_stable(self):
+        start = worker_state._pid_start(os.getpid())
+        self.assertTrue(start)
+        self.assertEqual(worker_state._pid_start(os.getpid()), start)
+
+    @unittest.skipUnless(sys.platform == "win32", "needs Windows' 100ns creation times")
+    def test_windows_start_time_differs_between_processes(self):
+        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+        try:
+            start = worker_state._pid_start(child.pid)
+            self.assertTrue(start)
+            self.assertNotEqual(start, worker_state._pid_start(os.getpid()))
+        finally:
+            child.kill()
+            child.wait()
 
 
 if __name__ == "__main__":

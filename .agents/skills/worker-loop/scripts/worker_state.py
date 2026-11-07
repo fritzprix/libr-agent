@@ -176,7 +176,7 @@ def _process_info(pid: int) -> ProcessInfo | None:
 def _pid_start(pid: int) -> str | None:
     """A value that changes when `pid` is reused; None where it cannot be read."""
     if sys.platform == "win32":
-        return None
+        return _win_pid_start(pid)
     try:
         if Path("/proc/self/stat").exists():
             return _proc_stat_fields(pid)[19]
@@ -293,6 +293,34 @@ def resolve_owner(explicit_pid: int | None = None, session: str | None = None) -
     if kind == "app":
         return Owner(f"app:{pid}:{start}", "app", pid, start, False)
     return Owner(f"anon:{uuid.uuid4().hex}", "anon")
+
+
+def _win_pid_start(pid: int) -> str | None:
+    """The process creation time from GetProcessTimes; None if it cannot be read."""
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    kernel32.GetProcessTimes.argtypes = (wintypes.HANDLE, *[ctypes.POINTER(wintypes.FILETIME)] * 4)
+    kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    handle = kernel32.OpenProcess(_WIN_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not handle:
+        return None
+    try:
+        created, exited, kernel, user = (wintypes.FILETIME() for _ in range(4))
+        if not kernel32.GetProcessTimes(
+            handle,
+            ctypes.byref(created),
+            ctypes.byref(exited),
+            ctypes.byref(kernel),
+            ctypes.byref(user),
+        ):
+            return None
+        return str((created.dwHighDateTime << 32) | created.dwLowDateTime)
+    finally:
+        kernel32.CloseHandle(handle)
 
 
 def _win_pid_alive(pid: int) -> bool:

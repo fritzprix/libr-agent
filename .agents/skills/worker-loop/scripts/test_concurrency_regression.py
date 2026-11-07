@@ -124,8 +124,6 @@ class LongRunningTickTest(StateDirCase):
     def test_reused_pid_does_not_keep_a_lease(self):
         reused = Owner("session:old", "session", os.getpid(), "not-this-process-start-time", True)
         held = lease.acquire(reused)
-        if worker_state._pid_start(os.getpid()) is None:
-            self.skipTest("no process start time on this platform")
         self.assertEqual(lease.acquire(anon("next")).worker, held.worker)
 
     def test_busy_reason_names_the_actual_conflict(self):
