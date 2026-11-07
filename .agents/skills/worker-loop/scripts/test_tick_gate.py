@@ -39,6 +39,11 @@ class TickGateTest(unittest.TestCase):
         no_processes = patch.object(tick_gate.worker_state, "_process_info_lookup", lambda pid: None)
         no_processes.start()
         self.addCleanup(no_processes.stop)
+        # list_open_prs uses issue_candidates' own gh wrapper, which patching
+        # tick_gate.gh does not cover. Unpatched, a test reads the real repo.
+        no_open_prs = patch.object(issue_candidates, "list_open_prs", return_value=[])
+        no_open_prs.start()
+        self.addCleanup(no_open_prs.stop)
 
     def _run(self, *args):
         """Run tick_gate.main; return (exit code, stdout)."""

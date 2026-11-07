@@ -23,6 +23,9 @@ jobs:
         with:
           python-version: '3.11'
       - name: Run tests
+        # PowerShell, the Windows default, exits with the last command's code,
+        # so a failure in the first suite would pass. bash stops at the first one.
+        shell: bash
         env:
           PYTHONDONTWRITEBYTECODE: '1'
         run: |
