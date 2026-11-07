@@ -13,12 +13,14 @@ enum StoredInputShell {
     PersistentBash,
     /// Gets the value but not the `sudo` wrapper.
     OneOffBash,
+    #[cfg(windows)]
     PowerShell,
 }
 
 impl StoredInputShell {
     fn env_ref(self) -> &'static str {
         match self {
+            #[cfg(windows)]
             Self::PowerShell => "$env:NAME",
             Self::PersistentBash | Self::OneOffBash => "$NAME",
         }
@@ -32,6 +34,7 @@ impl StoredInputShell {
             Self::OneOffBash => {
                 " For sudo use runInPersistentShell: plain sudo with a stored password works only there."
             }
+            #[cfg(windows)]
             Self::PowerShell => "",
         }
     }
