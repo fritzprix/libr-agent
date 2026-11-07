@@ -11,6 +11,12 @@ if (!fs.existsSync(gitDir)) {
   process.exit(0);
 }
 
+// In a linked worktree .git is a file, and hooks are shared with the main checkout.
+if (!fs.statSync(gitDir).isDirectory()) {
+  console.log('Linked worktree: git hooks come from the main checkout.');
+  process.exit(0);
+}
+
 const hooksDir = path.join(gitDir, 'hooks');
 if (!fs.existsSync(hooksDir)) {
   fs.mkdirSync(hooksDir, { recursive: true });
