@@ -378,14 +378,40 @@ impl MCPServiceProxy {
     }
 
     /// Cancel session-owned resources in every builtin server for this proxy.
+    ///
+    /// Every server is attempted even when one of them fails, so a single
+    /// failing server cannot skip the rest of the sweep. Failures are returned
+    /// together with the number of resources that were really killed, so
+    /// callers report partial cleanup honestly (issue #2633).
     pub async fn kill_session_processes(&self) -> Result<usize, String> {
         let mut killed_count = 0;
+        let mut failures: Vec<String> = Vec::new();
 
-        for server in self.builtin_servers.values() {
-            killed_count += server.kill_session_processes(&self.session_id).await?;
+        for (server_id, server) in &self.builtin_servers {
+            match server.kill_session_processes(&self.session_id).await {
+                Ok(killed) => killed_count += killed,
+                Err(error) => {
+                    log::error!(
+                        "Builtin server '{}' failed to force-stop resources for session {}: {}",
+                        server_id,
+                        self.session_id,
+                        error
+                    );
+                    failures.push(format!("{}: {}", server_id, error));
+                }
+            }
         }
 
-        Ok(killed_count)
+        if failures.is_empty() {
+            return Ok(killed_count);
+        }
+
+        Err(format!(
+            "partial force-stop for session {} ({} resource(s) killed): {}",
+            self.session_id,
+            killed_count,
+            failures.join("; ")
+        ))
     }
 
     /// Get tools from a specific builtin server

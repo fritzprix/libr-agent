@@ -350,6 +350,8 @@ impl MCPServiceProxyManager {
         match proxy.kill_session_processes().await {
             Ok(killed) => killed,
             Err(error) => {
+                // The error carries how many resources were killed before the
+                // failing server, so the sweep reports partial cleanup honestly.
                 log::warn!(
                     "Partial force-stop cleanup failure for session {}: {}",
                     session_id,
@@ -360,11 +362,32 @@ impl MCPServiceProxyManager {
         }
     }
 
+    /// Whether a session is currently fenced by an explicit force-stop.
+    pub async fn is_teardown_fenced(&self, session_id: &str) -> bool {
+        self.teardown_fenced.lock().await.contains(session_id)
+    }
+
+    /// Reject an operation on a force-terminated session (issue #2633).
+    ///
+    /// Used by proxy creation/ensure paths so neither a late tool dispatch nor
+    /// an automatic wake can lazily recreate builtin instances after teardown.
+    pub async fn reject_if_teardown_fenced(&self, session_id: &str) -> Result<(), String> {
+        if self.is_teardown_fenced(session_id).await {
+            return Err(format!(
+                "Session '{}' was terminated; its tool session is closed. Start a new workflow (or resume) before calling tools.",
+                session_id
+            ));
+        }
+        Ok(())
+    }
+
     /// Clear the force-stop fence for a session.
     ///
-    /// Called only at explicit lifecycle entry points (proxy bootstrap for
-    /// create/resume, new workflow start, session reload) so a later valid
-    /// message can work again after an explicit terminate.
+    /// Called only at explicit lifecycle entry points (session create/resume
+    /// proxy bootstrap, user-sent message or injected message, session reload)
+    /// so a later valid message can work again after an explicit terminate.
+    /// Automatic wakes (MCP channel notifications, scheduled jobs, compaction
+    /// continuation, background resume) must never call this.
     pub async fn clear_teardown_fence(&self, session_id: &str) {
         self.teardown_fenced.lock().await.remove(session_id);
     }
@@ -635,12 +658,7 @@ impl MCPServiceProxyManager {
     ) -> Result<MCPResponse, String> {
         // Force-stop fence: a terminated session's late dispatches must not
         // lazily recreate proxies or builtin instances (issue #2633).
-        if self.teardown_fenced.lock().await.contains(session_id) {
-            return Err(format!(
-                "Session '{}' was terminated; its tool session is closed. Start a new workflow (or resume) before calling tools.",
-                session_id
-            ));
-        }
+        self.reject_if_teardown_fenced(session_id).await?;
 
         let is_builtin = tool_name
             .split_once("__")
@@ -713,6 +731,11 @@ impl MCPServiceProxyManager {
                 .await
                 .map_err(|e| format!("Proxy not ready for external tool '{}': {}", tool_name, e))?;
         }
+
+        // Re-check after resolution and readiness waits: the fence can be set
+        // while this dispatch is still awaiting, and a proxy that was created
+        // during the fence must never be handed a tool call (issue #2633).
+        self.reject_if_teardown_fenced(session_id).await?;
 
         proxy.call_tool(tool_name, args).await
     }

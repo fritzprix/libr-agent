@@ -80,6 +80,13 @@ pub async fn delete_session(
     let mut deleted_ids = vec![session_id.clone()];
     deleted_ids.extend(descendant_ids);
 
+    // 4. Drop the teardown fence entries of the deleted sessions (issue #2633).
+    // Their rows are gone, so a late dispatch can no longer recreate anything,
+    // and keeping the keys would leak them for the life of the app.
+    for deleted_id in &deleted_ids {
+        proxy_manager.clear_teardown_fence(deleted_id).await;
+    }
+
     crate::agent::tauri_events::emit_resource_updated("session", "delete", Some(session_id));
 
     Ok(deleted_ids)
@@ -113,6 +120,9 @@ pub async fn delete_session_only(
     // 3. Delete workspace and db
     let orphaned_ids =
         crate::services::SessionCleanupService::delete_session_data_only(&session_id).await?;
+
+    // Drop the deleted session's teardown fence entry (issue #2633).
+    proxy_manager.clear_teardown_fence(&session_id).await;
 
     log::info!(
         "✅ Deleted session only (children orphaned): {}",
