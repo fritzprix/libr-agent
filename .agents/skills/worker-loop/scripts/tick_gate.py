@@ -17,8 +17,14 @@ If state.json has no 'current' and nothing is pending and the fingerprint matche
 Exit codes:
   0 - RUN (actionable work or state changed)
   1 - NOOP (state unchanged, idle, nothing pending)
-  2 - BUSY (another tick is in progress with an active lock)
+  2 - BUSY (no slot for this tick; the printed reason says why, and only
+      `slot-held` or `no-free-slot` means other workers exist)
   3 - ERROR (authentication, network, or GraphQL failure; not NOOP)
+  4 - LEASE LOST (this tick no longer owns its slot: stop working, touch nothing)
+
+--lock prints `WORKER <name>` and `TOKEN <token>`. Pass both to every later
+command of the tick. --renew extends the lease and is the ownership check before
+destructive git operations and pushes. Long commands run under lease_run.py.
 """
 from __future__ import annotations
 
@@ -32,15 +38,20 @@ import time
 from pathlib import Path
 
 import issue_candidates
+import lease
+import tick_lock
+import worker_claims
+import worker_slots
 import worker_state
 
 EXIT_RUN = 0
 EXIT_NOOP = 1
 EXIT_BUSY = 2
 EXIT_ERROR = 3
+EXIT_LEASE_LOST = worker_state.EXIT_LEASE_LOST
 
-# Lock TTL is 30 minutes; ticks with Rust builds can exceed 15 minutes.
-LOCK_TTL_SECONDS = 1800
+# Without renewal a lease ends after 30 minutes; lease_run.py renews during builds.
+LOCK_TTL_SECONDS = worker_state.LEASE_TTL_SECONDS
 
 # 30 candidates covers active queue without query bloat; matches worker-loop Step 2 fallback limit.
 ISSUE_LIMIT = 30
@@ -116,41 +127,18 @@ def gh(*args: str) -> str:
     return result.stdout
 
 
-def check_lock(lock_file: Path, ttl_seconds: int = LOCK_TTL_SECONDS) -> bool:
+def check_lock(lock_file: Path) -> bool:
     """Return True if an active, non-stale lock exists."""
-    if not lock_file.is_file():
-        return False
-    try:
-        data = json.loads(lock_file.read_text(encoding="utf-8-sig"))
-        locked_at = data.get("time", 0)
-        now = time.time()
-        # If lock expired by TTL, it is stale regardless of PID
-        if now - locked_at > ttl_seconds:
-            return False
-        # If PID was explicitly recorded, verify if process is still alive
-        pid = data.get("pid")
-        if pid and not worker_state._pid_alive(int(pid)):
-            # Process is dead, lock is stale
-            return False
-        return True
-    except Exception:
-        return False
+    return tick_lock.is_held(lock_file)
 
 
-def acquire_lock(lock_file: Path, pid: int | None = None) -> None:
-    lock_file.parent.mkdir(parents=True, exist_ok=True)
-    payload = {"time": int(time.time())}
-    if pid is not None:
-        payload["pid"] = pid
-    lock_file.write_text(json.dumps(payload), encoding="utf-8")
+def acquire_lock(lock_file: Path, pid: int | None = None) -> bool:
+    """Lock for single-instance loops (producer-loop); False while another run holds it."""
+    return tick_lock.acquire(lock_file, None, pid=pid) is not None
 
 
 def release_lock(lock_file: Path) -> None:
-    if lock_file.is_file():
-        try:
-            lock_file.unlink()
-        except OSError:
-            pass
+    tick_lock.release(lock_file, None)
 
 
 def pending_approved_issue(worker: str) -> int | None:
@@ -159,7 +147,7 @@ def pending_approved_issue(worker: str) -> int | None:
     Uses `issue_candidates.exclusion_reason` so "no open PR closes it" means the
     same thing here as in candidate selection.
     """
-    claims = worker_state.load_claims()
+    claims = worker_claims.load_claims()
     me = gh("api", "user", "--jq", ".login").strip()
     issues = json.loads(
         gh("issue", "list", "--state", "open", "--limit", str(ISSUE_LIMIT), "--json",
@@ -173,7 +161,7 @@ def pending_approved_issue(worker: str) -> int | None:
         assignees = [a["login"] for a in issue["assignees"]]
         free = issue_candidates.exclusion_reason(
             number, labels, assignees, me, closing_pr,
-            claimed_by=worker_state.claimed_by_other(claims, f"issue:{number}", worker),
+            claimed_by=worker_claims.claimed_by_other(claims, f"issue:{number}", worker),
         )
         if free is None:
             return number
@@ -236,104 +224,148 @@ def compute_fingerprint() -> str:
     return hasher.hexdigest()
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--worker",
-        default=None,
-        help="Worker name (default: auto check-in on --lock, else $WORKER_ID or 'worker')",
-    )
-    parser.add_argument("--state-file", type=Path, default=None, help="Path to state.json")
-    parser.add_argument("--update", action="store_true", help="Update lastFingerprint in state.json after a successful tick")
-    parser.add_argument("--lock", action="store_true", help="Acquire tick.lock before exiting 0")
-    parser.add_argument(
-        "--pid",
-        type=int,
-        default=None,
-        help="PID of the agent session running the tick (check-in + tick.lock); auto-detected if omitted",
-    )
-    parser.add_argument("--unlock", action="store_true", help="Release tick.lock")
-    args = parser.parse_args()
-
-    holder_pid = worker_state.resolve_holder_pid(args.pid)
-
-    if args.unlock and not args.worker and not os.environ.get("WORKER_ID"):
-        worker = (
-            worker_state.find_worker_by_holder_pid(holder_pid)
-            or worker_state.worker_name(None)
-        )
-    else:
-        worker = worker_state.worker_name(args.worker)
-
+def _finish_tick(args: argparse.Namespace, token: str | None) -> int:
+    """--update and/or --unlock. Only the run that owns the lease may do either."""
+    worker = args.worker or os.environ.get("WORKER_ID") or (token and worker_slots.find_worker_by_token(token))
+    worker = worker_state.worker_name(worker or None)
     state_path = args.state_file or default_state_path(worker)
-    lock_path = state_path.parent / "tick.lock"
-    checked_in = False
-
+    if not token or not lease.is_held_by(worker, token, args.state_file):
+        print(f"LEASE LOST: {worker} is not held by this token; nothing changed")
+        return EXIT_LEASE_LOST
     try:
+        state = load_state(state_path)
         if args.update:
-            state = load_state(state_path)
             tick_start_fp = state.pop("tickStartFingerprint", None)
             if tick_start_fp:
                 state["lastFingerprint"] = tick_start_fp
                 print(f"UPDATED: {tick_start_fp[:12]}")
             save_state(state_path, state)
-        elif args.unlock:
-            state = load_state(state_path)
-            if "tickStartFingerprint" in state:
-                del state["tickStartFingerprint"]
-                save_state(state_path, state)
+        elif "tickStartFingerprint" in state:
+            del state["tickStartFingerprint"]
+            save_state(state_path, state)
+        if args.unlock:
+            worker_claims.release_finished(worker, state)
+        return EXIT_RUN
+    except GhError as e:
+        sys.stderr.write(f"tick_gate GitHub CLI error: {e}\n")
+        return EXIT_ERROR
+    except (worker_state.StateFileCorrupt, TimeoutError, OSError) as e:
+        sys.stderr.write(f"tick_gate state file error: {e}\n")
+        return EXIT_ERROR
+    finally:
+        if args.unlock:
+            if os.environ.get(lease.INHERITED_TOKEN_ENV) == token:
+                print("LOCK KEPT (held by lease_run.py)")
+            else:
+                lease.release(worker, token, args.state_file)
+                print("UNLOCKED")
+
+
+def _gate(state: dict, state_path: Path, worker: str, locking: bool) -> tuple[int, str]:
+    """Decide RUN or NOOP for a slot this tick may use."""
+    if state.get("current"):
+        return EXIT_RUN, "RUN (current work in progress)"
+
+    fp = compute_fingerprint()
+    last_fp = state.get("lastFingerprint")
+    message = f"RUN (changes detected: {fp[:12]})"
+    if last_fp and last_fp == fp:
+        # Nothing tracked moved, but an approved issue may still be waiting.
+        pending = pending_approved_issue(worker)
+        if pending is None:
+            return EXIT_NOOP, "NOOP (no changes)"
+        message = f"RUN (approved issue pending: #{pending})"
+
+    # Keep the start-of-tick fingerprint; lastFingerprint is saved only by a
+    # successful idle tick (--update).
+    if locking:
+        state["tickStartFingerprint"] = fp
+        save_state(state_path, state)
+    return EXIT_RUN, message
+
+
+def _lock_and_gate(args: argparse.Namespace) -> int:
+    requested = args.worker or os.environ.get("WORKER_ID")
+    held = lease.inherited_lease(requested, args.state_file)
+    if held is None:
+        owner = worker_state.resolve_owner(args.pid, args.session)
+        try:
+            held = lease.acquire(owner, requested, args.state_file)
+        except worker_slots.SlotBusy as e:
+            print(f"BUSY reason={e.reason} ({e})")
+            return EXIT_BUSY
+    print(f"WORKER {held.worker}")
+    print(f"TOKEN {held.token}")
+
+    code = EXIT_ERROR
+    try:
+        state_path = args.state_file or default_state_path(held.worker)
+        code, message = _gate(load_state(state_path), state_path, held.worker, locking=True)
+        print(message)
+        return code
+    finally:
+        # RUN hands the lease to the tick. Every other exit, including an
+        # exception on its way out, must not leave the slot occupied.
+        if code != EXIT_RUN and not held.inherited:
+            lease.release(held.worker, held.token, args.state_file)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--worker",
+        default=None,
+        help="Worker slot (default: $WORKER_ID, else assigned on --lock)",
+    )
+    parser.add_argument("--state-file", type=Path, default=None, help="Path to state.json")
+    parser.add_argument("--update", action="store_true", help="Update lastFingerprint in state.json after a successful tick")
+    parser.add_argument("--lock", action="store_true", help="Take a slot and tick lock; prints WORKER and TOKEN")
+    parser.add_argument("--unlock", action="store_true", help="End the tick: release its claims, lock, and slot")
+    parser.add_argument("--renew", action="store_true", help="Extend the lease; exit 4 if this tick lost it")
+    parser.add_argument("--force-unlock", action="store_true", help="Operator recovery: free --worker without proving ownership")
+    parser.add_argument("--token", default=None, help="Tick token printed by --lock (default: $WORKER_LOOP_TOKEN)")
+    parser.add_argument("--session", default=None, help="Stable session ID (default: $WORKER_LOOP_SESSION_ID, or detected)")
+    parser.add_argument(
+        "--pid",
+        type=int,
+        default=None,
+        help="PID that lives as long as the agent session; auto-detected if omitted",
+    )
+    args = parser.parse_args()
+    token = args.token or os.environ.get("WORKER_LOOP_TOKEN") or os.environ.get(lease.INHERITED_TOKEN_ENV)
+
+    try:
+        if args.force_unlock:
+            if not args.worker:
+                sys.exit("--force-unlock requires --worker")
+            release_lock(lease.lock_path(args.worker, args.state_file))
+            worker_slots.force_release_slot(args.worker)
+            print(f"FORCE UNLOCKED {args.worker}")
+            sys.exit(EXIT_RUN)
+
+        if args.renew:
+            worker = args.worker or os.environ.get("WORKER_ID") or (token and worker_slots.find_worker_by_token(token))
+            if worker and token and lease.renew(worker, token, args.state_file):
+                print(f"RENEWED {worker}")
+                sys.exit(EXIT_RUN)
+            print(f"LEASE LOST: {worker or 'this tick'} is not held by this token; stop working")
+            sys.exit(EXIT_LEASE_LOST)
 
         if args.update or args.unlock:
-            sys.exit(EXIT_RUN)
+            sys.exit(_finish_tick(args, token))
 
         if args.lock:
-            try:
-                worker = worker_state.acquire_checkin(args.worker, holder=holder_pid)
-                checked_in = True
-                print(f"WORKER {worker}")
-            except worker_state.CheckinError as e:
-                sys.stderr.write(f"tick_gate check-in error: {e}\n")
-                sys.exit(EXIT_BUSY)
-            state_path = args.state_file or default_state_path(worker)
-            lock_path = state_path.parent / "tick.lock"
+            sys.exit(_lock_and_gate(args))
 
-        if check_lock(lock_path):
-            if checked_in:
-                worker_state.release_checkin(worker, holder=holder_pid)
-            print("BUSY (tick in progress)")
+        # Plain check: report without taking anything.
+        worker = worker_state.worker_name(args.worker)
+        if tick_lock.is_held(lease.lock_path(worker, args.state_file)):
+            print(f"BUSY reason=lock-held (a tick lock is live in {worker})")
             sys.exit(EXIT_BUSY)
-
-        state = load_state(state_path)
-
-        # If currently implementing an issue or branch, always run
-        if state.get("current"):
-            if args.lock:
-                acquire_lock(lock_path, pid=holder_pid)
-            print("RUN (current work in progress)")
-            sys.exit(EXIT_RUN)
-
-        fp = compute_fingerprint()
-        last_fp = state.get("lastFingerprint")
-
-        message = f"RUN (changes detected: {fp[:12]})"
-        if last_fp and last_fp == fp:
-            # Nothing tracked moved, but an approved issue may still be waiting.
-            pending = pending_approved_issue(worker)
-            if pending is None:
-                if checked_in:
-                    worker_state.release_checkin(worker, holder=holder_pid)
-                print("NOOP (no changes)")
-                sys.exit(EXIT_NOOP)
-            message = f"RUN (approved issue pending: #{pending})"
-
-        # Acquire lock if requested, but DO NOT save lastFingerprint yet.
-        # lastFingerprint must be saved only after a successful tick via --update.
-        if args.lock:
-            acquire_lock(lock_path, pid=holder_pid)
-            state["tickStartFingerprint"] = fp
-            save_state(state_path, state)
+        state_path = args.state_file or default_state_path(worker)
+        code, message = _gate(load_state(state_path), state_path, worker, locking=False)
         print(message)
-        sys.exit(EXIT_RUN)
+        sys.exit(code)
 
     except GhError as e:
         sys.stderr.write(f"tick_gate GitHub CLI error: {e}\n")
@@ -345,14 +377,6 @@ def main() -> None:
     except Exception as e:
         sys.stderr.write(f"tick_gate unexpected error: {e}\n")
         sys.exit(EXIT_ERROR)
-    finally:
-        if args.unlock:
-            release_lock(lock_path)
-            worker_state.release_checkin(
-                args.worker if args.worker else worker,
-                holder=holder_pid,
-            )
-            print("UNLOCKED")
 
 
 if __name__ == "__main__":

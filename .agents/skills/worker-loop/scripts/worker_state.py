@@ -1,25 +1,31 @@
 #!/usr/bin/env python3
-"""Per-worker state paths, atomic JSON writes, shared claims, and session check-ins.
+"""Shared foundation of worker-loop: paths, JSON files, cross-process mutex,
+session identity, lease liveness, repo-wide operating state, and `status`.
 
-Several workers (worker, worker-2, ...) may run in parallel, each in its own
-worktree. Each worker has its own directory with `state.json` and `tick.lock`.
-`claims.json` is shared: a claim on `issue:N` or `pr:N` names the worker that
-owns it, so two workers never take the same issue or PR.
+worker-loop keeps three separate concepts, in three modules:
 
-When no `--worker` / $WORKER_ID is set, a session checks in under `checkins.json`
-and receives the first free slot (`worker`, `worker-2`, ...). When a long-lived
-holder PID is known (e.g. LibrAgent desktop), it is stored; otherwise the slot
-uses a TTL until `--unlock` (no bogus transient bash/node PID).
+  worker_slots.py   who is assigned to a worker slot and its worktree
+  tick_lock.py      whether a tick is executing in that slot
+  worker_claims.py  which issue or PR a worker is working on
+
+lease.py combines the first two for one tick. A BUSY or a claim conflict says
+only what it says: see the `reason` it prints before concluding anything about
+other workers.
 
 State lives outside the user's checkout:
 `<repo>/../<repo-name>.worktrees/.worker-loop/` (override with $LOOP_STATE_DIR).
 
 CLI:
-  worker_state.py claim   --worker W --ref issue:N   exit 0 claimed (or already ours), 1 held by another worker
-  worker_state.py release --worker W --ref pr:N      release our own claim
-  worker_state.py list                               print claims.json
-  worker_state.py checkin acquire [--worker W] [--holder-pid P]   claim a slot; print WORKER line
-  worker_state.py checkin release [--worker W] [--holder-pid P]     release our slot
+  worker_state.py claim   --worker W --ref issue:N [--token T]   0 claimed, 1 held by another worker, 2 error, 4 lease lost
+  worker_state.py release --worker W --ref pr:N                  release our own claim
+  worker_state.py list                                           print claims.json
+  worker_state.py status                                         every slot, tick, claim, needsUser, and scheduler
+  worker_state.py needs-user --ref R --question Q                record once; prints ADDED or ALREADY ASKED
+  worker_state.py needs-user --ref R --clear                     remove after the user answered
+  worker_state.py ci-attempt --pr N                              count one attempt; print the new total
+  worker_state.py ci-attempt --pr N --clear                      reset when CI is green
+  worker_state.py scheduler add --kind K --id I                  record an armed schedule
+  worker_state.py scheduler list | clear                         list; clear prints what the caller must stop
 """
 from __future__ import annotations
 
@@ -32,6 +38,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,27 +46,20 @@ from typing import Callable
 
 DEFAULT_WORKER = "worker"
 WORKER_NAME = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
-REF_FORMAT = re.compile(r"^(issue|pr):\d+$")
-SLOT_NAME = re.compile(r"^worker(?:-\d+)?$")
-# A crashed writer must not block claims forever; claim updates take milliseconds.
-CLAIMS_LOCK_STALE_SECONDS = 60
-# Slots without a holder PID must not block forever (e.g. a killed tick);
-# match tick_gate LOCK_TTL_SECONDS. Slots with a PID use liveness probing.
-CHECKIN_TTL_SECONDS = 1800
-MAX_AUTO_SLOTS = 32
+# A lease nobody renewed for this long is abandoned, unless a live PID proves
+# its session still exists. Long commands renew through lease_run.py.
+LEASE_TTL_SECONDS = 1800
+EXIT_LEASE_LOST = 4
 _HOLDER_ENV = "WORKER_LOOP_HOLDER_PID"
+# Checked in order. Harnesses that expose a stable per-session ID go here.
+_SESSION_ENVS = ("WORKER_LOOP_SESSION_ID", "CLAUDE_CODE_SESSION_ID")
 _TRANSIENT_SHELLS = frozenset({"bash", "sh", "zsh", "dash", "fish", "pwsh", "cmd"})
-_HOLDER_UNSET = object()
 # Windows process-termination query (PROCESS_QUERY_LIMITED_INFORMATION).
 _WIN_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 _WIN_STILL_ACTIVE = 259  # STILL_ACTIVE is 0x00000103, not 0x100
 # OpenProcess: this code means the PID does not exist. Any other error
 # (including ERROR_ACCESS_DENIED = 5) means the process is alive.
 _WIN_ERROR_INVALID_PARAMETER = 87
-
-
-class CheckinError(RuntimeError):
-    """Could not acquire or release a worker check-in slot."""
 
 
 class StateFileCorrupt(RuntimeError):
@@ -93,12 +93,12 @@ def worker_dir(worker: str) -> Path:
     return state_root() / worker
 
 
-def claims_path() -> Path:
-    return state_root() / "claims.json"
+def state_path(worker: str) -> Path:
+    return worker_dir(worker) / "state.json"
 
 
-def checkins_path() -> Path:
-    return state_root() / "checkins.json"
+def shared_path() -> Path:
+    return state_root() / "shared.json"
 
 
 def _host() -> str:
@@ -119,9 +119,14 @@ class ProcessInfo:
 _process_info_lookup: Callable[[int], ProcessInfo | None] | None = None
 
 
+def _proc_stat_fields(pid: int) -> list[str]:
+    """Fields of /proc/PID/stat after the comm field, which may contain spaces."""
+    return Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
+
+
 def _linux_ppid(pid: int) -> int:
     try:
-        return int(Path(f"/proc/{pid}/stat").read_text().split()[3])
+        return int(_proc_stat_fields(pid)[1])
     except (OSError, ValueError, IndexError):
         return 0
 
@@ -134,16 +139,50 @@ def _read_cmdline(pid: int) -> list[str]:
         return []
 
 
+def _ps(pid: int, field: str) -> str:
+    """One `ps` field, for POSIX systems without /proc (macOS)."""
+    try:
+        result = subprocess.run(
+            ["ps", "-o", f"{field}=", "-p", str(pid)], capture_output=True, text=True
+        )
+    except OSError:
+        return ""
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
 def _process_info(pid: int) -> ProcessInfo | None:
     if pid <= 0:
         return None
     if _process_info_lookup is not None:
         return _process_info_lookup(pid)
-    try:
-        comm = Path(f"/proc/{pid}/comm").read_text().strip()
-    except OSError:
+    if sys.platform == "win32":
         return None
-    return ProcessInfo(comm=comm, cmdline=_read_cmdline(pid), ppid=_linux_ppid(pid))
+    if Path("/proc/self/stat").exists():
+        try:
+            comm = Path(f"/proc/{pid}/comm").read_text().strip()
+        except OSError:
+            return None
+        return ProcessInfo(comm=comm, cmdline=_read_cmdline(pid), ppid=_linux_ppid(pid))
+    comm = _ps(pid, "comm")
+    if not comm:
+        return None
+    try:
+        ppid = int(_ps(pid, "ppid") or 0)
+    except ValueError:
+        ppid = 0
+    return ProcessInfo(comm=comm, cmdline=_ps(pid, "args").split(), ppid=ppid)
+
+
+def _pid_start(pid: int) -> str | None:
+    """A value that changes when `pid` is reused; None where it cannot be read."""
+    if sys.platform == "win32":
+        return None
+    try:
+        if Path("/proc/self/stat").exists():
+            return _proc_stat_fields(pid)[19]
+    except (OSError, IndexError):
+        return None
+    return _ps(pid, "lstart") or None
 
 
 def _comm_base(comm: str) -> str:
@@ -158,51 +197,102 @@ def _is_transient_shell(info: ProcessInfo) -> bool:
     return "-c" in info.cmdline or "/c" in lowered
 
 
-def _is_ephemeral_runner(info: ProcessInfo) -> bool:
+def _is_script_runner(info: ProcessInfo) -> bool:
     base = _comm_base(info.comm)
-    joined = " ".join(info.cmdline).lower()
     if base.startswith("python"):
-        return "tick_gate" in joined or "worker_state" in joined
-    if base.startswith("node"):
-        return True
+        return any(name in " ".join(info.cmdline).lower() for name in ("tick_gate", "worker_state", "lease_run"))
     return base.startswith("ruby")
 
 
-def _is_trusted_session_holder(info: ProcessInfo) -> bool:
-    joined = " ".join(info.cmdline).lower()
-    base = _comm_base(info.comm)
-    return "libragent" in joined or base == "libragent"
+def _is_app_holder(info: ProcessInfo) -> bool:
+    """LibrAgent desktop: one long-lived PID shared by all of its sessions."""
+    return "libragent" in " ".join(info.cmdline).lower() or _comm_base(info.comm) == "libragent"
 
 
-def resolve_holder_pid(explicit: int | None = None) -> int | None:
-    """Long-lived session PID, or None → check-in uses TTL only (no pid field).
+def _is_session_holder(info: ProcessInfo) -> bool:
+    """A long-lived process that exists once per agent session (Claude Code)."""
+    if _comm_base(info.comm) == "claude":
+        return True
+    # npm-installed Claude Code runs as `node .../claude`.
+    return (
+        _comm_base(info.comm).startswith("node")
+        and len(info.cmdline) > 1
+        and _comm_base(info.cmdline[1]) == "claude"
+    )
 
-    The walk relies on `/proc`, which POSIX has and Windows does not: on
-    Windows `_process_info` finds nothing, so the walk stops at once and the
-    TTL fallback is returned. Tests inject a lookup and exercise the walk on
-    every platform.
+
+def resolve_holder(explicit: int | None = None) -> tuple[int | None, str | None]:
+    """(pid, kind) of the process that outlives this tick; kind is 'session' or 'app'.
+
+    Walks parent processes through /proc or `ps`. Windows has neither, so hosts
+    there are anonymous unless they pass --pid or a session ID. Tests inject a
+    lookup and exercise the walk on every platform.
     """
-    if explicit is not None:
-        return explicit
     env = os.environ.get(_HOLDER_ENV)
-    if env:
-        return int(env)
+    declared = explicit if explicit is not None else (int(env) if env else None)
+    if declared is not None:
+        info = _process_info(declared)
+        return declared, "app" if info and _is_app_holder(info) else "session"
 
     pid = os.getppid()
     for _ in range(40):
         info = _process_info(pid)
         if info is None:
             break
-        if _is_transient_shell(info):
+        if _is_transient_shell(info) or _is_script_runner(info):
             pid = info.ppid
             continue
-        if _is_ephemeral_runner(info):
-            pid = info.ppid
-            continue
-        if _is_trusted_session_holder(info):
-            return pid
+        if _is_app_holder(info):
+            return pid, "app"
+        if _is_session_holder(info):
+            return pid, "session"
         pid = info.ppid
-    return None
+    return None, None
+
+
+def resolve_holder_pid(explicit: int | None = None) -> int | None:
+    return resolve_holder(explicit)[0]
+
+
+@dataclass(frozen=True)
+class Owner:
+    """Who holds a lease. `id` is stable across every command of one session.
+
+    scope 'session': one agent session; a second tick from it is a duplicate.
+    scope 'app':     a process shared by many sessions; duplicates cannot be told apart.
+    scope 'anon':    nothing identifies the session; the tick token is all we have.
+    pid_bound:       the PID lives exactly as long as the session, so a live PID
+                     proves the session exists however long ago it last renewed.
+    """
+
+    id: str
+    scope: str
+    pid: int | None = None
+    pid_start: str | None = None
+    pid_bound: bool = False
+
+    def record(self) -> dict:
+        record: dict = {"owner": self.id, "scope": self.scope, "host": _host()}
+        if self.pid is not None:
+            record["pid"] = self.pid
+            record["pidBound"] = self.pid_bound
+            if self.pid_start:
+                record["pidStart"] = self.pid_start
+        return record
+
+
+def resolve_owner(explicit_pid: int | None = None, session: str | None = None) -> Owner:
+    pid, kind = resolve_holder(explicit_pid)
+    start = _pid_start(pid) if pid else None
+    bound = kind == "session"
+    session = session or next((os.environ[e] for e in _SESSION_ENVS if os.environ.get(e)), None)
+    if session:
+        return Owner(f"session:{session}", "session", pid, start, bound)
+    if kind == "session":
+        return Owner(f"pid:{pid}:{start}", "session", pid, start, True)
+    if kind == "app":
+        return Owner(f"app:{pid}:{start}", "app", pid, start, False)
+    return Owner(f"anon:{uuid.uuid4().hex}", "anon")
 
 
 def _win_pid_alive(pid: int) -> bool:
@@ -245,141 +335,29 @@ def _pid_alive(pid: int | None) -> bool:
         return False
 
 
-def checkin_record(holder_pid: int | None, *, started_at: int | None = None) -> dict:
-    now = int(time.time())
-    record: dict = {
-        "host": _host(),
-        "startedAt": started_at if started_at is not None else now,
-    }
-    if holder_pid is not None:
-        record["pid"] = holder_pid
-    return record
+def lease_expired(record: dict) -> bool:
+    last = record.get("renewedAt") or record.get("startedAt") or record.get("time") or 0
+    return time.time() - float(last) > LEASE_TTL_SECONDS
 
 
-def is_checkin_stale(record: dict | None) -> bool:
-    """True when the slot is free, TTL expired, or (if recorded) holder PID is dead."""
-    if not record or not isinstance(record, dict):
-        return True
-    started = int(record.get("startedAt") or 0)
+def lease_is_live(record: dict | None) -> bool:
+    """Is the run that wrote this slot or lock record still entitled to it?
+
+    A dead PID ends it. A live session-bound PID keeps it however old: a running
+    session's work is never taken by anyone else. Everything else needs renewal.
+    """
+    if not isinstance(record, dict) or not record:
+        return False
     pid = record.get("pid")
-    if pid is None:
-        return time.time() - started > CHECKIN_TTL_SECONDS
-    if not _pid_alive(int(pid)):
-        return True
-    return False
-
-
-def _same_checkin_holder(record: dict, holder: int | None) -> bool:
-    rec_pid = record.get("pid")
-    if holder is None:
-        return rec_pid is None
-    return rec_pid == holder
-
-
-def iter_slot_names(existing: dict | None = None) -> list[str]:
-    """Ordered slot names: worker, worker-2, worker-3, ..."""
-    names = ["worker"] + [f"worker-{n}" for n in range(2, MAX_AUTO_SLOTS + 1)]
-    if existing:
-        extra = sorted(
-            k for k in existing if SLOT_NAME.match(k) and k not in names
-        )
-        names.extend(extra)
-    return names
-
-
-def load_checkins(path: Path | None = None) -> dict:
-    return read_json(path or checkins_path())
-
-
-def find_worker_by_holder_pid(holder_pid: int | None, path: Path | None = None) -> str | None:
-    if holder_pid is None:
-        return None
-    for name, record in load_checkins(path).items():
-        if isinstance(record, dict) and record.get("pid") == holder_pid:
-            return name
-    return None
-
-
-def _write_checkin(path: Path, checkins: dict, worker: str, record: dict) -> None:
-    checkins[worker] = record
-    atomic_write_json(path, checkins)
-
-
-def acquire_checkin(
-    explicit: str | None = None,
-    path: Path | None = None,
-    *,
-    holder: int | None | object = _HOLDER_UNSET,
-) -> str:
-    """Claim a worker slot. Explicit `--worker` / $WORKER_ID wins; else first free slot."""
-    path = path or checkins_path()
-    if holder is _HOLDER_UNSET:
-        resolved: int | None = resolve_holder_pid(None)
-    else:
-        resolved = holder  # type: ignore[assignment]
-    requested = explicit or os.environ.get("WORKER_ID")
-    with exclusive(path.with_name(path.name + ".lock")):
-        checkins = read_json(path)
-
-        if requested:
-            worker = worker_name(requested)
-            current = checkins.get(worker)
-            if current and not is_checkin_stale(current) and not _same_checkin_holder(current, resolved):
-                other = current.get("pid")
-                raise CheckinError(f"slot {worker!r} busy (pid {other} on {current.get('host')})")
-            started = (
-                (current or {}).get("startedAt")
-                if current and _same_checkin_holder(current, resolved)
-                else None
-            )
-            _write_checkin(path, checkins, worker, checkin_record(resolved, started_at=started))
-            return worker
-
-        for worker in iter_slot_names(checkins):
-            current = checkins.get(worker)
-            if current and not is_checkin_stale(current):
-                continue
-            _write_checkin(path, checkins, worker, checkin_record(resolved))
-            return worker
-
-    raise CheckinError("no free worker slot (all check-ins active)")
-
-
-def release_checkin(
-    worker: str | None = None,
-    path: Path | None = None,
-    *,
-    holder: int | None | object = _HOLDER_UNSET,
-) -> bool:
-    """Release a slot. TTL slots release by worker name; PID slots match `holder`."""
-    path = path or checkins_path()
-    if holder is _HOLDER_UNSET:
-        resolved: int | None = resolve_holder_pid(None)
-    else:
-        resolved = holder  # type: ignore[assignment]
-
-    if worker is None:
-        worker = find_worker_by_holder_pid(resolved, path)
-        if worker is None:
+    if pid:
+        if not _pid_alive(int(pid)):
             return False
-    else:
-        worker = worker_name(worker)
-
-    with exclusive(path.with_name(path.name + ".lock")):
-        checkins = read_json(path)
-        record = checkins.get(worker)
-        if not record:
-            return False
-        rec_pid = record.get("pid")
-        if rec_pid is None:
-            del checkins[worker]
-            atomic_write_json(path, checkins)
+        started = record.get("pidStart")
+        if started and _pid_start(int(pid)) not in (None, started):
+            return False  # the PID was reused by another process
+        if record.get("pidBound"):
             return True
-        if resolved is not None and rec_pid == resolved:
-            del checkins[worker]
-            atomic_write_json(path, checkins)
-            return True
-    return False
+    return not lease_expired(record)
 
 
 def atomic_write_json(path: Path, data: dict) -> None:
@@ -414,120 +392,224 @@ def read_json(path: Path) -> dict:
     return data
 
 
+def _try_os_lock(fd: int) -> None:
+    if sys.platform == "win32":
+        import msvcrt
+
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+    else:
+        import fcntl
+
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def _os_unlock(fd: int) -> None:
+    if sys.platform == "win32":
+        import msvcrt
+
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+    # POSIX: closing the descriptor drops the flock.
+
+
 @contextmanager
 def exclusive(lock_path: Path, timeout: float = 10.0):
-    """Cross-process mutex via O_EXCL lock file; serializes read-modify-write of a shared file."""
+    """Cross-process mutex for one read-modify-write of a shared file.
+
+    An OS lock on a file that is never deleted: the kernel drops it when the
+    holder dies, so there is no stale state to break, and breaking a stale lock
+    can never let two writers in.
+    """
     lock_path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o644)
     deadline = time.monotonic() + timeout
-    while True:
-        try:
-            fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            os.close(fd)
-            break
-        except FileExistsError:
-            try:
-                if time.time() - lock_path.stat().st_mtime > CLAIMS_LOCK_STALE_SECONDS:
-                    lock_path.unlink(missing_ok=True)
-                    continue
-            except FileNotFoundError:
-                continue
-            if time.monotonic() > deadline:
-                raise TimeoutError(f"could not acquire {lock_path}")
-            time.sleep(0.05)
     try:
-        yield
+        while True:
+            try:
+                _try_os_lock(fd)
+                break
+            except OSError:
+                if time.monotonic() > deadline:
+                    raise TimeoutError(f"could not acquire {lock_path}") from None
+                time.sleep(0.01)
+        try:
+            yield
+        finally:
+            _os_unlock(fd)
     finally:
-        lock_path.unlink(missing_ok=True)
+        os.close(fd)
 
 
-def load_claims(path: Path | None = None) -> dict:
-    return read_json(path or claims_path())
+# --- Repo-wide operating state ------------------------------------------------
+# needsUser, ciAttempts, and schedulers describe the repo, not a slot: any worker
+# must see them, and `status` and `stop` must find them whichever slot armed them.
 
 
-def claim(worker: str, ref: str, path: Path | None = None) -> str | None:
-    """Claim `ref` for `worker`. Returns None on success, else the worker holding it."""
-    if not REF_FORMAT.match(ref):
-        raise ValueError(f"invalid ref: {ref!r} (expected issue:N or pr:N)")
-    path = path or claims_path()
+def _load_shared(path: Path) -> dict:
+    """Read shared.json; on first use, adopt what older versions kept per slot."""
+    if path.is_file():
+        return read_json(path)
+    shared: dict = {"needsUser": [], "ciAttempts": {}, "schedulers": []}
+    for slot_state in sorted(path.parent.glob("*/state.json")):
+        state = read_json(slot_state)
+        known = {item.get("ref") for item in shared["needsUser"]}
+        shared["needsUser"] += [i for i in state.get("needsUser") or [] if i.get("ref") not in known]
+        for pr, count in (state.get("ciAttempts") or {}).items():
+            shared["ciAttempts"][pr] = max(count, shared["ciAttempts"].get(pr, 0))
+        if state.get("scheduler"):
+            shared["schedulers"].append(state["scheduler"])
+    return shared
+
+
+@contextmanager
+def _shared_update():
+    path = shared_path()
     with exclusive(path.with_name(path.name + ".lock")):
-        claims = read_json(path)
-        holder = (claims.get(ref) or {}).get("worker")
-        if holder and holder != worker:
-            return holder
-        claims[ref] = {"worker": worker, "at": int(time.time())}
-        atomic_write_json(path, claims)
-    return None
+        shared = _load_shared(path)
+        yield shared
+        atomic_write_json(path, shared)
 
 
-def release(worker: str, ref: str, path: Path | None = None) -> bool:
-    """Release `ref` if `worker` holds it. Returns True when a claim was removed."""
-    path = path or claims_path()
-    with exclusive(path.with_name(path.name + ".lock")):
-        claims = read_json(path)
-        if (claims.get(ref) or {}).get("worker") != worker:
+def add_needs_user(ref: str, question: str) -> bool:
+    """Record a question once across all workers. False means it was already asked."""
+    with _shared_update() as shared:
+        if any(item.get("ref") == ref for item in shared["needsUser"]):
             return False
-        del claims[ref]
-        atomic_write_json(path, claims)
+        since = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        shared["needsUser"].append({"ref": ref, "question": question, "since": since})
     return True
 
 
-def claimed_by_other(claims: dict, ref: str, worker: str) -> str | None:
-    holder = (claims.get(ref) or {}).get("worker")
-    return holder if holder and holder != worker else None
+def clear_needs_user(ref: str) -> None:
+    with _shared_update() as shared:
+        shared["needsUser"] = [i for i in shared["needsUser"] if i.get("ref") != ref]
+
+
+def count_ci_attempt(pr: int) -> int:
+    with _shared_update() as shared:
+        count = shared["ciAttempts"].get(str(pr), 0) + 1
+        shared["ciAttempts"][str(pr)] = count
+    return count
+
+
+def clear_ci_attempts(pr: int) -> None:
+    with _shared_update() as shared:
+        shared["ciAttempts"].pop(str(pr), None)
+
+
+def add_scheduler(kind: str, scheduler_id: str) -> None:
+    with _shared_update() as shared:
+        entry = {"kind": kind, "id": scheduler_id}
+        if entry not in shared["schedulers"]:
+            shared["schedulers"].append(entry)
+
+
+def list_schedulers() -> list[dict]:
+    return _load_shared(shared_path())["schedulers"]
+
+
+def clear_schedulers() -> list[dict]:
+    """Forget all schedules and return them: the caller must stop each one."""
+    with _shared_update() as shared:
+        cleared, shared["schedulers"] = shared["schedulers"], []
+    return cleared
+
+
+def status() -> dict:
+    """Everything an operator needs, for every worker that left a trace."""
+    import tick_lock
+    import worker_claims
+    import worker_slots
+
+    root = state_root()
+    slots = worker_slots.load_slots()
+    names = set(slots) | {p.parent.name for p in root.glob("*/state.json")}
+    claims = worker_claims.load_claims()
+    workers = {}
+    for name in sorted(names):
+        state = read_json(root / name / "state.json")
+        lock = tick_lock.read(root / name / "tick.lock")
+        workers[name] = {
+            "slot": slots.get(name),
+            "slotLive": lease_is_live(slots.get(name)),
+            "tickRunning": lease_is_live(lock),
+            "current": state.get("current"),
+            "claims": sorted(r for r, c in claims.items() if c.get("worker") == name),
+        }
+    shared = _load_shared(shared_path())
+    return {"workers": workers, **shared}
 
 
 def main() -> None:
+    import worker_claims
+    import worker_slots
+
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
         "command",
-        choices=["claim", "release", "list", "checkin"],
+        choices=["claim", "release", "list", "status", "needs-user", "ci-attempt", "scheduler"],
     )
-    parser.add_argument(
-        "checkin_action",
-        nargs="?",
-        choices=["acquire", "release"],
-        help="With command checkin: acquire | release",
-    )
-    parser.add_argument("--worker", default=None, help="Worker name (default: $WORKER_ID or auto check-in)")
-    parser.add_argument("--holder-pid", type=int, default=None, help="PID of the tick session (default: auto-detect)")
+    parser.add_argument("action", nargs="?", choices=["add", "list", "clear"], help="With scheduler")
+    parser.add_argument("--worker", default=None, help="Worker name (default: $WORKER_ID)")
+    parser.add_argument("--token", default=None, help="Tick token from `tick_gate.py --lock`")
     parser.add_argument("--ref", default=None, help="issue:N or pr:N")
+    parser.add_argument("--question", default=None)
+    parser.add_argument("--pr", type=int, default=None)
+    parser.add_argument("--clear", action="store_true")
+    parser.add_argument("--kind", default=None)
+    parser.add_argument("--id", default=None)
     args = parser.parse_args()
 
-    if args.command == "list":
-        print(json.dumps(load_claims(), ensure_ascii=False, indent=2))
-        return
-
-    if args.command == "checkin":
-        if not args.checkin_action:
-            sys.exit("checkin requires acquire or release")
-        try:
-            resolved = resolve_holder_pid(args.holder_pid)
-            if args.checkin_action == "acquire":
-                worker = acquire_checkin(args.worker, holder=resolved)
-                print(f"WORKER {worker}")
+    # Exit 1 means only "another worker holds it"; every failure here is 2, so
+    # an unreadable claims file is never mistaken for a held claim.
+    try:
+        if args.command == "list":
+            print(json.dumps(worker_claims.load_claims(), ensure_ascii=False, indent=2))
+        elif args.command == "status":
+            print(json.dumps(status(), ensure_ascii=False, indent=2))
+        elif args.command == "needs-user":
+            if args.clear:
+                clear_needs_user(args.ref)
+                print("CLEARED")
             else:
-                print(
-                    "RELEASED"
-                    if release_checkin(args.worker, holder=resolved)
-                    else "NOT CHECKED IN"
-                )
-        except CheckinError as e:
-            sys.stderr.write(f"{e}\n")
-            sys.exit(2)
-        return
-
-    if not args.ref:
-        sys.exit("--ref is required")
-    worker = worker_name(args.worker)
-    if args.command == "claim":
-        holder = claim(worker, args.ref)
-        if holder:
-            print(f"HELD by {holder}")
-            sys.exit(1)
-        print(f"CLAIMED {args.ref} for {worker}")
-    else:
-        print("RELEASED" if release(worker, args.ref) else "NOT HELD")
+                print("ADDED" if add_needs_user(args.ref, args.question) else "ALREADY ASKED")
+        elif args.command == "ci-attempt":
+            if args.clear:
+                clear_ci_attempts(args.pr)
+                print("CLEARED")
+            else:
+                print(count_ci_attempt(args.pr))
+        elif args.command == "scheduler":
+            if args.action == "add":
+                add_scheduler(args.kind, args.id)
+                print("ADDED")
+            else:
+                entries = clear_schedulers() if args.action == "clear" else list_schedulers()
+                print(json.dumps(entries, ensure_ascii=False, indent=2))
+        else:
+            if not args.ref:
+                raise ValueError("--ref is required")
+            worker = worker_name(args.worker)
+            if args.command == "release":
+                print("RELEASED" if worker_claims.release(worker, args.ref) else "NOT HELD")
+                return
+            if args.token and not worker_slots.holds_slot(worker, args.token):
+                print(f"LEASE LOST: {worker} no longer holds this tick; stop working")
+                sys.exit(EXIT_LEASE_LOST)
+            holder = worker_claims.claim(worker, args.ref)
+            if holder:
+                print(f"HELD by {holder}")
+                sys.exit(1)
+            print(f"CLAIMED {args.ref} for {worker}")
+    except (StateFileCorrupt, TimeoutError, OSError, ValueError, TypeError, KeyError) as e:
+        sys.stderr.write(f"worker_state error: {e}\n")
+        sys.exit(2)
 
 
 if __name__ == "__main__":
-    main()
+    # Run through the importable module, so the exception classes here are the
+    # same ones worker_claims and worker_slots raise.
+    import worker_state as _module
+
+    _module.main()

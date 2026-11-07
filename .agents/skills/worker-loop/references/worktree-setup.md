@@ -1,6 +1,6 @@
 # Dedicated Worktree Setup
 
-All edits, builds, commits, and pushes happen in a dedicated, persistent worktree per worker — **never in the user's checkout**, which keeps its branch and uncommitted work untouched. Skill files, scripts, and ignored rule files such as `.agents/AGENTS.md` are read from the main checkout (`$MAIN`). The worktree directory name is the worker slot (`worker`, `worker-2`, …). After `tick_gate.py --lock`, use the printed `WORKER <name>` (or `$WORKER_ID` if you set it explicitly).
+All edits, builds, commits, and pushes happen in a dedicated, persistent worktree per worker — **never in the user's checkout**, which keeps its branch and uncommitted work untouched. Skill files, scripts, and ignored rule files such as `.agents/AGENTS.md` are read from the main checkout (`$MAIN`). The worktree directory name is the worker slot (`worker`, `worker-2`, …). After `tick_gate.py --lock`, use the printed `WORKER <name>`. Whoever holds the slot owns its worktree.
 
 ## Setup
 
@@ -28,8 +28,9 @@ All edits, builds, commits, and pushes happen in a dedicated, persistent worktre
 
 ## Worktree Lifecycle
 
-- Keep the worktree persistent between ticks so Rust `target/` and `node_modules` stay warm; the first tick pays a full build. Do not share `target/` with `$MAIN`. Each worktree has its own `src-tauri/target/` (including `target/ci-test` for `pnpm rust:test`); `scripts/run-rust-command.cjs` runs cargo with `cwd` under that worktree, so workers do not share a cargo target dir unless they share the same worktree path.
+- Keep the worktree persistent between ticks so Rust `target/` and `node_modules` stay warm; the first tick pays a full build. Do not share `target/` with `$MAIN`. Each worktree has its own `src-tauri/target/` (including `target/ci-test` for `pnpm rust:test`); `scripts/run-rust-command.cjs` runs cargo with `cwd` under that worktree, so workers do not share a cargo target dir unless they share the same worktree path. Builds from all worktrees and checkouts share a machine-wide limit (`scripts/rust-build-slot.cjs`, default one per 32GB of RAM, `LIBRAGENT_RUST_MAX_CONCURRENT` overrides it).
 - Run `pnpm install --frozen-lockfile` in `$WT` when `pnpm-lock.yaml` differs from the hash stored in state (`lockHash`).
 - Ignored files are not carried over.
-- A branch checked out in `$MAIN` cannot be checked out in `$WT`. Then work detached on `origin/<head>` and push with `git push origin HEAD:refs/heads/<head>`.
-- `$WT` belongs to the worker: at the start of a tick with no `current`, `git -C "$WT" reset --hard && git -C "$WT" clean -fd` is allowed. Never run these against `$MAIN`.
+- A branch can be checked out in only one worktree. Get a PR branch with `worker_worktree.py switch`: it reports `BRANCH BUSY` for a live run or a slot with `current`, detaches an abandoned clean slot, and otherwise (`$MAIN`, other worktrees, a slot with leftover changes) puts you on `origin/<head>` detached and prints the push command.
+- Detach at the end of a tick with no `current`, so the branch does not stay occupied.
+- Reset only with `worker_worktree.py reset`, which verifies the lease, stashes uncommitted changes as `worker-loop rescue: ...`, and does nothing when `current` is set. Recover with `git stash list` and `git stash apply <sha>`. Never run `reset --hard` or `clean` directly, and never against `$MAIN`.
