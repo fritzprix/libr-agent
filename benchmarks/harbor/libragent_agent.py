@@ -2290,7 +2290,7 @@ class LibrAgentHarborAdapter(BaseAgent):
             "resolvedInteractions": resolved_interactions,
             "messagesDigest": {
                 "toolNames": [
-                    tc.get("name")
+                    tc.get("function_name") or tc.get("name")
                     for msg in messages
                     for tc in (msg.get("toolCalls") or msg.get("tool_calls") or [])
                     if isinstance(tc, dict)

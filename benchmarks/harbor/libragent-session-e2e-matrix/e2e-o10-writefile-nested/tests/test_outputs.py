@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from verifier_lib import load_trajectory, trajectory_steps
+from verifier_lib import load_trajectory, observation_result_texts, trajectory_steps
 
 NESTED = Path("/app/parent.txt/child.txt")
 
@@ -16,12 +16,5 @@ def test_nested_child_not_created():
 
 
 def test_writefile_error_in_tool_results():
-    steps = trajectory_steps(load_trajectory())
-    texts = []
-    for step in steps:
-        for call in step.get("tool_calls") or []:
-            result = call.get("result") or {}
-            for item in result.get("content") or []:
-                if isinstance(item, dict) and item.get("text"):
-                    texts.append(item["text"])
+    texts = observation_result_texts(trajectory_steps(load_trajectory()))
     assert any("existing file" in t.lower() for t in texts), texts[:3]

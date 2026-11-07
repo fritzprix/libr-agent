@@ -49,13 +49,20 @@ def test_interactive_prompt_was_resolved():
 def test_marker_in_tool_results_not_literal_secret():
     """The marker must appear in a tool result, not in the agent's own prose."""
     traj = json.loads(TRAJECTORY.read_text(encoding="utf-8"))
-    texts = []
+    texts: list[str] = []
     for step in traj.get("steps") or []:
-        for call in step.get("tool_calls") or []:
-            result = call.get("result") or {}
-            for item in result.get("content") or []:
-                if isinstance(item, dict) and item.get("text"):
-                    texts.append(item["text"])
+        # ATIF stores tool results in the step's ``observation`` blocks, not
+        # on the tool call itself — reading ``tool_calls[].result`` yields
+        # nothing and makes this check silently vacuous.
+        observation = step.get("observation") or {}
+        for result in observation.get("results") or []:
+            content = result.get("content")
+            if isinstance(content, str) and content:
+                texts.append(content)
+            elif isinstance(content, list):
+                for item in content:
+                    if isinstance(item, dict) and item.get("text"):
+                        texts.append(str(item["text"]))
     assert any("E2E_MARKER_OK" in t for t in texts), (
         "E2E_MARKER_OK never appeared in any tool result"
     )
