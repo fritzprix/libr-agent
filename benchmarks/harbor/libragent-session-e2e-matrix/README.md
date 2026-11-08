@@ -12,7 +12,8 @@ enables the control plane on that disposable instance automatically.
 
 ```bash
 # once: build the debug binary and seed the disposable bench instance
-(cd src-tauri && cargo build)
+# (run-rust-command.cjs holds the machine-wide Rust build slot, see #2636)
+node scripts/run-rust-command.cjs build
 pnpm bench:instance:seed --assistant-id <uuid>
 
 # run the matrix

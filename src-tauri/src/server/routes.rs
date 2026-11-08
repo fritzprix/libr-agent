@@ -272,8 +272,10 @@ pub fn get_routes(
     // control plane is not enabled, so no runtime if/else filter wiring here.
     // The full guard chain lives in `e2e_control_guarded_routes` so the
     // integration tests pin the exact production wiring.
+    // `.boxed()` keeps the merged `core.or(e2e_routes)` filter type shallow.
     #[cfg(debug_assertions)]
-    let e2e_routes = crate::server::e2e_control::e2e_control_guarded_routes(agent_manager.clone());
+    let e2e_routes =
+        crate::server::e2e_control::e2e_control_guarded_routes(agent_manager.clone()).boxed();
 
     let api = create_session
         .or(get_session)
@@ -303,8 +305,10 @@ pub fn get_routes(
     // No allow_any_origin CORS. CLI clients omit Origin; browsers with Origin are rejected.
     let core = wake_session.or(pairing_session).or(guarded_api);
 
+    let core = core.boxed();
+
     #[cfg(debug_assertions)]
-    let core = core.or(e2e_routes);
+    let core = core.or(e2e_routes).boxed();
 
     access_guard(expose).and(core).recover(handle_rejection)
 }

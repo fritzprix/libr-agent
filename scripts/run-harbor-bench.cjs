@@ -345,7 +345,7 @@ async function runIsolated(benchCommand, benchArgs) {
     console.error(
       `Bench instance binary not found: ${appBin}\n` +
         (debugAppBin
-          ? 'Build the debug binary first: (cd src-tauri && cargo build)'
+          ? 'Build the debug binary first: node scripts/run-rust-command.cjs build'
           : 'Build the release binary first: pnpm tauri build'),
     );
     return 1;
@@ -359,8 +359,8 @@ async function runIsolated(benchCommand, benchArgs) {
   }
 
   // Set before `launch` so instance_env() sees the flag on the FIRST start
-  // too (it raises RUST_MIN_STACK for debug binaries carrying the E2E
-  // control-plane filter chain, which overflows the default 2 MiB stack).
+  // too (it raises RUST_MIN_STACK: a debug binary overflows the default 2 MiB
+  // worker stack on `POST /api/sessions`).
   if (debugAppBin) {
     // The E2E control plane routes only exist in debug builds and are opt-in;
     // the isolated instance forwards this flag into the app environment.
@@ -382,22 +382,26 @@ async function runIsolated(benchCommand, benchArgs) {
     }
   }
 
-  const launchStatus = runStatus('python', [
-    '-m',
-    INSTANCE_MODULE,
-    'launch',
-    '--app-bin',
-    appBin,
-  ]);
-  if (launchStatus !== 0) {
-    return launchStatus;
-  }
-
-  // The Harbor adapter relaunches the instance from the seed before each trial.
-  process.env.LIBRAGENT_BENCH_INSTANCE_APP_BIN = appBin;
-  process.env.LIBRAGENT_BENCH_INSTANCE_ROOT = INSTANCE_ROOT;
+  // The `try` must start before the instance launch: the frontend server is
+  // already detached by now, and an early `return` on a failed launch would
+  // otherwise leak it holding port 1420 (a developer's `pnpm dev` can no
+  // longer bind it, and the next bench run "accepts" the stale server).
   const containersBefore = snapshotContainers();
   try {
+    const launchStatus = runStatus('python', [
+      '-m',
+      INSTANCE_MODULE,
+      'launch',
+      '--app-bin',
+      appBin,
+    ]);
+    if (launchStatus !== 0) {
+      return launchStatus;
+    }
+
+    // The Harbor adapter relaunches the instance from the seed before each trial.
+    process.env.LIBRAGENT_BENCH_INSTANCE_APP_BIN = appBin;
+    process.env.LIBRAGENT_BENCH_INSTANCE_ROOT = INSTANCE_ROOT;
     return await runBenchChild(benchCommand[0], [
       ...benchCommand.slice(1),
       ...args,

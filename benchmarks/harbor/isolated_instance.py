@@ -473,11 +473,10 @@ def instance_env(layout: InstanceLayout, base: dict[str, str] | None = None) -> 
         env["HOME"] = str(layout.home_dir.resolve())
     if os.environ.get("LIBRAGENT_E2E_CONTROL") == "1":
         env["LIBRAGENT_E2E_CONTROL"] = "1"
-        # Debug-build binaries carry the extra E2E control-plane warp filter
-        # chain. In unoptimized debug code, matching the full route chain on a
-        # request can exceed the default 2 MiB worker-thread stack and abort
-        # the server thread with a stack overflow on the first HTTP request.
-        # Give bench instance threads a stack that comfortably fits it.
+        # The bench needs a debug binary, and in unoptimized debug code
+        # `POST /api/sessions` overflows the default 2 MiB tokio worker stack.
+        # This happens without the E2E routes too, so it is not caused by the
+        # route chain (#2637).
         try:
             parent_stack = int(env.get("RUST_MIN_STACK", "0"))
         except ValueError:
