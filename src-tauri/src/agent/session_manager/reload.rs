@@ -110,3 +110,14 @@ mod tests {
         assert!(validate_session_reloadable(&SessionStatus::Idle, false, true).is_err());
     }
 }
+
+impl AgentSessionManager {
+    /// Reload session tools, skills, and instructions context without wiping conversation history.
+    ///
+    /// Recreates the session MCP proxy to refresh tool schemas and assistant bindings,
+    /// invalidates the in-memory prompt cache, and emits a session update event for frontend
+    /// skills and tools revalidation.
+    pub async fn reload_session(&self, session_id: &str) -> Result<(), String> {
+        reload_session(self, session_id).await
+    }
+}

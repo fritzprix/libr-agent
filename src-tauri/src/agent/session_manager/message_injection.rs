@@ -275,3 +275,74 @@ pub async fn inject_messages(
 
     Ok(should_trigger_workflow)
 }
+
+impl AgentSessionManager {
+    /// Inject messages into the session
+    pub async fn inject_messages(
+        &self,
+        session_id: String,
+        messages: Vec<Message>,
+    ) -> Result<bool, String> {
+        self.ensure_session_active(&session_id).await?;
+        inject_messages(self, session_id, messages).await
+    }
+
+    /// Append messages into session history without triggering a workflow or touching pending_queue
+    pub async fn append_messages(
+        &self,
+        session_id: &str,
+        messages: Vec<Message>,
+    ) -> Result<(), String> {
+        self.ensure_session_active(session_id).await?;
+        crate::services::MessageService::append_messages_without_workflow(
+            &self.active_sessions,
+            &self.app_handle,
+            session_id,
+            messages,
+        )
+        .await
+    }
+
+    pub async fn get_pending_queue(&self, session_id: &str) -> Result<Vec<Message>, String> {
+        self.ensure_session_active(session_id).await?;
+        crate::agent::pending_queue::list_pending_messages(&self.active_sessions, session_id).await
+    }
+
+    pub async fn cancel_pending_prompt(
+        &self,
+        session_id: &str,
+        message_id: &str,
+    ) -> Result<bool, String> {
+        self.ensure_session_active(session_id).await?;
+        crate::agent::pending_queue::cancel_pending_message(
+            &self.active_sessions,
+            &self.app_handle,
+            session_id,
+            message_id,
+        )
+        .await
+    }
+
+    /// Remove a message from the in-memory cache.
+    /// Used when messages are deleted via messages_delete command to keep cache in sync.
+    pub async fn remove_message_from_cache(
+        &self,
+        session_id: &str,
+        message_id: &str,
+    ) -> Result<(), String> {
+        let sessions = self.active_sessions.read().await;
+        if let Some(session) = sessions.get(session_id) {
+            let mut messages = session.messages.write().await;
+            messages.retain(|m| m.id != message_id);
+            log::debug!(
+                "Removed message {} from in-memory cache for session {}. Remaining: {}",
+                message_id,
+                session_id,
+                messages.len()
+            );
+            Ok(())
+        } else {
+            Ok(())
+        }
+    }
+}

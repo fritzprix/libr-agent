@@ -144,3 +144,9 @@ pub(crate) async fn reset_session(
 
     Ok(())
 }
+
+impl AgentSessionManager {
+    pub async fn reset_session(&self, session_id: &str) -> Result<(), String> {
+        reset_session(self, session_id).await
+    }
+}

@@ -137,3 +137,28 @@ pub async fn set_execution_mode_in(
 
     Ok(resolved_ids)
 }
+
+impl AgentSessionManager {
+    pub async fn get_execution_mode(&self, session_id: &str) -> ExecutionMode {
+        {
+            let active = self.active_sessions.read().await;
+            if let Some(session) = active.get(session_id) {
+                return session.execution_mode();
+            }
+        }
+
+        if let Ok(Some(metadata)) = self.session_repo.get_session(session_id).await {
+            return metadata.execution_mode;
+        }
+
+        ExecutionMode::Normal
+    }
+
+    pub async fn set_execution_mode(
+        &self,
+        session_id: &str,
+        mode: ExecutionMode,
+    ) -> Result<Vec<String>, String> {
+        set_execution_mode(self, session_id, mode).await
+    }
+}
