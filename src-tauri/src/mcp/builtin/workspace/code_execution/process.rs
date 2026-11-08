@@ -80,6 +80,29 @@ pub async fn read_output_file(file_path: &PathBuf) -> Result<String, String> {
     Ok(decoded)
 }
 
+/// Kills the child's whole process tree before reaping the root. Once the
+/// root is reaped its children are reparented, so the tree walk and the
+/// group check in `force_kill_process_tree` can no longer reach them.
+async fn kill_child_tree(child: &mut tokio::process::Child, process_label: &str) {
+    if let Some(pid) = child.id() {
+        match tokio::task::spawn_blocking(move || {
+            crate::utils::process::force_kill_process_tree(pid)
+        })
+        .await
+        {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                warn!("Process {process_label} tree kill failed: {error}");
+            }
+            Err(error) => warn!(
+                "Process {process_label} tree kill task failed: {}",
+                crate::utils::process::describe_join_error(error)
+            ),
+        }
+    }
+    let _ = child.kill().await;
+}
+
 /// Spawn process and stream stdout/stderr to files (common logic for sync/async)
 /// Returns (pid, exit_code, stdout_content, stderr_content)
 /// Respects cancellation token for graceful shutdown
@@ -306,8 +329,7 @@ pub async fn spawn_and_stream_to_files_with_pid_tx(
         _ = cancel_token.cancelled() => {
             info!("Process {} cancellation requested, killing child", process_label);
 
-            // Try graceful kill first
-            let _ = child.kill().await;
+            kill_child_tree(&mut child, &process_label).await;
 
             // Wait a bit for process to die (configurable graceful shutdown timeout)
             let graceful_secs = crate::config::graceful_shutdown_timeout();
@@ -597,7 +619,7 @@ pub async fn spawn_and_stream_hybrid(
     let exit_code = tokio::select! {
         _ = cancel_token.cancelled() => {
             info!("Process {} cancellation requested, killing child", process_label);
-            let _ = child.kill().await;
+            kill_child_tree(&mut child, &process_label).await;
 
             let graceful_secs = crate::config::graceful_shutdown_timeout();
             match tokio::time::timeout(Duration::from_secs(graceful_secs), child.wait()).await {

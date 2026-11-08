@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 mod builtin_lifecycle;
 mod concurrency;
+mod descendant_cleanup;
 mod product_entry;
 mod readiness;
 mod scenarios;
