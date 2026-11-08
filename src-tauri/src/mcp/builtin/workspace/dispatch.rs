@@ -4,7 +4,7 @@ use crate::models::workspace_isolation::WorkspaceIsolationMode;
 use serde_json::Value;
 use tracing::info;
 
-use super::persistent_shell::secrets::mask_result;
+use super::persistent_shell::secrets::{mask_json_strings, mask_result, SecretMap};
 use super::workspace_server::WorkspaceServer;
 
 const MAX_LOGGED_STRING_BYTES: usize = 128;
@@ -63,6 +63,17 @@ fn summarize_value_for_log(value: &Value) -> Value {
     }
 }
 
+/// Masks stored values before summarizing: a truncated string can keep part of a value
+/// that whole-value masking no longer matches.
+fn logged_args(args: &Value, secrets: &SecretMap) -> Value {
+    if secrets.is_empty() {
+        return summarize_value_for_log(args);
+    }
+    let mut masked = args.clone();
+    mask_json_strings(&mut masked, secrets);
+    summarize_value_for_log(&masked)
+}
+
 impl WorkspaceServer {
     fn shell_tool_unavailable_result(&self, tool_name: &str) -> MCPResult {
         let (reason, guidance) = match self.workspace_isolation {
@@ -109,15 +120,15 @@ impl WorkspaceServer {
         args: Value,
         session_id: Option<String>,
     ) -> Result<MCPResult, String> {
-        let logged_args = summarize_value_for_log(&args);
-        info!(
-            "Workspace tool called: {} with args: {:?}",
-            tool_name, logged_args
-        );
-
         let target_session_id = session_id
             .clone()
             .unwrap_or_else(|| self.session_id.clone());
+        let secrets = self.shell_manager.session_secrets(&target_session_id).await;
+        info!(
+            "Workspace tool called: {} with args: {:?}",
+            tool_name,
+            logged_args(&args, &secrets)
+        );
 
         // Issue #2633: a force-terminated session must not spawn any new processes.
         if self.is_session_terminated() {
@@ -148,6 +159,7 @@ impl WorkspaceServer {
             .await;
         // Every tool, not only the shell ones: a command can write a value into a file
         // (including its own output files under `.libragent/tmp`) that `readFile` returns.
+        // Read again: this call may have stored a new value.
         let secrets = self.shell_manager.session_secrets(&target_session_id).await;
         result.map(|result| mask_result(result, &secrets))
     }
@@ -318,6 +330,28 @@ mod tests {
         assert_eq!(logged["command"], json!("<redacted: 18 bytes>"));
         assert_eq!(logged["script"], json!("<redacted: 25 bytes>"));
         assert_eq!(logged["env"], json!("<redacted: 1 keys>"));
+    }
+
+    #[test]
+    fn logged_args_mask_a_stored_value_before_truncation_and_at_any_depth() {
+        let stored = "dispatch-stored-5a1f";
+        let secrets = SecretMap::from([("DEMO_TOKEN".to_string(), stored.to_string())]);
+        let args = json!({
+            "pattern": format!("{}{stored}{}", "p".repeat(120), "q".repeat(40)),
+            "filters": [{ "query": stored, "name": "DEMO_TOKEN" }],
+            "command": format!("echo $DEMO_TOKEN {stored}"),
+        });
+
+        let serialized = logged_args(&args, &secrets).to_string();
+
+        // Truncating first would have kept the first 8 bytes of the value.
+        assert!(!serialized.contains(&stored[..8]), "{serialized}");
+        assert!(serialized.contains("***"), "{serialized}");
+        assert!(
+            serialized.contains("\"name\":\"DEMO_TOKEN\""),
+            "{serialized}"
+        );
+        assert!(serialized.contains("<redacted:"), "{serialized}");
     }
 
     #[test]

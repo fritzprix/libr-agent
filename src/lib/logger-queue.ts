@@ -1,11 +1,14 @@
 import { invoke } from '@tauri-apps/api/core';
 
+import { getLoggerConfig } from './logger-config';
 import { LogLevel } from './logger-types';
 
 interface LogEntry {
   level: LogLevel;
   message: string;
   timestamp: number;
+  /** Applied by the backend after it masks stored values. */
+  maxMessageLength: number;
 }
 
 function isTauriEnvironment(): boolean {
@@ -44,6 +47,7 @@ class LogQueue {
       level,
       message,
       timestamp: Date.now(),
+      maxMessageLength: getLoggerConfig().maxMessageLength,
     });
 
     if (this.queue.length >= this.batchSize) {

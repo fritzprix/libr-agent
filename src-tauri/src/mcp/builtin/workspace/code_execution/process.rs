@@ -126,8 +126,14 @@ pub async fn spawn_and_stream_to_files_with_pid_tx(
         // Note: tokio::process::Command automatically handles handle inheritance
         // on Windows when Stdio::piped() is used, but we log for diagnostics
 
-        // Log the full command for debugging Windows execution issues
-        info!("Windows process command debug: {:?}", cmd.as_std());
+        // Program and argument count only: argv holds the command text, and the
+        // environment holds the session's stored values.
+        let std_cmd = cmd.as_std();
+        info!(
+            "Windows process command: program={:?}, args={}",
+            std_cmd.get_program(),
+            std_cmd.get_args().count()
+        );
 
         // Also log important environment variables that affect Windows process
         // execution (PATH, SystemRoot, COMSPEC, PSModulePath, ProgramFiles).
