@@ -1,7 +1,6 @@
 //! Issue #2634: session processes and the persistent shell survive proxy reload.
-//! These tests start real processes. Windows is not covered here: the PowerShell
-//! variants hung the Windows CI `--lib` run, like the other real-process tests in
-//! this directory.
+//! These tests start real processes. They do not run on Windows: with their
+//! PowerShell variants the Windows CI `--lib` run hung, cause unknown.
 #![cfg(unix)]
 
 use super::*;
