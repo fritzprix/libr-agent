@@ -527,7 +527,7 @@ async fn terminate_kills_spawn_process_descendants_not_only_the_wrapper() {
 /// wiring itself is pinned at the source level.
 #[test]
 fn resume_session_and_workflow_lifts_the_fence_before_resuming() {
-    let source = include_str!("../../../agent/session_manager/mod.rs");
+    let source = include_str!("../../../agent/session_manager/workflow.rs");
     let signature = source
         .find("pub async fn resume_session_and_workflow")
         .expect("resume_session_and_workflow must exist");

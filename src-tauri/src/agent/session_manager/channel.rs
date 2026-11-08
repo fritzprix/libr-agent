@@ -238,3 +238,36 @@ fn escape_xml_text(value: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
 }
+
+impl AgentSessionManager {
+    pub async fn inject_channel_notification(
+        &self,
+        session_id: String,
+        server_name: String,
+        notification: ChannelNotification,
+    ) -> Result<(String, bool), String> {
+        inject_channel_notification(self, session_id, server_name, notification).await
+    }
+
+    pub async fn resolve_channel_notification_target(
+        &self,
+        server_name: &str,
+    ) -> Result<ChannelRouteCandidate, String> {
+        resolve_channel_notification_target(self, server_name).await
+    }
+
+    pub async fn inject_channel_notification_auto(
+        &self,
+        server_name: String,
+        notification: ChannelNotification,
+    ) -> Result<(ChannelRouteCandidate, String, bool), String> {
+        let target = self
+            .resolve_channel_notification_target(&server_name)
+            .await?;
+        let (message_id, triggered) = self
+            .inject_channel_notification(target.session_id.clone(), server_name, notification)
+            .await?;
+
+        Ok((target, message_id, triggered))
+    }
+}

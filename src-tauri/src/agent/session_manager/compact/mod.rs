@@ -16,12 +16,16 @@ use self::persistence::{
     retry_invalid_compact_summary_if_possible, CompactSummaryPersistenceContext,
 };
 use self::summary::validate_compact_summary;
+use super::AgentSessionManager;
 use crate::agent::state::AgentSession;
+use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::mcp::MCPServiceProxyManager;
+use crate::repositories::CompactContextRecord;
 use crate::repositories::SessionRepository;
 use crate::services::WorkspaceService;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 use tauri::AppHandle;
 use tokio::sync::RwLock;
 
@@ -521,4 +525,122 @@ pub async fn handle_compact_response(
         final_summary,
     )
     .await
+}
+
+impl AgentSessionManager {
+    /// Apply an optional session-scoped `maxInputContext` override (runtime-only).
+    ///
+    /// When `max_input_context` is `None`, this is a no-op. When `Some(0)`, returns
+    /// an error. Used by Session API / Harbor to lower the compaction budget without
+    /// mutating global UI settings.
+    pub async fn set_max_input_context_override(
+        &self,
+        session_id: &str,
+        max_input_context: Option<u64>,
+    ) -> Result<(), String> {
+        let Some(tokens) = max_input_context else {
+            return Ok(());
+        };
+        if tokens == 0 {
+            return Err("maxInputContext must be greater than 0".to_string());
+        }
+        let mut active = self.active_sessions.write().await;
+        let Some(session) = active.get_mut(session_id) else {
+            return Err(format!("Session not found: {}", session_id));
+        };
+        session.max_input_context_override = Some(tokens as usize);
+        log::info!(
+            "Set session maxInputContext override: session={}, value={}",
+            session_id,
+            tokens
+        );
+        Ok(())
+    }
+
+    /// Get compacted context for a session
+    pub async fn get_compact_context(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<CompactContextRecord>, String> {
+        get_compact_context(&self.active_sessions, session_id).await
+    }
+
+    pub async fn get_compact_context_view(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<CompactContextView>, String> {
+        get_compact_context_view(&self.active_sessions, session_id).await
+    }
+
+    /// Save compacted context for a session
+    pub async fn save_compact_context(
+        &self,
+        session_id: &str,
+        record: CompactContextRecord,
+    ) -> Result<(), String> {
+        save_compact_context(&self.active_sessions, session_id, record).await
+    }
+
+    /// Handle a successful compact response from the frontend.
+    pub async fn handle_compact_response(
+        &self,
+        session_id: &str,
+        to_id: String,
+        compacted_delta_count: usize,
+        summary: String,
+        stream_meta: Option<CompactStreamMeta>,
+    ) -> Result<CompactResponseOutcome, String> {
+        handle_compact_response(CompactResponseParams {
+            active_sessions: &self.active_sessions,
+            app_handle: &self.app_handle,
+            session_repo: &self.session_repo,
+            proxy_manager: &self.proxy_manager,
+            session_id,
+            to_id,
+            compacted_delta_count,
+            summary,
+            stream_meta,
+        })
+        .await
+    }
+
+    /// Handle a compact error from the LLM service.
+    pub async fn handle_compact_error(
+        &self,
+        session_id: String,
+        error: crate::agent::llm::types::AgentRuntimeError,
+        partial_output: Option<String>,
+    ) -> Result<(), String> {
+        let dispatcher = TauriEventDispatcher::new(self.app_handle.clone());
+        self::recovery::handle_compact_error_with_dispatcher(
+            &self.session_repo,
+            &self.active_sessions,
+            &self.proxy_manager,
+            &self.app_handle,
+            &dispatcher,
+            session_id,
+            error,
+            partial_output,
+        )
+        .await
+    }
+
+    /// Trigger a non-resuming manual compaction pass for an already-active session.
+    pub async fn trigger_manual_compaction(&self, session_id: &str) -> Result<bool, String> {
+        crate::agent::llm::trigger_manual_compaction_for_session(
+            &self.active_sessions,
+            &self.app_handle,
+            session_id,
+        )
+        .await
+    }
+
+    /// Wait until a session is no longer compacting.
+    pub async fn wait_for_compaction_to_settle(
+        &self,
+        session_id: &str,
+        timeout: Duration,
+    ) -> Result<(), String> {
+        wait_for_compaction_to_settle(&self.active_sessions, session_id, timeout).await
+    }
 }

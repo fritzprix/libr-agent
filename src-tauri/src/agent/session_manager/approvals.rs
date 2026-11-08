@@ -448,3 +448,28 @@ mod tests {
         assert!(approvals.is_empty());
     }
 }
+
+impl AgentSessionManager {
+    /// Respond to a pending tool execution approval
+    pub async fn respond_tool_approval(
+        &self,
+        session_id: &str,
+        tool_call_id: &str,
+        approved: bool,
+    ) -> Result<(), String> {
+        respond_tool_approval(self, session_id, tool_call_id, approved).await
+    }
+
+    pub async fn respond_channel_permission(
+        &self,
+        session_id: &str,
+        request_id: &str,
+        approved: bool,
+    ) -> Result<String, String> {
+        respond_channel_permission(self, session_id, request_id, approved).await
+    }
+
+    pub async fn list_pending_approvals(&self, session_id: &str) -> Vec<PendingApprovalSummary> {
+        list_pending_approvals_in(&self.active_sessions, session_id).await
+    }
+}
