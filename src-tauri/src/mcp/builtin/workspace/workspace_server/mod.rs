@@ -2,7 +2,7 @@ mod lifecycle;
 #[cfg(test)]
 mod linked_worktree_tests;
 mod path_validation;
-mod retained;
+pub(crate) mod retained;
 mod service_context;
 mod teamwork_paths;
 mod user_skills_guard;

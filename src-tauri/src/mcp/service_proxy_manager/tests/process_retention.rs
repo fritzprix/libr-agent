@@ -5,6 +5,32 @@ const LONG_COMMAND: &str = "echo retained-start; sleep 30";
 #[cfg(windows)]
 const LONG_COMMAND: &str = "Write-Output retained-start; Start-Sleep -Seconds 30";
 
+#[cfg(unix)]
+const PERSISTENT_SHELL_TOOL: &str = "workspace__runInPersistentShell";
+#[cfg(windows)]
+const PERSISTENT_SHELL_TOOL: &str = "workspace__runInPersistentPowerShell";
+#[cfg(unix)]
+const SET_SHELL_MARK: &str = "export RETAINED_MARK=kept-7731";
+#[cfg(windows)]
+const SET_SHELL_MARK: &str = "$env:RETAINED_MARK = 'kept-7731'";
+#[cfg(unix)]
+const READ_SHELL_STATE: &str = "echo \"mark=$RETAINED_MARK len=${#RETAIN_TOKEN}\"";
+#[cfg(windows)]
+const READ_SHELL_STATE: &str =
+    "$t = \"$env:RETAIN_TOKEN\"; Write-Output \"mark=$env:RETAINED_MARK len=$($t.Length)\"";
+
+/// Releases the sessions' retained state even when an assertion fails, so one failed
+/// test does not leave entries in the process-wide store for later tests.
+struct ReleaseOnDrop(&'static [&'static str]);
+
+impl Drop for ReleaseOnDrop {
+    fn drop(&mut self) {
+        for session_id in self.0 {
+            crate::mcp::builtin::workspace::release_session_workspace_state(session_id);
+        }
+    }
+}
+
 struct RetentionHarness {
     _harness: TestHarness,
     _workspace_root: tempfile::TempDir,
@@ -88,6 +114,7 @@ async fn reload_and_config_recreation_keep_a_running_process_listed_readable_and
     let manager = &harness.manager;
     let session_id = "process-retention-reload";
     let other_session = "process-retention-other";
+    let _release = ReleaseOnDrop(&["process-retention-reload", "process-retention-other"]);
     insert_test_session(manager, session_id).await;
     insert_test_session(manager, other_session).await;
 
@@ -149,8 +176,6 @@ async fn reload_and_config_recreation_keep_a_running_process_listed_readable_and
     assert!(other_listed.contains(&other_process_id), "{other_listed}");
 
     stop_process(manager, other_session, &other_process_id).await;
-    crate::mcp::builtin::workspace::release_session_workspace_state(session_id);
-    crate::mcp::builtin::workspace::release_session_workspace_state(other_session);
 }
 
 #[tokio::test]
@@ -158,6 +183,7 @@ async fn releasing_the_session_state_starts_the_next_server_empty() {
     let harness = retention_harness().await;
     let manager = &harness.manager;
     let session_id = "process-retention-release";
+    let _release = ReleaseOnDrop(&["process-retention-release"]);
     insert_test_session(manager, session_id).await;
 
     manager.ensure_builtin_proxy(session_id).await.unwrap();
@@ -170,5 +196,79 @@ async fn releasing_the_session_state_starts_the_next_server_empty() {
 
     let listed = list_processes(manager, session_id).await;
     assert!(!listed.contains(&process_id), "{listed}");
-    crate::mcp::builtin::workspace::release_session_workspace_state(session_id);
+}
+
+async fn run_in_persistent_shell(
+    manager: &MCPServiceProxyManager,
+    session_id: &str,
+    command: &str,
+) -> String {
+    let response = manager
+        .call_tool(
+            session_id,
+            PERSISTENT_SHELL_TOOL,
+            json!({ "command": command }),
+        )
+        .await
+        .expect("persistent shell");
+    response_text(&response)
+}
+
+#[tokio::test]
+async fn reload_keeps_the_persistent_shell_and_stored_values_until_release() {
+    use crate::mcp::builtin::workspace::workspace_server::retained::retained_state;
+
+    let harness = retention_harness().await;
+    let manager = &harness.manager;
+    let session_id = "process-retention-shell";
+    let _release = ReleaseOnDrop(&["process-retention-shell"]);
+    insert_test_session(manager, session_id).await;
+    let stored = "retained-secret-5521";
+
+    manager.ensure_builtin_proxy(session_id).await.unwrap();
+    retained_state(session_id)
+        .shell_manager
+        .store_secret(session_id, "RETAIN_TOKEN", stored.to_string())
+        .await
+        .expect("store secret");
+    run_in_persistent_shell(manager, session_id, SET_SHELL_MARK).await;
+
+    for _ in 0..2 {
+        manager.destroy_proxy(session_id).await;
+        manager.ensure_builtin_proxy(session_id).await.unwrap();
+    }
+    let kept = run_in_persistent_shell(manager, session_id, READ_SHELL_STATE).await;
+    assert!(
+        kept.contains("mark=kept-7731"),
+        "same shell after reload: {kept}"
+    );
+    assert!(
+        kept.contains(&format!("len={}", stored.len())),
+        "stored value still set: {kept}"
+    );
+    assert_eq!(
+        retained_state(session_id)
+            .shell_manager
+            .session_secrets(session_id)
+            .await
+            .get("RETAIN_TOKEN")
+            .map(String::as_str),
+        Some(stored)
+    );
+
+    manager.destroy_proxy(session_id).await;
+    assert!(crate::mcp::builtin::workspace::release_session_workspace_state(session_id));
+    manager.ensure_builtin_proxy(session_id).await.unwrap();
+
+    let fresh = run_in_persistent_shell(manager, session_id, READ_SHELL_STATE).await;
+    assert!(
+        !fresh.contains("kept-7731"),
+        "new shell after release: {fresh}"
+    );
+    assert!(fresh.contains("len=0"), "stored value gone: {fresh}");
+    assert!(retained_state(session_id)
+        .shell_manager
+        .session_secrets(session_id)
+        .await
+        .is_empty());
 }
