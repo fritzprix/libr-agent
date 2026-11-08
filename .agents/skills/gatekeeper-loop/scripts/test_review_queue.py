@@ -17,6 +17,7 @@ from review_queue import (
     determine_status,
     is_dev_base,
     is_rebased,
+    latest_clean_marker,
     owner_comments_after,
     parse_markers,
 )
@@ -349,6 +350,44 @@ class GapTests(unittest.TestCase):
             head="head2", last_verdict=self.approve, total_verdicts=5))
         self.assertEqual(status, "escalate")
 
+    # Changes requested at the current head, then a clean marker at the same head
+    # (the worker fixed the PR body, so no new commit).
+    requested_here = {"head": "head1", "verdict": "changes-requested", "base": "dev/0.9.x"}
+    answered = {"round": "3", "createdAt": "2026-01-01T00:00:00Z"}
+
+    def test_clean_after_changes_requested_at_the_same_head_awaits_pending_ci(self) -> None:
+        status, reason, _ = classify(**base_args(
+            last_verdict=self.requested_here, total_verdicts=3, worker_response=self.answered,
+            clean_head="head1", pending_checks=["Test"]))
+        self.assertEqual(status, "await-ci")
+        self.assertIn("waiting for pending CI", reason)
+
+    def test_clean_after_changes_requested_at_the_same_head_with_green_ci_asks_for_the_verdict(self) -> None:
+        status, reason, _ = classify(**base_args(
+            last_verdict=self.requested_here, total_verdicts=3, worker_response=self.answered,
+            clean_head="head1"))
+        self.assertEqual(status, "review")
+        self.assertIn("issue the verdict", reason)
+
+    def test_clean_at_the_same_head_without_a_response_awaits_ci(self) -> None:
+        status, _, _ = classify(**base_args(
+            last_verdict=self.requested_here, total_verdicts=3, clean_head="head1",
+            pending_checks=["Test"]))
+        self.assertEqual(status, "await-ci")
+
+    def test_worker_response_without_a_clean_marker_is_still_review(self) -> None:
+        status, reason, _ = classify(**base_args(
+            last_verdict=self.requested_here, total_verdicts=3, worker_response=self.answered))
+        self.assertEqual(status, "review")
+        self.assertIn("worker responded", reason)
+
+    def test_state_alone_does_not_override_changes_requested_at_the_head(self) -> None:
+        # Only a clean marker on GitHub counts here; state.json can be stale.
+        status, _, _ = classify(**base_args(
+            last_verdict=self.requested_here, total_verdicts=3,
+            state_reviewed_head="head1", state_pending_ci=True, pending_checks=["Test"]))
+        self.assertEqual(status, "wait-worker")
+
     def test_rebased_head_is_review(self) -> None:
         last = {"head": "old", "verdict": "changes-requested"}
         status, reason, _ = classify(**base_args(
@@ -455,6 +494,28 @@ Total **58/100**. Does not affect the verdict above.
             base_args(total_verdicts=5, last_verdict={"head": "x", "verdict": "changes-requested"}),
         ):
             self.assertTrue(classify(**kwargs)[1])
+
+
+class LatestCleanMarkerTests(unittest.TestCase):
+    verdict = {"createdAt": "2026-01-01T10:00:00Z"}
+    response = {"createdAt": "2026-01-01T11:00:00Z"}
+
+    def test_clean_after_the_response_counts(self) -> None:
+        clean = {"createdAt": "2026-01-01T12:00:00Z", "head": "h"}
+        self.assertEqual(latest_clean_marker([clean], self.verdict, self.response), clean)
+
+    def test_clean_before_a_later_response_does_not_count(self) -> None:
+        clean = {"createdAt": "2026-01-01T10:30:00Z", "head": "h"}
+        self.assertIsNone(latest_clean_marker([clean], self.verdict, self.response))
+
+    def test_clean_before_the_last_verdict_does_not_count(self) -> None:
+        clean = {"createdAt": "2026-01-01T09:00:00Z", "head": "h"}
+        self.assertIsNone(latest_clean_marker([clean], self.verdict, None))
+
+    def test_without_verdicts_the_newest_clean_counts(self) -> None:
+        older = {"createdAt": "2026-01-01T09:00:00Z", "head": "a"}
+        newer = {"createdAt": "2026-01-01T12:00:00Z", "head": "b"}
+        self.assertEqual(latest_clean_marker([older, newer], None, None), newer)
 
 
 if __name__ == "__main__":
