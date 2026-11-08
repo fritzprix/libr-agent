@@ -52,6 +52,13 @@ impl AgentEventDispatcher for NoopDispatcher {
     fn emit_compact_state(&self, _event: CompactStateEvent) -> Result<(), String> {
         Ok(())
     }
+
+    fn emit_completion_cancel(
+        &self,
+        _request: tauri_mcp_agent_lib::agent::llm::types::CompletionCancelRequest,
+    ) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 fn init_runtime_primitives() {

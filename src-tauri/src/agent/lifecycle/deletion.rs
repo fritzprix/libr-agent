@@ -1,4 +1,6 @@
+use crate::agent::events::AgentEventDispatcher;
 use crate::agent::state::AgentSession;
+use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::session_repository::SessionRepository;
 use std::collections::HashMap;
@@ -18,6 +20,25 @@ pub async fn delete_session(
     app_handle: &AppHandle,
     session_id: String,
 ) -> Result<Vec<String>, String> {
+    let dispatcher = TauriEventDispatcher::new(app_handle.clone());
+    delete_session_with_dispatcher(
+        session_repo,
+        active_sessions,
+        proxy_manager,
+        &dispatcher,
+        session_id,
+    )
+    .await
+}
+
+/// Like [`delete_session`], with events sent through `dispatcher`.
+pub async fn delete_session_with_dispatcher(
+    session_repo: &Arc<dyn SessionRepository>,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    proxy_manager: &Arc<MCPServiceProxyManager>,
+    dispatcher: &dyn AgentEventDispatcher,
+    session_id: String,
+) -> Result<Vec<String>, String> {
     // 0. Collect all descendant IDs BEFORE cascade delete (so we can clean their workspaces)
     log::debug!(
         "Collecting descendants for cascade workspace cleanup: {}",
@@ -35,21 +56,21 @@ pub async fn delete_session(
     }
 
     // 1. Terminate workflow if running (for this session and all descendants)
-    let _ = crate::agent::workflow::terminate_session(
+    let _ = crate::agent::workflow::terminate_session_with_dispatcher(
         session_repo,
         active_sessions,
         proxy_manager,
-        app_handle,
+        dispatcher,
         session_id.clone(),
     )
     .await;
 
     for descendant_id in &descendant_ids {
-        let _ = crate::agent::workflow::terminate_session(
+        let _ = crate::agent::workflow::terminate_session_with_dispatcher(
             session_repo,
             active_sessions,
             proxy_manager,
-            app_handle,
+            dispatcher,
             descendant_id.clone(),
         )
         .await;
@@ -104,12 +125,31 @@ pub async fn delete_session_only(
     app_handle: &AppHandle,
     session_id: String,
 ) -> Result<(String, Vec<String>), String> {
-    // 1. Terminate workflow if running (this session only)
-    let _ = crate::agent::workflow::terminate_session(
+    let dispatcher = TauriEventDispatcher::new(app_handle.clone());
+    delete_session_only_with_dispatcher(
         session_repo,
         active_sessions,
         proxy_manager,
-        app_handle,
+        &dispatcher,
+        session_id,
+    )
+    .await
+}
+
+/// Like [`delete_session_only`], with events sent through `dispatcher`.
+pub async fn delete_session_only_with_dispatcher(
+    session_repo: &Arc<dyn SessionRepository>,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    proxy_manager: &Arc<MCPServiceProxyManager>,
+    dispatcher: &dyn AgentEventDispatcher,
+    session_id: String,
+) -> Result<(String, Vec<String>), String> {
+    // 1. Terminate workflow if running (this session only)
+    let _ = crate::agent::workflow::terminate_session_with_dispatcher(
+        session_repo,
+        active_sessions,
+        proxy_manager,
+        dispatcher,
         session_id.clone(),
     )
     .await;

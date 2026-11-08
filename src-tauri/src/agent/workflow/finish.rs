@@ -468,6 +468,13 @@ mod tests {
         ) -> Result<(), String> {
             Ok(())
         }
+
+        fn emit_completion_cancel(
+            &self,
+            _request: crate::agent::llm::types::CompletionCancelRequest,
+        ) -> Result<(), String> {
+            Ok(())
+        }
     }
 
     async fn seed_in_memory_session(
@@ -536,6 +543,13 @@ mod tests {
         fn emit_compact_state(
             &self,
             _event: crate::agent::llm::types::CompactStateEvent,
+        ) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn emit_completion_cancel(
+            &self,
+            _request: crate::agent::llm::types::CompletionCancelRequest,
         ) -> Result<(), String> {
             Ok(())
         }

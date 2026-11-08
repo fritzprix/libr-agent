@@ -24,6 +24,10 @@ impl AgentEventDispatcher for TauriEventDispatcher {
     fn emit_compact_state(&self, event: CompactStateEvent) -> Result<(), String> {
         emit_compact_state(&self.app_handle, event)
     }
+
+    fn emit_completion_cancel(&self, request: CompletionCancelRequest) -> Result<(), String> {
+        emit_completion_cancel(&self.app_handle, request)
+    }
 }
 
 /// Emit an agent event to the frontend

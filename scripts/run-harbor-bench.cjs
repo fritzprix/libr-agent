@@ -19,6 +19,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const net = require('node:net');
 const { spawn, spawnSync } = require('node:child_process');
 const {
   createInterruptController,
@@ -140,6 +141,10 @@ function runStatus(command, args) {
 }
 
 const ISOLATED_FLAG = '--isolated';
+// Launch the debug bench binary instead of the release one. Debug builds are
+// the only ones that contain the debug-only E2E control-plane routes, so the
+// session-e2e matrix requires this flag.
+const DEBUG_APP_BIN_FLAG = '--debug-app-bin';
 const INSTANCE_MODULE = 'benchmarks.harbor.isolated_instance';
 const INSTANCE_ROOT = path.join(
   repoRoot,
@@ -155,6 +160,32 @@ const RELEASE_APP_BIN = path.join(
   'release',
   'libragent',
 );
+const DEBUG_APP_BIN = path.join(
+  repoRoot,
+  'src-tauri',
+  'target',
+  'debug',
+  'libragent',
+);
+// Must match build.devUrl in src-tauri/tauri.conf.json.
+const DEV_URL_PORT = 1420;
+
+/** @param {number} port */
+function portInUse(port) {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host: '127.0.0.1', port });
+    socket.setTimeout(500);
+    socket.once('connect', () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.once('timeout', () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.once('error', () => resolve(false));
+  });
+}
 
 /**
  * @returns {{ assistantId: string, port: number }}
@@ -254,6 +285,47 @@ function runBenchChild(command, args) {
  * @param {string[]} benchArgs
  * @returns {Promise<number>}
  */
+/**
+ * Serve the built frontend on the port `build.devUrl` points to
+ * (src-tauri/tauri.conf.json). A debug binary loads its WebView from that URL
+ * instead of the embedded dist/, so a headless bench run needs a server here
+ * or the frontend never registers its LLM listener and sessions hang busy.
+ *
+ * @returns {Promise<number|null>} the server pid, or null when the port is
+ *   already taken (e.g. a developer's `pnpm dev` is running).
+ */
+async function startFrontendServer() {
+  if (await portInUse(DEV_URL_PORT)) {
+    console.log(`==> Port ${DEV_URL_PORT} already in use; assuming it serves the frontend.`);
+    return null;
+  }
+  const distDir = path.join(repoRoot, 'dist');
+  if (!fs.existsSync(path.join(distDir, 'index.html'))) {
+    throw new Error(
+      `No frontend build at ${distDir}. A debug bench binary loads its WebView from ` +
+        `http://localhost:${DEV_URL_PORT}; run \`pnpm build\` first.`,
+    );
+  }
+  const child = spawn(
+    'python3',
+    ['-m', 'http.server', String(DEV_URL_PORT), '--bind', '127.0.0.1', '-d', distDir],
+    { stdio: 'ignore', detached: true },
+  );
+  child.unref();
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  if (!(await portInUse(DEV_URL_PORT))) {
+    killProcessTree(child.pid);
+    throw new Error(`Frontend server on port ${DEV_URL_PORT} failed to start.`);
+  }
+  console.log(`==> Serving ${distDir} on http://localhost:${DEV_URL_PORT} (devUrl for the debug binary).`);
+  return child.pid;
+}
+
+/** @param {number|null} pid */
+function stopFrontendServer(pid) {
+  if (pid !== null) killProcessTree(pid);
+}
+
 async function runIsolated(benchCommand, benchArgs) {
   if (process.platform !== 'linux') {
     // Stopping detached sidecars relies on /proc/<pid>/environ.
@@ -268,6 +340,16 @@ async function runIsolated(benchCommand, benchArgs) {
     return 1;
   }
   const { assistantId, port } = readSeedInfo();
+  const appBin = debugAppBin ? DEBUG_APP_BIN : RELEASE_APP_BIN;
+  if (!fs.existsSync(appBin)) {
+    console.error(
+      `Bench instance binary not found: ${appBin}\n` +
+        (debugAppBin
+          ? 'Build the debug binary first: node scripts/run-rust-command.cjs build'
+          : 'Build the release binary first: pnpm tauri build'),
+    );
+    return 1;
+  }
   const args = [...benchArgs];
   if (!args.includes('--api-url')) {
     args.push('--api-url', `http://localhost:${port}/api`);
@@ -276,22 +358,50 @@ async function runIsolated(benchCommand, benchArgs) {
     args.push('--assistant-id', assistantId);
   }
 
-  const launchStatus = runStatus('python', [
-    '-m',
-    INSTANCE_MODULE,
-    'launch',
-    '--app-bin',
-    RELEASE_APP_BIN,
-  ]);
-  if (launchStatus !== 0) {
-    return launchStatus;
+  // Set before `launch` so instance_env() sees the flag on the FIRST start
+  // too (it raises RUST_MIN_STACK: a debug binary overflows the default 2 MiB
+  // worker stack on `POST /api/sessions`).
+  if (debugAppBin) {
+    // The E2E control plane routes only exist in debug builds and are opt-in;
+    // the isolated instance forwards this flag into the app environment.
+    process.env.LIBRAGENT_E2E_CONTROL = '1';
   }
 
-  // The Harbor adapter relaunches the instance from the seed before each trial.
-  process.env.LIBRAGENT_BENCH_INSTANCE_APP_BIN = RELEASE_APP_BIN;
-  process.env.LIBRAGENT_BENCH_INSTANCE_ROOT = INSTANCE_ROOT;
+  // A debug binary loads its frontend from build.devUrl (tauri.conf.json,
+  // http://localhost:1420); the release binary embeds dist/ instead. Without
+  // something serving that port the WebView stays blank, the frontend never
+  // registers its `llm:completion-request` listener, and every session hangs
+  // `busy` after "Emitted LLM completion request". Serve dist/ ourselves.
+  let frontendServerPid = null;
+  if (debugAppBin) {
+    try {
+      frontendServerPid = await startFrontendServer();
+    } catch (err) {
+      console.error(String(err && err.message ? err.message : err));
+      return 1;
+    }
+  }
+
+  // The `try` must start before the instance launch: the frontend server is
+  // already detached by now, and an early `return` on a failed launch would
+  // otherwise leak it holding port 1420 (a developer's `pnpm dev` can no
+  // longer bind it, and the next bench run "accepts" the stale server).
   const containersBefore = snapshotContainers();
   try {
+    const launchStatus = runStatus('python', [
+      '-m',
+      INSTANCE_MODULE,
+      'launch',
+      '--app-bin',
+      appBin,
+    ]);
+    if (launchStatus !== 0) {
+      return launchStatus;
+    }
+
+    // The Harbor adapter relaunches the instance from the seed before each trial.
+    process.env.LIBRAGENT_BENCH_INSTANCE_APP_BIN = appBin;
+    process.env.LIBRAGENT_BENCH_INSTANCE_ROOT = INSTANCE_ROOT;
     return await runBenchChild(benchCommand[0], [
       ...benchCommand.slice(1),
       ...args,
@@ -304,6 +414,7 @@ async function runIsolated(benchCommand, benchArgs) {
       'stop',
       ...(forced ? ['--force'] : []),
     ]);
+    stopFrontendServer(frontendServerPid);
     if (interrupt.presses > 0) {
       removeLeftoverContainers(containersBefore);
     }
@@ -312,6 +423,7 @@ async function runIsolated(benchCommand, benchArgs) {
 
 const rawArgv = process.argv.slice(2);
 const isolated = rawArgv.includes(ISOLATED_FLAG);
+const debugAppBin = rawArgv.includes(DEBUG_APP_BIN_FLAG);
 
 /**
  * @param {string} mode
@@ -327,10 +439,14 @@ function applyWorkspaceMode(mode) {
 }
 
 const plan = planWorkspaceModes(
-  rawArgv.filter((arg) => arg !== ISOLATED_FLAG),
+  rawArgv.filter((arg) => arg !== ISOLATED_FLAG && arg !== DEBUG_APP_BIN_FLAG),
   isolated,
   process.env.LIBRAGENT_HARBOR_WORKSPACE_MODE,
 );
+if (debugAppBin && !isolated) {
+  console.error(`${DEBUG_APP_BIN_FLAG} only applies to ${ISOLATED_FLAG} runs.`);
+  process.exit(1);
+}
 if (plan.error !== null) {
   console.error(plan.error);
   process.exit(1);

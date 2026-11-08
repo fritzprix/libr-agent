@@ -471,6 +471,18 @@ def instance_env(layout: InstanceLayout, base: dict[str, str] | None = None) -> 
         # Docker CLI resolves credentials and contexts from $HOME/.docker.
         env.setdefault("DOCKER_CONFIG", str(Path(real_home) / ".docker"))
         env["HOME"] = str(layout.home_dir.resolve())
+    if os.environ.get("LIBRAGENT_E2E_CONTROL") == "1":
+        env["LIBRAGENT_E2E_CONTROL"] = "1"
+        # The bench needs a debug binary, and in unoptimized debug code
+        # `POST /api/sessions` overflows the default 2 MiB tokio worker stack.
+        # This happens without the E2E routes too, so it is not caused by the
+        # route chain (#2637).
+        try:
+            parent_stack = int(env.get("RUST_MIN_STACK", "0"))
+        except ValueError:
+            parent_stack = 0
+        env["RUST_MIN_STACK"] = str(max(parent_stack, 16 * 1024 * 1024))
+
     env.update(
         {
             "LIBRAGENT_DATA_DIR": str(layout.data_dir.resolve()),

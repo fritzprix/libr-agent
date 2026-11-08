@@ -293,7 +293,7 @@ fn marker_pid_file(session_id: &str) -> std::path::PathBuf {
 }
 
 #[cfg(unix)]
-fn pid_alive(pid: u32) -> bool {
+pub(super) fn pid_alive(pid: u32) -> bool {
     std::process::Command::new("kill")
         .args(["-0", &pid.to_string()])
         .status()
@@ -302,7 +302,7 @@ fn pid_alive(pid: u32) -> bool {
 }
 
 #[cfg(unix)]
-async fn wait_for_pid_death(pid: u32) -> bool {
+pub(super) async fn wait_for_pid_death(pid: u32) -> bool {
     let deadline = Instant::now() + Duration::from_secs(15);
     while Instant::now() < deadline {
         if !pid_alive(pid) {
@@ -316,7 +316,7 @@ async fn wait_for_pid_death(pid: u32) -> bool {
 /// Spawns a real background process through `workspace__spawnProcess` and
 /// returns its OS pid once the child has reported it.
 #[cfg(unix)]
-async fn spawn_real_process(manager: &MCPServiceProxyManager, session_id: &str) -> u32 {
+pub(super) async fn spawn_real_process(manager: &MCPServiceProxyManager, session_id: &str) -> u32 {
     let pid_file = marker_pid_file(session_id);
     let _ = std::fs::remove_file(&pid_file);
 

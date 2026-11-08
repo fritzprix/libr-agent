@@ -1,4 +1,4 @@
-use crate::agent::llm::types::{AgentRuntimeError, CompactStateEvent};
+use crate::agent::llm::types::{AgentRuntimeError, CompactStateEvent, CompletionCancelRequest};
 use crate::agent::runtime_state::SessionRuntimeState;
 use crate::models::chat::Message;
 use crate::repositories::SessionStatus;
@@ -210,6 +210,7 @@ pub enum AgentEvent {
 pub trait AgentEventDispatcher: Send + Sync {
     fn emit_agent_event(&self, event: AgentEvent) -> Result<(), String>;
     fn emit_compact_state(&self, event: CompactStateEvent) -> Result<(), String>;
+    fn emit_completion_cancel(&self, request: CompletionCancelRequest) -> Result<(), String>;
 }
 
 pub(crate) fn summarize_agent_event(event: &AgentEvent) -> String {

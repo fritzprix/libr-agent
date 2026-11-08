@@ -1,0 +1,399 @@
+{
+  "schema": 1,
+  "source_issue": 2565,
+  "checklist_ids": 65,
+  "issue_result_slots": 74,
+  "issue_result_slots_note": "Issue #2565 totals (pass/fail/skipped/open) sum to 74; the numbered checklist has 65 IDs (P/B/S/M/N/O/X/A).",
+  "cases": [
+    {
+      "id": "P-1",
+      "status": "deferred",
+      "reason": "needs Windows/Linux desktop debug instance + E2E control; task scaffold pending",
+      "harbor_task": null
+    },
+    {
+      "id": "P-2",
+      "status": "deferred",
+      "reason": "needs Windows/Linux desktop debug instance + E2E control; task scaffold pending",
+      "harbor_task": null
+    },
+    {
+      "id": "P-3",
+      "status": "deferred",
+      "reason": "needs Windows/Linux desktop debug instance + E2E control; task scaffold pending",
+      "harbor_task": null
+    },
+    {
+      "id": "P-4",
+      "status": "deferred",
+      "reason": "not yet automated in Harbor dataset",
+      "harbor_task": null
+    },
+    {
+      "id": "P-5",
+      "status": "deferred",
+      "reason": "needs Windows/Linux desktop debug instance + E2E control; task scaffold pending",
+      "harbor_task": null
+    },
+    {
+      "id": "P-6",
+      "status": "deferred",
+      "reason": "needs Windows/Linux desktop debug instance + E2E control; task scaffold pending",
+      "harbor_task": null
+    },
+    {
+      "id": "P-7",
+      "status": "deferred",
+      "reason": "not yet automated in Harbor dataset",
+      "harbor_task": null
+    },
+    {
+      "id": "P-8",
+      "status": "deferred",
+      "reason": "needs Windows/Linux desktop debug instance + E2E control; task scaffold pending",
+      "harbor_task": null
+    },
+    {
+      "id": "P-9",
+      "status": "deferred",
+      "reason": "needs Windows/Linux desktop debug instance + E2E control; task scaffold pending",
+      "harbor_task": null
+    },
+    {
+      "id": "B-1",
+      "status": "platform-specific",
+      "reason": "Linux sudo/host path",
+      "harbor_task": null
+    },
+    {
+      "id": "B-2",
+      "status": "platform-specific",
+      "reason": "Linux sudo/host path",
+      "harbor_task": null
+    },
+    {
+      "id": "B-3",
+      "status": "implemented",
+      "reason": "partial: e2e-interactive-echo (requireUserInput path); storeAs full matrix pending product API",
+      "harbor_task": "e2e-interactive-echo"
+    },
+    {
+      "id": "B-4",
+      "status": "deferred",
+      "reason": "needs Windows/Linux desktop debug instance + E2E control; task scaffold pending",
+      "harbor_task": null
+    },
+    {
+      "id": "B-5",
+      "status": "deferred",
+      "reason": "needs Windows/Linux desktop debug instance + E2E control; task scaffold pending",
+      "harbor_task": null
+    },
+    {
+      "id": "B-6",
+      "status": "implemented",
+      "reason": "Harbor e2e-b6-log-variable-ref; logging contract per #2631",
+      "harbor_task": "e2e-b6-log-variable-ref"
+    },
+    {
+      "id": "B-7",
+      "status": "deferred",
+      "reason": "needs Windows/Linux desktop debug instance + E2E control; task scaffold pending",
+      "harbor_task": null
+    },
+    {
+      "id": "B-8",
+      "status": "deferred",
+      "reason": "needs Windows/Linux desktop debug instance + E2E control; task scaffold pending",
+      "harbor_task": null
+    },
+    {
+      "id": "B-9",
+      "status": "deferred",
+      "reason": "needs Windows/Linux desktop debug instance + E2E control; task scaffold pending",
+      "harbor_task": null
+    },
+    {
+      "id": "B-10",
+      "status": "platform-specific",
+      "reason": "Docker attach / Windows host",
+      "harbor_task": null
+    },
+    {
+      "id": "B-11",
+      "status": "implemented",
+      "reason": "Harbor e2e-b11-no-runshell",
+      "harbor_task": "e2e-b11-no-runshell"
+    },
+    {
+      "id": "B-12",
+      "status": "deferred",
+      "reason": "needs Windows/Linux desktop debug instance + E2E control; task scaffold pending",
+      "harbor_task": null
+    },
+    {
+      "id": "S-1",
+      "status": "deferred",
+      "reason": "not yet automated in Harbor dataset",
+      "harbor_task": null
+    },
+    {
+      "id": "S-2",
+      "status": "deferred",
+      "reason": "not yet automated in Harbor dataset",
+      "harbor_task": null
+    },
+    {
+      "id": "S-3",
+      "status": "deferred",
+      "reason": "not yet automated in Harbor dataset",
+      "harbor_task": null
+    },
+    {
+      "id": "S-4",
+      "status": "deferred",
+      "reason": "not yet automated in Harbor dataset",
+      "harbor_task": null
+    },
+    {
+      "id": "S-5",
+      "status": "deferred",
+      "reason": "not yet automated in Harbor dataset",
+      "harbor_task": null
+    },
+    {
+      "id": "S-6",
+      "status": "deferred",
+      "reason": "not yet automated in Harbor dataset",
+      "harbor_task": null
+    },
+    {
+      "id": "S-7",
+      "status": "deferred",
+      "reason": "not yet automated in Harbor dataset",
+      "harbor_task": null
+    },
+    {
+      "id": "M-1",
+      "status": "deferred",
+      "reason": "not yet automated in Harbor dataset",
+      "harbor_task": null
+    },
+    {
+      "id": "M-2",
+      "status": "deferred",
+      "reason": "not yet automated in Harbor dataset",
+      "harbor_task": null
+    },
+    {
+      "id": "M-3",
+      "status": "deferred",
+      "reason": "not yet automated in Harbor dataset",
+      "harbor_task": null
+    },
+    {
+      "id": "M-4",
+      "status": "deferred",
+      "reason": "not yet automated in Harbor dataset",
+      "harbor_task": null
+    },
+    {
+      "id": "M-5",
+      "status": "deferred",
+      "reason": "not yet automated in Harbor dataset",
+      "harbor_task": null
+    },
+    {
+      "id": "M-6",
+      "status": "deferred",
+      "reason": "not yet automated in Harbor dataset",
+      "harbor_task": null
+    },
+    {
+      "id": "M-7",
+      "status": "deferred",
+      "reason": "not yet automated in Harbor dataset",
+      "harbor_task": null
+    },
+    {
+      "id": "M-8",
+      "status": "deferred",
+      "reason": "not yet automated in Harbor dataset",
+      "harbor_task": null
+    },
+    {
+      "id": "M-9",
+      "status": "platform-specific",
+      "reason": "Docker attach / Windows host",
+      "harbor_task": null
+    },
+    {
+      "id": "M-10",
+      "status": "deferred",
+      "reason": "not yet automated in Harbor dataset",
+      "harbor_task": null
+    },
+    {
+      "id": "M-11",
+      "status": "deferred",
+      "reason": "not yet automated in Harbor dataset",
+      "harbor_task": null
+    },
+    {
+      "id": "N-1",
+      "status": "ui-only",
+      "reason": "requires UI automation (pixels/keyboard); E2E control covers backend state only",
+      "harbor_task": null
+    },
+    {
+      "id": "N-2",
+      "status": "ui-only",
+      "reason": "requires UI automation (pixels/keyboard); E2E control covers backend state only",
+      "harbor_task": null
+    },
+    {
+      "id": "N-3",
+      "status": "ui-only",
+      "reason": "requires UI automation (pixels/keyboard); E2E control covers backend state only",
+      "harbor_task": null
+    },
+    {
+      "id": "N-4",
+      "status": "ui-only",
+      "reason": "requires UI automation (pixels/keyboard); E2E control covers backend state only",
+      "harbor_task": null
+    },
+    {
+      "id": "N-5",
+      "status": "ui-only",
+      "reason": "requires UI automation (pixels/keyboard); E2E control covers backend state only",
+      "harbor_task": null
+    },
+    {
+      "id": "O-1",
+      "status": "deferred",
+      "reason": "not yet automated in Harbor dataset",
+      "harbor_task": null
+    },
+    {
+      "id": "O-2",
+      "status": "platform-specific",
+      "reason": "Docker attach / Windows host",
+      "harbor_task": null
+    },
+    {
+      "id": "O-3",
+      "status": "platform-specific",
+      "reason": "Linux sudo/host path",
+      "harbor_task": null
+    },
+    {
+      "id": "O-4",
+      "status": "deferred",
+      "reason": "not yet automated in Harbor dataset",
+      "harbor_task": null
+    },
+    {
+      "id": "O-5",
+      "status": "deferred",
+      "reason": "not yet automated in Harbor dataset",
+      "harbor_task": null
+    },
+    {
+      "id": "O-6",
+      "status": "deferred",
+      "reason": "not yet automated in Harbor dataset",
+      "harbor_task": null
+    },
+    {
+      "id": "O-7",
+      "status": "deferred",
+      "reason": "not yet automated in Harbor dataset",
+      "harbor_task": null
+    },
+    {
+      "id": "O-8",
+      "status": "deferred",
+      "reason": "not yet automated in Harbor dataset",
+      "harbor_task": null
+    },
+    {
+      "id": "O-9",
+      "status": "deferred",
+      "reason": "not yet automated in Harbor dataset",
+      "harbor_task": null
+    },
+    {
+      "id": "O-10",
+      "status": "implemented",
+      "reason": "Harbor e2e-o10-writefile-nested",
+      "harbor_task": "e2e-o10-writefile-nested"
+    },
+    {
+      "id": "X-1",
+      "status": "deferred",
+      "reason": "not yet automated in Harbor dataset",
+      "harbor_task": null
+    },
+    {
+      "id": "X-2",
+      "status": "deferred",
+      "reason": "not yet automated in Harbor dataset",
+      "harbor_task": null
+    },
+    {
+      "id": "X-3",
+      "status": "deferred",
+      "reason": "not yet automated in Harbor dataset",
+      "harbor_task": null
+    },
+    {
+      "id": "X-4",
+      "status": "deferred",
+      "reason": "not yet automated in Harbor dataset",
+      "harbor_task": null
+    },
+    {
+      "id": "X-5",
+      "status": "deferred",
+      "reason": "not yet automated in Harbor dataset",
+      "harbor_task": null
+    },
+    {
+      "id": "X-6",
+      "status": "deferred",
+      "reason": "not yet automated in Harbor dataset",
+      "harbor_task": null
+    },
+    {
+      "id": "A-1",
+      "status": "ui-only",
+      "reason": "requires UI automation (pixels/keyboard); E2E control covers backend state only",
+      "harbor_task": null
+    },
+    {
+      "id": "A-2",
+      "status": "ui-only",
+      "reason": "requires UI automation (pixels/keyboard); E2E control covers backend state only",
+      "harbor_task": null
+    },
+    {
+      "id": "A-3",
+      "status": "ui-only",
+      "reason": "requires UI automation (pixels/keyboard); E2E control covers backend state only",
+      "harbor_task": null
+    },
+    {
+      "id": "A-4",
+      "status": "deferred",
+      "reason": "not yet automated in Harbor dataset",
+      "harbor_task": null
+    },
+    {
+      "id": "A-5",
+      "status": "ui-only",
+      "reason": "requires UI automation (pixels/keyboard); E2E control covers backend state only",
+      "harbor_task": null
+    }
+  ]
+}
