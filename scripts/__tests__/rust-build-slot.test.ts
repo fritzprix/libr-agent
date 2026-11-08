@@ -12,7 +12,7 @@ import {
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 const require = createRequire(import.meta.url);
 const { maxConcurrent, releaseBuildSlot, tryAcquire } =
@@ -37,6 +37,20 @@ function deadPid(): number {
 
 describe('rust build slot', () => {
   let dir: string;
+
+  // Windows shells out to PowerShell for process start times. Pay that once
+  // here so the 5s default test timeout is not racing a cold runner.
+  beforeAll(() => {
+    const warmupDir = mkdtempSync(path.join(tmpdir(), 'rust-slot-warmup-'));
+    try {
+      const held = tryAcquire(warmupDir, 1, 'warmup');
+      if (held) {
+        releaseBuildSlot(held);
+      }
+    } finally {
+      rmSync(warmupDir, { recursive: true, force: true });
+    }
+  }, 30000);
 
   beforeEach(() => {
     dir = mkdtempSync(path.join(tmpdir(), 'rust-slot-'));
@@ -63,13 +77,17 @@ describe('rust build slot', () => {
     ).toBe(1);
   });
 
-  it('refuses a slot while a live process holds it', () => {
-    const held = tryAcquire(dir, 1, 'a');
-    expect(held).not.toBeNull();
-    expect(tryAcquire(dir, 1, 'b')).toBeNull();
-    releaseBuildSlot(held!);
-    expect(tryAcquire(dir, 1, 'b')).not.toBeNull();
-  });
+  it(
+    'refuses a slot while a live process holds it',
+    () => {
+      const held = tryAcquire(dir, 1, 'a');
+      expect(held).not.toBeNull();
+      expect(tryAcquire(dir, 1, 'b')).toBeNull();
+      releaseBuildSlot(held!);
+      expect(tryAcquire(dir, 1, 'b')).not.toBeNull();
+    },
+    15000,
+  );
 
   it('takes a slot from a dead holder', () => {
     const dead = tryAcquire(dir, 1, 'crashed', deadPid());
