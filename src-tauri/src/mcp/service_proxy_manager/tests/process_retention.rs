@@ -1,23 +1,27 @@
+//! Issue #2634: session processes and the persistent shell survive proxy reload.
+//! These tests start real processes. Windows is not covered here: the PowerShell
+//! variants hung the Windows CI `--lib` run, like the other real-process tests in
+//! this directory.
+#![cfg(unix)]
+
 use super::*;
+use std::future::Future;
+use std::time::Duration;
 
-#[cfg(unix)]
 const LONG_COMMAND: &str = "echo retained-start; sleep 30";
-#[cfg(windows)]
-const LONG_COMMAND: &str = "Write-Output retained-start; Start-Sleep -Seconds 30";
-
-#[cfg(unix)]
 const PERSISTENT_SHELL_TOOL: &str = "workspace__runInPersistentShell";
-#[cfg(windows)]
-const PERSISTENT_SHELL_TOOL: &str = "workspace__runInPersistentPowerShell";
-#[cfg(unix)]
 const SET_SHELL_MARK: &str = "export RETAINED_MARK=kept-7731";
-#[cfg(windows)]
-const SET_SHELL_MARK: &str = "$env:RETAINED_MARK = 'kept-7731'";
-#[cfg(unix)]
 const READ_SHELL_STATE: &str = "echo \"mark=$RETAINED_MARK len=${#RETAIN_TOKEN}\"";
-#[cfg(windows)]
-const READ_SHELL_STATE: &str =
-    "$t = \"$env:RETAIN_TOKEN\"; Write-Output \"mark=$env:RETAINED_MARK len=$($t.Length)\"";
+
+/// Upper bound for one tool call or proxy step, so a stuck process fails the test
+/// with the step name instead of hanging the whole test binary.
+const STEP_TIMEOUT: Duration = Duration::from_secs(60);
+
+async fn within<T>(step: &str, future: impl Future<Output = T>) -> T {
+    tokio::time::timeout(STEP_TIMEOUT, future)
+        .await
+        .unwrap_or_else(|_| panic!("{step} did not finish within {STEP_TIMEOUT:?}"))
+}
 
 /// Releases the sessions' retained state even when an assertion fails, so one failed
 /// test does not leave entries in the process-wide store for later tests.
@@ -75,36 +79,42 @@ fn find_process_id(value: &serde_json::Value) -> Option<String> {
 }
 
 async fn spawn_long_process(manager: &MCPServiceProxyManager, session_id: &str) -> String {
-    let response = manager
-        .call_tool(
+    let response = within(
+        "spawnProcess",
+        manager.call_tool(
             session_id,
             "workspace__spawnProcess",
             json!({ "command": LONG_COMMAND }),
-        )
-        .await
-        .expect("spawnProcess");
+        ),
+    )
+    .await
+    .expect("spawnProcess");
     response_text(&response);
     let value = serde_json::to_value(&response).expect("response json");
     find_process_id(&value).expect("spawnProcess returns a process id")
 }
 
 async fn list_processes(manager: &MCPServiceProxyManager, session_id: &str) -> String {
-    let response = manager
-        .call_tool(session_id, "workspace__listProcesses", json!({}))
-        .await
-        .expect("listProcesses");
+    let response = within(
+        "listProcesses",
+        manager.call_tool(session_id, "workspace__listProcesses", json!({})),
+    )
+    .await
+    .expect("listProcesses");
     response_text(&response)
 }
 
 async fn stop_process(manager: &MCPServiceProxyManager, session_id: &str, process_id: &str) {
-    let response = manager
-        .call_tool(
+    let response = within(
+        "stopProcess",
+        manager.call_tool(
             session_id,
             "workspace__stopProcess",
             json!({ "processId": process_id }),
-        )
-        .await
-        .expect("stopProcess");
+        ),
+    )
+    .await
+    .expect("stopProcess");
     response_text(&response);
 }
 
@@ -118,48 +128,69 @@ async fn reload_and_config_recreation_keep_a_running_process_listed_readable_and
     insert_test_session(manager, session_id).await;
     insert_test_session(manager, other_session).await;
 
-    manager.ensure_builtin_proxy(session_id).await.unwrap();
-    manager.ensure_builtin_proxy(other_session).await.unwrap();
+    within(
+        "ensure_builtin_proxy",
+        manager.ensure_builtin_proxy(session_id),
+    )
+    .await
+    .unwrap();
+    within(
+        "ensure_builtin_proxy",
+        manager.ensure_builtin_proxy(other_session),
+    )
+    .await
+    .unwrap();
     let process_id = spawn_long_process(manager, session_id).await;
     let other_process_id = spawn_long_process(manager, other_session).await;
 
     // Reload: the proxy and its WorkspaceServer are destroyed and created again, twice.
     for _ in 0..2 {
-        manager.destroy_proxy(session_id).await;
-        manager.ensure_builtin_proxy(session_id).await.unwrap();
+        within("destroy_proxy", manager.destroy_proxy(session_id)).await;
+        within(
+            "ensure_builtin_proxy",
+            manager.ensure_builtin_proxy(session_id),
+        )
+        .await
+        .unwrap();
     }
     let listed = list_processes(manager, session_id).await;
     assert!(listed.contains(&process_id), "{listed}");
     assert!(!listed.contains(&other_process_id), "{listed}");
 
     // Config-driven recreation replaces the proxy through create_proxy.
-    manager
-        .create_proxy(
+    within(
+        "create_proxy",
+        manager.create_proxy(
             session_id.to_string(),
             vec!["playbook".to_string()],
             vec![],
             None,
-        )
-        .await
-        .unwrap();
-    manager
-        .create_proxy(
+        ),
+    )
+    .await
+    .unwrap();
+    within(
+        "create_proxy",
+        manager.create_proxy(
             session_id.to_string(),
             vec!["workspace".to_string(), "playbook".to_string()],
             vec![],
             None,
-        )
-        .await
-        .unwrap();
+        ),
+    )
+    .await
+    .unwrap();
 
-    let output = manager
-        .call_tool(
+    let output = within(
+        "readProcessOutput",
+        manager.call_tool(
             session_id,
             "workspace__readProcessOutput",
             json!({ "processId": process_id, "stream": "stdout" }),
-        )
-        .await
-        .expect("readProcessOutput");
+        ),
+    )
+    .await
+    .expect("readProcessOutput");
     let output = response_text(&output);
     assert!(output.contains("retained-start"), "{output}");
 
@@ -186,13 +217,23 @@ async fn releasing_the_session_state_starts_the_next_server_empty() {
     let _release = ReleaseOnDrop(&["process-retention-release"]);
     insert_test_session(manager, session_id).await;
 
-    manager.ensure_builtin_proxy(session_id).await.unwrap();
+    within(
+        "ensure_builtin_proxy",
+        manager.ensure_builtin_proxy(session_id),
+    )
+    .await
+    .unwrap();
     let process_id = spawn_long_process(manager, session_id).await;
     stop_process(manager, session_id, &process_id).await;
 
-    manager.destroy_proxy(session_id).await;
+    within("destroy_proxy", manager.destroy_proxy(session_id)).await;
     assert!(crate::mcp::builtin::workspace::release_session_workspace_state(session_id));
-    manager.ensure_builtin_proxy(session_id).await.unwrap();
+    within(
+        "ensure_builtin_proxy",
+        manager.ensure_builtin_proxy(session_id),
+    )
+    .await
+    .unwrap();
 
     let listed = list_processes(manager, session_id).await;
     assert!(!listed.contains(&process_id), "{listed}");
@@ -203,14 +244,16 @@ async fn run_in_persistent_shell(
     session_id: &str,
     command: &str,
 ) -> String {
-    let response = manager
-        .call_tool(
+    let response = within(
+        "persistent shell",
+        manager.call_tool(
             session_id,
             PERSISTENT_SHELL_TOOL,
             json!({ "command": command }),
-        )
-        .await
-        .expect("persistent shell");
+        ),
+    )
+    .await
+    .expect("persistent shell");
     response_text(&response)
 }
 
@@ -225,7 +268,12 @@ async fn reload_keeps_the_persistent_shell_and_stored_values_until_release() {
     insert_test_session(manager, session_id).await;
     let stored = "retained-secret-5521";
 
-    manager.ensure_builtin_proxy(session_id).await.unwrap();
+    within(
+        "ensure_builtin_proxy",
+        manager.ensure_builtin_proxy(session_id),
+    )
+    .await
+    .unwrap();
     retained_state(session_id)
         .shell_manager
         .store_secret(session_id, "RETAIN_TOKEN", stored.to_string())
@@ -234,8 +282,13 @@ async fn reload_keeps_the_persistent_shell_and_stored_values_until_release() {
     run_in_persistent_shell(manager, session_id, SET_SHELL_MARK).await;
 
     for _ in 0..2 {
-        manager.destroy_proxy(session_id).await;
-        manager.ensure_builtin_proxy(session_id).await.unwrap();
+        within("destroy_proxy", manager.destroy_proxy(session_id)).await;
+        within(
+            "ensure_builtin_proxy",
+            manager.ensure_builtin_proxy(session_id),
+        )
+        .await
+        .unwrap();
     }
     let kept = run_in_persistent_shell(manager, session_id, READ_SHELL_STATE).await;
     assert!(
@@ -256,9 +309,14 @@ async fn reload_keeps_the_persistent_shell_and_stored_values_until_release() {
         Some(stored)
     );
 
-    manager.destroy_proxy(session_id).await;
+    within("destroy_proxy", manager.destroy_proxy(session_id)).await;
     assert!(crate::mcp::builtin::workspace::release_session_workspace_state(session_id));
-    manager.ensure_builtin_proxy(session_id).await.unwrap();
+    within(
+        "ensure_builtin_proxy",
+        manager.ensure_builtin_proxy(session_id),
+    )
+    .await
+    .unwrap();
 
     let fresh = run_in_persistent_shell(manager, session_id, READ_SHELL_STATE).await;
     assert!(
@@ -283,14 +341,28 @@ async fn terminate_after_reload_refuses_a_late_persistent_shell() {
     let _release = ReleaseOnDrop(&["process-retention-terminate"]);
     insert_test_session(manager, session_id).await;
 
-    manager.ensure_builtin_proxy(session_id).await.unwrap();
+    within(
+        "ensure_builtin_proxy",
+        manager.ensure_builtin_proxy(session_id),
+    )
+    .await
+    .unwrap();
     run_in_persistent_shell(manager, session_id, SET_SHELL_MARK).await;
     for _ in 0..2 {
-        manager.destroy_proxy(session_id).await;
-        manager.ensure_builtin_proxy(session_id).await.unwrap();
+        within("destroy_proxy", manager.destroy_proxy(session_id)).await;
+        within(
+            "ensure_builtin_proxy",
+            manager.ensure_builtin_proxy(session_id),
+        )
+        .await
+        .unwrap();
     }
 
-    manager.terminate_session_resources(session_id).await;
+    within(
+        "terminate_session_resources",
+        manager.terminate_session_resources(session_id),
+    )
+    .await;
 
     // A late dispatch on any server of the session reaches this shared manager; the
     // terminate marked through the current server must fence it.
