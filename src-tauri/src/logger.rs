@@ -295,6 +295,48 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn emitted_lines_mask_escaped_copies_of_a_stored_value() {
+        use crate::mcp::builtin::workspace::persistent_shell::PersistentShellManager;
+
+        let stored = "p@ss\"w\\rd-91\tlog";
+        let manager = PersistentShellManager::new();
+        manager
+            .store_secret("logger-escape-session", "DEMO_PASSWORD", stored.to_string())
+            .await
+            .expect("store secret");
+        let (sender, receiver) = std::sync::mpsc::channel::<String>();
+        let (_, logger) = formatted_dispatch().chain(sender).into_log();
+
+        let args = serde_json::json!({ "command": format!("login --password {stored}") });
+        let call = serde_json::json!({ "name": "runInPersistentShell", "arguments": args });
+        let serialized_args = serde_json::json!({ "arguments": args.to_string() });
+        let messages = [
+            format!("[webview] tool call {call}"),
+            format!("[webview] tool call {serialized_args}"),
+            format!(
+                "tool args {:?}",
+                args["command"].as_str().unwrap_or_default()
+            ),
+            format!("raw args {:?}", args.to_string()),
+        ];
+        for message in &messages {
+            emit(
+                logger.as_ref(),
+                "libragent::commands::log_commands",
+                message,
+            );
+        }
+        manager.clear_session_state("logger-escape-session").await;
+
+        let lines: Vec<String> = receiver.try_iter().collect();
+        assert_eq!(lines.len(), messages.len(), "{lines:?}");
+        for line in &lines {
+            assert!(!line.contains("p@ss"), "{line}");
+            assert!(line.contains("--password ***"), "{line}");
+        }
+    }
+
     fn write_archive(dir: &Path, name: &str, bytes: usize, age_secs: u64) {
         let path = dir.join(name);
         fs::write(&path, vec![b'x'; bytes]).unwrap();

@@ -17,42 +17,100 @@ use crate::mcp::types::{MCPContent, MCPResult};
 pub type SecretMap = BTreeMap<String, String>;
 
 /// Stored values of every live session, so the logger can mask lines that carry no
-/// session id (webview logs, process debug lines). Never log while holding this lock:
-/// the logger reads it.
-static LOG_MASK_SECRETS: Lazy<RwLock<HashMap<String, SecretMap>>> =
-    Lazy::new(|| RwLock::new(HashMap::new()));
+/// session id (webview logs, process debug lines).
+#[derive(Default)]
+struct LogMaskRegistry {
+    sessions: HashMap<String, SecretMap>,
+    /// Every form a value can take in a log line, longest first. Rebuilt on each change
+    /// so a log line only scans it.
+    patterns: Vec<String>,
+}
+
+impl LogMaskRegistry {
+    fn rebuild_patterns(&mut self) {
+        let mut patterns: Vec<String> = self
+            .sessions
+            .values()
+            .flat_map(|secrets| secrets.values())
+            .filter(|value| value.chars().count() >= MIN_MASKED_LEN)
+            .flat_map(|value| escaped_forms(value))
+            .collect();
+        patterns.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
+        patterns.dedup();
+        self.patterns = patterns;
+    }
+}
+
+/// Never log while holding this lock: the logger reads it.
+static LOG_MASK_SECRETS: Lazy<RwLock<LogMaskRegistry>> =
+    Lazy::new(|| RwLock::new(LogMaskRegistry::default()));
+
+fn update_log_secrets(change: impl FnOnce(&mut HashMap<String, SecretMap>)) {
+    let mut registry = LOG_MASK_SECRETS
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    change(&mut registry.sessions);
+    registry.rebuild_patterns();
+}
 
 /// Makes the logger mask the session's current stored values.
 pub fn register_log_secrets(session_id: &str, secrets: &SecretMap) {
-    LOG_MASK_SECRETS
-        .write()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .insert(session_id.to_string(), secrets.clone());
+    update_log_secrets(|sessions| {
+        sessions.insert(session_id.to_string(), secrets.clone());
+    });
 }
 
 /// Stops masking the session's values in logs. Call when its secrets are dropped.
 pub fn forget_log_secrets(session_id: &str) {
-    LOG_MASK_SECRETS
-        .write()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .remove(session_id);
+    update_log_secrets(|sessions| {
+        sessions.remove(session_id);
+    });
 }
 
-/// Masks the stored values of every live session in a log line.
+/// The raw value plus the escaped copies a log line can carry: JSON string content
+/// (webview lines forward tool arguments as JSON), `{:?}` content, and each of those
+/// escaped once more (serialized args inside JSON, or a JSON string printed with `{:?}`).
+fn escaped_forms(value: &str) -> Vec<String> {
+    fn json_inner(text: &str) -> String {
+        let quoted = serde_json::Value::String(text.to_string()).to_string();
+        quoted[1..quoted.len() - 1].to_string()
+    }
+    fn debug_inner(text: &str) -> String {
+        let quoted = format!("{text:?}");
+        quoted[1..quoted.len() - 1].to_string()
+    }
+    let json = json_inner(value);
+    let debug = debug_inner(value);
+    vec![
+        value.to_string(),
+        json_inner(&json),
+        debug_inner(&json),
+        json_inner(&debug),
+        debug_inner(&debug),
+        json,
+        debug,
+    ]
+}
+
+/// Masks the stored values of every live session, raw or escaped, in a log line.
 pub fn mask_log_line(line: &str) -> Cow<'_, str> {
     let registry = LOG_MASK_SECRETS
         .read()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    if registry.is_empty() {
+    if !registry
+        .patterns
+        .iter()
+        .any(|pattern| line.contains(pattern.as_str()))
+    {
         return Cow::Borrowed(line);
     }
-    let values = registry.values().flat_map(|secrets| secrets.values());
-    let masked = mask_values(line, values);
-    if masked == line {
-        Cow::Borrowed(line)
-    } else {
-        Cow::Owned(masked)
+    let mut masked = line.to_string();
+    for pattern in &registry.patterns {
+        if masked.contains(pattern.as_str()) {
+            masked = masked.replace(pattern.as_str(), MASK);
+        }
     }
+    Cow::Owned(masked)
 }
 
 /// Shorter values are not masked: they match too much unrelated output.
@@ -120,11 +178,8 @@ pub fn validate_secret_name(name: &str) -> Result<(), String> {
 
 /// Replaces every stored value of `MIN_MASKED_LEN` or more characters with `***`.
 pub fn mask_secrets(text: &str, secrets: &SecretMap) -> String {
-    mask_values(text, secrets.values())
-}
-
-fn mask_values<'a>(text: &str, values: impl Iterator<Item = &'a String>) -> String {
-    let mut values: Vec<&str> = values
+    let mut values: Vec<&str> = secrets
+        .values()
         .map(String::as_str)
         .filter(|value| value.chars().count() >= MIN_MASKED_LEN)
         .collect();
