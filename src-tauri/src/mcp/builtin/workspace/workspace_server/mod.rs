@@ -57,6 +57,9 @@ pub struct WorkspaceServer {
     pub(crate) process_registry: terminal_manager::ProcessRegistry,
     pub(crate) shell_manager: Arc<persistent_shell::PersistentShellManager>,
     pub(crate) context_cache: ContextCache,
+    /// Set once the session is force-terminated (explicit terminate/delete).
+    /// Late tool dispatches on this instance must not create new processes.
+    pub(crate) terminated: Arc<std::sync::atomic::AtomicBool>,
     cleanup_shutdown: Arc<std::sync::atomic::AtomicBool>,
     cleanup_tasks: Vec<JoinHandle<()>>,
 }
@@ -79,6 +82,7 @@ impl WorkspaceServer {
         );
         let process_registry = terminal_manager::create_process_registry();
         let cleanup_shutdown = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let terminated = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
         let process_cleanup_task =
             lifecycle::start_cleanup_task(process_registry.clone(), cleanup_shutdown.clone());
@@ -89,11 +93,20 @@ impl WorkspaceServer {
             workspace_isolation,
             isolation_manager: crate::session_isolation::SessionIsolationManager::new(),
             process_registry,
-            shell_manager: Arc::new(persistent_shell::PersistentShellManager::new()),
+            shell_manager: Arc::new(
+                persistent_shell::PersistentShellManager::new()
+                    .with_terminated_flag(terminated.clone()),
+            ),
             context_cache: Arc::new(tokio::sync::RwLock::new(None)),
+            terminated,
             cleanup_shutdown,
             cleanup_tasks: vec![process_cleanup_task],
         }
+    }
+
+    /// True once this instance's session has been force-terminated.
+    pub(crate) fn is_session_terminated(&self) -> bool {
+        self.terminated.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     pub(crate) fn code_tools_profile(&self) -> tools::CodeToolsProfile {

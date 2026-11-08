@@ -31,6 +31,13 @@ pub async fn inject_messages(
             && session.metadata.status != SessionStatus::Queued
             && !is_transitioning_to_busy_or_queued
             && !compaction_in_flight
+            // A force-terminated session accepts automatic messages (channel
+            // notifications, scheduled callbacks, agent-tool follow-ups) into
+            // its history, but they must never start a workflow. Only an
+            // explicit user/API entry clears the fence first, and that entry
+            // has already passed the fence check by the time it gets here
+            // (issue #2633 G2.3).
+            && !manager.proxy_manager.is_teardown_fenced(&session_id).await
     };
 
     // Delegate message persistence, caching, and event emission to MessageService
@@ -181,6 +188,30 @@ pub async fn inject_messages(
             )
             .await
             {
+                if crate::mcp::MCPServiceProxyManager::is_teardown_fence_rejection(&e) {
+                    // A force-stop fence refusal is a correct outcome, not a failure:
+                    // undo the Busy promotion and emit no WorkflowError (#2633 G4.1).
+                    log::info!(
+                        "Background injection for session {} aborted by force-stop fence; no workflow error emitted",
+                        session_id_clone
+                    );
+                    if let Err(err) = crate::agent::lifecycle::end_fence_refused_wake(
+                        &session_repo,
+                        &active_sessions,
+                        &app_handle,
+                        &session_id_clone,
+                    )
+                    .await
+                    {
+                        log::warn!(
+                            "Failed to end refused background injection for session {}: {}",
+                            session_id_clone,
+                            err
+                        );
+                    }
+                    return;
+                }
+
                 log::error!(
                     "Proxy check failed during background injection for session {}: {}",
                     session_id_clone,

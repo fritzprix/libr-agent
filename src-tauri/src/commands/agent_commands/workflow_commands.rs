@@ -17,6 +17,10 @@ pub async fn agent_send_message(
     manager: State<'_, AgentSessionManager>,
     request: SendUserMessageRequest,
 ) -> Result<AgentResponse, String> {
+    // Explicit user message: a previous force-stop fence ends here (issue #2633).
+    manager
+        .allow_explicit_message_after_terminate(&request.session_id)
+        .await;
     manager
         .start_workflow(request.session_id, request.message)
         .await
@@ -33,6 +37,12 @@ pub async fn agent_inject_messages(
     manager: State<'_, AgentSessionManager>,
     request: InjectMessagesRequest,
 ) -> Result<AgentResponse, String> {
+    // Explicit UI inject: a previous force-stop fence ends here (issue #2633).
+    // Automatic inject callers (MCP channel notification, scheduled runner) do
+    // not clear the fence, so they cannot revive a terminated session.
+    manager
+        .allow_explicit_message_after_terminate(&request.session_id)
+        .await;
     let triggered = manager
         .inject_messages(request.session_id.clone(), request.messages)
         .await?;

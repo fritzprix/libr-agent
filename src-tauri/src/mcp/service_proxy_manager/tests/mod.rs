@@ -11,6 +11,7 @@ mod builtin_lifecycle;
 mod concurrency;
 mod readiness;
 mod scenarios;
+mod termination_fence;
 
 pub(super) struct TestHarness {
     pub(super) _guard: tokio::sync::MutexGuard<'static, ()>,
@@ -39,7 +40,8 @@ pub(super) async fn insert_test_session(manager: &MCPServiceProxyManager, sessio
     assistant::Entity::insert(assistant::ActiveModel {
         id: Set(assistant_id.clone()),
         name: Set(format!("Test Assistant for {session_id}")),
-        config: Set("{}".to_string()),
+        // Minimal config that parses as AgentConfig (systemPrompt is a required field).
+        config: Set(r#"{"systemPrompt":"test assistant"}"#.to_string()),
         created_at: Set(now),
         updated_at: Set(now),
         ..Default::default()

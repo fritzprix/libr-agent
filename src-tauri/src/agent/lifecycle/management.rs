@@ -388,6 +388,39 @@ pub async fn promote_queued_session_to_busy_with_dispatcher(
     .await
 }
 
+/// Ends a background wake that the force-stop fence refused after the wake promoted the session
+/// to `Busy`: the session returns to `Idle`, the status terminate leaves, and gives back its
+/// active agent permit. A session that is no longer `Busy` keeps its status. Returns whether
+/// the status changed.
+pub async fn end_fence_refused_wake(
+    session_repo: &Arc<dyn SessionRepository>,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    app_handle: &AppHandle,
+    session_id: &str,
+) -> Result<bool, String> {
+    let dispatcher = TauriEventDispatcher::new(app_handle.clone());
+    end_fence_refused_wake_with_dispatcher(session_repo, active_sessions, &dispatcher, session_id)
+        .await
+}
+
+pub async fn end_fence_refused_wake_with_dispatcher(
+    session_repo: &Arc<dyn SessionRepository>,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    dispatcher: &dyn AgentEventDispatcher,
+    session_id: &str,
+) -> Result<bool, String> {
+    apply_session_status(
+        session_repo,
+        active_sessions,
+        dispatcher,
+        session_id,
+        SessionStatus::Idle,
+        None,
+        TransitionGuard::OnlyFromBusy,
+    )
+    .await
+}
+
 /// Condition that [`apply_session_status`] checks under the session's transition lock.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TransitionGuard {
@@ -397,6 +430,8 @@ enum TransitionGuard {
     /// Only a `Queued` session changes. Otherwise the permit of a session that is not `Busy`
     /// is given back.
     OnlyFromQueued,
+    /// Only a `Busy` session changes.
+    OnlyFromBusy,
 }
 
 /// Returns `Ok(false)` without a change when `guard` does not allow it for the status that the
@@ -457,6 +492,7 @@ async fn apply_session_status(
         TransitionGuard::Always => true,
         TransitionGuard::UnlessBusy => prev_status != SessionStatus::Busy,
         TransitionGuard::OnlyFromQueued => prev_status == SessionStatus::Queued,
+        TransitionGuard::OnlyFromBusy => prev_status == SessionStatus::Busy,
     };
     if !allowed {
         if guard == TransitionGuard::OnlyFromQueued && prev_status != SessionStatus::Busy {
@@ -864,6 +900,87 @@ mod tests {
         )
         .await;
         assert!(freed.is_ok(), "the gate slot must be free again");
+    }
+
+    #[tokio::test]
+    async fn a_fence_refused_wake_returns_the_session_to_idle_and_frees_its_permit() {
+        let gate = crate::agent::concurrency::ConcurrencyGate::new(1, 1, 1, 1);
+        let (repo, active_sessions) = running_session("refused-session", &gate).await;
+        let dispatcher = RecordingDispatcher::default();
+
+        let ended = end_fence_refused_wake_with_dispatcher(
+            &repo,
+            &active_sessions,
+            &dispatcher,
+            "refused-session",
+        )
+        .await
+        .expect("end refused wake");
+
+        assert!(ended);
+        let stored = repo
+            .get_session("refused-session")
+            .await
+            .expect("get")
+            .expect("session");
+        assert_eq!(stored.status, SessionStatus::Idle);
+        assert_eq!(stored.status_reason, None);
+        {
+            let active = active_sessions.read().await;
+            let loaded = active.get("refused-session").expect("loaded session");
+            assert_eq!(loaded.metadata.status, SessionStatus::Idle);
+            assert!(!loaded.is_running);
+            assert!(loaded.active_permit.is_none());
+        }
+        let freed = tokio::time::timeout(
+            std::time::Duration::from_millis(20),
+            gate.acquire_active_agent(),
+        )
+        .await;
+        assert!(freed.is_ok(), "the gate slot must be free again");
+        let events = dispatcher.events.lock().expect("event lock").clone();
+        assert!(matches!(
+            events.as_slice(),
+            [AgentEvent::StatusChanged {
+                status: SessionStatus::Idle,
+                status_reason: None,
+                ..
+            }]
+        ));
+    }
+
+    #[tokio::test]
+    async fn a_fence_refused_wake_leaves_a_session_that_is_no_longer_busy() {
+        let gate = crate::agent::concurrency::ConcurrencyGate::new(1, 1, 1, 1);
+        let (repo, active_sessions) = running_session("terminated-session", &gate).await;
+        let dispatcher = RecordingDispatcher::default();
+        // Terminate moved the session to Idle before the refusal was handled.
+        update_session_status_with_dispatcher(
+            &repo,
+            &active_sessions,
+            &dispatcher,
+            "terminated-session",
+            SessionStatus::Idle,
+        )
+        .await
+        .expect("terminate to idle");
+        dispatcher.events.lock().expect("event lock").clear();
+
+        let ended = end_fence_refused_wake_with_dispatcher(
+            &repo,
+            &active_sessions,
+            &dispatcher,
+            "terminated-session",
+        )
+        .await
+        .expect("end refused wake");
+
+        assert!(!ended);
+        let active = active_sessions.read().await;
+        let loaded = active.get("terminated-session").expect("loaded session");
+        assert_eq!(loaded.metadata.status, SessionStatus::Idle);
+        assert!(loaded.active_permit.is_none());
+        assert!(dispatcher.events.lock().expect("event lock").is_empty());
     }
 
     #[tokio::test]

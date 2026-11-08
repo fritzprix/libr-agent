@@ -300,6 +300,19 @@ impl AgentSessionManager {
         .await
     }
 
+    /// Re-open a force-terminated session for an explicit user or API message.
+    ///
+    /// The teardown fence (issue #2633) is cleared only here and at the other
+    /// explicit lifecycle entry points (the resume command, an explicit
+    /// user/API message, session create-and-start, session reload, and
+    /// regenerate). Background proxy bootstrap never clears it — it skips
+    /// creation while fenced. Automatic wakes — MCP channel notifications,
+    /// scheduled jobs, compaction continuation, background resume — must never
+    /// call this, so a terminated session cannot be resurrected by them.
+    pub async fn allow_explicit_message_after_terminate(&self, session_id: &str) {
+        self.proxy_manager.clear_teardown_fence(session_id).await;
+    }
+
     /// Handle an LLM response from the frontend
     pub async fn handle_llm_response(
         &self,
@@ -403,7 +416,14 @@ impl AgentSessionManager {
     /// Reload the session (this prepares the Docker runtime again, or fails when the container
     /// cannot be used) and then resume its workflow. Retry after an error must use this:
     /// [`Self::resume_workflow`] alone skips the runtime when the session is already in memory.
+    ///
+    /// Both callers (`agent_resume_workflow`, `POST /api/sessions/:id/resume`) are
+    /// explicit user/API actions, so this entry lifts a force-stop fence before
+    /// anything else — otherwise the bootstrap skip would refuse the resume and
+    /// leave the session in `Error` (issue #2633 G3.1).
     pub async fn resume_session_and_workflow(&self, session_id: &str) -> Result<(), String> {
+        self.allow_explicit_message_after_terminate(session_id)
+            .await;
         self.resume_session(session_id)
             .await
             .map_err(|e| format!("Failed to resume session: {}", e))?;
@@ -457,7 +477,6 @@ impl AgentSessionManager {
 
     /// Terminate a running workflow
     pub async fn terminate_session(&self, session_id: String) -> Result<(), String> {
-        crate::server::wake::revoke_wake_token(&session_id);
         crate::agent::workflow::terminate_session(
             &self.session_repo,
             &self.active_sessions,
@@ -706,7 +725,6 @@ impl AgentSessionManager {
     /// Use `delete_session_only` when descendants should remain as top-level
     /// sessions instead of being deleted.
     pub async fn delete_session(&self, session_id: String) -> Result<Vec<String>, String> {
-        crate::server::wake::revoke_wake_token(&session_id);
         let deleted_ids = crate::agent::lifecycle::delete_session(
             &self.session_repo,
             &self.active_sessions,
@@ -715,9 +733,6 @@ impl AgentSessionManager {
             session_id,
         )
         .await?;
-        for id in &deleted_ids {
-            crate::server::wake::revoke_wake_token(id);
-        }
         Ok(deleted_ids)
     }
 
@@ -726,7 +741,6 @@ impl AgentSessionManager {
         &self,
         session_id: String,
     ) -> Result<(String, Vec<String>), String> {
-        crate::server::wake::revoke_wake_token(&session_id);
         crate::agent::lifecycle::delete_session_only(
             &self.session_repo,
             &self.active_sessions,

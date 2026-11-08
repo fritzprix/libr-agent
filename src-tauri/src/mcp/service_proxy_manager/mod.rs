@@ -87,6 +87,44 @@ pub struct MCPServiceProxyManager {
     /// Sessions whose active process was stopped by a user cancel while a tool
     /// ran. That tool's result consumes this marker and the workflow continues.
     process_cancel_pending: Arc<Mutex<HashSet<String>>>,
+
+    /// Sessions force-stopped by explicit terminate/delete. While fenced,
+    /// `call_tool` rejects late dispatches so lazy proxy recreation cannot
+    /// resurrect builtin instances. Cleared only by explicit user/API entry
+    /// points (session create, resume command, explicit message, reload).
+    /// Entries are never removed: each holds a per-session generation so an
+    /// in-flight dispatch can detect that the fence moved underneath it even
+    /// when the fence was cleared again before dispatch (issue #2633 G2.1).
+    /// The map is bounded by the number of sessions in a local app.
+    teardown_fenced: Arc<Mutex<HashMap<String, TeardownFenceState>>>,
+
+    /// Test-only: when an entry exists for a session, `ensure_builtin_proxy`
+    /// pauses after the second double-check (inside the creation guard),
+    /// signals readiness on the sender, and waits for the receiver. Lets
+    /// deterministic tests hold lazy creation open across terminate (#2633).
+    #[cfg(test)]
+    lazy_creation_holds: Arc<
+        Mutex<
+            HashMap<
+                String,
+                (
+                    tokio::sync::oneshot::Sender<()>,
+                    tokio::sync::oneshot::Receiver<()>,
+                ),
+            >,
+        >,
+    >,
+}
+
+/// Force-stop fence state for one session (issue #2633).
+#[derive(Clone, Copy, Debug, Default)]
+struct TeardownFenceState {
+    /// Bumped on every set and clear so an in-flight `call_tool` that
+    /// captured the generation at entry cannot be validated by a later
+    /// clear (issue #2633 G2.1).
+    generation: u64,
+    /// Whether late dispatches are currently rejected.
+    fenced: bool,
 }
 
 impl std::fmt::Debug for MCPServiceProxyManager {
@@ -107,6 +145,10 @@ impl std::fmt::Debug for MCPServiceProxyManager {
             .field("runtime_states", &"<RwLock<HashMap>>")
             .field("server_retry_states", &self.server_retry_states)
             .field("process_cancel_pending", &"<Mutex<HashSet<String>>>")
+            .field(
+                "teardown_fenced",
+                &"<Mutex<HashMap<String, TeardownFenceState>>>",
+            )
             .finish()
     }
 }

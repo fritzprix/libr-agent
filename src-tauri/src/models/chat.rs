@@ -69,6 +69,18 @@ impl MessageSource {
         }
     }
 
+    /// Whether a message from this source may lift a force-stop teardown
+    /// fence and reopen a terminated session (issue #2633 G2.2).
+    ///
+    /// Only direct user (UI) and external API messages qualify. Automatic or
+    /// machine sources — agent-tool messages from other sessions, channel
+    /// notifications, scheduled tasks, compaction, recovery — never revive a
+    /// terminated session; their messages are saved but do not start a
+    /// workflow.
+    pub fn may_reopen_terminated_session(&self) -> bool {
+        matches!(self, Self::Ui | Self::Api)
+    }
+
     fn from_id(id: &str) -> Option<Self> {
         if id.starts_with(COMPACT_SUMMARY_ID_PREFIX) {
             return Some(Self::CompactSummary);
@@ -295,5 +307,30 @@ impl Message {
                     .or_else(|| value.as_f64().map(|number| number as u64))
             })
             .and_then(|value| usize::try_from(value).ok())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MessageSource;
+
+    #[test]
+    fn only_ui_and_api_may_reopen_a_terminated_session() {
+        // Explicit user / external API entries reopen (issue #2633 G2.2).
+        assert!(MessageSource::Ui.may_reopen_terminated_session());
+        assert!(MessageSource::Api.may_reopen_terminated_session());
+
+        // Machine and automatic sources never revive a terminated session.
+        assert!(!MessageSource::AgentTool.may_reopen_terminated_session());
+        assert!(!MessageSource::Channel.may_reopen_terminated_session());
+        assert!(!MessageSource::ScheduledTask.may_reopen_terminated_session());
+        assert!(!MessageSource::Assistant.may_reopen_terminated_session());
+        assert!(!MessageSource::Tool.may_reopen_terminated_session());
+        assert!(!MessageSource::Recovery.may_reopen_terminated_session());
+        assert!(!MessageSource::CompactSummary.may_reopen_terminated_session());
+        assert!(!MessageSource::CompactionInstruction.may_reopen_terminated_session());
+        assert!(!MessageSource::SessionContext.may_reopen_terminated_session());
+        assert!(!MessageSource::SwarmLegacy.may_reopen_terminated_session());
+        assert!(!MessageSource::Unknown("whatever".to_string()).may_reopen_terminated_session());
     }
 }

@@ -66,4 +66,9 @@ impl BuiltinMCPServer for WorkspaceServer {
     async fn kill_session_processes(&self, session_id: &str) -> Result<usize, String> {
         WorkspaceServer::kill_session_processes(self, session_id).await
     }
+
+    fn mark_session_terminated(&self) {
+        self.terminated
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
 }

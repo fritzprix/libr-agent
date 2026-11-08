@@ -65,11 +65,21 @@ pub async fn agent_create_session(
 }
 
 /// Resume an existing agent session
+///
+/// This is an explicit user resume command, so it lifts a force-stop fence
+/// (issue #2633 G2.2). Automatic resumes (scheduled runner, message-send
+/// auto-resume) go through `AgentSessionManager::resume_session` directly and
+/// must not lift the fence. `agent_open_session` intentionally does not clear
+/// it either: merely viewing a terminated session must not revive it; the
+/// fence lifts when the user actually sends a message or clicks resume.
 #[command]
 pub async fn agent_resume_session(
     manager: State<'_, AgentSessionManager>,
     session_id: String,
 ) -> Result<SessionMetadata, String> {
+    manager
+        .allow_explicit_message_after_terminate(&session_id)
+        .await;
     manager.resume_session(&session_id).await
 }
 
