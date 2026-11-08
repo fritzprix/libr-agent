@@ -635,6 +635,13 @@ mod tests {
         ) -> Result<(), String> {
             Ok(())
         }
+
+        fn emit_completion_cancel(
+            &self,
+            _request: crate::agent::llm::types::CompletionCancelRequest,
+        ) -> Result<(), String> {
+            Ok(())
+        }
     }
 
     #[tokio::test]

@@ -63,6 +63,13 @@ impl AgentEventDispatcher for RecordingDispatcher {
     ) -> Result<(), String> {
         Ok(())
     }
+
+    fn emit_completion_cancel(
+        &self,
+        _request: tauri_mcp_agent_lib::agent::llm::types::CompletionCancelRequest,
+    ) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 #[derive(Default)]
@@ -94,6 +101,13 @@ impl AgentEventDispatcher for WorkflowEventFailingDispatcher {
     fn emit_compact_state(
         &self,
         _event: tauri_mcp_agent_lib::agent::llm::types::CompactStateEvent,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn emit_completion_cancel(
+        &self,
+        _request: tauri_mcp_agent_lib::agent::llm::types::CompletionCancelRequest,
     ) -> Result<(), String> {
         Ok(())
     }
