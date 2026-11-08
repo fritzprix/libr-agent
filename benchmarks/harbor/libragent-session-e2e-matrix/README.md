@@ -60,3 +60,7 @@ For **last release → HEAD** planning and **internal delegate self-E2E** (not H
 ## B-6 logging contract (#2631)
 
 Task `e2e-b6-log-variable-ref` keeps the known **variable-reference vs literal** conflict visible; it does not redefine B-6 as pass when command text containing `$env:VAR` appears in logs.
+
+## B-11 Windows host requirement (#2655)
+
+`e2e-b11-no-runshell` only has a passing path on a **Windows host** (the task exists because `workspace__runShell` is absent there). Its `task.toml` declares `requires_host_os = "windows"`; the harbor runners (`scripts/run-harbor-bench.sh` / `.ps1`, `path` preset) auto-add `-x e2e-b11-no-runshell` when the host OS does not match. The verifier asserts **tool calls and observations** (no successful `runShell`, no `submitInteractiveShellInput`, a successful PowerShell call), not blob string matching.

@@ -60,6 +60,30 @@ append_include_globs() {
   done
 }
 
+# Auto-exclude tasks whose task.toml declares requires_host_os (under
+# [metadata.libragent_session_e2e]) but does not match the current host.
+# Example: e2e-b11-no-runshell only has a passing path on Windows, so a
+# Linux runner adds `-x e2e-b11-no-runshell` instead of running a trial
+# that can only fail (issue #2655). Harbor matches -x against the local
+# task directory name.
+append_host_os_excludes() {
+  local root="$1"
+  local _host_os _toml _want _name
+  case "$(uname -s)" in
+    Linux*)               _host_os=linux ;;
+    Darwin*)              _host_os=macos ;;
+    MINGW*|MSYS*|CYGWIN*) _host_os=windows ;;
+    *)                    _host_os=unknown ;;
+  esac
+  while IFS= read -r _toml; do
+    _want=$(sed -n 's/^[[:space:]]*requires_host_os[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$_toml" | head -n 1)
+    [[ -z "$_want" || "$_want" == "$_host_os" ]] && continue
+    _name=$(basename "$(dirname "$_toml")")
+    echo "==> Excluding $_name (requires_host_os=$_want, host=$_host_os)"
+    ARGS+=(-x "$_name")
+  done < <(find "$root" -mindepth 2 -maxdepth 2 -name task.toml 2>/dev/null | sort)
+}
+
 usage() {
   cat <<'EOF'
 Usage: scripts/run-harbor-bench.sh [options]
@@ -497,6 +521,7 @@ case "$PRESET" in
   path)
     [[ -n "$PATH_ARG" ]] || { echo "--path required for preset=path" >&2; exit 1; }
     ARGS+=(-p "$PATH_ARG")
+    append_host_os_excludes "$PATH_ARG"
     append_include_globs "$INCLUDE"
     [[ "$N_TASKS" -gt 0 ]] && ARGS+=(-l "$N_TASKS")
     ;;

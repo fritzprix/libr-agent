@@ -164,6 +164,40 @@ function Expand-IncludePatterns([string[]]$Patterns) {
   return , $expanded.ToArray()
 }
 
+# Match bash append_host_os_excludes: skip tasks whose task.toml declares
+# requires_host_os (under [metadata.libragent_session_e2e]) mismatching the
+# current host (e.g. Windows-only e2e-b11-no-runshell on a Linux runner,
+# issue #2655). Harbor matches -x against the local task directory name.
+function Get-HostOsToken {
+  if ($null -ne $IsWindows) {
+    if ($IsWindows) { return "windows" }
+    if ($IsLinux) { return "linux" }
+    if ($IsMacOS) { return "macos" }
+    return "unknown"
+  }
+  # Windows PowerShell 5.1 has no $Is* variables and only runs on Windows.
+  if ($env:OS -eq "Windows_NT") { return "windows" }
+  return "unknown"
+}
+
+function Get-HostOsExcludes([string]$Root) {
+  $excludes = [System.Collections.Generic.List[string]]::new()
+  $hostOs = Get-HostOsToken
+  Get-ChildItem -Path $Root -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+    $toml = Join-Path $_.FullName "task.toml"
+    if (-not (Test-Path $toml)) { return }
+    $want = Select-String -Path $toml -Pattern '^\s*requires_host_os\s*=\s*"([^"]+)"' |
+      Select-Object -First 1
+    if (-not $want) { return }
+    $required = $want.Matches[0].Groups[1].Value
+    if ($required -eq $hostOs) { return }
+    Write-Host "==> Excluding $($_.Name) (requires_host_os=$required, host=$hostOs)"
+    $excludes.Add("-x") | Out-Null
+    $excludes.Add($_.Name) | Out-Null
+  }
+  return $excludes.ToArray()
+}
+
 function Assert-Command([string]$Name) {
   if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
     if ($Name -eq "harbor") {
@@ -553,6 +587,7 @@ switch ($Preset) {
     $resolvedPath = (Resolve-Path $Path).Path
     Write-Step "Preset: local path ($resolvedPath)"
     $harborArgs += @("-p", $resolvedPath)
+    $harborArgs += Get-HostOsExcludes $resolvedPath
     foreach ($pattern in (Expand-IncludePatterns $Include)) {
       $harborArgs += @("-i", $pattern)
     }

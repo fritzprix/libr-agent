@@ -122,7 +122,7 @@
     {
       "id": "B-11",
       "status": "implemented",
-      "reason": "Harbor e2e-b11-no-runshell",
+      "reason": "Harbor e2e-b11-no-runshell (tool-call verifier); Windows host only — requires_host_os=windows, runners auto-exclude elsewhere (#2655)",
       "harbor_task": "e2e-b11-no-runshell"
     },
     {
