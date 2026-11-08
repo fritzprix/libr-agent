@@ -8,7 +8,8 @@ A slot's worktree belongs to whoever holds the slot, so each command first renew
 the lease and refuses if it is lost or PATH is not this slot's worktree. `reset`
 saves uncommitted changes in a stash before discarding anything, so changes left
 by an earlier run stay recoverable. `switch` will not take a branch from a live
-run, and frees it from an abandoned, clean worktree.
+run, frees it from an abandoned, clean worktree, and keeps a ref to any local
+commits that resetting the branch to the remote would drop.
 
 Prints one result line. Exit codes:
   0 - done: READY | RESET | RESCUED <stash> | SWITCHED <branch> | DETACHED <branch>
@@ -108,6 +109,19 @@ def _occupant_is_replaceable(occupant: Path, sibling_root: Path) -> bool:
     return not worker_state.read_json(worker_state.state_path(slot)).get("current")
 
 
+def _save_unpushed_commits(wt: Path, branch: str, remote_ref: str) -> str | None:
+    """Keep a ref to local commits that resetting `branch` to the remote would drop."""
+    try:
+        local = git(wt, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}")
+    except WorktreeError:
+        return None  # no local branch yet
+    if not git(wt, "rev-list", "--max-count=1", local, f"^{remote_ref}"):
+        return None
+    ref = f"refs/worker-loop/rescued/{branch}/{local}"
+    git(wt, "update-ref", ref, local)
+    return ref
+
+
 def switch(wt: Path, branch: str) -> tuple[int, str]:
     remote_ref = f"origin/{branch}"
     occupant = _branch_occupant(wt, branch)
@@ -127,8 +141,9 @@ def switch(wt: Path, branch: str) -> tuple[int, str]:
                 f"DETACHED {branch} (push with: git push "
                 f"--force-with-lease=refs/heads/{branch}:{sha} origin HEAD:refs/heads/{branch})"
             )
+    saved = _save_unpushed_commits(wt, branch, remote_ref)
     git(wt, "switch", "-C", branch, remote_ref)
-    return 0, f"SWITCHED {branch}"
+    return 0, f"SWITCHED {branch} (unpushed commits saved at {saved})" if saved else f"SWITCHED {branch}"
 
 
 def main(argv: list[str] | None = None) -> int:

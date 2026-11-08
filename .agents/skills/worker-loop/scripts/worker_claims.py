@@ -85,6 +85,17 @@ def release_finished(worker: str, state: dict, path: Path | None = None) -> list
     return dropped
 
 
+def _claim_worker(entry: object) -> str | None:
+    """The worker a claim entry names, or None when the entry is malformed."""
+    worker = entry.get("worker") if isinstance(entry, dict) else None
+    if not worker or not isinstance(worker, str):
+        return None
+    try:
+        return worker_state.worker_name(worker)
+    except ValueError:
+        return None
+
+
 def reclaim_abandoned(live: set[str], path: Path | None = None) -> list[str]:
     """Tick start: drop claims of workers that have no live lease and no use for them."""
     path = path or claims_path()
@@ -92,7 +103,10 @@ def reclaim_abandoned(live: set[str], path: Path | None = None) -> list[str]:
         claims = read_json(path)
         dropped = []
         for ref, entry in claims.items():
-            worker = entry.get("worker")
+            worker = _claim_worker(entry)
+            if worker is None:
+                dropped.append(ref)  # names no worker, so it can only block ticks
+                continue
             if worker in live:
                 continue
             try:

@@ -101,6 +101,36 @@ class LongRunningTickTest(StateDirCase):
         self.assertNotEqual(new.token, old.token)
         self.assertFalse(lease.renew(old.worker, old.token))
 
+    def test_live_session_past_the_ttl_replaces_its_own_abandoned_tick(self):
+        # Its lock is live at any age, so it must not be refused and strand the slot.
+        old = lease.acquire(live_session())
+        self.age(old.worker, worker_state.LEASE_TTL_SECONDS + 60)
+        new = lease.acquire(live_session())
+        self.assertEqual(new.worker, old.worker)
+        self.assertEqual(set(worker_slots.load_slots()), {old.worker})
+        self.assertTrue(lease.is_held_by(new.worker, new.token))
+        self.assertFalse(lease.renew(old.worker, old.token))
+
+    def test_live_session_recovers_a_lock_it_stranded_without_a_slot(self):
+        old = lease.acquire(live_session())
+        worker_slots.release_slot(old.worker, old.token)
+        new = lease.acquire(live_session(), requested=old.worker)
+        self.assertTrue(lease.is_held_by(old.worker, new.token))
+
+    def test_another_live_sessions_lock_is_not_replaced(self):
+        lock = lease.lock_path("worker")
+        token = tick_lock.acquire(lock, live_session("other"))
+        self.assertIsNone(tick_lock.acquire(lock, live_session("me")))
+        self.assertTrue(tick_lock.holds(lock, token))
+
+    def test_shared_app_owner_does_not_replace_a_running_lock(self):
+        # Several ticks of one app share this ID, so it cannot prove abandonment.
+        app = Owner("app:1", "app", os.getpid(), None, True)
+        lock = lease.lock_path("worker")
+        token = tick_lock.acquire(lock, app)
+        self.assertIsNone(tick_lock.acquire(lock, app))
+        self.assertTrue(tick_lock.holds(lock, token))
+
     def test_live_session_keeps_its_slot_past_the_ttl(self):
         running = lease.acquire(live_session("long"))
         self.age(running.worker, 7 * 24 * 3600)
@@ -327,6 +357,16 @@ class ErrorExitTest(StateDirCase):
 
 
 class ClaimRecoveryTest(StateDirCase):
+    def test_malformed_claims_do_not_stop_a_tick(self):
+        worker_state.atomic_write_json(worker_claims.claims_path(), {
+            "issue:1": {"at": 1},
+            "issue:2": "not-an-object",
+            "issue:3": {"worker": "../outside"},
+        })
+        held = lease.acquire(anon())
+        self.assertTrue(lease.is_held_by(held.worker, held.token))
+        self.assertEqual(worker_claims.load_claims(), {})
+
     def test_unlock_releases_claims_except_current(self):
         held = lease.acquire(anon())
         worker_claims.claim(held.worker, "pr:1")
@@ -516,6 +556,29 @@ class WorktreeIsolationTest(StateDirCase):
         self.assertEqual(code, 0)
         self.assertIn("READY", out)
         self.assertEqual(edited.read_text(), "work in progress\n")
+
+    def test_switch_keeps_a_ref_to_unpushed_commits(self):
+        wt = self.wt("worker")
+        _git(wt, "switch", "-q", "-C", "fix/a-1", "origin/fix/a-1")
+        (wt / "file.txt").write_text("never pushed\n")
+        _git(wt, "commit", "-qam", "unpushed")
+        unpushed = _git(wt, "rev-parse", "HEAD")
+        _git(wt, "switch", "-q", "--detach")
+        held = lease.acquire(anon(), requested="worker")
+        code, out = self.switch(held)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(_git(wt, "rev-parse", "HEAD"), _git(wt, "rev-parse", "origin/fix/a-1"))
+        ref = f"refs/worker-loop/rescued/fix/a-1/{unpushed}"
+        self.assertIn(ref, out)
+        self.assertEqual(_git(wt, "rev-parse", ref), unpushed)
+
+    def test_switch_saves_nothing_when_everything_is_pushed(self):
+        _git(self.wt("worker"), "switch", "-q", "-C", "fix/a-1", "origin/fix/a-1")
+        _git(self.wt("worker"), "switch", "-q", "--detach")
+        code, out = self.switch(lease.acquire(anon(), requested="worker"))
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("saved", out)
+        self.assertEqual(_git(self.main, "for-each-ref", "refs/worker-loop"), "")
 
     def test_branch_of_a_live_run_is_not_taken(self):
         other = lease.acquire(live_session("other"), requested="worker-2")
