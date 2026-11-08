@@ -26,6 +26,8 @@ const MAX_HOLD_MS = 6 * 60 * 60 * 1000;
 // Reading a start time spawns a process outside Linux, and waiters poll every second.
 const IDENTITY_RECHECK_MS = 30000;
 const GUARD_STALE_MS = 30000;
+// PowerShell cold-start on Windows CI can take several seconds; never hang forever.
+const PID_START_TIMEOUT_MS = 15000;
 
 const identityCheckedAt = new Map();
 let ownPidStart;
@@ -95,8 +97,20 @@ function pidStart(pid) {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'ignore'],
     windowsHide: true,
+    timeout: PID_START_TIMEOUT_MS,
   });
   return result.status === 0 ? result.stdout.trim() || null : null;
+}
+
+/** Cache this process's start time so Windows does not spawn PowerShell twice. */
+function startTimeFor(pid) {
+  if (pid === process.pid) {
+    if (ownPidStart === undefined) {
+      ownPidStart = pidStart(pid);
+    }
+    return ownPidStart;
+  }
+  return pidStart(pid);
 }
 
 function pidWasReused(holder) {
@@ -107,7 +121,7 @@ function pidWasReused(holder) {
   if (checkedAt && Date.now() - checkedAt < IDENTITY_RECHECK_MS) {
     return false;
   }
-  const current = pidStart(holder.pid);
+  const current = startTimeFor(holder.pid);
   if (current !== null && current !== holder.pidStart) {
     return true;
   }
@@ -165,12 +179,9 @@ function reclaimIfStale(file) {
 function tryAcquire(dir, limit, label, pid = process.pid) {
   fs.mkdirSync(dir, { recursive: true });
   const token = crypto.randomUUID();
-  if (pid === process.pid && ownPidStart === undefined) {
-    ownPidStart = pidStart(pid);
-  }
   const content = JSON.stringify({
     pid,
-    pidStart: pid === process.pid ? ownPidStart : pidStart(pid),
+    pidStart: startTimeFor(pid),
     token,
     label,
     since: Date.now(),
