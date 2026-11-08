@@ -5,7 +5,7 @@
 #![cfg(unix)]
 
 use super::product_entry::{entry_deps, set_parent};
-use super::termination_fence::{pid_alive, spawn_real_process};
+use super::termination_fence::{pid_alive, spawn_real_process, wait_for_pid_death};
 use super::*;
 use crate::agent::context::registry::ContextRegistry;
 use crate::agent::state::AgentSession;
@@ -77,8 +77,13 @@ async fn normal_idle_transition_preserves_process_wake_fence_and_proxy() {
         .expect("an idle session must still accept tool calls");
 
     // Cleanup for the test itself, through the explicit terminate primitive.
+    // Poll for death rather than checking liveness inline: `kill -0` still
+    // succeeds on a killed-but-not-yet-reaped zombie (issue #2652 precedent).
     manager.terminate_session_resources(session_id).await;
-    assert!(!pid_alive(pid));
+    assert!(
+        wait_for_pid_death(pid).await,
+        "explicit terminate must kill background process {pid}"
+    );
 }
 
 #[test]
@@ -136,5 +141,8 @@ async fn idle_parent_keeps_delegate_wake_path_open() {
     );
 
     manager.terminate_session_resources(child).await;
-    assert!(!pid_alive(child_pid));
+    assert!(
+        wait_for_pid_death(child_pid).await,
+        "explicit terminate must kill the delegate process {child_pid}"
+    );
 }
