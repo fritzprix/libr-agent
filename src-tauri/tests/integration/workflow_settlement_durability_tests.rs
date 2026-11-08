@@ -1,7 +1,10 @@
 use crate::common;
+use serde_json::json;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use tauri::test::MockRuntime;
 use tauri_mcp_agent_lib::agent::concurrency::{
@@ -31,14 +34,21 @@ use tauri_mcp_agent_lib::mcp::types::MCPContent;
 use tauri_mcp_agent_lib::models::chat::Message;
 use tauri_mcp_agent_lib::repositories::{
     MessageRepository, SessionMetadata, SessionRepository, SessionStatus, SqliteMessageRepository,
-    SqliteSessionRepository, SqliteSettingsRepository,
+    SqlitePlaybookRepository, SqliteSessionRepository, SqliteSettingsRepository,
 };
+use tauri_mcp_agent_lib::server::wake::{verify_wake_token, wake_token_for};
 use tauri_mcp_agent_lib::utils::session_id::StorageSessionId;
-use tauri_mcp_agent_lib::{init_concurrency_gate, init_session_bus, set_settings_repository};
+use tauri_mcp_agent_lib::{
+    init_concurrency_gate, init_session_bus, set_settings_repository, try_get_session_bus,
+};
 use tokio::sync::{Mutex as AsyncMutex, RwLock};
 use tokio_util::sync::CancellationToken;
 
 static TEST_GUARD: AsyncMutex<()> = AsyncMutex::const_new(());
+
+/// Seeded in every harness DB; sessions reference it so lazy proxy creation
+/// can resolve an `AgentConfig`.
+const ASSISTANT_ID: &str = "settlement-test-assistant";
 
 #[derive(Default)]
 struct RecordingDispatcher {
@@ -136,6 +146,17 @@ impl SettlementHarness {
 
         let db = common::setup_test_db_with_migrations().await;
 
+        // Proxy creation (`MCPServiceProxy::builder(...).build()`) resolves the
+        // session's assistant config, so every harness session carries this
+        // seeded assistant.
+        common::seed_test_assistant(
+            &db,
+            ASSISTANT_ID,
+            "Settlement Test Assistant",
+            json!({"systemPrompt": "settlement test"}),
+        )
+        .await;
+
         init_session_bus(SessionBus::new());
         init_concurrency_gate(ConcurrencyGate::new(
             DEFAULT_MAX_ACTIVE_AGENTS,
@@ -150,6 +171,9 @@ impl SettlementHarness {
 
         tauri_mcp_agent_lib::set_message_repository(SqliteMessageRepository::new(db.clone()));
         tauri_mcp_agent_lib::set_session_repository(sqlite_session_repo.clone());
+        // Builtin servers read their repositories at tool-call time (e.g. the
+        // `playbook__listPlaybooks` idle-session probe below).
+        tauri_mcp_agent_lib::set_playbook_repository(SqlitePlaybookRepository::new(db.clone()));
 
         let session_repo = Arc::new(sqlite_session_repo.clone()) as Arc<dyn SessionRepository>;
         session_repo
@@ -240,7 +264,7 @@ fn build_session_metadata(session_id: &str, status: SessionStatus) -> SessionMet
         status,
         model: "gpt-4".to_string(),
         provider: "openai".to_string(),
-        assistant_id: None,
+        assistant_id: Some(ASSISTANT_ID.to_string()),
         parent_session_id: None,
         lineage_id: None,
         depth: None,
@@ -667,4 +691,256 @@ async fn settle_session_and_finalize_error_returns_error_when_workflow_error_emi
         .agent_events()
         .iter()
         .any(|event| { matches!(event, AgentEvent::WorkflowError { .. }) }));
+}
+
+// ── Idle-preservation on the real completion path (issue #2633 G1.1/G1.2) ──
+//
+// Normal completion must go Idle, not terminate: background processes, wake
+// tokens, fence state, and the session proxy all survive the finish path.
+// These run through `settle_session_and_go_idle_with_dispatcher` — the exact
+// function `finish.rs` uses — so the whole caller→transition chain is pinned,
+// replacing the old source-text check. The `integration_tests` binary is
+// `#![cfg(not(windows))]`, so the Unix process probes below are always live.
+
+fn marker_pid_file(session_id: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("issue2633-idle-{}.pid", session_id))
+}
+
+fn pid_alive(pid: u32) -> bool {
+    std::process::Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+/// Poll for death rather than checking liveness inline: `kill -0` still
+/// succeeds on a killed-but-not-yet-reaped zombie (issue #2652 precedent).
+async fn wait_for_pid_death(pid: u32) -> bool {
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while Instant::now() < deadline {
+        if !pid_alive(pid) {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    false
+}
+
+/// Spawns a real background process through the production
+/// `workspace__spawnProcess` tool path (lazy builtin-proxy creation) and
+/// returns its OS pid once the child has reported it.
+async fn spawn_real_process(harness: &SettlementHarness) -> u32 {
+    let pid_file = marker_pid_file(&harness.session_id);
+    let _ = std::fs::remove_file(&pid_file);
+
+    harness
+        .proxy_manager
+        .call_tool(
+            &harness.session_id,
+            "workspace__spawnProcess",
+            json!({
+                "command": format!("echo $$ > '{}' && sleep 60", pid_file.display()),
+                "name": "idle-probe",
+            }),
+        )
+        .await
+        .expect("workspace__spawnProcess must succeed on a live session");
+
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        if let Ok(content) = std::fs::read_to_string(&pid_file) {
+            if let Ok(pid) = content.trim().parse::<u32>() {
+                let _ = std::fs::remove_file(&pid_file);
+                assert!(
+                    pid_alive(pid),
+                    "the spawned process ({pid}) should be running before settlement"
+                );
+                return pid;
+            }
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the spawned process never reported its pid"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+/// Issue #2633 G1.1: the real normal-completion path must not behave like
+/// terminate. A real background process, the session's wake token, the
+/// teardown fence state, and the proxy itself all survive the finish-path
+/// Idle transition; only explicit terminate force-stops them.
+#[tokio::test]
+async fn normal_completion_path_preserves_process_wake_fence_and_proxy() {
+    let harness = SettlementHarness::new("sess-idle-preserve-real-path", SessionStatus::Busy).await;
+    let pid = spawn_real_process(&harness).await;
+    let token = wake_token_for(&harness.session_id);
+    let terminal = build_assistant_message(
+        &harness.session_id,
+        "asst-idle-preserve",
+        "Workflow finished; background work continues.",
+    );
+
+    let restarted = settle_session_and_go_idle_with_dispatcher(
+        &harness.session_repo,
+        &harness.active_sessions,
+        &harness.proxy_manager,
+        harness.app_handle(),
+        &harness.dispatcher,
+        &harness.session_id,
+        Some(&terminal),
+        WorkflowCompletionReason::Natural,
+    )
+    .await
+    .expect("settlement succeeds");
+
+    assert!(!restarted);
+    assert_eq!(harness.session_status().await, SessionStatus::Idle);
+    assert!(
+        pid_alive(pid),
+        "normal idle completion must not kill background process {pid}"
+    );
+    assert!(
+        verify_wake_token(&harness.session_id, &token),
+        "normal idle completion must not revoke the wake token"
+    );
+    assert!(
+        !harness
+            .proxy_manager
+            .is_teardown_fenced(&harness.session_id)
+            .await,
+        "normal idle completion must not fence the session"
+    );
+    assert!(
+        harness
+            .proxy_manager
+            .get_proxy(&harness.session_id)
+            .await
+            .is_some(),
+        "normal idle completion must keep the proxy for delegate result delivery"
+    );
+
+    // Late work from an idle (not terminated) session is still accepted.
+    harness
+        .proxy_manager
+        .call_tool(&harness.session_id, "playbook__listPlaybooks", json!({}))
+        .await
+        .expect("an idle session must still accept tool calls");
+
+    // Cleanup for the test itself, through the explicit terminate primitive.
+    harness
+        .proxy_manager
+        .terminate_session_resources(&harness.session_id)
+        .await;
+    assert!(
+        wait_for_pid_death(pid).await,
+        "explicit terminate must kill background process {pid}"
+    );
+}
+
+/// Issue #2633 G1.2: a child that finishes after the parent already went Idle
+/// must still deliver its result. The status-change notification fired by the
+/// real completion path wakes a checkSession-style waiter that subscribed
+/// before reading status, and the child's terminal message stays retrievable.
+#[tokio::test]
+async fn child_completing_after_parent_idle_delivers_result_to_waiting_parent() {
+    let parent_id = "sess-idle-parent-wait-child";
+    let child_id = "sess-child-completes-late";
+    let harness = SettlementHarness::new(parent_id, SessionStatus::Busy).await;
+
+    // Delegate child in the same DB, linked to the parent.
+    let mut child_metadata = build_session_metadata(child_id, SessionStatus::Busy);
+    child_metadata.parent_session_id = Some(parent_id.to_string());
+    harness
+        .session_repo
+        .upsert_session(&child_metadata)
+        .await
+        .expect("child session created");
+    harness.active_sessions.write().await.insert(
+        child_id.to_string(),
+        build_agent_session(child_id, SessionStatus::Busy),
+    );
+
+    // 1. The parent completes normally first through the real finish path.
+    let parent_terminal = build_assistant_message(
+        parent_id,
+        "asst-parent-idle-first",
+        "Parent finished; waiting on child result.",
+    );
+    let parent_restarted = settle_session_and_go_idle_with_dispatcher(
+        &harness.session_repo,
+        &harness.active_sessions,
+        &harness.proxy_manager,
+        harness.app_handle(),
+        &harness.dispatcher,
+        parent_id,
+        Some(&parent_terminal),
+        WorkflowCompletionReason::Natural,
+    )
+    .await
+    .expect("parent settlement succeeds");
+    assert!(!parent_restarted);
+    assert_eq!(harness.session_status().await, SessionStatus::Idle);
+
+    // 2. A parent-side waiter mirrors the agent__checkSession wait: subscribe
+    //    to the child notifier BEFORE reading status so no wake can slip
+    //    between the status read and the wait.
+    let bus = try_get_session_bus().expect("session bus initialized by harness");
+    let child_notifier = bus.get_or_create(child_id);
+    let child_wake = child_notifier.notified();
+
+    let child_before = harness
+        .session_repo
+        .get_session(child_id)
+        .await
+        .expect("child load")
+        .expect("child exists");
+    assert_eq!(child_before.status, SessionStatus::Busy);
+
+    // 3. The child finishes through the same real completion path.
+    let child_terminal = build_assistant_message(
+        child_id,
+        "asst-child-terminal",
+        "CHILD_RESULT: all subtasks done.",
+    );
+    let child_restarted = settle_session_and_go_idle_with_dispatcher(
+        &harness.session_repo,
+        &harness.active_sessions,
+        &harness.proxy_manager,
+        harness.app_handle(),
+        &harness.dispatcher,
+        child_id,
+        Some(&child_terminal),
+        WorkflowCompletionReason::Natural,
+    )
+    .await
+    .expect("child settlement succeeds");
+    assert!(!child_restarted);
+
+    // 4. The idle transition's status-change notification wakes the waiter...
+    tokio::time::timeout(Duration::from_secs(5), child_wake)
+        .await
+        .expect("child idle settlement must wake the waiting parent's status subscriber");
+
+    // ...the poll observes the terminal status the wait loop treats as done...
+    let child_after = harness
+        .session_repo
+        .get_session(child_id)
+        .await
+        .expect("child load")
+        .expect("child exists");
+    assert_eq!(child_after.status, SessionStatus::Idle);
+
+    // ...and the child's result itself is retrievable for the parent.
+    let messages_for_check_session = fetch_session_messages_for_result(
+        &StorageSessionId::from_resolved(child_id.to_string()),
+        50,
+    )
+    .await
+    .expect("parent-side checkSession message fetch");
+    assert_eq!(
+        latest_session_output(&messages_for_check_session),
+        "CHILD_RESULT: all subtasks done."
+    );
 }
