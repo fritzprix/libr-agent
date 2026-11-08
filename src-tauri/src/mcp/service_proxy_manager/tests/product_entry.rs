@@ -17,12 +17,12 @@ use std::sync::Mutex;
 use tokio::sync::RwLock;
 
 #[derive(Default)]
-struct RecordingDispatcher {
+pub(super) struct RecordingDispatcher {
     events: Mutex<Vec<AgentEvent>>,
 }
 
 impl RecordingDispatcher {
-    fn terminated(&self, session_id: &str) -> bool {
+    pub(super) fn terminated(&self, session_id: &str) -> bool {
         self.events.lock().expect("event lock").iter().any(|event| {
             matches!(
                 event,
@@ -56,13 +56,13 @@ impl AgentEventDispatcher for RecordingDispatcher {
     }
 }
 
-struct EntryDeps {
-    session_repo: Arc<dyn SessionRepository>,
-    active_sessions: Arc<RwLock<HashMap<String, AgentSession>>>,
-    dispatcher: RecordingDispatcher,
+pub(super) struct EntryDeps {
+    pub(super) session_repo: Arc<dyn SessionRepository>,
+    pub(super) active_sessions: Arc<RwLock<HashMap<String, AgentSession>>>,
+    pub(super) dispatcher: RecordingDispatcher,
 }
 
-fn entry_deps(manager: &MCPServiceProxyManager) -> EntryDeps {
+pub(super) fn entry_deps(manager: &MCPServiceProxyManager) -> EntryDeps {
     EntryDeps {
         session_repo: Arc::new(SqliteSessionRepository::new((*manager.db).clone())),
         active_sessions: Arc::new(RwLock::new(HashMap::new())),
@@ -70,7 +70,7 @@ fn entry_deps(manager: &MCPServiceProxyManager) -> EntryDeps {
     }
 }
 
-async fn set_parent(manager: &MCPServiceProxyManager, child: &str, parent: &str) {
+pub(super) async fn set_parent(manager: &MCPServiceProxyManager, child: &str, parent: &str) {
     session::Entity::update(session::ActiveModel {
         id: Set(child.to_string()),
         parent_session_id: Set(Some(parent.to_string())),
