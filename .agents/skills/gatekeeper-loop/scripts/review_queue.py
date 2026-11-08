@@ -186,16 +186,20 @@ def classify(
             return "review", "approve without green CI at this head; replace it with a clean marker", 0
         return "approved", "approved at current head", 9
 
-    if at_head and last_verdict.get("verdict") == "changes-requested":
+    # A clean marker for this head on GitHub means the code review of this head is
+    # done, even after changes were requested at it (the worker answered without a
+    # new commit, for example by editing the PR body). The caller only passes a clean
+    # marker newer than both the last verdict and the worker's response to it.
+    clean_at_head = clean_head == head
+
+    if at_head and last_verdict.get("verdict") == "changes-requested" and not clean_at_head:
         if worker_response is None:
             return "wait-worker", "changes requested; waiting for worker response", 9
         return "review", "worker responded to the latest verdict", 0
 
-    # No verdict at this head. A clean marker for it on GitHub (or, as a fallback,
-    # state.json) means the code review of this head is already done, even when
-    # earlier rounds gave verdicts at older heads. The caller only passes a clean
-    # marker newer than the last verdict.
-    reviewed_clean = clean_head == head or (
+    # Otherwise a clean marker (or, as a fallback, state.json) also covers a head
+    # reached after verdicts at older heads.
+    reviewed_clean = clean_at_head or (
         state_reviewed_head == head and state_pending_ci and not has_open_findings
     )
     if not reviewed_clean:
@@ -217,6 +221,18 @@ def classify(
     if failing_checks and ci_applies:
         return "review", "not reviewed yet; CI failing", 1
     return "review", "not reviewed yet", 1
+
+
+def latest_clean_marker(cleans: list[dict], last: dict | None, response: dict | None) -> dict | None:
+    """The newest clean marker posted after the last verdict and after the worker's
+    response to it. A response that arrives after a clean marker asks for a new look,
+    so that marker no longer counts."""
+    return next(
+        (c for c in reversed(cleans)
+         if (last is None or c["createdAt"] > last["createdAt"])
+         and (response is None or c["createdAt"] > response["createdAt"])),
+        None,
+    )
 
 
 def determine_status(**kwargs) -> str:
@@ -248,8 +264,7 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
              if r.get("round") == last.get("round") and r["createdAt"] > last["createdAt"]),
             None,
         )
-    clean = next((c for c in reversed(cleans)
-                  if last is None or c["createdAt"] > last["createdAt"]), None)
+    clean = latest_clean_marker(cleans, last, response)
 
     pr_state = (state or {}).get("prs", {}).get(str(number), {})
     state_reviewed_head = pr_state.get("reviewedHead")
