@@ -32,7 +32,6 @@ function formatLogMessage(
   args: unknown[],
   defaultContext: string,
 ): { formattedMessage: string; context: string } {
-  const config = getLoggerConfig();
   let actualContext = defaultContext;
   let logMessage = message;
   const logArgs = [...args];
@@ -56,10 +55,6 @@ function formatLogMessage(
       return String(arg);
     });
     logMessage = `${logMessage} ${formattedArgs.join(' ')}`;
-  }
-
-  if (logMessage.length > config.maxMessageLength) {
-    logMessage = `${logMessage.substring(0, config.maxMessageLength - 3)}...`;
   }
 
   return { formattedMessage: logMessage, context: actualContext };
