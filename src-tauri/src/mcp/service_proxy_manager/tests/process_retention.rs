@@ -272,3 +272,34 @@ async fn reload_keeps_the_persistent_shell_and_stored_values_until_release() {
         .await
         .is_empty());
 }
+
+#[tokio::test]
+async fn terminate_after_reload_refuses_a_late_persistent_shell() {
+    use crate::mcp::builtin::workspace::workspace_server::retained::retained_state;
+
+    let harness = retention_harness().await;
+    let manager = &harness.manager;
+    let session_id = "process-retention-terminate";
+    let _release = ReleaseOnDrop(&["process-retention-terminate"]);
+    insert_test_session(manager, session_id).await;
+
+    manager.ensure_builtin_proxy(session_id).await.unwrap();
+    run_in_persistent_shell(manager, session_id, SET_SHELL_MARK).await;
+    for _ in 0..2 {
+        manager.destroy_proxy(session_id).await;
+        manager.ensure_builtin_proxy(session_id).await.unwrap();
+    }
+
+    manager.terminate_session_resources(session_id).await;
+
+    // A late dispatch on any server of the session reaches this shared manager; the
+    // terminate marked through the current server must fence it.
+    let shell_manager = retained_state(session_id).shell_manager;
+    assert!(shell_manager.is_session_terminated());
+    let workspace = tempfile::tempdir().expect("temp dir");
+    let late = shell_manager
+        .get_or_create_shell(session_id.to_string(), workspace.path().to_path_buf())
+        .await;
+    assert!(late.is_err(), "late shell after terminate must be refused");
+    assert_eq!(shell_manager.shell_count().await, 0);
+}
