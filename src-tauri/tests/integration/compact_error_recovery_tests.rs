@@ -67,6 +67,13 @@ impl AgentEventDispatcher for RecordingDispatcher {
             .push(event);
         Ok(())
     }
+
+    fn emit_completion_cancel(
+        &self,
+        _request: tauri_mcp_agent_lib::agent::llm::types::CompletionCancelRequest,
+    ) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 fn init_runtime_primitives() {

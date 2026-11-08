@@ -1,6 +1,7 @@
+use crate::agent::events::AgentEventDispatcher;
 use crate::agent::llm::types::CompletionCancelRequest;
 use crate::agent::state::AgentSession;
-use crate::agent::tauri_events::emit_completion_cancel;
+use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::commands::agent_commands::{CancelWorkflowOutcome, CancelWorkflowResult};
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::session_repository::SessionRepository;
@@ -171,7 +172,7 @@ pub fn is_inactive_cancel_noop(status: &SessionStatus) -> bool {
 /// legitimate turns. Cancel/terminate own the abort via `llm:completion-cancel`.
 async fn cancel_frontend_completion_if_pending(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
-    app_handle: &AppHandle,
+    dispatcher: &dyn AgentEventDispatcher,
     session_id: &str,
     reason: &str,
 ) {
@@ -188,14 +189,11 @@ async fn cancel_frontend_completion_if_pending(
         return;
     };
 
-    if let Err(error) = emit_completion_cancel(
-        app_handle,
-        CompletionCancelRequest {
-            session_id: session_id.to_string(),
-            response_message_id,
-            reason: reason.to_string(),
-        },
-    ) {
+    if let Err(error) = dispatcher.emit_completion_cancel(CompletionCancelRequest {
+        session_id: session_id.to_string(),
+        response_message_id,
+        reason: reason.to_string(),
+    }) {
         log::warn!(
             "Failed to emit llm:completion-cancel for session {}: {}",
             session_id,
@@ -212,6 +210,25 @@ pub async fn terminate_session(
     app_handle: &AppHandle,
     session_id: String,
 ) -> Result<(), String> {
+    let dispatcher = TauriEventDispatcher::new(app_handle.clone());
+    terminate_session_with_dispatcher(
+        session_repo,
+        active_sessions,
+        proxy_manager,
+        &dispatcher,
+        session_id,
+    )
+    .await
+}
+
+/// Like [`terminate_session`], with events sent through `dispatcher`.
+pub async fn terminate_session_with_dispatcher(
+    session_repo: &Arc<dyn SessionRepository>,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    proxy_manager: &Arc<MCPServiceProxyManager>,
+    dispatcher: &dyn AgentEventDispatcher,
+    session_id: String,
+) -> Result<(), String> {
     log::info!("Terminating workflow for session: {}", session_id);
 
     // Revoke the session's external wake token first (issue #2633): a
@@ -225,7 +242,7 @@ pub async fn terminate_session(
     // after we flip the session to idle.
     cancel_frontend_completion_if_pending(
         active_sessions,
-        app_handle,
+        dispatcher,
         &session_id,
         "workflow-terminated",
     )
@@ -263,10 +280,10 @@ pub async fn terminate_session(
 
     // 3. Update status to idle in DB (and memory if active)
     // We ignore error here for inactive sessions to ensure best-effort cleanup
-    let _ = crate::agent::lifecycle::update_session_status(
+    let _ = crate::agent::lifecycle::update_session_status_with_dispatcher(
         session_repo,
         active_sessions,
-        app_handle,
+        dispatcher,
         &session_id,
         SessionStatus::Idle,
     )
@@ -310,7 +327,8 @@ pub async fn terminate_session(
         session_id: session_id.clone(),
         reason: crate::agent::events::WorkflowCompletionReason::Terminated,
     };
-    crate::agent::tauri_events::emit_agent_event(app_handle, event)
+    dispatcher
+        .emit_agent_event(event)
         .map_err(|e| format!("Failed to emit event: {}", e))?;
 
     log::info!("Terminated workflow for session: {}", session_id);
@@ -356,7 +374,7 @@ pub async fn cancel_workflow(
     if is_inactive_cancel_noop(&current_status) {
         cancel_frontend_completion_if_pending(
             active_sessions,
-            app_handle,
+            &TauriEventDispatcher::new(app_handle.clone()),
             &session_id,
             "workflow-cancel-noop-inactive",
         )
@@ -411,7 +429,7 @@ pub async fn cancel_workflow(
 
     cancel_frontend_completion_if_pending(
         active_sessions,
-        app_handle,
+        &TauriEventDispatcher::new(app_handle.clone()),
         &session_id,
         "workflow-cancelled",
     )
