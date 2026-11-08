@@ -169,11 +169,13 @@ def classify(
     if owner_comment:
         return "review", "owner comment after last verdict; treat as required items", 0
 
-    if total_verdicts >= MAX_ROUNDS:
-        return "escalate", f"round limit ({MAX_ROUNDS}) reached", 9
-
     at_head = bool(last_verdict) and last_verdict.get("head") == head
     base_changed = bool(reviewed_base) and reviewed_base != base
+
+    # An approve given in the last allowed round settles the PR; it is not an escalation.
+    approved_at_head = at_head and last_verdict.get("verdict") == "approve"
+    if total_verdicts >= MAX_ROUNDS and not approved_at_head:
+        return "escalate", f"round limit ({MAX_ROUNDS}) reached", 9
 
     if at_head and last_verdict.get("verdict") == "approve":
         if base_changed:
@@ -189,16 +191,19 @@ def classify(
             return "wait-worker", "changes requested; waiting for worker response", 9
         return "review", "worker responded to the latest verdict", 0
 
-    if rebased:
-        return "review", "head was rebased/force-pushed since last verdict; full review or range-diff", 0
-    if last_verdict:
-        return "review", "new head since last verdict", 0
-
-    # Never given a verdict at this head. A clean marker on GitHub (or, as a
-    # fallback, state.json) means the code review is already done.
+    # No verdict at this head. A clean marker for it on GitHub (or, as a fallback,
+    # state.json) means the code review of this head is already done, even when
+    # earlier rounds gave verdicts at older heads. The caller only passes a clean
+    # marker newer than the last verdict.
     reviewed_clean = clean_head == head or (
         state_reviewed_head == head and state_pending_ci and not has_open_findings
     )
+    if not reviewed_clean:
+        if rebased:
+            return "review", "head was rebased/force-pushed since last verdict; full review or range-diff", 0
+        if last_verdict:
+            return "review", "new head since last verdict", 0
+
     if reviewed_clean and ci_green:
         return "review", "reviewed clean; CI green at this head, issue the verdict", 1
     if reviewed_clean and ci_failed:

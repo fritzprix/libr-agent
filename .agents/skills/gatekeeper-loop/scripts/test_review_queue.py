@@ -302,6 +302,53 @@ class GapTests(unittest.TestCase):
         status = determine_status(**base_args(clean_head="head1"))
         self.assertEqual(status, "review")
 
+    # A PR that had changes requested at older heads and is now clean at this one.
+    earlier = {"head": "head0", "verdict": "changes-requested", "base": "dev/0.9.x"}
+
+    def test_clean_after_earlier_verdicts_awaits_pending_ci(self) -> None:
+        status, reason, _ = classify(**base_args(
+            last_verdict=self.earlier, total_verdicts=4, clean_head="head1",
+            pending_checks=["Test"]))
+        self.assertEqual(status, "await-ci")
+        self.assertIn("waiting for pending CI", reason)
+
+    def test_clean_after_earlier_verdicts_with_green_ci_asks_for_the_verdict(self) -> None:
+        status, reason, priority = classify(**base_args(
+            last_verdict=self.earlier, total_verdicts=4, clean_head="head1"))
+        self.assertEqual(status, "review")
+        self.assertIn("issue the verdict", reason)
+        self.assertEqual(priority, 1)
+
+    def test_clean_after_earlier_verdicts_with_failing_ci_is_diagnosed(self) -> None:
+        status, reason, _ = classify(**base_args(
+            last_verdict=self.earlier, total_verdicts=4, clean_head="head1",
+            failing_checks=["Test"]))
+        self.assertEqual(status, "review")
+        self.assertIn("CI failing, diagnose", reason)
+
+    def test_clean_for_an_older_head_after_verdicts_is_a_new_head(self) -> None:
+        status, reason, _ = classify(**base_args(
+            head="head2", last_verdict=self.earlier, total_verdicts=4, clean_head="head1",
+            pending_checks=["Test"]))
+        self.assertEqual(status, "review")
+        self.assertIn("new head", reason)
+
+    def test_clean_after_earlier_verdicts_still_hits_the_round_limit(self) -> None:
+        status, _, _ = classify(**base_args(
+            last_verdict=self.earlier, total_verdicts=5, clean_head="head1",
+            pending_checks=["Test"]))
+        self.assertEqual(status, "escalate")
+
+    def test_approve_in_the_last_round_is_approved_not_escalated(self) -> None:
+        status, _, _ = classify(**base_args(
+            last_verdict=self.approve, total_verdicts=5))
+        self.assertEqual(status, "approved")
+
+    def test_approve_in_the_last_round_still_escalates_after_a_push(self) -> None:
+        status, _, _ = classify(**base_args(
+            head="head2", last_verdict=self.approve, total_verdicts=5))
+        self.assertEqual(status, "escalate")
+
     def test_rebased_head_is_review(self) -> None:
         last = {"head": "old", "verdict": "changes-requested"}
         status, reason, _ = classify(**base_args(
