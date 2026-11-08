@@ -37,11 +37,24 @@ def is_held(lock: Path) -> bool:
     return lease_is_live(read(lock))
 
 
+def _is_own_session(record: dict | None, owner: Owner | None) -> bool:
+    """Does this lock belong to the session now acquiring it?
+
+    The slot layer has already refused a session whose tick is still running, so
+    such a lock is an abandoned tick. A live PID-bound lock never expires by age:
+    without this, the session could never replace it and the slot would stay
+    blocked until the process exits. App and anonymous IDs can be shared by
+    concurrent runs, so they do not qualify.
+    """
+    return bool(record and owner and owner.scope == "session" and record.get("owner") == owner.id)
+
+
 def acquire(lock: Path, owner: Owner | None, token: str | None = None, pid: int | None = None) -> str | None:
-    """Take the lock atomically. Return its token, or None while a live run holds it."""
+    """Take the lock atomically. Return its token, or None while another live run holds it."""
     token = token or uuid.uuid4().hex
     with exclusive(_guard(lock)):
-        if is_held(lock):
+        record = read(lock)
+        if lease_is_live(record) and not _is_own_session(record, owner):
             return None
         now = int(time.time())
         record = {**(owner.record() if owner else {}), "token": token, "time": now, "renewedAt": now}

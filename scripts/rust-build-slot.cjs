@@ -7,10 +7,11 @@
  * checkout it comes from. Waiting has no timeout: a build behind another build is
  * normal, and a holder that dies frees its slot.
  *
- * LIBRAGENT_RUST_MAX_CONCURRENT overrides the limit (default: one per 32GB of RAM,
- * at least one). LIBRAGENT_RUST_SLOT_DIR overrides the directory (tests).
+ * LIBRAGENT_RUST_MAX_CONCURRENT overrides the limit (default: one per 32GB of
+ * installed RAM, at least one). LIBRAGENT_RUST_SLOT_DIR overrides the directory (tests).
  */
 
+const { spawnSync } = require('node:child_process');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -19,8 +20,15 @@ const path = require('node:path');
 const POLL_MS = 1000;
 const REPORT_EVERY_MS = 60000;
 const GIB = 1024 ** 3;
-// No cargo run takes this long; a holder this old is a reused PID, not a build.
+const REPORTED_RAM_SHORTFALL_GIB = 4;
+// No cargo run takes this long. The last resort for a PID whose start time cannot be read.
 const MAX_HOLD_MS = 6 * 60 * 60 * 1000;
+// Reading a start time spawns a process outside Linux, and waiters poll every second.
+const IDENTITY_RECHECK_MS = 30000;
+const GUARD_STALE_MS = 30000;
+
+const identityCheckedAt = new Map();
+let ownPidStart;
 
 function slotDir(env = process.env) {
   if (env.LIBRAGENT_RUST_SLOT_DIR) {
@@ -38,7 +46,8 @@ function maxConcurrent(env = process.env, totalMem = os.totalmem()) {
   if (Number.isInteger(configured) && configured > 0) {
     return configured;
   }
-  return Math.max(1, Math.floor(Math.round(totalMem / GIB) / 32));
+  // The OS reports less than the installed RAM (64GB shows as about 62.7GiB).
+  return Math.max(1, Math.floor((totalMem / GIB + REPORTED_RAM_SHORTFALL_GIB) / 32));
 }
 
 function pidAlive(pid) {
@@ -59,51 +68,113 @@ function readHolder(file) {
   }
 }
 
-/**
- * Remove a slot file only if it still holds the content judged stale. Rename is
- * atomic and only one contender wins it; a contender that moved a newer holder's
- * file by mistake puts it straight back.
- */
-function reclaimIfStale(file) {
-  const raw = (() => {
+/** A value that changes when `pid` is reused; null where it cannot be read. */
+function pidStart(pid) {
+  if (process.platform === 'linux') {
     try {
-      return fs.readFileSync(file, 'utf8');
+      const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
+      // The comm field may contain spaces. starttime is field 22 of the file.
+      return stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19] ?? null;
     } catch {
       return null;
     }
-  })();
-  if (raw === null) {
+  }
+  const [command, args] =
+    process.platform === 'win32'
+      ? [
+          'powershell.exe',
+          [
+            '-NoProfile',
+            '-NonInteractive',
+            '-Command',
+            `(Get-Process -Id ${pid}).StartTime.ToFileTimeUtc()`,
+          ],
+        ]
+      : ['ps', ['-o', 'lstart=', '-p', String(pid)]];
+  const result = spawnSync(command, args, {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+    windowsHide: true,
+  });
+  return result.status === 0 ? result.stdout.trim() || null : null;
+}
+
+function pidWasReused(holder) {
+  if (!holder.pidStart) {
+    return false;
+  }
+  const checkedAt = identityCheckedAt.get(holder.token);
+  if (checkedAt && Date.now() - checkedAt < IDENTITY_RECHECK_MS) {
+    return false;
+  }
+  const current = pidStart(holder.pid);
+  if (current !== null && current !== holder.pidStart) {
+    return true;
+  }
+  identityCheckedAt.set(holder.token, Date.now());
+  return false;
+}
+
+function holderIsStale(holder) {
+  return (
+    !holder ||
+    !pidAlive(holder.pid) ||
+    Date.now() - holder.since >= MAX_HOLD_MS ||
+    pidWasReused(holder)
+  );
+}
+
+/**
+ * Remove a stale slot file. Only one contender works on a slot at a time and it
+ * re-reads the holder under the guard, so it cannot remove a newer holder that
+ * another contender's reclaim made room for. A guard left by a crash is removed
+ * after GUARD_STALE_MS; this contender then retries on its next poll.
+ */
+function reclaimIfStale(file) {
+  if (!fs.existsSync(file) || !holderIsStale(readHolder(file))) {
     return;
   }
-  const holder = readHolder(file);
-  if (
-    holder &&
-    pidAlive(holder.pid) &&
-    Date.now() - holder.since < MAX_HOLD_MS
-  ) {
-    return;
-  }
-  const moved = `${file}.reclaim.${crypto.randomUUID()}`;
+  const guard = `${file}.guard`;
+  let fd;
   try {
-    fs.renameSync(file, moved);
-  } catch {
+    fd = fs.openSync(guard, 'wx');
+  } catch (error) {
+    if (error.code !== 'EEXIST') {
+      throw error;
+    }
+    try {
+      if (Date.now() - fs.statSync(guard).mtimeMs > GUARD_STALE_MS) {
+        fs.rmSync(guard, { force: true });
+      }
+    } catch {
+      // The guard's owner finished in the meantime.
+    }
     return;
   }
-  if (fs.readFileSync(moved, 'utf8') !== raw) {
-    try {
-      fs.linkSync(moved, file);
-    } catch {
-      // Another run took the slot meanwhile; the moved holder is already replaced.
+  try {
+    if (fs.existsSync(file) && holderIsStale(readHolder(file))) {
+      fs.rmSync(file, { force: true });
     }
+  } finally {
+    fs.closeSync(fd);
+    fs.rmSync(guard, { force: true });
   }
-  fs.unlinkSync(moved);
 }
 
 /** Try every slot once. Returns a held slot or null. */
 function tryAcquire(dir, limit, label, pid = process.pid) {
   fs.mkdirSync(dir, { recursive: true });
   const token = crypto.randomUUID();
-  const content = JSON.stringify({ pid, token, label, since: Date.now() });
+  if (pid === process.pid && ownPidStart === undefined) {
+    ownPidStart = pidStart(pid);
+  }
+  const content = JSON.stringify({
+    pid,
+    pidStart: pid === process.pid ? ownPidStart : pidStart(pid),
+    token,
+    label,
+    since: Date.now(),
+  });
   const temp = path.join(dir, `.pending-${token}`);
   fs.writeFileSync(temp, content);
   try {
