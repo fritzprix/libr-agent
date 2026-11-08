@@ -5,6 +5,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::OnceLock;
 use std::time::{Duration, SystemTime};
 
+use crate::mcp::builtin::workspace::persistent_shell::secrets::mask_log_line;
+
 extern crate fern;
 
 fn parse_log_level_arg(value: &str) -> Option<log::LevelFilter> {
@@ -157,6 +159,20 @@ fn prune_archived_logs(log_dir: &Path, policy: ArchivePolicy, now: SystemTime) -
     (removed_files, removed_bytes)
 }
 
+/// Every line, from any target, has the stored shell values of live sessions masked.
+fn formatted_dispatch() -> fern::Dispatch {
+    fern::Dispatch::new().format(|out, message, record| {
+        let message = message.to_string();
+        out.finish(format_args!(
+            "[{}][{}][{}] {}",
+            chrono::Local::now().format("%Y-%m-%d][%H:%M:%S"),
+            record.target(),
+            record.level(),
+            mask_log_line(&message)
+        ))
+    })
+}
+
 pub fn setup_file_logger(log_dir: PathBuf, log_retention_days: u64) -> Result<(), String> {
     set_log_retention_days(log_retention_days);
 
@@ -189,17 +205,7 @@ pub fn setup_file_logger(log_dir: PathBuf, log_retention_days: u64) -> Result<()
 
     let log_level = resolve_launch_log_level();
 
-    // Configure fern logger
-    fern::Dispatch::new()
-        .format(|out, message, record| {
-            out.finish(format_args!(
-                "[{}][{}][{}] {}",
-                chrono::Local::now().format("%Y-%m-%d][%H:%M:%S"),
-                record.target(),
-                record.level(),
-                message
-            ))
-        })
+    formatted_dispatch()
         .level(log_level)
         .chain(std::io::stdout()) // Keep stdout
         .chain(file) // Add file output
@@ -235,6 +241,58 @@ mod tests {
 
     fn prune(dir: &Path, policy: ArchivePolicy) -> (usize, u64) {
         prune_archived_logs(dir, policy, SystemTime::now())
+    }
+
+    fn emit(logger: &dyn log::Log, target: &str, message: &str) {
+        logger.log(
+            &log::Record::builder()
+                .args(format_args!("{message}"))
+                .level(log::Level::Info)
+                .target(target)
+                .build(),
+        );
+    }
+
+    #[tokio::test]
+    async fn emitted_lines_mask_a_stored_value_and_keep_names_and_unrelated_literals() {
+        use crate::mcp::builtin::workspace::persistent_shell::PersistentShellManager;
+
+        let stored = "logger-stored-4b7e9d";
+        let manager = PersistentShellManager::new();
+        manager
+            .store_secret("logger-mask-session", "DEMO_TOKEN", stored.to_string())
+            .await
+            .expect("store secret");
+        let (sender, receiver) = std::sync::mpsc::channel::<String>();
+        let (_, logger) = formatted_dispatch().chain(sender).into_log();
+
+        let webview_tool_args = format!(
+            "[webview] tool call {{\"name\":\"runInPersistentPowerShell\",\"arguments\":{{\"nested\":[{{\"command\":\"{}Write-Output {stored}\"}}]}}}}",
+            "x".repeat(140)
+        );
+        emit(
+            logger.as_ref(),
+            "libragent::commands::log_commands",
+            &webview_tool_args,
+        );
+        emit(
+            logger.as_ref(),
+            "libragent::mcp::builtin::workspace::code_execution::process",
+            "Windows process command: Write-Output \"val=$env:DEMO_TOKEN\" unrelated-literal-c0de",
+        );
+        manager.clear_session_state("logger-mask-session").await;
+        emit(logger.as_ref(), "after", &format!("forgotten {stored}"));
+
+        let lines: Vec<String> = receiver.try_iter().collect();
+        assert_eq!(lines.len(), 3, "{lines:?}");
+        assert!(!lines[0].contains(stored), "{}", lines[0]);
+        assert!(lines[0].contains("Write-Output ***"), "{}", lines[0]);
+        assert!(lines[1].contains("$env:DEMO_TOKEN"), "{}", lines[1]);
+        assert!(lines[1].contains("unrelated-literal-c0de"), "{}", lines[1]);
+        assert!(
+            lines[2].contains(stored),
+            "a forgotten value is no longer known"
+        );
     }
 
     fn write_archive(dir: &Path, name: &str, bytes: usize, age_secs: u64) {

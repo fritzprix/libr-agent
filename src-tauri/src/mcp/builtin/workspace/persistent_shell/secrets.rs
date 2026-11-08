@@ -5,12 +5,55 @@
 //! go into logs, tool results, or chat history; shell output is masked before it is
 //! returned.
 
-use std::collections::BTreeMap;
+use std::borrow::Cow;
+use std::collections::{BTreeMap, HashMap};
+use std::sync::RwLock;
+
+use once_cell::sync::Lazy;
 
 use crate::mcp::types::{MCPContent, MCPResult};
 
 /// `name -> value` for one session.
 pub type SecretMap = BTreeMap<String, String>;
+
+/// Stored values of every live session, so the logger can mask lines that carry no
+/// session id (webview logs, process debug lines). Never log while holding this lock:
+/// the logger reads it.
+static LOG_MASK_SECRETS: Lazy<RwLock<HashMap<String, SecretMap>>> =
+    Lazy::new(|| RwLock::new(HashMap::new()));
+
+/// Makes the logger mask the session's current stored values.
+pub fn register_log_secrets(session_id: &str, secrets: &SecretMap) {
+    LOG_MASK_SECRETS
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .insert(session_id.to_string(), secrets.clone());
+}
+
+/// Stops masking the session's values in logs. Call when its secrets are dropped.
+pub fn forget_log_secrets(session_id: &str) {
+    LOG_MASK_SECRETS
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .remove(session_id);
+}
+
+/// Masks the stored values of every live session in a log line.
+pub fn mask_log_line(line: &str) -> Cow<'_, str> {
+    let registry = LOG_MASK_SECRETS
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if registry.is_empty() {
+        return Cow::Borrowed(line);
+    }
+    let values = registry.values().flat_map(|secrets| secrets.values());
+    let masked = mask_values(line, values);
+    if masked == line {
+        Cow::Borrowed(line)
+    } else {
+        Cow::Owned(masked)
+    }
+}
 
 /// Shorter values are not masked: they match too much unrelated output.
 const MIN_MASKED_LEN: usize = 4;
@@ -77,8 +120,11 @@ pub fn validate_secret_name(name: &str) -> Result<(), String> {
 
 /// Replaces every stored value of `MIN_MASKED_LEN` or more characters with `***`.
 pub fn mask_secrets(text: &str, secrets: &SecretMap) -> String {
-    let mut values: Vec<&str> = secrets
-        .values()
+    mask_values(text, secrets.values())
+}
+
+fn mask_values<'a>(text: &str, values: impl Iterator<Item = &'a String>) -> String {
+    let mut values: Vec<&str> = values
         .map(String::as_str)
         .filter(|value| value.chars().count() >= MIN_MASKED_LEN)
         .collect();
@@ -110,7 +156,8 @@ pub fn mask_result(mut result: MCPResult, secrets: &SecretMap) -> MCPResult {
     result
 }
 
-fn mask_json_strings(value: &mut serde_json::Value, secrets: &SecretMap) {
+/// Masks stored values in every string of a JSON value, at any depth.
+pub fn mask_json_strings(value: &mut serde_json::Value, secrets: &SecretMap) {
     match value {
         serde_json::Value::String(text) => *text = mask_secrets(text, secrets),
         serde_json::Value::Array(items) => {
@@ -220,5 +267,27 @@ mod tests {
                 "exit_code": 0
             }))
         );
+    }
+
+    #[test]
+    fn a_log_line_masks_stored_values_of_every_live_session_until_they_are_forgotten() {
+        register_log_secrets(
+            "log-mask-a",
+            &SecretMap::from([("DEMO_TOKEN".to_string(), "logmask-a-7f3c".to_string())]),
+        );
+        register_log_secrets(
+            "log-mask-b",
+            &SecretMap::from([("OTHER_TOKEN".to_string(), "logmask-b-91d2".to_string())]),
+        );
+        let line = "echo val=$env:DEMO_TOKEN logmask-a-7f3c logmask-b-91d2 never-stored-8e1a";
+
+        assert_eq!(
+            mask_log_line(line),
+            "echo val=$env:DEMO_TOKEN *** *** never-stored-8e1a"
+        );
+
+        forget_log_secrets("log-mask-a");
+        forget_log_secrets("log-mask-b");
+        assert_eq!(mask_log_line(line), line);
     }
 }

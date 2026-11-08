@@ -8,7 +8,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{debug, info, warn};
 
-use super::secrets::{mask_secrets, SecretMap};
+use super::secrets::{forget_log_secrets, mask_secrets, register_log_secrets, SecretMap};
 use super::session::PersistentShell;
 use crate::models::workspace_isolation::WorkspaceIsolationMode;
 use crate::repositories::SessionRepository;
@@ -75,13 +75,12 @@ impl PersistentShellManager {
         name: &str,
         value: String,
     ) -> Result<(), String> {
-        self.session_states
-            .lock()
-            .await
-            .entry(session_id.to_string())
-            .or_default()
-            .secrets
-            .insert(name.to_string(), value);
+        {
+            let mut states = self.session_states.lock().await;
+            let secrets = &mut states.entry(session_id.to_string()).or_default().secrets;
+            secrets.insert(name.to_string(), value);
+            register_log_secrets(session_id, secrets);
+        }
         info!("Stored shell secret {} for session {}", name, session_id);
         self.restart_shell(session_id).await
     }
@@ -116,6 +115,7 @@ impl PersistentShellManager {
     /// Drops the session's secrets. Call when the session ends.
     pub async fn clear_session_state(&self, session_id: &str) {
         self.session_states.lock().await.remove(session_id);
+        forget_log_secrets(session_id);
     }
 
     /// The session's `storeAs` values, for the env of a shell this session spawns.
