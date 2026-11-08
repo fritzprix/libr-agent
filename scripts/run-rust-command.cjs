@@ -185,13 +185,17 @@ if (isCargoTest && stdio === 'inherit') {
 // Held for this one cargo run. The sequential runner comes through here once per
 // target, so a long test suite does not shut other worktrees out until it ends.
 const buildSlot = acquireBuildSlot(`cargo ${cargoArgs[0]}`);
-const result = spawnSync(command, spawnArgs, {
-  cwd: path.join(__dirname, '..', 'src-tauri'),
-  env,
-  stdio,
-  shell: process.platform === 'win32' ? true : undefined,
-});
-releaseBuildSlot(buildSlot);
+let result;
+try {
+  result = spawnSync(command, spawnArgs, {
+    cwd: path.join(__dirname, '..', 'src-tauri'),
+    env,
+    stdio,
+    shell: process.platform === 'win32' ? true : undefined,
+  });
+} finally {
+  releaseBuildSlot(buildSlot);
+}
 
 if (logFd !== null) {
   fs.closeSync(logFd);

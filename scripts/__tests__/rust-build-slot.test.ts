@@ -6,6 +6,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -45,10 +46,15 @@ describe('rust build slot', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('allows one build per 32GB of RAM, at least one', () => {
+  it('allows one build per 32GB of installed RAM, at least one', () => {
     expect(maxConcurrent({}, 16 * GIB)).toBe(1);
     expect(maxConcurrent({}, 31 * GIB)).toBe(1);
+    expect(maxConcurrent({}, 59 * GIB)).toBe(1);
+    // The OS reports less than the installed amount.
+    expect(maxConcurrent({}, 62.7 * GIB)).toBe(2);
     expect(maxConcurrent({}, 64 * GIB)).toBe(2);
+    expect(maxConcurrent({}, 94 * GIB)).toBe(3);
+    expect(maxConcurrent({}, 125 * GIB)).toBe(4);
     expect(
       maxConcurrent({ LIBRAGENT_RUST_MAX_CONCURRENT: '3' }, 16 * GIB),
     ).toBe(3);
@@ -81,6 +87,47 @@ describe('rust build slot', () => {
       JSON.stringify({ pid: process.pid, token: 'reused-pid', since: ancient }),
     );
     expect(tryAcquire(dir, 1, 'next')).not.toBeNull();
+  });
+
+  it('takes a slot whose live PID now belongs to another process', () => {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      path.join(dir, 'slot-0.json'),
+      JSON.stringify({
+        pid: process.pid,
+        pidStart: 'an-earlier-process',
+        token: 'reused-pid',
+        since: Date.now(),
+      }),
+    );
+    expect(tryAcquire(dir, 1, 'next')).not.toBeNull();
+  });
+
+  it('keeps a slot whose holder start time matches', () => {
+    const held = tryAcquire(dir, 1, 'a');
+    const record = JSON.parse(readFileSync(held!.file, 'utf8')) as {
+      pidStart: string | null;
+    };
+    expect(record.pidStart).toBeTruthy();
+    expect(tryAcquire(dir, 1, 'b')).toBeNull();
+  });
+
+  it('leaves a stale slot alone while another contender reclaims it', () => {
+    const dead = tryAcquire(dir, 1, 'crashed', deadPid());
+    writeFileSync(`${dead!.file}.guard`, '');
+    expect(tryAcquire(dir, 1, 'next')).toBeNull();
+    expect(readFileSync(dead!.file, 'utf8')).toContain(dead!.token);
+  });
+
+  it('recovers from a guard left by a crash', () => {
+    const dead = tryAcquire(dir, 1, 'crashed', deadPid());
+    const guard = `${dead!.file}.guard`;
+    writeFileSync(guard, '');
+    const old = new Date(Date.now() - 60000);
+    utimesSync(guard, old, old);
+    expect(tryAcquire(dir, 1, 'next')).toBeNull();
+    expect(tryAcquire(dir, 1, 'next')).not.toBeNull();
+    expect(readdirSync(dir)).toEqual(['slot-0.json']);
   });
 
   it('does not let a late release remove the next holder', () => {
