@@ -267,28 +267,33 @@ pub fn get_routes(
         .and(json_body())
         .and_then(mcp_handler::mcp_rpc_auto);
 
+    // Box every route and the combined API. Each `Or` level otherwise holds
+    // the whole nested future inline, and in debug builds polling the first
+    // routes overflows the 2 MiB worker stack.
     let api = create_session
-        .or(get_session)
-        .or(patch_session)
-        .or(get_compact_context)
-        .or(get_messages)
-        .or(send_message)
-        .or(inject_channel_message_auto)
-        .or(inject_channel_message)
-        .or(respond_channel_permission)
-        .or(resume_session)
-        .or(terminate_session)
-        .or(delete_session)
-        .or(get_child_sessions)
-        .or(list_assistants)
-        .or(get_assistant)
-        .or(health)
-        .or(preferred_model)
-        .or(get_complexity_mapping)
-        .or(put_complexity_mapping)
-        .or(mcp_control_route)
-        .or(mcp_auto_route)
-        .or(mcp_route);
+        .boxed()
+        .or(get_session.boxed())
+        .or(patch_session.boxed())
+        .or(get_compact_context.boxed())
+        .or(get_messages.boxed())
+        .or(send_message.boxed())
+        .or(inject_channel_message_auto.boxed())
+        .or(inject_channel_message.boxed())
+        .or(respond_channel_permission.boxed())
+        .or(resume_session.boxed())
+        .or(terminate_session.boxed())
+        .or(delete_session.boxed())
+        .or(get_child_sessions.boxed())
+        .or(list_assistants.boxed())
+        .or(get_assistant.boxed())
+        .or(health.boxed())
+        .or(preferred_model.boxed())
+        .or(get_complexity_mapping.boxed())
+        .or(put_complexity_mapping.boxed())
+        .or(mcp_control_route.boxed())
+        .or(mcp_auto_route.boxed())
+        .or(mcp_route.boxed())
+        .boxed();
 
     // No allow_any_origin CORS. CLI clients omit Origin; browsers with Origin are rejected.
     access_guard(expose)
