@@ -431,6 +431,90 @@ async fn terminate_does_not_kill_another_sessions_processes() {
     );
 }
 
+/// Issue #2652: explicit terminate must remove every owned descendant of a
+/// spawned process, not just the tracked wrapper. Reported shape: a bash
+/// wrapper (its own process group, created by the isolation manager) with a
+/// long-lived `sleep` child. The reported build killed the wrapper and the
+/// child survived holding the dead wrapper's PGID.
+#[cfg(unix)]
+#[tokio::test]
+async fn terminate_kills_spawn_process_descendants_not_only_the_wrapper() {
+    let harness = create_test_harness().await;
+    let manager = &harness.manager;
+    let session_id = "terminate-kills-descendants";
+
+    insert_test_session(manager, session_id).await;
+
+    let pids_file = std::env::temp_dir().join(format!("issue2652-{}.pids", session_id));
+    let _ = std::fs::remove_file(&pids_file);
+
+    manager
+        .call_tool(
+            session_id,
+            "workspace__spawnProcess",
+            json!({
+                "command": format!(
+                    "w=$$; sleep 120 & c=$!; printf '%s %s\\n' \"$w\" \"$c\" > '{}'; wait",
+                    pids_file.display()
+                ),
+                "name": "descendant-probe",
+            }),
+        )
+        .await
+        .expect("spawnProcess should succeed");
+
+    let (wrapper_pid, child_pid) = {
+        let deadline = Instant::now() + Duration::from_secs(15);
+        loop {
+            if let Ok(content) = std::fs::read_to_string(&pids_file) {
+                let mut parts = content.split_whitespace();
+                if let (Some(Ok(wrapper)), Some(Ok(child))) = (
+                    parts.next().map(str::parse::<u32>),
+                    parts.next().map(str::parse::<u32>),
+                ) {
+                    break (wrapper, child);
+                }
+            }
+            assert!(
+                Instant::now() < deadline,
+                "the wrapper never reported wrapper+child pids via {}",
+                pids_file.display()
+            );
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    };
+    let _ = std::fs::remove_file(&pids_file);
+
+    assert!(pid_alive(wrapper_pid), "wrapper must be running");
+    assert!(pid_alive(child_pid), "child must be running");
+
+    let killed = manager.terminate_session_resources(session_id).await;
+    assert!(
+        killed >= 1,
+        "terminate must count the spawned process, got {killed}"
+    );
+
+    assert!(
+        wait_for_pid_death(wrapper_pid).await,
+        "wrapper {wrapper_pid} must be gone after terminate"
+    );
+    assert!(
+        wait_for_pid_death(child_pid).await,
+        "issue #2652: descendant {child_pid} must not survive as an orphan of the killed wrapper"
+    );
+
+    // No delayed resurrection: a reparented survivor would still show up.
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert!(
+        !pid_alive(child_pid),
+        "descendant {child_pid} must stay dead"
+    );
+    assert!(
+        !pid_alive(wrapper_pid),
+        "wrapper {wrapper_pid} must stay dead"
+    );
+}
+
 /// Issue #2633 G3.1: `resume_session_and_workflow` (used by the explicit
 /// `agent_resume_workflow` command and `POST /api/sessions/:id/resume`) must
 /// lift a force-stop fence before resuming, so terminate followed by an

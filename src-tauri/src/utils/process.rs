@@ -61,6 +61,25 @@ fn process_group_id(pid: u32) -> Option<u32> {
     String::from_utf8_lossy(&output.stdout).trim().parse().ok()
 }
 
+/// True when at least one live process belongs to process group `pgid`.
+///
+/// Used when the group leader is already dead: surviving members still carry
+/// `PGID == leader pid` (issue #2652), so the group id stays a safe,
+/// ownership-scoped signal target even though the leader is gone.
+#[cfg(unix)]
+fn unix_process_group_has_members(pgid: u32) -> bool {
+    let Ok(output) = Command::new("ps").args(["-A", "-o", "pgid="]).output() else {
+        return false;
+    };
+    if !output.status.success() {
+        return false;
+    }
+    String::from_utf8_lossy(&output.stdout)
+        .split_whitespace()
+        .filter_map(|value| value.parse::<u32>().ok())
+        .any(|value| value == pgid)
+}
+
 /// Collect child processes keyed by parent process ID.
 ///
 /// On Linux, this inspects `/proc/*/status` for zero-process-spawn performance.
@@ -167,9 +186,20 @@ fn collect_descendant_pids(root: u32) -> Vec<u32> {
     ordered
 }
 
+/// Send SIGKILL to a single PID (`pid_or_group > 0`) or a process group
+/// (`pid_or_group < 0`) via `kill(2)`.
+///
+/// The syscall is used instead of spawning `/usr/bin/kill`: some `kill`
+/// binaries accept a negative id, exit 0, and silently deliver nothing to the
+/// group members (issue #2652). `kill(2)` is the kernel contract we rely on.
 #[cfg(unix)]
-fn signal_kill(pid_or_group: &str) -> io::Result<std::process::ExitStatus> {
-    Command::new("kill").args(["-KILL", pid_or_group]).status()
+fn signal_kill(pid_or_group: i32) -> io::Result<()> {
+    // Safety: kill(2) with a plain signal number is safe for any pid value.
+    if unsafe { libc::kill(pid_or_group, libc::SIGKILL) } == 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
+    }
 }
 
 /// Kill a process and its descendants when the process is its own group leader.
@@ -200,6 +230,17 @@ pub(crate) fn force_kill_process_tree(pid: u32) -> io::Result<()> {
     }
 
     if !process_is_alive(pid)? {
+        #[cfg(unix)]
+        {
+            // Issue #2652: when the root died before this call — a concurrent
+            // killer reaped the wrapper first, or it was killed externally —
+            // its descendants are invisible to the PPID walk: they have been
+            // reparented elsewhere but still share the dead leader's PGID.
+            // Sweep that group so a late terminate still removes owned children.
+            if unix_process_group_has_members(pid) {
+                let _ = signal_kill(-(pid as i32));
+            }
+        }
         return Ok(());
     }
 
@@ -211,7 +252,7 @@ pub(crate) fn force_kill_process_tree(pid: u32) -> io::Result<()> {
 
         if let Some(group_id) = process_group_id(pid) {
             if group_id == pid {
-                let _ = signal_kill(&format!("-{pid}"));
+                let _ = signal_kill(-(pid as i32));
             }
         }
 
@@ -219,16 +260,18 @@ pub(crate) fn force_kill_process_tree(pid: u32) -> io::Result<()> {
         // process group (and any survivors after the group signal).
         for child_pid in descendants.into_iter().rev() {
             if process_is_alive(child_pid).unwrap_or(false) {
-                let _ = signal_kill(&child_pid.to_string());
+                let _ = signal_kill(child_pid as i32);
             }
         }
 
         if process_is_alive(pid)? {
-            let status = signal_kill(&pid.to_string())?;
-            if !status.success() && process_is_alive(pid)? {
-                return Err(io::Error::other(format!(
-                    "failed to kill process {pid}: {status}"
-                )));
+            if let Err(err) = signal_kill(pid as i32) {
+                // ESRCH just means the target exited concurrently with us.
+                if err.raw_os_error() != Some(libc::ESRCH) && process_is_alive(pid)? {
+                    return Err(io::Error::other(format!(
+                        "failed to kill process {pid}: {err}"
+                    )));
+                }
             }
         }
 
@@ -371,6 +414,72 @@ mod tests {
         assert!(
             !process_is_alive(child_pid).unwrap_or(true),
             "child {child_pid} should be gone after wait()"
+        );
+    }
+
+    /// Issue #2652: when the wrapper (group leader) dies before the tree kill
+    /// arrives — the race the reported build hit — the long-lived child stays
+    /// alive holding the dead leader's PGID. The sweep must still reach it.
+    #[cfg(unix)]
+    #[test]
+    fn force_kill_process_tree_sweeps_group_when_root_already_dead() {
+        use std::os::unix::process::CommandExt;
+
+        let pid_file = std::env::temp_dir().join(format!(
+            "issue2652-sweep-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        let mut command = Command::new("bash");
+        command.args([
+            "-c",
+            &format!("sleep 60 & echo $! > '{}'; wait", pid_file.display()),
+        ]);
+        command.process_group(0); // group leader, like the isolation manager
+        command.stdin(Stdio::null());
+        command.stdout(Stdio::null());
+        command.stderr(Stdio::null());
+        let mut wrapper = command.spawn().expect("spawn bash wrapper");
+        let wrapper_pid = wrapper.id();
+
+        let child_pid = {
+            let deadline = std::time::Instant::now() + Duration::from_secs(15);
+            loop {
+                if let Some(pid) = std::fs::read_to_string(&pid_file)
+                    .ok()
+                    .and_then(|content| content.trim().parse::<u32>().ok())
+                {
+                    break pid;
+                }
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "child sleep never reported its pid"
+                );
+                thread::sleep(Duration::from_millis(50));
+            }
+        };
+        let _ = std::fs::remove_file(&pid_file);
+
+        // Simulate the race: the wrapper dies first, leaving the child alive
+        // with PGID == wrapper pid and reparented away from the tree walk.
+        force_kill_process(wrapper_pid).expect("kill wrapper");
+        wrapper.wait().expect("reap wrapper"); // zombies still answer kill -0
+
+        force_kill_process_tree(wrapper_pid).expect("sweep dead leader's group");
+
+        // The child is reparented to init, so once dead it is reaped there and
+        // kill -0 starts failing.
+        let deadline = std::time::Instant::now() + Duration::from_secs(15);
+        while process_is_alive(child_pid).unwrap_or(false) && std::time::Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(100));
+        }
+        assert!(
+            !process_is_alive(child_pid).unwrap_or(true),
+            "child {child_pid} must be swept with its dead leader's group"
         );
     }
 
