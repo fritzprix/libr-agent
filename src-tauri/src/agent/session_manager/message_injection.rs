@@ -189,17 +189,25 @@ pub async fn inject_messages(
             .await
             {
                 if crate::mcp::MCPServiceProxyManager::is_teardown_fence_rejection(&e) {
-                    // The session was force-terminated after this wake was
-                    // queued. The refusal is correct behavior, not a failure:
-                    // release the permit and leave the session status and
-                    // error stream untouched (issue #2633 G2.3).
+                    // A force-stop fence refusal is a correct outcome, not a failure:
+                    // undo the Busy promotion and emit no WorkflowError (#2633 G4.1).
                     log::info!(
                         "Background injection for session {} aborted by force-stop fence; no workflow error emitted",
                         session_id_clone
                     );
-                    let mut active = active_sessions.write().await;
-                    if let Some(session) = active.get_mut(&session_id_clone) {
-                        session.active_permit.take();
+                    if let Err(err) = crate::agent::lifecycle::end_fence_refused_wake(
+                        &session_repo,
+                        &active_sessions,
+                        &app_handle,
+                        &session_id_clone,
+                    )
+                    .await
+                    {
+                        log::warn!(
+                            "Failed to end refused background injection for session {}: {}",
+                            session_id_clone,
+                            err
+                        );
                     }
                     return;
                 }
