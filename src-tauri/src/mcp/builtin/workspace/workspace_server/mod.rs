@@ -2,9 +2,12 @@ mod lifecycle;
 #[cfg(test)]
 mod linked_worktree_tests;
 mod path_validation;
+mod retained;
 mod service_context;
 mod teamwork_paths;
 mod user_skills_guard;
+
+pub use retained::release_session_workspace_state;
 
 pub(crate) use path_validation::{
     looks_like_confused_harness_path, path_operation_failure_guidance,
@@ -58,7 +61,8 @@ pub struct WorkspaceServer {
     pub(crate) shell_manager: Arc<persistent_shell::PersistentShellManager>,
     pub(crate) context_cache: ContextCache,
     /// Set once the session is force-terminated (explicit terminate/delete).
-    /// Late tool dispatches on this instance must not create new processes.
+    /// Late tool dispatches must not create new processes. Shared by every server of
+    /// the session and its shell manager, like the registry.
     pub(crate) terminated: Arc<std::sync::atomic::AtomicBool>,
     cleanup_shutdown: Arc<std::sync::atomic::AtomicBool>,
     cleanup_tasks: Vec<JoinHandle<()>>,
@@ -70,19 +74,44 @@ impl WorkspaceServer {
         Self::with_isolation(session_id, session_manager, WorkspaceIsolationMode::Host)
     }
 
-    /// Create a workspace server bound to a session's workspace isolation mode.
+    /// Create a workspace server bound to a session's workspace isolation mode, with its
+    /// own process registry and shell manager.
     pub fn with_isolation(
         session_id: String,
         session_manager: Arc<SessionManager>,
         workspace_isolation: WorkspaceIsolationMode,
     ) -> Self {
+        let state = retained::RetainedWorkspaceState::new();
+        Self::with_state(session_id, session_manager, workspace_isolation, state)
+    }
+
+    /// The server a session's proxy uses. Its processes and persistent shell outlive
+    /// the server, so a proxy created after reload or a config change still owns them.
+    pub fn for_session(
+        session_id: String,
+        session_manager: Arc<SessionManager>,
+        workspace_isolation: WorkspaceIsolationMode,
+    ) -> Self {
+        let state = retained::retained_state(&session_id);
+        Self::with_state(session_id, session_manager, workspace_isolation, state)
+    }
+
+    fn with_state(
+        session_id: String,
+        session_manager: Arc<SessionManager>,
+        workspace_isolation: WorkspaceIsolationMode,
+        state: retained::RetainedWorkspaceState,
+    ) -> Self {
         info!(
             "WorkspaceServer created for session: {} (isolation={})",
             session_id, workspace_isolation
         );
-        let process_registry = terminal_manager::create_process_registry();
+        let retained::RetainedWorkspaceState {
+            process_registry,
+            shell_manager,
+            terminated,
+        } = state;
         let cleanup_shutdown = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let terminated = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
         let process_cleanup_task =
             lifecycle::start_cleanup_task(process_registry.clone(), cleanup_shutdown.clone());
@@ -93,10 +122,7 @@ impl WorkspaceServer {
             workspace_isolation,
             isolation_manager: crate::session_isolation::SessionIsolationManager::new(),
             process_registry,
-            shell_manager: Arc::new(
-                persistent_shell::PersistentShellManager::new()
-                    .with_terminated_flag(terminated.clone()),
-            ),
+            shell_manager,
             context_cache: Arc::new(tokio::sync::RwLock::new(None)),
             terminated,
             cleanup_shutdown,

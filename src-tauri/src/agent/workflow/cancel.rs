@@ -277,6 +277,8 @@ pub async fn terminate_session_with_dispatcher(
     // (e.g. failed resume or already closed in memory but proxy still exists).
     proxy_manager.destroy_proxy(&session_id).await;
     log::info!("Destroyed MCP proxy for session: {}", session_id);
+    // Reload keeps this state across proxies; only terminate and delete end it.
+    crate::mcp::builtin::workspace::release_session_workspace_state(&session_id);
 
     // 3. Update status to idle in DB (and memory if active)
     // We ignore error here for inactive sessions to ensure best-effort cleanup

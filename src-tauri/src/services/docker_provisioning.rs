@@ -268,6 +268,7 @@ async fn fail_docker_provisioning(
         let mut active = deps.active_sessions.write().await;
         active.remove(&session.id);
         deps.proxy_manager.destroy_proxy(&session.id).await;
+        crate::mcp::builtin::workspace::release_session_workspace_state(&session.id);
         let _ = WorkspaceRuntimeManager::remove_runtime_for_session(session).await;
         return Ok(());
     }
