@@ -23,6 +23,16 @@ mod tests {
     static TEST_DB: OnceLock<Arc<DatabaseConnection>> = OnceLock::new();
     static TEST_DB_DIR: OnceLock<tempfile::TempDir> = OnceLock::new();
 
+    /// `destroy_proxy` does not release the session's retained shell manager, so its
+    /// shell would outlive the test. Releases it on drop, also when an assertion fails.
+    struct ReleaseWorkspaceStateOnDrop<'a>(&'a str);
+
+    impl Drop for ReleaseWorkspaceStateOnDrop<'_> {
+        fn drop(&mut self) {
+            crate::mcp::builtin::workspace::release_session_workspace_state(self.0);
+        }
+    }
+
     fn test_session_active_model(id: impl Into<String>) -> session::ActiveModel {
         session::ActiveModel {
             id: Set(id.into()),
@@ -706,6 +716,7 @@ mod tests {
         let proxy_manager = MCPServiceProxyManager::new(db, session_manager);
 
         let session_id = "path_resolution_test_session".to_string();
+        let _release_shell = ReleaseWorkspaceStateOnDrop(&session_id);
 
         // Create proxy with workspace tools
         proxy_manager

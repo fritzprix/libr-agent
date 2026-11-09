@@ -25,7 +25,7 @@ pub mod workspace_server;
 // Re-exports for public API stability
 pub(crate) use types::INTERACTIVE_SHELL_INPUT_MAX_BYTES;
 pub use types::{PERSISTENT_SHELL_TOOL, RUN_SHELL_TOOL};
-pub use workspace_server::WorkspaceServer;
+pub use workspace_server::{release_session_workspace_state, WorkspaceServer};
 
 #[cfg(test)]
 mod test_output_visibility;
