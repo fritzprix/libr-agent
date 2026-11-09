@@ -4,23 +4,11 @@
 #![cfg(unix)]
 
 use super::*;
-use std::future::Future;
-use std::time::Duration;
 
 const LONG_COMMAND: &str = "echo retained-start; sleep 30";
 const PERSISTENT_SHELL_TOOL: &str = "workspace__runInPersistentShell";
 const SET_SHELL_MARK: &str = "export RETAINED_MARK=kept-7731";
 const READ_SHELL_STATE: &str = "echo \"mark=$RETAINED_MARK len=${#RETAIN_TOKEN}\"";
-
-/// Upper bound for one tool call or proxy step, so a stuck process fails the test
-/// with the step name instead of hanging the whole test binary.
-const STEP_TIMEOUT: Duration = Duration::from_secs(60);
-
-async fn within<T>(step: &str, future: impl Future<Output = T>) -> T {
-    tokio::time::timeout(STEP_TIMEOUT, future)
-        .await
-        .unwrap_or_else(|_| panic!("{step} did not finish within {STEP_TIMEOUT:?}"))
-}
 
 /// Releases the sessions' retained state even when an assertion fails, so one failed
 /// test does not leave entries in the process-wide store for later tests.
