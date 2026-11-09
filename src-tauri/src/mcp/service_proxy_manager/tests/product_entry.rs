@@ -1,7 +1,6 @@
 //! Issue #2633: terminate and delete driven through the product entry points
 //! (`terminate_session_with_dispatcher`, `delete_session_with_dispatcher`,
 //! `delete_session_only_with_dispatcher`) with real OS processes.
-#![cfg(unix)]
 
 use super::termination_fence::{pid_alive, spawn_real_process, wait_for_pid_death};
 use super::*;

@@ -278,30 +278,28 @@ async fn clear_after_terminate_still_rejects_inflight_dispatch_by_generation() {
         .expect("new dispatch after explicit clear must succeed");
 }
 
-// ── Real process teardown (Linux) ───────────────────────────────────────────
+// ── Real process teardown (Linux + Windows) ────────────────────────────────
 //
 // These tests spawn real OS processes through the production tool path and
-// verify that explicit terminate really removes them. Windows runtime behavior
-// is recorded as an unverified gap in the PR (issue #2633).
+// verify that explicit terminate really removes them. Issue #2633 requires
+// this evidence on every supported platform, so the helpers are cross-platform:
+// only the spawn command string differs (bash on unix, the PowerShell wrapper
+// on Windows), while liveness uses the same production check as teardown.
 
-/// The child writes its own pid here. The shell `exec`s the final command, so
-/// a command-line marker (`pgrep -f`) would be exec'd away; the pid file
-/// survives the exec and identifies exactly the process teardown must kill.
-#[cfg(unix)]
+/// The child writes its own pid here. On unix the shell `exec`s the final
+/// command, so a command-line marker (`pgrep -f`) would be exec'd away; the
+/// pid file survives and identifies exactly the process teardown must kill.
+/// On Windows the pid file holds the PowerShell wrapper's own `$PID`.
 fn marker_pid_file(session_id: &str) -> std::path::PathBuf {
     std::env::temp_dir().join(format!("issue2633-{}.pid", session_id))
 }
 
-#[cfg(unix)]
+/// Same liveness check `force_kill_process_tree` uses, so "dead" here means
+/// exactly what teardown considers dead.
 pub(super) fn pid_alive(pid: u32) -> bool {
-    std::process::Command::new("kill")
-        .args(["-0", &pid.to_string()])
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
+    crate::utils::process::process_is_alive(pid).unwrap_or(false)
 }
 
-#[cfg(unix)]
 pub(super) async fn wait_for_pid_death(pid: u32) -> bool {
     let deadline = Instant::now() + Duration::from_secs(15);
     while Instant::now() < deadline {
@@ -315,17 +313,29 @@ pub(super) async fn wait_for_pid_death(pid: u32) -> bool {
 
 /// Spawns a real background process through `workspace__spawnProcess` and
 /// returns its OS pid once the child has reported it.
-#[cfg(unix)]
 pub(super) async fn spawn_real_process(manager: &MCPServiceProxyManager, session_id: &str) -> u32 {
     let pid_file = marker_pid_file(session_id);
     let _ = std::fs::remove_file(&pid_file);
+
+    // Unix: the shell reports its own `$$` and `exec`s into `sleep`, so the
+    // reported pid is exactly the process teardown must remove.
+    // Windows: the command runs inside the production PowerShell wrapper;
+    // `$PID` is that wrapper (the directly spawned child), and `Start-Sleep`
+    // keeps it alive in-process until teardown kills the tree.
+    #[cfg(unix)]
+    let command = format!("echo $$ > '{}' && sleep 60", pid_file.display());
+    #[cfg(windows)]
+    let command = format!(
+        "$PID | Out-File -Encoding ascii '{}'; Start-Sleep -Seconds 60",
+        pid_file.display()
+    );
 
     manager
         .call_tool(
             session_id,
             "workspace__spawnProcess",
             json!({
-                "command": format!("echo $$ > '{}' && sleep 60", pid_file.display()),
+                "command": command,
                 "name": "fence-probe",
             }),
         )
@@ -356,7 +366,6 @@ pub(super) async fn spawn_real_process(manager: &MCPServiceProxyManager, session
 /// Issue #2633 acceptance: explicit terminate must force-stop the session's
 /// real spawned processes through production code, fence late dispatches, and
 /// refuse automatic wakes.
-#[cfg(unix)]
 #[tokio::test]
 async fn terminate_kills_real_session_processes_and_refuses_late_work() {
     let harness = create_test_harness().await;
@@ -398,7 +407,6 @@ async fn terminate_kills_real_session_processes_and_refuses_late_work() {
 
 /// Issue #2633: teardown is session-scoped for real processes too — another
 /// session's live process must survive.
-#[cfg(unix)]
 #[tokio::test]
 async fn terminate_does_not_kill_another_sessions_processes() {
     let harness = create_test_harness().await;
@@ -436,7 +444,6 @@ async fn terminate_does_not_kill_another_sessions_processes() {
 /// wrapper (its own process group, created by the isolation manager) with a
 /// long-lived `sleep` child. The reported build killed the wrapper and the
 /// child survived holding the dead wrapper's PGID.
-#[cfg(unix)]
 #[tokio::test]
 async fn terminate_kills_spawn_process_descendants_not_only_the_wrapper() {
     let harness = create_test_harness().await;
@@ -448,15 +455,27 @@ async fn terminate_kills_spawn_process_descendants_not_only_the_wrapper() {
     let pids_file = std::env::temp_dir().join(format!("issue2652-{}.pids", session_id));
     let _ = std::fs::remove_file(&pids_file);
 
+    // Unix: bash wrapper (`$$`) with a background `sleep` child (`$!`), then
+    // `wait` keeps the wrapper alive. Windows: the PowerShell wrapper reports
+    // `$PID`, spawns a hidden `ping` child whose pid survives as a real tree
+    // descendant, and `Wait-Process` keeps the wrapper alive.
+    #[cfg(unix)]
+    let command = format!(
+        "w=$$; sleep 120 & c=$!; printf '%s %s\\n' \"$w\" \"$c\" > '{}'; wait",
+        pids_file.display()
+    );
+    #[cfg(windows)]
+    let command = format!(
+        "$w=$PID; $c=(Start-Process -FilePath ping.exe -ArgumentList '-n','120','127.0.0.1' -WindowStyle Hidden -PassThru).Id; \"$w $c\" | Out-File -Encoding ascii '{}'; Wait-Process -Id $c",
+        pids_file.display()
+    );
+
     manager
         .call_tool(
             session_id,
             "workspace__spawnProcess",
             json!({
-                "command": format!(
-                    "w=$$; sleep 120 & c=$!; printf '%s %s\\n' \"$w\" \"$c\" > '{}'; wait",
-                    pids_file.display()
-                ),
+                "command": command,
                 "name": "descendant-probe",
             }),
         )

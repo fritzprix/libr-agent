@@ -22,7 +22,7 @@ pub(crate) fn describe_join_error(error: tokio::task::JoinError) -> String {
 }
 
 #[cfg(unix)]
-fn process_is_alive(pid: u32) -> io::Result<bool> {
+pub(crate) fn process_is_alive(pid: u32) -> io::Result<bool> {
     Ok(Command::new("kill")
         .args(["-0", &pid.to_string()])
         .status()?
@@ -30,7 +30,7 @@ fn process_is_alive(pid: u32) -> io::Result<bool> {
 }
 
 #[cfg(windows)]
-fn process_is_alive(pid: u32) -> io::Result<bool> {
+pub(crate) fn process_is_alive(pid: u32) -> io::Result<bool> {
     use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::System::Threading::{
         GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
