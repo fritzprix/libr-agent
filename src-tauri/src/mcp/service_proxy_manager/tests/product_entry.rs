@@ -1,7 +1,6 @@
 //! Issue #2633: terminate and delete driven through the product entry points
 //! (`terminate_session_with_dispatcher`, `delete_session_with_dispatcher`,
 //! `delete_session_only_with_dispatcher`) with real OS processes.
-#![cfg(unix)]
 
 use super::termination_fence::{pid_alive, spawn_real_process, wait_for_pid_death};
 use super::*;
@@ -97,12 +96,15 @@ async fn terminate_entry_kills_only_the_target_and_refuses_late_work() {
 
     // The session is not loaded in memory, so the entry reports it after
     // running the full cleanup.
-    let _ = terminate_session_with_dispatcher(
-        &deps.session_repo,
-        &deps.active_sessions,
-        manager,
-        &deps.dispatcher,
-        target.to_string(),
+    let _ = within(
+        "terminate_session_with_dispatcher (target)",
+        terminate_session_with_dispatcher(
+            &deps.session_repo,
+            &deps.active_sessions,
+            manager,
+            &deps.dispatcher,
+            target.to_string(),
+        ),
     )
     .await;
 
@@ -128,16 +130,23 @@ async fn terminate_entry_kills_only_the_target_and_refuses_late_work() {
     assert!(error.contains("terminated"), "unexpected error: {error}");
 
     // A second terminate is safe.
-    let _ = terminate_session_with_dispatcher(
-        &deps.session_repo,
-        &deps.active_sessions,
-        manager,
-        &deps.dispatcher,
-        target.to_string(),
+    let _ = within(
+        "terminate_session_with_dispatcher (second, idempotent)",
+        terminate_session_with_dispatcher(
+            &deps.session_repo,
+            &deps.active_sessions,
+            manager,
+            &deps.dispatcher,
+            target.to_string(),
+        ),
     )
     .await;
 
-    manager.terminate_session_resources(bystander).await;
+    within(
+        "terminate_session_resources (bystander cleanup)",
+        manager.terminate_session_resources(bystander),
+    )
+    .await;
     assert!(wait_for_pid_death(bystander_pid).await);
 }
 
@@ -158,12 +167,15 @@ async fn cascade_delete_entry_kills_parent_and_child_processes_only() {
     let child_pid = spawn_real_process(manager, child).await;
     let bystander_pid = spawn_real_process(manager, bystander).await;
 
-    let deleted = delete_session_with_dispatcher(
-        &deps.session_repo,
-        &deps.active_sessions,
-        manager,
-        &deps.dispatcher,
-        parent.to_string(),
+    let deleted = within(
+        "delete_session_with_dispatcher (cascade)",
+        delete_session_with_dispatcher(
+            &deps.session_repo,
+            &deps.active_sessions,
+            manager,
+            &deps.dispatcher,
+            parent.to_string(),
+        ),
     )
     .await
     .expect("cascade delete must succeed");
@@ -190,7 +202,11 @@ async fn cascade_delete_entry_kills_parent_and_child_processes_only() {
         .expect("session lookup")
         .is_none());
 
-    manager.terminate_session_resources(bystander).await;
+    within(
+        "terminate_session_resources (cascade bystander cleanup)",
+        manager.terminate_session_resources(bystander),
+    )
+    .await;
     assert!(wait_for_pid_death(bystander_pid).await);
 }
 
@@ -208,12 +224,15 @@ async fn delete_only_entry_kills_the_parent_and_orphans_a_live_child() {
     let parent_pid = spawn_real_process(manager, parent).await;
     let child_pid = spawn_real_process(manager, child).await;
 
-    let (deleted, orphaned) = delete_session_only_with_dispatcher(
-        &deps.session_repo,
-        &deps.active_sessions,
-        manager,
-        &deps.dispatcher,
-        parent.to_string(),
+    let (deleted, orphaned) = within(
+        "delete_session_only_with_dispatcher",
+        delete_session_only_with_dispatcher(
+            &deps.session_repo,
+            &deps.active_sessions,
+            manager,
+            &deps.dispatcher,
+            parent.to_string(),
+        ),
     )
     .await
     .expect("delete-only must succeed");
@@ -238,6 +257,10 @@ async fn delete_only_entry_kills_the_parent_and_orphans_a_live_child() {
         .expect("the child row must remain");
     assert_eq!(orphan.parent_session_id, None);
 
-    manager.terminate_session_resources(child).await;
+    within(
+        "terminate_session_resources (delete-only child cleanup)",
+        manager.terminate_session_resources(child),
+    )
+    .await;
     assert!(wait_for_pid_death(child_pid).await);
 }
