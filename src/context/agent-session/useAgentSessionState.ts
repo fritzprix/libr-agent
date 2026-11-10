@@ -10,11 +10,7 @@ import type {
   SessionWorkflowStatus,
 } from '@/models/agent-ipc';
 import { applyViewedAtToSession } from '@/lib/session-utils';
-import type {
-  ExecutionMode,
-  PendingApproval,
-  WorkflowPhase,
-} from './types';
+import type { ExecutionMode, PendingApproval, WorkflowPhase } from './types';
 import { buildMessageError } from './utils';
 
 const DEFAULT_RUNTIME_STATE: SessionRuntimeState = {

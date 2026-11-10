@@ -280,13 +280,6 @@ export function useUIActionHandler(
         };
       }
     },
-    [
-      session?.id,
-      messageSessionId,
-      submit,
-      openExternalUrl,
-      contentRef,
-      t,
-    ],
+    [session?.id, messageSessionId, submit, openExternalUrl, contentRef, t],
   );
 }
