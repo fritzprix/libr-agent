@@ -218,6 +218,17 @@ pub(crate) fn is_missing_container_path_error(err: &str) -> bool {
     if lower.contains("no such container") {
         return false;
     }
+    // Daemon unreachable (e.g. Docker Desktop stopped): the socket lookup fails
+    // with "failed to connect to the docker API at unix:///…/docker.sock …
+    // connect: no such file or directory". The "no such file" here refers to
+    // docker.sock, not a path inside the container; treating it as soft-ok lets
+    // a stale staging copy pass an exists() probe.
+    if lower.contains("failed to connect to the docker api")
+        || lower.contains("cannot connect to the docker daemon")
+        || lower.contains("docker.sock")
+    {
+        return false;
+    }
     lower.contains("no such file")
         || lower.contains("cannot find the file")
         || lower.contains("could not find the file")
@@ -585,6 +596,14 @@ drwxr-xr-x 2 root root 4096 Jan  1 00:00 src
         ));
         assert!(!is_missing_container_path_error(
             "Failed to run docker cp nosuch:/app/work/task.txt C:\\task.txt: The system cannot find the file specified. (os error 2)"
+        ));
+        // docker daemon unreachable (Docker Desktop stopped) — the "no such file"
+        // refers to docker.sock, not a path inside the container (#2683).
+        assert!(!is_missing_container_path_error(
+            "docker cp failed: failed to connect to the docker API at unix:///Users/dev/.docker/run/docker.sock: connect: no such file or directory"
+        ));
+        assert!(!is_missing_container_path_error(
+            "docker cp failed: Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?"
         ));
     }
 }
