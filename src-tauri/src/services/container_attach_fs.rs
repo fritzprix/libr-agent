@@ -218,14 +218,17 @@ pub(crate) fn is_missing_container_path_error(err: &str) -> bool {
     if lower.contains("no such container") {
         return false;
     }
-    // Daemon unreachable (e.g. Docker Desktop stopped): the socket lookup fails
-    // with "failed to connect to the docker API at unix:///…/docker.sock …
-    // connect: no such file or directory". The "no such file" here refers to
-    // docker.sock, not a path inside the container; treating it as soft-ok lets
-    // a stale staging copy pass an exists() probe.
+    // Daemon unreachable (e.g. Docker Desktop stopped): newer CLIs report
+    // "failed to connect to the docker API at unix:///…/docker.sock … connect:
+    // no such file or directory", older Linux/macOS CLIs "Cannot connect to the
+    // Docker daemon at unix:///var/run/docker.sock", and older Windows CLIs
+    // "error during connect: … open //./pipe/docker_engine: The system cannot
+    // find the file specified." The "no such file"/"cannot find the file" there
+    // refers to the socket or named pipe, not a path inside the container;
+    // treating it as soft-ok lets a stale staging copy pass an exists() probe.
     if lower.contains("failed to connect to the docker api")
         || lower.contains("cannot connect to the docker daemon")
-        || lower.contains("docker.sock")
+        || lower.contains("error during connect")
     {
         return false;
     }
@@ -598,12 +601,18 @@ drwxr-xr-x 2 root root 4096 Jan  1 00:00 src
             "Failed to run docker cp nosuch:/app/work/task.txt C:\\task.txt: The system cannot find the file specified. (os error 2)"
         ));
         // docker daemon unreachable (Docker Desktop stopped) — the "no such file"
-        // refers to docker.sock, not a path inside the container (#2683).
+        // refers to the socket, not a path inside the container (#2683).
         assert!(!is_missing_container_path_error(
-            "docker cp failed: failed to connect to the docker API at unix:///Users/dev/.docker/run/docker.sock: connect: no such file or directory"
+            "docker cp abc123:/app/work/task.txt /tmp/task.txt failed: failed to connect to the docker API at unix:///Users/dev/.docker/run/docker.sock: connect: no such file or directory"
         ));
         assert!(!is_missing_container_path_error(
-            "docker cp failed: Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?"
+            "docker cp abc123:/app/work/task.txt /tmp/task.txt failed: Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?"
+        ));
+        // Older Windows CLI over the named pipe: "The system cannot find the
+        // file specified" refers to //./pipe/docker_engine, not the container
+        // path — must not be soft-ok either.
+        assert!(!is_missing_container_path_error(
+            "docker cp abc123:/app/work/task.txt C:\\task.txt failed: error during connect: this error may indicate that the docker daemon is not running: Get \"http://%2F%2F.%2Fpipe%2Fdocker_engine/v1.24/containers/abc123/json\": open //./pipe/docker_engine: The system cannot find the file specified."
         ));
     }
 }
