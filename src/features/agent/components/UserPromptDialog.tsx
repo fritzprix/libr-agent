@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import {
   cancelUserPrompt,
@@ -40,6 +41,7 @@ export default function UserPromptDialog({
   sessionId,
   promptState,
 }: UserPromptDialogProps) {
+  const { t } = useTranslation();
   const [value, setValue] = useState('');
   const [drafts, setDrafts] = useState<Record<string, QuestionDraft>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -72,11 +74,11 @@ export default function UserPromptDialog({
       await cancelUserPrompt(sessionId, requestId);
     } catch (error) {
       logger.error('Failed to cancel user prompt', error);
-      toast.error('Failed to cancel the prompt.');
+      toast.error(t('agent.userPromptDialog.cancelFailed'));
     } finally {
       setIsSubmitting(false);
     }
-  }, [isSubmitting, requestId, sessionId]);
+  }, [isSubmitting, requestId, sessionId, t]);
 
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -92,12 +94,12 @@ export default function UserPromptDialog({
         setValue('');
       } catch (error) {
         logger.error('Failed to submit user prompt', error);
-        toast.error('Failed to send your answer.');
+        toast.error(t('agent.userPromptDialog.submitFailed'));
       } finally {
         setIsSubmitting(false);
       }
     },
-    [isSubmitting, requestId, sessionId, submitValue],
+    [isSubmitting, requestId, sessionId, submitValue, t],
   );
 
   return (
@@ -122,13 +124,13 @@ export default function UserPromptDialog({
         <DialogHeader>
           <DialogTitle>
             {payload?.kind === 'secret'
-              ? 'A password is needed'
-              : 'Your answer is needed'}
+              ? t('agent.userPromptDialog.titleSecret')
+              : t('agent.userPromptDialog.titleQuestion')}
           </DialogTitle>
           <DialogDescription>
             {payload?.kind === 'secret'
               ? payload.label
-              : 'The agent is waiting for your answer.'}
+              : t('agent.userPromptDialog.waitingAnswer')}
           </DialogDescription>
         </DialogHeader>
 
@@ -171,13 +173,13 @@ export default function UserPromptDialog({
                 onClick={() => void handleCancel()}
                 disabled={isSubmitting}
               >
-                Cancel
+                {t('common.cancel')}
               </Button>
               <Button
                 type="submit"
                 disabled={isSubmitting || submitValue === null}
               >
-                Submit
+                {t('agent.userPromptDialog.submit')}
               </Button>
             </DialogFooter>
           </form>

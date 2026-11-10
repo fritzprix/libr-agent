@@ -1733,6 +1733,16 @@
       "imageAlt": "工具输出结果",
       "unsupportedAudio": "您的浏览器不支持音频元素。",
       "unsupportedVideo": "您的浏览器不支持视频元素。"
+    },
+    "userPromptDialog": {
+      "titleSecret": "需要密码",
+      "titleQuestion": "需要您的回答",
+      "waitingAnswer": "智能体正在等待您的回答。",
+      "submit": "提交",
+      "cancelFailed": "取消提示失败。",
+      "submitFailed": "发送您的回答失败。",
+      "other": "其他",
+      "otherInputLabel": "{{question}} (其他)"
     }
   },
   "scheduledTasks": {

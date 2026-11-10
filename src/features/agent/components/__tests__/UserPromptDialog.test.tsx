@@ -86,6 +86,7 @@ describe('UserPromptDialog', () => {
       <UserPromptDialog sessionId="session-1" promptState={secretPrompt} />,
     );
 
+    expect(screen.getByText('A password is needed')).toBeInTheDocument();
     expect(screen.getByText('GitHub token for this repo')).toBeInTheDocument();
     expect(
       screen.getByText('This value is reused for this session.'),
@@ -111,6 +112,10 @@ describe('UserPromptDialog', () => {
       <UserPromptDialog sessionId="session-1" promptState={questionPrompt} />,
     );
 
+    expect(screen.getByText('Your answer is needed')).toBeInTheDocument();
+    expect(
+      screen.getByText('The agent is waiting for your answer.'),
+    ).toBeInTheDocument();
     expect(screen.getByText('Shown in the changelog.')).toBeInTheDocument();
     const submit = screen.getByRole('button', { name: 'Submit' });
     expect(submit).toBeDisabled();
@@ -167,6 +172,22 @@ describe('UserPromptDialog', () => {
       expect(mocks.cancelUserPrompt).toHaveBeenCalledWith(
         'session-1',
         'req-secret',
+      );
+    });
+  });
+
+  it('surfaces a toast when cancelling fails', async () => {
+    mocks.cancelUserPrompt.mockRejectedValue(new Error('backend down'));
+
+    render(
+      <UserPromptDialog sessionId="session-1" promptState={secretPrompt} />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() => {
+      expect(mocks.toastError).toHaveBeenCalledWith(
+        'Failed to cancel the prompt.',
       );
     });
   });

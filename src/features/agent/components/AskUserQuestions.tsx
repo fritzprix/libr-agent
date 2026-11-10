@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import type { UserQuestion } from '@/models/agent-ipc';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -80,6 +81,7 @@ function QuestionField({
   disabled,
   onChange,
 }: QuestionFieldProps) {
+  const { t } = useTranslation();
   const update = (patch: Partial<QuestionDraft>) =>
     onChange(question.id, { ...draft, ...patch });
   const inputType = question.multiSelect ? 'checkbox' : 'radio';
@@ -130,11 +132,13 @@ function QuestionField({
                     )
                   }
                 />
-                Other
+                {t('agent.userPromptDialog.other')}
               </label>
               {draft.otherChecked ? (
                 <Input
-                  aria-label={`${question.question} (other)`}
+                  aria-label={t('agent.userPromptDialog.otherInputLabel', {
+                    question: question.question,
+                  })}
                   value={draft.text}
                   onChange={(event) => update({ text: event.target.value })}
                 />
