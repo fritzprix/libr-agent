@@ -1741,7 +1741,8 @@
       "submit": "Envoyer",
       "cancelFailed": "Échec de l'annulation de la demande.",
       "submitFailed": "L'envoi de votre réponse a échoué.",
-      "other": "Autre"
+      "other": "Autre",
+      "otherInputLabel": "{{question}} (Autre)"
     }
   },
   "scheduledTasks": {

@@ -136,7 +136,9 @@ function QuestionField({
               </label>
               {draft.otherChecked ? (
                 <Input
-                  aria-label={`${question.question} (other)`}
+                  aria-label={t('agent.userPromptDialog.otherInputLabel', {
+                    question: question.question,
+                  })}
                   value={draft.text}
                   onChange={(event) => update({ text: event.target.value })}
                 />

@@ -1741,7 +1741,8 @@
       "submit": "Enviar",
       "cancelFailed": "No se pudo cancelar el mensaje.",
       "submitFailed": "No se pudo enviar tu respuesta.",
-      "other": "Otro"
+      "other": "Otro",
+      "otherInputLabel": "{{question}} (Otro)"
     }
   },
   "scheduledTasks": {

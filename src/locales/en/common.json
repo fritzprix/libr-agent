@@ -1741,7 +1741,8 @@
       "submit": "Submit",
       "cancelFailed": "Failed to cancel the prompt.",
       "submitFailed": "Failed to send your answer.",
-      "other": "Other"
+      "other": "Other",
+      "otherInputLabel": "{{question}} (other)"
     }
   },
   "scheduledTasks": {

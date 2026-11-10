@@ -1741,7 +1741,8 @@
       "submit": "提交",
       "cancelFailed": "取消提示失败。",
       "submitFailed": "发送您的回答失败。",
-      "other": "其他"
+      "other": "其他",
+      "otherInputLabel": "{{question}} (其他)"
     }
   },
   "scheduledTasks": {

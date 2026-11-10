@@ -1731,7 +1731,8 @@
       "submit": "제출",
       "cancelFailed": "프롬프트 취소에 실패했습니다.",
       "submitFailed": "답변 전송에 실패했습니다.",
-      "other": "기타"
+      "other": "기타",
+      "otherInputLabel": "{{question}} (기타)"
     }
   },
   "scheduledTasks": {
