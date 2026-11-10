@@ -107,8 +107,7 @@ function tryLegacyInteractiveDocument(
     const body = raw.endsWith('\n') ? raw : `${raw}\n`;
     return {
       content: body,
-      fileBaseName:
-        extractLegacyInteractiveTitle(html) || 'interactive',
+      fileBaseName: extractLegacyInteractiveTitle(html) || 'interactive',
       exportKind: isMarkdown ? 'markdown' : 'html',
       source: 'legacyInteractive',
     };

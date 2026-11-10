@@ -62,7 +62,6 @@ import { recordUiToolInvocation } from './lib/recordUiToolInvocation';
 
 const logger = getLogger('AgentChatView');
 
-
 const UserPromptDialog = lazy(() => import('./components/UserPromptDialog'));
 
 const AGENT_CHAT_COMPOSER_OVERLAP_STYLE = {

@@ -82,10 +82,7 @@ export function SessionApiPairingDialog() {
     }
 
     const interval = setInterval(() => {
-      const remaining = Math.max(
-        0,
-        Math.ceil((expiresAt - Date.now()) / 1000),
-      );
+      const remaining = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
       setTimeLeft(remaining);
       if (remaining <= 0) {
         setPending(null);
