@@ -1733,6 +1733,15 @@
       "imageAlt": "ツール出力画像",
       "unsupportedAudio": "お使いのブラウザはオーディオ要素をサポートしていません。",
       "unsupportedVideo": "お使いのブラウザはビデオ要素をサポートしていません。"
+    },
+    "userPromptDialog": {
+      "titleSecret": "パスワードが必要です",
+      "titleQuestion": "回答が必要です",
+      "waitingAnswer": "エージェントが回答を待っています。",
+      "submit": "送信",
+      "cancelFailed": "プロンプトのキャンセルに失敗しました。",
+      "submitFailed": "回答の送信に失敗しました。",
+      "other": "その他"
     }
   },
   "scheduledTasks": {

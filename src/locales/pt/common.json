@@ -1733,6 +1733,15 @@
       "imageAlt": "Saída da ferramenta",
       "unsupportedAudio": "Seu navegador não suporta o elemento de áudio.",
       "unsupportedVideo": "Seu navegador não suporta o elemento de vídeo."
+    },
+    "userPromptDialog": {
+      "titleSecret": "Uma senha é necessária",
+      "titleQuestion": "Sua resposta é necessária",
+      "waitingAnswer": "O agente está aguardando sua resposta.",
+      "submit": "Enviar",
+      "cancelFailed": "Falha ao cancelar a solicitação.",
+      "submitFailed": "Falha ao enviar sua resposta.",
+      "other": "Outro"
     }
   },
   "scheduledTasks": {

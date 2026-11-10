@@ -1733,6 +1733,15 @@
       "imageAlt": "Tool output",
       "unsupportedAudio": "Your browser does not support the audio element.",
       "unsupportedVideo": "Your browser does not support the video element."
+    },
+    "userPromptDialog": {
+      "titleSecret": "A password is needed",
+      "titleQuestion": "Your answer is needed",
+      "waitingAnswer": "The agent is waiting for your answer.",
+      "submit": "Submit",
+      "cancelFailed": "Failed to cancel the prompt.",
+      "submitFailed": "Failed to send your answer.",
+      "other": "Other"
     }
   },
   "scheduledTasks": {

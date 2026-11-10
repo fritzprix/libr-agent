@@ -1723,6 +1723,15 @@
       "imageAlt": "도구 실행 결과",
       "unsupportedAudio": "현재 브라우저는 오디오 요소를 지원하지 않습니다.",
       "unsupportedVideo": "현재 브라우저는 비디오 요소를 지원하지 않습니다."
+    },
+    "userPromptDialog": {
+      "titleSecret": "비밀번호가 필요합니다",
+      "titleQuestion": "답변이 필요합니다",
+      "waitingAnswer": "에이전트가 답변을 기다리고 있습니다.",
+      "submit": "제출",
+      "cancelFailed": "프롬프트 취소에 실패했습니다.",
+      "submitFailed": "답변 전송에 실패했습니다.",
+      "other": "기타"
     }
   },
   "scheduledTasks": {

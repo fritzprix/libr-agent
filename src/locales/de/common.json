@@ -1733,6 +1733,15 @@
       "imageAlt": "Werkzeug-Ausgabe",
       "unsupportedAudio": "Ihr Browser unterstützt das Audio-Element nicht.",
       "unsupportedVideo": "Ihr Browser unterstützt das Video-Element nicht."
+    },
+    "userPromptDialog": {
+      "titleSecret": "Ein Passwort ist erforderlich",
+      "titleQuestion": "Ihre Antwort ist erforderlich",
+      "waitingAnswer": "Der Agent wartet auf Ihre Antwort.",
+      "submit": "Absenden",
+      "cancelFailed": "Der Prompt konnte nicht abgebrochen werden.",
+      "submitFailed": "Ihre Antwort konnte nicht gesendet werden.",
+      "other": "Sonstiges"
     }
   },
   "scheduledTasks": {

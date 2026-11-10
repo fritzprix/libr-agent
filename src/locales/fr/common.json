@@ -1733,6 +1733,15 @@
       "imageAlt": "Résultat de l'outil",
       "unsupportedAudio": "Votre navigateur ne prend pas en charge l'élément audio.",
       "unsupportedVideo": "Votre navigateur ne prend pas en charge l'élément vidéo."
+    },
+    "userPromptDialog": {
+      "titleSecret": "Un mot de passe est nécessaire",
+      "titleQuestion": "Votre réponse est nécessaire",
+      "waitingAnswer": "L'agent attend votre réponse.",
+      "submit": "Envoyer",
+      "cancelFailed": "Échec de l'annulation de la demande.",
+      "submitFailed": "L'envoi de votre réponse a échoué.",
+      "other": "Autre"
     }
   },
   "scheduledTasks": {
