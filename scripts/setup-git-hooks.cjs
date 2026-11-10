@@ -27,7 +27,7 @@ const preCommitHookPath = path.join(hooksDir, 'pre-commit');
 const hookContent = `#!/bin/sh
 # Git pre-commit hook to validate all bundled skills before commit
 echo "🔍 Running bundled skills quality audit..."
-pnpm skills:audit
+node scripts/audit-bundled-skills.cjs
 AUDIT_RESULT=$?
 
 if [ $AUDIT_RESULT -ne 0 ]; then
@@ -37,7 +37,7 @@ if [ $AUDIT_RESULT -ne 0 ]; then
 fi
 
 echo "🔍 Running skills mirror drift check..."
-pnpm skills:mirror:check
+node scripts/check-skills-mirror-drift.cjs
 MIRROR_RESULT=$?
 
 if [ $MIRROR_RESULT -ne 0 ]; then
