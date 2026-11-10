@@ -1,3 +1,31 @@
+## [0.9.31] - 2026-11-10
+
+### 🚀 Features & Capabilities
+
+- **Private password & key prompt**: When a command needs a password or access key, a private input box opens instead of asking in chat. The assistant only sees the value's name; the value is kept for the current session, masked in tool results and logs, and removed when the session ends. `sudo` on macOS/Linux now uses this prompt via `SUDO_ASKPASS`, and bundled setup skills (Telegram, X, Instagram, email, calendar, setup wizard) collect their secrets this way (#2543, #2544, #2545, #2546, #2631).
+- **Agent questions in a dialog**: The new blocking `ui__askUser` tool asks you 1–5 questions in the shared prompt dialog and replaces the older `ui__presentInteractive` / `getUserAnswer` forms (#2547).
+- **MCP secrets without an OS keychain**: `{{secret:NAME}}` templates store MCP secrets in the OS keychain, and when no keychain is available they are encrypted with a local app key file instead. Secrets stay masked in server approval previews (#2548, #2570, #2588).
+- **`clarify` skill**: A new bundled skill that turns a vague request into a reviewed requirements document before work starts (#2575).
+- **`docs` skill images**: Local PNG/JPEG images in Markdown are embedded in PDF, DOCX, and PPTX output; Mermaid blocks and raw HTML degrade gracefully (#2530).
+- **TOML editing & linked worktrees**: `editObject` now edits TOML files (keeping comments, CRLF, and BOM), and file tools can work in linked git worktrees of the workspace (#2589, #2600, #2605).
+- **Long-wait loop guard**: Repeated identical tool calls that wait on background work now get guidance to schedule a single wake-up instead of polling, with new controls under **Settings → Advanced** (#2610).
+
+### 🐛 Fixes & Hardening
+
+- **Safer database startup**: An older app version no longer moves aside a database created by a newer version; it stops and explains the problem in a native dialog instead (#2618).
+- **Session stop & delete cleanup**: Terminating or deleting a session now force-stops its shells and spawned process trees, and reloading a session no longer loses track of running processes (#2633, #2634, #2652).
+- **Windows MCP security**: Removed unsafe `cmd.exe` wrapping for stdio MCP servers to prevent command injection, and resolve `PATHEXT` shims correctly (#2621).
+- **Workspace guards**: File tools refuse writes into git metadata, and Docker bind mounts on Windows no longer break on verbatim (`\\?\`) paths (#2596, #2627).
+- **Truncated tool arguments**: The agent no longer silently retries truncated tool calls, and truncated payloads are redacted in history (#2617).
+- **UI**: The process output dialog scrolls and sticks to the bottom, and planning panel sections stay usable with long content (#2615, #2616).
+- **Smaller fixes**: `spawnProcess` reports exit code and stderr on fast failure, cancel survives LLM retry waits and fallback, skill lists rescan after changes, `writeFile` parent-directory errors are clearer, and keyboard access was improved for notification and API-key actions (#2517, #2518, #2524, #2537, #2538, #2539).
+
+### 🔧 Performance & Internal
+
+- **Modular splits**: Split session manager, MCP tool persistence, secret fallback, circuit breaker, tool approvals, lifecycle, workspace runtime, and service proxy management into focused modules (#2642–#2649).
+- **Maintainer tooling**: Parallel-safe `worker-loop` with automatic check-in, `gatekeeper-loop` quality scores, a machine-wide Rust build slot limiter, and a debug-only Harbor E2E control plane with the `release-head-self-e2e` workflow (#2612, #2655).
+- **CI**: Frontend tests no longer swallow the exit code, and Windows process tests are bounded with step timeouts (#2597).
+
 ## [0.9.30] - 2026-11-03
 
 ### 🚀 Features & Capabilities
