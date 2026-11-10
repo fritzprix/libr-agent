@@ -8,6 +8,7 @@ use super::super::utils::{
 use crate::agent::poll_tracker::{poll_tracker_key, PollTrackerVerdict};
 use crate::mcp::builtin::error_guidance::SuccessHint;
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
+use crate::mcp::builtin::utils::read_bool_arg;
 use crate::mcp::types::MCPResult;
 
 use super::super::AgentServer;
@@ -26,11 +27,28 @@ pub async fn check_session(
     args: Value,
     caller_session_id: &str,
 ) -> Result<MCPResult, String> {
+    let wait = match read_bool_arg(&args, "wait", false, ToolGroup::Agent) {
+        Ok(arg) => arg,
+        Err(result) => return Ok(result),
+    };
+
+    let result = check_session_inner(server, args, caller_session_id, wait.value).await?;
+    Ok(wait.annotate(result))
+}
+
+async fn check_session_inner(
+    server: &AgentServer,
+    args: Value,
+    caller_session_id: &str,
+    wait: bool,
+) -> Result<MCPResult, String> {
+    let session_ref = match read_required_string(&args, "sessionId") {
+        Ok(value) => value,
+        Err(result) => return Ok(result),
+    };
     let manager = server
         .get_manager()
         .ok_or("AgentSessionManager not available")?;
-    let session_ref = read_required_string(&args, "sessionId")?;
-    let wait = args.get("wait").and_then(|v| v.as_bool()).unwrap_or(false);
     let timeout_secs = args.get("timeout").and_then(|v| v.as_u64()).unwrap_or(3600);
 
     let current_session_meta = match load_accessible_delegated_session(

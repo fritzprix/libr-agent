@@ -1,8 +1,13 @@
 mod lifecycle;
+#[cfg(test)]
+mod linked_worktree_tests;
 mod path_validation;
+pub(crate) mod retained;
 mod service_context;
 mod teamwork_paths;
 mod user_skills_guard;
+
+pub use retained::release_session_workspace_state;
 
 pub(crate) use path_validation::{
     looks_like_confused_harness_path, path_operation_failure_guidance,
@@ -12,7 +17,6 @@ pub(crate) use path_validation::{
 use super::persistent_shell;
 use super::terminal_manager;
 use super::tools;
-use super::types::PendingExecutions;
 use super::utils;
 use crate::mcp::MCPTool;
 use crate::models::workspace_isolation::WorkspaceIsolationMode;
@@ -24,6 +28,21 @@ use tracing::info;
 
 /// Cached workspace service-context prompt text (TTL-managed in get_service_context).
 pub(crate) type ContextCache = Arc<tokio::sync::RwLock<Option<(String, std::time::Instant)>>>;
+
+/// The file tool manager for `workspace_dir`; see `WorkspaceServer::get_file_tool_manager`.
+pub(crate) fn file_tool_manager(
+    workspace_dir: std::path::PathBuf,
+    allow_linked_worktrees: bool,
+) -> SecureFileManager {
+    let git_dirs = crate::mcp::builtin::utils::git_metadata_dirs(&workspace_dir);
+    let manager = if allow_linked_worktrees {
+        let roots = crate::mcp::builtin::utils::linked_worktree_roots(&workspace_dir);
+        SecureFileManager::new_scoped_with_extra_roots(workspace_dir, roots)
+    } else {
+        SecureFileManager::new_scoped_with_base_dir(workspace_dir)
+    };
+    manager.with_git_metadata_write_guard(git_dirs)
+}
 
 /// Clear the workspace context cache. Safe to call from background process tasks.
 pub(crate) async fn clear_context_cache(cache: &ContextCache) {
@@ -39,9 +58,12 @@ pub struct WorkspaceServer {
     pub(crate) workspace_isolation: WorkspaceIsolationMode,
     pub(crate) isolation_manager: crate::session_isolation::SessionIsolationManager,
     pub(crate) process_registry: terminal_manager::ProcessRegistry,
-    pub(crate) pending_executions: Arc<PendingExecutions>,
     pub(crate) shell_manager: Arc<persistent_shell::PersistentShellManager>,
     pub(crate) context_cache: ContextCache,
+    /// Set once the session is force-terminated (explicit terminate/delete).
+    /// Late tool dispatches must not create new processes. Shared by every server of
+    /// the session and its shell manager, like the registry.
+    pub(crate) terminated: Arc<std::sync::atomic::AtomicBool>,
     cleanup_shutdown: Arc<std::sync::atomic::AtomicBool>,
     cleanup_tasks: Vec<JoinHandle<()>>,
 }
@@ -52,18 +74,43 @@ impl WorkspaceServer {
         Self::with_isolation(session_id, session_manager, WorkspaceIsolationMode::Host)
     }
 
-    /// Create a workspace server bound to a session's workspace isolation mode.
+    /// Create a workspace server bound to a session's workspace isolation mode, with its
+    /// own process registry and shell manager.
     pub fn with_isolation(
         session_id: String,
         session_manager: Arc<SessionManager>,
         workspace_isolation: WorkspaceIsolationMode,
     ) -> Self {
+        let state = retained::RetainedWorkspaceState::new();
+        Self::with_state(session_id, session_manager, workspace_isolation, state)
+    }
+
+    /// The server a session's proxy uses. Its processes and persistent shell outlive
+    /// the server, so a proxy created after reload or a config change still owns them.
+    pub fn for_session(
+        session_id: String,
+        session_manager: Arc<SessionManager>,
+        workspace_isolation: WorkspaceIsolationMode,
+    ) -> Self {
+        let state = retained::retained_state(&session_id);
+        Self::with_state(session_id, session_manager, workspace_isolation, state)
+    }
+
+    fn with_state(
+        session_id: String,
+        session_manager: Arc<SessionManager>,
+        workspace_isolation: WorkspaceIsolationMode,
+        state: retained::RetainedWorkspaceState,
+    ) -> Self {
         info!(
             "WorkspaceServer created for session: {} (isolation={})",
             session_id, workspace_isolation
         );
-        let process_registry = terminal_manager::create_process_registry();
-        let pending_executions = Arc::new(PendingExecutions::new());
+        let retained::RetainedWorkspaceState {
+            process_registry,
+            shell_manager,
+            terminated,
+        } = state;
         let cleanup_shutdown = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
         let process_cleanup_task =
@@ -75,12 +122,17 @@ impl WorkspaceServer {
             workspace_isolation,
             isolation_manager: crate::session_isolation::SessionIsolationManager::new(),
             process_registry,
-            pending_executions,
-            shell_manager: Arc::new(persistent_shell::PersistentShellManager::new()),
+            shell_manager,
             context_cache: Arc::new(tokio::sync::RwLock::new(None)),
+            terminated,
             cleanup_shutdown,
             cleanup_tasks: vec![process_cleanup_task],
         }
+    }
+
+    /// True once this instance's session has been force-terminated.
+    pub(crate) fn is_session_terminated(&self) -> bool {
+        self.terminated.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     pub(crate) fn code_tools_profile(&self) -> tools::CodeToolsProfile {
@@ -101,6 +153,16 @@ impl WorkspaceServer {
         let target_session_id = session_id.unwrap_or_else(|| self.session_id.clone());
         let workspace_dir = self.get_workspace_dir(&target_session_id);
         Arc::new(SecureFileManager::new_scoped_with_base_dir(workspace_dir))
+    }
+
+    /// The scoped manager used to validate file tool paths: the workspace root plus,
+    /// when the `allowLinkedWorktrees` setting is on, the linked git worktrees of the
+    /// workspace repository.
+    pub(crate) async fn get_file_tool_manager(&self, session_id: &str) -> SecureFileManager {
+        let allow = crate::models::system_settings::SystemSettings::load_global()
+            .await
+            .allow_linked_worktrees;
+        file_tool_manager(self.get_workspace_dir(session_id), allow)
     }
 
     #[allow(dead_code)]

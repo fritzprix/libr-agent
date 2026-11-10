@@ -3,7 +3,6 @@ import {
   resetLoggerConfig,
   updateLoggerConfig,
 } from './logger-config';
-import { logFileManager } from './logger-file-manager';
 import {
   debug as queueDebug,
   error as queueError,
@@ -33,7 +32,6 @@ function formatLogMessage(
   args: unknown[],
   defaultContext: string,
 ): { formattedMessage: string; context: string } {
-  const config = getLoggerConfig();
   let actualContext = defaultContext;
   let logMessage = message;
   const logArgs = [...args];
@@ -59,39 +57,11 @@ function formatLogMessage(
     logMessage = `${logMessage} ${formattedArgs.join(' ')}`;
   }
 
-  if (logMessage.length > config.maxMessageLength) {
-    logMessage = `${logMessage.substring(0, config.maxMessageLength - 3)}...`;
-  }
-
   return { formattedMessage: logMessage, context: actualContext };
-}
-
-async function ensureStartupBackup(
-  hasBackedUpOnStartup: boolean,
-): Promise<boolean> {
-  const config = getLoggerConfig();
-  if (
-    !config.enableFileLogging ||
-    !config.autoBackupOnStartup ||
-    hasBackedUpOnStartup ||
-    typeof window === 'undefined' ||
-    !('__TAURI_INTERNALS__' in window || '__TAURI__' in window)
-  ) {
-    return hasBackedUpOnStartup;
-  }
-
-  try {
-    await logFileManager.backupCurrentLog();
-    return true;
-  } catch (error) {
-    console.warn('⚠️ Failed to create startup backup:', error);
-    return hasBackedUpOnStartup;
-  }
 }
 
 export class Logger {
   private static defaultContext = 'TauriAgent';
-  private static hasBackedUpOnStartup = false;
 
   static updateConfig(config: Partial<LoggerConfig>): void {
     updateLoggerConfig(config);
@@ -103,17 +73,12 @@ export class Logger {
 
   static resetConfig(): void {
     resetLoggerConfig();
-    Logger.hasBackedUpOnStartup = false;
   }
 
   static async initialize(config?: Partial<LoggerConfig>): Promise<void> {
     if (config) {
       Logger.updateConfig(config);
     }
-
-    Logger.hasBackedUpOnStartup = await ensureStartupBackup(
-      Logger.hasBackedUpOnStartup,
-    );
   }
 
   private static async logWithLevel(
@@ -125,10 +90,6 @@ export class Logger {
     if (!shouldLog(level)) {
       return;
     }
-
-    Logger.hasBackedUpOnStartup = await ensureStartupBackup(
-      Logger.hasBackedUpOnStartup,
-    );
 
     const { formattedMessage, context } = formatLogMessage(
       message,
@@ -158,10 +119,6 @@ export class Logger {
     if (!shouldLog(LogLevel.Error)) {
       return;
     }
-
-    Logger.hasBackedUpOnStartup = await ensureStartupBackup(
-      Logger.hasBackedUpOnStartup,
-    );
 
     let errorObj: Error | undefined;
     const remainingArgs = [...args];

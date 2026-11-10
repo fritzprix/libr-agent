@@ -1,20 +1,24 @@
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 
+use crate::models::workspace_isolation::DEFAULT_SESSION_IMAGE;
 use crate::repositories::{SessionMetadata, SessionRepository};
 use crate::services::skill_service;
 use crate::session_isolation::{ShellType, CONTAINER_SYSTEM_SKILLS_DIR, CONTAINER_USER_SKILLS_DIR};
 use tokio::process::Command as AsyncCommand;
 
+#[cfg(test)]
+use super::docker_cli::is_current_root_hardening;
 use super::docker_cli::{
-    apply_docker_cli_env, current_uid_gid, docker_container_exists, docker_container_has_wake_host,
-    docker_container_running, run_docker_status, run_status_command, verify_container_label,
+    apply_docker_cli_env, current_uid_gid, docker_container_exists, docker_container_has_label,
+    docker_container_has_root_hardening, docker_container_running, run_docker_status,
+    run_status_command, verify_container_label, ROOT_HARDENING_LABEL, ROOT_HARDENING_VERSION,
     WAKE_HOST_LABEL,
 };
 use super::error::{RuntimeResult, WorkspaceRuntimeError};
 use super::session_config::{
-    build_docker_volume_args, build_skill_volume_args, docker_mount_path, session_docker_workdir,
-    session_is_attach,
+    build_docker_volume_args, build_skill_volume_args, docker_mount_path, refuse_home_workspace,
+    session_docker_workdir, session_is_attach,
 };
 use super::DockerStepReporter;
 
@@ -32,6 +36,29 @@ fn wake_host_run_args() -> [String; 3] {
     ]
 }
 
+/// `docker run` arguments that limit what a root `docker exec` (runShell `asRoot`) can leave
+/// behind for the host, and mark the container as created with them:
+/// - `no-new-privileges`: a setuid file cannot give root to a later non-root command.
+/// - no `SETFCAP`: root cannot put file capabilities on a file in a host bind mount.
+/// - no `MKNOD`: root cannot create a device node in a host bind mount.
+/// - no `NET_RAW`: root cannot open raw sockets (packet crafting or sniffing on the host network).
+///
+/// A setuid bit and root ownership are still possible; `RootExecLease::finish` removes them.
+pub(super) fn hardening_run_args() -> [String; 10] {
+    [
+        "--security-opt".to_string(),
+        "no-new-privileges".to_string(),
+        "--cap-drop".to_string(),
+        "SETFCAP".to_string(),
+        "--cap-drop".to_string(),
+        "MKNOD".to_string(),
+        "--cap-drop".to_string(),
+        "NET_RAW".to_string(),
+        "--label".to_string(),
+        format!("{ROOT_HARDENING_LABEL}={ROOT_HARDENING_VERSION}"),
+    ]
+}
+
 pub(super) async fn ensure_bash_image_contract(
     session_id: &str,
     container_name: &str,
@@ -42,9 +69,9 @@ pub(super) async fn ensure_bash_image_contract(
 ) -> RuntimeResult<ShellType> {
     if session_is_attach(session) {
         if !docker_container_exists(container_name).await? {
-            return Err(WorkspaceRuntimeError::DockerCommandFailed(format!(
-                "Attach container '{container_name}' was not found"
-            )));
+            return Err(WorkspaceRuntimeError::AttachContainerNotFound(
+                container_name.to_string(),
+            ));
         }
         if !docker_container_running(container_name).await? {
             if let Some(reporter) = reporter {
@@ -58,11 +85,16 @@ pub(super) async fn ensure_bash_image_contract(
         return ensure_supported_shell(session_id, container_name).await;
     }
 
+    refuse_home_workspace(host_workspace, dirs::home_dir().as_deref())?;
+
     let mut container_exists = docker_container_exists(container_name).await?;
     if container_exists {
         verify_container_label(container_name, session_id).await?;
-        if !docker_container_has_wake_host(container_name).await? {
-            // Created before the host mapping existed: wake callbacks cannot reach the host.
+        if !docker_container_has_label(container_name, WAKE_HOST_LABEL).await?
+            || !docker_container_has_root_hardening(container_name).await?
+        {
+            // Created before the host mapping (wake callbacks cannot reach the host) or with an
+            // older root-exec hardening.
             if let Some(reporter) = reporter {
                 reporter("Recreating container");
             }
@@ -104,6 +136,7 @@ pub(super) async fn ensure_bash_image_contract(
         if let Some(reporter) = reporter {
             reporter(&format!("Pulling image {image}"));
         }
+        ensure_image_available(image_ref).await?;
 
         let root_session_id = resolve_teamwork_root_session_id(session).await;
         let session_manager =
@@ -137,6 +170,7 @@ pub(super) async fn ensure_bash_image_contract(
         apply_docker_cli_env(&mut cmd);
         cmd.args(["run", "-d", "--name", container_name, "--label", &label]);
         cmd.args(wake_host_run_args());
+        cmd.args(hardening_run_args());
         cmd.args(volume_args);
         cmd.args(["-w", &workdir]);
 
@@ -164,6 +198,55 @@ pub(super) async fn ensure_bash_image_contract(
         reporter("Verifying shell");
     }
     ensure_supported_shell(session_id, container_name).await
+}
+
+async fn ensure_image_available(image_ref: &str) -> RuntimeResult<()> {
+    if run_docker_status(["image", "inspect", image_ref])
+        .await
+        .is_ok()
+    {
+        return Ok(());
+    }
+    run_docker_status(["pull", image_ref])
+        .await
+        .map_err(|error| match error {
+            WorkspaceRuntimeError::DockerCommandFailed(details) => {
+                let message = image_pull_failure(image_ref, &details);
+                if is_image_missing(&details) {
+                    WorkspaceRuntimeError::ImageNotFound(message)
+                } else {
+                    WorkspaceRuntimeError::DockerCommandFailed(message)
+                }
+            }
+            other => other,
+        })
+}
+
+/// Registry answers that mean the image does not exist (or is not visible to this user).
+/// Network and daemon errors do not match, so they stay retryable.
+fn is_image_missing(details: &str) -> bool {
+    const MISSING_MARKERS: [&str; 4] = [
+        "manifest unknown",
+        "repository does not exist",
+        "pull access denied",
+        "invalid reference format",
+    ];
+    let details = details.to_ascii_lowercase();
+    MISSING_MARKERS
+        .iter()
+        .any(|marker| details.contains(marker))
+}
+
+fn image_pull_failure(image_ref: &str, details: &str) -> String {
+    if image_ref == DEFAULT_SESSION_IMAGE {
+        format!(
+            "Cannot pull the default LibrAgent session image '{image_ref}': {details}. \
+             This image is published only for released LibrAgent versions. \
+             Set a different Docker image in the session isolation settings."
+        )
+    } else {
+        format!("Cannot pull Docker image '{image_ref}': {details}")
+    }
 }
 
 const FALLBACK_CONTAINER_HOME: &str = "/tmp";
@@ -325,5 +408,72 @@ mod wake_host_tests {
                 "com.libragent.wake_host=1"
             ]
         );
+    }
+
+    #[test]
+    fn hardening_blocks_new_privileges_file_capabilities_device_nodes_and_raw_sockets() {
+        assert_eq!(
+            hardening_run_args(),
+            [
+                "--security-opt",
+                "no-new-privileges",
+                "--cap-drop",
+                "SETFCAP",
+                "--cap-drop",
+                "MKNOD",
+                "--cap-drop",
+                "NET_RAW",
+                "--label",
+                "com.libragent.root_hardening=2"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_container_with_an_older_or_no_hardening_label_is_recreated() {
+        assert!(is_current_root_hardening(ROOT_HARDENING_VERSION));
+        // "1": created before NET_RAW was dropped; "": created before the hardening existed.
+        for old in ["1", ""] {
+            assert!(!is_current_root_hardening(old), "{old:?}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod image_pull_tests {
+    use super::*;
+
+    #[test]
+    fn default_image_pull_failure_names_the_image_and_the_override() {
+        let message = image_pull_failure(DEFAULT_SESSION_IMAGE, "manifest unknown");
+        assert!(message.contains(DEFAULT_SESSION_IMAGE), "{message}");
+        assert!(message.contains("manifest unknown"), "{message}");
+        assert!(message.contains("session isolation settings"), "{message}");
+    }
+
+    #[test]
+    fn custom_image_pull_failure_names_the_image_only() {
+        let message = image_pull_failure("python:3.12-slim", "denied");
+        assert!(message.contains("'python:3.12-slim'"), "{message}");
+        assert!(!message.contains("settings"), "{message}");
+    }
+
+    #[test]
+    fn only_registry_not_found_answers_count_as_a_missing_image() {
+        for missing in [
+            "Error response from daemon: manifest for foo:1 not found: manifest unknown",
+            "Error response from daemon: pull access denied for nosuch, repository does not exist or may require 'docker login'",
+            "invalid reference format: repository name must be lowercase",
+        ] {
+            assert!(is_image_missing(missing), "{missing}");
+        }
+        for transient in [
+            "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
+            "Get \"https://registry-1.docker.io/v2/\": dial tcp: lookup registry-1.docker.io: no such host",
+            "net/http: TLS handshake timeout",
+            "toomanyrequests: You have reached your pull rate limit",
+        ] {
+            assert!(!is_image_missing(transient), "{transient}");
+        }
     }
 }

@@ -171,7 +171,7 @@ pub(crate) async fn preprocess_assistant_tool_calls(
     let mut tool_loop_resample: Option<ToolLoopResampleDecision> = None;
 
     if let Some(tool_calls) = &assistant_message.tool_calls {
-        let (loop_threshold, loop_break_offset) =
+        let (loop_threshold, loop_break_offset, wait_settings) =
             circuit_breaker::load_loop_prevention_settings().await;
         let (tool_loop_resample_enabled, tool_loop_max_resample_retries) =
             load_tool_loop_resample_settings().await;
@@ -194,6 +194,7 @@ pub(crate) async fn preprocess_assistant_tool_calls(
                         tool_calls,
                         loop_threshold,
                         loop_break_offset,
+                        &wait_settings,
                     ) {
                         match action {
                             circuit_breaker::CircuitBreakerAction::HardBreak {
@@ -253,11 +254,42 @@ pub(crate) async fn preprocess_assistant_tool_calls(
                                     }
                                 }
                             }
+                            // Wait guidance: repeated identical long-running calls.
+                            // Short-circuit the whole batch with callback guidance; no
+                            // resample (the wait will look identical again).
+                            circuit_breaker::CircuitBreakerAction::WaitGuidance {
+                                count,
+                                tool_name,
+                                args,
+                            } => {
+                                for tool_call in tool_calls.iter() {
+                                    loop_prevention_short_circuits.insert(
+                                        tool_call.id.clone(),
+                                        LoopPreventionShortCircuit {
+                                            kind: LoopPreventionKind::WaitGuidance,
+                                            tool_name: tool_name.clone(),
+                                            count,
+                                            args: args.clone(),
+                                            duplicate_of_tool_call_id: None,
+                                        },
+                                    );
+                                }
+                            }
                             _ => {}
                         }
                     }
 
-                    if hard_break.is_none() && loop_prevention_short_circuits.is_empty() {
+                    // A repeated identical batch whose trailing run contains waits is
+                    // owned by the batch wait ladder — its members must not be
+                    // fast-blocked per-tool while the wait streak is active (#2610 G1.2).
+                    if hard_break.is_none()
+                        && loop_prevention_short_circuits.is_empty()
+                        && !circuit_breaker::is_wait_batch_streak(
+                            &messages,
+                            tool_calls,
+                            &wait_settings,
+                        )
+                    {
                         let intra_batch_duplicates =
                             circuit_breaker::find_intra_batch_duplicates(tool_calls);
 
@@ -289,6 +321,7 @@ pub(crate) async fn preprocess_assistant_tool_calls(
                                 &call_signature_by_id,
                                 loop_threshold,
                                 loop_break_offset,
+                                &wait_settings,
                             ) else {
                                 continue;
                             };
@@ -301,6 +334,25 @@ pub(crate) async fn preprocess_assistant_tool_calls(
                                 } => {
                                     hard_break = Some((index, count, tool_name, args));
                                     break;
+                                }
+                                // Wait guidance: repeated identical long-running calls.
+                                // Guide to a scheduled callback; no resample — the wait
+                                // would return identically again.
+                                circuit_breaker::CircuitBreakerAction::WaitGuidance {
+                                    count,
+                                    tool_name,
+                                    args,
+                                } => {
+                                    loop_prevention_short_circuits.insert(
+                                        tool_call.id.clone(),
+                                        LoopPreventionShortCircuit {
+                                            kind: LoopPreventionKind::WaitGuidance,
+                                            tool_name,
+                                            count,
+                                            args,
+                                            duplicate_of_tool_call_id: None,
+                                        },
+                                    );
                                 }
                                 circuit_breaker::CircuitBreakerAction::NaturalRecoveryError {
                                     count,
@@ -557,6 +609,7 @@ fn circuit_breaker_action_label(kind: &LoopPreventionKind) -> &'static str {
         LoopPreventionKind::RepeatedBatchSequence => "repeatedBatch",
         LoopPreventionKind::RepeatedBatchSequenceEscalate => "repeatedBatchEscalate",
         LoopPreventionKind::DuplicateInBatch => "duplicateInBatch",
+        LoopPreventionKind::WaitGuidance => "waitGuidance",
     }
 }
 

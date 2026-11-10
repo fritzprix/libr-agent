@@ -1,11 +1,13 @@
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHint, ToolGroup};
 use crate::mcp::builtin::utils::load_session_tool_access;
+use crate::mcp::builtin::utils::read_bool_arg;
 use crate::mcp::types::{MCPResult, MCPServerConfig};
 use crate::repositories::mcp_server_repository::MCPServerRepository;
 use crate::state::get_mcp_server_repository;
 use serde_json::{json, Value};
 
 use super::verify::test_server_connection;
+use crate::mcp::session_isolation::exec_target::StdioExecTarget;
 
 const AVAILABILITY_VALUES: &[&str] = &["inventory", "session"];
 const SCOPE_VALUES: &[&str] = &["all", "internal", "external", "catalog"];
@@ -68,6 +70,20 @@ fn validate_enum_args(scope: &str, availability: &str) -> Option<String> {
 
 /// Unified tool discovery across builtin and external MCP servers.
 pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResult, String> {
+    let force_verify = match read_bool_arg(&args, "forceVerify", false, ToolGroup::Tool) {
+        Ok(arg) => arg,
+        Err(result) => return Ok(result),
+    };
+
+    let result = list_tools_inner(args, session_id, force_verify.value).await?;
+    Ok(force_verify.annotate(result))
+}
+
+async fn list_tools_inner(
+    args: Value,
+    session_id: Option<&str>,
+    force_verify: bool,
+) -> Result<MCPResult, String> {
     let query = args
         .get("query")
         .and_then(|v| v.as_str())
@@ -93,11 +109,6 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
             );
         }
     };
-
-    let force_verify = args
-        .get("forceVerify")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
 
     let limit = args
         .get("limit")
@@ -176,13 +187,29 @@ pub async fn list_tools(args: Value, session_id: Option<&str>) -> Result<MCPResu
             }
         };
 
+        let verify_target = if force_verify {
+            match StdioExecTarget::for_session(session_id).await {
+                Ok(target) => target,
+                Err(e) => {
+                    return Ok(
+                        guided_error(ErrorCategory::DatabaseError, e, ToolGroup::Tool)
+                            .to_mcp_result(),
+                    )
+                }
+            }
+        } else {
+            StdioExecTarget::Host
+        };
+
         for model in &models {
             let config_opt: Option<MCPServerConfig> = serde_json::from_str(&model.config).ok();
 
             // Determine tool source: live (forceVerify) or cached
             let tools_json_str: Option<String> = if force_verify {
                 if let Some(ref config) = config_opt {
-                    match test_server_connection(config, &model.name).await {
+                    match test_server_connection(config, &model.id, &model.name, &verify_target)
+                        .await
+                    {
                         Ok((_, json_str)) => Some(json_str),
                         Err(e) => {
                             log::warn!("tool::list live verify failed for '{}': {}", model.name, e);
@@ -544,5 +571,22 @@ mod tests {
             serde_json::to_value(crate::mcp::builtin::tool::tools::list_tools_tool()).unwrap();
         assert_eq!(schema_enum(&tool, "scope"), SCOPE_VALUES);
         assert_eq!(schema_enum(&tool, "availability"), AVAILABILITY_VALUES);
+    }
+
+    #[tokio::test]
+    async fn force_verify_as_a_string_is_read_with_a_warning() {
+        use crate::mcp::builtin::utils::result_text;
+        let result = list_tools(json!({ "forceVerify": "true", "scope": "bogus" }), None)
+            .await
+            .unwrap();
+        let text = result_text(&result);
+        assert!(text.contains("Invalid scope"), "{text}");
+        assert!(
+            text.contains("Warning: forceVerify was the string"),
+            "{text}"
+        );
+
+        let result = list_tools(json!({ "forceVerify": 1 }), None).await.unwrap();
+        assert!(result_text(&result).contains("forceVerify must be a JSON boolean"));
     }
 }

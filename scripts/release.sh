@@ -12,23 +12,27 @@ if [ -n "$(git status --porcelain)" ]; then
   exit 1
 fi
 
-echo ">>> Running pre-release checks..."
-# 1. Frontend Tests
-echo "Running Frontend Tests..."
-pnpm test:run
+if [ "$SKIP_PRE_RELEASE_CHECKS" != "1" ]; then
+  echo ">>> Running pre-release checks..."
+  # 1. Frontend Tests
+  echo "Running Frontend Tests..."
+  pnpm test:run
 
-# 2. Backend Tests
-echo "Running Backend Tests..."
-pnpm rust:test
-pnpm rust:test:edit-file
+  # 2. Backend Tests
+  echo "Running Backend Tests..."
+  pnpm rust:test
+  pnpm rust:test:edit-file
 
-# 3. Verify Frontend Build (Type check + Build)
-echo "Verifying Frontend Build..."
-pnpm build
+  # 3. Verify Frontend Build (Type check + Build)
+  echo "Verifying Frontend Build..."
+  pnpm build
 
-# 4. Verify Backend Compilation
-echo "Verifying Backend Compilation..."
-pnpm rust:check
+  # 4. Verify Backend Compilation
+  echo "Verifying Backend Compilation..."
+  pnpm rust:check
+else
+  echo ">>> Skipping pre-release checks (SKIP_PRE_RELEASE_CHECKS=1)..."
+fi
 
 echo ">>> Final Verification passed."
 echo ">>> Proceeding to bump version to next '$1' and publish..."

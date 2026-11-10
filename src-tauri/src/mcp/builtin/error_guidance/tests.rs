@@ -157,9 +157,7 @@ fn test_timeout_guided_error_builder_is_informational() {
 #[test]
 fn test_guided_error_builder_allows_override_guidance() {
     let result = guided_error(ErrorCategory::InvalidInput, "Bad input", ToolGroup::UI)
-        .guidance(vec![
-            "Use ui__presentInteractive with type='text'".to_string()
-        ])
+        .guidance(vec!["Use ui__askUser with inputType='text'".to_string()])
         .to_mcp_result();
 
     let content = result.content.expect("Expected MCPResult.content");
@@ -172,7 +170,7 @@ fn test_guided_error_builder_allows_override_guidance() {
     };
 
     // Should contain the override guidance, and should not need to match UI defaults.
-    assert!(text.contains("1. Use ui__presentInteractive with type='text'"));
+    assert!(text.contains("1. Use ui__askUser with inputType='text'"));
 }
 
 #[test]

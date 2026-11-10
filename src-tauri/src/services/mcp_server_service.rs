@@ -1,11 +1,30 @@
 use crate::mcp::builtin::service_id::BuiltinServiceId;
+use crate::mcp::secret_templates::{
+    fill_secrets, parse_secret_names, secret_names_column, secret_store, template_names,
+    SecretStore,
+};
+use crate::mcp::session_isolation::exec_target::StdioExecTarget;
+use crate::mcp::session_isolation::{SessionMCPError, SessionMCPManager};
+use crate::mcp::session_isolation_config::SessionIsolationConfig;
+use crate::mcp::types::TransportConfig;
 use crate::mcp::utils::sanitize_mcp_server_name;
 use crate::mcp::{MCPServerManager, MCPTool};
 use crate::repositories::mcp_server_repository::MCPServerRepository;
 use serde_json::Value;
+use std::collections::HashMap;
 use std::time::Duration;
 
 pub struct McpServerService;
+
+/// Verification state a saved config starts with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SaveVerification {
+    /// A background probe sets `success` or `error`.
+    Pending,
+    /// The caller tests the server in a session container; the record keeps no status,
+    /// error or cached tools until a check succeeds.
+    Unverified,
+}
 
 /// Probe/install verification can include cold `npx`/`uvx` downloads; keep a
 /// floor above the session startup default (30s) so first installs do not fail
@@ -118,6 +137,74 @@ impl McpServerService {
         tools_result.map_err(|e| format!("Failed to list tools from '{}': {}", server_name, e))
     }
 
+    /// Verifies `config` where `target` runs stdio servers. A Docker session tests a stdio
+    /// server in its container; everything else uses [`Self::verify_config`].
+    ///
+    /// `{{secret:NAME}}` templates are filled in from the keychain entries of `server_id`
+    /// for this start only, and the values are masked in the error.
+    pub async fn verify_config_at(
+        config: crate::mcp::types::MCPServerConfig,
+        target: &StdioExecTarget,
+        server_id: &str,
+    ) -> Result<Vec<MCPTool>, String> {
+        let filled = fill_secrets(secret_store(), server_id, &config).await?;
+        let result = match (target.container_session(), &filled.config.transport) {
+            (Some(session), TransportConfig::Stdio { .. }) => {
+                Self::verify_stdio_in_container(filled.config.clone(), session).await
+            }
+            _ => Self::verify_config(filled.config.clone()).await,
+        };
+        result.map_err(|error| filled.mask(&error))
+    }
+
+    /// Starts the server through a short-lived session manager, so the test uses the same
+    /// container spawn (and missing-runtime message) as the tool calls of that session.
+    /// The container is prepared first: an image pull does not count against the timeout.
+    async fn verify_stdio_in_container(
+        config: crate::mcp::types::MCPServerConfig,
+        session: &crate::repositories::SessionMetadata,
+    ) -> Result<Vec<MCPTool>, String> {
+        let server_name = config
+            .name
+            .clone()
+            .unwrap_or_else(|| "unnamed_server".to_string());
+        crate::services::WorkspaceRuntimeManager::prepare_mcp_container(session)
+            .await
+            .map_err(|e| format!("Failed to prepare the session container: {}", e))?;
+        let session_id = session.id.as_str();
+        let (channel_event_tx, _channel_event_rx) =
+            crate::mcp::session_isolation::channel_events::create_channel_event_bus();
+        let manager = SessionMCPManager::new(
+            session_id.to_string(),
+            HashMap::from([(server_name.clone(), config)]),
+            SessionIsolationConfig::default(),
+            std::env::temp_dir(),
+            channel_event_tx,
+        );
+
+        let timeout = verify_config_timeout();
+        let result = tokio::time::timeout(
+            timeout,
+            manager.list_tools_with_init_timeout(&server_name, timeout),
+        )
+        .await;
+        manager.shutdown_all().await;
+
+        match result {
+            Ok(Ok(tools)) => Ok(tools),
+            Ok(Err(SessionMCPError::RuntimeMissing(message))) => Err(message),
+            Ok(Err(error)) => Err(format!(
+                "Failed to start '{}' in the session container: {}",
+                server_name, error
+            )),
+            Err(_) => Err(format!(
+                "Timed out starting '{}' in the session container after {}s",
+                server_name,
+                timeout.as_secs()
+            )),
+        }
+    }
+
     /// Run connectivity verification in the background and notify the UI when done.
     ///
     /// Used after save-first create/update so Install does not block on cold package downloads.
@@ -180,7 +267,7 @@ impl McpServerService {
         config.name = Some(server_name.clone());
 
         // 3. Verify config
-        let verify_result = Self::verify_config(config).await;
+        let verify_result = Self::verify_config_at(config, &StdioExecTarget::Host, server_id).await;
 
         match verify_result {
             Ok(tools) => {
@@ -237,6 +324,7 @@ impl McpServerService {
         repo: &dyn MCPServerRepository,
         name: String,
         mut config: Value,
+        verification: SaveVerification,
     ) -> Result<crate::entity::mcp_server::Model, String> {
         let name = sanitize_mcp_server_name(&name);
         if BuiltinServiceId::from_alias(&name).is_some() {
@@ -258,15 +346,17 @@ impl McpServerService {
 
         // Save-first: Install UI returns immediately with verification_status=pending.
         // Callers should `schedule_background_probe` (commands / tool path do this).
+        let pending = verification == SaveVerification::Pending;
         let model = repo
-            .create(&name, config)
+            .create_with_verification(&name, config, pending)
             .await
             .map_err(|e| format!("Failed to create MCP server config: {}", e))?;
 
         log::info!(
-            "'{}' ({}) saved with pending verification (background probe expected)",
+            "'{}' ({}) saved ({:?} verification)",
             model.name,
-            model.id
+            model.id,
+            verification
         );
 
         Ok(model)
@@ -277,6 +367,20 @@ impl McpServerService {
         id: String,
         name: Option<String>,
         config: Option<Value>,
+        verification: SaveVerification,
+    ) -> Result<crate::entity::mcp_server::Model, String> {
+        Self::update_server_config_with_store(repo, secret_store(), id, name, config, verification)
+            .await
+    }
+
+    /// [`Self::update_server_config`] with the secret store passed in.
+    pub(crate) async fn update_server_config_with_store(
+        repo: &dyn MCPServerRepository,
+        store: &dyn SecretStore,
+        id: String,
+        name: Option<String>,
+        config: Option<Value>,
+        verification: SaveVerification,
     ) -> Result<crate::entity::mcp_server::Model, String> {
         // Preserve legacy display names (including whitespace). Session load sanitizes
         // tool prefixes at runtime; do not rewrite existing DB rows on update.
@@ -304,14 +408,16 @@ impl McpServerService {
             None => existing_config_val.clone(),
         };
 
-        // Validate config shape when provided
+        // Validate config shape when provided; secrets the new config no longer uses are
+        // removed from the keychain (agent and UI edits alike).
+        let mut unused_secrets = Vec::new();
+        let stored_secrets = parse_secret_names(existing.secret_names.as_deref());
         if config.is_some() {
-            let mut mcp_config: crate::mcp::types::MCPServerConfig =
+            let mcp_config: crate::mcp::types::MCPServerConfig =
                 serde_json::from_value(final_config_val.clone())
                     .map_err(|e| format!("Invalid MCP server configuration: {}", e))?;
-            let final_name = name.clone().unwrap_or_else(|| existing.name.clone());
-            mcp_config.name = Some(final_name);
-            let _ = mcp_config;
+            let used = template_names(&mcp_config.transport)?;
+            unused_secrets = stored_secrets.difference(&used).cloned().collect();
         }
 
         let requires_reverification =
@@ -322,16 +428,42 @@ impl McpServerService {
             .await
             .map_err(|e| format!("Failed to update MCP server config: {}", e))?;
 
-        if requires_reverification {
-            repo.mark_verification_pending(&updated.id, true)
+        if !unused_secrets.is_empty() {
+            for secret in &unused_secrets {
+                if let Err(e) = store.delete(&id, secret).await {
+                    log::warn!(
+                        "Failed to delete secret '{}' of server '{}': {}",
+                        secret,
+                        id,
+                        e
+                    );
+                }
+            }
+            let kept = stored_secrets
+                .iter()
+                .filter(|name| !unused_secrets.contains(name))
+                .cloned()
+                .collect();
+            repo.set_secret_names(&id, secret_names_column(&kept))
                 .await
-                .map_err(|e| format!("Failed to mark verification pending: {}", e))?;
+                .map_err(|e| format!("Failed to update secret names: {}", e))?;
+        }
+
+        if requires_reverification {
+            match verification {
+                SaveVerification::Pending => {
+                    repo.mark_verification_pending(&updated.id, true).await
+                }
+                SaveVerification::Unverified => repo.clear_verification(&updated.id).await,
+            }
+            .map_err(|e| format!("Failed to reset verification: {}", e))?;
 
             let updated = Self::fetch_server_model(repo, &updated.id).await?;
             log::info!(
-                "'{}' ({}) updated; verification marked pending (background probe expected)",
+                "'{}' ({}) updated ({:?} verification)",
                 updated.name,
-                updated.id
+                updated.id,
+                verification
             );
             return Ok(updated);
         }
@@ -344,6 +476,16 @@ impl McpServerService {
         repo: &dyn MCPServerRepository,
         id: &str,
     ) -> Result<(), String> {
+        Self::delete_server_config_with_store(repo, secret_store(), id).await
+    }
+
+    /// [`Self::delete_server_config`] with the secret store passed in. Deleting the row
+    /// also drops its `encrypted_secrets`.
+    pub(crate) async fn delete_server_config_with_store(
+        repo: &dyn MCPServerRepository,
+        store: &dyn SecretStore,
+        id: &str,
+    ) -> Result<(), String> {
         // Cleanup token from keychain if present
         if let Err(e) = crate::mcp::keychain::delete_token(id).await {
             log::warn!(
@@ -351,6 +493,19 @@ impl McpServerService {
                 id,
                 e
             );
+        }
+
+        if let Ok(Some(model)) = repo.get(id).await {
+            for secret in parse_secret_names(model.secret_names.as_deref()) {
+                if let Err(e) = store.delete(id, &secret).await {
+                    log::warn!(
+                        "Failed to delete secret '{}' of server '{}': {}",
+                        secret,
+                        id,
+                        e
+                    );
+                }
+            }
         }
 
         repo.delete(id)
@@ -404,5 +559,39 @@ impl McpServerService {
         }
 
         Ok(models)
+    }
+}
+
+#[cfg(all(test, unix))]
+mod verify_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn verify_starts_the_server_with_the_value_not_the_template() {
+        let dir = tempfile::tempdir().unwrap();
+        let seen = dir.path().join("token");
+        let id = "verify-fill-test";
+        secret_store()
+            .set(id, "TOKEN", "the-secret-value")
+            .await
+            .unwrap();
+        let config: crate::mcp::types::MCPServerConfig =
+            serde_json::from_value(serde_json::json!({
+                "name": "probe",
+                "transport": {
+                    "type": "stdio",
+                    "command": "sh",
+                    "args": ["-c", format!("printf %s \"$TOKEN\" > '{}'", seen.display())],
+                    "env": { "TOKEN": "{{secret:TOKEN}}" }
+                }
+            }))
+            .unwrap();
+
+        let error = McpServerService::verify_config_at(config, &StdioExecTarget::Host, id)
+            .await
+            .expect_err("sh is not an MCP server");
+
+        assert_eq!(std::fs::read_to_string(&seen).unwrap(), "the-secret-value");
+        assert!(!error.contains("the-secret-value"), "{error}");
     }
 }

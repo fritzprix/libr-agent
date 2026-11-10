@@ -105,6 +105,7 @@ async fn seed_history_fixture() -> Arc<sea_orm::DatabaseConnection> {
             docker_config: None,
             docker_container_name: None,
             docker_host_workspace_path: None,
+            status_reason: None,
                 })
                 .await
                 .expect("session A should upsert");
@@ -138,6 +139,7 @@ async fn seed_history_fixture() -> Arc<sea_orm::DatabaseConnection> {
             docker_config: None,
             docker_container_name: None,
             docker_host_workspace_path: None,
+            status_reason: None,
                 })
                 .await
                 .expect("session B should upsert");
@@ -610,6 +612,7 @@ async fn history_read_message_clamps_max_chars_above_cap() {
             docker_config: None,
             docker_container_name: None,
             docker_host_workspace_path: None,
+            status_reason: None,
         })
         .await
         .expect("oversized session should upsert");

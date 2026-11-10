@@ -1,6 +1,6 @@
 ---
 name: setup-wizard
-description: 'Use when the user needs to diagnose and install runtime environment dependencies (Python, Node.js, uv) for running LibrAgent or MCP servers. Use on first run or a new machine ("I just installed LibrAgent, what do I need to set up?"), MCP "command not found" or spawn errors, or missing Python/Node runtime failures. Triggers: 처음 깔았는데 뭐 설정해야 돼, 초기 설정, 환경 설정, command not found, node 없음, python 없음. LibrAgent 실행에 필요한 Python, Node.js 등의 환경을 자동으로 진단하고 설치하도록 안내하는 마법사입니다.'
+description: 'Use when the user needs to diagnose and install runtime environment dependencies (Python, Node.js, uv) for running LibrAgent or MCP servers, or when a task fails because a runtime is missing. Use on first run or a new machine ("I just installed LibrAgent, what do I need to set up?"), MCP "command not found" or spawn errors, exit code 127, a missing Python or Node version (python3.9 not found), a broken venv, or os error 448 (ERROR_UNTRUSTED_MOUNT_POINT). Triggers: 처음 깔았는데 뭐 설정해야 돼, 초기 설정, 환경 설정, command not found, exit code 127, node 없음, python 없음, 파이썬 버전 없음, venv broken, os error 448. LibrAgent 실행에 필요한 Python, Node.js 등의 환경을 자동으로 진단하고 설치하도록 안내하는 마법사입니다.'
 license: Complete terms in LICENSE.txt
 ---
 
@@ -11,6 +11,17 @@ Automated installation and verification of MCP runtime dependencies.
 ## Path conventions
 
 Paths in this skill are relative to this skill's Base Directory. Replace `<skill-base-dir>` with its absolute path in commands.
+
+## Missing runtime during a task (fixed order)
+
+Use this when a command fails with `command not found`, exit code 127, a missing Python or Node version, or a broken venv:
+
+1. Look for a user-scope tool first: `uv`, conda, nvm (`Get-Command uv` / `command -v uv conda`; nvm is a shell function, so check `$NVM_DIR`).
+2. For Python, use `uv run --python <version> <script.py>` or `uv python install <version>`.
+3. Prefer a user-scope install. If a step needs root, ask for the password once with `workspace__runInPersistentShell` and `requireUserInput=true`, `inputType=password`, `storeAs=SUDO_PASSWORD`, then use plain `sudo`. Do not use `sudo -n`, `sudo -S`, `su`, or `pkexec`.
+4. After **one** install attempt, run the check again. If it still fails, report the error to the user and stop.
+
+If the output contains `os error 448` or `ERROR_UNTRUSTED_MOUNT_POINT`, stop and report: Windows RedirectionGuard blocks the uv Python junction (#2527). Do not reinstall.
 
 ## Workflow
 

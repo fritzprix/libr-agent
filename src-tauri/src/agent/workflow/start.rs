@@ -15,8 +15,6 @@ pub async fn reset_session_execution_state(session: &mut AgentSession) {
     session.cancellation_token = CancellationToken::new();
     *session.repeated_thinking_retry_count.write().await = 0;
     *session.repeated_text_loop_retry_count.write().await = 0;
-    *session.bad_tool_args_retry_count.write().await = 0;
-    *session.bad_tool_args_incident_count.write().await = 0;
     *session.reasoning_budget_retry_count.write().await = 0;
     *session.malformed_tool_markup_retry_count.write().await = 0;
     // Drop any in-flight tool batch marker so a restarted turn cannot treat a
@@ -231,15 +229,21 @@ pub async fn start_workflow(
         }
 
         // Transition status to Busy (bypasses concurrency gate block since permit is held)
-        if let Err(e) = crate::agent::lifecycle::update_session_status(
+        let promoted = crate::agent::lifecycle::promote_queued_session_to_busy(
             &session_repo,
             &active_sessions,
             &app_handle,
             &session_id_clone,
-            SessionStatus::Busy,
         )
-        .await
-        {
+        .await;
+        if let Ok(false) = promoted {
+            log::info!(
+                "Session {} left Queued before its workflow started. Not starting it.",
+                session_id_clone
+            );
+            return;
+        }
+        if let Err(e) = promoted {
             log::error!(
                 "Failed to transition session {} to Busy: {}",
                 session_id_clone,
@@ -272,6 +276,29 @@ pub async fn start_workflow(
         )
         .await
         {
+            // A force-stop fence refusal is a correct outcome, not a failure:
+            // undo the Busy promotion and emit no WorkflowError (#2633 G4.1).
+            if crate::mcp::MCPServiceProxyManager::is_teardown_fence_rejection(&e) {
+                log::info!(
+                    "Background start for session {} aborted by force-stop fence; no workflow error emitted",
+                    session_id_clone
+                );
+                if let Err(err) = crate::agent::lifecycle::end_fence_refused_wake(
+                    &session_repo,
+                    &active_sessions,
+                    &app_handle,
+                    &session_id_clone,
+                )
+                .await
+                {
+                    log::warn!(
+                        "Failed to end refused background start for session {}: {}",
+                        session_id_clone,
+                        err
+                    );
+                }
+                return;
+            }
             log::error!(
                 "Proxy check failed during background start for session {}: {}",
                 session_id_clone,
@@ -336,11 +363,21 @@ pub async fn start_workflow(
 }
 
 /// Helper to ensure a proxy exists for the session before invoking LLM
+///
+/// `app_handle` is optional so product-code tests can drive this exact entry
+/// without a Tauri app; production callers always pass their handle.
 pub(crate) async fn ensure_proxy_exists(
     proxy_manager: &Arc<MCPServiceProxyManager>,
-    app_handle: &AppHandle,
+    app_handle: Option<&AppHandle>,
     session_id: &str,
 ) -> Result<(), String> {
+    // This function is shared by every workflow entry, including automatic
+    // wakes (MCP channel notification, scheduled job, compaction continuation,
+    // background resume). It must therefore never clear the force-stop fence:
+    // a terminated session is woken only by an explicit user or API message,
+    // which clears the fence at its own entry point (issue #2633).
+    proxy_manager.reject_if_teardown_fenced(session_id).await?;
+
     if proxy_manager.get_proxy(session_id).await.is_some() {
         return Ok(());
     }
@@ -351,7 +388,7 @@ pub(crate) async fn ensure_proxy_exists(
     );
 
     match proxy_manager
-        .ensure_configured_proxy(session_id, Some(app_handle.clone()))
+        .ensure_configured_proxy(session_id, app_handle.cloned())
         .await
     {
         Ok(_) => {
@@ -383,7 +420,7 @@ pub(crate) async fn ensure_proxy_ready(
     session_id: &str,
     timeout_secs: u64,
 ) -> Result<(), String> {
-    ensure_proxy_exists(proxy_manager, app_handle, session_id).await?;
+    ensure_proxy_exists(proxy_manager, Some(app_handle), session_id).await?;
     proxy_manager
         .wait_until_proxy_ready(session_id, timeout_secs)
         .await

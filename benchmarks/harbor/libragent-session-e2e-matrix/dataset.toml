@@ -1,0 +1,9 @@
+# Local Harbor dataset manifest (publish with `harbor publish` when ready).
+
+[dataset]
+name = "fritzprix/libragent-session-e2e-matrix"
+description = "Unattended Session API E2E slice of issue #2565 (debug + LIBRAGENT_E2E_CONTROL)."
+keywords = ["libragent", "session-e2e", "matrix"]
+
+[[dataset.authors]]
+name = "fritzprix"

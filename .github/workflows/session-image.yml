@@ -1,0 +1,90 @@
+name: 🐳 Session Image
+on:
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+    paths:
+      - 'docker/**'
+      - '.github/actions/session-image-build/**'
+      - '.github/workflows/session-image.yml'
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/fritzprix/libragent-session
+  LOCAL_IMAGE: localhost:5000/libragent-session:ci
+  PLATFORMS: linux/amd64,linux/arm64
+  # Single source of the compressed size limit per architecture (issue #2402).
+  SIZE_LIMIT_MB: 200
+
+jobs:
+  size-check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5000:5000
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Build and check size
+        uses: ./.github/actions/session-image-build
+        with:
+          local-image: ${{ env.LOCAL_IMAGE }}
+          platforms: ${{ env.PLATFORMS }}
+          size-limit-mb: ${{ env.SIZE_LIMIT_MB }}
+
+  # Release tags only (no pre-release tags): the app pulls `<major>.<minor>.<patch>`.
+  # The tag push checks out the tag itself, so only tagged code is published.
+  publish:
+    if: github.event_name == 'push' && !contains(github.ref_name, '-')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5000:5000
+    steps:
+      - name: Resolve release version
+        id: version
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::'$TAG' is not a release tag (vX.Y.Z)"
+            exit 1
+          fi
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Build and check size
+        uses: ./.github/actions/session-image-build
+        with:
+          local-image: ${{ env.LOCAL_IMAGE }}
+          platforms: ${{ env.PLATFORMS }}
+          size-limit-mb: ${{ env.SIZE_LIMIT_MB }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Copies the image that passed the size check; it is not built again.
+      - name: Publish to GHCR
+        shell: bash
+        env:
+          TARGET: ${{ env.IMAGE }}:${{ steps.version.outputs.version }}
+        run: docker buildx imagetools create --tag "$TARGET" "$LOCAL_IMAGE"

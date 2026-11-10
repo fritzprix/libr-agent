@@ -71,6 +71,11 @@ fn spawn_startup_maintenance_tasks(
     session_manager: crate::session::SessionManager,
     search_index_frequency_minutes: u64,
 ) {
+    // Sweep MCP secrets pending deletes if any exist from a keychain outage (#2588).
+    tauri::async_runtime::spawn(async move {
+        crate::mcp::secret_fallback::sweep_pending_deletes_at_startup().await;
+    });
+
     tauri::async_runtime::spawn(async move {
         match session_manager.cleanup_old_sessions(24, 5).await {
             Ok(count) => info!(
@@ -135,7 +140,9 @@ fn should_sweep_stale_containers(data_dir_override: Option<&std::ffi::OsStr>) ->
 pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     // Setup custom file logger FIRST (before any log calls)
     let log_dir = app.path().app_log_dir()?;
-    logger::setup_file_logger(log_dir)?;
+    let log_retention_days =
+        tauri::async_runtime::block_on(SystemSettings::load_global()).log_retention_days;
+    logger::setup_file_logger(log_dir, log_retention_days)?;
 
     // Test if Rust logger is properly initialized
     log::info!("🔥 Logger initialized - testing Rust log to file");

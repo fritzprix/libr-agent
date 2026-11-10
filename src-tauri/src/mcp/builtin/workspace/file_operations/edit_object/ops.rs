@@ -1,4 +1,5 @@
-//! Typed object mutations applied to `serde_json::Value`.
+//! Typed object mutations. Parsing and the JSON (`serde_json::Value`) apply live here;
+//! the TOML apply in `toml_ops` reuses [`apply_ops_with`] and the error helpers.
 
 use super::pointer::{parse_array_index, JsonPointer};
 use serde_json::Value;
@@ -178,6 +179,15 @@ fn shape_error(
 }
 
 pub fn apply_ops(root: &mut Value, ops: &[ObjectOp]) -> Result<Vec<AppliedOp>, ApplyError> {
+    apply_ops_with(root, ops, apply_one)
+}
+
+/// Apply `ops` in order with `apply_one`, tagging errors and summaries with the op index.
+pub(super) fn apply_ops_with<T: ?Sized>(
+    root: &mut T,
+    ops: &[ObjectOp],
+    apply_one: fn(&mut T, &ObjectOp) -> Result<String, ApplyError>,
+) -> Result<Vec<AppliedOp>, ApplyError> {
     let mut applied = Vec::with_capacity(ops.len());
     for (op_index, op) in ops.iter().enumerate() {
         let summary = apply_one(root, op).map_err(|mut error| {
@@ -205,7 +215,7 @@ fn apply_one(root: &mut Value, op: &ObjectOp) -> Result<String, ApplyError> {
     }
 }
 
-fn array_index_guidance(len: usize) -> String {
+pub(super) fn array_index_guidance(len: usize) -> String {
     if len == 0 {
         "Array is currently empty. Use op=append to add elements.".to_string()
     } else {
@@ -408,7 +418,7 @@ fn resolve_mut<'a>(
                         "Path not found: array index {index} out of bounds (len={len})"
                     ),
                     guidance: vec![
-                        "Call workspace__readFile to inspect the current JSON structure"
+                        "Call workspace__readFile to inspect the current document structure"
                             .to_string(),
                     ],
                 })?
@@ -423,7 +433,7 @@ fn resolve_mut<'a>(
                         type_name(other)
                     ),
                     guidance: vec![
-                        "Call workspace__readFile to inspect the current JSON structure"
+                        "Call workspace__readFile to inspect the current document structure"
                             .to_string(),
                     ],
                 });
@@ -433,34 +443,49 @@ fn resolve_mut<'a>(
     Ok(current)
 }
 
-fn path_missing(op: &ObjectOp, token: &str) -> ApplyError {
+/// An error for `op` with a custom message and guidance.
+pub(super) fn op_error(
+    op: &ObjectOp,
+    message: impl Into<String>,
+    guidance: Vec<String>,
+) -> ApplyError {
+    ApplyError {
+        op_index: 0,
+        path: op.path.display(),
+        op: op.kind.as_str().to_string(),
+        message: message.into(),
+        guidance,
+    }
+}
+
+pub(super) fn path_missing(op: &ObjectOp, token: &str) -> ApplyError {
     ApplyError {
         op_index: 0,
         path: op.path.display(),
         op: op.kind.as_str().to_string(),
         message: format!("Path not found: missing key '{token}'"),
         guidance: vec![
-            "Call workspace__readFile to inspect the current JSON structure".to_string(),
+            "Call workspace__readFile to inspect the current document structure".to_string(),
             "Create parent objects first with op=set before nesting deeper".to_string(),
         ],
     }
 }
 
-fn type_mismatch(op: &ObjectOp, expected: &str, actual: &str) -> ApplyError {
+pub(super) fn type_mismatch(op: &ObjectOp, expected: &str, actual: &str) -> ApplyError {
     ApplyError {
         op_index: 0,
         path: op.path.display(),
         op: op.kind.as_str().to_string(),
         message: format!("Type mismatch at path: expected {expected}, got {actual}"),
         guidance: vec![
-            "Call workspace__readFile to inspect the current JSON structure".to_string(),
+            "Call workspace__readFile to inspect the current document structure".to_string(),
             "Choose an op that matches the value type (append/remove for arrays, set/delete for objects)"
                 .to_string(),
         ],
     }
 }
 
-fn logic_error(op: &ObjectOp, message: &str) -> ApplyError {
+pub(super) fn logic_error(op: &ObjectOp, message: &str) -> ApplyError {
     ApplyError {
         op_index: 0,
         path: op.path.display(),
@@ -482,14 +507,18 @@ fn type_name(value: &Value) -> &'static str {
 }
 
 fn compact_value(value: &Value) -> String {
-    const MAX_CHARS: usize = 120;
-    let rendered = match value {
+    truncate_summary(match value {
         Value::Object(map) if map.is_empty() => "{}".to_string(),
         Value::Array(arr) if arr.is_empty() => "[]".to_string(),
         Value::Object(map) => format!("object({} keys)", map.len()),
         Value::Array(arr) => format!("array(len={})", arr.len()),
         other => other.to_string(),
-    };
+    })
+}
+
+/// Cap a rendered value at 120 characters for op summaries.
+pub(super) fn truncate_summary(rendered: String) -> String {
+    const MAX_CHARS: usize = 120;
     let mut chars = rendered.chars();
     let truncated: String = chars.by_ref().take(MAX_CHARS).collect();
     if chars.next().is_some() {

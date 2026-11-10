@@ -1,6 +1,7 @@
 import { applyViewedAtToSession } from '@/lib/session-utils';
 import type { AgentSession } from '@/models/agent';
 import type {
+  PendingApprovalKind,
   WorkflowCompletionReason,
   SessionRuntimeState,
 } from '@/models/agent-ipc';
@@ -9,12 +10,13 @@ export interface AgentEventPayload {
   type: string;
   sessionId?: string;
   status?: AgentSession['status'];
+  statusReason?: string | null;
   message?: {
     role: 'user' | 'assistant' | 'system' | 'tool';
     createdAt: number;
   };
   toolCallId?: string;
-  approvalKind?: 'standard' | 'hard';
+  approvalKind?: PendingApprovalKind;
   approved?: boolean;
   reason?: WorkflowCompletionReason;
   runtimeState?: SessionRuntimeState;
@@ -86,6 +88,7 @@ const handleStatusChanged: AgentEventHandler = (payload, deps) => {
   deps.applySessionUpdate(payload.sessionId, (session) => ({
     ...session,
     status: nextStatus,
+    statusReason: payload.statusReason ?? undefined,
     provisioningStep:
       nextStatus === 'provisioning' ? session.provisioningStep : undefined,
   }));

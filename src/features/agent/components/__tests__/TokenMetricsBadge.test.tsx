@@ -11,7 +11,6 @@ vi.mock('@/context/SettingsContext', () => ({
   useSettings: () => ({
     value: {
       display: {
-        metricDisplayMode: 'inline',
         prefillDisplayFormat: 'time',
         showTokenSpeed: true,
         compactMetrics: false,

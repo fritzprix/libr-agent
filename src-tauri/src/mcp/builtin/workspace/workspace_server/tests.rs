@@ -1,8 +1,5 @@
 use super::WorkspaceServer;
-use crate::mcp::builtin::workspace::{
-    persistent_shell, terminal_manager, InteractiveShellInputType, PendingShellExecution,
-    PendingShellInputResolution, StdinDelivery,
-};
+use crate::mcp::builtin::workspace::{persistent_shell, terminal_manager};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -44,7 +41,6 @@ async fn kill_session_processes_marks_only_owned_processes_and_retains_output() 
         };
 
     let other_output = temp_dir.path().join("other").join("stdout.log");
-    let (response_tx, response_rx) = tokio::sync::oneshot::channel();
     {
         let mut registry = server.process_registry.write().await;
         registry.entries.insert(
@@ -61,20 +57,6 @@ async fn kill_session_processes_marks_only_owned_processes_and_retains_output() 
             process_entry("foreign-process", other_session_id, &other_output),
         );
     }
-    server.pending_executions.insert(PendingShellExecution {
-        execution_id: "interactive-1".to_string(),
-        session_id: session_id.to_string(),
-        executable_command: "read-host".to_string(),
-        display_command: "read-host".to_string(),
-        run_mode: "sync".to_string(),
-        timeout: 30,
-        created_at: chrono::Utc::now(),
-        prompt: "Input".to_string(),
-        input_type: InteractiveShellInputType::Text,
-        stdin_delivery: StdinDelivery::Host,
-        response_tx: Some(response_tx),
-    });
-
     assert_eq!(
         server
             .kill_session_processes(session_id)
@@ -109,10 +91,53 @@ async fn kill_session_processes_marks_only_owned_processes_and_retains_output() 
     drop(registry);
 
     assert!(retained_output.exists());
-    assert!(matches!(
-        response_rx.await.expect("pending response"),
-        PendingShellInputResolution::Cancelled
-    ));
+}
+
+/// Issue #2633: once the owning session is force-terminated, the persistent
+/// shell manager must refuse to create a new shell (late dispatch guard).
+#[tokio::test]
+async fn terminated_session_refuses_new_persistent_shell() {
+    let _guard = crate::state::lock_test_global_state().await;
+    crate::state::reset_state();
+
+    let temp_dir = tempfile::tempdir().expect("temp dir");
+    let workspace_path = temp_dir.path().join("workspace");
+    std::fs::create_dir_all(&workspace_path).expect("workspace directory");
+
+    let terminated = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let manager =
+        persistent_shell::PersistentShellManager::new().with_terminated_flag(terminated.clone());
+
+    // `terminate_session_resources` marks the flag before killing resources.
+    terminated.store(true, std::sync::atomic::Ordering::SeqCst);
+
+    let error = manager
+        .get_or_create_shell("terminated-guard".to_string(), workspace_path)
+        .await
+        .expect_err("terminated session must not create a new shell");
+    assert!(
+        error.contains("force-terminated"),
+        "unexpected error: {error}"
+    );
+    assert_eq!(manager.shell_count().await, 0);
+}
+
+/// Issue #2633: the termination flag starts unset and is flipped by the
+/// `BuiltinMCPServer::mark_session_terminated` hook used during teardown.
+#[tokio::test]
+async fn workspace_server_termination_flag_roundtrip() {
+    use crate::mcp::builtin::BuiltinMCPServer;
+
+    let temp_dir = tempfile::tempdir().expect("temp dir");
+    let session_manager = Arc::new(
+        crate::session::SessionManager::new_with_base_dir(temp_dir.path().to_path_buf())
+            .expect("session manager"),
+    );
+    let server = WorkspaceServer::new("flag-session".to_string(), session_manager);
+
+    assert!(!server.is_session_terminated());
+    server.mark_session_terminated();
+    assert!(server.is_session_terminated());
 }
 
 #[tokio::test]

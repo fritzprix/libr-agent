@@ -38,19 +38,6 @@ const TOOL_DETAIL_LEVEL_OPTIONS = [
   },
 ] as const;
 
-const METRIC_DISPLAY_MODE_OPTIONS = [
-  {
-    value: 'inline',
-    labelKey: 'settings.display.inline',
-    fallback: 'Inline (show in message)',
-  },
-  {
-    value: 'tooltip',
-    labelKey: 'settings.display.tooltip',
-    fallback: 'Tooltip (hover to see)',
-  },
-] as const;
-
 const PREFILL_DISPLAY_FORMAT_OPTIONS = [
   {
     value: 'time',
@@ -69,7 +56,6 @@ const FONT_FAMILY_SELECT_ID = 'settings-font-family';
 const UI_SIZE_LABEL_ID = 'settings-ui-size';
 const MESSAGE_LAYOUT_SELECT_ID = 'settings-message-layout';
 const TOOL_DETAIL_LEVEL_SELECT_ID = 'settings-tool-detail-level';
-const METRIC_DISPLAY_MODE_SELECT_ID = 'settings-metric-display-mode';
 const PREFILL_DISPLAY_FORMAT_SELECT_ID = 'settings-prefill-display-format';
 
 const MESSAGE_LAYOUT_OPTIONS = [
@@ -95,12 +81,6 @@ function isToolDetailLevel(
   value: string,
 ): value is DisplaySettings['toolDetailLevel'] {
   return TOOL_DETAIL_LEVEL_OPTIONS.some((option) => option.value === value);
-}
-
-function isMetricDisplayMode(
-  value: string,
-): value is DisplaySettings['metricDisplayMode'] {
-  return METRIC_DISPLAY_MODE_OPTIONS.some((option) => option.value === value);
 }
 
 function isPrefillDisplayFormat(
@@ -357,43 +337,6 @@ function GeneralTabComponent({
         </h3>
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="min-w-0">
-              <Label
-                htmlFor={METRIC_DISPLAY_MODE_SELECT_ID}
-                className="mb-2 block text-muted-foreground"
-              >
-                {t('settings.display.metricDisplayMode', 'Metric Display Mode')}
-              </Label>
-              <Select
-                value={localDisplay.metricDisplayMode}
-                onValueChange={(value) => {
-                  if (isMetricDisplayMode(value)) {
-                    onDisplaySettingsChange('metricDisplayMode', value);
-                  }
-                }}
-              >
-                <SelectTrigger
-                  id={METRIC_DISPLAY_MODE_SELECT_ID}
-                  className="w-full max-w-xs bg-background"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {METRIC_DISPLAY_MODE_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {t(option.labelKey, option.fallback)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground mt-1">
-                {t(
-                  'settings.display.metricDisplayModeDescription',
-                  'Choose how token metrics are displayed in chat messages',
-                )}
-              </p>
-            </div>
-
             <div className="min-w-0">
               <Label
                 htmlFor={PREFILL_DISPLAY_FORMAT_SELECT_ID}

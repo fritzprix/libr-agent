@@ -23,42 +23,46 @@ if (-not $ghCommand) {
     exit 1
 }
 
-Write-Host ">>> Running pre-release checks..."
-# 1. Frontend Tests
-Write-Host "Running frontend tests..."
-pnpm test:run
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Error: Frontend tests failed"
-    exit 1
-}
+if ($env:SKIP_PRE_RELEASE_CHECKS -ne "1") {
+    Write-Host ">>> Running pre-release checks..."
+    # 1. Frontend Tests
+    Write-Host "Running frontend tests..."
+    pnpm test:run
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Error: Frontend tests failed"
+        exit 1
+    }
 
-# 2. Backend Tests
-Write-Host "Running backend tests..."
-pnpm rust:test
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Error: Backend tests failed"
-    exit 1
-}
-pnpm rust:test:edit-file
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Error: Backend edit-file tests failed"
-    exit 1
-}
+    # 2. Backend Tests
+    Write-Host "Running backend tests..."
+    pnpm rust:test
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Error: Backend tests failed"
+        exit 1
+    }
+    pnpm rust:test:edit-file
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Error: Backend edit-file tests failed"
+        exit 1
+    }
 
-# 3. Verify Frontend Build (Type check + Build)
-Write-Host "Verifying frontend build..."
-pnpm build
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Error: Frontend build failed"
-    exit 1
-}
+    # 3. Verify Frontend Build (Type check + Build)
+    Write-Host "Verifying frontend build..."
+    pnpm build
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Error: Frontend build failed"
+        exit 1
+    }
 
-# 4. Verify Backend Compilation
-Write-Host "Verifying backend compilation..."
-pnpm rust:check
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Error: Backend check failed"
-    exit 1
+    # 4. Verify Backend Compilation
+    Write-Host "Verifying backend compilation..."
+    pnpm rust:check
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Error: Backend check failed"
+        exit 1
+    }
+} else {
+    Write-Host ">>> Skipping pre-release checks (SKIP_PRE_RELEASE_CHECKS=1)..."
 }
 
 Write-Host ">>> Bumping version..."

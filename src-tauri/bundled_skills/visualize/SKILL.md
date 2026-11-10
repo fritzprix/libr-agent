@@ -7,7 +7,7 @@ description: |
   chart a spreadsheet, or explain with equations.
   Triggers on: "시각화", "다이어그램", "마인드맵", "flowchart", "mermaid", "차트 만들어줘",
   "plot this", "dashboard from CSV", "수식 그려줘", "visualize this".
-  Not for document editing (docx/pptx) or raw format conversion (to-md).
+  Not for document authoring or format conversion (use the docs skill).
 ---
 
 # Visualize
@@ -20,12 +20,11 @@ One skill for **showing** things. Prefer in-chat/UI renderers for diagrams and m
 | --- | --- | --- |
 | Mindmap, flowchart, sequence, ER, state | **Chat / UI markdown** | `` ```mermaid `` fence. See [diagrams.md](references/diagrams.md). |
 | Equations | **Chat / UI markdown** | `$inline$` / `$$display$$` (KaTeX). See [diagrams.md](references/diagrams.md). |
-| Diagram + user input | **`ui__presentInteractive`** | `format: "markdown"` (or `auto`) + `interaction`. |
+| Diagram + user input | **Chat markdown + `ui__askUser`** | Show the Mermaid fence in the reply, then ask the choice with `ui__askUser`. |
 | Final report with visuals | **`ui__reportResult`** | Same Mermaid/LaTeX fences in markdown. |
 | Charts/dashboards from **tabular** data | **This skill’s scripts** | CSV/Excel/JSON → HTML. See [charts.md](references/charts.md). |
-| Custom interactive HTML widget | **`ui__presentInteractive` `format: "html"`** | Only when markdown Mermaid/charts cannot express it. |
 
-LibrAgent already renders Mermaid and LaTeX in chat, `ui__reportResult`, `ui__presentInteractive` (markdown), and PDF export — do not invent a separate renderer.
+LibrAgent already renders Mermaid and LaTeX in chat, `ui__reportResult`, and PDF export — do not invent a separate renderer.
 
 ## Default workflow
 
@@ -38,8 +37,7 @@ LibrAgent already renders Mermaid and LaTeX in chat, `ui__reportResult`, `ui__pr
 
 | Skill | Use for |
 | --- | --- |
-| **to-md** | Extract text from PDF/XLSX without charting |
-| **docx** / **pptx** | Author formatted documents |
+| **docs** | Convert to or from PDF, DOCX, PPTX, Markdown |
 | **deep-research** | Narrative research reports |
 | **workspace-indexer** | Batch markdown index for a repo |
 

@@ -11,7 +11,7 @@ use serde_json::json;
 /// * `mime_type` - The MIME type (typically "text/html")
 /// * `html` - The rendered HTML content
 /// * `server_name` - The name of the server (e.g., "ui", "playbook")
-/// * `tool_name` - The name of the tool (e.g., "presentInteractive", "visualizeData")
+/// * `tool_name` - The name of the tool (e.g., "circuitBreak", "visualizeData")
 /// * `message` - Optional text message to prepend before the resource
 ///
 /// # Returns

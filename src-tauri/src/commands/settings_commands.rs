@@ -40,6 +40,17 @@ impl From<crate::entity::settings::Model> for SettingDto {
 fn apply_system_settings_side_effects(value: &Value) {
     let settings = SystemSettings::from_stored(Some(&value.to_string()));
     crate::utils::keep_awake::set_user_preference(settings.prevent_sleep_during_agent_work);
+    crate::logger::set_log_retention_days(settings.log_retention_days);
+    tokio::task::spawn_blocking(|| {
+        let (removed_files, removed_bytes) = crate::logger::prune_archived_logs_now();
+        if removed_files > 0 {
+            log::info!(
+                "🧹 Pruned {} archived log file(s) ({} bytes) after settings change",
+                removed_files,
+                removed_bytes
+            );
+        }
+    });
 }
 
 #[command]

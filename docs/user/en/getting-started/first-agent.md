@@ -90,7 +90,7 @@ Run App Wizard once before heavy coding sessions.
 
 | Example               | Meaning                             |
 | --------------------- | ----------------------------------- |
-| `@skill:docx`         | Insert skill procedure into context |
+| `@skill:docs`         | Insert skill procedure into context |
 | `@skill:setup-wizard` | Runtime install skill               |
 
 Catalog: [Skills](../guides/skills.md).

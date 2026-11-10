@@ -1,5 +1,7 @@
 pub mod access_guard;
 pub mod api_key;
+#[cfg(debug_assertions)]
+pub mod e2e_control;
 pub mod handlers;
 pub mod mcp_handler;
 pub mod pairing;
@@ -114,6 +116,9 @@ pub async fn init(
             let _ = std::fs::write(dir.join("http_port"), bound_port.to_string());
         }
     }
+
+    #[cfg(debug_assertions)]
+    crate::server::e2e_control::init_capability_token();
 
     let routes = routes::get_routes(agent_manager, mcp_enabled, app_control_enabled, expose);
 

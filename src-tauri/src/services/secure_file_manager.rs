@@ -1,8 +1,35 @@
+use std::path::Path;
+
 use tokio::fs;
 use tokio::io::AsyncReadExt;
 use tracing::{error, info};
 
 use crate::mcp::builtin::utils::SecurityValidator;
+
+/// Text in the parent-directory error when an ancestor of the target is a regular file.
+pub const PARENT_IS_FILE_MARKER: &str = "is an existing file, not a directory";
+
+/// Builds an English error for a failed `create_dir_all(parent)`.
+/// `io::Error` Display follows the host locale, so the raw OS text goes to the log only.
+fn parent_dir_error(parent: &Path, e: &std::io::Error) -> String {
+    error!("Failed to create parent directory {:?}: {}", parent, e);
+    if let Some(file) = parent
+        .ancestors()
+        .find(|p| p.exists())
+        .filter(|p| p.is_file())
+    {
+        return format!(
+            "Cannot create '{}': '{}' {PARENT_IS_FILE_MARKER}. Choose a path whose parent is a directory.",
+            parent.display(),
+            file.display()
+        );
+    }
+    format!(
+        "Failed to create parent directory '{}': {}",
+        parent.display(),
+        e.kind()
+    )
+}
 
 /// Provides secure file system operations with path validation and optional
 /// base-directory scoping depending on how the manager is constructed.
@@ -26,6 +53,25 @@ impl SecureFileManager {
         Self {
             security: SecurityValidator::new_scoped_with_base_dir(base_dir),
         }
+    }
+
+    /// Like [`Self::new_scoped_with_base_dir`], but paths under `extra_roots` are also
+    /// accepted. Relative paths still resolve against `base_dir`.
+    pub fn new_scoped_with_extra_roots(
+        base_dir: std::path::PathBuf,
+        extra_roots: Vec<std::path::PathBuf>,
+    ) -> Self {
+        Self {
+            security: SecurityValidator::new_scoped_with_base_dir(base_dir)
+                .with_extra_roots(extra_roots),
+        }
+    }
+
+    /// Refuses writes into git metadata; see
+    /// [`SecurityValidator::with_git_metadata_write_guard`].
+    pub fn with_git_metadata_write_guard(mut self, git_dirs: Vec<std::path::PathBuf>) -> Self {
+        self.security = self.security.with_git_metadata_write_guard(git_dirs);
+        self
     }
 
     /// Securely reads the contents of a file as a byte vector.
@@ -111,8 +157,7 @@ impl SecureFileManager {
         // Create parent directory if it doesn't exist
         if let Some(parent) = safe_path.parent() {
             if let Err(e) = fs::create_dir_all(parent).await {
-                error!("Failed to create parent directory {:?}: {}", parent, e);
-                return Err(format!("Failed to create parent directory: {e}"));
+                return Err(parent_dir_error(parent, &e));
             }
         }
 
@@ -290,8 +335,7 @@ impl SecureFileManager {
         // Create parent directory if it doesn't exist
         if let Some(parent) = dest_path.parent() {
             if let Err(e) = fs::create_dir_all(parent).await {
-                error!("Failed to create parent directory {:?}: {}", parent, e);
-                return Err(format!("Failed to create parent directory: {e}"));
+                return Err(parent_dir_error(parent, &e));
             }
         }
 
@@ -312,5 +356,80 @@ impl SecureFileManager {
     /// Returns a reference to the internal `SecurityValidator`.
     pub fn get_security_validator(&self) -> &SecurityValidator {
         &self.security
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    fn expected_file_ancestor_error(parent: &Path, file: &Path) -> String {
+        format!(
+            "Cannot create '{}': '{}' {PARENT_IS_FILE_MARKER}. Choose a path whose parent is a directory.",
+            parent.display(),
+            file.display()
+        )
+    }
+
+    #[tokio::test]
+    async fn write_file_reports_existing_file_ancestor() {
+        let dir = tempdir().unwrap();
+        let file = dir.path().join("server.py");
+        std::fs::write(&file, "print()").unwrap();
+        let manager = SecureFileManager::new_with_base_dir(dir.path().to_path_buf());
+
+        let target = file.join("nested").join("config.json");
+        let error = manager
+            .write_file(&target.to_string_lossy(), b"{}")
+            .await
+            .expect_err("write under a regular file must fail");
+
+        assert_eq!(
+            error,
+            expected_file_ancestor_error(target.parent().unwrap(), &file)
+        );
+    }
+
+    #[tokio::test]
+    async fn copy_file_from_external_reports_existing_file_ancestor() {
+        let dir = tempdir().unwrap();
+        let file = dir.path().join("server.py");
+        std::fs::write(&file, "print()").unwrap();
+        let source = dir.path().join("source.txt");
+        std::fs::write(&source, "data").unwrap();
+        let manager = SecureFileManager::new_with_base_dir(dir.path().to_path_buf());
+
+        let target = file.join("config.json");
+        let error = manager
+            .copy_file_from_external(&source, &target.to_string_lossy())
+            .await
+            .expect_err("copy under a regular file must fail");
+
+        assert_eq!(error, expected_file_ancestor_error(&file, &file));
+    }
+
+    #[test]
+    fn parent_dir_error_omits_locale_dependent_os_text() {
+        let dir = tempdir().unwrap();
+        let parent = dir.path().join("missing").join("child");
+        let os_error = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
+        let raw = std::io::Error::from_raw_os_error(13);
+
+        let message = parent_dir_error(&parent, &os_error);
+        assert_eq!(
+            message,
+            format!(
+                "Failed to create parent directory '{}': permission denied",
+                parent.display()
+            )
+        );
+
+        let raw_message = parent_dir_error(&parent, &raw);
+        assert!(
+            !raw_message.contains("os error"),
+            "raw OS text leaked into the message: {raw_message}"
+        );
+        assert!(raw_message.ends_with(&raw.kind().to_string()));
     }
 }

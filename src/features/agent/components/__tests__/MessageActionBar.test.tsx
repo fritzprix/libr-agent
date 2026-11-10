@@ -370,7 +370,7 @@ describe('MessageActionBar', () => {
     ).toBeDisabled();
   });
 
-  it('exports presentInteractive HTML as .html and hides PDF', async () => {
+  it('exports old interactive form HTML as .html and hides PDF', async () => {
     mockDownloadTextFile.mockResolvedValue('/tmp/Widget.html');
     mockSerializeForDownload.mockReturnValue('<p>Hi</p>\n');
 

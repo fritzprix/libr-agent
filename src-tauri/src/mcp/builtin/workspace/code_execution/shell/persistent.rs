@@ -3,13 +3,12 @@ use std::time::Duration;
 use tracing::{error, info, warn};
 
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHint, ToolGroup};
-use crate::mcp::types::MCPResult;
+use crate::mcp::types::{MCPContent, MCPResult};
 use crate::models::workspace_isolation::WorkspaceIsolationMode;
 use crate::repositories::SessionRepository;
 use crate::session_isolation::PathMappingLayer;
 
 use super::super::super::{utils, WorkspaceServer, PERSISTENT_SHELL_TOOL};
-use super::super::normalization;
 use super::input::ShellInput;
 use super::{format_command_io_message, format_duration_ms, truncate_sync_shell_stream};
 
@@ -19,6 +18,22 @@ impl WorkspaceServer {
     /// This method provides state preservation across commands (cd, export, venv)
     /// by reusing a single shell process per session.
     pub(crate) async fn execute_shell_persistent(
+        &self,
+        command: &str,
+        tool_name: &str,
+        timeout_secs: u64,
+        session_id: &str,
+    ) -> Result<MCPResult, String> {
+        let mut result = self
+            .execute_shell_persistent_once(command, tool_name, timeout_secs, session_id)
+            .await?;
+        if self.shell_manager.take_restart_notice(session_id).await {
+            prepend_result_note(&mut result, SHELL_RESTARTED_NOTE);
+        }
+        Ok(result)
+    }
+
+    async fn execute_shell_persistent_once(
         &self,
         command: &str,
         tool_name: &str,
@@ -40,9 +55,6 @@ impl WorkspaceServer {
             return Ok(result);
         }
 
-        // Normalize command
-        let normalized_command = normalization::normalize_shell_command(command);
-
         // Track execution time
         let execution_start = std::time::Instant::now();
         let cancellation_generation = self
@@ -55,11 +67,8 @@ impl WorkspaceServer {
 
         let execution_result = tokio::time::timeout(
             timeout_duration,
-            self.shell_manager.execute(
-                session_id.clone(),
-                workspace_path.clone(),
-                &normalized_command,
-            ),
+            self.shell_manager
+                .execute(session_id.clone(), workspace_path.clone(), command),
         )
         .await;
 
@@ -243,6 +252,7 @@ impl WorkspaceServer {
                     &session_id,
                     HashMap::new(), // Pass empty env vars for fallback
                     None,
+                    false, // `asRoot` is refused in dispatch for persistent shells.
                 )
                 .await
             }
@@ -254,7 +264,7 @@ impl WorkspaceServer {
                 );
 
                 // Cleanup: Terminate the stuck shell
-                if let Err(e) = self.shell_manager.terminate_shell(&session_id).await {
+                if let Err(e) = self.shell_manager.restart_shell(&session_id).await {
                     error!(
                         "Failed to terminate stuck shell for session {}: {}",
                         session_id, e
@@ -275,6 +285,28 @@ impl WorkspaceServer {
                 .to_mcp_result())
             }
         }
+    }
+}
+
+pub(crate) const SHELL_RESTARTED_NOTE: &str =
+    "The shell restarted. Shell state such as an activated venv or exported variables is lost.";
+
+/// Puts `note` in front of the first text block of `result`.
+pub(crate) fn prepend_result_note(result: &mut MCPResult, note: &str) {
+    let first_text = result.content.as_mut().and_then(|content| {
+        content.iter_mut().find_map(|item| match item {
+            MCPContent::Text { text } => Some(text),
+            _ => None,
+        })
+    });
+    match first_text {
+        Some(text) => *text = format!("{note}\n\n{text}"),
+        None => result.content.get_or_insert_with(Vec::new).insert(
+            0,
+            MCPContent::Text {
+                text: note.to_string(),
+            },
+        ),
     }
 }
 
@@ -345,5 +377,40 @@ fn display_relative_path(relative_cwd: &std::path::Path) -> String {
         relative_cwd.to_string()
     } else {
         format!(".{}{}", std::path::MAIN_SEPARATOR, relative_cwd)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn texts(result: &MCPResult) -> Vec<String> {
+        result
+            .content
+            .iter()
+            .flatten()
+            .filter_map(|item| match item {
+                MCPContent::Text { text } => Some(text.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn note_goes_in_front_of_the_first_text_block() {
+        let mut result = MCPResult::success("output");
+        prepend_result_note(&mut result, "note");
+        assert_eq!(texts(&result), vec!["note\n\noutput".to_string()]);
+    }
+
+    #[test]
+    fn note_becomes_the_only_block_when_there_is_no_content() {
+        let mut result = MCPResult {
+            content: None,
+            structured_content: None,
+            is_error: None,
+        };
+        prepend_result_note(&mut result, "note");
+        assert_eq!(texts(&result), vec!["note".to_string()]);
     }
 }

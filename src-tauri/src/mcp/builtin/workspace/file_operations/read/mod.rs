@@ -36,6 +36,23 @@ impl WorkspaceServer {
         args: Value,
         session_id: Option<String>,
     ) -> Result<MCPResult, String> {
+        let show_line_anchors = match parse_show_line_anchors(&args) {
+            Ok(arg) => arg,
+            Err(result) => return Ok(result),
+        };
+
+        let result = self
+            .handle_read_file_inner(args, session_id, show_line_anchors.value)
+            .await?;
+        Ok(show_line_anchors.annotate(result))
+    }
+
+    async fn handle_read_file_inner(
+        &self,
+        args: Value,
+        session_id: Option<String>,
+        show_line_anchors: bool,
+    ) -> Result<MCPResult, String> {
         // ✅ ENHANCED: Add proactive parameter validation before file operations
 
         // 1. Parameter existence and non-empty check
@@ -83,7 +100,6 @@ impl WorkspaceServer {
             Ok(size) => size,
             Err(result) => return Ok(result),
         };
-        let show_line_anchors = parse_show_line_anchors(&args);
 
         if let Some(sz) = size_opt {
             if sz == 0 {
@@ -215,6 +231,20 @@ impl WorkspaceServer {
             Ok(mut chunk) => {
                 info!("Successfully read file: {}", path_str);
 
+                let docker_session =
+                    crate::mcp::builtin::workspace::utils::is_session_docker_isolated(
+                        session_id.as_deref().unwrap_or(&self.session_id),
+                    )
+                    .await;
+                // Resolve `<skill-base-dir>` in skill files read through an alias, so the
+                // agent gets runnable commands instead of a placeholder it must translate.
+                let placeholder_resolved = skill_base::substitute_skill_base_dir(
+                    path_str,
+                    &safe_path,
+                    docker_session,
+                    &mut chunk.content,
+                );
+
                 // Get file metadata for stats
                 let total_size = fs::metadata(&safe_path)
                     .await
@@ -336,10 +366,8 @@ impl WorkspaceServer {
                 let text_message = match skill_base::skill_base_directory_note(
                     path_str,
                     &safe_path,
-                    crate::mcp::builtin::workspace::utils::is_session_docker_isolated(
-                        session_id.as_deref().unwrap_or(&self.session_id),
-                    )
-                    .await,
+                    docker_session,
+                    placeholder_resolved,
                 ) {
                     Some(note) => format!("{text_message}\n\n{note}"),
                     None => text_message,

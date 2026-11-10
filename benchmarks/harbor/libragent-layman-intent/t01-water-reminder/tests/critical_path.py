@@ -175,7 +175,12 @@ class Call:
 
 
 SCHEDULE_CALLBACK = (Step("__scheduleCallback"),)
-INSTALL_MCP = (Step("__registerServer"), Step("__verifyServer"))
+# registerServer saves the record even when the container check fails, so the retry
+# after installing the runtime is updateServer (a second register is a duplicate).
+INSTALL_MCP = (
+    Step("__registerServer", alternatives=(Step("__updateServer"),)),
+    Step("__verifyServer"),
+)
 # Catalog installs look the preset up first; direct npm installs (T07, T10) do not.
 INSTALL_MCP_FROM_CATALOG = (Step("__listServers", "catalog"), *INSTALL_MCP)
 

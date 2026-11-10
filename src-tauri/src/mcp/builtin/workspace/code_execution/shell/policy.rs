@@ -99,20 +99,6 @@ pub fn evaluate_shell_policy(context: ShellPolicyContext<'_>) -> ShellPolicyDeci
         };
     }
 
-    if !path_inspection.hard_approval_reasons.is_empty() {
-        let reason = path_inspection.hard_approval_reasons.join("; ");
-        return ShellPolicyDecision {
-            action: ShellPolicyAction::RequireHardApproval,
-            enforced_in_unsafe: false,
-            description: format!(
-                "Claude requested hard approval to run tool {}. Risk summary: {}.",
-                context.tool_name, reason
-            ),
-            input_preview: preview,
-            reason,
-        };
-    }
-
     let mut reasons = path_inspection.approval_reasons;
     if context.force_approval {
         reasons.push("shell command execution requires approval by policy".to_string());
@@ -150,7 +136,6 @@ pub fn evaluate_shell_policy(context: ShellPolicyContext<'_>) -> ShellPolicyDeci
 struct ShellPathInspection {
     blocked_reason: Option<String>,
     blocked_is_app_database: bool,
-    hard_approval_reasons: Vec<String>,
     approval_reasons: Vec<String>,
 }
 
@@ -166,7 +151,6 @@ fn inspect_command_paths(
         .unwrap_or_else(|| PathBuf::from("."));
     let mut shell_variables = build_initial_shell_variables(environment);
     let mut sensitive_path_cache = HashMap::new();
-    let mut hard_approval_reasons = Vec::new();
     let approval_reasons = Vec::new();
 
     if candidate_targets_sensitive_path(&cwd, &mut sensitive_path_cache) {
@@ -176,7 +160,6 @@ fn inspect_command_paths(
                 "current shell directory '{}' is protected",
                 cwd.display()
             )),
-            hard_approval_reasons,
             approval_reasons,
         };
     }
@@ -192,12 +175,6 @@ fn inspect_command_paths(
             continue;
         }
 
-        if let Some(reason) =
-            detect_unresolved_path_variable_usage(&executable_words, &shell_variables, &cwd)
-        {
-            hard_approval_reasons.push(reason);
-        }
-
         if let Some(next_cwd) = resolve_cd_target(&executable_words, &cwd, &shell_variables) {
             cwd = next_cwd;
             if candidate_targets_sensitive_path(&cwd, &mut sensitive_path_cache) {
@@ -207,7 +184,6 @@ fn inspect_command_paths(
                         "command changes into protected directory '{}'",
                         cwd.display()
                     )),
-                    hard_approval_reasons,
                     approval_reasons,
                 };
             }
@@ -219,7 +195,6 @@ fn inspect_command_paths(
                 return ShellPathInspection {
                     blocked_is_app_database: true,
                     blocked_reason: Some(app_database_block_reason(&matched)),
-                    hard_approval_reasons,
                     approval_reasons,
                 };
             }
@@ -233,16 +208,8 @@ fn inspect_command_paths(
                 return ShellPathInspection {
                     blocked_is_app_database: false,
                     blocked_reason: Some(reason),
-                    hard_approval_reasons,
                     approval_reasons,
                 };
-            }
-
-            if token_contains_glob(&word) {
-                hard_approval_reasons.push(format!(
-                    "command uses dynamic glob expansion in path-like token '{}'",
-                    word
-                ));
             }
 
             if let Some(candidate_path) = resolve_candidate_path(&word, &cwd, &shell_variables) {
@@ -254,7 +221,6 @@ fn inspect_command_paths(
                             word,
                             candidate_path.display()
                         )),
-                        hard_approval_reasons,
                         approval_reasons,
                     };
                 }
@@ -265,7 +231,6 @@ fn inspect_command_paths(
     ShellPathInspection {
         blocked_is_app_database: false,
         blocked_reason: None,
-        hard_approval_reasons,
         approval_reasons,
     }
 }
@@ -624,68 +589,6 @@ fn is_valid_shell_variable_name(name: &str) -> bool {
         && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
 }
 
-fn detect_unresolved_path_variable_usage(
-    words: &[String],
-    shell_variables: &HashMap<String, String>,
-    cwd: &Path,
-) -> Option<String> {
-    let command = words.first().map(|word| word.to_lowercase());
-
-    for (index, word) in words.iter().enumerate() {
-        let is_cd_target =
-            matches!(command.as_deref(), Some("cd" | "pushd" | "set-location")) && index <= 2;
-        if !token_uses_unresolved_path_variable(word, shell_variables) {
-            continue;
-        }
-
-        if is_cd_target || looks_like_relative_path(word) {
-            return Some(format!(
-                "command uses unresolved shell variable in path-like token '{}'",
-                word
-            ));
-        }
-
-        let trimmed = word.trim_matches(|ch| matches!(ch, '"' | '\'' | ',' | ';' | '(' | ')'));
-        if resolve_candidate_path(trimmed, cwd, shell_variables).is_none()
-            && (trimmed.contains('/') || trimmed.contains('\\'))
-        {
-            return Some(format!(
-                "command uses unresolved shell variable in path-like token '{}'",
-                word
-            ));
-        }
-    }
-
-    None
-}
-
-fn token_uses_unresolved_path_variable(
-    token: &str,
-    shell_variables: &HashMap<String, String>,
-) -> bool {
-    let trimmed = token.trim_matches(|ch| matches!(ch, '"' | '\'' | ',' | ';' | '(' | ')'));
-
-    if let Some(var_name) = trimmed
-        .strip_prefix("${")
-        .and_then(|rest| rest.split('}').next())
-    {
-        return !shell_variables.contains_key(var_name);
-    }
-
-    if let Some(var_name) = trimmed
-        .strip_prefix('$')
-        .and_then(extract_shell_variable_name)
-    {
-        return !shell_variables.contains_key(var_name);
-    }
-
-    if let Some(var_name) = extract_windows_variable_name(trimmed) {
-        return !shell_variables.contains_key(var_name);
-    }
-
-    false
-}
-
 fn app_database_block_reason(path: &Path) -> String {
     format!(
         "LibrAgent's own database ('{}') is protected: shell access to it (read, copy, link, replace) is not allowed by any method. Change MCP servers, agents, skills, and settings with the tool__* / agent__* tools instead",
@@ -777,10 +680,6 @@ fn extract_shell_variable_name(value: &str) -> Option<&str> {
         .last()
         .map(|(index, ch)| index + ch.len_utf8())?;
     value.get(..end)
-}
-
-fn extract_windows_variable_name(value: &str) -> Option<&str> {
-    extract_windows_variable_parts(value).map(|(name, _)| name)
 }
 
 fn extract_windows_variable_parts(value: &str) -> Option<(&str, &str)> {
@@ -885,4 +784,78 @@ fn strip_prefix_ignore_ascii_case<'a>(value: &'a str, prefix: &str) -> Option<&'
         .get(..prefix.len())
         .filter(|candidate| candidate.eq_ignore_ascii_case(prefix))
         .and_then(|_| value.get(prefix.len()..))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    fn evaluate(command: &str, force_approval: bool) -> ShellPolicyDecision {
+        let workspace = tempdir().expect("temp dir");
+        evaluate_shell_policy(ShellPolicyContext {
+            tool_name: "runShell",
+            command,
+            workspace_dir: Some(workspace.path()),
+            current_dir: None,
+            environment: None,
+            force_approval,
+        })
+    }
+
+    #[test]
+    fn special_status_parameter_does_not_trigger_hard_approval() {
+        for command in ["echo $?", "cmd; echo \"exit=$?\""] {
+            assert_eq!(
+                evaluate(command, false).action,
+                ShellPolicyAction::Allow,
+                "{command} should not require hard approval when force_approval is false"
+            );
+            assert_eq!(
+                evaluate(command, true).action,
+                ShellPolicyAction::RequireApproval,
+                "{command} should follow normal approval flow when force_approval is true"
+            );
+        }
+    }
+
+    #[test]
+    fn non_sensitive_globs_and_unset_variables_follow_normal_approval_flow() {
+        for command in ["ls *.rs", "rm -rf $UNSET/x"] {
+            assert_eq!(
+                evaluate(command, false).action,
+                ShellPolicyAction::Allow,
+                "{command} should allow when force_approval is false"
+            );
+            assert_eq!(
+                evaluate(command, true).action,
+                ShellPolicyAction::RequireApproval,
+                "{command} should require normal approval when force_approval is true"
+            );
+        }
+    }
+
+    #[test]
+    fn dynamic_shell_evaluation_still_requires_hard_approval() {
+        for command in ["cat $(echo x)", "echo `uname -a`", "eval x"] {
+            let decision = evaluate(command, false);
+            assert_eq!(
+                decision.action,
+                ShellPolicyAction::RequireHardApproval,
+                "{command} should still require hard approval"
+            );
+        }
+    }
+
+    #[test]
+    fn literal_destructive_commands_are_still_blocked() {
+        for command in ["rm -rf ~", "rm -rf /"] {
+            let decision = evaluate(command, false);
+            assert_eq!(
+                decision.action,
+                ShellPolicyAction::Block,
+                "{command} should still be blocked"
+            );
+        }
+    }
 }

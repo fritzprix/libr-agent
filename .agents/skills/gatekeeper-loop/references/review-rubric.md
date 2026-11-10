@@ -2,6 +2,21 @@
 
 Classify every finding. Code review and `changes-requested` verdicts proceed immediately regardless of CI status. Only **blocker** and **major** become required `G` items; **minor** and **nit** become `S` suggestions and never block approval.
 
+## Code quality score (100 points, informational)
+
+Every gatekeeper verdict comment (including `changes-requested`, `approve`, `clean`, and `escalate`) must include a `### Code quality score (informational)` section. The **approve / changes-requested / escalate / clean** decision is unchanged: it depends only on open required `G` findings (and the existing CI/merge rules for approve). **Never** withhold approval or request changes because the score is below a threshold.
+
+| Category | Points | What to judge |
+| -------- | -----: | ------------- |
+| Correctness incl. boundary conditions | 30 | Behavior matches intent; null/empty/error/edge paths; no logic bugs in changed code |
+| Tests exercise the real production code path | 20 | Tests hit the same modules/APIs users get—not only hand-built fixtures, stubs, or duplicated logic in the test file |
+| Simplicity (KISS/YAGNI) | 15 | No needless layers, abstractions, or heuristics beyond what the issue needs |
+| Readability and naming | 15 | Names and structure make the diff easy to follow |
+| Error handling and robustness | 10 | Failures are visible or handled; no silent fallbacks that hide errors |
+| Scope discipline | 10 | Diff stays on-issue; no drive-by refactors, formatter-only churn, or unrelated files |
+
+For each row, assign a partial score (0–max) and one bullet with a **single-line rationale** that cites at least one `file:line` from the reviewed diff (or state clearly if the category is fully satisfied with no changed lines, e.g. scope-only doc tweak). Sum the six items for **Total X/100**. Do **not** score CI green/red or PR description quality.
+
 | Severity | Examples                                                                                                                                                                                                                                                                      |
 | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | blocker  | Wrong behavior, data loss, security/privacy leak, broken build, failing or deleted tests, migration without rollback path, diagnosed CI failure caused by the PR                                                                                                              |
@@ -18,9 +33,9 @@ Classify every finding. Code review and `changes-requested` verdicts proceed imm
 5. **Security** — Tool approval/policy, filesystem/shell access, secrets in logs or previews, untrusted input handling. Security-sensitive PRs get `gatekeeper:needs-human` and an approve must list the bypass scenarios checked.
 6. **User-facing** — UI text follows i18n standards (ko/en), docs updated when behavior changes, bundled skill `.force_update` bumped when a bundled `SKILL.md` changes.
 7. **PR hygiene** — Semantic title, base is the latest `dev/<version>`, body has `Fixes #N` (closes on merge into `dev/*` too; partial work must use `Refs #N`) and a test plan that matches what was run.
-8. **CI vs Code Review** — 빌드와 테스트를 확인할 때 로컬에서 무겁게 다시 돌리지 말고 CI 결과를 본다. **단, CI는 코드 리뷰(diff 검토, 설계 분석, 인수 조건 충족, 에지 케이스)를 대신하지 않는다.** CI 통과 여부와 무관하게 코드 리뷰를 직접 수행하며, CI 녹색은 `approve`를 낼 때만 확인하는 조건이다. CI가 실패한 경우에도 로그를 분석하여 실패 원인과 구체적 수정 지침을 finding으로 보고한다.
+8. **CI vs Code Review** — Check build and test results in CI; do not re-run heavy test suites locally. **However, CI does not replace code review (diff inspection, design analysis, acceptance criteria satisfaction, edge cases).** Perform code review directly regardless of CI status. Green CI is only a condition for issuing an approve verdict. If CI fails, analyze failure logs and include root cause and specific fix guidance in findings.
 9. **Cross-platform** — New or changed tests/code touching paths, separators, shell, processes or permissions must pass on every OS job in CI (ubuntu, windows, macos). Read each job's result for the reviewed head; cancelled/skipped is not a pass. Reason about Windows path and quoting behavior in the diff itself, since CI may not have finished yet.
-10. **Stacked PRs** — Base가 `dev/*`가 아닌 스택 PR은 GitHub Actions CI가 트리거되지 않는다. `ciPending`을 무시하고 코드 리뷰를 진행하며, approve 시 *"CI는 retarget 후 확인 필요"*라는 조건을 명시한다.
+10. **Stacked PRs** — Stacked PRs whose base is not a dev branch (`dev/*`) do not trigger GitHub Actions CI. Review the code normally, but post at most `clean`; approve only after the PR is retargeted and CI is green at the head.
 
 ## Re-review discipline
 

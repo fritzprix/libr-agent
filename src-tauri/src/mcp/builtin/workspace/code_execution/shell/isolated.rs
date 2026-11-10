@@ -9,9 +9,9 @@ use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHi
 use crate::mcp::types::MCPResult;
 use crate::session_isolation::{IsolatedProcessConfig, IsolationLevel};
 
-use super::super::super::{
-    terminal_manager, utils, workspace_server, WorkspaceServer, PERSISTENT_SHELL_TOOL,
-};
+use super::super::super::persistent_shell::secrets::mask_secrets;
+use super::super::super::{terminal_manager, utils, workspace_server, WorkspaceServer};
+use super::super::interactive::interactive_shell::env_var_ref;
 use super::super::{process, validation};
 use super::input::ShellInput;
 use super::{format_command_io_message, format_duration_ms, truncate_sync_shell_stream};
@@ -28,6 +28,7 @@ impl WorkspaceServer {
         session_id: &str,
         mut env_vars: HashMap<String, String>,
         working_directory: Option<std::path::PathBuf>,
+        run_as_root: bool,
     ) -> Result<MCPResult, String> {
         let command = input.text();
         let session_id = session_id.to_string();
@@ -48,6 +49,8 @@ impl WorkspaceServer {
             return Ok(result);
         }
         utils::add_wake_url_env(&session_id, &mut env_vars).await;
+        let secrets = self.shell_manager.session_secrets(&session_id).await;
+        let logged_command = mask_secrets(command, &secrets);
 
         // Preserve for response JSON before moving into IsolatedProcessConfig.
         let reported_cwd = working_directory
@@ -116,6 +119,25 @@ impl WorkspaceServer {
         let stdout_path = process_tmp_dir.join("stdout");
         let stderr_path = process_tmp_dir.join("stderr");
 
+        let root_lease = if run_as_root {
+            match utils::begin_root_exec(&session_id).await {
+                Ok(lease) => Some(lease),
+                Err(message) => {
+                    return Ok(guided_error(
+                        ErrorCategory::InvalidState,
+                        message,
+                        ToolGroup::Workspace,
+                    )
+                    .guidance(vec![
+                        "Run the command again after the other asRoot command ends".to_string(),
+                    ])
+                    .to_mcp_result());
+                }
+            }
+        } else {
+            None
+        };
+
         let isolation_config = IsolatedProcessConfig {
             session_id: session_id.clone(),
             workspace_path: workspace_path.clone(),
@@ -123,8 +145,10 @@ impl WorkspaceServer {
             command: normalized_command,
             args: vec![],
             env_vars,
+            secrets,
             isolation_level,
             shell_type: None, // Default to platform default shell
+            run_as_root,
         };
 
         // Create isolated command
@@ -179,6 +203,14 @@ impl WorkspaceServer {
 
         {
             let mut registry = self.process_registry.write().await;
+            // Re-check under the write lock: terminate marks the flag before it
+            // sweeps the registry, so a registered entry cannot slip past it.
+            if self.is_session_terminated() {
+                return Err(
+                    crate::mcp::builtin::workspace::persistent_shell::manager::SESSION_TERMINATED_MESSAGE
+                        .to_string(),
+                );
+            }
             registry.entries.insert(process_id.clone(), entry.clone());
             registry
                 .cancellation_tokens
@@ -246,6 +278,37 @@ impl WorkspaceServer {
             )
             .await;
 
+            // The workspace must belong to the host user again before the result is visible.
+            let (restore_error, stop_note) = match root_lease {
+                Some(lease) => match lease.finish().await {
+                    Ok(stopped) => (None, crate::services::stopped_processes_note(stopped)),
+                    Err(error) => (Some(error), None),
+                },
+                None => (None, None),
+            };
+            if let Some(note) = &stop_note {
+                info!("Root command {}: {}", pid_copy, note);
+            }
+            let note = match &restore_error {
+                Some(error) => {
+                    error!("Root command {} cleanup failed: {}", pid_copy, error);
+                    Some(format!("LibrAgent: {error}"))
+                }
+                None => stop_note,
+            };
+            if let Some(note) = note {
+                let note = format!("\n{note}\n");
+                if let Ok(mut file) = tokio::fs::OpenOptions::new()
+                    .append(true)
+                    .create(true)
+                    .open(&stderr_path_for_task)
+                    .await
+                {
+                    use tokio::io::AsyncWriteExt;
+                    let _ = file.write_all(note.as_bytes()).await;
+                }
+            }
+
             let mut reg = registry.write().await;
             if let Some(entry) = reg.entries.get_mut(&pid_copy) {
                 match result {
@@ -259,11 +322,12 @@ impl WorkspaceServer {
                             terminal_manager::get_file_size(&stderr_path_for_task).await;
 
                         if entry.status != terminal_manager::ProcessStatus::Killed {
-                            entry.status = if exit_code.unwrap_or(-1) == 0 {
-                                terminal_manager::ProcessStatus::Finished
-                            } else {
-                                terminal_manager::ProcessStatus::Failed
-                            };
+                            entry.status =
+                                if exit_code.unwrap_or(-1) == 0 && restore_error.is_none() {
+                                    terminal_manager::ProcessStatus::Finished
+                                } else {
+                                    terminal_manager::ProcessStatus::Failed
+                                };
                         }
                     }
                     Err(e) => {
@@ -424,7 +488,7 @@ impl WorkspaceServer {
 
                 info!(
                     "Isolated shell command executed: {} (session: {}, status: {:?}, exit: {:?}, duration: {}ms)",
-                    command, session_id, entry.status, entry.exit_code, duration_ms
+                    logged_command, session_id, entry.status, entry.exit_code, duration_ms
                 );
 
                 if interrupted {
@@ -490,8 +554,9 @@ impl WorkspaceServer {
                     return Ok(SuccessHint::new(
                         enhanced_message,
                         vec![format!(
-                            "Rerun with {}(requireUserInput: true)",
-                            PERSISTENT_SHELL_TOOL
+                            "Rerun with a non-interactive flag, or store the value with {}(requireUserInput: true, storeAs: NAME) and read {}",
+                            tool_name,
+                            env_var_ref(tool_name, "NAME")
                         )],
                     )
                     .to_mcp_result_with_data(Some(response)));
@@ -516,7 +581,7 @@ impl WorkspaceServer {
 
                 warn!(
                     "Isolated shell command '{}' exceeded sync timeout after {} seconds; handing off to background process {}",
-                    command, timeout_secs, process_id
+                    logged_command, timeout_secs, process_id
                 );
 
                 let might_be_interactive = validation::is_likely_interactive_command(command);
@@ -545,8 +610,9 @@ impl WorkspaceServer {
                     next_actions.insert(
                         0,
                         format!(
-                            "If the command needed input, rerun it with {} and requireUserInput: true",
-                            PERSISTENT_SHELL_TOOL
+                            "If the command needed input, store it with {}(requireUserInput: true, storeAs: NAME) and read {}",
+                            tool_name,
+                            env_var_ref(tool_name, "NAME")
                         ),
                     );
                 }

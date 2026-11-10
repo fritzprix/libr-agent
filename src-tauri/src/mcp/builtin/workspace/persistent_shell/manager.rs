@@ -8,6 +8,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{debug, info, warn};
 
+use super::secrets::{forget_log_secrets, mask_secrets, register_log_secrets, SecretMap};
 use super::session::PersistentShell;
 use crate::models::workspace_isolation::WorkspaceIsolationMode;
 use crate::repositories::SessionRepository;
@@ -27,6 +28,35 @@ pub struct PersistentShellManager {
     /// session is cancelled while that command is running, the generation
     /// changes and the normal crash-recovery retry is suppressed.
     cancellation_generations: Arc<Mutex<HashMap<String, u64>>>,
+    /// Per-session state that outlives a single shell process.
+    session_states: Arc<Mutex<HashMap<String, SessionShellState>>>,
+    /// Set once the owning session is force-terminated (issue #2633).
+    /// A terminated manager refuses to create new shells.
+    terminated: Arc<std::sync::atomic::AtomicBool>,
+}
+
+/// Error returned when a tool call targets a force-terminated session (issue #2633).
+pub(crate) const SESSION_TERMINATED_MESSAGE: &str =
+    "Session was force-terminated; its tool session is closed. Start a new workflow (or resume) before calling tools.";
+
+#[derive(Default)]
+struct SessionShellState {
+    /// `storeAs` values, kept in memory only and dropped when the session ends.
+    secrets: SecretMap,
+    /// Directory to restore when the shell is created again after a restart.
+    restart_cwd: Option<String>,
+    /// The next tool result tells the agent that shell state was lost.
+    restart_notice: bool,
+}
+
+impl std::fmt::Debug for SessionShellState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SessionShellState")
+            .field("secret_names", &self.secrets.keys().collect::<Vec<_>>())
+            .field("restart_cwd", &self.restart_cwd)
+            .field("restart_notice", &self.restart_notice)
+            .finish()
+    }
 }
 
 #[derive(Debug)]
@@ -41,7 +71,106 @@ impl PersistentShellManager {
         Self {
             shells: Arc::new(Mutex::new(HashMap::new())),
             cancellation_generations: Arc::new(Mutex::new(HashMap::new())),
+            session_states: Arc::new(Mutex::new(HashMap::new())),
+            terminated: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
+    }
+
+    /// Bind this manager to the owning session's termination flag (issue #2633).
+    ///
+    /// The flag is set by `mark_session_terminated` during force terminate.
+    /// Once set, no new shells may be created for the session.
+    pub fn with_terminated_flag(mut self, terminated: Arc<std::sync::atomic::AtomicBool>) -> Self {
+        self.terminated = terminated;
+        self
+    }
+
+    /// Whether the owning session has been force-terminated.
+    pub fn is_session_terminated(&self) -> bool {
+        self.terminated.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Stores a session secret and restarts the shell so the next call sees it as `$name`.
+    pub async fn store_secret(
+        &self,
+        session_id: &str,
+        name: &str,
+        value: String,
+    ) -> Result<(), String> {
+        {
+            let mut states = self.session_states.lock().await;
+            let secrets = &mut states.entry(session_id.to_string()).or_default().secrets;
+            secrets.insert(name.to_string(), value);
+            register_log_secrets(session_id, secrets);
+        }
+        info!("Stored shell secret {} for session {}", name, session_id);
+        self.restart_shell(session_id).await
+    }
+
+    /// Ends the session's shell. The next call creates it again with the same
+    /// secrets and working directory.
+    pub async fn restart_shell(&self, session_id: &str) -> Result<(), String> {
+        let cwd = self.get_shell_cwd(session_id).await;
+        let result = self.terminate_shell(session_id).await;
+        if let Some(cwd) = cwd {
+            self.mark_restarted(session_id, cwd).await;
+        }
+        result
+    }
+
+    async fn mark_restarted(&self, session_id: &str, cwd: String) {
+        let mut states = self.session_states.lock().await;
+        let state = states.entry(session_id.to_string()).or_default();
+        state.restart_cwd = Some(cwd);
+        state.restart_notice = true;
+    }
+
+    /// Returns whether the shell was restarted since the last call, and clears the flag.
+    pub async fn take_restart_notice(&self, session_id: &str) -> bool {
+        self.session_states
+            .lock()
+            .await
+            .get_mut(session_id)
+            .is_some_and(|state| std::mem::take(&mut state.restart_notice))
+    }
+
+    /// Drops the session's secrets. Call when the session ends.
+    pub async fn clear_session_state(&self, session_id: &str) {
+        self.session_states.lock().await.remove(session_id);
+        forget_log_secrets(session_id);
+    }
+
+    /// The session's `storeAs` values, for the env of a shell this session spawns.
+    pub async fn session_secrets(&self, session_id: &str) -> SecretMap {
+        self.session_states
+            .lock()
+            .await
+            .get(session_id)
+            .map(|state| state.secrets.clone())
+            .unwrap_or_default()
+    }
+
+    /// Replaces each stored value of the session in `text` with `***`.
+    pub async fn mask_for_session(&self, session_id: &str, text: &str) -> String {
+        let secrets = self.session_secrets(session_id).await;
+        mask_secrets(text, &secrets)
+    }
+
+    async fn mask_output(
+        &self,
+        session_id: &str,
+        (stdout, stderr, exit_code, cwd): (String, String, i32, String),
+    ) -> (String, String, i32, String) {
+        let secrets = self.session_secrets(session_id).await;
+        if secrets.is_empty() {
+            return (stdout, stderr, exit_code, cwd);
+        }
+        (
+            mask_secrets(&stdout, &secrets),
+            mask_secrets(&stderr, &secrets),
+            exit_code,
+            cwd,
+        )
     }
 
     /// Returns the number of shells currently managed.
@@ -58,6 +187,9 @@ impl PersistentShellManager {
         session_id: String,
         workspace_path: std::path::PathBuf,
     ) -> Result<Arc<Mutex<PersistentShell>>, String> {
+        if self.is_session_terminated() {
+            return Err(SESSION_TERMINATED_MESSAGE.to_string());
+        }
         if let Some(shell) = self
             .shells
             .lock()
@@ -84,7 +216,8 @@ impl PersistentShellManager {
         #[cfg(windows)]
         let shell_type = ShellType::PowerShell; // Default to PowerShell on Windows
 
-        let shell = if let Some(session_repo) = crate::state::try_get_session_repository() {
+        let secrets = self.session_secrets(&session_id).await;
+        let mut shell = if let Some(session_repo) = crate::state::try_get_session_repository() {
             match session_repo
                 .get_session(&session_id)
                 .await
@@ -93,7 +226,7 @@ impl PersistentShellManager {
                 Some(session) if session.workspace_isolation == WorkspaceIsolationMode::Docker => {
                     let spawned_shell =
                         crate::services::WorkspaceRuntimeManager::spawn_docker_persistent_shell(
-                            &session,
+                            &session, &secrets,
                         )
                         .await
                         .map_err(|error| error.to_string())?;
@@ -101,19 +234,48 @@ impl PersistentShellManager {
                         .await
                         .map_err(|e| format!("Failed to create Docker shell: {e}"))?
                 }
-                _ => PersistentShell::new(session_id.clone(), workspace_path, shell_type)
-                    .await
-                    .map_err(|e| format!("Failed to create shell: {e}"))?,
+                _ => PersistentShell::new_with_env(
+                    session_id.clone(),
+                    workspace_path,
+                    shell_type,
+                    &secrets,
+                )
+                .await
+                .map_err(|e| format!("Failed to create shell: {e}"))?,
             }
         } else {
-            PersistentShell::new(session_id.clone(), workspace_path, shell_type)
+            PersistentShell::new_with_env(session_id.clone(), workspace_path, shell_type, &secrets)
                 .await
                 .map_err(|e| format!("Failed to create shell: {e}"))?
         };
 
+        let restart_cwd = self
+            .session_states
+            .lock()
+            .await
+            .get_mut(&session_id)
+            .and_then(|state| state.restart_cwd.take());
+        if let Some(cwd) = restart_cwd {
+            if let Err(error) = shell.change_directory(&cwd).await {
+                warn!(
+                    "Restarted shell for session {} stays in its start directory: {}",
+                    session_id, error
+                );
+            }
+        }
+
         let shell_arc = Arc::new(Mutex::new(shell));
         let shell_pid = shell_arc.lock().await.pid();
         let mut shells = self.shells.lock().await;
+        if self.is_session_terminated() {
+            // Terminate raced with shell creation. Drop the shell (its Drop impl
+            // kills the child) and refuse to register it.
+            debug!(
+                "Refusing to register a shell for terminated session: {}",
+                session_id
+            );
+            return Err(SESSION_TERMINATED_MESSAGE.to_string());
+        }
         if let Some(existing) = shells.get(&session_id) {
             let existing_shell = existing.shell.clone();
             drop(shells);
@@ -147,7 +309,7 @@ impl PersistentShellManager {
         let cancellation_generation = self.cancellation_generation(&session_id).await;
 
         // Try to execute with retry on failure
-        match self
+        let result = match self
             .execute_internal(session_id.clone(), workspace_path.clone(), command)
             .await
         {
@@ -168,10 +330,11 @@ impl PersistentShellManager {
                 self.remove_shell(&session_id).await;
 
                 // Retry once with new shell
-                self.execute_internal(session_id, workspace_path, command)
+                self.execute_internal(session_id.clone(), workspace_path, command)
                     .await
             }
-        }
+        }?;
+        Ok(self.mask_output(&session_id, result).await)
     }
 
     /// Internal execute helper (no retry logic)
@@ -188,78 +351,6 @@ impl PersistentShellManager {
             .execute(command)
             .await
             .map_err(|e| format!("Shell execution failed: {e}"))
-    }
-
-    /// Execute command with user input (Two-Tool Pattern)
-    ///
-    /// Injects user input via stdin before executing command.
-    /// Used for interactive commands like sudo.
-    pub async fn execute_with_input(
-        &self,
-        session_id: String,
-        workspace_path: std::path::PathBuf,
-        command: &str,
-        user_input: &str,
-        stdin_delivery: crate::mcp::builtin::workspace::StdinDelivery,
-    ) -> Result<(String, String, i32, String), String> {
-        let cancellation_generation = self.cancellation_generation(&session_id).await;
-
-        // Try with retry on failure
-        match self
-            .execute_with_input_internal(
-                session_id.clone(),
-                workspace_path.clone(),
-                command,
-                user_input,
-                stdin_delivery,
-            )
-            .await
-        {
-            Ok(result) => Ok(result),
-            Err(e) => {
-                warn!(
-                    "Shell execution with input failed for session {}: {}. Attempting recovery...",
-                    session_id, e
-                );
-
-                if self.cancellation_generation(&session_id).await != cancellation_generation {
-                    return Err(format!(
-                        "Shell execution with input cancelled for session {session_id}"
-                    ));
-                }
-
-                // Remove dead shell
-                self.remove_shell(&session_id).await;
-
-                // Retry once with new shell
-                self.execute_with_input_internal(
-                    session_id,
-                    workspace_path,
-                    command,
-                    user_input,
-                    stdin_delivery,
-                )
-                .await
-            }
-        }
-    }
-
-    /// Internal execute with input helper (no retry logic)
-    async fn execute_with_input_internal(
-        &self,
-        session_id: String,
-        workspace_path: std::path::PathBuf,
-        command: &str,
-        user_input: &str,
-        stdin_delivery: crate::mcp::builtin::workspace::StdinDelivery,
-    ) -> Result<(String, String, i32, String), String> {
-        let shell = self.get_or_create_shell(session_id, workspace_path).await?;
-        let mut shell_guard = shell.lock().await;
-
-        shell_guard
-            .execute_with_input(command, user_input, stdin_delivery)
-            .await
-            .map_err(|e| format!("Shell execution with input failed: {e}"))
     }
 
     /// Get the current working directory for a session's persistent shell
@@ -404,5 +495,52 @@ impl PersistentShellManager {
 impl Default for PersistentShellManager {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn restart_keeps_cwd_and_notifies_once() {
+        let manager = PersistentShellManager::new();
+        manager.mark_restarted("s1", "/work/sub".to_string()).await;
+
+        let restart_cwd = manager
+            .session_states
+            .lock()
+            .await
+            .get("s1")
+            .and_then(|state| state.restart_cwd.clone());
+        assert_eq!(restart_cwd.as_deref(), Some("/work/sub"));
+        assert!(manager.take_restart_notice("s1").await);
+        assert!(!manager.take_restart_notice("s1").await);
+    }
+
+    #[tokio::test]
+    async fn storing_a_secret_without_a_shell_sets_no_notice() {
+        let manager = PersistentShellManager::new();
+        manager
+            .store_secret("s1", "API_TOKEN", "t0ken".to_string())
+            .await
+            .unwrap();
+        assert!(!manager.take_restart_notice("s1").await);
+        assert_eq!(
+            manager.session_secrets("s1").await.get("API_TOKEN"),
+            Some(&"t0ken".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn clearing_session_state_drops_secrets() {
+        let manager = PersistentShellManager::new();
+        manager
+            .store_secret("s1", "API_TOKEN", "t0ken".to_string())
+            .await
+            .unwrap();
+        manager.clear_session_state("s1").await;
+        assert!(manager.session_secrets("s1").await.is_empty());
+        assert!(!manager.take_restart_notice("s1").await);
     }
 }

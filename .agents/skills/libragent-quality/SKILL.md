@@ -22,13 +22,13 @@ It also runs `pnpm lockfile:check` (`pnpm install --frozen-lockfile`) to match C
 
 ## Package Manager Pin
 
-- `package.json` declares `"packageManager": "pnpm@9.15.9"` and `"engines.pnpm": "9.15.9"`.
+- `package.json` is the source of truth: it declares the pinned version in `"packageManager"` and `"engines.pnpm"`. Read the current pin from `package.json` instead of hardcoding it here.
 - Before every install, `scripts/enforce-pnpm-version.cjs` rejects other pnpm versions (for example pnpm 11 regenerating the lockfile without `overrides`).
 - Local setup:
 
 ```bash
 corepack enable
-corepack prepare pnpm@9.15.9 --activate
+corepack prepare "pnpm@$(node -p "require('./package.json').packageManager.split('@')[1]")" --activate
 pnpm install --frozen-lockfile
 ```
 

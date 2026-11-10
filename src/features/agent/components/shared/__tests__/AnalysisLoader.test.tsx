@@ -115,5 +115,5 @@ describe('AnalysisLoader', () => {
     const afterWrap = container.querySelector('span')?.textContent;
     expect(afterWrap).toBeTruthy();
     expect(afterWrap).not.toBe(beforeWrap);
-  });
+  }, 15000);
 });

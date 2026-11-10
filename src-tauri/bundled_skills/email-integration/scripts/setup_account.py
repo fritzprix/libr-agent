@@ -2,25 +2,19 @@
 """
 Email account setup for LibrAgent email-integration skill.
 
-Supports both:
-1. Interactive terminal setup for direct manual use
-2. Argument-driven setup for agent workflows that can only collect one hidden prompt
+The password is always read from the environment variable named by --password-env.
 
-Preferred agent flow:
-  - Collect email address and any custom server overrides outside the script
-  - Collect the password through a single hidden shell prompt in a first shell call
-  - Run setup_account.py in a second visible shell call with --password-env so
-    non-secret diagnostics remain visible to the agent
+Agent flow:
+  - Collect the email address and any custom server overrides in chat
+  - Run setup_account.py in one shell call with requireUserInput=true and
+    storeAs="LIBRAGENT_EMAIL_PASSWORD", passing --password-env LIBRAGENT_EMAIL_PASSWORD
 
 Usage:
-    python setup_account.py                         # Interactive wizard
-    python setup_account.py --reset                # Interactive reset
     python setup_account.py --email user@gmail.com --use-preset-servers \
       --password-env LIBRAGENT_EMAIL_PASSWORD
 """
 
 import argparse
-import getpass
 import imaplib
 import json
 import os
@@ -185,51 +179,25 @@ def server_from_preset(preset: dict) -> dict:
 
 
 def sanitize_secret(value: str) -> str:
-    """Strip whitespace and leading UTF-8 BOM injected by Windows pipes.
-
-    PowerShell 5.1 `$OutputEncoding = [System.Text.Encoding]::UTF8` prepends
-    U+FEFF to native stdin. str.strip() does not remove U+FEFF, so secrets
-    hashed or stored with a leading BOM are rejected by upstream services.
-    """
+    """Strip whitespace and any leading UTF-8 BOM (str.strip() keeps U+FEFF)."""
     cleaned = value.strip()
     while cleaned.startswith("\ufeff"):
         cleaned = cleaned.lstrip("\ufeff").strip()
     return cleaned
 
 
-def read_password_from_stdin() -> str:
-    """Read the entire stdin stream and trim the trailing line ending."""
-    password = sanitize_secret(sys.stdin.read().rstrip("\r\n"))
+def resolve_password(args: argparse.Namespace) -> str:
+    """Load the password from the environment variable named by --password-env."""
+    env_name = args.password_env or "LIBRAGENT_EMAIL_PASSWORD"
+    password = sanitize_secret(os.environ.get(env_name, ""))
     if not password:
-        fail("Password stdin was empty.")
+        fail(
+            f"Environment variable '{env_name}' is empty or unset. "
+            f"Ask for the password with requireUserInput=true and storeAs=\"{env_name}\", "
+            f"then run setup again with --password-env {env_name}.",
+            exit_code=3,
+        )
     return password
-
-
-def resolve_password(args: argparse.Namespace, interactive: bool) -> str:
-    """Load password from env/stdin or interactive getpass."""
-    if args.password_env and args.password_stdin:
-        fail("Use only one of --password-env or --password-stdin.")
-
-    if args.password_env:
-        password = os.environ.get(args.password_env)
-        if password is None:
-            fail(f"Environment variable '{args.password_env}' was not set.")
-        password = sanitize_secret(password)
-        if not password:
-            fail(f"Environment variable '{args.password_env}' is empty.")
-        return password
-
-    if args.password_stdin:
-        return read_password_from_stdin()
-
-    if interactive:
-        password = getpass.getpass("Password (input hidden): ")
-        if not password:
-            fail("Password cannot be empty.")
-        return password
-
-    fail("Password required. Use --password-env or --password-stdin.")
-    return ""
 
 
 def prompt_server_settings(preset: dict | None) -> dict:
@@ -396,7 +364,7 @@ def run_setup(args: argparse.Namespace) -> None:
     server = resolve_server_settings(args, email, interactive)
 
     print()
-    password = resolve_password(args, interactive)
+    password = resolve_password(args)
 
     print()
     print(f"  Testing IMAP connection to {server['imap_host']}:{server['imap_port']} ...")
@@ -462,12 +430,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--smtp-port", type=int, help="Override SMTP port")
     parser.add_argument(
         "--password-env",
-        help="Read the password from the named environment variable",
-    )
-    parser.add_argument(
-        "--password-stdin",
-        action="store_true",
-        help="Read the password from stdin",
+        help="Environment variable name holding the password (default: LIBRAGENT_EMAIL_PASSWORD)",
     )
     return parser
 

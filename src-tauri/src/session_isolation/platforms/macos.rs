@@ -38,6 +38,7 @@ pub async fn create_high_isolated_command(
 
     // Apply environment isolation
     cmd.env_clear();
+    cmd.envs(&config.secrets);
     for (k, v) in crate::utils::env::get_isolated_env() {
         cmd.env(k, v);
     }

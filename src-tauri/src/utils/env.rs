@@ -212,6 +212,60 @@ pub fn strip_windows_apps_shim_dirs(path: &str) -> String {
 /// Returns a list of environment variables that are safe to pass to external processes
 /// (whitelisted essential system variables), preventing the leakage of host secrets.
 pub fn get_isolated_env() -> Vec<(String, String)> {
+    let mut envs: Vec<(String, String)> = std::env::vars()
+        .filter(|(key, _)| is_isolated_env_name(key))
+        .collect();
+
+    let effective_path = {
+        #[cfg(windows)]
+        {
+            strip_windows_apps_shim_dirs(&get_effective_path())
+        }
+        #[cfg(not(windows))]
+        {
+            get_effective_path()
+        }
+    };
+    if let Some(entry) = envs
+        .iter_mut()
+        .find(|(k, _)| k.eq_ignore_ascii_case("PATH"))
+    {
+        entry.1 = effective_path;
+    } else {
+        envs.push(("PATH".to_string(), effective_path));
+    }
+
+    // Python on Windows defaults to the ANSI code page (e.g. CP949). UTF-8 mode
+    // keeps stdin/stdout aligned with the PowerShell UTF-8 pipe (PEP 540).
+    #[cfg(windows)]
+    {
+        envs.retain(|(key, _)| !key.eq_ignore_ascii_case("PYTHONUTF8"));
+        envs.push(("PYTHONUTF8".to_string(), "1".to_string()));
+    }
+
+    envs
+}
+
+/// Returns the effective PATH that will be passed to a child process,
+/// taking into account user configuration overrides and isolated system PATH.
+pub fn get_child_path_from_config(
+    custom_env: &std::collections::HashMap<String, String>,
+) -> String {
+    if let Some((_, custom_path)) = custom_env
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("PATH"))
+    {
+        return custom_path.clone();
+    }
+    get_isolated_env()
+        .into_iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("PATH"))
+        .map(|(_, v)| v)
+        .unwrap_or_default()
+}
+
+/// Whether `key` is a host variable that [`get_isolated_env`] passes to child processes.
+pub fn is_isolated_env_name(key: &str) -> bool {
     #[cfg(windows)]
     let platform_preserved = [
         "SystemRoot",
@@ -261,69 +315,32 @@ pub fn get_isolated_env() -> Vec<(String, String)> {
 
     let dynamic_exact = ["PYTHONPATH", "VIRTUAL_ENV"];
 
-    let mut envs = Vec::new();
-    for (key, value) in std::env::vars() {
-        let is_preserved = {
-            #[cfg(windows)]
-            {
-                common_preserved
-                    .iter()
-                    .any(|&p| p.eq_ignore_ascii_case(&key))
-                    || platform_preserved
-                        .iter()
-                        .any(|&p| p.eq_ignore_ascii_case(&key))
-                    || dynamic_exact.iter().any(|&p| p.eq_ignore_ascii_case(&key))
-                    || dynamic_prefixes
-                        .iter()
-                        .any(|&p| key.len() >= p.len() && key[..p.len()].eq_ignore_ascii_case(p))
-            }
-            #[cfg(not(windows))]
-            {
-                common_preserved.contains(&key.as_str())
-                    || platform_preserved.contains(&key.as_str())
-                    || dynamic_exact.contains(&key.as_str())
-                    || dynamic_prefixes.iter().any(|&p| key.starts_with(p))
-            }
-        };
-
-        // XDG_RUNTIME_DIR exposes live D-Bus / Wayland sockets under /run/user/<uid>;
-        // isolated processes have no business accessing them.
-        if is_preserved
-            || key.starts_with("LC_")
-            || (key.starts_with("XDG_") && key != "XDG_RUNTIME_DIR")
-        {
-            envs.push((key, value));
-        }
-    }
-
-    let effective_path = {
+    let is_preserved = {
         #[cfg(windows)]
         {
-            strip_windows_apps_shim_dirs(&get_effective_path())
+            common_preserved
+                .iter()
+                .any(|&p| p.eq_ignore_ascii_case(key))
+                || platform_preserved
+                    .iter()
+                    .any(|&p| p.eq_ignore_ascii_case(key))
+                || dynamic_exact.iter().any(|&p| p.eq_ignore_ascii_case(key))
+                || dynamic_prefixes
+                    .iter()
+                    .any(|&p| key.len() >= p.len() && key[..p.len()].eq_ignore_ascii_case(p))
         }
         #[cfg(not(windows))]
         {
-            get_effective_path()
+            common_preserved.contains(&key)
+                || platform_preserved.contains(&key)
+                || dynamic_exact.contains(&key)
+                || dynamic_prefixes.iter().any(|&p| key.starts_with(p))
         }
     };
-    if let Some(entry) = envs
-        .iter_mut()
-        .find(|(k, _)| k.eq_ignore_ascii_case("PATH"))
-    {
-        entry.1 = effective_path;
-    } else {
-        envs.push(("PATH".to_string(), effective_path));
-    }
 
-    // Python on Windows defaults to the ANSI code page (e.g. CP949). UTF-8 mode
-    // keeps stdin/stdout aligned with the PowerShell UTF-8 pipe (PEP 540).
-    #[cfg(windows)]
-    {
-        envs.retain(|(key, _)| !key.eq_ignore_ascii_case("PYTHONUTF8"));
-        envs.push(("PYTHONUTF8".to_string(), "1".to_string()));
-    }
-
-    envs
+    // XDG_RUNTIME_DIR exposes live D-Bus / Wayland sockets under /run/user/<uid>;
+    // isolated processes have no business accessing them.
+    is_preserved || key.starts_with("LC_") || (key.starts_with("XDG_") && key != "XDG_RUNTIME_DIR")
 }
 
 /// Scrubs the environment of the given command and applies the safe, isolated whitelist.

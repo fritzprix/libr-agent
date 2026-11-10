@@ -4,6 +4,7 @@ use super::utils::{format_file_diff, format_string_diff};
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, not_found_error, ErrorCategory, SuccessHint, ToolGroup,
 };
+use crate::mcp::builtin::utils::read_bool_arg;
 use crate::mcp::types::MCPResult;
 use serde_json::Value;
 use std::path::Path;
@@ -215,6 +216,23 @@ impl WorkspaceServer {
         args: Value,
         session_id: Option<String>,
     ) -> Result<MCPResult, String> {
+        let replace_all = match read_bool_arg(&args, "replace_all", false, ToolGroup::Workspace) {
+            Ok(arg) => arg,
+            Err(result) => return Ok(result),
+        };
+
+        let result = self
+            .handle_str_replace_inner(args, session_id, replace_all.value)
+            .await?;
+        Ok(replace_all.annotate(result))
+    }
+
+    async fn handle_str_replace_inner(
+        &self,
+        args: Value,
+        session_id: Option<String>,
+        replace_all: bool,
+    ) -> Result<MCPResult, String> {
         let path_str = match args.get("path").and_then(|value| value.as_str()) {
             Some(path) if !path.trim().is_empty() => path.trim(),
             Some(_) => {
@@ -266,11 +284,6 @@ impl WorkspaceServer {
             Some(value) => value,
             None => return Ok(missing_param_error("new_string", ToolGroup::Workspace)),
         };
-
-        let replace_all = args
-            .get("replace_all")
-            .and_then(|value| value.as_bool())
-            .unwrap_or(false);
 
         let target_session_id = session_id
             .clone()

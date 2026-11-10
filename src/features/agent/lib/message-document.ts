@@ -8,12 +8,12 @@ export type MessageDocumentExportKind = 'markdown' | 'html';
 export interface ResolvedMessageDocument {
   /**
    * Document for primary copy / markdown export
-   * (composed reportResult fields, or presentInteractive source).
+   * (composed reportResult fields, or the source of an old interactive form).
    */
   content: string;
   fileBaseName: string;
   exportKind: MessageDocumentExportKind;
-  source: 'reportResult' | 'presentInteractive';
+  source: 'reportResult' | 'legacyInteractive';
 }
 
 type ResourceLike = {
@@ -23,7 +23,6 @@ type ResourceLike = {
     mimeType?: string;
     text?: string;
   };
-  serviceInfo?: { toolName?: string };
 };
 
 function asResourceItem(item: MCPContent): ResourceLike | null {
@@ -52,9 +51,10 @@ function tryReportResultDocument(
 }
 
 /**
- * Pull presentInteractive source from the embedded `#raw-data` JSON blob.
+ * Pull the source of an old interactive form (removed `ui__presentInteractive`
+ * tool) from its embedded `#raw-data` JSON blob. Read-only: old transcripts.
  */
-export function extractPresentInteractiveRawData(html: string): string | null {
+export function extractLegacyInteractiveRawData(html: string): string | null {
   const match = html.match(
     /<script[^>]*\bid=["']raw-data["'][^>]*>([\s\S]*?)<\/script>/i,
   );
@@ -69,7 +69,7 @@ export function extractPresentInteractiveRawData(html: string): string | null {
   }
 }
 
-function extractPresentInteractiveTitle(html: string): string | null {
+function extractLegacyInteractiveTitle(html: string): string | null {
   const match = html.match(
     /<div[^>]*\bid=["']content-title["'][^>]*>([\s\S]*?)<\/div>/i,
   );
@@ -80,7 +80,7 @@ function extractPresentInteractiveTitle(html: string): string | null {
   return title || null;
 }
 
-function tryPresentInteractiveDocument(
+function tryLegacyInteractiveDocument(
   content: MCPContent[],
 ): ResolvedMessageDocument | null {
   for (const item of content) {
@@ -90,16 +90,15 @@ function tryPresentInteractiveDocument(
     }
     const html = resourceItem.resource.text;
     const uri = resourceItem.resource.uri ?? '';
-    const toolName = resourceItem.serviceInfo?.toolName ?? '';
+    // Every old template output had this URI or the raw-data block, so no tool-name check is needed.
     const isInteractive =
       uri.startsWith('ui://interactive/') ||
-      toolName === 'presentInteractive' ||
       html.includes("id='raw-data'") ||
       html.includes('id="raw-data"');
     if (!isInteractive) {
       continue;
     }
-    const raw = extractPresentInteractiveRawData(html);
+    const raw = extractLegacyInteractiveRawData(html);
     if (!raw?.trim()) {
       continue;
     }
@@ -108,10 +107,9 @@ function tryPresentInteractiveDocument(
     const body = raw.endsWith('\n') ? raw : `${raw}\n`;
     return {
       content: body,
-      fileBaseName:
-        extractPresentInteractiveTitle(html) || 'present-interactive',
+      fileBaseName: extractLegacyInteractiveTitle(html) || 'interactive',
       exportKind: isMarkdown ? 'markdown' : 'html',
-      source: 'presentInteractive',
+      source: 'legacyInteractive',
     };
   }
   return null;
@@ -182,12 +180,12 @@ function tryDocumentFromToolResult(
 ): ResolvedMessageDocument | null {
   return (
     tryReportResultDocument(getToolStructuredContent(toolResult)) ??
-    tryPresentInteractiveDocument(toolResult.content ?? [])
+    tryLegacyInteractiveDocument(toolResult.content ?? [])
   );
 }
 
 /**
- * Prefer UI tool document bodies (reportResult / presentInteractive) over
+ * Prefer UI tool document bodies (reportResult / old interactive forms) over
  * plain message text so MessageActionBar copy/export matches what the user sees.
  *
  * Boundary: only this bubble's tool_calls / displayContent ids — never other
@@ -231,5 +229,5 @@ export function resolveMessageDocument(
   }
 
   const content = options.displayContent ?? message.content ?? [];
-  return tryPresentInteractiveDocument(content);
+  return tryLegacyInteractiveDocument(content);
 }

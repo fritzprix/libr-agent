@@ -4,7 +4,7 @@ use super::super::session_isolation_config::SessionIsolationConfig;
 use super::background_discovery::{spawn_background_tool_loading, BackgroundDiscoveryPlan};
 use super::proxy_config::{
     apply_startup_timeout_settings, decide_existing_proxy_disposition,
-    load_requested_server_configs, ExistingProxyDisposition,
+    load_requested_server_configs, mask_server_secrets, ExistingProxyDisposition,
 };
 use super::runtime_updates::{
     apply_config_load_failed, apply_http_connecting, apply_loading_tool_config,
@@ -94,6 +94,7 @@ async fn cleanup_session_resources(manager: &MCPServiceProxyManager, session_id:
         .write()
         .await
         .remove(session_id);
+    manager.server_retry_states.clear_session(session_id).await;
     if let Some(old_mgr) = manager
         .session_stdio_managers
         .write()
@@ -207,9 +208,11 @@ impl MCPServiceProxyManager {
             creation_guards: Arc::new(Mutex::new(HashMap::new())),
             runtime_states: Arc::new(RwLock::new(HashMap::new())),
             session_server_configs: Arc::new(RwLock::new(HashMap::new())),
+            server_retry_states: Default::default(),
             process_cancel_pending: Arc::new(Mutex::new(std::collections::HashSet::new())),
-            process_cancel_retry_states: Arc::new(Mutex::new(HashMap::new())),
-            process_cancel_retry_counts: Arc::new(Mutex::new(HashMap::new())),
+            teardown_fenced: Arc::new(Mutex::new(std::collections::HashMap::new())),
+            #[cfg(test)]
+            lazy_creation_holds: Arc::new(Mutex::new(std::collections::HashMap::new())),
         };
 
         manager.start_cleanup_task();
@@ -319,7 +322,12 @@ impl MCPServiceProxyManager {
                     // Re-entering a session retries its failed servers (not the ones that are
                     // still starting in the background).
                     if let Err(error) = self
-                        .retry_failed_servers(&session_id, None, app_handle.as_ref())
+                        .retry_failed_servers(
+                            &session_id,
+                            None,
+                            super::retry_policy::RetryTrigger::Automatic,
+                            app_handle.as_ref(),
+                        )
                         .await
                     {
                         log::warn!(
@@ -459,12 +467,21 @@ impl MCPServiceProxyManager {
 
         if !loaded.http_configs.is_empty() {
             let http_startup_start = Instant::now();
-            let http_startup_results = start_http_servers_in_parallel(
+            let mut http_startup_results = start_http_servers_in_parallel(
                 &http_manager,
                 &loaded.http_configs,
                 tool_discovery_timeout,
             )
             .await;
+            for startup_result in &mut http_startup_results {
+                if let Err(error_message) = &mut startup_result.outcome {
+                    *error_message = mask_server_secrets(
+                        &loaded.secret_values,
+                        &startup_result.server_name,
+                        error_message,
+                    );
+                }
+            }
             http_startup_ms = http_startup_start.elapsed().as_millis();
             let update_result = update_runtime_state_store(
                 &self.runtime_states,
@@ -566,6 +583,7 @@ impl MCPServiceProxyManager {
                     stdio_configs: loaded.stdio_configs,
                     http_configs: loaded.http_configs,
                     server_name_to_id: loaded.server_name_to_id,
+                    secret_values: loaded.secret_values,
                     tool_discovery_timeout,
                     app_handle: app_handle.clone(),
                 },

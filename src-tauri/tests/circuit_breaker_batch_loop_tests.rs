@@ -13,7 +13,8 @@ use std::sync::{atomic::AtomicBool, Arc};
 use tauri_mcp_agent_lib::agent::context::registry::ContextRegistry;
 use tauri_mcp_agent_lib::agent::llm::circuit_breaker::{
     batch_fingerprint, evaluate_batch_circuit_breaker, find_intra_batch_duplicates,
-    normalize_tool_arguments, CircuitBreakerAction,
+    normalize_tool_arguments, CircuitBreakerAction, WaitPreventionSettings,
+    TRUNCATED_OR_MALFORMED_ARGS_SIGNATURE,
 };
 use tauri_mcp_agent_lib::agent::llm::natural_recovery::{
     build_loop_prevention_guidance, LoopPreventionKind, LoopPreventionShortCircuit,
@@ -22,6 +23,7 @@ use tauri_mcp_agent_lib::agent::llm::preprocess_assistant_tool_calls_for_testing
 use tauri_mcp_agent_lib::agent::state::{
     AgentSession, CompactionRuntimeState, PendingEventManager,
 };
+use tauri_mcp_agent_lib::agent::types::ToolCall;
 use tauri_mcp_agent_lib::agent::ExecutionMode;
 use tauri_mcp_agent_lib::models::chat::Message;
 use tauri_mcp_agent_lib::repositories::{SessionMetadata, SessionStatus};
@@ -60,6 +62,7 @@ fn build_session_metadata(session_id: &str) -> SessionMetadata {
         docker_config: None,
         docker_container_name: None,
         docker_host_workspace_path: None,
+        status_reason: None,
     }
 }
 
@@ -78,12 +81,11 @@ fn build_active_session(session_id: &str, messages: Vec<Message>) -> AgentSessio
         last_synced_at: Arc::new(RwLock::new(None)),
         repeated_thinking_retry_count: Arc::new(RwLock::new(0)),
         repeated_text_loop_retry_count: Arc::new(RwLock::new(0)),
-        bad_tool_args_retry_count: Arc::new(RwLock::new(0)),
-        bad_tool_args_incident_count: Arc::new(RwLock::new(0)),
         reasoning_budget_retry_count: Arc::new(RwLock::new(0)),
         malformed_tool_markup_retry_count: Arc::new(RwLock::new(0)),
         pending_events: Arc::new(RwLock::new(PendingEventManager::new())),
         pending_approvals: Arc::new(RwLock::new(HashMap::new())),
+        pending_user_prompt: tauri_mcp_agent_lib::agent::state::new_user_prompt_slot(),
         context_registry: Arc::new(ContextRegistry::new()),
         compact_context: Arc::new(RwLock::new(None)),
         compaction: CompactionRuntimeState::new(),
@@ -235,7 +237,13 @@ fn mixed_batch_escalates_before_hard_break_when_offset_allows_gap() {
     let current = mixed_batch(["tc-4a", "tc-4b", "tc-4c"], "");
 
     assert_eq!(
-        evaluate_batch_circuit_breaker(&messages, &current, 3, 2),
+        evaluate_batch_circuit_breaker(
+            &messages,
+            &current,
+            3,
+            2,
+            &WaitPreventionSettings::default(),
+        ),
         Some(CircuitBreakerAction::RepeatedBatchSequenceEscalate {
             count: 4,
             tool_name: "workspace__readFile".to_string(),
@@ -250,7 +258,13 @@ fn mixed_batch_repetition_is_detected_across_turns() {
     let current = mixed_batch(["tc-3a", "tc-3b", "tc-3c"], "");
 
     assert_eq!(
-        evaluate_batch_circuit_breaker(&messages, &current, 3, 1),
+        evaluate_batch_circuit_breaker(
+            &messages,
+            &current,
+            3,
+            1,
+            &WaitPreventionSettings::default(),
+        ),
         Some(CircuitBreakerAction::RepeatedBatchSequence {
             count: 3,
             tool_name: "workspace__readFile".to_string(),
@@ -340,7 +354,13 @@ fn mixed_batch_different_outcomes_do_not_accumulate_toward_threshold() {
     let current = mixed_batch(["tc-3a", "tc-3b", "tc-3c"], "");
 
     assert_eq!(
-        evaluate_batch_circuit_breaker(&messages, &current, 3, 1),
+        evaluate_batch_circuit_breaker(
+            &messages,
+            &current,
+            3,
+            1,
+            &WaitPreventionSettings::default(),
+        ),
         None,
         "changing batch outcomes must not Soft-block the next identical batch"
     );
@@ -370,7 +390,13 @@ fn mixed_batch_hard_breaks_after_threshold_plus_offset() {
     let current = mixed_batch(["tc-4a", "tc-4b", "tc-4c"], "");
 
     assert_eq!(
-        evaluate_batch_circuit_breaker(&messages, &current, 3, 1),
+        evaluate_batch_circuit_breaker(
+            &messages,
+            &current,
+            3,
+            1,
+            &WaitPreventionSettings::default(),
+        ),
         Some(CircuitBreakerAction::HardBreak {
             count: 4,
             tool_name: "workspace__readFile".to_string(),
@@ -413,7 +439,13 @@ fn user_message_resets_batch_streak() {
     let current = mixed_batch(["tc-4a", "tc-4b", "tc-4c"], "");
     // After a user turn, only one prior matching batch remains consecutive.
     assert_eq!(
-        evaluate_batch_circuit_breaker(&messages, &current, 3, 1),
+        evaluate_batch_circuit_breaker(
+            &messages,
+            &current,
+            3,
+            1,
+            &WaitPreventionSettings::default(),
+        ),
         None
     );
 }
@@ -621,6 +653,39 @@ fn normalize_tool_arguments_is_stable_for_nested_objects() {
     );
 }
 
+#[test]
+fn normalize_tool_arguments_is_stable_for_truncated_and_redacted_args() {
+    let truncated_1 = r#"{"path":"foo.txt","content":"abcdef"#;
+    let truncated_2 = r#"{"path":"foo.txt","content":"abcdefghijklmnop"#;
+    assert_eq!(
+        normalize_tool_arguments(truncated_1),
+        TRUNCATED_OR_MALFORMED_ARGS_SIGNATURE
+    );
+    assert_eq!(
+        normalize_tool_arguments(truncated_2),
+        TRUNCATED_OR_MALFORMED_ARGS_SIGNATURE
+    );
+    assert_eq!(
+        normalize_tool_arguments(truncated_1),
+        normalize_tool_arguments(truncated_2)
+    );
+
+    let redacted_1 = "<redacted: 100 bytes, truncated>";
+    let redacted_2 = "<redacted: 5000 bytes, truncated>";
+    assert_eq!(
+        normalize_tool_arguments(redacted_1),
+        TRUNCATED_OR_MALFORMED_ARGS_SIGNATURE
+    );
+    assert_eq!(
+        normalize_tool_arguments(redacted_2),
+        TRUNCATED_OR_MALFORMED_ARGS_SIGNATURE
+    );
+    assert_eq!(
+        normalize_tool_arguments(redacted_1),
+        normalize_tool_arguments(redacted_2)
+    );
+}
+
 #[tokio::test]
 async fn preprocess_only_short_circuits_intra_batch_duplicates() {
     let session_id = "intra-batch-preprocess-session";
@@ -676,5 +741,575 @@ async fn preprocess_only_short_circuits_intra_batch_duplicates() {
         dup.duplicate_of_tool_call_id.as_deref(),
         Some("tc-1"),
         "guidance must cite the earlier identical call in the batch"
+    );
+}
+
+// ---- Wait-aware batch loop prevention (#2610) ----
+
+/// `count` identical 2-call wait batches; the first result of each batch
+/// recorded a slow duration (≥ wait threshold), which marks the batch a wait.
+fn slow_wait_batch_history(count: usize) -> Vec<Message> {
+    let mut messages = Vec::new();
+    for i in 0..count {
+        let id_a = format!("tc-{i}a");
+        let id_b = format!("tc-{i}b");
+        messages.push(test_message(
+            &format!("assistant-{i}"),
+            "assistant",
+            Some(vec![
+                test_tool_call(
+                    &id_a,
+                    "workspace__waitForProcess",
+                    r#"{"processId":"proc-1","timeout":10}"#,
+                ),
+                test_tool_call(&id_b, "agent__checkSession", r#"{"sessionId":"s-1"}"#),
+            ]),
+            None,
+            None,
+            "",
+            None,
+        ));
+        messages.push(test_message(
+            &format!("tool-{i}a"),
+            "tool",
+            None,
+            Some(&id_a),
+            Some(serde_json::json!({ "executionDurationMs": 12_000 })),
+            "Process proc-1: running",
+            Some(false),
+        ));
+        messages.push(test_message(
+            &format!("tool-{i}b"),
+            "tool",
+            None,
+            Some(&id_b),
+            None,
+            "Session s-1: running",
+            Some(false),
+        ));
+    }
+    messages
+}
+
+fn current_wait_batch(suffix: &str) -> Vec<ToolCall> {
+    vec![
+        test_tool_call(
+            &format!("tc-cur{suffix}a"),
+            "workspace__waitForProcess",
+            r#"{"processId":"proc-1","timeout":10}"#,
+        ),
+        test_tool_call(
+            &format!("tc-cur{suffix}b"),
+            "agent__checkSession",
+            r#"{"sessionId":"s-1"}"#,
+        ),
+    ]
+}
+
+#[test]
+fn identical_slow_wait_batches_skip_fast_rule_below_guide_count() {
+    // 5 slow batches + current = 6th: the fast rule (threshold 3, hard at 5)
+    // would have hard-broken; the wait ladder passes instead.
+    assert_eq!(
+        evaluate_batch_circuit_breaker(
+            &slow_wait_batch_history(5),
+            &current_wait_batch(""),
+            3,
+            2,
+            &WaitPreventionSettings::default(),
+        ),
+        None,
+        "identical slow wait batches must skip the fast-loop ladder"
+    );
+}
+
+#[test]
+fn identical_slow_wait_batches_guide_at_eleventh_and_break_at_twenty_first() {
+    assert_eq!(
+        evaluate_batch_circuit_breaker(
+            &slow_wait_batch_history(10),
+            &current_wait_batch("11"),
+            3,
+            2,
+            &WaitPreventionSettings::default(),
+        ),
+        Some(CircuitBreakerAction::WaitGuidance {
+            count: 11,
+            tool_name: "workspace__waitForProcess".to_string(),
+            args: r#"{"processId":"proc-1","timeout":10}"#.to_string(),
+        }),
+        "the 11th identical slow wait batch must guide to a scheduled callback"
+    );
+
+    assert_eq!(
+        evaluate_batch_circuit_breaker(
+            &slow_wait_batch_history(20),
+            &current_wait_batch("21"),
+            3,
+            2,
+            &WaitPreventionSettings::default(),
+        ),
+        Some(CircuitBreakerAction::HardBreak {
+            count: 21,
+            tool_name: "workspace__waitForProcess".to_string(),
+            args: r#"{"processId":"proc-1","timeout":10}"#.to_string(),
+        }),
+        "continued guided wait batches must hard-break at the 21st"
+    );
+}
+
+#[test]
+fn wait_batch_hard_break_reached_for_large_non_default_counts() {
+    // S1.2: guide 40 + break 30 → hard break at the 71st identical wait batch.
+    // With the old fixed 32-batch scan cap the streak under-counts to 33 and
+    // the ladder never trips; the scanner must scan far enough back.
+    let wait = WaitPreventionSettings {
+        wait_duration_ms: 10_000,
+        guide_count: 40,
+        break_count: 30,
+    };
+    assert_eq!(
+        evaluate_batch_circuit_breaker(
+            &slow_wait_batch_history(70),
+            &current_wait_batch("71"),
+            3,
+            2,
+            &wait,
+        ),
+        Some(CircuitBreakerAction::HardBreak {
+            count: 71,
+            tool_name: "workspace__waitForProcess".to_string(),
+            args: r#"{"processId":"proc-1","timeout":10}"#.to_string(),
+        }),
+        "the batch scanner must reach the hard break for non-default guide/break counts"
+    );
+}
+
+#[tokio::test]
+async fn preprocess_mixed_wait_batch_owned_by_batch_ladder_across_turns() {
+    // G1.2: a mixed batch (slow `waitForProcess` + fast `checkSession`) repeated
+    // across turns must be owned entirely by the batch wait ladder. The fast
+    // member must not be fast-blocked per-tool on turns 3..=10 (the old
+    // per-tool/batch disagreement), and the 11th batch guides both members.
+    let session_id = "mixed-wait-batch-ladder-session";
+    let active_sessions = ensure_active_sessions();
+    let mut history: Vec<Message> = Vec::new();
+
+    for turn in 0..=10 {
+        {
+            let mut sessions = active_sessions.write().await;
+            sessions.insert(
+                session_id.to_string(),
+                build_active_session(session_id, history.clone()),
+            );
+        }
+
+        let current = current_wait_batch(&format!("-{turn}"));
+        let mut assistant_message = test_message(
+            &format!("assistant-{turn}"),
+            "assistant",
+            Some(current.clone()),
+            None,
+            None,
+            "",
+            None,
+        );
+
+        let preprocess_result = preprocess_assistant_tool_calls_for_testing(
+            &active_sessions,
+            session_id,
+            &mut assistant_message,
+        )
+        .await;
+
+        assert!(preprocess_result.forced_stop.is_none());
+
+        if turn < 10 {
+            assert!(
+                preprocess_result.loop_prevention_short_circuits.is_empty(),
+                "turn {}: repeated wait-batch members must not be fast-blocked per-tool",
+                turn + 1,
+            );
+
+            // Feed this turn's results back: one slow wait + one fast identical poll.
+            history.push(assistant_message);
+            history.push(test_message(
+                &format!("tool-{turn}a"),
+                "tool",
+                None,
+                Some(&format!("tc-cur-{turn}a")),
+                Some(serde_json::json!({ "executionDurationMs": 12_000 })),
+                "Process proc-1: running",
+                Some(false),
+            ));
+            history.push(test_message(
+                &format!("tool-{turn}b"),
+                "tool",
+                None,
+                Some(&format!("tc-cur-{turn}b")),
+                None,
+                "Session s-1: running",
+                Some(false),
+            ));
+        } else {
+            assert_eq!(
+                preprocess_result.loop_prevention_short_circuits.len(),
+                2,
+                "the 11th identical wait batch must short-circuit both members",
+            );
+            // Batch guidance cites the batch's first call as representative
+            // for every member (same as RepeatedBatchSequence guidance).
+            for tool_call in &current {
+                let short_circuit = preprocess_result
+                    .loop_prevention_short_circuits
+                    .get(&tool_call.id)
+                    .unwrap_or_else(|| panic!("{} must be short-circuited", tool_call.id));
+                assert_eq!(short_circuit.kind, LoopPreventionKind::WaitGuidance);
+                assert_eq!(short_circuit.tool_name, "workspace__waitForProcess");
+                assert_eq!(short_circuit.count, 11);
+            }
+        }
+    }
+}
+
+// ---- Duration-mix overall cap for batches (#2610 G3.1) ----
+
+/// `count` identical 2-call batches whose first (wait) member alternates
+/// duration: batch `i` (oldest first) is slow when `slow(i)`.
+fn duration_mix_batch_history(count: usize, slow: impl Fn(usize) -> bool) -> Vec<Message> {
+    let mut messages = Vec::new();
+    for i in 0..count {
+        let id_a = format!("tc-mix-{i}a");
+        let id_b = format!("tc-mix-{i}b");
+        let duration = if slow(i) { 12_000 } else { 50 };
+        messages.push(test_message(
+            &format!("assistant-mix-{i}"),
+            "assistant",
+            Some(vec![
+                test_tool_call(
+                    &id_a,
+                    "workspace__waitForProcess",
+                    r#"{"processId":"proc-1","timeout":10}"#,
+                ),
+                test_tool_call(&id_b, "agent__checkSession", r#"{"sessionId":"s-1"}"#),
+            ]),
+            None,
+            None,
+            "",
+            None,
+        ));
+        messages.push(test_message(
+            &format!("tool-mix-{i}a"),
+            "tool",
+            None,
+            Some(&id_a),
+            Some(serde_json::json!({ "executionDurationMs": duration })),
+            "Process proc-1: running",
+            Some(false),
+        ));
+        messages.push(test_message(
+            &format!("tool-mix-{i}b"),
+            "tool",
+            None,
+            Some(&id_b),
+            None,
+            "Session s-1: running",
+            Some(false),
+        ));
+    }
+    messages
+}
+
+#[test]
+fn alternating_slow_fast_identical_batches_are_bounded_by_overall_cap() {
+    // G3.1 for batches: only durations alternate — fingerprint and outcome are
+    // identical across every batch, so each ladder only ever sees a 1-batch
+    // trailing run. The overall streak must still be bounded.
+    assert_eq!(
+        evaluate_batch_circuit_breaker(
+            &duration_mix_batch_history(19, |i| i % 2 == 0),
+            &current_wait_batch("20"),
+            3,
+            2,
+            &WaitPreventionSettings::default(),
+        ),
+        None,
+        "the 20th identical batch (guide 10 + break 10) must not trip yet"
+    );
+    assert_eq!(
+        evaluate_batch_circuit_breaker(
+            &duration_mix_batch_history(20, |i| i % 2 == 0),
+            &current_wait_batch("21"),
+            3,
+            2,
+            &WaitPreventionSettings::default(),
+        ),
+        Some(CircuitBreakerAction::HardBreak {
+            count: 21,
+            tool_name: "workspace__waitForProcess".to_string(),
+            args: r#"{"processId":"proc-1","timeout":10}"#.to_string(),
+        }),
+        "the 21st identical batch must hard-break regardless of duration mix"
+    );
+}
+
+// ---- Overall cap never overrides the fast batch ladder (#2610 G4.1) ----
+
+const WAIT_BATCH_TOOL: &str = "workspace__waitForProcess";
+const WAIT_BATCH_ARGS: &str = r#"{"processId":"proc-1","timeout":10}"#;
+
+fn fast_batch_action(
+    history: usize,
+    threshold: usize,
+    hard_break_offset: usize,
+    wait: &WaitPreventionSettings,
+) -> Option<CircuitBreakerAction> {
+    evaluate_batch_circuit_breaker(
+        &duration_mix_batch_history(history, |_| false),
+        &current_wait_batch(&(history + 1).to_string()),
+        threshold,
+        hard_break_offset,
+        wait,
+    )
+}
+
+fn batch_sequence(count: usize) -> Option<CircuitBreakerAction> {
+    Some(CircuitBreakerAction::RepeatedBatchSequence {
+        count,
+        tool_name: WAIT_BATCH_TOOL.to_string(),
+        args: WAIT_BATCH_ARGS.to_string(),
+    })
+}
+
+fn batch_escalate(count: usize) -> Option<CircuitBreakerAction> {
+    Some(CircuitBreakerAction::RepeatedBatchSequenceEscalate {
+        count,
+        tool_name: WAIT_BATCH_TOOL.to_string(),
+        args: WAIT_BATCH_ARGS.to_string(),
+    })
+}
+
+fn batch_hard_break(count: usize) -> Option<CircuitBreakerAction> {
+    Some(CircuitBreakerAction::HardBreak {
+        count,
+        tool_name: WAIT_BATCH_TOOL.to_string(),
+        args: WAIT_BATCH_ARGS.to_string(),
+    })
+}
+
+#[test]
+fn pure_fast_batches_keep_configured_hard_break_above_wait_cap() {
+    // G4.1: threshold 20 + offset 20 configures the batch hard break at 40;
+    // the overall cap (guide 10 + break 10) must not cut it to 21.
+    let wait = WaitPreventionSettings::default();
+    assert_eq!(fast_batch_action(20, 20, 20, &wait), batch_sequence(21));
+    assert_eq!(fast_batch_action(38, 20, 20, &wait), batch_escalate(39));
+    assert_eq!(fast_batch_action(39, 20, 20, &wait), batch_hard_break(40));
+}
+
+#[test]
+fn pure_fast_batches_ignore_small_wait_counts() {
+    // G4.1: guide 1 + break 1 must not change fast batch behavior.
+    let wait = WaitPreventionSettings {
+        guide_count: 1,
+        break_count: 1,
+        ..WaitPreventionSettings::default()
+    };
+    assert_eq!(fast_batch_action(2, 3, 2, &wait), batch_sequence(3));
+    assert_eq!(fast_batch_action(3, 3, 2, &wait), batch_escalate(4));
+    assert_eq!(fast_batch_action(4, 3, 2, &wait), batch_hard_break(5));
+}
+
+#[test]
+fn nine_slow_one_fast_identical_batches_are_bounded_by_overall_cap() {
+    // G3.1: a 9-slow/1-fast batch cycle restarts the wait ladder every 10
+    // batches while the newest batch is fast.
+    assert_eq!(
+        evaluate_batch_circuit_breaker(
+            &duration_mix_batch_history(10, |i| i % 10 != 9),
+            &current_wait_batch("11"),
+            3,
+            2,
+            &WaitPreventionSettings::default(),
+        ),
+        None,
+        "the 11th identical batch stays below the overall cap"
+    );
+    assert_eq!(
+        evaluate_batch_circuit_breaker(
+            &duration_mix_batch_history(20, |i| i % 10 != 9),
+            &current_wait_batch("21"),
+            3,
+            2,
+            &WaitPreventionSettings::default(),
+        ),
+        Some(CircuitBreakerAction::HardBreak {
+            count: 21,
+            tool_name: "workspace__waitForProcess".to_string(),
+            args: r#"{"processId":"proc-1","timeout":10}"#.to_string(),
+        }),
+        "the 21st identical batch must hard-break even with a repeating duration mix"
+    );
+}
+
+#[tokio::test]
+async fn preprocess_changing_slow_batch_still_blocks_its_fast_member() {
+    // G3.2: the slow member's result progresses every turn, so the batch never
+    // repeats an identical outcome (previous = 1) and never forms a wait streak.
+    // The batch ladder must therefore NOT own the members: the byte-identical
+    // `readFile` error in the same batch has to reach its own per-tool soft
+    // ladder at count 3. Before the fix the gate treated any single slow batch
+    // as a wait streak and skipped the per-tool scan, which looped forever.
+    let session_id = "changing-slow-batch-session";
+    let active_sessions = ensure_active_sessions();
+    let mut history: Vec<Message> = Vec::new();
+    let wait_args = r#"{"processId":"proc-1","timeout":10}"#;
+    let read_args = r#"{"path":"src/main.ts"}"#;
+
+    for turn in 0..3 {
+        {
+            let mut sessions = active_sessions.write().await;
+            sessions.insert(
+                session_id.to_string(),
+                build_active_session(session_id, history.clone()),
+            );
+        }
+
+        let wait_id = format!("tc-{turn}a");
+        let read_id = format!("tc-{turn}b");
+        let current = vec![
+            test_tool_call(&wait_id, "workspace__waitForProcess", wait_args),
+            test_tool_call(&read_id, "workspace__readFile", read_args),
+        ];
+        let mut assistant_message = test_message(
+            &format!("assistant-{turn}"),
+            "assistant",
+            Some(current),
+            None,
+            None,
+            "",
+            None,
+        );
+
+        let preprocess_result = preprocess_assistant_tool_calls_for_testing(
+            &active_sessions,
+            session_id,
+            &mut assistant_message,
+        )
+        .await;
+
+        assert!(
+            preprocess_result.forced_stop.is_none(),
+            "turn {}: a changing slow batch must never hard-break",
+            turn + 1
+        );
+
+        if turn < 2 {
+            assert!(
+                preprocess_result.loop_prevention_short_circuits.is_empty(),
+                "turn {}: identical readFile errors must stay below the soft threshold",
+                turn + 1
+            );
+        } else {
+            assert_eq!(
+                preprocess_result.loop_prevention_short_circuits.len(),
+                1,
+                "only the repeatedly failing fast member is short-circuited"
+            );
+            assert!(
+                !preprocess_result
+                    .loop_prevention_short_circuits
+                    .contains_key(&wait_id),
+                "the slow member whose result progresses must keep running"
+            );
+            let short_circuit = preprocess_result
+                .loop_prevention_short_circuits
+                .get(&read_id)
+                .expect("the 3rd identical readFile error is soft-blocked");
+            assert_eq!(short_circuit.kind, LoopPreventionKind::RepeatedErrorOutcome);
+            assert_eq!(short_circuit.count, 3);
+        }
+
+        history.push(assistant_message);
+        history.push(test_message(
+            &format!("tool-{turn}a"),
+            "tool",
+            None,
+            Some(&wait_id),
+            Some(serde_json::json!({ "executionDurationMs": 12_000 })),
+            &format!("Process proc-1: running ({}s elapsed)", turn),
+            Some(false),
+        ));
+        history.push(test_message(
+            &format!("tool-{turn}b"),
+            "tool",
+            None,
+            Some(&read_id),
+            None,
+            "Error: file not found",
+            Some(true),
+        ));
+    }
+}
+
+#[tokio::test]
+async fn preprocess_fast_tail_wait_batch_does_not_inherit_owned_turns() {
+    // G3.3: 8 identical slow wait batches (all owned by the batch ladder, and
+    // guided once past the guide count) followed by 1 identical FAST batch.
+    // The newest batch being fast puts the batch wait ladder out of play
+    // (slow_suffix = 0), so the per-tool scan runs again — it must not inherit
+    // the owned batches as fast attempts for the fast member. Before the fix
+    // the fast member saw 9 fast attempts and hard-broke with no warning; now
+    // every owned turn is skipped and nothing fires.
+    let session_id = "fast-tail-wait-batch-session";
+    let active_sessions = ensure_active_sessions();
+    let history = duration_mix_batch_history(9, |i| i < 8);
+    {
+        let mut sessions = active_sessions.write().await;
+        sessions.insert(
+            session_id.to_string(),
+            build_active_session(session_id, history),
+        );
+    }
+
+    let current = current_wait_batch("-tail");
+    let mut assistant_message = test_message(
+        "assistant-tail",
+        "assistant",
+        Some(current.clone()),
+        None,
+        None,
+        "",
+        None,
+    );
+
+    let preprocess_result = preprocess_assistant_tool_calls_for_testing(
+        &active_sessions,
+        session_id,
+        &mut assistant_message,
+    )
+    .await;
+
+    assert!(
+        preprocess_result.forced_stop.is_none(),
+        "owned wait batches must not be re-counted as per-tool fast attempts"
+    );
+    assert!(
+        !preprocess_result
+            .loop_prevention_short_circuits
+            .contains_key(&current[0].id),
+        "the slow member keeps its own wait ladder (count 3, below the guide count)"
+    );
+    let short_circuit = preprocess_result
+        .loop_prevention_short_circuits
+        .get(&current[1].id)
+        .expect("the fast member is soft-blocked, not hard-broken");
+    assert_eq!(
+        short_circuit.kind,
+        LoopPreventionKind::RepeatedSuccessOutcome
+    );
+    assert_eq!(
+        short_circuit.count, 3,
+        "only the unowned batches 1 and 0 plus the current one count as fast attempts"
     );
 }

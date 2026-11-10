@@ -6,7 +6,9 @@ mod importing;
 mod outbox;
 mod scanning;
 
-pub use cache::{invalidate_skill_scan_cache, prewarm_managed_skill_scans};
+pub use cache::{
+    clear_skill_scan_cache_entries, invalidate_skill_scan_cache, prewarm_managed_skill_scans,
+};
 pub use contracts::{
     GitHubRepoSpec, ManagedSkillsOverview, SkillAliasRoot, SkillImportCandidate,
     SkillImportConflict, SkillImportPreview, SkillImportResult, SkillMetadata,

@@ -7,9 +7,8 @@ coverage/
 src/**/*.d.ts
 src/**/*.test.ts
 src/**/*.test.tsx
-# ts-rs output; must match what the Rust test generates byte for byte
-src/lib/generated/AdvancedSettings.ts
-src/lib/generated/ThinkingEffort.ts
+# ts-rs and script-generated output; must match generators byte for byte
+src/lib/generated/
 src-tauri/
 public/
 .venv/

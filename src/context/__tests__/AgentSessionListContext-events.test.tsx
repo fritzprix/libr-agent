@@ -188,6 +188,51 @@ describe('AgentSessionListContext – statusChanged event (crash recovery)', () 
         });
     });
 
+    it('keeps the status reason of statusChanged and clears it on the next change', async () => {
+        const { result } = renderHook(() => useAgentSessionListState(), {
+            wrapper: TestWrapperWithEvent,
+        });
+
+        await waitFor(() => {
+            expect(result.current.sessions).toHaveLength(1);
+            expect(agentEventHandler).toBeDefined();
+        });
+
+        act(() => {
+            agentEventHandler?.({
+                payload: {
+                    type: 'statusChanged',
+                    sessionId: 'session-child',
+                    status: 'error',
+                    statusReason: "Attach container 'dev-box' was not found",
+                },
+            });
+        });
+
+        await waitFor(() => {
+            expect(result.current.sessions[0].status).toBe('error');
+            expect(result.current.sessions[0].statusReason).toBe(
+                "Attach container 'dev-box' was not found",
+            );
+        });
+
+        act(() => {
+            agentEventHandler?.({
+                payload: {
+                    type: 'statusChanged',
+                    sessionId: 'session-child',
+                    status: 'idle',
+                    statusReason: null,
+                },
+            });
+        });
+
+        await waitFor(() => {
+            expect(result.current.sessions[0].status).toBe('idle');
+            expect(result.current.sessions[0].statusReason).toBeUndefined();
+        });
+    });
+
     it('does NOT reload sessions (invoke) when statusChanged fires', async () => {
         const { result } = renderHook(() => useAgentSessionListState(), {
             wrapper: TestWrapperWithEvent,
@@ -531,6 +576,102 @@ describe('AgentSessionListContext – statusChanged event (crash recovery)', () 
             expect(result.current.notificationSessions[0]?.id).toBe('session-child');
             expect(result.current.notificationSessions[0]?.pendingApprovalCount).toBe(1);
             expect(result.current.notificationSessions[0]?.lastAttentionReason).toBe('recurringStop');
+        });
+    });
+
+    it('markAllNotificationsViewed skips sessions with pending approvals', async () => {
+        (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation((cmd) => {
+            if (cmd === 'agent_list_sessions') {
+                return Promise.resolve([
+                    {
+                        id: 'session-child',
+                        name: 'Child Session',
+                        status: 'paused',
+                        model: 'gpt-4o',
+                        provider: 'openai',
+                        createdAt: Date.now(),
+                        updatedAt: Date.now(),
+                    },
+                    {
+                        id: 'session-normal',
+                        name: 'Normal Session',
+                        status: 'paused',
+                        model: 'gpt-4o',
+                        provider: 'openai',
+                        createdAt: Date.now(),
+                        updatedAt: Date.now(),
+                    },
+                ]);
+            }
+            if (cmd === 'agent_list_attention_sessions') {
+                return Promise.resolve([]);
+            }
+            if (cmd === 'agent_mark_session_viewed') {
+                return Promise.resolve();
+            }
+            return Promise.resolve();
+        });
+
+        const { result } = renderHook(
+            () => ({
+                state: useAgentSessionListState(),
+                actions: useAgentSessionListActions(),
+            }),
+            {
+                wrapper: TestWrapperWithEvent,
+            },
+        );
+
+        await waitFor(() => {
+            expect(result.current.state.sessions).toHaveLength(2);
+            expect(agentEventHandler).toBeDefined();
+        });
+
+        act(() => {
+            agentEventHandler?.({
+                payload: {
+                    type: 'toolExecutionRequiresApproval',
+                    sessionId: 'session-child',
+                    toolCallId: 'call-1',
+                },
+            });
+            agentEventHandler?.({
+                payload: {
+                    type: 'workflowCompleted',
+                    sessionId: 'session-child',
+                    reason: 'recurringStop',
+                },
+            });
+            agentEventHandler?.({
+                payload: {
+                    type: 'workflowCompleted',
+                    sessionId: 'session-normal',
+                    reason: 'recurringStop',
+                },
+            });
+        });
+
+        await waitFor(() => {
+            expect(result.current.state.notificationSessions).toHaveLength(2);
+        });
+
+        await act(async () => {
+            await result.current.actions.markAllNotificationsViewed();
+        });
+
+        await waitFor(() => {
+            expect(result.current.state.notificationSessions.map((s) => s.id)).toEqual([
+                'session-child',
+            ]);
+        });
+
+        expect(safeInvoke).toHaveBeenCalledWith('agent_mark_session_viewed', {
+            sessionId: 'session-normal',
+            viewedAt: expect.any(Number),
+        });
+        expect(safeInvoke).not.toHaveBeenCalledWith('agent_mark_session_viewed', {
+            sessionId: 'session-child',
+            viewedAt: expect.any(Number),
         });
     });
 

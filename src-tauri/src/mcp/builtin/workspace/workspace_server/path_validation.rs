@@ -16,6 +16,11 @@ fn skill_alias_write_rejected_error(alias_prefix: &str) -> String {
     )
 }
 
+/// Scoped manager for `@teamwork` / `@harness` writes; refuses writes into git metadata.
+fn alias_write_manager(root: PathBuf) -> SecureFileManager {
+    SecureFileManager::new_scoped_with_base_dir(root).with_git_metadata_write_guard(Vec::new())
+}
+
 impl WorkspaceServer {
     pub async fn validate_read_path_with_skill_access(
         &self,
@@ -63,7 +68,7 @@ impl WorkspaceServer {
             .map_docker_container_file_tool_path(path_str, &target_session_id)
             .await?;
         let effective_path = mapped_path.as_deref().unwrap_or(path_str);
-        let file_manager = self.get_file_manager(Some(target_session_id.clone()));
+        let file_manager = self.get_file_tool_manager(&target_session_id).await;
 
         match file_manager
             .get_security_validator()
@@ -126,7 +131,7 @@ impl WorkspaceServer {
 
         if let Some(teamwork_relative_path) = Self::extract_teamwork_alias_relative_path(path_str) {
             let teamwork_root = self.get_teamwork_artifact_root(&target_session_id).await?;
-            let teamwork_manager = SecureFileManager::new_scoped_with_base_dir(teamwork_root);
+            let teamwork_manager = alias_write_manager(teamwork_root);
             return teamwork_manager
                 .get_security_validator()
                 .validate_path_for_write(teamwork_relative_path)
@@ -143,7 +148,7 @@ impl WorkspaceServer {
                 &target_session_id,
             )
             .await?;
-            let harness_manager = SecureFileManager::new_scoped_with_base_dir(harness_root);
+            let harness_manager = alias_write_manager(harness_root);
             return harness_manager
                 .get_security_validator()
                 .validate_path_for_write(harness_relative_path)
@@ -173,8 +178,7 @@ impl WorkspaceServer {
                 if let Some(relative_path) =
                     Self::extract_absolute_teamwork_relative_path(&candidate_path, &teamwork_root)
                 {
-                    let teamwork_manager =
-                        SecureFileManager::new_scoped_with_base_dir(teamwork_root);
+                    let teamwork_manager = alias_write_manager(teamwork_root);
                     return teamwork_manager
                         .get_security_validator()
                         .validate_path_for_write(&relative_path)
@@ -196,7 +200,7 @@ impl WorkspaceServer {
                         &target_session_id,
                     )
                     .await?;
-                    let harness_manager = SecureFileManager::new_scoped_with_base_dir(harness_root);
+                    let harness_manager = alias_write_manager(harness_root);
                     return harness_manager
                         .get_security_validator()
                         .validate_path_for_write(&relative_path)
@@ -205,8 +209,11 @@ impl WorkspaceServer {
             }
         }
 
-        let validated =
-            self.validate_path_with_error_for_write(effective_path, Some(target_session_id))?;
+        let file_manager = self.get_file_tool_manager(&target_session_id).await;
+        let validated = super::super::file_operations::utils::validate_path_with_error_for_write(
+            &file_manager,
+            effective_path,
+        )?;
         refuse_user_skills_write(&validated)?;
         Ok(validated)
     }
@@ -264,22 +271,6 @@ impl WorkspaceServer {
         let file_manager = self.get_file_manager(session_id);
         super::super::file_operations::utils::validate_path_with_error(&file_manager, path_str)
     }
-
-    /// Validate path for write/create operations.
-    /// Blocks Windows reserved filenames in addition to standard security checks.
-    /// Delete operations should use `validate_path_with_error` instead so that
-    /// pre-existing reserved-name files can still be cleaned up.
-    pub fn validate_path_with_error_for_write(
-        &self,
-        path_str: &str,
-        session_id: Option<String>,
-    ) -> Result<std::path::PathBuf, String> {
-        let file_manager = self.get_file_manager(session_id);
-        super::super::file_operations::utils::validate_path_with_error_for_write(
-            &file_manager,
-            path_str,
-        )
-    }
 }
 
 /// Recovery for path-validation failures. Outside-workdir mapping errors steer to
@@ -310,6 +301,12 @@ pub(crate) fn path_validation_failure_guidance(error: &str, fallback: Vec<String
             "Write the skill to `.libragent/skills/<skill-name>/SKILL.md` (workspace) or use skill-deployer for `user_skills/` / `.libragent/skills/`.".to_string(),
             "Do not write through @workspace-skills / @user-skills / @assistant-skills / @system-skills — those aliases are read/list only.".to_string(),
             "After writing under `.libragent/skills/`, verify with workspace__readFile on the matching @workspace-skills/... alias.".to_string(),
+        ]
+    } else if error.contains(crate::mcp::builtin::utils::OUTSIDE_WORKSPACE_ROOT_MARKER) {
+        vec![
+            "Path is outside the workspace root and access is denied.".to_string(),
+            "For teamwork artifacts, use the '@teamwork/<relative-path>' alias instead of an external filesystem path.".to_string(),
+            "For other external files, ask the user to move or copy the file into the workspace (do not retry workspace file tools on external paths).".to_string(),
         ]
     } else {
         fallback
@@ -437,6 +434,25 @@ mod guidance_tests {
             .any(|line| line.contains(".libragent/skills")));
         assert!(guidance.iter().any(|line| line.contains("read/list only")));
         assert!(guidance.iter().all(|line| !line.contains("listDirectory")));
+    }
+
+    #[test]
+    fn outside_workspace_root_guidance_denies_access_without_list_directory_hint() {
+        let err = format!(
+            "Security error: {} Access denied: Path '/tmp/outside' is outside the allowed base directory",
+            crate::mcp::builtin::utils::OUTSIDE_WORKSPACE_ROOT_MARKER
+        );
+        let guidance = path_validation_failure_guidance(
+            &err,
+            vec!["Use workspace__listDirectory to see available paths".to_string()],
+        );
+        assert!(guidance.iter().any(|line| {
+            line.contains("outside the workspace root") && line.contains("access is denied")
+        }));
+        assert!(guidance.iter().any(|line| line.contains("@teamwork/")));
+        assert!(guidance
+            .iter()
+            .all(|line| !line.contains("workspace__listDirectory")));
     }
 
     #[test]

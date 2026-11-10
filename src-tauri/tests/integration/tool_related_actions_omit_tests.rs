@@ -15,7 +15,7 @@ const RELATED_ACTIONS_KEEPERS: &[&str] = &[
     "agent__prepareTeamworkWorkspace",
     "tool__listServers",
     "tool__registerServer",
-    "ui__presentInteractive",
+    "ui__askUser",
     "ui__reportResult",
 ];
 
@@ -71,15 +71,13 @@ fn keepers_still_document_completion_and_enablement_contracts() {
         .map(|t| (t.name.clone(), t.description))
         .collect();
 
-    let present = by_name
-        .get("presentInteractive")
-        .expect("presentInteractive");
-    assert!(present.contains(TOOL_RELATED_ACTIONS));
-    assert!(present.contains("ui__reportResult"));
+    let ask = by_name.get("askUser").expect("askUser");
+    assert!(ask.contains(TOOL_RELATED_ACTIONS));
+    assert!(ask.contains("ui__reportResult"));
 
     let report = by_name.get("reportResult").expect("reportResult");
     assert!(report.contains(TOOL_RELATED_ACTIONS));
-    assert!(report.contains("ui__presentInteractive"));
+    assert!(report.contains("ui__askUser"));
 
     let register = by_name.get("registerServer").expect("registerServer");
     assert!(register.contains(TOOL_RELATED_ACTIONS));

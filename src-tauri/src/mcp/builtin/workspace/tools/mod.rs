@@ -79,7 +79,9 @@ pub fn code_tools(profile: CodeToolsProfile) -> Vec<MCPTool> {
 
     match profile {
         CodeToolsProfile::HostUnix | CodeToolsProfile::Docker => {
-            list.push(code_tools::create_run_shell_tool());
+            list.push(code_tools::create_run_shell_tool(
+                profile == CodeToolsProfile::Docker,
+            ));
             list.push(code_tools::create_run_persistent_shell_tool());
         }
         CodeToolsProfile::HostWindows => {

@@ -1,6 +1,53 @@
 use super::AgentSessionManager;
-use crate::agent::state::PendingApprovalData;
+use crate::agent::state::{AgentSession, PendingApprovalData, PendingApprovalKind};
 use std::collections::HashMap;
+use tokio::sync::RwLock;
+
+/// Read-only summary of a pending tool approval exposed by `GET /api/sessions/:id`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingApprovalSummary {
+    pub tool_call_id: String,
+    pub tool_name: String,
+    pub reason: String,
+    pub command_preview: String,
+    pub approval_kind: PendingApprovalKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
+}
+
+pub async fn list_pending_approvals_in(
+    active_sessions: &RwLock<HashMap<String, AgentSession>>,
+    session_id: &str,
+) -> Vec<PendingApprovalSummary> {
+    let active = active_sessions.read().await;
+    let Some(session) = active.get(session_id) else {
+        return Vec::new();
+    };
+    let approvals = session.pending_approvals.read().await;
+    let mut items: Vec<PendingApprovalSummary> = approvals
+        .iter()
+        .map(|(tool_call_id, data)| PendingApprovalSummary {
+            tool_call_id: tool_call_id.clone(),
+            tool_name: data.tool_name.clone(),
+            reason: data.description.clone().unwrap_or_else(|| {
+                crate::agent::tool_approvals::build_channel_permission_description(
+                    &data.tool_name,
+                    &data.arguments,
+                )
+            }),
+            command_preview: data.input_preview.clone().unwrap_or_else(|| {
+                crate::agent::tool_approvals::build_channel_permission_input_preview(
+                    &data.arguments,
+                )
+            }),
+            approval_kind: data.approval_kind,
+            request_id: data.request_id.clone(),
+        })
+        .collect();
+    items.sort_by(|a, b| a.tool_call_id.cmp(&b.tool_call_id));
+    items
+}
 
 /// Re-emit pending tool-approval (and channel-permission) events after resume
 /// so the frontend can rehydrate approval UI for an already-active session.
@@ -59,62 +106,75 @@ pub(crate) async fn reemit_pending_approvals_on_resume(
 }
 
 fn complete_resolved_approval(
-    manager: &AgentSessionManager,
+    app_handle: Option<&tauri::AppHandle>,
     session_id: &str,
     tool_call_id: String,
     approved: bool,
     data: PendingApprovalData,
 ) {
     let _ = data.sender.send(approved);
-    let event = crate::agent::events::AgentEvent::ToolExecutionApprovalResolved {
-        session_id: session_id.to_string(),
-        tool_call_id,
-        approved,
-    };
-    if let Err(error) = crate::agent::tauri_events::emit_agent_event(&manager.app_handle, event) {
-        log::error!(
-            "Failed to emit ToolExecutionApprovalResolved event: {}",
-            error
-        );
+    if let Some(app_handle) = app_handle {
+        let event = crate::agent::events::AgentEvent::ToolExecutionApprovalResolved {
+            session_id: session_id.to_string(),
+            tool_call_id,
+            approved,
+        };
+        if let Err(error) = crate::agent::tauri_events::emit_agent_event(app_handle, event) {
+            log::error!(
+                "Failed to emit ToolExecutionApprovalResolved event: {}",
+                error
+            );
+        }
     }
 }
 
-pub(crate) async fn resolve_pending_tool_approval(
-    manager: &AgentSessionManager,
+pub(crate) async fn resolve_pending_tool_approval_in(
+    active_sessions: &RwLock<HashMap<String, AgentSession>>,
+    app_handle: Option<&tauri::AppHandle>,
     session_id: &str,
     tool_call_id: &str,
     approved: bool,
-) -> Result<bool, String> {
-    let active = manager.active_sessions.read().await;
+) -> Result<Option<Option<String>>, String> {
+    let active = active_sessions.read().await;
     let Some(session) = active.get(session_id) else {
         return Err(format!("Session not found: {}", session_id));
     };
 
     let mut approvals = session.pending_approvals.write().await;
     let Some(data) = approvals.remove(tool_call_id) else {
-        return Ok(false);
+        return Ok(None);
     };
+    let request_id = data.request_id.clone();
     drop(approvals);
     drop(active);
 
     complete_resolved_approval(
-        manager,
+        app_handle,
         session_id,
         tool_call_id.to_string(),
         approved,
         data,
     );
-    Ok(true)
+    Ok(Some(request_id))
 }
 
-pub async fn respond_tool_approval(
-    manager: &AgentSessionManager,
+pub async fn respond_tool_approval_in(
+    active_sessions: &RwLock<HashMap<String, AgentSession>>,
+    app_handle: Option<&tauri::AppHandle>,
     session_id: &str,
     tool_call_id: &str,
     approved: bool,
-) -> Result<(), String> {
-    if resolve_pending_tool_approval(manager, session_id, tool_call_id, approved).await? {
-        return Ok(());
+) -> Result<Option<String>, String> {
+    if let Some(request_id) = resolve_pending_tool_approval_in(
+        active_sessions,
+        app_handle,
+        session_id,
+        tool_call_id,
+        approved,
+    )
+    .await?
+    {
+        return Ok(request_id);
     }
 
     Err(format!(
@@ -123,13 +183,31 @@ pub async fn respond_tool_approval(
     ))
 }
 
-pub async fn respond_channel_permission(
+pub async fn respond_tool_approval(
     manager: &AgentSessionManager,
+    session_id: &str,
+    tool_call_id: &str,
+    approved: bool,
+) -> Result<(), String> {
+    respond_tool_approval_in(
+        &manager.active_sessions,
+        Some(&manager.app_handle),
+        session_id,
+        tool_call_id,
+        approved,
+    )
+    .await
+    .map(|_| ())
+}
+
+pub async fn respond_channel_permission_in(
+    active_sessions: &RwLock<HashMap<String, AgentSession>>,
+    app_handle: Option<&tauri::AppHandle>,
     session_id: &str,
     request_id: &str,
     approved: bool,
 ) -> Result<String, String> {
-    let active = manager.active_sessions.read().await;
+    let active = active_sessions.read().await;
     let Some(session) = active.get(session_id) else {
         return Err(format!("Session not found: {}", session_id));
     };
@@ -148,18 +226,42 @@ pub async fn respond_channel_permission(
         )
     })?;
 
-    respond_tool_approval(manager, session_id, &tool_call_id, approved).await?;
+    respond_tool_approval_in(
+        active_sessions,
+        app_handle,
+        session_id,
+        &tool_call_id,
+        approved,
+    )
+    .await?;
 
     Ok(tool_call_id)
 }
 
-pub async fn approve_all_pending_tool_approvals(
+pub async fn respond_channel_permission(
     manager: &AgentSessionManager,
+    session_id: &str,
+    request_id: &str,
+    approved: bool,
+) -> Result<String, String> {
+    respond_channel_permission_in(
+        &manager.active_sessions,
+        Some(&manager.app_handle),
+        session_id,
+        request_id,
+        approved,
+    )
+    .await
+}
+
+pub async fn approve_all_pending_tool_approvals_in(
+    active_sessions: &RwLock<HashMap<String, AgentSession>>,
+    app_handle: Option<&tauri::AppHandle>,
     session_id: &str,
     include_hard_approvals: bool,
 ) -> Result<Vec<String>, String> {
     let drained = {
-        let active = manager.active_sessions.read().await;
+        let active = active_sessions.read().await;
         let Some(session) = active.get(session_id) else {
             return Err(format!("Session not found: {}", session_id));
         };
@@ -170,10 +272,24 @@ pub async fn approve_all_pending_tool_approvals(
 
     let resolved_ids: Vec<String> = drained.iter().map(|(id, _)| id.clone()).collect();
     for (tool_call_id, data) in drained {
-        complete_resolved_approval(manager, session_id, tool_call_id, true, data);
+        complete_resolved_approval(app_handle, session_id, tool_call_id, true, data);
     }
 
     Ok(resolved_ids)
+}
+
+pub async fn approve_all_pending_tool_approvals(
+    manager: &AgentSessionManager,
+    session_id: &str,
+    include_hard_approvals: bool,
+) -> Result<Vec<String>, String> {
+    approve_all_pending_tool_approvals_in(
+        &manager.active_sessions,
+        Some(&manager.app_handle),
+        session_id,
+        include_hard_approvals,
+    )
+    .await
 }
 
 fn pending_approval_ids(
@@ -330,5 +446,30 @@ mod tests {
         let drained = drain_matching_approvals(&mut approvals, true);
         assert_eq!(drained.len(), 2);
         assert!(approvals.is_empty());
+    }
+}
+
+impl AgentSessionManager {
+    /// Respond to a pending tool execution approval
+    pub async fn respond_tool_approval(
+        &self,
+        session_id: &str,
+        tool_call_id: &str,
+        approved: bool,
+    ) -> Result<(), String> {
+        respond_tool_approval(self, session_id, tool_call_id, approved).await
+    }
+
+    pub async fn respond_channel_permission(
+        &self,
+        session_id: &str,
+        request_id: &str,
+        approved: bool,
+    ) -> Result<String, String> {
+        respond_channel_permission(self, session_id, request_id, approved).await
+    }
+
+    pub async fn list_pending_approvals(&self, session_id: &str) -> Vec<PendingApprovalSummary> {
+        list_pending_approvals_in(&self.active_sessions, session_id).await
     }
 }

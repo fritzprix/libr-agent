@@ -74,6 +74,81 @@ function AdvancedRuntimeControlsSectionComponent({
 
       <NumberSettingField
         label={t(
+          'settings.advanced.toolWaitDurationSecs',
+          'Tool Wait Duration (seconds)',
+        )}
+        description={t(
+          'settings.advanced.toolWaitDurationSecsDescription',
+          'A repeated tool call that takes at least this long counts as waiting for background work, not looping.',
+        )}
+        placeholder={t(
+          'settings.advanced.toolWaitDurationSecsPlaceholder',
+          'e.g., 10',
+        )}
+        min={1}
+        max={300}
+        step={1}
+        value={localAdvancedSettings.toolWaitDurationSecs ?? 10}
+        parseValue={(rawValue) =>
+          parseIntegerInput(rawValue, {
+            fallback: 10,
+            min: 1,
+            max: 300,
+          })
+        }
+        onValueChange={(value) => onChange('toolWaitDurationSecs', value)}
+      />
+
+      <NumberSettingField
+        label={t('settings.advanced.toolWaitGuideCount', 'Wait Guide Count')}
+        description={t(
+          'settings.advanced.toolWaitGuideCountDescription',
+          'After this many identical long waits, the agent is told to stop polling and schedule one wake-up instead.',
+        )}
+        placeholder={t(
+          'settings.advanced.toolWaitGuideCountPlaceholder',
+          'e.g., 10',
+        )}
+        min={1}
+        max={100}
+        step={1}
+        value={localAdvancedSettings.toolWaitGuideCount ?? 10}
+        parseValue={(rawValue) =>
+          parseIntegerInput(rawValue, {
+            fallback: 10,
+            min: 1,
+            max: 100,
+          })
+        }
+        onValueChange={(value) => onChange('toolWaitGuideCount', value)}
+      />
+
+      <NumberSettingField
+        label={t('settings.advanced.toolWaitBreakCount', 'Wait Break Count')}
+        description={t(
+          'settings.advanced.toolWaitBreakCountDescription',
+          'How many more identical long waits after the guidance before the agent stops completely.',
+        )}
+        placeholder={t(
+          'settings.advanced.toolWaitBreakCountPlaceholder',
+          'e.g., 10',
+        )}
+        min={1}
+        max={100}
+        step={1}
+        value={localAdvancedSettings.toolWaitBreakCount ?? 10}
+        parseValue={(rawValue) =>
+          parseIntegerInput(rawValue, {
+            fallback: 10,
+            min: 1,
+            max: 100,
+          })
+        }
+        onValueChange={(value) => onChange('toolWaitBreakCount', value)}
+      />
+
+      <NumberSettingField
+        label={t(
           'settings.advanced.thinkingLoopMinPatternLength',
           'Thinking Loop Min Pattern Length',
         )}

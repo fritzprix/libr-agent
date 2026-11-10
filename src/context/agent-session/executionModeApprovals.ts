@@ -16,7 +16,7 @@ export function isPendingApprovalAutoResolvedByMode(
     return true;
   }
   if (mode === 'yolo') {
-    return approvalKind !== 'hard';
+    return approvalKind === 'standard';
   }
   return false;
 }

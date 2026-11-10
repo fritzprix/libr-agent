@@ -62,9 +62,7 @@ import { recordUiToolInvocation } from './lib/recordUiToolInvocation';
 
 const logger = getLogger('AgentChatView');
 
-const InteractiveShellPromptDialog = lazy(
-  () => import('./components/InteractiveShellPromptDialog'),
-);
+const UserPromptDialog = lazy(() => import('./components/UserPromptDialog'));
 
 const AGENT_CHAT_COMPOSER_OVERLAP_STYLE = {
   '--agent-chat-composer-overlap': '64px',
@@ -236,7 +234,7 @@ function AgentChatInner() {
   } = usePanelWidth();
 
   const [searchParams, setSearchParams] = useSearchParams();
-  const { pendingInteractiveShellPrompt, session } = useAgentSessionState();
+  const { pendingUserPrompt, session } = useAgentSessionState();
   const { appendToolMessages, submit } = useAgentChatActions();
   const hasExecutedPlaybookRef = useRef(false);
   const hasOpenedShellRef = useRef(!isMobile && showSidePanel);
@@ -340,11 +338,11 @@ function AgentChatInner() {
 
   return (
     <>
-      {sessionId && pendingInteractiveShellPrompt ? (
+      {sessionId && pendingUserPrompt ? (
         <Suspense fallback={null}>
-          <InteractiveShellPromptDialog
+          <UserPromptDialog
             sessionId={sessionId}
-            promptState={pendingInteractiveShellPrompt}
+            promptState={pendingUserPrompt}
           />
         </Suspense>
       ) : null}
@@ -452,12 +450,15 @@ function AgentChatViewContent({
     runtimeState.initialization.docker?.step ??
     runtimeState.initialization.currentStep ??
     optionalSessionState.initializationStep?.step;
-  const initializationError =
+  const runtimeError =
     runtimeState.phase === 'failed'
       ? (runtimeState.initialization.docker?.error ??
-        runtimeState.initialization.error ??
-        null)
-      : null;
+        runtimeState.initialization.error)
+      : undefined;
+  const initializationError =
+    runtimeError ??
+    (session?.status === 'error' ? session.statusReason : undefined) ??
+    null;
   const isProxyReady = optionalSessionState.isProxyReady;
   const shouldShowBlockingLoader =
     (!session || runtimeState.phase === 'failed') && isSessionLoading;

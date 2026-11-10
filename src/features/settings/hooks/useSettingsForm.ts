@@ -64,7 +64,6 @@ function getChatInterfaceComparableState(settings: SettingsFormState) {
 
 function getSystemComparableState(settings: SettingsFormState) {
   return {
-    skillsDirectory: settings.system.skillsDirectory,
     maxFileUploadSizeMB: settings.system.maxFileUploadSizeMB,
     searchIndexFrequencyMinutes: settings.system.searchIndexFrequencyMinutes,
     webActionTimeoutSeconds: settings.system.webActionTimeoutSeconds,
@@ -75,6 +74,7 @@ function getSystemComparableState(settings: SettingsFormState) {
       settings.system.scheduledTaskMinimumIntervalMinutes,
     httpServerPort: settings.system.httpServerPort,
     httpServerExpose: settings.system.httpServerExpose,
+    logRetentionDays: settings.system.logRetentionDays,
   };
 }
 
@@ -93,6 +93,7 @@ function getAdvancedComparableState(settings: SettingsFormState) {
     ...advancedWithoutChatFields,
     shellIsolationLevel: settings.system.shellIsolationLevel,
     shellRuntimeBootstrap: settings.system.shellRuntimeBootstrap,
+    allowLinkedWorktrees: settings.system.allowLinkedWorktrees,
   };
 }
 

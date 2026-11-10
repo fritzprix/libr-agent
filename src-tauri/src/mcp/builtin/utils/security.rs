@@ -4,10 +4,14 @@ use path_clean::PathClean;
 use std::path::{Component, Path, PathBuf};
 use thiserror::Error;
 
+pub const OUTSIDE_WORKSPACE_ROOT_MARKER: &str = "Outside workspace root:";
+
 #[derive(Error, Debug)]
 pub enum SecurityError {
     #[error("Path traversal attempt detected: {0}")]
     PathTraversal(String),
+    #[error("Outside workspace root: {0}")]
+    OutsideWorkspaceRoot(String),
     #[error("Access denied: {0}")]
     #[allow(dead_code)]
     AccessDenied(String),
@@ -17,10 +21,53 @@ pub enum SecurityError {
     InvalidPath(String),
 }
 
+/// `path` with its longest existing prefix canonicalized, so symlinks in existing
+/// parents are resolved for a target that does not exist yet.
+fn canonicalize_existing_prefix(path: &Path) -> PathBuf {
+    let mut missing = Vec::new();
+    let mut current = path;
+    loop {
+        if let Ok(canonical) = current.canonicalize() {
+            return missing
+                .iter()
+                .rev()
+                .fold(canonical, |acc, name| acc.join(name));
+        }
+        match (current.parent(), current.file_name()) {
+            (Some(parent), Some(name)) => {
+                missing.push(name.to_os_string());
+                current = parent;
+            }
+            _ => return path.to_path_buf(),
+        }
+    }
+}
+
+/// True when a component is `.git`. Case, trailing dots/spaces, and an NTFS stream
+/// suffix (`.git::$INDEX_ALLOCATION`) are ignored because Windows and macOS resolve
+/// those variants to the same entry.
+fn has_git_component(path: &Path) -> bool {
+    path.components().any(|component| match component {
+        Component::Normal(name) => name.to_str().is_some_and(|name| {
+            let name = name.split(':').next().unwrap_or(name);
+            name.trim_end_matches([' ', '.'])
+                .eq_ignore_ascii_case(".git")
+        }),
+        _ => false,
+    })
+}
+
 /// Security utilities for built-in servers
 pub struct SecurityValidator {
     base_dir: PathBuf,
+    /// Canonical directories accepted in addition to `base_dir` by the containment
+    /// checks (linked git worktrees of the workspace repository). Relative paths still
+    /// resolve against `base_dir`.
+    extra_roots: Vec<PathBuf>,
     enforce_base_dir_containment: bool,
+    /// When set, writes into git metadata are refused: any path with a `.git`
+    /// component, or a path under one of these canonical git dirs.
+    git_write_guard: Option<Vec<PathBuf>>,
 }
 
 impl SecurityValidator {
@@ -50,8 +97,41 @@ impl SecurityValidator {
 
         Self {
             base_dir: canonical_base,
+            extra_roots: Vec::new(),
             enforce_base_dir_containment,
+            git_write_guard: None,
         }
+    }
+
+    /// Refuse writes into git metadata (`.git` dirs and files, and `git_dirs`, normally the
+    /// common git dir of the workspace repository). Reads are not affected. Dirs that
+    /// cannot be canonicalized are dropped; the `.git` component check still applies.
+    pub fn with_git_metadata_write_guard(mut self, git_dirs: Vec<PathBuf>) -> Self {
+        self.git_write_guard = Some(
+            git_dirs
+                .into_iter()
+                .filter_map(|dir| dir.canonicalize().ok())
+                .collect(),
+        );
+        self
+    }
+
+    /// Also accept paths under `roots` in the containment checks. Roots that cannot be
+    /// canonicalized are dropped.
+    pub fn with_extra_roots(mut self, roots: Vec<PathBuf>) -> Self {
+        self.extra_roots = roots
+            .into_iter()
+            .filter_map(|root| root.canonicalize().ok())
+            .collect();
+        self
+    }
+
+    fn is_within_allowed_roots(&self, path: &Path) -> bool {
+        path_starts_with(path, &self.base_dir)
+            || self
+                .extra_roots
+                .iter()
+                .any(|root| path_starts_with(path, root))
     }
 
     /// Validate and clean a file path to prevent directory traversal.
@@ -127,8 +207,14 @@ impl SecurityValidator {
             .canonicalize()
             .unwrap_or_else(|_| absolute_path.clone());
 
-        if enforce_base_containment && !path_starts_with(&early_containment_path, &self.base_dir) {
-            return Err(SecurityError::PathTraversal(format!(
+        // Only paths whose raw and canonical forms both lie outside `base_dir` are direct
+        // external paths (`OutsideWorkspaceRoot`); paths inside `base_dir` that resolve outside
+        // via symlinks are rejected as `PathTraversal` by the canonical checks below.
+        if enforce_base_containment
+            && !self.is_within_allowed_roots(&absolute_path)
+            && !self.is_within_allowed_roots(&early_containment_path)
+        {
+            return Err(SecurityError::OutsideWorkspaceRoot(format!(
                 "Access denied: Path '{user_path}' is outside the allowed base directory"
             )));
         }
@@ -179,7 +265,7 @@ impl SecurityValidator {
                 }
 
                 if let Some(canon) = existing_canonical {
-                    if enforce_base_containment && !path_starts_with(&canon, &self.base_dir) {
+                    if enforce_base_containment && !self.is_within_allowed_roots(&canon) {
                         return Err(SecurityError::PathTraversal(format!(
                             "Access denied: Path '{user_path}' resolves outside the allowed base directory"
                         )));
@@ -195,7 +281,7 @@ impl SecurityValidator {
             }
         };
 
-        if enforce_base_containment && !path_starts_with(&canonical_path, &self.base_dir) {
+        if enforce_base_containment && !self.is_within_allowed_roots(&canonical_path) {
             return Err(SecurityError::PathTraversal(format!(
                 "Access denied: Path '{user_path}' resolves outside the allowed base directory"
             )));
@@ -259,7 +345,28 @@ impl SecurityValidator {
                 }
             }
         }
-        self.validate_path_internal(user_path, self.enforce_base_dir_containment)
+        let path = self.validate_path_internal(user_path, self.enforce_base_dir_containment)?;
+        self.ensure_not_git_metadata(&path, user_path)?;
+        Ok(path)
+    }
+
+    fn ensure_not_git_metadata(&self, path: &Path, user_path: &str) -> Result<(), SecurityError> {
+        let Some(git_dirs) = &self.git_write_guard else {
+            return Ok(());
+        };
+        let resolved = canonicalize_existing_prefix(path);
+        let in_git_metadata = |candidate: &Path| {
+            has_git_component(candidate)
+                || git_dirs.iter().any(|dir| path_starts_with(candidate, dir))
+        };
+        if in_git_metadata(path) || in_git_metadata(&resolved) {
+            return Err(SecurityError::AccessDenied(format!(
+                "Path '{user_path}' is inside git metadata ('{}'). Writes into git metadata \
+                 (.git directories and files) are not allowed.",
+                resolved.display()
+            )));
+        }
+        Ok(())
     }
 
     /// Validate a path for read-only operations.

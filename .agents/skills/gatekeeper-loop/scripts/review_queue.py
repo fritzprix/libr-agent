@@ -10,12 +10,13 @@ status values:
   review     - needs review: new head/rebase/base change since last verdict, a
                worker response, an owner comment, never reviewed, CI failed
                (also after approve), or CI passed for a clean-marked PR.
-  await-ci   - current head has a `verdict=clean` marker (or state entry) and
-               only pending CI remains. Not reviewed again.
+  await-ci   - current head has a `verdict=clean` marker (or state entry) and CI
+               is not green yet: pending, not run, or a stacked PR (no CI until
+               retargeted). Not reviewed again.
   wait-worker- changes requested at the current head without response, or merge
                conflicts. Worker's turn to fix.
   approved   - approve verdict exists for the current head, base unchanged, CI
-               not failing, no newer owner comment.
+               green at the head, no newer owner comment.
   escalate   - round limit reached or unresolvable dispute; hand to the user.
   human-only - touches the gatekeeper's own skill; left to the human.
 
@@ -26,21 +27,44 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
 from pathlib import Path
 
 MAX_ROUNDS = 5
-MARKER = re.compile(r"<!--\s*(gatekeeper-loop|worker-loop):\s*(.*?)\s*-->")
+# Loop markers must appear at the very start of the comment (ignoring optional UTF-8 BOM and leading whitespace).
+# Quoted markers or mentions later in the comment are ignored.
+START_MARKER = re.compile(r"^(?:\ufeff)?\s*<!--\s*(gatekeeper-loop|worker-loop):\s*(.*?)\s*-->")
 FAILED = {"FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE"}
 PENDING = {"PENDING", "QUEUED", "IN_PROGRESS", "WAITING", "EXPECTED", "REQUESTED"}
-DEFAULT_STATE_FILE = Path(".libragent/work/gatekeeper-loop/state.json")
+PROTECTED_SKILL_PREFIXES = (
+    ".agents/skills/gatekeeper-loop/",
+    ".agents/skills/worker-loop/",
+)
 OWNER_ASSOCIATIONS = {"OWNER", "MEMBER", "COLLABORATOR"}
-OWN_SKILL_PREFIX = ".agents/skills/gatekeeper-loop/"
 SENSITIVE_PATH = re.compile(
     r"(shell[_-]?policy|tool[_-]?approval|permission|secret|credential|keychain|sandbox)", re.I
 )
+
+
+def get_default_state_file() -> Path:
+    env = os.environ.get("LOOP_STATE_DIR")
+    if env:
+        p = Path(env)
+        base = p.parent if p.name == "state.json" else p
+        return (base if base.name == "gatekeeper-loop" else base / "gatekeeper-loop") / "state.json"
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--git-common-dir"],
+            capture_output=True, text=True, check=True
+        ).stdout.strip()
+        common = Path(out).resolve()
+        repo_root = common.parent if common.name == ".git" else common
+        return repo_root / ".libragent" / "work" / "gatekeeper-loop" / "state.json"
+    except Exception:
+        return Path(".libragent/work/gatekeeper-loop/state.json")
 
 
 def gh(*args: str) -> str:
@@ -65,7 +89,7 @@ def parse_markers(comments: list[dict], me: str) -> tuple[list[dict], list[dict]
     for c in comments:
         if (c.get("author") or {}).get("login") != me:
             continue
-        match = MARKER.search(c.get("body") or "")
+        match = START_MARKER.match(c.get("body") or "")
         if not match:
             continue
         fields = dict(kv.split("=", 1) for kv in match.group(2).split() if "=" in kv)
@@ -79,7 +103,7 @@ def owner_comments_after(comments: list[dict], me: str, since: str | None) -> li
     found = []
     for c in comments:
         login = (c.get("author") or {}).get("login") or ""
-        if login.endswith("[bot]") or MARKER.search(c.get("body") or ""):
+        if login.endswith("[bot]") or START_MARKER.match(c.get("body") or ""):
             continue
         if login != me and c.get("authorAssociation") not in OWNER_ASSOCIATIONS:
             continue
@@ -102,7 +126,7 @@ def git_is_ancestor(old: str, new: str) -> bool:
 
 
 def load_state(path: Path | None = None) -> dict:
-    state_path = path or DEFAULT_STATE_FILE
+    state_path = path or get_default_state_file()
     if state_path.is_file():
         try:
             return json.loads(state_path.read_text(encoding="utf-8"))
@@ -128,10 +152,16 @@ def classify(
     reviewed_base: str | None = None,
     rebased: bool = False,
     owner_comment: bool = False,
+    ci_ran: bool = True,
 ) -> tuple[str, str, int]:
-    """Return (status, one-line reason, priority). Lower priority number is handled first."""
+    """Return (status, one-line reason, priority). Lower priority number is handled first.
+
+    An approve needs green CI at the head. Stacked PRs (non-dev base) never run CI, so they
+    stay at `clean` until they are retargeted and CI passes.
+    """
     ci_applies = is_dev_base(base)
     ci_failed = ci_applies and bool(failing_checks)
+    ci_green = ci_applies and ci_ran and not failing_checks and not pending_checks
 
     if mergeable == "CONFLICTING":
         return "wait-worker", "merge conflict; worker must rebase", 9
@@ -139,41 +169,70 @@ def classify(
     if owner_comment:
         return "review", "owner comment after last verdict; treat as required items", 0
 
-    if total_verdicts >= MAX_ROUNDS:
-        return "escalate", f"round limit ({MAX_ROUNDS}) reached", 9
-
     at_head = bool(last_verdict) and last_verdict.get("head") == head
     base_changed = bool(reviewed_base) and reviewed_base != base
+
+    # An approve given in the last allowed round settles the PR; it is not an escalation.
+    approved_at_head = at_head and last_verdict.get("verdict") == "approve"
+    if total_verdicts >= MAX_ROUNDS and not approved_at_head:
+        return "escalate", f"round limit ({MAX_ROUNDS}) reached", 9
 
     if at_head and last_verdict.get("verdict") == "approve":
         if base_changed:
             return "review", f"base changed after approve ({reviewed_base} -> {base})", 0
         if ci_failed:
             return "review", "CI failing after approve", 0
+        if not ci_green:
+            return "review", "approve without green CI at this head; replace it with a clean marker", 0
         return "approved", "approved at current head", 9
 
-    if at_head and last_verdict.get("verdict") == "changes-requested":
+    # A clean marker for this head on GitHub means the code review of this head is
+    # done, even after changes were requested at it (the worker answered without a
+    # new commit, for example by editing the PR body). The caller only passes a clean
+    # marker newer than both the last verdict and the worker's response to it.
+    clean_at_head = clean_head == head
+
+    if at_head and last_verdict.get("verdict") == "changes-requested" and not clean_at_head:
         if worker_response is None:
             return "wait-worker", "changes requested; waiting for worker response", 9
         return "review", "worker responded to the latest verdict", 0
 
-    if rebased:
-        return "review", "head was rebased/force-pushed since last verdict; full review or range-diff", 0
-    if last_verdict:
-        return "review", "new head since last verdict", 0
-
-    # Never given a verdict at this head. A clean marker on GitHub (or, as a
-    # fallback, state.json) means the code review is already done.
-    reviewed_clean = clean_head == head or (
+    # Otherwise a clean marker (or, as a fallback, state.json) also covers a head
+    # reached after verdicts at older heads.
+    reviewed_clean = clean_at_head or (
         state_reviewed_head == head and state_pending_ci and not has_open_findings
     )
-    if reviewed_clean and ci_applies and pending_checks and not failing_checks:
+    if not reviewed_clean:
+        if rebased:
+            return "review", "head was rebased/force-pushed since last verdict; full review or range-diff", 0
+        if last_verdict:
+            return "review", "new head since last verdict", 0
+
+    if reviewed_clean and ci_green:
+        return "review", "reviewed clean; CI green at this head, issue the verdict", 1
+    if reviewed_clean and ci_failed:
+        return "review", "reviewed clean; CI failing, diagnose it", 1
+    if reviewed_clean and not ci_applies:
+        return "await-ci", "reviewed clean; stacked PR runs no CI until it is retargeted", 9
+    if reviewed_clean and pending_checks:
         return "await-ci", "reviewed clean; waiting for pending CI", 9
     if reviewed_clean:
-        return "review", "reviewed clean; CI done or not applicable, issue the verdict", 1
+        return "await-ci", "reviewed clean; no CI run at this head yet", 9
     if failing_checks and ci_applies:
         return "review", "not reviewed yet; CI failing", 1
     return "review", "not reviewed yet", 1
+
+
+def latest_clean_marker(cleans: list[dict], last: dict | None, response: dict | None) -> dict | None:
+    """The newest clean marker posted after the last verdict and after the worker's
+    response to it. A response that arrives after a clean marker asks for a new look,
+    so that marker no longer counts."""
+    return next(
+        (c for c in reversed(cleans)
+         if (last is None or c["createdAt"] > last["createdAt"])
+         and (response is None or c["createdAt"] > response["createdAt"])),
+        None,
+    )
 
 
 def determine_status(**kwargs) -> str:
@@ -205,8 +264,7 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
              if r.get("round") == last.get("round") and r["createdAt"] > last["createdAt"]),
             None,
         )
-    clean = next((c for c in reversed(cleans)
-                  if last is None or c["createdAt"] > last["createdAt"]), None)
+    clean = latest_clean_marker(cleans, last, response)
 
     pr_state = (state or {}).get("prs", {}).get(str(number), {})
     state_reviewed_head = pr_state.get("reviewedHead")
@@ -225,7 +283,7 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
 
     labels = sorted(label["name"] for label in pr.get("labels") or [])
     paths = [f["path"] for f in pr.get("files") or []]
-    own_skill = any(p.startswith(OWN_SKILL_PREFIX) for p in paths)
+    own_skill = any(p.startswith(PROTECTED_SKILL_PREFIXES) for p in paths)
     sensitive = sorted(p for p in paths if SENSITIVE_PATH.search(p))
 
     status, reason, priority = classify(
@@ -244,9 +302,10 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
         reviewed_base=(last or {}).get("base"),
         rebased=rebased,
         owner_comment=bool(owner),
+        ci_ran=bool(checks),
     )
     if own_skill:
-        status, reason, priority = "human-only", "changes the gatekeeper's own skill; left to the human", 9
+        status, reason, priority = "human-only", "changes loop skill files; left to the human", 9
 
     if status != "review" or not reviewed_head or reviewed_head == head:
         review_mode = "full" if status == "review" and not reviewed_head else "incremental"
@@ -285,7 +344,7 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pr", type=int, help="Only this PR number")
-    parser.add_argument("--state-file", type=Path, default=DEFAULT_STATE_FILE, help="Path to state.json")
+    parser.add_argument("--state-file", type=Path, default=None, help="Path to state.json")
     args = parser.parse_args()
 
     state = load_state(args.state_file)

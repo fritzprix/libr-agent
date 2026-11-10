@@ -1,5 +1,8 @@
 use serde_json::{json, Value};
 
+use crate::mcp::builtin::error_guidance::{missing_param_error, ToolGroup};
+use crate::mcp::types::MCPResult;
+
 pub fn build_agent_tool_data(
     tool_name: &str,
     resource_type: &str,
@@ -96,9 +99,11 @@ pub fn check_session_next_actions(session_id: &str) -> Vec<Value> {
     ]
 }
 
-pub fn read_required_string(args: &Value, key: &str) -> Result<String, String> {
+/// Returns the guided missing-parameter result on `Err` so handlers can
+/// `return Ok(result)`; a plain `Err(String)` would be wrapped as an internal error.
+pub fn read_required_string(args: &Value, key: &str) -> Result<String, MCPResult> {
     args.get(key)
         .and_then(|v| v.as_str())
         .map(|v| v.to_string())
-        .ok_or_else(|| format!("Missing required parameter: {key}"))
+        .ok_or_else(|| missing_param_error(key, ToolGroup::Agent))
 }

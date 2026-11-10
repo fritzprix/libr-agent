@@ -1,6 +1,7 @@
+use crate::agent::events::AgentEventDispatcher;
 use crate::agent::llm::types::CompletionCancelRequest;
 use crate::agent::state::AgentSession;
-use crate::agent::tauri_events::emit_completion_cancel;
+use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::commands::agent_commands::{CancelWorkflowOutcome, CancelWorkflowResult};
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::session_repository::SessionRepository;
@@ -23,6 +24,30 @@ pub enum CancelStrategy {
     CancelToolsThenPause,
     /// No tool batch: pause the session immediately.
     StopImmediately,
+}
+
+/// Stop session processes with the process-cancel marker already set.
+///
+/// A killed foreground tool can return before `stop` finishes, so the marker
+/// must exist before any process is signalled. It is removed again when
+/// nothing was stopped.
+pub async fn stop_processes_with_cancel_marker<F>(
+    proxy_manager: &MCPServiceProxyManager,
+    session_id: &str,
+    has_pending_execution: bool,
+    stop: F,
+) -> usize
+where
+    F: std::future::Future<Output = usize>,
+{
+    if has_pending_execution {
+        proxy_manager.mark_process_cancel_pending(session_id).await;
+    }
+    let killed_resources = stop.await;
+    if has_pending_execution && killed_resources == 0 {
+        proxy_manager.clear_process_cancel_pending(session_id).await;
+    }
+    killed_resources
 }
 
 pub fn classify_cancel_strategy(
@@ -54,7 +79,7 @@ pub fn should_discard_workflow_before_continuation(
 }
 
 /// Drop every pending approval waiter so `request_approval` unblocks on cancel.
-async fn abort_pending_tool_approvals(
+pub async fn abort_pending_tool_approvals(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     session_id: &str,
 ) {
@@ -76,6 +101,63 @@ async fn abort_pending_tool_approvals(
     approvals.clear();
 }
 
+/// Drop the pending user prompt so its waiter ends at once (#2543 requirement 6).
+///
+/// Stop, terminate, and delete all route here, next to
+/// `abort_pending_tool_approvals`. Dropping the entry closes the oneshot channel,
+/// so the caller observes `UserPromptOutcome::Stopped` immediately instead of
+/// waiting out the 300 s timeout.
+pub async fn abort_pending_user_prompt(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+) -> bool {
+    let active = active_sessions.read().await;
+    let Some(session) = active.get(session_id) else {
+        return false;
+    };
+    let Some(prompt) = session.pending_user_prompt.write().await.take() else {
+        return false;
+    };
+    log::info!(
+        "Aborted pending user prompt for cancelled session {} (request_id={}, {})",
+        session_id,
+        prompt.request_id,
+        prompt.payload.describe()
+    );
+    true
+}
+
+/// First step of Stop: close the open user prompt, then kill the session's
+/// workspace resources and return how many were killed.
+///
+/// The prompt goes first because a live persistent shell makes Stop a
+/// process-only cancel that returns before the workflow-level cleanup runs.
+pub async fn stop_user_prompt_and_session_processes(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    proxy_manager: &Arc<MCPServiceProxyManager>,
+    session_id: &str,
+) -> usize {
+    abort_pending_user_prompt(active_sessions, session_id).await;
+    match proxy_manager.kill_session_processes(session_id).await {
+        Ok(count) => count,
+        Err(error) => {
+            log::warn!(
+                "Failed to clean up resources for cancelled session {}: {}",
+                session_id,
+                error
+            );
+            0
+        }
+    }
+}
+
+/// Determines whether workflow continuation should proceed after an approval channel was closed.
+/// Returns true only when the session remains in active_sessions and has Busy status (e.g. cancel_workflow).
+/// Returns false when the session is terminated (Idle) or removed/deleted, cleanly discarding the workflow.
+pub fn should_continue_after_approval_channel_closed(status: Option<&SessionStatus>) -> bool {
+    matches!(status, Some(SessionStatus::Busy))
+}
+
 /// Cancel is a no-op when the session is already inactive — no workflow to stop.
 pub fn is_inactive_cancel_noop(status: &SessionStatus) -> bool {
     matches!(
@@ -90,7 +172,7 @@ pub fn is_inactive_cancel_noop(status: &SessionStatus) -> bool {
 /// legitimate turns. Cancel/terminate own the abort via `llm:completion-cancel`.
 async fn cancel_frontend_completion_if_pending(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
-    app_handle: &AppHandle,
+    dispatcher: &dyn AgentEventDispatcher,
     session_id: &str,
     reason: &str,
 ) {
@@ -107,14 +189,11 @@ async fn cancel_frontend_completion_if_pending(
         return;
     };
 
-    if let Err(error) = emit_completion_cancel(
-        app_handle,
-        CompletionCancelRequest {
-            session_id: session_id.to_string(),
-            response_message_id,
-            reason: reason.to_string(),
-        },
-    ) {
+    if let Err(error) = dispatcher.emit_completion_cancel(CompletionCancelRequest {
+        session_id: session_id.to_string(),
+        response_message_id,
+        reason: reason.to_string(),
+    }) {
         log::warn!(
             "Failed to emit llm:completion-cancel for session {}: {}",
             session_id,
@@ -131,13 +210,39 @@ pub async fn terminate_session(
     app_handle: &AppHandle,
     session_id: String,
 ) -> Result<(), String> {
+    let dispatcher = TauriEventDispatcher::new(app_handle.clone());
+    terminate_session_with_dispatcher(
+        session_repo,
+        active_sessions,
+        proxy_manager,
+        &dispatcher,
+        session_id,
+    )
+    .await
+}
+
+/// Like [`terminate_session`], with events sent through `dispatcher`.
+pub async fn terminate_session_with_dispatcher(
+    session_repo: &Arc<dyn SessionRepository>,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    proxy_manager: &Arc<MCPServiceProxyManager>,
+    dispatcher: &dyn AgentEventDispatcher,
+    session_id: String,
+) -> Result<(), String> {
     log::info!("Terminating workflow for session: {}", session_id);
+
+    // Revoke the session's external wake token first (issue #2633): a
+    // force-terminated session must not be woken by hooks/webhooks after
+    // teardown. This is the single revoke point for every terminate path,
+    // including the delete cascade in `lifecycle::deletion`, which calls
+    // this function for the target and all descendants. Idempotent.
+    crate::server::wake::revoke_wake_token(&session_id);
 
     // Abort frontend LLM first so late chunks cannot keep ThinkingBubble alive
     // after we flip the session to idle.
     cancel_frontend_completion_if_pending(
         active_sessions,
-        app_handle,
+        dispatcher,
         &session_id,
         "workflow-terminated",
     )
@@ -155,18 +260,32 @@ pub async fn terminate_session(
         }
     };
 
-    // 2. Destroy proxy for this session - ALWAYS do this!
+    // 2. Force-stop session-owned resources (persistent shell, spawnProcess
+    // trees) through the still-alive proxy BEFORE destroying it, so ownership
+    // is available until cleanup completes (issue #2633). The fence inserted
+    // here rejects late tool dispatches that would lazily recreate instances.
+    // Soft cancel keeps the proxy alive and uses kill_session_processes only.
+    let killed = proxy_manager.terminate_session_resources(&session_id).await;
+    log::info!(
+        "Force-stopped {} session-owned resource(s) before teardown for session: {}",
+        killed,
+        session_id
+    );
+
+    // Destroy proxy for this session - ALWAYS do this!
     // This prevents resource leaks (MCP processes) even if the session wasn't active
     // (e.g. failed resume or already closed in memory but proxy still exists).
     proxy_manager.destroy_proxy(&session_id).await;
     log::info!("Destroyed MCP proxy for session: {}", session_id);
+    // Reload keeps this state across proxies; only terminate and delete end it.
+    crate::mcp::builtin::workspace::release_session_workspace_state(&session_id);
 
     // 3. Update status to idle in DB (and memory if active)
     // We ignore error here for inactive sessions to ensure best-effort cleanup
-    let _ = crate::agent::lifecycle::update_session_status(
+    let _ = crate::agent::lifecycle::update_session_status_with_dispatcher(
         session_repo,
         active_sessions,
-        app_handle,
+        dispatcher,
         &session_id,
         SessionStatus::Idle,
     )
@@ -194,6 +313,14 @@ pub async fn terminate_session(
         }
     }
 
+    // Abort pending approvals AFTER status is Idle and pending_execution is cleared.
+    // The woken waiter must observe Idle in active_sessions so should_continue_after_approval_channel_closed
+    // discards continuation instead of racing into a boundary pause or another LLM turn.
+    abort_pending_tool_approvals(active_sessions, &session_id).await;
+
+    // The user prompt blocks the turn, so terminate drops it like approvals.
+    abort_pending_user_prompt(active_sessions, &session_id).await;
+
     // Hard terminate drops waiting prompts; soft cancel preserves them.
     discard_pending_events(active_sessions, &session_id).await;
 
@@ -202,7 +329,8 @@ pub async fn terminate_session(
         session_id: session_id.clone(),
         reason: crate::agent::events::WorkflowCompletionReason::Terminated,
     };
-    crate::agent::tauri_events::emit_agent_event(app_handle, event)
+    dispatcher
+        .emit_agent_event(event)
         .map_err(|e| format!("Failed to emit event: {}", e))?;
 
     log::info!("Terminated workflow for session: {}", session_id);
@@ -248,7 +376,7 @@ pub async fn cancel_workflow(
     if is_inactive_cancel_noop(&current_status) {
         cancel_frontend_completion_if_pending(
             active_sessions,
-            app_handle,
+            &TauriEventDispatcher::new(app_handle.clone()),
             &session_id,
             "workflow-cancel-noop-inactive",
         )
@@ -264,27 +392,17 @@ pub async fn cancel_workflow(
         });
     }
 
-    // Stop session-owned workspace resources first. If a process was active,
-    // this is a process-only cancel: let its failed result return to the
-    // workflow instead of cancelling the workflow token.
-    let killed_resources = match proxy_manager.kill_session_processes(&session_id).await {
-        Ok(count) => count,
-        Err(error) => {
-            log::warn!(
-                "Failed to clean up resources for cancelled session {}: {}",
-                session_id,
-                error
-            );
-            0
-        }
-    };
+    let killed_resources = stop_processes_with_cancel_marker(
+        proxy_manager,
+        &session_id,
+        has_pending_execution,
+        stop_user_prompt_and_session_processes(active_sessions, proxy_manager, &session_id),
+    )
+    .await;
 
     if classify_cancel_strategy(has_pending_execution, killed_resources > 0)
         == CancelStrategy::CancelProcessThenContinue
     {
-        if has_pending_execution {
-            proxy_manager.mark_process_cancel_pending(&session_id).await;
-        }
         log::info!(
             "Cancelled {} active workspace resource(s) for session {}; workflow continues",
             killed_resources,
@@ -313,7 +431,7 @@ pub async fn cancel_workflow(
 
     cancel_frontend_completion_if_pending(
         active_sessions,
-        app_handle,
+        &TauriEventDispatcher::new(app_handle.clone()),
         &session_id,
         "workflow-cancelled",
     )

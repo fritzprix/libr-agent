@@ -1,5 +1,8 @@
+use crate::agent::session_manager::PendingApprovalSummary;
 pub use crate::agent::types::CreateSessionRequest;
+use crate::execution_mode::ExecutionMode;
 use crate::models::chat::MessageSource;
+use crate::repositories::SessionMetadata;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize)]
@@ -27,8 +30,37 @@ pub struct InjectChannelRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChannelPermissionRequestBody {
-    pub request_id: String,
+    #[serde(default)]
+    pub request_id: Option<String>,
+    #[serde(default)]
+    pub tool_call_id: Option<String>,
     pub behavior: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PatchSessionRequest {
+    pub execution_mode: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PatchSessionResponse {
+    pub id: String,
+    pub execution_mode: ExecutionMode,
+    pub resolved_approval_ids: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionStatusResponse {
+    #[serde(flatten)]
+    pub session: SessionMetadata,
+    pub pending_approvals: Vec<PendingApprovalSummary>,
+    /// The prompt still waiting for this session (#2543 requirement 7).
+    /// Never carries a secret value.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pending_user_prompt: Option<crate::agent::state::PendingUserPromptSummary>,
 }
 
 #[derive(Debug, Serialize)]
@@ -49,7 +81,7 @@ pub struct AutoRouteChannelResponse {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChannelPermissionResponse {
-    pub request_id: String,
+    pub request_id: Option<String>,
     pub tool_call_id: String,
     pub approved: bool,
 }

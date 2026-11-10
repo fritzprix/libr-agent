@@ -1,6 +1,5 @@
-use crate::agent::llm::types::{AgentRuntimeError, CompactStateEvent};
+use crate::agent::llm::types::{AgentRuntimeError, CompactStateEvent, CompletionCancelRequest};
 use crate::agent::runtime_state::SessionRuntimeState;
-use crate::mcp::builtin::workspace::InteractiveShellInputType;
 use crate::models::chat::Message;
 use crate::repositories::SessionStatus;
 use serde::{Deserialize, Serialize};
@@ -69,6 +68,8 @@ pub enum AgentEvent {
     StatusChanged {
         session_id: String,
         status: SessionStatus,
+        /// Stored reason for the new status; `None` when the status has no reason.
+        status_reason: Option<String>,
     },
 
     /// Message added to session (includes full message for immediate UI update)
@@ -155,21 +156,24 @@ pub enum AgentEvent {
         metrics: PreflightTokenMetrics,
     },
 
-    /// Interactive shell execution is waiting for local user input.
+    /// A `secret` or `question` prompt is waiting for the local user (#2543).
+    ///
+    /// The payload never carries a secret value: only the variable name and the
+    /// label. The answer returns through the backend channel, not this event.
     #[serde(rename_all = "camelCase")]
-    InteractiveShellInputRequested {
+    UserPromptRequested {
         session_id: String,
-        execution_id: String,
-        prompt: String,
-        input_type: InteractiveShellInputType,
-        command: String,
+        request_id: String,
+        /// Tagged with `kind`, so the dialog switches on `payload.kind` alone.
+        payload: crate::agent::state::UserPromptPayload,
     },
 
-    /// Interactive shell input request resolved locally.
+    /// A user prompt was answered, cancelled, timed out, or dropped by Stop.
     #[serde(rename_all = "camelCase")]
-    InteractiveShellInputResolved {
+    UserPromptResolved {
         session_id: String,
-        execution_id: String,
+        request_id: String,
+        /// `answered` | `cancelled` | `timeout` | `restart`
         outcome: String,
     },
 
@@ -206,6 +210,7 @@ pub enum AgentEvent {
 pub trait AgentEventDispatcher: Send + Sync {
     fn emit_agent_event(&self, event: AgentEvent) -> Result<(), String>;
     fn emit_compact_state(&self, event: CompactStateEvent) -> Result<(), String>;
+    fn emit_completion_cancel(&self, request: CompletionCancelRequest) -> Result<(), String>;
 }
 
 pub(crate) fn summarize_agent_event(event: &AgentEvent) -> String {
@@ -219,7 +224,9 @@ pub(crate) fn summarize_agent_event(event: &AgentEvent) -> String {
         AgentEvent::WorkflowError { session_id, .. } => {
             format!("WorkflowError(session={session_id})")
         }
-        AgentEvent::StatusChanged { session_id, status } => {
+        AgentEvent::StatusChanged {
+            session_id, status, ..
+        } => {
             format!("StatusChanged(session={session_id}, status={status:?})")
         }
         AgentEvent::MessageAdded { session_id, message } => {
@@ -304,20 +311,20 @@ pub(crate) fn summarize_agent_event(event: &AgentEvent) -> String {
             metrics.effective_input_budget,
             metrics.safe_input_token_limit
         ),
-        AgentEvent::InteractiveShellInputRequested {
+        AgentEvent::UserPromptRequested {
             session_id,
-            execution_id,
-            input_type,
-            ..
+            request_id,
+            payload,
         } => format!(
-            "InteractiveShellInputRequested(session={session_id}, execution_id={execution_id}, input_type={input_type})"
+            "UserPromptRequested(session={session_id}, request_id={request_id}, {})",
+            payload.describe()
         ),
-        AgentEvent::InteractiveShellInputResolved {
+        AgentEvent::UserPromptResolved {
             session_id,
-            execution_id,
+            request_id,
             outcome,
         } => format!(
-            "InteractiveShellInputResolved(session={session_id}, execution_id={execution_id}, outcome={outcome})"
+            "UserPromptResolved(session={session_id}, request_id={request_id}, outcome={outcome})"
         ),
         AgentEvent::ResourceUpdated {
             resource_type,

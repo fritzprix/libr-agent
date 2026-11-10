@@ -2,7 +2,7 @@
 
 | Error | Cause | Action |
 |---|---|---|
-| Auth failed (IMAP 535) | Wrong password or App Password needed | Re-run setup with `--reset` using the hidden-prompt + visible setup flow; guide user to provider App Password docs |
+| Auth failed (IMAP 535) | Wrong password or App Password needed | Re-run setup with `--reset`, asking for the password again with `requireUserInput=true` and `storeAs: "LIBRAGENT_EMAIL_PASSWORD"`; guide user to provider App Password docs |
 | Connection refused | Wrong host/port | Check [server-profiles.md](server-profiles.md), re-collect four server fields, re-run setup |
 | Config not found | First run or deleted | Run non-interactive setup; do **not** launch the bare wizard |
 | SSL error | Port mismatch | Suggest switching 993↔143 or 587↔465 |

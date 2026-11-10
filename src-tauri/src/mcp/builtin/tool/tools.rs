@@ -87,7 +87,9 @@ fn stdio_transport_schema() -> crate::mcp::schema::JSONSchema {
             ),
             (
                 "env".to_string(),
-                object_map_prop(Some("Environment variables for the process.")),
+                object_map_prop(Some(
+                    "Environment variables for the process. Write a secret as {{secret:NAME}}; the user enters it in a secure prompt.",
+                )),
             ),
         ],
         vec!["type".to_string(), "command".to_string()],
@@ -104,7 +106,11 @@ fn http_transport_schema() -> crate::mcp::schema::JSONSchema {
             ),
             (
                 "url".to_string(),
-                string_prop(Some(1), None, Some("Server URL. Required.")),
+                string_prop(
+                    Some(1),
+                    None,
+                    Some("Server URL. Required. A secret query value may be {{secret:NAME}}."),
+                ),
             ),
             (
                 "protocolVersion".to_string(),
@@ -128,7 +134,9 @@ fn http_transport_schema() -> crate::mcp::schema::JSONSchema {
             ),
             (
                 "headers".to_string(),
-                object_map_prop(Some("HTTP headers for HTTP transport.")),
+                object_map_prop(Some(
+                    "HTTP headers for HTTP transport. Write a secret as {{secret:NAME}}, e.g. \"Bearer {{secret:GITHUB_PAT}}\".",
+                )),
             ),
             (
                 "enableSSE".to_string(),
@@ -235,6 +243,13 @@ pub fn update_server_tool() -> MCPTool {
                         Some(
                             "Optional new description. If omitted, keep the existing description unchanged.",
                         ),
+                    ),
+                ),
+                (
+                    "reenterSecrets".to_string(),
+                    array_schema(
+                        string_prop(None, None, None),
+                        Some("Names of {{secret:NAME}} templates the user must enter again, for example after a wrong key. If omitted, a stored value is reused when the URL scheme, host, and port (or command and args) are unchanged."),
                     ),
                 ),
             ],

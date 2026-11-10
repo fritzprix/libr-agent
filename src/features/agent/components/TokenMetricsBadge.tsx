@@ -25,7 +25,6 @@ export const TokenMetricsBadge = memo(function TokenMetricsBadge({
   // Get display preferences from settings
   const { value: settings } = useSettings();
   const displaySettings = settings.display || {
-    metricDisplayMode: 'inline',
     prefillDisplayFormat: 'time',
     showTokenSpeed: true,
     compactMetrics: false,

@@ -10,10 +10,10 @@ use std::sync::Arc;
 use tauri_mcp_agent_lib::agent::state::{PendingEvent, PendingEventManager};
 use tauri_mcp_agent_lib::agent::workflow::{
     classify_cancel_strategy, is_inactive_cancel_noop, should_consume_cancel_at_message_boundary,
-    should_discard_workflow_before_continuation, CancelStrategy,
+    should_discard_workflow_before_continuation, stop_processes_with_cancel_marker, CancelStrategy,
 };
 use tauri_mcp_agent_lib::mcp::service_proxy_manager::MCPServiceProxyManager;
-use tauri_mcp_agent_lib::repositories::SessionStatus;
+use tauri_mcp_agent_lib::repositories::{SessionMetadata, SessionStatus};
 use tauri_mcp_agent_lib::session::SessionManager;
 use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
@@ -329,38 +329,332 @@ fn test_tool_batch_cancel_cancels_token_immediately() {
     );
 }
 
-#[tokio::test]
-async fn test_process_cancel_retry_state_survives_unrelated_batch_tool() {
+async fn process_cancel_test_manager() -> (MCPServiceProxyManager, TempDir) {
     let db = Arc::new(crate::common::setup_test_db_with_migrations().await);
     let session_root = TempDir::new().expect("session root");
     let session_manager = Arc::new(
         SessionManager::new_with_base_dir(session_root.path().join("sessions"))
             .expect("session manager"),
     );
-    let manager = MCPServiceProxyManager::new(db, session_manager);
+    (
+        MCPServiceProxyManager::new(db, session_manager),
+        session_root,
+    )
+}
 
-    manager
-        .record_process_cancelled_tool("retry-session", "workspace__execute", "{}")
+#[tokio::test]
+async fn test_process_cancel_scope_marks_cancel_during_tool_run() {
+    let (manager, _root) = process_cancel_test_manager().await;
+
+    let ((), cancelled) = manager
+        .run_with_process_cancel_scope("cancel-session", async {
+            manager.mark_process_cancel_pending("cancel-session").await;
+        })
         .await;
-    // The cancelled tool itself must retain its retry state.
-    manager
-        .clear_process_cancel_retry_after_tool("retry-session", true, true)
+    assert!(cancelled, "a cancel during the run marks this tool");
+
+    // The next tool call (the same or a different tool) runs unmarked.
+    let ((), next_cancelled) = manager
+        .run_with_process_cancel_scope("cancel-session", async {})
         .await;
-    // A normal follow-up tool in the same batch must not clear it either.
-    manager
-        .clear_process_cancel_retry_after_tool("retry-session", false, true)
+    assert!(!next_cancelled, "the next tool must not inherit the cancel");
+}
+
+#[tokio::test]
+async fn test_process_cancel_scope_ignores_marker_set_before_tool_run() {
+    let (manager, _root) = process_cancel_test_manager().await;
+
+    // Cancel stops a background process between tool calls.
+    manager.mark_process_cancel_pending("idle-session").await;
+
+    let ((), cancelled) = manager
+        .run_with_process_cancel_scope("idle-session", async {})
         .await;
+    assert!(!cancelled, "a stale marker must not mark the next tool");
+}
+
+#[tokio::test]
+async fn test_process_cancel_marker_exists_before_killed_tool_returns() {
+    let (manager, _root) = process_cancel_test_manager().await;
+    let (killed_tx, killed_rx) = tokio::sync::oneshot::channel::<()>();
+    let (tool_done_tx, tool_done_rx) = tokio::sync::oneshot::channel::<()>();
+
+    // The foreground tool returns as soon as its process is marked killed,
+    // which happens before the kill of the process tree finishes.
+    let tool = async {
+        let ((), cancelled) = manager
+            .run_with_process_cancel_scope("race-session", async {
+                let _ = killed_rx.await;
+            })
+            .await;
+        let _ = tool_done_tx.send(());
+        cancelled
+    };
+    let cancel = stop_processes_with_cancel_marker(&manager, "race-session", true, async {
+        let _ = killed_tx.send(());
+        let _ = tool_done_rx.await;
+        1
+    });
+
+    let (cancelled, killed) = tokio::join!(tool, cancel);
+    assert_eq!(killed, 1);
+    assert!(cancelled, "the killed tool must be marked cancelled");
+    assert!(
+        !manager.take_process_cancel_pending("race-session").await,
+        "no marker may be left for the next tool"
+    );
+}
+
+#[tokio::test]
+async fn test_process_cancel_marker_removed_when_nothing_stopped() {
+    let (manager, _root) = process_cancel_test_manager().await;
+
+    let killed =
+        stop_processes_with_cancel_marker(&manager, "noop-session", true, async { 0 }).await;
+
+    assert_eq!(killed, 0);
+    assert!(!manager.take_process_cancel_pending("noop-session").await);
+}
+
+#[tokio::test]
+async fn test_process_cancel_marker_not_set_without_pending_execution() {
+    let (manager, _root) = process_cancel_test_manager().await;
+    let (seen_tx, seen_rx) = tokio::sync::oneshot::channel::<bool>();
+
+    let killed = stop_processes_with_cancel_marker(&manager, "no-batch-session", false, async {
+        let _ = seen_tx.send(
+            manager
+                .take_process_cancel_pending("no-batch-session")
+                .await,
+        );
+        1
+    })
+    .await;
+
+    assert_eq!(killed, 1);
+    assert!(!seen_rx.await.expect("stop ran"));
+}
+
+// -----------------------------------------------------------------------
+// Approval channel closure continuation decision
+// -----------------------------------------------------------------------
+
+#[test]
+fn test_should_continue_after_approval_channel_closed_cases() {
+    use tauri_mcp_agent_lib::agent::workflow::should_continue_after_approval_channel_closed;
+
+    // Soft cancel: session is still active and busy in memory -> continuation tombstones call and pauses.
+    assert!(should_continue_after_approval_channel_closed(Some(
+        &SessionStatus::Busy
+    )));
+
+    // Terminated / deleted / inactive session -> continuation is discarded to prevent missing-session error cascades.
+    assert!(!should_continue_after_approval_channel_closed(Some(
+        &SessionStatus::Idle
+    )));
+    assert!(!should_continue_after_approval_channel_closed(Some(
+        &SessionStatus::Paused
+    )));
+    assert!(!should_continue_after_approval_channel_closed(Some(
+        &SessionStatus::Error
+    )));
+    assert!(!should_continue_after_approval_channel_closed(None));
+}
+
+fn sample_cancel_metadata(session_id: &str, status: SessionStatus) -> SessionMetadata {
+    SessionMetadata {
+        id: session_id.to_string(),
+        name: None,
+        status,
+        model: "gpt-4".to_string(),
+        provider: "openai".to_string(),
+        assistant_id: None,
+        parent_session_id: None,
+        lineage_id: None,
+        depth: None,
+        max_depth: None,
+        max_fanout: None,
+        org_id: None,
+        org_name: None,
+        org_root_session_id: None,
+        created_at: 0,
+        updated_at: 0,
+        last_viewed_at: None,
+        last_message_at: None,
+        last_attention_at: None,
+        last_attention_reason: None,
+        is_bookmarked: false,
+        execution_mode: tauri_mcp_agent_lib::execution_mode::ExecutionMode::Normal,
+        workspace_override: None,
+        workspace_isolation:
+            tauri_mcp_agent_lib::models::workspace_isolation::WorkspaceIsolationMode::Host,
+        docker_config: None,
+        docker_container_name: None,
+        docker_host_workspace_path: None,
+        status_reason: None,
+    }
+}
+
+#[tokio::test]
+async fn test_abort_pending_tool_approvals_clears_and_drops_sender() {
+    use std::collections::HashMap;
+    use tauri_mcp_agent_lib::agent::context::registry::ContextRegistry;
+    use tauri_mcp_agent_lib::agent::state::{
+        AgentSession, PendingApprovalData, PendingApprovalKind,
+    };
+    use tauri_mcp_agent_lib::agent::workflow::abort_pending_tool_approvals;
+    use tokio::sync::{oneshot, RwLock};
+
+    let active_sessions = Arc::new(RwLock::new(HashMap::new()));
+    let session_id = "test-session-abort-approvals".to_string();
+
+    let session = AgentSession::new(
+        sample_cancel_metadata(&session_id, SessionStatus::Busy),
+        Arc::new(ContextRegistry::new()),
+        None,
+    );
+
+    let (tx, rx) = oneshot::channel();
+    let approval_data = PendingApprovalData {
+        sender: tx,
+        tool_name: "test_tool".to_string(),
+        arguments: "{}".to_string(),
+        approval_kind: PendingApprovalKind::Standard,
+        request_id: None,
+        description: Some("needs approval".to_string()),
+        input_preview: Some("echo 1".to_string()),
+    };
+    session
+        .pending_approvals
+        .write()
+        .await
+        .insert("call-1".to_string(), approval_data);
+
+    active_sessions
+        .write()
+        .await
+        .insert(session_id.clone(), session);
+
+    // Verify approval exists before abort
+    {
+        let sessions = active_sessions.read().await;
+        let s = sessions.get(&session_id).unwrap();
+        assert_eq!(s.pending_approvals.read().await.len(), 1);
+    }
+
+    // Abort pending approvals (as called by cancel/terminate)
+    abort_pending_tool_approvals(&active_sessions, &session_id).await;
+
+    // Approvals map must now be cleared
+    {
+        let sessions = active_sessions.read().await;
+        let s = sessions.get(&session_id).unwrap();
+        assert!(s.pending_approvals.read().await.is_empty());
+    }
+
+    // Sender was dropped, so receiver must receive RecvError (channel closed)
+    assert!(rx.await.is_err());
+}
+
+/// #2543 requirement 13: a live persistent shell makes Stop a process-only
+/// cancel, which returns before the workflow-level cleanup. Stop must still end
+/// an open user prompt at once.
+#[tokio::test]
+async fn test_stop_with_live_shell_still_ends_the_user_prompt_wait() {
+    use std::collections::HashMap;
+    use std::time::Duration;
+    use tauri_mcp_agent_lib::agent::concurrency::{
+        ConcurrencyGate, DEFAULT_MAX_ACTIVE_AGENTS, DEFAULT_MAX_ACTIVE_PROCESSES,
+        DEFAULT_MAX_SUSPENDED_AGENTS, DEFAULT_MAX_SUSPENDED_PROCESSES,
+    };
+    use tauri_mcp_agent_lib::agent::context::registry::ContextRegistry;
+    use tauri_mcp_agent_lib::agent::session_bus::SessionBus;
+    use tauri_mcp_agent_lib::agent::state::{
+        admit_user_prompt, await_user_prompt_with_timeout, pending_user_prompt_summary,
+        AgentSession, UserPromptOutcome, UserPromptPayload, UserQuestion,
+    };
+    use tauri_mcp_agent_lib::agent::workflow::stop_user_prompt_and_session_processes;
+    use tauri_mcp_agent_lib::lifecycle::repositories::init_repositories;
+    use tauri_mcp_agent_lib::mcp::builtin::workspace::PERSISTENT_SHELL_TOOL;
+    use tauri_mcp_agent_lib::{init_concurrency_gate, init_session_bus};
+    use tokio::sync::RwLock;
+
+    let db = Arc::new(crate::common::setup_test_db_with_migrations().await);
+    init_repositories(&db).await;
+    init_session_bus(SessionBus::new());
+    init_concurrency_gate(ConcurrencyGate::new(
+        DEFAULT_MAX_ACTIVE_AGENTS,
+        DEFAULT_MAX_SUSPENDED_AGENTS,
+        DEFAULT_MAX_ACTIVE_PROCESSES,
+        DEFAULT_MAX_SUSPENDED_PROCESSES,
+    ));
+
+    let session_root = TempDir::new().expect("session root");
+    let session_manager = Arc::new(
+        SessionManager::new_with_base_dir(session_root.path().join("sessions"))
+            .expect("session manager"),
+    );
+    let proxy_manager = Arc::new(MCPServiceProxyManager::new(db, session_manager));
+    let session_id = "test-stop-live-shell-user-prompt".to_string();
+
+    proxy_manager
+        .create_proxy(
+            session_id.clone(),
+            vec!["workspace".to_string()],
+            Vec::new(),
+            None,
+        )
+        .await
+        .expect("workspace proxy");
+    proxy_manager
+        .call_tool(
+            &session_id,
+            &format!("workspace__{PERSISTENT_SHELL_TOOL}"),
+            serde_json::json!({ "command": "echo ready" }),
+        )
+        .await
+        .expect("persistent shell starts");
+
+    let session = AgentSession::new(
+        sample_cancel_metadata(&session_id, SessionStatus::Busy),
+        Arc::new(ContextRegistry::new()),
+        None,
+    );
+    let slot = session.pending_user_prompt.clone();
+    let (_request_id, receiver) = admit_user_prompt(
+        &slot,
+        UserPromptPayload::Question {
+            questions: vec![UserQuestion {
+                id: "continue".to_string(),
+                question: "Continue?".to_string(),
+                description: None,
+                options: None,
+                multi_select: false,
+                allow_custom: false,
+            }],
+        },
+    )
+    .await
+    .expect("prompt admitted");
+    let active_sessions = Arc::new(RwLock::new(HashMap::new()));
+    active_sessions
+        .write()
+        .await
+        .insert(session_id.clone(), session);
+
+    let killed =
+        stop_user_prompt_and_session_processes(&active_sessions, &proxy_manager, &session_id).await;
 
     assert!(
-        !manager
-            .process_cancel_retry_exhausted("retry-session", "workspace__execute", "{}")
-            .await,
-        "the cancelled tool should receive its single retry"
+        killed > 0,
+        "the live shell must make this the process-only cancel path"
     );
     assert!(
-        manager
-            .process_cancel_retry_exhausted("retry-session", "workspace__execute", "{}")
-            .await,
-        "the same cancelled tool must be blocked after its retry"
+        classify_cancel_strategy(false, killed > 0) == CancelStrategy::CancelProcessThenContinue
     );
+    // A generous timeout proves Stop closed the channel; the clock did not run out.
+    let outcome = await_user_prompt_with_timeout(receiver, Duration::from_secs(30)).await;
+    assert_eq!(outcome, UserPromptOutcome::Stopped);
+    assert_eq!(outcome.as_event_str(), "cancelled");
+    assert!(pending_user_prompt_summary(&slot).await.is_none());
 }

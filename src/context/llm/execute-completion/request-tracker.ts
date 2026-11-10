@@ -6,6 +6,12 @@ const logger = getLogger('request-tracker');
 
 export type RequestTerminationReason = 'aborted' | 'superseded';
 
+/** Cancel scope that spans every attempt (retries and fallback) of one listener request. */
+export interface ListenerRequestScope {
+  responseMessageId: string;
+  controller: AbortController;
+}
+
 export interface UseSessionRequestTrackerReturn {
   activeServicesRef: React.MutableRefObject<
     Map<string, AICompletionExecutionService>
@@ -16,6 +22,9 @@ export interface UseSessionRequestTrackerReturn {
   activeRequestIdsRef: React.MutableRefObject<Map<string, string>>;
   terminatedRequestsRef: React.MutableRefObject<
     Map<string, RequestTerminationReason>
+  >;
+  listenerRequestsRef: React.MutableRefObject<
+    Map<string, ListenerRequestScope>
   >;
   getRequestKey: (sessionId: string, responseMessageId: string) => string;
   getRequestTerminationReason: (
@@ -44,6 +53,11 @@ export interface UseSessionRequestTrackerReturn {
     abortController: AbortController,
     service: AICompletionExecutionService,
   ) => void;
+  startListenerRequest: (
+    sessionId: string,
+    responseMessageId: string,
+  ) => AbortSignal;
+  finishListenerRequest: (sessionId: string, signal: AbortSignal) => void;
 }
 
 export function useSessionRequestTracker(): UseSessionRequestTrackerReturn {
@@ -55,6 +69,9 @@ export function useSessionRequestTracker(): UseSessionRequestTrackerReturn {
   const lastStreamingUpdateRef = useRef<Map<string, number>>(new Map());
   const activeRequestIdsRef = useRef<Map<string, string>>(new Map());
   const terminatedRequestsRef = useRef<Map<string, RequestTerminationReason>>(
+    new Map(),
+  );
+  const listenerRequestsRef = useRef<Map<string, ListenerRequestScope>>(
     new Map(),
   );
 
@@ -192,6 +209,18 @@ export function useSessionRequestTracker(): UseSessionRequestTrackerReturn {
       responseMessageId?: string,
       onCancelMessageCleanup?: (sessionId: string) => void,
     ) => {
+      // The listener scope outlives individual attempts, so cancel it even
+      // when no attempt is in flight (e.g. during a retry wait).
+      const listenerRequest = listenerRequestsRef.current.get(sessionId);
+      if (
+        listenerRequest &&
+        (responseMessageId === undefined ||
+          listenerRequest.responseMessageId === responseMessageId)
+      ) {
+        listenerRequestsRef.current.delete(sessionId);
+        listenerRequest.controller.abort();
+      }
+
       const activeResponseMessageId =
         activeRequestIdsRef.current.get(sessionId);
       if (
@@ -261,6 +290,30 @@ export function useSessionRequestTracker(): UseSessionRequestTrackerReturn {
     [getRequestKey],
   );
 
+  const startListenerRequest = useCallback(
+    (sessionId: string, responseMessageId: string): AbortSignal => {
+      listenerRequestsRef.current.get(sessionId)?.controller.abort();
+      const controller = new AbortController();
+      listenerRequestsRef.current.set(sessionId, {
+        responseMessageId,
+        controller,
+      });
+      return controller.signal;
+    },
+    [],
+  );
+
+  const finishListenerRequest = useCallback(
+    (sessionId: string, signal: AbortSignal) => {
+      if (
+        listenerRequestsRef.current.get(sessionId)?.controller.signal === signal
+      ) {
+        listenerRequestsRef.current.delete(sessionId);
+      }
+    },
+    [],
+  );
+
   return useMemo(
     () => ({
       activeServicesRef,
@@ -269,6 +322,7 @@ export function useSessionRequestTracker(): UseSessionRequestTrackerReturn {
       lastStreamingUpdateRef,
       activeRequestIdsRef,
       terminatedRequestsRef,
+      listenerRequestsRef,
       getRequestKey,
       getRequestTerminationReason,
       isCurrentRequest,
@@ -276,6 +330,8 @@ export function useSessionRequestTracker(): UseSessionRequestTrackerReturn {
       prepareForNewRequest,
       cancelCompletionRequest,
       cleanupRequestState,
+      startListenerRequest,
+      finishListenerRequest,
     }),
     [
       getRequestKey,
@@ -285,6 +341,8 @@ export function useSessionRequestTracker(): UseSessionRequestTrackerReturn {
       prepareForNewRequest,
       cancelCompletionRequest,
       cleanupRequestState,
+      startListenerRequest,
+      finishListenerRequest,
     ],
   );
 }

@@ -37,6 +37,8 @@ export interface AgentSession {
   dockerConfig?: DockerWorkspaceConfig;
   /** Lightweight provisioning step for session list UI */
   provisioningStep?: string;
+  /** Why the session has its current status, for example a Docker setup failure. */
+  statusReason?: string;
 }
 /**
  * Agent configuration for creating a new session

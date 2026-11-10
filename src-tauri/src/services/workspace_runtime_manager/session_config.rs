@@ -24,6 +24,27 @@ pub(super) fn docker_host_workspace_path(session: &SessionMetadata) -> RuntimeRe
         .ok_or_else(|| WorkspaceRuntimeError::MissingHostWorkspacePath(session.id.clone()))
 }
 
+/// Refuses a managed workspace that is the user's home directory or an ancestor of it. A root
+/// command in the container could then change dotfiles and other files of the whole home.
+/// Symlinks are resolved when the paths exist.
+pub(crate) fn refuse_home_workspace(
+    host_workspace: &Path,
+    home: Option<&Path>,
+) -> RuntimeResult<()> {
+    let Some(home) = home else {
+        return Ok(());
+    };
+    let resolve = |path: &Path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    if resolve(home).starts_with(resolve(host_workspace)) {
+        return Err(WorkspaceRuntimeError::InvalidConfig(format!(
+            "The workspace '{}' is your home directory or contains it. A container workspace \
+             must not include your home directory. Select a project folder as the workspace.",
+            host_workspace.display()
+        )));
+    }
+    Ok(())
+}
+
 pub(super) fn session_is_attach(session: &SessionMetadata) -> bool {
     session
         .docker_config
@@ -54,10 +75,18 @@ pub(super) fn path_mapper_for_session(
     PathMappingLayer::with_container_root(host_workspace, session_docker_workdir(session))
 }
 
+/// Docker host bind source (`-v` source or `docker cp` source).
+///
+/// Rust `canonicalize()` on Windows yields verbatim paths (`\\?\C:\...`), which
+/// Docker rejects as bind sources. Strip the prefix at this argument boundary so
+/// every bind source (workspace, teamwork, skills) is normalized consistently.
+/// Verbatim UNC (`\\?\UNC\...`) is left unchanged: network paths need the
+/// verbatim form, and LibrAgent bind sources are local drive paths today.
 pub(super) fn docker_mount_path(path: &Path) -> RuntimeResult<String> {
-    path.to_str()
-        .map(str::to_string)
-        .ok_or_else(|| WorkspaceRuntimeError::InvalidWorkspacePath(path.display().to_string()))
+    let raw = path
+        .to_str()
+        .ok_or_else(|| WorkspaceRuntimeError::InvalidWorkspacePath(path.display().to_string()))?;
+    Ok(crate::mcp::builtin::utils::strip_windows_verbatim_prefix(raw).to_string())
 }
 
 /// The host workspace is mounted at the session workdir, which is also the root
@@ -116,6 +145,35 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_home_directory_and_its_ancestors_are_refused_as_a_managed_workspace() {
+        let root = tempfile::tempdir().expect("root");
+        let home = root.path().join("users").join("alice");
+        let project = home.join("projects").join("app");
+        std::fs::create_dir_all(&project).expect("dirs");
+
+        for workspace in [home.as_path(), home.parent().expect("users"), root.path()] {
+            let error = refuse_home_workspace(workspace, Some(&home))
+                .expect_err("home or an ancestor must be refused")
+                .to_string();
+            assert!(error.contains("Select a project folder"), "{error}");
+        }
+        assert!(refuse_home_workspace(&project, Some(&home)).is_ok());
+        assert!(refuse_home_workspace(&root.path().join("other"), Some(&home)).is_ok());
+        assert!(refuse_home_workspace(&home, None).is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_to_the_home_directory_is_refused() {
+        let root = tempfile::tempdir().expect("root");
+        let home = root.path().join("alice");
+        std::fs::create_dir_all(&home).expect("home");
+        let link = root.path().join("ws");
+        std::os::unix::fs::symlink(&home, &link).expect("symlink");
+        assert!(refuse_home_workspace(&link, Some(&home)).is_err());
+    }
+
+    #[test]
     fn skill_volume_args_mount_system_and_user_read_only() {
         let args = build_skill_volume_args(
             Some(Path::new("/data/system_skills")),
@@ -170,6 +228,73 @@ mod tests {
                 "/host/ws:/app",
                 "-v",
                 "/tw/123:/app/.libragent/teamwork"
+            ]
+        );
+    }
+
+    #[test]
+    fn docker_mount_path_strips_windows_verbatim_prefixes() {
+        assert_eq!(
+            docker_mount_path(Path::new(r"C:\Temp\ws")).unwrap(),
+            r"C:\Temp\ws"
+        );
+        assert_eq!(
+            docker_mount_path(Path::new(r"\\?\C:\Temp\ws")).unwrap(),
+            r"C:\Temp\ws"
+        );
+        assert_eq!(
+            docker_mount_path(Path::new("//?/C:/Temp/ws")).unwrap(),
+            "C:/Temp/ws"
+        );
+        // Verbatim UNC keeps the prefix: network paths need the verbatim form.
+        assert_eq!(
+            docker_mount_path(Path::new(r"\\?\UNC\server\share")).unwrap(),
+            r"\\?\UNC\server\share"
+        );
+    }
+
+    #[test]
+    fn volume_args_strip_verbatim_prefix_from_windows_bind_sources() {
+        let args = build_docker_volume_args(
+            Path::new(r"\\?\C:\Temp\Rumi-E2E\O2-docker"),
+            "/workspace",
+            Some(Path::new(r"\\?\C:\Users\dev\.libragent\teamwork")),
+        )
+        .unwrap();
+        assert_eq!(
+            args,
+            vec![
+                "-v",
+                r"C:\Temp\Rumi-E2E\O2-docker:/workspace",
+                "-v",
+                r"C:\Users\dev\.libragent\teamwork:/workspace/.libragent/teamwork",
+            ]
+        );
+    }
+
+    #[test]
+    fn volume_args_keep_spaces_in_windows_bind_sources() {
+        // Volume arguments go to docker as separate argv entries, so spaces stay literal.
+        let args =
+            build_docker_volume_args(Path::new(r"\\?\C:\Temp\My Workspace"), "/workspace", None)
+                .unwrap();
+        assert_eq!(args[1], r"C:\Temp\My Workspace:/workspace");
+    }
+
+    #[test]
+    fn skill_volume_args_strip_verbatim_prefix_from_bind_sources() {
+        let args = build_skill_volume_args(
+            Some(Path::new(r"\\?\C:\ProgramData\libragent\system_skills")),
+            Some(Path::new(r"\\?\C:\Users\dev\.libragent\user_skills")),
+        )
+        .unwrap();
+        assert_eq!(
+            args,
+            vec![
+                "-v",
+                r"C:\ProgramData\libragent\system_skills:/opt/libragent/skills/system:ro",
+                "-v",
+                r"C:\Users\dev\.libragent\user_skills:/opt/libragent/skills/user:ro",
             ]
         );
     }

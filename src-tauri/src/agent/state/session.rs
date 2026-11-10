@@ -1,5 +1,6 @@
 use super::{
-    CompactionRuntimeState, PendingApprovalData, PendingEventManager, PendingToolExecution,
+    new_user_prompt_slot, CompactionRuntimeState, PendingApprovalData, PendingEventManager,
+    PendingToolExecution, UserPromptSlot,
 };
 use crate::agent::concurrency::ActiveAgentPermit;
 use crate::agent::context::registry::ContextRegistry;
@@ -56,15 +57,6 @@ pub struct AgentSession {
     /// Independent from `repeated_thinking_retry_count`.
     pub repeated_text_loop_retry_count: Arc<RwLock<u32>>,
 
-    /// Counts Rust-owned recovery retries after malformed/truncated tool-call
-    /// argument JSON in a completion. Independent from thinking/text counters.
-    /// Not reset on FallThrough — only on workflow start or a clean valid batch.
-    pub bad_tool_args_retry_count: Arc<RwLock<u32>>,
-
-    /// Counts FallThrough incidents for malformed tool args in the current
-    /// workflow. Hard-stops after a fixed cap to bound unbounded truncated loops.
-    pub bad_tool_args_incident_count: Arc<RwLock<u32>>,
-
     /// Counts Rust-owned recovery retries after client-side reasoning-budget
     /// aborts (thinking reached ~90% of max output tokens). Independent from
     /// repeated-thinking / text-loop counters. No prompt nudge is injected.
@@ -81,6 +73,13 @@ pub struct AgentSession {
     /// Channels for pending tool execution approvals
     /// Maps tool_call_id to PendingApprovalData (which unblocks the workflow with a bool)
     pub pending_approvals: Arc<RwLock<HashMap<String, PendingApprovalData>>>,
+
+    /// The one user prompt currently waiting for a local answer (#2543).
+    ///
+    /// A single slot, not a map, because a session may only have one prompt
+    /// waiting at a time. Stop, terminate, and delete drop it, which closes the
+    /// channel so the waiting caller ends at once.
+    pub pending_user_prompt: UserPromptSlot,
 
     /// Context registry for read-only information providers
     pub context_registry: Arc<ContextRegistry>,
@@ -160,12 +159,11 @@ impl AgentSession {
             last_synced_at: Arc::new(RwLock::new(None)),
             repeated_thinking_retry_count: Arc::new(RwLock::new(0)),
             repeated_text_loop_retry_count: Arc::new(RwLock::new(0)),
-            bad_tool_args_retry_count: Arc::new(RwLock::new(0)),
-            bad_tool_args_incident_count: Arc::new(RwLock::new(0)),
             reasoning_budget_retry_count: Arc::new(RwLock::new(0)),
             malformed_tool_markup_retry_count: Arc::new(RwLock::new(0)),
             pending_events: Arc::new(RwLock::new(PendingEventManager::new())),
             pending_approvals: Arc::new(RwLock::new(HashMap::new())),
+            pending_user_prompt: new_user_prompt_slot(),
             context_registry,
             compact_context: Arc::new(RwLock::new(compact_context)),
             compaction: CompactionRuntimeState::new(),
@@ -187,6 +185,7 @@ impl AgentSession {
         self.messages.write().await.clear();
         *self.cached_stable_prompt.write().await = None;
         self.pending_approvals.write().await.clear();
+        self.pending_user_prompt.write().await.take();
         self.pending_execution = None;
         *self.compact_context.write().await = None;
         self.compaction.clear_runtime_state(true).await;
@@ -245,6 +244,7 @@ mod tests {
                 docker_config: None,
                 docker_container_name: None,
                 docker_host_workspace_path: None,
+                status_reason: None,
             },
             is_running: true,
             active_permit: None,
@@ -258,12 +258,11 @@ mod tests {
             last_synced_at: Arc::new(RwLock::new(None)),
             repeated_thinking_retry_count: Arc::new(RwLock::new(0)),
             repeated_text_loop_retry_count: Arc::new(RwLock::new(0)),
-            bad_tool_args_retry_count: Arc::new(RwLock::new(0)),
-            bad_tool_args_incident_count: Arc::new(RwLock::new(0)),
             reasoning_budget_retry_count: Arc::new(RwLock::new(0)),
             malformed_tool_markup_retry_count: Arc::new(RwLock::new(0)),
             pending_events: Arc::new(RwLock::new(PendingEventManager::new())),
             pending_approvals: Arc::new(RwLock::new(HashMap::new())),
+            pending_user_prompt: new_user_prompt_slot(),
             context_registry: Arc::new(ContextRegistry::new()),
             compact_context: Arc::new(RwLock::new(None)),
             compaction: CompactionRuntimeState::new(),
@@ -359,6 +358,7 @@ mod tests {
             .is_none());
         assert!(session.last_completion_request.read().await.is_none());
         assert!(session.pending_approvals.read().await.is_empty());
+        assert!(session.pending_user_prompt.read().await.is_none());
         assert!(session.pending_execution.is_none());
         assert!(session.compact_context.read().await.is_none());
         assert!(!session.pending_events.read().await.has_pending());

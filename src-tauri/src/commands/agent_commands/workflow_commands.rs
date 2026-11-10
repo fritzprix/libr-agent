@@ -17,6 +17,10 @@ pub async fn agent_send_message(
     manager: State<'_, AgentSessionManager>,
     request: SendUserMessageRequest,
 ) -> Result<AgentResponse, String> {
+    // Explicit user message: a previous force-stop fence ends here (issue #2633).
+    manager
+        .allow_explicit_message_after_terminate(&request.session_id)
+        .await;
     manager
         .start_workflow(request.session_id, request.message)
         .await
@@ -33,6 +37,12 @@ pub async fn agent_inject_messages(
     manager: State<'_, AgentSessionManager>,
     request: InjectMessagesRequest,
 ) -> Result<AgentResponse, String> {
+    // Explicit UI inject: a previous force-stop fence ends here (issue #2633).
+    // Automatic inject callers (MCP channel notification, scheduled runner) do
+    // not clear the fence, so they cannot revive a terminated session.
+    manager
+        .allow_explicit_message_after_terminate(&request.session_id)
+        .await;
     let triggered = manager
         .inject_messages(request.session_id.clone(), request.messages)
         .await?;
@@ -229,13 +239,13 @@ pub async fn agent_pause_workflow(
     })
 }
 
-/// Resume a paused workflow
+/// Resume a paused workflow or retry after an error. Same steps as `POST /api/sessions/:id/resume`.
 #[command]
 pub async fn agent_resume_workflow(
     manager: State<'_, AgentSessionManager>,
     session_id: String,
 ) -> Result<AgentResponse, String> {
-    manager.resume_workflow(session_id.clone()).await?;
+    manager.resume_session_and_workflow(&session_id).await?;
 
     Ok(AgentResponse {
         success: true,

@@ -75,6 +75,7 @@ async fn docker_workspace_run_shell_smoke_test() {
         }),
         docker_container_name: Some(container_name.clone()),
         docker_host_workspace_path: Some(workspace_path.to_string_lossy().to_string()),
+        status_reason: None,
     };
 
     repo.upsert_session(&session)
@@ -92,8 +93,10 @@ async fn docker_workspace_run_shell_smoke_test() {
                     .to_string(),
             args: Vec::new(),
             env_vars: HashMap::new(),
+            secrets: Default::default(),
             isolation_level: IsolationLevel::Medium,
             shell_type: None,
+            run_as_root: false,
         })
         .await
         .expect("Docker isolated command should be created");
@@ -189,6 +192,7 @@ async fn docker_workspace_persistent_shell_smoke_test() {
         }),
         docker_container_name: Some(container_name.clone()),
         docker_host_workspace_path: Some(workspace_path.to_string_lossy().to_string()),
+        status_reason: None,
     };
 
     repo.upsert_session(&session)
@@ -313,6 +317,7 @@ async fn docker_workspace_loopback_dynamic_port_smoke_test() {
         }),
         docker_container_name: Some(container_name.clone()),
         docker_host_workspace_path: Some(workspace_path.to_string_lossy().to_string()),
+        status_reason: None,
     };
 
     repo.upsert_session(&session)
@@ -398,6 +403,7 @@ async fn docker_workspace_sh_fallback_smoke_test() {
         }),
         docker_container_name: Some(container_name.clone()),
         docker_host_workspace_path: Some(workspace_path.to_string_lossy().to_string()),
+        status_reason: None,
     };
 
     repo.upsert_session(&session)
@@ -413,8 +419,10 @@ async fn docker_workspace_sh_fallback_smoke_test() {
             command: "pwd && echo sh-ok > sh-fallback.txt && cat sh-fallback.txt".to_string(),
             args: Vec::new(),
             env_vars: HashMap::new(),
+            secrets: Default::default(),
             isolation_level: IsolationLevel::Medium,
             shell_type: None,
+            run_as_root: false,
         })
         .await
         .expect("Docker isolated sh fallback command should be created");

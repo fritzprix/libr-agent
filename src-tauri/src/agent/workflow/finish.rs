@@ -468,6 +468,13 @@ mod tests {
         ) -> Result<(), String> {
             Ok(())
         }
+
+        fn emit_completion_cancel(
+            &self,
+            _request: crate::agent::llm::types::CompletionCancelRequest,
+        ) -> Result<(), String> {
+            Ok(())
+        }
     }
 
     async fn seed_in_memory_session(
@@ -504,6 +511,7 @@ mod tests {
             docker_config: None,
             docker_container_name: None,
             docker_host_workspace_path: None,
+            status_reason: None,
         };
         session_repo
             .upsert_session(&metadata)
@@ -535,6 +543,13 @@ mod tests {
         fn emit_compact_state(
             &self,
             _event: crate::agent::llm::types::CompactStateEvent,
+        ) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn emit_completion_cancel(
+            &self,
+            _request: crate::agent::llm::types::CompletionCancelRequest,
         ) -> Result<(), String> {
             Ok(())
         }
@@ -687,6 +702,7 @@ mod tests {
                 docker_config: None,
                 docker_container_name: None,
                 docker_host_workspace_path: None,
+                status_reason: None,
             },
             is_running: true,
             active_permit: None,
@@ -700,12 +716,11 @@ mod tests {
             last_synced_at: Arc::new(RwLock::new(Some(SystemTime::now()))),
             repeated_thinking_retry_count: Arc::new(RwLock::new(0)),
             repeated_text_loop_retry_count: Arc::new(RwLock::new(0)),
-            bad_tool_args_retry_count: Arc::new(RwLock::new(0)),
-            bad_tool_args_incident_count: Arc::new(RwLock::new(0)),
             reasoning_budget_retry_count: Arc::new(RwLock::new(0)),
             malformed_tool_markup_retry_count: Arc::new(RwLock::new(0)),
             pending_events: Arc::new(RwLock::new(PendingEventManager::new())),
             pending_approvals: Arc::new(RwLock::new(HashMap::new())),
+            pending_user_prompt: crate::agent::state::new_user_prompt_slot(),
             context_registry: Arc::new(ContextRegistry::new()),
             compact_context: Arc::new(RwLock::new(None)),
             compaction: CompactionRuntimeState::new(),

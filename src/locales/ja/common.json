@@ -146,7 +146,9 @@
     "recurringStop": "定期停止",
     "pendingApprovals_one": "{{count}} 件の承認",
     "pendingApprovals_other": "{{count}} 件の承認",
-    "viewSession": "セッション {{name}} を開く"
+    "viewSession": "セッション {{name}} を開く",
+    "markAllRead": "すべて既読にする",
+    "dismiss": "閉じる"
   },
   "sidebar": {
     "mobileTitle": "サイドバー",
@@ -317,6 +319,8 @@
     "rootLabel": "ルートセッション",
     "updatedLabel": "更新日",
     "resumeRoot": "ルートセッションを再開",
+    "exportBundle": "組織をエクスポート",
+    "importBundle": "組織をインポート",
     "delete": "組織を削除",
     "deleteConfirm": {
       "title": "組織を削除しますか？",
@@ -324,7 +328,12 @@
     },
     "toasts": {
       "deleted": "組織を削除しました",
-      "deleteFailed": "組織の削除に失敗しました"
+      "deleteFailed": "組織の削除に失敗しました",
+      "exported": "組織バンドルをエクスポートしました",
+      "exportFailed": "組織をエクスポートできませんでした",
+      "imported": "組織バンドルをインポートしました。Teamwork ファイル: {{path}}",
+      "importFailed": "組織バンドルをインポートできませんでした",
+      "importPasswordRequired": "この組織バンドルは暗号化されています。この画面ではパスワード付きのインポートにまだ対応していません。暗号化されていないエクスポートか移行ツールを使用してください。"
     },
     "emptyState": {
       "title": "Org 系統はまだありません",
@@ -338,6 +347,7 @@
     "saved": "設定を保存しました",
     "saving": "保存中...",
     "saveFailed": "設定の保存に失敗しました",
+    "restartRequiredNotice": "保存した設定の一部は、アプリの再起動後に適用されます。",
     "applyChanges": "変更を適用",
     "language": {
       "label": "言語",
@@ -373,9 +383,6 @@
     "decreaseToolCallCount": "表示するツール呼び出し数を減らす",
     "increaseToolCallCount": "表示するツール呼び出し数を増やす",
     "general": {
-      "skillsDirectory": "スキルディレクトリ",
-      "skillsDirectorySelectTitle": "スキルディレクトリを選択",
-      "skillsDirectoryPlaceholder": "ローカルスキルのディレクトリを選択...",
       "browse": "参照",
       "browseAriaLabel": "スキルディレクトリを参照",
       "openInExplorer": "エクスプローラーで開く",
@@ -383,8 +390,7 @@
       "error": "エラー: {{message}}",
       "skillsFound_one": "{{count}} 個のスキルが見つかりました",
       "skillsFound_other": "{{count}} 個のスキルが見つかりました",
-      "invalidDirectory": "無効なディレクトリ",
-      "skillsDirectoryDescription": "エージェントスキル（SKILL.mdを含むフォルダ）を含むディレクトリ。新しいスキルは自動的に検出されます。"
+      "invalidDirectory": "無効なディレクトリ"
     },
     "aiModels": {
       "apiKeys": "プロバイダーAPIキー",
@@ -481,10 +487,6 @@
         "d2coding": "D2Coding (開発者向け等幅)"
       },
       "metricsTitle": "パフォーマンス指標",
-      "metricDisplayMode": "指標表示モード",
-      "inline": "インライン（メッセージ内に表示）",
-      "tooltip": "ツールチップ（ホバーして表示）",
-      "metricDisplayModeDescription": "チャットメッセージでのトークン指標の表示方法を選択",
       "prefillDisplayFormat": "初期応答速度の形式",
       "time": "最初の応答までの時間（例: 245ms）",
       "tokensPerSecond": "秒間トークン数 (例: 520 tok/s)",
@@ -554,13 +556,20 @@
       "toolResultInlineLimitDescription": "チャットに直接表示するツール出力の最大サイズです。超過分はファイルに保存され、小さくするほどメモリを節約します。",
       "shellIsolation": "シェル分離レベル",
       "shellIsolationModes": {
-        "basic": "基本 - すべてのPATHへのアクセス（安全性が低い）",
-        "medium": "中 - 制限されたPATH（バランス）",
-        "high": "高 - サンドボックス化（最も安全）"
+        "basic": "基本",
+        "medium": "中",
+        "high": "高 - OS サンドボックス"
       },
-      "shellIsolationDescription": "シェルコマンドの環境分離を制御します。基本はユーザーがインストールしたツールを許可し、高は最大のセキュリティを提供します。",
+      "shellIsolationDescription": "ローカルセッションの単発シェルコマンドとバックグラウンドプロセスに適用されます。永続シェルと Docker セッションはこの設定を使用しません。",
+      "shellIsolationHelp": {
+        "basic": "環境変数をクリアした状態でワークスペース内でコマンドを実行します。PATH と一部の基本変数（HOME、USER、ロケール、プロキシなど）のみが渡され、API キーなどのホストの秘密情報は渡されません。ファイルとネットワークへのアクセスは制限されません。",
+        "medium": "基本と同じで、コマンドは独立したプロセスグループで実行されます。ファイルとネットワークへのアクセスは制限されません。",
+        "high": "Linux: 独立したユーザー・PID・マウント名前空間（unshare）で実行されます。ファイルとネットワークへのアクセスは制限されません。macOS: sandbox-exec で実行され、ファイルの書き込みはワークスペースと /tmp, /var/tmp のみ、ネットワークアクセスは許可されます。Windows: 中と同じです。サンドボックスが使えない場合は中で実行されます。"
+      },
       "shellRuntimeBootstrap": "シェルランタイムブートストラップ",
       "shellRuntimeBootstrapDescription": "ターミナル起動時にPythonおよびNodeの環境パスのみを高速に読み込み、コマンド実行を高速化します。",
+      "allowLinkedWorktrees": "ファイルツールでリンクされた git worktree を使用",
+      "allowLinkedWorktreesDescription": "ワークスペースが git リポジトリの場合、ファイルツールは同じリポジトリの他の作業フォルダー（git worktree）のファイルも読み取り・編集できます。オフにするとワークスペースフォルダーのみ使用できます。",
       "performance": "パフォーマンスと並行実行",
       "performanceDescription": "これらの実行時制限は、同時に実行できるエージェント数とワークスペースプロセス数を制御します。",
       "title": "高度な実行時制御",
@@ -571,6 +580,15 @@
       "loopPreventionHardBreakOffset": "ハードブレイクオフセット",
       "loopPreventionHardBreakOffsetPlaceholder": "例: 2",
       "loopPreventionHardBreakOffsetDescription": "ループ警告の後、エージェントが完全に停止するまでに許容される追加の試行回数です。",
+      "toolWaitDurationSecs": "ツール待機時間（秒）",
+      "toolWaitDurationSecsDescription": "この時間以上かかる同じツール呼び出しは、繰り返しではなくバックグラウンド作業の待機とみなされます。",
+      "toolWaitDurationSecsPlaceholder": "例: 10",
+      "toolWaitGuideCount": "待機案内の回数",
+      "toolWaitGuideCountDescription": "同じ長い待ちがこの回数を超えると、エージェントは確認を続けず、後で一度だけ起こされるよう予約するよう指示されます。",
+      "toolWaitGuideCountPlaceholder": "例: 10",
+      "toolWaitBreakCount": "待機中断の回数",
+      "toolWaitBreakCountDescription": "案内の後、同じ長い待ちがこの回数だけ続いても完全に停止します。",
+      "toolWaitBreakCountPlaceholder": "例: 10",
       "thinkingLoopMinPatternLength": "思考ループ最小パターン長",
       "thinkingLoopMinPatternLengthDescription": "思考プロセスでの繰り返しエラーを検知する最小の文字列長です。値を大きくすると誤検知を減らせます。",
       "thinkingLoopMinPatternLengthPlaceholder": "例: 256",
@@ -605,6 +623,9 @@
       "preventSleepDuringAgentWorkDescription": "LibrAgent の起動中、システムのアイドルスリープを防ぎます。ディスプレイを強制点灯はしません。既定はオンです。",
       "searchIndexFrequency": "検索インデックス頻度（分）",
       "searchIndexFrequencyDescription": "AIがメモリ検索を更新する頻度。更新を速くすると検索が最新に保たれますが、バッテリー/CPUをより多く消費します。",
+      "logRetentionDays": "アプリログの保存期間（日）",
+      "logRetentionDaysDescription": "この日数より古いアプリログを削除します。ログにはチャット内容が含まれる場合があります。0 にすると、件数と容量の上限だけを適用します。",
+      "logRetentionDaysUnlimited": "無制限",
       "webActionTimeout": "Webアクションタイムアウト（秒）",
       "webActionTimeoutDescription": "AIがウェブページの読み込みやクリックの完了を待機する時間。",
       "mcpServerStartupTimeout": "拡張ツールの検出タイムアウト（秒）",
@@ -622,6 +643,7 @@
         "maxFileUploadSize": "例: 50",
         "workspaceCapacity": "例: 10",
         "searchIndexFrequency": "例: 5",
+        "logRetentionDays": "例: 30",
         "webActionTimeout": "例: 30",
         "mcpServerStartupTimeout": "例: 30",
         "mcpToolTimeout": "0 (無効)",
@@ -927,6 +949,25 @@
         "title": "ツール結果にループ警告を表示 (レガシー)",
         "description": "有効にすると、自動で再試行する代わりにエラーメッセージとしてループ警告を表示します。"
       }
+    },
+    "sessionApi": {
+      "title": "Session API キー",
+      "description": "ペアリングによって外部 AI エージェントに発行された API キーです。キーが 1 つでもある場合、有効なキーのないリクエストは 401 で拒否されます。キーがない場合、localhost からのリクエストはキーなしで許可されます。",
+      "emptyList": "まだ API キーは発行されていません。チャットの「エージェントセッションに統合」を使用して外部エージェントをペアリングしてください。",
+      "fetchError": "Session API キーを読み込めませんでした",
+      "errorTitle": "Session API キーを読み込めませんでした",
+      "errorHelp": "キーファイルが破損しているか、権限が正しくない可能性があります。問題が解決するまでキーの検証はロックされます（fail-closed）。",
+      "confirmRevoke": "失効を確認",
+      "confirmRevokePrompt": "{{name}} の API キーを失効させますか？「失効を確認」または「キャンセル」を選んでください。",
+      "deleteSuccess": "{{name}} の API キーを削除しました",
+      "deleteError": "API キーを削除できませんでした",
+      "active": "有効",
+      "created": "作成日",
+      "pairingTitle": "エージェントのペアリング要求",
+      "pairingDescription": "外部エージェント「{{name}}」が Session API へのアクセスを要求しています。許可するには、エージェントの画面に表示された 6 文字のコードを入力してください。",
+      "pairingCodeLabel": "ペアリングコード (xxx-yyy)",
+      "pairingSuccess": "{{name}} とのペアリングに成功しました",
+      "pairingRejected": "ペアリング要求を拒否しました"
     }
   },
   "mcpServer": {
@@ -1238,7 +1279,6 @@
       "dockerRetryButton": "セッション開始を再試行",
       "dockerWaitingForEngine": "Dockerエンジンを待機中…",
       "dockerStillNotReady": "Dockerはまだ準備できていません。エンジンの起動を待ってから、もう一度お試しください。",
-      "dockerImageRequired": "Docker分離セッションを開始する前にDockerイメージを選択してください。",
       "dockerCreating": "セッションを作成中 — Dockerイメージ {{image}} を準備中…",
       "dockerNotInstalledTitle": "Dockerがインストールされていません",
       "dockerNotInstalledDescription": "このマシンで Docker CLI が見つかりませんでした。Docker Desktop をインストールするか、ホストモードでこのセッションを開始してください。",
@@ -1289,7 +1329,11 @@
       "renameCancelAria": "セッションタイトルの編集をキャンセル",
       "renameSuccess": "セッションタイトルを更新しました",
       "renameError": "セッションタイトルの更新に失敗しました",
-      "renameEmptyError": "セッションタイトルは空にできません"
+      "renameEmptyError": "セッションタイトルは空にできません",
+      "integrateExternalAgentAria": "エージェントセッションに統合（手順をコピー）",
+      "integrateExternalAgentTooltip": "エージェントセッションに統合（手順をコピー）",
+      "integrationInstructionCopied": "統合手順をクリップボードにコピーしました。外部 AI エージェントに貼り付けてください。",
+      "integrationInstructionCopyFailed": "統合手順をクリップボードにコピーできませんでした"
     },
     "sessionExport": {
       "menuAria": "セッションをエクスポート",
@@ -1311,6 +1355,7 @@
       "isolationTip": "Dockerワークスペースはホスト環境ではなくコンテナ内で安全にコマンドを実行します。",
       "useDockerContainer": "Dockerコンテナを使用",
       "dockerImage": "Dockerイメージ",
+      "defaultDockerImage": "LibrAgent 既定イメージ",
       "dockerNotInstalledWarning": "Docker がインストールされていないか、PATH で利用できません。",
       "dockerDaemonOfflineWarning": "Docker デーモンが実行されていません。",
       "dockerHealthHint": "Docker Desktop をインストールするか、エンジンを起動するか、ホストモードに切り替えてください。",
@@ -1378,6 +1423,11 @@
       "reasoningBudgetRetry": "推論が長すぎました。新しいターンで再試行します…",
       "thinkingLoopRetry": "思考ループを検出しました。新しいターンで再試行します…",
       "textLoopRetry": "繰り返しテキストのループを検出しました。新しいターンで再試行します…"
+    },
+    "interactiveForm": {
+      "submitSuccess": "回答を送信しました。エージェントが処理を続けています。",
+      "submitNotReady": "セッションの準備がまだできていませんでした。少し待ってからもう一度送信してください。",
+      "duplicateSubmit": "回答はすでに送信中です。"
     },
     "statusBar": {
       "retryError": "メッセージの再試行に失敗しました",
@@ -1683,6 +1733,16 @@
       "imageAlt": "ツール出力画像",
       "unsupportedAudio": "お使いのブラウザはオーディオ要素をサポートしていません。",
       "unsupportedVideo": "お使いのブラウザはビデオ要素をサポートしていません。"
+    },
+    "userPromptDialog": {
+      "titleSecret": "パスワードが必要です",
+      "titleQuestion": "回答が必要です",
+      "waitingAnswer": "エージェントが回答を待っています。",
+      "submit": "送信",
+      "cancelFailed": "プロンプトのキャンセルに失敗しました。",
+      "submitFailed": "回答の送信に失敗しました。",
+      "other": "その他",
+      "otherInputLabel": "{{question}} (その他)"
     }
   },
   "scheduledTasks": {
@@ -2004,6 +2064,11 @@
         "title": "UI の表示サイズを調整できます",
         "body": "設定 → General またはショートカット Ctrl/Cmd +、-、0 でインターフェース全体をすぐに拡大・縮小できます。",
         "cta": "General 設定を開く"
+      },
+      "docsExport": {
+        "title": "回答を PDF・Word・PowerPoint で受け取れます",
+        "body": "@skill:docs と入力して報告書・提案書・議事録を依頼すると、そのまま共有できる PDF、DOCX、PPTX ファイルとして保存します。",
+        "cta": "チャットで試す"
       }
     }
   }

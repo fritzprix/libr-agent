@@ -10,6 +10,11 @@ pub enum WorkspaceRuntimeError {
     DockerNotAvailable(String),
     #[error("Docker command failed: {0}")]
     DockerCommandFailed(String),
+    /// The registry has no such image (or denies it). Pulling again gives the same result.
+    #[error("{0}")]
+    ImageNotFound(String),
+    #[error("Attach container '{0}' was not found")]
+    AttachContainerNotFound(String),
     #[error("Docker container '{container_name}' is not owned by session '{session_id}'")]
     OwnershipMismatch {
         container_name: String,
@@ -54,6 +59,15 @@ impl WorkspaceRuntimeError {
             }
             other => other.to_string(),
         }
+    }
+
+    /// True when retrying without a change by the user gives the same error (the image or the
+    /// attach container does not exist). Daemon, network and other command failures are false.
+    pub fn is_permanent(&self) -> bool {
+        matches!(
+            self,
+            Self::ImageNotFound(_) | Self::AttachContainerNotFound(_)
+        )
     }
 }
 

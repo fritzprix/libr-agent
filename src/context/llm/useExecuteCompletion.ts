@@ -51,6 +51,7 @@ export function useExecuteCompletion({
     const activeServices = tracker.activeServicesRef;
     const activeRequestIds = tracker.activeRequestIdsRef;
     const terminatedRequests = tracker.terminatedRequestsRef;
+    const listenerRequests = tracker.listenerRequestsRef;
 
     return () => {
       const activeRequests = Array.from(
@@ -80,6 +81,8 @@ export function useExecuteCompletion({
       activeServices.current?.clear();
       activeRequestIds.current?.clear();
       terminatedRequests.current?.clear();
+      listenerRequests.current?.forEach(({ controller }) => controller.abort());
+      listenerRequests.current?.clear();
     };
     // Refs are stable across re-renders; run cleanup only on component unmount
   }, []);
@@ -459,5 +462,10 @@ export function useExecuteCompletion({
     [tracker.cancelCompletionRequest, setStreamingMessages],
   );
 
-  return { executeCompletionRequest, cancelCompletionRequest };
+  return {
+    executeCompletionRequest,
+    cancelCompletionRequest,
+    startListenerRequest: tracker.startListenerRequest,
+    finishListenerRequest: tracker.finishListenerRequest,
+  };
 }

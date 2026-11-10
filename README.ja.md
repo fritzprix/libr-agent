@@ -151,10 +151,11 @@ LibrAgent は、これらの作業を直感的に解決する **完成された�
 **[Releases ページ](https://github.com/fritzprix/libr-agent/releases/latest)**から最新のインストーラーをダウンロードしてください。
 
 <!-- RELEASE_DOWNLOADS_START -->
-- **Windows:** [`LibrAgent_0.9.29_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.29/LibrAgent_0.9.29_x64-setup.exe) · [`LibrAgent_0.9.29_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.29/LibrAgent_0.9.29_x64_en-US.msi)
-- **macOS (Apple Silicon):** [`LibrAgent_0.9.29_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.29/LibrAgent_0.9.29_aarch64.dmg)
-- **Linux:** [`LibrAgent_0.9.29_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.29/LibrAgent_0.9.29_amd64.AppImage) · [`LibrAgent_0.9.29_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.29/LibrAgent_0.9.29_amd64.deb) · [`LibrAgent-0.9.29-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.29/LibrAgent-0.9.29-1.x86_64.rpm)
-- **すべてのリリース資産:** [リリースページ](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.29)
+
+- **Windows:** [`LibrAgent_0.9.31_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.31/LibrAgent_0.9.31_x64-setup.exe) · [`LibrAgent_0.9.31_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.31/LibrAgent_0.9.31_x64_en-US.msi)
+- **macOS (Apple Silicon):** [`LibrAgent_0.9.31_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.31/LibrAgent_0.9.31_aarch64.dmg)
+- **Linux:** [`LibrAgent_0.9.31_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.31/LibrAgent_0.9.31_amd64.AppImage) · [`LibrAgent_0.9.31_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.31/LibrAgent_0.9.31_amd64.deb) · [`LibrAgent-0.9.31-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.31/LibrAgent-0.9.31-1.x86_64.rpm)
+- **すべてのリリース資産:** [リリースページ](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.31)
 <!-- RELEASE_DOWNLOADS_END -->
 
 ### 5分オンボーディングの手順

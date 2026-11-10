@@ -1,7 +1,7 @@
 use crate::common;
 
 use tauri_mcp_agent_lib::repositories::{MCPServerRepository, SqliteMCPServerRepository};
-use tauri_mcp_agent_lib::services::McpServerService;
+use tauri_mcp_agent_lib::services::{McpServerService, SaveVerification};
 
 async fn setup_repo() -> SqliteMCPServerRepository {
     let db = common::setup_test_db_with_migrations().await;
@@ -26,6 +26,7 @@ async fn test_create_server_config_saves_pending_without_blocking_on_verify() {
         &repo,
         "bad-server".to_string(),
         missing_stdio_wrapper_config(),
+        SaveVerification::Pending,
     )
     .await
     .expect("create must succeed immediately (save-first)");
@@ -83,6 +84,7 @@ async fn test_update_server_config_marks_pending_for_unreachable_transport_chang
         created.id.clone(),
         None,
         Some(missing_stdio_wrapper_config()),
+        SaveVerification::Pending,
     )
     .await
     .expect("transport update must persist even when target is unreachable");
@@ -109,6 +111,7 @@ async fn test_create_sanitizes_whitespace_server_name() {
         &repo,
         "My Server".to_string(),
         missing_stdio_wrapper_config(),
+        SaveVerification::Pending,
     )
     .await
     .expect("create must sanitize and persist");
@@ -149,6 +152,7 @@ async fn test_update_preserves_legacy_whitespace_display_name() {
         legacy.id.clone(),
         Some("Google Drive".to_string()),
         Some(missing_stdio_wrapper_config()),
+        SaveVerification::Pending,
     )
     .await
     .expect("update must succeed");
@@ -167,6 +171,7 @@ async fn test_create_rejects_reserved_builtin_name() {
         &repo,
         "workspace".to_string(),
         missing_stdio_wrapper_config(),
+        SaveVerification::Pending,
     )
     .await;
 

@@ -4,17 +4,13 @@ import type { Message, MessageError } from '@/models/chat';
 import type {
   AgentRuntimeError,
   MessageCursor,
+  PendingUserPromptSummary,
   PreflightTokenMetrics,
   SessionRuntimeState,
   SessionWorkflowStatus,
 } from '@/models/agent-ipc';
 import { applyViewedAtToSession } from '@/lib/session-utils';
-import type {
-  ExecutionMode,
-  PendingApproval,
-  PendingInteractiveShellPrompt,
-  WorkflowPhase,
-} from './types';
+import type { ExecutionMode, PendingApproval, WorkflowPhase } from './types';
 import { buildMessageError } from './utils';
 
 const DEFAULT_RUNTIME_STATE: SessionRuntimeState = {
@@ -51,8 +47,8 @@ export function useAgentSessionState() {
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>(
     [],
   );
-  const [pendingInteractiveShellPrompt, setPendingInteractiveShellPrompt] =
-    useState<PendingInteractiveShellPrompt | null>(null);
+  const [pendingUserPrompt, setPendingUserPrompt] =
+    useState<PendingUserPromptSummary | null>(null);
   const [executionMode, setExecutionMode] = useState<ExecutionMode>('normal');
 
   const workflowPhaseRef = useRef(workflowPhase);
@@ -83,7 +79,7 @@ export function useAgentSessionState() {
     setHasOlderMessages(false);
     setOldestMessageCursor(null);
     setPendingApprovals([]);
-    setPendingInteractiveShellPrompt(null);
+    setPendingUserPrompt(null);
     setErrorState(null);
     setLlmError(null);
     setWorkflowStatus('idle');
@@ -132,7 +128,7 @@ export function useAgentSessionState() {
       setRuntimeState,
       setPreflightTokenMetrics,
       setPendingApprovals,
-      setPendingInteractiveShellPrompt,
+      setPendingUserPrompt,
       setExecutionMode,
       applyLocalViewedAt,
       addMessage,
@@ -153,7 +149,7 @@ export function useAgentSessionState() {
       setRuntimeState,
       setPreflightTokenMetrics,
       setPendingApprovals,
-      setPendingInteractiveShellPrompt,
+      setPendingUserPrompt,
       setExecutionMode,
       applyLocalViewedAt,
       addMessage,
@@ -202,7 +198,7 @@ export function useAgentSessionState() {
       preflightTokenMetrics,
       initializationStep,
       pendingApprovals,
-      pendingInteractiveShellPrompt,
+      pendingUserPrompt,
       executionMode,
     },
     refs: {

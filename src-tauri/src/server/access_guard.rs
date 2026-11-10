@@ -103,23 +103,20 @@ pub async fn handle_rejection(err: Rejection) -> Result<warp::reply::Response, R
                 .into_response(),
         );
     }
-    if err.find::<super::api_key::KeyRequired>().is_some() {
-        let body = serde_json::json!({
-            "error": "the Session API needs a key while Docker sessions exist; start LibrAgent with LIBRAGENT_SESSION_API_KEY"
-        });
-        return Ok(warp::reply::with_header(
-            warp::reply::with_status(warp::reply::json(&body), StatusCode::UNAUTHORIZED),
-            "www-authenticate",
-            "Bearer",
-        )
-        .into_response());
-    }
     if let Some(unauthorized) = err.find::<super::api_key::Unauthorized>() {
         let body = serde_json::json!({ "error": "missing or invalid API key" });
         return Ok(warp::reply::with_header(
             warp::reply::with_status(warp::reply::json(&body), StatusCode::UNAUTHORIZED),
             "www-authenticate",
             unauthorized.www_authenticate(),
+        )
+        .into_response());
+    }
+    if err.find::<warp::reject::PayloadTooLarge>().is_some() {
+        let body = serde_json::json!({ "error": "request body too large" });
+        return Ok(warp::reply::with_status(
+            warp::reply::json(&body),
+            StatusCode::PAYLOAD_TOO_LARGE,
         )
         .into_response());
     }
@@ -164,5 +161,34 @@ mod tests {
         assert!(
             String::from_utf8_lossy(res.body()).contains("pairing is only permitted from loopback")
         );
+    }
+
+    #[tokio::test]
+    async fn json_body_enforces_10mb_limit_and_returns_413_on_overflow() {
+        let filter = warp::post()
+            .and(crate::server::routes::json_body::<serde_json::Value>())
+            .map(|_val: serde_json::Value| "ok")
+            .recover(handle_rejection);
+
+        let small = br#"{"content":"hello"}"#;
+        let res = warp::test::request()
+            .method("POST")
+            .header("content-type", "application/json")
+            .header("content-length", small.len().to_string())
+            .body(small.as_slice())
+            .reply(&filter)
+            .await;
+        assert_eq!(res.status(), StatusCode::OK);
+
+        let oversized_len = crate::server::routes::SESSION_API_JSON_BODY_LIMIT + 1;
+        let res = warp::test::request()
+            .method("POST")
+            .header("content-type", "application/json")
+            .body("{}")
+            .header("content-length", oversized_len.to_string())
+            .reply(&filter)
+            .await;
+        assert_eq!(res.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        assert!(String::from_utf8_lossy(res.body()).contains("request body too large"));
     }
 }

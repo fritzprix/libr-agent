@@ -5,12 +5,30 @@ use crate::entity::{
 };
 use sea_orm::{ConnectionTrait, Database, EntityTrait, Schema, Set};
 use serde_json::json;
+use std::future::Future;
 use std::sync::Arc;
+use std::time::Duration;
 
 mod builtin_lifecycle;
 mod concurrency;
+mod descendant_cleanup;
+mod process_retention;
+mod product_entry;
 mod readiness;
 mod scenarios;
+mod termination_fence;
+
+/// Upper bound for one tool call or proxy step, so a stuck process fails the test
+/// with the step name instead of hanging the whole test binary. Shared by every
+/// real-process test module: the Windows CI `--lib` job has no job timeout, so an
+/// unbounded await there is an unbounded hang (issue #2633 G1.1).
+pub(super) const STEP_TIMEOUT: Duration = Duration::from_secs(60);
+
+pub(super) async fn within<T>(step: &str, future: impl Future<Output = T>) -> T {
+    tokio::time::timeout(STEP_TIMEOUT, future)
+        .await
+        .unwrap_or_else(|_| panic!("{step} did not finish within {STEP_TIMEOUT:?}"))
+}
 
 pub(super) struct TestHarness {
     pub(super) _guard: tokio::sync::MutexGuard<'static, ()>,
@@ -39,7 +57,8 @@ pub(super) async fn insert_test_session(manager: &MCPServiceProxyManager, sessio
     assistant::Entity::insert(assistant::ActiveModel {
         id: Set(assistant_id.clone()),
         name: Set(format!("Test Assistant for {session_id}")),
-        config: Set("{}".to_string()),
+        // Minimal config that parses as AgentConfig (systemPrompt is a required field).
+        config: Set(r#"{"systemPrompt":"test assistant"}"#.to_string()),
         created_at: Set(now),
         updated_at: Set(now),
         ..Default::default()

@@ -28,8 +28,6 @@ export async function getLaunchLogLevel(): Promise<
 
 const DEFAULT_CONFIG: LoggerConfig = {
   enableFileLogging: true,
-  autoBackupOnStartup: true,
-  maxBackupFiles: 10,
   logLevel: 'info',
   maxMessageLength: 50000,
 };

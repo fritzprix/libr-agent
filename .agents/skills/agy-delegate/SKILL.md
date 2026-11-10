@@ -43,11 +43,12 @@ default id failed as unknown/stale.
 1. Write a **self-contained** handoff (agy does **not** see this Cursor chat)
 2. Use this skill’s **default** `--model` (below). Do **not** pick a different
    model for “harder” work, cost, or preference
-3. Run print mode (`-p` / `--print`) from the relevant cwd or pass `--add-dir`
+3. Run print mode (piped stdin or `run.ps1` on Windows, `-p` on Bash) from the relevant cwd or pass `--add-dir`
 4. Read stdout as the result; on failure check exit code and stderr
 5. Follow-ups: new `-p` with fuller context, or `--conversation <id>` /
    `--continue` when resuming the same thread — **same model as the first turn**
 6. Optional: `--output-format json` when you need `status` / `response` fields
+7. **Temporary files**: Write temporary task files in `.libragent/tmp/`, never in the skill folder (`.agents/skills/agy-delegate/`)
 
 Recipes: `references/cli.md`. Handoff / isolation: `references/handoff.md`.
 Optional wrappers: `scripts/run.sh` (Bash) or `scripts/run.ps1` (PowerShell).
@@ -83,7 +84,7 @@ Goal: ...
 Scope: ...
 '@
 
-& agy -p "$TASK" `
+$TASK | & agy `
   --model gemini-3.8-flash-high `
   --dangerously-skip-permissions `
   --print-timeout 300s `
@@ -91,7 +92,7 @@ Scope: ...
 ```
 
 ```powershell
-# Using bundled PowerShell wrapper (recommended on Windows)
+# Using bundled PowerShell wrapper (recommended on Windows; passes task via stdin with UTF-8 encoding)
 & .agents/skills/agy-delegate/scripts/run.ps1 -Dir "$WORKSPACE_ABS" -Task "$TASK"
 & .agents/skills/agy-delegate/scripts/run.ps1 -Dir "$WORKSPACE_ABS" -Json -Task "$TASK"
 ```
@@ -126,6 +127,7 @@ The agy session is not a clone of this Cursor chat:
 
 ## Anti-patterns
 
+- Writing temporary task files in the skill folder — write them to `.libragent/tmp/`
 - Calling nonexistent MCP tools (`agy__*`, `spawnAgy`, …)
 - Vague prompts that rely on Cursor thread context
 - Treating non-zero exit or JSON `status` ≠ `SUCCESS` as success

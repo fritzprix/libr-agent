@@ -20,6 +20,9 @@ const SETTINGS_KEY: &str = "advancedSettings";
 const CONCURRENCY_RANGE: (u32, u32) = (1, 256);
 const LOOP_THRESHOLD_RANGE: (usize, usize) = (2, 20);
 const LOOP_HARD_BREAK_OFFSET_RANGE: (usize, usize) = (1, 20);
+const TOOL_WAIT_DURATION_RANGE: (u32, u32) = (1, 300);
+const TOOL_WAIT_GUIDE_COUNT_RANGE: (usize, usize) = (1, 100);
+const TOOL_WAIT_BREAK_COUNT_RANGE: (usize, usize) = (1, 100);
 
 /// Extended reasoning effort preset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -67,6 +70,13 @@ pub struct AdvancedSettings {
     pub max_suspended_processes: u32,
     pub loop_prevention_threshold: usize,
     pub loop_prevention_hard_break_offset: usize,
+    /// A tool call whose execution time reaches this many seconds counts as a
+    /// deliberate wait; identical waits use the wait ladder instead of the fast rule.
+    pub tool_wait_duration_secs: u32,
+    /// Consecutive identical wait calls tolerated before guidance to schedule a callback.
+    pub tool_wait_guide_count: usize,
+    /// Further identical wait calls after guidance before the hard break trips.
+    pub tool_wait_break_count: usize,
     pub thinking_loop_min_pattern_length: u64,
     pub thinking_loop_min_repetitions: u64,
     pub max_recent_media_messages: u64,
@@ -89,6 +99,9 @@ impl Default for AdvancedSettings {
             max_suspended_processes: DEFAULT_MAX_SUSPENDED_PROCESSES,
             loop_prevention_threshold: 3,
             loop_prevention_hard_break_offset: 2,
+            tool_wait_duration_secs: 10,
+            tool_wait_guide_count: 10,
+            tool_wait_break_count: 10,
             thinking_loop_min_pattern_length: 256,
             thinking_loop_min_repetitions: 4,
             max_recent_media_messages: 1,
@@ -211,6 +224,24 @@ impl AdvancedSettings {
                 LOOP_HARD_BREAK_OFFSET_RANGE,
                 defaults.loop_prevention_hard_break_offset,
             ),
+            tool_wait_duration_secs: uint_in(
+                &map,
+                "toolWaitDurationSecs",
+                TOOL_WAIT_DURATION_RANGE,
+                defaults.tool_wait_duration_secs,
+            ),
+            tool_wait_guide_count: uint_in(
+                &map,
+                "toolWaitGuideCount",
+                TOOL_WAIT_GUIDE_COUNT_RANGE,
+                defaults.tool_wait_guide_count,
+            ),
+            tool_wait_break_count: uint_in(
+                &map,
+                "toolWaitBreakCount",
+                TOOL_WAIT_BREAK_COUNT_RANGE,
+                defaults.tool_wait_break_count,
+            ),
             thinking_loop_min_pattern_length: uint(&map, "thinkingLoopMinPatternLength")
                 .unwrap_or(defaults.thinking_loop_min_pattern_length),
             thinking_loop_min_repetitions: uint(&map, "thinkingLoopMinRepetitions")
@@ -331,12 +362,16 @@ mod tests {
     fn bounded_fields_are_clamped() {
         let settings = AdvancedSettings::from_stored(Some(
             r#"{"maxConcurrentActiveSessions":0,"maxSuspendedSessions":9999,
-                "loopPreventionThreshold":1,"loopPreventionHardBreakOffset":500}"#,
+                "loopPreventionThreshold":1,"loopPreventionHardBreakOffset":500,
+                "toolWaitDurationSecs":0,"toolWaitGuideCount":5000,"toolWaitBreakCount":0}"#,
         ));
         assert_eq!(settings.max_concurrent_active_sessions, 1);
         assert_eq!(settings.max_suspended_sessions, 256);
         assert_eq!(settings.loop_prevention_threshold, 2);
         assert_eq!(settings.loop_prevention_hard_break_offset, 20);
+        assert_eq!(settings.tool_wait_duration_secs, 1);
+        assert_eq!(settings.tool_wait_guide_count, 100);
+        assert_eq!(settings.tool_wait_break_count, 1);
     }
 
     #[test]

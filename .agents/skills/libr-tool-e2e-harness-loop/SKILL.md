@@ -45,6 +45,32 @@ LibrAgent must be up (`GET /api/health`). Prefer `executionMode: yolo` for unatt
 - One primary causal patch per cycle when implementing; ask before large product edits.
 - Do not run `pnpm refactor:validate` unless the user explicitly asks.
 - Stop looping when acceptance criteria pass, max cycles hit, or user aborts.
+- E2E safety:
+  - `unsafe` only in a scratch directory (Linux `/tmp/rumi-e2e`; Windows a dedicated empty folder). Never the repo or the user workspace.
+  - Assistant: Master Mind only (Linux `8da332e5`, Windows `fe603a74`). Never MCP Test Engineer `223a77a4`.
+  - Dummy secrets only. Never print API keys, session keys, or wake tokens in logs, comments, or artifacts.
+  - The loop never starts LibrAgent.
+  - sudo and OS keychain steps are never automated; they are always `[manual]`.
+- In issue checklist mode: never close an issue, edit its body, change labels, merge, or patch code. The only write is the one results comment.
+
+## Issue checklist mode
+
+Runs the `[auto]` items of open `auto:e2e` issues. The producer-loop `e2e` task uses this mode. Item format: [../producer-loop/references/e2e-plan-template.md](../producer-loop/references/e2e-plan-template.md).
+
+1. Targets: open issues with the label `auto:e2e`, whoever opened them, oldest first. One issue per run: `gh issue list --label auto:e2e --state open --json number,createdAt`.
+2. Health: `GET /api/health`. If it fails, print `NOOP` and stop. Never start LibrAgent.
+3. Parse: `python3 .agents/skills/libr-tool-e2e-harness-loop/scripts/checklist.py parse --issue <N>`.
+   - Only `[auto]` items run. `[manual]` and `[blocked: #N]` items are recorded as untouched.
+   - An untagged issue (old format, for example #2565) has no auto items. Its comment says `untagged → no auto items`.
+4. Per `[auto]` item, one one-shot `libr-delegate` session: scratch `workspacePath`, Master Mind assistant. Instruct with a one-item brief ([references/e2e-brief.md](references/e2e-brief.md#one-item-brief-issue-checklist-mode)) → poll → extract `messages?limit=500` → terminate and delete.
+5. Verdict per item: `pass`, `fail`, or `blocked` (precondition not met). Evidence: session id, a short result excerpt, the artifact path under `.libragent/work/tool-e2e-harness/<cycle-id>/`. Write them to `<scratch>/results.json`.
+6. Comment: `checklist.py comment --issue <N> --results <scratch>/results.json` (dry run), then the same with `--post`.
+   - One comment per issue, marker `<!-- e2e-harness:results issue=<N> -->`. The script updates it if it exists; otherwise it creates it.
+   - Table: `ID | 결과 | 증거 | 실행 시각(UTC)`.
+   - A result that holds a dummy secret value becomes `fail`, and the value is replaced with `***`.
+7. Skip cycle step 5 (Act). Do not write tasks or patches from this mode.
+
+Tests: `cd .agents/skills/libr-tool-e2e-harness-loop/scripts && python3 -m unittest discover`.
 
 ## Cycle
 

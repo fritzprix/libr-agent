@@ -350,6 +350,10 @@ pub async fn create_org(
     args: Value,
     caller_session_id: &str,
 ) -> Result<MCPResult, String> {
+    let org_name = match read_required_string(&args, "name") {
+        Ok(value) => value,
+        Err(result) => return Ok(result),
+    };
     let manager = server
         .get_manager()
         .ok_or("AgentSessionManager not available")?;
@@ -409,7 +413,6 @@ pub async fn create_org(
         return Ok(result);
     }
 
-    let org_name = read_required_string(&args, "name")?;
     let org_id = format!("org-{}", uuid::Uuid::new_v4().simple());
     let org_root_session_id = session.id.clone();
     let session_repo = crate::state::get_session_repository();

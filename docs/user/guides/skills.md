@@ -126,9 +126,11 @@ https://github.com/owner/repo/tree/main/skills/my-skill 스킬을 내 계정 전
 
 ### 조사·문서
 
-`deep-research`, `science-search`, `knowledge-distiller`, `to-md`, `docx`, `pptx`, `visualize`, `workspace-indexer`, `repo-wiki`, `soul-awakening`
+`deep-research`, `science-search`, `knowledge-distiller`, `docs`, `visualize`, `workspace-indexer`, `repo-wiki`, `soul-awakening`
 
 `science-search` — 학술 논문 검색·DOI·유사 논문·인용 연결 (무료, API 키 불필요)
+
+`docs` — Markdown을 PDF·Word(DOCX)·PowerPoint(PPTX)로 만들고(보고서·제안서·회의록 템플릿), 기존 PDF·DOCX·PPTX 등을 Markdown으로 추출
 
 ### 개발·연동·제작
 
@@ -145,6 +147,7 @@ https://github.com/owner/repo/tree/main/skills/my-skill 스킬을 내 계정 전
 | 자식 세션·팀        | [서브 에이전트 가이드](sub-agents.md)                |
 | 압축 전 대화 복구   | `@skill:context-recall`                              |
 | 학술 논문·DOI       | `@skill:science-search`                              |
+| PDF·Word·PPT 만들기 | `@skill:docs`                                        |
 | 메일                | `@skill:email-integration`                           |
 | 어시스턴트 설정     | [Assistants](assistants.md)                          |
 | 반복 실행           | [Playbooks](playbooks.md) · [자동화](automation.md)  |

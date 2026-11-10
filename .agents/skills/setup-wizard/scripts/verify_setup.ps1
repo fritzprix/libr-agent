@@ -2,6 +2,8 @@
 # Checks Python, Node.js, and uv installations
 
 $ErrorActionPreference = "Continue"
+# Absolute paths so the hints work from any current folder.
+$scriptDir = $PSScriptRoot
 
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "  System Setup Verification for MCP" -ForegroundColor Cyan
@@ -35,7 +37,7 @@ if ($pythonCmd) {
     }
 } else {
     Write-Host "  ✗ Python not found" -ForegroundColor Red
-    Write-Host "    Install with: .\scripts\install_python.ps1" -ForegroundColor Gray
+    Write-Host "    Install with: & `"$scriptDir\install_python.ps1`"" -ForegroundColor Gray
     $allGood = $false
 }
 
@@ -65,7 +67,7 @@ if ($nodeCmd) {
     }
 } else {
     Write-Host "  ✗ Node.js not found" -ForegroundColor Red
-    Write-Host "    Install with: .\scripts\install_node.ps1" -ForegroundColor Gray
+    Write-Host "    Install with: & `"$scriptDir\install_node.ps1`"" -ForegroundColor Gray
     $allGood = $false
 }
 
@@ -84,7 +86,7 @@ if ($uvCmd) {
     }
 } else {
     Write-Host "  ✗ uv not found" -ForegroundColor Red
-    Write-Host "    Install with: .\scripts\install_uv.ps1" -ForegroundColor Gray
+    Write-Host "    Install with: & `"$scriptDir\install_uv.ps1`"" -ForegroundColor Gray
     $allGood = $false
 }
 
@@ -104,12 +106,12 @@ if ($allGood) {
     Write-Host "✗ Some components are missing" -ForegroundColor Red
     Write-Host ""
     Write-Host "Please install missing components:" -ForegroundColor Yellow
-    Write-Host "  • Python:  .\scripts\install_python.ps1"
-    Write-Host "  • Node.js: .\scripts\install_node.ps1"
-    Write-Host "  • uv:      .\scripts\install_uv.ps1"
+    Write-Host "  • Python:  & `"$scriptDir\install_python.ps1`""
+    Write-Host "  • Node.js: & `"$scriptDir\install_node.ps1`""
+    Write-Host "  • uv:      & `"$scriptDir\install_uv.ps1`""
     Write-Host ""
     Write-Host "Or install all at once:" -ForegroundColor Yellow
-    Write-Host "  .\scripts\install_python.ps1; .\scripts\install_node.ps1; .\scripts\install_uv.ps1"
+    Write-Host "  & `"$scriptDir\install_python.ps1`"; & `"$scriptDir\install_node.ps1`"; & `"$scriptDir\install_uv.ps1`""
     Write-Host ""
 }
 

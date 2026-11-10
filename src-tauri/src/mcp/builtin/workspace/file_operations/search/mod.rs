@@ -8,6 +8,7 @@ use super::super::WorkspaceServer;
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, ErrorCategory, ToolGroup,
 };
+use crate::mcp::builtin::utils::{annotate_warnings, read_bool_arg};
 use crate::mcp::builtin::workspace::utils::is_internal_workspace_artifact_path;
 use crate::mcp::types::MCPResult;
 use helpers::{parse_pagination, reject_empty_optional_str, GlobMatcher};
@@ -117,6 +118,39 @@ impl WorkspaceServer {
         args: Value,
         session_id: Option<String>,
     ) -> Result<MCPResult, String> {
+        let ignore_case = match read_bool_arg(&args, "ignoreCase", false, ToolGroup::Workspace) {
+            Ok(arg) => arg,
+            Err(result) => return Ok(result),
+        };
+        let show_line_anchors =
+            match read_bool_arg(&args, "showLineAnchors", false, ToolGroup::Workspace) {
+                Ok(arg) => arg,
+                Err(result) => return Ok(result),
+            };
+
+        let result = self
+            .handle_grep_files_inner(
+                args,
+                session_id,
+                ignore_case.value,
+                LINE_ANCHORS_ENABLED && show_line_anchors.value,
+            )
+            .await?;
+        Ok(annotate_warnings(
+            result,
+            [ignore_case.warning, show_line_anchors.warning]
+                .into_iter()
+                .flatten(),
+        ))
+    }
+
+    async fn handle_grep_files_inner(
+        &self,
+        args: Value,
+        session_id: Option<String>,
+        ignore_case: bool,
+        show_line_anchors: bool,
+    ) -> Result<MCPResult, String> {
         let search_path = match args.get("path").and_then(|v| v.as_str()) {
             Some(p) => p,
             None => return Ok(missing_param_error("path", ToolGroup::Workspace)),
@@ -147,18 +181,6 @@ impl WorkspaceServer {
         ) {
             Ok(value) => value,
             Err(result) => return Ok(result),
-        };
-
-        let ignore_case = args
-            .get("ignoreCase")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let show_line_anchors = if LINE_ANCHORS_ENABLED {
-            args.get("showLineAnchors")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false)
-        } else {
-            false
         };
 
         let (limit, offset) = match parse_pagination(&args) {

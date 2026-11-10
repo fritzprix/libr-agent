@@ -251,25 +251,31 @@ export async function agentCallBuiltinTool<T = unknown>(
   });
 }
 
-export async function submitInteractiveShellInput(
+/**
+ * Answer the user prompt waiting for a session (#2543).
+ *
+ * The value goes to the waiting backend caller only. It is never logged, so the
+ * logged args carry the request id and a redaction marker instead.
+ */
+export async function submitUserPrompt(
   sessionId: string,
-  executionId: string,
-  input: string,
-): Promise<void> {
-  await safeInvoke(
-    'submit_interactive_shell_input',
+  requestId: string,
+  value: string,
+): Promise<AgentResponse> {
+  return safeInvoke<AgentResponse>(
+    'agent_submit_user_prompt',
     {
       request: {
         sessionId,
-        executionId,
-        input,
+        requestId,
+        value,
       },
     },
     {
       loggedArgs: {
         request: {
           sessionId,
-          executionId,
+          requestId,
           redacted: true,
         },
       },
@@ -277,14 +283,15 @@ export async function submitInteractiveShellInput(
   );
 }
 
-export async function cancelInteractiveShellInput(
+/** Cancel the user prompt waiting for a session without answering it (#2543). */
+export async function cancelUserPrompt(
   sessionId: string,
-  executionId: string,
-): Promise<void> {
-  await safeInvoke('cancel_interactive_shell_input', {
+  requestId: string,
+): Promise<AgentResponse> {
+  return safeInvoke<AgentResponse>('agent_cancel_user_prompt', {
     request: {
       sessionId,
-      executionId,
+      requestId,
     },
   });
 }

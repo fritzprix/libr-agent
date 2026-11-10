@@ -1,49 +1,38 @@
-# Base image: Debian Bookworm Slim (Lightweight & Compatible)
-FROM debian:bookworm-slim
+# LibrAgent default Docker session image.
+#
+# Contents: bash, git, node (npm, npx), python3, uv (uvx).
+# Not included: docker CLI, compilers, build tools.
+# Compressed size limit per architecture: SIZE_LIMIT_MB in
+# .github/workflows/session-image.yml (the build fails above it).
+# Base images are pinned by digest; update tag and digest together.
+FROM ghcr.io/astral-sh/uv:0.13.6@sha256:af22a52f5eafef3d78e551599d405c02df61919d18028f0cea8eda93bc9986d0 AS uv
 
-# Prevent interactive prompts during build
+FROM node:26-trixie-slim@sha256:e4db4c914bf8ad241bd24804fc25d272d89bad97e68cdc8a1414862790a02c39
+
+LABEL org.opencontainers.image.source=https://github.com/fritzprix/libr-agent
+
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install essential dependencies and Docker CLI prerequisites
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    ca-certificates \
-    git \
-    unzip \
-    gnupg \
-    && install -m 0755 -d /etc/apt/keyrings \
-    && curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
-    && chmod a+r /etc/apt/keyrings/docker.gpg \
-    && echo \
-    "deb [arch="$(dpkg --print-architecture)" signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \
-    "$(. /etc/os-release && echo "$VERSION_CODENAME")" stable" | \
-    tee /etc/apt/sources.list.d/docker.list > /dev/null \
-    && apt-get update && apt-get install -y --no-install-recommends \
-    docker-ce-cli \
-    python3 \
-    python3-pip \
-    python3-venv \
-    nodejs \
-    npm \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        git \
+        python3 \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python3 /usr/local/bin/python
 
-# Install uv (The Astral Python package manager)
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+COPY --from=uv /uv /uvx /usr/local/bin/
 
-# Create aliases/wrappers if necessary (uvx is included with uv)
-# Ensure standard generic links exist
-RUN ln -sf /usr/bin/python3 /usr/bin/python
-
-# Create workspace and skills directories
+RUN mkdir -p /workspace /skills
 WORKDIR /workspace
-RUN mkdir -p /skills
 
-# Verify installations
-RUN uv --version && \
-    node --version && \
-    npm --version && \
-    docker --version && \
-    python --version
+RUN bash --version >/dev/null \
+    && git --version \
+    && node --version \
+    && npm --version \
+    && npx --version \
+    && python3 --version \
+    && uv --version \
+    && uvx --version
 
-# Default command keeps the container running
 CMD ["tail", "-f", "/dev/null"]

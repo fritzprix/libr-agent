@@ -58,7 +58,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     executionMode,
     isProxyReady,
     pendingApprovals,
-    pendingInteractiveShellPrompt,
+    pendingUserPrompt,
   } = useAgentSessionState();
   const { clearSessionHistory, applyExecutionMode } = useAgentSessionActions();
   const { isSessionLoading, workflowStatus, pendingQueue } =
@@ -331,7 +331,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
         !isWorkflowActive ||
         isCompactionOnly ||
         pendingApprovals.length > 0 ||
-        Boolean(pendingInteractiveShellPrompt)
+        Boolean(pendingUserPrompt)
       ) {
         return;
       }
@@ -366,7 +366,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     isCompactionOnly,
     isWorkflowActive,
     pendingApprovals.length,
-    pendingInteractiveShellPrompt,
+    pendingUserPrompt,
   ]);
 
   const handleResume = useCallback(async () => {

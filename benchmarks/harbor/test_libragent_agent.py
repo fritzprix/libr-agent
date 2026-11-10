@@ -15,6 +15,7 @@ from benchmarks.harbor.libragent_agent import (
     DEFAULT_EXECUTION_MODE,
     EmptyAgentWorkError,
     LibrAgentHarborAdapter,
+    TRAJECTORY_MESSAGE_LIMIT,
     TrajectoryTelemetry,
     build_atif_trajectory,
     build_compaction_telemetry_document,
@@ -1288,3 +1289,59 @@ def test_wake_message_reaches_the_trajectory_as_a_user_step() -> None:
     assert woken and steps[woken[0]]["source"] == "user"
     after = [c for s in steps[woken[0] + 1 :] for c in s.get("tool_calls") or []]
     assert any("m-5c1e" in json.dumps(c["arguments"]) for c in after)
+
+
+def test_trajectory_message_limit_stays_within_server_cap() -> None:
+    assert 1 <= TRAJECTORY_MESSAGE_LIMIT <= 1_000
+    assert TRAJECTORY_MESSAGE_LIMIT == 1_000
+
+
+
+def test_session_create_401_names_the_key_variables(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+
+    import httpx
+
+    from benchmarks.harbor import libragent_agent as module
+    from benchmarks.harbor.isolated_instance import INSTANCE_APP_BIN_ENV
+
+    monkeypatch.delenv(INSTANCE_APP_BIN_ENV, raising=False)
+    monkeypatch.delenv("LIBRAGENT_SESSION_API_KEY_FILE", raising=False)
+    monkeypatch.setenv("LIBRAGENT_SESSION_API_KEY", "k-env")
+    monkeypatch.setattr(module, "resolve_harbor_main_container_id", lambda _env: "cid")
+    monkeypatch.setattr(module, "resolve_container_workdir", lambda *_args: "/work")
+    monkeypatch.setattr(module, "resolve_workspace_mode", lambda _env: "managed")
+    monkeypatch.setattr(module, "docker_inspect_image", lambda _cid: "task-image:1")
+    monkeypatch.setattr(module, "load_post_idle_event", lambda _dir: None)
+    adapter = _make_adapter(tmp_path / "agent")
+    monkeypatch.setattr(
+        adapter, "_resolve_local_workspace", lambda *_args: tmp_path / "workspace"
+    )
+
+    async def no_download(*_args: object, **_kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr(adapter, "_download_container_workdir", no_download)
+
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(401, json={"error": "unauthorized"})
+
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda **kwargs: real_client(transport=httpx.MockTransport(handler), **kwargs),
+    )
+
+    with pytest.raises(RuntimeError) as error:
+        asyncio.run(adapter._run_trial("instruction", None, None))  # type: ignore[arg-type]
+
+    assert "unauthorized (401)" in str(error.value)
+    assert module.API_KEY_HINT in str(error.value)
+    assert [(r.method, r.url.path) for r in seen] == [("POST", "/api/sessions")]
+    assert seen[0].headers["Authorization"] == "Bearer k-env"

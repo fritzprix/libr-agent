@@ -5,7 +5,7 @@ description: |
   Use when the user wants to view, create, update, or delete calendar events, or get a week summary
   ("show my schedule", "book a meeting tomorrow at 3pm", "what's on my calendar this week").
   MVP supports Google Calendar API (OAuth2). On first use, guide Google Cloud OAuth setup,
-  collect client_secret via hidden shell prompt, run setup.py --oauth, and store tokens in
+  collect client_secret with a storeAs prompt, run setup.py --oauth, and store tokens in
   ~/.libragent/calendar_config.json. Not for LibrAgent agent cron automation (schedule / loop) or completion waits (call-me-back).
   Triggers on: "일정 보여줘", "캘린더 확인", "미팅 예약", "show my calendar", "schedule a meeting".
 ---
@@ -35,8 +35,9 @@ Paths are relative to this skill's Base Directory. Replace `<skill-base-dir>` wi
 
 - **NEVER** ask for `client_secret`, access tokens, or refresh tokens in chat
 - **NEVER** display or repeat `~/.libragent/calendar_config.json`
-- Collect `client_secret` only via a **single hidden shell prompt** (`requireUserInput=true`, `inputType=password`), then pass `--client-secret-env LIBRAGENT_GOOGLE_CLIENT_SECRET`
-- If the user pastes a secret in chat, do not echo it — run setup immediately
+- **NEVER** put `client_secret` in a command line
+- Collect `client_secret` only with `requireUserInput=true`, `inputType=password`, and `storeAs: "LIBRAGENT_GOOGLE_CLIENT_SECRET"` on the setup call, which passes `--client-secret-env LIBRAGENT_GOOGLE_CLIENT_SECRET`
+- If the user pastes a secret in chat, do not echo it — ask for it again with the `storeAs` prompt and run setup
 
 ## Prerequisites
 
@@ -62,20 +63,22 @@ python "<skill-base-dir>/scripts/validate_config.py"
 
 ### 2. Setup (first time or re-auth)
 
-See [references/google-setup.md](references/google-setup.md) for Google Cloud Console steps and [references/setup-flow.md](references/setup-flow.md) for the LibrAgent hidden-prompt pattern.
+See [references/google-setup.md](references/google-setup.md) for Google Cloud Console steps and [references/setup-flow.md](references/setup-flow.md) for the exact `storeAs` tool calls.
 
 **Summary:**
 
 1. User creates a **Desktop OAuth client** in Google Cloud (Calendar API enabled).
 2. Collect `client_id` in chat (not secret).
-3. Hidden prompt → set `LIBRAGENT_GOOGLE_CLIENT_SECRET`.
-4. Run OAuth:
+3. Run OAuth in one `workspace__runInPersistentShell` call with `requireUserInput: true`, `inputType: "password"`, and `storeAs: "LIBRAGENT_GOOGLE_CLIENT_SECRET"`:
 
-```bash
-python "<skill-base-dir>/scripts/setup.py" \
-  --client-id "YOUR_CLIENT_ID.apps.googleusercontent.com" \
-  --client-secret-env LIBRAGENT_GOOGLE_CLIENT_SECRET \
-  --oauth
+```json
+{
+  "command": "python \"<skill-base-dir>/scripts/setup.py\" --client-id \"YOUR_CLIENT_ID.apps.googleusercontent.com\" --client-secret-env LIBRAGENT_GOOGLE_CLIENT_SECRET --oauth",
+  "requireUserInput": true,
+  "inputType": "password",
+  "inputPrompt": "Google OAuth client secret을 입력하세요:",
+  "storeAs": "LIBRAGENT_GOOGLE_CLIENT_SECRET"
+}
 ```
 
 Re-auth only (credentials already saved):
@@ -84,15 +87,7 @@ Re-auth only (credentials already saved):
 python "<skill-base-dir>/scripts/setup.py" --oauth
 ```
 
-Reset and reconnect:
-
-```bash
-python "<skill-base-dir>/scripts/setup.py" \
-  --reset \
-  --client-id "..." \
-  --client-secret-env LIBRAGENT_GOOGLE_CLIENT_SECRET \
-  --oauth
-```
+Reset and reconnect: the same `storeAs` call with `--reset` added to the command (see [references/setup-flow.md](references/setup-flow.md)).
 
 A browser window opens for Google consent. Tokens persist under `~/.libragent/calendar_config.json`.
 
@@ -155,7 +150,7 @@ Format for humans per [references/output-format.md](references/output-format.md)
 ## References
 
 - [google-setup.md](references/google-setup.md) — Google Cloud OAuth client setup
-- [setup-flow.md](references/setup-flow.md) — hidden prompt + setup commands
+- [setup-flow.md](references/setup-flow.md) — `storeAs` setup tool calls
 - [request-patterns.md](references/request-patterns.md) — natural language → actions
 - [output-format.md](references/output-format.md) — presentation guidelines
 - [error-handling.md](references/error-handling.md) — recovery steps

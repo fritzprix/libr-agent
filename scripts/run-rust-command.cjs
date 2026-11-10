@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const { spawnSync } = require('node:child_process');
 const path = require('node:path');
+const { acquireBuildSlot, releaseBuildSlot } = require('./rust-build-slot.cjs');
 
 const cargoArgs = process.argv.slice(2);
 
@@ -181,12 +182,20 @@ if (isCargoTest && stdio === 'inherit') {
   console.error(`[run-rust-command] cargo test (jobs=${jobs}, test-threads=1)`);
 }
 
-const result = spawnSync(command, spawnArgs, {
-  cwd: path.join(__dirname, '..', 'src-tauri'),
-  env,
-  stdio,
-  shell: process.platform === 'win32' ? true : undefined,
-});
+// Held for this one cargo run. The sequential runner comes through here once per
+// target, so a long test suite does not shut other worktrees out until it ends.
+const buildSlot = acquireBuildSlot(`cargo ${cargoArgs[0]}`);
+let result;
+try {
+  result = spawnSync(command, spawnArgs, {
+    cwd: path.join(__dirname, '..', 'src-tauri'),
+    env,
+    stdio,
+    shell: process.platform === 'win32' ? true : undefined,
+  });
+} finally {
+  releaseBuildSlot(buildSlot);
+}
 
 if (logFd !== null) {
   fs.closeSync(logFd);

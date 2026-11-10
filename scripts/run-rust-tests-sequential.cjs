@@ -97,7 +97,7 @@ function runCargoTest(cargoArgs) {
 }
 
 function runCargoTestWithRetries(cargoArgs, targetLabel) {
-  const maxAttempts = process.platform === 'win32' ? 3 : 1;
+  const maxAttempts = process.platform === 'win32' ? 5 : 1;
   let last = { status: 1, output: '' };
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     last = runCargoTest(cargoArgs);
@@ -109,10 +109,11 @@ function runCargoTestWithRetries(cargoArgs, targetLabel) {
     if (!canRetry) {
       return last.status;
     }
+    const delayMs = attempt * 2000;
     console.error(
-      `[rust-test-sequential] Transient Windows exec lock for ${targetLabel}; retry ${attempt}/${maxAttempts - 1} after 2s...`,
+      `[rust-test-sequential] Transient Windows exec lock for ${targetLabel}; retry ${attempt}/${maxAttempts - 1} after ${delayMs / 1000}s...`,
     );
-    sleepMs(2000);
+    sleepMs(delayMs);
   }
   return last.status;
 }

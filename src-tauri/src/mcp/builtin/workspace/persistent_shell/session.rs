@@ -19,7 +19,7 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use crate::mcp::builtin::workspace::StdinDelivery;
+use super::secrets::SecretMap;
 use crate::session_isolation::{PathMappingLayer, ShellType, SpawnedShell};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
@@ -92,7 +92,20 @@ impl PersistentShell {
     pub async fn new(
         session_id: String,
         workspace_path: PathBuf,
+        shell_type: ShellType,
+    ) -> Result<Self> {
+        Self::new_with_env(session_id, workspace_path, shell_type, &SecretMap::new()).await
+    }
+
+    /// Like [`Self::new`], with session secrets in the shell environment.
+    ///
+    /// Secrets are applied before the variables the app sets, so they never
+    /// override one of them.
+    pub async fn new_with_env(
+        session_id: String,
+        workspace_path: PathBuf,
         #[cfg_attr(unix, allow(unused_variables))] shell_type: ShellType,
+        secrets: &SecretMap,
     ) -> Result<Self> {
         #[cfg(unix)]
         let mut cmd = {
@@ -129,10 +142,7 @@ impl PersistentShell {
         // Apply environment isolation to prevent leaking host secrets
         // We do this BEFORE platform-specific environment adjustments (like Unix PATH fix)
         // to ensure whitelisted variables are isolated but specialized ones are preserved.
-        cmd.env_clear();
-        for (k, v) in crate::utils::env::get_isolated_env() {
-            cmd.env(k, v);
-        }
+        apply_shell_env(&mut cmd, secrets, crate::utils::env::get_isolated_env());
 
         #[cfg(unix)]
         {
@@ -159,6 +169,18 @@ impl PersistentShell {
                 } else {
                     cmd.env("PATH", &local_bin);
                 }
+            }
+
+            // A new session with no controlling terminal: sudo cannot open
+            // /dev/tty and wait on a prompt that nobody can answer.
+            // SAFETY: setsid is async-signal-safe and touches no Rust state.
+            unsafe {
+                cmd.pre_exec(|| {
+                    if libc::setsid() == -1 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    Ok(())
+                });
             }
 
             debug!("Creating persistent bash shell for session: {}", session_id);
@@ -250,6 +272,7 @@ impl PersistentShell {
         if crate::mcp::builtin::workspace::utils::get_shell_runtime_bootstrap_enabled().await {
             shell.apply_runtime_bootstrap().await;
         }
+        shell.install_sudo_shims().await;
 
         Ok(shell)
     }
@@ -295,6 +318,7 @@ impl PersistentShell {
         if crate::mcp::builtin::workspace::utils::get_shell_runtime_bootstrap_enabled().await {
             shell.apply_runtime_bootstrap().await;
         }
+        shell.install_sudo_shims().await;
 
         Ok(shell)
     }
@@ -302,6 +326,23 @@ impl PersistentShell {
     /// Get current working directory of the shell
     pub fn get_cwd(&self) -> &str {
         &self.last_known_cwd
+    }
+
+    /// Moves the shell to `dir`, for example the directory of a shell that was restarted.
+    pub async fn change_directory(&mut self, dir: &str) -> Result<()> {
+        let command = if self.uses_host_powershell_protocol() {
+            format!("Set-Location -LiteralPath '{}'", dir.replace('\'', "''"))
+        } else {
+            format!("cd -- '{}'", dir.replace('\'', r"'\''"))
+        };
+        let (_, stderr, exit_code, _) = self.execute(&command).await?;
+        if exit_code != 0 {
+            return Err(anyhow::anyhow!(
+                "Failed to restore working directory {dir}: {}",
+                stderr.trim()
+            ));
+        }
+        Ok(())
     }
 
     pub fn path_mapper(&self) -> Option<&PathMappingLayer> {
@@ -345,9 +386,11 @@ impl PersistentShell {
     pub async fn execute(&mut self, command: &str) -> Result<(String, String, i32, String)> {
         let sentinel = generate_sentinel();
 
+        // Command text can hold a pasted secret, so only its size is logged.
         debug!(
-            "Executing command in session {}: {}",
-            self.session_id, command
+            "Executing command in session {} ({} bytes)",
+            self.session_id,
+            command.len()
         );
 
         if self.uses_host_powershell_protocol() {
@@ -542,128 +585,6 @@ impl PersistentShell {
         Ok((stdout, stderr, exit_code, cwd))
     }
 
-    /// Execute a command with user input (Two-Tool Pattern)
-    ///
-    /// Injects user input via stdin before executing the command.
-    /// This is used for interactive commands like sudo that require password input.
-    ///
-    /// # Arguments
-    /// * `command` - Shell command to execute
-    /// * `user_input` - Input to inject via stdin
-    /// * `stdin_delivery` - Whether input is for the host shell or a child process
-    ///
-    /// # Returns
-    /// Tuple of (stdout, stderr, exit_code, cwd)
-    ///
-    /// # Security
-    /// Host delivery keeps secrets off the command line. Child delivery pipes input into the command.
-    pub async fn execute_with_input(
-        &mut self,
-        command: &str,
-        user_input: &str,
-        #[cfg_attr(unix, allow(unused_variables))] stdin_delivery: StdinDelivery,
-    ) -> Result<(String, String, i32, String)> {
-        #[cfg(windows)]
-        if stdin_delivery == StdinDelivery::Child && self.uses_host_powershell_protocol() {
-            let piped_command = format!(
-                "{} | {command}",
-                format_powershell_stdin_literal(user_input)
-            );
-            debug!(
-                "Executing child-stdin piped command in session {}: {}",
-                self.session_id, piped_command
-            );
-            return self.execute(&piped_command).await;
-        }
-
-        let sentinel = generate_sentinel();
-
-        debug!(
-            "Executing command with host stdin in session {}: {}",
-            self.session_id, command
-        );
-
-        if self.uses_host_powershell_protocol() {
-            self.write_powershell_host_stdin_command(command, user_input, &sentinel)
-                .await?;
-        } else {
-            // Use a unique sentinel for the heredoc to avoid conflicts with input content
-            let input_sentinel = format!("INPUT_SENTINEL_{}", generate_sentinel());
-
-            // Wrap command in a block and feed input via heredoc
-            // Format: { command; } <<'SENTINEL'
-            // input
-            // SENTINEL
-            //
-            // We use single quotes around SENTINEL to prevent variable expansion in input
-            let heredoc_cmd =
-                format!("{{ {command}; }} <<'{input_sentinel}'\n{user_input}\n{input_sentinel}\n");
-
-            self.stdin.write_all(heredoc_cmd.as_bytes()).await?;
-
-            // Capture exit code BEFORE echoing sentinel (which would reset $?)
-            self.stdin
-                .write_all(
-                    format!(
-                        "__code=$?; echo '{sentinel}'; echo \"__CWD__$(pwd)\"; echo \"EXIT_CODE_$__code\"\n"
-                    )
-                    .as_bytes(),
-                )
-                .await?;
-        }
-
-        self.stdin.flush().await?;
-
-        let (stdout, stderr, exit_code, cwd) = self.read_until_sentinel(&sentinel).await?;
-
-        // Update cached CWD
-        self.last_known_cwd = cwd.clone();
-
-        Ok((stdout, stderr, exit_code, cwd))
-    }
-
-    #[cfg(windows)]
-    async fn write_powershell_host_stdin_command(
-        &mut self,
-        command: &str,
-        user_input: &str,
-        sentinel: &str,
-    ) -> Result<()> {
-        // Send command first
-        self.stdin.write_all(command.as_bytes()).await?;
-        self.stdin.write_all(b"\n").await?;
-
-        // Send user input (stdin injection)
-        self.stdin.write_all(user_input.as_bytes()).await?;
-        self.stdin.write_all(b"\n").await?;
-
-        // Send sentinel markers
-        self.stdin
-            .write_all(format!("Write-Output '{}'\n", sentinel).as_bytes())
-            .await?;
-
-        // Capture CWD
-        self.stdin
-            .write_all("Write-Output \"__CWD__$((Get-Location).Path)\"\n".as_bytes())
-            .await?;
-
-        // Robust exit code capture for PowerShell (PS 5.1 compatible)
-        self.stdin
-            .write_all("Write-Output \"EXIT_CODE_$(if ($LASTEXITCODE -ne 0 -or -not $?) { if ($LASTEXITCODE -eq 0) { 1 } else { $LASTEXITCODE } } else { 0 })\"\n".as_bytes())
-            .await?;
-        Ok(())
-    }
-
-    #[cfg(unix)]
-    async fn write_powershell_host_stdin_command(
-        &mut self,
-        _command: &str,
-        _user_input: &str,
-        _sentinel: &str,
-    ) -> Result<()> {
-        anyhow::bail!("PowerShell host-stdin framing is not available on Unix hosts")
-    }
-
     /// Get the session ID
     #[allow(dead_code)]
     pub fn session_id(&self) -> &str {
@@ -683,22 +604,6 @@ impl PersistentShell {
     }
 }
 
-/// Format user input as a PowerShell literal suitable for piping into a child process.
-#[cfg(windows)]
-fn format_powershell_stdin_literal(value: &str) -> String {
-    let value = value.trim_start_matches('\u{feff}');
-    if !value.contains('\n') && !value.contains('\r') {
-        return format!("'{}'", value.replace('\'', "''"));
-    }
-
-    let mut delimiter = "LIBRAGENT_INPUT_EOF".to_string();
-    while value.contains(&delimiter) {
-        delimiter.push('_');
-    }
-
-    format!("@'{delimiter}'\n{value}\n{delimiter}")
-}
-
 impl Drop for PersistentShell {
     fn drop(&mut self) {
         debug!("Dropping persistent shell session: {}", self.session_id);
@@ -713,5 +618,41 @@ impl std::fmt::Debug for PersistentShell {
             .field("session_id", &self.session_id)
             .field("pid", &self.child.id())
             .finish_non_exhaustive()
+    }
+}
+
+/// Clears the host environment, then sets secrets before the app's own variables,
+/// so a secret can never override a variable the app sets.
+fn apply_shell_env(cmd: &mut Command, secrets: &SecretMap, app_env: Vec<(String, String)>) {
+    cmd.env_clear();
+    cmd.envs(secrets);
+    cmd.envs(app_env);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsStr;
+
+    #[test]
+    fn app_variables_win_over_secrets_with_the_same_name() {
+        let mut cmd = Command::new("shell");
+        let secrets = SecretMap::from([
+            ("APP_VAR".to_string(), "from-secret".to_string()),
+            ("API_TOKEN".to_string(), "t0ken".to_string()),
+        ]);
+        apply_shell_env(
+            &mut cmd,
+            &secrets,
+            vec![("APP_VAR".to_string(), "from-app".to_string())],
+        );
+        let envs: Vec<_> = cmd.as_std().get_envs().collect();
+        let value_of = |key: &str| {
+            envs.iter()
+                .find(|(k, _)| *k == OsStr::new(key))
+                .and_then(|(_, v)| *v)
+        };
+        assert_eq!(value_of("APP_VAR"), Some(OsStr::new("from-app")));
+        assert_eq!(value_of("API_TOKEN"), Some(OsStr::new("t0ken")));
     }
 }

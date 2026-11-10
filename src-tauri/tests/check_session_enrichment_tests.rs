@@ -45,6 +45,7 @@ fn sample_meta() -> SessionMetadata {
         docker_config: None,
         docker_container_name: None,
         docker_host_workspace_path: Some("/docker/host/path".to_string()),
+        status_reason: None,
     }
 }
 

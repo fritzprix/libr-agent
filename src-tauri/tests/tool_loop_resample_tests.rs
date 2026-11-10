@@ -111,6 +111,7 @@ fn build_session_metadata(session_id: &str) -> SessionMetadata {
         docker_config: None,
         docker_container_name: None,
         docker_host_workspace_path: None,
+        status_reason: None,
     }
 }
 
@@ -131,10 +132,9 @@ fn build_active_session(session_id: &str, messages: Vec<Message>) -> AgentSessio
         repeated_text_loop_retry_count: Arc::new(RwLock::new(0)),
         reasoning_budget_retry_count: Arc::new(RwLock::new(0)),
         malformed_tool_markup_retry_count: Arc::new(RwLock::new(0)),
-        bad_tool_args_retry_count: Arc::new(RwLock::new(0)),
-        bad_tool_args_incident_count: Arc::new(RwLock::new(0)),
         pending_events: Arc::new(RwLock::new(PendingEventManager::new())),
         pending_approvals: Arc::new(RwLock::new(HashMap::new())),
+        pending_user_prompt: tauri_mcp_agent_lib::agent::state::new_user_prompt_slot(),
         context_registry: Arc::new(ContextRegistry::new()),
         compact_context: Arc::new(RwLock::new(None)),
         compaction: tauri_mcp_agent_lib::agent::state::CompactionRuntimeState::new(),

@@ -44,6 +44,7 @@ fn build_session_metadata(session_id: &str) -> SessionMetadata {
         docker_config: None,
         docker_container_name: None,
         docker_host_workspace_path: None,
+        status_reason: None,
     }
 }
 
@@ -102,12 +103,11 @@ fn build_agent_session(session_id: &str) -> AgentSession {
         last_synced_at: Arc::new(RwLock::new(None)),
         repeated_thinking_retry_count: Arc::new(RwLock::new(0)),
         repeated_text_loop_retry_count: Arc::new(RwLock::new(0)),
-        bad_tool_args_retry_count: Arc::new(RwLock::new(0)),
-        bad_tool_args_incident_count: Arc::new(RwLock::new(0)),
         reasoning_budget_retry_count: Arc::new(RwLock::new(0)),
         malformed_tool_markup_retry_count: Arc::new(RwLock::new(0)),
         pending_events: Arc::new(RwLock::new(PendingEventManager::new())),
         pending_approvals: Arc::new(RwLock::new(HashMap::new())),
+        pending_user_prompt: tauri_mcp_agent_lib::agent::state::new_user_prompt_slot(),
         context_registry: Arc::new(ContextRegistry::new()),
         compact_context: Arc::new(RwLock::new(None)),
         compaction: CompactionRuntimeState::new(),
@@ -1374,6 +1374,7 @@ async fn append_during_open_tool_batch_is_deferred_until_batch_completes() {
             error: None,
             is_error: false,
             cancellation: None,
+            execution_duration_ms: None,
         },
     )
     .await
@@ -1414,6 +1415,178 @@ async fn append_during_open_tool_batch_is_deferred_until_batch_completes() {
         assert_eq!(cache[3].id, "ui-tool");
         assert!(s.pending_execution.is_none());
     }
+}
+
+/// Runs one `handle_tool_result` against a fresh single-tool pending batch and
+/// returns the completed tool `Message` so tests can assert on its metadata.
+async fn complete_single_tool_call(
+    execution: tauri_mcp_agent_lib::commands::agent_commands::ToolExecutionResult,
+) -> Message {
+    use std::collections::HashSet;
+    use tauri_mcp_agent_lib::agent::state::PendingToolExecution;
+    use tauri_mcp_agent_lib::agent::types::{ToolCall, ToolCallFunction};
+
+    let db = common::setup_test_db_with_migrations().await;
+    let session_repo = SqliteSessionRepository::new(db.clone());
+    tauri_mcp_agent_lib::set_message_repository(SqliteMessageRepository::new(db.clone()));
+    tauri_mcp_agent_lib::set_pending_queue_repository(SqlitePendingQueueRepository::new(
+        db.clone(),
+    ));
+    tauri_mcp_agent_lib::set_session_repository(session_repo.clone());
+
+    let session_id = format!("dur-{}", uuid::Uuid::new_v4());
+    let mut metadata = build_session_metadata(&session_id);
+    metadata.status = SessionStatus::Busy;
+    session_repo
+        .upsert_session(&metadata)
+        .await
+        .expect("session should be created");
+
+    let active_sessions = Arc::new(RwLock::new(HashMap::new()));
+    let mut session = build_agent_session(&session_id);
+    session.metadata.status = SessionStatus::Busy;
+    session.pending_execution = Some(PendingToolExecution {
+        message_id: "assistant-open".to_string(),
+        total_expected: 1,
+        tool_names: HashMap::from([("call-dur".to_string(), "workspace__readFile".to_string())]),
+        expected_tool_call_ids: HashSet::from(["call-dur".to_string()]),
+        completed_tool_call_ids: HashSet::new(),
+        deferred_history_append: Vec::new(),
+    });
+    {
+        let mut cache = session.messages.write().await;
+        let mut assistant = build_user_message(&session_id, "assistant-open", 500);
+        assistant.role = "assistant".to_string();
+        assistant.tool_calls = Some(vec![ToolCall {
+            id: "call-dur".to_string(),
+            r#type: "function".to_string(),
+            function: ToolCallFunction {
+                name: "workspace__readFile".to_string(),
+                arguments: "{}".to_string(),
+            },
+        }]);
+        cache.push(assistant);
+    }
+    active_sessions
+        .write()
+        .await
+        .insert(session_id.clone(), session);
+
+    let mock_app = tauri::test::mock_app();
+    let mock_handle = mock_app.handle();
+    let app_handle: &tauri::AppHandle = unsafe {
+        &*(mock_handle as *const tauri::AppHandle<MockRuntime> as *const tauri::AppHandle)
+    };
+
+    let outcome = tauri_mcp_agent_lib::agent::tools::handle_tool_result(
+        &active_sessions,
+        app_handle,
+        session_id,
+        "call-dur".to_string(),
+        execution,
+    )
+    .await
+    .expect("tool result should be accepted")
+    .expect("completing result should be returned");
+    assert!(
+        outcome.1,
+        "single-tool batch completes with the accepted result"
+    );
+    outcome.0
+}
+
+fn duration_of(message: &Message) -> Option<u64> {
+    message
+        .metadata
+        .as_ref()
+        .and_then(|metadata| metadata.get("executionDurationMs"))
+        .and_then(|value| value.as_u64())
+}
+
+#[tokio::test]
+async fn handle_tool_result_records_execution_duration_on_success() {
+    // #2610 G1.4: the wait-aware circuit breaker reads `executionDurationMs`
+    // off the persisted tool message — `handle_tool_result` must write it.
+    let message = complete_single_tool_call(
+        tauri_mcp_agent_lib::commands::agent_commands::ToolExecutionResult {
+            success: true,
+            content: "read ok".to_string(),
+            mcp_content: Some(vec![MCPContent::Text {
+                text: "read ok".to_string(),
+            }]),
+            structured_content: None,
+            error: None,
+            is_error: false,
+            cancellation: None,
+            execution_duration_ms: Some(12_345),
+        },
+    )
+    .await;
+
+    assert_eq!(duration_of(&message), Some(12_345));
+}
+
+#[tokio::test]
+async fn handle_tool_result_records_execution_duration_on_error() {
+    let message = complete_single_tool_call(
+        tauri_mcp_agent_lib::commands::agent_commands::ToolExecutionResult {
+            success: false,
+            content: String::new(),
+            mcp_content: None,
+            structured_content: None,
+            error: Some("boom".to_string()),
+            is_error: true,
+            cancellation: None,
+            execution_duration_ms: Some(7_000),
+        },
+    )
+    .await;
+
+    assert_eq!(duration_of(&message), Some(7_000));
+}
+
+#[tokio::test]
+async fn handle_tool_result_records_execution_duration_with_structured_content() {
+    let message = complete_single_tool_call(
+        tauri_mcp_agent_lib::commands::agent_commands::ToolExecutionResult {
+            success: true,
+            content: String::new(),
+            mcp_content: Some(vec![MCPContent::Text {
+                text: "structured ok".to_string(),
+            }]),
+            structured_content: Some(serde_json::json!({ "status": "ok" })),
+            error: None,
+            is_error: false,
+            cancellation: None,
+            execution_duration_ms: Some(15_000),
+        },
+    )
+    .await;
+
+    assert_eq!(duration_of(&message), Some(15_000));
+}
+
+#[tokio::test]
+async fn handle_tool_result_without_duration_leaves_metadata_key_absent() {
+    // A result that carries no duration (e.g. a loop-prevention short-circuit)
+    // must not gain an `executionDurationMs` key.
+    let message = complete_single_tool_call(
+        tauri_mcp_agent_lib::commands::agent_commands::ToolExecutionResult {
+            success: true,
+            content: "no duration".to_string(),
+            mcp_content: Some(vec![MCPContent::Text {
+                text: "no duration".to_string(),
+            }]),
+            structured_content: None,
+            error: None,
+            is_error: false,
+            cancellation: None,
+            execution_duration_ms: None,
+        },
+    )
+    .await;
+
+    assert_eq!(duration_of(&message), None);
 }
 
 #[tokio::test]

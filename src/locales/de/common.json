@@ -146,7 +146,9 @@
     "recurringStop": "Wiederkehrender Stopp",
     "pendingApprovals_one": "{{count}} Genehmigung",
     "pendingApprovals_other": "{{count}} Genehmigungen",
-    "viewSession": "Sitzung {{name}} öffnen"
+    "viewSession": "Sitzung {{name}} öffnen",
+    "markAllRead": "Alle als gelesen markieren",
+    "dismiss": "Schließen"
   },
   "sidebar": {
     "mobileTitle": "Seitenleiste",
@@ -317,6 +319,8 @@
     "rootLabel": "Wurzelsitzung",
     "updatedLabel": "Aktualisiert",
     "resumeRoot": "Wurzelsitzung fortsetzen",
+    "exportBundle": "Org exportieren",
+    "importBundle": "Org importieren",
     "delete": "Organisation löschen",
     "deleteConfirm": {
       "title": "Organisation löschen?",
@@ -324,7 +328,12 @@
     },
     "toasts": {
       "deleted": "Organisation gelöscht",
-      "deleteFailed": "Organisation konnte nicht gelöscht werden"
+      "deleteFailed": "Organisation konnte nicht gelöscht werden",
+      "exported": "Organisationspaket exportiert",
+      "exportFailed": "Organisation konnte nicht exportiert werden",
+      "imported": "Organisationspaket importiert. Teamwork-Dateien: {{path}}",
+      "importFailed": "Organisationspaket konnte nicht importiert werden",
+      "importPasswordRequired": "Dieses Org-Paket ist verschlüsselt. Der Import mit Passwort ist in dieser Oberfläche noch nicht verfügbar — verwenden Sie einen unverschlüsselten Export oder die Migrationswerkzeuge."
     },
     "emptyState": {
       "title": "Noch keine Organisations-Abstammungslinien",
@@ -338,6 +347,7 @@
     "saved": "Einstellungen erfolgreich gespeichert",
     "saving": "Speichervorgang...",
     "saveFailed": "Einstellungen konnten nicht gespeichert werden",
+    "restartRequiredNotice": "Einige der gespeicherten Einstellungen werden erst nach einem Neustart der App wirksam.",
     "applyChanges": "Änderungen übernehmen",
     "language": {
       "label": "Sprache",
@@ -373,9 +383,6 @@
     "decreaseToolCallCount": "Anzahl der Tool-Aufrufe verringern",
     "increaseToolCallCount": "Anzahl der Tool-Aufrufe erhöhen",
     "general": {
-      "skillsDirectory": "Skills-Verzeichnis",
-      "skillsDirectorySelectTitle": "Skills-Verzeichnis auswählen",
-      "skillsDirectoryPlaceholder": "Verzeichnis für lokale Skills auswählen...",
       "browse": "Durchsuchen",
       "browseAriaLabel": "Skills-Verzeichnis durchsuchen",
       "openInExplorer": "Im Explorer öffnen",
@@ -383,8 +390,7 @@
       "error": "Fehler: {{message}}",
       "skillsFound_one": "{{count}} Skill gefunden",
       "skillsFound_other": "{{count}} Skills gefunden",
-      "invalidDirectory": "Ungültiges Verzeichnis",
-      "skillsDirectoryDescription": "Verzeichnis mit Agent-Skills (Ordner mit SKILL.md). Neue Skills werden automatisch erkannt."
+      "invalidDirectory": "Ungültiges Verzeichnis"
     },
     "aiModels": {
       "apiKeys": "Anbieter-API-Schlüssel",
@@ -481,10 +487,6 @@
         "d2coding": "D2Coding (Entwickler-Mono)"
       },
       "metricsTitle": "Leistungskennzahlen",
-      "metricDisplayMode": "Anzeigemodus für Kennzahlen",
-      "inline": "Inline (in der Nachricht anzeigen)",
-      "tooltip": "Tooltip (zum Anzeigen mit der Maus darüberfahren)",
-      "metricDisplayModeDescription": "Wählen Sie aus, wie Token-Kennzahlen in Chat-Nachrichten angezeigt werden",
       "prefillDisplayFormat": "Format der ersten Antwortzeit",
       "time": "Zeit bis zur ersten Antwort (z. B. 245 ms)",
       "tokensPerSecond": "Token pro Sekunde (z.B. 520 tok/s)",
@@ -554,13 +556,20 @@
       "toolResultInlineLimitDescription": "Maximale Größe der Werkzeugausgabe im Chat, bevor sie als Datei gespeichert wird. Kleinere Werte sparen Speicher.",
       "shellIsolation": "Shell-Isolationsstufe",
       "shellIsolationModes": {
-        "basic": "Basis - Voller PATH-Zugriff (weniger sicher)",
-        "medium": "Mittel - Eingeschränkter PATH (ausgewogen)",
-        "high": "Hoch - Sandbox (am sichersten)"
+        "basic": "Basis",
+        "medium": "Mittel",
+        "high": "Hoch - OS-Sandbox"
       },
-      "shellIsolationDescription": "Steuert die Umgebungsisolation für Shell-Befehle. Basis erlaubt vom Benutzer installierte Werkzeuge, Hoch bietet maximale Sicherheit.",
+      "shellIsolationDescription": "Gilt für einmalige Shell-Befehle und Hintergrundprozesse in lokalen Sitzungen. Die persistente Shell und Docker-Sitzungen verwenden diese Einstellung nicht.",
+      "shellIsolationHelp": {
+        "basic": "Führt den Befehl im Arbeitsbereich mit geleerter Umgebung aus: Nur PATH und einige Basisvariablen (z. B. HOME, USER, Gebietsschema und Proxy) werden übergeben, Host-Geheimnisse wie API-Schlüssel nicht. Datei- und Netzwerkzugriff werden nicht eingeschränkt.",
+        "medium": "Wie Basis; zusätzlich läuft der Befehl in einer eigenen Prozessgruppe. Datei- und Netzwerkzugriff werden nicht eingeschränkt.",
+        "high": "Linux: läuft in eigenen User-, PID- und Mount-Namespaces (unshare); Datei- und Netzwerkzugriff werden nicht eingeschränkt. macOS: läuft unter sandbox-exec; Dateien können nur im Arbeitsbereich und in /tmp, /var/tmp geschrieben werden, Netzwerkzugriff ist erlaubt. Windows: wie Mittel. Ist die Sandbox nicht verfügbar, wird Mittel verwendet."
+      },
       "shellRuntimeBootstrap": "Shell-Laufzeit-Bootstrap",
       "shellRuntimeBootstrapDescription": "Lädt nur Python- und Node-Pfade im Terminal, um Befehle schneller zu starten.",
+      "allowLinkedWorktrees": "Dateiwerkzeuge dürfen verknüpfte Git-Worktrees nutzen",
+      "allowLinkedWorktreesDescription": "Ist der Arbeitsbereich ein Git-Repository, können Dateiwerkzeuge auch Dateien in den anderen Arbeitsordnern desselben Repositorys (Git-Worktrees) lesen und bearbeiten. Ausschalten, um nur den Arbeitsbereichsordner zu erlauben.",
       "performance": "Leistung und Parallelität",
       "performanceDescription": "Diese Laufzeitlimits steuern, wie viele Agenten und Arbeitsbereichsprozesse gleichzeitig laufen können.",
       "title": "Erweiterte Laufzeitsteuerung",
@@ -571,6 +580,15 @@
       "loopPreventionHardBreakOffset": "Hard-Break-Offset",
       "loopPreventionHardBreakOffsetPlaceholder": "z. B. 2",
       "loopPreventionHardBreakOffsetDescription": "Zusätzliche Versuche nach einer Schleifenwarnung, bevor der Agent vollständig stoppt.",
+      "toolWaitDurationSecs": "Tool-Wartezeit (Sekunden)",
+      "toolWaitDurationSecsDescription": "Ein wiederholter Tool-Aufruf, der mindestens so lange dauert, gilt als Warten auf Hintergrundarbeit, nicht als Schleife.",
+      "toolWaitDurationSecsPlaceholder": "z. B. 10",
+      "toolWaitGuideCount": "Hinweisschwelle für Wartezeiten",
+      "toolWaitGuideCountDescription": "Nach so vielen identischen langen Wartezeiten wird dem Agent empfohlen, nicht weiter abzufragen, sondern stattdessen einen einzigen späteren Prüfzeitpunkt zu planen.",
+      "toolWaitGuideCountPlaceholder": "z. B. 10",
+      "toolWaitBreakCount": "Abbruchschwelle für Wartezeiten",
+      "toolWaitBreakCountDescription": "Wie viele weitere identische lange Wartezeiten nach dem Hinweis, bevor der Agent vollständig stoppt.",
+      "toolWaitBreakCountPlaceholder": "z. B. 10",
       "thinkingLoopMinPatternLength": "Minimale Denkschleifen-Musterlänge",
       "thinkingLoopMinPatternLengthDescription": "Mindestlänge wiederholter Texte zur Erkennung von Denkschleifen. Höhere Werte vermeiden Fehlalarme.",
       "thinkingLoopMinPatternLengthPlaceholder": "z. B. 256",
@@ -605,6 +623,9 @@
       "preventSleepDuringAgentWorkDescription": "Verhindert den Idle-Ruhezustand, solange LibrAgent geöffnet ist. Hält das Display nicht zwingend an. Standardmäßig aktiviert.",
       "searchIndexFrequency": "Suchindex-Frequenz (Min)",
       "searchIndexFrequencyDescription": "Wie oft die KI ihre Gedächtnissuche aktualisiert. Schnellere Updates halten die Suche aktuell, verbrauchen aber mehr Akku/CPU.",
+      "logRetentionDays": "App-Protokolle aufbewahren (Tage)",
+      "logRetentionDaysDescription": "Löscht gespeicherte App-Protokolle, die älter als diese Anzahl von Tagen sind. Protokolle können Ihre Chat-Inhalte enthalten. Bei 0 gelten nur die Grenzen für Anzahl und Größe.",
+      "logRetentionDaysUnlimited": "Keine Begrenzung",
       "webActionTimeout": "Web-Aktions-Timeout (Sek)",
       "webActionTimeoutDescription": "Wie lange die KI wartet, bis eine Webseite geladen oder ein Klick abgeschlossen ist.",
       "mcpServerStartupTimeout": "Zeitlimit für Erweiterungserkennung (Sek.)",
@@ -622,6 +643,7 @@
         "maxFileUploadSize": "z.B. 50",
         "workspaceCapacity": "z.B. 10",
         "searchIndexFrequency": "z.B. 5",
+        "logRetentionDays": "z.B. 30",
         "webActionTimeout": "z.B. 30",
         "mcpServerStartupTimeout": "z.B. 30",
         "mcpToolTimeout": "0 (deaktiviert)",
@@ -927,6 +949,25 @@
         "title": "Schleifenwarnungen in Werkzeugergebnissen anzeigen (Legacy)",
         "description": "Fügt bei Aktivierung Schleifenwarnungen in Fehlermeldungen ein, statt automatisch neu zu starten."
       }
+    },
+    "sessionApi": {
+      "title": "Session-API-Schlüssel",
+      "description": "API-Schlüssel, die externen KI-Agenten durch Kopplung ausgestellt wurden. Sobald ein Schlüssel existiert, werden Anfragen ohne gültigen Schlüssel mit 401 abgelehnt. Wenn keine Schlüssel existieren, sind Anfragen von localhost ohne Schlüssel erlaubt.",
+      "emptyList": "Noch keine API-Schlüssel ausgestellt. Verwenden Sie im Chat „In Agent-Sitzung integrieren“, um einen externen Agenten zu koppeln.",
+      "fetchError": "Session-API-Schlüssel konnten nicht geladen werden",
+      "errorTitle": "Session-API-Schlüssel konnten nicht geladen werden",
+      "errorHelp": "Die Schlüsseldatei ist möglicherweise beschädigt oder hat falsche Berechtigungen. Die Schlüsselprüfung bleibt gesperrt (fail-closed), bis das Problem behoben ist.",
+      "confirmRevoke": "Widerruf bestätigen",
+      "confirmRevokePrompt": "API-Schlüssel für {{name}} widerrufen? Wählen Sie „Widerruf bestätigen“ oder „Abbrechen“.",
+      "deleteSuccess": "API-Schlüssel für {{name}} gelöscht",
+      "deleteError": "API-Schlüssel konnte nicht gelöscht werden",
+      "active": "Aktiv",
+      "created": "Erstellt",
+      "pairingTitle": "Kopplungsanfrage eines Agenten",
+      "pairingDescription": "Der externe Agent „{{name}}“ fordert Zugriff auf die Session API an. Geben Sie zur Freigabe den 6-stelligen Code ein, der auf dem Bildschirm des Agenten angezeigt wird.",
+      "pairingCodeLabel": "Kopplungscode (xxx-yyy)",
+      "pairingSuccess": "Erfolgreich mit {{name}} gekoppelt",
+      "pairingRejected": "Kopplungsanfrage abgelehnt"
     }
   },
   "mcpServer": {
@@ -1238,7 +1279,6 @@
       "dockerRetryButton": "Sitzungsstart erneut versuchen",
       "dockerWaitingForEngine": "Warte auf Docker-Engine…",
       "dockerStillNotReady": "Docker ist noch nicht bereit. Warten Sie, bis die Engine gestartet ist, und versuchen Sie es erneut.",
-      "dockerImageRequired": "Wählen Sie ein Docker-Image, bevor Sie eine Docker-isolierte Sitzung starten.",
       "dockerCreating": "Sitzung wird erstellt — Docker-Image {{image}} wird vorbereitet…",
       "dockerNotInstalledTitle": "Docker ist nicht installiert",
       "dockerNotInstalledDescription": "Die Docker-CLI wurde auf diesem Rechner nicht gefunden. Installieren Sie Docker Desktop oder starten Sie diese Sitzung im Host-Modus.",
@@ -1289,7 +1329,11 @@
       "renameCancelAria": "Bearbeiten des Sitzungstitels abbrechen",
       "renameSuccess": "Sitzungstitel aktualisiert",
       "renameError": "Sitzungstitel konnte nicht aktualisiert werden",
-      "renameEmptyError": "Der Sitzungstitel darf nicht leer sein"
+      "renameEmptyError": "Der Sitzungstitel darf nicht leer sein",
+      "integrateExternalAgentAria": "In Agent-Sitzung integrieren (Anleitung kopieren)",
+      "integrateExternalAgentTooltip": "In Agent-Sitzung integrieren (Anleitung kopieren)",
+      "integrationInstructionCopied": "Integrationsanleitung in die Zwischenablage kopiert. Fügen Sie sie in Ihren externen KI-Agenten ein.",
+      "integrationInstructionCopyFailed": "Integrationsanleitung konnte nicht in die Zwischenablage kopiert werden"
     },
     "sessionExport": {
       "menuAria": "Sitzung exportieren",
@@ -1311,6 +1355,7 @@
       "isolationTip": "Der Docker-Arbeitsbereich führt Befehle sicher in einem Container aus, nicht auf Ihrem Host-System.",
       "useDockerContainer": "Docker-Container verwenden",
       "dockerImage": "Docker-Image",
+      "defaultDockerImage": "LibrAgent-Standardimage",
       "dockerNotInstalledWarning": "Docker ist nicht installiert oder im PATH nicht verfügbar.",
       "dockerDaemonOfflineWarning": "Der Docker-Daemon läuft nicht.",
       "dockerHealthHint": "Installieren Sie Docker Desktop, starten Sie die Engine oder wechseln Sie zurück in den Host-Modus.",
@@ -1378,6 +1423,11 @@
       "reasoningBudgetRetry": "Das Reasoning dauerte zu lange. Neuer Versuch mit einem frischen Turn…",
       "thinkingLoopRetry": "Denkschleife erkannt. Neuer Versuch mit einem frischen Turn…",
       "textLoopRetry": "Wiederholte-Text-Schleife erkannt. Neuer Versuch mit einem frischen Turn…"
+    },
+    "interactiveForm": {
+      "submitSuccess": "Antwort gesendet — der Agent arbeitet weiter.",
+      "submitNotReady": "Die Sitzung war noch nicht bereit. Bitte senden Sie gleich noch einmal.",
+      "duplicateSubmit": "Ihre Antwort wird bereits gesendet."
     },
     "statusBar": {
       "retryError": "Fehler beim erneuten Senden der Nachricht",
@@ -1683,6 +1733,16 @@
       "imageAlt": "Werkzeug-Ausgabe",
       "unsupportedAudio": "Ihr Browser unterstützt das Audio-Element nicht.",
       "unsupportedVideo": "Ihr Browser unterstützt das Video-Element nicht."
+    },
+    "userPromptDialog": {
+      "titleSecret": "Ein Passwort ist erforderlich",
+      "titleQuestion": "Ihre Antwort ist erforderlich",
+      "waitingAnswer": "Der Agent wartet auf Ihre Antwort.",
+      "submit": "Absenden",
+      "cancelFailed": "Der Prompt konnte nicht abgebrochen werden.",
+      "submitFailed": "Ihre Antwort konnte nicht gesendet werden.",
+      "other": "Sonstiges",
+      "otherInputLabel": "{{question}} (Sonstiges)"
     }
   },
   "scheduledTasks": {
@@ -2004,6 +2064,11 @@
         "title": "Oberflächengröße anpassen",
         "body": "Skalieren Sie die gesamte Oberfläche unter Einstellungen → General oder jederzeit mit Strg/Cmd +, - und 0.",
         "cta": "General öffnen"
+      },
+      "docsExport": {
+        "title": "Antworten als PDF, Word oder PowerPoint",
+        "body": "Geben Sie @skill:docs ein und bitten Sie um einen Bericht, ein Angebot oder ein Protokoll – der Agent speichert eine teilbare PDF-, DOCX- oder PPTX-Datei.",
+        "cta": "Im Chat ausprobieren"
       }
     }
   }

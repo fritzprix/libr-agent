@@ -36,21 +36,22 @@ pub use services::SecureFileManager;
 
 use commands::agent_commands::{
     agent_add_attachment, agent_append_tool_messages, agent_call_builtin_tool,
-    agent_cancel_pending_prompt, agent_cancel_workflow, agent_clear_all_sessions,
-    agent_create_session, agent_create_session_with_initial_message, agent_delete_attachment,
-    agent_delete_session, agent_delete_session_only, agent_execute_command,
-    agent_execute_ui_tauri_action, agent_factory_reset, agent_get_all_sessions,
-    agent_get_available_tools, agent_get_child_session_ids, agent_get_child_sessions,
-    agent_get_compact_context, agent_get_descendant_session_ids, agent_get_pending_queue,
-    agent_get_service_contexts, agent_get_session, agent_get_tools, agent_handle_compact_error,
-    agent_handle_compact_response, agent_handle_llm_error, agent_handle_llm_response,
-    agent_handle_tool_result, agent_init_session_with_messages, agent_inject_channel_message,
+    agent_cancel_pending_prompt, agent_cancel_user_prompt, agent_cancel_workflow,
+    agent_clear_all_sessions, agent_create_session, agent_create_session_with_initial_message,
+    agent_delete_attachment, agent_delete_session, agent_delete_session_only,
+    agent_execute_command, agent_execute_ui_tauri_action, agent_factory_reset,
+    agent_get_all_sessions, agent_get_available_tools, agent_get_child_session_ids,
+    agent_get_child_sessions, agent_get_compact_context, agent_get_descendant_session_ids,
+    agent_get_pending_queue, agent_get_service_contexts, agent_get_session, agent_get_tools,
+    agent_get_user_prompt, agent_handle_compact_error, agent_handle_compact_response,
+    agent_handle_llm_error, agent_handle_llm_response, agent_handle_tool_result,
+    agent_init_session_with_messages, agent_inject_channel_message,
     agent_inject_channel_message_auto, agent_inject_messages, agent_list_attention_sessions,
     agent_list_sessions, agent_mark_session_viewed, agent_open_session, agent_pause_workflow,
     agent_regenerate_last_turn, agent_report_llm_streaming_issue, agent_respond_channel_permission,
     agent_respond_tool_approval, agent_resume_session, agent_resume_workflow, agent_send_message,
-    agent_set_execution_mode, agent_terminate_workflow, agent_toggle_session_bookmark,
-    agent_update_session_config, agent_update_session_name,
+    agent_set_execution_mode, agent_submit_user_prompt, agent_terminate_workflow,
+    agent_toggle_session_bookmark, agent_update_session_config, agent_update_session_name,
 };
 use commands::assistant_crud_commands::{
     batch_upsert_assistants, create_assistant, delete_assistant, get_assistant,
@@ -123,13 +124,12 @@ use commands::skill_management::{
 };
 use commands::url_commands::{open_external_url, open_path_with_default_app};
 use commands::workspace_commands::{
-    cancel_interactive_shell_input, cancel_workspace_override, check_docker_health,
-    docker_desktop_launch_supported, get_app_data_dir, get_app_logs_dir,
-    get_update_install_capability, get_workspace_dir, get_workspace_override, greet,
-    list_workspace_file_paths, list_workspace_file_paths_for_path, list_workspace_files,
-    open_workspace_file_with_default_app, open_workspace_in_explorer, open_workspace_in_terminal,
-    probe_runtime_binaries, read_local_file_as_base64, read_workspace_file_content, restart_app,
-    set_workspace_override, start_docker_desktop, submit_interactive_shell_input,
+    cancel_workspace_override, check_docker_health, docker_desktop_launch_supported,
+    get_app_data_dir, get_app_logs_dir, get_update_install_capability, get_workspace_dir,
+    get_workspace_override, greet, list_workspace_file_paths, list_workspace_file_paths_for_path,
+    list_workspace_files, open_workspace_file_with_default_app, open_workspace_in_explorer,
+    open_workspace_in_terminal, probe_runtime_binaries, read_local_file_as_base64,
+    read_workspace_file_content, restart_app, set_workspace_override, start_docker_desktop,
 };
 
 // Re-export state management functions
@@ -145,7 +145,8 @@ pub use state::{
     set_planning_repository, set_playbook_repository, set_scheduled_task_repository,
     set_session_repository, set_settings_repository, set_sqlite_db_url, try_get_active_sessions,
     try_get_compact_context_repository, try_get_message_repository,
-    try_get_pending_queue_repository, try_get_session_repository, try_get_settings_repository,
+    try_get_pending_queue_repository, try_get_session_bus, try_get_session_repository,
+    try_get_settings_repository,
 };
 
 /// A synchronous wrapper to initialize and run the application with SQLite support.
@@ -274,8 +275,6 @@ pub fn run() {
                 get_workspace_override,
                 set_workspace_override,
                 cancel_workspace_override,
-                submit_interactive_shell_input,
-                cancel_interactive_shell_input,
                 get_workspace_dir,
                 read_local_file_as_base64,
                 start_docker_desktop,
@@ -345,6 +344,9 @@ pub fn run() {
                 agent_inject_channel_message,
                 agent_inject_channel_message_auto,
                 agent_respond_channel_permission,
+                agent_submit_user_prompt,
+                agent_cancel_user_prompt,
+                agent_get_user_prompt,
                 agent_clear_all_sessions,
                 agent_factory_reset,
                 agent_update_session_config,

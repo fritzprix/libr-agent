@@ -38,6 +38,7 @@ fn session_with_assistant(session_id: &str, assistant_id: Option<&str>) -> Sessi
         docker_config: None,
         docker_container_name: None,
         docker_host_workspace_path: None,
+        status_reason: None,
     }
 }
 

@@ -1,6 +1,7 @@
 use serde_json::{json, Value};
 
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHint, ToolGroup};
+use crate::mcp::builtin::utils::read_bool_arg;
 use crate::mcp::types::MCPResult;
 use crate::repositories::mcp_server_repository::MCPServerRepository;
 use crate::repositories::session_repository::SessionRepository;
@@ -111,6 +112,20 @@ async fn list_agent_configs_from_db(
     db: &DatabaseConnection,
     args: &Value,
 ) -> Result<MCPResult, String> {
+    let verbose = match read_bool_arg(args, "verbose", false, ToolGroup::Agent) {
+        Ok(arg) => arg,
+        Err(result) => return Ok(result),
+    };
+
+    let result = list_agent_configs_from_db_inner(db, args, verbose.value).await?;
+    Ok(verbose.annotate(result))
+}
+
+async fn list_agent_configs_from_db_inner(
+    db: &DatabaseConnection,
+    args: &Value,
+    verbose: bool,
+) -> Result<MCPResult, String> {
     let repo = crate::repositories::SqliteAssistantRepository::new(db.clone());
     let mut agents = repo.list_assistants().await.map_err(|e| e.to_string())?;
 
@@ -124,10 +139,6 @@ async fn list_agent_configs_from_db(
     }
 
     let (limit, offset) = extract_pagination_args(args);
-    let verbose = args
-        .get("verbose")
-        .and_then(|value| value.as_bool())
-        .unwrap_or(false);
 
     let total = agents.len();
     let paged_agents: Vec<_> = agents.into_iter().skip(offset).take(limit).collect();

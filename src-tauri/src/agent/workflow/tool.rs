@@ -264,11 +264,16 @@ pub async fn continue_workflow_after_tool(
             // Still waiting for other tools
         }
         Err(e) => {
-            // Handle cancellation gracefully without emitting error event
-            if e == "Workflow was cancelled" {
+            // Handle cancellation or inactive session gracefully without emitting error event or cascading into handle_llm_error
+            if e == "Workflow was cancelled" || e.starts_with("Session not found") {
                 log::info!(
-                    "Ignoring tool result for session {} because the workflow was cancelled",
-                    session_id
+                    "Ignoring tool result for session {} because {}",
+                    session_id,
+                    if e == "Workflow was cancelled" {
+                        "the workflow was cancelled"
+                    } else {
+                        "the session is no longer active"
+                    }
                 );
                 return Err(e);
             }

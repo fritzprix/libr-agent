@@ -146,7 +146,9 @@
     "recurringStop": "Recurring stop",
     "pendingApprovals_one": "{{count}} approval",
     "pendingApprovals_other": "{{count}} approvals",
-    "viewSession": "Open session {{name}}"
+    "viewSession": "Open session {{name}}",
+    "markAllRead": "Mark all read",
+    "dismiss": "Dismiss"
   },
   "sidebar": {
     "mobileTitle": "Sidebar",
@@ -345,6 +347,7 @@
     "saved": "Settings saved successfully",
     "saving": "Saving...",
     "saveFailed": "Failed to save settings",
+    "restartRequiredNotice": "Some of the saved settings are applied after restarting the app.",
     "applyChanges": "Apply Changes",
     "language": {
       "label": "Language",
@@ -380,9 +383,6 @@
     "decreaseToolCallCount": "Decrease tool call count",
     "increaseToolCallCount": "Increase tool call count",
     "general": {
-      "skillsDirectory": "Skills Directory",
-      "skillsDirectorySelectTitle": "Select Skills Directory",
-      "skillsDirectoryPlaceholder": "Select a directory for local skills...",
       "browse": "Browse",
       "browseAriaLabel": "Browse skills directory",
       "openInExplorer": "Open in Explorer",
@@ -390,8 +390,7 @@
       "error": "Error: {{message}}",
       "skillsFound_one": "Found {{count}} skill",
       "skillsFound_other": "Found {{count}} skills",
-      "invalidDirectory": "Invalid directory",
-      "skillsDirectoryDescription": "Directory containing Agent Skills (folders with SKILL.md). New skills will be discovered automatically."
+      "invalidDirectory": "Invalid directory"
     },
     "aiModels": {
       "apiKeys": "Provider API Keys",
@@ -488,10 +487,6 @@
         "d2coding": "D2Coding (Developer Mono)"
       },
       "metricsTitle": "Performance Metrics",
-      "metricDisplayMode": "Metric Display Mode",
-      "inline": "Inline (show in message)",
-      "tooltip": "Tooltip (hover to see)",
-      "metricDisplayModeDescription": "Choose how token metrics are displayed in chat messages",
       "prefillDisplayFormat": "Initial Response Speed Format",
       "time": "Time to first response (e.g., 245ms)",
       "tokensPerSecond": "Tokens Per Second (e.g., 520 tok/s)",
@@ -561,13 +556,20 @@
       "toolResultInlineLimitDescription": "Maximum tool output size displayed directly in chat before saving to a file. Lower values keep conversation memory lean.",
       "shellIsolation": "Shell Isolation Level",
       "shellIsolationModes": {
-        "basic": "Basic - Full PATH access (less secure)",
-        "medium": "Medium - Restricted PATH (balanced)",
-        "high": "High - Sandboxed (most secure)"
+        "basic": "Basic",
+        "medium": "Medium",
+        "high": "High - OS sandbox"
       },
-      "shellIsolationDescription": "Controls environment isolation for shell commands. Basic allows user-installed tools, High provides maximum security.",
+      "shellIsolationDescription": "Applies to one-shot shell commands and background processes in local sessions. The persistent shell and Docker sessions do not use this setting.",
+      "shellIsolationHelp": {
+        "basic": "Runs the command in the workspace with a cleared environment: only PATH and a few basic variables (such as HOME, USER, locale and proxy) are passed, so host secrets such as API keys are not. File and network access are not restricted.",
+        "medium": "Same as Basic, and the command runs in its own process group. File and network access are not restricted.",
+        "high": "Linux: runs in separate user, PID and mount namespaces (unshare); file and network access are not restricted. macOS: runs under sandbox-exec; files can be written only in the workspace and /tmp, /var/tmp, and network access is allowed. Windows: same as Medium. If the sandbox is not available, Medium is used."
+      },
       "shellRuntimeBootstrap": "Shell runtime bootstrap",
       "shellRuntimeBootstrapDescription": "Loads only Python and Node paths in the terminal to start commands faster.",
+      "allowLinkedWorktrees": "File tools can use linked git worktrees",
+      "allowLinkedWorktreesDescription": "When the workspace is a git repository, file tools can also read and edit files in the other working folders of the same repository (git worktrees). Turn off to allow the workspace folder only.",
       "performance": "Performance & Concurrency",
       "performanceDescription": "These runtime limits control how many agents and workspace processes can run at once.",
       "title": "Advanced Runtime Controls",
@@ -578,6 +580,15 @@
       "loopPreventionHardBreakOffset": "Hard Break Offset",
       "loopPreventionHardBreakOffsetPlaceholder": "e.g., 2",
       "loopPreventionHardBreakOffsetDescription": "Additional retry attempts after a loop warning before the agent stops completely.",
+      "toolWaitDurationSecs": "Tool Wait Duration (seconds)",
+      "toolWaitDurationSecsDescription": "A repeated tool call that takes at least this long counts as waiting for background work, not looping.",
+      "toolWaitDurationSecsPlaceholder": "e.g., 10",
+      "toolWaitGuideCount": "Wait Guide Count",
+      "toolWaitGuideCountDescription": "After this many identical long waits, the agent is told to stop polling and schedule one wake-up instead.",
+      "toolWaitGuideCountPlaceholder": "e.g., 10",
+      "toolWaitBreakCount": "Wait Break Count",
+      "toolWaitBreakCountDescription": "How many more identical long waits after the guidance before the agent stops completely.",
+      "toolWaitBreakCountPlaceholder": "e.g., 10",
       "thinkingLoopMinPatternLength": "Thinking Loop Min Pattern Length",
       "thinkingLoopMinPatternLengthDescription": "Minimum length of repeating text needed to detect a thinking loop. Larger values reduce false alarms in long reasoning.",
       "thinkingLoopMinPatternLengthPlaceholder": "e.g., 256",
@@ -612,6 +623,9 @@
       "preventSleepDuringAgentWorkDescription": "Keep the system from idle-sleeping while LibrAgent is open. Does not force the display to stay on. Enabled by default.",
       "searchIndexFrequency": "Search Index Frequency (Min)",
       "searchIndexFrequencyDescription": "How often the AI updates its memory search. Faster updates keep search fresh but use more battery/CPU.",
+      "logRetentionDays": "Keep App Logs (Days)",
+      "logRetentionDaysDescription": "Delete saved app logs older than this number of days. Logs can contain your chat content. Set to 0 to keep logs by count and size limits only.",
+      "logRetentionDaysUnlimited": "No limit",
       "webActionTimeout": "Web Action Timeout (Sec)",
       "webActionTimeoutDescription": "How long the AI waits for a webpage to load or a click to finish.",
       "mcpServerStartupTimeout": "Extension Discovery Timeout (Sec)",
@@ -629,6 +643,7 @@
         "maxFileUploadSize": "e.g., 50",
         "workspaceCapacity": "e.g., 10",
         "searchIndexFrequency": "e.g., 5",
+        "logRetentionDays": "e.g., 30",
         "webActionTimeout": "e.g., 30",
         "mcpServerStartupTimeout": "e.g., 30",
         "mcpToolTimeout": "0 (disabled)",
@@ -942,6 +957,8 @@
       "fetchError": "Failed to load Session API keys",
       "errorTitle": "Failed to load Session API keys",
       "errorHelp": "The key file may be damaged or have incorrect permissions. Key verification is locked (fail-closed) until the issue is resolved.",
+      "confirmRevoke": "Confirm revoke",
+      "confirmRevokePrompt": "Revoke the API key for {{name}}? Choose Confirm revoke or Cancel.",
       "deleteSuccess": "Deleted API key for {{name}}",
       "deleteError": "Failed to delete API key",
       "active": "Active",
@@ -1262,7 +1279,6 @@
       "dockerRetryButton": "Retry Session Start",
       "dockerWaitingForEngine": "Waiting for Docker engine…",
       "dockerStillNotReady": "Docker is still not ready. Wait for the engine to start, then try again.",
-      "dockerImageRequired": "Select a Docker image before starting a Docker-isolated session.",
       "dockerCreating": "Creating session — preparing Docker image {{image}}…",
       "dockerNotInstalledTitle": "Docker is not installed",
       "dockerNotInstalledDescription": "The Docker CLI was not found on this machine. Install Docker Desktop, or start this session in host mode.",
@@ -1339,6 +1355,7 @@
       "isolationTip": "Docker workspace runs your workspace commands safely inside a container rather than directly on your host machine.",
       "useDockerContainer": "Use Docker Container",
       "dockerImage": "Docker Image",
+      "defaultDockerImage": "LibrAgent default image",
       "dockerNotInstalledWarning": "Docker is not installed or is not available on PATH.",
       "dockerDaemonOfflineWarning": "Docker daemon is not running.",
       "dockerHealthHint": "Install Docker Desktop, start the engine, or switch back to host mode.",
@@ -1716,6 +1733,16 @@
       "imageAlt": "Tool output",
       "unsupportedAudio": "Your browser does not support the audio element.",
       "unsupportedVideo": "Your browser does not support the video element."
+    },
+    "userPromptDialog": {
+      "titleSecret": "A password is needed",
+      "titleQuestion": "Your answer is needed",
+      "waitingAnswer": "The agent is waiting for your answer.",
+      "submit": "Submit",
+      "cancelFailed": "Failed to cancel the prompt.",
+      "submitFailed": "Failed to send your answer.",
+      "other": "Other",
+      "otherInputLabel": "{{question}} (other)"
     }
   },
   "scheduledTasks": {
@@ -2037,6 +2064,11 @@
         "title": "Adjust the UI size",
         "body": "Scale the whole interface from Settings → General or press Ctrl/Cmd +, -, and 0 at any time.",
         "cta": "Open General settings"
+      },
+      "docsExport": {
+        "title": "Get answers as PDF, Word, or PowerPoint",
+        "body": "Type @skill:docs and ask for a report, proposal, or meeting minutes — the agent saves a ready-to-share PDF, DOCX, or PPTX file.",
+        "cta": "Try it in chat"
       }
     }
   }

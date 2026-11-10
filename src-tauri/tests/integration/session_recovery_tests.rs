@@ -16,7 +16,9 @@ use tauri_mcp_agent_lib::agent::lifecycle::{
     recover_sessions_with_dispatcher_and_message_repo,
 };
 use tauri_mcp_agent_lib::agent::session_bus::SessionBus;
-use tauri_mcp_agent_lib::agent::state::{AgentSession, MAX_CACHED_MESSAGES};
+use tauri_mcp_agent_lib::agent::state::{
+    persist_waiting_tool_call, AgentSession, MAX_CACHED_MESSAGES, USER_PROMPT_RESTART_MESSAGE,
+};
 use tauri_mcp_agent_lib::agent::types::{ToolCall, ToolCallFunction};
 use tauri_mcp_agent_lib::agent::ExecutionMode;
 use tauri_mcp_agent_lib::entity::session;
@@ -25,13 +27,13 @@ use tauri_mcp_agent_lib::models::chat::{Message, MessageSource};
 use tauri_mcp_agent_lib::repositories::compact_context_repository::CompactContextRepository;
 use tauri_mcp_agent_lib::repositories::{
     CompactContextRecord, InMemorySessionRepository, MessageRepository as _, SessionMetadata,
-    SessionRepository, SessionStatus, SqliteCompactContextRepository, SqliteMessageRepository,
-    SqlitePendingQueueRepository,
+    SessionRepository, SessionStatus, SettingsRepository as _, SqliteCompactContextRepository,
+    SqliteMessageRepository, SqlitePendingQueueRepository, SqliteSettingsRepository,
 };
 use tauri_mcp_agent_lib::{
     get_compact_context_repository, get_message_repository, init_concurrency_gate,
     init_session_bus, set_compact_context_repository, set_message_repository,
-    set_pending_queue_repository,
+    set_pending_queue_repository, set_settings_repository, try_get_settings_repository,
 };
 use tauri_mcp_agent_lib::{migration::Migrator, utils::sqlite::format_sqlite_url};
 use tokio::sync::{Mutex, OnceCell, RwLock};
@@ -62,6 +64,13 @@ impl AgentEventDispatcher for RecordingDispatcher {
     fn emit_compact_state(
         &self,
         _event: tauri_mcp_agent_lib::agent::llm::types::CompactStateEvent,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn emit_completion_cancel(
+        &self,
+        _request: tauri_mcp_agent_lib::agent::llm::types::CompletionCancelRequest,
     ) -> Result<(), String> {
         Ok(())
     }
@@ -111,6 +120,7 @@ async fn ensure_test_runtime_state() {
     let db = test_db().await;
     set_message_repository(SqliteMessageRepository::new(db.clone()));
     set_compact_context_repository(SqliteCompactContextRepository::new(db.clone()));
+    set_settings_repository(SqliteSettingsRepository::new(db.clone()));
     set_pending_queue_repository(SqlitePendingQueueRepository::new(db));
 
     init_session_bus(SessionBus::new());
@@ -153,6 +163,7 @@ fn build_session_metadata(session_id: &str, status: SessionStatus) -> SessionMet
         docker_config: None,
         docker_container_name: None,
         docker_host_workspace_path: None,
+        status_reason: None,
     }
 }
 
@@ -269,6 +280,7 @@ async fn recover_sessions_marks_crashed_busy_sessions_paused_without_auto_resumi
             AgentEvent::StatusChanged {
                 session_id: changed_session_id,
                 status: SessionStatus::Paused,
+                ..
             } if changed_session_id == &session_id
         )),
         "recovery should emit a paused status change for the recovered session"
@@ -528,4 +540,108 @@ async fn recover_sessions_with_dispatcher_tolerates_uninitialized_message_reposi
 
     // Restore runtime state for subsequent tests
     ensure_test_runtime_state().await;
+}
+
+/// Text of the recovery tombstone for `tool_call_id`.
+async fn tombstone_text(session_id: &str, tool_call_id: &str) -> String {
+    let recent = get_message_repository()
+        .get_recent_slice(session_id, 8)
+        .await
+        .expect("recent slice should load");
+    let tombstone = recent
+        .items
+        .iter()
+        .find(|message| {
+            message.role == "tool" && message.tool_call_id.as_deref() == Some(tool_call_id)
+        })
+        .expect("recovery should close the orphaned tool call");
+    tombstone
+        .content
+        .iter()
+        .find_map(|content| match content {
+            MCPContent::Text { text, .. } => Some(text.clone()),
+            _ => None,
+        })
+        .expect("tombstone should carry text")
+}
+
+/// Crash a session with two orphaned calls, one of them waiting on a prompt.
+async fn recover_with_waiting_prompt(tool_name: &str) {
+    let _guard = TEST_GUARD.lock().await;
+    ensure_test_runtime_state().await;
+
+    let db = test_db().await;
+    let session_id = format!("recovery-prompt-{}", uuid::Uuid::new_v4());
+    let repo = Arc::new(InMemorySessionRepository::new());
+    let session_repo: Arc<dyn SessionRepository> = repo.clone();
+    let active_sessions: Arc<RwLock<HashMap<String, AgentSession>>> =
+        Arc::new(RwLock::new(HashMap::new()));
+    let dispatcher = RecordingDispatcher::default();
+    let settings = try_get_settings_repository().expect("settings repository should be set");
+
+    insert_sqlite_session(&db, &session_id).await;
+
+    let mut assistant =
+        build_assistant_tool_call_message(&session_id, "assistant-prompt", "prompt-call");
+    if let Some(calls) = assistant.tool_calls.as_mut() {
+        calls[0].function.name = tool_name.to_string();
+        calls.push(ToolCall {
+            id: "later-call".to_string(),
+            r#type: "function".to_string(),
+            function: ToolCallFunction {
+                name: "workspace__read".to_string(),
+                arguments: "{}".to_string(),
+            },
+        });
+    }
+    get_message_repository()
+        .insert(&assistant)
+        .await
+        .expect("assistant tool-call insert should succeed");
+    persist_waiting_tool_call(settings, &session_id, "prompt-call").await;
+
+    repo.upsert_session(&build_session_metadata(&session_id, SessionStatus::Busy))
+        .await
+        .expect("session upsert should succeed");
+
+    recover_sessions_with_dispatcher(
+        &session_repo,
+        &active_sessions,
+        &dispatcher,
+        Arc::new(ContextRegistry::new()),
+    )
+    .await
+    .expect("session recovery should succeed");
+
+    assert_eq!(
+        tombstone_text(&session_id, "prompt-call").await,
+        USER_PROMPT_RESTART_MESSAGE
+    );
+    assert!(
+        tombstone_text(&session_id, "later-call")
+            .await
+            .contains("did not complete"),
+        "a call that did not wait on a prompt keeps the crash text"
+    );
+    let leftover = settings
+        .list()
+        .await
+        .expect("settings should list")
+        .into_iter()
+        .filter(|setting| setting.key.contains(&session_id))
+        .count();
+    assert_eq!(
+        leftover, 0,
+        "recovery should clear the waiting tool call record"
+    );
+}
+
+#[tokio::test]
+async fn recover_sessions_reports_restart_for_a_call_waiting_on_a_secret_prompt() {
+    recover_with_waiting_prompt("workspace__interactiveShell").await;
+}
+
+#[tokio::test]
+async fn recover_sessions_reports_restart_for_a_call_waiting_on_a_question_prompt() {
+    recover_with_waiting_prompt("ui__askUser").await;
 }

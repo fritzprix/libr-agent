@@ -57,7 +57,7 @@ const SettingsPage: FC = function SettingsPage() {
     isDiscardDialogOpen,
     isLeaveDialogOpen,
     isSaving,
-    networkSettingsChanged,
+    restartRequiredSettingsChanged,
     setIsDiscardDialogOpen,
     setIsLeaveDialogOpen,
     systemSettingsProps,
@@ -99,7 +99,7 @@ const SettingsPage: FC = function SettingsPage() {
                 })}
               </Badge>
             )}
-            {networkSettingsChanged && (
+            {restartRequiredSettingsChanged && (
               <Badge
                 variant="outline"
                 className="border-warning/30 bg-warning/10 text-warning-foreground"

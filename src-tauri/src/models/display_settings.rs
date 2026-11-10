@@ -2,7 +2,8 @@
 //!
 //! Schema and defaults live here. Stored JSON may be missing fields, hold
 //! values of the wrong type, or not parse at all; [`DisplaySettings::from_stored`]
-//! always returns a complete object, falling back per field.
+//! always returns a complete object, falling back per field. Unknown keys
+//! (such as the removed `metricDisplayMode`) are ignored.
 //!
 //! The frontend's `DisplaySettings` type is generated from this model
 //! (`src/lib/generated/`); `ts_bindings` fails when the checked-in file is stale.
@@ -14,14 +15,6 @@ use serde_json::{Map, Value};
 const SETTINGS_KEY: &str = "displaySettings";
 /// Webview zoom factors offered in Settings and walked by Ctrl/Cmd +/-.
 const UI_SCALE_STEPS: [f64; 5] = [0.9, 1.0, 1.1, 1.25, 1.5];
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(test, derive(ts_rs::TS))]
-#[serde(rename_all = "camelCase")]
-pub enum MetricDisplayMode {
-    Tooltip,
-    Inline,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -64,7 +57,6 @@ pub enum ColorTheme {
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct DisplaySettings {
-    pub metric_display_mode: MetricDisplayMode,
     pub prefill_display_format: PrefillDisplayFormat,
     pub show_token_speed: bool,
     pub compact_metrics: bool,
@@ -81,7 +73,6 @@ pub struct DisplaySettings {
 impl Default for DisplaySettings {
     fn default() -> Self {
         Self {
-            metric_display_mode: MetricDisplayMode::Inline,
             prefill_display_format: PrefillDisplayFormat::Time,
             show_token_speed: true,
             compact_metrics: false,
@@ -111,7 +102,6 @@ impl DisplaySettings {
         };
 
         Self {
-            metric_display_mode: parsed(&map, "metricDisplayMode", defaults.metric_display_mode),
             prefill_display_format: parsed(
                 &map,
                 "prefillDisplayFormat",
@@ -175,7 +165,6 @@ mod tests {
                 "showTokenSpeed":false,"compactMetrics":true,"toolDetailLevel":"developer",
                 "fontFamily":"Inter"}"#,
         ));
-        assert_eq!(settings.metric_display_mode, MetricDisplayMode::Tooltip);
         assert_eq!(
             settings.prefill_display_format,
             PrefillDisplayFormat::TokensPerSecond
@@ -227,7 +216,7 @@ mod tests {
     #[test]
     fn serialized_row_round_trips_with_camel_case_names() {
         let value = serde_json::to_value(DisplaySettings::default()).unwrap();
-        assert_eq!(value["metricDisplayMode"], "inline");
+        assert!(value.get("metricDisplayMode").is_none());
         assert_eq!(value["prefillDisplayFormat"], "time");
         assert_eq!(value["uiScale"], 1.1);
         assert_eq!(
@@ -244,8 +233,7 @@ mod tests {
 #[cfg(test)]
 mod ts_bindings {
     use super::{
-        ColorTheme, DisplaySettings, MessageLayoutStyle, MetricDisplayMode, PrefillDisplayFormat,
-        ToolDetailLevel,
+        ColorTheme, DisplaySettings, MessageLayoutStyle, PrefillDisplayFormat, ToolDetailLevel,
     };
     use std::path::Path;
     use ts_rs::{Config, TS};
@@ -273,7 +261,6 @@ mod ts_bindings {
     #[test]
     fn display_settings_bindings_are_current() {
         check::<DisplaySettings>();
-        check::<MetricDisplayMode>();
         check::<PrefillDisplayFormat>();
         check::<ToolDetailLevel>();
         check::<MessageLayoutStyle>();

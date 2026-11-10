@@ -41,7 +41,7 @@ export interface AgentConfig {
 export type WorkspaceIsolationMode = 'host' | 'docker';
 
 export interface DockerWorkspaceConfig {
-  /** Required for managed Docker sessions; omit when attaching to an existing container. */
+  /** Managed sessions without an image use the LibrAgent default image; ignored when attaching. */
   image?: string;
   /** Existing container id/name to attach (Harbor task containers). */
   attachContainer?: string;
@@ -278,6 +278,8 @@ export interface ToolExecutionResult {
   cancellation?: {
     cancelledBy: 'user' | 'timeout' | 'system';
   };
+  /** Wall-clock execution duration in ms, recorded for real tool executions only. */
+  executionDurationMs?: number;
 }
 
 export type SessionWorkflowStatus =
@@ -321,6 +323,8 @@ export interface AgentSessionMetadata {
   dockerConfig?: DockerWorkspaceConfig;
   dockerContainerName?: string;
   dockerHostWorkspacePath?: string;
+  /** Why the session has its current status, for example a Docker setup failure. */
+  statusReason?: string | null;
 }
 
 export interface AgentSessionListCursor {
@@ -364,9 +368,54 @@ export interface PendingApprovalSnapshot {
   inputPreview?: string;
 }
 
+/**
+ * What a waiting user prompt asks for (#2543). Serde-tagged with `kind`, so the
+ * dialog switches on `kind` alone. A `secret` prompt never carries a value.
+ */
+export type UserPromptPayload =
+  | {
+      kind: 'secret';
+      variableName: string;
+      label: string;
+      /** Optional line telling the user the value is reused for the session. */
+      reuseNote?: string;
+    }
+  | {
+      kind: 'question';
+      questions: UserQuestion[];
+    };
+
+/** One `ui__askUser` question (#2547). Without `options` it is free text. */
+export interface UserQuestion {
+  id: string;
+  question: string;
+  description?: string;
+  options?: string[];
+  multiSelect: boolean;
+  /** Adds an "Other" free-text choice to `options`. */
+  allowCustom: boolean;
+}
+
+/** How a user prompt ended; Stop reports `cancelled` (#2543). */
+export type UserPromptOutcome =
+  | 'answered'
+  | 'cancelled'
+  | 'timeout'
+  | 'restart';
+
+/** The prompt waiting for a session. No field can carry a secret value. */
+export interface PendingUserPromptSummary {
+  requestId: string;
+  kind: 'secret' | 'question';
+  payload: UserPromptPayload;
+  createdAt: string;
+}
+
 export interface AgentOpenSessionResponse {
   session: AgentSessionMetadata;
   messages: MessageSlice<RustMessage>;
   pendingApprovals: PendingApprovalSnapshot[];
+  /** The prompt still waiting when this session was opened (#2543). */
+  pendingUserPrompt?: PendingUserPromptSummary | null;
   runtimeState: SessionRuntimeState;
 }

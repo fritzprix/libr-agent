@@ -117,6 +117,13 @@ function applyOpenSessionPayload(
     setters.setPendingApprovals(incomingApprovals);
   }
 
+  // A prompt may have arrived (or been resolved) while open() was in flight, so
+  // a merged open must not clear a prompt the events already set.
+  const incomingUserPrompt = response.pendingUserPrompt ?? null;
+  if (!options.mergeWithLiveState || incomingUserPrompt !== null) {
+    setters.setPendingUserPrompt(incomingUserPrompt);
+  }
+
   if (isInactiveWorkflowStatus(sessionData.status)) {
     options.clearStreamingOnInactive();
   }
@@ -247,8 +254,9 @@ export function useAgentSessionEvents(
               case 'statusChanged': {
                 const newStatus = payload.status;
                 setters.setWorkflowStatus(newStatus);
+                const statusReason = payload.statusReason ?? undefined;
                 setters.setSession((prev) =>
-                  prev ? { ...prev, status: newStatus } : null,
+                  prev ? { ...prev, status: newStatus, statusReason } : null,
                 );
 
                 if (newStatus === 'busy' || newStatus === 'queued') {
@@ -381,23 +389,33 @@ export function useAgentSessionEvents(
                 break;
               }
 
-              case 'interactiveShellInputRequested': {
-                setters.setPendingInteractiveShellPrompt({
-                  executionId: payload.executionId,
-                  prompt: payload.prompt,
-                  inputType: payload.inputType,
-                  command: payload.command,
+              case 'userPromptRequested': {
+                liveMutationEpoch += 1;
+                setters.setPendingUserPrompt({
+                  requestId: payload.requestId,
+                  kind: payload.payload.kind,
+                  payload: payload.payload,
+                  createdAt: new Date().toISOString(),
                 });
-                setters.setWorkflowPhase('using_tools');
+                setters.setWorkflowPhase('waiting_approval');
+                logger.info('User prompt requested', {
+                  requestId: payload.requestId,
+                  kind: payload.payload.kind,
+                });
                 break;
               }
 
-              case 'interactiveShellInputResolved': {
-                setters.setPendingInteractiveShellPrompt((currentPrompt) =>
-                  currentPrompt?.executionId === payload.executionId
+              case 'userPromptResolved': {
+                liveMutationEpoch += 1;
+                setters.setPendingUserPrompt((currentPrompt) =>
+                  currentPrompt?.requestId === payload.requestId
                     ? null
                     : currentPrompt,
                 );
+                logger.info('User prompt resolved', {
+                  requestId: payload.requestId,
+                  outcome: payload.outcome,
+                });
                 break;
               }
 
@@ -466,7 +484,7 @@ export function useAgentSessionEvents(
                   prev ? { ...prev, status: nextStatus } : null,
                 );
                 setters.setWorkflowPhase('idle');
-                setters.setPendingInteractiveShellPrompt(null);
+                setters.setPendingUserPrompt(null);
                 clearStreamingOnInactive();
                 logger.info('Workflow phase: idle', {
                   sessionId,

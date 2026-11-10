@@ -10,7 +10,61 @@ use crate::mcp::types::MCPResult;
 use crate::session_isolation::IsolatedProcessConfig;
 
 use super::super::super::{terminal_manager, utils, workspace_server, WorkspaceServer};
-use super::super::{normalization, process};
+use super::super::process;
+
+/// Max stderr lines returned when a process ends during the startup check.
+const IMMEDIATE_EXIT_STDERR_TAIL_LINES: usize = 20;
+
+/// Response for a process that is already `Failed` at the startup check.
+///
+/// `exit_code` is `Some` when the process started and exited non-zero, and
+/// `None` when spawning itself failed (the cause is recorded in stderr).
+pub(crate) fn immediate_exit_result(
+    process_id: &str,
+    command: &str,
+    exit_code: Option<i32>,
+    stderr_tail: &[String],
+) -> MCPResult {
+    let headline = match exit_code {
+        Some(code) => format!("Process exited immediately with code {code}"),
+        None => "Process failed to start".to_string(),
+    };
+    let stderr_block = if stderr_tail.is_empty() {
+        "(no stderr output)".to_string()
+    } else {
+        stderr_tail.join("\n")
+    };
+    let message = format!(
+        "{headline}\n\n• Process ID: {process_id}\n• Command: {command}\n\nstderr (last {IMMEDIATE_EXIT_STDERR_TAIL_LINES} lines):\n{stderr_block}"
+    );
+    let read_output = format!(
+        "Use workspace__readProcessOutput(\"{process_id}\", \"both\") to see the full output"
+    );
+    let guidance = match exit_code {
+        Some(_) => vec![
+            "Read the stderr above to find the cause before retrying the same command".to_string(),
+            read_output,
+        ],
+        None => vec![
+            "Verify the command syntax is correct".to_string(),
+            "Check if required programs are installed".to_string(),
+            read_output,
+        ],
+    };
+
+    guided_error(
+        ErrorCategory::OperationFailed,
+        message,
+        ToolGroup::Workspace,
+    )
+    .guidance(guidance)
+    .to_mcp_result_with_data(Some(serde_json::json!({
+        "process_id": process_id,
+        "status": "failed",
+        "exit_code": exit_code,
+        "stderr_tail": stderr_tail,
+    })))
+}
 
 impl WorkspaceServer {
     /// Execute shell command asynchronously in background
@@ -141,9 +195,6 @@ impl WorkspaceServer {
         let stdout_path = process_tmp_dir.join("stdout");
         let stderr_path = process_tmp_dir.join("stderr");
 
-        // Normalize command
-        let normalized_command = normalization::normalize_shell_command(command);
-
         // Use configured isolation level
         let isolation_level = utils::get_shell_isolation_level().await;
 
@@ -152,11 +203,14 @@ impl WorkspaceServer {
             session_id: session_id.clone(),
             workspace_path: workspace_path.clone(),
             working_directory,
-            command: normalized_command.clone(),
+            command: command.to_string(),
             args: vec![],
             env_vars,
+            secrets: self.shell_manager.session_secrets(&session_id).await,
             isolation_level,
             shell_type: None, // Default to platform default shell
+            // `asRoot` is refused in dispatch for spawnProcess.
+            run_as_root: false,
         };
 
         // Create isolated command
@@ -214,6 +268,14 @@ impl WorkspaceServer {
 
         {
             let mut registry = self.process_registry.write().await;
+            // Re-check under the write lock: terminate marks the flag before it
+            // sweeps the registry, so a registered entry cannot slip past it.
+            if self.is_session_terminated() {
+                return Err(
+                    crate::mcp::builtin::workspace::persistent_shell::manager::SESSION_TERMINATED_MESSAGE
+                        .to_string(),
+                );
+            }
             registry.entries.insert(process_id.clone(), entry.clone());
             registry
                 .cancellation_tokens
@@ -319,6 +381,20 @@ impl WorkspaceServer {
                         entry.finished_at.get_or_insert_with(chrono::Utc::now);
                         error!("Process {} execution error: {}", pid_copy, e);
 
+                        // Record the cause in stderr so the startup check and
+                        // readProcessOutput can report it.
+                        if let Ok(mut file) = tokio::fs::OpenOptions::new()
+                            .create(true)
+                            .append(true)
+                            .open(&stderr_path)
+                            .await
+                        {
+                            use tokio::io::AsyncWriteExt;
+                            let _ = file
+                                .write_all(format!("LibrAgent: process error: {e}\n").as_bytes())
+                                .await;
+                        }
+
                         // Update file sizes even on error
                         entry.stdout_size = terminal_manager::get_file_size(&stdout_path).await;
                         entry.stderr_size = terminal_manager::get_file_size(&stderr_path).await;
@@ -355,24 +431,31 @@ impl WorkspaceServer {
         // Wait briefly to detect immediate failures
         tokio::time::sleep(Duration::from_millis(100)).await;
 
-        // Check if process failed to start
-        {
+        // Check if the process already failed (spawn error or fast non-zero exit)
+        let immediate_failure = {
             let registry = self.process_registry.read().await;
-            if let Some(entry) = registry.entries.get(&process_id) {
-                if matches!(entry.status, terminal_manager::ProcessStatus::Failed) {
-                    return Ok(guided_error(
-                        ErrorCategory::OperationFailed,
-                        "Process failed to start",
-                        ToolGroup::Workspace,
+            registry
+                .entries
+                .get(&process_id)
+                .filter(|entry| matches!(entry.status, terminal_manager::ProcessStatus::Failed))
+                .map(|entry| {
+                    (
+                        entry.exit_code,
+                        std::path::PathBuf::from(&entry.stderr_path),
                     )
-                    .guidance(vec![
-                        "Verify the command syntax is correct".to_string(),
-                        "Check if required programs are installed".to_string(),
-                        "Use workspace__listProcesses to see failed process details".to_string(),
-                    ])
-                    .to_mcp_result());
-                }
-            }
+                })
+        };
+        if let Some((exit_code, stderr_file)) = immediate_failure {
+            let stderr_tail =
+                terminal_manager::tail_lines(&stderr_file, IMMEDIATE_EXIT_STDERR_TAIL_LINES)
+                    .await
+                    .unwrap_or_default();
+            return Ok(immediate_exit_result(
+                &process_id,
+                command,
+                exit_code,
+                &stderr_tail,
+            ));
         }
 
         // Invalidate service context cache to reflect new process

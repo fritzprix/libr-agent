@@ -8,11 +8,17 @@ use crate::mcp::types::{
 };
 use crate::repositories::AssistantRepository;
 use serde_json::{json, Value};
+use std::collections::BTreeSet;
 
 use super::super::queries::{find_server_model, get_server_config};
 use super::super::ToolServer;
 use super::catalog::matching_catalog_preset;
-use super::persistence::{delete_server_config_db, save_server_config, SavedServer};
+use super::persistence::{
+    delete_server_config_db, reused_secret_names, save_server_config, ContainerCheck, SavedServer,
+};
+use super::verify::container_stdio_guidance;
+use crate::mcp::secret_templates::secret_store;
+use crate::mcp::session_isolation::exec_target::StdioExecTarget;
 
 /// Catalog only for an exact preset transport without custom OAuth; the same
 /// rule lets `tool__registerServer` skip hard approval.
@@ -35,6 +41,67 @@ pub(crate) fn install_provenance(
     }
 }
 
+fn reenter_names(args: &Value) -> BTreeSet<String> {
+    args.get("reenterSecrets")
+        .and_then(Value::as_array)
+        .map(|names| {
+            names
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Names of the stored secrets that a `tool__registerServer` or `tool__updateServer` call
+/// would reuse without asking, so its approval preview can list them.
+pub(crate) async fn secrets_reused_by(args: &Value) -> Vec<String> {
+    let name = args.get("name").and_then(Value::as_str);
+    let transport = args
+        .get("transport")
+        .and_then(|value| serde_json::from_value::<TransportConfig>(value.clone()).ok());
+    let (Some(name), Some(transport), Some(repo)) = (
+        name,
+        transport,
+        crate::state::try_get_mcp_server_repository(),
+    ) else {
+        return Vec::new();
+    };
+    // `plan_secrets` reads templates from the transport only; revisit if
+    // `authentication` ever holds one.
+    let config = MCPServerConfig {
+        name: Some(name.to_string()),
+        transport,
+        authentication: None,
+        metadata: None,
+        provenance: None,
+    };
+    reused_secret_names(repo, secret_store(), &config, &reenter_names(args)).await
+}
+
+async fn session_exec_target(session_id: Option<&str>) -> Result<StdioExecTarget, MCPResult> {
+    StdioExecTarget::for_session(session_id)
+        .await
+        .map_err(|error| {
+            guided_error(ErrorCategory::DatabaseError, error, ToolGroup::Tool).to_mcp_result()
+        })
+}
+
+/// The container test failed: the record is saved, but only this response reports the failure.
+fn container_check_failed(name: &str, id: &str, error: &str, secrets_line: &str) -> MCPResult {
+    guided_error(
+        ErrorCategory::OperationFailed,
+        format!(
+            "Server '{}' (ID: {}) was saved, but it did not start in the session container.{}\n\n{}",
+            name, id, secrets_line, error
+        ),
+        ToolGroup::Tool,
+    )
+    .with_guidance(container_stdio_guidance())
+    .to_mcp_result_with_data(Some(json!({ "name": name, "id": id })))
+}
+
 fn provenance_line(provenance: &ServerProvenance) -> String {
     match &provenance.preset {
         Some(preset) => format!("• Source: catalog preset '{preset}'"),
@@ -43,7 +110,11 @@ fn provenance_line(provenance: &ServerProvenance) -> String {
 }
 
 /// Register a new MCP server configuration
-pub async fn register_server(_server: &ToolServer, args: Value) -> Result<MCPResult, String> {
+pub async fn register_server(
+    _server: &ToolServer,
+    args: Value,
+    session_id: Option<&str>,
+) -> Result<MCPResult, String> {
     let name = match args.get("name").and_then(|v| v.as_str()) {
         Some(n) if !n.is_empty() => n.to_string(),
         Some(_) => {
@@ -169,7 +240,12 @@ pub async fn register_server(_server: &ToolServer, args: Value) -> Result<MCPRes
         provenance: Some(provenance),
     };
 
-    let SavedServer { id, name } = match save_server_config(&config).await {
+    let target = match session_exec_target(session_id).await {
+        Ok(target) => target,
+        Err(result) => return Ok(result),
+    };
+
+    let saved = match save_server_config(&config, &target, session_id, &BTreeSet::new()).await {
         Ok(saved) => saved,
         Err(e) => {
             return Ok(guided_error(
@@ -184,6 +260,13 @@ pub async fn register_server(_server: &ToolServer, args: Value) -> Result<MCPRes
             .to_mcp_result());
         }
     };
+    let secrets_line = saved.secrets_line();
+    let SavedServer {
+        id,
+        name,
+        container_check,
+        ..
+    } = saved;
 
     // Note: Session Isolation means we cannot auto-start via global manager
     // External servers are now created per-session through MCPServiceProxyManager
@@ -195,10 +278,21 @@ pub async fn register_server(_server: &ToolServer, args: Value) -> Result<MCPRes
         Some(name.to_string()),
     );
 
+    let status = match container_check {
+        Some(ContainerCheck::Failed(error)) => {
+            return Ok(container_check_failed(&name, &id, &error, &secrets_line))
+        }
+        Some(ContainerCheck::Passed { tool_count }) => format!(
+            "Saved and verified in the session container ({} tools)",
+            tool_count
+        ),
+        None => "Saved (connectivity verification running in the background)".to_string(),
+    };
+
     let hint = SuccessHint::new(
         format!(
-            "✓ Server configuration saved\n\n• Server Name: {}\n• Server ID: {}\n{}\n\nStatus: Saved (connectivity verification running in the background)",
-            name, id, source_line
+            "✓ Server configuration saved\n\n• Server Name: {}\n• Server ID: {}\n{}{}\n\nStatus: {}",
+            name, id, source_line, secrets_line, status
         ),
         vec![
             "Use tool__listServers({\"availability\":\"inventory\"}) to confirm the registered server.".to_string(),
@@ -312,7 +406,11 @@ pub async fn delete_server(_server: &ToolServer, args: Value) -> Result<MCPResul
 }
 
 /// Update an existing MCP server configuration
-pub async fn update_server(_server: &ToolServer, args: Value) -> Result<MCPResult, String> {
+pub async fn update_server(
+    _server: &ToolServer,
+    args: Value,
+    session_id: Option<&str>,
+) -> Result<MCPResult, String> {
     let name = match args.get("name").and_then(|v| v.as_str()) {
         Some(n) if !n.is_empty() => n,
         Some(_) => {
@@ -400,8 +498,14 @@ pub async fn update_server(_server: &ToolServer, args: Value) -> Result<MCPResul
         provenance: Some(provenance),
     };
 
+    let target = match session_exec_target(session_id).await {
+        Ok(target) => target,
+        Err(result) => return Ok(result),
+    };
+
     // Update config and get ID
-    let SavedServer { id, name } = match save_server_config(&config).await {
+    let saved = match save_server_config(&config, &target, session_id, &reenter_names(&args)).await
+    {
         Ok(saved) => saved,
         Err(e) => {
             return Ok(guided_error(
@@ -413,6 +517,13 @@ pub async fn update_server(_server: &ToolServer, args: Value) -> Result<MCPResul
             .to_mcp_result());
         }
     };
+    let secrets_line = saved.secrets_line();
+    let SavedServer {
+        id,
+        name,
+        container_check,
+        ..
+    } = saved;
 
     // Note: Session Isolation means we cannot restart via global manager
     // Configuration updates take effect when servers are next started in a session
@@ -424,10 +535,21 @@ pub async fn update_server(_server: &ToolServer, args: Value) -> Result<MCPResul
         Some(name.to_string()),
     );
 
+    let status = match container_check {
+        Some(ContainerCheck::Failed(error)) => {
+            return Ok(container_check_failed(&name, &id, &error, &secrets_line))
+        }
+        Some(ContainerCheck::Passed { tool_count }) => format!(
+            "\nStatus: verified in the session container ({} tools)",
+            tool_count
+        ),
+        None => String::new(),
+    };
+
     let hint = SuccessHint::new(
         format!(
-            "✓ Server configuration updated for '{}' (ID: {})\n{}",
-            name, id, source_line
+            "✓ Server configuration updated for '{}' (ID: {})\n{}{}{}",
+            name, id, source_line, secrets_line, status
         ),
         vec!["Use tool__listServers({\"availability\":\"inventory\",\"query\":\"<server-name>\"}) to verify changes".to_string()],
     );
@@ -458,5 +580,13 @@ mod tests {
         assert_eq!(stored["source"], "external");
         assert!(stored.get("preset").is_none());
         assert!(stored["recordedAt"].is_i64());
+    }
+
+    #[test]
+    fn container_guidance_retries_with_update_not_register() {
+        let guidance = container_stdio_guidance().join("\n");
+        assert!(guidance.contains("tool__updateServer"));
+        assert!(guidance.contains("then tool__verifyServer"));
+        assert!(guidance.contains("Do not call tool__registerServer again"));
     }
 }

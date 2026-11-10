@@ -124,15 +124,21 @@ pub async fn resume_workflow(
         }
 
         // Transition status to Busy (bypasses concurrency gate block since permit is held)
-        if let Err(e) = crate::agent::lifecycle::update_session_status(
+        let promoted = crate::agent::lifecycle::promote_queued_session_to_busy(
             &session_repo,
             &active_sessions,
             &app_handle,
             &session_id_clone,
-            SessionStatus::Busy,
         )
-        .await
-        {
+        .await;
+        if let Ok(false) = promoted {
+            log::info!(
+                "Session {} left Queued before its resumed workflow started. Not starting it.",
+                session_id_clone
+            );
+            return;
+        }
+        if let Err(e) = promoted {
             log::error!(
                 "Failed to transition resumed session {} to Busy: {}",
                 session_id_clone,
@@ -166,6 +172,29 @@ pub async fn resume_workflow(
         )
         .await
         {
+            // A force-stop fence refusal is a correct outcome, not a failure:
+            // undo the Busy promotion and emit no WorkflowError (#2633 G4.1).
+            if crate::mcp::MCPServiceProxyManager::is_teardown_fence_rejection(&e) {
+                log::info!(
+                    "Background resume for session {} aborted by force-stop fence; no workflow error emitted",
+                    session_id_clone
+                );
+                if let Err(err) = crate::agent::lifecycle::end_fence_refused_wake(
+                    &session_repo,
+                    &active_sessions,
+                    &app_handle,
+                    &session_id_clone,
+                )
+                .await
+                {
+                    log::warn!(
+                        "Failed to end refused background resume for session {}: {}",
+                        session_id_clone,
+                        err
+                    );
+                }
+                return;
+            }
             log::error!(
                 "Proxy check failed during background resume for session {}: {}",
                 session_id_clone,

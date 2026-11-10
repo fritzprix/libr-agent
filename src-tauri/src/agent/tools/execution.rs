@@ -33,6 +33,7 @@ pub async fn handle_tool_result(
         error,
         is_error,
         cancellation,
+        execution_duration_ms,
     } = result;
     let mcp_content = match mcp_content {
         Some(content) => Some(externalize_media_content_for_storage(&session_id, content).await?),
@@ -74,7 +75,7 @@ pub async fn handle_tool_result(
                 }
 
                 // Create Tool Message using helper methods
-                let message = if is_error {
+                let mut message = if is_error {
                     if let Some(mut mcp_content) = mcp_content {
                         append_cancellation_note(&mut mcp_content, cancellation.as_ref());
                         // Prefer structured content (guided_error) over bare error string —
@@ -125,6 +126,20 @@ pub async fn handle_tool_result(
                 };
 
                 pending.completed_tool_call_ids.insert(tool_call_id.clone());
+
+                // Record wall-clock duration on the message metadata so the circuit
+                // breaker can classify long identical calls as waits (#2610).
+                if let Some(duration_ms) = execution_duration_ms {
+                    let metadata = message
+                        .metadata
+                        .get_or_insert_with(|| serde_json::json!({}));
+                    if let Some(object) = metadata.as_object_mut() {
+                        object.insert(
+                            "executionDurationMs".to_string(),
+                            serde_json::Value::from(duration_ms),
+                        );
+                    }
+                }
 
                 // Emit ToolExecutionCompleted event for external tools (progress tracking)
                 if let Some(tool_name) = pending.tool_names.get(&tool_call_id) {

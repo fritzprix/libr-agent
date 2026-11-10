@@ -283,15 +283,15 @@ fn tool_is_always_enabled_for_any_explicit_alias_list() {
 }
 
 #[test]
-fn ui_public_surface_prefers_present_interactive_over_legacy_split_tools() {
+fn ui_public_surface_exposes_ask_user_and_report_result_only() {
     let tool_names: Vec<String> = ui_tools::all_tools()
         .into_iter()
         .map(|tool| tool.name)
         .collect();
 
     assert!(
-        tool_names.contains(&"presentInteractive".to_string()),
-        "presentInteractive must remain on the public UI surface"
+        tool_names.contains(&"askUser".to_string()),
+        "askUser must be on the public UI surface"
     );
     assert!(
         tool_names.contains(&"reportResult".to_string()),
@@ -299,7 +299,7 @@ fn ui_public_surface_prefers_present_interactive_over_legacy_split_tools() {
     );
     assert!(
         !tool_names.contains(&"visualizeData".to_string()),
-        "visualizeData should be hidden from the AI-facing UI surface in favor of presentInteractive"
+        "visualizeData should be hidden from the AI-facing UI surface"
     );
     assert!(
         !tool_names.contains(&"promptUser".to_string()),

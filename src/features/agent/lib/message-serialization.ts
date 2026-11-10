@@ -207,7 +207,7 @@ export function serializeMessageForClipboard(
 
 /**
  * Serialize message body for file download (MD/PDF).
- * Prefers UI tool documents (reportResult / presentInteractive); otherwise
+ * Prefers UI tool documents (reportResult / old interactive forms); otherwise
  * returns the reply text only — no role header, thinking, or tool calls.
  */
 export function serializeMessageForDownload(

@@ -71,6 +71,79 @@ pub async fn delete_token(server_id: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// MCP server secret values (`{{secret:NAME}}` templates) in the OS keychain,
+/// under the account `<server_id>:<NAME>`.
+pub struct KeychainSecretStore;
+
+impl KeychainSecretStore {
+    fn entry(server_id: &str, name: &str) -> Result<Entry, String> {
+        Entry::new(SERVICE_NAME, &format!("{server_id}:{name}"))
+            .map_err(|e| format!("Failed to create keychain entry: {e}"))
+    }
+}
+
+/// Whether the OS keychain works on this machine. Checked once per process: the
+/// credential store must start, and a read must not fail with a platform or access
+/// error (for example Linux with no Secret Service running, or WSL).
+fn keychain_available() -> bool {
+    static AVAILABLE: once_cell::sync::Lazy<bool> = once_cell::sync::Lazy::new(|| {
+        if let Err(e) = Entry::store_status() {
+            log::warn!("OS keychain is not available: {e}");
+            return false;
+        }
+        let probe =
+            Entry::new(SERVICE_NAME, "availability-probe").map(|entry| entry.get_password());
+        match probe {
+            Ok(Ok(_)) | Ok(Err(keyring::Error::NoEntry)) => true,
+            Ok(Err(
+                e @ (keyring::Error::PlatformFailure(_) | keyring::Error::NoStorageAccess(_)),
+            ))
+            | Err(e) => {
+                log::warn!("OS keychain is not available: {e}");
+                false
+            }
+            Ok(Err(_)) => true,
+        }
+    });
+    *AVAILABLE
+}
+
+#[async_trait::async_trait]
+impl crate::mcp::secret_templates::SecretStore for KeychainSecretStore {
+    async fn get(&self, server_id: &str, name: &str) -> Result<Option<String>, String> {
+        match Self::entry(server_id, name)?.get_password() {
+            Ok(value) => Ok(Some(value)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(e) => Err(format!("Failed to read secret '{name}' from keychain: {e}")),
+        }
+    }
+
+    async fn set(
+        &self,
+        server_id: &str,
+        name: &str,
+        value: &str,
+    ) -> Result<Option<String>, String> {
+        Self::entry(server_id, name)?
+            .set_password(value)
+            .map(|()| None)
+            .map_err(|e| format!("Failed to store secret '{name}' in keychain: {e}"))
+    }
+
+    async fn delete(&self, server_id: &str, name: &str) -> Result<(), String> {
+        match Self::entry(server_id, name)?.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(e) => Err(format!(
+                "Failed to delete secret '{name}' from keychain: {e}"
+            )),
+        }
+    }
+
+    fn available(&self) -> bool {
+        keychain_available()
+    }
+}
+
 /// Checks if a token exists in the keychain without retrieving it
 ///
 /// # Arguments

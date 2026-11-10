@@ -39,6 +39,7 @@ async fn session_repository_persists_explicit_org_identity() {
         docker_config: None,
         docker_container_name: None,
         docker_host_workspace_path: None,
+        status_reason: None,
     })
     .await
     .expect("session should persist");

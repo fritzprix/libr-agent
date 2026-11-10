@@ -99,6 +99,36 @@ pub struct RespondChannelPermissionRequest {
     pub behavior: String,
 }
 
+/// Answer an open user prompt (#2543).
+///
+/// `value` carries the typed text for both kinds: the password for a `secret`,
+/// the reply for a `question`. It is never logged or echoed back.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubmitUserPromptRequest {
+    pub session_id: String,
+    pub request_id: String,
+    pub value: String,
+}
+
+impl std::fmt::Debug for SubmitUserPromptRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SubmitUserPromptRequest")
+            .field("session_id", &self.session_id)
+            .field("request_id", &self.request_id)
+            .field("value", &"<redacted>")
+            .finish()
+    }
+}
+
+/// Cancel an open user prompt without answering it (#2543).
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CancelUserPromptRequest {
+    pub session_id: String,
+    pub request_id: String,
+}
+
 /// Request to update session model/provider binding for a session
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -143,6 +173,10 @@ pub struct AgentOpenSessionResponse {
     pub messages: MessageSlice,
     #[serde(default)]
     pub pending_approvals: Vec<PendingApprovalSnapshot>,
+    /// The prompt still waiting for this session, so a reload shows it again
+    /// (#2543 requirement 7). Never carries a secret value.
+    #[serde(default)]
+    pub pending_user_prompt: Option<crate::agent::state::PendingUserPromptSummary>,
     #[serde(default)]
     pub runtime_state: crate::agent::runtime_state::SessionRuntimeState,
 }
@@ -174,6 +208,11 @@ pub struct ToolExecutionResult {
     pub is_error: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cancellation: Option<ToolCancellation>,
+    /// Wall-clock execution duration in milliseconds (call start → result).
+    /// Recorded by the workflow executor for real tool executions only; used by
+    /// the circuit breaker to classify long identical calls as waits (#2610).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_duration_ms: Option<u64>,
 }
 
 /// Describes why a tool result was cancelled.

@@ -38,12 +38,17 @@ fn build_cache_key(
     }
 }
 
-pub fn invalidate_skill_scan_cache() -> u64 {
+/// Drops cached scan results without bumping the skills catalog revision, so the
+/// next scan reads the disk again (e.g. for skill folders added outside the app).
+pub fn clear_skill_scan_cache_entries() {
     match skill_scan_cache().entries.write() {
         Ok(mut entries) => entries.clear(),
-        Err(error) => warn!("Failed to clear skill scan cache after mutation: {}", error),
+        Err(error) => warn!("Failed to clear skill scan cache: {}", error),
     }
+}
 
+pub fn invalidate_skill_scan_cache() -> u64 {
+    clear_skill_scan_cache_entries();
     invalidate_skills_catalog()
 }
 
@@ -104,4 +109,41 @@ pub async fn prewarm_managed_skill_scans() -> Result<(), String> {
     .await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    fn write_skill(root: &Path, dir: &str, name: &str) {
+        let skill_dir = root.join(dir);
+        fs::create_dir_all(&skill_dir).unwrap();
+        fs::write(
+            skill_dir.join("SKILL.md"),
+            format!("---\nname: {name}\ndescription: test skill\n---\n# {name}\n"),
+        )
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn clear_entries_rescans_disk_without_bumping_catalog_revision() {
+        let root = tempfile::tempdir().unwrap();
+        write_skill(root.path(), "first", "first-skill");
+
+        let first = scan_skills_internal_cached(root.path(), None, None)
+            .await
+            .unwrap();
+        assert_eq!(first.len(), 1);
+
+        write_skill(root.path(), "second", "second-skill");
+        let revision = get_skills_catalog_revision();
+        clear_skill_scan_cache_entries();
+        assert_eq!(get_skills_catalog_revision(), revision);
+
+        let second = scan_skills_internal_cached(root.path(), None, None)
+            .await
+            .unwrap();
+        assert!(second.iter().any(|skill| skill.name == "second-skill"));
+    }
 }

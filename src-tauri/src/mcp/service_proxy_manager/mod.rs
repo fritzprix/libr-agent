@@ -10,19 +10,6 @@ use super::session_isolation::{HttpSessionManager, SessionMCPManager};
 use super::session_isolation_config::SessionIsolationConfig;
 use crate::agent::runtime_state::SessionRuntimeState;
 use crate::session::SessionManager;
-use sha2::{Digest, Sha256};
-
-const MAX_PROCESS_CANCEL_RETRIES: usize = 1;
-
-#[derive(Debug, Clone)]
-struct ProcessCancelRetryState {
-    tool_name: String,
-    arguments_digest: [u8; 32],
-}
-
-fn process_cancel_arguments_digest(arguments: &str) -> [u8; 32] {
-    Sha256::digest(arguments.as_bytes()).into()
-}
 
 mod background_discovery;
 mod caching;
@@ -31,6 +18,7 @@ mod creation;
 mod lazy_proxy;
 mod management;
 mod proxy_config;
+mod retry_policy;
 mod runtime_updates;
 #[cfg(test)]
 mod test_helpers;
@@ -93,15 +81,50 @@ pub struct MCPServiceProxyManager {
     /// Saved server configs per session, used for retrying failed servers on session reuse or manual retry.
     session_server_configs: Arc<RwLock<HashMap<String, proxy_config::LoadedServerConfigs>>>,
 
-    /// Sessions whose active process was stopped by a user cancel. The next
-    /// foreground tool result consumes this marker and continues the workflow.
+    /// Failure counts and backoff of failed servers, used to limit automatic retries.
+    server_retry_states: retry_policy::RetryStateStore,
+
+    /// Sessions whose active process was stopped by a user cancel while a tool
+    /// ran. That tool's result consumes this marker and the workflow continues.
     process_cancel_pending: Arc<Mutex<HashSet<String>>>,
 
-    /// Bounds repeated retries of the exact tool call that was cancelled.
-    process_cancel_retry_states: Arc<Mutex<HashMap<String, ProcessCancelRetryState>>>,
+    /// Sessions force-stopped by explicit terminate/delete. While fenced,
+    /// `call_tool` rejects late dispatches so lazy proxy recreation cannot
+    /// resurrect builtin instances. Cleared only by explicit user/API entry
+    /// points (session create, resume command, explicit message, reload).
+    /// Entries are never removed: each holds a per-session generation so an
+    /// in-flight dispatch can detect that the fence moved underneath it even
+    /// when the fence was cleared again before dispatch (issue #2633 G2.1).
+    /// The map is bounded by the number of sessions in a local app.
+    teardown_fenced: Arc<Mutex<HashMap<String, TeardownFenceState>>>,
 
-    /// Session-wide safety net for retries that change tool arguments between attempts.
-    process_cancel_retry_counts: Arc<Mutex<HashMap<String, usize>>>,
+    /// Test-only: when an entry exists for a session, `ensure_builtin_proxy`
+    /// pauses after the second double-check (inside the creation guard),
+    /// signals readiness on the sender, and waits for the receiver. Lets
+    /// deterministic tests hold lazy creation open across terminate (#2633).
+    #[cfg(test)]
+    lazy_creation_holds: Arc<
+        Mutex<
+            HashMap<
+                String,
+                (
+                    tokio::sync::oneshot::Sender<()>,
+                    tokio::sync::oneshot::Receiver<()>,
+                ),
+            >,
+        >,
+    >,
+}
+
+/// Force-stop fence state for one session (issue #2633).
+#[derive(Clone, Copy, Debug, Default)]
+struct TeardownFenceState {
+    /// Bumped on every set and clear so an in-flight `call_tool` that
+    /// captured the generation at entry cannot be validated by a later
+    /// clear (issue #2633 G2.1).
+    generation: u64,
+    /// Whether late dispatches are currently rejected.
+    fenced: bool,
 }
 
 impl std::fmt::Debug for MCPServiceProxyManager {
@@ -120,14 +143,11 @@ impl std::fmt::Debug for MCPServiceProxyManager {
             .field("config", &self.config)
             .field("proxy_readiness", &"<RwLock<HashMap>>")
             .field("runtime_states", &"<RwLock<HashMap>>")
+            .field("server_retry_states", &self.server_retry_states)
             .field("process_cancel_pending", &"<Mutex<HashSet<String>>>")
             .field(
-                "process_cancel_retry_states",
-                &"<Mutex<HashMap<String, ProcessCancelRetryState>>>",
-            )
-            .field(
-                "process_cancel_retry_counts",
-                &"<Mutex<HashMap<String, usize>>>",
+                "teardown_fenced",
+                &"<Mutex<HashMap<String, TeardownFenceState>>>",
             )
             .finish()
     }

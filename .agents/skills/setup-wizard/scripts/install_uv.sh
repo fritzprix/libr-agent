@@ -1,21 +1,24 @@
 #!/bin/bash
 # uv Installation Script for Linux/macOS
+# Non-interactive. User scope only: uv installs under the user profile, so
+# this script never needs root.
 
 set -e
+
+# Absolute paths so the hints work from any current folder.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 echo "=== uv Installation Script ==="
 echo ""
 
-# Check if uv is already installed
-if command -v uv &> /dev/null; then
+FORCE="${1:-}"
+
+# A working uv is enough unless --force is given.
+if [ "$FORCE" != "--force" ] && command -v uv > /dev/null 2>&1; then
     CURRENT_VERSION=$(uv --version)
     echo "uv already installed: $CURRENT_VERSION"
-    read -p "Do you want to continue with installation? (y/n) " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        echo "Installation cancelled."
-        exit 0
-    fi
+    echo "Nothing to do. Pass --force to reinstall."
+    exit 0
 fi
 
 # Method 1: Using standalone installer (recommended)
@@ -28,7 +31,7 @@ else
     # Method 2: Using pip
     if ! command -v python3 &> /dev/null; then
         echo "✗ Python not found. Please install Python first."
-        echo "Run: ./install_python.sh"
+        echo "Run: bash \"$SCRIPT_DIR/install_python.sh\""
         exit 1
     fi
     

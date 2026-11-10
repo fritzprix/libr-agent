@@ -23,16 +23,9 @@ pub mod utils;
 pub mod workspace_server;
 
 // Re-exports for public API stability
-pub use types::{
-    InteractiveShellInputType, PendingExecutionLookupError, PendingExecutions,
-    PendingShellExecution, PendingShellInputResolution, StdinDelivery, PERSISTENT_SHELL_TOOL,
-    RUN_SHELL_TOOL,
-};
-pub(crate) use types::{
-    CANCEL_INTERACTIVE_SHELL_INPUT_INTERNAL, INTERACTIVE_SHELL_INPUT_MAX_BYTES,
-    INTERACTIVE_SHELL_INPUT_TIMEOUT_SECS, SUBMIT_INTERACTIVE_SHELL_INPUT_INTERNAL,
-};
-pub use workspace_server::WorkspaceServer;
+pub(crate) use types::INTERACTIVE_SHELL_INPUT_MAX_BYTES;
+pub use types::{PERSISTENT_SHELL_TOOL, RUN_SHELL_TOOL};
+pub use workspace_server::{release_session_workspace_state, WorkspaceServer};
 
 #[cfg(test)]
 mod test_output_visibility;
@@ -72,5 +65,10 @@ impl BuiltinMCPServer for WorkspaceServer {
 
     async fn kill_session_processes(&self, session_id: &str) -> Result<usize, String> {
         WorkspaceServer::kill_session_processes(self, session_id).await
+    }
+
+    fn mark_session_terminated(&self) {
+        self.terminated
+            .store(true, std::sync::atomic::Ordering::SeqCst);
     }
 }

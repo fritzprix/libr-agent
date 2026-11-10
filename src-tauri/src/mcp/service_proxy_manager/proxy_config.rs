@@ -2,6 +2,7 @@ use super::super::session_isolation_config::SessionIsolationConfig;
 use crate::agent::runtime_state::{
     SessionRuntimeServerState, SessionRuntimeServerStatus, SessionRuntimeTransport,
 };
+use crate::mcp::secret_templates::{fill_secrets, mask_values, secret_store, FilledConfig};
 use crate::mcp::utils::unique_session_server_name;
 use crate::repositories::mcp_server_repository::MCPServerRepository;
 use crate::state::get_mcp_server_repository;
@@ -58,6 +59,8 @@ pub(super) struct LoadedServerConfigs {
     pub(super) requested_external_server_names: Vec<String>,
     pub(super) use_external_servers: bool,
     pub(super) config_load_error: Option<String>,
+    /// Filled `{{secret:NAME}}` values per session server name, masked in its errors.
+    pub(super) secret_values: HashMap<String, Vec<String>>,
 }
 
 impl LoadedServerConfigs {
@@ -74,6 +77,7 @@ pub(super) async fn load_requested_server_configs(
     let mut stdio_configs = HashMap::new();
     let mut http_configs = HashMap::new();
     let mut server_name_to_id = HashMap::new();
+    let mut secret_values = HashMap::new();
     let mut config_load_error = None;
     let repo = get_mcp_server_repository();
     let use_external_servers = !mcp_server_ids.is_empty();
@@ -105,9 +109,16 @@ pub(super) async fn load_requested_server_configs(
                         continue;
                     }
 
-                    match serde_json::from_str::<crate::mcp::types::MCPServerConfig>(&model.config)
-                    {
-                        Ok(mut config) => {
+                    let parsed = match serde_json::from_str::<crate::mcp::types::MCPServerConfig>(
+                        &model.config,
+                    ) {
+                        Ok(config) => fill_secrets(secret_store(), &model.id, &config)
+                            .await
+                            .map(FilledConfig::into_parts),
+                        Err(error) => Err(error.to_string()),
+                    };
+                    match parsed {
+                        Ok((mut config, values)) => {
                             let raw_name = config.name.unwrap_or_else(|| model.name.clone());
                             let server_name = unique_session_server_name(
                                 &raw_name,
@@ -127,6 +138,9 @@ pub(super) async fn load_requested_server_configs(
                             // so legacy display names with spaces remain intact.
                             config.name = Some(server_name.clone());
                             server_name_to_id.insert(server_name.clone(), model.id.clone());
+                            if !values.is_empty() {
+                                secret_values.insert(server_name.clone(), values);
+                            }
 
                             log::debug!(
                                 "Loading MCP server '{}' (raw: '{}', ID: {}) into session {}",
@@ -147,7 +161,7 @@ pub(super) async fn load_requested_server_configs(
                         }
                         Err(error) => {
                             log::warn!(
-                                "Failed to parse config for MCP server '{}' (ID: {}): {}",
+                                "Failed to load config for MCP server '{}' (ID: {}): {}",
                                 model.name,
                                 model.id,
                                 error
@@ -216,6 +230,19 @@ pub(super) async fn load_requested_server_configs(
         requested_external_server_names,
         use_external_servers,
         config_load_error,
+        secret_values,
+    }
+}
+
+/// Replace the filled secret values of `server_name` in `text` with `***`.
+pub(super) fn mask_server_secrets(
+    secret_values: &HashMap<String, Vec<String>>,
+    server_name: &str,
+    text: &str,
+) -> String {
+    match secret_values.get(server_name) {
+        Some(values) => mask_values(text, values.iter().map(String::as_str)),
+        None => text.to_string(),
     }
 }
 
@@ -235,4 +262,24 @@ pub(super) async fn resolve_startup_timeout_seconds(base_config: &SessionIsolati
     apply_startup_timeout_settings(base_config.clone())
         .await
         .process_startup_timeout_seconds
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn failure_messages_mask_the_filled_values_of_that_server() {
+        let secret_values = HashMap::from([("exa".to_string(), vec!["sk-live-123".to_string()])]);
+        let failure = "HTTP connection failed: error sending request for url (https://mcp.exa.ai/mcp?exaApiKey=sk-live-123)";
+
+        let masked = mask_server_secrets(&secret_values, "exa", failure);
+        assert!(!masked.contains("sk-live-123"), "{masked}");
+        assert!(masked.contains("exaApiKey=***"), "{masked}");
+
+        assert_eq!(
+            mask_server_secrets(&secret_values, "other", failure),
+            failure
+        );
+    }
 }

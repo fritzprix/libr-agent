@@ -131,7 +131,11 @@ docs/proposals/
 
 # Local/temporary run artifacts and state
 kilo.json
+.tmp/
 .tmp_*
+test-results/
+.antigravitycli/
+.clibragent/
 .slibragent/
 .vitest-*.txt
 .freebuff/

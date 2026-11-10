@@ -25,6 +25,10 @@ impl LogService {
             .await
             .map_err(|e| format!("Failed to backup log file: {e}"))?;
 
+        tokio::task::spawn_blocking(move || crate::logger::prune_archived_logs_in(&log_dir))
+            .await
+            .map_err(|e| format!("Failed to prune archived logs: {e}"))?;
+
         Ok(backup_file.to_string_lossy().to_string())
     }
 

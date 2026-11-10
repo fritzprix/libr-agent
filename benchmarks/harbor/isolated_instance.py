@@ -33,6 +33,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -56,6 +57,10 @@ DEFAULT_ROOT = Path(".libragent/work/bench-instance")
 # instance from the seed before every trial when the app binary is given.
 INSTANCE_APP_BIN_ENV = "LIBRAGENT_BENCH_INSTANCE_APP_BIN"
 INSTANCE_ROOT_ENV = "LIBRAGENT_BENCH_INSTANCE_ROOT"
+# The app's own key variables (src-tauri/src/server/api_key.rs). A non-isolated
+# run has no per-launch key file, so it reads the key from these instead.
+ENV_KEY_VAR = "LIBRAGENT_SESSION_API_KEY"
+ENV_KEY_FILE_VAR = "LIBRAGENT_SESSION_API_KEY_FILE"
 # "1" runs the instance in a bubblewrap sandbox for host-workspace sessions: the
 # filesystem is read-only except the run dir, HOME and /tmp are throwaway, and
 # the run dir's app/ is mounted at /app (the workdir host-mode tasks refer to).
@@ -466,6 +471,18 @@ def instance_env(layout: InstanceLayout, base: dict[str, str] | None = None) -> 
         # Docker CLI resolves credentials and contexts from $HOME/.docker.
         env.setdefault("DOCKER_CONFIG", str(Path(real_home) / ".docker"))
         env["HOME"] = str(layout.home_dir.resolve())
+    if os.environ.get("LIBRAGENT_E2E_CONTROL") == "1":
+        env["LIBRAGENT_E2E_CONTROL"] = "1"
+        # The bench needs a debug binary, and in unoptimized debug code
+        # `POST /api/sessions` overflows the default 2 MiB tokio worker stack.
+        # This happens without the E2E routes too, so it is not caused by the
+        # route chain (#2637).
+        try:
+            parent_stack = int(env.get("RUST_MIN_STACK", "0"))
+        except ValueError:
+            parent_stack = 0
+        env["RUST_MIN_STACK"] = str(max(parent_stack, 16 * 1024 * 1024))
+
     env.update(
         {
             "LIBRAGENT_DATA_DIR": str(layout.data_dir.resolve()),
@@ -514,6 +531,53 @@ def auth_headers(layout: InstanceLayout) -> dict[str, str]:
         key = layout.api_key_file.read_text(encoding="utf-8").strip()
     except OSError:
         return {}
+    return {"Authorization": f"Bearer {key}"} if key else {}
+
+
+class BenchAuthError(RuntimeError):
+    """No usable Session API key was supplied, so a key-protected API will return 401."""
+
+
+def read_env_api_key(environ: Mapping[str, str] | None = None) -> str:
+    """Session API key supplied through the environment, or ``""`` when there is none.
+
+    ``LIBRAGENT_SESSION_API_KEY_FILE`` wins over ``LIBRAGENT_SESSION_API_KEY``, matching
+    the app's own precedence (``src-tauri/src/server/api_key.rs::resolve_env_key``), so a
+    launcher that sets both sends the key the app actually enforces.
+
+    The path is only a pointer. The app reads and deletes that file at startup, so the
+    bench must not consume it: it has to stay available for the next launch.
+    """
+    env = os.environ if environ is None else environ
+
+    file_path = (env.get(ENV_KEY_FILE_VAR) or "").strip()
+    if file_path:
+        try:
+            key = Path(file_path).read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            raise BenchAuthError(
+                f"{ENV_KEY_FILE_VAR} points at {file_path!r}, which could not be read "
+                f"({exc.strerror or exc}). Point it at a readable file that holds the key."
+            ) from exc
+        if not key:
+            raise BenchAuthError(
+                f"{ENV_KEY_FILE_VAR} ({file_path}) is empty. Write the key to it, or set "
+                f"{ENV_KEY_VAR} instead."
+            )
+        return key
+
+    return (env.get(ENV_KEY_VAR) or "").strip()
+
+
+def resolve_env_auth_headers(
+    environ: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    """``Authorization`` header for a live key-protected API, or ``{}`` when no key is set.
+
+    Used when the bench talks to an app it did not launch (the non-isolated path), where
+    there is no per-launch ``auth_headers`` file to read.
+    """
+    key = read_env_api_key(environ)
     return {"Authorization": f"Bearer {key}"} if key else {}
 
 

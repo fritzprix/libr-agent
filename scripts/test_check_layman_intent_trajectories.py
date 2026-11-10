@@ -78,8 +78,25 @@ class CriticalPathTests(unittest.TestCase):
         )
         self.assertEqual(
             failures,
-            ["last __registerServer failed", "missing __verifyServer"],
+            ["last __registerServer or __updateServer failed", "missing __verifyServer"],
         )
+
+    def test_install_retry_through_update_after_failed_register(self) -> None:
+        failed_register = _step(("a", "tool__registerServer", {}, True))
+        update = _step(("b", "tool__updateServer", {}, False))
+        verify = _step(("c", "tool__verifyServer", {}, False))
+        for task in ("T07", "T10"):
+            self.assertEqual(_grade(task, failed_register, update, verify), [], task)
+            self.assertEqual(
+                _grade(task, failed_register, verify),
+                ["last __registerServer or __updateServer failed"],
+                task,
+            )
+            self.assertEqual(
+                _grade(task, _step(("a", "tool__registerServer", {}, False)), verify),
+                [],
+                task,
+            )
 
     def test_call_without_recorded_result_does_not_pass(self) -> None:
         self.assertEqual(
@@ -152,7 +169,7 @@ class CriticalPathTests(unittest.TestCase):
                 _step(("a", "tool__verifyServer", {}, False)),
                 _step(("b", "tool__registerServer", {}, False)),
             ),
-            ["__verifyServer only before __registerServer"],
+            ["__verifyServer only before __registerServer or __updateServer"],
         )
 
     def test_call_me_back_has_no_trajectory_checks(self) -> None:
@@ -174,7 +191,7 @@ class CriticalPathTests(unittest.TestCase):
             )
             self.assertEqual(
                 _grade(task, register, verify, listing),
-                ["__registerServer only before __listServers (catalog)"],
+                ["__registerServer or __updateServer only before __listServers (catalog)"],
                 task,
             )
         wrong_scope = _step(("a", "tool__listServers", {"scope": "session"}, False))

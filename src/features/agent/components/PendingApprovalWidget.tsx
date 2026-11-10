@@ -183,6 +183,9 @@ export function PendingApprovalWidget({
         const approvalKindLabel = isHardApproval
           ? t('agent.approval.hardBadge', 'Hard approval')
           : t('agent.approval.standardBadge', 'Standard approval');
+        const approveLabel = isHardApproval
+          ? t('agent.approval.hardApprove', 'Approve high-risk action')
+          : t('agent.approval.approve', 'Approve');
 
         const card = (
           <Card className={containerClass}>
@@ -276,9 +279,7 @@ export function PendingApprovalWidget({
                 ) : (
                   <ApproveIcon className="w-3.5 h-3.5 mr-1.5" />
                 )}
-                {isHardApproval
-                  ? t('agent.approval.hardApprove', 'Approve high-risk action')
-                  : t('agent.approval.approve', 'Approve')}
+                {approveLabel}
                 <kbd className="ml-1.5 hidden sm:inline rounded border border-current/20 bg-black/10 px-1 py-px text-[10px] font-normal opacity-80 dark:bg-white/10">
                   {t('agent.approval.approveShortcutBadge', '⌘↵')}
                 </kbd>

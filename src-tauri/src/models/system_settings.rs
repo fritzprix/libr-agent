@@ -50,9 +50,13 @@ pub struct SystemSettings {
     pub scheduled_task_minimum_interval_minutes: u64,
     pub shell_isolation_level: IsolationLevel,
     pub shell_runtime_bootstrap: bool,
-    pub skills_directory: String,
+    /// Workspace file tools also accept paths in linked git worktrees of the
+    /// repository at the session workspace root.
+    pub allow_linked_worktrees: bool,
     /// Inhibit idle sleep while LibrAgent is running. Does not keep the display on.
     pub prevent_sleep_during_agent_work: bool,
+    /// Archived app logs older than this are deleted. `0` means no age limit.
+    pub log_retention_days: u64,
 }
 
 impl Default for SystemSettings {
@@ -68,8 +72,9 @@ impl Default for SystemSettings {
             scheduled_task_minimum_interval_minutes: 0,
             shell_isolation_level: IsolationLevel::Medium,
             shell_runtime_bootstrap: false,
-            skills_directory: String::new(),
+            allow_linked_worktrees: true,
             prevent_sleep_during_agent_work: true,
+            log_retention_days: 30,
         }
     }
 }
@@ -132,12 +137,17 @@ impl SystemSettings {
                 "shellRuntimeBootstrap",
                 defaults.shell_runtime_bootstrap,
             ),
-            skills_directory: parsed(&map, "skillsDirectory", defaults.skills_directory),
+            allow_linked_worktrees: parsed(
+                &map,
+                "allowLinkedWorktrees",
+                defaults.allow_linked_worktrees,
+            ),
             prevent_sleep_during_agent_work: parsed(
                 &map,
                 "preventSleepDuringAgentWork",
                 defaults.prevent_sleep_during_agent_work,
             ),
+            log_retention_days: parsed(&map, "logRetentionDays", defaults.log_retention_days),
         }
     }
 
@@ -176,8 +186,10 @@ mod tests {
     fn partial_row_keeps_present_fields_and_fills_the_rest() {
         let settings = SystemSettings::from_stored(Some(
             r#"{"maxFileUploadSizeMB":10,"httpServerPort":4000,"shellIsolationLevel":"high",
-                "scheduledTaskMinimumIntervalMinutes":15,"preventSleepDuringAgentWork":false}"#,
+                "scheduledTaskMinimumIntervalMinutes":15,"preventSleepDuringAgentWork":false,
+                "logRetentionDays":0}"#,
         ));
+        assert_eq!(settings.log_retention_days, 0);
         assert_eq!(settings.max_file_upload_size_mb, 10);
         assert_eq!(settings.http_server_port, 4000);
         assert_eq!(settings.shell_isolation_level, IsolationLevel::High);
@@ -191,7 +203,7 @@ mod tests {
     fn wrong_typed_fields_fall_back_individually() {
         let settings = SystemSettings::from_stored(Some(
             r#"{"httpServerPort":70000,"httpServerExpose":"yes","shellIsolationLevel":"max",
-                "webActionTimeoutSeconds":-1,"shellRuntimeBootstrap":true,"skillsDirectory":3}"#,
+                "webActionTimeoutSeconds":-1,"shellRuntimeBootstrap":true,"skillsDirectory":"/old"}"#,
         ));
         let defaults = SystemSettings::default();
         assert_eq!(settings.http_server_port, defaults.http_server_port);
@@ -204,8 +216,20 @@ mod tests {
             settings.web_action_timeout_seconds,
             defaults.web_action_timeout_seconds
         );
-        assert_eq!(settings.skills_directory, "");
         assert!(settings.shell_runtime_bootstrap);
+    }
+
+    #[test]
+    fn allow_linked_worktrees_defaults_to_true_and_falls_back() {
+        assert!(SystemSettings::from_stored(Some("{}")).allow_linked_worktrees);
+        assert!(
+            SystemSettings::from_stored(Some(r#"{"allowLinkedWorktrees":"no"}"#))
+                .allow_linked_worktrees
+        );
+        assert!(
+            !SystemSettings::from_stored(Some(r#"{"allowLinkedWorktrees":false}"#))
+                .allow_linked_worktrees
+        );
     }
 
     #[test]
@@ -214,7 +238,10 @@ mod tests {
         let keys = value.as_object().unwrap();
         assert!(keys.contains_key("maxFileUploadSizeMB"));
         assert!(keys.contains_key("mcpServerStartupTimeoutSeconds"));
-        assert_eq!(keys.len(), 12);
+        assert!(keys.contains_key("logRetentionDays"));
+        assert!(!keys.contains_key("skillsDirectory"));
+        assert!(keys.contains_key("allowLinkedWorktrees"));
+        assert_eq!(keys.len(), 13);
         assert_eq!(
             SystemSettings::from_stored(Some(&value.to_string())),
             SystemSettings::default()

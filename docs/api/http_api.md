@@ -13,7 +13,7 @@ LibrAgent provides a robust HTTP API for remote management of AI agents, session
 - **Authentication**:
   - Bearer token authentication supported via `Authorization: Bearer <token>` (`libr_...`).
   - Keys can be injected via `LIBRAGENT_SESSION_API_KEY` or `LIBRAGENT_SESSION_API_KEY_FILE`, or issued dynamically via the interactive agent pairing flow (`POST /api/pairings`).
-  - Authentication is required when an API key is configured or when managed Docker sessions exist.
+  - Authentication is required only when an API key is set.
 - **CORS**: Cross-origin browser access is not enabled (no `Access-Control-Allow-Origin`).
 
 ---
@@ -76,7 +76,7 @@ Creates a new isolated agent session and starts an initial workflow.
   "workspacePath": "absolute path (optional)",
   "workspaceIsolation": "host | docker (optional)",
   "dockerConfig": {
-    "image": "string (optional)",
+    "image": "string (optional; default: ghcr.io/fritzprix/libragent-session:<app version>)",
     "env": { "KEY": "VALUE" }
   },
   "executionMode": "normal | yolo | unsafe (optional)",
@@ -95,6 +95,17 @@ Creates a new isolated agent session and starts an initial workflow.
 
 > [!NOTE]
 > `executionMode` is applied **before** the initial workflow starts (or immediately when creating an idle session with no `request`). Use `yolo` for unattended benchmark/automation runs that need standard tools auto-approved, or `unsafe` when hard-approval tools must also run without a human. When omitted, child sessions inherit a non-`normal` parent mode; otherwise the session defaults to `normal`.
+
+#### Execution Mode & Tool Approval Matrix
+
+| Execution Mode | Standard Approval Tools | Hard Approval Tools |
+| :--- | :--- | :--- |
+| `normal` (default) | **Requires approval** (`workspace__writeFile`, `workspace__strReplace`, `workspace__editFile`, `workspace__editObject`, `workspace__runShell`, `workspace__runInPersistentShell`, `workspace__spawnProcess`, `workspace__runPowerShell`, `workspace__runInPersistentPowerShell`, `workspace__runCmd`, `workspace__runInPersistentCmd`, `workspace__stopProcess`, `scheduled_task__*` write tools, `media__captureScreen`, `desktop__computerControl`) | **Requires hard approval** (`tool__registerServer` except unauthenticated curated catalog presets, `tool__updateServer`, `media__deployAssistPlugin`, and dynamic shell evaluation: `$(...)`, backticks, `<(...)`, `>(...)`, `eval`, and `source`) |
+| `yolo` | **Auto-approved** | **Requires hard approval** (waits for explicit approval or a raise to `unsafe`) |
+| `unsafe` | **Auto-approved** | **Auto-approved** |
+
+> [!NOTE]
+> Destructive commands and sensitive or protected paths (such as `~/.ssh`, `~/.aws`, application database, and restricted system directories) are **blocked** in every execution mode, not routed to hard approval.
 
 > [!NOTE]
 > When `request` is omitted or blank, the session is created in `idle` status and no workflow is started. This is useful for API smoke checks that only need to verify configuration (for example `executionMode`) without burning an LLM turn.
@@ -153,13 +164,55 @@ Retrieves current session metadata and execution state.
   "lastViewedAt": 1739000000000,
   "lastMessageAt": 1739000000000,
   "lastAttentionAt": null,
-  "lastAttentionReason": null,
+  "lastAttentionReason": "recurringStop | pendingApproval | null",
   "executionMode": "normal | yolo | unsafe",
   "workspaceOverride": "string (nullable)",
   "workspaceIsolation": "host | docker",
   "dockerConfig": null,
   "dockerContainerName": null,
-  "dockerHostWorkspacePath": null
+  "dockerHostWorkspacePath": null,
+  "statusReason": "string (nullable)",
+  "pendingApprovals": [
+    {
+      "toolCallId": "call-uuid",
+      "toolName": "workspace__runShell",
+      "reason": "Command substitution requires approval",
+      "commandPreview": "echo $(whoami)",
+      "approvalKind": "standard | hard",
+      "requestId": "approval-request-uuid (optional)"
+    }
+  ]
+}
+```
+
+- `lastAttentionReason`: `null`, `"recurringStop"` (a recurring scheduled task stopped or completed), or `"pendingApproval"` (the session is `busy` and waiting on one or more tool approvals listed in `pendingApprovals`).
+- `pendingApprovals`: Active tool calls currently awaiting approval while `status` remains `busy`. Each entry includes `toolCallId`, `toolName`, `reason`, `commandPreview`, `approvalKind` (`"standard"` or `"hard"`), and optional channel relay `requestId`.
+- `statusReason`: Tells why the session has its current status. When a Docker session cannot prepare its container (for example, a failed image pull or a missing attach container), `status` is `Error` and `statusReason` contains the failure. Session env values, wake tokens, and session API keys are replaced with `[redacted]`. The value stays after an app restart. The next status change clears it.
+
+---
+
+### Update Session Execution Mode
+
+Updates the session's `executionMode` (`normal`, `yolo`, or `unsafe`) using the same authentication guard as session creation. Raising the mode automatically approves and releases any pending approvals covered by the new mode (`yolo` releases `standard` approvals; `unsafe` releases both `standard` and `hard` approvals). Lowering the mode is always allowed.
+
+- **Method**: `PATCH`
+- **Path**: `/api/sessions/:id`
+
+#### Request Body
+
+```json
+{
+  "executionMode": "normal | yolo | unsafe"
+}
+```
+
+#### Response Body
+
+```json
+{
+  "id": "a1b2c3d4e5",
+  "executionMode": "unsafe",
+  "resolvedApprovalIds": ["call-uuid"]
 }
 ```
 
@@ -374,10 +427,13 @@ Responds to a pending tool execution approval (e.g., executing shell commands in
 
 #### Request Body
 
+Provide either `toolCallId` (from `GET /api/sessions/:id` `pendingApprovals`) or `requestId` (from a channel permission relay event):
+
 ```json
 {
-  "requestId": "approval-request-uuid",
-  "behavior": "yolo | normal | unsafe | deny"
+  "toolCallId": "call-uuid",
+  "requestId": "approval-request-uuid (optional if toolCallId is provided)",
+  "behavior": "allow | deny"
 }
 ```
 
@@ -385,7 +441,7 @@ Responds to a pending tool execution approval (e.g., executing shell commands in
 
 ```json
 {
-  "requestId": "approval-request-uuid",
+  "requestId": "approval-request-uuid (nullable)",
   "toolCallId": "call-uuid",
   "approved": true
 }

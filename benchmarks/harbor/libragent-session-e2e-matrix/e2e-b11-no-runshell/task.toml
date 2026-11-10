@@ -1,0 +1,30 @@
+schema_version = "1.3"
+
+[task]
+name = "fritzprix/e2e-b11-no-runshell"
+description = "B-11: submitInteractiveShellInput must not exist; runShell unavailable on Windows"
+
+[metadata]
+category = "session-api-e2e"
+tags = ["B-11", "platform-windows"]
+
+[metadata.libragent_session_e2e]
+matrix_id = "B-11"
+# The task only has a passing path when the host exposes the Windows tool
+# profile (runShell absent -> PowerShell fallback). On any other host the
+# agent can legitimately call runShell and the verifier must fail, so the
+# harbor runners auto-exclude this task via `-x e2e-b11-no-runshell`
+# (see scripts/run-harbor-bench.{sh,ps1}, path preset).
+# NOTE: [environment].os below is the *verifier container* OS (Linux pytest
+# image) and must stay "linux"; requires_host_os is the runner-side gate.
+requires_host_os = "windows"
+
+[verifier]
+timeout_sec = 120.0
+
+[agent]
+timeout_sec = 600.0
+
+[environment]
+network_mode = "no-network"
+os = "linux"

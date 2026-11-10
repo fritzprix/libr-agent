@@ -100,7 +100,7 @@ pub(crate) async fn create_builtin_server(
                 }
             };
             Ok(Some(Box::new(
-                crate::mcp::builtin::workspace::WorkspaceServer::with_isolation(
+                crate::mcp::builtin::workspace::WorkspaceServer::for_session(
                     _session_id,
                     _session_manager,
                     isolation,

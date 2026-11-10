@@ -21,6 +21,17 @@ mod tests {
     use std::sync::OnceLock;
 
     static TEST_DB: OnceLock<Arc<DatabaseConnection>> = OnceLock::new();
+    static TEST_DB_DIR: OnceLock<tempfile::TempDir> = OnceLock::new();
+
+    /// `destroy_proxy` does not release the session's retained shell manager, so its
+    /// shell would outlive the test. Releases it on drop, also when an assertion fails.
+    struct ReleaseWorkspaceStateOnDrop<'a>(&'a str);
+
+    impl Drop for ReleaseWorkspaceStateOnDrop<'_> {
+        fn drop(&mut self) {
+            crate::mcp::builtin::workspace::release_session_workspace_state(self.0);
+        }
+    }
 
     fn test_session_active_model(id: impl Into<String>) -> session::ActiveModel {
         session::ActiveModel {
@@ -44,9 +55,15 @@ mod tests {
             return db.clone();
         }
 
-        // Initialize DB with a file to debug persistence issues
-        let temp_dir = std::env::temp_dir();
-        let db_path = temp_dir.join("libragent_test.db");
+        // A file DB (to debug persistence issues) in a directory of this run only, so that
+        // concurrent runs and old schemas of earlier runs cannot interfere.
+        let temp_dir = TEST_DB_DIR.get_or_init(|| {
+            tempfile::Builder::new()
+                .prefix("libragent_test_db")
+                .tempdir()
+                .expect("Failed to create test database directory")
+        });
+        let db_path = temp_dir.path().join("libragent_test.db");
         let db_url = format!(
             "sqlite://{}?mode=rwc",
             db_path.to_string_lossy().replace('\\', "/")
@@ -699,6 +716,7 @@ mod tests {
         let proxy_manager = MCPServiceProxyManager::new(db, session_manager);
 
         let session_id = "path_resolution_test_session".to_string();
+        let _release_shell = ReleaseWorkspaceStateOnDrop(&session_id);
 
         // Create proxy with workspace tools
         proxy_manager

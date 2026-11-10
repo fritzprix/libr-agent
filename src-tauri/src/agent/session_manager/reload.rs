@@ -45,8 +45,12 @@ pub(crate) async fn reload_session(
         }
     }
 
-    // 3. Force MCP proxy recreate to pick up changed bindings or tool schemas
+    // 3. Force MCP proxy recreate to pick up changed bindings or tool schemas.
+    // Reload is not a force-stop and does not kill session processes, so an
+    // existing teardown fence (issue #2633) is cleared to let the reloaded
+    // session call tools again.
     manager.proxy_manager.destroy_proxy(session_id).await;
+    manager.proxy_manager.clear_teardown_fence(session_id).await;
     manager
         .proxy_manager
         .ensure_configured_proxy(session_id, Some(manager.app_handle.clone()))
@@ -104,5 +108,16 @@ mod tests {
 
         assert!(validate_session_reloadable(&SessionStatus::Idle, true, false).is_err());
         assert!(validate_session_reloadable(&SessionStatus::Idle, false, true).is_err());
+    }
+}
+
+impl AgentSessionManager {
+    /// Reload session tools, skills, and instructions context without wiping conversation history.
+    ///
+    /// Recreates the session MCP proxy to refresh tool schemas and assistant bindings,
+    /// invalidates the in-memory prompt cache, and emits a session update event for frontend
+    /// skills and tools revalidation.
+    pub async fn reload_session(&self, session_id: &str) -> Result<(), String> {
+        reload_session(self, session_id).await
     }
 }

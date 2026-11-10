@@ -2,11 +2,12 @@ use serde_json::{json, Value};
 
 use super::super::super::utils::{
     build_agent_tool_data, check_session_next_actions, insert_agent_session_id_fields,
-    parse_complexity, read_required_string, resolve_model_for_complexity,
+    read_complexity, read_required_string, resolve_model_for_complexity,
 };
 use crate::mcp::builtin::error_guidance::{
-    missing_agent_config_error, session_id_passed_as_agent_config_error, SuccessHint,
+    missing_agent_config_error, session_id_passed_as_agent_config_error, SuccessHint, ToolGroup,
 };
+use crate::mcp::builtin::utils::read_bool_arg;
 use crate::mcp::types::MCPResult;
 use crate::repositories::{AssistantRepository, SessionRepository};
 
@@ -25,6 +26,41 @@ async fn spawn_session_impl(
     caller_session_id: &str,
     tool_name: &str,
 ) -> Result<MCPResult, String> {
+    let wait_for_result = match read_bool_arg(&args, "waitForResult", false, ToolGroup::Agent) {
+        Ok(arg) => arg,
+        Err(result) => return Ok(result),
+    };
+
+    let result = spawn_session_impl_inner(
+        server,
+        args,
+        caller_session_id,
+        tool_name,
+        wait_for_result.value,
+    )
+    .await?;
+    Ok(wait_for_result.annotate(result))
+}
+
+async fn spawn_session_impl_inner(
+    server: &AgentServer,
+    args: Value,
+    caller_session_id: &str,
+    tool_name: &str,
+    wait_for_result: bool,
+) -> Result<MCPResult, String> {
+    let assistant_id = match read_required_string(&args, "configId") {
+        Ok(value) => value,
+        Err(result) => return Ok(result),
+    };
+    let task = match read_required_string(&args, "task") {
+        Ok(value) => value,
+        Err(result) => return Ok(result),
+    };
+    let complexity = match read_complexity(&args) {
+        Ok(level) => level,
+        Err(result) => return Ok(result),
+    };
     let manager = server
         .get_manager()
         .ok_or("AgentSessionManager not available")?;
@@ -45,10 +81,6 @@ async fn spawn_session_impl(
     };
 
     let explicit_org = caller_explicit_org.clone();
-    let assistant_id = read_required_string(&args, "configId")?;
-    let task = read_required_string(&args, "task")?;
-    let complexity_raw = read_required_string(&args, "complexity")?;
-    let complexity = parse_complexity(&complexity_raw)?;
     let resolved_model = resolve_model_for_complexity(complexity).await?;
     let requested_workspace_override = args
         .get("workspaceOverride")
@@ -107,11 +139,6 @@ async fn spawn_session_impl(
 
     let body: crate::agent::types::CreateSessionRequest = serde_json::from_value(body_json)
         .map_err(|e| format!("Invalid arguments for {}: {}", tool_name, e))?;
-
-    let wait_for_result = args
-        .get("waitForResult")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
 
     let response = match crate::services::AgentService::spawn_agent(manager, body).await {
         Ok(res) => res,

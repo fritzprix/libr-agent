@@ -4,10 +4,18 @@ import type {
   AgentRuntimeError,
   PendingApprovalKind,
   PendingApprovalSnapshot,
+  PendingUserPromptSummary,
   PreflightTokenMetrics,
   SessionRuntimeState,
   SessionWorkflowStatus,
+  UserPromptOutcome,
+  UserPromptPayload,
   WorkflowCompletionReason,
+} from '@/models/agent-ipc';
+
+export type {
+  PendingUserPromptSummary,
+  UserPromptPayload,
 } from '@/models/agent-ipc';
 
 /** Why a session pane learned its session no longer exists. */
@@ -25,6 +33,7 @@ export type AgentEventPayload =
       type: 'statusChanged';
       sessionId: string;
       status: SessionWorkflowStatus;
+      statusReason?: string | null;
     }
   | { type: 'messageAdded'; sessionId: string; message: RustMessage }
   | { type: 'messagesRemoved'; sessionId: string; messageIds: string[] }
@@ -73,18 +82,16 @@ export type AgentEventPayload =
       metrics: PreflightTokenMetrics;
     }
   | {
-      type: 'interactiveShellInputRequested';
+      type: 'userPromptRequested';
       sessionId: string;
-      executionId: string;
-      prompt: string;
-      inputType: 'password' | 'text';
-      command: string;
+      requestId: string;
+      payload: UserPromptPayload;
     }
   | {
-      type: 'interactiveShellInputResolved';
+      type: 'userPromptResolved';
       sessionId: string;
-      executionId: string;
-      outcome: string;
+      requestId: string;
+      outcome: UserPromptOutcome;
     }
   | {
       type: 'resourceUpdated';
@@ -110,13 +117,6 @@ export type AgentEventPayload =
       sessionId: string;
       messages: RustMessage[];
     };
-
-export interface PendingInteractiveShellPrompt {
-  executionId: string;
-  prompt: string;
-  inputType: 'password' | 'text';
-  command: string;
-}
 
 export type WorkflowPhase =
   | 'idle'
@@ -156,7 +156,8 @@ export interface AgentSessionStateContextValue {
     status: 'running' | 'complete' | 'error';
   } | null;
   pendingApprovals: PendingApproval[];
-  pendingInteractiveShellPrompt: PendingInteractiveShellPrompt | null;
+  /** A `secret` or `question` prompt waiting for the local user (#2543). */
+  pendingUserPrompt: PendingUserPromptSummary | null;
   executionMode: ExecutionMode;
 }
 

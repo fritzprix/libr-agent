@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -25,6 +25,31 @@ function SessionApiKeysSectionComponent() {
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  // The confirm step has no time limit (WCAG 2.2.1); it ends on Cancel, Escape,
+  // Confirm, or when focus leaves it. Focus moves into it so keyboard and
+  // screen reader users land on a control, and returns to Delete on cancel.
+  const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
+  const deleteButtonRefs = useRef(new Map<string, HTMLButtonElement>());
+  const [restoreFocusId, setRestoreFocusId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (confirmDeleteId) {
+      cancelButtonRef.current?.focus();
+    }
+  }, [confirmDeleteId]);
+
+  useEffect(() => {
+    if (restoreFocusId) {
+      deleteButtonRefs.current.get(restoreFocusId)?.focus();
+      setRestoreFocusId(null);
+    }
+  }, [restoreFocusId]);
+
+  const cancelConfirm = useCallback((id: string) => {
+    setConfirmDeleteId(null);
+    setRestoreFocusId(id);
+  }, []);
 
   const fetchKeys = useCallback(async () => {
     setIsLoading(true);
@@ -136,6 +161,7 @@ function SessionApiKeysSectionComponent() {
         <div className="divide-y divide-border/50 rounded-lg border border-border/60 overflow-hidden">
           {keys.map((k) => {
             const isBusy = deletingId === k.id;
+            const isConfirming = confirmDeleteId === k.id;
             return (
               <div
                 key={k.id}
@@ -160,17 +186,84 @@ function SessionApiKeysSectionComponent() {
                   </div>
                 </div>
 
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={isBusy}
-                  onClick={() => void handleDelete(k.id, k.name)}
-                  className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive shrink-0 gap-1"
-                >
-                  <Trash2 className="h-3 w-3" />
-                  {t('common.delete', 'Delete')}
-                </Button>
+                {isConfirming ? (
+                  <div
+                    role="group"
+                    aria-label={t(
+                      'settings.sessionApi.confirmRevokePrompt',
+                      'Revoke the API key for {{name}}? Choose Confirm revoke or Cancel.',
+                      { name: k.name },
+                    )}
+                    className="flex items-center gap-1.5 shrink-0"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') {
+                        e.stopPropagation();
+                        cancelConfirm(k.id);
+                      }
+                    }}
+                    onBlur={(e) => {
+                      if (
+                        !e.currentTarget.contains(
+                          e.relatedTarget as Node | null,
+                        )
+                      ) {
+                        setConfirmDeleteId(null);
+                      }
+                    }}
+                  >
+                    <span role="status" className="sr-only">
+                      {t(
+                        'settings.sessionApi.confirmRevokePrompt',
+                        'Revoke the API key for {{name}}? Choose Confirm revoke or Cancel.',
+                        { name: k.name },
+                      )}
+                    </span>
+                    <Button
+                      ref={cancelButtonRef}
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={isBusy}
+                      onClick={() => cancelConfirm(k.id)}
+                      className="h-7 text-xs px-2"
+                    >
+                      {t('common.cancel', 'Cancel')}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      disabled={isBusy}
+                      onClick={() => {
+                        setConfirmDeleteId(null);
+                        void handleDelete(k.id, k.name);
+                      }}
+                      className="h-7 text-xs gap-1"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      {t('settings.sessionApi.confirmRevoke', 'Confirm revoke')}
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    ref={(node) => {
+                      if (node) {
+                        deleteButtonRefs.current.set(k.id, node);
+                      } else {
+                        deleteButtonRefs.current.delete(k.id);
+                      }
+                    }}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isBusy}
+                    onClick={() => setConfirmDeleteId(k.id)}
+                    className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive shrink-0 gap-1"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                    {t('common.delete', 'Delete')}
+                  </Button>
+                )}
               </div>
             );
           })}

@@ -5,6 +5,14 @@ use crate::server::mcp_handler;
 use std::sync::Arc;
 use warp::Filter;
 
+/// Maximum JSON request body size (10 MB) for Session API endpoints.
+pub const SESSION_API_JSON_BODY_LIMIT: u64 = 10 * 1024 * 1024;
+
+pub fn json_body<T: serde::de::DeserializeOwned + Send>(
+) -> impl Filter<Extract = (T,), Error = warp::Rejection> + Clone {
+    warp::body::content_length_limit(SESSION_API_JSON_BODY_LIMIT).and(warp::body::json())
+}
+
 /// `POST /api/sessions/:id/wake/:token` — process-completion callback.
 ///
 /// Shared by the main Session API server and the wake-only listener, so both
@@ -41,7 +49,7 @@ pub fn get_routes(
         .and(warp::path("sessions"))
         .and(warp::path::end())
         .and(agent_manager.clone())
-        .and(warp::body::json())
+        .and(json_body())
         .and_then(handlers::create_session);
 
     // GET /api/sessions/:id
@@ -52,6 +60,16 @@ pub fn get_routes(
         .and(warp::path::end())
         .and(agent_manager.clone())
         .and_then(handlers::get_session);
+
+    // PATCH /api/sessions/:id
+    let patch_session = warp::patch()
+        .and(warp::path("api"))
+        .and(warp::path("sessions"))
+        .and(warp::path::param())
+        .and(warp::path::end())
+        .and(agent_manager.clone())
+        .and(json_body())
+        .and_then(handlers::patch_session);
 
     // GET /api/sessions/:id/compact-context
     let get_compact_context = warp::get()
@@ -82,7 +100,7 @@ pub fn get_routes(
         .and(warp::path("messages"))
         .and(warp::path::end())
         .and(agent_manager.clone())
-        .and(warp::body::json())
+        .and(json_body())
         .and_then(handlers::send_message);
 
     // Authorized by its per-session token alone, so it sits outside the API key guard.
@@ -110,7 +128,7 @@ pub fn get_routes(
         .and(warp::path("channel"))
         .and(warp::path::end())
         .and(agent_manager.clone())
-        .and(warp::body::json())
+        .and(json_body())
         .and_then(handlers::inject_channel_message);
 
     // POST /api/channel
@@ -119,7 +137,7 @@ pub fn get_routes(
         .and(warp::path("channel"))
         .and(warp::path::end())
         .and(agent_manager.clone())
-        .and(warp::body::json())
+        .and(json_body())
         .and_then(handlers::inject_channel_message_auto);
 
     // POST /api/sessions/:id/channel/permission
@@ -131,7 +149,7 @@ pub fn get_routes(
         .and(warp::path("permission"))
         .and(warp::path::end())
         .and(agent_manager.clone())
-        .and(warp::body::json())
+        .and(json_body())
         .and_then(handlers::respond_channel_permission);
 
     // POST /api/sessions/:id/resume
@@ -216,7 +234,7 @@ pub fn get_routes(
         .and(warp::path("settings"))
         .and(warp::path("complexityModelMapping"))
         .and(warp::path::end())
-        .and(warp::body::json())
+        .and(json_body())
         .and_then(handlers::put_complexity_model_mapping);
 
     // POST /mcp/:session_id — MCP JSON-RPC endpoint (gated by mcp_enabled flag)
@@ -230,7 +248,7 @@ pub fn get_routes(
         .and(warp::path::end())
         .and(mcp_enabled_filter)
         .and(app_control_enabled_filter)
-        .and(warp::body::json())
+        .and(json_body())
         .and_then(mcp_handler::mcp_control_rpc);
 
     let mcp_route = warp::post()
@@ -238,7 +256,7 @@ pub fn get_routes(
         .and(warp::path::param::<String>())
         .and(warp::path::end())
         .and(mcp_enabled_filter)
-        .and(warp::body::json())
+        .and(json_body())
         .and_then(mcp_handler::mcp_rpc_gated);
 
     // POST /mcp — sessionless endpoint: auto-selects the first active session
@@ -246,37 +264,56 @@ pub fn get_routes(
         .and(warp::path("mcp"))
         .and(warp::path::end())
         .and(mcp_enabled_filter)
-        .and(warp::body::json())
+        .and(json_body())
         .and_then(mcp_handler::mcp_rpc_auto);
 
+    // E2E control plane: debug binaries only (module is cfg-gated). The routes
+    // always mount in debug builds; the capability guard answers 404 when the
+    // control plane is not enabled, so no runtime if/else filter wiring here.
+    // The full guard chain lives in `e2e_control_guarded_routes` so the
+    // integration tests pin the exact production wiring.
+    // `.boxed()` keeps the merged `core.or(e2e_routes)` filter type shallow.
+    #[cfg(debug_assertions)]
+    let e2e_routes =
+        crate::server::e2e_control::e2e_control_guarded_routes(agent_manager.clone()).boxed();
+
+    // Box every route and the combined API. Each `Or` level otherwise holds
+    // the whole nested future inline, and in debug builds polling the first
+    // routes overflows the 2 MiB worker stack.
     let api = create_session
-        .or(get_session)
-        .or(get_compact_context)
-        .or(get_messages)
-        .or(send_message)
-        .or(inject_channel_message_auto)
-        .or(inject_channel_message)
-        .or(respond_channel_permission)
-        .or(resume_session)
-        .or(terminate_session)
-        .or(delete_session)
-        .or(get_child_sessions)
-        .or(list_assistants)
-        .or(get_assistant)
-        .or(health)
-        .or(preferred_model)
-        .or(get_complexity_mapping)
-        .or(put_complexity_mapping)
-        .or(mcp_control_route)
-        .or(mcp_auto_route)
-        .or(mcp_route);
+        .boxed()
+        .or(get_session.boxed())
+        .or(patch_session.boxed())
+        .or(get_compact_context.boxed())
+        .or(get_messages.boxed())
+        .or(send_message.boxed())
+        .or(inject_channel_message_auto.boxed())
+        .or(inject_channel_message.boxed())
+        .or(respond_channel_permission.boxed())
+        .or(resume_session.boxed())
+        .or(terminate_session.boxed())
+        .or(delete_session.boxed())
+        .or(get_child_sessions.boxed())
+        .or(list_assistants.boxed())
+        .or(get_assistant.boxed())
+        .or(health.boxed())
+        .or(preferred_model.boxed())
+        .or(get_complexity_mapping.boxed())
+        .or(put_complexity_mapping.boxed())
+        .or(mcp_control_route.boxed())
+        .or(mcp_auto_route.boxed())
+        .or(mcp_route.boxed())
+        .boxed();
+
+    let guarded_api = crate::server::api_key::api_key_guard().and(api);
 
     // No allow_any_origin CORS. CLI clients omit Origin; browsers with Origin are rejected.
-    access_guard(expose)
-        .and(
-            wake_session
-                .or(pairing_session)
-                .or(crate::server::api_key::api_key_guard().and(api)),
-        )
-        .recover(handle_rejection)
+    let core = wake_session.or(pairing_session).or(guarded_api);
+
+    let core = core.boxed();
+
+    #[cfg(debug_assertions)]
+    let core = core.or(e2e_routes).boxed();
+
+    access_guard(expose).and(core).recover(handle_rejection)
 }

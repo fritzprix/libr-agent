@@ -295,7 +295,7 @@ async fn shell_policy_preview_keeps_command_tail() {
 #[test]
 fn shell_policy_requires_approval_for_unresolved_variable_path() {
     let workspace = tempdir().expect("temp dir");
-    let decision = evaluate_shell_policy(ShellPolicyContext {
+    let allowed = evaluate_shell_policy(ShellPolicyContext {
         tool_name: "runShell",
         command: "cat $SECRET_DIR/id_rsa",
         workspace_dir: Some(workspace.path()),
@@ -303,17 +303,28 @@ fn shell_policy_requires_approval_for_unresolved_variable_path() {
         environment: None,
         force_approval: false,
     });
+    assert_eq!(allowed.action, ShellPolicyAction::Allow);
 
-    assert_eq!(decision.action, ShellPolicyAction::RequireHardApproval);
+    let approval = evaluate_shell_policy(ShellPolicyContext {
+        tool_name: "runShell",
+        command: "cat $SECRET_DIR/id_rsa",
+        workspace_dir: Some(workspace.path()),
+        current_dir: None,
+        environment: None,
+        force_approval: true,
+    });
+    assert_eq!(approval.action, ShellPolicyAction::RequireApproval);
     assert!(
-        decision.reason.contains("unresolved shell variable"),
-        "expected unresolved-variable reason, got: {}",
-        decision.reason
+        approval
+            .reason
+            .contains("shell command execution requires approval by policy"),
+        "expected normal policy approval reason, got: {}",
+        approval.reason
     );
 }
 
 #[tokio::test]
-async fn tool_policy_requires_hard_approval_for_unresolved_variable_path() {
+async fn tool_policy_requires_normal_approval_for_unresolved_variable_path() {
     let decision = evaluate_tool_execution_policy(
         "workspace__runShell",
         &json!({ "command": "cat $SECRET_DIR/id_rsa" }),
@@ -321,19 +332,23 @@ async fn tool_policy_requires_hard_approval_for_unresolved_variable_path() {
     .await;
 
     match decision {
-        ToolExecutionPolicyDecision::RequireHardApproval(request) => {
+        ToolExecutionPolicyDecision::RequireApproval(request) => {
             assert!(
-                request.description.contains("hard approval"),
-                "expected hard approval description, got: {}",
+                request
+                    .description
+                    .contains("Claude requested approval to run tool workspace__runShell"),
+                "expected normal approval description, got: {}",
                 request.description
             );
             assert!(
-                request.description.contains("unresolved shell variable"),
-                "expected unresolved-variable reason, got: {}",
+                request
+                    .description
+                    .contains("shell command execution requires approval by policy"),
+                "expected normal approval policy reason, got: {}",
                 request.description
             );
         }
-        other => panic!("expected hard approval decision, got {:?}", other),
+        other => panic!("expected normal approval decision, got {:?}", other),
     }
 }
 

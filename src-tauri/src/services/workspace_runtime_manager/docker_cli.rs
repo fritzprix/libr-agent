@@ -16,8 +16,18 @@ pub fn normalize_docker_arch(arch: &str) -> String {
     }
 }
 
+/// Architecture of the image that the container runs. A container has no `Architecture` field;
+/// its image has.
 pub(super) async fn docker_container_architecture(container_name: &str) -> RuntimeResult<String> {
-    let arch = docker_output(["inspect", "-f", "{{.Architecture}}", container_name]).await?;
+    let image_id = docker_output(["inspect", "-f", "{{.Image}}", container_name]).await?;
+    let arch = docker_output([
+        "image",
+        "inspect",
+        "-f",
+        "{{.Architecture}}",
+        image_id.trim(),
+    ])
+    .await?;
     Ok(normalize_docker_arch(&arch))
 }
 
@@ -53,17 +63,63 @@ pub(super) async fn verify_container_label(
 /// Label set on containers created with the host mapping for wake callbacks.
 pub(super) const WAKE_HOST_LABEL: &str = "com.libragent.wake_host";
 
-/// True when the container was created with the host mapping (see [`WAKE_HOST_LABEL`]).
-/// Containers created before it existed carry no label and must be recreated.
-pub(super) async fn docker_container_has_wake_host(container_name: &str) -> RuntimeResult<bool> {
+/// Label set on containers created with the root-exec hardening (see `hardening_run_args`).
+pub(super) const ROOT_HARDENING_LABEL: &str = "com.libragent.root_hardening";
+
+/// Value of [`ROOT_HARDENING_LABEL`] for the current hardening. Increase it when
+/// `hardening_run_args` changes, so that older containers are recreated.
+pub(super) const ROOT_HARDENING_VERSION: &str = "2";
+
+/// True when the container carries `label=1`. Containers created before a label existed lack
+/// it and must be recreated.
+pub(super) async fn docker_container_has_label(
+    container_name: &str,
+    label: &str,
+) -> RuntimeResult<bool> {
+    Ok(docker_container_label_value(container_name, label).await? == "1")
+}
+
+/// True when the container was created with the current root-exec hardening.
+pub(super) async fn docker_container_has_root_hardening(
+    container_name: &str,
+) -> RuntimeResult<bool> {
+    Ok(is_current_root_hardening(
+        &docker_container_label_value(container_name, ROOT_HARDENING_LABEL).await?,
+    ))
+}
+
+pub(super) fn is_current_root_hardening(label_value: &str) -> bool {
+    label_value == ROOT_HARDENING_VERSION
+}
+
+async fn docker_container_label_value(container_name: &str, label: &str) -> RuntimeResult<String> {
     let value = docker_output([
         "inspect",
         "-f",
-        &format!("{{{{ index .Config.Labels \"{WAKE_HOST_LABEL}\" }}}}"),
+        &format!("{{{{ index .Config.Labels \"{label}\" }}}}"),
         container_name,
     ])
     .await?;
-    Ok(value.trim() == "1")
+    Ok(value.trim().to_string())
+}
+
+/// Destinations of the container's read-write mounts, one per line of `docker inspect`.
+pub(super) async fn docker_rw_mount_destinations(
+    container_name: &str,
+) -> RuntimeResult<Vec<String>> {
+    let output = docker_output([
+        "inspect",
+        "-f",
+        "{{range .Mounts}}{{if .RW}}{{println .Destination}}{{end}}{{end}}",
+        container_name,
+    ])
+    .await?;
+    Ok(output
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(str::to_string)
+        .collect())
 }
 
 /// IPv4 gateway of Docker's default `bridge` network: the host address that managed
@@ -151,6 +207,21 @@ pub(super) async fn run_status_command(mut cmd: AsyncCommand) -> RuntimeResult<(
     } else {
         Err(format_docker_failure(&output))
     }
+}
+
+/// Absolute path of the docker CLI on the host PATH, so a `PATH` in the child env (meant for
+/// the container) cannot change which `docker` the host runs. Falls back to a PATH lookup.
+pub(super) fn docker_program() -> std::path::PathBuf {
+    let names: &[&str] = if cfg!(windows) {
+        &["docker.exe", "docker"]
+    } else {
+        &["docker"]
+    };
+    let effective_path = crate::utils::env::get_effective_path();
+    std::env::split_paths(&effective_path)
+        .flat_map(|dir| names.iter().map(move |name| dir.join(name)))
+        .find(|candidate| candidate.is_file())
+        .unwrap_or_else(|| std::path::PathBuf::from("docker"))
 }
 
 pub(super) fn apply_docker_cli_env(cmd: &mut AsyncCommand) {

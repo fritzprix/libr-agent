@@ -4,9 +4,13 @@ use crate::execution_mode::ExecutionMode;
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, ErrorCategory, ToolGroup,
 };
+use crate::mcp::builtin::utils::read_bool_arg;
 use crate::mcp::types::MCPResult;
 
 use super::super::super::{utils, WorkspaceServer, PERSISTENT_SHELL_TOOL};
+use super::super::interactive::interactive_shell::{
+    prepend_stored_note, store_as_without_prompt_error,
+};
 use super::super::validation;
 use super::input::ShellInput;
 use super::policy::{evaluate_shell_policy, ShellPolicyAction, ShellPolicyContext};
@@ -198,18 +202,24 @@ impl WorkspaceServer {
             return Ok(result);
         }
 
-        // Check for requireUserInput parameter or auto-detect privilege escalation
-        let require_input = args
-            .get("requireUserInput")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let auto_detect = validation::detect_privilege_escalation(raw_command);
+        let require_input =
+            match read_bool_arg(&args, "requireUserInput", false, ToolGroup::Workspace) {
+                Ok(arg) => arg,
+                Err(result) => return Ok(result),
+            };
+
+        if !require_input.value {
+            if let Some(result) = store_as_without_prompt_error(&args) {
+                return Ok(require_input.annotate(result));
+            }
+        }
 
         // If user input is required, suspend the same synchronous tool call until the UI submits it.
-        if require_input || auto_detect {
+        if require_input.value {
             return self
-                .handle_interactive_shell(raw_command, &args, session_id)
-                .await;
+                .handle_interactive_shell(raw_command, &args, session_id, tool_name)
+                .await
+                .map(|result| require_input.annotate(result));
         }
 
         // Sync mode: persistent shell execution
@@ -219,13 +229,15 @@ impl WorkspaceServer {
             Err(max_timeout) => {
                 let attempted_timeout =
                     requested_timeout.unwrap_or_else(utils::default_sync_execution_timeout);
-                return Ok(self.sync_timeout_exceeded_result(attempted_timeout, max_timeout));
+                return Ok(require_input
+                    .annotate(self.sync_timeout_exceeded_result(attempted_timeout, max_timeout)));
             }
         };
 
         // Execute with persistent shell (state preservation)
         self.execute_shell_persistent(raw_command, tool_name, timeout_secs, session_id)
             .await
+            .map(|result| require_input.annotate(result))
     }
 
     /// Handle primary isolated shell execution (new tool)
@@ -241,6 +253,24 @@ impl WorkspaceServer {
         };
         let raw_command = input.text();
 
+        let require_input =
+            match read_bool_arg(&args, "requireUserInput", false, ToolGroup::Workspace) {
+                Ok(arg) => arg,
+                Err(result) => return Ok(result),
+            };
+        if !require_input.value {
+            if let Some(result) = store_as_without_prompt_error(&args) {
+                return Ok(require_input.annotate(result));
+            }
+        }
+
+        let run_as_root = crate::services::as_root_requested(&args);
+        if run_as_root {
+            if let Some(blocker) = utils::root_exec_blocker(session_id).await {
+                return Ok(utils::root_exec_unavailable_result(blocker));
+            }
+        }
+
         if matches!(input, ShellInput::Command(_)) {
             if let Some(result) = self.validate_windows_shell_syntax(raw_command) {
                 return Ok(result);
@@ -252,10 +282,7 @@ impl WorkspaceServer {
 
         // Check for interactive patterns but allow execution (removed blocking heuristic)
         if validation::is_likely_interactive_command(raw_command) {
-            tracing::debug!(
-                "Command '{}' matches interactive patterns but execution is allowed",
-                raw_command
-            );
+            tracing::debug!("Command matches interactive patterns but execution is allowed");
         }
 
         // Parse optional environment variables
@@ -320,9 +347,22 @@ impl WorkspaceServer {
             return Ok(result);
         }
 
+        // Ask only after every other check passed, so a rejected call opens no prompt.
+        let stored_name = if require_input.value {
+            match self
+                .prompt_and_store_secret(raw_command, &args, session_id)
+                .await
+            {
+                Ok(name) => Some(name),
+                Err(result) => return Ok(require_input.annotate(result)),
+            }
+        } else {
+            None
+        };
+
         // Execute with configured isolation level (workspace root unless cwd is set)
         let isolation_level = utils::get_shell_isolation_level().await;
-        let result = self
+        let mut result = self
             .execute_shell_with_isolation(
                 input,
                 tool_name,
@@ -331,12 +371,16 @@ impl WorkspaceServer {
                 session_id,
                 env_vars,
                 working_directory,
+                run_as_root,
             )
             .await;
         if utils::is_session_docker_isolated(session_id).await {
             install_skill_outbox(workspace_path).await;
         }
-        result
+        if let (Ok(result), Some(name)) = (result.as_mut(), stored_name.as_deref()) {
+            prepend_stored_note(result, name, tool_name);
+        }
+        result.map(|result| require_input.annotate(result))
     }
 
     /// Handle async shell execution (separate tool)
@@ -357,12 +401,13 @@ impl WorkspaceServer {
         }
 
         // Async mode does not support interactive input
-        let require_input = args
-            .get("requireUserInput")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        let require_input =
+            match read_bool_arg(&args, "requireUserInput", false, ToolGroup::Workspace) {
+                Ok(arg) => arg,
+                Err(result) => return Ok(result),
+            };
 
-        if require_input {
+        if require_input.value {
             return Ok(guided_error(
                 ErrorCategory::InvalidInput,
                 "Background processes cannot prompt for interactive input".to_string(),
@@ -374,7 +419,7 @@ impl WorkspaceServer {
                     PERSISTENT_SHELL_TOOL
                 ),
                 format!(
-                    "{} supports requireUserInput for sudo/interactive commands",
+                    "{} supports requireUserInput with storeAs for passwords and tokens",
                     PERSISTENT_SHELL_TOOL
                 ),
                 "Async processes run in the background without user interaction".to_string(),
@@ -384,15 +429,13 @@ impl WorkspaceServer {
 
         // Async mode does not support interactive input validation (heuristic removed)
         if validation::is_likely_interactive_command(raw_command) {
-            tracing::warn!(
-                "Async command likely interactive: {} (execution allowed)",
-                raw_command
-            );
+            tracing::warn!("Async command likely interactive (execution allowed)");
         }
 
         // Policy + cwd resolve live in execute_shell_async (cwd must be known first).
         self.execute_shell_async(raw_command, &args, session_id)
             .await
+            .map(|result| require_input.annotate(result))
     }
 
     pub(crate) fn apply_shell_policy_block(
@@ -512,6 +555,7 @@ mod tests {
             docker_config: None,
             docker_container_name: None,
             docker_host_workspace_path: None,
+            status_reason: None,
         }
     }
 
@@ -525,13 +569,12 @@ mod tests {
             cancellation_token: CancellationToken::new(),
             cancel_pending: Arc::new(AtomicBool::new(false)),
             pending_execution: None,
+            pending_user_prompt: crate::agent::state::new_user_prompt_slot(),
             messages: Arc::new(RwLock::new(Vec::new())),
             cache_initialized: Arc::new(AtomicBool::new(true)),
             last_synced_at: Arc::new(RwLock::new(None)),
             repeated_thinking_retry_count: Arc::new(RwLock::new(0)),
             repeated_text_loop_retry_count: Arc::new(RwLock::new(0)),
-            bad_tool_args_retry_count: Arc::new(RwLock::new(0)),
-            bad_tool_args_incident_count: Arc::new(RwLock::new(0)),
             reasoning_budget_retry_count: Arc::new(RwLock::new(0)),
             malformed_tool_markup_retry_count: Arc::new(RwLock::new(0)),
             pending_events: Arc::new(RwLock::new(PendingEventManager::new())),
@@ -627,5 +670,153 @@ mod tests {
             result.expect("app database stays blocked in unsafe mode")
         );
         assert!(text.contains("LibrAgent's own database"), "{text}");
+    }
+
+    /// `asRoot` values that are not exactly `false`; each one must take the root path.
+    fn non_false_as_root_values() -> [serde_json::Value; 4] {
+        [
+            serde_json::json!(true),
+            serde_json::json!("true"),
+            serde_json::json!(1),
+            serde_json::json!("yes"),
+        ]
+    }
+
+    #[tokio::test]
+    async fn as_root_is_rejected_outside_a_managed_session_container() {
+        let temp_dir = tempdir().expect("temp dir");
+        let session_id = "workspace-shell-as-root-host";
+        let session_manager = Arc::new(
+            SessionManager::new_with_base_dir(temp_dir.path().to_path_buf())
+                .expect("session manager"),
+        );
+        let server = WorkspaceServer::new(session_id.to_string(), session_manager);
+
+        for as_root in non_false_as_root_values() {
+            let result = server
+                .handle_run_shell(
+                    serde_json::json!({ "command": "id -u > uid.txt", "asRoot": as_root }),
+                    session_id,
+                    "runShell",
+                )
+                .await
+                .expect("guided result");
+
+            let text = format!("{result:?}");
+            assert!(
+                text.contains(crate::services::RootExecBlocker::HostSession.message()),
+                "asRoot={as_root}: {text}"
+            );
+        }
+        assert!(!temp_dir.path().join(session_id).join("uid.txt").exists());
+    }
+
+    #[test]
+    fn as_root_is_rejected_for_an_attached_container() {
+        use crate::models::workspace_isolation::{DockerWorkspaceConfig, WorkspaceIsolationMode};
+
+        let session = SessionMetadata {
+            workspace_isolation: WorkspaceIsolationMode::Docker,
+            docker_config: Some(DockerWorkspaceConfig {
+                attach_container: Some("someone-elses-container".to_string()),
+                ..DockerWorkspaceConfig::default()
+            }),
+            ..SessionMetadata::test_fixture("workspace-shell-as-root-attach")
+        };
+
+        for as_root in non_false_as_root_values() {
+            let args = serde_json::json!({ "command": "id -u", "asRoot": as_root });
+            assert!(
+                crate::services::as_root_requested(&args),
+                "asRoot={as_root}"
+            );
+            let blocker = utils::root_exec_blocker_for(Some(&session))
+                .expect("an attached container must refuse asRoot");
+            let text = format!("{:?}", utils::root_exec_unavailable_result(blocker));
+            assert!(
+                text.contains(crate::services::RootExecBlocker::AttachedContainer.message()),
+                "asRoot={as_root}: {text}"
+            );
+        }
+    }
+
+    fn test_server(session_id: &str) -> (tempfile::TempDir, WorkspaceServer) {
+        let temp_dir = tempdir().expect("temp dir");
+        let session_manager = Arc::new(
+            SessionManager::new_with_base_dir(temp_dir.path().to_path_buf())
+                .expect("session manager"),
+        );
+        let server = WorkspaceServer::new(session_id.to_string(), session_manager);
+        (temp_dir, server)
+    }
+
+    #[tokio::test]
+    async fn run_shell_rejects_a_bad_store_as_before_running_the_command() {
+        let session_id = "workspace-run-shell-store-as-guards";
+        let (temp_dir, server) = test_server(session_id);
+
+        let cases = [
+            (
+                serde_json::json!({ "command": "echo hi > ran.txt", "requireUserInput": true }),
+                "requireUserInput needs storeAs",
+            ),
+            (
+                serde_json::json!({ "command": "echo hi > ran.txt", "requireUserInput": true, "storeAs": "PATH" }),
+                "is reserved",
+            ),
+            (
+                serde_json::json!({ "command": "echo hi > ran.txt", "requireUserInput": true, "storeAs": "lower_case" }),
+                "is not valid",
+            ),
+            (
+                serde_json::json!({ "command": "echo hi > ran.txt", "storeAs": "API_TOKEN" }),
+                "storeAs needs requireUserInput=true",
+            ),
+        ];
+        for (args, expected) in cases {
+            let result = server
+                .handle_run_shell(args, session_id, "runShell")
+                .await
+                .expect("guided result");
+            assert_eq!(result.is_error, Some(true));
+            let text = format!("{result:?}");
+            assert!(text.contains(expected), "{text}");
+        }
+        assert!(!temp_dir.path().join(session_id).join("ran.txt").exists());
+        assert!(server
+            .shell_manager
+            .session_secrets(session_id)
+            .await
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn shell_tools_other_than_run_shell_refuse_as_root() {
+        let temp_dir = tempdir().expect("temp dir");
+        let session_id = "workspace-shell-as-root-other-tools";
+        let session_manager = Arc::new(
+            SessionManager::new_with_base_dir(temp_dir.path().to_path_buf())
+                .expect("session manager"),
+        );
+        let server = WorkspaceServer::new(session_id.to_string(), session_manager);
+
+        for tool in ["spawnProcess", "runInPersistentShell"] {
+            for as_root in non_false_as_root_values() {
+                let result = server
+                    .call_tool(
+                        tool,
+                        serde_json::json!({ "command": "id -u > uid.txt", "asRoot": as_root }),
+                        Some(session_id.to_string()),
+                    )
+                    .await
+                    .expect("guided result");
+                let text = format!("{result:?}");
+                assert!(
+                    text.contains("only workspace__runShell accepts asRoot"),
+                    "{tool} asRoot={as_root}: {text}"
+                );
+            }
+        }
+        assert!(!temp_dir.path().join(session_id).join("uid.txt").exists());
     }
 }

@@ -126,7 +126,7 @@ export async function exportMarkdownDocumentWithNotify(options: {
   }
 }
 
-/** i18n labels shared by MessageActionBar / ReportResult / presentInteractive. */
+/** i18n labels shared by MessageActionBar / ReportResult. */
 export function markdownExportLabelsFromT(
   t: (key: string) => string,
 ): MarkdownExportLabels {

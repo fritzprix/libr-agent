@@ -4,6 +4,8 @@ mod compaction;
 mod message_cache;
 mod pending;
 mod session;
+mod user_prompt;
+mod user_prompt_marker;
 
 pub use compaction::{
     CompactionBeginOutcome, CompactionKind, CompactionPhase, CompactionRecoveryPhase,
@@ -18,3 +20,15 @@ pub use pending::{
     PendingToolExecution,
 };
 pub use session::{AgentSession, SessionStatusTransition};
+pub use user_prompt::{
+    admit_user_prompt, await_user_prompt, await_user_prompt_with_timeout, new_user_prompt_slot,
+    pending_user_prompt_summary, secret_outcome_message, take_any_pending_user_prompt,
+    take_pending_user_prompt, wait_for_user_prompt, PendingUserPrompt, PendingUserPromptSummary,
+    UserPromptAnswer, UserPromptKind, UserPromptOutcome, UserPromptPayload, UserPromptSlot,
+    UserQuestion, USER_PROMPT_ALREADY_PENDING_MESSAGE, USER_PROMPT_CANCELLED_MESSAGE,
+    USER_PROMPT_GONE_MESSAGE, USER_PROMPT_RESTART_MESSAGE, USER_PROMPT_TIMEOUT_MESSAGE,
+    USER_PROMPT_TIMEOUT_SECS,
+};
+pub use user_prompt_marker::{
+    persist_waiting_tool_call, take_waiting_tool_call, with_tool_call_id, WaitingToolCallRecord,
+};

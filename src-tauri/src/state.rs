@@ -363,6 +363,11 @@ pub fn get_mcp_server_repository() -> &'static SqliteMCPServerRepository {
         .expect("MCP server repository not initialized. Call set_mcp_server_repository() first.")
 }
 
+/// Gets a reference to the global MCP server repository if it has been initialized.
+pub fn try_get_mcp_server_repository() -> Option<&'static SqliteMCPServerRepository> {
+    MCP_SERVER_REPOSITORY.get()
+}
+
 /// Sets the global MCP service proxy manager instance.
 ///
 /// # Panics
@@ -559,6 +564,11 @@ pub fn get_session_bus() -> &'static SessionBus {
     SESSION_BUS
         .get()
         .expect("SessionBus not initialized. Call init_session_bus() first.")
+}
+
+/// Get the global `SessionBus` if it is initialized.
+pub fn try_get_session_bus() -> Option<&'static SessionBus> {
+    SESSION_BUS.get()
 }
 
 // ── SP2: ConcurrencyGate ──────────────────────────────────────────────────────

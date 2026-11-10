@@ -6,7 +6,76 @@ use serde_json::json;
 /// Upper bound for `runShell.script`; longer logic belongs in a file run via `command`.
 pub const RUN_SHELL_SCRIPT_MAX_CHARS: u32 = 20_000;
 
-pub fn create_run_shell_tool() -> MCPTool {
+/// How a stored value is read in a shell, and what the tool says about sudo.
+#[derive(Clone, Copy)]
+enum StoredInputShell {
+    /// Has the `sudo` wrapper that reads `$SUDO_PASSWORD`.
+    PersistentBash,
+    /// Gets the value but not the `sudo` wrapper.
+    OneOffBash,
+    #[cfg(windows)]
+    PowerShell,
+}
+
+impl StoredInputShell {
+    fn env_ref(self) -> &'static str {
+        match self {
+            #[cfg(windows)]
+            Self::PowerShell => "$env:NAME",
+            Self::PersistentBash | Self::OneOffBash => "$NAME",
+        }
+    }
+
+    fn sudo_note(self) -> &'static str {
+        match self {
+            Self::PersistentBash => {
+                " For sudo: inputType=password, storeAs=SUDO_PASSWORD, then plain sudo."
+            }
+            Self::OneOffBash => {
+                " For sudo use runInPersistentShell: plain sudo with a stored password works only there."
+            }
+            #[cfg(windows)]
+            Self::PowerShell => "",
+        }
+    }
+}
+
+/// `requireUserInput` / `inputPrompt` / `inputType` / `storeAs`, shared by every
+/// synchronous shell tool so a value can be stored from any of them.
+fn insert_stored_input_props(props: &mut SchemaProperties, shell: StoredInputShell) {
+    let env_ref = shell.env_ref();
+    let require_description = format!(
+        "Ask the user for a value before execution. Requires storeAs: the value is kept as {env_ref} and the command reads it; the shell never sends input to a command.{}",
+        shell.sudo_note()
+    );
+    props.insert("requireUserInput".to_string(), {
+        let mut schema = boolean_prop(Some(&require_description));
+        schema.default = Some(json!(false));
+        schema
+    });
+    props.insert(
+        "inputPrompt".to_string(),
+        string_prop(None, None, Some("Custom prompt message for user input")),
+    );
+    props.insert(
+        "inputType".to_string(),
+        enum_prop(
+            vec!["password", "text"],
+            "text",
+            Some("Input type: 'password' (hidden) or 'text' (visible)"),
+        ),
+    );
+    props.insert(
+        "storeAs".to_string(),
+        string_prop(
+            Some(1),
+            Some(64),
+            Some(&format!("With requireUserInput=true: ask the user once for a secret and keep it as env var {env_ref} for this session (uppercase name, e.g. API_TOKEN). Every later shell call in this session (one-off or persistent) sees it. The value is never shown to you; the result names the variable only.")),
+        ),
+    );
+}
+
+pub fn create_run_shell_tool(allow_root: bool) -> MCPTool {
     let mut props = SchemaProperties::new();
     props.insert(
         "command".to_string(),
@@ -27,7 +96,7 @@ pub fn create_run_shell_tool() -> MCPTool {
             Some(1),
             Some(RUN_SHELL_SCRIPT_MAX_CHARS),
             Some(
-                "Multi-line bash script run verbatim (no quote escaping needed; newlines separate commands). Use instead of command for loops, nested quotes, or $(...). Provide exactly one of command or script.",
+                "Multi-line bash script run verbatim (no quote escaping needed; newlines separate commands). Use instead of command for loops or nested quotes; command substitution ($(...) and backticks) still requires user approval. Provide exactly one of command or script.",
             ),
         ),
     );
@@ -52,6 +121,18 @@ pub fn create_run_shell_tool() -> MCPTool {
             ),
         ),
     );
+    insert_stored_input_props(&mut props, StoredInputShell::OneOffBash);
+    if allow_root {
+        props.insert(
+            "asRoot".to_string(),
+            boolean_prop_with_default(
+                false,
+                Some(
+                    "Run this call as root in the session container. Use it only to install system packages (for example: apt-get update && apt-get install -y nodejs npm). When the call ends, every process it left running (background jobs, daemons) is stopped, so start long-running services in a call without asRoot. Workspace files it writes are given back to the host user afterwards. Not available for an attached container.",
+                ),
+            ),
+        );
+    }
 
     MCPTool {
         name: "runShell".to_string(),
@@ -62,6 +143,7 @@ pub fn create_run_shell_tool() -> MCPTool {
                        1) Finished within timeout (exit success or failure): this response already has stdout/stderr and exit code. No processId — do not call workspace__waitForProcess/workspace__readProcessOutput for this run.\n\
                        2) Still running after the sync timeout: response includes processId; only then use workspace__waitForProcess/workspace__readProcessOutput/workspace__stopProcess.\n\
                        For loops, nested quotes, or multi-step logic: pass script instead of command (runs verbatim, no escaping).\n\
+                       The shell has no terminal and never sends input to a command. For a password or token, set requireUserInput=true with storeAs=NAME: the UI asks once, the value is kept as $NAME for this session (later calls see it too), then the command runs. Plain sudo with a stored password works only in runInPersistentShell.\n\
                        For persistent cd/env vars: runInPersistentShell. For explicitly non-blocking tasks: spawnProcess."
             .to_string(),
         input_schema: object_schema(props, Vec::new()),
@@ -97,48 +179,14 @@ pub fn create_run_persistent_shell_tool() -> MCPTool {
             Some("Timeout in seconds for synchronous execution."),
         ),
     );
-    props.insert(
-        "requireUserInput".to_string(),
-        {
-            let mut schema = boolean_prop(Some("Request user input before execution. Auto-detects privilege-escalation commands such as sudo, su, doas, and pkexec on Unix."));
-            schema.default = Some(json!(false));
-            schema
-        },
-    );
-    props.insert(
-        "inputPrompt".to_string(),
-        string_prop(
-            None,
-            None,
-            Some("Custom prompt message for user input (default: auto-detected based on command)"),
-        ),
-    );
-    props.insert(
-        "inputType".to_string(),
-        enum_prop(
-            vec!["password", "text"],
-            "text",
-            Some("Input type: 'password' (hidden) or 'text' (visible). Auto-set to 'password' for sudo commands."),
-        ),
-    );
-    props.insert(
-        "stdinDelivery".to_string(),
-        enum_prop(
-            vec!["host", "child"],
-            "host",
-            Some(
-                "How to deliver interactive input: 'host' for Read-Host/sudo (default), 'child' to pipe into subprocess stdin (auto-detected for --code-stdin/--password-stdin).",
-            ),
-        ),
-    );
+    insert_stored_input_props(&mut props, StoredInputShell::PersistentBash);
 
     MCPTool {
         name: "runInPersistentShell".to_string(),
         title: Some("Execute Shell Command (Persistent Session)".to_string()),
         description: "Run a shell command in a persistent session that preserves working directory and env vars across calls.\n\
-                       Use when you need 'cd' to stick, 'export' to carry forward, or commands that require user input such as sudo.\n\
-                       If requireUserInput=true (or a sudo-like command is auto-detected), the tool stays a single synchronous call: the backend pauses, the UI collects the human input, then the same tool call resumes and returns the final result.\n\
-                       This is prompt-resume interactive input, not a PTY terminal for ncurses/full-screen apps.\n\
+                       Use when you need 'cd' to stick or 'export' to carry forward.\n\
+                       The shell has no terminal and never sends input to a command. For a password or token, set requireUserInput=true with storeAs=NAME: the UI asks once, the value is kept as $NAME, then the command runs. For sudo use storeAs=SUDO_PASSWORD and plain sudo.\n\
                        File tools accept relative paths from the workspace or absolute paths, but they do not follow the shell's current directory automatically.\n\
                        For longer work: spawnProcess.\n\
                        For simple stateless commands: runShell."
@@ -240,6 +288,7 @@ pub fn create_run_powershell_tool() -> MCPTool {
             ),
         ),
     );
+    insert_stored_input_props(&mut props, StoredInputShell::PowerShell);
 
     MCPTool {
         name: "runPowerShell".to_string(),
@@ -250,6 +299,7 @@ pub fn create_run_powershell_tool() -> MCPTool {
                        - Access environment variables using '$env:VARNAME'.\n\
                        - Each call starts fresh at the workspace root (or at optional cwd). `cd`/`Set-Location` does NOT persist across tool calls.\n\
                        - Prefer cwd='subdir' when the next commands need a different directory, or use workspace__runInPersistentPowerShell for sticky state.\n\
+                       - The shell never sends input to a command. For a password or token, set requireUserInput=true with storeAs=NAME: the UI asks once, the value is kept as $env:NAME for this session (later calls see it too), then the command runs.\n\
                        Two outcomes:\n\
                        1) Finished within timeout (exit success or failure): this response already has stdout/stderr and exit code. No processId — do not call workspace__waitForProcess/workspace__readProcessOutput for this run.\n\
                        2) Still running after the sync timeout: response includes processId; only then use workspace__waitForProcess/workspace__readProcessOutput/workspace__stopProcess.\n\
@@ -288,43 +338,14 @@ pub fn create_run_persistent_powershell_tool() -> MCPTool {
             Some("Timeout in seconds for synchronous execution."),
         ),
     );
-    props.insert("requireUserInput".to_string(), {
-        let mut schema = boolean_prop(Some(
-            "Request user input before execution (e.g., for interactive prompts).",
-        ));
-        schema.default = Some(json!(false));
-        schema
-    });
-    props.insert(
-        "inputPrompt".to_string(),
-        string_prop(None, None, Some("Custom prompt message for user input")),
-    );
-    props.insert(
-        "inputType".to_string(),
-        enum_prop(
-            vec!["password", "text"],
-            "text",
-            Some("Input type: 'password' (hidden) or 'text' (visible)"),
-        ),
-    );
-    props.insert(
-        "stdinDelivery".to_string(),
-        enum_prop(
-            vec!["host", "child"],
-            "host",
-            Some(
-                "How to deliver interactive input: 'host' for Read-Host (default), 'child' to pipe into subprocess stdin (auto-detected for --code-stdin/--password-stdin).",
-            ),
-        ),
-    );
+    insert_stored_input_props(&mut props, StoredInputShell::PowerShell);
 
     MCPTool {
         name: "runInPersistentPowerShell".to_string(),
         title: Some("Execute PowerShell Command (Persistent Session)".to_string()),
         description: "Run PowerShell in a persistent session that preserves location (Set-Location) and env vars across calls.\n\
                        - Use ';' to chain commands.\n\
-                       - If requireUserInput=true, or the command is auto-detected as a privilege-escalation prompt, the tool remains one synchronous call: the backend pauses, the UI collects the human input, then the same call resumes and returns the final result.\n\
-                       - This supports prompt-resume interactive input such as password/text prompts, not PTY-style full-screen terminal apps.\n\
+                       - The shell never sends input to a command. For a password or token, set requireUserInput=true with storeAs=NAME: the UI asks once, the value is kept as $env:NAME, then the command runs.\n\
                        - File tools accept relative paths from the workspace or absolute paths, but they do not follow the shell's current location automatically.\n\
                        - For longer work: spawnProcess.\n\
                        - For simple stateless commands: runPowerShell."
@@ -485,5 +506,77 @@ mod tests {
             }
             _ => panic!("Expected Object schema type"),
         }
+    }
+
+    #[test]
+    fn one_off_shell_tools_accept_store_as_like_the_persistent_ones() {
+        let input_props = |tool: MCPTool| {
+            let schema = serde_json::to_value(tool.input_schema).unwrap();
+            ["requireUserInput", "inputPrompt", "inputType", "storeAs"]
+                .map(|name| schema.pointer(&format!("/properties/{name}")).cloned())
+        };
+        let one_off = input_props(create_run_shell_tool(false));
+        assert!(one_off.iter().all(Option::is_some));
+        #[cfg(unix)]
+        assert_eq!(
+            one_off[1..],
+            input_props(create_run_persistent_shell_tool())[1..]
+        );
+        #[cfg(windows)]
+        assert_eq!(
+            input_props(create_run_powershell_tool()),
+            input_props(create_run_persistent_powershell_tool())
+        );
+    }
+
+    /// The `sudo` wrapper exists only in the persistent shell, so `runShell` must not
+    /// promise that plain sudo reads a stored password.
+    #[test]
+    fn only_the_persistent_shell_offers_sudo_with_a_stored_password() {
+        let tool_text = |tool: MCPTool| {
+            let schema = serde_json::to_value(&tool.input_schema).unwrap();
+            let require = schema
+                .pointer("/properties/requireUserInput/description")
+                .and_then(|value| value.as_str())
+                .unwrap()
+                .to_string();
+            format!("{} {require}", tool.description)
+        };
+        let one_off = tool_text(create_run_shell_tool(false));
+        assert!(!one_off.contains("then plain sudo"), "{one_off}");
+        assert!(!one_off.contains("For sudo use storeAs"), "{one_off}");
+        assert!(one_off.contains("runInPersistentShell"), "{one_off}");
+        let persistent = tool_text(create_run_persistent_shell_tool());
+        assert!(persistent.contains("then plain sudo"), "{persistent}");
+    }
+
+    #[test]
+    fn as_root_is_offered_only_when_the_session_allows_root() {
+        use crate::mcp::schema::JSONSchemaType;
+
+        let has_as_root = |tool: MCPTool| match tool.input_schema.schema_type {
+            JSONSchemaType::Object { properties, .. } => properties
+                .as_ref()
+                .is_some_and(|props| props.contains_key("asRoot")),
+            _ => panic!("Expected Object schema type"),
+        };
+        assert!(has_as_root(create_run_shell_tool(true)));
+        assert!(!has_as_root(create_run_shell_tool(false)));
+    }
+
+    #[test]
+    fn as_root_description_states_the_cleanup_after_the_call() {
+        let schema = serde_json::to_value(create_run_shell_tool(true).input_schema).unwrap();
+        let text = schema
+            .pointer("/properties/asRoot/description")
+            .and_then(|value| value.as_str())
+            .expect("asRoot description");
+        assert!(text.contains("every process it left running"), "{text}");
+        assert!(
+            text.contains("long-running services in a call without asRoot"),
+            "{text}"
+        );
+        assert!(text.contains("given back to the host user"), "{text}");
+        assert!(!text.contains("belong to root"), "{text}");
     }
 }

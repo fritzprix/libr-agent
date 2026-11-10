@@ -9,8 +9,17 @@ mcpToolTimeoutSeconds: number, searchIndexFrequencyMinutes: number,
 /**
  * `0` means no minimum.
  */
-scheduledTaskMinimumIntervalMinutes: number, shellIsolationLevel: IsolationLevel, shellRuntimeBootstrap: boolean, skillsDirectory: string, 
+scheduledTaskMinimumIntervalMinutes: number, shellIsolationLevel: IsolationLevel, shellRuntimeBootstrap: boolean, 
+/**
+ * Workspace file tools also accept paths in linked git worktrees of the
+ * repository at the session workspace root.
+ */
+allowLinkedWorktrees: boolean, 
 /**
  * Inhibit idle sleep while LibrAgent is running. Does not keep the display on.
  */
-preventSleepDuringAgentWork: boolean, };
+preventSleepDuringAgentWork: boolean, 
+/**
+ * Archived app logs older than this are deleted. `0` means no age limit.
+ */
+logRetentionDays: number, };

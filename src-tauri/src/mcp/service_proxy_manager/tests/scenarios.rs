@@ -1,3 +1,4 @@
+use super::super::retry_policy::{FailureKind, RetryTrigger};
 use super::*;
 
 #[tokio::test]
@@ -624,7 +625,7 @@ async fn test_retry_failed_servers_retries_failed_but_not_timed_out() {
     // The path session re-entry takes: `Failed` is retried, `TimedOut` (still starting in the
     // background) is not.
     let started = manager
-        .retry_failed_servers(session_id, None, None)
+        .retry_failed_servers(session_id, None, RetryTrigger::Automatic, None)
         .await
         .unwrap();
     assert_eq!(started, 1);
@@ -640,10 +641,115 @@ async fn test_retry_failed_servers_retries_failed_but_not_timed_out() {
     // A manual retry of the server that is still starting is a no-op.
     assert_eq!(
         manager
-            .retry_failed_servers(session_id, Some("slow-server"), None)
+            .retry_failed_servers(session_id, Some("slow-server"), RetryTrigger::Manual, None)
             .await
             .unwrap(),
         0
+    );
+
+    manager.destroy_proxy(session_id).await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_automatic_retry_follows_backoff_and_manual_retry_resets_it() {
+    use crate::agent::runtime_state::{
+        SessionRuntimeServerState, SessionRuntimeServerStatus, SessionRuntimeTransport,
+    };
+    use crate::mcp::types::{MCPServerConfig, TransportConfig};
+
+    let harness = create_test_harness().await;
+    let manager = &harness.manager;
+    let session_id = "retry-backoff-test";
+    insert_test_session(manager, session_id).await;
+    manager
+        .create_proxy(
+            session_id.to_string(),
+            vec!["playbook".to_string()],
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+
+    let mut loaded = manager
+        .session_server_configs
+        .read()
+        .await
+        .get(session_id)
+        .cloned()
+        .expect("configs are cached when the proxy is created");
+    loaded.stdio_configs.insert(
+        "failed-server".to_string(),
+        MCPServerConfig {
+            name: None,
+            transport: TransportConfig::Stdio {
+                command: "libragent-test-no-such-command".to_string(),
+                args: vec![],
+                env: Default::default(),
+            },
+            authentication: None,
+            metadata: None,
+            provenance: None,
+        },
+    );
+    manager
+        .session_server_configs
+        .write()
+        .await
+        .insert(session_id.to_string(), loaded);
+
+    let mut state = manager.get_runtime_state(session_id).await;
+    state.servers.push(SessionRuntimeServerState {
+        name: "failed-server".to_string(),
+        transport: SessionRuntimeTransport::Stdio,
+        status: SessionRuntimeServerStatus::Failed,
+        tool_count: 0,
+        error: Some("Session container is not available".to_string()),
+    });
+    manager.set_runtime_state(session_id, state, None).await;
+    manager
+        .server_retry_states
+        .record_failure(
+            session_id,
+            "failed-server",
+            FailureKind::Permanent,
+            std::time::Instant::now(),
+        )
+        .await;
+
+    // Session re-entry does not restart a server whose failure cannot change.
+    assert_eq!(
+        manager
+            .retry_failed_servers(session_id, None, RetryTrigger::Automatic, None)
+            .await
+            .unwrap(),
+        0
+    );
+    let server = manager
+        .get_runtime_state(session_id)
+        .await
+        .servers
+        .into_iter()
+        .find(|server| server.name == "failed-server")
+        .unwrap();
+    assert_eq!(server.status, SessionRuntimeServerStatus::Failed);
+    assert_eq!(
+        server.error.as_deref(),
+        Some("Session container is not available")
+    );
+
+    // The user can still retry it.
+    assert_eq!(
+        manager
+            .retry_failed_servers(
+                session_id,
+                Some("failed-server"),
+                RetryTrigger::Manual,
+                None
+            )
+            .await
+            .unwrap(),
+        1
     );
 
     manager.destroy_proxy(session_id).await;

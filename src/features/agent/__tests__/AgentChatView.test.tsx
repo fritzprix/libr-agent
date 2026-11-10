@@ -57,7 +57,7 @@ function createBaseSessionState(): AgentSessionStateContextValue {
     preflightTokenMetrics: null,
     initializationStep: null,
     pendingApprovals: [],
-    pendingInteractiveShellPrompt: null,
+    pendingUserPrompt: null,
     executionMode: 'normal',
   };
 }

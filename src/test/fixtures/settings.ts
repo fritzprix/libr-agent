@@ -25,6 +25,9 @@ export const TEST_ADVANCED_SETTINGS: AdvancedSettings = {
   maxSuspendedProcesses: 20,
   loopPreventionThreshold: 3,
   loopPreventionHardBreakOffset: 2,
+  toolWaitDurationSecs: 10,
+  toolWaitGuideCount: 10,
+  toolWaitBreakCount: 10,
   thinkingLoopMinPatternLength: 256,
   thinkingLoopMinRepetitions: 4,
   maxRecentMediaMessages: 1,
@@ -33,7 +36,6 @@ export const TEST_ADVANCED_SETTINGS: AdvancedSettings = {
 
 /** Test data only: Rust owns `display` (`get_display_settings`). */
 export const TEST_DISPLAY_SETTINGS: DisplaySettings = {
-  metricDisplayMode: 'inline',
   prefillDisplayFormat: 'time',
   showTokenSpeed: true,
   compactMetrics: false,
@@ -64,8 +66,9 @@ export const TEST_SYSTEM_SETTINGS: SystemSettings = {
   scheduledTaskMinimumIntervalMinutes: 0,
   shellIsolationLevel: 'medium',
   shellRuntimeBootstrap: false,
-  skillsDirectory: '',
+  allowLinkedWorktrees: true,
   preventSleepDuringAgentWork: true,
+  logRetentionDays: 30,
 };
 
 /** Complete settings for tests: frontend defaults plus the Rust-owned fixtures. */

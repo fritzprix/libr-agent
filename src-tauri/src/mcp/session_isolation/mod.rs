@@ -12,6 +12,7 @@ pub mod channel_transport;
 /// - **Stdio servers**: Independent processes per session (SessionMCPManager)
 /// - **HTTP servers**: Shared connections with session ID injection (HttpSessionManager)
 pub mod error;
+pub mod exec_target;
 pub mod http_manager;
 pub mod process;
 pub mod stdio_manager;

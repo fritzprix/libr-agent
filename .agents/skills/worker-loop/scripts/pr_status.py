@@ -4,8 +4,7 @@
 Prints JSON: one entry per open PR authored by @me with merge state, failing
 and pending checks, unresolved review threads, and PR comments from others
 that arrived after the latest commit, plus the latest gatekeeper-loop verdict
-(own marker comments only). `duplicateCommits` lists head commits whose patch-id is
-already in the base (needs a prior `git fetch origin`); they yield `restack`.
+(own marker comments only). A PR claimed by another worker yields `claimed`.
 Bodies are truncated; fetch the full text only for items you act on.
 """
 from __future__ import annotations
@@ -16,13 +15,22 @@ import re
 import subprocess
 import sys
 
-MARKER = re.compile(r"<!--\s*(gatekeeper-loop|worker-loop):\s*(.*?)\s*-->")
+import worker_claims
+import worker_state
+
+# Loop markers must appear at the very start of the comment (ignoring optional UTF-8 BOM and leading whitespace).
+# Quoted markers or mentions later in the comment are ignored.
+START_MARKER = re.compile(r"^(?:\ufeff)?\s*<!--\s*(gatekeeper-loop|worker-loop):\s*(.*?)\s*-->")
 
 THREADS_QUERY = """
-query($owner: String!, $name: String!, $number: Int!) {
+query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
-      reviewThreads(first: 100) {
+      reviewThreads(first: 100, after: $cursor) {
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
         nodes {
           id isResolved isOutdated path line
           comments(first: 1) { nodes { author { login } body url } }
@@ -53,29 +61,13 @@ def check_state(check: dict) -> str:
     return (check.get("conclusion") or check.get("state") or check.get("status") or "").upper()
 
 
-def duplicate_commits(base: str, head: str, cwd: str | None = None) -> list[str]:
-    """Head commits whose patch-id also exists in base (`git cherry` marks them `-`).
-
-    These appear when the base was rebased or the commits were cherry-picked into it:
-    the PR still carries the old copies and needs a restack. Returns [] when either
-    ref is missing locally.
-    """
-    result = subprocess.run(
-        ["git", "cherry", f"origin/{base}", f"origin/{head}"],
-        capture_output=True, text=True, encoding="utf-8", cwd=cwd,
-    )
-    if result.returncode != 0:
-        return []
-    return [line[2:] for line in result.stdout.splitlines() if line.startswith("- ")]
-
-
 def gatekeeper_state(comments: list[dict], me: str, head_sha: str) -> dict | None:
     """Latest gatekeeper verdict (own comments only) and whether it awaits the worker."""
     verdict, responded_rounds = None, set()
     for c in comments:
         if (c.get("author") or {}).get("login") != me:
             continue
-        match = MARKER.search(c.get("body") or "")
+        match = START_MARKER.match(c.get("body") or "")
         if not match:
             continue
         fields = dict(kv.split("=", 1) for kv in match.group(2).split() if "=" in kv)
@@ -96,7 +88,6 @@ def gatekeeper_state(comments: list[dict], me: str, head_sha: str) -> dict | Non
 def select_next_action(
     *,
     conflicting: bool,
-    duplicates: list[str],
     gatekeeper: dict | None,
     has_comments: bool,
     failing: list[str],
@@ -104,8 +95,6 @@ def select_next_action(
 ) -> str:
     if conflicting:
         return "resolve-conflict"
-    if duplicates:
-        return "restack"
     if gatekeeper and gatekeeper["awaitingWorker"]:
         return "address-gatekeeper"
     if has_comments:
@@ -117,7 +106,7 @@ def select_next_action(
     return "none"
 
 
-def summarize(number: int, owner: str, name: str, me: str) -> dict:
+def summarize(number: int, owner: str, name: str, me: str, claimed_by: str | None = None) -> dict:
     pr = json.loads(
         gh(
             "pr", "view", str(number), "--json",
@@ -130,49 +119,63 @@ def summarize(number: int, owner: str, name: str, me: str) -> dict:
     failing = [c.get("name") or c.get("context") for c in checks if check_state(c) in FAILED]
     pending = [c.get("name") or c.get("context") for c in checks if check_state(c) in PENDING]
 
-    threads_raw = json.loads(
-        gh("api", "graphql", "-f", f"query={THREADS_QUERY}", "-F", f"owner={owner}",
-           "-F", f"name={name}", "-F", f"number={number}")
-    )
-    nodes = threads_raw["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"]
     threads = []
-    for node in nodes:
-        if node["isResolved"]:
-            continue
-        first = (node["comments"]["nodes"] or [{}])[0]
-        threads.append({
-            "threadId": node["id"],
-            "outdated": node["isOutdated"],
-            "path": node["path"],
-            "line": node["line"],
-            "author": (first.get("author") or {}).get("login"),
-            "body": short(first.get("body")),
-            "url": first.get("url"),
-        })
+    cursor = None
+    while True:
+        args = ["api", "graphql", "-f", f"query={THREADS_QUERY}", "-F", f"owner={owner}",
+                "-F", f"name={name}", "-F", f"number={number}"]
+        if cursor:
+            args.extend(["-F", f"cursor={cursor}"])
+        threads_raw = json.loads(gh(*args))
+        review_threads = (
+            threads_raw.get("data", {}).get("repository", {}).get("pullRequest", {}).get("reviewThreads") or {}
+        )
+        nodes = review_threads.get("nodes") or []
+        for node in nodes:
+            if node["isResolved"]:
+                continue
+            first = (node["comments"]["nodes"] or [{}])[0]
+            threads.append({
+                "threadId": node["id"],
+                "outdated": node["isOutdated"],
+                "path": node["path"],
+                "line": node["line"],
+                "author": (first.get("author") or {}).get("login"),
+                "body": short(first.get("body")),
+                "url": first.get("url"),
+            })
+        page_info = review_threads.get("pageInfo") or {}
+        if not page_info.get("hasNextPage"):
+            break
+        cursor = page_info.get("endCursor")
 
     commits = pr.get("commits") or []
     last_commit_at = commits[-1]["committedDate"] if commits else ""
-    new_comments = [
-        {
-            "author": c["author"]["login"],
-            "createdAt": c["createdAt"],
-            "body": short(c.get("body")),
-            "url": c.get("url"),
-        }
-        for c in pr.get("comments") or []
-        if c.get("author", {}).get("login") != me and c.get("createdAt", "") > last_commit_at
-    ]
-
-    duplicates = duplicate_commits(pr["baseRefName"], pr["headRefName"])
+    # Filter comments: keep non-bot comments posted after the latest commit that do NOT
+    # carry loop markers. This includes human owner comments even when the owner shares login @me.
+    new_comments = []
+    for c in pr.get("comments") or []:
+        author_login = (c.get("author") or {}).get("login") or ""
+        body = c.get("body") or ""
+        if author_login.endswith("[bot]") or START_MARKER.match(body):
+            continue
+        if c.get("createdAt", "") > last_commit_at:
+            new_comments.append({
+                "author": author_login,
+                "createdAt": c["createdAt"],
+                "body": short(body),
+                "url": c.get("url"),
+            })
 
     next_action = select_next_action(
         conflicting=pr.get("mergeable") == "CONFLICTING",
-        duplicates=duplicates,
         gatekeeper=gatekeeper,
         has_comments=bool(threads or new_comments),
         failing=failing,
         pending=pending,
     )
+    if claimed_by:
+        next_action = "claimed"
 
     return {
         "number": pr["number"],
@@ -189,7 +192,7 @@ def summarize(number: int, owner: str, name: str, me: str) -> dict:
         "unresolvedThreads": threads,
         "newComments": new_comments,
         "gatekeeper": gatekeeper,
-        "duplicateCommits": duplicates,
+        "claimedBy": claimed_by,
         "nextAction": next_action,
     }
 
@@ -197,7 +200,10 @@ def summarize(number: int, owner: str, name: str, me: str) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pr", type=int, help="Only this PR number")
+    parser.add_argument("--worker", default=None, help="Worker name (default: $WORKER_ID or 'worker')")
     args = parser.parse_args()
+    worker = worker_state.worker_name(args.worker)
+    claims = worker_claims.load_claims()
 
     repo = json.loads(gh("repo", "view", "--json", "owner,name"))
     owner, name = repo["owner"]["login"], repo["name"]
@@ -206,10 +212,14 @@ def main() -> None:
     if args.pr:
         numbers = [args.pr]
     else:
-        listed = json.loads(gh("pr", "list", "--author", "@me", "--state", "open", "--json", "number"))
-        numbers = [p["number"] for p in listed]
+        listed = json.loads(gh("pr", "list", "--author", "@me", "--state", "open", "--json", "number,isDraft"))
+        numbers = [p["number"] for p in listed if not p.get("isDraft")]
 
-    print(json.dumps([summarize(n, owner, name, me) for n in numbers], ensure_ascii=False, indent=2))
+    summaries = [
+        summarize(n, owner, name, me, worker_claims.claimed_by_other(claims, f"pr:{n}", worker))
+        for n in numbers
+    ]
+    print(json.dumps(summaries, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

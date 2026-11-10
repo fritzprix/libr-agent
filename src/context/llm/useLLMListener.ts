@@ -99,6 +99,11 @@ interface UseLLMListenerProps {
     sessionId: string,
     responseMessageId?: string,
   ) => void;
+  startListenerRequest: (
+    sessionId: string,
+    responseMessageId: string,
+  ) => AbortSignal;
+  finishListenerRequest: (sessionId: string, signal: AbortSignal) => void;
   setStreamingMessages: React.Dispatch<
     React.SetStateAction<Map<string, Partial<Message>>>
   >;
@@ -114,6 +119,8 @@ export function useLLMListener({
   settingsRef,
   executeCompletionRequest,
   cancelCompletionRequest,
+  startListenerRequest,
+  finishListenerRequest,
   setStreamingMessages,
   setCompactingFromEvent,
   setCompactedRangeForSession,
@@ -205,6 +212,22 @@ export function useLLMListener({
             return next;
           });
 
+          // One cancel scope for every primary attempt and the fallback, so a
+          // cancel between attempts is not lost when no attempt is in flight.
+          const requestSignal = startListenerRequest(
+            sessionId,
+            responseMessageId,
+          );
+          const throwIfRequestCancelled = (phase: string) => {
+            if (requestSignal.aborted) {
+              logger.info(`Completion request cancelled before ${phase}`, {
+                sessionId,
+                responseMessageId,
+              });
+              throw new Error('Request aborted');
+            }
+          };
+
           try {
             // Execute with retry (exponential backoff + jitter) and optional fallback model.
             // Malformed/empty responses come as errors from executeCompletionRequest,
@@ -234,6 +257,7 @@ export function useLLMListener({
                     { sessionId, model: targetModel, provider: targetProvider },
                   );
                   await sleep(jitteredDelay);
+                  throwIfRequestCancelled(`retry ${attempt}`);
 
                   // Reset streaming indicator so UI shows a fresh spinner on retry
                   setStreamingMessages((prev) => {
@@ -300,6 +324,8 @@ export function useLLMListener({
               // Primary model exhausted — try configured fallback model
               const fallbackModel = settingsRef.current.fallbackModel;
               if (fallbackModel) {
+                throwIfRequestCancelled('fallback');
+
                 const fallbackApiKey =
                   resolveProviderRuntimeConfig(
                     fallbackModel.provider,
@@ -395,6 +421,8 @@ export function useLLMListener({
 
             // Report error to Rust
             await handleLLMError(sessionId, toAgentRuntimeError(error));
+          } finally {
+            finishListenerRequest(sessionId, requestSignal);
           }
         },
       );
@@ -505,5 +533,5 @@ export function useLLMListener({
         unlistenCompactState();
       }
     };
-  }, [cancelCompletionRequest]); // cancel handler identity must stay in sync
+  }, [cancelCompletionRequest, startListenerRequest, finishListenerRequest]); // handler identities must stay in sync
 }

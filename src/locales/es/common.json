@@ -146,7 +146,9 @@
     "recurringStop": "Detención recurrente",
     "pendingApprovals_one": "{{count}} aprobación",
     "pendingApprovals_other": "{{count}} aprobaciones",
-    "viewSession": "Abrir sesión {{name}}"
+    "viewSession": "Abrir sesión {{name}}",
+    "markAllRead": "Marcar todo como leído",
+    "dismiss": "Cerrar"
   },
   "sidebar": {
     "mobileTitle": "Barra lateral",
@@ -317,6 +319,8 @@
     "rootLabel": "Sesión raíz",
     "updatedLabel": "Actualizado",
     "resumeRoot": "Reanudar sesión raíz",
+    "exportBundle": "Exportar organización",
+    "importBundle": "Importar organización",
     "delete": "Eliminar organización",
     "deleteConfirm": {
       "title": "¿Eliminar organización?",
@@ -324,7 +328,12 @@
     },
     "toasts": {
       "deleted": "Organización eliminada",
-      "deleteFailed": "Error al eliminar la organización"
+      "deleteFailed": "Error al eliminar la organización",
+      "exported": "Paquete de organización exportado",
+      "exportFailed": "No se pudo exportar la organización",
+      "imported": "Paquete de organización importado. Archivos de Teamwork: {{path}}",
+      "importFailed": "No se pudo importar el paquete de organización",
+      "importPasswordRequired": "Este paquete de organización está cifrado. La importación con contraseña aún no está disponible en esta interfaz: use una exportación sin cifrar o las herramientas de migración."
     },
     "emptyState": {
       "title": "Aún no hay linajes de organización",
@@ -338,6 +347,7 @@
     "saved": "Configuración guardada correctamente",
     "saving": "Guardando...",
     "saveFailed": "Error al guardar la configuración",
+    "restartRequiredNotice": "Algunos de los ajustes guardados se aplican después de reiniciar la aplicación.",
     "applyChanges": "Aplicar cambios",
     "language": {
       "label": "Idioma",
@@ -373,9 +383,6 @@
     "decreaseToolCallCount": "Disminuir cantidad de llamadas de herramientas",
     "increaseToolCallCount": "Aumentar cantidad de llamadas de herramientas",
     "general": {
-      "skillsDirectory": "Directorio de habilidades",
-      "skillsDirectorySelectTitle": "Seleccionar directorio de habilidades",
-      "skillsDirectoryPlaceholder": "Seleccione un directorio para habilidades locales...",
       "browse": "Buscar",
       "browseAriaLabel": "Buscar directorio de habilidades",
       "openInExplorer": "Abrir en el explorador",
@@ -383,8 +390,7 @@
       "error": "Error: {{message}}",
       "skillsFound_one": "Se encontró {{count}} habilidad",
       "skillsFound_other": "Se encontraron {{count}} habilidades",
-      "invalidDirectory": "Directorio no válido",
-      "skillsDirectoryDescription": "Directorio que contiene las habilidades del agente (carpetas con SKILL.md). Las nuevas habilidades se descubrirán automáticamente."
+      "invalidDirectory": "Directorio no válido"
     },
     "aiModels": {
       "apiKeys": "Claves API del proveedor",
@@ -481,10 +487,6 @@
         "d2coding": "D2Coding (monoespaciada para desarrolladores)"
       },
       "metricsTitle": "Métricas de rendimiento",
-      "metricDisplayMode": "Modo de visualización de métricas",
-      "inline": "En línea (mostrar en el mensaje)",
-      "tooltip": "Información (pasar el ratón para ver)",
-      "metricDisplayModeDescription": "Elija cómo se muestran las métricas de tokens en los mensajes de chat",
       "prefillDisplayFormat": "Formato del tiempo de primera respuesta",
       "time": "Tiempo hasta la primera respuesta (ej. 245 ms)",
       "tokensPerSecond": "Tokens por segundo (ej., 520 tok/s)",
@@ -554,13 +556,20 @@
       "toolResultInlineLimitDescription": "Tamaño máximo del resultado visible en el chat antes de guardarse en un archivo. Valores menores ahorran memoria.",
       "shellIsolation": "Nivel de aislamiento de Shell",
       "shellIsolationModes": {
-        "basic": "Básico - Acceso completo al PATH (menos seguro)",
-        "medium": "Medio - PATH restringido (equilibrado)",
-        "high": "Alto - Aislado (más seguro)"
+        "basic": "Básico",
+        "medium": "Medio",
+        "high": "Alto - sandbox del SO"
       },
-      "shellIsolationDescription": "Controla el aislamiento del entorno para los comandos de shell. Básico permite herramientas instaladas por el usuario, Alto proporciona la máxima seguridad.",
+      "shellIsolationDescription": "Se aplica a los comandos de shell puntuales y a los procesos en segundo plano en sesiones locales. El shell persistente y las sesiones de Docker no usan este ajuste.",
+      "shellIsolationHelp": {
+        "basic": "Ejecuta el comando en el espacio de trabajo con el entorno vaciado: solo se pasan PATH y algunas variables básicas (como HOME, USER, configuración regional y proxy), por lo que no se pasan secretos del host como las claves de API. No se restringe el acceso a archivos ni a la red.",
+        "medium": "Igual que Básico, y además el comando se ejecuta en su propio grupo de procesos. No se restringe el acceso a archivos ni a la red.",
+        "high": "Linux: se ejecuta en espacios de nombres de usuario, PID y montaje separados (unshare); no se restringe el acceso a archivos ni a la red. macOS: se ejecuta con sandbox-exec; solo se pueden escribir archivos en el espacio de trabajo y en /tmp, /var/tmp, y se permite el acceso a la red. Windows: igual que Medio. Si el sandbox no está disponible, se usa Medio."
+      },
       "shellRuntimeBootstrap": "Inicialización del entorno de shell",
       "shellRuntimeBootstrapDescription": "Carga solo las rutas de Python y Node en la consola para iniciar comandos más rápido.",
+      "allowLinkedWorktrees": "Las herramientas de archivos pueden usar worktrees de git vinculados",
+      "allowLinkedWorktreesDescription": "Si el espacio de trabajo es un repositorio git, las herramientas de archivos también pueden leer y editar archivos en las otras carpetas de trabajo del mismo repositorio (worktrees de git). Desactívelo para permitir solo la carpeta del espacio de trabajo.",
       "performance": "Rendimiento y concurrencia",
       "performanceDescription": "Estos límites de ejecución controlan cuántos agentes y procesos del espacio de trabajo pueden ejecutarse al mismo tiempo.",
       "title": "Controles avanzados de ejecución",
@@ -571,6 +580,15 @@
       "loopPreventionHardBreakOffset": "Desviación de parada forzada",
       "loopPreventionHardBreakOffsetPlaceholder": "p. ej., 2",
       "loopPreventionHardBreakOffsetDescription": "Intentos adicionales permitidos tras una advertencia antes de detener el agente.",
+      "toolWaitDurationSecs": "Tiempo de espera de la herramienta (s)",
+      "toolWaitDurationSecsDescription": "Una llamada repetida que dura al menos este tiempo se considera espera de una tarea en segundo plano, no una repetición.",
+      "toolWaitDurationSecsPlaceholder": "p. ej., 10",
+      "toolWaitGuideCount": "Umbral de aviso de espera",
+      "toolWaitGuideCountDescription": "Tras este número de esperas idénticas, se indica al agente que deje de consultar y programe una única reactivación posterior.",
+      "toolWaitGuideCountPlaceholder": "p. ej., 10",
+      "toolWaitBreakCount": "Umbral de interrupción de espera",
+      "toolWaitBreakCountDescription": "Cuántas esperas idénticas más, tras el aviso, antes de detener el agente por completo.",
+      "toolWaitBreakCountPlaceholder": "p. ej., 10",
       "thinkingLoopMinPatternLength": "Longitud mínima de patrón en bucle de pensamiento",
       "thinkingLoopMinPatternLengthDescription": "Longitud mínima de texto repetido para detectar bucles. Valores mayores reducen falsas alarmas.",
       "thinkingLoopMinPatternLengthPlaceholder": "ej., 256",
@@ -605,6 +623,9 @@
       "preventSleepDuringAgentWorkDescription": "Evita que el sistema entre en suspensión por inactividad mientras LibrAgent está abierto. No fuerza la pantalla encendida. Activado por defecto.",
       "searchIndexFrequency": "Frecuencia de índice de búsqueda (Min)",
       "searchIndexFrequencyDescription": "Con qué frecuencia la IA mide su búsqueda en memoria. Las actualizaciones más rápidas mantienen la búsqueda fresca pero consumen más batería/CPU.",
+      "logRetentionDays": "Conservar registros de la app (días)",
+      "logRetentionDaysDescription": "Elimina los registros guardados de la app con más de este número de días. Los registros pueden contener el contenido de tus chats. Con 0 solo se aplican los límites de cantidad y tamaño.",
+      "logRetentionDaysUnlimited": "Sin límite",
       "webActionTimeout": "Tiempo de espera de acción web (Seg)",
       "webActionTimeoutDescription": "Cuánto tiempo espera la IA para que se cargue una página web o termine un clic.",
       "mcpServerStartupTimeout": "Tiempo de espera de detección de extensiones (seg.)",
@@ -622,6 +643,7 @@
         "maxFileUploadSize": "ej., 50",
         "workspaceCapacity": "ej., 10",
         "searchIndexFrequency": "ej., 5",
+        "logRetentionDays": "ej., 30",
         "webActionTimeout": "ej., 30",
         "mcpServerStartupTimeout": "ej., 30",
         "mcpToolTimeout": "0 (desactivado)",
@@ -927,6 +949,25 @@
         "title": "Mostrar avisos de bucle en resultados de herramientas (heredado)",
         "description": "Si está activo, muestra avisos de bucle como errores de herramienta en lugar de reintentar en silencio."
       }
+    },
+    "sessionApi": {
+      "title": "Claves de la Session API",
+      "description": "Claves de API emitidas a agentes de IA externos mediante vinculación. Si existe alguna clave, las solicitudes sin una clave válida se rechazan con 401. Si no existe ninguna clave, se permiten las solicitudes de localhost sin clave.",
+      "emptyList": "Aún no se ha emitido ninguna clave de API. Use «Integrar en la sesión del agente» en el chat para vincular un agente externo.",
+      "fetchError": "No se pudieron cargar las claves de la Session API",
+      "errorTitle": "No se pudieron cargar las claves de la Session API",
+      "errorHelp": "Es posible que el archivo de claves esté dañado o tenga permisos incorrectos. La verificación de claves permanece bloqueada (fail-closed) hasta que se resuelva el problema.",
+      "confirmRevoke": "Confirmar revocación",
+      "confirmRevokePrompt": "¿Revocar la clave de API de {{name}}? Elija Confirmar revocación o Cancelar.",
+      "deleteSuccess": "Se eliminó la clave de API de {{name}}",
+      "deleteError": "No se pudo eliminar la clave de API",
+      "active": "Activa",
+      "created": "Creada",
+      "pairingTitle": "Solicitud de vinculación de agente",
+      "pairingDescription": "El agente externo «{{name}}» solicita acceso a la Session API. Introduzca el código de 6 caracteres que se muestra en la pantalla del agente para autorizarlo.",
+      "pairingCodeLabel": "Código de vinculación (xxx-yyy)",
+      "pairingSuccess": "Vinculado correctamente con {{name}}",
+      "pairingRejected": "Solicitud de vinculación rechazada"
     }
   },
   "mcpServer": {
@@ -1238,7 +1279,6 @@
       "dockerRetryButton": "Reintentar inicio de sesión",
       "dockerWaitingForEngine": "Esperando al motor de Docker…",
       "dockerStillNotReady": "Docker aún no está listo. Espere a que el motor se inicie y vuelva a intentarlo.",
-      "dockerImageRequired": "Seleccione una imagen Docker antes de iniciar una sesión aislada con Docker.",
       "dockerCreating": "Creando sesión — preparando imagen Docker {{image}}…",
       "dockerNotInstalledTitle": "Docker no está instalado",
       "dockerNotInstalledDescription": "No se encontró la CLI de Docker en este equipo. Instale Docker Desktop o inicie esta sesión en modo host.",
@@ -1289,7 +1329,11 @@
       "renameCancelAria": "Cancelar edición del título de la sesión",
       "renameSuccess": "Título de la sesión actualizado",
       "renameError": "No se pudo actualizar el título de la sesión",
-      "renameEmptyError": "El título de la sesión no puede estar vacío"
+      "renameEmptyError": "El título de la sesión no puede estar vacío",
+      "integrateExternalAgentAria": "Integrar en la sesión del agente (copiar instrucciones)",
+      "integrateExternalAgentTooltip": "Integrar en la sesión del agente (copiar instrucciones)",
+      "integrationInstructionCopied": "Instrucciones de integración copiadas al portapapeles. Péguelas en su agente de IA externo.",
+      "integrationInstructionCopyFailed": "No se pudieron copiar las instrucciones de integración al portapapeles"
     },
     "sessionExport": {
       "menuAria": "Exportar sesión",
@@ -1311,6 +1355,7 @@
       "isolationTip": "El espacio de trabajo en Docker ejecuta comandos de forma segura en un contenedor en lugar del sistema anfitrión.",
       "useDockerContainer": "Usar contenedor Docker",
       "dockerImage": "Imagen Docker",
+      "defaultDockerImage": "Imagen predeterminada de LibrAgent",
       "dockerNotInstalledWarning": "Docker no está instalado o no está disponible en el PATH.",
       "dockerDaemonOfflineWarning": "El demonio de Docker no está en ejecución.",
       "dockerHealthHint": "Instale Docker Desktop, inicie el motor o vuelva al modo host.",
@@ -1378,6 +1423,11 @@
       "reasoningBudgetRetry": "El razonamiento duró demasiado. Reintentando con un turno nuevo…",
       "thinkingLoopRetry": "Se detectó un bucle de pensamiento. Reintentando con un turno nuevo…",
       "textLoopRetry": "Se detectó un bucle de texto repetido. Reintentando con un turno nuevo…"
+    },
+    "interactiveForm": {
+      "submitSuccess": "Respuesta enviada: el agente continúa.",
+      "submitNotReady": "La sesión aún no estaba lista. Vuelva a enviar en un momento.",
+      "duplicateSubmit": "Su respuesta ya se está enviando."
     },
     "statusBar": {
       "retryError": "Error al reintentar el mensaje",
@@ -1683,6 +1733,16 @@
       "imageAlt": "Salida de la herramienta",
       "unsupportedAudio": "Su navegador no admite el elemento de audio.",
       "unsupportedVideo": "Su navegador no admite el elemento de video."
+    },
+    "userPromptDialog": {
+      "titleSecret": "Se necesita una contraseña",
+      "titleQuestion": "Se necesita tu respuesta",
+      "waitingAnswer": "El agente espera tu respuesta.",
+      "submit": "Enviar",
+      "cancelFailed": "No se pudo cancelar el mensaje.",
+      "submitFailed": "No se pudo enviar tu respuesta.",
+      "other": "Otro",
+      "otherInputLabel": "{{question}} (Otro)"
     }
   },
   "scheduledTasks": {
@@ -2004,6 +2064,11 @@
         "title": "Ajustar el tamaño de la interfaz",
         "body": "Escala toda la interfaz en Ajustes → General o con los atajos Ctrl/Cmd +, - y 0 en cualquier momento.",
         "cta": "Abrir General"
+      },
+      "docsExport": {
+        "title": "Recibe respuestas en PDF, Word o PowerPoint",
+        "body": "Escribe @skill:docs y pide un informe, una propuesta o un acta: el agente guarda un archivo PDF, DOCX o PPTX listo para compartir.",
+        "cta": "Probar en el chat"
       }
     }
   }

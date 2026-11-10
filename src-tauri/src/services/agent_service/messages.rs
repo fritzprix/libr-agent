@@ -1,6 +1,6 @@
 use super::{AgentService, SendSessionMessageResponse};
 use crate::models::chat::{Message, MessageSource};
-use crate::repositories::SessionMetadata;
+use crate::repositories::{SessionMetadata, SessionStatus};
 
 impl AgentService {
     pub async fn send_message_to_session(
@@ -22,6 +22,14 @@ impl AgentService {
 
         let session = load_or_resume_session(manager, session_id).await?;
 
+        // Only an explicit user or external API message may lift a force-stop
+        // fence. Agent-tool messages (parent/child sessions), channel
+        // notifications, and scheduled callbacks are saved but never revive a
+        // terminated session (issue #2633 G2.2).
+        let may_reopen = source
+            .as_ref()
+            .is_some_and(MessageSource::may_reopen_terminated_session);
+
         let message = Message::new_user_message(
             session_id.to_string(),
             content,
@@ -29,6 +37,13 @@ impl AgentService {
             crate::agent::extract_assistant_id_from_session(&session),
         );
         let message_id = message.id.clone();
+
+        if may_reopen {
+            // Explicit user/API message: a previous force-stop fence ends here (issue #2633).
+            manager
+                .allow_explicit_message_after_terminate(session_id)
+                .await;
+        }
 
         let triggered = manager
             .inject_messages(session_id.to_string(), vec![message])
@@ -56,8 +71,12 @@ async fn load_or_resume_session(
         active.contains_key(session_id)
     };
 
-    if is_active {
+    if is_active && !needs_docker_setup_retry(&persisted_session) {
         Ok(persisted_session)
+    } else if is_active {
+        // A failed Docker setup leaves the session active in memory. `resume_session` runs the
+        // setup again; on failure it stores the cause as `statusReason` and returns it.
+        manager.resume_session(session_id).await
     } else {
         log::info!(
             "Auto-resuming inactive session before send_message_to_session: {}",
@@ -66,5 +85,41 @@ async fn load_or_resume_session(
         let resumed_session = manager.resume_session(session_id).await?;
         manager.init_session_with_messages(session_id).await?;
         Ok(resumed_session)
+    }
+}
+
+fn needs_docker_setup_retry(session: &SessionMetadata) -> bool {
+    session.workspace_isolation
+        == crate::models::workspace_isolation::WorkspaceIsolationMode::Docker
+        && session.status == SessionStatus::Error
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::workspace_isolation::WorkspaceIsolationMode;
+
+    fn session(isolation: WorkspaceIsolationMode, status: SessionStatus) -> SessionMetadata {
+        SessionMetadata {
+            workspace_isolation: isolation,
+            status,
+            ..SessionMetadata::test_fixture("session")
+        }
+    }
+
+    #[test]
+    fn only_a_docker_session_in_error_retries_the_setup() {
+        assert!(needs_docker_setup_retry(&session(
+            WorkspaceIsolationMode::Docker,
+            SessionStatus::Error
+        )));
+        assert!(!needs_docker_setup_retry(&session(
+            WorkspaceIsolationMode::Docker,
+            SessionStatus::Idle
+        )));
+        assert!(!needs_docker_setup_retry(&session(
+            WorkspaceIsolationMode::Host,
+            SessionStatus::Error
+        )));
     }
 }

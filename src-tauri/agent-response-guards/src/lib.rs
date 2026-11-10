@@ -20,7 +20,7 @@ pub struct ResponseAdmissionDecision {
 /// Kept for callers that need to identify these tools; admission no longer
 /// requires this allowlist — any non-empty tool_calls can restart Idle/Paused.
 pub fn is_internal_ui_callback_tool_name(tool_name: &str) -> bool {
-    matches!(tool_name, "ui__getUserAnswer" | "ui__resumeCircuitBreak")
+    tool_name == "ui__resumeCircuitBreak"
 }
 
 pub fn should_skip_expected_response_id_for_idle_tool_entry(
@@ -50,7 +50,7 @@ pub fn inspect_response_admission(
     }
 
     if status == GuardSessionStatus::Busy {
-        // Interactive form callbacks (getUserAnswer / resumeCircuitBreak) arrive as
+        // Interactive form callbacks (resumeCircuitBreak) arrive as
         // new assistant messages while the session may still be Busy settling the
         // turn that rendered the form. Their message ids never match the in-flight
         // LLM expected_response_id — skip that check so the answer is not dropped.
@@ -261,9 +261,7 @@ mod tests {
 
     #[test]
     fn internal_ui_callback_tool_names_are_recognized() {
-        assert!(is_internal_ui_callback_tool_name("ui__getUserAnswer"));
         assert!(is_internal_ui_callback_tool_name("ui__resumeCircuitBreak"));
-        assert!(!is_internal_ui_callback_tool_name("ui__presentInteractive"));
         assert!(!is_internal_ui_callback_tool_name("workspace__export"));
     }
 }

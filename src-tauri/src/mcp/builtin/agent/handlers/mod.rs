@@ -8,6 +8,8 @@ mod check_session_results;
 mod configs;
 mod delegation;
 mod enrichment;
+#[cfg(test)]
+mod missing_param_tests;
 mod orgs;
 mod sessions;
 mod shared;
