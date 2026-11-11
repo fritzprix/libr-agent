@@ -6,7 +6,8 @@ description: >
   plane. Use when asked to "E2E 검증", "verify this build E2E", "run the smoke matrix",
   "smoke test LibrAgent", or when executing the `[auto]` items of an `auto:e2e` ticket
   checklist with per-item pass/fail evidence. One invocation runs
-  health → create session → message → control-plane check → transcript check → cleanup
+  health → create session → control-plane probe → message → poll (driving pending
+  approvals/prompts) → transcript check → cleanup
   and prints a pass/fail table. No new server code; the skill never starts or stops
   LibrAgent. Not for spawning a session alone (libr-delegate), builtin-tool improvement
   loops (libr-tool-e2e-harness-loop), Harbor benchmarks (bench), or diff-driven
@@ -31,8 +32,8 @@ this skill is the knowledge and the pass/fail discipline:
 | Check | How | Meaning |
 | --- | --- | --- |
 | Health gate | `GET /api/health` → `status: ok` | Proceed. If unreachable, abort: the app is not up; the harness owns the app lifecycle, never start it here. |
-| Control plane | `GET /api/e2e-control/status` with header `X-LibrAgent-E2E-Control: <cap>`, where `<cap>` is the content of `e2e_control.cap` under `LIBRAGENT_DATA_DIR` | `200` = debug build with `LIBRAGENT_E2E_CONTROL=1` and an explicit `LIBRAGENT_DATA_DIR`. `404`/`405` = absent (release build, debug without opt-in, or wrong/missing header). |
-| Fallback | Control plane absent → run with `executionMode: yolo` (standard tools) or `unsafe` (also hard-approval tools) | Report `control plane absent — yolo/unsafe fallback`, do not fail the run. |
+| Control plane | `GET /api/e2e-control/status` with header `X-LibrAgent-E2E-Control: <cap>`, where `<cap>` is the content of `e2e_control.cap` under `LIBRAGENT_DATA_DIR` | `200` = debug build with `LIBRAGENT_E2E_CONTROL=1` and an explicit `LIBRAGENT_DATA_DIR`. `403` = plane enabled but the header is missing/wrong — re-read `e2e_control.cap` and check the data dir you are reading it from. `404`/`405` = absent (release build or debug without opt-in). |
+| Fallback | Control plane absent → run with `executionMode: yolo` (default; standard tools) or `unsafe` (also hard-approval tools; scratch workspace only) | Report `control plane absent — yolo/unsafe fallback`, do not fail the run. |
 
 - The control plane is debug-only and loopback-only. Never expect it on a release build.
 - `Authorization: Bearer <key>` on the Session API is configuration-dependent; send it only when the user provides an API key.
@@ -91,7 +92,8 @@ node .agents/skills/libr-e2e-verify/scripts/smoke_matrix.cjs --assistant <config
   [--execution-mode yolo|unsafe] [--timeout 180] [--keep-session]
 ```
 
-Runs health → create → message → poll → control-plane check (reads interactions; approves
-any pending tool approval) → transcript check → terminate + delete, and prints one
-pass/fail table. Exit `0` only when every step passes; a release build passes the
-control-plane step as `absent (yolo/unsafe fallback)`, not as a failure.
+Runs health → create → control-plane probe → message → poll (driving pending tool
+approvals and user prompts through the control plane while the session is busy) →
+transcript check → terminate + delete, and prints one pass/fail table. Exit `0` only
+when every step passes; a release build passes the control-plane step as
+`absent (yolo/unsafe fallback)`, not as a failure.
