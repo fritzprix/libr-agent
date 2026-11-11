@@ -57,6 +57,7 @@
     "diagnose": "echo 'System diagnostic...' && ldd --version && echo 'WebKit packages:' && dpkg -l | grep webkit",
     "dead-code": "unimported",
     "dead-code:init": "unimported --init",
+    "cleanup:branches": "node scripts/cleanup-merged-branches.cjs",
     "rust:fmt": "cd src-tauri && cargo fmt",
     "rust:fmt:check": "cd src-tauri && cargo fmt --check",
     "rust:lock:check": "node scripts/check-cargo-lock-version.cjs",
