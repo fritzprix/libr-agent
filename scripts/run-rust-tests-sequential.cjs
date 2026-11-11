@@ -96,11 +96,27 @@ function runCargoTest(cargoArgs) {
   };
 }
 
-function runCargoTestWithRetries(cargoArgs, targetLabel) {
-  const maxAttempts = process.platform === 'win32' ? 5 : 1;
+/** Windows only: Defender may lock a freshly linked test exe for a few seconds. */
+const MAX_ATTEMPTS_WINDOWS = 5;
+/** Linear backoff base: attempt N waits N * RETRY_BASE_DELAY_MS before retry N+1. */
+const RETRY_BASE_DELAY_MS = 2000;
+
+function maxAttemptsFor(platform) {
+  return platform === 'win32' ? MAX_ATTEMPTS_WINDOWS : 1;
+}
+
+/**
+ * Retry a transient Windows exec-lock failure with linear backoff.
+ * `deps` exists for tests (inject `runCargoTest`/`sleepMs`/`maxAttempts`);
+ * the CLI path always uses the defaults.
+ */
+function runCargoTestWithRetries(cargoArgs, targetLabel, deps = {}) {
+  const run = deps.runCargoTest ?? runCargoTest;
+  const sleep = deps.sleepMs ?? sleepMs;
+  const maxAttempts = deps.maxAttempts ?? maxAttemptsFor(process.platform);
   let last = { status: 1, output: '' };
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    last = runCargoTest(cargoArgs);
+    last = run(cargoArgs);
     if (last.status === 0) {
       return 0;
     }
@@ -109,11 +125,11 @@ function runCargoTestWithRetries(cargoArgs, targetLabel) {
     if (!canRetry) {
       return last.status;
     }
-    const delayMs = attempt * 2000;
+    const delayMs = attempt * RETRY_BASE_DELAY_MS;
     console.error(
       `[rust-test-sequential] Transient Windows exec lock for ${targetLabel}; retry ${attempt}/${maxAttempts - 1} after ${delayMs / 1000}s...`,
     );
-    sleepMs(delayMs);
+    sleep(delayMs);
   }
   return last.status;
 }
@@ -173,4 +189,14 @@ function main() {
   process.exit(0);
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = {
+  isTransientWindowsExecFailure,
+  maxAttemptsFor,
+  runCargoTestWithRetries,
+  MAX_ATTEMPTS_WINDOWS,
+  RETRY_BASE_DELAY_MS,
+};
