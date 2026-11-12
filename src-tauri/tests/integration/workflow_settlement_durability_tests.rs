@@ -702,6 +702,11 @@ async fn settle_session_and_finalize_error_returns_error_when_workflow_error_emi
 // replacing the old source-text check. The `integration_tests` binary is
 // `#![cfg(not(windows))]`, so the Unix process probes below are always live.
 
+// Real OS process startup/teardown waits under a saturated integration test
+// binary. 15 s flaked on shared CI runners under scheduling starvation
+// (issue #2713 G3.1); a genuinely stuck probe still fails, just later.
+const OS_PROCESS_GRACE: Duration = Duration::from_secs(90);
+
 fn marker_pid_file(session_id: &str) -> PathBuf {
     std::env::temp_dir().join(format!("issue2633-idle-{}.pid", session_id))
 }
@@ -717,7 +722,7 @@ fn pid_alive(pid: u32) -> bool {
 /// Poll for death rather than checking liveness inline: `kill -0` still
 /// succeeds on a killed-but-not-yet-reaped zombie (issue #2652 precedent).
 async fn wait_for_pid_death(pid: u32) -> bool {
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + OS_PROCESS_GRACE;
     while Instant::now() < deadline {
         if !pid_alive(pid) {
             return true;
@@ -747,7 +752,7 @@ async fn spawn_real_process(harness: &SettlementHarness) -> u32 {
         .await
         .expect("workspace__spawnProcess must succeed on a live session");
 
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + OS_PROCESS_GRACE;
     loop {
         if let Ok(content) = std::fs::read_to_string(&pid_file) {
             if let Ok(pid) = content.trim().parse::<u32>() {
