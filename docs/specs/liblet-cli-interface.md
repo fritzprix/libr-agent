@@ -1,6 +1,6 @@
 # liblet CLI interface: benchmark and proposal
 
-Status: proposal for #2699 (part of epic #2698). Nothing here is implemented. The TUI (#2702) and headless (#2703) tickets should build against section 3 once the open decisions in section 5 are answered.
+Status: proposal for #2699 (part of epic #2698). Nothing here is implemented. Section 5 records the maintainer decisions of 2026-11-12; section 3 already reflects them. The TUI (#2702) and headless (#2703) tickets should build against section 3.
 
 The invocation forms used in the epic discussion (`liblet`, `liblet "…"`, `liblet --prompt "…"`, `--hook`) were examples of intent. This document is the contract proposal; those examples are not.
 
@@ -96,56 +96,75 @@ No tool documents an exit code for "waiting on approval", because none of them w
 - **Short or casual skip flags (`-y`, `--yolo`).** The epic forbids defaulting to approval skipping, and a one-letter flag is easy to add by habit. LibrAgent already has named execution modes; reuse them.
 - **Undocumented exit codes (Codex CLI, Aider).** Automation cannot branch on them. liblet's codes must be part of the documented interface.
 - **A large flag surface (Claude Code has over 60 options).** Start with the flags below and add on demand.
-- **Per-tool-call hooks.** Claude Code and Gemini CLI both have them. The epic lists them as a later item, so phase 1 has one end-or-block callback only.
-- **Text-only output (Aider).** A run with no machine-readable result cannot report a session id for resume.
+- **Hooks and callbacks.** Claude Code and Gemini CLI both have them. liblet has none: a caller gets the final result, or the full trace, from the process's standard output (decision 5).
+- **Text-only output (Aider).** A run with no machine-readable result cannot tell a script why it stopped.
 
 ## 3. Proposed liblet interface
 
-liblet is a client of the Session API (`docs/api/http_api.md`). Every behavior below maps to that API or names the gap in section 4.
+### 3.1 Shape
 
-### 3.1 Invocation
+- `liblet` is its own binary. The build produces two artifacts: the GUI app, and `liblet`, a TUI that also supports headless runs. There are no subcommands.
+- The GUI and the TUI are both frontends of one shared backend and see the same sessions. A session opened in one can be resumed in the other.
+- A headless run uses an **ephemeral session**, separate from the shared sessions: it is created for that run, it is not listed in the GUI or the TUI, it cannot be resumed, and it is removed when the process exits.
+- The Session API (`docs/api/http_api.md`) is the contract between the shared backend and its frontends. It is not a side door for an extra client attaching to the GUI.
+- Several apps may run on one device. Nothing may enforce "one app instance per device"; the only single-owner rule is that a live session has exactly one executor.
 
-| Command                          | Behavior                                                                             | Convention                                             |
-| -------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------ |
-| `liblet`                         | Open the TUI on a new session in the current directory                               | All four tools                                         |
-| `liblet "prompt"`                | Open the TUI and send `prompt` as the first message                                  | Claude Code, Codex CLI, Gemini CLI                     |
-| `liblet -p "prompt"`             | Headless: run one prompt to completion, print the result, exit. Long form `--prompt` | Gemini CLI (`-p` / `--prompt`); Claude Code short form |
-| `cat file \| liblet -p "prompt"` | Headless: piped stdin is appended to the prompt as context                           | Claude Code, Codex CLI, Gemini CLI                     |
-| `liblet -p -`                    | Headless: read the whole prompt from stdin                                           | Codex CLI                                              |
-| `liblet sessions`                | List sessions (id, name, status, workspace path, last message time), then exit       | Gemini CLI `--list-sessions`, as a subcommand          |
+### 3.2 Invocation
 
-Where liblet differs: without `-p`, liblet always wants a terminal. If stdin or stdout is not a TTY and `-p` is absent, liblet prints a usage error and exits with code 2. It does not switch to headless on its own (see 2.7).
+| Command                          | Terminal                   | Behavior                                                                                       | Convention                                             |
+| -------------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `liblet`                         | stdin and stdout are a TTY | Open the TUI on a new session in the current directory                                         | All four tools                                         |
+| `liblet "prompt"`                | stdin and stdout are a TTY | Open the TUI and send `prompt` as the first message                                            | Claude Code, Codex CLI, Gemini CLI                     |
+| `liblet -p "prompt"`             | Any                        | Headless: run one prompt in an ephemeral session, print the result, exit. Long form `--prompt` | Gemini CLI (`-p` / `--prompt`); Claude Code short form |
+| `cat file \| liblet -p "prompt"` | Any                        | Headless: piped stdin is appended to the prompt as context                                     | Claude Code, Codex CLI, Gemini CLI                     |
+| `echo "prompt" \| liblet`        | stdin is a pipe            | Headless: the piped text is the prompt                                                         | Codex CLI (`codex exec` with no prompt reads stdin)    |
+| `liblet --list-sessions`         | Any                        | Print the shared sessions (id, name, status, workspace path, last message time), then exit     | Gemini CLI                                             |
 
-### 3.2 Flags
+Mode selection is explicit and has exactly three outcomes:
 
-Common to the TUI and headless mode:
+1. **Headless** when `-p` is given, or when a non-empty prompt arrives on piped stdin.
+2. **TUI** when neither holds and both stdin and stdout are a terminal.
+3. **Usage error** (exit code 2) otherwise: for example no terminal and no prompt, an empty pipe, or `liblet "prompt"` with stdout redirected. A positional prompt never selects headless mode.
 
-| Flag                                    | Meaning                                                                                                                                       |
-| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `-c`, `--continue`                      | Resume the most recent session whose workspace is the current directory                                                                       |
-| `-r`, `--resume <session-id>`           | Resume that session from any directory. The session keeps its own workspace path. In a TTY with no id, show a picker                          |
-| `-C`, `--cd <dir>`                      | Workspace for a new session. Default: the current directory. Rejected together with `--continue` or `--resume`                                |
-| `--assistant <id>`                      | Assistant for a new session                                                                                                                   |
-| `--model <name>`, `--provider <name>`   | Model for a new session. Default: the profile's preferred model                                                                               |
-| `--name <name>`                         | Display name for a new session                                                                                                                |
-| `--isolation host\|docker`              | Workspace isolation for a new session                                                                                                         |
-| `--execution-mode normal\|yolo\|unsafe` | Execution mode. Default `normal`. This is the only way to skip approvals, it has no short form, and it uses the existing LibrAgent mode names |
-| `--version`, `--help`                   | Standard                                                                                                                                      |
+liblet does not switch to headless because a terminal is missing (see 2.7). A pipe selects headless only because it carries the prompt.
 
-Headless only (`-p`):
+### 3.3 Flags
+
+Common to the TUI and headless mode (they describe the new session):
+
+| Flag                                    | Meaning                                                                                                                                                               |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-C`, `--cd <dir>`                      | Workspace for the new session. Default: the current directory                                                                                                         |
+| `--assistant <id>`                      | Assistant for the new session                                                                                                                                         |
+| `--model <name>`, `--provider <name>`   | Model for the new session. Default: the profile's preferred model                                                                                                     |
+| `--isolation host\|docker`              | Workspace isolation for the new session                                                                                                                               |
+| `--execution-mode normal\|yolo\|unsafe` | Execution mode the session starts with. Default `normal`. This is the only way to skip approvals, it has no short form, and it uses the existing LibrAgent mode names |
+| `--version`, `--help`                   | Standard                                                                                                                                                              |
+
+TUI only:
+
+| Flag                          | Meaning                                                                                                   |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `-c`, `--continue`            | Resume the most recent shared session whose workspace is the current directory                            |
+| `-r`, `--resume [session-id]` | Resume that shared session from any directory; it keeps its own workspace path. With no id, show a picker |
+| `--name <name>`               | Display name for a new session                                                                            |
+
+`--continue` and `--resume` are rejected with `-C`, and are a usage error in headless mode, because a headless session is ephemeral.
+
+Headless only:
 
 | Flag                                      | Meaning                                                                |
 | ----------------------------------------- | ---------------------------------------------------------------------- |
-| `--output-format text\|json\|stream-json` | Output format. Default `text`                                          |
-| `--on-approval deny\|wait\|fail`          | What to do when a tool call needs approval. Default `deny` (see 3.4)   |
-| `--timeout <seconds>`                     | Stop waiting after this long and exit with code 124. Default: no limit |
-| `--hook <command>`                        | End-or-block callback (see 3.6)                                        |
+| `--output-format text\|json\|stream-json` | What standard output carries. Default `text` (see 3.4)                 |
+| `--timeout <seconds>`                     | Stop the run after this long and exit with code 124. Default: no limit |
 
-Profile, data directory, and worker isolation flags belong to instance management (#2701) and are not defined here. liblet honors `LIBRAGENT_DATA_DIR` and the Session API key variables as the runtime does today.
+There is no `--hook`, no `--on-approval`, and no per-tool allowlist. Profile, data directory, and worker isolation flags belong to instance management (#2701) and are not defined here.
 
-### 3.3 Output
+### 3.4 Output
 
-- `text` (default): stdout gets only the final assistant message. Progress, tool activity, and warnings go to stderr. This follows Codex CLI, so `liblet -p "…" > out.md` is clean.
+The final result always goes to the process's standard output, the way a parent session receives a sub-session's final result. How much else is printed is fixed when the run starts, by `--output-format`:
+
+- `text` (default): stdout gets only the final assistant message. Progress and warnings go to stderr, so `liblet -p "…" > out.md` is clean. This follows Codex CLI.
 - `json`: stdout gets one JSON object when the run ends.
 
   ```json
@@ -155,101 +174,96 @@ Profile, data directory, and worker isolation flags belong to instance managemen
     "reason": "approval | question | null",
     "result": "final assistant message (string, may be empty)",
     "error": "message (present when status is error)",
-    "sessionId": "a1b2c3d4e5",
     "workspacePath": "/abs/path",
     "executionMode": "normal",
-    "deniedApprovals": [
-      { "toolCallId": "…", "toolName": "…", "approvalKind": "standard | hard" }
+    "pendingApprovals": [
+      {
+        "toolCallId": "…",
+        "toolName": "…",
+        "reason": "…",
+        "commandPreview": "…",
+        "approvalKind": "standard | hard"
+      }
     ],
-    "pendingApprovals": [],
     "exitCode": 0
   }
   ```
 
-  `deniedApprovals` and `pendingApprovals` reuse the entry shape of `pendingApprovals` in `GET /api/sessions/:id`. Field names are camelCase to match the Session API; Claude Code and Gemini CLI use snake_case.
+  `pendingApprovals` reuses the entry shape of `GET /api/sessions/:id` and is non-empty only when `reason` is `approval`. Field names are camelCase to match the Session API; Claude Code and Gemini CLI use snake_case. There is no session id, because the session does not outlive the run.
 
-- `stream-json`: newline-delimited JSON, one event per line. Event `type` values: `init` (session id, workspace, model), `message` (user and assistant text), `tool_use`, `tool_result`, `approval_request`, `question`, `error` (non-fatal), and a final `result` with the same object as `json`. The first six names follow Gemini CLI; `approval_request` and `question` are added because LibrAgent sessions can block on them.
+- `stream-json`: the **full trace**, as newline-delimited JSON, one event per line. Event `type` values: `init` (workspace, model, execution mode), `message` (user and assistant text), `tool_use`, `tool_result`, `approval_request`, `question`, `error` (non-fatal), and a final `result` with the same object as `json`. `init`, `message`, `tool_use`, `tool_result`, `error`, and `result` follow Gemini CLI; `approval_request` and `question` are added because a LibrAgent turn can stop on them.
 
-In every format, `sessionId` is reported so a script can continue with `liblet -p "…" --resume <id>`.
+### 3.5 Approvals and user questions in headless mode
 
-### 3.4 Approvals and user questions in headless mode
+Approvals follow the configuration the run started with: the execution mode from `--execution-mode`, default `normal`. Nothing is auto-approved beyond what that mode already allows, and the mode cannot be raised during the run.
 
-The default execution mode is `normal`, so standard and hard approvals are both required, exactly as in the GUI. Nothing is auto-approved unless the caller passes `--execution-mode yolo` or `unsafe`.
+When a tool call needs an approval that the starting mode does not cover, the run **stops**. liblet prints the result with `status: "blocked"`, `reason: "approval"`, and the pending call in `pendingApprovals`, then exits with code 3. It does not deny-and-continue and it does not wait. The caller decides whether to rerun with a higher `--execution-mode`.
 
-When a tool call needs approval (`pendingApprovals` is non-empty):
+When the agent asks the user a question (`ui__askUser`) or requests a secret, nobody can answer. The run stops the same way with `reason: "question"` and exit code 4.
 
-| `--on-approval`  | Behavior                                                                                                                                                                                                      |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `deny` (default) | liblet answers `deny` through `POST /api/sessions/:id/channel/permission`. The agent continues and can work around the denial. Each denial is listed in `deniedApprovals`. Follows Claude Code and Gemini CLI |
-| `wait`           | liblet leaves the approval pending and fires the `blocked` callback once. A person in the GUI, or another client, can answer. The wait is bounded by `--timeout`                                              |
-| `fail`           | liblet leaves the approval pending, stops waiting, and exits with code 3. The session stays resumable                                                                                                         |
+Where this differs from the benchmark: Claude Code and Gemini CLI deny the call and let the agent continue. liblet stops, so a run never reports success after working around a refused action.
 
-When the agent asks the user a question (`ui__askUser`) or requests a secret, nobody can answer in headless mode. liblet fires the `blocked` callback with `reason: "question"`, leaves the session as it is, and exits with code 4. `--on-approval wait` does not change this.
-
-### 3.5 Exit codes
+### 3.6 Exit codes
 
 | Code  | Meaning                                                                                         | Convention                                   |
 | ----- | ----------------------------------------------------------------------------------------------- | -------------------------------------------- |
-| `0`   | The run completed. Denied approvals do not change this; they are in `deniedApprovals`           | All tools; Claude Code for denials           |
-| `1`   | The run failed: session status `error`, the runtime could not be reached, or an API call failed | Claude Code, Gemini CLI                      |
-| `2`   | Usage error: bad flag, bad combination, or no TTY without `-p`. No session is created           | Common shell convention (Gemini CLI uses 42) |
-| `3`   | Blocked on a tool approval (`--on-approval fail`)                                               | liblet-specific; no tool documents one       |
-| `4`   | Blocked on a user question or secret request                                                    | liblet-specific                              |
-| `124` | `--timeout` reached. The session keeps running in the runtime                                   | GNU `timeout`                                |
-| `130` | Interrupted by SIGINT. liblet first asks the runtime to terminate the session's workflow        | Shell convention (128 + signal)              |
-| `143` | Terminated by SIGTERM, same cleanup                                                             | Claude Code                                  |
+| `0`   | The run completed                                                                               | All tools                                    |
+| `1`   | The run failed: session status `error`, the backend could not be reached, or an API call failed | Claude Code, Gemini CLI                      |
+| `2`   | Usage error: bad flag, bad combination, or no way to pick a mode (3.2). No session is created   | Common shell convention (Gemini CLI uses 42) |
+| `3`   | Stopped: a tool call needed an approval the starting mode does not cover                        | liblet-specific; no tool documents one       |
+| `4`   | Stopped: the agent asked a user question or requested a secret                                  | liblet-specific                              |
+| `124` | `--timeout` reached                                                                             | GNU `timeout`                                |
+| `130` | Interrupted by SIGINT                                                                           | Shell convention (128 + signal)              |
+| `143` | Terminated by SIGTERM                                                                           | Claude Code                                  |
 
-Codes 3, 4, and 124 always mean "the session still exists and can be resumed". The `status` field in `json` output carries the same information for callers that do not read exit codes.
-
-### 3.6 End-or-block callback
-
-`--hook <command>` runs `<command>` through the platform shell when the headless run ends or blocks. It is one callback for the whole run, not a per-tool hook.
-
-- **When:** once with `event: "end"` just before liblet exits (any exit code except 2), and once per block with `event: "blocked"` (approval under `--on-approval wait` or `fail`, or a user question).
-- **Input:** one JSON object on the command's stdin, the convention shared by Claude Code and Gemini CLI.
-
-  ```json
-  {
-    "event": "end | blocked",
-    "reason": "approval | question | null",
-    "status": "completed | error | blocked | timeout | interrupted",
-    "exitCode": 0,
-    "sessionId": "a1b2c3d4e5",
-    "cwd": "/abs/path",
-    "result": "final assistant message (end only)",
-    "pendingApprovals": []
-  }
-  ```
-
-- **Output:** observability only in phase 1. The command's stdout is ignored, and it cannot approve, deny, or answer anything. A non-zero exit or a run longer than 60 seconds prints a warning on stderr and does not change liblet's exit code. This is the Gemini CLI `Notification` model. Letting a callback decide approvals is the per-tool hook the epic defers.
-- A callback that wants to act on a block can call the Session API itself with `sessionId`, for example the permission endpoint.
+On every exit, liblet terminates the run's workflow and removes the ephemeral session. The `status` field in `json` and `stream-json` output carries the same information for callers that do not read exit codes.
 
 ### 3.7 TUI requirements that follow from the benchmark
 
 These are inputs to #2702, not a layout.
 
 - A positional prompt starts the TUI with that prompt sent; it never selects headless mode.
-- `--continue` and `--resume` behave the same in the TUI and in headless mode.
+- The TUI lists and resumes the same sessions as the GUI, and a session it creates appears in the GUI.
 - An approval request is shown inline with the tool name, reason, and command preview from `pendingApprovals`, and offers allow, deny, and raising the execution mode. Raising the mode is an explicit action, never a default.
 - A user question or secret request is answered inline.
 - The first Ctrl+C interrupts the running turn; exiting the TUI does not terminate the session unless the user asks.
 
-## 4. Session API gaps this proposal depends on
+## 4. What the backend contract still lacks
 
-Checked against `src-tauri/src/server/routes.rs` on `dev/0.9.x` at `dc94e17c3`.
+Checked against `src-tauri/src/server/routes.rs` on `dev/0.9.x` at `dc94e17c3`. Under decision 4 these are requirements on the backend–frontend contract; the TUI cannot be a full frontend without them.
 
-1. **No session list endpoint.** `--continue`, `liblet sessions`, and the resume picker need to list sessions with their workspace path and last message time.
-2. **No streaming endpoint.** The API has `GET /api/sessions/:id` and `GET /api/sessions/:id/messages` only. `stream-json` and TUI streaming need either a server-sent event stream or polling; polling is enough for `text` and `json`.
-3. **No release-build endpoint for user questions.** Seeing and answering a pending `ui__askUser` prompt exists only in the debug-only E2E control plane (`src-tauri/src/server/e2e_control`). The TUI needs a release endpoint to answer; headless mode needs at least to see that a question is pending to return exit code 4.
+1. **No session list.** `--continue`, `--list-sessions`, and the resume picker need the shared sessions with their workspace path and last message time.
+2. **No streaming.** The API has `GET /api/sessions/:id` and `GET /api/sessions/:id/messages` only. TUI streaming and the `stream-json` trace need an event stream; polling is enough only for `text` and `json`.
+3. **No release-build route for user questions.** Seeing and answering a pending `ui__askUser` prompt exists only in the debug-only E2E control plane (`src-tauri/src/server/e2e_control`). This item is already in #2700's work list.
+4. **No ephemeral session.** Sessions created through the API today are persisted and visible to every frontend. Headless mode needs a session that is hidden from the shared list and removed when its run ends.
 
-These are not part of #2699. They should be assigned to #2700 or to new sub-issues before #2702 and #2703 start.
+Items 1, 2, and 4 have no owner issue yet.
 
-## 5. Open decisions for a maintainer
+## 5. Maintainer decisions (2026-11-12)
 
-Each item has a recommended answer, used in section 3. They are listed here so nothing is decided silently.
+The first draft listed five open decisions. They are settled as follows.
 
-1. **Headless flag spelling.** Recommended: `-p` / `--prompt` (Gemini CLI spelling, Claude Code short form). Alternative: a subcommand, `liblet exec "prompt"`, as in Codex CLI.
-2. **Default for `--on-approval`.** Recommended: `deny`, the documented default of Claude Code and Gemini CLI. Alternative: `fail`, which never lets a run finish "successfully" after a denial, at the cost of more blocked runs.
-3. **No TTY without `-p`.** Recommended: usage error, exit code 2. Alternative: switch to headless automatically, as Gemini CLI does.
-4. **Owner of the Session API gaps in section 4.** Recommended: add them to #2700's scope or open sub-issues under #2698.
-5. **`--hook` in the TUI.** Recommended: headless only in phase 1. Alternative: also fire `end` when a TUI session exits.
+1. **Headless flag.** `-p` / `--prompt`, the familiar spelling. No subcommand is needed.
+2. **Approvals in headless mode.** Approvals follow the configuration the run started with. If a further approval is needed, the run stops (fail). Approvals are never skipped by default.
+3. **Mode selection.** No automatic headless. The TUI runs only when there is a terminal. Headless runs only with `-p` or when the prompt is piped in. With neither, liblet exits with a usage error.
+4. **Architecture.** liblet is an independent binary. The build produces one GUI and one TUI that supports headless. The TUI and the GUI share the backend and the sessions; headless uses a separate, ephemeral session. A single-instance lock that would block running several apps on one device is removed; only the executor of a live session is single. The Session API is needed only as the contract between the shared backend and its frontends, not as a way for an extra client to attach to the GUI.
+5. **Callbacks and output.** `--hook` is not supported. The final result goes to the process's standard output, as when a sub-session returns its final result. A full trace must be available according to the initial configuration.
+
+### 5.1 How section 3 reads those decisions
+
+These are this document's interpretations. Correct them here if they are wrong.
+
+- **"No subcommand" is applied to the whole CLI.** Session listing is the flag `--list-sessions`, not `liblet sessions`.
+- **"Ephemeral" is read as: not listed, not resumable, removed at exit.** So headless output carries no session id, and `--continue` / `--resume` are TUI-only.
+- **"Initial configuration" is read as the flags given at start.** `--execution-mode` fixes approvals for the run, and `--output-format stream-json` is the full trace.
+- **A user question stops a headless run the same way an approval does** (exit code 4). Decision 2 names approvals only.
+- **`--timeout` is kept.** It was not part of the five decisions.
+
+### 5.2 Effect on other sub-issues
+
+This document does not change them; a maintainer should.
+
+- **Epic #2698** says liblet attaches to a running instance or starts a hidden one, and that the CLI is "a separate binary that wraps the Session API". Decision 4 replaces that picture with one shared backend and two frontends.
+- **#2700** plans a data-dir lock so that a second runtime "must attach (or fail)". No single-instance lock exists in the code today (a search of `src-tauri` for `single_instance` and `single-instance` finds nothing), so decision 4's "remove the single-instance lock" bears on that planned lock: the single-owner rule moves from the data directory to the live session's executor.
+- **#2701** (attach on the same profile, isolate workers) is written around attach. It needs to be restated for a shared backend and for ephemeral headless sessions.
+- **#2703** (headless) should drop any end-or-block callback and session resume.
