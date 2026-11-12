@@ -52,6 +52,25 @@ pub fn get_routes(
         .and(json_body())
         .and_then(handlers::create_session);
 
+    // GET /api/sessions — list sessions, most recent activity first
+    let list_sessions = warp::get()
+        .and(warp::path("api"))
+        .and(warp::path("sessions"))
+        .and(warp::path::end())
+        .and(warp::query())
+        .and(agent_manager.clone())
+        .and_then(handlers::list_sessions);
+
+    // GET /api/sessions/:id/events — server-sent status and message events
+    let get_session_events = warp::get()
+        .and(warp::path("api"))
+        .and(warp::path("sessions"))
+        .and(warp::path::param())
+        .and(warp::path("events"))
+        .and(warp::path::end())
+        .and(agent_manager.clone())
+        .and_then(handlers::get_session_events);
+
     // GET /api/sessions/:id
     let get_session = warp::get()
         .and(warp::path("api"))
@@ -151,6 +170,20 @@ pub fn get_routes(
         .and(agent_manager.clone())
         .and(json_body())
         .and_then(handlers::respond_channel_permission);
+
+    // POST /api/sessions/:id/channel/prompt — answer/cancel the user prompt
+    // (ui__askUser / secret) this session is waiting on. The waiting prompt
+    // (requestId + kind) is visible on GET /api/sessions/:id.
+    let respond_channel_prompt = warp::post()
+        .and(warp::path("api"))
+        .and(warp::path("sessions"))
+        .and(warp::path::param())
+        .and(warp::path("channel"))
+        .and(warp::path("prompt"))
+        .and(warp::path::end())
+        .and(agent_manager.clone())
+        .and(json_body())
+        .and_then(handlers::respond_channel_prompt);
 
     // POST /api/sessions/:id/resume
     let resume_session = warp::post()
@@ -282,7 +315,9 @@ pub fn get_routes(
     // routes overflows the 2 MiB worker stack.
     let api = create_session
         .boxed()
+        .or(list_sessions.boxed())
         .or(get_session.boxed())
+        .or(get_session_events.boxed())
         .or(patch_session.boxed())
         .or(get_compact_context.boxed())
         .or(get_messages.boxed())
@@ -290,6 +325,7 @@ pub fn get_routes(
         .or(inject_channel_message_auto.boxed())
         .or(inject_channel_message.boxed())
         .or(respond_channel_permission.boxed())
+        .or(respond_channel_prompt.boxed())
         .or(resume_session.boxed())
         .or(terminate_session.boxed())
         .or(delete_session.boxed())

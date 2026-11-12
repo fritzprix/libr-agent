@@ -286,6 +286,14 @@ async fn clear_after_terminate_still_rejects_inflight_dispatch_by_generation() {
 // only the spawn command string differs (bash on unix, the PowerShell wrapper
 // on Windows), while liveness uses the same production check as teardown.
 
+// These probes wait on real OS process startup and teardown under the
+// fully-parallel lib suite (1100+ tests on shared CI runners). A fixed 15 s
+// grace proved too tight under scheduling/process-table starvation spikes
+// (issue #2713 G3.1: intermittent "never reported its pid" panics while the
+// same test passes in isolation in ~0.2 s). Generous deadlines keep the
+// assertion honest — a genuinely stuck spawn still fails — without flaking.
+const OS_PROCESS_GRACE: Duration = Duration::from_secs(90);
+
 /// The child writes its own pid here. On unix the shell `exec`s the final
 /// command, so a command-line marker (`pgrep -f`) would be exec'd away; the
 /// pid file survives and identifies exactly the process teardown must kill.
@@ -301,7 +309,7 @@ pub(super) fn pid_alive(pid: u32) -> bool {
 }
 
 pub(super) async fn wait_for_pid_death(pid: u32) -> bool {
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + OS_PROCESS_GRACE;
     while Instant::now() < deadline {
         if !pid_alive(pid) {
             return true;
@@ -344,7 +352,7 @@ pub(super) async fn spawn_real_process(manager: &MCPServiceProxyManager, session
     .await
     .expect("spawnProcess should succeed");
 
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + OS_PROCESS_GRACE;
     loop {
         if let Ok(content) = std::fs::read_to_string(&pid_file) {
             if let Ok(pid) = content.trim().parse::<u32>() {
@@ -501,7 +509,7 @@ async fn terminate_kills_spawn_process_descendants_not_only_the_wrapper() {
     .expect("spawnProcess should succeed");
 
     let (wrapper_pid, child_pid) = {
-        let deadline = Instant::now() + Duration::from_secs(15);
+        let deadline = Instant::now() + OS_PROCESS_GRACE;
         loop {
             if let Ok(content) = std::fs::read_to_string(&pids_file) {
                 let mut parts = content.split_whitespace();

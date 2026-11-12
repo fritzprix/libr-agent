@@ -233,24 +233,71 @@ Write-Host "Available tools: python3, typescript/deno, shell commands"
     }
 
     pub fn get_logs_dir(&self) -> PathBuf {
-        #[cfg(target_os = "windows")]
-        {
-            if let Some(local_data) = dirs::data_local_dir() {
-                return local_data.join("com.fritzprix.libragent").join("logs");
-            }
-        }
+        logs_dir_for(
+            std::env::var_os("LIBRAGENT_DATA_DIR").is_some_and(|value| !value.is_empty()),
+            &self.base_data_dir,
+        )
+    }
+}
 
-        #[cfg(target_os = "macos")]
-        {
-            if let Some(home) = dirs::home_dir() {
-                return home
-                    .join("Library")
-                    .join("Logs")
-                    .join("com.fritzprix.libragent");
-            }
-        }
+/// Resolve the logs directory.
+///
+/// With an explicit `LIBRAGENT_DATA_DIR` override, logs live inside the
+/// overridden dir on **every** platform, so an isolated instance's logs stay
+/// isolated. The platform-specific defaults below are fixed per-app
+/// (Windows AppData\Local, macOS ~/Library/Logs) and would otherwise mix the
+/// isolated instance's logs into the primary instance's.
+fn logs_dir_for(data_dir_override_set: bool, base_data_dir: &Path) -> PathBuf {
+    if data_dir_override_set {
+        return base_data_dir.join("logs");
+    }
 
-        // Fallback for Linux or if platform specific dirs fail
-        self.base_data_dir.join("logs")
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(local_data) = dirs::data_local_dir() {
+            return local_data.join("com.fritzprix.libragent").join("logs");
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(home) = dirs::home_dir() {
+            return home
+                .join("Library")
+                .join("Logs")
+                .join("com.fritzprix.libragent");
+        }
+    }
+
+    // Fallback for Linux or if platform specific dirs fail
+    base_data_dir.join("logs")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::logs_dir_for;
+    use std::path::Path;
+
+    #[test]
+    fn data_dir_override_isolates_logs_on_every_platform() {
+        let base = Path::new("/tmp/isolated-instance");
+        assert_eq!(
+            logs_dir_for(true, base),
+            base.join("logs"),
+            "LIBRAGENT_DATA_DIR must keep logs inside the overridden data dir"
+        );
+    }
+
+    #[test]
+    fn default_data_dir_uses_platform_logs_location() {
+        let base = Path::new("/tmp/default-instance");
+        let resolved = logs_dir_for(false, base);
+        #[cfg(target_os = "linux")]
+        assert_eq!(resolved, base.join("logs"));
+        #[cfg(not(target_os = "linux"))]
+        assert!(
+            !resolved.starts_with(base),
+            "platform default should not be the data dir"
+        );
     }
 }

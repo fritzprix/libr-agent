@@ -334,9 +334,29 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         .state::<agent::AgentSessionManager>()
         .inner()
         .clone_for_task();
+    // Checked before this process publishes itself, so "another backend" can
+    // only mean a different process.
+    let live_backend = crate::server::backend_descriptor::find_live_backend();
     tauri::async_runtime::spawn(async move {
-        if let Err(e) = recovery_manager.recover_sessions().await {
-            log::error!("❌ Session recovery failed: {}", e);
+        use crate::server::readiness::{mark_recovery, RecoveryState};
+
+        // Startup recovery resets Busy -> Paused and Queued -> Idle. Those rows
+        // belong to the live backend when there is one: leave them alone.
+        if let Some(backend) = live_backend {
+            log::info!(
+                "Skipping startup session recovery: backend pid {} is live on port {}",
+                backend.pid,
+                backend.port
+            );
+            mark_recovery(RecoveryState::Skipped);
+            return;
+        }
+        match recovery_manager.recover_sessions().await {
+            Ok(_) => mark_recovery(RecoveryState::Ok),
+            Err(e) => {
+                log::error!("❌ Session recovery failed: {}", e);
+                mark_recovery(RecoveryState::Failed);
+            }
         }
     });
 

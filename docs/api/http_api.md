@@ -15,6 +15,13 @@ LibrAgent provides a robust HTTP API for remote management of AI agents, session
   - Keys can be injected via `LIBRAGENT_SESSION_API_KEY` or `LIBRAGENT_SESSION_API_KEY_FILE`, or issued dynamically via the interactive agent pairing flow (`POST /api/pairings`).
   - Authentication is required only when an API key is set.
 - **CORS**: Cross-origin browser access is not enabled (no `Access-Control-Allow-Origin`).
+- **Finding the running backend**: after it binds, the process that hosts this API writes its own record `<database file>.backend.<pid>.json` next to its SQLite database, for example `libragent_v2.db.backend.12345.json`:
+
+  ```json
+  { "pid": 12345, "port": 3030, "startedAtMs": 1739000000000 }
+  ```
+
+  Every running backend publishes a record of its own, so a second runtime never hides the first. Another process on the same profile scans these records and picks the newest one that is live: `pid` is a running process and the port accepts a connection. Records whose pid is definitively dead are deleted on scan. The records are not a lock: a second app is never refused because of them. A process that finds a live backend does not run startup session recovery, so it never resets that backend's busy or queued sessions.
 
 ---
 
@@ -274,6 +281,59 @@ Retrieves a list of child sessions spawned by a parent session.
 
 ---
 
+### List Sessions
+
+Lists sessions, most recent activity first.
+
+- **Method**: `GET`
+- **Path**: `/api/sessions`
+- **Query Parameters** (all optional):
+  - `limit`: `number` (default: 50, max: 200)
+  - `cursorUpdatedAt`, `cursorId`: the `nextCursor` of the previous page; give both or neither
+  - `search`: case-insensitive match on session name/id or assistant name
+  - `status`: `idle | busy | paused | error | queued | provisioning`
+  - `bookmarked`: `true` for bookmarked sessions only
+
+#### Response Body
+
+```json
+{
+  "sessions": [
+    {
+      "id": "a1b2c3d4e5",
+      "name": "string",
+      "status": "idle",
+      "workspaceOverride": "string (nullable)",
+      "updatedAt": 1739000000000,
+      "lastMessageAt": 1739000000000
+    }
+  ],
+  "nextCursor": { "updatedAt": 1739000000000, "id": "a1b2c3d4e5" }
+}
+```
+
+Each entry has the session fields of [Get Session Status](#get-session-status), without `pendingApprovals`. `nextCursor` is `null` on the last page.
+
+---
+
+### Session Events (stream)
+
+Follows one session as [server-sent events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events), so a frontend does not have to poll.
+
+- **Method**: `GET`
+- **Path**: `/api/sessions/:id/events`
+- **Response**: `text/event-stream`
+
+| Event     | Data                                                                                                   | Sent when                                                                                      |
+| :-------- | :----------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------- |
+| `status`  | The [Get Session Status](#get-session-status) body, including `pendingApprovals` and `pendingUserPrompt` | First, then whenever any field changes                                                         |
+| `message` | One [Message Object](#message-object)                                                                  | A message is stored, or a stored message changes. Replace any message you hold with the same `id` |
+| `end`     | `{}`                                                                                                   | The session no longer exists. The stream then closes                                           |
+
+Messages that existed when the stream opened are not replayed; read them with [Get Messages](#get-messages). The stream carries what the backend stores. Token-by-token model output is produced by the frontend that runs the LLM call and is not part of this stream.
+
+---
+
 ### Resume Session
 
 Loads a paused/crashed session into active memory and resumes the workflow.
@@ -449,6 +509,27 @@ Provide either `toolCallId` (from `GET /api/sessions/:id` `pendingApprovals`) or
 
 ---
 
+### Answer a User Prompt
+
+Answers or cancels the question a session is waiting on (`ui__askUser`, or a secret request). The waiting prompt is `pendingUserPrompt` in [Get Session Status](#get-session-status); it carries the `requestId` to send back and never carries a secret value.
+
+- **Method**: `POST`
+- **Path**: `/api/sessions/:id/channel/prompt`
+
+#### Request Body
+
+```json
+{
+  "requestId": "prompt-request-uuid",
+  "action": "answer | cancel",
+  "value": "the answer (required when action is answer)"
+}
+```
+
+A `requestId` that does not match the waiting prompt returns `404`.
+
+---
+
 ## 🤖 Assistants
 
 ### List Assistants
@@ -500,7 +581,7 @@ Retrieves details for a specific assistant.
 
 ### Health Check
 
-Checks if the server is running and reachable.
+Checks if the server is running, and whether it is ready to run a session.
 
 - **Method**: `GET`
 - **Path**: `/api/health`
@@ -510,9 +591,16 @@ Checks if the server is running and reachable.
 ```json
 {
   "status": "ok",
-  "service": "libr-agent-session-api"
+  "service": "libr-agent-session-api",
+  "version": "0.9.31",
+  "ready": true,
+  "recovery": "pending | ok | failed | skipped"
 }
 ```
+
+- `status: "ok"` only means the HTTP server answered. Wait for `ready: true` before sending work.
+- `ready` becomes `true` when startup session recovery has ended.
+- `recovery` says how it ended: `ok`; `failed` (sessions from a previous run may still be marked busy); or `skipped` (another live backend owns the sessions, so this process left them alone). `pending` goes with `ready: false`.
 
 ---
 

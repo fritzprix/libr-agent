@@ -11,13 +11,14 @@ use super::helpers::{
     resolve_session_ref_in,
 };
 use super::types::{
-    ChildSessionsResponse, CreateSessionRequest, ErrorResponse, PatchSessionRequest,
-    PatchSessionResponse, SessionStatusResponse,
+    ChildSessionsResponse, CreateSessionRequest, ErrorResponse, ListSessionsQuery,
+    ListSessionsResponse, PatchSessionRequest, PatchSessionResponse, SessionStatusResponse,
 };
 use crate::agent::session_manager::approvals::list_pending_approvals_in;
 use crate::agent::session_manager::execution_mode::set_execution_mode_in;
 use crate::agent::state::AgentSession;
 use crate::execution_mode::ExecutionMode;
+use crate::repositories::session_repository::SessionListCursor;
 use std::collections::HashMap;
 use tokio::sync::RwLock;
 
@@ -97,35 +98,9 @@ async fn get_session_reply(
         Err((status, error)) => return resolve_error_reply(status, error),
     };
 
-    match crate::agent::lifecycle::get_session(session_repo, &id).await {
-        Ok(Some(session)) => {
-            let pending_approvals = match active_sessions {
-                Some(active) => list_pending_approvals_in(active, &id).await,
-                None => Vec::new(),
-            };
-            let pending_user_prompt = match active_sessions {
-                Some(active) => {
-                    let active = active.read().await;
-                    match active.get(&id) {
-                        Some(agent_session) => {
-                            crate::agent::state::pending_user_prompt_summary(
-                                &agent_session.pending_user_prompt,
-                            )
-                            .await
-                        }
-                        None => None,
-                    }
-                }
-                None => None,
-            };
-            warp::reply::with_status(
-                warp::reply::json(&SessionStatusResponse {
-                    session: map_session_metadata_for_http(session),
-                    pending_approvals,
-                    pending_user_prompt,
-                }),
-                StatusCode::OK,
-            )
+    match session_status_snapshot(&id, active_sessions, session_repo).await {
+        Ok(Some(snapshot)) => {
+            warp::reply::with_status(warp::reply::json(&snapshot), StatusCode::OK)
         }
         Ok(None) => warp::reply::with_status(
             warp::reply::json(&ErrorResponse {
@@ -140,7 +115,106 @@ async fn get_session_reply(
     }
 }
 
-/// PATCH /api/sessions/:id — update session execution mode and release covered pending approvals.
+/// The `GET /api/sessions/:id` body for an exact session id, or `None` when
+/// the session does not exist. Also the `status` payload of the event stream.
+pub(super) async fn session_status_snapshot(
+    id: &str,
+    active_sessions: Option<&RwLock<HashMap<String, AgentSession>>>,
+    session_repo: &Arc<dyn SessionRepository>,
+) -> Result<Option<SessionStatusResponse>, String> {
+    let Some(session) = crate::agent::lifecycle::get_session(session_repo, id).await? else {
+        return Ok(None);
+    };
+    let pending_approvals = match active_sessions {
+        Some(active) => list_pending_approvals_in(active, id).await,
+        None => Vec::new(),
+    };
+    let pending_user_prompt = match active_sessions {
+        Some(active) => {
+            let active = active.read().await;
+            match active.get(id) {
+                Some(agent_session) => {
+                    crate::agent::state::pending_user_prompt_summary(
+                        &agent_session.pending_user_prompt,
+                    )
+                    .await
+                }
+                None => None,
+            }
+        }
+        None => None,
+    };
+    Ok(Some(SessionStatusResponse {
+        session: map_session_metadata_for_http(session),
+        pending_approvals,
+        pending_user_prompt,
+    }))
+}
+
+const DEFAULT_SESSIONS_LIMIT: u64 = 50;
+const MAX_SESSIONS_LIMIT: u64 = 200;
+
+/// `GET /api/sessions` — sessions ordered by most recent activity.
+///
+/// Pass the `nextCursor` of one page as `cursorUpdatedAt` + `cursorId` to get
+/// the next one.
+pub async fn list_sessions(
+    query: ListSessionsQuery,
+    manager: Arc<AgentSessionManager>,
+) -> Result<impl Reply, Rejection> {
+    Ok(list_sessions_reply(query, &manager.repositories().session).await)
+}
+
+async fn list_sessions_reply(
+    query: ListSessionsQuery,
+    session_repo: &Arc<dyn SessionRepository>,
+) -> warp::reply::WithStatus<warp::reply::Json> {
+    let limit = query.limit.unwrap_or(DEFAULT_SESSIONS_LIMIT);
+    if !(1..=MAX_SESSIONS_LIMIT).contains(&limit) {
+        return resolve_error_reply(
+            StatusCode::BAD_REQUEST,
+            format!("Invalid limit {limit}: must be between 1 and {MAX_SESSIONS_LIMIT}"),
+        );
+    }
+    let cursor = match (query.cursor_updated_at, query.cursor_id) {
+        (Some(updated_at), Some(id)) => Some(SessionListCursor { updated_at, id }),
+        (None, None) => None,
+        _ => {
+            return resolve_error_reply(
+                StatusCode::BAD_REQUEST,
+                "cursorUpdatedAt and cursorId must be given together".to_string(),
+            )
+        }
+    };
+
+    match session_repo
+        .list_sessions(
+            cursor,
+            limit,
+            query.search.as_deref(),
+            query.bookmarked.unwrap_or(false),
+            query.status.as_deref(),
+        )
+        .await
+    {
+        Ok(page) => warp::reply::with_status(
+            warp::reply::json(&ListSessionsResponse {
+                sessions: page
+                    .items
+                    .into_iter()
+                    .map(map_session_metadata_for_http)
+                    .collect(),
+                next_cursor: page.next_cursor,
+            }),
+            StatusCode::OK,
+        ),
+        Err(e) => resolve_error_reply(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to list sessions: {e}"),
+        ),
+    }
+}
+
 pub async fn patch_session(
     id: String,
     manager: Arc<AgentSessionManager>,
@@ -367,6 +441,101 @@ mod tests {
             .expect("reply body should be readable");
         let json = serde_json::from_slice(&body).expect("reply body should be JSON");
         (status, json)
+    }
+
+    /// #2700: a release build can list sessions, page by page.
+    #[tokio::test]
+    async fn list_sessions_pages_through_every_session_once() {
+        let repo = sqlite_session_repo().await;
+        for (index, id) in ["list-a", "list-b", "list-c"].into_iter().enumerate() {
+            let mut session = SessionMetadata::test_fixture(id);
+            session.updated_at = 1_000 + index as i64;
+            repo.upsert_session(&session)
+                .await
+                .expect("session should be stored");
+        }
+
+        let (status, first) = reply_to_json(
+            list_sessions_reply(
+                ListSessionsQuery {
+                    limit: Some(2),
+                    ..Default::default()
+                },
+                &repo,
+            )
+            .await,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let first_ids: Vec<&str> = first["sessions"]
+            .as_array()
+            .expect("sessions array")
+            .iter()
+            .map(|session| session["id"].as_str().expect("id"))
+            .collect();
+        assert_eq!(first_ids.len(), 2, "{first}");
+        let cursor = &first["nextCursor"];
+        assert!(
+            cursor.is_object(),
+            "a full page must carry a cursor: {first}"
+        );
+
+        let (_, second) = reply_to_json(
+            list_sessions_reply(
+                ListSessionsQuery {
+                    limit: Some(2),
+                    cursor_updated_at: cursor["updatedAt"].as_i64(),
+                    cursor_id: cursor["id"].as_str().map(str::to_string),
+                    ..Default::default()
+                },
+                &repo,
+            )
+            .await,
+        )
+        .await;
+        let second_ids: Vec<&str> = second["sessions"]
+            .as_array()
+            .expect("sessions array")
+            .iter()
+            .map(|session| session["id"].as_str().expect("id"))
+            .collect();
+
+        let mut all: Vec<&str> = first_ids.iter().chain(second_ids.iter()).copied().collect();
+        all.sort_unstable();
+        assert_eq!(all, vec!["list-a", "list-b", "list-c"]);
+        assert_eq!(second["nextCursor"], serde_json::Value::Null);
+    }
+
+    #[tokio::test]
+    async fn list_sessions_rejects_a_bad_limit_and_half_a_cursor() {
+        let repo = sqlite_session_repo().await;
+
+        let (status, _) = reply_to_json(
+            list_sessions_reply(
+                ListSessionsQuery {
+                    limit: Some(0),
+                    ..Default::default()
+                },
+                &repo,
+            )
+            .await,
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+
+        let (status, json) = reply_to_json(
+            list_sessions_reply(
+                ListSessionsQuery {
+                    cursor_id: Some("list-a".to_string()),
+                    ..Default::default()
+                },
+                &repo,
+            )
+            .await,
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(json["error"].as_str().unwrap().contains("together"));
     }
 
     #[tokio::test]
