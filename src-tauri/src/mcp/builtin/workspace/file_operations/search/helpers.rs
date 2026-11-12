@@ -103,6 +103,10 @@ pub(super) fn matches_glob(matcher: &GlobMatcher, path: &Path, file_name: Option
         .any(|pattern| glob_pattern_matches(pattern, path, file_name))
 }
 
+// The trailing `false` is required on Windows builds where the
+// normalized-path guard below is compiled in; clippy only sees the
+// non-Windows shape where it looks redundant.
+#[allow(clippy::needless_bool)]
 fn glob_pattern_matches(pattern: &glob::Pattern, path: &Path, file_name: Option<&str>) -> bool {
     if let Some(name) = file_name {
         if pattern.matches(name) {
