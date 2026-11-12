@@ -37,6 +37,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::Manager;
+use tempfile::TempDir;
 use tokio::sync::{watch, RwLock};
 
 /// Determine whether `liblet` should read piped `stdin` before parsing CLI flags.
@@ -250,32 +251,61 @@ impl EphemeralHeadlessRuntime {
         // still hold a pooled SQLite connection, and Windows (unlike Linux)
         // refuses to delete a file while a handle to it is open.
         let _ = driver_handle.await;
-        let _ = self.active_sessions.write().await.remove(&self.session_id);
-        let _ = self.session_repo.delete_session(&self.session_id).await;
-        let _ = self.db.close().await;
 
-        // Remove the ephemeral temp dir explicitly instead of relying on the
-        // implicit `TempDir` drop: SeaORM's SQLite workers release their file
-        // handles asynchronously after `close()`, so a single best-effort
-        // cleanup races with handle release and leaves the directory behind
-        // on Windows (Linux silently unlinks open files and never notices).
-        // Retry briefly; the later `TempDir::drop` sees `NotFound` and treats
-        // it as success.
-        let temp_path = self.env.temp_dir.path().to_path_buf();
-        for attempt in 0..40u32 {
-            match std::fs::remove_dir_all(&temp_path) {
-                Ok(()) => break,
-                Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => break,
-                Err(_) if attempt < 39 => {
-                    tokio::time::sleep(Duration::from_millis(50)).await;
-                }
-                Err(_) => break,
-            }
-        }
+        cleanup_headless_run(
+            &self.session_id,
+            &self.session_repo,
+            &self.active_sessions,
+            &self.db,
+            &self.env.temp_dir,
+        )
+        .await;
 
         let _ = write_final_output(args.output_format, &payload, stdout, stderr);
         payload
     }
+}
+
+/// Remove `path` recursively with a bounded retry, reporting the final
+/// failure on `stderr` instead of swallowing it.
+///
+/// Used by every headless teardown path because SQLite and WebView file
+/// handles are released asynchronously after close: a single best-effort
+/// delete races with handle release and leaves the directory behind on
+/// Windows (Linux silently unlinks open files and never notices).
+fn remove_temp_dir_with_retry(path: &Path) {
+    for attempt in 0..40u32 {
+        match std::fs::remove_dir_all(path) {
+            Ok(()) => break,
+            Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => break,
+            Err(_) if attempt < 39 => {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            Err(err) => {
+                eprintln!("warning: failed to remove ephemeral headless directory {path:?}: {err}");
+            }
+        }
+    }
+}
+
+/// Shared teardown for every headless run path (production binary and tests):
+/// drop the active session entry, delete the ephemeral session record, close
+/// the database connection, and remove the ephemeral `TempDir`.
+pub async fn cleanup_headless_run(
+    session_id: &str,
+    session_repo: &Arc<dyn SessionRepository>,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    db: &DatabaseConnection,
+    temp_dir: &TempDir,
+) {
+    let _ = active_sessions.write().await.remove(session_id);
+    let _ = session_repo.delete_session(session_id).await;
+    let _ = db.clone().close().await;
+    // Remove the temp dir explicitly instead of relying on the implicit
+    // `TempDir` drop so the retry above runs while the caller can still
+    // report the outcome; the later `TempDir::drop` sees `NotFound` and
+    // treats it as success.
+    remove_temp_dir_with_retry(temp_dir.path());
 }
 
 /// Format a startup failure before a session could be created and return exit code `1`.
@@ -367,7 +397,12 @@ pub fn run_list_sessions<Out: Write, ErrOut: Write>(
     exit_codes::SUCCESS
 }
 
-/// Run a full headless invocation using the hidden Tauri WebView runtime in Phase 1.
+/// Run a full headless invocation using the hidden Tauri WebView runtime.
+///
+/// Shares the bootstrap (`EphemeralHeadlessRuntime::bootstrap`), the run
+/// (`run_with_driver` + `monitor_headless_session`), and the cleanup
+/// (`cleanup_headless_run`) with the test path; the hidden-WebView turn is
+/// just the driver injected into that shared run.
 pub fn run_headless_with_hidden_webview(args: HeadlessArgs) -> i32 {
     let profile = crate::profile::resolve_profile();
     let source_db_path = crate::profile::db_path(profile);
@@ -379,8 +414,11 @@ pub fn run_headless_with_hidden_webview(args: HeadlessArgs) -> i32 {
         return emit_startup_error(&args, err, &mut stdout, &mut stderr).exit_code;
     }
 
-    let ephemeral_env = match EphemeralEnvironment::create(Some(&source_db_path)) {
-        Ok(env) => env,
+    let mut runtime = match tauri::async_runtime::block_on(EphemeralHeadlessRuntime::bootstrap(
+        Some(&source_db_path),
+        &args,
+    )) {
+        Ok(runtime) => runtime,
         Err(err) => {
             let mut stdout = std::io::stdout();
             let mut stderr = std::io::stderr();
@@ -391,9 +429,9 @@ pub fn run_headless_with_hidden_webview(args: HeadlessArgs) -> i32 {
     // Point LibrAgent and WebView data/cache folders into the ephemeral TempDir
     // so this headless process is 100% isolated from the GUI, TUI, and sibling
     // headless processes.
-    std::env::set_var("LIBRAGENT_DATA_DIR", &ephemeral_env.data_dir);
-    std::env::set_var("LIBRAGENT_DB_PATH", &ephemeral_env.db_path);
-    let webview_cache_dir = ephemeral_env.temp_dir.path().join("webview-cache");
+    std::env::set_var("LIBRAGENT_DATA_DIR", &runtime.env.data_dir);
+    std::env::set_var("LIBRAGENT_DB_PATH", &runtime.env.db_path);
+    let webview_cache_dir = runtime.env.temp_dir.path().join("webview-cache");
     let _ = std::fs::create_dir_all(&webview_cache_dir);
     #[cfg(target_os = "windows")]
     std::env::set_var("WEBVIEW2_USER_DATA_FOLDER", &webview_cache_dir);
@@ -405,20 +443,32 @@ pub fn run_headless_with_hidden_webview(args: HeadlessArgs) -> i32 {
         }
     }
 
+    let temp_dir_path = runtime.env.temp_dir.path().to_path_buf();
     let db_url =
-        crate::utils::sqlite::format_sqlite_url(ephemeral_env.db_path.to_string_lossy().as_ref());
-    crate::state::set_sqlite_db_url(db_url.clone());
+        crate::utils::sqlite::format_sqlite_url(runtime.env.db_path.to_string_lossy().as_ref());
+    crate::state::set_sqlite_db_url(db_url);
 
+    // Wire the process-wide repositories to the ephemeral connection, seed the
+    // default assistants into the snapshot (the GUI does the same on startup),
+    // and re-resolve the run config so a profile without assistants yet still
+    // picks one up before the session is created.
     if let Err(err) = tauri::async_runtime::block_on(async {
         let _ = crate::session::get_session_manager()
             .map_err(|e| format!("Failed to initialize SessionManager: {e}"))?;
-        let db = crate::lifecycle::database::init_database(&db_url)
-            .await
-            .map_err(|e| format!("Failed to initialize ephemeral database: {e}"))?;
-        crate::lifecycle::repositories::init_repositories(&db).await;
+        crate::lifecycle::repositories::init_repositories(&runtime.db).await;
         crate::lifecycle::llm_env_seed::seed_llm_settings_from_env().await;
+        let _ = crate::services::assistant_init::ensure_default_assistants_hardcoded().await;
+        runtime.resolved =
+            resolve_headless_config(&args, &runtime.settings_repo, &runtime.assistant_repo).await?;
         Ok::<(), String>(())
     }) {
+        tauri::async_runtime::block_on(cleanup_headless_run(
+            &runtime.session_id,
+            &runtime.session_repo,
+            &runtime.active_sessions,
+            &runtime.db,
+            &runtime.env.temp_dir,
+        ));
         let mut stdout = std::io::stdout();
         let mut stderr = std::io::stderr();
         return emit_startup_error(&args, err, &mut stdout, &mut stderr).exit_code;
@@ -426,7 +476,6 @@ pub fn run_headless_with_hidden_webview(args: HeadlessArgs) -> i32 {
 
     let exit_code_holder = Arc::new(std::sync::Mutex::new(exit_codes::ERROR));
     let exit_code_for_setup = exit_code_holder.clone();
-    let ephemeral_data_dir = ephemeral_env.data_dir.clone();
 
     let mut context = crate::create_tauri_context();
     for win in &mut context.config_mut().app.windows {
@@ -437,9 +486,7 @@ pub fn run_headless_with_hidden_webview(args: HeadlessArgs) -> i32 {
 
     let builder = crate::configure_tauri_builder(tauri::Builder::default());
     let app = match builder
-        .setup(move |app| {
-            setup_hidden_headless_app(app, args, ephemeral_data_dir, exit_code_for_setup)
-        })
+        .setup(move |app| setup_hidden_headless_app(app, args, runtime, exit_code_for_setup))
         .build(context)
     {
         Ok(app) => app,
@@ -449,19 +496,26 @@ pub fn run_headless_with_hidden_webview(args: HeadlessArgs) -> i32 {
         }
     };
 
-    app.run(|_app_handle, _event| {});
+    // `run_return` (unlike `run`) returns after the event loop tears down, so
+    // the exit code below is actually reached. The session, database, and
+    // temp dir were already torn down by the shared cleanup inside
+    // `run_with_driver`; this second pass catches files the WebView's own
+    // processes still held open during the first pass (mostly Windows).
+    app.run_return(|_app_handle, _event| {});
 
-    drop(ephemeral_env);
+    remove_temp_dir_with_retry(&temp_dir_path);
+
     let code = *exit_code_holder.lock().unwrap();
-    code
+    std::process::exit(code);
 }
 
 fn setup_hidden_headless_app(
     app: &mut tauri::App,
     args: HeadlessArgs,
-    ephemeral_data_dir: std::path::PathBuf,
+    mut runtime: EphemeralHeadlessRuntime,
     exit_code_holder: Arc<std::sync::Mutex<i32>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let ephemeral_data_dir = runtime.env.data_dir.clone();
     let log_dir = ephemeral_data_dir.join("logs");
     let _ = crate::logger::setup_file_logger(log_dir, 1);
 
@@ -513,49 +567,67 @@ fn setup_hidden_headless_app(
     crate::state::init_app_handle(app_handle.clone());
     app.manage(agent_manager.clone());
 
+    // The monitor and the driver must observe the agent manager's live session
+    // map and repository, not the placeholder copies from `bootstrap`.
+    runtime.active_sessions = agent_manager.active_sessions_arc();
+    runtime.session_repo = agent_manager.repositories().session.clone();
+
     tauri::async_runtime::spawn(async move {
         let interrupt_rx = spawn_interrupt_watcher();
-        let code =
-            execute_hidden_webview_turn(&app_handle, &agent_manager, args, interrupt_rx).await;
+        let driver_args = args.clone();
+        let mut stdout = std::io::stdout();
+        let mut stderr = std::io::stderr();
+        let payload = runtime
+            .run_with_driver(
+                &args,
+                interrupt_rx,
+                move |session_id, _session_repo, _active_sessions, resolved| {
+                    let agent_manager = agent_manager.clone();
+                    async move {
+                        run_hidden_webview_turn(
+                            &agent_manager,
+                            &session_id,
+                            &resolved,
+                            &driver_args,
+                        )
+                        .await
+                    }
+                },
+                &mut stdout,
+                &mut stderr,
+            )
+            .await;
         if let Ok(mut guard) = exit_code_holder.lock() {
-            *guard = code;
+            *guard = payload.exit_code;
         }
-        app_handle.exit(code);
+        app_handle.exit(payload.exit_code);
     });
 
     Ok(())
 }
 
-async fn execute_hidden_webview_turn(
-    app_handle: &tauri::AppHandle,
+/// Hidden-WebView turn driver injected into the shared `run_with_driver` run.
+///
+/// Creates the session in the agent manager, waits for the hidden WebView
+/// frontend (`useLLMListener`) to mark itself ready, and starts the workflow.
+/// Returning `Err` marks the session `Error`; the shared monitor in
+/// `run_with_driver` then emits the final payload and tears everything down.
+async fn run_hidden_webview_turn(
     agent_manager: &crate::agent::AgentSessionManager,
-    args: HeadlessArgs,
-    mut interrupt_rx: watch::Receiver<Option<InterruptSignal>>,
-) -> i32 {
-    let _ = crate::services::assistant_init::ensure_default_assistants_hardcoded().await;
-
-    let settings_repo = crate::state::get_settings_repository();
-    let assistant_repo = crate::state::get_assistant_repository();
-    let resolved = match resolve_headless_config(&args, settings_repo, assistant_repo).await {
-        Ok(r) => r,
-        Err(err) => {
-            let mut stdout = std::io::stdout();
-            let mut stderr = std::io::stderr();
-            return emit_startup_error(&args, err, &mut stdout, &mut stderr).exit_code;
-        }
-    };
-
-    let session_id = format!("headless-{}", uuid::Uuid::new_v4());
+    session_id: &str,
+    resolved: &ResolvedHeadlessConfig,
+    args: &HeadlessArgs,
+) -> Result<(), String> {
     if let Ok(sm) = crate::session::get_session_manager() {
         let _ = sm
-            .register_session_override(&session_id, resolved.workspace_path.clone())
+            .register_session_override(session_id, resolved.workspace_path.clone())
             .await;
     }
 
-    if let Err(err) = agent_manager
+    agent_manager
         .create_session_with_repo(
             agent_manager.repositories().session.clone(),
-            session_id.clone(),
+            session_id.to_string(),
             None,
             Some(resolved.model.clone()),
             Some(resolved.provider.clone()),
@@ -563,110 +635,42 @@ async fn execute_hidden_webview_turn(
             args.isolation,
             None,
         )
-        .await
-    {
-        let mut stdout = std::io::stdout();
-        let mut stderr = std::io::stderr();
-        return emit_startup_error(&args, err, &mut stdout, &mut stderr).exit_code;
-    }
+        .await?;
 
     let _ = crate::agent::session_manager::execution_mode::set_execution_mode(
         agent_manager,
-        &session_id,
+        session_id,
         resolved.execution_mode,
     )
     .await;
 
-    // Wait for the hidden WebView frontend (`useLLMListener`) to mark itself ready,
-    // while still honoring `--timeout` and OS interrupt signals.
+    // Wait for the hidden WebView frontend to mark itself ready. `--timeout`
+    // bounds the wait; otherwise a fixed 30 s cap prevents an infinite hang
+    // when the WebView never initializes.
     let frontend_wait_timeout = args
         .timeout_secs
         .map(Duration::from_secs)
         .unwrap_or_else(|| Duration::from_secs(30));
 
-    let workspace_str = resolved.workspace_path.to_string_lossy().to_string();
-
     tokio::select! {
         _ = crate::lifecycle::frontend_ready::wait_until_ready() => {}
         _ = tokio::time::sleep(frontend_wait_timeout) => {
-            let mut stdout = std::io::stdout();
-            let mut stderr = std::io::stderr();
-            let payload = if args.timeout_secs.is_some() {
-                HeadlessResultPayload::timeout(workspace_str, resolved.execution_mode)
-            } else {
-                HeadlessResultPayload::error(
-                    "Timed out waiting for hidden LLM runtime to initialize".to_string(),
-                    workspace_str,
-                    resolved.execution_mode,
-                )
-            };
-            let _ = agent_manager.delete_session(session_id).await;
-            let _ = write_final_output(args.output_format, &payload, &mut stdout, &mut stderr);
-            return payload.exit_code;
-        }
-        _ = interrupt_rx.changed() => {
-            let maybe_sig = *interrupt_rx.borrow();
-            if let Some(sig) = maybe_sig {
-                let mut stdout = std::io::stdout();
-                let mut stderr = std::io::stderr();
-                let payload = HeadlessResultPayload::interrupted(
-                    sig.exit_code(),
-                    workspace_str,
-                    resolved.execution_mode,
-                );
-                let _ = agent_manager.delete_session(session_id).await;
-                let _ = write_final_output(args.output_format, &payload, &mut stdout, &mut stderr);
-                return payload.exit_code;
-            }
+            return Err(
+                "Timed out waiting for hidden LLM runtime to initialize".to_string(),
+            );
         }
     }
 
     let user_message = Message::new_user_message(
-        session_id.clone(),
+        session_id.to_string(),
         args.prompt.clone(),
         Some(MessageSource::Ui),
         resolved.assistant_id.clone(),
     );
 
-    if let Err(err) = agent_manager
-        .start_workflow(session_id.clone(), user_message)
+    agent_manager
+        .start_workflow(session_id.to_string(), user_message)
         .await
-    {
-        let mut stdout = std::io::stdout();
-        let mut stderr = std::io::stderr();
-        let payload = HeadlessResultPayload::error(err, workspace_str, resolved.execution_mode);
-        let _ = agent_manager.delete_session(session_id).await;
-        let _ = write_final_output(args.output_format, &payload, &mut stdout, &mut stderr);
-        return payload.exit_code;
-    }
-
-    let active_sessions = agent_manager.active_sessions_arc();
-    let session_repo = agent_manager.repositories().session.clone();
-
-    let monitor_params = HeadlessMonitorParams {
-        session_repo: &session_repo,
-        active_sessions: &active_sessions,
-        session_id: &session_id,
-        workspace_path: workspace_str,
-        execution_mode: resolved.execution_mode,
-        model: resolved.model,
-        provider: resolved.provider,
-        assistant_id: resolved.assistant_id,
-        output_format: args.output_format,
-        timeout: args.timeout_secs.map(Duration::from_secs),
-        poll_interval: Duration::from_millis(25),
-    };
-
-    let mut stdout = std::io::stdout();
-    let mut stderr = std::io::stderr();
-    let payload = monitor_headless_session(monitor_params, interrupt_rx, &mut stdout).await;
-
-    let _ = agent_manager.terminate_session(session_id.clone()).await;
-    let _ = agent_manager.delete_session(session_id).await;
-    let _ = app_handle;
-
-    let _ = write_final_output(args.output_format, &payload, &mut stdout, &mut stderr);
-    payload.exit_code
 }
 
 /// Entry point for the `liblet` binary.

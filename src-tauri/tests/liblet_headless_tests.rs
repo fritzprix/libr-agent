@@ -649,3 +649,74 @@ async fn multiple_headless_runs_execute_concurrently_without_blocking() {
     let shared_sessions = SqliteSessionRepository::new(shared_db);
     assert!(shared_sessions.get_all_sessions().await.unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn snapshot_scrubs_session_rows_from_raw_pages_not_just_rows() {
+    // A `DELETE` leaves the freed pages in the file, so a copied profile
+    // session's text would remain recoverable from the snapshot's raw bytes.
+    // The snapshot must `VACUUM` after stripping so the sentinel is gone
+    // physically, not just logically.
+    let shared_dir = TempDir::new().unwrap();
+    let workspace_dir = TempDir::new().unwrap();
+    let shared_db_path = shared_dir.path().join("sentinel_profile.db");
+
+    let shared_db = init_ephemeral_database(&shared_db_path).await.unwrap();
+    let shared_sessions = SqliteSessionRepository::new(shared_db.clone());
+
+    let sentinel = "SENTINEL-SESSION-9f3a7c2e-REDACT-ME";
+    let session = SessionMetadata {
+        id: "gui-sentinel-1".to_string(),
+        name: Some(sentinel.to_string()),
+        status: SessionStatus::Idle,
+        model: "gpt-4o".to_string(),
+        provider: "openai".to_string(),
+        assistant_id: None,
+        parent_session_id: None,
+        lineage_id: Some("gui-sentinel-1".to_string()),
+        depth: Some(0),
+        max_depth: None,
+        max_fanout: None,
+        org_id: None,
+        org_name: None,
+        org_root_session_id: None,
+        created_at: 100,
+        updated_at: 100,
+        last_viewed_at: None,
+        last_attention_at: None,
+        last_attention_reason: None,
+        last_message_at: None,
+        is_bookmarked: false,
+        execution_mode: ExecutionMode::Normal,
+        workspace_override: None,
+        workspace_isolation: WorkspaceIsolationMode::Host,
+        docker_config: None,
+        docker_container_name: None,
+        docker_host_workspace_path: None,
+        status_reason: None,
+    };
+    shared_sessions.upsert_session(&session).await.unwrap();
+    drop(shared_db);
+
+    let args = default_headless_args("unused", workspace_dir.path());
+    let runtime = EphemeralHeadlessRuntime::bootstrap(Some(&shared_db_path), &args)
+        .await
+        .unwrap();
+    let snapshot_path = runtime.env.db_path.clone();
+
+    // No row-level access: read the raw snapshot bytes and require the
+    // sentinel name to be physically absent.
+    let raw = std::fs::read(&snapshot_path).expect("snapshot file must exist");
+    let raw_text = String::from_utf8_lossy(&raw);
+    assert!(
+        !raw_text.contains(sentinel),
+        "ephemeral snapshot must physically scrub stripped profile session rows (VACUUM after DELETE)"
+    );
+
+    // Sanity: the snapshot itself is still usable and only holds the
+    // bootstrap's own ephemeral session.
+    let sessions = runtime.session_repo.get_all_sessions().await.unwrap();
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0].id, runtime.session_id);
+
+    drop(runtime);
+}

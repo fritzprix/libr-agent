@@ -104,6 +104,13 @@ pub fn snapshot_sqlite_db_stripping_sessions(
     }
     let _ = dst_conn.execute_batch("PRAGMA foreign_keys = ON;");
 
+    // `DELETE` alone leaves the freed pages in the file, so profile session and
+    // message rows copied by the snapshot remain recoverable from the raw
+    // bytes. `VACUUM` rebuilds the database and scrubs them physically.
+    dst_conn
+        .execute_batch("VACUUM;")
+        .map_err(|e| format!("Failed to vacuum ephemeral DB {:?}: {e}", dest_db))?;
+
     Ok(())
 }
 
