@@ -226,6 +226,11 @@ mod tests {
             "sessionId": "s1",
             "role": "assistant",
             "content": [{ "type": "text", "text": text }],
+            // Pinned: `createdAt`/`updatedAt` default to wall-clock now, so
+            // two fixtures built a millisecond apart would serialize
+            // differently and the cursor would wrongly call them changed.
+            "createdAt": 1,
+            "updatedAt": 1,
         }))
         .expect("message fixture")
     }
