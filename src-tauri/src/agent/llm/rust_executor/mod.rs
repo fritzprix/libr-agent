@@ -105,6 +105,7 @@ async fn read_setting(key: &str) -> Option<Value> {
     serde_json::from_str(&row.value).ok()
 }
 
+#[allow(clippy::result_large_err)]
 async fn endpoint_for(provider: &str) -> Result<Endpoint, AgentRuntimeError> {
     let service_configs = read_setting("serviceConfigs").await;
     let custom_providers = read_setting("customProviders").await;
@@ -154,6 +155,7 @@ fn assistant_message(request: &CompletionRequest, chat: stream::CompletedChat) -
     }
 }
 
+#[allow(clippy::result_large_err)]
 async fn run_completion(request: &CompletionRequest) -> Result<Message, AgentRuntimeError> {
     let endpoint = endpoint_for(&request.provider).await?;
     let body = convert::chat_request_body(
@@ -230,6 +232,7 @@ pub fn try_dispatch_completion(app_handle: &AppHandle, request: &CompletionReque
     true
 }
 
+#[allow(clippy::result_large_err)]
 async fn run_compaction(
     request: &CompactRequest,
     model: &str,

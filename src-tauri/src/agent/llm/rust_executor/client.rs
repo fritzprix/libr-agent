@@ -59,6 +59,7 @@ fn http_status_error(status: reqwest::StatusCode, body: &str) -> AgentRuntimeErr
 }
 
 /// POST `body` and read the stream to its end.
+#[allow(clippy::result_large_err)]
 pub(super) async fn complete(
     endpoint: &Endpoint,
     body: &Value,
