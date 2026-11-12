@@ -179,6 +179,12 @@ fn prevent_browser_reload_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     builder.build()
 }
 
+/// Generate the Tauri application context once in the library crate so macOS
+/// `embed_info_plist_bytes` does not emit duplicate `_EMBED_INFO_PLIST` symbols.
+pub(crate) fn create_tauri_context() -> tauri::Context<tauri::Wry> {
+    tauri::generate_context!()
+}
+
 /// Attach shared plugins and invoke handlers to a Tauri builder.
 pub(crate) fn configure_tauri_builder(
     builder: tauri::Builder<tauri::Wry>,
@@ -467,7 +473,7 @@ pub fn run() {
                     let _ = (window, event);
                 }
             })
-            .build(tauri::generate_context!())
+            .build(create_tauri_context())
             .expect("error while building tauri application")
             .run(|app_handle, event| {
                 if let tauri::RunEvent::Exit = event {

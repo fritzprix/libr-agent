@@ -405,7 +405,7 @@ pub fn run_headless_with_hidden_webview(args: HeadlessArgs) -> i32 {
     let exit_code_for_setup = exit_code_holder.clone();
     let ephemeral_data_dir = ephemeral_env.data_dir.clone();
 
-    let mut context = tauri::generate_context!();
+    let mut context = crate::create_tauri_context();
     for win in &mut context.config_mut().app.windows {
         win.visible = false;
         win.skip_taskbar = true;
