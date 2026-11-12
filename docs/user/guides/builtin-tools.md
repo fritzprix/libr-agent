@@ -88,12 +88,14 @@ LibrAgent는 별도의 외부 도구 설치 없이도 코딩, 파일 조작, 웹
 |                      | `browser__clickElement`                                             | 웹페이지 요소 클릭                                           | Optional (선택)                                         |
 | **`desktop`**        | `desktop__computerControl`                                          | 마우스 클릭/이동, 키보드 타이핑 OS 제어                      | Optional (Normal 모드 승인 필요, YOLO·Unsafe 자동 실행) |
 | **`media`**          | `media__captureScreen`                                              | 데스크톱 모니터 전체/영역 캡처                               | Optional (Normal 모드 승인 필요, YOLO·Unsafe 자동 실행) |
-|                      | `media__seeContent`                                                 | 이미지·영상 **시각** 분석                                    | Optional (선택)                                         |
-|                      | `media__listenContent`                                              | 오디오·영상 **청각** 분석                                    | Optional (선택)                                         |
+|                      | `media__seeContent`                                                 | 이미지 파일 **시각** 분석                                    | Optional (선택)                                         |
+|                      | `media__listenContent`                                              | 오디오 파일 **청각** 분석                                    | Optional (선택)                                         |
 | **`planning`**       | `planning__createGoal`                                              | 다단계 목표 수립 및 Todo 관리                                | Optional (선택)                                         |
 |                      | `planning__updateGoal`                                              | 목표 진행 상태 갱신                                          | Optional (선택)                                         |
 | **`scheduled_task`** | `scheduled_task__createScheduledTask`                               | 백그라운드 예약 작업 등록                                    | Core (기본)                                             |
 |                      | `scheduled_task__listScheduledTasks`                                | 등록된 예약 작업 목록 조회                                   | Core (기본)                                             |
+
+두 미디어 도구 모두 영상 파일은 받지 않습니다. 영상은 오디오 트랙을 추출해 `media__listenContent`에 넘기거나, 주요 장면을 이미지로 골라 `media__seeContent`에 넘기세요.
 
 > [!NOTE]
 > 위 식별자는 프롬프트·디버깅용 참고입니다. 일반 사용에서는 어시스턴트 **Tools** 탭에서 켜고 끄면 됩니다.
