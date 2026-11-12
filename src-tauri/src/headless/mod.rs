@@ -246,9 +246,32 @@ impl EphemeralHeadlessRuntime {
         let payload = monitor_headless_session(monitor_params, interrupt_rx, stdout).await;
 
         driver_handle.abort();
+        // Reap the aborted driver task before teardown: an unreaped task can
+        // still hold a pooled SQLite connection, and Windows (unlike Linux)
+        // refuses to delete a file while a handle to it is open.
+        let _ = driver_handle.await;
         let _ = self.active_sessions.write().await.remove(&self.session_id);
         let _ = self.session_repo.delete_session(&self.session_id).await;
         let _ = self.db.close().await;
+
+        // Remove the ephemeral temp dir explicitly instead of relying on the
+        // implicit `TempDir` drop: SeaORM's SQLite workers release their file
+        // handles asynchronously after `close()`, so a single best-effort
+        // cleanup races with handle release and leaves the directory behind
+        // on Windows (Linux silently unlinks open files and never notices).
+        // Retry briefly; the later `TempDir::drop` sees `NotFound` and treats
+        // it as success.
+        let temp_path = self.env.temp_dir.path().to_path_buf();
+        for attempt in 0..40u32 {
+            match std::fs::remove_dir_all(&temp_path) {
+                Ok(()) => break,
+                Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => break,
+                Err(_) if attempt < 39 => {
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+                Err(_) => break,
+            }
+        }
 
         let _ = write_final_output(args.output_format, &payload, stdout, stderr);
         payload
