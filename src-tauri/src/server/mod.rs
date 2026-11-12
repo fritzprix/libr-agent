@@ -1,5 +1,6 @@
 pub mod access_guard;
 pub mod api_key;
+pub mod backend_descriptor;
 #[cfg(debug_assertions)]
 pub mod e2e_control;
 pub mod handlers;
@@ -119,6 +120,12 @@ pub async fn init(
     info!("Starting HTTP server on {}:{}", bind_addr, bound_port);
 
     set_active_http_port(bound_port);
+
+    // Let other processes on this profile find this backend. Left alone when
+    // another live process already published itself.
+    if !backend_descriptor::publish(bound_port) {
+        log::info!("Backend descriptor not published by this process");
+    }
 
     // Persist active HTTP port to ~/.libragent/http_port for external scripts/tools
     if should_persist_global_http_port(std::env::var_os("LIBRAGENT_DATA_DIR").as_deref()) {

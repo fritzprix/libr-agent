@@ -13,6 +13,9 @@ pub struct HealthResponse {
     /// False while startup session recovery is still running; true once the
     /// runtime is ready to run sessions (see `server::readiness`).
     pub ready: bool,
+    /// Outcome of startup session recovery: `pending`, `ok`, `failed`, or
+    /// `skipped` (another live backend owns the sessions).
+    pub recovery: crate::server::readiness::RecoveryState,
 }
 
 #[derive(Debug, Deserialize)]
@@ -64,6 +67,30 @@ pub struct SessionStatusResponse {
     /// Never carries a secret value.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pending_user_prompt: Option<crate::agent::state::PendingUserPromptSummary>,
+}
+
+/// Query of `GET /api/sessions`.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListSessionsQuery {
+    pub limit: Option<u64>,
+    /// With `cursor_id`: the `nextCursor` of the previous page.
+    pub cursor_updated_at: Option<i64>,
+    pub cursor_id: Option<String>,
+    /// Case-insensitive match on session name/id or assistant name.
+    pub search: Option<String>,
+    /// Session status filter, for example `busy`.
+    pub status: Option<String>,
+    /// Only bookmarked sessions when true.
+    pub bookmarked: Option<bool>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListSessionsResponse {
+    pub sessions: Vec<SessionMetadata>,
+    /// `null` on the last page.
+    pub next_cursor: Option<crate::repositories::session_repository::SessionListCursor>,
 }
 
 #[derive(Debug, Serialize)]

@@ -179,11 +179,10 @@ pub async fn recover_sessions_with_dispatcher(
 
 /// Recover BUSY sessions with optional injected message repository for isolated testing.
 ///
-/// Owner guard: this pass only ever runs in the process that holds the
-/// data-dir [`crate::runtime_lock::RuntimeLock`] (acquired in `main` before
-/// the DB opens). A second runtime on the same data dir cannot start, so any
-/// `Busy` / `Queued` row found here belongs to a dead owner (crash residue),
-/// never to a live one — this function never rewrites a live owner's sessions.
+/// Owner guard: the caller (`lifecycle::app_setup`) does not run this pass when
+/// `server::backend_descriptor::find_live_backend` reports another live
+/// backend for this database, so a second app starting on the same profile
+/// never rewrites that backend's `Busy` / `Queued` sessions.
 pub async fn recover_sessions_with_dispatcher_and_message_repo(
     session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,

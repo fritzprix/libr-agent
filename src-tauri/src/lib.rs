@@ -18,7 +18,6 @@ pub mod media_assist;
 pub mod models;
 pub mod profile; // prod | dev | demo runtime profile (data dir + DB)
 pub mod repositories; // Make public for integration tests
-pub mod runtime_lock; // Data-dir single-instance lock
 pub mod scheduled; // Cron-backed scheduled task background worker (public for integration tests)
 mod search;
 pub mod server;
