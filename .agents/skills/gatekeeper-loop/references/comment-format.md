@@ -6,6 +6,8 @@ Worker and gatekeeper share one GitHub account, and GitHub rejects Approve / Req
 
 `head` = full SHA of the PR head that was reviewed. `base` = the PR's base branch at review time (a later change forces re-review). `round` starts at 1 and increments per verdict (`clean` markers do not count).
 
+**Before posting:** follow [pre-post-checklist.md](pre-post-checklist.md) (head drift, duplicate `head`+`verdict`, severity, clean→approve consistency).
+
 ```markdown
 <!-- gatekeeper-loop: round=2 verdict=changes-requested head=<sha> base=<branch> -->
 

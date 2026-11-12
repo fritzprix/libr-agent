@@ -14,12 +14,15 @@ from review_queue import (
     PROTECTED_SKILL_PREFIXES,
     START_MARKER,
     classify,
+    classify_sensitive_paths,
     determine_status,
     is_dev_base,
     is_rebased,
     latest_clean_marker,
+    markers_at_head,
     owner_comments_after,
     parse_markers,
+    posting_checks,
 )
 
 
@@ -494,6 +497,53 @@ Total **58/100**. Does not affect the verdict above.
             base_args(total_verdicts=5, last_verdict={"head": "x", "verdict": "changes-requested"}),
         ):
             self.assertTrue(classify(**kwargs)[1])
+
+
+class SecuritySensitiveTests(unittest.TestCase):
+    def test_policy_paths_only(self) -> None:
+        paths = ["src-tauri/src/secret_fallback.rs", "src/foo.rs"]
+        info = classify_sensitive_paths(paths)
+        self.assertEqual(info["securitySensitivePolicyPaths"], ["src-tauri/src/secret_fallback.rs"])
+        self.assertEqual(info["securitySensitiveBehaviorHints"], [])
+        self.assertEqual(info["securitySensitive"], ["src-tauri/src/secret_fallback.rs"])
+
+    def test_behavior_hint_without_policy_match(self) -> None:
+        paths = ["src-tauri/src/rust_executor/client.rs", "docs/readme.md"]
+        info = classify_sensitive_paths(paths)
+        self.assertEqual(info["securitySensitivePolicyPaths"], [])
+        self.assertIn("src-tauri/src/rust_executor/client.rs", info["securitySensitiveBehaviorHints"])
+        self.assertIn("src-tauri/src/rust_executor/client.rs", info["securitySensitive"])
+
+    def test_combined_dedupes(self) -> None:
+        paths = ["src/secret_store.rs", "src/session_api/routes.rs"]
+        info = classify_sensitive_paths(paths)
+        self.assertEqual(len(info["securitySensitive"]), 2)
+        self.assertIn("src/secret_store.rs", info["securitySensitivePolicyPaths"])
+        self.assertIn("src/session_api/routes.rs", info["securitySensitiveBehaviorHints"])
+
+
+class PostingChecksTests(unittest.TestCase):
+    def test_markers_at_head_filters(self) -> None:
+        markers = [
+            {"verdict": "clean", "head": "aaa", "round": None},
+            {"verdict": "changes-requested", "head": "bbb", "round": "1"},
+            {"verdict": "clean", "head": "bbb", "round": None},
+        ]
+        at_b = markers_at_head(markers, "bbb")
+        self.assertEqual(len(at_b), 2)
+        self.assertEqual({m["verdict"] for m in at_b}, {"changes-requested", "clean"})
+
+    def test_posting_checks_exposes_head_markers(self) -> None:
+        head = "deadbeef"
+        markers = [
+            {"verdict": "clean", "head": head, "round": None, "createdAt": "t1"},
+            {"verdict": "changes-requested", "head": "other", "round": "1", "createdAt": "t0"},
+        ]
+        last = {"verdict": "changes-requested", "head": "other", "round": "1"}
+        checks = posting_checks(head=head, markers=markers, last_verdict=last)
+        self.assertEqual(checks["headSha"], head)
+        self.assertEqual(len(checks["markersAtHead"]), 1)
+        self.assertIsNone(checks["lastVerdictAtHead"])
 
 
 class LatestCleanMarkerTests(unittest.TestCase):
