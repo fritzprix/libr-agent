@@ -48,9 +48,10 @@ fn main() {
         std::fs::create_dir_all(&data_dir).expect("Failed to create data directory");
     }
 
-    // Not a lock: this only tells the server where to publish (and look for)
-    // the running backend's record. A second app on the same profile starts
-    // normally and can find the first one through it (#2700).
+    // Not a lock: this only tells the server where to publish its own record
+    // and where to look for the records of other running backends (#2700).
+    // A second app on the same profile starts normally and can find the
+    // first one through these records.
     tauri_mcp_agent_lib::server::backend_descriptor::init(&db_path);
 
     let db_url =

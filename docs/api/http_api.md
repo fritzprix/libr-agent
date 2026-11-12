@@ -15,13 +15,13 @@ LibrAgent provides a robust HTTP API for remote management of AI agents, session
   - Keys can be injected via `LIBRAGENT_SESSION_API_KEY` or `LIBRAGENT_SESSION_API_KEY_FILE`, or issued dynamically via the interactive agent pairing flow (`POST /api/pairings`).
   - Authentication is required only when an API key is set.
 - **CORS**: Cross-origin browser access is not enabled (no `Access-Control-Allow-Origin`).
-- **Finding the running backend**: after it binds, the process that hosts this API writes `<database file>.backend.json` next to its SQLite database, for example `libragent_v2.db.backend.json`:
+- **Finding the running backend**: after it binds, the process that hosts this API writes its own record `<database file>.backend.<pid>.json` next to its SQLite database, for example `libragent_v2.db.backend.12345.json`:
 
   ```json
   { "pid": 12345, "port": 3030, "startedAtMs": 1739000000000 }
   ```
 
-  Another process on the same profile reads it to find the backend at `127.0.0.1:<port>`. Treat the record as live only if `pid` is a running process and the port accepts a connection; a crashed backend leaves a stale record behind. The record is not a lock: a second app is never refused because of it. A process that finds a live backend does not run startup session recovery, so it never resets that backend's busy or queued sessions.
+  Every running backend publishes a record of its own, so a second runtime never hides the first. Another process on the same profile scans these records and picks the newest one that is live: `pid` is a running process and the port accepts a connection. Records whose pid is definitively dead are deleted on scan. The records are not a lock: a second app is never refused because of them. A process that finds a live backend does not run startup session recovery, so it never resets that backend's busy or queued sessions.
 
 ---
 

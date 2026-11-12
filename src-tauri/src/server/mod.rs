@@ -121,10 +121,11 @@ pub async fn init(
 
     set_active_http_port(bound_port);
 
-    // Let other processes on this profile find this backend. Left alone when
-    // another live process already published itself.
-    if !backend_descriptor::publish(bound_port) {
-        log::info!("Backend descriptor not published by this process");
+    // Publish this runtime's own record so other processes on this profile
+    // can find it. Records are per-pid; publishing never touches another
+    // running backend's record.
+    if let Err(error) = backend_descriptor::publish(bound_port) {
+        log::warn!("Failed to publish backend descriptor: {error}");
     }
 
     // Persist active HTTP port to ~/.libragent/http_port for external scripts/tools
