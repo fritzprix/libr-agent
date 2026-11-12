@@ -41,8 +41,9 @@ function parseArgs(argv) {
   return args;
 }
 
-function run(cmd, cmdArgs, { allowFail = false } = {}) {
+function run(cmd, cmdArgs, { allowFail = false, cwd } = {}) {
   const res = spawnSync(cmd, cmdArgs, {
+    cwd,
     encoding: 'utf8',
     maxBuffer: 32 * 1024 * 1024,
   });
@@ -69,6 +70,24 @@ const ghJson = (cmdArgs) => JSON.parse(run('gh', cmdArgs).stdout);
 
 function isLongLived(branch) {
   return branch === 'main' || branch === 'master' || branch.startsWith('dev/');
+}
+
+/**
+ * Local branch names that are not long-lived, optionally only those merged
+ * into `mergedInto`.
+ *
+ * Reads `refs/heads` with `git for-each-ref`, which lists real branches only.
+ * `git branch` also prints a `(HEAD detached at <sha>)` placeholder when HEAD
+ * is detached; that line is not a ref and made `git merge-base` fail (#2707).
+ */
+function listLocalBranches({ mergedInto, cwd } = {}) {
+  const cmdArgs = ['for-each-ref', '--format=%(refname:short)'];
+  if (mergedInto) cmdArgs.push(`--merged=${mergedInto}`);
+  cmdArgs.push('refs/heads');
+  return git(cmdArgs, { cwd })
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((b) => b && !isLongLived(b));
 }
 
 function isAncestor(ref, baseRef) {
@@ -114,10 +133,7 @@ function main() {
     ]).map((pr) => pr.headRefName),
   );
 
-  const localBranches = git(['branch', '--format=%(refname:short)'])
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((b) => b && b !== 'HEAD' && !isLongLived(b));
+  const localBranches = listLocalBranches();
 
   const remoteBranches = git(['ls-remote', '--heads', 'origin'])
     .split('\n')
@@ -169,15 +185,7 @@ function main() {
     }
   }
 
-  const remaining = git([
-    'branch',
-    '--merged',
-    baseRef,
-    '--format=%(refname:short)',
-  ])
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((b) => b && b !== 'HEAD' && !isLongLived(b));
+  const remaining = listLocalBranches({ mergedInto: baseRef });
 
   console.log(
     `Deleted. Remaining merged non-long-lived local branches: ${remaining.length}`,
@@ -189,4 +197,8 @@ function main() {
   }
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = { isLongLived, listLocalBranches };
