@@ -1,6 +1,6 @@
 # liblet CLI interface: benchmark and proposal
 
-Status: proposal for #2699 (part of epic #2698). Nothing here is implemented. Section 5 records the maintainer decisions of 2026-11-12; section 3 already reflects them. The TUI (#2702) and headless (#2703) tickets should build against section 3.
+Status: proposal for #2699 (part of epic #2698). Nothing here is implemented. Section 5 records the maintainer decisions of 2026-11-12; section 3 follows them and the epic and sub-issues as revised that day. The TUI (#2702) and headless (#2703) tickets should build against section 3.
 
 The invocation forms used in the epic discussion (`liblet`, `liblet "…"`, `liblet --prompt "…"`, `--hook`) were examples of intent. This document is the contract proposal; those examples are not.
 
@@ -104,9 +104,10 @@ No tool documents an exit code for "waiting on approval", because none of them w
 ### 3.1 Shape
 
 - `liblet` is its own binary. The build produces two artifacts: the GUI app, and `liblet`, a TUI that also supports headless runs. There are no subcommands.
-- The GUI and the TUI are both frontends of one shared backend and see the same sessions. A session opened in one can be resumed in the other.
-- A headless run uses an **ephemeral session**, separate from the shared sessions: it is created for that run, it is not listed in the GUI or the TUI, it cannot be resumed, and it is removed when the process exits.
-- The Session API (`docs/api/http_api.md`) is the contract between the shared backend and its frontends. It is not a side door for an extra client attaching to the GUI.
+- The GUI and the TUI are equal frontends of one shared local backend and see the same sessions. Whichever starts first starts the backend; a later one connects to it. A session opened in one can be resumed in the other.
+- The Session API (`docs/api/http_api.md`) is the contract between that shared backend and its frontends. It is not a way for a thin client to attach to a hidden GUI instance.
+- A headless run is self-contained. It hosts its own **ephemeral session** and does not connect to the shared backend. The session is not in the shared session list, cannot be resumed, and is removed when the process exits. Headless runs can proceed in parallel with the GUI, the TUI, and each other.
+- A headless run may read its initial settings, including the approval policy, from the profile (see 3.5).
 - Several apps may run on one device. Nothing may enforce "one app instance per device"; the only single-owner rule is that a live session has exactly one executor.
 
 ### 3.2 Invocation
@@ -122,9 +123,11 @@ No tool documents an exit code for "waiting on approval", because none of them w
 
 Mode selection is explicit and has exactly three outcomes:
 
-1. **Headless** when `-p` is given, or when a non-empty prompt arrives on piped stdin.
-2. **TUI** when neither holds and both stdin and stdout are a terminal.
-3. **Usage error** (exit code 2) otherwise: for example no terminal and no prompt, an empty pipe, or `liblet "prompt"` with stdout redirected. A positional prompt never selects headless mode.
+1. **Headless** when `-p` is given, or when a non-empty prompt arrives on piped stdin and there is no positional prompt.
+2. **TUI** when `-p` is absent and both stdin and stdout are a terminal.
+3. **Usage error** (exit code 2) otherwise: for example no terminal and no prompt, an empty pipe, or `liblet "prompt"` with stdout redirected.
+
+A positional prompt never selects headless mode. That settles the mixed case: `cat notes.md | liblet "summarize"` has a positional prompt and no terminal, so it is a usage error, and the message tells the user to add `-p`. With `-p`, the piped text is context for the prompt (the `cat file | liblet -p "prompt"` row). Piped text is the prompt itself only when no prompt is given any other way.
 
 liblet does not switch to headless because a terminal is missing (see 2.7). A pipe selects headless only because it carries the prompt.
 
@@ -195,26 +198,28 @@ The final result always goes to the process's standard output, the way a parent 
 
 ### 3.5 Approvals and user questions in headless mode
 
-Approvals follow the configuration the run started with: the execution mode from `--execution-mode`, default `normal`. Nothing is auto-approved beyond what that mode already allows, and the mode cannot be raised during the run.
+Approvals follow the configuration the run started with. The starting execution mode is, in order: `--execution-mode` if given; otherwise the approval policy in the profile's initial settings, if the profile sets one; otherwise `normal`. Nothing is auto-approved beyond what that mode already allows, and the mode cannot be raised during the run.
 
 When a tool call needs an approval that the starting mode does not cover, the run **stops**. liblet prints the result with `status: "blocked"`, `reason: "approval"`, and the pending call in `pendingApprovals`, then exits with code 3. It does not deny-and-continue and it does not wait. The caller decides whether to rerun with a higher `--execution-mode`.
 
 When the agent asks the user a question (`ui__askUser`) or requests a secret, nobody can answer. The run stops the same way with `reason: "question"` and exit code 4.
 
+Because the ephemeral session is removed at exit, a stopped run cannot be inspected afterwards. The `pendingApprovals` entry in the result (and the events in a `stream-json` trace) are the only record of what the run was about to do.
+
 Where this differs from the benchmark: Claude Code and Gemini CLI deny the call and let the agent continue. liblet stops, so a run never reports success after working around a refused action.
 
 ### 3.6 Exit codes
 
-| Code  | Meaning                                                                                         | Convention                                   |
-| ----- | ----------------------------------------------------------------------------------------------- | -------------------------------------------- |
-| `0`   | The run completed                                                                               | All tools                                    |
-| `1`   | The run failed: session status `error`, the backend could not be reached, or an API call failed | Claude Code, Gemini CLI                      |
-| `2`   | Usage error: bad flag, bad combination, or no way to pick a mode (3.2). No session is created   | Common shell convention (Gemini CLI uses 42) |
-| `3`   | Stopped: a tool call needed an approval the starting mode does not cover                        | liblet-specific; no tool documents one       |
-| `4`   | Stopped: the agent asked a user question or requested a secret                                  | liblet-specific                              |
-| `124` | `--timeout` reached                                                                             | GNU `timeout`                                |
-| `130` | Interrupted by SIGINT                                                                           | Shell convention (128 + signal)              |
-| `143` | Terminated by SIGTERM                                                                           | Claude Code                                  |
+| Code  | Meaning                                                                                                                                                    | Convention                                   |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `0`   | The run completed                                                                                                                                          | All tools                                    |
+| `1`   | The run failed: the session ended in `error` (for example the LLM provider failed), or the run could not start (for example the profile could not be read) | Claude Code, Gemini CLI                      |
+| `2`   | Usage error: bad flag, bad combination, or no way to pick a mode (3.2). No session is created                                                              | Common shell convention (Gemini CLI uses 42) |
+| `3`   | Stopped: a tool call needed an approval the starting mode does not cover                                                                                   | liblet-specific; no tool documents one       |
+| `4`   | Stopped: the agent asked a user question or requested a secret                                                                                             | liblet-specific                              |
+| `124` | `--timeout` reached                                                                                                                                        | GNU `timeout`                                |
+| `130` | Interrupted by SIGINT                                                                                                                                      | Shell convention (128 + signal)              |
+| `143` | Terminated by SIGTERM                                                                                                                                      | Claude Code                                  |
 
 On every exit, liblet terminates the run's workflow and removes the ephemeral session. The `status` field in `json` and `stream-json` output carries the same information for callers that do not read exit codes.
 
@@ -228,16 +233,21 @@ These are inputs to #2702, not a layout.
 - A user question or secret request is answered inline.
 - The first Ctrl+C interrupts the running turn; exiting the TUI does not terminate the session unless the user asks.
 
-## 4. What the backend contract still lacks
+## 4. What is still missing
 
-Checked against `src-tauri/src/server/routes.rs` on `dev/0.9.x` at `dc94e17c3`. Under decision 4 these are requirements on the backend–frontend contract; the TUI cannot be a full frontend without them.
+Checked against `src-tauri/src/server/routes.rs` on `dev/0.9.x` at `dc94e17c3`.
+
+### 4.1 Shared-backend contract (TUI)
+
+The TUI cannot be a full frontend without these. All three are in #2700's work list as revised on 2026-11-12.
 
 1. **No session list.** `--continue`, `--list-sessions`, and the resume picker need the shared sessions with their workspace path and last message time.
-2. **No streaming.** The API has `GET /api/sessions/:id` and `GET /api/sessions/:id/messages` only. TUI streaming and the `stream-json` trace need an event stream; polling is enough only for `text` and `json`.
-3. **No release-build route for user questions.** Seeing and answering a pending `ui__askUser` prompt exists only in the debug-only E2E control plane (`src-tauri/src/server/e2e_control`). This item is already in #2700's work list.
-4. **No ephemeral session.** Sessions created through the API today are persisted and visible to every frontend. Headless mode needs a session that is hidden from the shared list and removed when its run ends.
+2. **No streaming.** The API has `GET /api/sessions/:id` and `GET /api/sessions/:id/messages` only. The TUI needs an event stream for model output.
+3. **No release-build route for user questions.** Seeing and answering a pending `ui__askUser` prompt exists only in the debug-only E2E control plane (`src-tauri/src/server/e2e_control`).
 
-Items 1, 2, and 4 have no owner issue yet.
+### 4.2 Headless requirement (#2703)
+
+There is no ephemeral session today: a session is persisted and visible to every frontend. #2703 has to provide a session that a headless process hosts itself, that never enters the shared list, and that is removed when the run ends. This is not a gap in the shared-backend contract, because a headless run does not use that backend. The `stream-json` trace comes from the headless process's own run, not from a backend stream.
 
 ## 5. Maintainer decisions (2026-11-12)
 
@@ -255,15 +265,16 @@ These are this document's interpretations. Correct them here if they are wrong.
 
 - **"No subcommand" is applied to the whole CLI.** Session listing is the flag `--list-sessions`, not `liblet sessions`.
 - **"Ephemeral" is read as: not listed, not resumable, removed at exit.** So headless output carries no session id, and `--continue` / `--resume` are TUI-only.
-- **"Initial configuration" is read as the flags given at start.** `--execution-mode` fixes approvals for the run, and `--output-format stream-json` is the full trace.
+- **"Initial configuration" is read as what is fixed when the run starts:** the flags, then the profile's initial settings. `--execution-mode` (or the profile's approval policy) fixes approvals for the run, and `--output-format stream-json` is the full trace.
 - **A user question stops a headless run the same way an approval does** (exit code 4). Decision 2 names approvals only.
 - **`--timeout` is kept.** It was not part of the five decisions.
 
-### 5.2 Effect on other sub-issues
+### 5.2 State of the epic and sub-issues
 
-This document does not change them; a maintainer should.
+The maintainer revised #2698, #2700, #2701, #2702, and #2703 on 2026-11-12 to match these decisions. Nothing in them is known to be out of date:
 
-- **Epic #2698** says liblet attaches to a running instance or starts a hidden one, and that the CLI is "a separate binary that wraps the Session API". Decision 4 replaces that picture with one shared backend and two frontends.
-- **#2700** plans a data-dir lock so that a second runtime "must attach (or fail)". No single-instance lock exists in the code today (a search of `src-tauri` for `single_instance` and `single-instance` finds nothing), so decision 4's "remove the single-instance lock" bears on that planned lock: the single-owner rule moves from the data directory to the live session's executor.
-- **#2701** (attach on the same profile, isolate workers) is written around attach. It needs to be restated for a shared backend and for ephemeral headless sessions.
-- **#2703** (headless) should drop any end-or-block callback and session resume.
+- **#2698** describes equal frontends on a shared backend, ephemeral headless, and no `--hook`.
+- **#2700** forbids a single-instance or data-dir lock and adds the session list, streaming, and user-question routes of section 4.1.
+- **#2701** is the shared backend for the GUI and the TUI, with headless out of scope.
+- **#2703** is the ephemeral headless path: `-p` or a piped prompt, result on stdout, no callback, a distinct exit status when a human is needed.
+- **#2702** says reserved subcommands take precedence "if the interface proposal keeps that shape". This proposal has no subcommands (5.1), so that clause does not apply.
