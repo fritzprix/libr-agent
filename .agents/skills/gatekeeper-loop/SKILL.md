@@ -74,7 +74,7 @@ If `rebased: true` (reviewedHead is not an ancestor of head, or no longer exists
 
 `ownerComments` lists unmarked owner/`@me` comments posted after the last marker. Treat each as a required item: answer it in the next verdict (as a `G` item, or in `### Checked` if already satisfied). Apply [references/review-rubric.md](references/review-rubric.md).
 
-Check build and test results in CI; do not run them locally. **However, CI does not replace code review (diff, design, acceptance criteria satisfaction, edge cases).** Perform code review directly regardless of CI status. If CI failed, analyze failure logs and include root cause and fix guidance in findings. Use the dedicated gatekeeper worktree only when local verification is strictly required (never run `pnpm refactor:validate`):
+Check build and test results in CI; do not run them locally. **However, CI does not replace code review (diff, design, acceptance criteria satisfaction, edge cases).** Perform code review directly regardless of CI status. If CI failed, analyze failure logs and include root cause and fix guidance in findings — see [references/pre-post-checklist.md](references/pre-post-checklist.md) § CI (be skeptical of worker explanations; timeout bumps on pre-existing tests need log proof and cross-PR reconciliation). Use the dedicated gatekeeper worktree only when local verification is strictly required (never run `pnpm refactor:validate`):
 
 ```bash
 MAIN=$(git rev-parse --show-toplevel)
@@ -86,7 +86,7 @@ git -C "$WT" checkout --detach --force "origin/<head>" && git -C "$WT" clean -fd
 
 Keep it between ticks so build caches stay warm; run `pnpm install --frozen-lockfile` there only when the lockfile changed. Local runs never lead to commits.
 
-`securitySensitive` lists changed paths touching shell policy, tool approval, permissions, secrets or sandboxing. For such PRs add the label `gatekeeper:needs-human`, and an `approve` is only valid if `### Checked` lists the concrete bypass scenarios you tried (e.g. quoting, env, symlink, path traversal) and why each is blocked. Never auto-approve them silently.
+Queue output includes `securitySensitivePolicyPaths` (shell policy, tool approval, permissions, secrets, sandbox paths), `securitySensitiveBehaviorHints` (broader path hints such as API routes, executors, API-key modules), and the combined `securitySensitive` list. **Path hits are only a first pass.** Also read the diff for security-sensitive **behavior**: sending API keys or bearer tokens over HTTP, new auth or secret-prompt surfaces, credential storage, sandbox/approval policy changes — even when no path matched. For any policy hit, behavior hint, or behavior you classify as security-sensitive, add `gatekeeper:needs-human`, and an `approve` is only valid if `### Checked` lists the concrete bypass scenarios you tried (e.g. quoting, env, symlink, path traversal) and why each is blocked. Never auto-approve them silently.
 
 On round ≥ 2, read the worker response first and settle every previous `G` item: fixed (verify in the diff), decline accepted, or disputed (restate once; a second dispute on the same item → escalate).
 
@@ -102,7 +102,9 @@ Decide:
 - **clean, await CI** — code review completed with zero open required findings, but CI is not green at the head yet (pending, not run, or a stacked PR). Post a `verdict=clean head=<sha>` marker comment, remove any stale `gatekeeper:changes-requested` label (`gh pr edit N --remove-label gatekeeper:changes-requested`; does not count as a round), optionally mirror it in state, and move on to the next PR. On a later tick the script reports `await-ci`; once CI completes it reports `review` again: do not re-review the diff, just post `approve` (with `gh pr edit N --add-label gatekeeper:approved --remove-label gatekeeper:changes-requested`) if green or diagnose the failure.
 - **escalate** — round limit (5) reached, a repeated dispute, or the right answer is a product/security/data decision for the user.
 
-Include the mandatory **informational** 100-point code-quality breakdown in every verdict comment (`### Code quality score (informational)` in [references/comment-format.md](references/comment-format.md), rubric in [references/review-rubric.md](references/review-rubric.md)). Per-item one-line rationales must cite `file:line` evidence. The score must **not** change how you choose approve vs changes-requested.
+Include the mandatory **informational** 100-point code-quality breakdown in every verdict comment (`### Code quality score (informational)` in [references/comment-format.md](references/comment-format.md), rubric in [references/review-rubric.md](references/review-rubric.md)). Per-item one-line rationales must cite `file:line` evidence. The score must **not** change how you choose approve vs changes-requested (no score threshold); use [references/pre-post-checklist.md](references/pre-post-checklist.md) § score calibration so totals spread across the range.
+
+**Before posting**, complete [references/pre-post-checklist.md](references/pre-post-checklist.md): re-fetch `headRefOid` (abort if it moved), refuse duplicate `head`+`verdict` markers, run the severity table (major vs minor), and when upgrading `clean` → `approve` at the same head, align the approve body with the latest `clean` marker (especially `### Checked` and suggestions).
 
 Post the verdict with `gh pr comment N --body-file <tmp>` using the exact marker format (`head=` is the full `headSha` you reviewed, `base=` the PR's current base branch), then swap labels:
 

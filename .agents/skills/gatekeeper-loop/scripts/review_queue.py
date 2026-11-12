@@ -47,6 +47,14 @@ OWNER_ASSOCIATIONS = {"OWNER", "MEMBER", "COLLABORATOR"}
 SENSITIVE_PATH = re.compile(
     r"(shell[_-]?policy|tool[_-]?approval|permission|secret|credential|keychain|sandbox)", re.I
 )
+# Extra path hints for auth/credential surfaces that path-only policy regex misses (HTTP clients,
+# release API routes, executor modules). Behavior review in the skill is still required.
+SENSITIVE_BEHAVIOR_HINT = re.compile(
+    r"(api[_-]?key|bearer|oauth|auth[_-]?guard|encrypted_secret|rust[_-]?executor|"
+    r"llm[_-]?executor|openai[_-]?compat|session[_-]?api|routes\.rs|user[_-]?prompt|"
+    r"prompt[_-]?kind|headless[_-]?runtime|liblet)",
+    re.I,
+)
 
 
 def get_default_state_file() -> Path:
@@ -223,6 +231,53 @@ def classify(
     return "review", "not reviewed yet", 1
 
 
+def classify_sensitive_paths(paths: list[str]) -> dict:
+    """Split changed paths into policy-regex hits and broader behavior-hint hits."""
+    policy = sorted(p for p in paths if SENSITIVE_PATH.search(p))
+    behavior_hint = sorted(
+        p for p in paths
+        if p not in policy and SENSITIVE_BEHAVIOR_HINT.search(p)
+    )
+    combined = sorted(set(policy) | set(behavior_hint))
+    return {
+        "securitySensitive": combined,
+        "securitySensitivePolicyPaths": policy,
+        "securitySensitiveBehaviorHints": behavior_hint,
+    }
+
+
+def markers_at_head(markers: list[dict], head: str) -> list[dict]:
+    """Gatekeeper markers (incl. clean) already posted for this PR head SHA."""
+    return [m for m in markers if m.get("head") == head]
+
+
+def posting_checks(*, head: str, markers: list[dict], last_verdict: dict | None) -> dict:
+    """Signals the reviewer must satisfy immediately before posting a new marker."""
+    at_head = markers_at_head(markers, head)
+    last_at_head = last_verdict if (last_verdict or {}).get("head") == head else None
+    return {
+        "headSha": head,
+        "markersAtHead": [
+            {"verdict": m.get("verdict"), "round": m.get("round"), "createdAt": m.get("createdAt")}
+            for m in at_head
+        ],
+        "lastVerdictAtHead": (
+            {
+                "verdict": last_at_head.get("verdict"),
+                "round": last_at_head.get("round"),
+                "url": last_at_head.get("url"),
+            }
+            if last_at_head
+            else None
+        ),
+        "reFetchHeadBeforePost": True,
+        "doNotDuplicateHeadVerdict": (
+            "Before posting, refuse if an identical gatekeeper-loop marker already exists "
+            "for this headSha and intended verdict (including clean)."
+        ),
+    }
+
+
 def latest_clean_marker(cleans: list[dict], last: dict | None, response: dict | None) -> dict | None:
     """The newest clean marker posted after the last verdict and after the worker's
     response to it. A response that arrives after a clean marker asks for a new look,
@@ -284,7 +339,7 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
     labels = sorted(label["name"] for label in pr.get("labels") or [])
     paths = [f["path"] for f in pr.get("files") or []]
     own_skill = any(p.startswith(PROTECTED_SKILL_PREFIXES) for p in paths)
-    sensitive = sorted(p for p in paths if SENSITIVE_PATH.search(p))
+    sensitive_info = classify_sensitive_paths(paths)
 
     status, reason, priority = classify(
         mergeable=pr.get("mergeable"),
@@ -329,7 +384,10 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
         "cleanMarker": clean,
         "workerResponse": response,
         "ownerComments": owner,
-        "securitySensitive": sensitive,
+        "securitySensitive": sensitive_info["securitySensitive"],
+        "securitySensitivePolicyPaths": sensitive_info["securitySensitivePolicyPaths"],
+        "securitySensitiveBehaviorHints": sensitive_info["securitySensitiveBehaviorHints"],
+        "postingChecks": posting_checks(head=head, markers=markers, last_verdict=last),
         "labels": labels,
         "staleApprovedLabel": "gatekeeper:approved" in labels and status != "approved",
         "url": pr["url"],
