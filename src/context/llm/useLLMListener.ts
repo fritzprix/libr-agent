@@ -444,13 +444,19 @@ export function useLLMListener({
       const unlistenFn = await listen<CompletionCancelRequest>(
         'llm:completion-cancel',
         (event) => {
-          const { sessionId, responseMessageId, reason } = event.payload;
+          const { sessionId, responseMessageId, reason, willRetry } =
+            event.payload;
           logger.info('Received Rust-driven completion cancel request', {
             sessionId,
             responseMessageId,
             reason,
+            willRetry,
           });
-          notifyRecoveryCancel(reason, tRef.current);
+          // The "Retrying…" toast is true only when Rust starts a new turn.
+          // On the final failure the error bubble explains what happened.
+          if (willRetry) {
+            notifyRecoveryCancel(reason, tRef.current);
+          }
           cancelCompletionRequest(sessionId, responseMessageId);
         },
       );

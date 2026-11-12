@@ -28,7 +28,7 @@ Frontend (useExecuteCompletion)
   reportLLMStreamingIssue({ issueKind: REPEATED_TEXT_LOOP })
        ↓
 Backend (handle_streaming_issue)
-  emit_completion_cancel(reason: "repeated-text-loop")
+  emit_completion_cancel(reason: "repeated-text-loop", willRetry)
        ↓
   request_llm_completion_with_recovery (max 2 retries)
 ```
@@ -83,6 +83,8 @@ detection is the primary fix.
 | `StreamingIssueKind` | `REPEATED_TEXT_LOOP` |
 | Error code           | `REPEATED_TEXT_LOOP` |
 | Cancel reason        | `repeated-text-loop` |
+
+`willRetry` is `true` when a fresh completion follows the cancel and `false` when the retry budget is spent. The frontend shows its "Retrying…" toast only when it is `true`; on the final failure the error bubble explains the stop instead.
 
 ## Recovery chain guarantees
 

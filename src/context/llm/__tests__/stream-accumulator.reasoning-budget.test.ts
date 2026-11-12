@@ -22,7 +22,10 @@ function createAccumulator(maxTokens: number): StreamAccumulator {
     'response-1',
     settingsRef,
     performance.now(),
-    { reasoningBudgetMaxTokens: maxTokens },
+    {
+      reasoningBudgetMaxTokens: maxTokens,
+      reasoningBudgetMaxTokensSource: 'settings',
+    },
   );
 }
 
@@ -54,6 +57,9 @@ describe('StreamAccumulator reasoning/output budget', () => {
         thinkingText: thinking,
         contentText: '',
       }),
+      // The error bubble shows these so the user knows which limit applied.
+      maxOutputTokens: maxTokens,
+      maxOutputTokensSource: 'settings',
     });
     expect(first.shouldAbortStream).toBe(true);
     expect(accumulator.didExceedReasoningBudget()).toBe(true);

@@ -169,12 +169,21 @@ export interface StreamingIssueReport {
   patternLength: number;
   /** For reasoning/output-budget: estimated non-tool output tokens at abort. */
   repetitionCount: number;
+  /** Reasoning/output-budget only: max output tokens in effect for the request. */
+  maxOutputTokens?: number;
+  /** Reasoning/output-budget only: where `maxOutputTokens` was resolved from. */
+  maxOutputTokensSource?: MaxOutputTokensSource;
 }
+
+/** Where a request's max output tokens came from (see `useExecuteCompletion`). */
+export type MaxOutputTokensSource = 'assistant' | 'settings' | 'fallback';
 
 export interface CompletionCancelRequest {
   sessionId: string;
   responseMessageId: string;
   reason: string;
+  /** True when Rust starts a fresh completion right after this cancel. */
+  willRetry: boolean;
 }
 
 export type AgentRuntimeError = MessageError;

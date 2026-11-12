@@ -532,7 +532,7 @@
       "circuitBreaker": "도구 루프 제한",
       "circuitBreakerDescription": "작업을 중단하기 전까지 허용되는 반복 오류 또는 도구 실행 횟수입니다.",
       "maxOutputTokens": "최대 출력 토큰 (기본값)",
-      "maxOutputTokensDescription": "어시스턴트가 지정하지 않은 경우 새 세션에 대한 기본 최대 출력 토큰 수입니다.",
+      "maxOutputTokensDescription": "어시스턴트가 따로 지정하지 않았을 때 쓰는 기본 최대 출력 토큰 수입니다. 요청마다 다시 읽습니다.",
       "defaultSessionMaxDepth": "세션 분기 제한 (고급)",
       "defaultSessionMaxDepthDescription": "기본적으로 허용되는 하위 세션 레벨 수를 제어합니다. 제한 없음을 위해 0으로 설정하세요. 대부분의 사용자는 그대로 두셔도 됩니다.",
       "defaultSessionMaxDepthPlaceholder": "예: 3",
@@ -1876,7 +1876,26 @@
     "tryAgain": "다시 시도",
     "goToSettings": "설정에서 API 키 확인하기",
     "invalidContextState": "이 세션에는 더 큰 문맥 한도가 필요합니다. 설정에서 최대 입력 문맥을 올린 뒤 다시 시도하세요.",
-    "openContextSettings": "문맥 설정 열기"
+    "openContextSettings": "문맥 설정 열기",
+    "reasoningStop": {
+      "budgetReason": "모델이 답변이나 도구 호출 없이 추론에 출력 예산을 다 써서 턴을 중단했습니다.",
+      "budgetNumbers": "약 {{used}} 토큰을 사용했습니다. 중단 기준은 {{budget}} 토큰이며, 최대 출력 토큰의 90%입니다.",
+      "sourceAssistant": "최대 출력 토큰은 {{max}}이며 이 어시스턴트에 설정된 값입니다. 설정의 기본값을 바꿔도 이 세션에는 적용되지 않습니다.",
+      "sourceSettings": "최대 출력 토큰은 {{max}}이며 설정 → 채팅 인터페이스 → 최대 출력 토큰 (기본값)에서 온 값입니다.",
+      "sourceFallback": "최대 출력 토큰은 {{max}}입니다. 설정에 값이 없어 내장 기본값을 사용했습니다.",
+      "budgetNextSteps": "다음 단계: 설정에서 최대 출력 토큰 (기본값)을 올린 뒤 다시 시도하세요. 새 값은 다음 요청부터 적용됩니다. 아무것도 바꾸지 않고 다시 시도하면 같은 방식으로 중단되는 경우가 많습니다.",
+      "budgetNextStepsAssistant": "다음 단계: 다시 시도하거나, 추론이 덜 필요하도록 요청 범위를 좁히세요. 아무것도 바꾸지 않고 다시 시도하면 같은 방식으로 중단되는 경우가 많습니다.",
+      "thinkingOnlyReason": "모델이 답변도 도구 호출도 없이 내부 추론만 남기고 끝났습니다.",
+      "thinkingOnlyNextSteps": "다음 단계: 다시 시도하거나 직접적인 답변을 요청하세요. 모델이 출력 한도에 걸렸을 수 있다면 먼저 설정에서 최대 출력 토큰 (기본값)을 올리세요.",
+      "thinkingLoopReason": "모델이 같은 추론을 계속 반복해서 턴을 중단했습니다.",
+      "textLoopReason": "모델이 같은 텍스트를 계속 반복해서 턴을 중단했습니다.",
+      "loopNumbers": "{{patternLength}}자 길이의 패턴이 {{repetitionCount}}회 반복된 것을 감지했습니다.",
+      "thinkingLoopNextSteps": "다음 단계: 다시 시도하거나 요청을 바꿔 쓰거나 범위를 좁히세요. 오탐이었다면 설정 → 고급에서 생각 루프 최소 패턴 길이 또는 생각 루프 최소 반복 횟수를 올리세요.",
+      "textLoopNextSteps": "다음 단계: 다시 시도하거나 요청을 바꿔 쓰거나 범위를 좁히세요.",
+      "autoRetries": "이미 사용한 자동 재시도 횟수: {{retries}}회.",
+      "openOutputTokenSettings": "최대 출력 토큰 설정 열기",
+      "openLoopSettings": "고급 설정 열기"
+    }
   },
   "knowledge": {
     "untitledEntry": "Untitled knowledge entry",

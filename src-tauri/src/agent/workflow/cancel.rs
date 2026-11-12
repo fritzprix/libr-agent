@@ -193,6 +193,7 @@ async fn cancel_frontend_completion_if_pending(
         session_id: session_id.to_string(),
         response_message_id,
         reason: reason.to_string(),
+        will_retry: false,
     }) {
         log::warn!(
             "Failed to emit llm:completion-cancel for session {}: {}",

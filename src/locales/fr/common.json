@@ -532,7 +532,7 @@
       "circuitBreaker": "Limite de boucle d'outils",
       "circuitBreakerDescription": "Nombre d'erreurs répétées autorisées avant l'arrêt de la tâche.",
       "maxOutputTokens": "Tokens de sortie max (Défaut)",
-      "maxOutputTokensDescription": "Nombre maximum de tokens de sortie par défaut pour les nouvelles sessions si non spécifié par l'assistant.",
+      "maxOutputTokensDescription": "Nombre maximal de tokens de sortie par défaut lorsque l'assistant ne définit pas le sien. Relu à chaque requête.",
       "defaultSessionMaxDepth": "Limite de ramification de session (Avancé)",
       "defaultSessionMaxDepthDescription": "Contrôle combien de niveaux de sessions enfants sont autorisés par défaut. Réglez sur 0 pour illimité. La plupart des utilisateurs peuvent laisser tel quel.",
       "defaultSessionMaxDepthPlaceholder": "ex. 3",
@@ -1886,7 +1886,26 @@
     "tryAgain": "Réessayer",
     "goToSettings": "Configurer la clé API dans les Paramètres",
     "invalidContextState": "Cette session nécessite une limite de contexte plus élevée. Augmentez le contexte d’entrée max dans les paramètres, puis réessayez.",
-    "openContextSettings": "Ouvrir les paramètres de contexte"
+    "openContextSettings": "Ouvrir les paramètres de contexte",
+    "reasoningStop": {
+      "budgetReason": "Le modèle a dépensé son budget de sortie en raisonnement sans donner de réponse ni appeler d'outil. Le tour a donc été arrêté.",
+      "budgetNumbers": "Environ {{used}} tokens utilisés. Le seuil est de {{budget}} tokens, soit 90 % des tokens de sortie max.",
+      "sourceAssistant": "Les tokens de sortie max sont de {{max}}, définis sur cet assistant. Modifier la valeur par défaut dans les Paramètres ne change rien pour cette session.",
+      "sourceSettings": "Les tokens de sortie max sont de {{max}}, d'après Paramètres → Interface de chat → Tokens de sortie max (Défaut).",
+      "sourceFallback": "Les tokens de sortie max sont de {{max}}, la valeur intégrée, car aucune valeur n'est définie dans les Paramètres.",
+      "budgetNextSteps": "Étape suivante : augmentez Tokens de sortie max (Défaut) dans les Paramètres, puis réessayez. La nouvelle valeur s'applique à la requête suivante. Réessayer sans rien changer s'arrête souvent de la même façon.",
+      "budgetNextStepsAssistant": "Étape suivante : réessayez, ou réduisez la demande pour qu'elle exige moins de raisonnement. Réessayer sans rien changer s'arrête souvent de la même façon.",
+      "thinkingOnlyReason": "Le modèle a terminé avec seulement un raisonnement interne : ni réponse ni appel d'outil.",
+      "thinkingOnlyNextSteps": "Étape suivante : réessayez, ou demandez une réponse directe. Si le modèle a pu atteindre sa limite de sortie, augmentez d'abord Tokens de sortie max (Défaut) dans les Paramètres.",
+      "thinkingLoopReason": "Le modèle répétait sans cesse le même raisonnement. Le tour a donc été arrêté.",
+      "textLoopReason": "Le modèle répétait sans cesse le même texte. Le tour a donc été arrêté.",
+      "loopNumbers": "Motif de {{patternLength}} caractères détecté, répété {{repetitionCount}} fois.",
+      "thinkingLoopNextSteps": "Étape suivante : réessayez, ou reformulez ou réduisez la demande. S'il s'agit d'une fausse alerte, augmentez Longueur minimale du motif de boucle de pensée ou Répétitions minimales de boucle de pensée dans Paramètres → Avancé.",
+      "textLoopNextSteps": "Étape suivante : réessayez, ou reformulez ou réduisez la demande.",
+      "autoRetries": "Nouvelles tentatives automatiques déjà utilisées : {{retries}}.",
+      "openOutputTokenSettings": "Ouvrir les paramètres des tokens de sortie max",
+      "openLoopSettings": "Ouvrir les paramètres avancés"
+    }
   },
   "knowledge": {
     "untitledEntry": "Entrée de connaissance sans titre",

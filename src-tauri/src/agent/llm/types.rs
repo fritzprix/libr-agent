@@ -135,6 +135,13 @@ pub struct StreamingIssueReport {
     pub observed_tail_chars: usize,
     pub pattern_length: usize,
     pub repetition_count: usize,
+    /// Reasoning/output-budget only: the max output tokens in effect for the request.
+    #[serde(default)]
+    pub max_output_tokens: Option<usize>,
+    /// Reasoning/output-budget only: where that value came from
+    /// (`assistant`, `settings`, or `fallback`), resolved by the frontend.
+    #[serde(default)]
+    pub max_output_tokens_source: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -143,6 +150,9 @@ pub struct CompletionCancelRequest {
     pub session_id: String,
     pub response_message_id: String,
     pub reason: String,
+    /// True when Rust starts a fresh completion right after this cancel.
+    /// False when the turn ends (user cancel, or recovery budget spent).
+    pub will_retry: bool,
 }
 
 /// Prompt-layout inputs from the parent workflow request reused by Rust when it

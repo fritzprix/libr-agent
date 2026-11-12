@@ -532,7 +532,7 @@
       "circuitBreaker": "Werkzeugschleifen-Grenze",
       "circuitBreakerDescription": "Zulässige Anzahl wiederholter Fehler vor dem Stoppen der Aufgabe.",
       "maxOutputTokens": "Max. Ausgabe-Token (Standard)",
-      "maxOutputTokensDescription": "Standardmäßige maximale Ausgabe-Token für neue Sitzungen, falls vom Assistenten nicht anders angegeben.",
+      "maxOutputTokensDescription": "Standardwert für die maximalen Ausgabe-Token, wenn der Assistent keinen eigenen Wert festlegt. Wird bei jeder Anfrage neu gelesen.",
       "defaultSessionMaxDepth": "Sitzungsverzweigungs-Limit (Erweitert)",
       "defaultSessionMaxDepthDescription": "Steuert, wie viele Ebenen von Kind-Sitzungen standardmäßig erlaubt sind. Auf 0 für unbegrenzt setzen. Die meisten Benutzer können dies so lassen.",
       "defaultSessionMaxDepthPlaceholder": "z. B. 3",
@@ -1886,7 +1886,26 @@
     "tryAgain": "Erneut versuchen",
     "goToSettings": "API-Schlüssel in Einstellungen konfigurieren",
     "invalidContextState": "Diese Sitzung braucht ein größeres Kontextlimit. Erhöhen Sie in den Einstellungen Max. Eingabekontext und versuchen Sie es erneut.",
-    "openContextSettings": "Kontexteinstellungen öffnen"
+    "openContextSettings": "Kontexteinstellungen öffnen",
+    "reasoningStop": {
+      "budgetReason": "Das Modell hat sein Ausgabebudget für Überlegungen verbraucht, ohne zu antworten oder ein Tool aufzurufen. Der Durchlauf wurde deshalb gestoppt.",
+      "budgetNumbers": "Etwa {{used}} Token verbraucht. Die Grenze liegt bei {{budget}} Token, das sind 90 % der maximalen Ausgabe-Token.",
+      "sourceAssistant": "Die maximalen Ausgabe-Token betragen {{max}} und sind bei diesem Assistenten festgelegt. Eine Änderung des Standardwerts in den Einstellungen wirkt sich auf diese Sitzung nicht aus.",
+      "sourceSettings": "Die maximalen Ausgabe-Token betragen {{max}}, aus Einstellungen → Chat-Oberfläche → Max. Ausgabe-Token (Standard).",
+      "sourceFallback": "Die maximalen Ausgabe-Token betragen {{max}}. Das ist der eingebaute Standardwert, weil in den Einstellungen kein Wert gesetzt ist.",
+      "budgetNextSteps": "Nächster Schritt: Erhöhen Sie Max. Ausgabe-Token (Standard) in den Einstellungen und versuchen Sie es erneut. Der neue Wert gilt ab der nächsten Anfrage. Ein erneuter Versuch ohne Änderung endet oft auf dieselbe Weise.",
+      "budgetNextStepsAssistant": "Nächster Schritt: Versuchen Sie es erneut oder grenzen Sie die Anfrage ein, damit weniger Überlegung nötig ist. Ein erneuter Versuch ohne Änderung endet oft auf dieselbe Weise.",
+      "thinkingOnlyReason": "Das Modell hat nur interne Überlegungen ausgegeben: keine Antwort und kein Tool-Aufruf.",
+      "thinkingOnlyNextSteps": "Nächster Schritt: Versuchen Sie es erneut oder bitten Sie um eine direkte Antwort. Falls das Modell sein Ausgabelimit erreicht haben könnte, erhöhen Sie zuerst Max. Ausgabe-Token (Standard) in den Einstellungen.",
+      "thinkingLoopReason": "Das Modell hat dieselbe Überlegung immer wieder wiederholt. Der Durchlauf wurde deshalb gestoppt.",
+      "textLoopReason": "Das Modell hat denselben Text immer wieder wiederholt. Der Durchlauf wurde deshalb gestoppt.",
+      "loopNumbers": "Erkannt wurde ein Muster von {{patternLength}} Zeichen, das {{repetitionCount}}-mal wiederholt wurde.",
+      "thinkingLoopNextSteps": "Nächster Schritt: Versuchen Sie es erneut, formulieren Sie die Anfrage um oder grenzen Sie sie ein. Bei einem Fehlalarm erhöhen Sie Minimale Denkschleifen-Musterlänge oder Minimale Denkschleifen-Wiederholungen unter Einstellungen → Erweitert.",
+      "textLoopNextSteps": "Nächster Schritt: Versuchen Sie es erneut, formulieren Sie die Anfrage um oder grenzen Sie sie ein.",
+      "autoRetries": "Bereits genutzte automatische Wiederholungen: {{retries}}.",
+      "openOutputTokenSettings": "Einstellungen für Max. Ausgabe-Token öffnen",
+      "openLoopSettings": "Erweiterte Einstellungen öffnen"
+    }
   },
   "knowledge": {
     "untitledEntry": "Unbenannter Wissenseintrag",

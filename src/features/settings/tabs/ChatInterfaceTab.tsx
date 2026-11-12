@@ -167,7 +167,7 @@ function ChatInterfaceTabComponent({
         <p className="mt-3 text-xs text-muted-foreground">
           {t(
             'settings.advanced.maxOutputTokensDescription',
-            'Default maximum output tokens for new sessions if not specified by assistant.',
+            'Default maximum output tokens when the assistant does not set its own. Read on every request.',
           )}
         </p>
       </div>
