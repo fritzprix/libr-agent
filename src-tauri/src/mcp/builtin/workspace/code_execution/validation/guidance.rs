@@ -214,9 +214,17 @@ pub fn shell_command_failure_guidance(
                 command,
             )
         }
+        // Exit 2 is not proof of a shell error: argparse-style usage errors and
+        // programs with their own status codes also return 2 after running. Real
+        // shell parse errors are caught above by `looks_like_shell_quote_parse_error`.
         Some(2) => with_rewrite_loop_hint(
             vec![
-                "Misuse of shell command or invalid arguments".to_string(),
+                if stdout.is_empty() && stderr.is_empty() {
+                    "Exit code 2 - the command ran and printed no output. Many programs use 2 for a usage error or as their own status."
+                } else {
+                    "Exit code 2 - the command ran. Many programs use 2 for a usage error or as their own status; read its output above."
+                }
+                .to_string(),
                 format!(
                     "For multi-line or quote-heavy scripts, use workspace__writeFile then {} with a short command.",
                     crate::mcp::builtin::workspace::types::RUN_SHELL_TOOL
@@ -387,11 +395,23 @@ mod tests {
     }
 
     #[test]
+    fn exit_2_with_no_output_says_so_instead_of_pointing_at_output() {
+        let guidance = shell_command_failure_guidance(Some(2), "", "", "foo -x", false);
+        let joined = guidance.join("\n");
+        assert!(joined.contains("printed no output"), "{joined}");
+        assert!(!joined.contains("read its output above"), "{joined}");
+    }
+
+    #[test]
     fn test_shell_command_failure_guidance_exit_2_without_quote_signal() {
         let guidance =
             shell_command_failure_guidance(Some(2), "", "usage: foo [-a]", "foo -x", false);
         let joined = guidance.join("\n");
-        assert!(joined.contains("Misuse of shell command"));
+        assert!(
+            joined.contains("Exit code 2 - the command ran"),
+            "exit 2 must be described as a completed command, not shell misuse: {joined}"
+        );
+        assert!(!joined.contains("Misuse of shell command"));
         assert!(
             joined.contains("writeFile"),
             "plain exit 2 should still offer workspace__writeFile alternative: {joined}"

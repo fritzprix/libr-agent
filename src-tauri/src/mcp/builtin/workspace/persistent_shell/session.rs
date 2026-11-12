@@ -10,9 +10,7 @@
 /// - Separate stdout/stderr streams
 /// - Exit code capture for error handling
 use anyhow::Result;
-#[cfg(windows)]
 use base64::engine::general_purpose;
-#[cfg(windows)]
 use base64::Engine;
 
 use std::path::PathBuf;
@@ -54,6 +52,32 @@ async fn read_line_lossy<R: tokio::io::AsyncBufRead + Unpin>(
 }
 
 /// Generate unique sentinel marker for command completion detection
+/// Builds the PowerShell text sent for one command: the command itself, then the
+/// sentinel, the working directory, and the exit code lines `read_until_sentinel`
+/// parses.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn powershell_framed_script(command: &str, sentinel: &str) -> String {
+    // Base64 keeps non-ASCII text (for example Korean) intact regardless of the
+    // console code page. Invoke-Expression runs the decoded string.
+    let encoded = general_purpose::STANDARD.encode(command);
+    let mut script = String::new();
+
+    // `$LASTEXITCODE` is set only by native programs and keeps its value across
+    // commands. Without this reset, one `python ...; exit 2` made every later
+    // cmdlet-only command (even `echo hello`) report exit 2 (#2706).
+    script.push_str("$global:LASTEXITCODE = 0\n");
+    script.push_str(&format!(
+        "Invoke-Expression ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('{encoded}')))\n"
+    ));
+    script.push_str(&format!("Write-Output '{sentinel}'\n"));
+    script.push_str("Write-Output \"__CWD__$((Get-Location).Path)\"\n");
+
+    // Exit code capture (PS 5.1 compatible, so no ternary operator):
+    // non-zero $LASTEXITCODE wins; if only `$?` is false, report 1; else 0.
+    script.push_str("Write-Output \"EXIT_CODE_$(if ($LASTEXITCODE -ne 0 -or -not $?) { if ($LASTEXITCODE -eq 0) { 1 } else { $LASTEXITCODE } } else { 0 })\"\n");
+    script
+}
+
 fn generate_sentinel() -> String {
     static COUNTER: AtomicU32 = AtomicU32::new(0);
     let id = COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -427,34 +451,8 @@ impl PersistentShell {
         command: &str,
         sentinel: &str,
     ) -> Result<()> {
-        // Encode command to Base64 to avoid encoding issues in the pipe
-        // This ensures that characters like Korean are transmitted correctly
-        // regardless of the current console code page.
-        let encoded = general_purpose::STANDARD.encode(command);
-        // We use Invoke-Expression to execute the decoded string
-        let wrapper = format!(
-            "Invoke-Expression ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('{}')))\n",
-            encoded
-        );
-        self.stdin.write_all(wrapper.as_bytes()).await?;
-
         self.stdin
-            .write_all(format!("Write-Output '{}'\n", sentinel).as_bytes())
-            .await?;
-
-        // Capture CWD
-        self.stdin
-            .write_all("Write-Output \"__CWD__$((Get-Location).Path)\"\n".as_bytes())
-            .await?;
-
-        // Robust exit code capture for PowerShell (PS 5.1 compatible):
-        // If $LASTEXITCODE is non-zero OR $? is false:
-        //   If $LASTEXITCODE is 0 (meaning $? was false but LASTEXITCODE wasn't set), return 1.
-        //   Else return $LASTEXITCODE.
-        // Else return 0.
-        // Note: Ternary operator (?:) is not supported in PS 5.1, so we use if/else statements.
-        self.stdin
-            .write_all("Write-Output \"EXIT_CODE_$(if ($LASTEXITCODE -ne 0 -or -not $?) { if ($LASTEXITCODE -eq 0) { 1 } else { $LASTEXITCODE } } else { 0 })\"\n".as_bytes())
+            .write_all(powershell_framed_script(command, sentinel).as_bytes())
             .await?;
         Ok(())
     }
@@ -633,6 +631,24 @@ fn apply_shell_env(cmd: &mut Command, secrets: &SecretMap, app_env: Vec<(String,
 mod tests {
     use super::*;
     use std::ffi::OsStr;
+
+    /// #2706: `$LASTEXITCODE` keeps the last native exit code, so the frame must
+    /// clear it before the command and read it after.
+    #[test]
+    fn powershell_frame_resets_the_exit_code_before_the_command() {
+        let script = powershell_framed_script("Write-Output hello", "SENTINEL_1");
+        let lines: Vec<&str> = script.lines().collect();
+
+        assert_eq!(lines.len(), 5, "{script}");
+        assert_eq!(lines[0], "$global:LASTEXITCODE = 0");
+        assert!(lines[1].starts_with("Invoke-Expression "), "{script}");
+        assert_eq!(lines[2], "Write-Output 'SENTINEL_1'");
+        assert!(lines[3].contains("__CWD__"), "{script}");
+        assert!(lines[4].contains("EXIT_CODE_"), "{script}");
+        // The command travels Base64-encoded, never as raw text.
+        assert!(!script.contains("Write-Output hello"), "{script}");
+        assert!(script.ends_with('\n'));
+    }
 
     #[test]
     fn app_variables_win_over_secrets_with_the_same_name() {
