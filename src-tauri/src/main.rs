@@ -48,6 +48,17 @@ fn main() {
         std::fs::create_dir_all(&data_dir).expect("Failed to create data directory");
     }
 
+    // Single-instance guard: a second runtime on the same data dir must fail
+    // here, before the DB opens, instead of racing the first one on shared
+    // state. Held until process exit (guard's Drop removes the lock file).
+    let _runtime_lock = match tauri_mcp_agent_lib::runtime_lock::RuntimeLock::acquire(&data_dir) {
+        Ok(lock) => lock,
+        Err(error) => {
+            eprintln!("❌ {error}");
+            std::process::exit(1);
+        }
+    };
+
     let db_url =
         tauri_mcp_agent_lib::utils::sqlite::format_sqlite_url(db_path.to_string_lossy().as_ref());
 

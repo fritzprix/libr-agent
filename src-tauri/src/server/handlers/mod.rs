@@ -5,6 +5,7 @@ mod health;
 pub(crate) mod helpers;
 mod messages;
 mod pairing;
+pub(crate) mod prompts;
 mod sessions;
 mod settings;
 mod types;
@@ -19,6 +20,7 @@ pub use compact_context::get_compact_context;
 pub use health::health;
 pub use messages::{get_messages, send_message};
 pub use pairing::handle_pairing_request;
+pub use prompts::respond_channel_prompt;
 pub use sessions::{
     create_session, delete_session, get_child_sessions, get_session, patch_session,
     resume_session_workflow, terminate_session,

@@ -338,6 +338,10 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         if let Err(e) = recovery_manager.recover_sessions().await {
             log::error!("❌ Session recovery failed: {}", e);
         }
+        // Startup recovery completed: the runtime is ready to run sessions.
+        // Marked ready even after a recovery error so `/api/health` does not
+        // stay pinned to `ready:false` forever; the failure is logged above.
+        crate::server::readiness::mark_ready();
     });
 
     info!("🔄 Session recovery initiated in background");

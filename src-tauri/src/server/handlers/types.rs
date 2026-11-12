@@ -10,6 +10,9 @@ pub struct HealthResponse {
     pub status: String,
     pub service: String,
     pub version: String,
+    /// False while startup session recovery is still running; true once the
+    /// runtime is ready to run sessions (see `server::readiness`).
+    pub ready: bool,
 }
 
 #[derive(Debug, Deserialize)]

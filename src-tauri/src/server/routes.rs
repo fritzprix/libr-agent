@@ -152,6 +152,20 @@ pub fn get_routes(
         .and(json_body())
         .and_then(handlers::respond_channel_permission);
 
+    // POST /api/sessions/:id/channel/prompt — answer/cancel the user prompt
+    // (ui__askUser / secret) this session is waiting on. The waiting prompt
+    // (requestId + kind) is visible on GET /api/sessions/:id.
+    let respond_channel_prompt = warp::post()
+        .and(warp::path("api"))
+        .and(warp::path("sessions"))
+        .and(warp::path::param())
+        .and(warp::path("channel"))
+        .and(warp::path("prompt"))
+        .and(warp::path::end())
+        .and(agent_manager.clone())
+        .and(json_body())
+        .and_then(handlers::respond_channel_prompt);
+
     // POST /api/sessions/:id/resume
     let resume_session = warp::post()
         .and(warp::path("api"))
@@ -290,6 +304,7 @@ pub fn get_routes(
         .or(inject_channel_message_auto.boxed())
         .or(inject_channel_message.boxed())
         .or(respond_channel_permission.boxed())
+        .or(respond_channel_prompt.boxed())
         .or(resume_session.boxed())
         .or(terminate_session.boxed())
         .or(delete_session.boxed())

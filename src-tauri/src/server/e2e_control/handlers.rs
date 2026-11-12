@@ -27,13 +27,18 @@ use crate::agent::session_manager::{
     approvals::{list_pending_approvals_in, respond_tool_approval},
     pending_user_prompt_in, PendingApprovalSummary,
 };
-use crate::agent::state::{
-    PendingUserPromptSummary, UserPromptAnswer, UserPromptKind, USER_PROMPT_GONE_MESSAGE,
-};
+use crate::agent::state::PendingUserPromptSummary;
 use crate::agent::AgentSessionManager;
 use crate::server::access_guard::AccessDenied;
 use crate::server::e2e_control::token::{capability_token, header_matches};
 use crate::server::handlers::helpers::resolve_http_session_ref;
+
+// Answering a user prompt is shared with the release Session API route
+// (`POST /api/sessions/:id/channel/prompt`); re-exported so the debug plane
+// and its tests keep importing from this module.
+pub use crate::server::handlers::prompts::{
+    plan_user_prompt_action, PlannedPromptAction, UserPromptBody,
+};
 
 /// Guard filter: 404 when the control plane is disabled, 403 when the
 /// capability header is missing or wrong. Pure — the capability is passed in.
@@ -70,16 +75,6 @@ pub struct SessionInteractionsSnapshot {
     pub session_id: String,
     pub pending_user_prompt: Option<PendingUserPromptSummary>,
     pub pending_approvals: Vec<PendingApprovalSummary>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UserPromptBody {
-    pub request_id: String,
-    /// `answer` delivers `value`; `cancel` resolves the prompt unanswered.
-    pub action: String,
-    #[serde(default)]
-    pub value: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -137,48 +132,6 @@ async fn handle_get_interactions(
         pending_approvals: list_pending_approvals_in(manager.active_sessions(), &session_id).await,
     };
     Ok(json_ok(&snapshot))
-}
-
-/// What a validated user-prompt request asks the control plane to deliver.
-#[derive(Debug, PartialEq, Eq)]
-pub enum PlannedPromptAction {
-    Answer(UserPromptAnswer),
-    Cancel,
-}
-
-/// Pure dispatch decision behind [`handle_user_prompt`]: matches the waiting
-/// prompt against `requestId`, then maps `action`/`value` to the answer to
-/// deliver. Errors carry `(status, message)` exactly as the handler replies,
-/// so stale-requestId rejection, missing answer values, and unknown actions
-/// are testable without a live `AgentSessionManager`.
-pub fn plan_user_prompt_action(
-    pending: Option<&PendingUserPromptSummary>,
-    body: &UserPromptBody,
-) -> Result<PlannedPromptAction, (StatusCode, String)> {
-    let pending = match pending {
-        Some(pending) if pending.request_id == body.request_id => pending,
-        _ => return Err((StatusCode::NOT_FOUND, USER_PROMPT_GONE_MESSAGE.to_string())),
-    };
-    match body.action.as_str() {
-        "answer" => {
-            let Some(value) = body.value.clone() else {
-                return Err((
-                    StatusCode::BAD_REQUEST,
-                    "Missing value for answer action".to_string(),
-                ));
-            };
-            let answer = match pending.kind {
-                UserPromptKind::Secret => UserPromptAnswer::Secret(value),
-                UserPromptKind::Question => UserPromptAnswer::Question(value),
-            };
-            Ok(PlannedPromptAction::Answer(answer))
-        }
-        "cancel" => Ok(PlannedPromptAction::Cancel),
-        other => Err((
-            StatusCode::BAD_REQUEST,
-            format!("Unknown user prompt action: {other}"),
-        )),
-    }
 }
 
 async fn handle_user_prompt(
