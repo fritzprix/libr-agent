@@ -36,6 +36,17 @@ vi.mock('@/lib/ai-service/factory', () => ({
 }));
 
 // Mock logger
+const toastMessage = vi.hoisted(() => vi.fn());
+vi.mock('sonner', () => ({
+  toast: Object.assign(vi.fn(), {
+    message: toastMessage,
+    error: vi.fn(),
+    success: vi.fn(),
+    warning: vi.fn(),
+    info: vi.fn(),
+  }),
+}));
+
 vi.mock('@/lib/logger', () => ({
   getLogger: () => ({
     info: vi.fn(),
@@ -283,6 +294,55 @@ describe('LLMServiceContext – SP4 Retry & Fallback Recovery', () => {
 
     // Only 1 attempt — no retries on abort
     expect(mockStreamChat).toHaveBeenCalledTimes(1);
+  });
+
+  describe('recovery cancel toast', () => {
+    const registerCancelHandler = async () => {
+      let cancelHandler: ((event: unknown) => void) | undefined;
+      (listen as ReturnType<typeof vi.fn>).mockImplementation(
+        async (eventName, handler) => {
+          if (eventName === 'llm:completion-cancel') {
+            cancelHandler = handler as (event: unknown) => void;
+          }
+          return mockUnlisten;
+        },
+      );
+      renderHook(() => useLLMService(), { wrapper: TestWrapper });
+      await waitFor(() => expect(cancelHandler).toBeDefined());
+      return (willRetry: boolean) =>
+        cancelHandler?.({
+          payload: {
+            sessionId: 'sp4-session',
+            responseMessageId: 'resp-1',
+            reason: 'reasoning-budget-exceeded',
+            willRetry,
+          },
+        });
+    };
+
+    beforeEach(() => {
+      toastMessage.mockClear();
+    });
+
+    it('shows the "Retrying" toast when Rust starts a fresh turn', async () => {
+      const cancel = await registerCancelHandler();
+
+      act(() => {
+        cancel(true);
+      });
+
+      expect(toastMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows no "Retrying" toast when the turn ends in failure', async () => {
+      const cancel = await registerCancelHandler();
+
+      act(() => {
+        cancel(false);
+      });
+
+      expect(toastMessage).not.toHaveBeenCalled();
+    });
   });
 
   describe('cancel between attempts', () => {

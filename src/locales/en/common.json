@@ -532,7 +532,7 @@
       "circuitBreaker": "Tool Loop Limit",
       "circuitBreakerDescription": "Number of repeated errors or tool actions before stopping the task.",
       "maxOutputTokens": "Max Output Tokens (Default)",
-      "maxOutputTokensDescription": "Default maximum output tokens for new sessions if not specified by assistant.",
+      "maxOutputTokensDescription": "Default maximum output tokens when the assistant does not set its own. Read on every request.",
       "defaultSessionMaxDepth": "Session Branching Limit (Advanced)",
       "defaultSessionMaxDepthDescription": "Controls how many child-session levels are allowed by default. Set 0 for unlimited. Most users can leave this as-is.",
       "defaultSessionMaxDepthPlaceholder": "e.g., 3",
@@ -1886,7 +1886,26 @@
     "tryAgain": "Try Again",
     "goToSettings": "Configure API Key in Settings",
     "invalidContextState": "This session needs a larger context limit. Open Settings, raise Max Input Context, then try again.",
-    "openContextSettings": "Open Context Settings"
+    "openContextSettings": "Open Context Settings",
+    "reasoningStop": {
+      "budgetReason": "The model spent its output budget on reasoning without giving an answer or calling a tool, so the turn was stopped.",
+      "budgetNumbers": "Used about {{used}} tokens. The cutoff is {{budget}} tokens, which is 90% of Max Output Tokens.",
+      "sourceAssistant": "Max Output Tokens is {{max}}, set on this assistant. Changing the Settings default will not change this session.",
+      "sourceSettings": "Max Output Tokens is {{max}}, from Settings → Chat Interface → Max Output Tokens (Default).",
+      "sourceFallback": "Max Output Tokens is {{max}}, the built-in default, because no value is set in Settings.",
+      "budgetNextSteps": "Next: raise Max Output Tokens (Default) in Settings, then try again. The new value applies to the next request. Trying again with nothing changed often stops the same way.",
+      "budgetNextStepsAssistant": "Next: try again, or narrow the request so it needs less reasoning. Trying again with nothing changed often stops the same way.",
+      "thinkingOnlyReason": "The model finished with only internal reasoning: no answer and no tool call.",
+      "thinkingOnlyNextSteps": "Next: try again, or ask for a direct answer. If the model may have hit its output limit, raise Max Output Tokens (Default) in Settings first.",
+      "thinkingLoopReason": "The model kept repeating the same reasoning, so the turn was stopped.",
+      "textLoopReason": "The model kept repeating the same text, so the turn was stopped.",
+      "loopNumbers": "Detected a {{patternLength}}-character pattern repeated {{repetitionCount}} times.",
+      "thinkingLoopNextSteps": "Next: try again, or rephrase or narrow the request. If this was a false alarm, raise Thinking Loop Min Pattern Length or Thinking Loop Min Repetitions in Settings → Advanced.",
+      "textLoopNextSteps": "Next: try again, or rephrase or narrow the request.",
+      "autoRetries": "Automatic retries already used: {{retries}}.",
+      "openOutputTokenSettings": "Open Max Output Tokens Settings",
+      "openLoopSettings": "Open Advanced Settings"
+    }
   },
   "knowledge": {
     "untitledEntry": "Untitled knowledge entry",

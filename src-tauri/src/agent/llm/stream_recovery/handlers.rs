@@ -123,6 +123,7 @@ pub(super) async fn handle_non_productive_completion(
                     observed_tail_chars,
                     reasoning_budget_tokens,
                     estimated_thinking_tokens,
+                    ..
                 } => {
                     log::warn!(
                         "Reasoning budget exceeded for session {} response {} (thinking_chars={}, reasoning_budget_tokens={}, estimated_thinking_tokens={}). Retrying LLM turn ({}/{}).",
@@ -231,6 +232,8 @@ pub(super) async fn handle_non_productive_completion(
                     observed_tail_chars,
                     reasoning_budget_tokens,
                     estimated_thinking_tokens,
+                    max_output_tokens,
+                    max_output_tokens_source,
                 } => (
                     format!(
                         "Stopped: reasoning used the full output budget twice without an answer or tool call (session '{}'). This prevents a hang. Click Retry to try again.",
@@ -242,6 +245,8 @@ pub(super) async fn handle_non_productive_completion(
                         "observedTailChars": observed_tail_chars,
                         "reasoningBudgetTokens": reasoning_budget_tokens,
                         "estimatedThinkingTokens": estimated_thinking_tokens,
+                        "maxOutputTokens": max_output_tokens,
+                        "maxOutputTokensSource": max_output_tokens_source,
                         "maxRetries": max_retries,
                     }),
                 ),

@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { getLogger } from '@/lib/logger';
 import { cn } from '@/lib/utils';
+import { ReasoningStopGuide, isReasoningStopCode } from './ReasoningStopGuide';
 
 const logger = getLogger('ErrorBubble');
 
@@ -119,6 +120,9 @@ export const ErrorBubble: React.FC<ErrorBubbleProps> = memo(
         ? error.details.errorCode
         : undefined;
     const isInvalidContextState = errorCode === 'INVALID_CONTEXT_STATE';
+    const reasoningStopCode = isReasoningStopCode(errorCode)
+      ? errorCode
+      : undefined;
     const displayMessage = isInvalidContextState
       ? t(
           'errorBubble.invalidContextState',
@@ -145,9 +149,16 @@ export const ErrorBubble: React.FC<ErrorBubbleProps> = memo(
         className={getErrorColor(errorType)}
       >
         <div className="space-y-3">
-          <p className="text-muted-foreground break-words whitespace-pre-wrap">
-            {displayMessage}
-          </p>
+          {reasoningStopCode ? (
+            <ReasoningStopGuide
+              code={reasoningStopCode}
+              details={error?.details?.originalError}
+            />
+          ) : (
+            <p className="text-muted-foreground break-words whitespace-pre-wrap">
+              {displayMessage}
+            </p>
+          )}
 
           {errorType === 'AUTHENTICATION_ERROR' && (
             <Button

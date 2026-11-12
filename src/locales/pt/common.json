@@ -532,7 +532,7 @@
       "circuitBreaker": "Limite de loop de ferramentas",
       "circuitBreakerDescription": "Número de erros repetidos permitidos antes de parar a tarefa.",
       "maxOutputTokens": "Máximo de Tokens de Saída (Padrão)",
-      "maxOutputTokensDescription": "Máximo de tokens de saída padrão para novas sessões, se não especificado pelo assistente.",
+      "maxOutputTokensDescription": "Máximo de tokens de saída padrão quando o assistente não define o seu próprio. É lido a cada solicitação.",
       "defaultSessionMaxDepth": "Limite de Ramificação de Sessão (Avançado)",
       "defaultSessionMaxDepthDescription": "Controla quantos níveis de sessão-filho são permitidos por padrão. Defina 0 para ilimitado. A maioria dos usuários pode deixar como está.",
       "defaultSessionMaxDepthPlaceholder": "ex: 3",
@@ -1886,7 +1886,26 @@
     "tryAgain": "Tentar Novamente",
     "goToSettings": "Configurar chave de API nas Configurações",
     "invalidContextState": "Esta sessão precisa de um limite de contexto maior. Nas configurações, aumente o contexto de entrada máx. e tente de novo.",
-    "openContextSettings": "Abrir configurações de contexto"
+    "openContextSettings": "Abrir configurações de contexto",
+    "reasoningStop": {
+      "budgetReason": "O modelo gastou o orçamento de saída em raciocínio sem dar uma resposta nem chamar uma ferramenta, por isso o turno foi interrompido.",
+      "budgetNumbers": "Usou cerca de {{used}} tokens. O limite é de {{budget}} tokens, 90% do máximo de tokens de saída.",
+      "sourceAssistant": "O máximo de tokens de saída é {{max}}, definido neste assistente. Alterar o padrão nas Configurações não muda esta sessão.",
+      "sourceSettings": "O máximo de tokens de saída é {{max}}, vindo de Configurações → Interface de Chat → Máximo de Tokens de Saída (Padrão).",
+      "sourceFallback": "O máximo de tokens de saída é {{max}}, o valor interno, porque não há valor definido nas Configurações.",
+      "budgetNextSteps": "Próximo passo: aumente Máximo de Tokens de Saída (Padrão) nas Configurações e tente novamente. O novo valor vale a partir da próxima solicitação. Tentar de novo sem mudar nada costuma parar do mesmo jeito.",
+      "budgetNextStepsAssistant": "Próximo passo: tente novamente ou restrinja o pedido para que exija menos raciocínio. Tentar de novo sem mudar nada costuma parar do mesmo jeito.",
+      "thinkingOnlyReason": "O modelo terminou apenas com raciocínio interno: sem resposta e sem chamada de ferramenta.",
+      "thinkingOnlyNextSteps": "Próximo passo: tente novamente ou peça uma resposta direta. Se o modelo pode ter atingido o limite de saída, aumente antes Máximo de Tokens de Saída (Padrão) nas Configurações.",
+      "thinkingLoopReason": "O modelo ficou repetindo o mesmo raciocínio, por isso o turno foi interrompido.",
+      "textLoopReason": "O modelo ficou repetindo o mesmo texto, por isso o turno foi interrompido.",
+      "loopNumbers": "Foi detectado um padrão de {{patternLength}} caracteres repetido {{repetitionCount}} vezes.",
+      "thinkingLoopNextSteps": "Próximo passo: tente novamente, ou reformule ou restrinja o pedido. Se foi um alarme falso, aumente Comprimento mínimo do padrão de loop de pensamento ou Repetições mínimas do loop de pensamento em Configurações → Avançado.",
+      "textLoopNextSteps": "Próximo passo: tente novamente, ou reformule ou restrinja o pedido.",
+      "autoRetries": "Novas tentativas automáticas já usadas: {{retries}}.",
+      "openOutputTokenSettings": "Abrir configurações de máximo de tokens de saída",
+      "openLoopSettings": "Abrir configurações avançadas"
+    }
   },
   "knowledge": {
     "untitledEntry": "Entrada de conhecimento sem título",

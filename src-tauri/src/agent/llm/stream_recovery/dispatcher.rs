@@ -44,6 +44,8 @@ fn repeated_loop_reason_from_report(
                 observed_tail_chars: report.observed_tail_chars,
                 reasoning_budget_tokens: report.pattern_length,
                 estimated_thinking_tokens: report.repetition_count,
+                max_output_tokens: report.max_output_tokens,
+                max_output_tokens_source: report.max_output_tokens_source.clone(),
             })
         }
     }
@@ -141,6 +143,7 @@ pub async fn handle_streaming_issue(
             session_id: report.session_id.clone(),
             response_message_id: report.response_message_id.clone(),
             reason: cancel_reason_for_issue(issue_kind).to_string(),
+            will_retry: matches!(action, StreamingIssueAction::CancelAndRetry { .. }),
         },
     ) {
         let active = active_sessions.read().await;

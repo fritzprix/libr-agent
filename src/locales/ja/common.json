@@ -532,7 +532,7 @@
       "circuitBreaker": "ツールループ制限",
       "circuitBreakerDescription": "タスクを停止するまでの許容される繰り返しエラーまたはツール実行回数です。",
       "maxOutputTokens": "最大出力トークン（デフォルト）",
-      "maxOutputTokensDescription": "アシスタントによって指定されていない場合の、新しいセッションのデフォルト最大出力トークン数。",
+      "maxOutputTokensDescription": "アシスタントが独自に指定していない場合に使うデフォルトの最大出力トークン数です。リクエストごとに読み込まれます。",
       "defaultSessionMaxDepth": "セッション分岐制限（高度）",
       "defaultSessionMaxDepthDescription": "デフォルトで許可される子セッションのレベル数を制御します。無制限にするには0を設定してください。ほとんどのユーザーはデフォルトのままで問題ありません。",
       "defaultSessionMaxDepthPlaceholder": "例: 3",
@@ -1886,7 +1886,26 @@
     "tryAgain": "もう一度試す",
     "goToSettings": "設定でAPIキーを設定",
     "invalidContextState": "このセッションにはより大きなコンテキスト上限が必要です。設定で最大入力コンテキストを上げてから再試行してください。",
-    "openContextSettings": "コンテキスト設定を開く"
+    "openContextSettings": "コンテキスト設定を開く",
+    "reasoningStop": {
+      "budgetReason": "モデルが回答もツール呼び出しもしないまま、出力予算を推論に使い切ったため、ターンを停止しました。",
+      "budgetNumbers": "約 {{used}} トークンを使用しました。打ち切りの基準は {{budget}} トークンで、最大出力トークンの 90% です。",
+      "sourceAssistant": "最大出力トークンは {{max}} で、このアシスタントに設定された値です。設定のデフォルト値を変えても、このセッションには反映されません。",
+      "sourceSettings": "最大出力トークンは {{max}} で、設定 → チャットインターフェース → 最大出力トークン（デフォルト）の値です。",
+      "sourceFallback": "最大出力トークンは {{max}} です。設定に値がないため、組み込みのデフォルト値を使っています。",
+      "budgetNextSteps": "次の手順：設定で最大出力トークン（デフォルト）を上げてから、もう一度試してください。新しい値は次のリクエストから適用されます。何も変えずに再試行すると、同じように停止することがよくあります。",
+      "budgetNextStepsAssistant": "次の手順：もう一度試すか、推論が少なくて済むようにリクエストの範囲を絞ってください。何も変えずに再試行すると、同じように停止することがよくあります。",
+      "thinkingOnlyReason": "モデルは内部の推論だけで終了しました。回答もツール呼び出しもありません。",
+      "thinkingOnlyNextSteps": "次の手順：もう一度試すか、直接の回答を求めてください。モデルが出力上限に達した可能性がある場合は、先に設定で最大出力トークン（デフォルト）を上げてください。",
+      "thinkingLoopReason": "モデルが同じ推論を繰り返し続けたため、ターンを停止しました。",
+      "textLoopReason": "モデルが同じテキストを繰り返し続けたため、ターンを停止しました。",
+      "loopNumbers": "{{patternLength}} 文字のパターンが {{repetitionCount}} 回繰り返されたことを検出しました。",
+      "thinkingLoopNextSteps": "次の手順：もう一度試すか、リクエストを言い換えるか範囲を絞ってください。誤検出だった場合は、設定 → 高度な設定で思考ループ最小パターン長または思考ループ最小繰り返し回数を上げてください。",
+      "textLoopNextSteps": "次の手順：もう一度試すか、リクエストを言い換えるか範囲を絞ってください。",
+      "autoRetries": "使用済みの自動再試行回数：{{retries}}。",
+      "openOutputTokenSettings": "最大出力トークンの設定を開く",
+      "openLoopSettings": "高度な設定を開く"
+    }
   },
   "knowledge": {
     "untitledEntry": "無題のナレッジエントリ",

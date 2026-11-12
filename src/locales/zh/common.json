@@ -532,7 +532,7 @@
       "circuitBreaker": "工具循环限制",
       "circuitBreakerDescription": "在停止任务前允许的重复错误或工具调用次数。",
       "maxOutputTokens": "最大输出 Token (默认)",
-      "maxOutputTokensDescription": "如果助手中未指定，则为新会话使用的默认最大输出 token 数。",
+      "maxOutputTokensDescription": "助手未自行指定时使用的默认最大输出 token 数。每次请求都会重新读取。",
       "defaultSessionMaxDepth": "会话分支限制 (高级)",
       "defaultSessionMaxDepthDescription": "控制默认允许的子会话层级数。设置为 0 为无限制。大多数用户可以保持原样。",
       "defaultSessionMaxDepthPlaceholder": "例如：3",
@@ -1886,7 +1886,26 @@
     "tryAgain": "重试",
     "goToSettings": "在设置中配置 API 密钥",
     "invalidContextState": "此会话需要更大的上下文上限。请在设置中提高最大输入上下文，然后重试。",
-    "openContextSettings": "打开上下文设置"
+    "openContextSettings": "打开上下文设置",
+    "reasoningStop": {
+      "budgetReason": "模型把输出预算都用在了推理上，没有给出回答，也没有调用工具，因此本轮已停止。",
+      "budgetNumbers": "已使用约 {{used}} 个 token。截止值为 {{budget}} 个 token，即最大输出 Token 的 90%。",
+      "sourceAssistant": "最大输出 Token 为 {{max}}，由此助手设置。更改设置中的默认值不会影响此会话。",
+      "sourceSettings": "最大输出 Token 为 {{max}}，来自 设置 → 聊天界面 → 最大输出 Token (默认)。",
+      "sourceFallback": "最大输出 Token 为 {{max}}，这是内置默认值，因为设置中没有指定。",
+      "budgetNextSteps": "下一步：在设置中调高最大输出 Token (默认)，然后重试。新值从下一次请求开始生效。不做任何更改就重试，通常会以同样的方式停止。",
+      "budgetNextStepsAssistant": "下一步：重试，或缩小请求范围以减少所需的推理。不做任何更改就重试，通常会以同样的方式停止。",
+      "thinkingOnlyReason": "模型只输出了内部推理就结束了：没有回答，也没有调用工具。",
+      "thinkingOnlyNextSteps": "下一步：重试，或要求直接给出回答。如果模型可能触及了输出上限，请先在设置中调高最大输出 Token (默认)。",
+      "thinkingLoopReason": "模型不断重复相同的推理，因此本轮已停止。",
+      "textLoopReason": "模型不断重复相同的文本，因此本轮已停止。",
+      "loopNumbers": "检测到长度为 {{patternLength}} 个字符的模式重复了 {{repetitionCount}} 次。",
+      "thinkingLoopNextSteps": "下一步：重试，或改写、缩小请求。如果这是误报，请在 设置 → 高级 中调高思考循环最小模式长度或思考循环最小重复次数。",
+      "textLoopNextSteps": "下一步：重试，或改写、缩小请求。",
+      "autoRetries": "已使用的自动重试次数：{{retries}}。",
+      "openOutputTokenSettings": "打开最大输出 Token 设置",
+      "openLoopSettings": "打开高级设置"
+    }
   },
   "knowledge": {
     "untitledEntry": "未命名知识条目",
