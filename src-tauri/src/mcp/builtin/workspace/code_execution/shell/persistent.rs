@@ -10,7 +10,7 @@ use crate::session_isolation::PathMappingLayer;
 
 use super::super::super::{utils, WorkspaceServer, PERSISTENT_SHELL_TOOL};
 use super::input::ShellInput;
-use super::{format_command_io_message, format_duration_ms, truncate_sync_shell_stream};
+use super::{format_command_io_message, format_duration_ms};
 
 impl WorkspaceServer {
     /// Execute command using persistent shell
@@ -195,15 +195,16 @@ impl WorkspaceServer {
                         duration_ms, exit_code
                     );
 
-                    let error_message = if !stderr.is_empty() {
-                        format!(
-                            "{}\n\nstderr:\n{}",
-                            header,
-                            truncate_sync_shell_stream(&stderr)
-                        )
-                    } else {
-                        header
-                    };
+                    // A non-zero exit is still a result: show both streams, as the
+                    // success branch does. Dropping stdout hid the program's own
+                    // output and led agents to retry blindly (#2706).
+                    let error_message = format_command_io_message(
+                        &header,
+                        "Command output",
+                        &stdout,
+                        "Stderr",
+                        &stderr,
+                    );
 
                     Ok(guided_error(
                         ErrorCategory::OperationFailed,

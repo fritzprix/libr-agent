@@ -300,4 +300,67 @@ mod tests {
         let serialized = serde_json::to_string(&result).expect("serialize result");
         assert!(!serialized.contains("s3cr3t"), "{serialized}");
     }
+
+    /// A program that prints to both streams and exits 2 (argparse-style).
+    #[cfg(unix)]
+    const EXIT_2_COMMAND: &str = "sh -c 'echo out-line; echo err-line 1>&2; exit 2'";
+    #[cfg(windows)]
+    const EXIT_2_COMMAND: &str = "cmd /c \"echo out-line& echo err-line 1>&2& exit 2\"";
+
+    #[cfg(unix)]
+    const SHELL_TOOLS: (&str, &str) = ("runShell", "runInPersistentShell");
+    #[cfg(windows)]
+    const SHELL_TOOLS: (&str, &str) = ("runPowerShell", "runInPersistentPowerShell");
+
+    async fn run(server: &WorkspaceServer, tool: &str, command: &str) -> String {
+        let result = server
+            .call_tool(
+                tool,
+                json!({ "command": command }),
+                Some("test-session".to_string()),
+            )
+            .await
+            .expect("run shell tool");
+        result_text(&result)
+    }
+
+    /// #2706: a non-zero exit must still show what the program printed, on both
+    /// streams, and exit 2 must not be described as shell misuse.
+    #[tokio::test]
+    async fn a_nonzero_exit_still_shows_stdout_and_stderr_in_both_shell_tools() {
+        let harness = create_server().await;
+
+        for tool in [SHELL_TOOLS.0, SHELL_TOOLS.1] {
+            let text = run(&harness.server, tool, EXIT_2_COMMAND).await;
+
+            assert!(text.contains("out-line"), "{tool} dropped stdout: {text}");
+            assert!(text.contains("err-line"), "{tool} dropped stderr: {text}");
+            assert!(text.contains("exit code: 2"), "{tool}: {text}");
+            assert!(
+                !text.contains("Misuse of shell command"),
+                "{tool} called a completed program shell misuse: {text}"
+            );
+        }
+    }
+
+    /// #2706: an exit code from one command must not leak into the next one. On
+    /// PowerShell `$LASTEXITCODE` used to stay at 2, so `Write-Output hello`
+    /// looked like a failure with no output.
+    #[tokio::test]
+    async fn a_failed_command_does_not_make_the_next_persistent_command_fail() {
+        let harness = create_server().await;
+        let persistent = SHELL_TOOLS.1;
+
+        let failed = run(&harness.server, persistent, EXIT_2_COMMAND).await;
+        assert!(failed.contains("exit code: 2"), "{failed}");
+
+        #[cfg(unix)]
+        let next = "echo hello-after-failure";
+        #[cfg(windows)]
+        let next = "Write-Output hello-after-failure";
+        let text = run(&harness.server, persistent, next).await;
+
+        assert!(text.contains("hello-after-failure"), "{text}");
+        assert!(text.contains("exit code: 0"), "{text}");
+    }
 }
