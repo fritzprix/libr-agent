@@ -242,6 +242,12 @@ pub async fn request_llm_completion(
         }
     }
 
+    // With the Rust executor enabled, OpenAI-compatible providers are answered
+    // in this process and no frontend listener is needed (#2704).
+    if crate::agent::llm::rust_executor::try_dispatch_completion(app_handle, &request) {
+        return Ok(());
+    }
+
     app_handle
         .emit("llm:completion-request", request)
         .map_err(|e| {

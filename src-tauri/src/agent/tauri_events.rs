@@ -97,6 +97,9 @@ pub fn emit_compact_finished(
 }
 
 pub fn emit_compact_request(app_handle: &AppHandle, event: CompactRequest) -> Result<(), String> {
+    if crate::agent::llm::rust_executor::try_dispatch_compaction(app_handle, &event) {
+        return Ok(());
+    }
     app_handle
         .emit("llm:compact-request", event)
         .map_err(|e| format!("Failed to emit llm:compact-request: {}", e))
@@ -106,6 +109,8 @@ pub fn emit_completion_cancel(
     app_handle: &AppHandle,
     event: CompletionCancelRequest,
 ) -> Result<(), String> {
+    // A call running in the Rust executor has no frontend stream to abort.
+    crate::agent::llm::rust_executor::cancel(&event.session_id);
     app_handle
         .emit("llm:completion-cancel", event)
         .map_err(|e| format!("Failed to emit llm:completion-cancel: {}", e))
