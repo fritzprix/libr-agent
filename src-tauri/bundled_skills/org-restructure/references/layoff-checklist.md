@@ -57,14 +57,14 @@ For each active session mapped to this role:
 | Goal | Action |
 | --- | --- |
 | Work complete, remove from org view | `agent__stopSession` → `agent__deleteSession` |
-| Work incomplete, reassign | `agent__messageToSession` with new owner instructions; stop old session if redundant |
+| Work incomplete, reassign | `agent__messageToSession(sessionId, complexity, message)` with new owner instructions; stop old session if redundant |
 | Detach but keep session | **Not supported** — inform user |
 
 Never delete the **org root** session.
 
 ### 6. Broadcast refresh
 
-Message the org root (or `agent__messageToSession` to active children):
+Message the org root (or `agent__messageToSession(sessionId, complexity, message)` to active children):
 
 - Which role was removed
 - New owner for former tasks

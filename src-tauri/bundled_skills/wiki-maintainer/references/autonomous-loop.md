@@ -23,7 +23,7 @@ Triggers: “알아서 돌려”, “매일 정리해”, “자동으로 wiki �
 6. Tell the user: task id, next run, and that they can pause under
    **Scheduled Tasks**. Do not ask them to re-type the mine prompt each day.
 
-If a task with the same purpose already exists (`listScheduledTasks`), update or
+If a task with the same purpose already exists (`scheduled_task__listScheduledTasks()`), update or
 toggle it instead of creating duplicates.
 
 ## Wake prompt (scheduled `message`)

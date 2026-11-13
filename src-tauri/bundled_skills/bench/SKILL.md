@@ -282,26 +282,15 @@ Aggregate the results and generate a standardized Markdown report after all chil
 ### Timeout Handling
 
 ```
-// If a child exceeds timeout
-const status = await agent__checkSession(sessionId, wait=true, timeout=300);
-if (status.state === "running" && status.timedOut) {
-  await agent__stopSession(sessionId);
-  results[id] = { status: "timeout", answer: "Timed out after 300s" };
-}
+const waited = await agent__checkSession(sessionId, wait=true, timeout=300);
+const snapshot = await agent__checkSession(sessionId);
+// A wait timeout means the child was still busy — keep polling with wait=false
+// before recording bench results or calling agent__stopSession
 ```
 
-### Fanout Limit
+### Parallel Capacity
 
-By default, child sessions inherit the parent's `maxFanout`. If you need to bench many problems:
-
-```
-agent__spawnSession({
-  configId: "...",
-  complexity: "normal",
-  task: "...",
-  maxFanout: 20   // Override parent limit for this child
-})
-```
+Spawn benchmarks in batches that fit `maxConcurrentActiveSessions` (Settings, default 4). Lineage `maxFanout` and `maxDepth` also cap how many children the parent may run.
 
 ### Result Verification
 
@@ -323,7 +312,7 @@ When verifying results, use the most lightweight and accurate verification metho
 | Spawn child | `agent__spawnSession` | `{ configId, complexity, task, waitForResult: false }` |
 | Poll child | `agent__checkSession` | `{ sessionId }` |
 | Wait for child | `agent__checkSession` | `{ sessionId, wait: true, timeout: 300 }` |
-| Stop stuck child | `agent__stopSession` | `{ sessionId }` |
+| Stop stuck child | `agent__checkSession` then `agent__stopSession` | `{ sessionId }` after `wait=false` shows the child is stuck |
 | List children | `agent__listAgents` | `{ type: "sessions" }` |
 | Read file | `workspace__readFile` | `{ path: "benchmarks/..." }` |
 
@@ -331,7 +320,7 @@ When verifying results, use the most lightweight and accurate verification metho
 
 - **Isolate workspaces by default** — children should not share the parent's workspace unless explicitly needed (`workspaceOverride`). When sharing, write to separate files or use sequential mode to avoid conflicts.
 - **Set timeouts** — always specify `timeout` on `checkSession(wait=true)` to prevent infinite waits.
-- **Limit fanout** — be mindful of `maxFanout` limits; spawn in batches if needed.
+- **Parallel capacity** — spawn in batches that respect active-session and lineage fanout limits.
 - **Verify results** — don't trust child answers blindly; use automated exit-code and stdout/stderr verification when available, and only delegate to a judge session for semantic verification.
 - **Clean up** — stop any remaining children after the benchmark completes.
 - **Report format** — use consistent Markdown tables for readability.

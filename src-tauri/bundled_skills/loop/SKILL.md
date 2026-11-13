@@ -92,12 +92,14 @@ Do not pass both. Do not pass neither.
 ### 2. Create the schedule
 
 ```text
-scheduleCallback(
+scheduled_task__scheduleCallback(
   message="...",           // required instruction injected when it fires
   name="...",              // optional Planning panel label
   delaySeconds=300         // OR cronExpression="0 9 * * *"
 )
 ```
+
+Optional: `executionMode` (`normal` | `yolo` | `unsafe`) when unattended tool runs must auto-approve.
 
 Requirements:
 
@@ -107,9 +109,9 @@ Requirements:
 
 ### 3. Manage existing session schedules
 
-- `getScheduledTask(taskId)`
-- `toggleScheduledTask(taskId, enabled=false)`
-- `deleteScheduledTask(taskId)`
+- `scheduled_task__getScheduledTask(taskId)`
+- `scheduled_task__toggleScheduledTask(taskId, enabled=false)`
+- `scheduled_task__deleteScheduledTask(taskId)`
 
 Users can also manage these from the session Planning panel.
 

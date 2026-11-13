@@ -14,7 +14,7 @@ MAX_REWORKS = 3
 On **reject** from reviewer:
 
 1. If `reworkCount >= MAX_REWORKS` → escalate to user (do not message creator again).
-2. Else → `reworkCount += 1`, forward reject via `agent__messageToSession`.
+2. Else → `reworkCount += 1`, forward reject via `agent__messageToSession(sessionId, complexity, message)`.
 
 On **approve** → reset `reworkCount` for next artifact.
 

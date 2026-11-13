@@ -38,4 +38,4 @@ Driver and Navigator alternate via parent-mediated messages.
 
 ## Parent coordination
 
-Use `agent__messageToSession` to pass Change Summary and Review between sessions. Parent enforces turn order — spokes do not message each other directly unless Hub pattern explicitly allows.
+Use `agent__messageToSession(sessionId, complexity, message)` to pass Change Summary and Review between sessions. Parent enforces turn order — spokes do not message each other directly unless Hub pattern explicitly allows.

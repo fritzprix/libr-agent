@@ -30,7 +30,7 @@ Use `postmortem-improve` after missions or repeated failures to capture lessons 
    - Record the returned `orgId` and `orgName` in `coordination/DECISIONS.md` (the backend automatically updates `.libragent/teamwork.json` with these details).
    - The session that calls `agent__createOrg` becomes the org root. Do not call `agent__createOrg` again.
 5. Spawn org-visible members explicitly.
-   - Before creating a member for new work, inspect `agent__listAgents(type="sessions")` for an Idle org child with the same assistant ID and compatible workspace, then use `agent__messageToSession` (with `reset=true` for a fresh assignment) when reuse is safe.
+   - Before creating a member for new work, inspect `agent__listAgents(type="sessions")` for an Idle org child with the same assistant ID and compatible workspace, then use `agent__messageToSession(sessionId, complexity, message, reset=true)` when reuse is safe. Always pass `complexity` (`low`|`normal`|`high`).
    - Use `agent__spawnSession(configId, complexity, task)` for org-visible children only when no suitable member exists, a different role/workspace is needed, or additional parallel capacity is required. Always pass `complexity` (`low`|`normal`|`high`). If the current session already belongs to the org, inheritance is automatic.
    - To keep a child out of Org view, spawn it from a session that is not part of an explicit org.
 6. Resume through the org root.
