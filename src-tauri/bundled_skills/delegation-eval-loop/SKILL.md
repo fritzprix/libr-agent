@@ -43,7 +43,7 @@ Composite cheerleading is forbidden: Layer 1 pass does **not** override Layer 2/
 
 ### 1. Brief with a Sprint Contract
 
-When calling `agent__spawnSession` (or assigning via `agent__messageToSession`), include:
+When calling `agent__spawnSession(..., complexity="...")` or `agent__messageToSession(..., complexity="...")`, include:
 
 - **Exact Objective** — concrete deliverable
 - **Authorized paths / FORBIDDEN paths** — invariant gate inputs
@@ -74,7 +74,7 @@ If any layer fails:
 
 1. Increment iteration counter (abort if over max, typically 4)
 2. Structured correction: which layer, exact error snippet, single next action
-3. `agent__messageToSession(sessionId, message)`
+3. `agent__messageToSession(sessionId, complexity="...", message="...")`
 4. Return to Step 2
 
 Templates: [handoff-templates.md](references/handoff-templates.md).

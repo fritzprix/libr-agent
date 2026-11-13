@@ -71,7 +71,7 @@ Ensure failures and timeouts are cleanly categorized and aggregated in the final
 
 | Condition | Aggregated Status | Score | Cause | Action Needed |
 |---|---|---|---|---|
-| Child runs out of time | `timeout` | `0.0` | Session duration exceeded `timeout` limit | Call `agent__stopSession(sessionId)` to reclaim CPU/Memory |
+| Child runs out of time | `timeout` | `0.0` | Wait returned while the child was still busy and a follow-up `checkSession` confirms stuck state | `agent__checkSession(sessionId)` then `agent__stopSession(sessionId)` when still stuck |
 | Child crashes with error | `error` | `0.0` | API errors, runtime crashes, out of memory | Log error message to report |
 | Child completes but fails tests | `failed` | `0.0` or `< 1.0` | Output does not match expectation or tests failed | Parse failed test case names for error logs |
 

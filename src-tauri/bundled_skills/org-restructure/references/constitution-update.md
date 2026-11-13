@@ -53,6 +53,6 @@ Every role in one file must appear in the other. On any restructure, diff both f
 
 ## After edits
 
-- Root resume or `agent__messageToSession` to active members
+- Root resume or `agent__messageToSession(sessionId, complexity, message)` to active members
 - `agent__getOrg()` for membership sanity
 - Grep coordination files for stale role names

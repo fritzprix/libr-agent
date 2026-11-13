@@ -66,7 +66,7 @@ Keep in mind during multi-child workflows:
 - **Depth:** nested delegation consumes `maxDepth`; prefer flat panels under one parent
 - **Concurrency:** global active-session slots are capped (default 4, configurable via `maxConcurrentActiveSessions`); async spawn + selective waits is safer than blocking on every child up front
 - **Timeouts:** `agent__checkSession(wait=true)` and `agent__messageToSession` waits honor a timeout (default up to 3600 seconds)
-- **Truncation:** terminal `agent__checkSession` summarizes recent assistant output; ask for full detail via `agent__messageToSession` when results are long
+- **Truncation:** terminal `agent__checkSession` summarizes recent assistant output; ask for full detail via `agent__messageToSession(sessionId, complexity, message)` when results are long
 - **Context growth:** deep reconciliation rounds accumulate history; use `agent__compactSessionContext(sessionId)` before large follow-ups to keep token costs reasonable
 
 ## Paused, Error, or Terminated Children
@@ -74,7 +74,7 @@ Keep in mind during multi-child workflows:
 If `agent__checkSession` reports paused, error, or terminated state:
 
 - do not treat the panel as complete
-- use `agent__messageToSession` with a recovery instruction referencing the last stable step
+- use `agent__messageToSession(sessionId, complexity, message)` with a recovery instruction referencing the last stable step
 - re-check after the child reaches a terminal state
 
 If a child is stuck or no longer needed:

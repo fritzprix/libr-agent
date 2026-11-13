@@ -34,7 +34,9 @@ The Gatekeeper pattern sets up a loop between a Creator session and a Reviewer/G
 
 ## 🛠️ MCP Tools Guide
 
-- **Feedback Delivery**: Inject the reviewer's audit report using `agent__messageToSession` to wake and direct the Creator to rework.
+Spawn Creator and Reviewer children with `agent__spawnSession(configId, complexity, task, workspaceOverride="current")` when both must share the same workspace. Always pass `complexity` (`low`|`normal`|`high`) on spawn and on every `agent__messageToSession(sessionId, complexity, message)`.
+
+- **Feedback Delivery**: Inject the reviewer's audit report with `agent__messageToSession` to wake and direct the Creator to rework.
 - **Infinite Loop Avoidance**: The parent session must track and enforce a **maximum rework limit (default: 3)** to prevent endless loops over minor stylistic differences. See [rework-limit-examples.md](references/rework-limit-examples.md).
 
 ## References

@@ -12,7 +12,7 @@ Worker sessions (Spokes) must never communicate with each other directly. All me
    - Instead, the Hub extracts the core specs and artifact file paths, presenting a clean summary to Spoke B.
 
 3. **Bridge Routing**
-   - When Spoke A finishes, the Hub catches the event and triggers Spoke B with `agent__messageToSession`.
+   - When Spoke A finishes, the Hub catches the event and triggers Spoke B with `agent__messageToSession(sessionId, complexity, message)`.
    - **SHARED** workspace (same Hub root / `workspaceOverride`): Hub may pass relative paths (e.g. "Spoke A finished — read `output_A.json` and proceed").
    - **ISOLATED** spokes: Hub cannot `workspace__readFile` a child Metadata path, and Spoke B cannot read Spoke A's private path either — Hub must bridge **Result text** (or ask A via `messageToSession` for the needed excerpt) into B's instructions.
    - Before starting a new spoke for later work, inspect the live child inventory and reuse an Idle spoke with the same `assistantId` when its workspace is compatible. Use `reset=true` for a genuinely fresh assignment; otherwise preserve the existing conversation.
@@ -35,7 +35,7 @@ A translation workflow coordinated by the Hub (assumes SHARED workspace / `works
         └─► Response: "Guide completed. Output at GUIDE.ko.md"
 ```
 
-For **ISOLATED** spokes, replace path handoffs with Hub-bridged Result excerpts in `messageToSession` — do not tell B to read A's absolute Metadata workspace path.
+For **ISOLATED** spokes, replace path handoffs with Hub-bridged Result excerpts in `agent__messageToSession` — do not tell B to read A's absolute Metadata workspace path.
 
 ---
 

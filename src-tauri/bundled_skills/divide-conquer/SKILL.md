@@ -44,7 +44,7 @@ The Divide-Conquer pattern splits a complex task into independent subtasks, dele
 - **Discovery**: Use `agent__listAgents(type="configs")` to find assistant IDs.
 - **Delegation**: Use `agent__messageToSession(..., complexity=..., reset=true)` to assign fresh work to a suitable Idle matching-role child. Use `agent__spawnSession(..., complexity=..., waitForResult=false)` only when no suitable child exists, a different role or workspace is needed, or another parallel capacity slot is required. Always pass `complexity` (`low`|`normal`|`high`).
 - **Monitoring**: Check status via `agent__listAgents(type="sessions")` and wait for completion via `agent__checkSession(sessionId, wait=true)`.
-- **Rework**: Use `agent__messageToSession(sessionId, message)` to wake/retry paused/error sessions.
+- **Rework**: Use `agent__messageToSession(sessionId, complexity="...", message="...")` to wake/retry paused/error sessions.
 - **Cancellation**: Use `agent__stopSession(sessionId)` to abort hung subtasks.
 
 ## ⚖️ `consensus-delegation` vs `divide-conquer`

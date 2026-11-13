@@ -86,7 +86,7 @@ Installation is not done until the server is verified.
 #### 3a. Offer to attach (required after a successful verify)
 
 1. Ask: "Attach `<server>` to this assistant so it can use these tools?" Use the agent id from `## Agent Runtime Identity`.
-2. **Yes** → read the assistant's current `externalMcpServers` with `agent__listAgents(type: "configs")`, then call `agent__updateAgent(id: "<agent id>", externalMcpServers: [...current ids, "<server id>"])`. The list is replaced, not merged, so always include the existing ids. Then tell the user: "Start a new session to use the `<server>` tools. The current session cannot load them."
+2. **Yes** → read the assistant's current `externalMcpServers` with `agent__listAgents({ type: "configs", query: "<agent id>", verbose: true })`, then call `agent__updateAgent(id: "<agent id>", externalMcpServers: [...current ids, "<server id>"])`. The list is replaced, not merged, so always include the existing ids. Then tell the user: "Start a new session to use the `<server>` tools. The current session cannot load them."
 3. **No** → tell the user the server is saved but not attached, and that they can attach it later to any assistant (by name) in Settings or by asking you.
 
 #### 4. Claude Desktop (Optional)

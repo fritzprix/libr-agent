@@ -15,12 +15,12 @@ SUBSTRATE_CHOICES = [SUBSTRATE_PLAIN, SUBSTRATE_ORG, SUBSTRATE_SCHEDULED]
 
 SUBSTRATE_DISPLAY = {
     SUBSTRATE_PLAIN: (
-        "Plain child sessions via agent__spawnSession(...). "
+        "Plain child sessions via agent__spawnSession(configId, complexity, task). "
         "Use delegate for delegation mechanics when needed."
     ),
     SUBSTRATE_ORG: (
         "Explicit org lineage via agent__createOrg(...) once from the root session, "
-        "then agent__spawnSession(...) for org-visible children. "
+        "then agent__spawnSession(configId, complexity, task) for org-visible children. "
         "Org-visible children inherit the governing session's effective workspace by default. "
         "Follow org for org-specific operating rules."
     ),
@@ -347,8 +347,8 @@ def main() -> None:
 Active specialist skill: `{SUBSTRATE_SPECIALIST_SKILL[substrate_mode]}`
 
 ## Execution Notes
-- Plain child sessions: `agent__spawnSession(...)`, use `delegate` for delegation mechanics
-- Explicit org lineage: `agent__createOrg(...)` once from root, then `agent__spawnSession(...)`, follow `org`
+- Plain child sessions: `agent__spawnSession(configId, complexity, task)`, use `delegate` for delegation mechanics
+- Explicit org lineage: `agent__createOrg(...)` once from root, then `agent__spawnSession(configId, complexity, task)`, follow `org`
 - Recurring automation: `scheduled_task__createScheduledTask(...)` and related scheduled-task tools, follow `schedule`
 
 ## Definition of Done

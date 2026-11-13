@@ -32,13 +32,13 @@ The Hub-and-Spoke pattern designates a central Coordinator session (Hub) to mana
    - When sharing a workspace across parallel spokes, use unique filenames or per-spoke subdirectories to avoid collisions.
    - If inter-spoke coordination is needed, the Hub routes messages. See [routing.md](references/routing.md).
 4. **Monitoring**: The Hub polls Spoke statuses via `agent__checkSession` and reads the Metadata `workspace` line (`SHARED` vs `ISOLATED`) before assuming files exist in the Hub root.
-5. **Synthesis**: The Hub merges all finished spoke artifacts from Result text (and `agent__messageToSession` follow-ups when needed). For `ISOLATED` spokes, do not attempt parent `workspace__readFile` on the child Metadata path — ask the spoke for contents or require the deliverable in Result text. For `SHARED` spokes, relative paths in the Hub root are safe.
+5. **Synthesis**: The Hub merges all finished spoke artifacts from Result text (and `agent__messageToSession(..., complexity=...)` follow-ups when needed). For `ISOLATED` spokes, do not attempt parent `workspace__readFile` on the child Metadata path — ask the spoke for contents or require the deliverable in Result text. For `SHARED` spokes, relative paths in the Hub root are safe.
 
 ## 🛠️ MCP Tools Guide
 
 - **Session Reuse**: Match on `assistantId`, status, and workspace compatibility before creating a Spoke. A reset reuses the session's identity and workspace files but closes its browser session; do not reuse a child whose prior workspace or runtime state is incompatible.
 - **Context Management**: Do not let the Hub read all conversation logs from all Spokes to prevent context overflow. Instruct the Hub to only request **summarized status reports and file list results**.
-- **Message Bridging**: If Worker B depends on Worker A's output, the Hub collects the artifact details from A and injects them to B via `agent__messageToSession`.
+- **Message Bridging**: If Worker B depends on Worker A's output, the Hub collects the artifact details from A and injects them to B via `agent__messageToSession(sessionId, complexity, message)`.
 
 ## References
 
