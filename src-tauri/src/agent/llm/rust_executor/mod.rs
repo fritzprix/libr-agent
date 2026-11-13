@@ -74,8 +74,6 @@ pub struct ExecutorConfig {
     pub endpoint_override: Option<Endpoint>,
     /// Treat the app as having no WebView, whatever its windows say.
     pub assume_no_webview: bool,
-    /// Deliver results here instead of to the session manager in app state.
-    pub sink_override: Option<Arc<dyn ResponseSink>>,
 }
 
 impl ExecutorConfig {
@@ -84,7 +82,6 @@ impl ExecutorConfig {
             enabled: env_selects_rust(std::env::var(EXECUTOR_ENV).ok().as_deref()),
             endpoint_override: None,
             assume_no_webview: false,
-            sink_override: None,
         }
     }
 }
@@ -449,7 +446,7 @@ pub fn dispatch_completion(
     }
     // The route said Rust can answer, so falling back to the WebView now would
     // silently lose the request when there is none: fail instead.
-    let Some(sink) = config.sink_override.clone().or_else(manager) else {
+    let Some(sink) = manager() else {
         return Err(Box::new(no_session_manager()));
     };
 
@@ -535,7 +532,7 @@ pub fn dispatch_compaction(
     };
     // The route said Rust can answer, so falling back to the WebView now would
     // silently lose the request when there is none: fail instead.
-    let Some(sink) = config.sink_override.clone().or_else(manager) else {
+    let Some(sink) = manager() else {
         return Err(Box::new(no_session_manager()));
     };
 
