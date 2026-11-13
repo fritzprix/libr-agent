@@ -1,8 +1,9 @@
-//! Forwarding helpers for GUI attach mode (#2701).
+//! Forwarding helpers and attach-mode guard for GUI attach mode (#2701).
 //!
 //! When a second GUI connects to an already-running shared backend, session,
-//! workflow, and channel commands route through [`SharedBackendClient`] to the
-//! single backend's Session API instead of running a second local executor.
+//! workflow, and channel commands either route through [`SharedBackendClient`]
+//! to the single backend's Session API or are rejected by
+//! [`reject_if_attached`] so the attached GUI never runs a second executor.
 
 use super::contracts::{
     AgentOpenSessionResponse, AgentResponse, AgentSessionListResponse, CreateAgentSessionRequest,
@@ -12,6 +13,7 @@ use crate::agent::events::AgentEvent;
 use crate::agent::state::PendingUserPromptSummary;
 use crate::agent::tauri_events::emit_agent_event;
 use crate::commands::messages_commands::MessageSlice;
+use crate::mcp::types::MCPContent;
 use crate::models::chat::Message;
 use crate::repositories::{SessionMetadata, SessionStatus};
 use crate::server::shared_backend::SharedBackendClient;
@@ -23,6 +25,39 @@ static SUBSCRIBED_SESSIONS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
 
 fn subscribed_sessions() -> &'static Mutex<HashSet<String>> {
     SUBSCRIBED_SESSIONS.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+/// Enforce that no non-forwarded session-mutating or executor-driving command
+/// executes locally while this GUI is attached to a shared backend.
+pub fn reject_if_attached(action: &str) -> Result<(), String> {
+    reject_if_client(crate::state::get_shared_backend_client(), action)
+}
+
+pub fn reject_if_client(client: Option<&SharedBackendClient>, action: &str) -> Result<(), String> {
+    if client.is_some() {
+        return Err(format!(
+            "{action} is not available while attached to the shared backend"
+        ));
+    }
+    Ok(())
+}
+
+/// Extract plain text from message content, rejecting non-text parts explicitly
+/// instead of silently dropping attachments or media when forwarding over HTTP.
+pub fn extract_text_content(content: &[MCPContent]) -> Result<String, String> {
+    let mut parts = Vec::with_capacity(content.len());
+    for item in content {
+        match item {
+            MCPContent::Text { text, .. } => parts.push(text.as_str()),
+            _ => {
+                return Err(
+                    "Non-text message content is not supported over shared-backend forwarding yet"
+                        .to_string(),
+                );
+            }
+        }
+    }
+    Ok(parts.join("\n"))
 }
 
 /// Ensure at most one background SSE forwarder is running for `session_id` in
@@ -39,10 +74,11 @@ pub fn ensure_session_event_stream(client: &SharedBackendClient, session_id: &st
 
     let url = client.events_url(session_id);
     let http = client.http_client().clone();
+    let api_key = client.api_key().map(str::to_string);
     let sid = session_id.to_string();
 
     tauri::async_runtime::spawn(async move {
-        let result = forward_sse_events(&http, &url, &sid).await;
+        let result = forward_sse_events(&http, &url, api_key.as_deref(), &sid).await;
         if let Err(err) = result {
             log::debug!("Shared backend SSE stream ended for {sid}: {err}");
         }
@@ -55,13 +91,22 @@ pub fn ensure_session_event_stream(client: &SharedBackendClient, session_id: &st
 async fn forward_sse_events(
     http: &reqwest::Client,
     url: &str,
+    api_key: Option<&str>,
     session_id: &str,
 ) -> Result<(), String> {
-    let resp = http
-        .get(url)
+    let mut req = http.get(url);
+    if let Some(key) = api_key {
+        req = req.bearer_auth(key);
+    }
+    let resp = req
         .send()
         .await
         .map_err(|e| format!("Failed to connect to SSE {url}: {e}"))?;
+    if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+        return Err(format!(
+            "SSE {url} rejected the request (401 Unauthorized): Session API key required or invalid"
+        ));
+    }
     if !resp.status().is_success() {
         return Err(format!("SSE {url} returned HTTP {}", resp.status()));
     }
@@ -158,6 +203,7 @@ pub async fn create_session(
     let id = created
         .get("id")
         .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
         .ok_or_else(|| "Shared backend create_session response missing id".to_string())?;
     let session_json = client.get_session(id).await?;
     serde_json::from_value::<SessionMetadata>(session_json)
@@ -168,16 +214,7 @@ pub async fn create_session_with_initial_message(
     client: &SharedBackendClient,
     request: CreateAgentSessionWithMessageRequest,
 ) -> Result<AgentResponse, String> {
-    let prompt_text = request
-        .message
-        .content
-        .iter()
-        .filter_map(|c| match c {
-            crate::mcp::types::MCPContent::Text { text, .. } => Some(text.as_str()),
-            _ => None,
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let prompt_text = extract_text_content(&request.message.content)?;
 
     let body = serde_json::json!({
         "name": request.name,
@@ -193,7 +230,8 @@ pub async fn create_session_with_initial_message(
     let id = created
         .get("id")
         .and_then(|v| v.as_str())
-        .unwrap_or_default()
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| "Shared backend create_session response missing id".to_string())?
         .to_string();
     ensure_session_event_stream(client, &id);
     Ok(AgentResponse {
@@ -212,24 +250,29 @@ pub async fn open_session(
     let session: SessionMetadata = serde_json::from_value(session_json.clone())
         .map_err(|e| format!("Failed to parse session from shared backend: {e}"))?;
 
-    let pending_approvals: Vec<PendingApprovalSnapshot> = session_json
-        .get("pendingApprovals")
-        .cloned()
-        .and_then(|v| serde_json::from_value(v).ok())
-        .unwrap_or_default();
-    let pending_user_prompt: Option<PendingUserPromptSummary> = session_json
-        .get("pendingUserPrompt")
-        .cloned()
-        .and_then(|v| serde_json::from_value(v).ok());
+    let pending_approvals: Vec<PendingApprovalSnapshot> = match session_json.get("pendingApprovals")
+    {
+        Some(v) => serde_json::from_value(v.clone())
+            .map_err(|e| format!("Failed to parse pendingApprovals from shared backend: {e}"))?,
+        None => Vec::new(),
+    };
+    let pending_user_prompt: Option<PendingUserPromptSummary> =
+        match session_json.get("pendingUserPrompt") {
+            Some(v) if !v.is_null() => Some(serde_json::from_value(v.clone()).map_err(|e| {
+                format!("Failed to parse pendingUserPrompt from shared backend: {e}")
+            })?),
+            _ => None,
+        };
 
     let msgs_json = client
         .get_messages(&session.id, Some(initial_message_limit))
         .await?;
-    let items: Vec<Message> = msgs_json
+    let items_val = msgs_json
         .get("messages")
         .cloned()
-        .and_then(|v| serde_json::from_value(v).ok())
-        .unwrap_or_default();
+        .ok_or_else(|| "Shared backend get_messages response missing messages array".to_string())?;
+    let items: Vec<Message> = serde_json::from_value(items_val)
+        .map_err(|e| format!("Failed to parse messages from shared backend: {e}"))?;
 
     ensure_session_event_stream(client, &session.id);
 
@@ -252,11 +295,11 @@ pub async fn list_sessions(
 ) -> Result<AgentSessionListResponse, String> {
     let limit = request.and_then(|r| r.limit);
     let json = client.list_sessions(limit).await?;
-    let items: Vec<SessionMetadata> = json
-        .get("sessions")
-        .cloned()
-        .and_then(|v| serde_json::from_value(v).ok())
-        .unwrap_or_default();
+    let items_val = json.get("sessions").cloned().ok_or_else(|| {
+        "Shared backend list_sessions response missing sessions array".to_string()
+    })?;
+    let items: Vec<SessionMetadata> = serde_json::from_value(items_val)
+        .map_err(|e| format!("Failed to parse sessions from shared backend: {e}"))?;
     Ok(AgentSessionListResponse {
         items,
         next_cursor: None,
@@ -267,20 +310,21 @@ pub async fn get_all_sessions(
     client: &SharedBackendClient,
 ) -> Result<Vec<SessionMetadata>, String> {
     let json = client.list_sessions(Some(200)).await?;
-    json.get("sessions")
-        .cloned()
-        .and_then(|v| serde_json::from_value(v).ok())
-        .ok_or_else(|| "Shared backend list_sessions missing sessions array".to_string())
+    let items_val = json.get("sessions").cloned().ok_or_else(|| {
+        "Shared backend list_sessions response missing sessions array".to_string()
+    })?;
+    serde_json::from_value(items_val)
+        .map_err(|e| format!("Failed to parse sessions from shared backend: {e}"))
 }
 
 pub async fn get_session(
     client: &SharedBackendClient,
     session_id: &str,
 ) -> Result<Option<SessionMetadata>, String> {
-    match client.get_session(session_id).await {
-        Ok(val) => serde_json::from_value(val)
+    match client.get_session_opt(session_id).await? {
+        Some(val) => serde_json::from_value(val)
             .map(Some)
-            .map_err(|e| e.to_string()),
-        Err(_) => Ok(None),
+            .map_err(|e| format!("Failed to parse session from shared backend: {e}")),
+        None => Ok(None),
     }
 }

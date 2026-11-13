@@ -18,16 +18,7 @@ pub async fn agent_send_message(
     request: SendUserMessageRequest,
 ) -> Result<AgentResponse, String> {
     if let Some(client) = crate::state::get_shared_backend_client() {
-        let content = request
-            .message
-            .content
-            .iter()
-            .filter_map(|c| match c {
-                crate::mcp::types::MCPContent::Text { text, .. } => Some(text.as_str()),
-                _ => None,
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
+        let content = super::shared_proxy::extract_text_content(&request.message.content)?;
         let data = client
             .send_message(
                 &request.session_id,
@@ -64,6 +55,7 @@ pub async fn agent_inject_messages(
     manager: State<'_, AgentSessionManager>,
     request: InjectMessagesRequest,
 ) -> Result<AgentResponse, String> {
+    super::shared_proxy::reject_if_attached("agent_inject_messages")?;
     // Explicit UI inject: a previous force-stop fence ends here (issue #2633).
     // Automatic inject callers (MCP channel notification, scheduled runner) do
     // not clear the fence, so they cannot revive a terminated session.
@@ -97,6 +89,7 @@ pub async fn agent_append_tool_messages(
     manager: State<'_, AgentSessionManager>,
     request: InjectMessagesRequest,
 ) -> Result<AgentResponse, String> {
+    super::shared_proxy::reject_if_attached("agent_append_tool_messages")?;
     manager
         .append_messages(&request.session_id, request.messages)
         .await?;
@@ -129,6 +122,7 @@ pub async fn agent_cancel_pending_prompt(
     session_id: String,
     message_id: String,
 ) -> Result<AgentResponse, String> {
+    super::shared_proxy::reject_if_attached("agent_cancel_pending_prompt")?;
     let removed = manager
         .cancel_pending_prompt(&session_id, &message_id)
         .await?;
@@ -150,6 +144,7 @@ pub async fn agent_handle_llm_response(
     session_id: String,
     assistant_message: Message,
 ) -> Result<AgentResponse, String> {
+    super::shared_proxy::reject_if_attached("agent_handle_llm_response")?;
     log::info!(
         "📥 Received LLM response from frontend: session={}, message_id={}, has_tool_calls={}, tool_call_count={}, content_len={}",
         session_id,
@@ -181,6 +176,7 @@ pub async fn agent_report_llm_streaming_issue(
     manager: State<'_, AgentSessionManager>,
     report: crate::agent::llm::types::StreamingIssueReport,
 ) -> Result<AgentResponse, String> {
+    super::shared_proxy::reject_if_attached("agent_report_llm_streaming_issue")?;
     let outcome = manager.report_llm_streaming_issue(report.clone()).await?;
     let (message, action) = match outcome {
         crate::agent::llm::StreamingIssueOutcome::Ignored => (
@@ -257,6 +253,7 @@ pub async fn agent_pause_workflow(
     manager: State<'_, AgentSessionManager>,
     session_id: String,
 ) -> Result<AgentResponse, String> {
+    super::shared_proxy::reject_if_attached("agent_pause_workflow")?;
     manager.pause_workflow(session_id.clone()).await?;
 
     Ok(AgentResponse {
@@ -297,6 +294,7 @@ pub async fn agent_regenerate_last_turn(
     manager: State<'_, AgentSessionManager>,
     session_id: String,
 ) -> Result<AgentResponse, String> {
+    super::shared_proxy::reject_if_attached("agent_regenerate_last_turn")?;
     let plan = manager.regenerate_last_turn(session_id.clone()).await?;
 
     Ok(AgentResponse {
@@ -367,6 +365,7 @@ pub async fn agent_handle_tool_result(
     tool_call_id: String,
     result: ToolExecutionResult,
 ) -> Result<AgentResponse, String> {
+    super::shared_proxy::reject_if_attached("agent_handle_tool_result")?;
     manager
         .handle_tool_result(session_id.clone(), tool_call_id, result)
         .await?;
@@ -420,6 +419,7 @@ pub async fn agent_handle_llm_error(
     session_id: String,
     error: crate::agent::llm::types::AgentRuntimeError,
 ) -> Result<AgentResponse, String> {
+    super::shared_proxy::reject_if_attached("agent_handle_llm_error")?;
     manager.handle_llm_error(session_id.clone(), error).await?;
 
     Ok(AgentResponse {

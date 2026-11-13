@@ -295,20 +295,16 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
             "🔗 Attaching GUI to live shared backend pid {} on port {}",
             backend.pid, backend.port
         );
-        let client = crate::server::shared_backend::SharedBackendClient::new(backend.port);
-        match tauri::async_runtime::block_on(
-            client.wait_until_ready(std::time::Duration::from_secs(30)),
-        ) {
-            Ok(_) => {
-                info!("✅ Shared backend at port {} is ready", backend.port);
-            }
-            Err(err) => {
-                log::warn!(
-                    "⚠️  Shared backend readiness wait timed out (continuing in attach mode): {}",
-                    err
-                );
-            }
-        }
+        let client = crate::server::shared_backend::SharedBackendClient::new(backend.port)
+            .map_err(std::io::Error::other)?;
+        tauri::async_runtime::block_on(client.wait_until_ready(std::time::Duration::from_secs(30)))
+            .map_err(|err| {
+                std::io::Error::other(format!(
+                    "Shared backend pid {} at port {} did not become ready: {}",
+                    backend.pid, backend.port, err
+                ))
+            })?;
+        info!("✅ Shared backend at port {} is ready", backend.port);
         crate::state::init_shared_backend_client(client);
         crate::server::readiness::mark_recovery(crate::server::readiness::RecoveryState::Skipped);
     } else {

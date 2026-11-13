@@ -400,4 +400,18 @@ mod tests {
         assert!(!record_path_for(&db, first_pid).exists());
         assert!(!record_path_for(&db, second_pid).exists());
     }
+
+    #[test]
+    fn unpublish_removes_own_record_only() {
+        let dir = tempdir().unwrap();
+        let db = dir.path().join("app.db");
+        write_record(&db, &record(100, 3030, 100));
+        write_record(&db, &record(200, 3131, 200));
+
+        unpublish_at(&db, 100).unwrap();
+        assert!(!record_path_for(&db, 100).exists());
+        assert!(record_path_for(&db, 200).exists());
+        // Idempotent when already removed.
+        unpublish_at(&db, 100).unwrap();
+    }
 }

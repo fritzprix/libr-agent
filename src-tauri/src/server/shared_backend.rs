@@ -29,6 +29,7 @@ pub struct SharedBackendClient {
     port: u16,
     base_url: String,
     client: reqwest::Client,
+    api_key: Option<String>,
 }
 
 impl SharedBackendClient {
@@ -36,17 +37,30 @@ impl SharedBackendClient {
     ///
     /// Disables system proxy lookup so `HTTP_PROXY` / `ALL_PROXY` never
     /// hijack loopback frontend-to-backend traffic.
-    pub fn new(port: u16) -> Self {
+    pub fn new(port: u16) -> Result<Self, String> {
         let client = reqwest::Client::builder()
             .no_proxy()
             .timeout(DEFAULT_REQUEST_TIMEOUT)
             .build()
-            .unwrap_or_else(|_| reqwest::Client::new());
-        Self {
+            .map_err(|e| format!("Failed to build shared backend HTTP client: {e}"))?;
+        Ok(Self {
             port,
             base_url: format!("http://127.0.0.1:{port}"),
             client,
+            api_key: None,
+        })
+    }
+
+    pub fn with_api_key(mut self, api_key: impl Into<String>) -> Self {
+        let key = api_key.into();
+        if !key.trim().is_empty() {
+            self.api_key = Some(key);
         }
+        self
+    }
+
+    pub fn api_key(&self) -> Option<&str> {
+        self.api_key.as_deref()
     }
 
     pub fn port(&self) -> u16 {
@@ -112,14 +126,17 @@ impl SharedBackendClient {
         }
     }
 
-    async fn send_json(
+    async fn send_json_status(
         &self,
         method: reqwest::Method,
         path: &str,
         body: Option<&serde_json::Value>,
-    ) -> Result<serde_json::Value, String> {
+    ) -> Result<(reqwest::StatusCode, serde_json::Value), String> {
         let url = format!("{}{}", self.base_url, path);
         let mut req = self.client.request(method, &url);
+        if let Some(key) = &self.api_key {
+            req = req.bearer_auth(key);
+        }
         if let Some(payload) = body {
             req = req.json(payload);
         }
@@ -132,7 +149,15 @@ impl SharedBackendClient {
             .text()
             .await
             .map_err(|e| format!("Failed reading shared backend response from {url}: {e}"))?;
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(format!(
+                "Shared backend {url} rejected the request (401 Unauthorized): Session API key required or invalid"
+            ));
+        }
         if !status.is_success() {
+            if status == reqwest::StatusCode::NOT_FOUND {
+                return Ok((status, serde_json::Value::Null));
+            }
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
                 if let Some(msg) = json.get("error").and_then(|v| v.as_str()) {
                     return Err(msg.to_string());
@@ -143,10 +168,27 @@ impl SharedBackendClient {
             ));
         }
         if text.trim().is_empty() {
-            return Ok(serde_json::Value::Null);
+            return Ok((status, serde_json::Value::Null));
         }
-        serde_json::from_str(&text)
-            .map_err(|e| format!("Invalid JSON from shared backend {url}: {e}"))
+        let parsed = serde_json::from_str(&text)
+            .map_err(|e| format!("Invalid JSON from shared backend {url}: {e}"))?;
+        Ok((status, parsed))
+    }
+
+    async fn send_json(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        body: Option<&serde_json::Value>,
+    ) -> Result<serde_json::Value, String> {
+        let (status, val) = self.send_json_status(method, path, body).await?;
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Err(format!(
+                "Shared backend {}{} returned HTTP 404 Not Found",
+                self.base_url, path
+            ));
+        }
+        Ok(val)
     }
 
     pub async fn list_sessions(&self, limit: Option<u64>) -> Result<serde_json::Value, String> {
@@ -172,6 +214,24 @@ impl SharedBackendClient {
             None,
         )
         .await
+    }
+
+    pub async fn get_session_opt(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<serde_json::Value>, String> {
+        let (status, val) = self
+            .send_json_status(
+                reqwest::Method::GET,
+                &format!("/api/sessions/{session_id}"),
+                None,
+            )
+            .await?;
+        if status == reqwest::StatusCode::NOT_FOUND {
+            Ok(None)
+        } else {
+            Ok(Some(val))
+        }
     }
 
     pub async fn patch_session(
@@ -289,7 +349,7 @@ pub async fn attach_to_live_backend(
     let Some(descriptor) = backend_descriptor::find_live_backend() else {
         return Ok(None);
     };
-    let client = SharedBackendClient::new(descriptor.port);
+    let client = SharedBackendClient::new(descriptor.port)?;
     client.wait_until_ready(timeout).await?;
     Ok(Some((descriptor, client)))
 }
@@ -320,7 +380,7 @@ mod tests {
         let (addr, server_fut) = warp::serve(route).bind_ephemeral(([127, 0, 0, 1], 0));
         let server = tokio::spawn(server_fut);
 
-        let client = SharedBackendClient::new(addr.port());
+        let client = SharedBackendClient::new(addr.port()).unwrap();
 
         // Must time out while ready == false even though status == "ok".
         let err = client

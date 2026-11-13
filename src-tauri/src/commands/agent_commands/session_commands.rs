@@ -243,6 +243,7 @@ pub async fn agent_init_session_with_messages(
     manager: State<'_, AgentSessionManager>,
     session_id: String,
 ) -> Result<AgentResponse, String> {
+    super::shared_proxy::reject_if_attached("agent_init_session_with_messages")?;
     manager.init_session_with_messages(&session_id).await?;
 
     Ok(AgentResponse {
@@ -271,6 +272,7 @@ pub async fn agent_update_session_config(
     manager: State<'_, AgentSessionManager>,
     request: UpdateAgentConfigRequest,
 ) -> Result<AgentResponse, String> {
+    super::shared_proxy::reject_if_attached("agent_update_session_config")?;
     manager
         .update_session_config(
             request.session_id.clone(),
@@ -375,6 +377,7 @@ pub async fn agent_call_builtin_tool(
     tool_name: String,
     args: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
+    super::shared_proxy::reject_if_attached("agent_call_builtin_tool")?;
     AgentService::call_builtin_tool(session_id, tool_name, args).await
 }
 
@@ -384,6 +387,7 @@ pub async fn agent_add_attachment(
     session_id: String,
     args: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
+    super::shared_proxy::reject_if_attached("agent_add_attachment")?;
     AgentService::add_attachment(session_id, args).await
 }
 
@@ -393,6 +397,7 @@ pub async fn agent_delete_attachment(
     session_id: String,
     args: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
+    super::shared_proxy::reject_if_attached("agent_delete_attachment")?;
     AgentService::delete_attachment(session_id, args).await
 }
 
@@ -436,6 +441,7 @@ pub async fn agent_delete_session_only(
     manager: State<'_, AgentSessionManager>,
     session_id: String,
 ) -> Result<AgentResponse, String> {
+    super::shared_proxy::reject_if_attached("agent_delete_session_only")?;
     let (deleted_id, orphaned_ids) = manager.delete_session_only(session_id.clone()).await?;
     remove_lineage(&deleted_id).await;
 
@@ -474,6 +480,7 @@ pub async fn agent_get_tools(
 pub async fn agent_clear_all_sessions(
     manager: State<'_, AgentSessionManager>,
 ) -> Result<AgentResponse, String> {
+    super::shared_proxy::reject_if_attached("agent_clear_all_sessions")?;
     let count = AgentService::clear_all_sessions(&manager).await?;
 
     Ok(AgentResponse {
@@ -489,6 +496,7 @@ pub async fn agent_toggle_session_bookmark(
     session_id: String,
     bookmarked: bool,
 ) -> Result<(), String> {
+    super::shared_proxy::reject_if_attached("agent_toggle_session_bookmark")?;
     let repo = get_session_repository();
     repo.toggle_bookmark(&session_id, bookmarked)
         .await
@@ -502,6 +510,7 @@ pub async fn agent_update_session_name(
     session_id: String,
     name: String,
 ) -> Result<(), String> {
+    super::shared_proxy::reject_if_attached("agent_update_session_name")?;
     let trimmed_name = name.trim();
     if trimmed_name.is_empty() {
         return Err("Session title cannot be empty".to_string());
@@ -531,6 +540,7 @@ pub async fn agent_mark_session_viewed(
     session_id: String,
     viewed_at: Option<i64>,
 ) -> Result<(), String> {
+    super::shared_proxy::reject_if_attached("agent_mark_session_viewed")?;
     let repo = get_session_repository();
     let viewed_at = viewed_at.unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
     repo.update_last_viewed_at(&session_id, viewed_at)
@@ -568,6 +578,7 @@ pub async fn agent_set_execution_mode(
 pub async fn agent_factory_reset(
     manager: State<'_, AgentSessionManager>,
 ) -> Result<AgentResponse, String> {
+    super::shared_proxy::reject_if_attached("agent_factory_reset")?;
     AgentService::factory_reset(&manager).await?;
 
     Ok(AgentResponse {
@@ -591,6 +602,7 @@ pub async fn agent_execute_command(
     session_id: String,
     command_text: String,
 ) -> Result<CommandResult, String> {
+    super::shared_proxy::reject_if_attached("agent_execute_command")?;
     use crate::agent::command_parser::Command;
 
     let command = Command::parse(&command_text)

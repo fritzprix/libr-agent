@@ -65,6 +65,7 @@ pub async fn agent_inject_channel_message_auto(
     manager: State<'_, AgentSessionManager>,
     request: InjectChannelMessageAutoRequest,
 ) -> Result<AgentResponse, String> {
+    super::shared_proxy::reject_if_attached("agent_inject_channel_message_auto")?;
     let (target, message_id, triggered) = manager
         .inject_channel_notification_auto(
             request.server_name.clone(),
