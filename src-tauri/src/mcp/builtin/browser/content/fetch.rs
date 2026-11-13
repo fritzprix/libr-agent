@@ -202,11 +202,7 @@ fn is_usable_static_fetch(html: &str, markdown: &str) -> bool {
         "_incapsula_",
         "attention required! | cloudflare",
     ];
-    if BLOCKERS.iter().any(|marker| lower.contains(marker)) && md.len() < 2_000 {
-        return false;
-    }
-
-    true
+    !(BLOCKERS.iter().any(|marker| lower.contains(marker)) && md.len() < 2_000)
 }
 
 fn build_fetch_success(
