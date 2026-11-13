@@ -110,17 +110,12 @@ fn glob_pattern_matches(pattern: &glob::Pattern, path: &Path, file_name: Option<
         }
     }
     let path_str = path.to_string_lossy();
-    if pattern.matches(&path_str) {
-        return true;
-    }
-    #[cfg(target_os = "windows")]
-    if path_str.contains('\\') {
-        let normalized = path_str.replace('\\', "/");
-        if pattern.matches(&normalized) {
-            return true;
-        }
-    }
-    false
+    #[cfg(windows)]
+    let windows_match =
+        path_str.contains('\\') && pattern.matches(&path_str.replace('\\', "/"));
+    #[cfg(not(windows))]
+    let windows_match = false;
+    pattern.matches(&path_str) || windows_match
 }
 
 fn expand_brace_globs(pattern: &str) -> Result<Vec<String>, String> {
