@@ -73,7 +73,8 @@ Rust builds take a machine-wide slot, so a command may wait behind another workt
    *(Only skip directly to step 6 if a PR was fixed and pushed in this tick, respecting the one-push-per-tick rule, or if no candidate issues exist.)*
 4. **Else pick an issue (continue work on remaining issues).** Run `scripts/issue_candidates.py --worker NAME`. Whenever no PR required fixes in step 3, you MUST proceed here as long as any candidate issues remain. Take the first candidate you can claim: `claim` exit 1 means try the next one. Then `gh issue edit N --add-assignee @me`. Ignore `Depends on #N` text. Do not stack PRs.
 5. **Implement the whole issue in one PR.**
-   - `BASE=$(python3 .agents/skills/create-pr/scripts/resolve_dev_base.py)`; `git switch -c <type>/<slug>-<N> origin/$BASE` in `$WT`. Set `current` to `{"ref": "issue:N", "branch": "<branch>"}`.
+   - **Base branch:** read the issue body for `Target branch:` (gatekeeper §8 follow-ups and similar). If present, use that name as `$BASE` after `git fetch origin $BASE`. Otherwise `BASE=$(python3 .agents/skills/create-pr/scripts/resolve_dev_base.py)`. Open the PR with base `$BASE` — a PR into `dev/*` is required; never use `needsUser` because you cannot push directly to `dev/*`.
+   - `git switch -c <type>/<slug>-<N> origin/$BASE` in `$WT`. Set `current` to `{"ref": "issue:N", "branch": "<branch>"}`.
    - Implement all of the issue. Do not split or stage it. Follow `agents.md` (KISS/YAGNI). Change only files the issue needs.
    - Run the local validation for the change. Fix failures.
    - Commit and push through `LR`, and open the PR with the `create-pr` skill: base `$BASE`, body with `Fixes #N`, summary, test plan. If the issue says `Depends on #X`, add one line: `Merge order: merge after the PR for #X.` Clear `current`, then `worker_state.py release` the `issue:N` claim (the open PR keeps any other worker off the issue) — do not unlock yet. After opening the PR, go back to step 3 and take the next item; leave the loop only when no PR needs action and no approved issue is free, then go to step 6, which is where you unlock.
@@ -86,7 +87,7 @@ A wrapper may own the lease for a whole tick: `lease_run.py --acquire -- <agent 
 
 ## needsUser
 
-Record a question with `worker_state.py needs-user --ref R --question Q` only when the issue is unclear, contradicts itself, or a required decision is missing (or for the CI case in step 3). It is shared by all workers: `ALREADY ASKED` means do not ask again. Skip items listed in `worker_state.py status` until the user answers; clear with `needs-user --ref R --clear`. Do not use needsUser because of paths, size, or risk.
+Record a question with `worker_state.py needs-user --ref R --question Q` only when the issue is unclear, contradicts itself, or a required decision is missing (or for the CI case in step 3). It is shared by all workers: `ALREADY ASKED` means do not ask again. Skip items listed in `worker_state.py status` until the user answers; clear with `needs-user --ref R --clear`. Do not use needsUser because of paths, size, risk, or inability to push directly to `dev/*` — open a PR targeting the issue's **Target branch** (or default dev base) instead.
 
 ## Hard rules
 

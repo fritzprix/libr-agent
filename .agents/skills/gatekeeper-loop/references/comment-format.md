@@ -19,7 +19,8 @@ Scope: <one line — what the PR claims and whether the diff matches it>
 
 - **G2.1** `src-tauri/src/agent/tool_approvals.rs:212` — <problem>. Expected: <concrete fix or acceptance check>.
 - **G2.2** <missing test> — Expected: a unit test covering <case>.
-- **G2.3** `CI failure (<job-name>)` — <diagnosed root cause from CI logs>. Expected: <concrete fix>.
+- **G2.3** `CI failure (<job-name>)` — <diagnosed root cause from CI logs, PR-introduced only>. Expected: <concrete fix>.
+  - Base-branch / out-of-scope CI: **no `G` item** — note “Out-of-scope base CI: #<issue>” (gatekeeper-created §8 follow-up).
 
 ### Suggestions (non-blocking)
 
@@ -125,7 +126,8 @@ Posted after addressing a `changes-requested` verdict, in the same round number.
 
 - **G2.1** fixed in <short-sha> — <one line>
 - **G2.2** declined — <reason grounded in code, issue scope, or project rules>
-- **S2.1** deferred — <reason or follow-up issue link>
+- **S2.1** deferred — <reason> (non-blocking; gatekeeper does **not** file an issue for `S` items)
+- **G2.x** declined — deferred out of scope — follow-up **#<issue>** (filed by gatekeeper, not the worker)
 ```
 
 Every `G` item must be answered as **fixed** or **declined**. Suggestions may be skipped silently.

@@ -54,6 +54,7 @@ When a finding is `CI failure (<job>)`:
 2. Do **not** treat the worker's explanation as root cause until logs support it.
 3. If the proposed fix is only a **timeout increase** on a **pre-existing** test, you must: (a) show the log proves timeout (not cancel/fail-fast elsewhere), and (b) note whether the same CI step is green on other open PRs at the same base. If other PRs pass, the bump alone is insufficient — identify flake vs regression vs infra.
 4. Distinguish PR-introduced failures from base-branch or toolchain drift (failures in files the PR did not touch).
+5. **Base-branch or out-of-scope CI/tooling failures do not become required `G` items** on the PR under review. Note them in the verdict (e.g. under `### Checked` or a short out-of-scope note) and file follow-up per §8 — do not request changes solely because the base is red for unrelated reasons.
 
 ## 7. Code quality score (informational only)
 
@@ -67,4 +68,37 @@ The score must **never** drive approve vs changes-requested. Use the full range 
 | 93–100 | Exceptional: thorough tests on production paths, tight scope, strong error handling |
 
 Avoid clustering every clean PR at 87–96; differentiate test depth and robustness.
+
+## 8. Follow-up work the PR did not cause (gatekeeper files the issue)
+
+When review finds work that is **not this PR's fault**, the **gatekeeper** must open a GitHub issue in the same tick — before or when posting the verdict — and link it in the PR comment. Do **not** ask the worker or the owner to open it, do **not** record `needsUser`, and do **not** treat “another open PR will fix the base” as a substitute.
+
+Applies when **all** of the following hold:
+
+- The problem is outside the PR diff, on the PR's **base branch**, or is **tech debt** explicitly deferred for a later change; **and**
+- It would block or distract if folded into the current PR; **and**
+- It is **not** a non-blocking suggestion (`S` item) — **never** file an issue for optional polish.
+
+Examples:
+
+1. Base-branch CI is red for rustfmt/clippy/tests on files this PR does not touch (leftover from a merged base change).
+2. Tech debt outside the diff that the verdict or worker response defers (major/blocker class only — not `S`).
+
+**Before creating:** search open issues (`gh issue list --search "..."`) for the same cause; link the existing issue instead of duplicating.
+
+**Create (English body, public repo):**
+
+```bash
+gh issue create --title "<short noun phrase>" --label "auto:producer" --body-file <tmp>
+```
+
+Body must include:
+
+- **Cause** — what failed or what debt, with `path:line` or CI job evidence.
+- **Expected fix** — concrete acceptance check or command that must pass.
+- **Target branch** — the PR's base (e.g. `dev/0.9.x`). Workers use this as the PR base after a human adds `approved`.
+
+Label **only** `auto:producer`. Do **not** add `approved` or `validated` on create (step 4 of the gatekeeper tick may add `validated` later, same as producer-filed issues).
+
+In the PR verdict, cite the issue (e.g. “Out-of-scope base CI: #N”) and keep required `G` items limited to what **this diff** must fix. Waiting for another PR to merge does not remove the need for #N.
 

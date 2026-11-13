@@ -21,14 +21,14 @@ For each row, assign a partial score (0–max) and one bullet with a **single-li
 
 | Severity | Examples                                                                                                                                                                                                                                                                      |
 | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| blocker  | Wrong behavior, data loss, security/privacy leak, broken build, failing or deleted tests, migration without rollback path, diagnosed CI failure caused by the PR                                                                                                              |
+| blocker  | Wrong behavior, data loss, security/privacy leak, broken build, failing or deleted tests, migration without rollback path, diagnosed CI failure **caused by this PR's diff** (not base-branch drift — see §8 follow-up issue)                                                                                                              |
 | major    | Linked issue's acceptance criteria / checklist not met; new logic without tests; unhandled error path that users will hit; cross-platform path bug; violates `agents.md` hard rules (`as any`, raw `cargo`, protected-path edits outside scope); unrelated changes bundled in |
 | minor    | Naming, small duplication, missing doc/i18n string for a non-critical path, comment noise                                                                                                                                                                                     |
 | nit      | Style preferences the formatter/linter does not enforce                                                                                                                                                                                                                       |
 
 ## Checklist
 
-1. **Scope** — Read the linked issue (`Fixes #N`). Does the diff deliver what it promises, and nothing unrelated? Large leftovers must be stated in the PR body.
+1. **Scope** — Read the linked issue (`Fixes #N`). Does the diff deliver what it promises, and nothing unrelated? Tech debt or cleanup **outside the diff** must not become required `G` items on this PR: the gatekeeper files a linked follow-up issue ([pre-post-checklist.md](pre-post-checklist.md) §8). Optional follow-ups stay `S` only (no issue).
 2. **Correctness** — Trace changed code paths, including error and edge cases. Read surrounding code with `git show origin/<head>:<path>`, not just the hunk.
 3. **Tests** — New behavior has tests at the right level; tests assert behavior, not implementation detail.
 4. **Conventions** — `agents.md`/`CLAUDE.md`: KISS/YAGNI, no unsafe casts, comment density matches surroundings, Rust via `pnpm rust:*`.
