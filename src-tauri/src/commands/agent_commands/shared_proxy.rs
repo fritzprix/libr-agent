@@ -74,11 +74,10 @@ pub fn ensure_session_event_stream(client: &SharedBackendClient, session_id: &st
 
     let url = client.events_url(session_id);
     let http = client.http_client().clone();
-    let api_key = client.api_key().map(str::to_string);
     let sid = session_id.to_string();
 
     tauri::async_runtime::spawn(async move {
-        let result = forward_sse_events(&http, &url, api_key.as_deref(), &sid).await;
+        let result = forward_sse_events(&http, &url, &sid).await;
         if let Err(err) = result {
             log::debug!("Shared backend SSE stream ended for {sid}: {err}");
         }
@@ -91,13 +90,9 @@ pub fn ensure_session_event_stream(client: &SharedBackendClient, session_id: &st
 async fn forward_sse_events(
     http: &reqwest::Client,
     url: &str,
-    api_key: Option<&str>,
     session_id: &str,
 ) -> Result<(), String> {
-    let mut req = http.get(url);
-    if let Some(key) = api_key {
-        req = req.bearer_auth(key);
-    }
+    let req = http.get(url);
     let resp = req
         .send()
         .await

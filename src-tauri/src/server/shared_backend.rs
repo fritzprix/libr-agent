@@ -29,7 +29,14 @@ pub struct SharedBackendClient {
     port: u16,
     base_url: String,
     client: reqwest::Client,
-    api_key: Option<String>,
+}
+
+/// Outcome of a single health probe. A 401 is permanent for a keyless client
+/// (the backend is key-guarded), so it must not be retried like a transient
+/// state.
+enum HealthProbeError {
+    Unauthorized(String),
+    Other(String),
 }
 
 impl SharedBackendClient {
@@ -47,20 +54,7 @@ impl SharedBackendClient {
             port,
             base_url: format!("http://127.0.0.1:{port}"),
             client,
-            api_key: None,
         })
-    }
-
-    pub fn with_api_key(mut self, api_key: impl Into<String>) -> Self {
-        let key = api_key.into();
-        if !key.trim().is_empty() {
-            self.api_key = Some(key);
-        }
-        self
-    }
-
-    pub fn api_key(&self) -> Option<&str> {
-        self.api_key.as_deref()
     }
 
     pub fn port(&self) -> u16 {
@@ -79,24 +73,34 @@ impl SharedBackendClient {
         &self.client
     }
 
-    /// Query `GET /api/health` once.
-    pub async fn health(&self) -> Result<HealthStatus, String> {
+    async fn health_probe(&self) -> Result<HealthStatus, HealthProbeError> {
         let url = format!("{}/api/health", self.base_url);
-        let resp = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| format!("Failed to reach shared backend at {url}: {e}"))?;
+        let resp = self.client.get(&url).send().await.map_err(|e| {
+            HealthProbeError::Other(format!("Failed to reach shared backend at {url}: {e}"))
+        })?;
+        if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(HealthProbeError::Unauthorized(format!(
+                "Shared backend {url} rejected the request (401 Unauthorized): Session API key required or invalid"
+            )));
+        }
         if !resp.status().is_success() {
-            return Err(format!(
+            return Err(HealthProbeError::Other(format!(
                 "Shared backend health check returned HTTP {}",
                 resp.status()
-            ));
+            )));
         }
-        resp.json::<HealthStatus>()
-            .await
-            .map_err(|e| format!("Invalid /api/health response from shared backend: {e}"))
+        resp.json::<HealthStatus>().await.map_err(|e| {
+            HealthProbeError::Other(format!(
+                "Invalid /api/health response from shared backend: {e}"
+            ))
+        })
+    }
+
+    /// Query `GET /api/health` once.
+    pub async fn health(&self) -> Result<HealthStatus, String> {
+        self.health_probe().await.map_err(|err| match err {
+            HealthProbeError::Unauthorized(msg) | HealthProbeError::Other(msg) => msg,
+        })
     }
 
     /// Wait until `GET /api/health` reports `ready: true`.
@@ -107,13 +111,16 @@ impl SharedBackendClient {
         let deadline = Instant::now() + timeout;
 
         loop {
-            let last_error = match self.health().await {
+            let last_error = match self.health_probe().await {
                 Ok(health) if health.ready => return Ok(health),
                 Ok(health) => format!(
                     "backend not ready yet (status={}, recovery={})",
                     health.status, health.recovery
                 ),
-                Err(err) => err,
+                // A 401 never resolves by retrying: fail fast with the
+                // explicit message instead of burning the whole timeout.
+                Err(HealthProbeError::Unauthorized(msg)) => return Err(msg),
+                Err(HealthProbeError::Other(err)) => err,
             };
 
             if Instant::now() >= deadline {
@@ -134,9 +141,6 @@ impl SharedBackendClient {
     ) -> Result<(reqwest::StatusCode, serde_json::Value), String> {
         let url = format!("{}{}", self.base_url, path);
         let mut req = self.client.request(method, &url);
-        if let Some(key) = &self.api_key {
-            req = req.bearer_auth(key);
-        }
         if let Some(payload) = body {
             req = req.json(payload);
         }

@@ -9,7 +9,7 @@ mod pairing;
 pub(crate) mod prompts;
 mod sessions;
 mod settings;
-mod types;
+pub mod types;
 mod wake;
 
 // Re-export endpoints so existing routes.rs does not break
