@@ -721,13 +721,16 @@ async fn snapshot_scrubs_session_rows_from_raw_pages_not_just_rows() {
     drop(runtime);
 }
 
-/// The hidden-WebView path builds its agent manager from the runtime, so the
-/// manager and the driver read the same session repository and session map
-/// (there is no second copy to keep in sync).
+/// The hidden-WebView path builds its agent manager through
+/// `build_agent_manager`, so the manager and the driver read the same session
+/// repository and session map (there is no second copy to keep in sync).
 #[tokio::test]
-async fn agent_state_for_the_hidden_webview_path_is_the_runtimes_own() {
+async fn the_agent_manager_runs_on_the_runtimes_own_session_state() {
+    use std::mem::ManuallyDrop;
     use std::sync::Arc;
-    use tauri_mcp_agent_lib::headless::agent_repositories_for;
+    use tauri::test::MockRuntime;
+    use tauri_mcp_agent_lib::headless::build_agent_manager;
+    use tauri_mcp_agent_lib::mcp::MCPServiceProxyManager;
     use tauri_mcp_agent_lib::repositories::{
         SqliteCompactContextRepository, SqliteMessageRepository, SqlitePendingQueueRepository,
     };
@@ -737,25 +740,47 @@ async fn agent_state_for_the_hidden_webview_path_is_the_runtimes_own() {
     let runtime = EphemeralHeadlessRuntime::bootstrap(None, &args)
         .await
         .unwrap();
+    let session_root = TempDir::new().unwrap();
+    let proxy_manager = Arc::new(MCPServiceProxyManager::new(
+        Arc::new(runtime.db.clone()),
+        Arc::new(
+            tauri_mcp_agent_lib::session::SessionManager::new_with_base_dir(
+                session_root.path().join("session-root"),
+            )
+            .unwrap(),
+        ),
+    ));
 
-    let repositories = agent_repositories_for(
+    // A mock app stands in for the window. Its handle is bit-copied into the
+    // manager (never cloned or used: a mock handle is not a `Wry` one), and the
+    // manager is forgotten so the copy is not dropped either.
+    let mock_app = tauri::test::mock_app();
+    let app_handle: tauri::AppHandle = unsafe {
+        std::ptr::read(
+            mock_app.handle() as *const tauri::AppHandle<MockRuntime> as *const tauri::AppHandle
+        )
+    };
+    let manager = ManuallyDrop::new(build_agent_manager(
+        app_handle,
         &runtime,
+        proxy_manager,
         Arc::new(SqliteMessageRepository::new(runtime.db.clone())),
         Arc::new(SqlitePendingQueueRepository::new(runtime.db.clone())),
         Arc::new(SqliteCompactContextRepository::new(runtime.db.clone())),
-    );
+    ));
 
-    // The same repository object, and it holds the ephemeral session.
-    assert!(Arc::ptr_eq(&repositories.session, &runtime.session_repo));
-    assert!(repositories
-        .session
-        .get_session(&runtime.session_id)
-        .await
-        .unwrap()
-        .is_some());
-    // The live session map is the one the manager is built on.
-    assert!(runtime
-        .active_sessions
+    // Same session map and same repository object, not copies.
+    assert!(Arc::ptr_eq(
+        &manager.active_sessions_arc(),
+        &runtime.active_sessions
+    ));
+    assert!(Arc::ptr_eq(
+        &manager.repositories().session,
+        &runtime.session_repo
+    ));
+    // And the manager sees the ephemeral session the runtime created.
+    assert!(manager
+        .active_sessions_arc()
         .read()
         .await
         .contains_key(&runtime.session_id));

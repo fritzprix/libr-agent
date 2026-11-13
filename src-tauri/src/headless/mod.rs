@@ -447,20 +447,27 @@ pub fn run_headless_with_hidden_webview(args: HeadlessArgs) -> i32 {
     std::process::exit(code);
 }
 
-/// The repositories the agent manager runs on: the runtime's own session
-/// repository, so the manager, the monitor, and the driver share one source of
-/// truth for the ephemeral session (the session map is shared through
-/// `AgentSessionManager::with_active_sessions`).
-pub fn agent_repositories_for(
+/// Build the agent manager for the hidden-WebView path on the runtime's own
+/// session repository and session map, so the manager, the monitor, and the
+/// driver share one source of truth for the ephemeral session.
+pub fn build_agent_manager(
+    app_handle: tauri::AppHandle,
     runtime: &EphemeralHeadlessRuntime,
+    proxy_manager: Arc<crate::mcp::MCPServiceProxyManager>,
     message: Arc<dyn crate::repositories::message_repository::MessageRepository>,
     pending_queue: Arc<dyn crate::repositories::PendingQueueRepository>,
     compact_context: Arc<dyn crate::repositories::CompactContextRepository>,
-) -> crate::agent::AgentRepositories {
-    crate::agent::AgentRepositories::new(runtime.session_repo.clone())
+) -> crate::agent::AgentSessionManager {
+    let repositories = crate::agent::AgentRepositories::new(runtime.session_repo.clone())
         .with_message(message)
         .with_pending_queue(pending_queue)
-        .with_compact_context(compact_context)
+        .with_compact_context(compact_context);
+    crate::agent::AgentSessionManager::new_with_repositories(
+        app_handle,
+        proxy_manager,
+        repositories,
+    )
+    .with_active_sessions(runtime.active_sessions.clone())
 }
 
 fn setup_hidden_headless_app(
@@ -498,20 +505,15 @@ fn setup_hidden_headless_app(
     let compact_context_repo_arc: Arc<dyn crate::repositories::CompactContextRepository> =
         Arc::new((*crate::state::get_compact_context_repository()).clone());
 
-    let repositories = agent_repositories_for(
+    let app_handle = app.handle().clone();
+    let agent_manager = build_agent_manager(
+        app_handle.clone(),
         &runtime,
+        proxy_manager_arc,
         message_repo_arc,
         pending_queue_repo_arc,
         compact_context_repo_arc,
     );
-
-    let app_handle = app.handle().clone();
-    let agent_manager = crate::agent::AgentSessionManager::new_with_repositories(
-        app_handle.clone(),
-        proxy_manager_arc,
-        repositories,
-    )
-    .with_active_sessions(runtime.active_sessions.clone());
 
     crate::state::init_active_sessions(agent_manager.active_sessions_arc());
     crate::state::init_channel_dispatch_agent(agent_manager.clone());
