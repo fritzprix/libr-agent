@@ -14,6 +14,12 @@ import type {
   SessionStatusResponse,
 } from './types.js';
 import { initialState, reduce } from './session.js';
+import {
+  approvalKeyAction,
+  askFormPayload,
+  askFormReduce,
+  initialAskForm,
+} from './askform.js';
 
 const MODES = ['normal', 'yolo', 'unsafe'] as const;
 const TRANSCRIPT_LINES = 15;
@@ -24,6 +30,8 @@ export interface AppProps {
   initialStatus: SessionStatusResponse;
   history: ChatMessage[];
   initialPrompt?: string;
+  /** The session was busy/queued at attach; another frontend drives it. */
+  attachedRunning?: boolean;
 }
 
 function messageText(message: ChatMessage): string {
@@ -50,6 +58,7 @@ export function App({
   initialStatus,
   history,
   initialPrompt,
+  attachedRunning = false,
 }: AppProps) {
   const { exit } = useApp();
   const seed = reduce(
@@ -60,13 +69,19 @@ export function App({
   const [draft, setDraft] = useState('');
   const [approvalIndex, setApprovalIndex] = useState(0);
   const [secretDraft, setSecretDraft] = useState('');
-  const [questionIndex, setQuestionIndex] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [askForm, setAskForm] = useState(initialAskForm);
   const sentInitial = useRef(false);
 
   const prompt = state.pendingUserPrompt;
   const approvals = state.pendingApprovals;
   const running = state.status === 'busy' || state.status === 'queued';
+
+  // A new prompt request starts a fresh form (render-phase adjustment).
+  const promptId = useRef<string | undefined>(undefined);
+  if (prompt?.requestId !== promptId.current) {
+    promptId.current = prompt?.requestId;
+    setAskForm(initialAskForm());
+  }
 
   // Follow the session's SSE stream for the lifetime of the view.
   useEffect(() => {
@@ -109,6 +124,15 @@ export function App({
       );
   }, [client, sessionId, initialPrompt]);
 
+  // The askUser form submits itself once the last question is answered.
+  useEffect(() => {
+    if (askForm.finished && prompt?.payload.questions)
+      respondPrompt(
+        'answer',
+        JSON.stringify(askFormPayload(askForm, prompt.payload.questions)),
+      );
+  }, [askForm]);
+
   const respondPrompt = (action: 'answer' | 'cancel', value?: string) => {
     if (!prompt) return;
     client
@@ -121,18 +145,7 @@ export function App({
         dispatch({ type: 'notice', notice: `prompt failed: ${error.message}` }),
       );
     setSecretDraft('');
-    setAnswers({});
-    setQuestionIndex(0);
-  };
-
-  const answerCurrentQuestion = () => {
-    if (!prompt?.payload.questions) return;
-    const questions = prompt.payload.questions;
-    if (questionIndex < questions.length - 1) {
-      setQuestionIndex(questionIndex + 1);
-      return;
-    }
-    respondPrompt('answer', JSON.stringify(answers));
+    setAskForm(initialAskForm());
   };
 
   const respondApproval = (approval: PendingApproval, behavior: string) => {
@@ -189,69 +202,29 @@ export function App({
           setSecretDraft((d) => d + input);
         return;
       }
-      // askUser form: single selection per question by number.
+      // askUser form: every key rule lives in the pure reducer (askform.ts).
       const questions = prompt.payload.questions ?? [];
-      const question = questions[questionIndex];
-      if (!question) return;
-      if (question.options && question.options.length > 0) {
-        const digit = Number(input);
-        if (
-          Number.isInteger(digit) &&
-          digit >= 1 &&
-          digit <= question.options.length
-        ) {
-          const choice = question.options[digit - 1];
-          setAnswers((prev) => ({ ...prev, [question.id]: choice }));
-          if (!question.multiSelect) answerCurrentQuestion();
-          return;
-        }
-        if (question.allowCustom && input === 'o') {
-          const custom = answers[`${question.id}:pending`] ?? '';
-          if (key.return && custom) {
-            setAnswers((prev) => ({ ...prev, [question.id]: custom }));
-            answerCurrentQuestion();
-          }
-          return;
-        }
-      }
-      if (key.return) {
-        // Free-text question: the draft doubles as the answer.
-        const answer = answers[`${question.id}:pending`] ?? draft;
-        if (answer) {
-          setAnswers((prev) => ({ ...prev, [question.id]: answer }));
-          setDraft('');
-          answerCurrentQuestion();
-        }
-        return;
-      }
-      if (key.backspace || key.delete) {
-        setAnswers((prev) => ({
-          ...prev,
-          [`${question.id}:pending`]: (
-            prev[`${question.id}:pending`] ?? draft
-          ).slice(0, -1),
-        }));
-        return;
-      }
-      if (!key.ctrl && !key.meta && input) {
-        setAnswers((prev) => ({
-          ...prev,
-          [`${question.id}:pending`]:
-            (prev[`${question.id}:pending`] ?? draft) + input,
-        }));
-      }
+      if (questions.length === 0) return;
+      setAskForm((prev) =>
+        askFormReduce(prev, questions, {
+          input,
+          returnKey: key.return,
+          backspaceKey: key.backspace || key.delete,
+        }),
+      );
       return;
     }
 
     if (approvals.length > 0) {
-      if (key.upArrow) setApprovalIndex((i) => Math.max(0, i - 1));
-      else if (key.downArrow)
+      const action = approvalKeyAction(input, key);
+      if (action === 'up') setApprovalIndex((i) => Math.max(0, i - 1));
+      else if (action === 'down')
         setApprovalIndex((i) => Math.min(approvals.length - 1, i + 1));
-      else if (input === 'a' || input === 'y')
+      else if (action === 'allow')
         respondApproval(approvals[approvalIndex], 'allow');
-      else if (input === 'd' || input === 'n')
+      else if (action === 'deny')
         respondApproval(approvals[approvalIndex], 'deny');
-      else if (input === 'm') cycleMode();
+      else if (action === 'mode') cycleMode();
       return;
     }
 
@@ -281,14 +254,17 @@ export function App({
   const transcript = state.messages.slice(-TRANSCRIPT_LINES);
   const selected = approvals[approvalIndex];
   const questions = prompt?.payload.questions ?? [];
-  const question = questions[questionIndex];
-  const typing = answers[`${question?.id}:pending`] ?? (question ? '' : draft);
+  const question = questions[askForm.questionIndex];
+  const picked = (question ? (askForm.answers[question.id] ?? '') : '')
+    .split(',')
+    .filter(Boolean);
 
   return (
     <Box flexDirection="column">
       <Text dimColor>
         liblet · {state.sessionName || sessionId.slice(0, 8)} · {state.status}
-        {state.statusReason ? ` (${state.statusReason})` : ''} ·{' '}
+        {state.statusReason ? ` (${state.statusReason})` : ''}
+        {attachedRunning ? ' · driven by another frontend' : ''} ·{' '}
         {state.executionMode} · {state.model ?? ''} ·{' '}
         {state.workspace ?? 'no workspace'}
       </Text>
@@ -327,23 +303,28 @@ export function App({
       {prompt && prompt.kind !== 'secret' && question && (
         <Box flexDirection="column" borderStyle="round" borderColor="magenta">
           <Text color="magenta">
-            question {questionIndex + 1}/{questions.length}: {question.question}
+            question {askForm.questionIndex + 1}/{questions.length}:{' '}
+            {question.question}
           </Text>
           {question.description && <Text dimColor>{question.description}</Text>}
           {(question.options ?? []).map((option, index) => (
             <Text key={option}>
               {index + 1}) {option}
-              {answers[question.id] === option ? ' ✓' : ''}
+              {picked.includes(option) ? ' ✓' : ''}
             </Text>
           ))}
           {question.options && question.options.length > 0 ? (
-            <Text dimColor>
-              press number{question.multiSelect ? ' (multi, then enter)' : ''}
-              {question.allowCustom ? ' · o then text for other' : ''} · enter
-              next
-            </Text>
+            askForm.customMode ? (
+              <Text>other ❯ {askForm.pending}</Text>
+            ) : (
+              <Text dimColor>
+                press number
+                {question.multiSelect ? ' (multi, then enter)' : ''}
+                {question.allowCustom ? ' · o for other' : ''} · enter next
+              </Text>
+            )
           ) : (
-            <Text>❯ {typing}</Text>
+            <Text>❯ {askForm.pending}</Text>
           )}
           <Text dimColor>enter submit · esc cancel all</Text>
         </Box>

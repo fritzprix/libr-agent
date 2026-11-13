@@ -41,7 +41,6 @@ export function dataDirFor(
   profile: Profile,
   env: NodeJS.ProcessEnv = process.env,
   platform: NodeJS.Platform = process.platform,
-  envOrSystem: NodeJS.ProcessEnv = process.env,
 ): string {
   if (env.LIBRAGENT_DATA_DIR) return env.LIBRAGENT_DATA_DIR;
   const folder =
@@ -50,12 +49,11 @@ export function dataDirFor(
       : 'com.fritzprix.libragent';
   let base: string;
   if (platform === 'win32') {
-    base = envOrSystem.APPDATA ?? path.join(os.homedir(), 'AppData', 'Roaming');
+    base = env.APPDATA ?? path.join(os.homedir(), 'AppData', 'Roaming');
   } else if (platform === 'darwin') {
     base = path.join(os.homedir(), 'Library', 'Application Support');
   } else {
-    base =
-      envOrSystem.XDG_DATA_HOME ?? path.join(os.homedir(), '.local', 'share');
+    base = env.XDG_DATA_HOME ?? path.join(os.homedir(), '.local', 'share');
   }
   return path.join(base, folder);
 }

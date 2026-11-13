@@ -26,16 +26,16 @@ describe('profile and paths (mirrors src-tauri/src/profile.rs)', () => {
 
   it('uses the platform data dir and the profile folder', () => {
     expect(
-      dataDirFor('prod', {}, 'win32', {
-        APPDATA: 'C:\\Users\\x\\AppData\\Roaming',
-      }),
+      dataDirFor(
+        'prod',
+        { APPDATA: 'C:\\Users\\x\\AppData\\Roaming' },
+        'win32',
+      ),
     ).toBe(
       path.join('C:\\Users\\x\\AppData\\Roaming', 'com.fritzprix.libragent'),
     );
     expect(
-      dataDirFor('demo', {}, 'linux', {
-        XDG_DATA_HOME: '/home/x/.local/share',
-      }),
+      dataDirFor('demo', { XDG_DATA_HOME: '/home/x/.local/share' }, 'linux'),
     ).toBe(path.join('/home/x/.local/share', 'com.fritzprix.libragent-demo'));
   });
 

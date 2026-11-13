@@ -6,8 +6,6 @@
  * then handing the session to the interactive view (app.tsx).
  */
 
-import * as path from 'node:path';
-
 import { render } from 'ink';
 
 import { HELP_TEXT, VERSION, EXIT, parseInvocation } from './args.js';
@@ -15,7 +13,11 @@ import { NoBackendError, findReadyBackend } from './backend.js';
 import { ApiError, SessionApiClient } from './client.js';
 import { App } from './app.js';
 import { pickSession } from './picker.js';
+import { findContinueSession } from './resolve.js';
 import type { SessionMetadata } from './types.js';
+
+/** Statuses that mean a running workflow already drives the session. */
+const DRIVEN_STATUSES = new Set(['busy', 'queued', 'provisioning']);
 
 /** Piped stdin as text, or null when stdin is a terminal. */
 async function readPipedStdin(): Promise<string | null> {
@@ -23,12 +25,6 @@ async function readPipedStdin(): Promise<string | null> {
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
   return Buffer.concat(chunks).toString('utf8');
-}
-
-function normalizeWorkspace(p: string): string {
-  let out = path.resolve(p).replace(/[\\/]+$/, '');
-  if (process.platform === 'win32') out = out.toLowerCase();
-  return out;
 }
 
 function printSessions(sessions: SessionMetadata[]): void {
@@ -72,8 +68,10 @@ async function main(): Promise<number> {
       console.error('run `liblet --help` for usage');
       return EXIT.USAGE;
     case 'headless':
+      // #2703 shipped headless mode as the native Rust `liblet` binary
+      // (src-tauri/src/bin/liblet.rs); this Node package is the TUI only.
       console.error(
-        'liblet: headless mode is not implemented yet (issue #2703).',
+        'liblet: headless mode lives in the native liblet binary (src-tauri, issue #2703).',
       );
       return EXIT.ERROR;
     case 'list-sessions':
@@ -105,7 +103,7 @@ async function main(): Promise<number> {
 
   // TUI path: resolve the session to attach to.
   let status;
-  let initialPrompt = parsed.initialPrompt;
+  const initialPrompt = parsed.initialPrompt;
 
   try {
     if (parsed.resumeId !== undefined || parsed.cont) {
@@ -113,12 +111,7 @@ async function main(): Promise<number> {
       if (parsed.cont || sessionId === '') {
         const { sessions } = await client.listSessions();
         if (parsed.cont) {
-          const cwd = normalizeWorkspace(process.cwd());
-          const match = sessions.find(
-            (s) =>
-              s.workspaceOverride &&
-              normalizeWorkspace(s.workspaceOverride) === cwd,
-          );
+          const match = findContinueSession(sessions, process.cwd());
           if (!match) {
             console.error(`liblet: no session for workspace ${process.cwd()}`);
             return EXIT.ERROR;
@@ -130,14 +123,14 @@ async function main(): Promise<number> {
         }
       }
       status = await client.getSession(sessionId!);
-      try {
-        await client.resume(sessionId!);
-      } catch (error) {
-        // Already running elsewhere: attach read-only, one executor per session.
-        if (!(error instanceof ApiError)) throw error;
-        initialPrompt = undefined;
-        process.stderr.write(`liblet: ${error.message}\n`);
-      }
+      // POST /api/sessions/:id/resume (src-tauri/src/server/handlers/sessions.rs:266)
+      // has no already-running status — it resets execution state and
+      // re-queues the session (src-tauri/src/agent/workflow/pause_resume.rs:30).
+      // A session another frontend is driving is therefore detected by its
+      // status here: resume is skipped and the TUI header says so. Every
+      // other resume failure is a real error and exits 1 — never a silent
+      // read-only-looking attach.
+      if (!DRIVEN_STATUSES.has(status.status)) await client.resume(sessionId!);
     } else {
       const assistants = await client.assistants();
       if (assistants.length === 0) {
@@ -171,6 +164,7 @@ async function main(): Promise<number> {
       initialStatus={status}
       history={history.messages}
       initialPrompt={initialPrompt}
+      attachedRunning={DRIVEN_STATUSES.has(status.status)}
     />,
   );
   await instance.waitUntilExit();
