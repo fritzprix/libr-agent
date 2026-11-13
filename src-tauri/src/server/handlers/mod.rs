@@ -9,7 +9,7 @@ mod pairing;
 pub(crate) mod prompts;
 mod sessions;
 mod settings;
-pub mod types;
+mod types;
 mod wake;
 
 // Re-export endpoints so existing routes.rs does not break
@@ -30,4 +30,5 @@ pub use sessions::{
 pub use settings::{
     get_complexity_model_mapping, get_preferred_model, put_complexity_model_mapping,
 };
+pub use types::{ListSessionsResponse, SessionStatusResponse};
 pub use wake::wake_session;

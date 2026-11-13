@@ -39,6 +39,13 @@ enum HealthProbeError {
     Other(String),
 }
 
+/// Shared 401 wording so the health and JSON paths report the same failure.
+fn unauthorized_message(url: &str) -> String {
+    format!(
+        "Shared backend {url} rejected the request (401 Unauthorized): Session API key required or invalid"
+    )
+}
+
 impl SharedBackendClient {
     /// Build a client targeting `http://127.0.0.1:<port>`.
     ///
@@ -79,9 +86,7 @@ impl SharedBackendClient {
             HealthProbeError::Other(format!("Failed to reach shared backend at {url}: {e}"))
         })?;
         if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
-            return Err(HealthProbeError::Unauthorized(format!(
-                "Shared backend {url} rejected the request (401 Unauthorized): Session API key required or invalid"
-            )));
+            return Err(HealthProbeError::Unauthorized(unauthorized_message(&url)));
         }
         if !resp.status().is_success() {
             return Err(HealthProbeError::Other(format!(
@@ -93,13 +98,6 @@ impl SharedBackendClient {
             HealthProbeError::Other(format!(
                 "Invalid /api/health response from shared backend: {e}"
             ))
-        })
-    }
-
-    /// Query `GET /api/health` once.
-    pub async fn health(&self) -> Result<HealthStatus, String> {
-        self.health_probe().await.map_err(|err| match err {
-            HealthProbeError::Unauthorized(msg) | HealthProbeError::Other(msg) => msg,
         })
     }
 
@@ -154,9 +152,7 @@ impl SharedBackendClient {
             .await
             .map_err(|e| format!("Failed reading shared backend response from {url}: {e}"))?;
         if status == reqwest::StatusCode::UNAUTHORIZED {
-            return Err(format!(
-                "Shared backend {url} rejected the request (401 Unauthorized): Session API key required or invalid"
-            ));
+            return Err(unauthorized_message(&url));
         }
         if !status.is_success() {
             if status == reqwest::StatusCode::NOT_FOUND {

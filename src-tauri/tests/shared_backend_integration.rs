@@ -10,7 +10,7 @@ use tauri_mcp_agent_lib::execution_mode::ExecutionMode;
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
 use tauri_mcp_agent_lib::models::workspace_isolation::WorkspaceIsolationMode;
 use tauri_mcp_agent_lib::repositories::{SessionMetadata, SessionStatus};
-use tauri_mcp_agent_lib::server::handlers::types::{ListSessionsResponse, SessionStatusResponse};
+use tauri_mcp_agent_lib::server::handlers::{ListSessionsResponse, SessionStatusResponse};
 use tauri_mcp_agent_lib::server::shared_backend::SharedBackendClient;
 use warp::Filter;
 
