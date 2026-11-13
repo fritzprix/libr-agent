@@ -7,6 +7,10 @@ const OUTPUT_TOKEN_PRESETS = [
   1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072,
 ] as const;
 
+// Ceiling of the Max Input Context slider: room for 1M-class models (the model
+// catalog already lists 2M windows). Only a ceiling; the default is unchanged.
+const MAX_INPUT_CONTEXT_CEILING = 4194304;
+
 function findNearestPresetIndex(value: number): number {
   return OUTPUT_TOKEN_PRESETS.reduce((bestIndex, preset, index) => {
     const bestDistance = Math.abs(OUTPUT_TOKEN_PRESETS[bestIndex] - value);
@@ -205,7 +209,7 @@ function ChatInterfaceTabComponent({
               <div className="flex max-w-xs items-center gap-4">
                 <Slider
                   min={8192}
-                  max={262144}
+                  max={MAX_INPUT_CONTEXT_CEILING}
                   step={8192}
                   value={[localMaxInputContext]}
                   onValueChange={([val]) => onMaxInputContextChange(val)}

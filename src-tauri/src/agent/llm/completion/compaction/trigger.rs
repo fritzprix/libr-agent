@@ -138,8 +138,7 @@ pub(crate) async fn try_trigger_preflight_compaction(
         session_id,
     )
     .await;
-    let current_context_limit =
-        std::cmp::min(settings.max_input_context(), settings.model_max_limit);
+    let current_context_limit = settings.max_input_context();
     let effective_input_budget = crate::agent::llm::token_utils::calculate_effective_input_budget(
         current_context_limit,
         measured_output_tokens_reserve,
