@@ -32,7 +32,7 @@ Arm exactly like `worker-loop` (Cursor `loop` skill mechanics): check `pgrep -af
 
 ## State
 
-`.libragent/work/gatekeeper-loop/state.json` (git-ignored, resolved via `git rev-parse --git-common-dir` or `$LOOP_STATE_DIR`): `loopPid`, `issueValidation` (validated and rejected counts per producer task), and per PR the open findings (`G2.1: open|fixed|declined-accepted|disputed`) and dispute counts. GitHub comments remain the source of truth; state only speeds up re-review. "Reviewed clean, waiting for CI" is **not** state-only: it is recorded as a `verdict=clean` marker comment (see comment-format.md), so a missing or lost `state.json` never causes a full re-review.
+`.libragent/work/gatekeeper-loop/state.json` (git-ignored, resolved via `git rev-parse --git-common-dir` or `$LOOP_STATE_DIR`): `loopPid`, `issueValidation` (validated and rejected counts per producer task), and per PR the open findings (`G2.1: open|fixed|declined-accepted|disputed`) and dispute counts. A per-PR `maxRounds` raises the round limit (default 5); set it only when the user approves extra rounds. GitHub comments remain the source of truth; state only speeds up re-review. "Reviewed clean, waiting for CI" is **not** state-only: it is recorded as a `verdict=clean` marker comment (see comment-format.md), so a missing or lost `state.json` never causes a full re-review.
 
 ## Tick procedure
 
@@ -92,17 +92,44 @@ On round ≥ 2, read the worker response first and settle every previous `G` ite
 
 ### 3. Verdict
 
+#### Quality bar (all must hold for `clean` / `approve`)
+
+1. **Score ≥ 86/100** on the code-quality rubric ([references/review-rubric.md](references/review-rubric.md)). Score honestly; never inflate to cross the gate.
+2. **Zero open required `G` items** (blocker or major).
+3. **No technical debt in the diff**: no copy-pasted logic, dead code, unlinked `TODO`/`FIXME`/workarounds, unneeded fallbacks or compatibility shims, duplicated state/IDs, or lint/type suppressions.
+4. **Production-path tests**: new or changed behavior is tested through the real modules, and existing tests for changed logic are updated.
+5. **Acceptance criteria met**: every criterion of the linked issue maps to `file:line` evidence.
+6. **Project rules**: `agents.md` / `CLAUDE.md` hard rules (no `as any` or unsafe casts, KISS/YAGNI, `pnpm rust:*` only).
+7. **For `approve` only**: CI green at the reviewed head on every OS job, the PR targets `dev/*` or `main`, and it is mergeable.
+
+#### Rejection criteria (any one → `changes-requested`)
+
+| Criterion                     | Example                                                                                                                      |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Score ≤ 85                    | `G` items name the lowest-scoring categories and the change that raises each                                                 |
+| Wrong behavior or a logic bug | edge/null/error path broken, data loss                                                                                       |
+| Security or privacy problem   | secret in logs, approval/sandbox bypass, unvalidated untrusted input                                                         |
+| Acceptance criteria not met   | linked issue checklist item missing                                                                                          |
+| Missing or fake tests         | new logic untested, tests only hit stubs or duplicated logic                                                                 |
+| Technical debt in the diff    | items in quality bar 3; each one is a `G` with a concrete refactor (debt outside the diff gets a §8 follow-up issue instead) |
+| Silent failure handling       | swallowed errors, fallbacks that hide failures                                                                               |
+| Scope violation               | unrelated files, drive-by refactors, formatter churn                                                                         |
+| Project rule violation        | `as any`, raw `cargo`, protected-path edits outside scope                                                                    |
+| CI failure caused by the PR   | diagnosed from the logs with a fix                                                                                           |
+
+Minor/nit issues alone do not reject a PR that meets the quality bar; list them as `S` suggestions.
+
 Decide:
 
-- **changes-requested** — at least one blocker/major finding (code defect, unhandled error/path, linked issue acceptance criteria not met, or diagnosed **PR-caused** CI failure). Base-branch or out-of-scope failures are **not** required `G` items; file a follow-up issue per [pre-post-checklist.md](references/pre-post-checklist.md) §8 and link it. **Post immediately regardless of whether CI is pending, failing, or passing.**
-- **approve** — no open required findings **and** CI ran at the reviewed head and is green (`ciPending`/`ciFailing` empty and at least one check ran) **and** the PR targets `dev/*` or `main` **and** the PR is mergeable. Without a CI run at the head, post at most `clean`.
+- **changes-requested** — any rejection criterion applies. Base-branch or out-of-scope failures are **not** required `G` items; file a follow-up issue per [pre-post-checklist.md](references/pre-post-checklist.md) §8 and link it. **Post immediately regardless of whether CI is pending, failing, or passing.**
+- **approve** — the full quality bar holds: no open required findings, score ≥ 86, **and** CI ran at the reviewed head and is green (`ciPending`/`ciFailing` empty and at least one check ran) **and** the PR targets `dev/*` or `main` **and** the PR is mergeable. Without a CI run at the head, post at most `clean`.
   - **Required `Checked` section**: must include a non-empty `### Checked` section in the comment mapping every linked issue acceptance criterion **and** every previous-round finding (on round ≥ 2, citing at least one finding verified as fixed in the diff) and owner concern to concrete code evidence (`file:line`). An approve verdict without this section is invalid and must not be posted.
   - **Per-OS CI evidence**: when the diff adds or changes tests or code touching paths, shell, processes or other OS behavior, `### Checked` must name the result of each OS job (ubuntu / windows / macos) for the reviewed head. A skipped or cancelled job is not green. Do not approve on one OS's green.
   - **Stacked PRs**: if the PR targets a non-dev branch, CI does not run, so never approve it; post `clean` and wait for the retarget.
-- **clean, await CI** — code review completed with zero open required findings, but CI is not green at the head yet (pending, not run, or a stacked PR). Post a `verdict=clean head=<sha>` marker comment, remove any stale `gatekeeper:changes-requested` label (`gh pr edit N --remove-label gatekeeper:changes-requested`; does not count as a round), optionally mirror it in state, and move on to the next PR. On a later tick the script reports `await-ci`; once CI completes it reports `review` again: do not re-review the diff, just post `approve` (with `gh pr edit N --add-label gatekeeper:approved --remove-label gatekeeper:changes-requested`) if green or diagnose the failure.
+- **clean, await CI** — code review completed with zero open required findings and score ≥ 86, but CI is not green at the head yet (pending, not run, or a stacked PR). Post a `verdict=clean head=<sha>` marker comment, remove any stale `gatekeeper:changes-requested` label (`gh pr edit N --remove-label gatekeeper:changes-requested`; does not count as a round), optionally mirror it in state, and move on to the next PR. On a later tick the script reports `await-ci`; once CI completes it reports `review` again: do not re-review the diff, just post `approve` (with `gh pr edit N --add-label gatekeeper:approved --remove-label gatekeeper:changes-requested`) if green and the clean marker's score is ≥ 86, or diagnose the failure. A clean marker scored ≤ 85 becomes `changes-requested`.
 - **escalate** — round limit (5) reached, a repeated dispute, or the right answer is a product/security/data decision for the user.
 
-Include the mandatory **informational** 100-point code-quality breakdown in every verdict comment (`### Code quality score (informational)` in [references/comment-format.md](references/comment-format.md), rubric in [references/review-rubric.md](references/review-rubric.md)). Per-item one-line rationales must cite `file:line` evidence. The score must **not** change how you choose approve vs changes-requested (no score threshold); use [references/pre-post-checklist.md](references/pre-post-checklist.md) § score calibration so totals spread across the range.
+Include the mandatory 100-point code-quality breakdown in every verdict comment (`### Code quality score (gate: ≥86 to approve)` in [references/comment-format.md](references/comment-format.md), rubric in [references/review-rubric.md](references/review-rubric.md)). Per-item one-line rationales must cite `file:line` evidence. The score gates the verdict (≤ 85 → `changes-requested`); use [references/pre-post-checklist.md](references/pre-post-checklist.md) § score calibration so totals spread across the range.
 
 **Before posting**, complete [references/pre-post-checklist.md](references/pre-post-checklist.md): re-fetch `headRefOid` (abort if it moved), refuse duplicate `head`+`verdict` markers, run the severity table (major vs minor), file any §8 follow-up issues yourself and link them in the comment, and when upgrading `clean` → `approve` at the same head, align the approve body with the latest `clean` marker (especially `### Checked` and suggestions).
 
@@ -142,7 +169,7 @@ The script appends the reason to the issue body, adds the label, and counts the 
 
 ### 5. Report
 
-1–2 sentences per reviewed PR: PR link, round, verdict, the count of required findings, and the informational code-quality total (e.g. `72/100`). When nothing is reviewed, give one line **per open PR** with its `status` and `reason` from the script so stalls are visible. Add one line for a validated or rejected producer issue (link and verdict).
+1–2 sentences per reviewed PR: PR link, round, verdict, the count of required findings, and the code-quality total (e.g. `72/100`). When nothing is reviewed, give one line **per open PR** with its `status` and `reason` from the script so stalls are visible. Add one line for a validated or rejected producer issue (link and verdict).
 
 ## Tests
 
@@ -157,6 +184,7 @@ cd .agents/skills/gatekeeper-loop/scripts && python3 -m unittest discover
 - **Do not re-review diff in await-ci**: for an `await-ci` PR, verify only whether the head changed or CI completed. If green, approve.
 - **No approve without green CI at the head**, including stacked PRs: until then the verdict is at most `clean`.
 - **A push after an approve requires re-review.** An approve only covers the head, base and CI state it was issued for.
+- **Quality gate**: never post `clean` or `approve` with a score ≤ 85 or with technical debt left in the diff; request the fix instead.
 - **Approve requires Checked section**: every approve verdict must contain a non-empty `### Checked` section citing `file:line` for all acceptance criteria.
 - Never push, commit, edit code, merge, enable auto-merge, close PRs/issues, or resolve the worker's threads. The gatekeeper comments, labels, and may **create** follow-up issues per [pre-post-checklist.md](references/pre-post-checklist.md) §8 (`gh issue create` with label `auto:producer` only).
 - On existing `auto:producer` issues the gatekeeper only judges validity in step 4: it adds `validated` or `rejected` and appends to the body. It never adds `approved`, closes the issue, or comments — except creating a **new** §8 follow-up issue (no comment on the issue beyond the body).

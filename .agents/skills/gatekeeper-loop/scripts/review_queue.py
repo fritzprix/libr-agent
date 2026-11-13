@@ -161,6 +161,7 @@ def classify(
     rebased: bool = False,
     owner_comment: bool = False,
     ci_ran: bool = True,
+    max_rounds: int = MAX_ROUNDS,
 ) -> tuple[str, str, int]:
     """Return (status, one-line reason, priority). Lower priority number is handled first.
 
@@ -182,8 +183,8 @@ def classify(
 
     # An approve given in the last allowed round settles the PR; it is not an escalation.
     approved_at_head = at_head and last_verdict.get("verdict") == "approve"
-    if total_verdicts >= MAX_ROUNDS and not approved_at_head:
-        return "escalate", f"round limit ({MAX_ROUNDS}) reached", 9
+    if total_verdicts >= max_rounds and not approved_at_head:
+        return "escalate", f"round limit ({max_rounds}) reached", 9
 
     if at_head and last_verdict.get("verdict") == "approve":
         if base_changed:
@@ -358,6 +359,7 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
         rebased=rebased,
         owner_comment=bool(owner),
         ci_ran=bool(checks),
+        max_rounds=int(pr_state.get("maxRounds", MAX_ROUNDS)),
     )
     if own_skill:
         status, reason, priority = "human-only", "changes loop skill files; left to the human", 9
