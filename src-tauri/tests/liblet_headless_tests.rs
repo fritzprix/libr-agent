@@ -777,6 +777,48 @@ fn list_sessions_prints_this_directorys_sessions_newest_first() {
 }
 
 #[test]
+fn list_sessions_matches_non_canonical_workspace_override() {
+    use tauri_mcp_agent_lib::headless::run_list_sessions;
+    let workspace = TempDir::new().unwrap();
+    let db_dir = TempDir::new().unwrap();
+    let db_path = db_dir.path().join("profile.db");
+
+    // The app stores `workspace_override` exactly as the user gave it, so a
+    // redundant segment like `<workspace>/sub/..` must still match the
+    // canonicalized target directory. `sub` has to exist for canonicalization
+    // to resolve the path (portable: no symlinks required).
+    std::fs::create_dir(workspace.path().join("sub")).unwrap();
+    let non_canonical = workspace.path().join("sub").join("..");
+    assert_ne!(
+        non_canonical.as_os_str(),
+        workspace.path().as_os_str(),
+        "the override must be a non-canonical spelling of the workspace dir"
+    );
+
+    profile_db_with_sessions(&db_path, &non_canonical, "/somewhere/else");
+
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    let code = run_list_sessions(
+        &list_sessions_args(workspace.path()),
+        &db_path,
+        &mut out,
+        &mut err,
+    );
+
+    assert_eq!(code, exit_codes::SUCCESS);
+    assert!(err.is_empty());
+    let text = String::from_utf8(out).unwrap();
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(
+        lines.len(),
+        2,
+        "non-canonical override must still list this directory's sessions: {text}"
+    );
+    assert_eq!(lines[0], "s-new\tidle\tgpt-x\t200\t(untitled)");
+    assert_eq!(lines[1], "s-old\tidle\tgpt-x\t100\tOlder");
+}
+
+#[test]
 fn list_sessions_without_a_profile_database_is_an_empty_success() {
     use tauri_mcp_agent_lib::headless::run_list_sessions;
     let workspace = TempDir::new().unwrap();

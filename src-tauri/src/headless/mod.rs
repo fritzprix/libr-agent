@@ -383,27 +383,50 @@ pub fn run_list_sessions<Out: Write, ErrOut: Write>(
 
 type SessionRow = (String, String, String, String, i64);
 
+/// Select the sessions whose `workspace_override` designates `workspace`.
+///
+/// The app stores `workspace_override` exactly as the user gave it (only `~`
+/// expanded), while `workspace` arrives canonicalized from
+/// [`resolve_workspace_path`]. Raw string equality therefore misses real
+/// sessions on Windows (`\\?\C:\...`) and macOS (`/private/var/...`) or behind
+/// symlinks, so both sides are canonicalized in Rust and compared. When
+/// canonicalizing a stored value fails (the directory no longer exists), the
+/// row falls back to plain string equality against the canonical target.
 fn query_sessions_of(db_path: &Path, workspace: &Path) -> Result<Vec<SessionRow>, rusqlite::Error> {
     let conn = rusqlite::Connection::open_with_flags(
         db_path,
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )?;
+    let canonical_target =
+        std::fs::canonicalize(workspace).unwrap_or_else(|_| workspace.to_path_buf());
+    let canonical_target_str = canonical_target.to_string_lossy();
     let mut stmt = conn.prepare(
-        "SELECT id, COALESCE(name, ''), status, model, updated_at \
+        "SELECT id, COALESCE(name, ''), status, model, updated_at, workspace_override \
          FROM sessions \
-         WHERE workspace_override = ?1 \
+         WHERE workspace_override IS NOT NULL \
          ORDER BY updated_at DESC",
     )?;
-    let rows = stmt.query_map([workspace.to_string_lossy().as_ref()], |row| {
+    let rows = stmt.query_map([], |row| {
         Ok((
             row.get::<_, String>(0)?,
             row.get::<_, String>(1)?,
             row.get::<_, String>(2)?,
             row.get::<_, String>(3)?,
             row.get::<_, i64>(4)?,
+            row.get::<_, String>(5)?,
         ))
     })?;
-    rows.collect()
+    rows.filter_map(|row| match row {
+        Ok((id, name, status, model, updated_at, stored_override)) => {
+            let matches_workspace = match std::fs::canonicalize(&stored_override) {
+                Ok(canonical_override) => canonical_override == canonical_target,
+                Err(_) => stored_override == canonical_target_str,
+            };
+            matches_workspace.then_some(Ok((id, name, status, model, updated_at)))
+        }
+        Err(err) => Some(Err(err)),
+    })
+    .collect()
 }
 
 /// Run a full headless invocation using the hidden Tauri WebView runtime.
