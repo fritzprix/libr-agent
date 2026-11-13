@@ -17,8 +17,13 @@ status values:
                conflicts. Worker's turn to fix.
   approved   - approve verdict exists for the current head, base unchanged, CI
                green at the head, no newer owner comment.
+  ready-for-owner - ready-for-owner verdict at the current head with the same
+               CI/base rules as approved; the owner merges (no approve marker).
   escalate   - round limit reached or unresolvable dispute; hand to the user.
-  human-only - touches the gatekeeper's own skill; left to the human.
+
+Each entry may set humanOnly when the diff touches gatekeeper-loop or
+worker-loop skill paths: review and score like any other PR; the best final
+verdict is ready-for-owner with gatekeeper:needs-human, not approve.
 
 The list is sorted by priority (worker response / new head / owner comment
 first), then oldest PR first. Every entry carries a one-line `reason`.
@@ -43,6 +48,7 @@ PROTECTED_SKILL_PREFIXES = (
     ".agents/skills/gatekeeper-loop/",
     ".agents/skills/worker-loop/",
 )
+OWNER_MERGE_VERDICT = "ready-for-owner"
 OWNER_ASSOCIATIONS = {"OWNER", "MEMBER", "COLLABORATOR"}
 SENSITIVE_PATH = re.compile(
     r"(shell[_-]?policy|tool[_-]?approval|permission|secret|credential|keychain|sandbox)", re.I
@@ -181,12 +187,13 @@ def classify(
     at_head = bool(last_verdict) and last_verdict.get("head") == head
     base_changed = bool(reviewed_base) and reviewed_base != base
 
-    # An approve given in the last allowed round settles the PR; it is not an escalation.
-    approved_at_head = at_head and last_verdict.get("verdict") == "approve"
-    if total_verdicts >= max_rounds and not approved_at_head:
+    # A terminal verdict in the last allowed round settles the PR; it is not an escalation.
+    verdict_kind = (last_verdict or {}).get("verdict")
+    settled_at_head = at_head and verdict_kind in ("approve", OWNER_MERGE_VERDICT)
+    if total_verdicts >= max_rounds and not settled_at_head:
         return "escalate", f"round limit ({max_rounds}) reached", 9
 
-    if at_head and last_verdict.get("verdict") == "approve":
+    if at_head and verdict_kind == "approve":
         if base_changed:
             return "review", f"base changed after approve ({reviewed_base} -> {base})", 0
         if ci_failed:
@@ -194,6 +201,19 @@ def classify(
         if not ci_green:
             return "review", "approve without green CI at this head; replace it with a clean marker", 0
         return "approved", "approved at current head", 9
+
+    if at_head and verdict_kind == OWNER_MERGE_VERDICT:
+        if base_changed:
+            return "review", f"base changed after ready-for-owner ({reviewed_base} -> {base})", 0
+        if ci_failed:
+            return "review", "CI failing after ready-for-owner", 0
+        if not ci_green:
+            return (
+                "review",
+                "ready-for-owner without green CI at this head; replace it with a clean marker",
+                0,
+            )
+        return "ready-for-owner", "ready for owner merge at current head", 9
 
     # A clean marker for this head on GitHub means the code review of this head is
     # done, even after changes were requested at it (the worker answered without a
@@ -230,6 +250,11 @@ def classify(
     if failing_checks and ci_applies:
         return "review", "not reviewed yet; CI failing", 1
     return "review", "not reviewed yet", 1
+
+
+def touches_protected_skill(paths: list[str]) -> bool:
+    """True when the PR diff includes gatekeeper-loop or worker-loop skill paths."""
+    return any(p.startswith(PROTECTED_SKILL_PREFIXES) for p in paths)
 
 
 def classify_sensitive_paths(paths: list[str]) -> dict:
@@ -339,7 +364,7 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
 
     labels = sorted(label["name"] for label in pr.get("labels") or [])
     paths = [f["path"] for f in pr.get("files") or []]
-    own_skill = any(p.startswith(PROTECTED_SKILL_PREFIXES) for p in paths)
+    human_only = touches_protected_skill(paths)
     sensitive_info = classify_sensitive_paths(paths)
 
     status, reason, priority = classify(
@@ -361,8 +386,6 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
         ci_ran=bool(checks),
         max_rounds=int(pr_state.get("maxRounds", MAX_ROUNDS)),
     )
-    if own_skill:
-        status, reason, priority = "human-only", "changes loop skill files; left to the human", 9
 
     if status != "review" or not reviewed_head or reviewed_head == head:
         review_mode = "full" if status == "review" and not reviewed_head else "incremental"
@@ -389,6 +412,7 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
         "securitySensitive": sensitive_info["securitySensitive"],
         "securitySensitivePolicyPaths": sensitive_info["securitySensitivePolicyPaths"],
         "securitySensitiveBehaviorHints": sensitive_info["securitySensitiveBehaviorHints"],
+        "humanOnly": human_only,
         "postingChecks": posting_checks(head=head, markers=markers, last_verdict=last),
         "labels": labels,
         "staleApprovedLabel": "gatekeeper:approved" in labels and status != "approved",

@@ -11,6 +11,7 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 from review_queue import (
+    OWNER_MERGE_VERDICT,
     PROTECTED_SKILL_PREFIXES,
     START_MARKER,
     classify,
@@ -23,6 +24,7 @@ from review_queue import (
     owner_comments_after,
     parse_markers,
     posting_checks,
+    touches_protected_skill,
 )
 
 
@@ -466,6 +468,39 @@ Total **58/100**. Does not affect the verdict above.
     def test_protected_skill_prefixes(self) -> None:
         self.assertIn(".agents/skills/gatekeeper-loop/", PROTECTED_SKILL_PREFIXES)
         self.assertIn(".agents/skills/worker-loop/", PROTECTED_SKILL_PREFIXES)
+
+    def test_touches_protected_skill(self) -> None:
+        self.assertTrue(
+            touches_protected_skill([".agents/skills/gatekeeper-loop/scripts/review_queue.py"])
+        )
+        self.assertTrue(touches_protected_skill([".agents/skills/worker-loop/SKILL.md"]))
+        self.assertFalse(touches_protected_skill([".agents/skills/gatekeeper-loop-other/x"]))
+        self.assertFalse(touches_protected_skill(["src/lib.rs"]))
+
+    def test_ready_for_owner_at_current_head(self) -> None:
+        status = determine_status(
+            mergeable="MERGEABLE",
+            head="head1",
+            base="dev/0.9.x",
+            last_verdict={"head": "head1", "verdict": OWNER_MERGE_VERDICT},
+            worker_response=None,
+            total_verdicts=1,
+            state_reviewed_head="head1",
+            state_pending_ci=False,
+            has_open_findings=False,
+            pending_checks=[],
+            failing_checks=[],
+        )
+        self.assertEqual(status, "ready-for-owner")
+
+    def test_ready_for_owner_in_last_round_not_escalated(self) -> None:
+        status, _, _ = classify(
+            **base_args(
+                last_verdict={"head": "head1", "verdict": OWNER_MERGE_VERDICT, "base": "dev/0.9.x"},
+                total_verdicts=5,
+            )
+        )
+        self.assertEqual(status, "ready-for-owner")
 
     def test_quoted_markers_ignored(self) -> None:
         comments = [

@@ -46,15 +46,16 @@ The script output is already sorted: priority 0 first (worker response, new head
 
 - **Never empty or skip a tick due to pending CI**: select PRs that actually have reviewable work in this tick.
 - PRs in `status: await-ci` have a `verdict=clean` marker for the current head and are only waiting for CI; do not re-review them.
-- `human-only` PRs (they change this skill) are never reviewed or labelled; leave them to the human.
+- When `humanOnly: true` (diff touches `gatekeeper-loop` or `worker-loop`), review and label like any other PR; at score ≥ 86 and green CI post `ready-for-owner` with `gatekeeper:needs-human`, not `approve` or `gatekeeper:approved`.
 - Use each entry's `reviewMode`: `full` (first review), `incremental` (`git diff reviewedHead..head`), `range-diff` (rebased; see step 2).
 - Stacked PRs (whose `base` is not `dev/*` or `main`) do not run GitHub Actions CI: review the code normally, but the best verdict is `clean`. They stay `await-ci` until the worker retargets them and CI passes at the head.
 
 Other statuses:
 
-- `await-ci` — a `verdict=clean` marker exists for this head; CI is pending, has not run, or cannot run (stacked PR). Remove any stale `gatekeeper:changes-requested` label (`gh pr edit N --remove-label gatekeeper:changes-requested`). If CI turned green, post `approve` (and remove any stale `gatekeeper:changes-requested`: `gh pr edit N --add-label gatekeeper:approved --remove-label gatekeeper:changes-requested`); if failed, diagnose failure and post `changes-requested`.
+- `await-ci` — a `verdict=clean` marker exists for this head; CI is pending, has not run, or cannot run (stacked PR). Remove any stale `gatekeeper:changes-requested` label (`gh pr edit N --remove-label gatekeeper:changes-requested`). If CI turned green, post `approve` (and remove any stale `gatekeeper:changes-requested`: `gh pr edit N --add-label gatekeeper:approved --remove-label gatekeeper:changes-requested`) or, when `humanOnly`, post `ready-for-owner` with `gatekeeper:needs-human`; if failed, diagnose failure and post `changes-requested`.
 - `wait-worker` — worker's turn (changes requested at current head without response, or merge conflicts).
 - `approved` — nothing to do; make sure the label is `gatekeeper:approved`. For any PR with `staleApprovedLabel: true` (status no longer `approved`), swap the label right away (`gatekeeper:changes-requested` if CI is failing, otherwise remove `gatekeeper:approved`) before reviewing, so a stale approve is never visible. The script already turns an approve back into `review` when the head changed (a push after an approve **always requires re-review**), CI fails or is not green at the head, the base changed (e.g. stacked PR retargeted), or the owner commented. For "approve without green CI at this head", post a `verdict=clean` marker for the head and remove `gatekeeper:approved`; do not re-review the diff.
+- `ready-for-owner` — same idle posture as `approved`, but the PR is `humanOnly`: keep `gatekeeper:needs-human`; do not add `gatekeeper:approved`. Re-review triggers match `approved`.
 - `escalate` — post an `escalate` verdict if none exists yet and swap the label to `gatekeeper:escalated`. Note: An owner comment on an escalated PR resets status to `review` so the gatekeeper can incorporate owner direction.
 
 ### 2. Review (read-only)
@@ -122,11 +123,12 @@ Minor/nit issues alone do not reject a PR that meets the quality bar; list them 
 Decide:
 
 - **changes-requested** — any rejection criterion applies. Base-branch or out-of-scope failures are **not** required `G` items; file a follow-up issue per [pre-post-checklist.md](references/pre-post-checklist.md) §8 and link it. **Post immediately regardless of whether CI is pending, failing, or passing.**
-- **approve** — the full quality bar holds: no open required findings, score ≥ 86, **and** CI ran at the reviewed head and is green (`ciPending`/`ciFailing` empty and at least one check ran) **and** the PR targets `dev/*` or `main` **and** the PR is mergeable. Without a CI run at the head, post at most `clean`.
-  - **Required `Checked` section**: must include a non-empty `### Checked` section in the comment mapping every linked issue acceptance criterion **and** every previous-round finding (on round ≥ 2, citing at least one finding verified as fixed in the diff) and owner concern to concrete code evidence (`file:line`). An approve verdict without this section is invalid and must not be posted.
+- **approve** — the full quality bar holds: no open required findings, score ≥ 86, **and** CI ran at the reviewed head and is green (`ciPending`/`ciFailing` empty and at least one check ran) **and** the PR targets `dev/*` or `main` **and** the PR is mergeable, **and** `humanOnly` is false. Without a CI run at the head, post at most `clean`.
+  - **Required `Checked` section**: must include a non-empty `### Checked` section in the comment mapping every linked issue acceptance criterion **and** every previous-round finding (on round ≥ 2, citing at least one finding verified as fixed in the diff) and owner concern to concrete code evidence (`file:line`). An approve or ready-for-owner verdict without this section is invalid and must not be posted.
   - **Per-OS CI evidence**: when the diff adds or changes tests or code touching paths, shell, processes or other OS behavior, `### Checked` must name the result of each OS job (ubuntu / windows / macos) for the reviewed head. A skipped or cancelled job is not green. Do not approve on one OS's green.
   - **Stacked PRs**: if the PR targets a non-dev branch, CI does not run, so never approve it; post `clean` and wait for the retarget.
-- **clean, await CI** — code review completed with zero open required findings and score ≥ 86, but CI is not green at the head yet (pending, not run, or a stacked PR). Post a `verdict=clean head=<sha>` marker comment, remove any stale `gatekeeper:changes-requested` label (`gh pr edit N --remove-label gatekeeper:changes-requested`; does not count as a round), optionally mirror it in state, and move on to the next PR. On a later tick the script reports `await-ci`; once CI completes it reports `review` again: do not re-review the diff, just post `approve` (with `gh pr edit N --add-label gatekeeper:approved --remove-label gatekeeper:changes-requested`) if green and the clean marker's score is ≥ 86, or diagnose the failure. A clean marker scored ≤ 85 becomes `changes-requested`.
+- **ready-for-owner** — same bar as **approve**, for `humanOnly: true` PRs only: post the ready-for-owner marker and add `gatekeeper:needs-human`; remove `gatekeeper:changes-requested`. The owner merges; the gatekeeper does not post `approve` or `gatekeeper:approved`.
+- **clean, await CI** — code review completed with zero open required findings and score ≥ 86, but CI is not green at the head yet (pending, not run, or a stacked PR). Post a `verdict=clean head=<sha>` marker comment, remove any stale `gatekeeper:changes-requested` label (`gh pr edit N --remove-label gatekeeper:changes-requested`; does not count as a round), optionally mirror it in state, and move on to the next PR. On a later tick the script reports `await-ci`; once CI completes it reports `review` again: do not re-review the diff; if green and the clean marker's score is ≥ 86, post `approve` when `humanOnly` is false or `ready-for-owner` with `gatekeeper:needs-human` when `humanOnly` is true; if CI failed, diagnose. A clean marker scored ≤ 85 becomes `changes-requested`.
 - **escalate** — round limit (5) reached, a repeated dispute, or the right answer is a product/security/data decision for the user.
 
 Include the mandatory 100-point code-quality breakdown in every verdict comment (`### Code quality score (gate: ≥86 to approve)` in [references/comment-format.md](references/comment-format.md), rubric in [references/review-rubric.md](references/review-rubric.md)). Per-item one-line rationales must cite `file:line` evidence. The score gates the verdict (≤ 85 → `changes-requested`); use [references/pre-post-checklist.md](references/pre-post-checklist.md) § score calibration so totals spread across the range.
@@ -141,6 +143,9 @@ gh pr edit N --add-label gatekeeper:changes-requested --remove-label gatekeeper:
 
 # approve:
 gh pr edit N --add-label gatekeeper:approved --remove-label gatekeeper:changes-requested,gatekeeper:escalated
+
+# ready-for-owner (humanOnly PRs only; owner merges):
+gh pr edit N --add-label gatekeeper:needs-human --remove-label gatekeeper:changes-requested,gatekeeper:approved,gatekeeper:escalated
 
 # clean, await CI:
 gh pr edit N --remove-label gatekeeper:changes-requested
@@ -181,7 +186,8 @@ cd .agents/skills/gatekeeper-loop/scripts && python3 -m unittest discover
 
 - **Never wait for or poll CI in a tick**: do not use `gh pr checks --watch`, `sleep`, or polling loops waiting for CI.
 - **Record clean-awaiting-CI on GitHub and move on**: post the `verdict=clean` marker, remove any stale `gatekeeper:changes-requested` label (`gh pr edit N --remove-label gatekeeper:changes-requested`), then continue with the next PR. Never idle or leave a tick empty when other PRs have reviewable work.
-- **Do not re-review diff in await-ci**: for an `await-ci` PR, verify only whether the head changed or CI completed. If green, approve.
+- **Do not re-review diff in await-ci**: for an `await-ci` PR, verify only whether the head changed or CI completed. If green, post `approve` or `ready-for-owner` per `humanOnly`.
+- **`humanOnly` PRs**: full review and labels; terminal verdict is `ready-for-owner` with `gatekeeper:needs-human`, never `approve` or `gatekeeper:approved`.
 - **No approve without green CI at the head**, including stacked PRs: until then the verdict is at most `clean`.
 - **A push after an approve requires re-review.** An approve only covers the head, base and CI state it was issued for.
 - **Quality gate**: never post `clean` or `approve` with a score ≤ 85 or with technical debt left in the diff; request the fix instead.

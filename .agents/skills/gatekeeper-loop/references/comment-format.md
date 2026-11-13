@@ -73,6 +73,33 @@ Total **<sum>/100** (≥86 required for approve).
 > [!IMPORTANT]
 > The `### Checked` section is **mandatory**. Every acceptance criterion from the linked issue, every finding from earlier rounds and every owner concern must be listed with concrete verification evidence (`file:line`). For security-sensitive PRs (shell policy, tool approval, permissions, secrets) also list the bypass scenarios checked. For OS-sensitive changes also list the per-OS CI job results (ubuntu / windows / macos) for the reviewed head. If this section is missing or empty, an `approve` verdict cannot be issued.
 
+Ready for owner merge (`humanOnly` PRs that touch gatekeeper-loop or worker-loop; same quality bar as approve; owner merges):
+
+```markdown
+<!-- gatekeeper-loop: round=3 verdict=ready-for-owner head=<sha> base=<branch> -->
+
+## Gatekeeper · round 3 · Ready for owner merge
+
+<2–3 lines: what was verified (diff, tests, CI green at <short-sha>), why the owner must merge this loop-skill change>
+
+### Checked
+
+- `<acceptance criterion>` — verified in `<file>:<line>` (<brief explanation>).
+
+### Code quality score (gate: ≥86 to approve)
+
+Total **<sum>/100** (≥86 required).
+
+- **Correctness incl. boundary conditions (<n>/30)** — `<file>:<line>` — <one-line rationale>.
+- **Tests exercise the real production code path (<n>/20)** — `<file>:<line>` — <one-line rationale>.
+- **Simplicity (KISS/YAGNI) (<n>/15)** — `<file>:<line>` — <one-line rationale>.
+- **Readability and naming (<n>/15)** — `<file>:<line>` — <one-line rationale>.
+- **Error handling and robustness (<n>/10)** — `<file>:<line>` — <one-line rationale>.
+- **Scope discipline (<n>/10)** — `<file>:<line>` — <one-line rationale>.
+```
+
+Pair with label `gatekeeper:needs-human`. Do not post `verdict=approve` or `gatekeeper:approved` on these PRs.
+
 Clean, waiting for CI (no label change, not a round; lets any tick or machine see the review is done):
 
 ```markdown

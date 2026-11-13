@@ -12,7 +12,7 @@ The value must equal the `headSha` you reviewed and the `head=` in the marker. I
 
 ## 2. No duplicate marker
 
-Read `postingChecks.markersAtHead` from `review_queue.py` output (or scan PR comments). **Do not post** if a gatekeeper-loop marker already exists for this `headSha` and the **same** `verdict` you are about to post (`changes-requested`, `approve`, `clean`, or `escalate`). Identical double-posts waste round budget.
+Read `postingChecks.markersAtHead` from `review_queue.py` output (or scan PR comments). **Do not post** if a gatekeeper-loop marker already exists for this `headSha` and the **same** `verdict` you are about to post (`changes-requested`, `approve`, `ready-for-owner`, `clean`, or `escalate`). Identical double-posts waste round budget.
 
 Posting a **different** verdict at the same head is allowed (e.g. `changes-requested` after CI failure following `clean`).
 
