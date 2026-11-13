@@ -303,6 +303,15 @@ class PendingApprovedIssueTest(unittest.TestCase):
     def test_issue_assigned_to_someone_else_is_skipped(self):
         self.assertIsNone(self.pending([approvals_issue(3, ["approved"], ["other"])]))
 
+    def test_epic_and_auto_e2e_are_not_pending(self):
+        issues = [
+            approvals_issue(3, ["approved", "epic"]),
+            approvals_issue(5, ["approved", "auto:e2e"]),
+            approvals_issue(7, ["approved"]),
+        ]
+        self.assertEqual(self.pending(issues), 7)
+        self.assertIsNone(self.pending(issues[:2]))
+
 
 if __name__ == "__main__":
     unittest.main()

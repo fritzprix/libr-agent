@@ -30,6 +30,10 @@ class ExclusionReasonTest(unittest.TestCase):
         for label in sorted(issue_candidates.EXCLUDED_LABELS):
             self.assertIn(label, reason(["approved", label]))
 
+    def test_epic_and_auto_e2e_are_not_candidates(self):
+        self.assertIn("epic", reason(["approved", "epic"]))
+        self.assertIn("auto:e2e", reason(["approved", "auto:e2e"]))
+
     def test_assignment_rules(self):
         self.assertIn("assigned to other", reason(["approved"], assignees=["other"]))
         self.assertIsNone(reason(["approved"], assignees=["me"]))
