@@ -2,6 +2,7 @@ mod channel_commands;
 mod compaction_commands;
 mod contracts;
 mod session_commands;
+mod shared_proxy;
 mod ui_actions;
 mod workflow_commands;
 

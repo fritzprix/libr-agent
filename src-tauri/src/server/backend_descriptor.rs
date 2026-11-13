@@ -188,6 +188,22 @@ pub fn publish(port: u16) -> std::io::Result<()> {
     publish_at(db_path, port)
 }
 
+fn unpublish_at(db_path: &Path, pid: u32) -> std::io::Result<()> {
+    let path = record_path_for(db_path, pid);
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(err),
+    }
+}
+
+/// Remove this process's own backend record on clean shutdown.
+pub fn unpublish() {
+    if let Some(db_path) = DB_PATH.get() {
+        let _ = unpublish_at(db_path, std::process::id());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

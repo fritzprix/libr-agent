@@ -61,6 +61,9 @@ pub async fn agent_create_session(
     manager: State<'_, AgentSessionManager>,
     request: CreateAgentSessionRequest,
 ) -> Result<SessionMetadata, String> {
+    if let Some(client) = crate::state::get_shared_backend_client() {
+        return super::shared_proxy::create_session(client, request).await;
+    }
     AgentService::create_session(&manager, request).await
 }
 
@@ -77,6 +80,12 @@ pub async fn agent_resume_session(
     manager: State<'_, AgentSessionManager>,
     session_id: String,
 ) -> Result<SessionMetadata, String> {
+    if let Some(client) = crate::state::get_shared_backend_client() {
+        let json = client.resume_session(&session_id).await?;
+        super::shared_proxy::ensure_session_event_stream(client, &session_id);
+        return serde_json::from_value::<SessionMetadata>(json)
+            .map_err(|e| format!("Failed to parse resumed session from shared backend: {e}"));
+    }
     manager
         .allow_explicit_message_after_terminate(&session_id)
         .await;
@@ -93,6 +102,10 @@ pub async fn agent_open_session(
     initial_message_limit: Option<u64>,
 ) -> Result<AgentOpenSessionResponse, String> {
     let message_limit = initial_message_limit.unwrap_or(DEFAULT_INITIAL_MESSAGE_LIMIT);
+
+    if let Some(client) = crate::state::get_shared_backend_client() {
+        return super::shared_proxy::open_session(client, &session_id, message_limit).await;
+    }
 
     // Warm reopen when the route already carries the storage id.
     if let Some(warm) = try_open_warm_session(&manager, &session_id, message_limit).await? {
@@ -246,6 +259,9 @@ pub async fn agent_create_session_with_initial_message(
     manager: State<'_, AgentSessionManager>,
     request: CreateAgentSessionWithMessageRequest,
 ) -> Result<AgentResponse, String> {
+    if let Some(client) = crate::state::get_shared_backend_client() {
+        return super::shared_proxy::create_session_with_initial_message(client, request).await;
+    }
     AgentService::create_session_with_initial_message(&manager, request).await
 }
 
@@ -278,6 +294,9 @@ pub async fn agent_get_session(
     manager: State<'_, AgentSessionManager>,
     session_id: String,
 ) -> Result<Option<SessionMetadata>, String> {
+    if let Some(client) = crate::state::get_shared_backend_client() {
+        return super::shared_proxy::get_session(client, &session_id).await;
+    }
     let resolved = match resolve_tauri_session_ref(&session_id).await {
         Ok(id) => id,
         Err(_) => return Ok(None),
@@ -290,6 +309,9 @@ pub async fn agent_get_session(
 pub async fn agent_get_all_sessions(
     manager: State<'_, AgentSessionManager>,
 ) -> Result<Vec<SessionMetadata>, String> {
+    if let Some(client) = crate::state::get_shared_backend_client() {
+        return super::shared_proxy::get_all_sessions(client).await;
+    }
     manager.get_all_sessions().await
 }
 
@@ -299,6 +321,9 @@ pub async fn agent_list_sessions(
     manager: State<'_, AgentSessionManager>,
     request: Option<ListAgentSessionsRequest>,
 ) -> Result<AgentSessionListResponse, String> {
+    if let Some(client) = crate::state::get_shared_backend_client() {
+        return super::shared_proxy::list_sessions(client, request).await;
+    }
     let request = request.unwrap_or(ListAgentSessionsRequest {
         cursor: None,
         limit: None,
@@ -385,6 +410,14 @@ pub async fn agent_delete_session(
     manager: State<'_, AgentSessionManager>,
     session_id: String,
 ) -> Result<AgentResponse, String> {
+    if let Some(client) = crate::state::get_shared_backend_client() {
+        let data = client.delete_session(&session_id).await?;
+        return Ok(AgentResponse {
+            success: true,
+            message: format!("Session deleted: {}", session_id),
+            data: Some(data),
+        });
+    }
     let deleted_ids = manager.delete_session(session_id.clone()).await?;
     for deleted_id in &deleted_ids {
         remove_lineage(deleted_id).await;
@@ -514,6 +547,16 @@ pub async fn agent_set_execution_mode(
     session_id: String,
     mode: String,
 ) -> Result<Vec<String>, String> {
+    if let Some(client) = crate::state::get_shared_backend_client() {
+        let res = client
+            .patch_session(&session_id, &serde_json::json!({ "executionMode": mode }))
+            .await?;
+        return Ok(res
+            .get("resolvedApprovalIds")
+            .cloned()
+            .and_then(|v| serde_json::from_value(v).ok())
+            .unwrap_or_default());
+    }
     manager
         .set_execution_mode(&session_id, mode.parse::<ExecutionMode>()?)
         .await
@@ -635,6 +678,22 @@ pub async fn agent_submit_user_prompt(
     manager: State<'_, AgentSessionManager>,
     request: SubmitUserPromptRequest,
 ) -> Result<AgentResponse, String> {
+    if let Some(client) = crate::state::get_shared_backend_client() {
+        let data = client
+            .respond_prompt(
+                &request.session_id,
+                &serde_json::json!({
+                    "requestId": request.request_id,
+                    "value": request.value,
+                }),
+            )
+            .await?;
+        return Ok(AgentResponse {
+            success: true,
+            message: "Answer delivered to shared backend".to_string(),
+            data: Some(data),
+        });
+    }
     let pending =
         crate::agent::session_manager::pending_user_prompt_in(manager.inner(), &request.session_id)
             .await
@@ -674,6 +733,22 @@ pub async fn agent_cancel_user_prompt(
     manager: State<'_, AgentSessionManager>,
     request: CancelUserPromptRequest,
 ) -> Result<AgentResponse, String> {
+    if let Some(client) = crate::state::get_shared_backend_client() {
+        let data = client
+            .respond_prompt(
+                &request.session_id,
+                &serde_json::json!({
+                    "requestId": request.request_id,
+                    "cancelled": true,
+                }),
+            )
+            .await?;
+        return Ok(AgentResponse {
+            success: true,
+            message: "Prompt cancelled".to_string(),
+            data: Some(data),
+        });
+    }
     let delivered = manager
         .cancel_user_prompt(&request.session_id, &request.request_id)
         .await?;
