@@ -67,7 +67,7 @@ Pick the execution substrate that matches the job:
 
 - **Plain child sessions** - use `agent__spawnSession(..., complexity=...)` for one-off delegation that does not need org visibility. `complexity` (`low`|`normal`|`high`) is required.
 - **Explicit org lineage** - call `agent__prepareTeamworkWorkspace()` first, then use `agent__createOrg(...)` once from the root session, then use `agent__spawnSession(..., complexity=...)` for org-visible children. Under the explicit org root, org inheritance is automatic. Org-visible children inherit the governing session's effective workspace by default.
-- **Scheduled task groups** - use `scheduled_task__createScheduledTask(...)` and the other `scheduled_task` tools for recurring, heartbeat, cron-like, or resumable automation loops.
+- **Global scheduled tasks** - use `scheduled_task__createScheduledTask(...)` and the other `scheduled_task` tools for recurring, heartbeat, cron-like, or resumable automation loops.
 - **Session-bound clock follow-ups** - use `loop` with `scheduled_task__scheduleCallback(...)` when a delay or reminder must stay inside the current conversation. This does not require teamwork scaffolding.
 - **Completion wakes** - use `call-me-back` when the agent should resume on process exit, kanban/ticket status, or another external signal (not a clock).
 
@@ -75,9 +75,9 @@ Keep these separate:
 
 - **Org** is for explicit lineage-based teamwork and org UX.
 - **Org** keeps the normal parent workspace semantics; only the teamwork artifacts move out of the repo/workspace.
-- **Scheduled task groups** are for global recurring automation and policy-governed background collaboration.
-- **Session loops / schedules** are for in-conversation delays and session-scoped recurrence, not teamwork groups.
-- A recurring task group may wake a coordinator session, but that does not make the scheduled group an org.
+- **Global scheduled tasks** are for app-wide recurring automation and policy-governed background runs.
+- **Session loops / schedules** are for in-conversation delays and session-scoped recurrence.
+- To resume an existing session, use that session's `scheduleCallback` (`loop`).
 
 Before creating a new member for a later task, inspect `agent__listAgents(type="sessions")` and reuse an Idle child with the same assistant ID and compatible workspace through `agent__messageToSession` (always pass `complexity`). Set `reset=true` only for a fresh assignment; create a new member when the role, workspace, or required parallel capacity differs.
 
@@ -89,7 +89,7 @@ After choosing the execution substrate, route to the matching specialist skill:
 - **Explicit org lineage** - switch to `org`.
 - **Living org restructure** (add/layoff/merge roles, constitution edits) - switch to `org-restructure` after the org exists.
 - **Postmortem → improve** (after-action learning, continuous org improvement) - switch to `postmortem-improve`.
-- **Global scheduled tasks or groups** - switch to `schedule`.
+- **Standalone global scheduled tasks** - switch to `schedule`.
 - **In-session delays or session-bound recurrence** - switch to `loop`.
 - **Wait for a job/ticket/webhook to finish** - switch to `call-me-back`.
 

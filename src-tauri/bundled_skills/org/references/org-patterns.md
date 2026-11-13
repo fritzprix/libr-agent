@@ -117,12 +117,12 @@ The backend automatically updates the scaffolded `.libragent/teamwork.json` file
     "workspacePolicy": {
       "plainChildSessions": "isolated-by-default",
       "explicitOrgLineage": "inherit-governing-session-workspace-by-default",
-      "scheduledTaskGroups": "workspace-defined-per-group"
+      "scheduledTasks": "global-cron-per-task"
     },
     "specialistSkills": {
       "plainChildSessions": "delegate",
       "explicitOrgLineage": "org",
-      "scheduledTaskGroups": "schedule"
+      "scheduledTasks": "schedule"
     },
     "orgLineage": {
       "intended": true,
@@ -135,9 +135,9 @@ The backend automatically updates the scaffolded `.libragent/teamwork.json` file
       "compatibilityAlias": "spawnOrgAgent",
       "workspaceSharing": "inherit-parent-workspace-by-default"
     },
-    "scheduledTaskGroups": {
+    "scheduledTasks": {
       "intended": false,
-      "notes": "Use scheduled task groups for recurring or cron-like collaboration, not org lineage."
+      "notes": "Use global scheduled tasks for standalone cron automation without org lineage."
     }
   },
   "refreshSemantics": {

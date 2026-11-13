@@ -5,7 +5,7 @@ description: Run explicit org-based teamwork in LibrAgent. Use when collaboratio
 
 # Org
 
-Org is explicit lineage teamwork. It is not generic delegation and it is not scheduled automation.
+An org is a long-lived team: one root session and a stable set of members, reused across runs.
 
 Use `teamwork` first when the workspace constitution is not ready.
 Use `org-restructure` when the org already exists and roles or constitution files need to change (add, layoff, merge, agents.md updates).
@@ -43,7 +43,6 @@ Use `postmortem-improve` after missions or repeated failures to capture lessons 
 ## Guardrails
 
 - Do not invent a separate org-only workspace. Org members should inherit the parent effective workspace unless a task explicitly needs a different `workspaceOverride`.
-- Do not use org identity for scheduled task groups or recurring automation.
 - Do not treat arbitrary child-session resume as org resume. The org root is the entry point.
 - Do not infer org membership from parent/child lineage alone — membership requires explicit org inheritance at session creation. Under an explicit org root that inheritance is automatic.
 - After `agent__createOrg`, verify `.libragent/teamwork.json` contains the updated `orgId` and `rootSessionId` (written automatically by the backend).
