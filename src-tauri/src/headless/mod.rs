@@ -466,8 +466,8 @@ pub fn build_agent_manager(
         app_handle,
         proxy_manager,
         repositories,
+        runtime.active_sessions.clone(),
     )
-    .with_active_sessions(runtime.active_sessions.clone())
 }
 
 fn setup_hidden_headless_app(

@@ -87,14 +87,18 @@ impl AgentSessionManager {
             app_handle,
             proxy_manager,
             AgentRepositories::new(session_repo),
+            Arc::new(RwLock::new(HashMap::new())),
         )
     }
 
     /// Create a new AgentSessionManager with an explicit AgentRepositories bundle
+    /// and the session map it runs on. Pass a fresh map for a normal app; a
+    /// headless run passes its own so the manager and the run share one map.
     pub fn new_with_repositories(
         app_handle: AppHandle,
         proxy_manager: Arc<MCPServiceProxyManager>,
         repositories: AgentRepositories,
+        active_sessions: Arc<RwLock<HashMap<String, AgentSession>>>,
     ) -> Self {
         // Initialize context registry with providers
         let mut registry = ContextRegistry::new();
@@ -110,23 +114,13 @@ impl AgentSessionManager {
         let session_repo = repositories.session.clone();
 
         Self {
-            active_sessions: Arc::new(RwLock::new(HashMap::new())),
+            active_sessions,
             app_handle,
             proxy_manager,
             session_repo,
             repositories,
             context_registry: Arc::new(registry),
         }
-    }
-
-    /// Run on an existing session map instead of the empty one, so another
-    /// owner of that map (for example a headless run) sees the same live state.
-    pub fn with_active_sessions(
-        mut self,
-        active_sessions: Arc<RwLock<HashMap<String, AgentSession>>>,
-    ) -> Self {
-        self.active_sessions = active_sessions;
-        self
     }
 
     /// Access the injected repository bundle.

@@ -248,6 +248,7 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         app.handle().clone(),
         proxy_manager_arc,
         repositories,
+        Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
     );
 
     // SP6: Expose the shared sessions map globally so builtin MCP tools can read
