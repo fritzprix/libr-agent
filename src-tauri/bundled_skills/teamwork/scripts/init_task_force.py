@@ -229,7 +229,7 @@ def build_teamwork_manifest(
             "specialistSkills": {
                 "plainChildSessions": "delegate",
                 "explicitOrgLineage": "org",
-                "scheduledTaskGroups": "schedule",
+                "scheduledTasks": "schedule",
             },
             "orgLineage": {
                 "intended": is_org,
@@ -239,7 +239,7 @@ def build_teamwork_manifest(
                 "compatibilityAlias": "spawnOrgAgent",
                 "workspaceSharing": "inherit-parent-workspace-by-default",
             },
-            "scheduledTaskGroups": {
+            "scheduledTasks": {
                 "intended": is_scheduled,
                 "notes": "Use global scheduled tasks for standalone recurring or cron-like automation.",
             },

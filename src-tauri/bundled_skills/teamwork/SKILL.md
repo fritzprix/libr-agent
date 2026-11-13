@@ -77,7 +77,7 @@ Keep these separate:
 - **Org** keeps the normal parent workspace semantics; only the teamwork artifacts move out of the repo/workspace.
 - **Global scheduled tasks** are for app-wide recurring automation and policy-governed background runs.
 - **Session loops / schedules** are for in-conversation delays and session-scoped recurrence.
-- A global scheduled task may wake an existing coordinator or org root session.
+- To resume an existing session, use that session's `scheduleCallback` (`loop`).
 
 Before creating a new member for a later task, inspect `agent__listAgents(type="sessions")` and reuse an Idle child with the same assistant ID and compatible workspace through `agent__messageToSession` (always pass `complexity`). Set `reset=true` only for a fresh assignment; create a new member when the role, workspace, or required parallel capacity differs.
 
