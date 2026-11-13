@@ -720,3 +720,149 @@ async fn snapshot_scrubs_session_rows_from_raw_pages_not_just_rows() {
 
     drop(runtime);
 }
+
+fn list_sessions_args(
+    dir: &std::path::Path,
+) -> tauri_mcp_agent_lib::headless::cli::ListSessionsArgs {
+    tauri_mcp_agent_lib::headless::cli::ListSessionsArgs {
+        cd: Some(dir.to_path_buf()),
+    }
+}
+
+/// A profile database holding sessions for two directories.
+fn profile_db_with_sessions(db_path: &std::path::Path, here: &std::path::Path, other: &str) {
+    let conn = rusqlite::Connection::open(db_path).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE sessions (id TEXT, name TEXT, status TEXT, model TEXT, \
+         updated_at INTEGER, workspace_override TEXT);",
+    )
+    .unwrap();
+    let here = here.to_string_lossy().to_string();
+    for (id, name, ws, updated) in [
+        ("s-old", Some("Older"), here.as_str(), 100_i64),
+        ("s-new", None, here.as_str(), 200_i64),
+        ("s-other", Some("Elsewhere"), other, 300_i64),
+    ] {
+        conn.execute(
+            "INSERT INTO sessions VALUES (?1, ?2, 'idle', 'gpt-x', ?3, ?4)",
+            rusqlite::params![id, name, updated, ws],
+        )
+        .unwrap();
+    }
+}
+
+#[test]
+fn list_sessions_prints_this_directorys_sessions_newest_first() {
+    use tauri_mcp_agent_lib::headless::run_list_sessions;
+    let workspace = TempDir::new().unwrap();
+    let db_dir = TempDir::new().unwrap();
+    let db_path = db_dir.path().join("profile.db");
+    profile_db_with_sessions(&db_path, workspace.path(), "/somewhere/else");
+
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    let code = run_list_sessions(
+        &list_sessions_args(workspace.path()),
+        &db_path,
+        &mut out,
+        &mut err,
+    );
+
+    assert_eq!(code, exit_codes::SUCCESS);
+    assert!(err.is_empty());
+    let text = String::from_utf8(out).unwrap();
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(lines.len(), 2, "only this directory's sessions: {text}");
+    assert_eq!(lines[0], "s-new\tidle\tgpt-x\t200\t(untitled)");
+    assert_eq!(lines[1], "s-old\tidle\tgpt-x\t100\tOlder");
+}
+
+#[test]
+fn list_sessions_without_a_profile_database_is_an_empty_success() {
+    use tauri_mcp_agent_lib::headless::run_list_sessions;
+    let workspace = TempDir::new().unwrap();
+    let db_dir = TempDir::new().unwrap();
+
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    let code = run_list_sessions(
+        &list_sessions_args(workspace.path()),
+        &db_dir.path().join("missing.db"),
+        &mut out,
+        &mut err,
+    );
+
+    assert_eq!(code, exit_codes::SUCCESS);
+    assert!(out.is_empty() && err.is_empty());
+}
+
+#[test]
+fn list_sessions_on_a_database_without_the_sessions_table_is_an_error() {
+    use tauri_mcp_agent_lib::headless::run_list_sessions;
+    let workspace = TempDir::new().unwrap();
+    let db_dir = TempDir::new().unwrap();
+    let db_path = db_dir.path().join("profile.db");
+    rusqlite::Connection::open(&db_path)
+        .unwrap()
+        .execute_batch("CREATE TABLE unrelated (x INTEGER);")
+        .unwrap();
+
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    let code = run_list_sessions(
+        &list_sessions_args(workspace.path()),
+        &db_path,
+        &mut out,
+        &mut err,
+    );
+
+    // Not "no sessions": the schema is wrong, and the caller must be told.
+    assert_eq!(code, exit_codes::ERROR);
+    assert!(out.is_empty());
+    assert!(String::from_utf8(err)
+        .unwrap()
+        .contains("failed to list sessions"));
+}
+
+#[test]
+fn list_sessions_on_a_bad_row_is_an_error_not_a_shorter_list() {
+    use tauri_mcp_agent_lib::headless::run_list_sessions;
+    let workspace = TempDir::new().unwrap();
+    let db_dir = TempDir::new().unwrap();
+    let db_path = db_dir.path().join("profile.db");
+    profile_db_with_sessions(&db_path, workspace.path(), "/somewhere/else");
+    // A row whose `updated_at` is not an integer cannot be read.
+    rusqlite::Connection::open(&db_path)
+        .unwrap()
+        .execute(
+            "INSERT INTO sessions VALUES ('s-bad', 'Bad', 'idle', 'gpt-x', 'not-a-number', ?1)",
+            [workspace.path().to_string_lossy().as_ref()],
+        )
+        .unwrap();
+
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    let code = run_list_sessions(
+        &list_sessions_args(workspace.path()),
+        &db_path,
+        &mut out,
+        &mut err,
+    );
+
+    assert_eq!(code, exit_codes::ERROR);
+    assert!(out.is_empty(), "no partial list on error");
+    assert!(!err.is_empty());
+}
+
+#[test]
+fn list_sessions_for_a_missing_directory_is_an_error() {
+    use tauri_mcp_agent_lib::headless::run_list_sessions;
+    let db_dir = TempDir::new().unwrap();
+
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    let code = run_list_sessions(
+        &list_sessions_args(&db_dir.path().join("no-such-dir")),
+        &db_dir.path().join("profile.db"),
+        &mut out,
+        &mut err,
+    );
+
+    assert_eq!(code, exit_codes::ERROR);
+    assert!(String::from_utf8(err).unwrap().contains("does not exist"));
+}
