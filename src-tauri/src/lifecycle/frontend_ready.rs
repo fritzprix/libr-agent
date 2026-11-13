@@ -18,3 +18,16 @@ pub async fn wait_until_ready() {
     }
     READY_NOTIFY.notified().await;
 }
+
+/// Wait until something can answer LLM requests.
+///
+/// With the Rust executor on and no WebView, that is this process itself, so
+/// there is nothing to wait for. With a WebView the wait stays, whatever the
+/// executor setting: a provider the executor does not handle still goes to the
+/// WebView, which must have announced itself or the request would be lost.
+pub async fn wait_until_llm_executor_ready(app_handle: &tauri::AppHandle) {
+    if crate::agent::llm::rust_executor::runs_without_webview(app_handle) {
+        return;
+    }
+    wait_until_ready().await;
+}
