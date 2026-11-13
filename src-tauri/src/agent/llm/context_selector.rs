@@ -1,30 +1,6 @@
 use crate::agent::llm::token_utils;
 use crate::models::chat::Message;
 
-/// Options for message selection
-#[derive(Debug)]
-pub struct SelectionOptions {
-    pub system_prompt: Option<String>,
-    pub tools_json: Option<String>,
-    pub max_messages: Option<usize>,
-    pub max_tool_calls_per_message: Option<usize>,
-    pub pin_first_user_message: bool,
-    pub fallback_calibration_ratio: Option<f64>,
-}
-
-impl Default for SelectionOptions {
-    fn default() -> Self {
-        Self {
-            system_prompt: None,
-            tools_json: None,
-            max_messages: None,
-            max_tool_calls_per_message: None,
-            pin_first_user_message: true,
-            fallback_calibration_ratio: None,
-        }
-    }
-}
-
 const CONTEXT_FIT_TRUNCATION_NOTICE: &str = "\n\n...[truncated for context fit]...\n\n";
 const CONTEXT_FIT_TRUNCATION_SCALES: [f64; 6] = [0.5, 0.35, 0.25, 0.15, 0.1, 0.05];
 const MIN_CONTEXT_FIT_SIDE_CHARS: usize = 48;

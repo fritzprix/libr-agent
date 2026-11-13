@@ -5,7 +5,7 @@ use tauri_mcp_agent_lib::agent::compaction_text::{
 };
 use tauri_mcp_agent_lib::agent::llm::completion::{
     advance_compaction_overflow_recovery_step_for_testing, apply_compaction_retry_budget,
-    build_checkpoint_backoff_split_candidates_for_testing, build_compact_context_selection_options,
+    build_checkpoint_backoff_split_candidates_for_testing,
     build_compact_summary_message_for_messages, build_compact_summary_text,
     build_compaction_preservation_hints, build_compaction_request_payload_for_testing,
     build_compaction_request_payload_with_planning_for_testing,
@@ -2336,32 +2336,6 @@ fn test_batch_tool_calls_in_messages() {
     assert_eq!(batched.len(), 2);
     assert_eq!(batched[0].id, "m1_batch_0");
     assert_eq!(batched[1].id, "m1_batch_1");
-}
-
-#[test]
-fn test_compact_mode_selection_options_disable_first_user_pinning() {
-    let options = build_compact_context_selection_options(
-        Some("system".to_string()),
-        Some("tools".to_string()),
-        "openai",
-        7,
-        Some(0.63),
-    );
-
-    assert_eq!(options.system_prompt.as_deref(), Some("system"));
-    assert_eq!(options.tools_json.as_deref(), Some("tools"));
-    assert_eq!(options.max_messages, None);
-    assert_eq!(options.max_tool_calls_per_message, Some(7));
-    assert!(!options.pin_first_user_message);
-    assert_eq!(options.fallback_calibration_ratio, Some(0.63));
-}
-
-#[test]
-fn test_compact_mode_selection_options_keep_gemini_tool_visibility_contract() {
-    let options = build_compact_context_selection_options(None, None, "gemini", 7, None);
-
-    assert_eq!(options.max_tool_calls_per_message, Some(100));
-    assert!(!options.pin_first_user_message);
 }
 
 #[test]
