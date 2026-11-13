@@ -23,6 +23,7 @@ from review_queue import (
     owner_comments_after,
     parse_markers,
     posting_checks,
+    touches_human_only_paths,
 )
 
 
@@ -466,6 +467,22 @@ Total **58/100**. Does not affect the verdict above.
     def test_protected_skill_prefixes(self) -> None:
         self.assertIn(".agents/skills/gatekeeper-loop/", PROTECTED_SKILL_PREFIXES)
         self.assertIn(".agents/skills/worker-loop/", PROTECTED_SKILL_PREFIXES)
+
+    def test_touches_human_only_paths(self) -> None:
+        self.assertTrue(
+            touches_human_only_paths([".agents/skills/worker-loop/docs/foo.md"])
+        )
+        self.assertTrue(
+            touches_human_only_paths([".agents/skills/gatekeeper-loop/scripts/review_queue.py"])
+        )
+        self.assertFalse(touches_human_only_paths(["src/lib.rs", "README.md"]))
+
+    def test_human_only_paths_use_normal_review_status(self) -> None:
+        """Loop-skill PRs stay in review like any other unreviewed PR."""
+        status, reason, priority = classify(**base_args())
+        self.assertEqual(status, "review")
+        self.assertIn("not reviewed", reason)
+        self.assertEqual(priority, 1)
 
     def test_quoted_markers_ignored(self) -> None:
         comments = [

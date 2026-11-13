@@ -18,7 +18,9 @@ status values:
   approved   - approve verdict exists for the current head, base unchanged, CI
                green at the head, no newer owner comment.
   escalate   - round limit reached or unresolvable dispute; hand to the user.
-  human-only - touches the gatekeeper's own skill; left to the human.
+
+Each entry may include humanOnly: true when the diff touches
+`.agents/skills/gatekeeper-loop/` or `.agents/skills/worker-loop/`.
 
 The list is sorted by priority (worker response / new head / owner comment
 first), then oldest PR first. Every entry carries a one-line `reason`.
@@ -232,6 +234,10 @@ def classify(
     return "review", "not reviewed yet", 1
 
 
+def touches_human_only_paths(paths: list[str]) -> bool:
+    return any(p.startswith(PROTECTED_SKILL_PREFIXES) for p in paths)
+
+
 def classify_sensitive_paths(paths: list[str]) -> dict:
     """Split changed paths into policy-regex hits and broader behavior-hint hits."""
     policy = sorted(p for p in paths if SENSITIVE_PATH.search(p))
@@ -339,7 +345,7 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
 
     labels = sorted(label["name"] for label in pr.get("labels") or [])
     paths = [f["path"] for f in pr.get("files") or []]
-    own_skill = any(p.startswith(PROTECTED_SKILL_PREFIXES) for p in paths)
+    human_only = touches_human_only_paths(paths)
     sensitive_info = classify_sensitive_paths(paths)
 
     status, reason, priority = classify(
@@ -361,8 +367,6 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
         ci_ran=bool(checks),
         max_rounds=int(pr_state.get("maxRounds", MAX_ROUNDS)),
     )
-    if own_skill:
-        status, reason, priority = "human-only", "changes loop skill files; left to the human", 9
 
     if status != "review" or not reviewed_head or reviewed_head == head:
         review_mode = "full" if status == "review" and not reviewed_head else "incremental"
@@ -373,6 +377,7 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
     return {
         "number": pr["number"],
         "status": status,
+        "humanOnly": human_only,
         "reason": reason,
         "priority": priority,
         "reviewMode": review_mode,
