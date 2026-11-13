@@ -75,6 +75,8 @@ export function App({
   const prompt = state.pendingUserPrompt;
   const approvals = state.pendingApprovals;
   const running = state.status === 'busy' || state.status === 'queued';
+  // The list shrinks as approvals resolve; never index past its end.
+  const approvalAt = Math.min(approvalIndex, approvals.length - 1);
 
   // A new prompt request starts a fresh form (render-phase adjustment).
   const promptId = useRef<string | undefined>(undefined);
@@ -221,9 +223,9 @@ export function App({
       else if (action === 'down')
         setApprovalIndex((i) => Math.min(approvals.length - 1, i + 1));
       else if (action === 'allow')
-        respondApproval(approvals[approvalIndex], 'allow');
+        respondApproval(approvals[approvalAt], 'allow');
       else if (action === 'deny')
-        respondApproval(approvals[approvalIndex], 'deny');
+        respondApproval(approvals[approvalAt], 'deny');
       else if (action === 'mode') cycleMode();
       return;
     }
@@ -252,12 +254,11 @@ export function App({
   });
 
   const transcript = state.messages.slice(-TRANSCRIPT_LINES);
-  const selected = approvals[approvalIndex];
+  const selected = approvals[approvalAt];
   const questions = prompt?.payload.questions ?? [];
   const question = questions[askForm.questionIndex];
-  const picked = (question ? (askForm.answers[question.id] ?? '') : '')
-    .split(',')
-    .filter(Boolean);
+  const answer = question ? askForm.answers[question.id] : undefined;
+  const picked = Array.isArray(answer) ? answer : [];
 
   return (
     <Box flexDirection="column">
@@ -281,7 +282,7 @@ export function App({
       {selected && (
         <Box flexDirection="column" borderStyle="round" borderColor="yellow">
           <Text color="yellow">
-            approval needed ({approvalIndex + 1}/{approvals.length}) —{' '}
+            approval needed ({approvalAt + 1}/{approvals.length}) —{' '}
             {selected.approvalKind}
           </Text>
           <Text>
@@ -330,6 +331,11 @@ export function App({
         </Box>
       )}
       {state.notice && <Text color="red">{state.notice}</Text>}
+      {state.sessionGone && (
+        <Text color="red">
+          event stream closed — restart liblet to reattach
+        </Text>
+      )}
       {!prompt && !selected && (
         <Box>
           <Text color="cyan">❯ </Text>

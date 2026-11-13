@@ -53,10 +53,33 @@ describe('askFormReduce — multi select', () => {
   it('digits accumulate picks and toggling removes one', () => {
     let state = askFormReduce(initialAskForm(), questions, { input: '1' });
     state = askFormReduce(state, questions, { input: '3' });
-    expect(state.answers.m).toBe('a,c');
+    expect(state.answers.m).toEqual(['a', 'c']);
     expect(state.questionIndex).toBe(0);
     state = askFormReduce(state, questions, { input: '3' });
-    expect(state.answers.m).toBe('a');
+    expect(state.answers.m).toEqual(['a']);
+  });
+
+  it('an option containing a comma is picked, un-picked, and submitted whole', () => {
+    const commas = [
+      question('m', {
+        options: ['Yes, proceed', 'No'],
+        multiSelect: true,
+        allowCustom: true,
+      }),
+    ];
+    let state = askFormReduce(initialAskForm(), commas, { input: '1' });
+    expect(state.answers.m).toEqual(['Yes, proceed']);
+    state = askFormReduce(state, commas, { input: '1' });
+    expect(state.answers.m).toEqual([]);
+    expect(askFormReduce(state, commas, enter)).toBe(state); // nothing picked
+
+    state = askFormReduce(state, commas, { input: '1' });
+    state = askFormReduce(state, commas, { input: 'o' });
+    state = askFormReduce(state, commas, { input: 'later, maybe' });
+    state = askFormReduce(state, commas, enter);
+    expect(askFormPayload(state, commas)).toEqual({
+      m: ['Yes, proceed', 'later, maybe'],
+    });
   });
 
   it('enter advances and the payload is a string array', () => {

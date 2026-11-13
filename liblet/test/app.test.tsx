@@ -23,11 +23,20 @@ function flush(): Promise<void> {
 interface Calls {
   prompts: PromptBody[];
   permissions: PermissionBody[];
+  terminated: string[];
 }
 
-function stubClient(calls: Calls): SessionApiClient {
+type Events = SessionApiClient['events'];
+
+function stubClient(
+  calls: Calls,
+  events: Events = async function* () {},
+): SessionApiClient {
   return {
-    events: async function* () {},
+    events,
+    terminate: async (id: string) => {
+      calls.terminated.push(id);
+    },
     respondPrompt: async (_id: string, body: PromptBody) => {
       calls.prompts.push(body);
     },
@@ -70,11 +79,11 @@ const question = (
   ...over,
 });
 
-const renderApp = (initialStatus: SessionStatusResponse) => {
-  const calls: Calls = { prompts: [], permissions: [] };
+const renderApp = (initialStatus: SessionStatusResponse, events?: Events) => {
+  const calls: Calls = { prompts: [], permissions: [], terminated: [] };
   const view = render(
     <App
-      client={stubClient(calls)}
+      client={stubClient(calls, events)}
       sessionId="s1"
       initialStatus={initialStatus}
       history={[]}
@@ -170,6 +179,53 @@ describe('App approvals and secrets', () => {
     ]);
   });
 
+  it('a shrinking approval list keeps a valid selection', async () => {
+    const approval = (n: number) => ({
+      toolCallId: `t${n}`,
+      toolName: 'shell',
+      reason: 'run',
+      commandPreview: `cmd ${n}`,
+      approvalKind: 'standard',
+      requestId: `r${n}`,
+    });
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const { calls, stdin, lastFrame } = renderApp(
+      status({ pendingApprovals: [approval(1), approval(2)] }),
+      async function* () {
+        await gate;
+        yield {
+          event: 'status',
+          data: status({ pendingApprovals: [approval(1)] }),
+        };
+        await new Promise(() => {}); // keep the stream open
+      },
+    );
+    await flush();
+
+    stdin.write('\u001b[B'); // select the second approval
+    await flush();
+    stdin.write('a');
+    await flush();
+    release(); // the backend resolves it; one approval is left
+    await flush();
+    await flush();
+    expect(lastFrame()).toContain('approval needed (1/1)');
+
+    stdin.write('a');
+    await flush();
+    expect(calls.permissions.map((p) => p.requestId)).toEqual(['r2', 'r1']);
+  });
+
+  it('ctrl+c interrupts a running turn instead of quitting', async () => {
+    const { calls, stdin } = renderApp(status({ status: 'busy' }));
+    await flush();
+
+    stdin.write('\u0003');
+    await flush();
+    expect(calls.terminated).toEqual(['s1']);
+  });
+
   it('secret prompt sends the typed value on enter', async () => {
     const { calls, stdin } = renderApp(
       status({
@@ -193,7 +249,7 @@ describe('App approvals and secrets', () => {
   });
 
   it('attachedRunning shows the driven-by-another-frontend header', async () => {
-    const calls: Calls = { prompts: [], permissions: [] };
+    const calls: Calls = { prompts: [], permissions: [], terminated: [] };
     const { lastFrame } = render(
       <App
         client={stubClient(calls)}

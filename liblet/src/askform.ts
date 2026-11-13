@@ -16,8 +16,8 @@ import type { UserQuestion } from './types.js';
 
 export interface AskFormState {
   questionIndex: number;
-  /** Finished answers keyed by question id; multiSelect answers are stored comma-joined. */
-  answers: Record<string, string>;
+  /** Answers keyed by question id; a multiSelect answer is the list of picks. */
+  answers: Record<string, string | string[]>;
   /** In-progress "other" / free-text input for the current question. */
   pending: string;
   /** True while typing the custom answer (started with `o`). */
@@ -46,7 +46,7 @@ export function initialAskForm(): AskFormState {
 function advance(
   state: AskFormState,
   questions: UserQuestion[],
-  answers: Record<string, string>,
+  answers: Record<string, string | string[]>,
 ): AskFormState {
   const next = state.questionIndex + 1;
   return {
@@ -71,14 +71,18 @@ export function askFormReduce(
   const question = questions[state.questionIndex];
   if (!question) return state;
   const options = question.options ?? [];
+  const current = state.answers[question.id];
+  const picks = Array.isArray(current) ? current : [];
 
   if (key.returnKey) {
     if (state.pending)
       return advance(state, questions, {
         ...state.answers,
-        [question.id]: state.pending,
+        [question.id]: question.multiSelect
+          ? [...picks, state.pending]
+          : state.pending,
       });
-    if (question.multiSelect && state.answers[question.id])
+    if (question.multiSelect && picks.length > 0)
       return advance(state, questions, state.answers);
     if (options.length > 0 && state.customMode)
       return { ...state, customMode: false }; // empty custom entry leaves the mode
@@ -104,15 +108,12 @@ export function askFormReduce(
     ) {
       const option = options[value - 1];
       if (question.multiSelect) {
-        const selected = (state.answers[question.id] ?? '')
-          .split(',')
-          .filter(Boolean);
-        const next = selected.includes(option)
-          ? selected.filter((c) => c !== option)
-          : [...selected, option];
+        const next = picks.includes(option)
+          ? picks.filter((c) => c !== option)
+          : [...picks, option];
         return {
           ...state,
-          answers: { ...state.answers, [question.id]: next.join(',') },
+          answers: { ...state.answers, [question.id]: next },
         };
       }
       return advance(state, questions, {
@@ -142,10 +143,8 @@ export function askFormPayload(
   const payload: Record<string, string | string[]> = {};
   for (const question of questions) {
     const raw = state.answers[question.id];
-    if (raw === undefined || raw === '') continue;
-    payload[question.id] = question.multiSelect
-      ? raw.split(',').filter(Boolean)
-      : raw;
+    if (raw === undefined || raw.length === 0) continue;
+    payload[question.id] = raw;
   }
   return payload;
 }

@@ -166,6 +166,9 @@ async function main(): Promise<number> {
       initialPrompt={initialPrompt}
       attachedRunning={DRIVEN_STATUSES.has(status.status)}
     />,
+    // Ink's default exits on Ctrl+C before useInput sees it; the App
+    // decides between interrupting the turn and quitting.
+    { exitOnCtrlC: false },
   );
   await instance.waitUntilExit();
   return EXIT.OK;
