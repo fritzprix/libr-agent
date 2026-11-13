@@ -1,41 +1,6 @@
 use crate::agent::llm::token_utils;
 use crate::models::chat::Message;
 
-/// Minimal representation of model config needed for context selection
-pub struct ModelContextInfo {
-    pub context_window: usize,
-}
-
-/// Options for message selection
-#[derive(Debug)]
-pub struct SelectionOptions {
-    pub system_prompt: Option<String>,
-    pub tools_json: Option<String>,
-    pub max_messages: Option<usize>,
-    pub max_tool_calls_per_message: Option<usize>,
-    pub pin_first_user_message: bool,
-    pub fallback_calibration_ratio: Option<f64>,
-}
-
-impl Default for SelectionOptions {
-    fn default() -> Self {
-        Self {
-            system_prompt: None,
-            tools_json: None,
-            max_messages: None,
-            max_tool_calls_per_message: None,
-            pin_first_user_message: true,
-            fallback_calibration_ratio: None,
-        }
-    }
-}
-
-/// Selected Context Result
-#[derive(Debug)]
-pub struct SelectedContext {
-    pub messages: Vec<Message>,
-}
-
 const CONTEXT_FIT_TRUNCATION_NOTICE: &str = "\n\n...[truncated for context fit]...\n\n";
 const CONTEXT_FIT_TRUNCATION_SCALES: [f64; 6] = [0.5, 0.35, 0.25, 0.15, 0.1, 0.05];
 const MIN_CONTEXT_FIT_SIDE_CHARS: usize = 48;
@@ -43,18 +8,6 @@ const MIN_CONTEXT_FIT_SIDE_CHARS: usize = 48;
 fn provider_requires_tool_chain_cleanup(provider_id: &str) -> bool {
     crate::agent::llm::request_layout::is_custom_openai_compatible_provider(provider_id)
         || ["anthropic", "gemini", "openai", "openrouter", "groq"].contains(&provider_id)
-}
-
-fn resolve_calibration_ratio(
-    messages: &[Message],
-    system_prompt_tokens: usize,
-    tools_tokens: usize,
-    fallback_calibration_ratio: Option<f64>,
-) -> f64 {
-    token_utils::try_derive_bpe_calibration_ratio(messages, system_prompt_tokens, tools_tokens)
-        .or(fallback_calibration_ratio)
-        .filter(|ratio| ratio.is_finite() && *ratio > 0.0)
-        .unwrap_or(1.0)
 }
 
 /// Calculates the split index for compaction.
@@ -338,140 +291,6 @@ pub fn select_recent_messages_fifo(
     adjusted
 }
 
-pub fn select_messages_within_context(
-    messages: &[Message],
-    provider_id: &str,
-    max_tokens: Option<usize>,
-    options: Option<&SelectionOptions>,
-    model_info: Option<&ModelContextInfo>,
-) -> Vec<Message> {
-    let pin_first_user_message = options.map(|o| o.pin_first_user_message).unwrap_or(true);
-    let max_tool_calls = options
-        .and_then(|o| o.max_tool_calls_per_message)
-        .unwrap_or(4);
-    let fallback_calibration_ratio = options.and_then(|o| o.fallback_calibration_ratio);
-    let batched_messages = batch_tool_calls_in_messages(messages, max_tool_calls);
-
-    let context_window = model_info.map(|m| m.context_window).unwrap_or(128_000);
-    let base_token_limit =
-        max_tokens.unwrap_or_else(|| (context_window as f64 * 0.9).floor() as usize);
-
-    let system_prompt_tokens = options
-        .and_then(|o| o.system_prompt.as_ref())
-        .map(|s| token_utils::estimate_text_tokens(s))
-        .unwrap_or(0);
-
-    let tools_tokens = options
-        .and_then(|o| o.tools_json.as_ref())
-        .map(|s| token_utils::estimate_text_tokens(s))
-        .unwrap_or(0);
-
-    let mut pinned_message: Option<Message> = None;
-    let mut pinned_message_tokens = 0;
-
-    if pin_first_user_message && !batched_messages.is_empty() && batched_messages[0].role == "user"
-    {
-        pinned_message = Some(batched_messages[0].clone());
-        pinned_message_tokens = token_utils::estimate_tokens_bpe(&batched_messages[0]);
-    }
-
-    let non_message_reserved = system_prompt_tokens + tools_tokens;
-    if non_message_reserved >= base_token_limit {
-        log::warn!("System prompt + tools tokens exhaust the entire context window.");
-        if let Some(most_recent) = batched_messages.last() {
-            return vec![most_recent.clone()];
-        } else {
-            return vec![];
-        }
-    }
-
-    let calibration_ratio = resolve_calibration_ratio(
-        &batched_messages,
-        system_prompt_tokens,
-        tools_tokens,
-        fallback_calibration_ratio,
-    );
-
-    log::debug!(
-        "Calibration ratio for context selection: {:.4} (promptTokens-anchored)",
-        calibration_ratio
-    );
-
-    let reserved_tokens = non_message_reserved + pinned_message_tokens;
-    let token_limit = std::cmp::max(1024, base_token_limit.saturating_sub(reserved_tokens));
-    let pinned_message_budget = base_token_limit.saturating_sub(non_message_reserved);
-
-    let mut total_tokens = 0;
-    let mut selected = std::collections::VecDeque::new();
-
-    let max_msgs = options.and_then(|o| o.max_messages);
-
-    for msg in batched_messages.iter().rev() {
-        if let Some(pinned) = &pinned_message {
-            if msg.id == pinned.id {
-                continue;
-            }
-        }
-
-        let tokens = token_utils::estimate_tokens_bpe(msg);
-        let calibrated_tokens = (tokens as f64 * calibration_ratio).ceil() as usize;
-
-        if total_tokens + calibrated_tokens > token_limit {
-            if provider_requires_tool_chain_cleanup(provider_id) {
-                let adjusted = remove_incomplete_tool_chains(Vec::from(selected));
-                return build_selected_with_optional_pinned(
-                    pinned_message.clone(),
-                    pinned_message_tokens,
-                    pinned_message_budget,
-                    adjusted,
-                );
-            }
-            break;
-        }
-
-        let current_max = if pinned_message.is_some() {
-            max_msgs.map(|m| m.saturating_sub(1))
-        } else {
-            max_msgs
-        };
-
-        if let Some(max) = current_max {
-            if selected.len() >= max {
-                if selected.is_empty() {
-                    selected.push_front(msg.clone());
-                }
-                if provider_requires_tool_chain_cleanup(provider_id) {
-                    let adjusted = remove_incomplete_tool_chains(Vec::from(selected));
-                    return build_selected_with_optional_pinned(
-                        pinned_message.clone(),
-                        pinned_message_tokens,
-                        pinned_message_budget,
-                        adjusted,
-                    );
-                }
-                break;
-            }
-        }
-
-        selected.push_front(msg.clone());
-        total_tokens += calibrated_tokens;
-    }
-
-    let final_selected = Vec::from(selected);
-    let adjusted = if provider_requires_tool_chain_cleanup(provider_id) {
-        remove_incomplete_tool_chains(final_selected)
-    } else {
-        final_selected
-    };
-
-    build_selected_with_optional_pinned(
-        pinned_message,
-        pinned_message_tokens,
-        pinned_message_budget,
-        adjusted,
-    )
-}
-
 pub fn trim_messages_to_fit_conservative_limit(
     messages: &[Message],
     provider_id: &str,
@@ -628,52 +447,4 @@ pub fn truncate_single_oversized_message_to_fit_conservative_limit(
     }
 
     best_candidate
-}
-
-fn prepend_pinned_message(pinned_msg: Message, mut selected_msgs: Vec<Message>) -> Vec<Message> {
-    if selected_msgs.is_empty() {
-        return selected_msgs;
-    }
-
-    if pinned_msg.role == "user" && selected_msgs[0].role == "user" {
-        let separator = crate::mcp::types::MCPContent::Text {
-            text: "\n\n---\n\n(Merging context...)\n\n".to_string(),
-        };
-
-        let mut merged_msg = pinned_msg.clone();
-        merged_msg.id = format!("merged_{}_{}", pinned_msg.id, selected_msgs[0].id);
-
-        let mut new_content = merged_msg.content;
-        new_content.push(separator);
-        new_content.extend(selected_msgs[0].content.clone());
-
-        merged_msg.content = new_content;
-
-        selected_msgs.remove(0);
-        selected_msgs.insert(0, merged_msg);
-        return selected_msgs;
-    }
-
-    selected_msgs.insert(0, pinned_msg);
-    selected_msgs
-}
-
-fn build_selected_with_optional_pinned(
-    pinned_message: Option<Message>,
-    pinned_message_tokens: usize,
-    pinned_message_budget: usize,
-    selected_msgs: Vec<Message>,
-) -> Vec<Message> {
-    if let Some(pinned) = pinned_message {
-        if selected_msgs.is_empty() {
-            if pinned_message_tokens <= pinned_message_budget {
-                return vec![pinned];
-            }
-            return vec![];
-        }
-
-        return prepend_pinned_message(pinned, selected_msgs);
-    }
-
-    selected_msgs
 }
