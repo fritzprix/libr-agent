@@ -353,6 +353,11 @@ class GapTests(unittest.TestCase):
             head="head2", last_verdict=self.approve, total_verdicts=5))
         self.assertEqual(status, "escalate")
 
+    def test_max_rounds_override_allows_another_round(self) -> None:
+        status, _, _ = classify(**base_args(
+            head="head2", last_verdict=self.approve, total_verdicts=5, max_rounds=6))
+        self.assertNotEqual(status, "escalate")
+
     # Changes requested at the current head, then a clean marker at the same head
     # (the worker fixed the PR body, so no new commit).
     requested_here = {"head": "head1", "verdict": "changes-requested", "base": "dev/0.9.x"}

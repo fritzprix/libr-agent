@@ -30,9 +30,9 @@ Scope: <one line — what the PR claims and whether the diff matches it>
 
 - G1.1 ✅ fixed in <short-sha> · G1.2 ✅ decline accepted (<reason>)
 
-### Code quality score (informational)
+### Code quality score (gate: ≥86 to approve)
 
-Total **<sum>/100**. Does not affect the verdict above (decision is based on open required `G` items only).
+Total **<sum>/100**. A total of 85 or lower requires changes (see the `G` items for the lowest categories).
 
 - **Correctness incl. boundary conditions (<n>/30)** — `<file>:<line>` — <one-line rationale with evidence>.
 - **Tests exercise the real production code path (<n>/20)** — `<file>:<line>` — <one-line rationale>.
@@ -41,7 +41,7 @@ Total **<sum>/100**. Does not affect the verdict above (decision is based on ope
 - **Error handling and robustness (<n>/10)** — `<file>:<line>` — <one-line rationale>.
 - **Scope discipline (<n>/10)** — `<file>:<line>` — <one-line rationale>.
 
-Do not score CI status or the PR body. See [review-rubric.md](review-rubric.md#code-quality-score-100-points-informational).
+Do not score CI status or the PR body. See [review-rubric.md](review-rubric.md#code-quality-score-100-points-gate).
 ```
 
 Approve:
@@ -58,9 +58,9 @@ Approve:
 - `<acceptance criterion 1 from linked issue>` — verified in `<file>:<line>` (<brief explanation>).
 - `<acceptance criterion 2 from linked issue>` — verified in `<file>:<line>` (<brief explanation>).
 
-### Code quality score (informational)
+### Code quality score (gate: ≥86 to approve)
 
-Total **<sum>/100**. Does not affect the verdict above.
+Total **<sum>/100** (≥86 required for approve).
 
 - **Correctness incl. boundary conditions (<n>/30)** — `<file>:<line>` — <one-line rationale>.
 - **Tests exercise the real production code path (<n>/20)** — `<file>:<line>` — <one-line rationale>.
@@ -82,9 +82,9 @@ Clean, waiting for CI (no label change, not a round; lets any tick or machine se
 
 <1–2 lines: what was reviewed, zero open required findings>
 
-### Code quality score (informational)
+### Code quality score (gate: ≥86 to approve)
 
-Total **<sum>/100**. Does not affect the clean marker (awaiting CI only).
+Total **<sum>/100** (≥86 required for a clean marker).
 
 - **Correctness incl. boundary conditions (<n>/30)** — `<file>:<line>` — <one-line rationale>.
 - **Tests exercise the real production code path (<n>/20)** — `<file>:<line>` — <one-line rationale>.
@@ -103,9 +103,9 @@ Escalate (round limit or unresolved disagreement):
 
 <the open disagreement, both positions, and the decision needed>
 
-### Code quality score (informational)
+### Code quality score (gate: ≥86 to approve)
 
-Total **<sum>/100**. Does not affect escalation.
+Total **<sum>/100**.
 
 - **Correctness incl. boundary conditions (<n>/30)** — `<file>:<line>` — <one-line rationale>.
 - **Tests exercise the real production code path (<n>/20)** — `<file>:<line>` — <one-line rationale>.

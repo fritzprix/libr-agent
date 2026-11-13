@@ -26,8 +26,9 @@ For each finding you plan to put under `### Required`:
 | Missing i18n on a non-critical UI path | **minor** | `S` only — never `G` |
 | Naming, comment noise, style | **minor** / **nit** | `S` only |
 | Wrong behavior, security leak, acceptance criteria not met | **blocker** / **major** | `G` |
+| Technical debt in the diff (duplication, dead code, workaround, unneeded fallback, lint suppression, stale test) | **major** | `G` with a concrete refactor |
 
-If every open issue is minor/nit, verdict is `clean` or `approve`, not `changes-requested`.
+If every open issue is minor/nit **and** the score is 86 or higher, verdict is `clean` or `approve`, not `changes-requested`. A score of 85 or lower is always `changes-requested`.
 
 ## 4. `clean` → `approve` body must match latest clean review
 
@@ -56,15 +57,15 @@ When a finding is `CI failure (<job>)`:
 4. Distinguish PR-introduced failures from base-branch or toolchain drift (failures in files the PR did not touch).
 5. **Base-branch or out-of-scope CI/tooling failures do not become required `G` items** on the PR under review. Note them in the verdict (e.g. under `### Checked` or a short out-of-scope note) and file follow-up per §8 — do not request changes solely because the base is red for unrelated reasons.
 
-## 7. Code quality score (informational only)
+## 7. Code quality score (gate: ≥86 to approve)
 
-The score must **never** drive approve vs changes-requested. Use the full range so scores are meaningful:
+A total of **85 or lower** blocks `clean` and `approve`: post `changes-requested` with `G` items for the lowest-scoring categories. When upgrading an existing `clean` marker to `approve`, re-check its score; a clean marker scored 85 or lower must become `changes-requested`. Use the full range so scores are meaningful, and never inflate a score to cross the gate:
 
 | Band | Typical meaning |
 | ---- | ---------------- |
 | 50–69 | Multiple major gaps or weak test coverage on new logic |
-| 70–84 | Solid but notable major or robustness gaps |
-| 85–92 | Clean merge with minor suggestions |
+| 70–85 | Solid but notable major, robustness, or tech-debt gaps — changes requested |
+| 86–92 | Clean merge with minor suggestions |
 | 93–100 | Exceptional: thorough tests on production paths, tight scope, strong error handling |
 
 Avoid clustering every clean PR at 87–96; differentiate test depth and robustness.
