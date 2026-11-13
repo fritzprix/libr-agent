@@ -20,7 +20,7 @@ The org scaffold is the operating contract: `agents.md`, `MISSION.md`, `ROLES.md
 ## Tick
 
 1. Read the board the scaffold names (default `coordination/KANBAN.md`). With nothing actionable, end the tick.
-2. For each actionable item, up to `slots`: take the role `ROLES.md` assigns; pick an Idle member of that role from `agent__getOrg()` and send `agent__messageToSession(sessionId, complexity, message, reset=true, waitForResponse=false)`; with no such member, `agent__spawnSession(configId, complexity, task)`. Complexity comes from the role.
+2. For each actionable item, up to `slots`: take the role `ROLES.md` assigns and the member the scaffold names for it (`ROLES.md`, `coordination/`); check that member's status and session id in `agent__getOrg()` (it reports `name [status] depth=N session=ID`); if the member is Idle, send `agent__messageToSession(sessionId, complexity, message, reset=true, waitForResponse=false)`; otherwise `agent__spawnSession(configId, complexity, task)`. Complexity comes from the role.
 3. The message asks the member to do one unit of its role per `agents.md` and its role skill, record status as the scaffold says, and finish.
 4. A member waiting on the user: record it as blocked on the board, tell the user, and free the slot.
 5. Close items judged complete under `MISSION.md`'s definition of done, recording it as the scaffold says.
