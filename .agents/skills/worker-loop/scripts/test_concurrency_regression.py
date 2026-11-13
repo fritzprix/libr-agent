@@ -666,8 +666,13 @@ class LeaseRunTest(StateDirCase):
         waits_for_renewal = (
             "import json,time,sys\n"
             f"p={str(lock)!r}\n"
-            "start=json.load(open(p))['renewedAt']\n"
-            "while json.load(open(p))['renewedAt']==start: time.sleep(0.02)\n"
+            # Renewal replaces the file; on Windows a read can hit it mid-replace.
+            "def r():\n"
+            "    while True:\n"
+            "        try: return json.load(open(p))['renewedAt']\n"
+            "        except (OSError, ValueError): time.sleep(0.01)\n"
+            "start=r()\n"
+            "while r()==start: time.sleep(0.02)\n"
         )
         result = self.lease_run("--worker", held.worker, "--token", held.token, "--interval", "0.05", "--",
                                 *self.py(waits_for_renewal))
