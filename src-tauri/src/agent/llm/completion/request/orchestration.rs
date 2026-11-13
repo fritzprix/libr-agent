@@ -625,10 +625,7 @@ async fn check_token_limit(
         return Ok(final_messages);
     }
 
-    let safe_input_token_limit = std::cmp::min(
-        context_settings.max_input_context,
-        context_settings.model_max_limit,
-    );
+    let safe_input_token_limit = context_settings.max_input_context;
     let prompt_anchored_total_tokens =
         crate::agent::llm::token_utils::calculate_prompt_anchored_total_tokens(
             &final_messages,

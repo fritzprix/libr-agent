@@ -10,7 +10,6 @@ pub struct ContextManagementSettings {
     pub(crate) window_size: usize,
     pub(crate) max_input_context: usize,
     pub(crate) tool_call_group_visible_count: usize,
-    pub(crate) model_max_limit: usize,
 }
 
 impl ContextManagementSettings {
@@ -29,10 +28,6 @@ impl ContextManagementSettings {
     pub fn tool_call_group_visible_count(&self) -> usize {
         self.tool_call_group_visible_count
     }
-
-    pub fn model_max_limit(&self) -> usize {
-        self.model_max_limit
-    }
 }
 
 pub(crate) fn default_context_management_settings() -> ContextManagementSettings {
@@ -41,7 +36,6 @@ pub(crate) fn default_context_management_settings() -> ContextManagementSettings
         window_size: 20,
         max_input_context: 49152,
         tool_call_group_visible_count: 4,
-        model_max_limit: 128_000,
     }
 }
 
@@ -125,12 +119,11 @@ pub(crate) async fn load_context_management_settings() -> ContextManagementSetti
         resolve_context_management_settings(legacy_settings_blob.as_ref(), &direct_settings);
 
     log::info!(
-        "🧭 Loaded context management settings: strategy={}, window_size={}, max_input_context={}, tool_call_group_visible_count={}, model_max_limit={}, legacy_blob_present={}, direct_keys={}",
+        "🧭 Loaded context management settings: strategy={}, window_size={}, max_input_context={}, tool_call_group_visible_count={}, legacy_blob_present={}, direct_keys={}",
         settings.context_strategy,
         settings.window_size,
         settings.max_input_context,
         settings.tool_call_group_visible_count,
-        settings.model_max_limit,
         legacy_settings_blob.is_some(),
         if direct_keys.is_empty() {
             "<none>".to_string()

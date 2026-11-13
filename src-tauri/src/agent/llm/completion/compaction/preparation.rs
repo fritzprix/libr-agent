@@ -215,8 +215,7 @@ async fn prepare_compaction_request(
         session_id,
     )
     .await;
-    let safe_input_token_limit =
-        std::cmp::min(settings.max_input_context(), settings.model_max_limit);
+    let safe_input_token_limit = settings.max_input_context();
     let base_effective_input_budget =
         crate::agent::llm::token_utils::calculate_effective_input_budget(
             safe_input_token_limit,

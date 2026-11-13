@@ -676,9 +676,7 @@ async fn apply_tool_loop_token_fence(
 
     let output_reserve_tokens =
         derive_measured_output_tokens_reserve(&projection_history, configured_max_output_tokens);
-    let safe_input_token_limit = context_settings
-        .max_input_context()
-        .min(context_settings.model_max_limit());
+    let safe_input_token_limit = context_settings.max_input_context();
     let effective_input_budget =
         calculate_effective_input_budget(safe_input_token_limit, output_reserve_tokens);
     let guarded_total_budget_limit = effective_input_budget

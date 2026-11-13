@@ -93,4 +93,52 @@ describe('ChatInterfaceTab', () => {
     expect(slidingWindowButton).toHaveAttribute('aria-checked', 'false');
     expect(compactButton).toHaveAttribute('aria-checked', 'true');
   });
+
+  describe('max input context (compact strategy)', () => {
+    const renderCompact = (maxInputContext: number) => {
+      const onMaxInputContextChange = vi.fn();
+      render(
+        <ChatInterfaceTab
+          localContextStrategy="compact"
+          localWindowSize={DEFAULT_SETTING.windowSize}
+          localMaxInputContext={maxInputContext}
+          localToolCallGroupVisibleCount={
+            DEFAULT_SETTING.toolCallGroupVisibleCount
+          }
+          localAdvancedSettings={TEST_ADVANCED_SETTINGS}
+          onContextStrategyChange={vi.fn()}
+          onWindowSizeChange={vi.fn()}
+          onMaxInputContextChange={onMaxInputContextChange}
+          onToolCallGroupVisibleCountChange={vi.fn()}
+          onAdvancedSettingsChange={vi.fn()}
+        />,
+      );
+      return onMaxInputContextChange;
+    };
+
+    it('shows the default as 48K', () => {
+      renderCompact(DEFAULT_SETTING.maxInputContext);
+      expect(DEFAULT_SETTING.maxInputContext).toBe(49152);
+      expect(screen.getAllByText('48K').length).toBeGreaterThan(0);
+    });
+
+    it('can select 1M and the top preset, and reports the exact value', () => {
+      const onMaxInputContextChange = renderCompact(
+        DEFAULT_SETTING.maxInputContext,
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: '1M' }));
+      expect(onMaxInputContextChange).toHaveBeenLastCalledWith(1048576);
+
+      fireEvent.click(screen.getByRole('button', { name: '4M' }));
+      expect(onMaxInputContextChange).toHaveBeenLastCalledWith(4194304);
+    });
+
+    it('labels large values in M and keeps a stored non-preset value as is', () => {
+      const onMaxInputContextChange = renderCompact(1572864);
+      expect(screen.getAllByText('1.5M').length).toBeGreaterThan(0);
+      // Showing it does not save anything.
+      expect(onMaxInputContextChange).not.toHaveBeenCalled();
+    });
+  });
 });
