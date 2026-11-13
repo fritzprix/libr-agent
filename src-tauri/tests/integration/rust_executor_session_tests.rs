@@ -19,8 +19,7 @@ use warp::Filter;
 
 use tauri::test::MockRuntime;
 use tauri_mcp_agent_lib::agent::llm::rust_executor::{
-    configure, try_dispatch_compaction, try_dispatch_completion, Endpoint, ExecutorConfig,
-    ResponseSink,
+    configure, dispatch_compaction, dispatch_completion, Endpoint, ExecutorConfig, ResponseSink,
 };
 use tauri_mcp_agent_lib::agent::llm::types::{
     AgentRuntimeError, CompactRequest, CompactionParentRequest, CompletionRequest,
@@ -233,13 +232,19 @@ fn app() -> &'static tauri::AppHandle {
     }
 }
 
-fn config(endpoint: Endpoint, sink: Arc<RecordingSink>) -> ExecutorConfig {
+fn config(endpoint: Endpoint) -> ExecutorConfig {
     ExecutorConfig {
         enabled: true,
         endpoint_override: Some(endpoint),
         assume_no_webview: true,
-        sink_override: Some(sink),
     }
+}
+
+/// The delivery target a test hands to `dispatch_*` in place of the session
+/// manager that production finds in app state.
+fn deliver_to(sink: &Arc<RecordingSink>) -> impl FnOnce() -> Option<Arc<dyn ResponseSink>> {
+    let sink: Arc<dyn ResponseSink> = sink.clone();
+    move || Some(sink)
 }
 
 /// A tool-call turn reaches the session as an assistant turn, and the tool
@@ -254,13 +259,14 @@ async fn a_tool_call_turn_is_delivered_and_its_result_is_sent_back_paired() {
     ])
     .await;
     let sink = Arc::new(RecordingSink::default());
-    let _config = configure(config(provider.endpoint.clone(), sink.clone()));
+    let _config = configure(config(provider.endpoint.clone()));
     let handle = app();
     let user = message(session_id, "u1", "user", "list the playbooks", 1_000);
 
-    assert!(try_dispatch_completion(
+    assert!(dispatch_completion(
         handle,
-        &request(session_id, "resp-1", PROVIDER, vec![user.clone()])
+        &request(session_id, "resp-1", PROVIDER, vec![user.clone()]),
+        deliver_to(&sink),
     )
     .unwrap());
     wait_for("the tool-call turn", || {
@@ -277,7 +283,7 @@ async fn a_tool_call_turn_is_delivered_and_its_result_is_sent_back_paired() {
     let mut result = message(session_id, "t1", "tool", "[]", 2_000);
     result.tool_call_id = Some(calls[0].id.clone());
     let follow_up = request(session_id, "resp-2", PROVIDER, vec![user, turn, result]);
-    assert!(try_dispatch_completion(handle, &follow_up).unwrap());
+    assert!(dispatch_completion(handle, &follow_up, deliver_to(&sink)).unwrap());
     wait_for("the final answer", || {
         sink.responses.lock().unwrap().len() == 2
     })
@@ -298,11 +304,15 @@ async fn a_provider_the_executor_cannot_run_fails_fast_without_a_webview() {
     let _guard = TEST_GUARD.lock().await;
     let provider = mock_provider(vec![text_reply("unused")]).await;
     let sink = Arc::new(RecordingSink::default());
-    let _config = configure(config(provider.endpoint.clone(), sink.clone()));
+    let _config = configure(config(provider.endpoint.clone()));
     let user = message("s", "u1", "user", "hello", 1_000);
 
-    let error = try_dispatch_completion(app(), &request("s", "resp-1", "anthropic", vec![user]))
-        .expect_err("nothing can answer an Anthropic request without a WebView");
+    let error = dispatch_completion(
+        app(),
+        &request("s", "resp-1", "anthropic", vec![user]),
+        deliver_to(&sink),
+    )
+    .expect_err("nothing can answer an Anthropic request without a WebView");
 
     assert!(error.display_message.contains("anthropic"));
     assert!(provider.requests.lock().unwrap().is_empty());
@@ -338,9 +348,9 @@ async fn a_compaction_round_trip_delivers_the_summary_and_its_usage() {
     let session_id = "rust-executor-compaction";
     let provider = mock_provider(vec![text_reply("A tidy summary.")]).await;
     let sink = Arc::new(RecordingSink::default());
-    let _config = configure(config(provider.endpoint.clone(), sink.clone()));
+    let _config = configure(config(provider.endpoint.clone()));
 
-    assert!(try_dispatch_compaction(app(), &compact_request(session_id)).unwrap());
+    assert!(dispatch_compaction(app(), &compact_request(session_id), deliver_to(&sink)).unwrap());
     wait_for("the compaction summary", || {
         !sink.compactions.lock().unwrap().is_empty()
     })
@@ -373,14 +383,9 @@ async fn a_failing_compaction_call_is_reported_through_compact_error() {
     let session_id = "rust-executor-compaction-error";
     let (endpoint, requests) = failing_provider(502).await;
     let sink = Arc::new(RecordingSink::default());
-    let _config = configure(ExecutorConfig {
-        enabled: true,
-        endpoint_override: Some(endpoint),
-        assume_no_webview: true,
-        sink_override: Some(sink.clone()),
-    });
+    let _config = configure(config(endpoint));
 
-    assert!(try_dispatch_compaction(app(), &compact_request(session_id)).unwrap());
+    assert!(dispatch_compaction(app(), &compact_request(session_id), deliver_to(&sink)).unwrap());
     wait_for("the compaction error", || {
         !sink.compact_errors.lock().unwrap().is_empty()
     })
@@ -389,4 +394,47 @@ async fn a_failing_compaction_call_is_reported_through_compact_error() {
     assert!(sink.compact_errors.lock().unwrap()[0].contains("HTTP 502"));
     assert_eq!(requests.lock().unwrap().len(), 1);
     assert!(sink.compactions.lock().unwrap().is_empty());
+}
+
+/// The executor took the request but the app has no session manager: the
+/// request fails with a named error instead of falling through to a WebView
+/// listener that may not exist. The lookup is passed in because a mock handle
+/// cannot reach app state (see the module docs).
+fn error_code(error: &AgentRuntimeError) -> Option<&str> {
+    error
+        .details
+        .as_ref()
+        .and_then(|details| details.error_code.as_deref())
+}
+
+#[tokio::test]
+async fn a_completion_without_a_session_manager_fails_with_a_named_error() {
+    let _guard = TEST_GUARD.lock().await;
+    let provider = mock_provider(vec![text_reply("unused")]).await;
+    let _config = configure(config(provider.endpoint.clone()));
+    let user = message("s", "u1", "user", "hello", 1_000);
+
+    let error = dispatch_completion(app(), &request("s", "resp-1", PROVIDER, vec![user]), || {
+        None
+    })
+    .expect_err("no session manager means nothing can receive the result");
+
+    assert_eq!(error_code(&error), Some("RUST_EXECUTOR_NO_SESSION_MANAGER"));
+    assert!(
+        provider.requests.lock().unwrap().is_empty(),
+        "no provider call may be made for a result nobody can receive"
+    );
+}
+
+#[tokio::test]
+async fn a_compaction_without_a_session_manager_fails_with_a_named_error() {
+    let _guard = TEST_GUARD.lock().await;
+    let provider = mock_provider(vec![text_reply("unused")]).await;
+    let _config = configure(config(provider.endpoint.clone()));
+
+    let error = dispatch_compaction(app(), &compact_request("s"), || None)
+        .expect_err("no session manager means nothing can receive the summary");
+
+    assert_eq!(error_code(&error), Some("RUST_EXECUTOR_NO_SESSION_MANAGER"));
+    assert!(provider.requests.lock().unwrap().is_empty());
 }
