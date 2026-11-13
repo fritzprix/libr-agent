@@ -97,7 +97,9 @@ pub fn emit_compact_finished(
 }
 
 pub fn emit_compact_request(app_handle: &AppHandle, event: CompactRequest) -> Result<(), String> {
-    if crate::agent::llm::rust_executor::try_dispatch_compaction(app_handle, &event) {
+    if crate::agent::llm::rust_executor::try_dispatch_compaction(app_handle, &event)
+        .map_err(|e| e.display_message)?
+    {
         return Ok(());
     }
     app_handle

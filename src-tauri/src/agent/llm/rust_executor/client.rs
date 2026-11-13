@@ -4,16 +4,17 @@ use super::stream::{ChatStreamAccumulator, CompletedChat, LineBuffer};
 use crate::agent::llm::types::{AgentRuntimeError, AgentRuntimeErrorType};
 use futures::StreamExt;
 use serde_json::Value;
+use std::sync::LazyLock;
 use std::time::Duration;
 
 /// Where and how to reach the provider.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct Endpoint {
+pub struct Endpoint {
     /// Base URL up to and including the API version, for example
     /// `https://api.openai.com/v1` or `http://127.0.0.1:8000/v1`.
-    pub(super) base_url: String,
+    pub base_url: String,
     /// Sent as a bearer token when present. Local servers often need none.
-    pub(super) api_key: Option<String>,
+    pub api_key: Option<String>,
 }
 
 impl Endpoint {
@@ -28,11 +29,20 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 /// How much of an error body is kept for the user-facing message.
 const ERROR_BODY_CHARS: usize = 600;
 
-fn error(kind: AgentRuntimeErrorType, code: &str, message: String) -> AgentRuntimeError {
-    AgentRuntimeError::new(kind, message).with_code(code)
+fn error(kind: AgentRuntimeErrorType, code: &str, message: String) -> Box<AgentRuntimeError> {
+    Box::new(AgentRuntimeError::new(kind, message).with_code(code))
 }
 
-fn http_status_error(status: reqwest::StatusCode, body: &str) -> AgentRuntimeError {
+/// One client for every call, so connections to a provider are reused.
+static HTTP_CLIENT: LazyLock<Result<reqwest::Client, String>> = LazyLock::new(|| {
+    reqwest::Client::builder()
+        .connect_timeout(CONNECT_TIMEOUT)
+        .read_timeout(READ_IDLE_TIMEOUT)
+        .build()
+        .map_err(|e| e.to_string())
+});
+
+fn http_status_error(status: reqwest::StatusCode, body: &str) -> Box<AgentRuntimeError> {
     let snippet: String = body.chars().take(ERROR_BODY_CHARS).collect();
     let message = format!(
         "LLM provider returned HTTP {}: {}",
@@ -59,22 +69,17 @@ fn http_status_error(status: reqwest::StatusCode, body: &str) -> AgentRuntimeErr
 }
 
 /// POST `body` and read the stream to its end.
-#[allow(clippy::result_large_err)]
 pub(super) async fn complete(
     endpoint: &Endpoint,
     body: &Value,
-) -> Result<CompletedChat, AgentRuntimeError> {
-    let client = reqwest::Client::builder()
-        .connect_timeout(CONNECT_TIMEOUT)
-        .read_timeout(READ_IDLE_TIMEOUT)
-        .build()
-        .map_err(|e| {
-            error(
-                AgentRuntimeErrorType::NetworkError,
-                "RUST_EXECUTOR_CLIENT",
-                format!("Failed to build the HTTP client: {e}"),
-            )
-        })?;
+) -> Result<CompletedChat, Box<AgentRuntimeError>> {
+    let client = HTTP_CLIENT.as_ref().map_err(|e| {
+        error(
+            AgentRuntimeErrorType::NetworkError,
+            "RUST_EXECUTOR_CLIENT",
+            format!("Failed to build the HTTP client: {e}"),
+        )
+    })?;
 
     let mut request = client
         .post(endpoint.chat_completions_url())

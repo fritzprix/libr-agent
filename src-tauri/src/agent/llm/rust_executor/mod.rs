@@ -7,7 +7,14 @@
 //! window. Every other provider still goes to the frontend.
 //!
 //! Enable with `LIBRAGENT_LLM_EXECUTOR=rust`. Existing GUI sessions are not
-//! affected unless that variable is set.
+//! affected unless that variable is set. [`configure`] replaces the variable,
+//! the endpoint lookup, the WebView check and the delivery target for the life
+//! of its guard, so a test can run a whole turn without touching the process
+//! environment or needing a window.
+//!
+//! With the executor on, a request that Rust cannot answer (any other provider)
+//! still goes to the WebView when there is one, and fails fast when there is
+//! none, because nothing would ever answer it.
 //!
 //! Covered: the built-in `openai` provider and custom OpenAI-compatible
 //! providers (`custom:<id>`, for example vLLM or LM Studio), streaming text,
@@ -28,11 +35,13 @@ use crate::agent::AgentSessionManager;
 use crate::mcp::types::MCPContent;
 use crate::models::chat::Message;
 use crate::repositories::settings_repository::SettingsRepository;
-use client::Endpoint;
+pub use client::Endpoint;
 use dashmap::DashMap;
 use serde_json::Value;
-use std::sync::LazyLock;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, LazyLock, RwLock};
 use tauri::{AppHandle, Manager};
+use tokio::sync::oneshot;
 
 /// Process-wide switch. Value `rust` turns the executor on.
 pub const EXECUTOR_ENV: &str = "LIBRAGENT_LLM_EXECUTOR";
@@ -40,16 +49,129 @@ const OPENAI_PROVIDER: &str = "openai";
 const CUSTOM_PROVIDER_PREFIX: &str = "custom:";
 const OPENAI_DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 
+/// A call that is running for a session. `generation` tells a finished call
+/// apart from the one that replaced it.
+struct InFlight {
+    generation: u64,
+    handle: tokio::task::AbortHandle,
+}
+
 /// In-flight calls by session, so a cancel can stop the HTTP request.
-static IN_FLIGHT: LazyLock<DashMap<String, tokio::task::AbortHandle>> = LazyLock::new(DashMap::new);
+static IN_FLIGHT: LazyLock<DashMap<String, InFlight>> = LazyLock::new(DashMap::new);
+static NEXT_GENERATION: AtomicU64 = AtomicU64::new(1);
 
 fn env_selects_rust(value: Option<&str>) -> bool {
     value.is_some_and(|value| value.trim().eq_ignore_ascii_case("rust"))
 }
 
+/// Settings of the executor. Production uses [`ExecutorConfig::from_env`].
+#[derive(Clone)]
+pub struct ExecutorConfig {
+    /// Answer OpenAI-compatible requests in Rust.
+    pub enabled: bool,
+    /// Use this endpoint instead of reading Settings. For a fixed server, such
+    /// as a loopback mock in a test.
+    pub endpoint_override: Option<Endpoint>,
+    /// Treat the app as having no WebView, whatever its windows say.
+    pub assume_no_webview: bool,
+    /// Deliver results here instead of to the session manager in app state.
+    pub sink_override: Option<Arc<dyn ResponseSink>>,
+}
+
+impl ExecutorConfig {
+    pub fn from_env() -> Self {
+        Self {
+            enabled: env_selects_rust(std::env::var(EXECUTOR_ENV).ok().as_deref()),
+            endpoint_override: None,
+            assume_no_webview: false,
+            sink_override: None,
+        }
+    }
+}
+
+static CONFIG_OVERRIDE: RwLock<Option<ExecutorConfig>> = RwLock::new(None);
+
+/// Keeps a [`configure`] setting in force; dropping it restores the default.
+pub struct ConfigGuard(());
+
+impl Drop for ConfigGuard {
+    fn drop(&mut self) {
+        *CONFIG_OVERRIDE
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+    }
+}
+
+/// Replace the environment-derived config until the guard is dropped.
+#[must_use = "the setting ends when the guard is dropped"]
+pub fn configure(config: ExecutorConfig) -> ConfigGuard {
+    *CONFIG_OVERRIDE
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(config);
+    ConfigGuard(())
+}
+
+fn current_config() -> ExecutorConfig {
+    CONFIG_OVERRIDE
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone()
+        .unwrap_or_else(ExecutorConfig::from_env)
+}
+
 /// True when this process should answer LLM requests in Rust.
 pub fn is_enabled() -> bool {
-    env_selects_rust(std::env::var(EXECUTOR_ENV).ok().as_deref())
+    current_config().enabled
+}
+
+fn has_webview(app_handle: &AppHandle, config: &ExecutorConfig) -> bool {
+    !config.assume_no_webview && !app_handle.webview_windows().is_empty()
+}
+
+/// True when something can answer an LLM request without a WebView.
+pub fn runs_without_webview(app_handle: &AppHandle) -> bool {
+    let config = current_config();
+    config.enabled && !has_webview(app_handle, &config)
+}
+
+/// Who answers an LLM request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Route {
+    /// This executor.
+    Rust,
+    /// The WebView, as before.
+    Frontend,
+    /// Nobody: the executor cannot take it and there is no WebView.
+    Unavailable,
+}
+
+fn route(enabled: bool, has_webview: bool, provider: &str) -> Route {
+    if !enabled {
+        Route::Frontend
+    } else if is_openai_compatible(provider) {
+        Route::Rust
+    } else if has_webview {
+        Route::Frontend
+    } else {
+        Route::Unavailable
+    }
+}
+
+fn route_for(app_handle: &AppHandle, provider: &str) -> (Route, ExecutorConfig) {
+    let config = current_config();
+    let route = route(config.enabled, has_webview(app_handle, &config), provider);
+    (route, config)
+}
+
+fn unavailable(provider: &str) -> AgentRuntimeError {
+    AgentRuntimeError::new(
+        AgentRuntimeErrorType::ValidationError,
+        format!(
+            "Provider '{provider}' needs the app window to run, and none is open. \
+             Without a window only OpenAI-compatible providers can run."
+        ),
+    )
+    .with_code("RUST_EXECUTOR_NO_WEBVIEW")
 }
 
 fn is_openai_compatible(provider: &str) -> bool {
@@ -105,8 +227,13 @@ async fn read_setting(key: &str) -> Option<Value> {
     serde_json::from_str(&row.value).ok()
 }
 
-#[allow(clippy::result_large_err)]
-async fn endpoint_for(provider: &str) -> Result<Endpoint, AgentRuntimeError> {
+async fn endpoint_for(
+    provider: &str,
+    config: &ExecutorConfig,
+) -> Result<Endpoint, Box<AgentRuntimeError>> {
+    if let Some(endpoint) = &config.endpoint_override {
+        return Ok(endpoint.clone());
+    }
     let service_configs = read_setting("serviceConfigs").await;
     let custom_providers = read_setting("customProviders").await;
     resolve_endpoint(
@@ -115,8 +242,10 @@ async fn endpoint_for(provider: &str) -> Result<Endpoint, AgentRuntimeError> {
         custom_providers.as_ref(),
     )
     .map_err(|message| {
-        AgentRuntimeError::new(AgentRuntimeErrorType::ValidationError, message)
-            .with_code("RUST_EXECUTOR_NO_ENDPOINT")
+        Box::new(
+            AgentRuntimeError::new(AgentRuntimeErrorType::ValidationError, message)
+                .with_code("RUST_EXECUTOR_NO_ENDPOINT"),
+        )
     })
 }
 
@@ -155,9 +284,11 @@ fn assistant_message(request: &CompletionRequest, chat: stream::CompletedChat) -
     }
 }
 
-#[allow(clippy::result_large_err)]
-async fn run_completion(request: &CompletionRequest) -> Result<Message, AgentRuntimeError> {
-    let endpoint = endpoint_for(&request.provider).await?;
+async fn run_completion(
+    request: &CompletionRequest,
+    config: &ExecutorConfig,
+) -> Result<Message, Box<AgentRuntimeError>> {
+    let endpoint = endpoint_for(&request.provider, config).await?;
     let body = convert::chat_request_body(
         &request.model,
         request.system_prompt.as_deref(),
@@ -169,56 +300,148 @@ async fn run_completion(request: &CompletionRequest) -> Result<Message, AgentRun
     Ok(assistant_message(request, chat))
 }
 
-fn manager_for_task(app_handle: &AppHandle) -> Option<AgentSessionManager> {
+/// Where an executor result is delivered: the session manager in the app.
+///
+/// A trait so a test can deliver through the real session handlers without a
+/// full Tauri runtime, which cannot be cloned for a mock window in tests.
+#[async_trait::async_trait]
+pub trait ResponseSink: Send + Sync {
+    async fn llm_response(&self, session_id: String, message: Message) -> Result<(), String>;
+    async fn llm_error(&self, session_id: String, error: AgentRuntimeError) -> Result<(), String>;
+    async fn compact_response(
+        &self,
+        session_id: &str,
+        request: &CompactRequest,
+        summary: String,
+        meta: CompactStreamMeta,
+    ) -> Result<(), String>;
+    async fn compact_error(
+        &self,
+        session_id: String,
+        error: AgentRuntimeError,
+    ) -> Result<(), String>;
+}
+
+#[async_trait::async_trait]
+impl ResponseSink for AgentSessionManager {
+    async fn llm_response(&self, session_id: String, message: Message) -> Result<(), String> {
+        self.handle_llm_response(session_id, message).await
+    }
+
+    async fn llm_error(&self, session_id: String, error: AgentRuntimeError) -> Result<(), String> {
+        self.handle_llm_error(session_id, error).await
+    }
+
+    async fn compact_response(
+        &self,
+        session_id: &str,
+        request: &CompactRequest,
+        summary: String,
+        meta: CompactStreamMeta,
+    ) -> Result<(), String> {
+        self.handle_compact_response(
+            session_id,
+            request.to_id.clone(),
+            request.compacted_delta_count,
+            summary,
+            Some(meta),
+        )
+        .await
+        .map(|_| ())
+    }
+
+    async fn compact_error(
+        &self,
+        session_id: String,
+        error: AgentRuntimeError,
+    ) -> Result<(), String> {
+        self.handle_compact_error(session_id, error, None).await
+    }
+}
+
+fn sink_for_task(app_handle: &AppHandle, config: &ExecutorConfig) -> Option<Arc<dyn ResponseSink>> {
+    if let Some(sink) = &config.sink_override {
+        return Some(sink.clone());
+    }
     app_handle
         .try_state::<AgentSessionManager>()
-        .map(|manager| manager.inner().clone_for_task())
+        .map(|manager| Arc::new(manager.inner().clone_for_task()) as Arc<dyn ResponseSink>)
 }
 
 /// Stop this session's in-flight call, if any. Called for every
 /// `llm:completion-cancel`, so a workflow cancel or a recovery retry does not
 /// leave an HTTP request running.
 pub fn cancel(session_id: &str) {
-    if let Some((_, handle)) = IN_FLIGHT.remove(session_id) {
-        handle.abort();
+    if let Some((_, call)) = IN_FLIGHT.remove(session_id) {
+        call.handle.abort();
         log::info!("Rust LLM executor: cancelled the call for session {session_id}");
     }
 }
 
-fn track(session_id: &str, handle: tokio::task::AbortHandle) {
-    if let Some(previous) = IN_FLIGHT.insert(session_id.to_string(), handle) {
-        previous.abort();
+/// Run `work` as the one in-flight call of `session_id`.
+///
+/// The call is registered before `work` starts, so it can neither finish ahead
+/// of its own entry nor leave a stale one. A call this replaces is aborted: the
+/// new request supersedes it and settles the session. Each call removes only
+/// its own entry when it ends.
+fn spawn_tracked<F>(session_id: &str, work: F)
+where
+    F: std::future::Future<Output = ()> + Send + 'static,
+{
+    let generation = NEXT_GENERATION.fetch_add(1, Ordering::Relaxed);
+    let (registered, wait_registered) = oneshot::channel::<()>();
+    let key = session_id.to_string();
+    let task = tokio::spawn({
+        let key = key.clone();
+        async move {
+            // Closed channel means the entry was dropped; run anyway.
+            let _ = wait_registered.await;
+            work.await;
+            IN_FLIGHT.remove_if(&key, |_, call| call.generation == generation);
+        }
+    });
+    let call = InFlight {
+        generation,
+        handle: task.abort_handle(),
+    };
+    if let Some(previous) = IN_FLIGHT.insert(key, call) {
+        previous.handle.abort();
+        log::warn!(
+            "Rust LLM executor: a new call for session {session_id} replaced one still running"
+        );
     }
+    let _ = registered.send(());
 }
 
 /// Answer `request` in Rust when the executor is enabled and the provider is
-/// OpenAI-compatible. Returns `false` when the frontend must handle it.
-pub fn try_dispatch_completion(app_handle: &AppHandle, request: &CompletionRequest) -> bool {
-    if !is_enabled() || !is_openai_compatible(&request.provider) {
-        return false;
+/// OpenAI-compatible. `Ok(false)` means the frontend must handle it; an error
+/// means nothing can.
+pub fn try_dispatch_completion(
+    app_handle: &AppHandle,
+    request: &CompletionRequest,
+) -> Result<bool, Box<AgentRuntimeError>> {
+    let (route, config) = route_for(app_handle, &request.provider);
+    match route {
+        Route::Frontend => return Ok(false),
+        Route::Unavailable => return Err(Box::new(unavailable(&request.provider))),
+        Route::Rust => {}
     }
-    let Some(manager) = manager_for_task(app_handle) else {
-        return false;
+    let Some(sink) = sink_for_task(app_handle, &config) else {
+        return Ok(false);
     };
 
     let request = request.clone();
     let session_id = request.session_id.clone();
-    let task = tokio::spawn(async move {
+    spawn_tracked(&session_id, async move {
         let session_id = request.session_id.clone();
-        let outcome = run_completion(&request).await;
-        IN_FLIGHT.remove(&session_id);
-        let delivered = match outcome {
-            Ok(message) => {
-                manager
-                    .handle_llm_response(session_id.clone(), message)
-                    .await
-            }
+        let delivered = match run_completion(&request, &config).await {
+            Ok(message) => sink.llm_response(session_id.clone(), message).await,
             Err(error) => {
                 log::warn!(
                     "Rust LLM executor: completion failed for session {session_id}: {}",
                     error.display_message
                 );
-                manager.handle_llm_error(session_id.clone(), error).await
+                sink.llm_error(session_id.clone(), *error).await
             }
         };
         if let Err(error) = delivered {
@@ -227,19 +450,18 @@ pub fn try_dispatch_completion(app_handle: &AppHandle, request: &CompletionReque
             );
         }
     });
-    track(&session_id, task.abort_handle());
     log::info!("Rust LLM executor: running completion for session {session_id}");
-    true
+    Ok(true)
 }
 
-#[allow(clippy::result_large_err)]
 async fn run_compaction(
     request: &CompactRequest,
     model: &str,
     provider: &str,
     system_prompt: Option<&str>,
-) -> Result<(String, CompactStreamMeta), AgentRuntimeError> {
-    let endpoint = endpoint_for(provider).await?;
+    config: &ExecutorConfig,
+) -> Result<(String, CompactStreamMeta), Box<AgentRuntimeError>> {
+    let endpoint = endpoint_for(provider, config).await?;
     // No tools: the summary must be plain text.
     let body = convert::chat_request_body(model, system_prompt, &request.messages, &[], None);
     let chat = client::complete(&endpoint, &body).await?;
@@ -259,19 +481,28 @@ async fn run_compaction(
 }
 
 /// Compaction counterpart of [`try_dispatch_completion`].
-pub fn try_dispatch_compaction(app_handle: &AppHandle, request: &CompactRequest) -> bool {
-    if !is_enabled() {
-        return false;
+pub fn try_dispatch_compaction(
+    app_handle: &AppHandle,
+    request: &CompactRequest,
+) -> Result<bool, Box<AgentRuntimeError>> {
+    // Without the parent request there is no model to call, so no provider to
+    // route by: the frontend gets it, as before.
+    let provider = request
+        .parent_request
+        .as_ref()
+        .map(|parent| parent.provider.as_str())
+        .unwrap_or_default();
+    let (route, config) = route_for(app_handle, provider);
+    match route {
+        Route::Frontend => return Ok(false),
+        Route::Unavailable => return Err(Box::new(unavailable(provider))),
+        Route::Rust => {}
     }
-    // Without the parent request there is no model to call.
     let Some(parent) = request.parent_request.as_ref() else {
-        return false;
+        return Ok(false);
     };
-    if !is_openai_compatible(&parent.provider) {
-        return false;
-    }
-    let Some(manager) = manager_for_task(app_handle) else {
-        return false;
+    let Some(sink) = sink_for_task(app_handle, &config) else {
+        return Ok(false);
     };
 
     let request = request.clone();
@@ -279,29 +510,27 @@ pub fn try_dispatch_compaction(app_handle: &AppHandle, request: &CompactRequest)
     let provider = parent.provider.clone();
     let system_prompt = parent.system_prompt.clone();
     let session_id = request.session_id.clone();
-    let task = tokio::spawn(async move {
+    spawn_tracked(&session_id, async move {
         let session_id = request.session_id.clone();
-        let outcome = run_compaction(&request, &model, &provider, system_prompt.as_deref()).await;
-        IN_FLIGHT.remove(&session_id);
+        let outcome = run_compaction(
+            &request,
+            &model,
+            &provider,
+            system_prompt.as_deref(),
+            &config,
+        )
+        .await;
         let delivered = match outcome {
-            Ok((summary, meta)) => manager
-                .handle_compact_response(
-                    &session_id,
-                    request.to_id.clone(),
-                    request.compacted_delta_count,
-                    summary,
-                    Some(meta),
-                )
-                .await
-                .map(|_| ()),
+            Ok((summary, meta)) => {
+                sink.compact_response(&session_id, &request, summary, meta)
+                    .await
+            }
             Err(error) => {
                 log::warn!(
                     "Rust LLM executor: compaction failed for session {session_id}: {}",
                     error.display_message
                 );
-                manager
-                    .handle_compact_error(session_id.clone(), error, None)
-                    .await
+                sink.compact_error(session_id.clone(), *error).await
             }
         };
         if let Err(error) = delivered {
@@ -310,9 +539,8 @@ pub fn try_dispatch_compaction(app_handle: &AppHandle, request: &CompactRequest)
             );
         }
     });
-    track(&session_id, task.abort_handle());
     log::info!("Rust LLM executor: running compaction for session {session_id}");
-    true
+    Ok(true)
 }
 
 #[cfg(test)]
@@ -411,5 +639,73 @@ mod tests {
         assert!(message.tool_calls.is_none());
         assert!(message.thinking.is_none());
         assert_eq!(message.prompt_tokens, Some(7));
+    }
+
+    #[test]
+    fn routing_keeps_the_frontend_unless_rust_can_answer() {
+        // Off: everything goes to the WebView, with or without one.
+        assert_eq!(route(false, true, "openai"), Route::Frontend);
+        assert_eq!(route(false, false, "anthropic"), Route::Frontend);
+        // On: OpenAI-compatible providers are answered in Rust either way.
+        assert_eq!(route(true, true, "openai"), Route::Rust);
+        assert_eq!(route(true, false, "custom:lmstudio"), Route::Rust);
+        // On: any other provider needs the WebView, and fails fast without it.
+        assert_eq!(route(true, true, "anthropic"), Route::Frontend);
+        assert_eq!(route(true, false, "anthropic"), Route::Unavailable);
+        assert_eq!(route(true, false, ""), Route::Unavailable);
+    }
+
+    #[test]
+    fn an_unavailable_route_says_which_provider_cannot_run() {
+        let error = unavailable("gemini");
+        let code = error
+            .details
+            .as_ref()
+            .and_then(|details| details.error_code.as_deref());
+        assert_eq!(code, Some("RUST_EXECUTOR_NO_WEBVIEW"));
+        assert!(error.display_message.contains("gemini"));
+    }
+
+    #[tokio::test]
+    async fn a_call_that_ends_at_once_leaves_no_entry_behind() {
+        let (done, finished) = oneshot::channel::<()>();
+        spawn_tracked("early-finish", async move {
+            let _ = done.send(());
+        });
+        finished.await.unwrap();
+        // The entry is removed right after the work, on the task itself.
+        for _ in 0..100 {
+            if !IN_FLIGHT.contains_key("early-finish") {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+        panic!("a finished call left its in-flight entry");
+    }
+
+    #[tokio::test]
+    async fn a_replacing_call_aborts_the_old_one_and_keeps_its_own_entry() {
+        let (old_started, old_running) = oneshot::channel::<()>();
+        let (old_dropped, old_was_aborted) = oneshot::channel::<()>();
+        spawn_tracked("replaced", async move {
+            // Dropped when the task is aborted, which signals the test.
+            let _signal = old_dropped;
+            let _ = old_started.send(());
+            std::future::pending::<()>().await;
+        });
+        old_running.await.unwrap();
+
+        let (release, wait_release) = oneshot::channel::<()>();
+        spawn_tracked("replaced", async move {
+            let _ = wait_release.await;
+        });
+
+        // The old call was aborted: its sender is dropped without a send.
+        assert!(old_was_aborted.await.is_err());
+        // The old call's end did not remove the new call's entry.
+        assert!(IN_FLIGHT.contains_key("replaced"));
+        let _ = release.send(());
+        cancel("replaced");
+        assert!(!IN_FLIGHT.contains_key("replaced"));
     }
 }
