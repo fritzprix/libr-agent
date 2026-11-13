@@ -8,6 +8,7 @@ pub mod mcp_handler;
 pub mod pairing;
 pub mod readiness;
 pub mod routes;
+pub mod shared_backend;
 pub mod wake;
 pub mod wake_listener;
 

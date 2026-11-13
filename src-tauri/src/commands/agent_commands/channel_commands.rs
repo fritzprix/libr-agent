@@ -12,6 +12,26 @@ pub async fn agent_inject_channel_message(
     manager: State<'_, AgentSessionManager>,
     request: InjectChannelMessageRequest,
 ) -> Result<AgentResponse, String> {
+    if let Some(client) = crate::state::get_shared_backend_client() {
+        let data = client
+            .inject_channel_message(
+                &request.session_id,
+                &serde_json::json!({
+                    "serverName": request.server_name,
+                    "content": request.content,
+                    "meta": request.meta,
+                }),
+            )
+            .await?;
+        return Ok(AgentResponse {
+            success: true,
+            message: format!(
+                "Injected channel message for session: {} from {}",
+                request.session_id, request.server_name
+            ),
+            data: Some(data),
+        });
+    }
     let (message_id, triggered) = manager
         .inject_channel_notification(
             request.session_id.clone(),
@@ -45,6 +65,7 @@ pub async fn agent_inject_channel_message_auto(
     manager: State<'_, AgentSessionManager>,
     request: InjectChannelMessageAutoRequest,
 ) -> Result<AgentResponse, String> {
+    super::shared_proxy::reject_if_attached("agent_inject_channel_message_auto")?;
     let (target, message_id, triggered) = manager
         .inject_channel_notification_auto(
             request.server_name.clone(),
@@ -78,6 +99,22 @@ pub async fn agent_respond_channel_permission(
     manager: State<'_, AgentSessionManager>,
     request: RespondChannelPermissionRequest,
 ) -> Result<AgentResponse, String> {
+    if let Some(client) = crate::state::get_shared_backend_client() {
+        let data = client
+            .respond_permission(
+                &request.session_id,
+                &serde_json::json!({
+                    "requestId": request.request_id,
+                    "behavior": request.behavior,
+                }),
+            )
+            .await?;
+        return Ok(AgentResponse {
+            success: true,
+            message: "Channel permission responded".to_string(),
+            data: Some(data),
+        });
+    }
     let verdict = ChannelPermissionVerdict {
         request_id: request.request_id.clone(),
         behavior: request.behavior.clone(),

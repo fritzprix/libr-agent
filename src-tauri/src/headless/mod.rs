@@ -753,15 +753,47 @@ pub fn run_liblet_main() -> i32 {
         Ok(LibletCommand::Headless(headless_args)) => {
             run_headless_with_hidden_webview(headless_args)
         }
-        Ok(LibletCommand::Tui(_tui_args)) => {
+        Ok(LibletCommand::Tui(_tui_args)) => run_liblet_tui_entry(),
+        Err(usage_err) => {
+            eprintln!("{usage_err}");
+            usage_err.exit_code()
+        }
+    }
+}
+
+/// Shared-backend discovery and readiness entry point for `liblet` TUI mode (#2701).
+///
+/// Headless (`-p`/`--prompt`) never calls this function: it stays ephemeral and
+/// isolated. TUI mode resolves the active profile's database, checks for a live
+/// shared backend via [`crate::server::backend_descriptor`], and waits for
+/// `/api/health` `ready: true` before proceeding.
+fn run_liblet_tui_entry() -> i32 {
+    let profile = crate::profile::resolve_profile();
+    let db_path = crate::profile::db_path(profile);
+    if let Some(parent_dir) = db_path.parent() {
+        let _ = std::fs::create_dir_all(parent_dir);
+    }
+    crate::server::backend_descriptor::init(&db_path);
+
+    match tauri::async_runtime::block_on(crate::server::shared_backend::attach_to_live_backend(
+        Duration::from_secs(30),
+    )) {
+        Ok(Some((descriptor, _client))) => {
+            eprintln!(
+                "Connected to shared backend pid {} on port {}; interactive TUI (#2702) is not wired yet.",
+                descriptor.pid, descriptor.port
+            );
+            exit_codes::ERROR
+        }
+        Ok(None) => {
             eprintln!(
                 "error: interactive TUI mode (#2702) is not available yet; pass -p / --prompt <text> for headless execution."
             );
             exit_codes::ERROR
         }
-        Err(usage_err) => {
-            eprintln!("{usage_err}");
-            usage_err.exit_code()
+        Err(err) => {
+            eprintln!("error: failed to connect to shared backend: {err}");
+            exit_codes::ERROR
         }
     }
 }

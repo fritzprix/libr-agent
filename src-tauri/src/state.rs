@@ -92,6 +92,19 @@ static SKILLS_CATALOG_REVISION: OnceLock<AtomicU64> = OnceLock::new();
 /// Coordinates background startup preparation of managed skills directories.
 static MANAGED_SKILLS_SYNC_STATE: OnceLock<ManagedSkillsSyncState> = OnceLock::new();
 static STARTUP_TIMER: OnceLock<Instant> = OnceLock::new();
+static SHARED_BACKEND_CLIENT: OnceLock<crate::server::shared_backend::SharedBackendClient> =
+    OnceLock::new();
+
+pub fn init_shared_backend_client(client: crate::server::shared_backend::SharedBackendClient) {
+    if SHARED_BACKEND_CLIENT.set(client).is_err() {
+        log::warn!("SharedBackendClient already initialized");
+    }
+}
+
+pub fn get_shared_backend_client(
+) -> Option<&'static crate::server::shared_backend::SharedBackendClient> {
+    SHARED_BACKEND_CLIENT.get()
+}
 
 struct ManagedSkillsSyncState {
     ready: AtomicBool,
