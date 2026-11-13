@@ -111,8 +111,7 @@ fn glob_pattern_matches(pattern: &glob::Pattern, path: &Path, file_name: Option<
     }
     let path_str = path.to_string_lossy();
     #[cfg(windows)]
-    let windows_match =
-        path_str.contains('\\') && pattern.matches(&path_str.replace('\\', "/"));
+    let windows_match = path_str.contains('\\') && pattern.matches(&path_str.replace('\\', "/"));
     #[cfg(not(windows))]
     let windows_match = false;
     pattern.matches(&path_str) || windows_match
