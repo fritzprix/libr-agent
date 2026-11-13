@@ -323,7 +323,7 @@ pub async fn effective_command_cwd(session_id: &str, host_workspace: &Path) -> S
 /// Resolve optional `cwd` for host-isolated `runShell` / `runPowerShell`.
 ///
 /// Relative paths are anchored at the session workspace. Absolute paths must stay
-/// inside that workspace. Returns `None` when `cwd` is omitted/blank.
+/// inside that workspace or one of its linked git worktrees. Returns `None` when `cwd` is omitted/blank.
 pub fn resolve_isolated_shell_cwd(
     workspace: &Path,
     cwd: Option<&str>,
@@ -357,7 +357,11 @@ pub fn resolve_isolated_shell_cwd(
         ));
     }
 
-    if !canonical_cwd.starts_with(&canonical_workspace) {
+    let within_workspace = canonical_cwd.starts_with(&canonical_workspace)
+        || crate::mcp::builtin::utils::linked_worktree_roots(&canonical_workspace)
+            .iter()
+            .any(|root| canonical_cwd.starts_with(root));
+    if !within_workspace {
         return Err(format!(
             "cwd '{}' escapes the session workspace '{}'",
             canonical_cwd.display(),
@@ -597,6 +601,20 @@ mod tests {
             err.contains("escapes the session workspace"),
             "unexpected err: {err}"
         );
+    }
+
+    #[test]
+    fn test_resolve_isolated_shell_cwd_allows_linked_worktree() {
+        use crate::mcp::builtin::utils::linked_worktrees::test_support::{add_worktree, main_repo};
+
+        let parent = tempdir().expect("tempdir");
+        let repo = main_repo(parent.path());
+        let worktree = add_worktree(&repo, "worker");
+
+        let resolved = resolve_isolated_shell_cwd(&repo, Some(worktree.to_str().expect("utf8")))
+            .expect("linked worktree cwd allowed")
+            .expect("some cwd");
+        assert_eq!(resolved, std::fs::canonicalize(&worktree).unwrap());
     }
 
     #[test]

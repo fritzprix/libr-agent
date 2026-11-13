@@ -21,6 +21,16 @@ pub enum SecurityError {
     InvalidPath(String),
 }
 
+/// True when `user_path` still climbs out of its start after lexical normalization.
+///
+/// `a/../b` resolves to `b` and is fine; `../b` or `/x/../../b` is not.
+pub fn has_parent_traversal(user_path: &str) -> bool {
+    PathBuf::from(normalize_user_path(user_path))
+        .clean()
+        .components()
+        .any(|component| matches!(component, Component::ParentDir))
+}
+
 /// `path` with its longest existing prefix canonicalized, so symlinks in existing
 /// parents are resolved for a target that does not exist yet.
 fn canonicalize_existing_prefix(path: &Path) -> PathBuf {
@@ -172,10 +182,7 @@ impl SecurityValidator {
         };
 
         // Block parent-directory traversal before any filesystem access.
-        if Path::new(&prepared_path)
-            .components()
-            .any(|component| matches!(component, Component::ParentDir))
-        {
+        if has_parent_traversal(user_path) {
             return Err(SecurityError::PathTraversal(format!(
                 "Parent directory traversal not allowed: '{user_path}'"
             )));
@@ -397,5 +404,18 @@ impl SecurityValidator {
     pub fn extract_filename(path: &str) -> Option<String> {
         let normalized = Self::normalize_path_separators(path);
         normalized.split('/').next_back().map(|s| s.to_string())
+    }
+}
+
+#[cfg(test)]
+mod parent_traversal_tests {
+    use super::has_parent_traversal;
+
+    #[test]
+    fn normalizes_before_rejecting_parent_segments() {
+        assert!(!has_parent_traversal("src/../lib/a.rs"));
+        assert!(!has_parent_traversal("/repo/../repo.worktrees/w/a.rs"));
+        assert!(has_parent_traversal("../a.rs"));
+        assert!(has_parent_traversal("src/../../a.rs"));
     }
 }

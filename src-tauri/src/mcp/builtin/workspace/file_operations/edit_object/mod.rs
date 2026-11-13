@@ -48,7 +48,7 @@ impl WorkspaceServer {
             None => return Ok(missing_param_error("path", ToolGroup::Workspace)),
         };
 
-        if path_str.contains("..") {
+        if crate::mcp::builtin::utils::has_parent_traversal(path_str) {
             return Ok(guided_error(
                 ErrorCategory::InvalidInput,
                 "Path traversal patterns (..) are not allowed",
