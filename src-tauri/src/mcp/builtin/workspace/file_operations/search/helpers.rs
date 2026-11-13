@@ -103,22 +103,16 @@ pub(super) fn matches_glob(matcher: &GlobMatcher, path: &Path, file_name: Option
         .any(|pattern| glob_pattern_matches(pattern, path, file_name))
 }
 
-// The trailing `false` is required on Windows builds where the
-// normalized-path guard below is compiled in; clippy only sees the
-// non-Windows shape where it looks redundant.
-#[allow(clippy::needless_bool)]
 fn glob_pattern_matches(pattern: &glob::Pattern, path: &Path, file_name: Option<&str>) -> bool {
-    if let Some(name) = file_name {
-        if pattern.matches(name) {
-            return true;
-        }
+    if file_name.is_some_and(|name| pattern.matches(name)) {
+        return true;
     }
     let path_str = path.to_string_lossy();
-    #[cfg(windows)]
-    let windows_match = path_str.contains('\\') && pattern.matches(&path_str.replace('\\', "/"));
-    #[cfg(not(windows))]
-    let windows_match = false;
-    pattern.matches(&path_str) || windows_match
+    // On Windows a pattern is written with `/`, so try the path with `\` swapped.
+    pattern.matches(&path_str)
+        || (cfg!(windows)
+            && path_str.contains('\\')
+            && pattern.matches(&path_str.replace('\\', "/")))
 }
 
 fn expand_brace_globs(pattern: &str) -> Result<Vec<String>, String> {

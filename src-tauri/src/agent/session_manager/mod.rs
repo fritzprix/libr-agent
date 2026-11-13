@@ -119,6 +119,16 @@ impl AgentSessionManager {
         }
     }
 
+    /// Run on an existing session map instead of the empty one, so another
+    /// owner of that map (for example a headless run) sees the same live state.
+    pub fn with_active_sessions(
+        mut self,
+        active_sessions: Arc<RwLock<HashMap<String, AgentSession>>>,
+    ) -> Self {
+        self.active_sessions = active_sessions;
+        self
+    }
+
     /// Access the injected repository bundle.
     pub fn repositories(&self) -> &AgentRepositories {
         &self.repositories

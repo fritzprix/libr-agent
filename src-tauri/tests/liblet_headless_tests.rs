@@ -720,3 +720,43 @@ async fn snapshot_scrubs_session_rows_from_raw_pages_not_just_rows() {
 
     drop(runtime);
 }
+
+/// The hidden-WebView path builds its agent manager from the runtime, so the
+/// manager and the driver read the same session repository and session map
+/// (there is no second copy to keep in sync).
+#[tokio::test]
+async fn agent_state_for_the_hidden_webview_path_is_the_runtimes_own() {
+    use std::sync::Arc;
+    use tauri_mcp_agent_lib::headless::agent_repositories_for;
+    use tauri_mcp_agent_lib::repositories::{
+        SqliteCompactContextRepository, SqliteMessageRepository, SqlitePendingQueueRepository,
+    };
+
+    let workspace_dir = TempDir::new().unwrap();
+    let args = default_headless_args("hello", workspace_dir.path());
+    let runtime = EphemeralHeadlessRuntime::bootstrap(None, &args)
+        .await
+        .unwrap();
+
+    let repositories = agent_repositories_for(
+        &runtime,
+        Arc::new(SqliteMessageRepository::new(runtime.db.clone())),
+        Arc::new(SqlitePendingQueueRepository::new(runtime.db.clone())),
+        Arc::new(SqliteCompactContextRepository::new(runtime.db.clone())),
+    );
+
+    // The same repository object, and it holds the ephemeral session.
+    assert!(Arc::ptr_eq(&repositories.session, &runtime.session_repo));
+    assert!(repositories
+        .session
+        .get_session(&runtime.session_id)
+        .await
+        .unwrap()
+        .is_some());
+    // The live session map is the one the manager is built on.
+    assert!(runtime
+        .active_sessions
+        .read()
+        .await
+        .contains_key(&runtime.session_id));
+}

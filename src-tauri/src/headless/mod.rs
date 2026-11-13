@@ -15,9 +15,7 @@ use crate::agent::context::registry::ContextRegistry;
 use crate::agent::session_manager::execution_mode::set_execution_mode_in;
 use crate::agent::state::AgentSession;
 use crate::execution_mode::ExecutionMode;
-use crate::headless::cli::{
-    exit_codes, parse_cli, HeadlessArgs, LibletCommand, ListSessionsArgs, TtyState,
-};
+use crate::headless::cli::{exit_codes, parse_cli, HeadlessArgs, LibletCommand, TtyState};
 use crate::headless::ephemeral_db::{
     resolve_headless_config, resolve_workspace_path, EphemeralEnvironment, ResolvedHeadlessConfig,
 };
@@ -298,9 +296,15 @@ pub async fn cleanup_headless_run(
     db: &DatabaseConnection,
     temp_dir: &TempDir,
 ) {
-    let _ = active_sessions.write().await.remove(session_id);
-    let _ = session_repo.delete_session(session_id).await;
-    let _ = db.clone().close().await;
+    // Dropping the in-memory entry cannot fail. The other two can, and a failed
+    // delete leaves an orphan session row, so say so on stderr.
+    active_sessions.write().await.remove(session_id);
+    if let Err(err) = session_repo.delete_session(session_id).await {
+        eprintln!("warning: failed to delete ephemeral session {session_id}: {err}");
+    }
+    if let Err(err) = db.clone().close().await {
+        eprintln!("warning: failed to close ephemeral database: {err}");
+    }
     // Remove the temp dir explicitly instead of relying on the implicit
     // `TempDir` drop so the retry above runs while the caller can still
     // report the outcome; the later `TempDir::drop` sees `NotFound` and
@@ -329,72 +333,6 @@ pub fn emit_startup_error<Out: Write, ErrOut: Write>(
     let payload = HeadlessResultPayload::error(error_message, workspace_path, execution_mode);
     let _ = write_final_output(args.output_format, &payload, stdout, stderr);
     payload
-}
-
-/// Execute `--list-sessions` against the profile database read-only.
-pub fn run_list_sessions<Out: Write, ErrOut: Write>(
-    list_args: &ListSessionsArgs,
-    source_db_path: &Path,
-    stdout: &mut Out,
-    stderr: &mut ErrOut,
-) -> i32 {
-    let target_dir = match resolve_workspace_path(list_args.cd.as_deref()) {
-        Ok(dir) => dir,
-        Err(err) => {
-            let _ = writeln!(stderr, "error: {err}");
-            return exit_codes::ERROR;
-        }
-    };
-
-    if !source_db_path.exists() {
-        return exit_codes::SUCCESS;
-    }
-
-    let conn = match rusqlite::Connection::open_with_flags(
-        source_db_path,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    ) {
-        Ok(c) => c,
-        Err(e) => {
-            let _ = writeln!(stderr, "error: failed to open session database: {e}");
-            return exit_codes::ERROR;
-        }
-    };
-
-    let target_str = target_dir.to_string_lossy().to_string();
-    let mut stmt = match conn.prepare(
-        "SELECT id, COALESCE(name, ''), status, model, updated_at \
-         FROM sessions \
-         WHERE workspace_override = ?1 \
-         ORDER BY updated_at DESC",
-    ) {
-        Ok(s) => s,
-        Err(_) => return exit_codes::SUCCESS,
-    };
-
-    let rows = stmt.query_map([&target_str], |row| {
-        Ok((
-            row.get::<_, String>(0)?,
-            row.get::<_, String>(1)?,
-            row.get::<_, String>(2)?,
-            row.get::<_, String>(3)?,
-            row.get::<_, i64>(4)?,
-        ))
-    });
-
-    if let Ok(iter) = rows {
-        for item in iter.flatten() {
-            let (id, name, status, model, updated_at) = item;
-            let title = if name.trim().is_empty() {
-                "(untitled)"
-            } else {
-                name.as_str()
-            };
-            let _ = writeln!(stdout, "{id}\t{status}\t{model}\t{updated_at}\t{title}");
-        }
-    }
-
-    exit_codes::SUCCESS
 }
 
 /// Run a full headless invocation using the hidden Tauri WebView runtime.
@@ -509,10 +447,26 @@ pub fn run_headless_with_hidden_webview(args: HeadlessArgs) -> i32 {
     std::process::exit(code);
 }
 
+/// The repositories the agent manager runs on: the runtime's own session
+/// repository, so the manager, the monitor, and the driver share one source of
+/// truth for the ephemeral session (the session map is shared through
+/// `AgentSessionManager::with_active_sessions`).
+pub fn agent_repositories_for(
+    runtime: &EphemeralHeadlessRuntime,
+    message: Arc<dyn crate::repositories::message_repository::MessageRepository>,
+    pending_queue: Arc<dyn crate::repositories::PendingQueueRepository>,
+    compact_context: Arc<dyn crate::repositories::CompactContextRepository>,
+) -> crate::agent::AgentRepositories {
+    crate::agent::AgentRepositories::new(runtime.session_repo.clone())
+        .with_message(message)
+        .with_pending_queue(pending_queue)
+        .with_compact_context(compact_context)
+}
+
 fn setup_hidden_headless_app(
     app: &mut tauri::App,
     args: HeadlessArgs,
-    mut runtime: EphemeralHeadlessRuntime,
+    runtime: EphemeralHeadlessRuntime,
     exit_code_holder: Arc<std::sync::Mutex<i32>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let ephemeral_data_dir = runtime.env.data_dir.clone();
@@ -537,8 +491,6 @@ fn setup_hidden_headless_app(
     app.manage(browser_server);
 
     let proxy_manager_arc = crate::state::get_mcp_service_proxy_manager();
-    let session_repo_arc: Arc<dyn crate::repositories::SessionRepository> =
-        Arc::new((*crate::state::get_session_repository()).clone());
     let message_repo_arc: Arc<dyn crate::repositories::message_repository::MessageRepository> =
         Arc::new((*crate::state::get_message_repository()).clone());
     let pending_queue_repo_arc: Arc<dyn crate::repositories::PendingQueueRepository> =
@@ -546,17 +498,20 @@ fn setup_hidden_headless_app(
     let compact_context_repo_arc: Arc<dyn crate::repositories::CompactContextRepository> =
         Arc::new((*crate::state::get_compact_context_repository()).clone());
 
-    let repositories = crate::agent::AgentRepositories::new(session_repo_arc)
-        .with_message(message_repo_arc)
-        .with_pending_queue(pending_queue_repo_arc)
-        .with_compact_context(compact_context_repo_arc);
+    let repositories = agent_repositories_for(
+        &runtime,
+        message_repo_arc,
+        pending_queue_repo_arc,
+        compact_context_repo_arc,
+    );
 
     let app_handle = app.handle().clone();
     let agent_manager = crate::agent::AgentSessionManager::new_with_repositories(
         app_handle.clone(),
         proxy_manager_arc,
         repositories,
-    );
+    )
+    .with_active_sessions(runtime.active_sessions.clone());
 
     crate::state::init_active_sessions(agent_manager.active_sessions_arc());
     crate::state::init_channel_dispatch_agent(agent_manager.clone());
@@ -566,11 +521,6 @@ fn setup_hidden_headless_app(
     ));
     crate::state::init_app_handle(app_handle.clone());
     app.manage(agent_manager.clone());
-
-    // The monitor and the driver must observe the agent manager's live session
-    // map and repository, not the placeholder copies from `bootstrap`.
-    runtime.active_sessions = agent_manager.active_sessions_arc();
-    runtime.session_repo = agent_manager.repositories().session.clone();
 
     tauri::async_runtime::spawn(async move {
         let interrupt_rx = spawn_interrupt_watcher();
@@ -700,12 +650,10 @@ pub fn run_liblet_main() -> i32 {
             let _ = std::io::stdout().flush();
             exit_codes::SUCCESS
         }
-        Ok(LibletCommand::ListSessions(list_args)) => {
-            let profile = crate::profile::resolve_profile();
-            let source_db_path = crate::profile::db_path(profile);
-            let mut stdout = std::io::stdout();
-            let mut stderr = std::io::stderr();
-            run_list_sessions(&list_args, &source_db_path, &mut stdout, &mut stderr)
+        Ok(LibletCommand::ListSessions(_list_args)) => {
+            // Listing persisted sessions is not part of headless execution (#2703).
+            eprintln!("error: --list-sessions is not available yet.");
+            exit_codes::ERROR
         }
         Ok(LibletCommand::Headless(headless_args)) => {
             run_headless_with_hidden_webview(headless_args)
