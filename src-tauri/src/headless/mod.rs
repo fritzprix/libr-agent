@@ -15,7 +15,9 @@ use crate::agent::context::registry::ContextRegistry;
 use crate::agent::session_manager::execution_mode::set_execution_mode_in;
 use crate::agent::state::AgentSession;
 use crate::execution_mode::ExecutionMode;
-use crate::headless::cli::{exit_codes, parse_cli, HeadlessArgs, LibletCommand, TtyState};
+use crate::headless::cli::{
+    exit_codes, parse_cli, HeadlessArgs, LibletCommand, ListSessionsArgs, TtyState,
+};
 use crate::headless::ephemeral_db::{
     resolve_headless_config, resolve_workspace_path, EphemeralEnvironment, ResolvedHeadlessConfig,
 };
@@ -335,6 +337,95 @@ pub fn emit_startup_error<Out: Write, ErrOut: Write>(
     payload
 }
 
+/// Execute `--list-sessions` against the profile database, read-only.
+///
+/// Prints one tab-separated line per session of the target directory:
+/// `id  status  model  updated_at  title`. A profile with no database yet has no
+/// sessions, which is a success. A database that cannot be read (it cannot be
+/// opened, has no `sessions` table, or has a bad row) is an error on stderr and
+/// exit `1`, never an empty list.
+pub fn run_list_sessions<Out: Write, ErrOut: Write>(
+    list_args: &ListSessionsArgs,
+    source_db_path: &Path,
+    stdout: &mut Out,
+    stderr: &mut ErrOut,
+) -> i32 {
+    let target_dir = match resolve_workspace_path(list_args.cd.as_deref()) {
+        Ok(dir) => dir,
+        Err(err) => {
+            let _ = writeln!(stderr, "error: {err}");
+            return exit_codes::ERROR;
+        }
+    };
+
+    if !source_db_path.exists() {
+        return exit_codes::SUCCESS;
+    }
+
+    match query_sessions_of(source_db_path, &target_dir) {
+        Ok(rows) => {
+            for (id, name, status, model, updated_at) in rows {
+                let title = if name.trim().is_empty() {
+                    "(untitled)"
+                } else {
+                    name.as_str()
+                };
+                let _ = writeln!(stdout, "{id}\t{status}\t{model}\t{updated_at}\t{title}");
+            }
+            exit_codes::SUCCESS
+        }
+        Err(err) => {
+            let _ = writeln!(stderr, "error: failed to list sessions: {err}");
+            exit_codes::ERROR
+        }
+    }
+}
+
+type SessionRow = (String, String, String, String, i64);
+
+/// Select the sessions whose `workspace_override` designates `workspace`.
+///
+/// The app stores `workspace_override` exactly as the user gave it (only `~`
+/// expanded), while `workspace` arrives canonicalized from
+/// [`resolve_workspace_path`]. Raw string equality therefore misses real
+/// sessions on Windows (`\\?\C:\...`) and macOS (`/private/var/...`) or behind
+/// symlinks, so the stored value is canonicalized in Rust and compared with
+/// `workspace`. A stored value that cannot be canonicalized does not designate
+/// an existing directory, so its row is not a match.
+fn query_sessions_of(db_path: &Path, workspace: &Path) -> Result<Vec<SessionRow>, rusqlite::Error> {
+    let conn = rusqlite::Connection::open_with_flags(
+        db_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )?;
+    let mut stmt = conn.prepare(
+        "SELECT id, COALESCE(name, ''), status, model, updated_at, workspace_override \
+         FROM sessions \
+         WHERE workspace_override IS NOT NULL \
+         ORDER BY updated_at DESC",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, String>(3)?,
+            row.get::<_, i64>(4)?,
+            row.get::<_, String>(5)?,
+        ))
+    })?;
+    rows.filter_map(|row| match row {
+        Ok((id, name, status, model, updated_at, stored_override)) => {
+            let matches_workspace = match std::fs::canonicalize(&stored_override) {
+                Ok(canonical_override) => canonical_override == workspace,
+                Err(_) => false,
+            };
+            matches_workspace.then_some(Ok((id, name, status, model, updated_at)))
+        }
+        Err(err) => Some(Err(err)),
+    })
+    .collect()
+}
+
 /// Run a full headless invocation using the hidden Tauri WebView runtime.
 ///
 /// Shares the bootstrap (`EphemeralHeadlessRuntime::bootstrap`), the run
@@ -652,10 +743,12 @@ pub fn run_liblet_main() -> i32 {
             let _ = std::io::stdout().flush();
             exit_codes::SUCCESS
         }
-        Ok(LibletCommand::ListSessions(_list_args)) => {
-            // Listing persisted sessions is not part of headless execution (#2703).
-            eprintln!("error: --list-sessions is not available yet.");
-            exit_codes::ERROR
+        Ok(LibletCommand::ListSessions(list_args)) => {
+            let profile = crate::profile::resolve_profile();
+            let source_db_path = crate::profile::db_path(profile);
+            let mut stdout = std::io::stdout();
+            let mut stderr = std::io::stderr();
+            run_list_sessions(&list_args, &source_db_path, &mut stdout, &mut stderr)
         }
         Ok(LibletCommand::Headless(headless_args)) => {
             run_headless_with_hidden_webview(headless_args)
