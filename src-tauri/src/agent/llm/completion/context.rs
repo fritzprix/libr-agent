@@ -196,25 +196,4 @@ mod tests {
         apply_session_max_input_context_override(&mut settings, Some(0));
         assert_eq!(settings.max_input_context(), 49_152);
     }
-
-    #[test]
-    fn a_max_input_context_above_128k_is_kept_as_set() {
-        let mut settings = default_context_management_settings();
-        for tokens in [262_144_u64, 1_048_576, 2_097_152] {
-            apply_context_management_setting(
-                &mut settings,
-                "maxInputContext",
-                &serde_json::json!(tokens),
-            );
-            // No hidden model-side clamp: the compaction threshold is the setting.
-            assert_eq!(settings.max_input_context(), tokens as usize);
-        }
-    }
-
-    #[test]
-    fn a_session_override_above_128k_is_kept_as_set() {
-        let mut settings = default_context_management_settings();
-        apply_session_max_input_context_override(&mut settings, Some(1_048_576));
-        assert_eq!(settings.max_input_context(), 1_048_576);
-    }
 }

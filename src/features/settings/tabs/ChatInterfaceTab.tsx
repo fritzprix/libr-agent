@@ -7,19 +7,31 @@ const OUTPUT_TOKEN_PRESETS = [
   1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072,
 ] as const;
 
-// Ceiling of the Max Input Context slider: room for 1M-class models (the model
-// catalog already lists 2M windows). Only a ceiling; the default is unchanged.
-const MAX_INPUT_CONTEXT_CEILING = 4194304;
+// Max Input Context choices: powers of two from 8K to 4M (room for 1M-class
+// models; the model catalog lists 2M windows), plus 48K so the default is exact.
+// A stored value that is not a preset still shows and saves unchanged until the
+// user picks another one.
+const MAX_INPUT_CONTEXT_PRESETS = [
+  8192, 16384, 32768, 49152, 65536, 131072, 262144, 524288, 1048576, 2097152,
+  4194304,
+] as const;
 
-function findNearestPresetIndex(value: number): number {
-  return OUTPUT_TOKEN_PRESETS.reduce((bestIndex, preset, index) => {
-    const bestDistance = Math.abs(OUTPUT_TOKEN_PRESETS[bestIndex] - value);
+function findNearestPresetIndex(
+  presets: readonly number[],
+  value: number,
+): number {
+  return presets.reduce((bestIndex, preset, index) => {
+    const bestDistance = Math.abs(presets[bestIndex] - value);
     const nextDistance = Math.abs(preset - value);
     return nextDistance < bestDistance ? index : bestIndex;
   }, 0);
 }
 
 function formatTokenPreset(value: number): string {
+  if (value >= 1048576) {
+    // 1M, 2M, 4M; one decimal for a stored value in between, such as 1.5M.
+    return `${Math.round((value / 1048576) * 10) / 10}M`;
+  }
   return value >= 1024 ? `${Math.round(value / 1024)}K` : `${value}`;
 }
 
@@ -55,7 +67,12 @@ function ChatInterfaceTabComponent({
   const defaultMaxOutputTokens =
     localAdvancedSettings.defaultMaxOutputTokens ?? 8192;
   const selectedOutputTokenIndex = findNearestPresetIndex(
+    OUTPUT_TOKEN_PRESETS,
     defaultMaxOutputTokens,
+  );
+  const selectedMaxInputContextIndex = findNearestPresetIndex(
+    MAX_INPUT_CONTEXT_PRESETS,
+    localMaxInputContext,
   );
 
   const updateToolCallCount = (delta: number) => {
@@ -208,16 +225,36 @@ function ChatInterfaceTabComponent({
             <>
               <div className="flex max-w-xs items-center gap-4">
                 <Slider
-                  min={8192}
-                  max={MAX_INPUT_CONTEXT_CEILING}
-                  step={8192}
-                  value={[localMaxInputContext]}
-                  onValueChange={([val]) => onMaxInputContextChange(val)}
+                  min={0}
+                  max={MAX_INPUT_CONTEXT_PRESETS.length - 1}
+                  step={1}
+                  value={[selectedMaxInputContextIndex]}
+                  onValueChange={([index]) =>
+                    onMaxInputContextChange(
+                      MAX_INPUT_CONTEXT_PRESETS[index] ??
+                        MAX_INPUT_CONTEXT_PRESETS[0],
+                    )
+                  }
                   className="flex-1"
                 />
                 <span className="min-w-[3.5rem] text-right font-mono text-sm text-primary">
-                  {Math.round(localMaxInputContext / 1024)}K
+                  {formatTokenPreset(localMaxInputContext)}
                 </span>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {MAX_INPUT_CONTEXT_PRESETS.map((preset) => (
+                  <Button
+                    key={preset}
+                    type="button"
+                    variant={
+                      preset === localMaxInputContext ? 'default' : 'outline'
+                    }
+                    className="h-8 px-2 text-xs"
+                    onClick={() => onMaxInputContextChange(preset)}
+                  >
+                    {formatTokenPreset(preset)}
+                  </Button>
+                ))}
               </div>
               <p className="mt-4 text-xs text-muted-foreground">
                 {t(
