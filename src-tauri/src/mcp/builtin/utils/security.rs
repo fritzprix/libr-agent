@@ -21,9 +21,14 @@ pub enum SecurityError {
     InvalidPath(String),
 }
 
-/// True when `user_path` still climbs out of its start after lexical normalization.
+/// True when a relative `user_path` still climbs out of its start after lexical
+/// normalization.
 ///
-/// `a/../b` resolves to `b` and is fine; `../b` or `/x/../../b` is not.
+/// `a/../b` resolves to `b` and is fine; `../b` and `a/../../b` are not. A rooted path
+/// cannot climb above its root (`/x/../../b` normalizes to `/b`), so for those this
+/// returns `false` and containment is enforced by `validate_path_internal`, not here.
+/// Normalization is lexical: `link/../x` with a symlink `link` validates as `x`, where a
+/// shell would resolve it through the link target. File I/O uses the validated path.
 pub fn has_parent_traversal(user_path: &str) -> bool {
     PathBuf::from(normalize_user_path(user_path))
         .clean()
@@ -409,7 +414,10 @@ impl SecurityValidator {
 
 #[cfg(test)]
 mod parent_traversal_tests {
-    use super::has_parent_traversal;
+    use super::{has_parent_traversal, SecurityError};
+    use crate::mcp::builtin::utils::linked_worktrees::test_support::{add_worktree, main_repo};
+    use crate::mcp::builtin::workspace::workspace_server::file_tool_manager;
+    use tempfile::tempdir;
 
     #[test]
     fn normalizes_before_rejecting_parent_segments() {
@@ -417,5 +425,34 @@ mod parent_traversal_tests {
         assert!(!has_parent_traversal("/repo/../repo.worktrees/w/a.rs"));
         assert!(has_parent_traversal("../a.rs"));
         assert!(has_parent_traversal("src/../../a.rs"));
+        // Rooted paths cannot climb above the root; containment handles them.
+        assert!(!has_parent_traversal("/x/../../b"));
+    }
+
+    #[test]
+    fn scoped_validator_accepts_a_normalized_sibling_worktree_path() {
+        let parent = tempdir().expect("tempdir");
+        let repo = main_repo(parent.path());
+        add_worktree(&repo, "w");
+        let manager = file_tool_manager(repo.clone(), true);
+        let validator = manager.get_security_validator();
+        // Callers pass a plain drive path (`git rev-parse`), not a `\?\` verbatim one.
+        let base = repo.display().to_string();
+        let base = crate::mcp::builtin::utils::strip_windows_verbatim_prefix(&base);
+
+        let accepted = validator
+            .validate_path_for_write(&format!("{base}/../repo.worktrees/w/a.rs"))
+            .expect("normalized sibling worktree path is allowed");
+        assert!(accepted.ends_with("a.rs"));
+
+        let outside = validator
+            .validate_path_for_write(&format!("{base}/../outside/a.rs"))
+            .expect_err("path outside every allowed root is rejected");
+        assert!(matches!(outside, SecurityError::OutsideWorkspaceRoot(_)));
+
+        let climbing = validator
+            .validate_path_for_write("a/../../x")
+            .expect_err("relative path that climbs out is rejected");
+        assert!(matches!(climbing, SecurityError::PathTraversal(_)));
     }
 }
