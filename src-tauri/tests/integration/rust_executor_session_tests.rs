@@ -19,10 +19,11 @@ use warp::Filter;
 
 use tauri::test::MockRuntime;
 use tauri_mcp_agent_lib::agent::llm::rust_executor::{
-    configure, try_dispatch_completion, Endpoint, ExecutorConfig, ResponseSink,
+    configure, try_dispatch_compaction, try_dispatch_completion, Endpoint, ExecutorConfig,
+    ResponseSink,
 };
 use tauri_mcp_agent_lib::agent::llm::types::{
-    AgentRuntimeError, CompactRequest, CompletionRequest,
+    AgentRuntimeError, CompactRequest, CompactionParentRequest, CompletionRequest,
 };
 use tauri_mcp_agent_lib::agent::session_manager::CompactStreamMeta;
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
@@ -85,6 +86,32 @@ fn text_reply(text: &str) -> Vec<Value> {
     ]
 }
 
+/// A loopback server that always answers POST /v1/chat/completions with
+/// `status`, and keeps the request bodies it saw.
+async fn failing_provider(status: u16) -> (Endpoint, Arc<Mutex<Vec<Value>>>) {
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let seen = requests.clone();
+    let route = warp::post()
+        .and(warp::path!("v1" / "chat" / "completions"))
+        .and(warp::body::json())
+        .map(move |body: Value| {
+            seen.lock().unwrap().push(body);
+            warp::reply::with_status(
+                "provider exploded".to_string(),
+                warp::http::StatusCode::from_u16(status).unwrap(),
+            )
+        });
+    let (addr, server): (SocketAddr, _) = warp::serve(route).bind_ephemeral(([127, 0, 0, 1], 0));
+    tokio::spawn(server);
+    (
+        Endpoint {
+            base_url: format!("http://{addr}/v1"),
+            api_key: None,
+        },
+        requests,
+    )
+}
+
 fn tool_call_reply(name: &str) -> Vec<Value> {
     vec![
         json!({"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":name,"arguments":"{}"}}]},"finish_reason":"tool_calls"}]}),
@@ -96,6 +123,8 @@ fn tool_call_reply(name: &str) -> Vec<Value> {
 #[derive(Default)]
 struct RecordingSink {
     responses: Mutex<Vec<Message>>,
+    compactions: Mutex<Vec<(String, CompactStreamMeta)>>,
+    compact_errors: Mutex<Vec<String>>,
 }
 
 #[async_trait::async_trait]
@@ -111,9 +140,10 @@ impl ResponseSink for RecordingSink {
         &self,
         _session_id: &str,
         _request: &CompactRequest,
-        _summary: String,
-        _meta: CompactStreamMeta,
+        summary: String,
+        meta: CompactStreamMeta,
     ) -> Result<(), String> {
+        self.compactions.lock().unwrap().push((summary, meta));
         Ok(())
     }
     async fn compact_error(
@@ -121,7 +151,11 @@ impl ResponseSink for RecordingSink {
         _session_id: String,
         error: AgentRuntimeError,
     ) -> Result<(), String> {
-        Err(error.display_message)
+        self.compact_errors
+            .lock()
+            .unwrap()
+            .push(error.display_message);
+        Ok(())
     }
 }
 
@@ -273,4 +307,86 @@ async fn a_provider_the_executor_cannot_run_fails_fast_without_a_webview() {
     assert!(error.display_message.contains("anthropic"));
     assert!(provider.requests.lock().unwrap().is_empty());
     assert!(sink.responses.lock().unwrap().is_empty());
+}
+
+fn compact_request(session_id: &str) -> CompactRequest {
+    CompactRequest {
+        session_id: session_id.to_string(),
+        session_name: "test session".to_string(),
+        messages: vec![
+            message(session_id, "u1", "user", "hello", 1_000),
+            message(session_id, "a1", "assistant", "hi", 2_000),
+        ],
+        to_id: "compact-1".to_string(),
+        compacted_delta_count: 2,
+        parent_request: Some(CompactionParentRequest {
+            model: "mock-model".to_string(),
+            provider: PROVIDER.to_string(),
+            system_prompt: Some("rust executor test".to_string()),
+            session_context: None,
+            available_tools: None,
+        }),
+        resume_completion_after_compact: false,
+    }
+}
+
+/// A compaction round trip delivers the summary with its usage, and the
+/// request the provider sees carries no tools (the summary must be plain text).
+#[tokio::test]
+async fn a_compaction_round_trip_delivers_the_summary_and_its_usage() {
+    let _guard = TEST_GUARD.lock().await;
+    let session_id = "rust-executor-compaction";
+    let provider = mock_provider(vec![text_reply("A tidy summary.")]).await;
+    let sink = Arc::new(RecordingSink::default());
+    let _config = configure(config(provider.endpoint.clone(), sink.clone()));
+
+    assert!(try_dispatch_compaction(app(), &compact_request(session_id)).unwrap());
+    wait_for("the compaction summary", || {
+        !sink.compactions.lock().unwrap().is_empty()
+    })
+    .await;
+
+    let (summary, meta) = sink.compactions.lock().unwrap()[0].clone();
+    assert_eq!(summary, "A tidy summary.");
+    assert_eq!(meta.finish_reason.as_deref(), Some("stop"));
+    assert_eq!(meta.prompt_tokens, Some(12));
+    assert_eq!(meta.completion_tokens, Some(4));
+    assert_eq!(meta.total_tokens, Some(16));
+
+    let requests = provider.requests.lock().unwrap();
+    assert_eq!(requests.len(), 1);
+    assert!(requests[0].get("tools").is_none());
+    // The parent request's system prompt is carried over as one system
+    // message ahead of the two messages being compacted.
+    let messages = requests[0]["messages"].as_array().unwrap();
+    assert_eq!(messages.len(), 3);
+    assert_eq!(messages[0]["role"].as_str(), Some("system"));
+    assert_eq!(messages[0]["content"].as_str(), Some("rust executor test"));
+    assert_eq!(messages[1]["role"].as_str(), Some("user"));
+    assert_eq!(messages[2]["role"].as_str(), Some("assistant"));
+}
+
+/// An HTTP failure from the provider reaches `compact_error`, not a summary.
+#[tokio::test]
+async fn a_failing_compaction_call_is_reported_through_compact_error() {
+    let _guard = TEST_GUARD.lock().await;
+    let session_id = "rust-executor-compaction-error";
+    let (endpoint, requests) = failing_provider(502).await;
+    let sink = Arc::new(RecordingSink::default());
+    let _config = configure(ExecutorConfig {
+        enabled: true,
+        endpoint_override: Some(endpoint),
+        assume_no_webview: true,
+        sink_override: Some(sink.clone()),
+    });
+
+    assert!(try_dispatch_compaction(app(), &compact_request(session_id)).unwrap());
+    wait_for("the compaction error", || {
+        !sink.compact_errors.lock().unwrap().is_empty()
+    })
+    .await;
+
+    assert!(sink.compact_errors.lock().unwrap()[0].contains("HTTP 502"));
+    assert_eq!(requests.lock().unwrap().len(), 1);
+    assert!(sink.compactions.lock().unwrap().is_empty());
 }

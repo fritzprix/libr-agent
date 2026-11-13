@@ -38,7 +38,6 @@ pub use compact::validate_compact_summary_for_testing;
 pub use compact::CompactContextView;
 pub use compact::CompactStreamMeta;
 pub use compact::CompactSummaryClampResult;
-pub use compact::{handle_compact_response, CompactResponseOutcome, CompactResponseParams};
 
 use crate::agent::repositories::AgentRepositories;
 use crate::repositories::compact_context_repository::CompactContextRepository;

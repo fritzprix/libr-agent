@@ -103,6 +103,9 @@ impl Drop for ConfigGuard {
 }
 
 /// Replace the environment-derived config until the guard is dropped.
+///
+/// The override is process-wide: callers must serialize their use of it (for
+/// example with a test-suite lock) so concurrent callers do not race.
 #[must_use = "the setting ends when the guard is dropped"]
 pub fn configure(config: ExecutorConfig) -> ConfigGuard {
     *CONFIG_OVERRIDE
@@ -161,6 +164,16 @@ fn route_for(app_handle: &AppHandle, provider: &str) -> (Route, ExecutorConfig) 
     let config = current_config();
     let route = route(config.enabled, has_webview(app_handle, &config), provider);
     (route, config)
+}
+
+fn no_session_manager() -> AgentRuntimeError {
+    AgentRuntimeError::new(
+        AgentRuntimeErrorType::ValidationError,
+        "The Rust LLM executor took this request, but no session manager is available \
+         to receive the result."
+            .to_string(),
+    )
+    .with_code("RUST_EXECUTOR_NO_SESSION_MANAGER")
 }
 
 fn unavailable(provider: &str) -> AgentRuntimeError {
@@ -426,8 +439,10 @@ pub fn try_dispatch_completion(
         Route::Unavailable => return Err(Box::new(unavailable(&request.provider))),
         Route::Rust => {}
     }
+    // The route said Rust can answer, so falling back to the WebView now would
+    // silently lose the request when there is none: fail instead.
     let Some(sink) = sink_for_task(app_handle, &config) else {
-        return Ok(false);
+        return Err(Box::new(no_session_manager()));
     };
 
     let request = request.clone();
@@ -501,8 +516,10 @@ pub fn try_dispatch_compaction(
     let Some(parent) = request.parent_request.as_ref() else {
         return Ok(false);
     };
+    // The route said Rust can answer, so falling back to the WebView now would
+    // silently lose the request when there is none: fail instead.
     let Some(sink) = sink_for_task(app_handle, &config) else {
-        return Ok(false);
+        return Err(Box::new(no_session_manager()));
     };
 
     let request = request.clone();
@@ -664,6 +681,17 @@ mod tests {
             .and_then(|details| details.error_code.as_deref());
         assert_eq!(code, Some("RUST_EXECUTOR_NO_WEBVIEW"));
         assert!(error.display_message.contains("gemini"));
+    }
+
+    #[test]
+    fn a_missing_session_manager_names_the_missing_receiver() {
+        let error = no_session_manager();
+        let code = error
+            .details
+            .as_ref()
+            .and_then(|details| details.error_code.as_deref());
+        assert_eq!(code, Some("RUST_EXECUTOR_NO_SESSION_MANAGER"));
+        assert!(error.display_message.contains("session manager"));
     }
 
     #[tokio::test]
