@@ -19,8 +19,8 @@ use warp::Filter;
 
 use tauri::test::MockRuntime;
 use tauri_mcp_agent_lib::agent::llm::rust_executor::{
-    configure, try_dispatch_compaction, try_dispatch_completion, Endpoint, ExecutorConfig,
-    ResponseSink,
+    configure, dispatch_compaction, dispatch_completion, try_dispatch_compaction,
+    try_dispatch_completion, Endpoint, ExecutorConfig, ResponseSink,
 };
 use tauri_mcp_agent_lib::agent::llm::types::{
     AgentRuntimeError, CompactRequest, CompactionParentRequest, CompletionRequest,
@@ -389,4 +389,56 @@ async fn a_failing_compaction_call_is_reported_through_compact_error() {
     assert!(sink.compact_errors.lock().unwrap()[0].contains("HTTP 502"));
     assert_eq!(requests.lock().unwrap().len(), 1);
     assert!(sink.compactions.lock().unwrap().is_empty());
+}
+
+/// The executor took the request but the app has no session manager: the
+/// request fails with a named error instead of falling through to a WebView
+/// listener that may not exist. The lookup is passed in because a mock handle
+/// cannot reach app state (see the module docs).
+fn no_manager_config(endpoint: Endpoint) -> ExecutorConfig {
+    ExecutorConfig {
+        enabled: true,
+        endpoint_override: Some(endpoint),
+        assume_no_webview: true,
+        sink_override: None,
+    }
+}
+
+fn error_code(error: &AgentRuntimeError) -> Option<&str> {
+    error
+        .details
+        .as_ref()
+        .and_then(|details| details.error_code.as_deref())
+}
+
+#[tokio::test]
+async fn a_completion_without_a_session_manager_fails_with_a_named_error() {
+    let _guard = TEST_GUARD.lock().await;
+    let provider = mock_provider(vec![text_reply("unused")]).await;
+    let _config = configure(no_manager_config(provider.endpoint.clone()));
+    let user = message("s", "u1", "user", "hello", 1_000);
+
+    let error = dispatch_completion(app(), &request("s", "resp-1", PROVIDER, vec![user]), || {
+        None
+    })
+    .expect_err("no session manager means nothing can receive the result");
+
+    assert_eq!(error_code(&error), Some("RUST_EXECUTOR_NO_SESSION_MANAGER"));
+    assert!(
+        provider.requests.lock().unwrap().is_empty(),
+        "no provider call may be made for a result nobody can receive"
+    );
+}
+
+#[tokio::test]
+async fn a_compaction_without_a_session_manager_fails_with_a_named_error() {
+    let _guard = TEST_GUARD.lock().await;
+    let provider = mock_provider(vec![text_reply("unused")]).await;
+    let _config = configure(no_manager_config(provider.endpoint.clone()));
+
+    let error = dispatch_compaction(app(), &compact_request("s"), || None)
+        .expect_err("no session manager means nothing can receive the summary");
+
+    assert_eq!(error_code(&error), Some("RUST_EXECUTOR_NO_SESSION_MANAGER"));
+    assert!(provider.requests.lock().unwrap().is_empty());
 }

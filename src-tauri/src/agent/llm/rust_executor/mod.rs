@@ -372,10 +372,8 @@ impl ResponseSink for AgentSessionManager {
     }
 }
 
-fn sink_for_task(app_handle: &AppHandle, config: &ExecutorConfig) -> Option<Arc<dyn ResponseSink>> {
-    if let Some(sink) = &config.sink_override {
-        return Some(sink.clone());
-    }
+/// The session manager kept in the app's managed state, as a delivery target.
+fn manager_sink(app_handle: &AppHandle) -> Option<Arc<dyn ResponseSink>> {
     app_handle
         .try_state::<AgentSessionManager>()
         .map(|manager| Arc::new(manager.inner().clone_for_task()) as Arc<dyn ResponseSink>)
@@ -433,6 +431,16 @@ pub fn try_dispatch_completion(
     app_handle: &AppHandle,
     request: &CompletionRequest,
 ) -> Result<bool, Box<AgentRuntimeError>> {
+    dispatch_completion(app_handle, request, || manager_sink(app_handle))
+}
+
+/// [`try_dispatch_completion`] with the session-manager lookup passed in, for
+/// a caller (a test) that cannot reach app state through its handle.
+pub fn dispatch_completion(
+    app_handle: &AppHandle,
+    request: &CompletionRequest,
+    manager: impl FnOnce() -> Option<Arc<dyn ResponseSink>>,
+) -> Result<bool, Box<AgentRuntimeError>> {
     let (route, config) = route_for(app_handle, &request.provider);
     match route {
         Route::Frontend => return Ok(false),
@@ -441,7 +449,7 @@ pub fn try_dispatch_completion(
     }
     // The route said Rust can answer, so falling back to the WebView now would
     // silently lose the request when there is none: fail instead.
-    let Some(sink) = sink_for_task(app_handle, &config) else {
+    let Some(sink) = config.sink_override.clone().or_else(manager) else {
         return Err(Box::new(no_session_manager()));
     };
 
@@ -500,6 +508,15 @@ pub fn try_dispatch_compaction(
     app_handle: &AppHandle,
     request: &CompactRequest,
 ) -> Result<bool, Box<AgentRuntimeError>> {
+    dispatch_compaction(app_handle, request, || manager_sink(app_handle))
+}
+
+/// [`try_dispatch_compaction`] with the session-manager lookup passed in.
+pub fn dispatch_compaction(
+    app_handle: &AppHandle,
+    request: &CompactRequest,
+    manager: impl FnOnce() -> Option<Arc<dyn ResponseSink>>,
+) -> Result<bool, Box<AgentRuntimeError>> {
     // Without the parent request there is no model to call, so no provider to
     // route by: the frontend gets it, as before.
     let provider = request
@@ -518,7 +535,7 @@ pub fn try_dispatch_compaction(
     };
     // The route said Rust can answer, so falling back to the WebView now would
     // silently lose the request when there is none: fail instead.
-    let Some(sink) = sink_for_task(app_handle, &config) else {
+    let Some(sink) = config.sink_override.clone().or_else(manager) else {
         return Err(Box::new(no_session_manager()));
     };
 
