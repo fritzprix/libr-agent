@@ -40,8 +40,7 @@ pub enum LockAttempt {
 pub struct StartupLock {
     /// Held open purely to keep the OS lock alive: closing this handle
     /// releases the lock, so the field is never read.
-    #[allow(dead_code)]
-    file: File,
+    _file: File,
 }
 
 /// Why one non-blocking lock syscall refused.
@@ -75,7 +74,7 @@ pub fn try_acquire(path: &Path) -> LockAttempt {
             // Diagnostic only: content never feeds the acquisition decision,
             // so a concurrent reader cannot be misled and nothing sweeps.
             let _ = write_owner_note(&file);
-            LockAttempt::Acquired(StartupLock { file })
+            LockAttempt::Acquired(StartupLock { _file: file })
         }
         Err(LockError::Busy) => LockAttempt::Held,
         Err(LockError::Io(err)) => LockAttempt::Failed(format!(
@@ -226,7 +225,7 @@ mod tests {
 
     #[test]
     fn unopenable_lock_path_fails_with_the_real_error() {
-        // S1.1: a real I/O problem must not masquerade as `Held`.
+        // A real I/O problem must not masquerade as `Held`.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("no-such-dir").join("db.backend.lock");
 

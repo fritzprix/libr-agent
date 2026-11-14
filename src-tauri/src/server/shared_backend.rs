@@ -885,10 +885,7 @@ mod tests {
 
     /// #2757: a lock file left behind by a dead process carries no OS lock,
     /// so the next frontend acquires it immediately and starts the one
-    /// backend. Nothing is probed and nothing is swept. (G1.4: the old
-    /// `u32::MAX` pid stand-in is gone — `kill -0 -1` succeeds on Unix, so
-    /// no pid value is reliably dead. With an OS lock, a dead holder is the
-    /// default case, not a probe.)
+    /// backend. Nothing is probed and nothing is swept.
     #[tokio::test]
     async fn startup_race_takes_over_a_leftover_lock_file() {
         let dir = tempfile::tempdir().unwrap();
@@ -1009,7 +1006,7 @@ mod tests {
         )
     }
 
-    /// G1.3 / #2757 acceptance criterion: several frontends start at the
+    /// #2757: several frontends start at the
     /// same moment on one profile. Exactly one runs `start_backend`; every
     /// other one attaches. Repeated over many rounds so the interleavings
     /// are real, not lucky.
@@ -1042,7 +1039,7 @@ mod tests {
         }
     }
 
-    /// G1.3 / #2757: the same concurrent race with a stale (unheld) lock
+    /// #2757: the same concurrent race with a stale (unheld) lock
     /// file already on disk. Crash residue must neither block the frontends
     /// nor let two of them start.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
