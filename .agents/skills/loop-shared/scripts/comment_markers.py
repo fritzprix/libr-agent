@@ -9,8 +9,8 @@ START_MARKER = re.compile(
 )
 
 NEEDS_OWNER_LABEL = "needs-owner"
-# Besides `me` (the owner and the workers may share one account), only people
-# with write access to the repository can answer an owner question.
+# Besides `me` (the owner and the workers may share one account), only a
+# repository owner, member, or collaborator can answer an owner question.
 _ANSWER_ASSOCIATIONS = {"OWNER", "MEMBER", "COLLABORATOR"}
 
 

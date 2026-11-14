@@ -60,17 +60,23 @@ def comment(body, at, login="me", association="NONE"):
 QUESTION = comment("<!-- worker-loop: needs-owner -->\nWhich one? (a) or (b)", "2026-01-01T00:00:00Z")
 
 
-def fake_gh(comments=(), states=None, blocked_by=None):
-    """gh stand-in: issue comments, issue states by number, and the blocked-by API."""
+NOT_FOUND = "gh api failed: gh: Not Found (HTTP 404)"
+
+
+def fake_gh(comments=(), states=None, blocked_by=None, blocked_by_error=NOT_FOUND):
+    """gh stand-in: issue comments, issue states by number ('missing' = 404), and the blocked-by API."""
     def _gh(*args):
         if args[:2] == ("issue", "view"):
             return json.dumps({"comments": list(comments)})
         if args[0] == "api" and args[1].endswith("/dependencies/blocked_by"):
             if blocked_by is None:
-                raise issue_candidates.GhError("404")
+                raise issue_candidates.GhError(blocked_by_error)
             return json.dumps(blocked_by)
         if args[0] == "api":
-            return (states or {}).get(int(args[1].rsplit("/", 1)[1]), "closed") + "\n"
+            state = (states or {}).get(int(args[1].rsplit("/", 1)[1]), "closed")
+            if state == "missing":
+                raise issue_candidates.GhError(NOT_FOUND)
+            return state + "\n"
         raise ValueError(f"Unexpected gh call: {args}")
     return _gh
 
@@ -85,6 +91,10 @@ class DependencyRefsTest(unittest.TestCase):
         body = "Part of #1. Depends on #2749. Continues #2704.\nBlocked by #3, #4, and #5"
         self.assertEqual(issue_candidates.dependency_refs(body), [2749, 3, 4, 5])
 
+    def test_list_ends_at_the_first_item_that_is_not_a_number(self):
+        body = "Depends on #2752, the implementation issues under this epic, #2754, and #2755"
+        self.assertEqual(issue_candidates.dependency_refs(body), [2752])
+
     def test_plain_mentions_are_not_dependencies(self):
         self.assertEqual(issue_candidates.dependency_refs("Part of #1. See #2."), [])
         self.assertEqual(issue_candidates.dependency_refs(None), [])
@@ -98,6 +108,14 @@ class WaitingReasonTest(unittest.TestCase):
         reason, _ = waiting(body="Depends on #7 and #8", states={7: "open", 8: "closed"})
         self.assertEqual(reason, "blocked by open #7")
         self.assertEqual(waiting(body="Depends on #7", states={7: "closed"}), (None, None))
+
+    def test_missing_dependency_excludes_only_that_issue(self):
+        self.assertEqual(waiting(body="Depends on #404", states={404: "missing"})[0],
+                         "dependency #404 not found")
+
+    def test_blocked_by_failure_other_than_404_is_raised(self):
+        with self.assertRaises(issue_candidates.GhError):
+            waiting(blocked_by_error="gh api failed: API rate limit exceeded (HTTP 403)")
 
     def test_github_blocked_by_counts_when_available(self):
         self.assertEqual(waiting(blocked_by=[9])[0], "blocked by open #9")

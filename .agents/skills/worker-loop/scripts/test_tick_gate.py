@@ -176,7 +176,7 @@ class TickGateTest(unittest.TestCase):
                 idx[0] += 1
                 return json.dumps(resp)
             if args[0] == "api" and args[1].endswith("/dependencies/blocked_by"):
-                raise tick_gate.GhError("blocked-by API unavailable")
+                raise tick_gate.GhError("gh: Not Found (HTTP 404)")
             if args[:3] == ("issue", "list", "--state"):
                 return json.dumps(list(issues))
             if args[:3] == ("pr", "list", "--state"):
@@ -341,7 +341,7 @@ class PendingApprovedIssueTest(unittest.TestCase):
             if args[:2] == ("issue", "view"):
                 return json.dumps({"comments": list(comments)})
             if args[0] == "api" and args[1].endswith("/dependencies/blocked_by"):
-                raise tick_gate.GhError("blocked-by API unavailable")
+                raise tick_gate.GhError("gh: Not Found (HTTP 404)")
             if args[0] == "api":
                 number = int(args[1].rsplit("/", 1)[1])
                 return "open\n" if number in open_issues else "closed\n"

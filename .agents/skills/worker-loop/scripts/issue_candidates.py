@@ -34,7 +34,8 @@ APPROVED_LABEL = "approved"
 CLOSING_PATTERN = re.compile(r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)\b", re.I)
 # Branch names end with the issue number (`fix/keychain-fallback-stale-2588`).
 BRANCH_REF_PATTERN = re.compile(r"-(\d{3,})\b")
-# `Depends on #1`, `Blocked by #1, #2, and #3`, `depends on #1 / #2`.
+# `Depends on #1`, `Blocked by #1, #2, and #3`, `depends on #1 / #2`. The list
+# ends at the first item that is not `#N`, so write dependencies as a plain list.
 DEPENDENCY_PATTERN = re.compile(
     r"\b(?:depends\s+on|blocked\s+by)\s*:?\s*(#\d+(?:\s*(?:,|/|&|and)\s*(?:and\s+)?#\d+)*)", re.I
 )
@@ -42,6 +43,10 @@ DEPENDENCY_PATTERN = re.compile(
 
 class GhError(RuntimeError):
     """Raised when GitHub CLI execution fails."""
+
+
+def _is_not_found(error: GhError) -> bool:
+    return "HTTP 404" in str(error)
 
 
 def gh(*args: str) -> str:
@@ -104,14 +109,16 @@ def exclusion_reason(
 
 
 def _open_blocked_by(number: int, run_gh: Callable[..., str]) -> list[int]:
-    """Open issues GitHub records as blocking this one; empty where the API is unavailable."""
+    """Open issues GitHub records as blocking this one; empty where the API is unavailable (404)."""
     try:
         out = run_gh(
             "api", f"repos/{{owner}}/{{repo}}/issues/{number}/dependencies/blocked_by",
             "--jq", '[.[] | select(.state == "open") | .number]',
         )
-    except GhError:
-        return []
+    except GhError as e:
+        if _is_not_found(e):
+            return []
+        raise
     return [int(n) for n in json.loads(out or "[]")]
 
 
@@ -133,7 +140,12 @@ def waiting_reason(
 
     blockers = []
     for dep in dependency_refs(issue.get("body")):
-        state = run_gh("api", f"repos/{{owner}}/{{repo}}/issues/{dep}", "--jq", ".state").strip()
+        try:
+            state = run_gh("api", f"repos/{{owner}}/{{repo}}/issues/{dep}", "--jq", ".state").strip()
+        except GhError as e:
+            if _is_not_found(e):
+                return f"dependency #{dep} not found", answer
+            raise
         if state == "open":
             blockers.append(dep)
     blockers += [n for n in _open_blocked_by(number, run_gh) if n not in blockers]
