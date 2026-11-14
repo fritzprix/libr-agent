@@ -1,6 +1,6 @@
 # TUI parity spec
 
-Status: §1 is the GUI inventory for #2749 (part of epic #2698). §2–§4 are added by #2750 (classify and prioritize), #2751 (command and screen design), and #2752 (E2E scenarios).
+Status: §1 is the GUI inventory for #2749 (part of epic #2698). §2 (classification and priority) is added by #2750. §3 (command and screen design) and §4 (E2E scenarios) are still to be added by #2751 and #2752.
 
 Goal of the whole spec: `libragent --tui` is functionally near-identical to the GUI. Menus are entered with `/{command}` (for example `/settings`), and sessions are switched with `/new` and `/resume`.
 
@@ -654,7 +654,428 @@ Paths in `components/` and `hooks/` are under `src/features/migration/`.
 
 ## 2. Classification and priority
 
-Added by #2750.
+Added by #2750. Every §1 inventory item gets exactly one class, and every direct or adapted item gets one priority.
+
+Terminal forms below name concrete commands as placeholders; the final command and
+sub-command names are decided in §3 (#2751).
+
+Classes:
+
+- **direct** — works the same in a terminal: text, lists, forms, toggles, confirmations.
+- **adapted** — needs a terminal-specific form; the note says what that form is.
+- **excluded** — not offered in the TUI; the note states the reason. Parity is the default: exclusion is only for things a terminal cannot render meaningfully (window chrome, fonts, canvas).
+
+Priorities:
+
+- **P0** — needed for the first release: a full chat turn (send, stream, tool approval, askUser, secret prompt) plus `/new` and `/resume`, and the configuration required to send a first message.
+- **P1** — also required for phase 1: the surfaces a day-to-day user manages (session management, assistants, playbooks, extensions, skills, knowledge text flows, scheduled tasks, settings).
+- **P2** — not required for phase 1: convenience, visual-only, or deep-dive surfaces with a workable fallback.
+
+Excluded items are listed with reasons in place; the rollup is §2.15.
+
+### 2.1 Routes and coverage (§1.1)
+
+| Route / panel          | Class    | Priority | Terminal form                                  |
+| ---------------------- | -------- | -------- | ---------------------------------------------- |
+| `/`                    | direct   | P0       | TUI starts at the chat screen                  |
+| `/agent`               | direct   | P0       | default screen; `/new` starts a draft          |
+| `/agent/draft`         | direct   | P0       | draft state before first send                  |
+| `/agent/:sessionId`    | direct   | P0       | `/resume <id>` or picker                       |
+| `/assistants`          | direct   | P1       | `/assistants`                                  |
+| `/playbooks`           | direct   | P1       | `/playbooks`                                   |
+| `/history`             | direct   | P1       | `/history`                                     |
+| `/history/search`      | excluded | —        | hidden duplicate route with no link in the GUI |
+| `/org`                 | direct   | P2       | `/org`                                         |
+| `/settings`            | direct   | P1       | `/settings`                                    |
+| `/settings/migration`  | direct   | P2       | `/settings migration`                          |
+| `/mcp-servers`         | direct   | P1       | `/extensions`                                  |
+| `/knowledge`           | direct   | P1       | `/knowledge`                                   |
+| `/scheduled-tasks`     | direct   | P1       | `/tasks`                                       |
+| Settings tabs 1.10.2–8 | —        | —        | classified in §2.13 (they are §1.10 items)     |
+
+### 2.2 App shell (§1.2)
+
+The sidebar navigation entries (§1.2.1) are adapted as a whole: the sidebar becomes
+slash commands, and each entry is classified in the table below.
+
+| Item (§1 ref)                         | Class    | Priority | Terminal form                                                      |
+| ------------------------------------- | -------- | -------- | ------------------------------------------------------------------ |
+| History (§1.2.1)                      | adapted  | P1       | `/history`                                                         |
+| Bookmarked (§1.2.1)                   | adapted  | P1       | `/history --bookmarked`                                            |
+| Chat (§1.2.1)                         | adapted  | P0       | `/new`                                                             |
+| Knowledge (§1.2.1)                    | adapted  | P1       | `/knowledge`                                                       |
+| Assistants (§1.2.1)                   | adapted  | P1       | `/assistants`                                                      |
+| Playbooks (§1.2.1)                    | adapted  | P1       | `/playbooks`                                                       |
+| Extensions (§1.2.1)                   | adapted  | P1       | `/extensions`                                                      |
+| Org (§1.2.1)                          | adapted  | P2       | `/org`                                                             |
+| Scheduled Tasks (§1.2.1)              | adapted  | P1       | `/tasks`                                                           |
+| Recent Sessions (§1.2.1)              | adapted  | P0       | `/resume` picker shows the same list with status                   |
+| Settings (§1.2.1)                     | adapted  | P1       | `/settings`; version shown in the status line                      |
+| Collapse sidebar (§1.2.1)             | excluded | —        | no persistent sidebar in a terminal                                |
+| Sidebar toggle (§1.2.2)               | excluded | —        | window chrome; nothing to collapse                                 |
+| Notifications bell (§1.2.2)           | adapted  | P1       | `/attention` list plus a status-line badge count                   |
+| Theme toggle (§1.2.2)                 | excluded | —        | light/dark is the terminal emulator's job                          |
+| Agent Pairing Request dialog (§1.2.3) | adapted  | P1       | blocking prompt with pairing code, Approve / Reject (Esc rejects)  |
+| Update toast (§1.2.3)                 | adapted  | P2       | status-line notice; install runs the updater and asks to quit      |
+| Toasts (§1.2.3)                       | adapted  | P0       | inline notification lines in the transcript                        |
+| UI scale shortcuts (§1.2.3)           | excluded | —        | font size is the terminal emulator's job                           |
+| Agent panel shortcuts (§1.2.3)        | adapted  | P1       | `/panel` plus the workspace, processes, and planning targets       |
+| App control bridge (§1.2.3)           | excluded | —        | hidden automation hook with no user surface; backend keeps working |
+| "What's new" card (§1.2.4)            | excluded | —        | GUI tip cards; terminal users read the changelog                   |
+| "Tip" card (§1.2.4)                   | excluded | —        | as above                                                           |
+| "Tip · title" link (§1.2.4)           | excluded | —        | as above                                                           |
+| Tip CTA targets (§1.2.4)              | excluded | —        | tips are not shown in the TUI                                      |
+
+### 2.3 Chat: start and draft (§1.3.1–§1.3.2)
+
+| Item (§1 ref)                         | Class    | Priority | Terminal form                                                 |
+| ------------------------------------- | -------- | -------- | ------------------------------------------------------------- |
+| AI model banner (§1.3.1)              | adapted  | P0       | start-screen warning line; `/settings ai-models` to configure |
+| Runtime banner (§1.3.1)               | adapted  | P1       | warning line with `/setup-wizard` and recheck action          |
+| Feature tips (§1.3.1)                 | excluded | —        | see §1.2.4 tips                                               |
+| Morning Briefing recipe card (§1.3.1) | adapted  | P2       | `/morning-briefing` starts the walkthrough                    |
+| Built-in Assistants (§1.3.1)          | direct   | P0       | `/new` lists assistants as a picker                           |
+| My Assistants (§1.3.1)                | direct   | P0       | same picker                                                   |
+| Manage Assistants (§1.3.1)            | adapted  | P1       | `/assistants`                                                 |
+| Empty / error state (§1.3.1)          | direct   | P0       | plain error text with a create action                         |
+| Playbook start (§1.3.1)               | adapted  | P1       | `/playbooks` card action                                      |
+| Draft header (§1.3.2)                 | direct   | P0       | header line "[assistant] · New Session"                       |
+| Capabilities (§1.3.2)                 | adapted  | P1       | text badge list under the header                              |
+| Add tools (§1.3.2)                    | adapted  | P1       | opens the assistant editor Tools tab                          |
+| Model and thinking (§1.3.2)           | adapted  | P0       | `/model` and `/thinking` pickers for the draft                |
+| Isolation Settings (§1.3.2)           | adapted  | P2       | `/docker` toggle plus image argument                          |
+| Workspace by drop (§1.3.2)            | adapted  | P1       | `/workspace <path>` argument (no drag-and-drop in a terminal) |
+| Draft composer (§1.3.2)               | direct   | P0       | the input line                                                |
+| Create on send (§1.3.2)               | direct   | P0       | identical backend flow                                        |
+| No-provider toast (§1.3.2)            | direct   | P0       | inline error with settings action                             |
+| Docker error dialog (§1.3.2)          | adapted  | P2       | prompt with the same four choices                             |
+
+### 2.4 Chat: session screen and header (§1.3.3–§1.3.4)
+
+| Item (§1 ref)                      | Class   | Priority | Terminal form                                                    |
+| ---------------------------------- | ------- | -------- | ---------------------------------------------------------------- |
+| Loading overlay (§1.3.3)           | direct  | P0       | status lines while the session starts                            |
+| Load error (§1.3.3)                | direct  | P0       | inline error text                                                |
+| Playbook auto-start (§1.3.3)       | adapted | P1       | `/playbooks` start action prints the same strip                  |
+| MCP discovery toasts (§1.3.3)      | direct  | P1       | inline lines per server                                          |
+| Keep-alive (§1.3.3)                | direct  | P0       | no client-side work: the shared backend runs sessions regardless |
+| Title (§1.3.4)                     | direct  | P0       | header line                                                      |
+| Rename session (§1.3.4)            | direct  | P1       | `/rename <name>`                                                 |
+| Bookmark (§1.3.4)                  | direct  | P1       | `/bookmark`                                                      |
+| Export session (§1.3.4)            | adapted | P1       | `/export md <path>` or `/export atif <path>` writes the file     |
+| Copy pairing instructions (§1.3.4) | adapted | P2       | `/pairing` prints the instructions (terminal clipboard varies)   |
+| Panel update badges (§1.3.4)       | adapted | P1       | status-line hint "planning updated"                              |
+| Toggle agent panels (§1.3.4)       | adapted | P1       | `/panel ...`                                                     |
+| Session files (§1.3.4)             | adapted | P1       | `/files` lists; path shown; open with default app on request     |
+
+### 2.5 Chat: status bar (§1.3.5)
+
+| Item (§1 ref)                     | Class   | Priority | Terminal form                                           |
+| --------------------------------- | ------- | -------- | ------------------------------------------------------- |
+| Workflow banner (§1.3.5)          | direct  | P0       | persistent status line with Retry / Continue keys       |
+| Session model (§1.3.5)            | adapted | P0       | `/model` picker; same idle-only rule and refresh action |
+| Sub-session batch update (§1.3.5) | adapted | P2       | confirm prompt with the same three choices              |
+| Thinking effort (§1.3.5)          | direct  | P0       | `/thinking` choice list: off, low, medium, high, auto   |
+| Execution mode (§1.3.5)           | direct  | P0       | `/permission` choice list: normal, yolo, unsafe         |
+| Token metrics (§1.3.5)            | adapted | P2       | `/stats` prints the same numbers                        |
+| Tools count (§1.3.5)              | adapted | P1       | `/tools` list with badges and schemas                   |
+| Retry failed MCP (§1.3.5)         | direct  | P1       | `/mcp retry`                                            |
+
+### 2.6 Chat: composer (§1.3.6)
+
+| Item (§1 ref)               | Class   | Priority | Terminal form                                                           |
+| --------------------------- | ------- | -------- | ----------------------------------------------------------------------- |
+| Mode badge (§1.3.6)         | direct  | P0       | status-line text                                                        |
+| Attached files bar (§1.3.6) | adapted | P0       | attached paths listed above the input; remove by number                 |
+| Queued prompts (§1.3.6)     | direct  | P0       | queued list with cancel-by-number                                       |
+| Input (§1.3.6)              | direct  | P0       | Enter sends, Shift+Enter newline, IME composition respected             |
+| `@` mentions (§1.3.6)       | adapted | P1       | typing `@` opens the same picker list (skills, files, tools, playbooks) |
+| `/clear` (§1.3.6)           | direct  | P0       | identical                                                               |
+| `/reload` (§1.3.6)          | direct  | P0       | identical                                                               |
+| `/permission …` (§1.3.6)    | direct  | P0       | identical                                                               |
+| Attach file (§1.3.6)        | adapted | P0       | `/attach <path>` argument (no file picker)                              |
+| Drop files (§1.3.6)         | adapted | P0       | same `/attach <path>` path                                              |
+| Paste image (§1.3.6)        | adapted | P2       | terminals cannot paste image bytes; attach a saved file instead         |
+| Cancel request (§1.3.6)     | direct  | P0       | Esc / Ctrl+C; skipped while a prompt is open                            |
+| Resume (§1.3.6)             | direct  | P0       | key shown in the status line when paused                                |
+| Oversize guard (§1.3.6)     | direct  | P0       | identical rejection message                                             |
+
+### 2.7 Chat: messages (§1.3.7)
+
+| Item (§1 ref)              | Class   | Priority | Terminal form                                                                                                                                                                             |
+| -------------------------- | ------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Load older (§1.3.7)        | adapted | P0       | pager scrolls into history; loads 50 at a time on demand                                                                                                                                  |
+| Jump to approvals (§1.3.7) | adapted | P0       | status-line badge "n awaiting approval"; approval prompt is inline                                                                                                                        |
+| Scroll to latest (§1.3.7)  | adapted | P0       | pager key                                                                                                                                                                                 |
+| Compact divider (§1.3.7)   | adapted | P1       | "Context compressed above" line; expand key shows the summary                                                                                                                             |
+| Role label (§1.3.7)        | direct  | P0       | prefix line per message                                                                                                                                                                   |
+| Copy message (§1.3.7)      | adapted | P1       | `/copy <n>` writes the text to a file (terminal clipboard varies)                                                                                                                         |
+| Regenerate (§1.3.7)        | direct  | P1       | `/regenerate`                                                                                                                                                                             |
+| Copy tool calls (§1.3.7)   | adapted | P2       | JSON dump to a file                                                                                                                                                                       |
+| Export message (§1.3.7)    | adapted | P2       | session export covers it; per-message export later                                                                                                                                        |
+| Error bubble (§1.3.7)      | direct  | P0       | error text with Try Again / settings actions                                                                                                                                              |
+| Thinking (§1.3.7)          | adapted | P0       | collapsed "Thinking…" block, expand key, auto-expand while streaming                                                                                                                      |
+| Rich content (§1.3.7)      | adapted | P0       | Markdown and code rendered in-terminal; Mermaid becomes source plus file link; images, audio, and video become paths with an open-externally action; resource links become openable paths |
+
+### 2.8 Chat: tool cards (§1.3.8)
+
+| Item (§1 ref)                     | Class   | Priority | Terminal form                                                                                      |
+| --------------------------------- | ------- | -------- | -------------------------------------------------------------------------------------------------- |
+| Tool group (§1.3.8)               | direct  | P0       | "Tool Executions (n)" block with status badges                                                     |
+| Tool call row (§1.3.8)            | direct  | P0       | expandable parameters and result, same detail level                                                |
+| MCP UI resource (§1.3.8)          | adapted | P2       | action list rendered as text choices; interactive form fallback                                    |
+| Legacy form (§1.3.8)              | adapted | P2       | read-only text dump of the form (already disabled in GUI)                                          |
+| File write card (§1.3.8)          | adapted | P0       | badge plus unified diff in text; preview as pager content                                          |
+| String replace card (§1.3.8)      | direct  | P0       | diff text                                                                                          |
+| Shell output card (§1.3.8)        | direct  | P0       | exit code, duration, stdout, stderr block                                                          |
+| Report result card (§1.3.8)       | direct  | P0       | status, criteria, proof; deliverables listed as paths                                              |
+| Deliverable file actions (§1.3.8) | adapted | P0       | Preview opens the pager; Open runs the OS open command; Download is a no-op (already a local path) |
+| Sub-agent card (§1.3.8)           | adapted | P1       | state, task, result as text; `/resume <child-id>` opens it                                         |
+
+### 2.9 Chat: in-chat prompts (§1.3.9)
+
+| Item (§1 ref)            | Class   | Priority | Terminal form                                              |
+| ------------------------ | ------- | -------- | ---------------------------------------------------------- |
+| Tool approval (§1.3.9)   | direct  | P0       | blocking prompt with tool name and JSON; Approve / Reject  |
+| Secret prompt (§1.3.9)   | direct  | P0       | masked password input; Esc cancels                         |
+| Question prompt (§1.3.9) | direct  | P0       | list-based picker per question, same multi-select and text |
+| Pairing request (§1.3.9) | adapted | P1       | see §2.2 (dialog becomes a prompt)                         |
+
+### 2.10 Side panels (§1.3.10)
+
+| Item (§1 ref)                | Class   | Priority | Terminal form                                                    |
+| ---------------------------- | ------- | -------- | ---------------------------------------------------------------- |
+| Workspace toolbar (§1.3.10)  | adapted | P1       | `/panel workspace` with open-explorer, open-terminal, refresh    |
+| Workspace override (§1.3.10) | adapted | P1       | `/workspace <path>` and `/workspace clear`                       |
+| File tree (§1.3.10)          | adapted | P1       | indented tree list; file click previews or opens externally      |
+| Upload zone (§1.3.10)        | adapted | P1       | `/import <path>` into the workspace                              |
+| File preview (§1.3.10)       | adapted | P1       | pager for text and Markdown; HTML source; others open externally |
+| Processes (§1.3.10)          | adapted | P1       | `/panel processes` list with view, status, stop                  |
+| Process output (§1.3.10)     | adapted | P1       | pager with stdout and stderr                                     |
+| Planning (§1.3.10)           | adapted | P1       | `/panel planning` shows goal, tasks, scratchpad                  |
+| Session schedules (§1.3.10)  | adapted | P1       | list with pause, resume, cancel actions                          |
+| Panel attention (§1.3.10)    | adapted | P2       | status-line "planning updated" hints                             |
+
+### 2.11 Session management (§1.4)
+
+| Item (§1 ref)                     | Class   | Priority | Terminal form                                               |
+| --------------------------------- | ------- | -------- | ----------------------------------------------------------- |
+| New session (§1.4.1)              | direct  | P0       | `/new`                                                      |
+| From playbook (§1.4.1)            | adapted | P1       | `/playbooks` start                                          |
+| From scheduled task (§1.4.1)      | direct  | P0       | backend behaviour, no user surface                          |
+| Recent Sessions list (§1.4.2)     | adapted | P0       | `/resume` picker                                            |
+| History page (§1.4.2)             | adapted | P1       | `/history`                                                  |
+| Search (§1.4.2)                   | adapted | P1       | `/history search <text>`                                    |
+| Sort (§1.4.2)                     | adapted | P1       | `/history --sort …`                                         |
+| Status filter (§1.4.2)            | adapted | P1       | `/history --status …`                                       |
+| Bookmarked filter (§1.4.2)        | adapted | P1       | `/history --bookmarked`                                     |
+| Bookmarked strip (§1.4.2)         | adapted | P2       | the bookmarked filter covers it                             |
+| Lineage filter (§1.4.2)           | adapted | P2       | `/history --lineage <id>`                                   |
+| Tree badges (§1.4.2)              | adapted | P1       | text badges on rows                                         |
+| Open from sidebar (§1.4.3)        | direct  | P0       | `/resume`                                                   |
+| Resume from History (§1.4.3)      | adapted | P1       | row action in `/history`                                    |
+| From notification (§1.4.3)        | adapted | P1       | `/attention` row action                                     |
+| From Org (§1.4.3)                 | adapted | P2       | `/org` card action                                          |
+| From sub-agent card (§1.4.3)      | adapted | P1       | `/resume <child-id>`                                        |
+| Rename (§1.4.4)                   | direct  | P1       | `/rename`                                                   |
+| Bookmark (§1.4.4)                 | direct  | P1       | `/bookmark`                                                 |
+| Delete (§1.4.4)                   | direct  | P1       | `/delete` with confirm                                      |
+| Delete with children (§1.4.4)     | adapted | P1       | confirm prompt offers both choices                          |
+| Clear all sessions (§1.4.4)       | adapted | P2       | danger-zone action in `/settings advanced`                  |
+| Markdown export (§1.4.5)          | adapted | P1       | `/export md <path>`                                         |
+| ATIF export (§1.4.5)              | adapted | P1       | `/export atif <path>`                                       |
+| Copy visible (§1.4.5)             | adapted | P1       | `/export visible <path>`                                    |
+| Org bundle (§1.4.5)               | adapted | P2       | `/org export <path>` and `/org import <path>`               |
+| Sidebar status dot (§1.4.6)       | adapted | P0       | status column in every session list                         |
+| History status badge (§1.4.6)     | adapted | P1       | same words as text badges                                   |
+| Live updates (§1.4.6)             | direct  | P0       | the TUI consumes the same `agent:event` stream              |
+| Attention list (§1.4.6)           | adapted | P1       | `/attention`                                                |
+| Mark viewed (§1.4.6)              | direct  | P1       | automatic, identical triggers                               |
+| Import Org (§1.4.7)               | adapted | P2       | `/org import <path>`                                        |
+| Org refresh / search (§1.4.7)     | adapted | P2       | `/org` actions                                              |
+| Org card (§1.4.7)                 | adapted | P2       | text card with counts and lineage list                      |
+| Export Org (§1.4.7)               | adapted | P2       | `/org export`                                               |
+| Delete org (§1.4.7)               | adapted | P2       | `/org delete` with confirm                                  |
+| Resume root (§1.4.7)              | adapted | P2       | `/org` card action                                          |
+| Workspace at creation (§1.4.8)    | adapted | P1       | `/new --workspace <path>`                                   |
+| Override after creation (§1.4.8)  | adapted | P1       | `/workspace <path>`                                         |
+| Scheduled task workspace (§1.4.8) | adapted | P1       | path field in the task form                                 |
+| Backend commands (§1.4.9)         | —       | —        | reference table, no classification; TUI reuses the commands |
+
+### 2.12 Feature pages (§1.5–§1.9)
+
+| Item (§1 ref)                         | Class    | Priority | Terminal form                                              |
+| ------------------------------------- | -------- | -------- | ---------------------------------------------------------- |
+| Assistants search (§1.5)              | direct   | P1       | `/assistants <text>`                                       |
+| Create (§1.5)                         | direct   | P1       | `/assistants new`                                          |
+| Card expand (§1.5)                    | direct   | P1       | list row expands to prompt and badges                      |
+| Edit (§1.5)                           | direct   | P1       | `/assistants edit <id>`                                    |
+| Delete (§1.5)                         | direct   | P1       | confirm prompt                                             |
+| Editor General (§1.5)                 | adapted  | P1       | form wizard: name, description, prompt (multi-line editor) |
+| Editor Tools (§1.5)                   | adapted  | P1       | toggle and checkbox lists                                  |
+| Editor Skills (§1.5)                  | adapted  | P1       | enable or disable list; add by path                        |
+| Playbooks refresh (§1.6)              | direct   | P1       | `/playbooks` reload key                                    |
+| Playbooks search (§1.6)               | direct   | P1       | filter text                                                |
+| Playbooks display options (§1.6)      | adapted  | P2       | sort flag only; grouping is list-native                    |
+| Playbooks group header (§1.6)         | excluded | —        | terminal lists are flat; sort covers ordering              |
+| Playbooks card (§1.6)                 | direct   | P1       | list row with goal and steps                               |
+| Playbooks Start / Continue (§1.6)     | direct   | P1       | row action                                                 |
+| Playbooks delete (§1.6)               | direct   | P1       | confirm prompt                                             |
+| Extensions Add Extension (§1.7.1)     | adapted  | P1       | form wizard (name, transport, env, headers)                |
+| Extensions server card (§1.7.1)       | adapted  | P1       | text card: transport, verification, OAuth state            |
+| Extensions Active switch (§1.7.1)     | direct   | P1       | `/extensions active <name>`                                |
+| Extensions Tools list (§1.7.1)        | adapted  | P1       | `/extensions tools <name>` pager                           |
+| Extensions Edit (§1.7.1)              | adapted  | P1       | same wizard prefilled                                      |
+| Extensions Retry (§1.7.1)             | direct   | P1       | `/extensions retry <name>`                                 |
+| Open App Wizard (§1.7.1)              | adapted  | P2       | creates the wizard draft chat, same as GUI                 |
+| Authorize / Disconnect (§1.7.1)       | adapted  | P1       | starts the same OAuth flow; browser opens externally       |
+| Extensions Delete (§1.7.1)            | direct   | P1       | confirm prompt                                             |
+| Extensions Load more (§1.7.1)         | direct   | P1       | pager                                                      |
+| Recommended presets (§1.7.1)          | adapted  | P1       | searchable preset list; one-click install stays            |
+| Add / Edit / Install dialog (§1.7.1)  | adapted  | P1       | wizard pages instead of one modal                          |
+| Skills refresh (§1.7.2)               | direct   | P1       | reload key                                                 |
+| Installed skills (§1.7.2)             | adapted  | P1       | list with delete; system skills marked locked              |
+| Skills folders (§1.7.2)               | adapted  | P2       | paths printed; open command on request                     |
+| Reset user skills (§1.7.2)            | direct   | P1       | confirm prompt                                             |
+| Install by drop (§1.7.2)              | adapted  | P1       | `/skills install <path>`                                   |
+| Install from GitHub (§1.7.2)          | direct   | P1       | `/skills install <url>`                                    |
+| Conflict dialog (§1.7.2)              | direct   | P1       | picker with the same choices                               |
+| Knowledge view switcher (§1.8)        | excluded | —        | the terminal has one layout                                |
+| Knowledge refresh (§1.8)              | direct   | P1       | reload key                                                 |
+| Knowledge search (§1.8)               | direct   | P1       | `/knowledge search <text>`                                 |
+| Knowledge assistant filter (§1.8)     | direct   | P1       | `/knowledge --assistant …`                                 |
+| Knowledge graph (§1.8)                | adapted  | P2       | text citation list (neighbours, relationships); no canvas  |
+| Knowledge entity filter (§1.8)        | adapted  | P1       | `/knowledge entity <id>` with inspect                      |
+| Knowledge chunk list (§1.8)           | adapted  | P1       | pager with load-more                                       |
+| Knowledge inspector (§1.8)            | adapted  | P1       | detail view; delete with confirm                           |
+| Scheduled tasks New task (§1.9.1)     | direct   | P1       | `/tasks new`                                               |
+| Starter templates (§1.9.1)            | adapted  | P2       | `/tasks template` picker                                   |
+| Morning Briefing link (§1.9.1)        | adapted  | P2       | `/morning-briefing`                                        |
+| Scheduled tasks summary (§1.9.1)      | direct   | P1       | header line                                                |
+| Scheduled task row (§1.9.1)           | adapted  | P1       | row with enable, edit, delete actions                      |
+| Task form fields (§1.9.2)             | direct   | P1       | form wizard: name, assistant, schedule, message, mode      |
+| Schedule builder (§1.9.2)             | direct   | P1       | simple fields plus raw cron input                          |
+| Workspace field (§1.9.2)              | adapted  | P1       | path argument                                              |
+| Message field with mentions (§1.9.2)  | adapted  | P1       | same `@` picker                                            |
+| Execution mode field (§1.9.2)         | direct   | P1       | choice list                                                |
+| Reset planning switch (§1.9.2)        | direct   | P1       | toggle                                                     |
+| Morning Briefing walkthrough (§1.9.3) | adapted  | P2       | scripted step-by-step prompts                              |
+
+### 2.13 Settings (§1.10–§1.11)
+
+| Item (§1 ref)                              | Class    | Priority | Terminal form                                                         |
+| ------------------------------------------ | -------- | -------- | --------------------------------------------------------------------- |
+| Settings page shell (§1.10.1)              | —        | —        | section-level rows below                                              |
+| Version (§1.10.1)                          | direct   | P1       | `/settings` header                                                    |
+| Changed badge / tab dots (§1.10.1)         | adapted  | P1       | "n sections changed" line                                             |
+| Restart required (§1.10.1)                 | direct   | P1       | same wording                                                          |
+| Discard (§1.10.1)                          | direct   | P1       | confirm prompt                                                        |
+| Close (§1.10.1)                            | direct   | P1       | same unsaved-changes choices                                          |
+| Save Changes (§1.10.1)                     | direct   | P1       | `/settings save`                                                      |
+| Language (§1.10.2)                         | direct   | P1       | choice list                                                           |
+| Color Theme (§1.10.2)                      | excluded | —        | terminal colours belong to the emulator                               |
+| Font Family (§1.10.2)                      | excluded | —        | terminal fonts belong to the emulator                                 |
+| UI size (§1.10.2)                          | excluded | —        | terminal font size belongs to the emulator                            |
+| Message Layout (§1.10.2)                   | excluded | —        | the TUI always uses the document look; the value affects the GUI only |
+| Tool Detail Level (§1.10.2)                | direct   | P1       | choice list                                                           |
+| Initial Response Speed Format (§1.10.2)    | direct   | P2       | choice list                                                           |
+| Show feature tips (§1.10.2)                | excluded | —        | the TUI shows no tips; the value affects the GUI only                 |
+| Show Token Speed (§1.10.2)                 | direct   | P2       | toggle                                                                |
+| Compact Metrics (§1.10.2)                  | direct   | P2       | toggle                                                                |
+| Default AI Model (§1.10.3)                 | adapted  | P0       | `/model` picker with provider list and refresh                        |
+| Backup AI Model (§1.10.3)                  | adapted  | P1       | picker                                                                |
+| Thinking Depth (§1.10.3)                   | direct   | P1       | choice list                                                           |
+| Override Temperature (§1.10.3)             | direct   | P1       | toggle plus numeric input                                             |
+| Sub-Agent Model Routing (§1.10.3)          | adapted  | P1       | three pickers plus Use default                                        |
+| Provider API Keys (§1.10.3)                | adapted  | P0       | masked secret inputs per provider                                     |
+| Custom OpenAI Providers (§1.10.3)          | adapted  | P1       | form wizard                                                           |
+| Context Management Strategy (§1.10.4)      | direct   | P1       | choice list                                                           |
+| Max Output Tokens (§1.10.4)                | direct   | P1       | preset list                                                           |
+| Message Window Size (§1.10.4)              | direct   | P1       | numeric input                                                         |
+| Max Input Context (§1.10.4)                | direct   | P1       | preset list                                                           |
+| Tool Calls Visible Count (§1.10.4)         | direct   | P1       | numeric input                                                         |
+| Code Diff Context Lines (§1.10.4)          | direct   | P1       | numeric input                                                         |
+| Max File Upload Size (§1.10.5)             | direct   | P1       | preset list                                                           |
+| Your Chrome (§1.10.5)                      | adapted  | P2       | status lines; Web Store link opens the browser                        |
+| Clear agent browser data (§1.10.5)         | direct   | P2       | confirm prompt                                                        |
+| Prevent sleep (§1.10.5)                    | direct   | P1       | toggle                                                                |
+| Search Index Frequency (§1.10.5)           | direct   | P1       | numeric input                                                         |
+| Web Action Timeout (§1.10.5)               | direct   | P1       | numeric input                                                         |
+| Extension Discovery Timeout (§1.10.5)      | direct   | P1       | numeric input                                                         |
+| MCP Tool Execution Timeout (§1.10.5)       | direct   | P1       | numeric input                                                         |
+| Keep App Logs (§1.10.5)                    | direct   | P1       | numeric input                                                         |
+| Scheduled Task Minimum Interval (§1.10.5)  | direct   | P1       | numeric input                                                         |
+| HTTP Server Port (§1.10.5)                 | direct   | P1       | numeric input                                                         |
+| Expose HTTP Server (§1.10.5)               | direct   | P1       | choice list                                                           |
+| Session API Keys (§1.10.5)                 | adapted  | P1       | key list with refresh and revoke-confirm                              |
+| Open Migration Dashboard (§1.10.5)         | direct   | P2       | `/settings migration`                                                 |
+| Max Retry Attempts / Retry Delay (§1.10.6) | direct   | P1       | numeric and preset inputs                                             |
+| Loop and wait limits (§1.10.6)             | direct   | P1       | numeric inputs                                                        |
+| Session Branching / Child Limit (§1.10.6)  | direct   | P1       | numeric inputs                                                        |
+| Concurrency limits (§1.10.6)               | direct   | P1       | numeric inputs                                                        |
+| Recent Media Payload Messages (§1.10.6)    | direct   | P2       | numeric input                                                         |
+| Tool Result Inline Limit (§1.10.6)         | direct   | P2       | preset list                                                           |
+| Shell Isolation Level (§1.10.6)            | direct   | P1       | choice list                                                           |
+| Shell runtime bootstrap (§1.10.6)          | direct   | P2       | toggle                                                                |
+| Linked git worktrees (§1.10.6)             | direct   | P2       | toggle                                                                |
+| About / Check for Updates (§1.10.6)        | adapted  | P2       | check prints the result; install runs the updater and quits           |
+| Clear All Sessions & Workspace (§1.10.6)   | adapted  | P2       | danger-zone action in `/settings advanced` with confirm               |
+| Reset All Data & Settings (§1.10.6)        | direct   | P2       | type-`RESET` confirm                                                  |
+| Inline Audio Attachments (§1.10.7)         | direct   | P2       | toggle                                                                |
+| Tool-loop recovery legacy (§1.10.7)        | direct   | P2       | toggle                                                                |
+| Max resample retries (§1.10.7)             | direct   | P2       | numeric input                                                         |
+| Dev tab (all rows) (§1.10.8)               | excluded | —        | dev-only build; developers use the GUI dev build                      |
+| Provider model list (§1.10.9)              | —        | —        | reference table; served through the P0 `/model` picker                |
+| Thinking Depth provider mapping (§1.10.9)  | —        | —        | reference table; backend behaviour                                    |
+| Migration Back (§1.11)                     | direct   | P2       | leave the page                                                        |
+| Migration Export (§1.11)                   | adapted  | P2       | path argument plus sensitive-data prompt                              |
+| Migration Import (§1.11)                   | adapted  | P2       | path argument                                                         |
+| Migration Password dialogs (§1.11)         | direct   | P2       | masked inputs                                                         |
+| Migration Progress (§1.11)                 | adapted  | P2       | single updating percent line                                          |
+| Migration Import preview (§1.11)           | direct   | P2       | text preview plus conflict choice                                     |
+| Migration Done (§1.11)                     | direct   | P2       | result table                                                          |
+
+### 2.14 Dev-only, hidden, and conditional (§1.12)
+
+| Item (§1 ref)                               | Class    | Priority | Terminal form                                                   |
+| ------------------------------------------- | -------- | -------- | --------------------------------------------------------------- |
+| Settings Dev tab (§1.12)                    | excluded | —        | dev-only, as in the GUI                                         |
+| Update auto-check (§1.12)                   | —        | —        | backend behaviour inherited by §2.2 Update toast                |
+| `/history/search` (§1.12)                   | excluded | —        | hidden duplicate, as in the GUI                                 |
+| App control bridge (§1.12)                  | excluded | —        | hidden automation hook, as in §2.2                              |
+| Session API pairing dialog (§1.12)          | —        | —        | already classified P1 in §2.2 and §2.9                          |
+| Slash commands and `@` mentions (§1.12)     | —        | —        | already classified in §2.6; discovery-by-typing stays identical |
+| Agent Hub URL (§1.12)                       | excluded | —        | no rendered input in the GUI either; nothing to port            |
+| Provider options without UI (§1.12)         | excluded | —        | no rendered control in the GUI; backend-only settings           |
+| Message search (§1.12)                      | excluded | —        | no GUI screen calls it; out of scope for parity                 |
+| Feature tips (§1.12)                        | excluded | —        | see §2.2 tips rows                                              |
+| Starter templates, Morning Briefing (§1.12) | —        | —        | already classified in §2.12                                     |
+| Onboarding banners (§1.12)                  | —        | —        | already classified in §2.3                                      |
+| Isolation Settings in draft (§1.12)         | —        | —        | already classified in §2.3                                      |
+
+### 2.15 Excluded rollup
+
+All exclusions, with reasons, so a reader can audit that parity is the default:
+
+1. Sidebar toggle and Collapse sidebar — window chrome; the navigation itself is adapted as slash commands (§2.2).
+2. Theme toggle, Color Theme, Font Family, UI size, Message Layout — rendering concerns owned by the terminal emulator or a fixed TUI layout.
+3. Feature tips (cards, links, CTAs) — GUI onboarding surface; the underlying "show tips" setting persists for the GUI.
+4. App control bridge — hidden automation hook with no user surface.
+5. `/history/search` route — hidden duplicate route, hidden in the GUI too.
+6. Playbooks group headers — terminal lists are flat.
+7. Knowledge view switcher — one terminal layout.
+8. Dev tab — dev-only builds.
+9. Agent Hub URL, provider options without UI, message search — no GUI surface exists to port.
+
+### 2.16 P0 core (phase-1 release gate)
+
+The P0 set is the full chat turn plus session entry, exactly as required:
+
+- Send and stream: §2.3 composer and create-on-send, §2.6 input, §2.7 messages and rich content, §2.8 tool cards.
+- Tool approval, askUser, secret prompt: §2.9.
+- `/new`: §2.3 assistant picker, model and thinking, §2.11 New session.
+- `/resume`: §2.11 Recent Sessions and Open from sidebar, §2.11 sidebar status dot.
+- Reaching a first message: §2.3 AI model banner, §2.13 Default AI Model and Provider API Keys, §2.5 execution mode, §2.4 loading and error states, §2.5 workflow banner.
 
 ## 3. Commands and TUI screens
 
