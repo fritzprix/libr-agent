@@ -16,16 +16,18 @@
 //! still goes to the WebView when there is one, and fails fast when there is
 //! none, because nothing would ever answer it.
 //!
-//! Covered: the built-in `openai` provider and custom OpenAI-compatible
-//! providers (`custom:<id>`, for example vLLM or LM Studio), streaming text,
-//! reasoning, tool calls, images and audio in the request, and compaction.
-//! Not covered here (the frontend has them): mid-stream loop and
-//! reasoning-budget detection, retry with a fallback model, prompt-cache keys,
-//! and thinking-effort mapping.
+//! The HTTP calls go through the Tauri-free `llm-client` crate, which the GUI,
+//! `libragent --tui`, and `liblet` share. This module decides who answers a
+//! request, reads the provider and generation settings, and delivers results.
+//!
+//! Covered: the OpenAI-compatible providers (`openai`, `fireworks`,
+//! `openrouter`, and `custom:<id>`, for example vLLM or LM Studio), streaming
+//! text, reasoning, tool calls, images and audio in the request, compaction,
+//! and the GUI's temperature, thinking-effort, retry, and prompt-cache-key
+//! behaviour. Not covered here (the frontend has them): mid-stream loop and
+//! reasoning-budget detection, and retry with a fallback model.
 
-mod client;
 mod convert;
-mod stream;
 
 use crate::agent::llm::types::{
     AgentRuntimeError, AgentRuntimeErrorType, CompactRequest, CompletionRequest,
@@ -33,21 +35,22 @@ use crate::agent::llm::types::{
 use crate::agent::session_manager::CompactStreamMeta;
 use crate::agent::AgentSessionManager;
 use crate::mcp::types::MCPContent;
+use crate::models::advanced_settings::AdvancedSettings;
 use crate::models::chat::Message;
 use crate::repositories::settings_repository::SettingsRepository;
-pub use client::Endpoint;
+use convert::GenerationOptions;
 use dashmap::DashMap;
+pub use llm_client::Endpoint;
+use llm_client::{ChatProvider, CompletedChat, ErrorKind, LlmError, RetryPolicy};
 use serde_json::Value;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, RwLock};
+use std::time::Duration;
 use tauri::{AppHandle, Manager};
 use tokio::sync::oneshot;
 
 /// Process-wide switch. Value `rust` turns the executor on.
 pub const EXECUTOR_ENV: &str = "LIBRAGENT_LLM_EXECUTOR";
-const OPENAI_PROVIDER: &str = "openai";
-const CUSTOM_PROVIDER_PREFIX: &str = "custom:";
-const OPENAI_DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 
 /// A call that is running for a session. `generation` tells a finished call
 /// apart from the one that replaced it.
@@ -148,7 +151,7 @@ enum Route {
 fn route(enabled: bool, has_webview: bool, provider: &str) -> Route {
     if !enabled {
         Route::Frontend
-    } else if is_openai_compatible(provider) {
+    } else if llm_client::is_openai_compatible(provider) {
         Route::Rust
     } else if has_webview {
         Route::Frontend
@@ -184,74 +187,32 @@ fn unavailable(provider: &str) -> AgentRuntimeError {
     .with_code("RUST_EXECUTOR_NO_WEBVIEW")
 }
 
-fn is_openai_compatible(provider: &str) -> bool {
-    provider == OPENAI_PROVIDER
-        || provider
-            .strip_prefix(CUSTOM_PROVIDER_PREFIX)
-            .is_some_and(|id| !id.is_empty())
-}
-
-/// Picks the endpoint for `provider` out of the `serviceConfigs` and
-/// `customProviders` settings values (the same data the frontend reads).
-fn resolve_endpoint(
-    provider: &str,
-    service_configs: Option<&Value>,
-    custom_providers: Option<&Value>,
-) -> Result<Endpoint, String> {
-    let non_empty = |value: Option<&Value>| {
-        value
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|text| !text.is_empty())
-            .map(str::to_string)
-    };
-
-    if let Some(id) = provider.strip_prefix(CUSTOM_PROVIDER_PREFIX) {
-        let entry = custom_providers
-            .and_then(Value::as_array)
-            .and_then(|providers| {
-                providers
-                    .iter()
-                    .find(|entry| entry.get("id").and_then(Value::as_str) == Some(id))
-            })
-            .ok_or_else(|| format!("Custom provider '{provider}' is not in Settings"))?;
-        let base_url = non_empty(entry.get("baseUrl"))
-            .ok_or_else(|| format!("Custom provider '{provider}' has no base URL"))?;
-        return Ok(Endpoint {
-            base_url,
-            api_key: non_empty(entry.get("apiKey")),
-        });
-    }
-
-    let config = service_configs.and_then(|configs| configs.get(provider));
-    Ok(Endpoint {
-        base_url: non_empty(config.and_then(|config| config.get("baseUrl")))
-            .unwrap_or_else(|| OPENAI_DEFAULT_BASE_URL.to_string()),
-        api_key: non_empty(config.and_then(|config| config.get("apiKey"))),
-    })
-}
-
 async fn read_setting(key: &str) -> Option<Value> {
     let repo = crate::state::try_get_settings_repository()?;
     let row = repo.get(key).await.ok()??;
     serde_json::from_str(&row.value).ok()
 }
 
-async fn endpoint_for(
+/// The provider for `provider`, from the `serviceConfigs` and `customProviders`
+/// settings values (the same data the frontend reads).
+async fn provider_for(
     provider: &str,
     config: &ExecutorConfig,
-) -> Result<Endpoint, Box<AgentRuntimeError>> {
-    if let Some(endpoint) = &config.endpoint_override {
-        return Ok(endpoint.clone());
-    }
-    let service_configs = read_setting("serviceConfigs").await;
-    let custom_providers = read_setting("customProviders").await;
-    resolve_endpoint(
-        provider,
-        service_configs.as_ref(),
-        custom_providers.as_ref(),
-    )
-    .map_err(|message| {
+) -> Result<Box<dyn ChatProvider>, Box<AgentRuntimeError>> {
+    let resolved = match &config.endpoint_override {
+        Some(endpoint) => llm_client::provider_with_endpoint(provider, endpoint.clone())
+            .ok_or_else(|| format!("Provider '{provider}' is not OpenAI-compatible")),
+        None => {
+            let service_configs = read_setting("serviceConfigs").await;
+            let custom_providers = read_setting("customProviders").await;
+            llm_client::resolve_provider(
+                provider,
+                service_configs.as_ref(),
+                custom_providers.as_ref(),
+            )
+        }
+    };
+    resolved.map_err(|message| {
         Box::new(
             AgentRuntimeError::new(AgentRuntimeErrorType::ValidationError, message)
                 .with_code("RUST_EXECUTOR_NO_ENDPOINT"),
@@ -259,14 +220,45 @@ async fn endpoint_for(
     })
 }
 
+/// The temperature, thinking effort, and retry policy the GUI would use.
+async fn generation_settings() -> (GenerationOptions, RetryPolicy) {
+    let advanced = AdvancedSettings::load_global().await;
+    let temperature = convert::temperature_override(
+        read_setting("temperatureOverrideEnabled").await.as_ref(),
+        read_setting("temperature").await.as_ref(),
+    );
+    let options = GenerationOptions {
+        temperature,
+        thinking_effort: advanced.thinking_effort,
+    };
+    let retry = RetryPolicy {
+        max_retries: advanced.max_retries,
+        base_delay: Duration::from_millis(advanced.retry_delay),
+    };
+    (options, retry)
+}
+
+fn runtime_error(error: LlmError) -> Box<AgentRuntimeError> {
+    let error_type = match error.kind {
+        ErrorKind::Network => AgentRuntimeErrorType::NetworkError,
+        ErrorKind::Authentication => AgentRuntimeErrorType::AuthenticationError,
+        ErrorKind::RateLimit => AgentRuntimeErrorType::RateLimitError,
+        ErrorKind::Service => AgentRuntimeErrorType::AiServiceError,
+    };
+    Box::new(AgentRuntimeError::new(error_type, error.message).with_code(error.code))
+}
+
 /// The assistant message the agent loop expects back for `request`.
-fn assistant_message(request: &CompletionRequest, chat: stream::CompletedChat) -> Message {
+fn assistant_message(request: &CompletionRequest, chat: CompletedChat) -> Message {
     let now = chrono::Utc::now().timestamp_millis();
     let prompt_tokens = chat
         .usage
         .as_ref()
-        .and_then(|usage| usage.get("promptTokens"))
-        .and_then(Value::as_i64);
+        .and_then(|usage| i64::try_from(usage.prompt_tokens).ok());
+    let usage = chat
+        .usage
+        .as_ref()
+        .and_then(|usage| serde_json::to_value(usage).ok());
     Message {
         id: request.response_message_id.clone(),
         session_id: request.session_id.clone(),
@@ -284,7 +276,7 @@ fn assistant_message(request: &CompletionRequest, chat: stream::CompletedChat) -
         assistant_id: None,
         attachments: None,
         tool_use: None,
-        usage: chat.usage,
+        usage,
         prompt_tokens,
         created_at: now,
         updated_at: now,
@@ -298,15 +290,19 @@ async fn run_completion(
     request: &CompletionRequest,
     config: &ExecutorConfig,
 ) -> Result<Message, Box<AgentRuntimeError>> {
-    let endpoint = endpoint_for(&request.provider, config).await?;
-    let body = convert::chat_request_body(
+    let provider = provider_for(&request.provider, config).await?;
+    let (options, retry) = generation_settings().await;
+    let chat_request = convert::chat_request(
         &request.model,
         request.system_prompt.as_deref(),
         &request.messages,
         request.available_tools.as_deref().unwrap_or(&[]),
         request.max_tokens,
+        options,
     );
-    let chat = client::complete(&endpoint, &body).await?;
+    let chat = llm_client::complete(provider.as_ref(), &chat_request, retry)
+        .await
+        .map_err(runtime_error)?;
     Ok(assistant_message(request, chat))
 }
 
@@ -481,21 +477,20 @@ async fn run_compaction(
     system_prompt: Option<&str>,
     config: &ExecutorConfig,
 ) -> Result<(String, CompactStreamMeta), Box<AgentRuntimeError>> {
-    let endpoint = endpoint_for(provider, config).await?;
+    let provider = provider_for(provider, config).await?;
+    let (options, retry) = generation_settings().await;
     // No tools: the summary must be plain text.
-    let body = convert::chat_request_body(model, system_prompt, &request.messages, &[], None);
-    let chat = client::complete(&endpoint, &body).await?;
-    let token = |key: &str| {
-        chat.usage
-            .as_ref()
-            .and_then(|usage| usage.get(key))
-            .and_then(Value::as_u64)
-    };
+    let chat_request =
+        convert::chat_request(model, system_prompt, &request.messages, &[], None, options);
+    let chat = llm_client::complete(provider.as_ref(), &chat_request, retry)
+        .await
+        .map_err(runtime_error)?;
+    let usage = chat.usage.as_ref();
     let meta = CompactStreamMeta {
         finish_reason: chat.finish_reason.clone(),
-        prompt_tokens: token("promptTokens"),
-        completion_tokens: token("completionTokens"),
-        total_tokens: token("totalTokens"),
+        prompt_tokens: usage.map(|usage| usage.prompt_tokens),
+        completion_tokens: usage.map(|usage| usage.completion_tokens),
+        total_tokens: usage.map(|usage| usage.total_tokens),
     };
     Ok((chat.content, meta))
 }
@@ -589,55 +584,33 @@ mod tests {
     }
 
     #[test]
-    fn only_openai_and_custom_providers_are_handled_in_rust() {
-        assert!(is_openai_compatible("openai"));
-        assert!(is_openai_compatible("custom:abc123"));
-        assert!(!is_openai_compatible("custom:"));
-        assert!(!is_openai_compatible("anthropic"));
-        assert!(!is_openai_compatible("gemini"));
-    }
-
-    #[test]
-    fn openai_uses_its_service_config_and_falls_back_to_the_public_api() {
-        let configs = json!({
-            "openai": { "apiKey": "dummy-token-abcd", "baseUrl": "http://127.0.0.1:8000/v1" },
-        });
-        assert_eq!(
-            resolve_endpoint("openai", Some(&configs), None).unwrap(),
-            Endpoint {
-                base_url: "http://127.0.0.1:8000/v1".to_string(),
-                api_key: Some("dummy-token-abcd".to_string()),
-            }
-        );
-        assert_eq!(
-            resolve_endpoint("openai", None, None).unwrap(),
-            Endpoint {
-                base_url: OPENAI_DEFAULT_BASE_URL.to_string(),
-                api_key: None,
-            }
-        );
-    }
-
-    #[test]
-    fn a_custom_provider_needs_its_settings_entry_and_a_base_url() {
-        let providers = json!([
-            { "id": "lmstudio", "name": "LM Studio", "baseUrl": "http://localhost:1234/v1" },
-            { "id": "broken", "name": "No URL", "baseUrl": "  " },
-        ]);
-
-        assert_eq!(
-            resolve_endpoint("custom:lmstudio", None, Some(&providers)).unwrap(),
-            Endpoint {
-                base_url: "http://localhost:1234/v1".to_string(),
-                api_key: None,
-            }
-        );
-        assert!(resolve_endpoint("custom:broken", None, Some(&providers))
-            .unwrap_err()
-            .contains("no base URL"));
-        assert!(resolve_endpoint("custom:missing", None, Some(&providers))
-            .unwrap_err()
-            .contains("not in Settings"));
+    fn client_errors_keep_their_kind_and_code() {
+        let cases = [
+            (ErrorKind::Network, AgentRuntimeErrorType::NetworkError),
+            (
+                ErrorKind::Authentication,
+                AgentRuntimeErrorType::AuthenticationError,
+            ),
+            (ErrorKind::RateLimit, AgentRuntimeErrorType::RateLimitError),
+            (ErrorKind::Service, AgentRuntimeErrorType::AiServiceError),
+        ];
+        for (kind, expected) in cases {
+            let error = runtime_error(LlmError {
+                kind,
+                code: "RUST_EXECUTOR_HTTP",
+                message: "boom".to_string(),
+                status: None,
+            });
+            assert_eq!(
+                std::mem::discriminant(&error.error_type),
+                std::mem::discriminant(&expected)
+            );
+            let code = error
+                .details
+                .as_ref()
+                .and_then(|details| details.error_code.as_deref());
+            assert_eq!(code, Some("RUST_EXECUTOR_HTTP"));
+        }
     }
 
     #[test]
@@ -652,11 +625,17 @@ mod tests {
             max_tokens: None,
             available_tools: None,
         };
-        let chat = stream::CompletedChat {
+        let chat = CompletedChat {
             content: "done".to_string(),
             thinking: String::new(),
             tool_calls: Vec::new(),
-            usage: Some(json!({ "promptTokens": 7, "completionTokens": 1, "totalTokens": 8 })),
+            usage: Some(llm_client::Usage {
+                prompt_tokens: 7,
+                completion_tokens: 1,
+                total_tokens: 8,
+                cached_prompt_tokens: None,
+                details: None,
+            }),
             finish_reason: Some("stop".to_string()),
         };
 
@@ -670,6 +649,10 @@ mod tests {
         assert!(message.tool_calls.is_none());
         assert!(message.thinking.is_none());
         assert_eq!(message.prompt_tokens, Some(7));
+        assert_eq!(
+            message.usage,
+            Some(json!({ "promptTokens": 7, "completionTokens": 1, "totalTokens": 8 }))
+        );
     }
 
     #[test]
@@ -680,6 +663,8 @@ mod tests {
         // On: OpenAI-compatible providers are answered in Rust either way.
         assert_eq!(route(true, true, "openai"), Route::Rust);
         assert_eq!(route(true, false, "custom:lmstudio"), Route::Rust);
+        assert_eq!(route(true, false, "fireworks"), Route::Rust);
+        assert_eq!(route(true, false, "openrouter"), Route::Rust);
         // On: any other provider needs the WebView, and fails fast without it.
         assert_eq!(route(true, true, "anthropic"), Route::Frontend);
         assert_eq!(route(true, false, "anthropic"), Route::Unavailable);

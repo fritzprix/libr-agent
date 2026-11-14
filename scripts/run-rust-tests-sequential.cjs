@@ -19,6 +19,8 @@ const { spawnSync } = require('node:child_process');
 const ROOT = path.join(__dirname, '..');
 const TESTS_DIR = path.join(ROOT, 'src-tauri', 'tests');
 const RUNNER = path.join(__dirname, 'run-rust-command.cjs');
+// Workspace member crates whose unit tests run after the app's `--lib` step.
+const WORKSPACE_TEST_CRATES = ['llm-client'];
 
 function hasFlag(args, flagNames) {
   return args.some((arg) => {
@@ -153,9 +155,19 @@ function main() {
     process.exit(1);
   }
 
-  const totalSteps = targets.length + 1;
+  // Workspace crates have none of the app's features, so a feature-specific
+  // run (for example the edit-file one) leaves them out.
+  const crates = hasFlag(passthrough, [
+    '--features',
+    '--no-default-features',
+    '--all-features',
+  ])
+    ? []
+    : WORKSPACE_TEST_CRATES;
+  const leadSteps = 1 + crates.length;
+  const totalSteps = targets.length + leadSteps;
   console.error(
-    `[rust-test-sequential] ${totalSteps} targets (1 lib + ${targets.length} integration) — linking one binary at a time (avoids multi-target OOM)`,
+    `[rust-test-sequential] ${totalSteps} targets (1 lib + ${crates.length} crate + ${targets.length} integration) — linking one binary at a time (avoids multi-target OOM)`,
   );
 
   console.error(`\n[rust-test-sequential] (1/${totalSteps}) --lib`);
@@ -165,10 +177,25 @@ function main() {
     process.exit(libStatus);
   }
 
+  for (let i = 0; i < crates.length; i += 1) {
+    const crate = crates[i];
+    console.error(
+      `\n[rust-test-sequential] (${i + 2}/${totalSteps}) -p ${crate} --lib`,
+    );
+    const status = runCargoTestWithRetries(
+      ['-p', crate, '--lib', ...passthrough],
+      crate,
+    );
+    if (status !== 0) {
+      console.error(`[rust-test-sequential] FAILED: ${crate} (exit ${status})`);
+      process.exit(status);
+    }
+  }
+
   for (let i = 0; i < targets.length; i += 1) {
     const target = targets[i];
     console.error(
-      `\n[rust-test-sequential] (${i + 2}/${totalSteps}) --test ${target}`,
+      `\n[rust-test-sequential] (${i + leadSteps + 1}/${totalSteps}) --test ${target}`,
     );
     const status = runCargoTestWithRetries(
       ['--test', target, ...passthrough],
@@ -179,7 +206,7 @@ function main() {
         `[rust-test-sequential] FAILED: ${target} (exit ${status})`,
       );
       console.error(
-        `[rust-test-sequential] Stopping after first failure. Passed ${i + 1}/${totalSteps} before fail.`,
+        `[rust-test-sequential] Stopping after first failure. Passed ${i + leadSteps}/${totalSteps} before fail.`,
       );
       process.exit(status);
     }

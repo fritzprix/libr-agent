@@ -1,0 +1,16 @@
+data: {"id":"chatcmpl-8c1f0e2a","object":"chat.completion.chunk","created":1763100100,"model":"Qwen/Qwen3-8B","choices":[{"index":0,"delta":{"role":"assistant","content":""},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-8c1f0e2a","object":"chat.completion.chunk","created":1763100100,"model":"Qwen/Qwen3-8B","choices":[{"index":0,"delta":{"reasoning":"The user wants 2+2."},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-8c1f0e2a","object":"chat.completion.chunk","created":1763100100,"model":"Qwen/Qwen3-8B","choices":[{"index":0,"delta":{"reasoning":" That is 4."},"logprobs":null,"finish_reason":null}]}
+
+: ping
+
+data: {"id":"chatcmpl-8c1f0e2a","object":"chat.completion.chunk","created":1763100100,"model":"Qwen/Qwen3-8B","choices":[{"index":0,"delta":{"content":"2 + 2 = 4."},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-8c1f0e2a","object":"chat.completion.chunk","created":1763100100,"model":"Qwen/Qwen3-8B","choices":[{"index":0,"delta":{"content":""},"logprobs":null,"finish_reason":"stop","stop_reason":null}]}
+
+data: {"id":"chatcmpl-8c1f0e2a","object":"chat.completion.chunk","created":1763100100,"model":"Qwen/Qwen3-8B","choices":[],"usage":{"prompt_tokens":31,"total_tokens":58,"completion_tokens":27}}
+
+data: [DONE]
+

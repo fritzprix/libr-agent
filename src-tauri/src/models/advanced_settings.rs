@@ -13,6 +13,7 @@ use crate::agent::concurrency::{
 };
 use crate::agent::tools::spillover::TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES;
 use crate::repositories::settings_repository::SettingsRepository;
+pub use llm_client::ThinkingEffort;
 use serde::Serialize;
 use serde_json::{Map, Value};
 
@@ -23,31 +24,6 @@ const LOOP_HARD_BREAK_OFFSET_RANGE: (usize, usize) = (1, 20);
 const TOOL_WAIT_DURATION_RANGE: (u32, u32) = (1, 300);
 const TOOL_WAIT_GUIDE_COUNT_RANGE: (usize, usize) = (1, 100);
 const TOOL_WAIT_BREAK_COUNT_RANGE: (usize, usize) = (1, 100);
-
-/// Extended reasoning effort preset.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS))]
-#[serde(rename_all = "lowercase")]
-pub enum ThinkingEffort {
-    Off,
-    Low,
-    Medium,
-    High,
-    Auto,
-}
-
-impl ThinkingEffort {
-    fn parse(effort: &str) -> Option<Self> {
-        match effort {
-            "off" => Some(Self::Off),
-            "low" => Some(Self::Low),
-            "medium" => Some(Self::Medium),
-            "high" => Some(Self::High),
-            "auto" => Some(Self::Auto),
-            _ => None,
-        }
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]

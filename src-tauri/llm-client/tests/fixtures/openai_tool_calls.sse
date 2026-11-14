@@ -1,0 +1,16 @@
+data: {"id":"chatcmpl-B9mY7","object":"chat.completion.chunk","created":1763100042,"model":"gpt-4.1-2025-04-14","system_fingerprint":"fp_b3f1157249","choices":[{"index":0,"delta":{"role":"assistant","content":null,"tool_calls":[{"index":0,"id":"call_Qx7mJ2","type":"function","function":{"name":"workspace__readFile","arguments":""}}],"refusal":null},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-B9mY7","object":"chat.completion.chunk","created":1763100042,"model":"gpt-4.1-2025-04-14","system_fingerprint":"fp_b3f1157249","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"path\":"}}]},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-B9mY7","object":"chat.completion.chunk","created":1763100042,"model":"gpt-4.1-2025-04-14","system_fingerprint":"fp_b3f1157249","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"notes/todo.md\"}"}}]},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-B9mY7","object":"chat.completion.chunk","created":1763100042,"model":"gpt-4.1-2025-04-14","system_fingerprint":"fp_b3f1157249","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"id":"call_Zr81kP","type":"function","function":{"name":"workspace__listDirectory","arguments":""}}]},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-B9mY7","object":"chat.completion.chunk","created":1763100042,"model":"gpt-4.1-2025-04-14","system_fingerprint":"fp_b3f1157249","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"function":{"arguments":"{\"path\":\".\"}"}}]},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-B9mY7","object":"chat.completion.chunk","created":1763100042,"model":"gpt-4.1-2025-04-14","system_fingerprint":"fp_b3f1157249","choices":[{"index":0,"delta":{},"logprobs":null,"finish_reason":"tool_calls"}],"usage":null}
+
+data: {"id":"chatcmpl-B9mY7","object":"chat.completion.chunk","created":1763100042,"model":"gpt-4.1-2025-04-14","system_fingerprint":"fp_b3f1157249","choices":[],"usage":{"prompt_tokens":2048,"completion_tokens":46,"total_tokens":2094,"prompt_tokens_details":{"cached_tokens":0,"audio_tokens":0},"completion_tokens_details":{"reasoning_tokens":0,"audio_tokens":0,"accepted_prediction_tokens":0,"rejected_prediction_tokens":0}}}
+
+data: [DONE]
+

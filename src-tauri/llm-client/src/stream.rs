@@ -1,17 +1,28 @@
-//! Accumulates an OpenAI chat-completions SSE stream into one assistant turn.
+//! Reads a streamed chat answer into one assistant turn.
 
-use crate::agent::types::{ToolCall, ToolCallFunction};
-use serde_json::{json, Value};
+use crate::types::{CompletedChat, ToolCall, ToolCallFunction, Usage, UsageDetails};
+use serde_json::Value;
 use std::collections::BTreeMap;
+
+/// Turns the lines of one response stream into a [`CompletedChat`].
+///
+/// [`OpenAiStream`] is the default; a provider with a different stream format
+/// supplies its own through [`crate::ChatProvider::stream_parser`].
+pub trait StreamParser: Send {
+    /// Feed one line. Returns `Ok(true)` once the stream says it is done.
+    fn push_line(&mut self, line: &str) -> Result<bool, String>;
+    /// Everything the stream produced.
+    fn finish(self: Box<Self>) -> CompletedChat;
+}
 
 /// Splits a byte stream into complete lines; a line can span network chunks.
 #[derive(Default)]
-pub(super) struct LineBuffer {
+pub(crate) struct LineBuffer {
     pending: Vec<u8>,
 }
 
 impl LineBuffer {
-    pub(super) fn push(&mut self, chunk: &[u8]) -> Vec<String> {
+    pub(crate) fn push(&mut self, chunk: &[u8]) -> Vec<String> {
         self.pending.extend_from_slice(chunk);
         let mut lines = Vec::new();
         while let Some(end) = self.pending.iter().position(|byte| *byte == b'\n') {
@@ -23,7 +34,7 @@ impl LineBuffer {
     }
 
     /// Whatever is left when the stream ends without a final newline.
-    pub(super) fn finish(self) -> Option<String> {
+    pub(crate) fn finish(self) -> Option<String> {
         (!self.pending.is_empty()).then(|| String::from_utf8_lossy(&self.pending).to_string())
     }
 }
@@ -35,30 +46,42 @@ struct PartialToolCall {
     arguments: String,
 }
 
-/// What one completed stream produced.
-#[derive(Debug, Default, PartialEq)]
-pub(super) struct CompletedChat {
-    pub(super) content: String,
-    pub(super) thinking: String,
-    pub(super) tool_calls: Vec<ToolCall>,
-    /// `{ promptTokens, completionTokens, totalTokens }`, as the frontend stores it.
-    pub(super) usage: Option<Value>,
-    pub(super) finish_reason: Option<String>,
-}
-
+/// Accumulates an OpenAI chat-completions SSE stream.
 #[derive(Default)]
-pub(super) struct ChatStreamAccumulator {
+pub struct OpenAiStream {
     content: String,
     thinking: String,
     tool_calls: BTreeMap<u64, PartialToolCall>,
-    usage: Option<Value>,
+    usage: Option<Usage>,
     finish_reason: Option<String>,
     done: bool,
 }
 
-impl ChatStreamAccumulator {
-    /// Feed one SSE line. Returns `Ok(true)` once the stream said `[DONE]`.
-    pub(super) fn push_line(&mut self, line: &str) -> Result<bool, String> {
+fn token_count(value: &Value, key: &str) -> Option<u64> {
+    value.get(key).and_then(Value::as_u64)
+}
+
+fn usage_of(usage: &Value) -> Usage {
+    let cached_prompt_tokens = usage
+        .get("prompt_tokens_details")
+        .and_then(|details| token_count(details, "cached_tokens"))
+        .or_else(|| token_count(usage, "prompt_cache_hit_tokens"));
+    let reasoning_tokens = usage
+        .get("completion_tokens_details")
+        .and_then(|details| token_count(details, "reasoning_tokens"));
+    Usage {
+        prompt_tokens: token_count(usage, "prompt_tokens").unwrap_or(0),
+        completion_tokens: token_count(usage, "completion_tokens").unwrap_or(0),
+        total_tokens: token_count(usage, "total_tokens").unwrap_or(0),
+        cached_prompt_tokens,
+        details: reasoning_tokens.map(|tokens| UsageDetails {
+            reasoning_tokens: Some(tokens),
+        }),
+    }
+}
+
+impl StreamParser for OpenAiStream {
+    fn push_line(&mut self, line: &str) -> Result<bool, String> {
         let Some(data) = line.strip_prefix("data:") else {
             // Comments, `event:` lines, and blank separators carry nothing here.
             return Ok(self.done);
@@ -86,11 +109,7 @@ impl ChatStreamAccumulator {
         }
 
         if let Some(usage) = chunk.get("usage").filter(|usage| usage.is_object()) {
-            self.usage = Some(json!({
-                "promptTokens": usage.get("prompt_tokens").and_then(Value::as_u64).unwrap_or(0),
-                "completionTokens": usage.get("completion_tokens").and_then(Value::as_u64).unwrap_or(0),
-                "totalTokens": usage.get("total_tokens").and_then(Value::as_u64).unwrap_or(0),
-            }));
+            self.usage = Some(usage_of(usage));
         }
 
         let Some(choice) = chunk.get("choices").and_then(|choices| choices.get(0)) else {
@@ -140,7 +159,7 @@ impl ChatStreamAccumulator {
         Ok(false)
     }
 
-    pub(super) fn finish(self) -> CompletedChat {
+    fn finish(self: Box<Self>) -> CompletedChat {
         let tool_calls = self
             .tool_calls
             .into_iter()
@@ -180,11 +199,23 @@ mod tests {
     use super::*;
 
     fn feed(lines: &[&str]) -> CompletedChat {
-        let mut accumulator = ChatStreamAccumulator::default();
+        let mut stream = Box::<OpenAiStream>::default();
         for line in lines {
-            accumulator.push_line(line).expect("line accepted");
+            stream.push_line(line).expect("line accepted");
         }
-        accumulator.finish()
+        stream.finish()
+    }
+
+    /// Feeds a recorded SSE body through the line buffer, as the client does.
+    fn replay(recording: &str) -> CompletedChat {
+        let mut lines = LineBuffer::default();
+        let mut stream = Box::<OpenAiStream>::default();
+        for line in lines.push(recording.as_bytes()) {
+            if stream.push_line(&line).expect("line accepted") {
+                break;
+            }
+        }
+        stream.finish()
     }
 
     #[test]
@@ -199,62 +230,76 @@ mod tests {
     }
 
     #[test]
-    fn text_reasoning_and_usage_are_collected() {
-        let chat = feed(&[
-            r#"data: {"choices":[{"delta":{"reasoning_content":"think "}}]}"#,
-            r#"data: {"choices":[{"delta":{"reasoning":"more"}}]}"#,
-            r#"data: {"choices":[{"delta":{"content":"Hel"}}]}"#,
-            ": keep-alive",
-            r#"data: {"choices":[{"delta":{"content":"lo"},"finish_reason":"stop"}]}"#,
-            r#"data: {"choices":[],"usage":{"prompt_tokens":12,"completion_tokens":3,"total_tokens":15}}"#,
-            "data: [DONE]",
-        ]);
+    fn recorded_openai_text_stream_keeps_text_and_usage_details() {
+        let chat = replay(include_str!("../tests/fixtures/openai_text.sse"));
 
-        assert_eq!(chat.content, "Hello");
-        assert_eq!(chat.thinking, "think more");
+        assert_eq!(chat.content, "Hello! How can I help you today?");
         assert_eq!(chat.finish_reason.as_deref(), Some("stop"));
-        assert_eq!(
-            chat.usage,
-            Some(json!({ "promptTokens": 12, "completionTokens": 3, "totalTokens": 15 }))
-        );
+        let usage = chat.usage.expect("usage chunk");
+        assert_eq!(usage.prompt_tokens, 1_210);
+        assert_eq!(usage.completion_tokens, 10);
+        assert_eq!(usage.total_tokens, 1_220);
+        assert_eq!(usage.cached_prompt_tokens, Some(1_152));
+        assert_eq!(usage.details.and_then(|d| d.reasoning_tokens), Some(0));
         assert!(chat.tool_calls.is_empty());
     }
 
     #[test]
-    fn tool_call_arguments_are_joined_per_index() {
-        let chat = feed(&[
-            r#"data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_a","function":{"name":"workspace__readFile","arguments":"{\"pa"}}]}}]}"#,
-            r#"data: {"choices":[{"delta":{"tool_calls":[{"index":1,"id":"call_b","function":{"name":"workspace__listDirectory","arguments":""}}]}}]}"#,
-            r#"data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"th\":\"a.txt\"}"}}]}}]}"#,
-            r#"data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}"#,
-        ]);
+    fn recorded_parallel_tool_calls_are_joined_per_index() {
+        let chat = replay(include_str!("../tests/fixtures/openai_tool_calls.sse"));
 
+        assert_eq!(chat.finish_reason.as_deref(), Some("tool_calls"));
         assert_eq!(chat.tool_calls.len(), 2);
-        assert_eq!(chat.tool_calls[0].id, "call_a");
+        assert_eq!(chat.tool_calls[0].id, "call_Qx7mJ2");
         assert_eq!(chat.tool_calls[0].function.name, "workspace__readFile");
-        assert_eq!(chat.tool_calls[0].function.arguments, r#"{"path":"a.txt"}"#);
-        assert_eq!(chat.tool_calls[1].id, "call_b");
-        // No arguments at all still has to be valid JSON for the tool runner.
-        assert_eq!(chat.tool_calls[1].function.arguments, "{}");
+        assert_eq!(
+            chat.tool_calls[0].function.arguments,
+            r#"{"path":"notes/todo.md"}"#
+        );
+        assert_eq!(chat.tool_calls[1].id, "call_Zr81kP");
+        assert_eq!(chat.tool_calls[1].function.name, "workspace__listDirectory");
+        assert_eq!(chat.tool_calls[1].function.arguments, r#"{"path":"."}"#);
     }
 
     #[test]
-    fn a_missing_tool_call_id_gets_a_generated_one() {
+    fn recorded_vllm_reasoning_stream_collects_thinking_apart_from_the_answer() {
+        let chat = replay(include_str!("../tests/fixtures/vllm_reasoning.sse"));
+
+        assert_eq!(chat.thinking, "The user wants 2+2. That is 4.");
+        assert_eq!(chat.content, "2 + 2 = 4.");
+        let usage = chat.usage.expect("usage chunk");
+        assert_eq!(usage.prompt_tokens, 31);
+        // A stream without `prompt_tokens_details` reports no cache hit.
+        assert_eq!(usage.cached_prompt_tokens, None);
+    }
+
+    #[test]
+    fn deepseek_style_cache_hits_are_read_too() {
         let chat = feed(&[
-            r#"data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"t","arguments":"{}"}}]}}]}"#,
+            r#"data: {"choices":[],"usage":{"prompt_tokens":40,"completion_tokens":2,"total_tokens":42,"prompt_cache_hit_tokens":32}}"#,
+        ]);
+        assert_eq!(chat.usage.unwrap().cached_prompt_tokens, Some(32));
+    }
+
+    #[test]
+    fn a_missing_tool_call_id_gets_a_generated_one_and_empty_arguments_become_an_object() {
+        let chat = feed(&[
+            r#"data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"t","arguments":""}}]}}]}"#,
         ]);
         assert!(chat.tool_calls[0].id.starts_with("call_0_"));
+        // No arguments at all still has to be valid JSON for the tool runner.
+        assert_eq!(chat.tool_calls[0].function.arguments, "{}");
     }
 
     #[test]
     fn an_error_chunk_or_bad_json_fails_the_stream() {
-        let mut accumulator = ChatStreamAccumulator::default();
-        let error = accumulator
+        let mut stream = OpenAiStream::default();
+        let error = stream
             .push_line(r#"data: {"error":{"message":"context length exceeded"}}"#)
             .unwrap_err();
         assert!(error.contains("context length exceeded"), "{error}");
 
-        let mut accumulator = ChatStreamAccumulator::default();
-        assert!(accumulator.push_line("data: {not json").is_err());
+        let mut stream = OpenAiStream::default();
+        assert!(stream.push_line("data: {not json").is_err());
     }
 }
