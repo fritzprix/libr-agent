@@ -7,6 +7,9 @@ that arrived after the latest commit, plus the latest gatekeeper-loop verdict
 (own marker comments only). A PR claimed by another worker yields `claimed`;
 a PR labelled `needs-owner` with no owner answer yet yields `wait-owner`.
 `ciAttempts` counts the `<!-- worker-loop: ci-attempt n=K -->` comments.
+A PR whose base moved far enough (see base_drift_needs_rebase) yields
+`rebase-base`. `mergeable == UNKNOWN` is refetched with a short backoff; if it
+stays UNKNOWN, `mergeableUnknown` is true and the turn report says so.
 Bodies are truncated; fetch the full text only for items you act on.
 """
 from __future__ import annotations
@@ -15,6 +18,8 @@ import argparse
 import json
 import subprocess
 import sys
+import time
+from collections.abc import Callable, Iterable
 from pathlib import Path
 
 import worker_claims
@@ -48,6 +53,15 @@ query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
 
 FAILED = {"FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE"}
 PENDING = {"PENDING", "QUEUED", "IN_PROGRESS", "WAITING", "EXPECTED", "REQUESTED"}
+PR_FIELDS = (
+    "number,title,url,headRefName,headRefOid,baseRefName,isDraft,mergeable,"
+    "mergeStateStatus,reviewDecision,statusCheckRollup,commits,comments,labels,files"
+)
+# Base commits missing from the PR before the worker rebases it. GitHub reports
+# mergeStateStatus BEHIND only when branch protection requires up-to-date
+# branches, so drift is measured with the compare API as well.
+BASE_DRIFT_COMMITS = 10
+UNKNOWN_RETRY_DELAYS = (2.0, 4.0, 8.0)
 
 
 def gh(*args: str) -> str:
@@ -90,6 +104,41 @@ def gatekeeper_state(comments: list[dict], me: str, head_sha: str) -> dict | Non
     return verdict
 
 
+def base_drift_needs_rebase(
+    *,
+    merge_state: str | None,
+    base_ahead_by: int,
+    base_files: Iterable[str],
+    pr_files: Iterable[str],
+    threshold: int = BASE_DRIFT_COMMITS,
+) -> bool:
+    """True when the base moved enough that CI on the PR head is out of date.
+
+    That is: GitHub reports BEHIND, the base has `threshold` or more commits the
+    PR lacks, or a base commit since the merge base touched a file the PR changes.
+    """
+    if base_ahead_by <= 0:
+        return False
+    if merge_state == "BEHIND" or base_ahead_by >= threshold:
+        return True
+    return not set(base_files).isdisjoint(pr_files)
+
+
+def fetch_until_mergeable_known(
+    fetch: Callable[[], dict],
+    sleep: Callable[[float], None] = time.sleep,
+    delays: Iterable[float] = UNKNOWN_RETRY_DELAYS,
+) -> dict:
+    """Refetch while GitHub is still computing `mergeable`; return the last PR JSON."""
+    pr = fetch()
+    for delay in delays:
+        if pr.get("mergeable") != "UNKNOWN":
+            break
+        sleep(delay)
+        pr = fetch()
+    return pr
+
+
 def select_next_action(
     *,
     turn: str,
@@ -99,6 +148,7 @@ def select_next_action(
     failing: list[str],
     pending: list[str],
     waiting_owner: bool = False,
+    base_drift: bool = False,
 ) -> str:
     if waiting_owner:
         return "wait-owner"
@@ -106,6 +156,8 @@ def select_next_action(
         return "no-owner"
     if conflicting:
         return "resolve-conflict"
+    if base_drift:
+        return "rebase-base"
     if turn == "worker" and gatekeeper and gatekeeper["awaitingWorker"]:
         return "address-gatekeeper"
     if turn == "gatekeeper":
@@ -121,13 +173,24 @@ def select_next_action(
     return "none"
 
 
+def base_drift(owner: str, name: str, pr: dict) -> tuple[int, list[str]]:
+    """Commits on the base that the PR head lacks, and the files they changed."""
+    compare = json.loads(gh(
+        "api", f"repos/{owner}/{name}/compare/{pr['headRefOid']}...{pr['baseRefName']}",
+        "--jq", "{ahead_by, files: [.files[]?.filename]}",
+    ))
+    return compare.get("ahead_by") or 0, compare.get("files") or []
+
+
 def summarize(number: int, owner: str, name: str, me: str, claimed_by: str | None = None) -> dict:
-    pr = json.loads(
-        gh(
-            "pr", "view", str(number), "--json",
-            "number,title,url,headRefName,headRefOid,baseRefName,isDraft,mergeable,"
-            "mergeStateStatus,reviewDecision,statusCheckRollup,commits,comments,labels",
-        )
+    pr = fetch_until_mergeable_known(lambda: json.loads(gh("pr", "view", str(number), "--json", PR_FIELDS)))
+    mergeable_unknown = pr.get("mergeable") == "UNKNOWN"
+    base_ahead_by, base_files = base_drift(owner, name, pr)
+    needs_rebase = base_drift_needs_rebase(
+        merge_state=pr.get("mergeStateStatus"),
+        base_ahead_by=base_ahead_by,
+        base_files=base_files,
+        pr_files=[f["path"] for f in pr.get("files") or []],
     )
     comments = pr.get("comments") or []
     head_sha = pr["headRefOid"]
@@ -201,9 +264,13 @@ def summarize(number: int, owner: str, name: str, me: str, claimed_by: str | Non
         failing=failing,
         pending=pending,
         waiting_owner=NEEDS_OWNER_LABEL in labels and answer is None,
+        base_drift=needs_rebase,
     )
     if claimed_by:
         next_action = "claimed"
+    turn_report = format_turn_report(turn, pr_number=pr["number"])
+    if mergeable_unknown:
+        turn_report += "; mergeable still UNKNOWN after retries, recheck next tick"
 
     return {
         "number": pr["number"],
@@ -214,6 +281,8 @@ def summarize(number: int, owner: str, name: str, me: str, claimed_by: str | Non
         "draft": pr["isDraft"],
         "mergeable": pr.get("mergeable"),
         "mergeState": pr.get("mergeStateStatus"),
+        "mergeableUnknown": mergeable_unknown,
+        "baseAheadBy": base_ahead_by,
         "reviewDecision": pr.get("reviewDecision"),
         "failingChecks": failing,
         "pendingChecks": pending,
@@ -226,7 +295,7 @@ def summarize(number: int, owner: str, name: str, me: str, claimed_by: str | Non
         "currentHeadSha": head_sha,
         "labelMismatch": turn.labelMismatch,
         "noOwnerError": turn.noOwner,
-        "turnReport": format_turn_report(turn, pr_number=pr["number"]),
+        "turnReport": turn_report,
         "ciAttempts": ci_attempts(comments, me),
         "ownerAnswer": answer,
         "claimedBy": claimed_by,

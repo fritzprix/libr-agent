@@ -100,22 +100,64 @@ def check_skills_fresh(
     raise SkillsFreshnessError(diff.stderr.strip() or "git diff failed")
 
 
+def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(["git", *args], cwd=root, capture_output=True, text=True)
+
+
+def fast_forward_main(base: str) -> tuple[bool, str]:
+    """Fast-forward the checkout to origin/base when that is safe.
+
+    Safe means: on the base branch, no uncommitted changes to tracked files,
+    and no local commits missing from origin/base. Otherwise nothing changes,
+    and the message says which condition failed. Expects a fresh fetch.
+    """
+    root = _repo_root()
+    remote = f"origin/{base}"
+    branch = _git(root, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+    if branch != base:
+        return False, (
+            f"checkout {root} is on '{branch}', not {base}; "
+            f"switch it to {base} or update .agents/skills by hand"
+        )
+    if _git(root, "status", "--porcelain", "--untracked-files=no").stdout.strip():
+        return False, (
+            f"checkout {root} has uncommitted changes; commit or stash them, "
+            f"then run git merge --ff-only {remote}"
+        )
+    if _git(root, "merge-base", "--is-ancestor", "HEAD", remote).returncode != 0:
+        return False, (
+            f"checkout {root} has commits that are not on {remote}; "
+            f"it cannot fast-forward, so reconcile {base} by hand"
+        )
+    merge = _git(root, "merge", "--ff-only", "--quiet", remote)
+    if merge.returncode != 0:
+        return False, f"git merge --ff-only {remote} failed in {root}: {merge.stderr.strip()}"
+    return True, f"fast-forwarded {base} in {root} to {remote}"
+
+
 def gate_skills_freshness() -> int | None:
     """Shared loop-tick gate: the exit code when the tick must stop, or None.
 
-    Stale skills exit GATE_STALE_EXIT; a check that could not run (unresolved
-    dev base, failed fetch, _repo_root CalledProcessError) exits GATE_ERROR_EXIT.
+    Stale skills are fast-forwarded when the checkout allows it, and the tick
+    continues. Skills that stay stale exit GATE_STALE_EXIT; a check that could
+    not run (unresolved dev base, failed fetch, _repo_root CalledProcessError)
+    exits GATE_ERROR_EXIT.
     """
     if os.environ.get(SKIP_GATE_ENV):
         return None
     try:
-        fresh, message = check_skills_fresh(resolve_base_branch(None), fetch=True)
+        base = resolve_base_branch(None)
+        fresh, message = check_skills_fresh(base, fetch=True)
+        if fresh:
+            return None
+        synced, sync_message = fast_forward_main(base)
     except (SkillsFreshnessError, subprocess.CalledProcessError) as exc:
         print(f"skills freshness check error: {exc}", file=sys.stderr)
         return GATE_ERROR_EXIT
-    if fresh:
+    if synced:
+        print(f"{message}; {sync_message}", file=sys.stderr)
         return None
-    print(message, file=sys.stderr)
+    print(f"{message}; {sync_message}", file=sys.stderr)
     return GATE_STALE_EXIT
 
 
