@@ -8,7 +8,10 @@ Computes a fingerprint from a single GraphQL request covering:
 
 With no 'current' work and an unchanged fingerprint, it still returns RUN when an
 open `approved` issue is free to take and no open PR closes it, so an approved
-issue is never ignored just because the tracked state did not move.
+issue is never ignored just because the tracked state did not move. It also
+returns RUN when another slot's run died with `current` work (see
+worker_slots.orphaned_slots) and prints one `ORPHANED <slot> <ref> ...` line per
+such slot; `worker_worktree.py takeover` resumes that work.
 
 If state.json has no 'current' and nothing is pending and the fingerprint matches
 'lastFingerprint', outputs 'NOOP' and exits with code 1 so external schedulers
@@ -275,20 +278,29 @@ def _gate(state: dict, state_path: Path, worker: str, locking: bool) -> tuple[in
 
     fp = compute_fingerprint()
     last_fp = state.get("lastFingerprint")
+    orphans = [o for o in worker_slots.orphaned_slots() if o["worker"] != worker]
     message = f"RUN (changes detected: {fp[:12]})"
     if last_fp and last_fp == fp:
-        # Nothing tracked moved, but an approved issue may still be waiting.
+        # Nothing tracked moved, but an approved issue or orphaned work may still be waiting.
         pending = pending_approved_issue(worker)
-        if pending is None:
+        if pending is not None:
+            message = f"RUN (approved issue pending: #{pending})"
+        elif orphans:
+            message = f"RUN (orphaned work: {orphans[0]['ref']} in {orphans[0]['worker']})"
+        else:
             return EXIT_NOOP, "NOOP (no changes)"
-        message = f"RUN (approved issue pending: #{pending})"
 
     # Keep the start-of-tick fingerprint; lastFingerprint is saved only by a
     # successful idle tick (--update).
     if locking:
         state["tickStartFingerprint"] = fp
         save_state(state_path, state)
-    return EXIT_RUN, message
+    return EXIT_RUN, "\n".join([message, *(_orphan_line(o) for o in orphans)])
+
+
+def _orphan_line(orphan: dict) -> str:
+    renewed = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(orphan["lastRenewedAt"]))
+    return f"ORPHANED {orphan['worker']} {orphan['ref']} branch={orphan.get('branch') or '-'} lastRenewed={renewed}"
 
 
 def _lock_and_gate(args: argparse.Namespace) -> int:
