@@ -50,7 +50,7 @@ LibrAgent must be up (`GET /api/health`). Prefer `executionMode: yolo` for unatt
   - `unsafe` only in a scratch directory (Linux `/tmp/rumi-e2e`; Windows a dedicated empty folder). Never the repo or the user workspace.
   - Assistant: Master Mind only (Linux `8da332e5`, Windows `fe603a74`). Never MCP Test Engineer `223a77a4`.
   - Dummy secrets only. Never print API keys, session keys, or wake tokens in logs, comments, or artifacts.
-  - The loop never starts LibrAgent.
+  - The loop never builds or starts LibrAgent; the operator or external harness owns the app build and lifecycle.
   - sudo and OS keychain steps are never automated; they are always `[manual]`.
 - In issue checklist mode: never close an issue, edit its body, change labels, merge, or patch code. The only write is the one results comment.
 
@@ -59,8 +59,8 @@ LibrAgent must be up (`GET /api/health`). Prefer `executionMode: yolo` for unatt
 Runs the `[auto]` items of open `auto:e2e` issues. The producer-loop `e2e` task uses this mode. Item format: [../producer-loop/references/e2e-plan-template.md](../producer-loop/references/e2e-plan-template.md).
 
 1. Targets: open issues with the label `auto:e2e`, whoever opened them, oldest first. One issue per run: `gh issue list --label auto:e2e --state open --json number,createdAt`.
-2. Build and provenance: follow the shared E2E build precondition. Record `buildSha` before items run.
-3. Health: `GET /api/health`. If it fails, print `NOOP` and stop. Never start LibrAgent.
+2. Provenance: the operator or external harness builds and starts the app ([shared E2E build precondition](../libr-e2e-verify/references/e2e-build-precondition.md) describes how). Read `buildSha` and PR containment before items run and record them; if the running build is missing a required merge commit, report `blocked: not in build` and stop.
+3. Health: `GET /api/health`. If it fails, print `NOOP` and stop. Never build or start LibrAgent.
 4. Parse: `python3 .agents/skills/libr-tool-e2e-harness-loop/scripts/checklist.py parse --issue <N>`.
    - Only `[auto]` items run. `[manual]` and `[blocked: #N]` items are recorded as untouched.
    - An untagged issue (old format, for example #2565) has no auto items. Its comment says `untagged → no auto items`.

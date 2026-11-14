@@ -29,7 +29,7 @@ this skill is the knowledge and the pass/fail discipline:
 
 ## Preconditions
 
-Follow [references/e2e-build-precondition.md](references/e2e-build-precondition.md) before any HTTP checks. The harness owns the app lifecycle; this skill never starts LibrAgent.
+Follow [references/e2e-build-precondition.md](references/e2e-build-precondition.md) before any HTTP checks. The operator or external harness owns building and starting the app; this skill never builds or starts LibrAgent. If the running build is missing a required commit, report the verdict (`NOOP` / `blocked: not in build`) and stop.
 
 | Check | How | Meaning |
 | --- | --- | --- |

@@ -4,9 +4,9 @@ use tauri::Manager;
 use crate::services::InteractiveBrowserServer;
 
 pub mod agent; // pub for integration tests (cancel_logic.rs)
-pub mod build_provenance;
 pub mod browser_extension_bridge;
 pub mod browser_sidecar;
+pub mod build_provenance;
 pub mod commands; // Make public for integration tests
 mod config;
 mod db_schema_validator; // Schema validation for database integrity

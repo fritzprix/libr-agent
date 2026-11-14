@@ -109,10 +109,6 @@ fn git_stdout(args: &[&str]) -> Option<String> {
     (!text.is_empty()).then(|| text.to_string())
 }
 
-/// The session image is published only for release tags (`vX.Y.Z`, no pre-release).
-/// A build whose version has no release tag (dev, pre-release or local build) uses
-/// the last release tag reachable from HEAD. Without git metadata, the package
-/// version without its pre-release part is used.
 fn git_success(args: &[&str]) -> bool {
     std::process::Command::new("git")
         .args(args)
@@ -129,6 +125,12 @@ fn emit_build_provenance() {
             }
         }
     }
+    // `.git/HEAD` and `.git/index` alone miss edits to tracked files that are
+    // not staged, so also rerun on anything that goes into the binary. The
+    // dirty flag then always describes the tree of the last build-script run.
+    for path in ["src", "../src", "Cargo.toml", "Cargo.lock"] {
+        println!("cargo:rerun-if-changed={path}");
+    }
 
     let sha = git_stdout(&["rev-parse", "HEAD"]).unwrap_or_else(|| "unknown".to_string());
     let dirty = if sha == "unknown" {
@@ -143,6 +145,10 @@ fn emit_build_provenance() {
     );
 }
 
+/// The session image is published only for release tags (`vX.Y.Z`, no pre-release).
+/// A build whose version has no release tag (dev, pre-release or local build) uses
+/// the last release tag reachable from HEAD. Without git metadata, the package
+/// version without its pre-release part is used.
 fn emit_session_image_tag() {
     // `--git-path` resolves the files of a linked worktree too.
     for name in ["HEAD", "packed-refs", "refs/tags"] {

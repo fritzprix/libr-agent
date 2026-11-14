@@ -74,8 +74,18 @@ def is_ancestor(repo: Path, ancestor: str, descendant: str) -> bool:
     result = subprocess.run(
         ["git", "-C", str(repo), "merge-base", "--is-ancestor", ancestor, descendant],
         capture_output=True,
+        text=True,
     )
-    return result.returncode == 0
+    if result.returncode == 0:
+        return True
+    if result.returncode == 1:
+        # merge-base uses exit 1 for the plain "not an ancestor" answer.
+        return False
+    # Any other code means git itself failed (bad rev, not fetched, ...).
+    raise ContainmentError(
+        f"git merge-base --is-ancestor {ancestor} {descendant} failed "
+        f"(code {result.returncode}): {result.stderr.strip()}"
+    )
 
 
 @dataclass
@@ -95,7 +105,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true", help="Print machine-readable report")
     args = parser.parse_args(argv)
 
-    prs = [int(n.strip()) for n in args.prs.split(",") if n.strip()]
+    try:
+        prs = [int(n.strip()) for n in args.prs.split(",") if n.strip()]
+    except ValueError:
+        sys.stderr.write("check_pr_build_containment: --prs must be comma-separated integers\n")
+        return 2
     if not prs:
         sys.stderr.write("check_pr_build_containment: no PR numbers\n")
         return 2
@@ -103,7 +117,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.build_sha:
             build_sha = args.build_sha.strip()
-            build_dirty = False
+            # Not read from the app in --build-sha mode; report it as unknown.
+            build_dirty: bool | None = None
         elif args.status_url:
             build_sha, build_dirty = provenance_from_url(args.status_url, args.e2e_cap)
         else:
@@ -123,12 +138,15 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr.write(f"check_pr_build_containment: {exc}\n")
         return 3
 
+    json_dirty = "unknown" if build_dirty is None else build_dirty
+    text_dirty = "unknown" if build_dirty is None else str(build_dirty).lower()
+
     if args.json:
         print(
             json.dumps(
                 {
                     "buildSha": build_sha,
-                    "buildDirty": build_dirty,
+                    "buildDirty": json_dirty,
                     "prs": [
                         {
                             "pr": r.pr,
@@ -145,7 +163,7 @@ def main(argv: list[str] | None = None) -> int:
         missing = [r.pr for r in rows if not r.contained]
         return 1 if missing else 0
 
-    print(f"buildSha={build_sha} buildDirty={build_dirty}")
+    print(f"buildSha={build_sha} buildDirty={text_dirty}")
     for row in rows:
         verdict = "contained" if row.contained else "blocked: not in build"
         print(f"PR #{row.pr} merge={row.merge_commit} {verdict}")
