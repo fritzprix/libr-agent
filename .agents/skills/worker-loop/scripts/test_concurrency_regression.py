@@ -5,6 +5,7 @@ Outcomes here do not depend on timing: lease ages are set by editing records,
 races assert only what must hold for every interleaving, and nothing is retried.
 Real processes and real git repositories are used where the behaviour lives there.
 """
+import json
 import multiprocessing
 import os
 import subprocess
@@ -441,16 +442,29 @@ class StatusTest(StateDirCase):
         self.assertFalse(status["workers"]["worker-9"]["slotLive"])
         self.assertEqual(status["workers"]["worker-9"]["current"], {"ref": "issue:2"})
 
-    def test_questions_are_shared_and_asked_once(self):
-        self.assertTrue(worker_state.add_needs_user("issue:1", "which?"))
-        self.assertFalse(worker_state.add_needs_user("issue:1", "which?"))
-        self.assertEqual(len(worker_state.status()["needsUser"]), 1)
-        worker_state.clear_needs_user("issue:1")
-        self.assertTrue(worker_state.add_needs_user("issue:1", "again?"))
+    def test_shared_state_keeps_only_schedulers(self):
+        shared = worker_state.shared_path()
+        shared.parent.mkdir(parents=True, exist_ok=True)
+        shared.write_text(json.dumps({
+            "schedulers": [{"kind": "process", "id": "1"}],
+            "ciAttempts": {"7": 2},
+            "needsUser": [],
+        }))
+        worker_state.add_scheduler("process", "2")
+        self.assertEqual(set(json.loads(shared.read_text())), {"schedulers"})
+        self.assertNotIn("needsUser", worker_state.status())
 
-    def test_ci_attempts_count_across_workers(self):
-        self.assertEqual(worker_state.count_ci_attempt(5), 1)
-        self.assertEqual(worker_state.count_ci_attempt(5), 2)
+    def test_legacy_questions_are_listed_until_cleared(self):
+        shared = worker_state.shared_path()
+        shared.parent.mkdir(parents=True, exist_ok=True)
+        shared.write_text(json.dumps({
+            "schedulers": [],
+            "needsUser": [{"ref": "issue:1", "question": "q", "since": "s"}],
+        }))
+        self.assertEqual(len(worker_state.status()["needsUser"]), 1)
+        worker_state.clear_legacy_question("issue:1")
+        self.assertNotIn("needsUser", worker_state.status())
+        self.assertEqual(set(json.loads(shared.read_text())), {"schedulers"})
 
     def test_stop_finds_every_schedule(self):
         worker_state.add_scheduler("process", "1")
@@ -458,16 +472,13 @@ class StatusTest(StateDirCase):
         self.assertEqual(len(worker_state.clear_schedulers()), 2)
         self.assertEqual(worker_state.list_schedulers(), [])
 
-    def test_existing_per_slot_state_is_adopted_once(self):
-        self.set_state("worker", {
-            "scheduler": {"kind": "scheduled_task", "id": "x"},
-            "ciAttempts": {"7": 2},
-            "needsUser": [{"ref": "issue:1", "question": "q", "since": "s"}],
-        })
-        self.set_state("worker-2", {"ciAttempts": {"7": 1}})
-        self.assertEqual(worker_state.count_ci_attempt(7), 3)
-        self.assertEqual(worker_state.list_schedulers(), [{"kind": "scheduled_task", "id": "x"}])
-        self.assertFalse(worker_state.add_needs_user("issue:1", "q"))
+    def test_existing_per_slot_schedulers_are_adopted_once(self):
+        self.set_state("worker", {"scheduler": {"kind": "scheduled_task", "id": "x"}})
+        worker_state.add_scheduler("process", "1")
+        self.assertEqual(
+            worker_state.list_schedulers(),
+            [{"kind": "scheduled_task", "id": "x"}, {"kind": "process", "id": "1"}],
+        )
 
 
 def _git(cwd, *args):

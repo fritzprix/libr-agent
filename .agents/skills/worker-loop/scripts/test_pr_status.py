@@ -129,6 +129,40 @@ class MarkerAndGatekeeperStateTest(unittest.TestCase):
         state = pr_status.gatekeeper_state(comments, "me", "sha1")
         self.assertFalse(state["awaitingWorker"])
 
+    def test_needs_owner_comment_does_not_settle_a_round(self):
+        comments = [
+            {
+                "author": {"login": "me"},
+                "createdAt": "2026-10-31T08:00:00Z",
+                "body": "<!-- gatekeeper-loop: verdict=changes-requested round=1 head=sha1 -->",
+            },
+            {
+                "author": {"login": "me"},
+                "createdAt": "2026-10-31T09:00:00Z",
+                "body": "<!-- worker-loop: needs-owner -->\n(a) or (b)?",
+            },
+        ]
+        self.assertTrue(pr_status.gatekeeper_state(comments, "me", "sha1")["awaitingWorker"])
+
+
+class OwnerQuestionAndCiAttemptsTest(unittest.TestCase):
+    def test_waiting_on_the_owner_comes_first(self):
+        found = pr_status.select_next_action(
+            turn="worker", conflicting=True, gatekeeper={"awaitingWorker": True},
+            has_comments=True, failing=["ci"], pending=[], waiting_owner=True,
+        )
+        self.assertEqual(found, "wait-owner")
+
+    def test_ci_attempts_count_only_own_markers(self):
+        comments = [
+            {"author": {"login": "me"}, "createdAt": "1", "body": "<!-- worker-loop: ci-attempt n=1 -->"},
+            {"author": {"login": "me"}, "createdAt": "2", "body": "<!-- worker-loop: response round=1 -->"},
+            {"author": {"login": "x"}, "createdAt": "3", "body": "<!-- worker-loop: ci-attempt n=2 -->"},
+            {"author": {"login": "me"}, "createdAt": "4", "body": "> <!-- worker-loop: ci-attempt n=2 -->"},
+            {"author": {"login": "me"}, "createdAt": "5", "body": "<!-- worker-loop: ci-attempt n=2 -->"},
+        ]
+        self.assertEqual(pr_status.ci_attempts(comments, "me"), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

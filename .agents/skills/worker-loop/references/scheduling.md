@@ -6,7 +6,7 @@
 | --- | --- |
 | `/worker-loop` | Run one tick now. |
 | `/worker-loop 10m` | Arm recurring loop (10m interval), then run one tick now. |
-| `/worker-loop status` | Print `scripts/worker_state.py status`: every worker, plus `needsUser` and schedules. Do no work. |
+| `/worker-loop status` | Print `scripts/worker_state.py status` (every worker and schedule), then the open owner questions: `gh issue list --label needs-owner` and `gh pr list --label needs-owner`. Do no work. |
 | `/worker-loop stop` | Disarm every loop listed by `worker_state.py scheduler clear`. Running ticks finish normally. |
 
 ## Runtimes

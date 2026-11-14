@@ -175,6 +175,8 @@ class TickGateTest(unittest.TestCase):
                 resp = responses[idx[0]]
                 idx[0] += 1
                 return json.dumps(resp)
+            if args[0] == "api" and args[1].endswith("/dependencies/blocked_by"):
+                raise tick_gate.GhError("blocked-by API unavailable")
             if args[:3] == ("issue", "list", "--state"):
                 return json.dumps(list(issues))
             if args[:3] == ("pr", "list", "--state"):
@@ -328,12 +330,21 @@ class TickGateTest(unittest.TestCase):
 
 
 class PendingApprovedIssueTest(unittest.TestCase):
-    def pending(self, issues, prs=(), claims=None, worker="worker"):
+    def pending(self, issues, prs=(), claims=None, worker="worker", comments=(), open_issues=()):
         def _gh(*args):
             if args[:2] == ("api", "user"):
                 return "me\n"
             if args[:3] == ("issue", "list", "--state"):
+                self.assertIn("--label", args)
+                self.assertEqual(args[args.index("--label") + 1], "approved")
                 return json.dumps(list(issues))
+            if args[:2] == ("issue", "view"):
+                return json.dumps({"comments": list(comments)})
+            if args[0] == "api" and args[1].endswith("/dependencies/blocked_by"):
+                raise tick_gate.GhError("blocked-by API unavailable")
+            if args[0] == "api":
+                number = int(args[1].rsplit("/", 1)[1])
+                return "open\n" if number in open_issues else "closed\n"
             raise ValueError(f"Unexpected gh call: {args}")
 
         # `list_open_prs` lives in issue_candidates and uses its own gh wrapper.
@@ -369,6 +380,19 @@ class PendingApprovedIssueTest(unittest.TestCase):
         ]
         self.assertEqual(self.pending(issues), 7)
         self.assertIsNone(self.pending(issues[:2]))
+
+    def test_issue_waiting_on_the_owner_is_not_pending(self):
+        question = {"author": {"login": "me"}, "body": "<!-- worker-loop: needs-owner -->\n(a) or (b)?",
+                    "createdAt": "2026-01-01T00:00:00Z"}
+        issue = approvals_issue(3, ["approved", "needs-owner"])
+        self.assertIsNone(self.pending([issue], comments=[question]))
+        answer = {"author": {"login": "me"}, "body": "(a)", "createdAt": "2026-01-02T00:00:00Z"}
+        self.assertEqual(self.pending([issue], comments=[question, answer]), 3)
+
+    def test_issue_with_an_open_dependency_is_not_pending(self):
+        blocked = {**approvals_issue(3, ["approved"]), "body": "Depends on #2"}
+        self.assertIsNone(self.pending([blocked], open_issues={2}))
+        self.assertEqual(self.pending([blocked]), 3)
 
 
 if __name__ == "__main__":
