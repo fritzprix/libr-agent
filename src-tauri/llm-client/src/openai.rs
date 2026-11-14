@@ -6,7 +6,7 @@
 use crate::types::{ChatMessage, ChatRequest, ContentPart, Role, ToolSpec};
 use serde_json::{json, Value};
 
-fn text_of(content: &[ContentPart]) -> String {
+pub(crate) fn text_of(content: &[ContentPart]) -> String {
     content
         .iter()
         .filter_map(|part| match part {
@@ -17,7 +17,7 @@ fn text_of(content: &[ContentPart]) -> String {
         .join("\n")
 }
 
-fn is_media(part: &ContentPart) -> bool {
+pub(crate) fn is_media(part: &ContentPart) -> bool {
     matches!(part, ContentPart::Image { .. } | ContentPart::Audio { .. })
 }
 
@@ -78,7 +78,7 @@ fn user_content(content: &[ContentPart]) -> Value {
 }
 
 /// Name of the tool whose call produced `tool_call_id`, searching backwards.
-fn tool_name_for<'a>(earlier: &'a [ChatMessage], tool_call_id: &str) -> Option<&'a str> {
+pub(crate) fn tool_name_for<'a>(earlier: &'a [ChatMessage], tool_call_id: &str) -> Option<&'a str> {
     earlier.iter().rev().find_map(|message| {
         message
             .tool_calls
@@ -169,23 +169,27 @@ pub(crate) fn chat_messages(system_prompt: Option<&str>, messages: &[ChatMessage
     out
 }
 
+/// `tool`'s parameters schema, with the `type` providers require.
+pub(crate) fn object_schema(tool: &ToolSpec) -> Value {
+    let mut parameters = tool.parameters.clone();
+    if let Some(object) = parameters.as_object_mut() {
+        object.entry("type").or_insert(json!("object"));
+    } else {
+        parameters = json!({ "type": "object", "properties": {} });
+    }
+    parameters
+}
+
 pub(crate) fn chat_tools(tools: &[ToolSpec]) -> Vec<Value> {
     tools
         .iter()
         .map(|tool| {
-            let mut parameters = tool.parameters.clone();
-            // Providers reject a parameters schema without a type.
-            if let Some(object) = parameters.as_object_mut() {
-                object.entry("type").or_insert(json!("object"));
-            } else {
-                parameters = json!({ "type": "object", "properties": {} });
-            }
             json!({
                 "type": "function",
                 "function": {
                     "name": tool.name,
                     "description": tool.description,
-                    "parameters": parameters,
+                    "parameters": object_schema(tool),
                 },
             })
         })
@@ -259,6 +263,7 @@ mod tests {
             tool_calls: Vec::new(),
             tool_call_id: None,
             thinking: None,
+            thinking_signature: None,
         }
     }
 

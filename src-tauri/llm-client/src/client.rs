@@ -84,14 +84,15 @@ fn network_error(message: String) -> LlmError {
     LlmError::new(ErrorKind::Network, "RUST_EXECUTOR_NETWORK", message)
 }
 
-/// Sends `body` once and returns the response if it is a success.
+/// Sends `body` to `url` once and returns the response if it is a success.
 async fn send(
     client: &reqwest::Client,
     provider: &dyn ChatProvider,
+    url: &str,
     body: &Value,
 ) -> Result<reqwest::Response, LlmError> {
     let mut request = client
-        .post(provider.request_url())
+        .post(url)
         .header("accept", "text/event-stream")
         .json(body);
     for (name, value) in provider.extra_headers() {
@@ -103,7 +104,8 @@ async fn send(
         .as_deref()
         .filter(|key| !key.is_empty())
     {
-        request = request.bearer_auth(api_key);
+        let (name, value) = provider.auth_header(api_key);
+        request = request.header(name, value);
     }
 
     let response = request.send().await.map_err(|e| {
@@ -125,12 +127,13 @@ async fn send(
 async fn send_with_retries(
     client: &reqwest::Client,
     provider: &dyn ChatProvider,
+    url: &str,
     body: &Value,
     retry: RetryPolicy,
 ) -> Result<reqwest::Response, LlmError> {
     let mut retries_done = 0;
     loop {
-        match send(client, provider, body).await {
+        match send(client, provider, url, body).await {
             Ok(response) => return Ok(response),
             Err(error) if error.is_retryable() && retries_done < retry.max_retries => {
                 let delay = retry.delay_before_retry(retries_done);
@@ -169,8 +172,9 @@ pub async fn complete(
     } else {
         retry
     };
+    let url = provider.request_url(&provider.model_id(&request.model));
     let body = provider.build_body(request);
-    let response = send_with_retries(client, provider, &body, retry).await?;
+    let response = send_with_retries(client, provider, &url, &body, retry).await?;
 
     let stream_error =
         |message: String| LlmError::new(ErrorKind::Service, "RUST_EXECUTOR_STREAM", message);
@@ -324,7 +328,15 @@ mod tests {
         retry: RetryPolicy,
     ) -> Result<reqwest::Response, LlmError> {
         let client = HTTP_CLIENT.as_ref().unwrap();
-        send_with_retries(client, provider, &provider.build_body(&request()), retry).await
+        let url = provider.request_url("m");
+        send_with_retries(
+            client,
+            provider,
+            &url,
+            &provider.build_body(&request()),
+            retry,
+        )
+        .await
     }
 
     #[tokio::test]

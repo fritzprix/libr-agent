@@ -81,6 +81,9 @@ pub struct ChatMessage {
     pub tool_call_id: Option<String>,
     /// Reasoning an assistant turn produced.
     pub thinking: Option<String>,
+    /// The provider's signature over that turn's reasoning (Anthropic thinking
+    /// signature, Gemini thought signature), sent back with it.
+    pub thinking_signature: Option<String>,
 }
 
 /// A tool the model may call.
@@ -129,6 +132,8 @@ pub struct UsageDetails {
 pub struct CompletedChat {
     pub content: String,
     pub thinking: String,
+    /// See [`ChatMessage::thinking_signature`].
+    pub thinking_signature: Option<String>,
     pub tool_calls: Vec<ToolCall>,
     pub usage: Option<Usage>,
     pub finish_reason: Option<String>,

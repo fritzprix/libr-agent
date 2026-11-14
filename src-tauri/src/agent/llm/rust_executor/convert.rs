@@ -70,6 +70,7 @@ fn chat_message(message: &Message) -> Option<ChatMessage> {
         tool_calls: message.tool_calls.clone().unwrap_or_default(),
         tool_call_id: message.tool_call_id.clone(),
         thinking: message.thinking.clone(),
+        thinking_signature: message.thinking_signature.clone(),
     })
 }
 
@@ -221,6 +222,7 @@ mod tests {
                     "function": { "name": "media__captureScreen", "arguments": "{}" },
                 }],
                 "thinking": "need a screenshot",
+                "thinkingSignature": "sig-1",
             })),
             message(json!({
                 "id": "t1", "sessionId": "s", "role": "tool", "toolCallId": "call_1",
@@ -255,6 +257,7 @@ mod tests {
             "media__captureScreen"
         );
         assert_eq!(assistant.thinking.as_deref(), Some("need a screenshot"));
+        assert_eq!(assistant.thinking_signature.as_deref(), Some("sig-1"));
         let tool_turn = &request.messages[1];
         assert_eq!(tool_turn.tool_call_id.as_deref(), Some("call_1"));
         assert_eq!(
