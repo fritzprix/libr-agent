@@ -113,6 +113,36 @@ fn git_stdout(args: &[&str]) -> Option<String> {
 /// A build whose version has no release tag (dev, pre-release or local build) uses
 /// the last release tag reachable from HEAD. Without git metadata, the package
 /// version without its pre-release part is used.
+fn git_success(args: &[&str]) -> bool {
+    std::process::Command::new("git")
+        .args(args)
+        .status()
+        .is_ok_and(|s| s.success())
+}
+
+/// Embed the source commit and dirty flag for E2E build provenance (#2744).
+fn emit_build_provenance() {
+    for name in ["HEAD", "index"] {
+        if let Some(path) = git_stdout(&["rev-parse", "--git-path", name]) {
+            if Path::new(&path).exists() {
+                println!("cargo:rerun-if-changed={path}");
+            }
+        }
+    }
+
+    let sha = git_stdout(&["rev-parse", "HEAD"]).unwrap_or_else(|| "unknown".to_string());
+    let dirty = if sha == "unknown" {
+        false
+    } else {
+        !git_success(&["diff-index", "--quiet", "HEAD", "--"])
+    };
+    println!("cargo:rustc-env=LIBRAGENT_BUILD_SHA={sha}");
+    println!(
+        "cargo:rustc-env=LIBRAGENT_BUILD_DIRTY={}",
+        if dirty { "true" } else { "false" }
+    );
+}
+
 fn emit_session_image_tag() {
     // `--git-path` resolves the files of a linked worktree too.
     for name in ["HEAD", "packed-refs", "refs/tags"] {
@@ -147,6 +177,7 @@ fn emit_session_image_tag() {
 fn main() {
     println!("cargo:rerun-if-changed=bundled_skills");
     println!("cargo:rerun-if-changed=bundled_assistants");
+    emit_build_provenance();
     emit_session_image_tag();
 
     if let Err(error) = sync_bundled_skills_into_profile_output() {

@@ -244,6 +244,7 @@ def render_body(collected: dict, items: dict) -> str:
         "- Use `unsafe` mode only in a scratch directory. Use the Master Mind assistant.",
         "- sudo, OS keychain, dialog answers, and visual checks are `[manual]`.",
         "- Source: PR bodies and linked issue bodies. The expected text was not checked against the code.",
+        "- Build: follow .agents/skills/libr-e2e-verify/references/e2e-build-precondition.md. Record buildSha in the results comment.",
     ]
     lines += [f"- {note}" for note in items.get("notes") or [] if isinstance(note, str) and note]
     lines += ["", range_marker(first, last)]

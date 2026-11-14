@@ -29,6 +29,7 @@ Optimize tool contracts (schema, handler, hints, bridge/backend), not model choi
 
 | Need                                     | Skill / precondition                                        |
 | ---------------------------------------- | ----------------------------------------------------------- |
+| Build target commit + PR containment     | [../libr-e2e-verify/references/e2e-build-precondition.md](../libr-e2e-verify/references/e2e-build-precondition.md) |
 | Spawn/poll/cleanup session               | `libr-delegate` (read + follow it)                          |
 | Builtin design critique after root-cause | `critique-builtin-tool` / `refactor-builtin-tool` as needed |
 | Harbor job ATIF analysis                 | **Not this skill** → `harbor-harness-improvement-loop`      |
@@ -58,17 +59,18 @@ LibrAgent must be up (`GET /api/health`). Prefer `executionMode: yolo` for unatt
 Runs the `[auto]` items of open `auto:e2e` issues. The producer-loop `e2e` task uses this mode. Item format: [../producer-loop/references/e2e-plan-template.md](../producer-loop/references/e2e-plan-template.md).
 
 1. Targets: open issues with the label `auto:e2e`, whoever opened them, oldest first. One issue per run: `gh issue list --label auto:e2e --state open --json number,createdAt`.
-2. Health: `GET /api/health`. If it fails, print `NOOP` and stop. Never start LibrAgent.
-3. Parse: `python3 .agents/skills/libr-tool-e2e-harness-loop/scripts/checklist.py parse --issue <N>`.
+2. Build and provenance: follow the shared E2E build precondition. Record `buildSha` before items run.
+3. Health: `GET /api/health`. If it fails, print `NOOP` and stop. Never start LibrAgent.
+4. Parse: `python3 .agents/skills/libr-tool-e2e-harness-loop/scripts/checklist.py parse --issue <N>`.
    - Only `[auto]` items run. `[manual]` and `[blocked: #N]` items are recorded as untouched.
    - An untagged issue (old format, for example #2565) has no auto items. Its comment says `untagged → no auto items`.
-4. Per `[auto]` item, one one-shot `libr-delegate` session: scratch `workspacePath`, Master Mind assistant. Instruct with a one-item brief ([references/e2e-brief.md](references/e2e-brief.md#one-item-brief-issue-checklist-mode)) → poll → extract `messages?limit=500` → terminate and delete.
-5. Verdict per item: `pass`, `fail`, or `blocked` (precondition not met). Evidence: session id, a short result excerpt, the artifact path under `.libragent/work/tool-e2e-harness/<cycle-id>/`. Write them to `<scratch>/results.json`.
-6. Comment: `checklist.py comment --issue <N> --results <scratch>/results.json` (dry run), then the same with `--post`.
+5. Per `[auto]` item, one one-shot `libr-delegate` session: scratch `workspacePath`, Master Mind assistant. Instruct with a one-item brief ([references/e2e-brief.md](references/e2e-brief.md#one-item-brief-issue-checklist-mode)) → poll → extract `messages?limit=500` → terminate and delete.
+6. Verdict per item: `pass`, `fail`, or `blocked` (precondition not met). Evidence: session id, a short result excerpt, the artifact path under `.libragent/work/tool-e2e-harness/<cycle-id>/`. Write them to `<scratch>/results.json`.
+7. Comment: `checklist.py comment --issue <N> --results <scratch>/results.json --build-sha <sha> [--build-dirty]` (dry run), then the same with `--post`.
    - One comment per issue, marker `<!-- e2e-harness:results issue=<N> -->`. The script updates it if it exists; otherwise it creates it.
    - Table: `ID | 결과 | 증거 | 실행 시각(UTC)`.
    - A result that holds a dummy secret value becomes `fail`, and the value is replaced with `***`.
-7. Skip cycle step 5 (Act). Do not write tasks or patches from this mode.
+8. Skip cycle step 5 (Act). Do not write tasks or patches from this mode.
 
 Tests: `cd .agents/skills/libr-tool-e2e-harness-loop/scripts && python3 -m unittest discover`.
 

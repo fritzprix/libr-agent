@@ -25,7 +25,7 @@ A task reuses an existing skill for the method. It must not copy that skill's lo
 ## e2e
 
 - **Inputs**: open issues with the label `auto:e2e`, whoever opened them (including issues that a person opened), oldest first, one issue per run.
-- **Checks**: run the issue in the **Issue checklist mode** of `libr-tool-e2e-harness-loop`. Only `[auto]` items run. `[manual]`, `[blocked: #N]`, and untagged items are recorded as untouched.
+- **Checks**: follow [../../libr-e2e-verify/references/e2e-build-precondition.md](../../libr-e2e-verify/references/e2e-build-precondition.md), then run the issue in the **Issue checklist mode** of `libr-tool-e2e-harness-loop`. Only `[auto]` items run. `[manual]`, `[blocked: #N]`, and untagged items are recorded as untouched.
 - **Output**: one results comment per issue (marker `<!-- e2e-harness:results issue=<N> -->`), created or updated. This is the only write. It files no findings, so skip `file_issue.py`.
 - **Rules**: Linux only. Run `unsafe` sessions only in a scratch directory outside the repository. Do not touch the user's workspace. If `GET /api/health` fails, print `NOOP`; never start LibrAgent. Never close an issue, edit its body, change labels, or patch code.
 

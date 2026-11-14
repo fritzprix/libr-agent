@@ -67,6 +67,8 @@ pub struct E2eControlStatus {
     pub enabled: bool,
     pub debug_build: bool,
     pub loopback_only: bool,
+    pub build_sha: &'static str,
+    pub build_dirty: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -104,6 +106,8 @@ async fn handle_status() -> Result<JsonReply, Infallible> {
         enabled: true,
         debug_build: cfg!(debug_assertions),
         loopback_only: true,
+        build_sha: crate::build_provenance::BUILD_SHA,
+        build_dirty: crate::build_provenance::build_dirty(),
     }))
 }
 

@@ -127,6 +127,9 @@ Link confirmed product failures only within user-granted write scope.
 
 **Preconditions**
 
+Follow [../libr-e2e-verify/references/e2e-build-precondition.md](../libr-e2e-verify/references/e2e-build-precondition.md).
+The running app must be a debug build of `headSha`. Read `buildSha` from the status routes and confirm each PR in scope before executing cases.
+
 - Debug LibrAgent (`pnpm tauri dev` or debug build), disposable data dir.
 - `LIBRAGENT_E2E_CONTROL=1`. The capability token is **harness-side only**: the
   external harness reads it from the disposable instance data dir. Agents and

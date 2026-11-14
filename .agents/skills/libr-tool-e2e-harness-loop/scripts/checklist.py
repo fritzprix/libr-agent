@@ -104,10 +104,19 @@ def _cell(text: str) -> str:
     return " ".join(text.split()).replace("|", "\\|")
 
 
-def render_comment(issue: int, items: list[dict], rows: list[dict]) -> str:
+def render_comment(
+    issue: int,
+    items: list[dict],
+    rows: list[dict],
+    build_sha: str | None = None,
+    build_dirty: bool | None = None,
+) -> str:
     auto, untouched = split_items(items)
     lines = [results_marker(issue), f"## E2E harness results (#{issue})", "",
              "libr-tool-e2e-harness-loop, issue checklist mode. Only `[auto]` items run.", ""]
+    if build_sha:
+        dirty = "yes" if build_dirty else "no"
+        lines += [f"Build: `{build_sha}` (dirty: {dirty})", ""]
     if not items:
         lines.append("No checklist items found.")
     elif not auto and all(item["tag"] is None for item in items):
@@ -164,6 +173,8 @@ def main(argv: list[str] | None = None) -> int:
     comment_cmd.add_argument("--issue", required=True, type=int)
     comment_cmd.add_argument("--results", type=Path, default=None)
     comment_cmd.add_argument("--secret", action="append", default=[], help="Extra dummy value to scrub")
+    comment_cmd.add_argument("--build-sha", default=None, help="Recorded buildSha from the running app")
+    comment_cmd.add_argument("--build-dirty", action="store_true", help="Set when buildDirty was true")
     comment_cmd.add_argument("--post", action="store_true", help="Create or update the comment (default: dry run)")
     args = parser.parse_args(argv)
 
@@ -181,7 +192,8 @@ def main(argv: list[str] | None = None) -> int:
         if not isinstance(results, list):
             raise ValueError("results file must hold a JSON list")
         rows = apply_results(results, dummy_secrets(body, args.secret))
-        text = render_comment(args.issue, items, rows)
+        text = render_comment(args.issue, items, rows, build_sha=args.build_sha,
+                             build_dirty=args.build_dirty if args.build_sha else None)
         action, comment_id = comment_action(data.get("comments") or [], args.issue)
         print(f"ACTION {action}{' ' + comment_id if comment_id else ''}{'' if args.post else ' (dry run)'}")
         print(text)

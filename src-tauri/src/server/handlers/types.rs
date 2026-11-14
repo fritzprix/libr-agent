@@ -6,10 +6,13 @@ use crate::repositories::SessionMetadata;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct HealthResponse {
     pub status: String,
     pub service: String,
     pub version: String,
+    pub build_sha: &'static str,
+    pub build_dirty: bool,
     /// False while startup session recovery is still running; true once the
     /// runtime is ready to run sessions (see `server::readiness`).
     pub ready: bool,

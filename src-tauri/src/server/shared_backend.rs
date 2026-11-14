@@ -19,6 +19,10 @@ pub struct HealthStatus {
     pub status: String,
     pub service: String,
     pub version: String,
+    #[serde(default)]
+    pub build_sha: Option<String>,
+    #[serde(default)]
+    pub build_dirty: Option<bool>,
     pub ready: bool,
     pub recovery: String,
 }

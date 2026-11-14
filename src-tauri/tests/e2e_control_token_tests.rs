@@ -124,6 +124,8 @@ mod tests {
         assert_eq!(res.status(), 200);
         let body: serde_json::Value = serde_json::from_slice(res.body()).unwrap();
         assert_eq!(body["enabled"], true);
+        assert!(body["buildSha"].is_string());
+        assert!(body["buildDirty"].is_boolean());
     }
 
     #[tokio::test]
