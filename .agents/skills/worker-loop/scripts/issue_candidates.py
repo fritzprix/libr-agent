@@ -18,7 +18,7 @@ import sys
 import worker_claims
 import worker_state
 
-EXCLUDED_LABELS = {"wontfix", "duplicate", "invalid", "question"}
+EXCLUDED_LABELS = {"wontfix", "duplicate", "invalid", "question", "epic", "auto:e2e"}
 APPROVED_LABEL = "approved"
 CLOSING_PATTERN = re.compile(r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)\b", re.I)
 # Branch names end with the issue number (`fix/keychain-fallback-stale-2588`).
