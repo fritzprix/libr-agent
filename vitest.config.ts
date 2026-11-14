@@ -20,6 +20,8 @@ export default mergeConfig(
         '.worktrees/**',
         'jobs/**',
         '.libragent/**',
+        // liblet runs its own node-environment test suite (see liblet/vitest.config.ts).
+        'liblet/**',
       ],
       fileParallelism: !lowMemoryValidate,
       maxWorkers: lowMemoryValidate ? 1 : undefined,
