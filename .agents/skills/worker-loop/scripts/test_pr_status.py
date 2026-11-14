@@ -13,6 +13,7 @@ class SelectNextActionTest(unittest.TestCase):
         turn="none",
         conflicting=False, gatekeeper=None,
         has_comments=False, failing=[], pending=[],
+        base_drift=False,
     )
 
     def action(self, **overrides):
@@ -24,8 +25,10 @@ class SelectNextActionTest(unittest.TestCase):
             conflicting=True, gatekeeper={"awaitingWorker": True},
             has_comments=True, failing=["ci"], pending=["ci"],
         )
+        everything["base_drift"] = True
         expected = [
             ("conflicting", "resolve-conflict"),
+            ("base_drift", "rebase-base"),
             ("gatekeeper", "address-gatekeeper"),
             ("has_comments", "triage-comments"),
             ("failing", "fix-ci"),
@@ -60,6 +63,48 @@ class SelectNextActionTest(unittest.TestCase):
             self.action(turn="gatekeeper", gatekeeper=gk),
             "wait-gatekeeper",
         )
+
+
+class BaseDriftTest(unittest.TestCase):
+    def drift(self, merge_state="CLEAN", ahead=0, base_files=(), pr_files=("src/a.rs",)):
+        return pr_status.base_drift_needs_rebase(
+            merge_state=merge_state, base_ahead_by=ahead, base_files=base_files, pr_files=pr_files,
+        )
+
+    def test_up_to_date_pr_is_not_rebased(self):
+        self.assertFalse(self.drift(merge_state="CLEAN", ahead=0))
+
+    def test_behind_below_threshold_on_unrelated_files_is_not_rebased(self):
+        threshold = pr_status.BASE_DRIFT_COMMITS
+        self.assertFalse(self.drift(merge_state="UNSTABLE", ahead=threshold - 1, base_files=["docs/x.md"]))
+
+    def test_behind_at_or_above_threshold_is_rebased(self):
+        threshold = pr_status.BASE_DRIFT_COMMITS
+        self.assertTrue(self.drift(merge_state="UNSTABLE", ahead=threshold))
+        self.assertTrue(self.drift(merge_state="CLEAN", ahead=threshold + 5))
+
+    def test_base_commit_touching_a_pr_file_is_rebased(self):
+        self.assertTrue(self.drift(ahead=1, base_files=["docs/x.md", "src/a.rs"]))
+
+    def test_github_behind_state_is_rebased(self):
+        self.assertTrue(self.drift(merge_state="BEHIND", ahead=1, base_files=["docs/x.md"]))
+
+
+class MergeableUnknownTest(unittest.TestCase):
+    def run_fetch(self, states):
+        replies = iter({"mergeable": s} for s in states)
+        sleeps = []
+        pr = pr_status.fetch_until_mergeable_known(lambda: next(replies), sleeps.append, delays=(1, 2, 3))
+        return pr["mergeable"], sleeps
+
+    def test_known_state_is_not_refetched(self):
+        self.assertEqual(self.run_fetch(["MERGEABLE"]), ("MERGEABLE", []))
+
+    def test_unknown_is_refetched_until_known(self):
+        self.assertEqual(self.run_fetch(["UNKNOWN", "UNKNOWN", "CONFLICTING"]), ("CONFLICTING", [1, 2]))
+
+    def test_unknown_after_all_retries_stays_unknown(self):
+        self.assertEqual(self.run_fetch(["UNKNOWN"] * 4), ("UNKNOWN", [1, 2, 3]))
 
 
 class MarkerAndGatekeeperStateTest(unittest.TestCase):

@@ -115,7 +115,8 @@ class ProducerGateTest(unittest.TestCase):
         # G1.1: stale skills exit 5 before tick.lock is acquired.
         stale = (False, "skills under .agents/skills differ from origin/dev/0.9.x")
         with mock.patch.object(producer_gate.skills_freshness, "resolve_base_branch", return_value="dev/0.9.x"), \
-             mock.patch.object(producer_gate.skills_freshness, "check_skills_fresh", return_value=stale):
+             mock.patch.object(producer_gate.skills_freshness, "check_skills_fresh", return_value=stale), \
+             mock.patch.object(producer_gate.skills_freshness, "fast_forward_main", return_value=(False, "dirty")):
             code, err = self.run_gate_with_freshness("--lock", "--pid", str(os.getpid()))
         self.assertEqual(code, producer_gate.skills_freshness.GATE_STALE_EXIT)
         self.assertIn("differ", err)

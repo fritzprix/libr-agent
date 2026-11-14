@@ -122,18 +122,30 @@ class SkillsFreshnessTests(unittest.TestCase):
         self.assertEqual(code, skills_freshness.EXIT_ERROR)
         self.assertIn("git fetch", stderr.getvalue())
 
-    def test_gate_helper_maps_stale_to_gate_stale_exit(self) -> None:
+    def _gate_with_stale_skills(self, sync_result: tuple[bool, str]) -> tuple[int | None, str]:
         stderr = io.StringIO()
         with mock.patch.dict(os.environ), \
              mock.patch.object(skills_freshness, "resolve_base_branch", return_value="dev/0.9.x"), \
              mock.patch.object(
                  skills_freshness, "check_skills_fresh",
                  return_value=(False, "skills under .agents/skills differ from origin/dev/0.9.x"),
-             ), contextlib.redirect_stderr(stderr):
+             ), \
+             mock.patch.object(skills_freshness, "fast_forward_main", return_value=sync_result), \
+             contextlib.redirect_stderr(stderr):
             os.environ.pop(skills_freshness.SKIP_GATE_ENV, None)
             code = skills_freshness.gate_skills_freshness()
+        return code, stderr.getvalue()
+
+    def test_gate_helper_maps_stale_to_gate_stale_exit(self) -> None:
+        code, err = self._gate_with_stale_skills((False, "checkout /repo is on 'feat/x', not dev/0.9.x"))
         self.assertEqual(code, skills_freshness.GATE_STALE_EXIT)
-        self.assertIn("differ", stderr.getvalue())
+        self.assertIn("differ", err)
+        self.assertIn("not dev/0.9.x", err)
+
+    def test_gate_helper_continues_after_fast_forward(self) -> None:
+        code, err = self._gate_with_stale_skills((True, "fast-forwarded dev/0.9.x"))
+        self.assertIsNone(code)
+        self.assertIn("fast-forwarded", err)
 
     def test_gate_helper_maps_check_error_to_gate_error_exit(self) -> None:
         # G1.3: fetch/diff errors must map to the gate's error exit, not stale.
@@ -165,6 +177,81 @@ class SkillsFreshnessTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {skills_freshness.SKIP_GATE_ENV: "1"}), \
              mock.patch.object(skills_freshness, "check_skills_fresh", side_effect=AssertionError("must not run")):
             self.assertIsNone(skills_freshness.gate_skills_freshness())
+
+
+BASE = "dev/9.9.x"
+
+
+def _run_git(cwd: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", "-c", "user.name=t", "-c", "user.email=t@localhost", "-c", "commit.gpgsign=false", *args],
+        cwd=cwd, capture_output=True, text=True, check=True,
+    ).stdout.strip()
+
+
+class FastForwardMainTests(unittest.TestCase):
+    """Real git: a checkout on BASE whose origin moved one skills commit ahead."""
+
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        origin = root / "origin.git"
+        _run_git(root, "init", "--bare", "--quiet", str(origin))
+        self.main = root / "main"
+        _run_git(root, "init", "--quiet", "-b", BASE, str(self.main))
+        _run_git(self.main, "remote", "add", "origin", str(origin))
+        skill = self.main / ".agents/skills/x/SKILL.md"
+        skill.parent.mkdir(parents=True)
+        skill.write_text("v1\n", encoding="utf-8")
+        _run_git(self.main, "add", ".")
+        _run_git(self.main, "commit", "--quiet", "-m", "v1")
+        _run_git(self.main, "push", "--quiet", "origin", BASE)
+
+        other = root / "other"
+        _run_git(root, "clone", "--quiet", "-b", BASE, str(origin), str(other))
+        (other / ".agents/skills/x/SKILL.md").write_text("v2\n", encoding="utf-8")
+        _run_git(other, "commit", "--quiet", "-am", "v2")
+        _run_git(other, "push", "--quiet", "origin", BASE)
+        _run_git(self.main, "fetch", "--quiet", "origin")
+
+        patcher = mock.patch.object(skills_freshness, "_repo_root", return_value=self.main)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _skill(self) -> str:
+        return (self.main / ".agents/skills/x/SKILL.md").read_text(encoding="utf-8")
+
+    def test_clean_checkout_on_base_is_fast_forwarded(self) -> None:
+        (self.main / "notes.txt").write_text("untracked files do not block\n", encoding="utf-8")
+        synced, message = skills_freshness.fast_forward_main(BASE)
+        self.assertTrue(synced, message)
+        self.assertEqual(self._skill(), "v2\n")
+        fresh, _ = skills_freshness.check_skills_fresh(BASE, fetch=False)
+        self.assertTrue(fresh)
+
+    def test_dirty_checkout_is_left_alone(self) -> None:
+        (self.main / ".agents/skills/x/SKILL.md").write_text("local edit\n", encoding="utf-8")
+        synced, message = skills_freshness.fast_forward_main(BASE)
+        self.assertFalse(synced)
+        self.assertIn("uncommitted changes", message)
+        self.assertEqual(self._skill(), "local edit\n")
+
+    def test_diverged_checkout_is_left_alone(self) -> None:
+        (self.main / "local.txt").write_text("local\n", encoding="utf-8")
+        _run_git(self.main, "add", "local.txt")
+        _run_git(self.main, "commit", "--quiet", "-m", "local")
+        synced, message = skills_freshness.fast_forward_main(BASE)
+        self.assertFalse(synced)
+        self.assertIn("cannot fast-forward", message)
+        self.assertEqual(self._skill(), "v1\n")
+
+    def test_checkout_on_another_branch_is_left_alone(self) -> None:
+        _run_git(self.main, "switch", "--quiet", "-c", "feat/y")
+        synced, message = skills_freshness.fast_forward_main(BASE)
+        self.assertFalse(synced)
+        self.assertIn("is on 'feat/y'", message)
+        self.assertEqual(self._skill(), "v1\n")
 
 
 if __name__ == "__main__":

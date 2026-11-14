@@ -287,7 +287,8 @@ class TickGateTest(unittest.TestCase):
         self._no_freshness_skip()
         stale = (False, "skills under .agents/skills differ from origin/dev/0.9.x")
         with patch.object(tick_gate.skills_freshness, "resolve_base_branch", return_value="dev/0.9.x"), \
-             patch.object(tick_gate.skills_freshness, "check_skills_fresh", return_value=stale):
+             patch.object(tick_gate.skills_freshness, "check_skills_fresh", return_value=stale), \
+             patch.object(tick_gate.skills_freshness, "fast_forward_main", return_value=(False, "dirty")):
             code, out = self._run("--lock")
         self.assertEqual(code, tick_gate.skills_freshness.GATE_STALE_EXIT)
         self.assertIn("differ", out)
