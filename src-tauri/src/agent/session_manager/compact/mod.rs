@@ -611,7 +611,7 @@ impl AgentSessionManager {
         error: crate::agent::llm::types::AgentRuntimeError,
         partial_output: Option<String>,
     ) -> Result<(), String> {
-        let dispatcher = TauriEventDispatcher::new(self.app_handle.clone());
+        let dispatcher = TauriEventDispatcher::new(&self.app_handle);
         self::recovery::handle_compact_error_with_dispatcher(
             &self.session_repo,
             &self.active_sessions,

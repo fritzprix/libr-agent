@@ -3,33 +3,37 @@ use crate::agent::llm::types::{CompactRequest, CompactStateEvent, CompletionCanc
 use log::info;
 use tauri::{AppHandle, Emitter};
 
+/// Borrows the handle instead of owning a clone: emit paths must never clone a
+/// handle they only received, because integration tests hand production code a
+/// `tauri::test` mock handle by pointer cast — cloning it reads memory with the
+/// wrong runtime layout and segfaults the test binary (#2772 gatekeeper G1.1).
+/// Borrowing keeps the pre-dispatcher behaviour: the handle is only ever used
+/// behind the registered-handle guard in [`emit_agent_event`].
 #[derive(Clone)]
-pub struct TauriEventDispatcher {
-    app_handle: AppHandle,
+pub struct TauriEventDispatcher<'a> {
+    app_handle: &'a AppHandle,
 }
 
-impl TauriEventDispatcher {
-    pub fn new(app_handle: AppHandle) -> Self {
+impl<'a> TauriEventDispatcher<'a> {
+    pub fn new(app_handle: &'a AppHandle) -> Self {
         Self { app_handle }
     }
 
-    /// The same dispatcher from a borrowed handle. Runtime code that only ever
-    /// holds `&AppHandle` (the llm paths do) takes the dispatcher from here
-    /// instead of spelling out the clone at every emit site (#2772).
-    pub fn from_handle(app_handle: &AppHandle) -> Self {
-        Self {
-            app_handle: (*app_handle).clone(),
-        }
+    /// Runtime code that only ever holds `&AppHandle` (the llm paths do) takes
+    /// the dispatcher from here (#2772). Same as [`Self::new`] — kept as the
+    /// name used at those call sites.
+    pub fn from_handle(app_handle: &'a AppHandle) -> Self {
+        Self::new(app_handle)
     }
 }
 
-impl AgentEventDispatcher for TauriEventDispatcher {
+impl AgentEventDispatcher for TauriEventDispatcher<'_> {
     fn emit_agent_event(&self, event: AgentEvent) -> Result<(), String> {
-        emit_agent_event(&self.app_handle, event)
+        emit_agent_event(self.app_handle, event)
     }
 
     fn emit_compact_state(&self, event: CompactStateEvent) -> Result<(), String> {
-        emit_compact_state(&self.app_handle, event)
+        emit_compact_state(self.app_handle, event)
     }
 
     fn emit_completion_cancel(&self, request: CompletionCancelRequest) -> Result<(), String> {

@@ -130,7 +130,7 @@ impl AgentSessionManager {
 
     /// Recover sessions stuck in BUSY state after app crash/restart
     pub async fn recover_sessions(&self) -> Result<(), String> {
-        let dispatcher = TauriEventDispatcher::new(self.app_handle.clone());
+        let dispatcher = TauriEventDispatcher::new(&self.app_handle);
         let message_repo = self.message_repo();
         crate::agent::lifecycle::recover_sessions_with_dispatcher_and_message_repo(
             &self.session_repo,
