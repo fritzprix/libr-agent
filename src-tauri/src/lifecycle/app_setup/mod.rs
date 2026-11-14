@@ -284,104 +284,104 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     crate::state::init_app_handle(app.handle().clone());
     info!("✅ Global AppHandle initialized for event emission");
 
-    // Check before this process publishes itself, so "another backend" can only
-    // mean a different process. If one is live, this GUI attaches to it via
-    // Session API instead of starting a second HTTP server, scheduler, or
-    // session executor.
-    let live_backend = crate::server::backend_descriptor::find_live_backend();
+    // Attach-or-start on the shared backend startup path (#2756), the same
+    // entry every frontend uses. Checked before this process publishes
+    // itself, so "another backend" can only mean a different process: if one
+    // is live, this GUI attaches to it via the Session API instead of
+    // starting a second HTTP server, scheduler, or session executor.
+    let startup =
+        tauri::async_runtime::block_on(crate::server::shared_backend::attach_or_start_backend(
+            crate::server::shared_backend::ATTACH_READY_TIMEOUT,
+            || {
+                spawn_startup_maintenance_tasks(
+                    session_manager,
+                    startup_settings.search_index_frequency_minutes,
+                );
 
-    if let Some(backend) = live_backend {
+                // Spawn HTTP Server for External Features
+                let server_manager = app
+                    .state::<agent::AgentSessionManager>()
+                    .inner()
+                    .clone_for_task();
+                tauri::async_runtime::spawn(async move {
+                    let server_manager = std::sync::Arc::new(server_manager);
+                    // Binds on the first Docker session that needs a wake URL.
+                    crate::server::wake_listener::install(server_manager.clone());
+                    match crate::server::init(
+                        server_manager,
+                        startup_settings.http_port,
+                        startup_settings.http_expose,
+                        mcp_enabled,
+                        app_control_enabled,
+                    )
+                    .await
+                    {
+                        Ok(actual_port) => {
+                            info!(
+                                "✅ HTTP Server spawned on {}:{} (mcp={} app_control={})",
+                                if startup_settings.http_expose {
+                                    "0.0.0.0"
+                                } else {
+                                    "127.0.0.1"
+                                },
+                                actual_port,
+                                mcp_enabled,
+                                app_control_enabled
+                            );
+                        }
+                        Err(e) => {
+                            log::error!(
+                                "Failed to start HTTP server on port range starting from {}: {}",
+                                startup_settings.http_port,
+                                e
+                            );
+                        }
+                    }
+                });
+
+                // Spawn session recovery in background
+                let recovery_manager = app
+                    .state::<agent::AgentSessionManager>()
+                    .inner()
+                    .clone_for_task();
+                tauri::async_runtime::spawn(async move {
+                    use crate::server::readiness::{mark_recovery, RecoveryState};
+
+                    match recovery_manager.recover_sessions().await {
+                        Ok(_) => mark_recovery(RecoveryState::Ok),
+                        Err(e) => {
+                            log::error!("❌ Session recovery failed: {}", e);
+                            mark_recovery(RecoveryState::Failed);
+                        }
+                    }
+                });
+
+                info!("🔄 Session recovery initiated in background");
+
+                // Start scheduled task background worker (polls every 60s).
+                // Must be stored in managed state to prevent being dropped when setup_app returns.
+                let scheduler_app_handle = app.handle().clone();
+                let scheduler_worker = crate::scheduled::SchedulerWorker::new(
+                    scheduler_app_handle,
+                    std::time::Duration::from_secs(60),
+                );
+                app.manage(scheduler_worker);
+                info!("✅ Scheduled task worker started");
+
+                Ok(())
+            },
+        ))
+        .map_err(std::io::Error::other)?;
+
+    if let crate::server::shared_backend::BackendStartup::Attached { descriptor, client } = startup
+    {
         info!(
-            "🔗 Attaching GUI to live shared backend pid {} on port {}",
-            backend.pid, backend.port
+            "🔗 GUI attached to live shared backend pid {} on port {}",
+            descriptor.pid, descriptor.port
         );
-        let client = crate::server::shared_backend::SharedBackendClient::new(backend.port)
-            .map_err(std::io::Error::other)?;
-        tauri::async_runtime::block_on(client.wait_until_ready(std::time::Duration::from_secs(30)))
-            .map_err(|err| {
-                std::io::Error::other(format!(
-                    "Shared backend pid {} at port {} did not become ready: {}",
-                    backend.pid, backend.port, err
-                ))
-            })?;
-        info!("✅ Shared backend at port {} is ready", backend.port);
+        info!("✅ Shared backend at port {} is ready", descriptor.port);
         crate::state::init_shared_backend_client(client);
         crate::server::readiness::mark_recovery(crate::server::readiness::RecoveryState::Skipped);
-    } else {
-        spawn_startup_maintenance_tasks(
-            session_manager,
-            startup_settings.search_index_frequency_minutes,
-        );
-
-        // Spawn HTTP Server for External Features
-        let server_manager = app
-            .state::<agent::AgentSessionManager>()
-            .inner()
-            .clone_for_task();
-        tauri::async_runtime::spawn(async move {
-            let server_manager = std::sync::Arc::new(server_manager);
-            // Binds on the first Docker session that needs a wake URL.
-            crate::server::wake_listener::install(server_manager.clone());
-            match crate::server::init(
-                server_manager,
-                startup_settings.http_port,
-                startup_settings.http_expose,
-                mcp_enabled,
-                app_control_enabled,
-            )
-            .await
-            {
-                Ok(actual_port) => {
-                    info!(
-                        "✅ HTTP Server spawned on {}:{} (mcp={} app_control={})",
-                        if startup_settings.http_expose {
-                            "0.0.0.0"
-                        } else {
-                            "127.0.0.1"
-                        },
-                        actual_port,
-                        mcp_enabled,
-                        app_control_enabled
-                    );
-                }
-                Err(e) => {
-                    log::error!(
-                        "Failed to start HTTP server on port range starting from {}: {}",
-                        startup_settings.http_port,
-                        e
-                    );
-                }
-            }
-        });
-
-        // Spawn session recovery in background
-        let recovery_manager = app
-            .state::<agent::AgentSessionManager>()
-            .inner()
-            .clone_for_task();
-        tauri::async_runtime::spawn(async move {
-            use crate::server::readiness::{mark_recovery, RecoveryState};
-
-            match recovery_manager.recover_sessions().await {
-                Ok(_) => mark_recovery(RecoveryState::Ok),
-                Err(e) => {
-                    log::error!("❌ Session recovery failed: {}", e);
-                    mark_recovery(RecoveryState::Failed);
-                }
-            }
-        });
-
-        info!("🔄 Session recovery initiated in background");
-
-        // Start scheduled task background worker (polls every 60s).
-        // Must be stored in managed state to prevent being dropped when setup_app returns.
-        let scheduler_app_handle = app.handle().clone();
-        let scheduler_worker = crate::scheduled::SchedulerWorker::new(
-            scheduler_app_handle,
-            std::time::Duration::from_secs(60),
-        );
-        app.manage(scheduler_worker);
-        info!("✅ Scheduled task worker started");
     }
 
     info!("✅ Builtin servers initialized with SessionManager support");
