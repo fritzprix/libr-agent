@@ -104,8 +104,8 @@ query($prQuery: String!, $prLimit: Int!, $owner: String!, $name: String!, $issue
 """
 
 
-class GhError(RuntimeError):
-    """Raised when GitHub CLI execution fails."""
+# One class, so issue_candidates can tell an optional lookup failed through our gh.
+GhError = issue_candidates.GhError
 
 
 def default_state_path(worker: str) -> Path:
@@ -151,14 +151,14 @@ def release_lock(lock_file: Path) -> None:
 def pending_approved_issue(worker: str) -> int | None:
     """First open `approved` issue this worker can take, or None.
 
-    Uses `issue_candidates.exclusion_reason` so "no open PR closes it" means the
-    same thing here as in candidate selection.
+    Uses the same checks as `issue_candidates`, so an issue waiting on the owner
+    or on an open dependency does not keep every tick running.
     """
     claims = worker_claims.load_claims()
     me = gh("api", "user", "--jq", ".login").strip()
     issues = json.loads(
-        gh("issue", "list", "--state", "open", "--limit", str(ISSUE_LIMIT), "--json",
-           "number,labels,assignees")
+        gh("issue", "list", "--state", "open", "--label", issue_candidates.APPROVED_LABEL,
+           "--limit", str(ISSUE_LIMIT), "--json", "number,body,labels,assignees")
     )
     closing_pr = issue_candidates.closing_pr_map(issue_candidates.list_open_prs())
 
@@ -170,7 +170,7 @@ def pending_approved_issue(worker: str) -> int | None:
             number, labels, assignees, me, closing_pr,
             claimed_by=worker_claims.claimed_by_other(claims, f"issue:{number}", worker),
         )
-        if free is None:
+        if free is None and issue_candidates.waiting_reason(issue, labels, me, gh)[0] is None:
             return number
     return None
 

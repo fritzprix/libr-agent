@@ -4,7 +4,9 @@
 Prints JSON: one entry per open PR authored by @me with merge state, failing
 and pending checks, unresolved review threads, and PR comments from others
 that arrived after the latest commit, plus the latest gatekeeper-loop verdict
-(own marker comments only). A PR claimed by another worker yields `claimed`.
+(own marker comments only). A PR claimed by another worker yields `claimed`;
+a PR labelled `needs-owner` with no owner answer yet yields `wait-owner`.
+`ciAttempts` counts the `<!-- worker-loop: ci-attempt n=K -->` comments.
 Bodies are truncated; fetch the full text only for items you act on.
 """
 from __future__ import annotations
@@ -22,7 +24,7 @@ _LOOP_SHARED = Path(__file__).resolve().parents[2] / "loop-shared" / "scripts"
 if str(_LOOP_SHARED) not in sys.path:
     sys.path.insert(0, str(_LOOP_SHARED))
 
-from comment_markers import START_MARKER  # noqa: E402
+from comment_markers import NEEDS_OWNER_LABEL, START_MARKER, ci_attempts, owner_answer  # noqa: E402
 from pr_turn import decide_pr_turn, format_turn_report  # noqa: E402
 
 THREADS_QUERY = """
@@ -76,8 +78,8 @@ def gatekeeper_state(comments: list[dict], me: str, head_sha: str) -> dict | Non
         fields = dict(kv.split("=", 1) for kv in match.group(2).split() if "=" in kv)
         if match.group(1) == "gatekeeper-loop":
             verdict = {**fields, "url": c.get("url"), "createdAt": c["createdAt"]}
-        elif verdict and c["createdAt"] > verdict["createdAt"]:
-            responded_rounds.add(fields.get("round"))
+        elif verdict and c["createdAt"] > verdict["createdAt"] and "round" in fields:
+            responded_rounds.add(fields["round"])
     if verdict is None:
         return None
     verdict["awaitingWorker"] = (
@@ -96,7 +98,10 @@ def select_next_action(
     has_comments: bool,
     failing: list[str],
     pending: list[str],
+    waiting_owner: bool = False,
 ) -> str:
+    if waiting_owner:
+        return "wait-owner"
     if turn == "error":
         return "no-owner"
     if conflicting:
@@ -187,6 +192,7 @@ def summarize(number: int, owner: str, name: str, me: str, claimed_by: str | Non
                 "url": c.get("url"),
             })
 
+    answer = owner_answer(comments, me) if NEEDS_OWNER_LABEL in labels else None
     next_action = select_next_action(
         turn=turn.turn,
         conflicting=pr.get("mergeable") == "CONFLICTING",
@@ -194,6 +200,7 @@ def summarize(number: int, owner: str, name: str, me: str, claimed_by: str | Non
         has_comments=bool(threads or new_comments),
         failing=failing,
         pending=pending,
+        waiting_owner=NEEDS_OWNER_LABEL in labels and answer is None,
     )
     if claimed_by:
         next_action = "claimed"
@@ -220,6 +227,8 @@ def summarize(number: int, owner: str, name: str, me: str, claimed_by: str | Non
         "labelMismatch": turn.labelMismatch,
         "noOwnerError": turn.noOwner,
         "turnReport": format_turn_report(turn, pr_number=pr["number"]),
+        "ciAttempts": ci_attempts(comments, me),
+        "ownerAnswer": answer,
         "claimedBy": claimed_by,
         "nextAction": next_action,
     }

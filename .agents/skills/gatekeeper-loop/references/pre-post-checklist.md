@@ -75,7 +75,7 @@ Avoid clustering every clean PR at 87–96; differentiate test depth and robustn
 
 ## 8. Follow-up work the PR did not cause (gatekeeper files the issue)
 
-When review finds work that is **not this PR's fault**, the **gatekeeper** must open a GitHub issue in the same tick — before or when posting the verdict — and link it in the PR comment. Do **not** ask the worker or the owner to open it, do **not** record `needsUser`, and do **not** treat “another open PR will fix the base” as a substitute.
+When review finds work that is **not this PR's fault**, the **gatekeeper** must open a GitHub issue in the same tick — before or when posting the verdict — and link it in the PR comment. Do **not** ask the worker or the owner to open it, do **not** add `needs-owner`, and do **not** treat “another open PR will fix the base” as a substitute.
 
 Applies when **all** of the following hold:
 

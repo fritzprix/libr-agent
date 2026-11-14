@@ -19,13 +19,12 @@ CLI:
   worker_state.py claim   --worker W --ref issue:N [--token T]   0 claimed, 1 held by another worker, 2 error, 4 lease lost
   worker_state.py release --worker W --ref pr:N                  release our own claim
   worker_state.py list                                           print claims.json
-  worker_state.py status                                         every slot, tick, claim, needsUser, and scheduler
-  worker_state.py needs-user --ref R --question Q                record once; prints ADDED or ALREADY ASKED
-  worker_state.py needs-user --ref R --clear                     remove after the user answered
-  worker_state.py ci-attempt --pr N                              count one attempt; print the new total
-  worker_state.py ci-attempt --pr N --clear                      reset when CI is green
+  worker_state.py status                                         every slot, tick, claim, and scheduler
   worker_state.py scheduler add --kind K --id I                  record an armed schedule
   worker_state.py scheduler list | clear                         list; clear prints what the caller must stop
+
+Owner questions and CI attempt counts live on GitHub (the `needs-owner` label and
+worker-loop comment markers), not here.
 """
 from __future__ import annotations
 
@@ -470,21 +469,25 @@ def exclusive(lock_path: Path, timeout: float = 10.0):
 
 
 # --- Repo-wide operating state ------------------------------------------------
-# needsUser, ciAttempts, and schedulers describe the repo, not a slot: any worker
-# must see them, and `status` and `stop` must find them whichever slot armed them.
+# Schedulers describe the repo, not a slot: `status` and `stop` must find them
+# whichever slot armed them. Owner questions and CI attempts live on GitHub.
+
+# Questions recorded by older versions; `status` lists them until they are moved
+# to GitHub, and nothing writes new ones.
+_LEGACY_QUESTIONS = "needsUser"
 
 
 def _load_shared(path: Path) -> dict:
-    """Read shared.json; on first use, adopt what older versions kept per slot."""
+    """Read shared.json; on first use, adopt schedulers older versions kept per slot."""
     if path.is_file():
-        return read_json(path)
-    shared: dict = {"needsUser": [], "ciAttempts": {}, "schedulers": []}
+        data = read_json(path)
+        shared: dict = {"schedulers": data.get("schedulers") or []}
+        if data.get(_LEGACY_QUESTIONS):
+            shared[_LEGACY_QUESTIONS] = data[_LEGACY_QUESTIONS]
+        return shared
+    shared = {"schedulers": []}
     for slot_state in sorted(path.parent.glob("*/state.json")):
         state = read_json(slot_state)
-        known = {item.get("ref") for item in shared["needsUser"]}
-        shared["needsUser"] += [i for i in state.get("needsUser") or [] if i.get("ref") not in known]
-        for pr, count in (state.get("ciAttempts") or {}).items():
-            shared["ciAttempts"][pr] = max(count, shared["ciAttempts"].get(pr, 0))
         if state.get("scheduler"):
             shared["schedulers"].append(state["scheduler"])
     return shared
@@ -499,31 +502,14 @@ def _shared_update():
         atomic_write_json(path, shared)
 
 
-def add_needs_user(ref: str, question: str) -> bool:
-    """Record a question once across all workers. False means it was already asked."""
+def clear_legacy_question(ref: str) -> None:
+    """Drop a pre-GitHub question after it was posted with the `needs-owner` label."""
     with _shared_update() as shared:
-        if any(item.get("ref") == ref for item in shared["needsUser"]):
-            return False
-        since = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-        shared["needsUser"].append({"ref": ref, "question": question, "since": since})
-    return True
-
-
-def clear_needs_user(ref: str) -> None:
-    with _shared_update() as shared:
-        shared["needsUser"] = [i for i in shared["needsUser"] if i.get("ref") != ref]
-
-
-def count_ci_attempt(pr: int) -> int:
-    with _shared_update() as shared:
-        count = shared["ciAttempts"].get(str(pr), 0) + 1
-        shared["ciAttempts"][str(pr)] = count
-    return count
-
-
-def clear_ci_attempts(pr: int) -> None:
-    with _shared_update() as shared:
-        shared["ciAttempts"].pop(str(pr), None)
+        remaining = [i for i in shared.get(_LEGACY_QUESTIONS, []) if i.get("ref") != ref]
+        if remaining:
+            shared[_LEGACY_QUESTIONS] = remaining
+        else:
+            shared.pop(_LEGACY_QUESTIONS, None)
 
 
 def add_scheduler(kind: str, scheduler_id: str) -> None:
@@ -596,18 +582,15 @@ def main() -> None:
             print(json.dumps(worker_claims.load_claims(), ensure_ascii=False, indent=2))
         elif args.command == "status":
             print(json.dumps(status(), ensure_ascii=False, indent=2))
-        elif args.command == "needs-user":
-            if args.clear:
-                clear_needs_user(args.ref)
-                print("CLEARED")
-            else:
-                print("ADDED" if add_needs_user(args.ref, args.question) else "ALREADY ASKED")
-        elif args.command == "ci-attempt":
-            if args.clear:
-                clear_ci_attempts(args.pr)
-                print("CLEARED")
-            else:
-                print(count_ci_attempt(args.pr))
+        elif args.command == "needs-user" and args.clear:
+            clear_legacy_question(args.ref)
+            print("CLEARED")
+        elif args.command in ("needs-user", "ci-attempt"):
+            sys.stderr.write(
+                f"worker_state error: `{args.command}` moved to GitHub; use the `needs-owner` label "
+                "or a `<!-- worker-loop: ci-attempt n=K -->` PR comment (see SKILL.md)\n"
+            )
+            sys.exit(2)
         elif args.command == "scheduler":
             if args.action == "add":
                 add_scheduler(args.kind, args.id)
