@@ -38,6 +38,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 agent-response-guards = { path = "agent-response-guards" }
+llm-client = { path = "llm-client" }
 tauri = { version = "2", features = ["protocol-asset", "test"] }
 tauri-plugin-opener = "2"
 
@@ -156,6 +157,7 @@ workspace-str-replace = []
 tokio = { version = "1.52", features = ["test-util"] }
 # TS types generated from Rust models (src/lib/generated); test-only, no runtime cost.
 ts-rs = "12.0.1"
+llm-client = { path = "llm-client", features = ["ts"] }
 
 [profile.ci-test]
 inherits = "test"
@@ -167,4 +169,4 @@ debug = 0
 strip = true
 
 [workspace]
-members = ["migration", "agent-response-guards"]
+members = ["migration", "agent-response-guards", "llm-client"]

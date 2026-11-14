@@ -2,18 +2,7 @@ use crate::execution_mode::ExecutionMode;
 use crate::models::workspace_isolation::{DockerWorkspaceConfig, WorkspaceIsolationMode};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
-pub struct ToolCall {
-    pub id: String,
-    pub r#type: String, // "function"
-    pub function: ToolCallFunction,
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
-pub struct ToolCallFunction {
-    pub name: String,
-    pub arguments: String, // JSON string
-}
+pub use llm_client::{ToolCall, ToolCallFunction};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
