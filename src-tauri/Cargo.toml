@@ -33,6 +33,15 @@ name = "liblet"
 path = "src/bin/liblet.rs"
 test = false
 
+# Console-subsystem TUI entry (#2761). Console subsystem on every platform so
+# terminals, pipes, and scripts wait for it and see its exit code — the
+# release `libragent` binary must stay `windows_subsystem = "windows"` for the
+# GUI and can never satisfy that on Windows (spike evidence, #2761).
+[[bin]]
+name = "libragent-tui"
+path = "src/bin/libragent_tui.rs"
+test = false
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -72,6 +81,8 @@ tauri-plugin-updater = "2"
 tauri-plugin-prevent-default = { version = "5", features = ["platform-windows"] }
 path-clean = "1.0"
 tempfile = "3.27"
+# Terminal raw mode, alternate screen, and key events for `libragent --tui` (#2761).
+crossterm = "0.28"
 thiserror = "2.0"
 tracing = "0.1"
 async-trait = "0.1"
@@ -108,6 +119,7 @@ windows-sys = { version = "0.59", features = [
   "Win32_Globalization",
   "Win32_Security",
   "Win32_Security_Authorization",
+  "Win32_System_Console",
   "Win32_System_Environment",
   "Win32_System_Power",
   "Win32_System_Threading",
