@@ -3,17 +3,24 @@
 
   worker_worktree.py reset  --worker W --token T --wt PATH
   worker_worktree.py switch --worker W --token T --wt PATH --branch B
+  worker_worktree.py takeover --worker W --token T --wt PATH --from DEAD [--orphan-after SECONDS]
 
 A slot's worktree belongs to whoever holds the slot, so each command first renews
 the lease and refuses if it is lost or PATH is not this slot's worktree. `reset`
 saves uncommitted changes in a stash before discarding anything, so changes left
 by an earlier run stay recoverable. `switch` will not take a branch from a live
 run, frees it from an abandoned, clean worktree, and keeps a ref to any local
-commits that resetting the branch to the remote would drop.
+commits that resetting the branch to the remote would drop. `takeover` resumes
+an orphaned slot's `current` (see worker_slots.orphaned_slots): it replaces the
+dead run's lease with a handoff lease first, so that run can never renew it and
+no new tick can acquire it meanwhile, aborts any rebase or merge in progress in
+the dead worktree, commits its uncommitted changes as WIP on the branch, checks
+the branch out here with its local commits, and moves the claim and `current`
+to this slot. If any step fails, the slot is reported as orphaned again.
 
 Prints one result line. Exit codes:
-  0 - done: READY | RESET | RESCUED <stash> | SWITCHED <branch> | DETACHED <branch>
-  2 - BRANCH BUSY <path>: another run needs that branch; skip this item
+  0 - done: READY | RESET | RESCUED <stash> | SWITCHED <branch> | DETACHED <branch> | TOOK OVER <ref>
+  2 - skip this item: BRANCH BUSY <path> | NOT ORPHANED <slot> | CLAIMED <ref> by <worker>
   3 - error
   4 - LEASE LOST: stop working
 """
@@ -26,6 +33,7 @@ import time
 from pathlib import Path
 
 import lease
+import worker_claims
 import worker_slots
 import worker_state
 
@@ -146,16 +154,117 @@ def switch(wt: Path, branch: str) -> tuple[int, str]:
     return 0, f"SWITCHED {branch} (unpushed commits saved at {saved})" if saved else f"SWITCHED {branch}"
 
 
+def _branch_exists(wt: Path, ref: str) -> bool:
+    try:
+        git(wt, "rev-parse", "--verify", "--quiet", ref)
+    except WorktreeError:
+        return False
+    return True
+
+
+def _commit_identity(wt: Path) -> list[str]:
+    """The user's identity when configured, else a recognisable fallback."""
+    try:
+        git(wt, "config", "user.email")
+        return []
+    except WorktreeError:
+        return ["-c", "user.name=worker-loop", "-c", "user.email=worker-loop@localhost"]
+
+
+def _commit_wip(dead_wt: Path, dead: str) -> str | None:
+    """Commit everything uncommitted in the dead worktree. Returns the commit."""
+    _abort_in_progress(dead_wt)
+    if not _is_dirty(dead_wt):
+        return None
+    git(dead_wt, "add", "--all")
+    # A snapshot of unfinished work must not be lost to hooks that check finished work.
+    git(dead_wt, *_commit_identity(dead_wt), "commit", "--quiet", "--no-verify",
+        "-m", f"WIP: worker-loop takeover of {dead}")
+    return git(dead_wt, "rev-parse", "HEAD")
+
+
+def _set_current(worker: str, current: dict | None) -> None:
+    path = worker_state.state_path(worker)
+    state = worker_state.read_json(path)
+    state["current"] = current
+    worker_state.atomic_write_json(path, state)
+
+
+def takeover(wt: Path, worker: str, token: str, dead: str, threshold: int | None) -> tuple[int, str]:
+    """Resume the `current` work of a slot whose run died without unlocking."""
+    if dead == worker or not worker_slots.SLOT_NAME.match(dead):
+        return EXIT_ERROR, f"ERROR: {dead!r} is not another worker slot"
+    if worker_state.read_json(worker_state.state_path(worker)).get("current"):
+        return EXIT_ERROR, f"ERROR: {worker} already has current work; finish it before taking over"
+    if _is_dirty(wt):
+        return EXIT_ERROR, f"ERROR: {wt} has uncommitted changes; reset it first"
+    orphan = next((o for o in worker_slots.orphaned_slots(threshold) if o["worker"] == dead), None)
+    if orphan is None:
+        return EXIT_BRANCH_BUSY, f"NOT ORPHANED {dead}: its run is live, recent, or left no current work"
+    ref, branch = orphan["ref"], orphan.get("branch")
+    holder = worker_claims.claimed_by_other(worker_claims.load_claims(), ref, dead)
+    if holder and holder != worker:
+        return EXIT_BRANCH_BUSY, f"CLAIMED {ref} by {holder}"
+    dead_wt = wt.parent / dead
+    if branch:
+        if not (_branch_exists(wt, f"refs/heads/{branch}") or _branch_exists(wt, f"refs/remotes/origin/{branch}")):
+            return EXIT_ERROR, f"ERROR: branch {branch} of {ref} exists neither locally nor on origin"
+        occupant = _branch_occupant(wt, branch)
+        if occupant is not None and occupant.resolve() not in (wt.resolve(), dead_wt.resolve()):
+            return EXIT_BRANCH_BUSY, f"BRANCH BUSY {occupant}"
+
+    # From here the dead run is fenced: its token can no longer renew the slot,
+    # and no new tick can acquire the slot until end_handoff.
+    fenced = worker_slots.fence_orphan(dead, worker, token, threshold)
+    if fenced is None:
+        return EXIT_BRANCH_BUSY, f"NOT ORPHANED {dead}: it changed while taking over"
+    handed_over = False
+    wip = None
+    try:
+        if branch:
+            # A rebase or merge in progress detaches HEAD, which hides the branch
+            # from `git worktree list`; aborting it checks the branch out again.
+            if (dead_wt / ".git").exists():
+                _abort_in_progress(dead_wt)
+            occupant = _branch_occupant(wt, branch)
+            if occupant is not None and occupant.resolve() == dead_wt.resolve():
+                wip = _commit_wip(dead_wt, dead)
+                git(dead_wt, "switch", "--detach")
+            if _branch_exists(wt, f"refs/heads/{branch}"):
+                git(wt, "switch", branch)
+            else:
+                git(wt, "switch", "-c", branch, f"origin/{branch}")
+        holder = worker_claims.transfer(ref, dead, worker)
+        if holder:
+            return EXIT_BRANCH_BUSY, f"CLAIMED {ref} by {holder} (slot {dead} stays orphaned)"
+        _set_current(worker, {"ref": ref, "branch": branch})
+        _set_current(dead, None)
+        handed_over = True
+    finally:
+        worker_slots.end_handoff(dead, fenced, handed_over)
+    renewed = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(orphan["lastRenewedAt"]))
+    line = f"TOOK OVER {ref} from {dead} on {branch or '(no branch)'} (last renewed {renewed})"
+    return 0, f"{line}; uncommitted changes committed as {wip}" if wip else line
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("command", choices=["reset", "switch"])
+    parser.add_argument("command", choices=["reset", "switch", "takeover"])
     parser.add_argument("--worker", required=True)
     parser.add_argument("--token", required=True)
     parser.add_argument("--wt", type=Path, required=True)
     parser.add_argument("--branch", default=None)
+    parser.add_argument("--from", dest="dead", default=None, help="takeover: the orphaned slot")
+    parser.add_argument("--orphan-after", type=int, default=None,
+                        help=f"takeover: seconds of silence (default ${worker_slots.ORPHAN_AFTER_ENV} or "
+                             f"{worker_slots.DEFAULT_ORPHAN_AFTER_SECONDS})")
     args = parser.parse_args(argv)
     if args.command == "switch" and not args.branch:
         parser.error("switch requires --branch")
+    if args.command == "takeover" and not args.dead:
+        parser.error("takeover requires --from")
+    if args.orphan_after is not None and args.orphan_after <= 0:
+        parser.error("--orphan-after must be positive")
 
     try:
         wt = args.wt.resolve()
@@ -168,10 +277,13 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "reset":
             print(reset(wt, args.worker))
             return 0
-        code, line = switch(wt, args.branch)
+        if args.command == "takeover":
+            code, line = takeover(wt, args.worker, args.token, args.dead, args.orphan_after)
+        else:
+            code, line = switch(wt, args.branch)
         print(line)
         return code
-    except (WorktreeError, worker_state.StateFileCorrupt, TimeoutError, OSError) as e:
+    except (WorktreeError, worker_state.StateFileCorrupt, TimeoutError, OSError, ValueError) as e:
         print(f"ERROR: {e}")
         return EXIT_ERROR
 

@@ -19,7 +19,7 @@ CLI:
   worker_state.py claim   --worker W --ref issue:N [--token T]   0 claimed, 1 held by another worker, 2 error, 4 lease lost
   worker_state.py release --worker W --ref pr:N                  release our own claim
   worker_state.py list                                           print claims.json
-  worker_state.py status                                         every slot, tick, claim, and scheduler
+  worker_state.py status                                         every slot, tick, claim, scheduler, and orphaned slot
   worker_state.py scheduler add --kind K --id I                  record an armed schedule
   worker_state.py scheduler list | clear                         list; clear prints what the caller must stop
 
@@ -362,9 +362,13 @@ def _pid_alive(pid: int | None) -> bool:
         return False
 
 
+def lease_renewed_at(record: dict) -> float:
+    """When the run that wrote this slot or lock record last proved it was alive."""
+    return float(record.get("renewedAt") or record.get("startedAt") or record.get("time") or 0)
+
+
 def lease_expired(record: dict) -> bool:
-    last = record.get("renewedAt") or record.get("startedAt") or record.get("time") or 0
-    return time.time() - float(last) > LEASE_TTL_SECONDS
+    return time.time() - lease_renewed_at(record) > LEASE_TTL_SECONDS
 
 
 def lease_is_live(record: dict | None) -> bool:
@@ -540,6 +544,8 @@ def status() -> dict:
     slots = worker_slots.load_slots()
     names = set(slots) | {p.parent.name for p in root.glob("*/state.json")}
     claims = worker_claims.load_claims()
+    orphaned = worker_slots.orphaned_slots()
+    orphaned_names = {entry["worker"] for entry in orphaned}
     workers = {}
     for name in sorted(names):
         state = read_json(root / name / "state.json")
@@ -550,9 +556,10 @@ def status() -> dict:
             "tickRunning": lease_is_live(lock),
             "current": state.get("current"),
             "claims": sorted(r for r, c in claims.items() if c.get("worker") == name),
+            "orphaned": name in orphaned_names,
         }
     shared = _load_shared(shared_path())
-    return {"workers": workers, **shared}
+    return {"workers": workers, "orphaned": orphaned, **shared}
 
 
 def main() -> None:
