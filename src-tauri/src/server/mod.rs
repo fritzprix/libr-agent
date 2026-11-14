@@ -3,6 +3,7 @@ pub mod api_key;
 pub mod backend_descriptor;
 #[cfg(debug_assertions)]
 pub mod e2e_control;
+pub mod frontend_attachments;
 pub mod handlers;
 pub mod mcp_handler;
 pub mod pairing;

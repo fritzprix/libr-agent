@@ -380,6 +380,9 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
             descriptor.pid, descriptor.port
         );
         info!("✅ Shared backend at port {} is ready", descriptor.port);
+        tauri::async_runtime::spawn(crate::server::shared_backend::hold_frontend_attachment(
+            client.clone(),
+        ));
         crate::state::init_shared_backend_client(client);
         crate::server::readiness::mark_recovery(crate::server::readiness::RecoveryState::Skipped);
     }

@@ -1,13 +1,15 @@
 //! Shared-backend discovery, readiness wait, and Session API client (#2701).
 //!
-//! Both the GUI (`libragent`) and the TUI (`liblet`) are equal frontends of one
+//! Both the GUI (`libragent`) and the TUI (`libragent --tui`) are equal frontends of one
 //! local backend. Whichever starts first hosts the backend; a later frontend
 //! discovers it through [`backend_descriptor::find_live_backend`], waits until
 //! `/api/health` reports `ready: true`, and drives sessions exclusively through
 //! the Session API so a live session never gets a second executor.
 
 use crate::server::backend_descriptor::{self, BackendDescriptor};
+use crate::server::frontend_attachments::{AttachResponse, HEARTBEAT_INTERVAL};
 use serde::{Deserialize, Serialize};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 const HEALTH_POLL_INTERVAL: Duration = Duration::from_millis(100);
@@ -333,6 +335,39 @@ impl SharedBackendClient {
         .await
     }
 
+    /// Register this frontend as attached to the backend (#2758).
+    pub async fn attach_frontend(&self) -> Result<String, String> {
+        let value = self
+            .send_json(reqwest::Method::POST, "/api/frontends", None)
+            .await?;
+        serde_json::from_value::<AttachResponse>(value)
+            .map(|resp| resp.id)
+            .map_err(|e| format!("Invalid attach response from shared backend: {e}"))
+    }
+
+    /// Refresh this frontend's attachment. `Ok(false)` means the backend no
+    /// longer knows the id (it dropped it as stale), so attach again.
+    pub async fn heartbeat_frontend(&self, attachment_id: &str) -> Result<bool, String> {
+        let (status, _) = self
+            .send_json_status(
+                reqwest::Method::POST,
+                &format!("/api/frontends/{attachment_id}/heartbeat"),
+                None,
+            )
+            .await?;
+        Ok(status != reqwest::StatusCode::NOT_FOUND)
+    }
+
+    pub async fn detach_frontend(&self, attachment_id: &str) -> Result<(), String> {
+        self.send_json_status(
+            reqwest::Method::DELETE,
+            &format!("/api/frontends/{attachment_id}"),
+            None,
+        )
+        .await
+        .map(|_| ())
+    }
+
     pub async fn respond_prompt(
         &self,
         session_id: &str,
@@ -344,6 +379,66 @@ impl SharedBackendClient {
             Some(body),
         )
         .await
+    }
+}
+
+/// This process's attachment id on the shared backend, while it holds one.
+static ATTACHMENT_ID: Mutex<Option<String>> = Mutex::new(None);
+
+fn attachment_id() -> std::sync::MutexGuard<'static, Option<String>> {
+    ATTACHMENT_ID
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Keep this frontend counted by the backend (#2758): attach, then send a
+/// heartbeat every [`HEARTBEAT_INTERVAL`]. When the backend no longer knows
+/// the id (for example after this process was suspended past the timeout),
+/// attach again. Runs until the process exits.
+pub async fn hold_frontend_attachment(client: SharedBackendClient) {
+    loop {
+        let current = attachment_id().clone();
+        let next = attachment_step(&client, current).await;
+        *attachment_id() = next;
+        tokio::time::sleep(HEARTBEAT_INTERVAL).await;
+    }
+}
+
+/// One heartbeat-loop step: the attachment id to hold after it. No id or an
+/// id the backend no longer knows means attach (again); a failed request
+/// keeps the current id so the next step retries it.
+async fn attachment_step(client: &SharedBackendClient, current: Option<String>) -> Option<String> {
+    let known = match &current {
+        Some(id) => client.heartbeat_frontend(id).await,
+        None => Ok(false),
+    };
+    match known {
+        Ok(true) => current,
+        Ok(false) => match client.attach_frontend().await {
+            Ok(id) => {
+                log::info!("Attached to shared backend as frontend {id}");
+                Some(id)
+            }
+            Err(err) => {
+                log::warn!("Failed to attach to shared backend: {err}");
+                None
+            }
+        },
+        Err(err) => {
+            log::warn!("Shared backend heartbeat failed: {err}");
+            current
+        }
+    }
+}
+
+/// Release this frontend's attachment on clean exit. A crash skips this; the
+/// backend then drops the attachment when heartbeats stop.
+pub async fn detach_frontend(client: &SharedBackendClient) {
+    let Some(id) = attachment_id().take() else {
+        return;
+    };
+    if let Err(err) = client.detach_frontend(&id).await {
+        log::warn!("Failed to detach frontend {id} from shared backend: {err}");
     }
 }
 
@@ -499,6 +594,67 @@ mod tests {
         let (addr, server_fut) = warp::serve(route).bind_ephemeral(([127, 0, 0, 1], 0));
         let server = tokio::spawn(server_fut);
         (addr.port(), server)
+    }
+
+    #[tokio::test]
+    async fn client_attaches_heartbeats_and_detaches() {
+        let (addr, server_fut) = warp::serve(crate::server::frontend_attachments::routes())
+            .bind_ephemeral(([127, 0, 0, 1], 0));
+        let server = tokio::spawn(server_fut);
+        let client = SharedBackendClient::new(addr.port()).unwrap();
+
+        let id = client.attach_frontend().await.expect("attach succeeds");
+        assert!(client.heartbeat_frontend(&id).await.unwrap());
+
+        client.detach_frontend(&id).await.expect("detach succeeds");
+        assert!(
+            !client.heartbeat_frontend(&id).await.unwrap(),
+            "a detached id must be unknown, so the frontend attaches again"
+        );
+        server.abort();
+    }
+
+    fn attachment_server() -> (SharedBackendClient, tokio::task::JoinHandle<()>) {
+        let (addr, server_fut) = warp::serve(crate::server::frontend_attachments::routes())
+            .bind_ephemeral(([127, 0, 0, 1], 0));
+        let server = tokio::spawn(server_fut);
+        (SharedBackendClient::new(addr.port()).unwrap(), server)
+    }
+
+    #[tokio::test]
+    async fn attachment_step_attaches_when_no_id_is_held() {
+        let (client, server) = attachment_server();
+        let id = attachment_step(&client, None).await.expect("attached");
+        assert!(client.heartbeat_frontend(&id).await.unwrap());
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn attachment_step_keeps_a_known_id() {
+        let (client, server) = attachment_server();
+        let id = client.attach_frontend().await.unwrap();
+        assert_eq!(attachment_step(&client, Some(id.clone())).await, Some(id));
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn attachment_step_reattaches_when_the_backend_forgot_the_id() {
+        let (client, server) = attachment_server();
+        let next = attachment_step(&client, Some("dropped-as-stale".to_string()))
+            .await
+            .expect("re-attached");
+        assert_ne!(next, "dropped-as-stale");
+        assert!(client.heartbeat_frontend(&next).await.unwrap());
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn attachment_step_keeps_the_id_when_the_request_fails() {
+        let (client, server) = attachment_server();
+        server.abort();
+        let _ = server.await;
+        let kept = attachment_step(&client, Some("held".to_string())).await;
+        assert_eq!(kept.as_deref(), Some("held"));
     }
 
     #[tokio::test]
