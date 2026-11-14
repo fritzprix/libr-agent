@@ -39,6 +39,7 @@ pub fn should_quarantine_on_init_failure(error: &DatabaseError) -> bool {
 /// The native message box is blocking on purpose: startup exits right after.
 fn show_fatal_database_error(title: &str, guidance: &str, error: &DatabaseError) {
     log::error!("❌ {title}: {error}");
+    crate::tui::restore_terminal();
     eprintln!("❌ {title}\n{guidance}\nDetails: {error}");
     rfd::MessageDialog::new()
         .set_title(title)

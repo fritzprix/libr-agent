@@ -428,8 +428,10 @@ pub fn run() {
 /// presented, while the hidden WebView keeps answering LLM calls (the
 /// phase-1 allowance) exactly like the GUI and `liblet` paths do.
 fn run_with_visibility(show_windows: bool) {
-    // Set up custom panic handler for better error reporting
-    std::panic::set_hook(Box::new(|panic_info| {
+    // Set up custom panic handler for better error reporting. It chains the
+    // previous hook, which in TUI mode restores the terminal.
+    let previous_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic_info| {
         error!("🚨 PANIC: {panic_info}");
         if let Some(location) = panic_info.location() {
             error!(
@@ -442,6 +444,7 @@ fn run_with_visibility(show_windows: bool) {
 
         // Attempt graceful shutdown
         error!("🔄 Attempting graceful shutdown...");
+        previous_hook(panic_info);
     }));
 
     // Configure Tauri builder with error handling
@@ -505,6 +508,7 @@ fn run_with_visibility(show_windows: bool) {
                     lifecycle::deferred_exit::on_exit_requested(app_handle, *code, api);
                 }
                 if let tauri::RunEvent::Exit = event {
+                    crate::tui::restore_terminal();
                     crate::server::backend_descriptor::unpublish();
                     crate::utils::keep_awake::shutdown();
                     let app_handle_clone = app_handle.clone();

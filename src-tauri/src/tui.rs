@@ -36,12 +36,17 @@
 use crossterm::{
     cursor::MoveTo,
     event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
-    execute,
+    execute, queue,
     terminal::{Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
+
+/// Set while this process holds the terminal in raw mode on the alternate
+/// screen, so restore is a no-op for the GUI and after the first restore.
+static TERMINAL_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 /// Flag that selects TUI mode on any entry binary.
 pub const TUI_FLAG: &str = "--tui";
@@ -50,13 +55,13 @@ pub const TUI_FLAG: &str = "--tui";
 pub const TUI_POLL_INTERVAL: Duration = Duration::from_millis(200);
 
 /// True when the given arguments contain [`TUI_FLAG`].
-pub fn args_want_tui<'a>(args: impl IntoIterator<Item = &'a String>) -> bool {
-    args.into_iter().any(|arg| arg == TUI_FLAG)
+pub fn args_want_tui(args: impl IntoIterator<Item = impl AsRef<str>>) -> bool {
+    args.into_iter().any(|arg| arg.as_ref() == TUI_FLAG)
 }
 
 /// True when this process was started with [`TUI_FLAG`].
 pub fn wants_tui() -> bool {
-    std::env::args().any(|arg| arg == TUI_FLAG)
+    args_want_tui(std::env::args())
 }
 
 /// Path of the console-subsystem launcher next to this executable.
@@ -140,10 +145,23 @@ pub fn status_screen(
     ]
 }
 
-/// Restore the terminal to cooked, non-alternate-screen mode. Idempotent;
-/// every error is ignored because there is nothing left to do if the
-/// terminal is already gone.
-fn restore_terminal() {
+/// Draw one frame from the top-left corner. Raw mode on Unix turns off
+/// output post-processing, so every line ends with an explicit `\r\n`.
+fn render_frame(out: &mut impl Write, lines: &[String]) -> std::io::Result<()> {
+    queue!(out, MoveTo(0, 0), Clear(ClearType::FromCursorDown))?;
+    for line in lines {
+        write!(out, "{line}\r\n")?;
+    }
+    out.flush()
+}
+
+/// Restore the terminal to cooked, non-alternate-screen mode if the TUI set
+/// it up. Safe to call from any exit path, any number of times; every error
+/// is ignored because there is nothing left to do if the terminal is gone.
+pub(crate) fn restore_terminal() {
+    if !TERMINAL_ACTIVE.swap(false, Ordering::SeqCst) {
+        return;
+    }
     let _ = crossterm::terminal::disable_raw_mode();
     let _ = execute!(std::io::stdout(), LeaveAlternateScreen);
 }
@@ -163,6 +181,7 @@ fn install_terminal_panic_hook() {
 /// not leave an invisible backend running.
 fn setup_terminal() -> Result<(), String> {
     install_terminal_panic_hook();
+    TERMINAL_ACTIVE.store(true, Ordering::SeqCst);
     if crossterm::terminal::enable_raw_mode().is_err() {
         return Err(
             "this terminal cannot enter raw mode; run libragent-tui from a real terminal"
@@ -198,14 +217,7 @@ fn front_of_house() {
             lines.push(" Quitting (waiting for the backend to shut down)...".to_string());
         }
 
-        {
-            let mut stdout = stdout.lock();
-            execute!(stdout, MoveTo(0, 0), Clear(ClearType::FromCursorDown)).ok();
-            for line in &lines {
-                writeln!(stdout, "{line}").ok();
-            }
-            stdout.flush().ok();
-        }
+        render_frame(&mut stdout.lock(), &lines).ok();
 
         if event::poll(TUI_POLL_INTERVAL).unwrap_or(false) {
             if let Ok(Event::Key(key)) = event::read() {
@@ -223,12 +235,10 @@ fn front_of_house() {
 
         if quit_requested {
             // Graceful exit only: the RunEvent::Exit handler unpublishes the
-            // backend record. Until the app handle exists (still starting),
-            // keep looping so a very early q is honoured, not dropped.
+            // backend record and restores the terminal. Until the app handle
+            // exists (still starting), keep looping so a very early q is
+            // honoured, not dropped.
             if let Some(handle) = crate::state::get_app_handle() {
-                restore_terminal();
-                // Returning is enough: the main thread stays blocked in the
-                // Tauri event loop until this exit request tears it down.
                 handle.exit(0);
                 return;
             }
@@ -243,7 +253,12 @@ fn front_of_house() {
 /// #2761 — because this is the same Tauri app the GUI runs, only with
 /// `visible = false`.
 pub fn run_tui() -> i32 {
-    // Set the terminal before booting anything: if this process cannot
+    // Bootstrap starts no backend and may exit(1) on its own, so it runs
+    // on the normal screen where its messages stay readable.
+    crate::bootstrap::load_dotenv_files();
+    let db_url = crate::bootstrap::prepare_profile_runtime();
+
+    // Set the terminal before the backend boots: if this process cannot
     // present a TUI, fail now instead of leaving an invisible backend.
     if let Err(err) = setup_terminal() {
         restore_terminal();
@@ -251,18 +266,12 @@ pub fn run_tui() -> i32 {
         return 1;
     }
 
-    crate::bootstrap::load_dotenv_files();
-    let db_url = crate::bootstrap::prepare_profile_runtime();
+    std::thread::spawn(front_of_house);
 
-    let front = std::thread::spawn(front_of_house);
-
-    // Blocks until the event loop exits (quit keys call AppHandle::exit).
+    // Tauri's App::run ends the process with std::process::exit; the
+    // terminal is restored by the RunEvent::Exit handler, so nothing after
+    // this call runs.
     crate::lifecycle::run_with_sqlite_sync_and_visibility(db_url, false);
-
-    restore_terminal();
-    // If the event loop ended without the front thread quitting (e.g. a
-    // tray quit), let it finish its last render and exit.
-    let _ = front.join();
     0
 }
 
@@ -286,8 +295,24 @@ mod tests {
         assert!(args_want_tui(with_flag.iter()));
         assert!(!args_want_tui(without.iter()));
         assert!(!args_want_tui(Vec::<String>::new().iter()));
+        assert!(args_want_tui(["libragent", "--profile", "dev", "--tui"]));
     }
 
+    #[test]
+    fn render_frame_returns_to_column_zero_after_every_line() {
+        let lines = status_screen(None, 100);
+        let mut buffer = Vec::new();
+        render_frame(&mut buffer, &lines).unwrap();
+        let output = String::from_utf8(buffer).unwrap();
+
+        let body = format!("{}\r\n", lines.join("\r\n"));
+        assert!(output.ends_with(&body), "frame body: {output:?}");
+        let bare_newlines = output
+            .match_indices('\n')
+            .filter(|(index, _)| !output[..*index].ends_with('\r'))
+            .count();
+        assert_eq!(bare_newlines, 0, "frame has a bare \\n: {output:?}");
+    }
     #[test]
     fn launcher_path_uses_sibling_name_for_platform() {
         let dir = Path::new(if cfg!(windows) { "C:\\app" } else { "/opt/app" });
