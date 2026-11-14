@@ -478,6 +478,9 @@ pub fn run() {
             .build(create_tauri_context())
             .expect("error while building tauri application")
             .run(|app_handle, event| {
+                if let tauri::RunEvent::ExitRequested { code, api, .. } = &event {
+                    lifecycle::deferred_exit::on_exit_requested(app_handle, *code, api);
+                }
                 if let tauri::RunEvent::Exit = event {
                     crate::server::backend_descriptor::unpublish();
                     crate::utils::keep_awake::shutdown();

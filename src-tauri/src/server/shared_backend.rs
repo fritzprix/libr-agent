@@ -1,6 +1,6 @@
 //! Shared-backend discovery, readiness wait, and Session API client (#2701).
 //!
-//! Both the GUI (`libragent`) and the TUI (`liblet`) are equal frontends of one
+//! Both the GUI (`libragent`) and the TUI (`libragent --tui`) are equal frontends of one
 //! local backend. Whichever starts first hosts the backend; a later frontend
 //! discovers it through [`backend_descriptor::find_live_backend`], waits until
 //! `/api/health` reports `ready: true`, and drives sessions exclusively through
@@ -398,22 +398,36 @@ fn attachment_id() -> std::sync::MutexGuard<'static, Option<String>> {
 pub async fn hold_frontend_attachment(client: SharedBackendClient) {
     loop {
         let current = attachment_id().clone();
-        let known = match current {
-            Some(id) => client.heartbeat_frontend(&id).await,
-            None => Ok(false),
-        };
-        match known {
-            Ok(true) => {}
-            Ok(false) => match client.attach_frontend().await {
-                Ok(id) => {
-                    log::info!("Attached to shared backend as frontend {id}");
-                    *attachment_id() = Some(id);
-                }
-                Err(err) => log::warn!("Failed to attach to shared backend: {err}"),
-            },
-            Err(err) => log::warn!("Shared backend heartbeat failed: {err}"),
-        }
+        let next = attachment_step(&client, current).await;
+        *attachment_id() = next;
         tokio::time::sleep(HEARTBEAT_INTERVAL).await;
+    }
+}
+
+/// One heartbeat-loop step: the attachment id to hold after it. No id or an
+/// id the backend no longer knows means attach (again); a failed request
+/// keeps the current id so the next step retries it.
+async fn attachment_step(client: &SharedBackendClient, current: Option<String>) -> Option<String> {
+    let known = match &current {
+        Some(id) => client.heartbeat_frontend(id).await,
+        None => Ok(false),
+    };
+    match known {
+        Ok(true) => current,
+        Ok(false) => match client.attach_frontend().await {
+            Ok(id) => {
+                log::info!("Attached to shared backend as frontend {id}");
+                Some(id)
+            }
+            Err(err) => {
+                log::warn!("Failed to attach to shared backend: {err}");
+                None
+            }
+        },
+        Err(err) => {
+            log::warn!("Shared backend heartbeat failed: {err}");
+            current
+        }
     }
 }
 
@@ -598,6 +612,49 @@ mod tests {
             "a detached id must be unknown, so the frontend attaches again"
         );
         server.abort();
+    }
+
+    fn attachment_server() -> (SharedBackendClient, tokio::task::JoinHandle<()>) {
+        let (addr, server_fut) = warp::serve(crate::server::frontend_attachments::routes())
+            .bind_ephemeral(([127, 0, 0, 1], 0));
+        let server = tokio::spawn(server_fut);
+        (SharedBackendClient::new(addr.port()).unwrap(), server)
+    }
+
+    #[tokio::test]
+    async fn attachment_step_attaches_when_no_id_is_held() {
+        let (client, server) = attachment_server();
+        let id = attachment_step(&client, None).await.expect("attached");
+        assert!(client.heartbeat_frontend(&id).await.unwrap());
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn attachment_step_keeps_a_known_id() {
+        let (client, server) = attachment_server();
+        let id = client.attach_frontend().await.unwrap();
+        assert_eq!(attachment_step(&client, Some(id.clone())).await, Some(id));
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn attachment_step_reattaches_when_the_backend_forgot_the_id() {
+        let (client, server) = attachment_server();
+        let next = attachment_step(&client, Some("dropped-as-stale".to_string()))
+            .await
+            .expect("re-attached");
+        assert_ne!(next, "dropped-as-stale");
+        assert!(client.heartbeat_frontend(&next).await.unwrap());
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn attachment_step_keeps_the_id_when_the_request_fails() {
+        let (client, server) = attachment_server();
+        server.abort();
+        let _ = server.await;
+        let kept = attachment_step(&client, Some("held".to_string())).await;
+        assert_eq!(kept.as_deref(), Some("held"));
     }
 
     #[tokio::test]
