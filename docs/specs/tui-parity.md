@@ -656,6 +656,9 @@ Paths in `components/` and `hooks/` are under `src/features/migration/`.
 
 Added by #2750. Every §1 inventory item gets exactly one class, and every direct or adapted item gets one priority.
 
+Terminal forms below name concrete commands as placeholders; the final command and
+sub-command names are decided in §3 (#2751).
+
 Classes:
 
 - **direct** — works the same in a terminal: text, lists, forms, toggles, confirmations.
@@ -692,9 +695,11 @@ Excluded items are listed with reasons in place; the rollup is §2.15.
 
 ### 2.2 App shell (§1.2)
 
+The sidebar navigation entries (§1.2.1) are adapted as a whole: the sidebar becomes
+slash commands, and each entry is classified in the table below.
+
 | Item (§1 ref)                         | Class    | Priority | Terminal form                                                      |
-| ------------------------------------- | -------- | -------- | ------------------------------------------------------------------ | --------- | --------- |
-| Sidebar nav entries (§1.2.1)          | adapted  | see rows | the sidebar becomes slash commands                                 |
+| ------------------------------------- | -------- | -------- | ------------------------------------------------------------------ |
 | History (§1.2.1)                      | adapted  | P1       | `/history`                                                         |
 | Bookmarked (§1.2.1)                   | adapted  | P1       | `/history --bookmarked`                                            |
 | Chat (§1.2.1)                         | adapted  | P0       | `/new`                                                             |
@@ -714,7 +719,7 @@ Excluded items are listed with reasons in place; the rollup is §2.15.
 | Update toast (§1.2.3)                 | adapted  | P2       | status-line notice; install runs the updater and asks to quit      |
 | Toasts (§1.2.3)                       | adapted  | P0       | inline notification lines in the transcript                        |
 | UI scale shortcuts (§1.2.3)           | excluded | —        | font size is the terminal emulator's job                           |
-| Agent panel shortcuts (§1.2.3)        | adapted  | P1       | `/panel workspace                                                  | processes | planning` |
+| Agent panel shortcuts (§1.2.3)        | adapted  | P1       | `/panel` plus the workspace, processes, and planning targets       |
 | App control bridge (§1.2.3)           | excluded | —        | hidden automation hook with no user surface; backend keeps working |
 | "What's new" card (§1.2.4)            | excluded | —        | GUI tip cards; terminal users read the changelog                   |
 | "Tip" card (§1.2.4)                   | excluded | —        | as above                                                           |
@@ -748,7 +753,7 @@ Excluded items are listed with reasons in place; the rollup is §2.15.
 ### 2.4 Chat: session screen and header (§1.3.3–§1.3.4)
 
 | Item (§1 ref)                      | Class   | Priority | Terminal form                                                    |
-| ---------------------------------- | ------- | -------- | ---------------------------------------------------------------- | -------------------------------------------------- |
+| ---------------------------------- | ------- | -------- | ---------------------------------------------------------------- |
 | Loading overlay (§1.3.3)           | direct  | P0       | status lines while the session starts                            |
 | Load error (§1.3.3)                | direct  | P0       | inline error text                                                |
 | Playbook auto-start (§1.3.3)       | adapted | P1       | `/playbooks` start action prints the same strip                  |
@@ -757,7 +762,7 @@ Excluded items are listed with reasons in place; the rollup is §2.15.
 | Title (§1.3.4)                     | direct  | P0       | header line                                                      |
 | Rename session (§1.3.4)            | direct  | P1       | `/rename <name>`                                                 |
 | Bookmark (§1.3.4)                  | direct  | P1       | `/bookmark`                                                      |
-| Export session (§1.3.4)            | adapted | P1       | `/export md                                                      | atif <path>` writes the file instead of a download |
+| Export session (§1.3.4)            | adapted | P1       | `/export md <path>` or `/export atif <path>` writes the file     |
 | Copy pairing instructions (§1.3.4) | adapted | P2       | `/pairing` prints the instructions (terminal clipboard varies)   |
 | Panel update badges (§1.3.4)       | adapted | P1       | status-line hint "planning updated"                              |
 | Toggle agent panels (§1.3.4)       | adapted | P1       | `/panel ...`                                                     |
@@ -766,12 +771,12 @@ Excluded items are listed with reasons in place; the rollup is §2.15.
 ### 2.5 Chat: status bar (§1.3.5)
 
 | Item (§1 ref)                     | Class   | Priority | Terminal form                                           |
-| --------------------------------- | ------- | -------- | ------------------------------------------------------- | ---- | --------------------------------- | ---- | ----- |
+| --------------------------------- | ------- | -------- | ------------------------------------------------------- |
 | Workflow banner (§1.3.5)          | direct  | P0       | persistent status line with Retry / Continue keys       |
 | Session model (§1.3.5)            | adapted | P0       | `/model` picker; same idle-only rule and refresh action |
 | Sub-session batch update (§1.3.5) | adapted | P2       | confirm prompt with the same three choices              |
-| Thinking effort (§1.3.5)          | direct  | P1       | `/thinking off                                          | low  | medium                            | high | auto` |
-| Execution mode (§1.3.5)           | direct  | P0       | `/permission normal                                     | yolo | unsafe` (already a slash command) |
+| Thinking effort (§1.3.5)          | direct  | P0       | `/thinking` choice list: off, low, medium, high, auto   |
+| Execution mode (§1.3.5)           | direct  | P0       | `/permission` choice list: normal, yolo, unsafe         |
 | Token metrics (§1.3.5)            | adapted | P2       | `/stats` prints the same numbers                        |
 | Tools count (§1.3.5)              | adapted | P1       | `/tools` list with badges and schemas                   |
 | Retry failed MCP (§1.3.5)         | direct  | P1       | `/mcp retry`                                            |
@@ -854,7 +859,7 @@ Excluded items are listed with reasons in place; the rollup is §2.15.
 ### 2.11 Session management (§1.4)
 
 | Item (§1 ref)                     | Class   | Priority | Terminal form                                               |
-| --------------------------------- | ------- | -------- | ----------------------------------------------------------- | -------------- |
+| --------------------------------- | ------- | -------- | ----------------------------------------------------------- |
 | New session (§1.4.1)              | direct  | P0       | `/new`                                                      |
 | From playbook (§1.4.1)            | adapted | P1       | `/playbooks` start                                          |
 | From scheduled task (§1.4.1)      | direct  | P0       | backend behaviour, no user surface                          |
@@ -880,7 +885,7 @@ Excluded items are listed with reasons in place; the rollup is §2.15.
 | Markdown export (§1.4.5)          | adapted | P1       | `/export md <path>`                                         |
 | ATIF export (§1.4.5)              | adapted | P1       | `/export atif <path>`                                       |
 | Copy visible (§1.4.5)             | adapted | P1       | `/export visible <path>`                                    |
-| Org bundle (§1.4.5)               | adapted | P2       | `/org export                                                | import <path>` |
+| Org bundle (§1.4.5)               | adapted | P2       | `/org export <path>` and `/org import <path>`               |
 | Sidebar status dot (§1.4.6)       | adapted | P0       | status column in every session list                         |
 | History status badge (§1.4.6)     | adapted | P1       | same words as text badges                                   |
 | Live updates (§1.4.6)             | direct  | P0       | the TUI consumes the same `agent:event` stream              |
@@ -958,77 +963,77 @@ Excluded items are listed with reasons in place; the rollup is §2.15.
 
 ### 2.13 Settings (§1.10–§1.11)
 
-| Item (§1 ref)                              | Class    | Priority | Terminal form                                               |
-| ------------------------------------------ | -------- | -------- | ----------------------------------------------------------- |
-| Settings page shell (§1.10.1)              | —        | —        | section-level rows below                                    |
-| Version (§1.10.1)                          | direct   | P1       | `/settings` header                                          |
-| Changed badge / tab dots (§1.10.1)         | adapted  | P1       | "n sections changed" line                                   |
-| Restart required (§1.10.1)                 | direct   | P1       | same wording                                                |
-| Discard (§1.10.1)                          | direct   | P1       | confirm prompt                                              |
-| Close (§1.10.1)                            | direct   | P1       | same unsaved-changes choices                                |
-| Save Changes (§1.10.1)                     | direct   | P1       | `/settings save`                                            |
-| Language (§1.10.2)                         | direct   | P1       | choice list                                                 |
-| Color Theme (§1.10.2)                      | excluded | —        | terminal colours belong to the emulator                     |
-| Font Family (§1.10.2)                      | excluded | —        | terminal fonts belong to the emulator                       |
-| UI size (§1.10.2)                          | excluded | —        | terminal font size belongs to the emulator                  |
-| Message Layout (§1.10.2)                   | direct   | P2       | stored; the TUI always uses the document look               |
-| Tool Detail Level (§1.10.2)                | direct   | P1       | choice list                                                 |
-| Initial Response Speed Format (§1.10.2)    | direct   | P2       | choice list                                                 |
-| Show feature tips (§1.10.2)                | direct   | P2       | stored for the GUI; the TUI shows no tips                   |
-| Show Token Speed (§1.10.2)                 | direct   | P2       | toggle                                                      |
-| Compact Metrics (§1.10.2)                  | direct   | P2       | toggle                                                      |
-| Default AI Model (§1.10.3)                 | adapted  | P0       | `/model` picker with provider list and refresh              |
-| Backup AI Model (§1.10.3)                  | adapted  | P1       | picker                                                      |
-| Thinking Depth (§1.10.3)                   | direct   | P1       | choice list                                                 |
-| Override Temperature (§1.10.3)             | direct   | P1       | toggle plus numeric input                                   |
-| Sub-Agent Model Routing (§1.10.3)          | adapted  | P1       | three pickers plus Use default                              |
-| Provider API Keys (§1.10.3)                | adapted  | P1       | masked secret inputs per provider                           |
-| Custom OpenAI Providers (§1.10.3)          | adapted  | P1       | form wizard                                                 |
-| Context Management Strategy (§1.10.4)      | direct   | P1       | choice list                                                 |
-| Max Output Tokens (§1.10.4)                | direct   | P1       | preset list                                                 |
-| Message Window Size (§1.10.4)              | direct   | P1       | numeric input                                               |
-| Max Input Context (§1.10.4)                | direct   | P1       | preset list                                                 |
-| Tool Calls Visible Count (§1.10.4)         | direct   | P1       | numeric input                                               |
-| Code Diff Context Lines (§1.10.4)          | direct   | P1       | numeric input                                               |
-| Max File Upload Size (§1.10.5)             | direct   | P1       | preset list                                                 |
-| Your Chrome (§1.10.5)                      | adapted  | P2       | status lines; Web Store link opens the browser              |
-| Clear agent browser data (§1.10.5)         | direct   | P2       | confirm prompt                                              |
-| Prevent sleep (§1.10.5)                    | direct   | P1       | toggle                                                      |
-| Search Index Frequency (§1.10.5)           | direct   | P1       | numeric input                                               |
-| Web Action Timeout (§1.10.5)               | direct   | P1       | numeric input                                               |
-| Extension Discovery Timeout (§1.10.5)      | direct   | P1       | numeric input                                               |
-| MCP Tool Execution Timeout (§1.10.5)       | direct   | P1       | numeric input                                               |
-| Keep App Logs (§1.10.5)                    | direct   | P1       | numeric input                                               |
-| Scheduled Task Minimum Interval (§1.10.5)  | direct   | P1       | numeric input                                               |
-| HTTP Server Port (§1.10.5)                 | direct   | P1       | numeric input                                               |
-| Expose HTTP Server (§1.10.5)               | direct   | P1       | choice list                                                 |
-| Session API Keys (§1.10.5)                 | adapted  | P1       | key list with refresh and revoke-confirm                    |
-| Open Migration Dashboard (§1.10.5)         | direct   | P2       | `/settings migration`                                       |
-| Max Retry Attempts / Retry Delay (§1.10.6) | direct   | P1       | numeric and preset inputs                                   |
-| Loop and wait limits (§1.10.6)             | direct   | P1       | numeric inputs                                              |
-| Session Branching / Child Limit (§1.10.6)  | direct   | P1       | numeric inputs                                              |
-| Concurrency limits (§1.10.6)               | direct   | P1       | numeric inputs                                              |
-| Recent Media Payload Messages (§1.10.6)    | direct   | P2       | numeric input                                               |
-| Tool Result Inline Limit (§1.10.6)         | direct   | P2       | preset list                                                 |
-| Shell Isolation Level (§1.10.6)            | direct   | P1       | choice list                                                 |
-| Shell runtime bootstrap (§1.10.6)          | direct   | P2       | toggle                                                      |
-| Linked git worktrees (§1.10.6)             | direct   | P2       | toggle                                                      |
-| About / Check for Updates (§1.10.6)        | adapted  | P2       | check prints the result; install runs the updater and quits |
-| Clear All Sessions & Workspace (§1.10.6)   | direct   | P2       | confirm prompt                                              |
-| Reset All Data & Settings (§1.10.6)        | direct   | P2       | type-`RESET` confirm                                        |
-| Inline Audio Attachments (§1.10.7)         | direct   | P2       | toggle                                                      |
-| Tool-loop recovery legacy (§1.10.7)        | direct   | P2       | toggle                                                      |
-| Max resample retries (§1.10.7)             | direct   | P2       | numeric input                                               |
-| Dev tab (all rows) (§1.10.8)               | excluded | —        | dev-only build; developers use the GUI dev build            |
-| Provider model list (§1.10.9)              | —        | —        | reference table; served through the P0 `/model` picker      |
-| Thinking Depth provider mapping (§1.10.9)  | —        | —        | reference table; backend behaviour                          |
-| Migration Back (§1.11)                     | direct   | P2       | leave the page                                              |
-| Migration Export (§1.11)                   | adapted  | P2       | path argument plus sensitive-data prompt                    |
-| Migration Import (§1.11)                   | adapted  | P2       | path argument                                               |
-| Migration Password dialogs (§1.11)         | direct   | P2       | masked inputs                                               |
-| Migration Progress (§1.11)                 | adapted  | P2       | single updating percent line                                |
-| Migration Import preview (§1.11)           | direct   | P2       | text preview plus conflict choice                           |
-| Migration Done (§1.11)                     | direct   | P2       | result table                                                |
+| Item (§1 ref)                              | Class    | Priority | Terminal form                                                         |
+| ------------------------------------------ | -------- | -------- | --------------------------------------------------------------------- |
+| Settings page shell (§1.10.1)              | —        | —        | section-level rows below                                              |
+| Version (§1.10.1)                          | direct   | P1       | `/settings` header                                                    |
+| Changed badge / tab dots (§1.10.1)         | adapted  | P1       | "n sections changed" line                                             |
+| Restart required (§1.10.1)                 | direct   | P1       | same wording                                                          |
+| Discard (§1.10.1)                          | direct   | P1       | confirm prompt                                                        |
+| Close (§1.10.1)                            | direct   | P1       | same unsaved-changes choices                                          |
+| Save Changes (§1.10.1)                     | direct   | P1       | `/settings save`                                                      |
+| Language (§1.10.2)                         | direct   | P1       | choice list                                                           |
+| Color Theme (§1.10.2)                      | excluded | —        | terminal colours belong to the emulator                               |
+| Font Family (§1.10.2)                      | excluded | —        | terminal fonts belong to the emulator                                 |
+| UI size (§1.10.2)                          | excluded | —        | terminal font size belongs to the emulator                            |
+| Message Layout (§1.10.2)                   | excluded | —        | the TUI always uses the document look; the value affects the GUI only |
+| Tool Detail Level (§1.10.2)                | direct   | P1       | choice list                                                           |
+| Initial Response Speed Format (§1.10.2)    | direct   | P2       | choice list                                                           |
+| Show feature tips (§1.10.2)                | excluded | —        | the TUI shows no tips; the value affects the GUI only                 |
+| Show Token Speed (§1.10.2)                 | direct   | P2       | toggle                                                                |
+| Compact Metrics (§1.10.2)                  | direct   | P2       | toggle                                                                |
+| Default AI Model (§1.10.3)                 | adapted  | P0       | `/model` picker with provider list and refresh                        |
+| Backup AI Model (§1.10.3)                  | adapted  | P1       | picker                                                                |
+| Thinking Depth (§1.10.3)                   | direct   | P1       | choice list                                                           |
+| Override Temperature (§1.10.3)             | direct   | P1       | toggle plus numeric input                                             |
+| Sub-Agent Model Routing (§1.10.3)          | adapted  | P1       | three pickers plus Use default                                        |
+| Provider API Keys (§1.10.3)                | adapted  | P0       | masked secret inputs per provider                                     |
+| Custom OpenAI Providers (§1.10.3)          | adapted  | P1       | form wizard                                                           |
+| Context Management Strategy (§1.10.4)      | direct   | P1       | choice list                                                           |
+| Max Output Tokens (§1.10.4)                | direct   | P1       | preset list                                                           |
+| Message Window Size (§1.10.4)              | direct   | P1       | numeric input                                                         |
+| Max Input Context (§1.10.4)                | direct   | P1       | preset list                                                           |
+| Tool Calls Visible Count (§1.10.4)         | direct   | P1       | numeric input                                                         |
+| Code Diff Context Lines (§1.10.4)          | direct   | P1       | numeric input                                                         |
+| Max File Upload Size (§1.10.5)             | direct   | P1       | preset list                                                           |
+| Your Chrome (§1.10.5)                      | adapted  | P2       | status lines; Web Store link opens the browser                        |
+| Clear agent browser data (§1.10.5)         | direct   | P2       | confirm prompt                                                        |
+| Prevent sleep (§1.10.5)                    | direct   | P1       | toggle                                                                |
+| Search Index Frequency (§1.10.5)           | direct   | P1       | numeric input                                                         |
+| Web Action Timeout (§1.10.5)               | direct   | P1       | numeric input                                                         |
+| Extension Discovery Timeout (§1.10.5)      | direct   | P1       | numeric input                                                         |
+| MCP Tool Execution Timeout (§1.10.5)       | direct   | P1       | numeric input                                                         |
+| Keep App Logs (§1.10.5)                    | direct   | P1       | numeric input                                                         |
+| Scheduled Task Minimum Interval (§1.10.5)  | direct   | P1       | numeric input                                                         |
+| HTTP Server Port (§1.10.5)                 | direct   | P1       | numeric input                                                         |
+| Expose HTTP Server (§1.10.5)               | direct   | P1       | choice list                                                           |
+| Session API Keys (§1.10.5)                 | adapted  | P1       | key list with refresh and revoke-confirm                              |
+| Open Migration Dashboard (§1.10.5)         | direct   | P2       | `/settings migration`                                                 |
+| Max Retry Attempts / Retry Delay (§1.10.6) | direct   | P1       | numeric and preset inputs                                             |
+| Loop and wait limits (§1.10.6)             | direct   | P1       | numeric inputs                                                        |
+| Session Branching / Child Limit (§1.10.6)  | direct   | P1       | numeric inputs                                                        |
+| Concurrency limits (§1.10.6)               | direct   | P1       | numeric inputs                                                        |
+| Recent Media Payload Messages (§1.10.6)    | direct   | P2       | numeric input                                                         |
+| Tool Result Inline Limit (§1.10.6)         | direct   | P2       | preset list                                                           |
+| Shell Isolation Level (§1.10.6)            | direct   | P1       | choice list                                                           |
+| Shell runtime bootstrap (§1.10.6)          | direct   | P2       | toggle                                                                |
+| Linked git worktrees (§1.10.6)             | direct   | P2       | toggle                                                                |
+| About / Check for Updates (§1.10.6)        | adapted  | P2       | check prints the result; install runs the updater and quits           |
+| Clear All Sessions & Workspace (§1.10.6)   | adapted  | P2       | danger-zone action in `/settings advanced` with confirm               |
+| Reset All Data & Settings (§1.10.6)        | direct   | P2       | type-`RESET` confirm                                                  |
+| Inline Audio Attachments (§1.10.7)         | direct   | P2       | toggle                                                                |
+| Tool-loop recovery legacy (§1.10.7)        | direct   | P2       | toggle                                                                |
+| Max resample retries (§1.10.7)             | direct   | P2       | numeric input                                                         |
+| Dev tab (all rows) (§1.10.8)               | excluded | —        | dev-only build; developers use the GUI dev build                      |
+| Provider model list (§1.10.9)              | —        | —        | reference table; served through the P0 `/model` picker                |
+| Thinking Depth provider mapping (§1.10.9)  | —        | —        | reference table; backend behaviour                                    |
+| Migration Back (§1.11)                     | direct   | P2       | leave the page                                                        |
+| Migration Export (§1.11)                   | adapted  | P2       | path argument plus sensitive-data prompt                              |
+| Migration Import (§1.11)                   | adapted  | P2       | path argument                                                         |
+| Migration Password dialogs (§1.11)         | direct   | P2       | masked inputs                                                         |
+| Migration Progress (§1.11)                 | adapted  | P2       | single updating percent line                                          |
+| Migration Import preview (§1.11)           | direct   | P2       | text preview plus conflict choice                                     |
+| Migration Done (§1.11)                     | direct   | P2       | result table                                                          |
 
 ### 2.14 Dev-only, hidden, and conditional (§1.12)
 
@@ -1052,8 +1057,8 @@ Excluded items are listed with reasons in place; the rollup is §2.15.
 
 All exclusions, with reasons, so a reader can audit that parity is the default:
 
-1. Sidebar, sidebar toggle, Collapse sidebar — window chrome; commands replace navigation.
-2. Theme toggle, Color Theme, Font Family, UI size — rendering concerns owned by the terminal emulator.
+1. Sidebar toggle and Collapse sidebar — window chrome; the navigation itself is adapted as slash commands (§2.2).
+2. Theme toggle, Color Theme, Font Family, UI size, Message Layout — rendering concerns owned by the terminal emulator or a fixed TUI layout.
 3. Feature tips (cards, links, CTAs) — GUI onboarding surface; the underlying "show tips" setting persists for the GUI.
 4. App control bridge — hidden automation hook with no user surface.
 5. `/history/search` route — hidden duplicate route, hidden in the GUI too.
