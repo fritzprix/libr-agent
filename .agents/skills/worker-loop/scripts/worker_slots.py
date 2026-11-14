@@ -205,7 +205,6 @@ def _orphan(path: Path, name: str, record: object, threshold: int, now: float) -
         "worker": name,
         "ref": current["ref"],
         "branch": current.get("branch"),
-        "token": record.get("token"),
         "lastRenewedAt": int(renewed_at),
     }
 
@@ -223,21 +222,52 @@ def orphaned_slots(threshold: int | None = None, path: Path | None = None) -> li
     return sorted(found, key=lambda entry: entry["lastRenewedAt"])
 
 
-def fence_orphan(name: str, threshold: int | None = None, path: Path | None = None) -> dict | None:
-    """Remove an orphaned slot's lease so its run can never renew it again.
+def fence_orphan(
+    name: str, taker: str, taker_token: str, threshold: int | None = None, path: Path | None = None
+) -> dict | None:
+    """Hand an orphaned slot to `taker` for the duration of a takeover.
 
-    Return the orphan entry, or None when the slot is no longer orphaned (it
-    came back, was cleaned up, or another run fenced it first). The check and
-    the removal happen under the slots mutex, so exactly one caller wins.
+    The dead run's lease is replaced by a handoff lease that only the taker
+    knows, so the dead run can never renew the slot and no new tick can acquire
+    it (and its `current`) until the taker calls `end_handoff`. Return the
+    orphan entry plus `handoffToken` and `orphanRecord`, or None when the slot
+    is no longer orphaned (it came back, was cleaned up, or another run fenced
+    it first). The check and the swap happen under the slots mutex, so exactly
+    one caller wins.
     """
     path = path or slots_path()
     threshold = orphan_after_seconds() if threshold is None else threshold
+    handoff_token = f"{taker_token}:handoff"
     with exclusive(path.with_name(path.name + ".lock")):
         slots = read_json(path)
-        entry = _orphan(path, name, slots.get(name), threshold, time.time())
+        record = slots.get(name)
+        entry = _orphan(path, name, record, threshold, time.time())
         if entry is None:
             return None
-        del slots[name]
+        now = int(time.time())
+        slots[name] = {
+            "owner": f"handoff:{taker}", "scope": "handoff", "host": record.get("host"),
+            "token": handoff_token, "startedAt": now, "renewedAt": now,
+        }
         worker_state.atomic_write_json(path, slots)
-    tick_lock.release(_tick_lock_path(path, name), entry["token"])
-    return entry
+    tick_lock.release(_tick_lock_path(path, name), record.get("token"))
+    return {**entry, "handoffToken": handoff_token, "orphanRecord": {**record, "token": handoff_token}}
+
+
+def end_handoff(name: str, fenced: dict, handed_over: bool, path: Path | None = None) -> None:
+    """Finish a takeover started by `fence_orphan`.
+
+    Handed over: free the slot. Otherwise put the orphan record back (with a
+    token the dead run does not have), so `orphaned_slots` reports the work
+    again instead of losing it.
+    """
+    path = path or slots_path()
+    with exclusive(path.with_name(path.name + ".lock")):
+        slots = read_json(path)
+        if (slots.get(name) or {}).get("token") != fenced["handoffToken"]:
+            return
+        if handed_over:
+            del slots[name]
+        else:
+            slots[name] = fenced["orphanRecord"]
+        worker_state.atomic_write_json(path, slots)
