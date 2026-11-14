@@ -1,6 +1,6 @@
 # TUI parity spec
 
-Status: §1 is the GUI inventory for #2749 (part of epic #2698). §2 (classification and priority) is added by #2750. §3 (command and screen design) is added by #2751. §4 (E2E scenarios) is still to be added by #2752.
+Status: §1 is the GUI inventory for #2749 (part of epic #2698). §2 (classification and priority) is added by #2750. §3 (command and screen design) is added by #2751. §4 (E2E scenarios) is added by #2752.
 
 Goal of the whole spec: `libragent --tui` is functionally near-identical to the GUI. Menus are entered with `/{command}` (for example `/settings`), and sessions are switched with `/new` and `/resume`.
 
@@ -1593,4 +1593,237 @@ Every §2 row classed direct or adapted is listed here with its command or scree
 
 ## 4. E2E scenarios
 
-Added by #2752.
+Added by #2752. This is the fixed checklist that implementation (#2756–#2764, #2772) is tested against. Each scenario is one checkbox.
+
+### 4.1 Conventions
+
+- **ID and title**, then the OS tags and the harness mark:
+  - **OS**: `Win`, `mac`, `Linux`. `All` means all three.
+  - **`[auto]`**: the harness can run every step and check every result with no person. The harness has the Session API, the debug-only E2E control plane (`GET /api/e2e-control/sessions/:ref/interactions`, approvals, and prompt answers), and process control: start, stop, `kill -9`, exit codes, stdout and stderr, and files such as the backend descriptor `<db file>.backend.<pid>.json`. It starts `libragent --tui` inside a pseudo-terminal but does not read the screen. The method is `.agents/skills/libr-e2e-verify`.
+  - No mark: a person runs the scenario, or at least checks the screen. Results that the backend stores are still compared over HTTP.
+- **Same result** (§4.2): do the action in the GUI on one session and in the TUI on another, or in sequence on the same session. Then compare what the backend stores, through `GET /api/sessions/:id` and `GET /api/sessions/:id/messages`, and through the settings or object the action changed. Ignore ids, timestamps, and token counts. Visual layout is not compared; §3 defines the TUI form.
+- **Covers** names the §2 subsections. Every P0 and P1 row in §3.7 is checked by the scenario for its command or screen. P2 rows are not in this checklist (§2: not required for phase 1).
+- Use a scratch profile (`LIBRAGENT_DATA_DIR`) and a scratch workspace. Never use the personal profile.
+
+### 4.2 GUI and TUI parity (P0 and P1)
+
+P0 (the §2.16 release gate):
+
+- [ ] **P-01 First message from a new profile** — All
+  - On a profile with no model and no key, the TUI start screen shows the AI model warning line, and a send shows the no-provider error line pointing to `/settings ai-models`, as the GUI does.
+  - Set Default AI Model and a provider API key in `/settings ai-models`, then `/settings save`. The GUI shows the same values after a reload, and a key set in the GUI is used by the TUI. The key is masked in both UIs and never appears in a transcript or log.
+  - The first send in a draft creates the session (create on send).
+  - Covers: §2.3 AI model banner, no-provider toast, create on send; §2.13 Default AI Model, Provider API Keys.
+- [ ] **P-02 `/new` and the draft** — All
+  - `/new` lists built-in assistants and My Assistants, and shows the empty or error state when the list cannot load. `/new <assistant-id>` and `/new --workspace <path>` skip the picker or set the workspace.
+  - The draft header shows the assistant, "New Session", the model, and the thinking effort. `/model` and `/thinking` in the draft change what the session is created with.
+  - Same result: the assistant, model, thinking effort, execution mode, and workspace path on the created session.
+  - Covers: §2.1 `/agent`, `/agent/draft`; §2.2 Chat; §2.3 pickers, draft header, model and thinking, draft composer; §2.11 New session, workspace at creation.
+- [ ] **P-03 A streamed turn** — All
+  - Text streams into the transcript with the role prefix. Thinking is collapsed and expands in browse mode (Ctrl+O). Markdown and code render as text in the terminal.
+  - PgUp at the top loads 50 older messages, and End jumps to the latest. The compaction divider appears where the GUI shows it.
+  - Loading lines and load errors replace the GUI overlay. Toasts appear as transcript notice lines.
+  - Same result: the transcript (`/messages`) of the same prompt, run once in each UI.
+  - Covers: §2.2 toasts; §2.4 loading overlay, load error, title; §2.7 load older, scroll to latest, compact divider, role label, thinking, rich content.
+- [ ] **P-04 Tool cards** — All
+  - A turn that writes a file, replaces a string, runs a shell command, and reports a result shows the tool group and one row per call: a diff for the write and the replace, the shell output, and the report.
+  - In browse mode, `p` opens a deliverable in the pager (S6) and `o` opens it with the OS default app.
+  - A sub-agent card shows the child, and `/resume <child-id>` opens it.
+  - Same result: the tool calls and results in `/messages`; the files in the workspace.
+  - Covers: §2.8 (all P0 and P1 rows); §2.11 from sub-agent card.
+- [ ] **P-05 Tool approval** — All
+  - In `normal` mode a tool that needs approval opens the S5 prompt with the tool name and the JSON arguments. The composer keeps focus and its text.
+  - Typing `a` or `r` without Tab writes into the composer and never approves or rejects. This holds even when the composer was empty when the prompt opened.
+  - `Alt+Y` approves and `Alt+N` rejects, regardless of focus. Tab moves focus to the prompt; then `a` approves and `r` rejects. On macOS Terminal and iTerm2 without Option-as-Meta, only Tab then `a` / `r` works (§3.4).
+  - Esc does not cancel the request. With a standard and a hard approval waiting, the hard approval is targeted first.
+  - The status line badge counts pending approvals, as the GUI's jump-to-approvals does.
+  - Same result: approving or rejecting the same call gives the same tool result or rejection text in `/messages`. The control plane's `interactions` list is empty afterwards.
+  - Covers: §2.7 jump to approvals; §2.9 tool approval.
+- [ ] **P-06 askUser question and secret prompt** — All
+  - A single-choice, a multi-choice (Space toggles), and a free-text question are each answered in S5. Enter submits.
+  - A secret request takes masked input. The value is not in the transcript, the terminal scroll-back, or the logs. Esc cancels it.
+  - Same result: the answer stored for the request, compared with the same answer given in the GUI.
+  - Covers: §2.9 question prompt, secret prompt.
+- [ ] **P-07 Composer and commands** — All
+  - Enter sends, and queues while the agent is busy. The queue line numbers queued prompts, and `/queue cancel <n>` removes one. Shift+Enter, Alt+Enter, and Ctrl+J add a new line. Enter is ignored during IME composition.
+  - The oversize guard refuses the same input the GUI refuses, with the same message.
+  - `//text` sends `/text`. `/foo` shows "Unknown command /foo" with the closest match and is not sent.
+  - Tab completes commands, sub-commands, and live argument values. `@` opens the mention popup with `@skill:`, `@file:`, `@tool:`, and `@playbook:` items.
+  - Covers: §2.6 input, queued prompts, oversize guard, `@` mentions; §3.2 rules 1, 2, 8, and 9.
+- [ ] **P-08 Attachments** — All
+  - `/attach <path>…` adds files and images to the attachment line, and `/detach <n>` removes one. Attaching a dropped path works the same as `/attach`.
+  - Same result: the attachments on the sent user message in `/messages`.
+  - Covers: §2.6 attached files bar, attach file, drop files.
+- [ ] **P-09 Cancel, continue, and retry** — All
+  - Esc or Ctrl+C cancels a running request.
+  - After a failed turn, the transcript error block and the status line show the same workflow state as the GUI banner. `/retry` retries and `/continue` resumes.
+  - Same result: the session status (`idle`, `paused`, `error`) after each step.
+  - Covers: §2.5 workflow banner; §2.6 cancel request, resume; §2.7 error bubble.
+- [ ] **P-10 Session controls** — All
+  - `/model` changes the model only while idle; while busy it is refused with the GUI's message. `/thinking` and `/permission` change the session.
+  - The status line shows the execution mode, the tool count, and the attention and approval badges. `/clear` and `/reload` behave like their GUI slash commands.
+  - Same result: the model, thinking effort, and execution mode on the session.
+  - Covers: §2.5 session model, thinking effort, execution mode; §2.6 mode badge, `/clear`, `/reload`, `/permission`.
+- [ ] **P-11 `/resume` and live status** — All
+  - `/resume` lists the same sessions as the GUI's Recent Sessions, with the same status words. `/resume <id>` opens one directly. Opening a session marks it viewed in both UIs.
+  - A session that the GUI creates or changes appears or updates in an open TUI list without a reload (`agent:event`), and the reverse.
+  - A session started in the GUI and closed there can be resumed in the TUI, and the reverse. (Refusal while it is open elsewhere is B-07.)
+  - Covers: §2.1 `/agent/:sessionId`; §2.2 Recent Sessions; §2.11 Recent Sessions list, open from sidebar, sidebar status dot, live updates, mark viewed.
+
+P1:
+
+- [ ] **P-12 Session management** — All
+  - `/history` with `search`, `--sort`, `--status`, `--bookmarked`, and `--lineage` gives the same rows, in the same order, as the GUI History page with the same filters. Tree badges match.
+  - `/rename`, `/bookmark`, and `/delete` (S4 with "delete with children" and "delete only this") have the same effect as in the GUI. `/rename` in a draft says "Send a message first".
+  - `/export md|atif|visible <path>` writes the same content as the GUI export of the same session.
+  - Same result: the session rows over HTTP; the exported files, compared without timestamps.
+  - Covers: §2.1 `/history`; §2.2 History, Bookmarked; §2.4 rename, bookmark, export; §2.11 history, search, sort, filters, tree badges, resume from History, rename, bookmark, delete, exports.
+- [ ] **P-13 Attention and pairing** — All
+  - `/attention` lists the same sessions as the GUI notification list, and the badge counts match. Resuming from the list clears the item.
+  - A pairing request opens the S5 pairing prompt with the code. It uses the same keys and focus rule as P-05.
+  - Covers: §2.2 notifications bell, pairing request dialog; §2.9 pairing request; §2.11 from notification, attention list.
+- [ ] **P-14 Workspace, panels, and tools** — All
+  - `/workspace <path>` and `/workspace clear` set and clear the override. `/import <path>` copies a file in. `/files` lists the session files.
+  - `/panel workspace|processes|planning|schedules` shows the same content as the GUI panel: the tree, file preview, process list and output, plan, and session schedules. The status line hints match the GUI panel badges.
+  - `/tools` lists the session's tools, with the same count as the status line. `/extensions retry` without a name retries the failed servers of the open session.
+  - Covers: §2.2 agent panel shortcuts; §2.4 panel badges, toggle panels, session files; §2.5 tools count, retry failed MCP; §2.10 (P1 rows); §2.11 override after creation.
+- [ ] **P-15 Chat extras** — All
+  - `/regenerate` regenerates the last answer. `/copy <n> [path]` copies a message.
+  - `/setup-wizard` starts the same flow as the GUI runtime banner. Browse mode (Ctrl+O) selects and expands every block type.
+  - Playbook auto-start and MCP discovery notices appear as transcript lines.
+  - Covers: §2.3 runtime banner, capabilities, add tools, playbook start; §2.4 playbook auto-start, MCP discovery toasts; §2.7 copy message, regenerate.
+- [ ] **P-16 `/settings`** — All
+  - Every P1 field in each section (general, ai-models, chat-interface, system, advanced, experimental) is changed once in the TUI and read in the GUI, and once the other way round.
+  - Changed marks, `/settings discard` (S4), Esc with unsaved changes (S4), and the restart-required notice match the GUI. Revoking a session API key in `system` asks for confirmation (S4).
+  - Same result: the stored setting values.
+  - Covers: §2.1 `/settings`; §2.2 Settings; §2.13 (all P1 rows).
+- [ ] **P-17 `/assistants`** — All
+  - `search`, `new`, `edit` (General, Tools, and Skills pages), and `delete` (S4). Required fields give the same validation messages as the GUI.
+  - Same result: the stored assistant.
+  - Covers: §2.1, §2.2 Assistants; §2.3 manage assistants; §2.12 assistants rows.
+- [ ] **P-18 `/playbooks`** — All
+  - The list, `search`, row detail, the Start and Continue row actions, the reload key, and `delete` (S4).
+  - Same result: the session that Start creates, and the deleted playbook.
+  - Covers: §2.1, §2.2 Playbooks; §2.11 from playbook; §2.12 playbooks rows.
+- [ ] **P-19 `/extensions` and `/skills`** — All
+  - `/extensions`: `new`, `edit`, `delete`, `enable`, `disable`, `tools`, `retry <name>`, `auth`, `logout`, `presets`, and load more.
+  - `/skills`: install from a path and from a GitHub URL, the conflict choice (S4), `delete`, `reset` (S4), and reload.
+  - Same result: the stored server configuration and the installed skill set.
+  - Covers: §2.1 `/mcp-servers`; §2.2 Extensions; §2.12 extensions and skills rows.
+- [ ] **P-20 `/knowledge`** — All
+  - `search`, `--assistant`, `entity <id>`, the chunk list with load more, the inspector in S6, and delete (S4).
+  - Same result: the same chunks for the same filter; the deleted chunk.
+  - Covers: §2.1, §2.2 Knowledge; §2.12 knowledge rows.
+- [ ] **P-21 `/tasks`** — All
+  - `new` and `edit` cover every task field: the schedule builder, workspace, message with `@` mentions, execution mode, and reset planning. Also `enable`, `disable`, `delete` (S4), and the summary line.
+  - Same result: the stored task. A task created in the TUI runs on schedule and shows in both UIs.
+  - Covers: §2.1, §2.2 Scheduled Tasks; §2.11 scheduled task workspace; §2.12 scheduled tasks rows.
+- [ ] **P-22 Menus over the chat** — All
+  - Esc goes back one level. Esc at a menu's first level returns to S1 with the composer text unchanged.
+  - A turn keeps streaming while a menu is open. An approval that arrives then shows "Approval waiting — Esc to return" in the menu footer, and form input is kept (§3.4).
+- [ ] **P-23 Start, quit, and the terminal** — All
+  - `/quit`, Ctrl+D, and Ctrl+C pressed twice within 2 s each leave the TUI and restore the terminal: cursor, echo, line mode, and the alternate screen.
+  - A running session keeps running in the backend after the TUI quits, and the GUI or a new TUI sees it.
+  - F1 and `/help [command]` show the command list. Ctrl+L redraws.
+- [ ] **P-24 Backend-only behaviour** — All · `[auto]`
+  - A scheduled task run and keep-alive work the same while only the TUI is attached as while only the GUI is attached. Session status and messages are checked over HTTP.
+  - Covers: §2.4 keep-alive; §2.11 from scheduled task.
+
+### 4.3 Shared backend
+
+All on one scratch profile, with `LIBRAGENT_LLM_EXECUTOR` unset (the phase-1 WebView path) unless the scenario says otherwise. "One backend" means one live descriptor file, one HTTP server answering `/api/health` with `ready: true`, and one scheduler.
+
+- [ ] **B-01 The TUI starts first** (#2756, #2761) — All · `[auto]`
+  - With no backend running, `libragent --tui` brings the backend up and attaches. One backend, and no GUI window.
+  - A GUI started afterwards attaches to it and does not start a second one.
+- [ ] **B-02 The GUI starts first** (#2756) — All · `[auto]`
+  - With the GUI running, `libragent --tui` attaches. One backend.
+- [ ] **B-03 Concurrent start** (#2757) — All · `[auto]`
+  - Start two frontends at the same moment (GUI and TUI, and TUI and TUI), 20 times each. Every run ends with exactly one backend.
+  - The loser of the descriptor lock attaches. It starts no second HTTP server, scheduler, or session executor.
+- [ ] **B-04 The starting frontend closes** (#2758) — All · `[auto]`
+  - Frontend A starts the backend and B attaches. Close A cleanly. B stays connected: a turn sent from B completes.
+  - Close B: the backend exits.
+- [ ] **B-05 A crashed frontend drops out** (#2758) — All · `[auto]`
+  - A and B are attached. `kill -9` A. After the heartbeat timeout, close B cleanly: the backend exits. It would stay if A were still counted.
+  - A session that A had open can be opened from B after the timeout.
+- [ ] **B-06 One executor per live session** (#2759) — All · `[auto]`
+  - While a session runs a turn opened from A, B's attempt to open it, send to it, or drive its approvals is refused.
+  - There is one turn in `/messages`, not two.
+- [ ] **B-07 Busy is shown and entry is refused** (#2759, #2763) — All
+  - A session open in the GUI (idle) shows **open elsewhere** in the TUI `/resume` and `/history` lists. While it runs a turn, it shows **running**. Both refuse entry, with no read-only view and no takeover.
+  - The same holds with the roles swapped.
+  - After the owner closes the session, switches to another session, or exits cleanly, it opens normally.
+- [ ] **B-08 The owner dies mid-turn, another frontend stays** (d1, #2759) — All · `[auto]`
+  - A runs a long turn, and B is attached. `kill -9` A.
+  - The turn continues in the backend. The session stays **running** and refuses entry until the turn ends. Then B can open it and sees the full turn.
+- [ ] **B-09 The last frontend dies mid-turn** (d2, #2758) — All · `[auto]`
+  - A is the only attachment and runs a turn. `kill -9` A. The backend interrupts the turn, persists the session, and exits.
+  - On the next backend start the session is `paused` (recovered from `busy` by the #2700 path), and resuming it continues the work.
+- [ ] **B-10 An isolated data dir** (#2701) — All · `[auto]`
+  - A frontend started with a different `LIBRAGENT_DATA_DIR` runs its own backend next to the shared one. Neither sees the other's sessions.
+  - Nothing prevents several apps from running on one device.
+- [ ] **B-11 Hidden WebView LLM calls in the TUI** (#2761) — All · `[auto]`
+  - With only the TUI attached and no GUI window, a turn on a provider that the Rust client does not cover (for example Groq) completes through the phase-1 hidden WebView.
+
+### 4.4 Windows console
+
+- [ ] **W-01 The shell waits for the TUI** (#2761) — Win
+  - In Windows Terminal and in conhost, from both cmd and PowerShell, `libragent --tui` keeps the console. The shell prompt returns only after the TUI exits, and the prompt and the TUI never draw over each other.
+  - The exit code reaches the shell (`%ERRORLEVEL%`, `$LASTEXITCODE`).
+- [ ] **W-02 Console restore and Ctrl+C** (#2761) — Win
+  - Ctrl+C inside the TUI follows §3.4 and does not end the parent shell. After any exit, including `kill`, the console mode (echo, line input, VT processing) is back to what it was.
+
+### 4.5 liblet headless
+
+Per `docs/specs/liblet-cli-interface.md` §3.2–§3.6, on the headless binary from #2772. #2701 made liblet headless only, so the TUI rows of that spec are covered by `libragent --tui` in §4.2 and §4.3, not here.
+
+- [ ] **H-01 No Tauri or WebView** (#2772) — All · `[auto]`
+  - `cargo tree` for the liblet crate shows no `tauri`, `wry`, `webview2-com`, `webkit2gtk`, or other WebView crate. liblet runs on a machine with no WebView runtime.
+- [ ] **H-02 Mode selection** — All · `[auto]`
+  - `-p "…"` and a piped prompt select headless mode. With `-p`, piped stdin is added as context.
+  - No terminal and no prompt, an empty pipe, a positional prompt with redirected stdout, and `--continue` or `--resume` with `-p` each exit with code 2 and create no session.
+- [ ] **H-03 Output formats** — All · `[auto]`
+  - `text`: only the final message on stdout, and progress on stderr.
+  - `json`: one result object with the fields in §3.4.
+  - `stream-json`: `init`, `message`, `tool_use`, `tool_result`, and a final `result`, one per line.
+- [ ] **H-04 Exit codes** — All · `[auto]`
+  - 0 completed. 1 provider error. 3 approval needed, with `pendingApprovals` filled. 4 question or secret requested. 124 `--timeout` reached. 130 SIGINT (Ctrl+C on Windows). 143 SIGTERM (Linux and macOS).
+- [ ] **H-05 Approvals follow the start configuration** — All · `[auto]`
+  - In `normal` mode, an approval stops the run (code 3); it is not denied-and-continued.
+  - `--execution-mode yolo` runs standard tools without stopping. The mode cannot be raised during the run.
+  - Without the flag, the profile's approval policy applies.
+- [ ] **H-06 Ephemeral and parallel** — All · `[auto]`
+  - The headless session never appears in the shared list (GUI, TUI, or Session API) and is gone after exit, on every exit path in H-04.
+  - Two headless runs and a running GUI on the same profile do not block each other.
+
+### 4.6 LLM client provider parity
+
+The Rust LLM client (`src-tauri/llm-client`, #2754 and #2755) is compared with the GUI's frontend providers for `openai`, `custom:<id>` (vLLM or LM Studio), `fireworks`, `openrouter`, `anthropic`, and `gemini`. Run each scenario once with `LIBRAGENT_LLM_EXECUTOR=rust` and once without it, on the same prompt, in the GUI or the TUI. In phase 2 (#2772) also run it through liblet. Each scenario runs per provider.
+
+- [ ] **L-01 Text and reasoning stream** — All · `[auto]`
+  - The final text, the thinking text, and the finish reason match.
+  - Usage includes prompt, completion, cached prompt, and reasoning tokens where the provider reports them.
+- [ ] **L-02 Tool calls** — All · `[auto]`
+  - Single and parallel tool calls round-trip, and their results are sent back paired with their calls.
+  - A second tool turn after thinking is accepted: Anthropic needs the thinking signature, and Gemini needs the thought signature on the first function call.
+- [ ] **L-03 Images and audio in the request** — All · `[auto]`
+  - An attached image reaches providers that accept images. Audio, and media a provider cannot take, are replaced by the same text note as in the GUI.
+- [ ] **L-04 Model options** — All · `[auto]`
+  - Thinking effort off, low, medium, high, and auto map to each provider's setting.
+  - The temperature override is sent only when it is on, and within the provider's range. Anthropic does not send it while thinking is on.
+  - Max output tokens is respected.
+- [ ] **L-05 Retries and errors** — All · `[auto]`
+  - Against a mock endpoint that fails twice, the client retries with the configured count and delay. A self-hosted endpoint is not retried.
+  - A provider error ends the turn in `error`, and its message includes the HTTP status.
+- [ ] **L-06 Prompt cache** — All · `[auto]`
+  - OpenAI receives the same prompt cache key for the same session. Anthropic marks the system prompt, the last tool, and the message breakpoints for caching.
+  - On a second turn, cached prompt tokens are reported for OpenAI, Anthropic, and Gemini.
+- [ ] **L-07 Routing** — All · `[auto]`
+  - With the Rust executor on, the six providers above are answered in Rust: no `llm:completion-request` event is sent to the WebView. Other providers go to the WebView.
+  - When no WebView is available, other providers fail at once with `RUST_EXECUTOR_NO_WEBVIEW`.
+
+Not covered in this checklist:
+
+- `liblet --list-sessions` (`liblet-cli-interface.md` §3.2) reads the shared sessions, but #2701 says liblet does not use the shared session store. Add a scenario once that conflict is settled.
+- Gemini's retry without tools after `MALFORMED_FUNCTION_CALL`, because the Rust client does not have it yet (#2755).
