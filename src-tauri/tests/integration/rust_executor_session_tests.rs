@@ -309,12 +309,12 @@ async fn a_provider_the_executor_cannot_run_fails_fast_without_a_webview() {
 
     let error = dispatch_completion(
         app(),
-        &request("s", "resp-1", "anthropic", vec![user]),
+        &request("s", "resp-1", "groq", vec![user]),
         deliver_to(&sink),
     )
-    .expect_err("nothing can answer an Anthropic request without a WebView");
+    .expect_err("nothing can answer a Groq request without a WebView");
 
-    assert!(error.display_message.contains("anthropic"));
+    assert!(error.display_message.contains("groq"));
     assert!(provider.requests.lock().unwrap().is_empty());
     assert!(sink.responses.lock().unwrap().is_empty());
 }

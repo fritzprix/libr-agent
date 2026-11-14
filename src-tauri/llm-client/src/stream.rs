@@ -187,6 +187,7 @@ impl StreamParser for OpenAiStream {
         CompletedChat {
             content: self.content,
             thinking: self.thinking,
+            thinking_signature: None,
             tool_calls,
             usage: self.usage,
             finish_reason: self.finish_reason,

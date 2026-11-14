@@ -4,7 +4,9 @@
 //! that speaks the same API overrides only what differs, as the frontend's
 //! `FireworksService` and `OpenRouterService` extend `OpenAIService`.
 
+use crate::anthropic::Anthropic;
 use crate::error::LlmError;
+use crate::gemini::Gemini;
 use crate::openai;
 use crate::stream::{OpenAiStream, StreamParser};
 use crate::types::{ChatRequest, ThinkingEffort};
@@ -24,12 +26,17 @@ pub struct Endpoint {
 pub trait ChatProvider: Send + Sync {
     fn endpoint(&self) -> &Endpoint;
 
-    /// Where a chat call is posted.
-    fn request_url(&self) -> String {
+    /// Where a chat call for `model` (as [`Self::model_id`] gives it) is posted.
+    fn request_url(&self, _model: &str) -> String {
         format!(
             "{}/chat/completions",
             self.endpoint().base_url.trim_end_matches('/')
         )
+    }
+
+    /// The header that carries `api_key`.
+    fn auth_header(&self, api_key: &str) -> (&'static str, String) {
+        ("authorization", format!("Bearer {api_key}"))
     }
 
     /// Headers sent with every call, besides auth and content type.
@@ -169,12 +176,16 @@ impl ChatProvider for OpenRouter {
 const OPENAI_PROVIDER: &str = "openai";
 const FIREWORKS_PROVIDER: &str = "fireworks";
 const OPENROUTER_PROVIDER: &str = "openrouter";
+const ANTHROPIC_PROVIDER: &str = "anthropic";
+const GEMINI_PROVIDER: &str = "gemini";
 const CUSTOM_PROVIDER_PREFIX: &str = "custom:";
 const OPENAI_DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 const FIREWORKS_BASE_URL: &str = "https://api.fireworks.ai/inference/v1";
 const OPENROUTER_BASE_URL: &str = "https://openrouter.ai/api/v1";
+const ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com/v1";
+const GEMINI_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
 
-/// True for the providers this crate implements.
+/// True for the providers that speak the OpenAI chat-completions API.
 pub fn is_openai_compatible(provider: &str) -> bool {
     matches!(
         provider,
@@ -184,16 +195,23 @@ pub fn is_openai_compatible(provider: &str) -> bool {
         .is_some_and(|id| !id.is_empty())
 }
 
+/// True for the providers this crate implements.
+pub fn is_supported(provider: &str) -> bool {
+    is_openai_compatible(provider) || matches!(provider, ANTHROPIC_PROVIDER | GEMINI_PROVIDER)
+}
+
 /// The provider `provider` talking to `endpoint`, or `None` for a provider
 /// this crate does not implement.
 pub fn provider_with_endpoint(provider: &str, endpoint: Endpoint) -> Option<Box<dyn ChatProvider>> {
-    if !is_openai_compatible(provider) {
+    if !is_supported(provider) {
         return None;
     }
     Some(match provider {
         OPENAI_PROVIDER => Box::new(OpenAi { endpoint }),
         FIREWORKS_PROVIDER => Box::new(Fireworks { endpoint }),
         OPENROUTER_PROVIDER => Box::new(OpenRouter { endpoint }),
+        ANTHROPIC_PROVIDER => Box::new(Anthropic { endpoint }),
+        GEMINI_PROVIDER => Box::new(Gemini { endpoint }),
         _ => Box::new(CustomOpenAi { endpoint }),
     })
 }
@@ -201,8 +219,8 @@ pub fn provider_with_endpoint(provider: &str, endpoint: Endpoint) -> Option<Box<
 /// Builds `provider` from the `serviceConfigs` and `customProviders` settings
 /// values, the same data the frontend reads.
 ///
-/// Fireworks and OpenRouter have fixed URLs; only OpenAI and custom providers
-/// take a Base URL, as in the Settings screen.
+/// Fireworks, OpenRouter, Anthropic, and Gemini have fixed URLs; only OpenAI
+/// and custom providers take a Base URL, as in the Settings screen.
 pub fn resolve_provider(
     provider: &str,
     service_configs: Option<&Value>,
@@ -236,6 +254,8 @@ pub fn resolve_provider(
         let base_url = match provider {
             FIREWORKS_PROVIDER => FIREWORKS_BASE_URL.to_string(),
             OPENROUTER_PROVIDER => OPENROUTER_BASE_URL.to_string(),
+            ANTHROPIC_PROVIDER => ANTHROPIC_BASE_URL.to_string(),
+            GEMINI_PROVIDER => GEMINI_BASE_URL.to_string(),
             _ => non_empty(config.and_then(|config| config.get("baseUrl")))
                 .unwrap_or_else(|| OPENAI_DEFAULT_BASE_URL.to_string()),
         };
@@ -246,7 +266,7 @@ pub fn resolve_provider(
     };
 
     provider_with_endpoint(provider, endpoint)
-        .ok_or_else(|| format!("Provider '{provider}' is not OpenAI-compatible"))
+        .ok_or_else(|| format!("Provider '{provider}' is not supported"))
 }
 
 #[cfg(test)]
@@ -271,6 +291,7 @@ mod tests {
                 tool_calls: Vec::new(),
                 tool_call_id: None,
                 thinking: None,
+                thinking_signature: None,
             }],
             tools: vec![ToolSpec {
                 name: "t".to_string(),
@@ -286,18 +307,42 @@ mod tests {
         for provider in ["openai", "fireworks", "openrouter", "custom:abc123"] {
             assert!(is_openai_compatible(provider), "{provider}");
         }
-        for provider in [
-            "custom:",
-            "anthropic",
-            "gemini",
-            "groq",
-            "cerebras",
-            "ollama",
-            "",
-        ] {
+        for provider in ["anthropic", "gemini"] {
             assert!(!is_openai_compatible(provider), "{provider}");
+            assert!(is_supported(provider), "{provider}");
         }
-        assert!(provider_with_endpoint("anthropic", endpoint("http://x")).is_none());
+        for provider in ["custom:", "groq", "cerebras", "ollama", ""] {
+            assert!(!is_supported(provider), "{provider}");
+        }
+        assert!(provider_with_endpoint("groq", endpoint("http://x")).is_none());
+    }
+
+    #[test]
+    fn anthropic_and_gemini_use_their_fixed_urls_and_configured_keys() {
+        let configs = json!({
+            "anthropic": { "apiKey": "sk-ant-key", "baseUrl": "http://ignored" },
+            "gemini": { "apiKey": "gm-key" },
+        });
+        let anthropic = resolve_provider("anthropic", Some(&configs), None).unwrap();
+        assert_eq!(
+            anthropic.request_url("claude-sonnet-4-5"),
+            "https://api.anthropic.com/v1/messages"
+        );
+        assert_eq!(anthropic.endpoint().api_key.as_deref(), Some("sk-ant-key"));
+        assert_eq!(
+            anthropic.auth_header("sk-ant-key"),
+            ("x-api-key", "sk-ant-key".to_string())
+        );
+
+        let gemini = resolve_provider("gemini", Some(&configs), None).unwrap();
+        assert_eq!(
+            gemini.request_url("gemini-2.5-flash"),
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse"
+        );
+        assert_eq!(
+            gemini.auth_header("gm-key"),
+            ("x-goog-api-key", "gm-key".to_string())
+        );
     }
 
     #[test]
@@ -328,7 +373,7 @@ mod tests {
         assert_eq!(fireworks.endpoint().api_key.as_deref(), Some("fw-key"));
         let openrouter = resolve_provider("openrouter", Some(&configs), None).unwrap();
         assert_eq!(
-            openrouter.request_url(),
+            openrouter.request_url("m"),
             "https://openrouter.ai/api/v1/chat/completions"
         );
     }
@@ -342,13 +387,17 @@ mod tests {
 
         let provider = resolve_provider("custom:lmstudio", None, Some(&providers)).unwrap();
         assert_eq!(
-            provider.request_url(),
+            provider.request_url("m"),
             "http://localhost:1234/v1/chat/completions"
+        );
+        assert_eq!(
+            provider.auth_header("k"),
+            ("authorization", "Bearer k".to_string())
         );
         let error = |id: &str| resolve_provider(id, None, Some(&providers)).err().unwrap();
         assert!(error("custom:broken").contains("no base URL"));
         assert!(error("custom:missing").contains("not in Settings"));
-        assert!(error("anthropic").contains("not OpenAI-compatible"));
+        assert!(error("groq").contains("not supported"));
     }
 
     #[test]

@@ -1,8 +1,9 @@
-//! LLM execution in Rust for OpenAI-compatible providers (#2704).
+//! LLM execution in Rust for the providers `llm-client` implements (#2704,
+//! #2755).
 //!
 //! By default the WebView runs every LLM call: Rust emits
 //! `llm:completion-request` / `llm:compact-request` and the frontend answers.
-//! With this executor enabled, requests for an OpenAI-compatible provider are
+//! With this executor enabled, requests for a provider the client supports are
 //! answered here instead, so a session can run with no WebView and no GUI
 //! window. Every other provider still goes to the frontend.
 //!
@@ -21,11 +22,13 @@
 //! request, reads the provider and generation settings, and delivers results.
 //!
 //! Covered: the OpenAI-compatible providers (`openai`, `fireworks`,
-//! `openrouter`, and `custom:<id>`, for example vLLM or LM Studio), streaming
-//! text, reasoning, tool calls, images and audio in the request, compaction,
-//! and the GUI's temperature, thinking-effort, retry, and prompt-cache-key
-//! behaviour. Not covered here (the frontend has them): mid-stream loop and
-//! reasoning-budget detection, and retry with a fallback model.
+//! `openrouter`, and `custom:<id>`, for example vLLM or LM Studio),
+//! `anthropic`, and `gemini`; streaming text, reasoning and its signature,
+//! tool calls, images and audio in the request, compaction, and the GUI's
+//! temperature, thinking-effort, retry, and prompt-cache behaviour. Not
+//! covered here (the frontend has them): mid-stream loop and reasoning-budget
+//! detection, retry with a fallback model, and Gemini's retry without tools
+//! after a malformed function call.
 
 mod convert;
 
@@ -70,7 +73,7 @@ fn env_selects_rust(value: Option<&str>) -> bool {
 /// Settings of the executor. Production uses [`ExecutorConfig::from_env`].
 #[derive(Clone)]
 pub struct ExecutorConfig {
-    /// Answer OpenAI-compatible requests in Rust.
+    /// Answer requests for supported providers in Rust.
     pub enabled: bool,
     /// Use this endpoint instead of reading Settings. For a fixed server, such
     /// as a loopback mock in a test.
@@ -151,7 +154,7 @@ enum Route {
 fn route(enabled: bool, has_webview: bool, provider: &str) -> Route {
     if !enabled {
         Route::Frontend
-    } else if llm_client::is_openai_compatible(provider) {
+    } else if llm_client::is_supported(provider) {
         Route::Rust
     } else if has_webview {
         Route::Frontend
@@ -181,7 +184,7 @@ fn unavailable(provider: &str) -> AgentRuntimeError {
         AgentRuntimeErrorType::ValidationError,
         format!(
             "Provider '{provider}' needs the app window to run, and none is open. \
-             Without a window only OpenAI-compatible providers can run."
+             Without a window only OpenAI-compatible providers, Anthropic, and Gemini can run."
         ),
     )
     .with_code("RUST_EXECUTOR_NO_WEBVIEW")
@@ -201,7 +204,7 @@ async fn provider_for(
 ) -> Result<Box<dyn ChatProvider>, Box<AgentRuntimeError>> {
     let resolved = match &config.endpoint_override {
         Some(endpoint) => llm_client::provider_with_endpoint(provider, endpoint.clone())
-            .ok_or_else(|| format!("Provider '{provider}' is not OpenAI-compatible")),
+            .ok_or_else(|| format!("Provider '{provider}' is not supported")),
         None => {
             let service_configs = read_setting("serviceConfigs").await;
             let custom_providers = read_setting("customProviders").await;
@@ -272,7 +275,7 @@ fn assistant_message(request: &CompletionRequest, chat: CompletedChat) -> Messag
         tool_call_id: None,
         is_streaming: Some(false),
         thinking: (!chat.thinking.is_empty()).then_some(chat.thinking),
-        thinking_signature: None,
+        thinking_signature: chat.thinking_signature,
         assistant_id: None,
         attachments: None,
         tool_use: None,
@@ -418,7 +421,7 @@ where
 }
 
 /// Answer `request` in Rust when the executor is enabled and the provider is
-/// OpenAI-compatible. `Ok(false)` means the frontend must handle it; an error
+/// one `llm-client` supports. `Ok(false)` means the frontend must handle it; an error
 /// means nothing can.
 pub fn try_dispatch_completion(
     app_handle: &AppHandle,
@@ -628,6 +631,7 @@ mod tests {
         let chat = CompletedChat {
             content: "done".to_string(),
             thinking: String::new(),
+            thinking_signature: Some("sig".to_string()),
             tool_calls: Vec::new(),
             usage: Some(llm_client::Usage {
                 prompt_tokens: 7,
@@ -648,6 +652,8 @@ mod tests {
         assert_eq!(convert::text_of(&message.content), "done");
         assert!(message.tool_calls.is_none());
         assert!(message.thinking.is_none());
+        // Anthropic and Gemini need it back with the next request.
+        assert_eq!(message.thinking_signature.as_deref(), Some("sig"));
         assert_eq!(message.prompt_tokens, Some(7));
         assert_eq!(
             message.usage,
@@ -660,26 +666,28 @@ mod tests {
         // Off: everything goes to the WebView, with or without one.
         assert_eq!(route(false, true, "openai"), Route::Frontend);
         assert_eq!(route(false, false, "anthropic"), Route::Frontend);
-        // On: OpenAI-compatible providers are answered in Rust either way.
+        // On: supported providers are answered in Rust either way.
         assert_eq!(route(true, true, "openai"), Route::Rust);
         assert_eq!(route(true, false, "custom:lmstudio"), Route::Rust);
         assert_eq!(route(true, false, "fireworks"), Route::Rust);
         assert_eq!(route(true, false, "openrouter"), Route::Rust);
+        assert_eq!(route(true, false, "anthropic"), Route::Rust);
+        assert_eq!(route(true, true, "gemini"), Route::Rust);
         // On: any other provider needs the WebView, and fails fast without it.
-        assert_eq!(route(true, true, "anthropic"), Route::Frontend);
-        assert_eq!(route(true, false, "anthropic"), Route::Unavailable);
+        assert_eq!(route(true, true, "groq"), Route::Frontend);
+        assert_eq!(route(true, false, "ollama"), Route::Unavailable);
         assert_eq!(route(true, false, ""), Route::Unavailable);
     }
 
     #[test]
     fn an_unavailable_route_says_which_provider_cannot_run() {
-        let error = unavailable("gemini");
+        let error = unavailable("groq");
         let code = error
             .details
             .as_ref()
             .and_then(|details| details.error_code.as_deref());
         assert_eq!(code, Some("RUST_EXECUTOR_NO_WEBVIEW"));
-        assert!(error.display_message.contains("gemini"));
+        assert!(error.display_message.contains("groq"));
     }
 
     #[test]
