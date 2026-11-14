@@ -478,7 +478,8 @@ pub async fn cancel_workflow(
         session_id: session_id.clone(),
         reason: crate::agent::events::WorkflowCompletionReason::Cancelled,
     };
-    crate::agent::tauri_events::emit_agent_event(app_handle, event)
+    TauriEventDispatcher::from_handle(app_handle)
+        .emit_agent_event(event)
         .map_err(|e| format!("Failed to emit event: {}", e))?;
 
     log::info!("Cancelled workflow for session: {}", session_id);

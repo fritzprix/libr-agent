@@ -1,4 +1,6 @@
+use crate::agent::events::AgentEventDispatcher;
 use crate::agent::state::AgentSession;
+use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::SessionStatus;
@@ -93,7 +95,8 @@ pub async fn resume_workflow(
                     )
                     .with_code("BACKGROUND_RESUME_FAILED"),
                 };
-                let _ = crate::agent::tauri_events::emit_agent_event(&app_handle, error_event);
+                let _ =
+                    TauriEventDispatcher::from_handle(&app_handle).emit_agent_event(error_event);
                 return;
             }
         };
@@ -158,7 +161,7 @@ pub async fn resume_workflow(
                 )
                 .with_code("BACKGROUND_RESUME_FAILED"),
             };
-            let _ = crate::agent::tauri_events::emit_agent_event(&app_handle, error_event);
+            let _ = TauriEventDispatcher::from_handle(&app_handle).emit_agent_event(error_event);
             return;
         }
 
@@ -216,7 +219,7 @@ pub async fn resume_workflow(
                 )
                 .with_code("BACKGROUND_RESUME_FAILED"),
             };
-            let _ = crate::agent::tauri_events::emit_agent_event(&app_handle, error_event);
+            let _ = TauriEventDispatcher::from_handle(&app_handle).emit_agent_event(error_event);
             return;
         }
 
@@ -251,7 +254,7 @@ pub async fn resume_workflow(
                 )
                 .with_code("BACKGROUND_RESUME_FAILED"),
             };
-            let _ = crate::agent::tauri_events::emit_agent_event(&app_handle, error_event);
+            let _ = TauriEventDispatcher::from_handle(&app_handle).emit_agent_event(error_event);
         }
     });
 
