@@ -1,5 +1,7 @@
+use crate::agent::events::AgentEventDispatcher;
 use crate::agent::session_manager::AgentSessionManager;
 use crate::agent::state::AgentSession;
+use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::models::chat::Message;
 use crate::repositories::{MessageRepository, SessionStatus};
 use crate::search::message_index::{MessageSearchEngine, SearchResult};
@@ -361,7 +363,8 @@ impl MessageService {
             session_id: session_id.to_string(),
             message: Box::new(user_message.clone()),
         };
-        crate::agent::tauri_events::emit_agent_event(app_handle, message_added_event)
+        TauriEventDispatcher::from_handle(app_handle)
+            .emit_agent_event(message_added_event)
             .map_err(|e| format!("Failed to emit MessageAdded event: {}", e))?;
 
         // 3. Persist to DB synchronously to ensure data integrity
@@ -583,7 +586,7 @@ impl MessageService {
                 session_id: session_id.to_string(),
                 message: Box::new(msg.clone()),
             };
-            if let Err(e) = crate::agent::tauri_events::emit_agent_event(app_handle, event) {
+            if let Err(e) = TauriEventDispatcher::from_handle(app_handle).emit_agent_event(event) {
                 // Headless / mock app contexts may not have a live event loop.
                 log::warn!("Failed to emit MessageAdded event: {e}");
             }

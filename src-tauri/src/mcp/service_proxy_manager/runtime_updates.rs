@@ -1,9 +1,10 @@
-use crate::agent::events::AgentEvent;
+use crate::agent::events::{AgentEvent, AgentEventDispatcher};
 use crate::agent::runtime_state::{
     SessionRuntimeInitResult, SessionRuntimePhase, SessionRuntimeProxyMode,
     SessionRuntimeServerState, SessionRuntimeServerStatus, SessionRuntimeState,
     SessionRuntimeTransport,
 };
+use crate::agent::tauri_events::TauriEventDispatcher;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::AppHandle;
@@ -26,7 +27,7 @@ pub(super) fn emit_runtime_state(
             session_id: session_id.to_string(),
             runtime_state: runtime_state.clone(),
         };
-        if let Err(error) = crate::agent::tauri_events::emit_agent_event(app, event) {
+        if let Err(error) = TauriEventDispatcher::from_handle(app).emit_agent_event(event) {
             log::warn!(
                 "Failed to emit runtime state update for session {}: {}",
                 session_id,

@@ -1,7 +1,5 @@
 use crate::agent::events::{summarize_agent_event, AgentEvent, AgentEventDispatcher};
-use crate::agent::llm::types::{
-    CompactRequest, CompactStateEvent, CompactStatePhase, CompletionCancelRequest,
-};
+use crate::agent::llm::types::{CompactRequest, CompactStateEvent, CompletionCancelRequest};
 use log::info;
 use tauri::{AppHandle, Emitter};
 
@@ -13,6 +11,15 @@ pub struct TauriEventDispatcher {
 impl TauriEventDispatcher {
     pub fn new(app_handle: AppHandle) -> Self {
         Self { app_handle }
+    }
+
+    /// The same dispatcher from a borrowed handle. Runtime code that only ever
+    /// holds `&AppHandle` (the llm paths do) takes the dispatcher from here
+    /// instead of spelling out the clone at every emit site (#2772).
+    pub fn from_handle(app_handle: &AppHandle) -> Self {
+        Self {
+            app_handle: (*app_handle).clone(),
+        }
     }
 }
 
@@ -26,7 +33,11 @@ impl AgentEventDispatcher for TauriEventDispatcher {
     }
 
     fn emit_completion_cancel(&self, request: CompletionCancelRequest) -> Result<(), String> {
-        emit_completion_cancel(&self.app_handle, request)
+        // A call running in the Rust executor has no frontend stream to abort.
+        crate::agent::llm::rust_executor::cancel(&request.session_id);
+        self.app_handle
+            .emit("llm:completion-cancel", request)
+            .map_err(|e| format!("Failed to emit llm:completion-cancel: {}", e))
     }
 }
 
@@ -51,49 +62,10 @@ pub fn emit_agent_event(app_handle: &AppHandle, event: AgentEvent) -> Result<(),
         .map_err(|e| format!("Failed to emit agent event: {}", e))
 }
 
-pub fn emit_compact_state(app_handle: &AppHandle, event: CompactStateEvent) -> Result<(), String> {
+fn emit_compact_state(app_handle: &AppHandle, event: CompactStateEvent) -> Result<(), String> {
     app_handle
         .emit("llm:compact-state", event)
         .map_err(|e| format!("Failed to emit llm:compact-state: {}", e))
-}
-
-pub fn emit_compact_started(
-    app_handle: &AppHandle,
-    session_id: impl Into<String>,
-    session_name: Option<String>,
-    awaiting_compact: bool,
-) -> Result<(), String> {
-    emit_compact_state(
-        app_handle,
-        CompactStateEvent {
-            session_id: session_id.into(),
-            session_name,
-            compacting: true,
-            awaiting_compact,
-            phase: CompactStatePhase::Started,
-            error: None,
-        },
-    )
-}
-
-pub fn emit_compact_finished(
-    app_handle: &AppHandle,
-    session_id: impl Into<String>,
-    session_name: Option<String>,
-    phase: CompactStatePhase,
-    error: Option<String>,
-) -> Result<(), String> {
-    emit_compact_state(
-        app_handle,
-        CompactStateEvent {
-            session_id: session_id.into(),
-            session_name,
-            compacting: false,
-            awaiting_compact: false,
-            phase,
-            error,
-        },
-    )
 }
 
 pub fn emit_compact_request(app_handle: &AppHandle, event: CompactRequest) -> Result<(), String> {
@@ -105,17 +77,6 @@ pub fn emit_compact_request(app_handle: &AppHandle, event: CompactRequest) -> Re
     app_handle
         .emit("llm:compact-request", event)
         .map_err(|e| format!("Failed to emit llm:compact-request: {}", e))
-}
-
-pub fn emit_completion_cancel(
-    app_handle: &AppHandle,
-    event: CompletionCancelRequest,
-) -> Result<(), String> {
-    // A call running in the Rust executor has no frontend stream to abort.
-    crate::agent::llm::rust_executor::cancel(&event.session_id);
-    app_handle
-        .emit("llm:completion-cancel", event)
-        .map_err(|e| format!("Failed to emit llm:completion-cancel: {}", e))
 }
 
 /// Emit a resource update event (convenience wrapper)

@@ -1,4 +1,6 @@
+use crate::agent::events::AgentEventDispatcher;
 use crate::agent::state::AgentSession;
+use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::models::chat::Message;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -148,7 +150,7 @@ pub async fn handle_tool_result(
                         tool_name: tool_name.clone(),
                         success: !is_error && success,
                     };
-                    let _ = crate::agent::tauri_events::emit_agent_event(app_handle, event);
+                    let _ = TauriEventDispatcher::from_handle(app_handle).emit_agent_event(event);
                 }
 
                 log::debug!(

@@ -4,9 +4,11 @@ use super::types::{
     NonProductiveCompletionAction, NonProductiveCompletionReason, RecoveryContext,
     StreamingIssueAction, StreamingIssueOutcome,
 };
+use crate::agent::events::AgentEventDispatcher;
 use crate::agent::llm::completion::request_llm_completion_with_recovery;
 use crate::agent::llm::response::finalize_workflow_error_with_dispatcher;
 use crate::agent::llm::types::{AgentRuntimeError, AgentRuntimeErrorType};
+use crate::agent::tauri_events::TauriEventDispatcher;
 
 pub fn evaluate_non_productive_completion_action(
     retry_count: u32,
@@ -293,12 +295,10 @@ async fn append_recovery_note(
         .insert(&note)
         .await
         .map_err(|error| format!("Failed to save recovery note: {error}"))?;
-    crate::agent::tauri_events::emit_agent_event(
-        context.app_handle,
-        crate::agent::events::AgentEvent::MessageAdded {
+    TauriEventDispatcher::from_handle(context.app_handle)
+        .emit_agent_event(crate::agent::events::AgentEvent::MessageAdded {
             session_id: session_id.to_string(),
             message: Box::new(note),
-        },
-    )
-    .map_err(|error| format!("Failed to emit MessageAdded for recovery note: {error}"))
+        })
+        .map_err(|error| format!("Failed to emit MessageAdded for recovery note: {error}"))
 }

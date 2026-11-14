@@ -1,4 +1,6 @@
 use super::AgentSessionManager;
+use crate::agent::events::AgentEventDispatcher;
+use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::models::chat::Message;
 use crate::repositories::SessionStatus;
 use std::sync::Arc;
@@ -77,7 +79,9 @@ pub async fn inject_messages(
         let event = crate::agent::events::AgentEvent::WorkflowStarted {
             session_id: session_id.clone(),
         };
-        if let Err(e) = crate::agent::tauri_events::emit_agent_event(&manager.app_handle, event) {
+        if let Err(e) =
+            TauriEventDispatcher::from_handle(&manager.app_handle).emit_agent_event(event)
+        {
             log::error!(
                 "Failed to emit WorkflowStarted event during injection: {}",
                 e
@@ -109,7 +113,8 @@ pub async fn inject_messages(
                         )
                         .with_code("BACKGROUND_INJECTION_FAILED"),
                     };
-                    let _ = crate::agent::tauri_events::emit_agent_event(&app_handle, error_event);
+                    let _ = TauriEventDispatcher::from_handle(&app_handle)
+                        .emit_agent_event(error_event);
                     return;
                 }
             };
@@ -174,7 +179,8 @@ pub async fn inject_messages(
                     )
                     .with_code("BACKGROUND_INJECTION_FAILED"),
                 };
-                let _ = crate::agent::tauri_events::emit_agent_event(&app_handle, error_event);
+                let _ =
+                    TauriEventDispatcher::from_handle(&app_handle).emit_agent_event(error_event);
                 return;
             }
 
@@ -233,7 +239,8 @@ pub async fn inject_messages(
                     )
                     .with_code("BACKGROUND_INJECTION_FAILED"),
                 };
-                let _ = crate::agent::tauri_events::emit_agent_event(&app_handle, error_event);
+                let _ =
+                    TauriEventDispatcher::from_handle(&app_handle).emit_agent_event(error_event);
                 return;
             }
 
@@ -268,7 +275,8 @@ pub async fn inject_messages(
                     )
                     .with_code("BACKGROUND_INJECTION_FAILED"),
                 };
-                let _ = crate::agent::tauri_events::emit_agent_event(&app_handle, error_event);
+                let _ =
+                    TauriEventDispatcher::from_handle(&app_handle).emit_agent_event(error_event);
             }
         });
     }

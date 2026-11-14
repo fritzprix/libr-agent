@@ -1,5 +1,7 @@
 use crate::agent::events::AgentEvent;
+use crate::agent::events::AgentEventDispatcher;
 use crate::agent::state::AgentSession;
+use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::models::chat::Message;
 use crate::repositories::message_repository::MessageRepository as MessageRepositoryTrait;
 use crate::repositories::pending_queue_repository::PendingQueueRepository;
@@ -23,7 +25,8 @@ pub async fn emit_pending_queue_updated(
         session_id: session_id.to_string(),
         messages,
     };
-    crate::agent::tauri_events::emit_agent_event(app_handle, event)
+    TauriEventDispatcher::from_handle(app_handle)
+        .emit_agent_event(event)
         .map_err(|e| format!("Failed to emit PendingQueueUpdated: {e}"))
 }
 
@@ -36,7 +39,8 @@ pub(crate) async fn emit_message_added(
         session_id: session_id.to_string(),
         message: Box::new(message.clone()),
     };
-    crate::agent::tauri_events::emit_agent_event(app_handle, event)
+    TauriEventDispatcher::from_handle(app_handle)
+        .emit_agent_event(event)
         .map_err(|e| format!("Failed to emit MessageAdded: {e}"))
 }
 

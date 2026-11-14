@@ -1,9 +1,10 @@
 use super::context::save_compact_context;
 use super::CompactResponseOutcome;
 use crate::agent::compaction_telemetry::{CompactionTelemetryEventDraft, CompactionTelemetryPhase};
+use crate::agent::events::AgentEventDispatcher;
 use crate::agent::llm::types::CompactStatePhase;
 use crate::agent::state::{AgentSession, CompactionResumeAction};
-use crate::agent::tauri_events::{emit_compact_finished, emit_compact_request};
+use crate::agent::tauri_events::{emit_compact_request, TauriEventDispatcher};
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
 use crate::repositories::{CompactContextRecord, MessageRepository, SessionRepository};
@@ -233,8 +234,8 @@ pub(super) async fn abort_empty_delta_compaction_and_resume(
 
     // Still emit Failed so UI clears compacting/awaiting flags; frontend silences
     // the toast for EMPTY_DELTA_NOOP_ERROR (intentional skip, not a user error).
-    if let Err(error) = emit_compact_finished(
-        context.app_handle,
+    let dispatcher = TauriEventDispatcher::from_handle(context.app_handle);
+    if let Err(error) = dispatcher.emit_compact_finished(
         context.session_id.to_string(),
         context.session_name,
         CompactStatePhase::Failed,
@@ -341,8 +342,8 @@ pub(super) async fn persist_compact_summary_and_resume(
             CompactionResumeAction::ResumeCompletion => "resume_completion",
         }
     );
-    if let Err(error) = emit_compact_finished(
-        context.app_handle,
+    let dispatcher = TauriEventDispatcher::from_handle(context.app_handle);
+    if let Err(error) = dispatcher.emit_compact_finished(
         context.session_id.to_string(),
         context.session_name,
         CompactStatePhase::Succeeded,
