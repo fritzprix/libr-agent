@@ -177,7 +177,7 @@ The script appends the reason to the issue body, adds the label, and counts the 
 
 ### 5. Report
 
-One line **per open PR** using each entry's `turnReport` (verdict, reviewed head, current head, whose turn; fix `labelMismatch` before posting). For PRs you reviewed this tick, add round, required-finding count, and code-quality total (e.g. `72/100`). Add one line for a validated or rejected producer issue (link and verdict).
+One line **per open PR** using each entry's `turnReport` (verdict, reviewed head, current head, whose turn; fix `labelMismatch` before posting). Only the gatekeeper applies `labelFix` — workers never edit `gatekeeper:*` labels. For PRs you reviewed this tick, add round, required-finding count, and code-quality total (e.g. `72/100`). Add one line for a validated or rejected producer issue (link and verdict).
 
 ## Tests
 

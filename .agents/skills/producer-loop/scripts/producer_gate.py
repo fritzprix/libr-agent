@@ -52,19 +52,6 @@ if str(_LOOP_SHARED) not in sys.path:
 
 import skills_freshness  # noqa: E402
 
-EXIT_SKILLS_STALE = 5
-
-
-def _require_fresh_skills() -> int | None:
-    fresh, message = skills_freshness.check_skills_fresh(
-        skills_freshness.resolve_base_branch(None),
-        fetch=True,
-    )
-    if fresh:
-        return None
-    print(message, file=sys.stderr)
-    return EXIT_SKILLS_STALE
-
 
 def default_state_path() -> Path:
     """`.producer-loop/state.json` next to the shared `.worker-loop` state root."""
@@ -129,7 +116,7 @@ def main(argv: list[str] | None = None) -> int:
             print("BUSY (tick in progress)")
             return EXIT_BUSY
 
-        stale = _require_fresh_skills()
+        stale = skills_freshness.gate_skills_freshness()
         if stale is not None:
             return stale
 

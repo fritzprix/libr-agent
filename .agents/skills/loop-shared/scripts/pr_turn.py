@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from typing import Literal
 
 from comment_markers import (
-    latest_non_clean_verdict,
     latest_worker_response,
     parse_markers,
 )
@@ -78,7 +77,9 @@ def decide_pr_turn(
         )
 
     verdicts, responses = parse_markers(comments, me)
-    last = latest_non_clean_verdict(verdicts)
+    # The newest marker is the current verdict, even when it is `clean`: a
+    # clean at the current head supersedes any older changes-requested.
+    last = verdicts[-1] if verdicts else None
     response = latest_worker_response(last, responses)
 
     if last is None:

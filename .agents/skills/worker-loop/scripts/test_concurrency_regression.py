@@ -50,7 +50,13 @@ class StateDirCase(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self.root = Path(self._tmp.name).resolve()
-        env = patch.dict(os.environ, {"LOOP_STATE_DIR": str(self.root)})
+        env = patch.dict(os.environ, {
+            "LOOP_STATE_DIR": str(self.root),
+            # The skills-freshness gate runs real git; these tests are about
+            # leases and slots, so the gate is skipped here (its own behavior
+            # is covered in test_tick_gate.py).
+            tick_gate.skills_freshness.SKIP_GATE_ENV: "1",
+        })
         env.start()
         self.addCleanup(env.stop)
         for name in _IDENTITY_ENVS:
@@ -304,7 +310,13 @@ class ErrorExitTest(StateDirCase):
             gh = bin_dir / "gh"
             gh.write_text("#!/bin/sh\nexit 1\n")
             gh.chmod(0o755)
-        return {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+        # On Windows CreateProcess never executes the .cmd stub, so the real gh
+        # runs there; invalid tokens make it fail the same way the stub does.
+        return {
+            "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+            "GH_TOKEN": "invalid-token-for-test",
+            "GITHUB_TOKEN": "invalid-token-for-test",
+        }
 
     def assert_nothing_held(self):
         self.assertEqual(worker_slots.load_slots(), {})

@@ -46,10 +46,3 @@ def latest_worker_response(
             continue
         return response
     return None
-
-
-def latest_non_clean_verdict(verdicts: list[dict]) -> dict | None:
-    non_clean = [v for v in verdicts if v.get("verdict") != "clean"]
-    if non_clean:
-        return non_clean[-1]
-    return verdicts[-1] if verdicts else None

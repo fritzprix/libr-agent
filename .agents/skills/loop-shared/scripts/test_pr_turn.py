@@ -46,6 +46,23 @@ class PrTurnTests(unittest.TestCase):
         self.assertEqual(turn.verdictHead, "sha1")
         self.assertFalse(turn.atVerdictHead)
 
+    def test_clean_at_current_head_supersedes_older_changes_requested(self) -> None:
+        """G1.4: clean at the current head IS the current verdict, not the older changes-requested."""
+        turn = decide_pr_turn(
+            head_sha="sha2",
+            mergeable="MERGEABLE",
+            comments=[
+                gk("changes-requested", "sha1", round_="1", created="t1"),
+                gk("clean", "sha2", round_="2", created="t3"),
+            ],
+            me="me",
+        )
+        self.assertEqual(turn.turn, "gatekeeper")
+        self.assertEqual(turn.currentVerdict, "clean")
+        self.assertEqual(turn.verdictHead, "sha2")
+        self.assertTrue(turn.atVerdictHead)
+        self.assertIn("clean at head", turn.reason)
+
     def test_changes_requested_at_head_without_response_is_worker(self) -> None:
         turn = decide_pr_turn(
             head_sha="sha1",
