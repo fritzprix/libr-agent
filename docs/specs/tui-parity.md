@@ -1171,12 +1171,12 @@ Six screen types cover every command. Codes S1–S6 are used in the tables below
 
 #### S5 Inline prompt
 
-- **Tool approval**: tool name and arguments as JSON (scrollable). `a` approves, `r` or Esc rejects.
+- **Tool approval**: tool name and arguments as JSON (scrollable). `Alt+Y` approves, `Alt+N` or Esc rejects; `a` / `r` also approve or reject, but only while the prompt has focus (focus rule below). Hard approvals ("Hard Approval Required", the high-risk tools) behave the same way and are targeted first when several approvals wait. No "always allow". Ordinary typing can never approve — the intent of the GUI's Ctrl/Cmd+Enter rule (`PendingApprovalWidget.tsx`).
 - **Question (askUser)**: one question at a time; choices as a list (Space toggles in multi-select), plus the free-text field where the GUI has one. Enter submits.
 - **Secret**: masked input. Enter submits, Esc cancels.
-- **Pairing request**: shows the pairing code. `a` approves, `r` or Esc rejects.
+- **Pairing request**: shows the pairing code. `Alt+Y` approves, `Alt+N` or Esc rejects; `a` / `r` when the prompt has focus.
 
-While a prompt is open it takes keyboard focus. The composer keeps its text, and Esc does not cancel the request (same rule as the GUI).
+An open prompt never steals keyboard focus from a composer that has text: while the composer has text it keeps focus and the prompt answers only the `Alt+Y` / `Alt+N` chords, shown in the prompt's footer. The prompt has focus when the composer is empty as the prompt opens, or after the user presses Tab to move focus to it (Tab moves it back; while the prompt holds focus, composer completion is paused). With prompt focus, `a` / `r` approve or reject. The composer keeps its text, and Esc does not cancel the request (same rule as the GUI).
 
 #### S6 Pager
 
@@ -1187,9 +1187,9 @@ Full-screen read-only view with a title line. PgUp/PgDn, Home/End, and `/` to se
 1. **Plain text is always a chat message.** Input is a command only when its first character is `/`. To send text that starts with `/`, type `//`; the first `/` is removed.
 2. **Unknown commands are not sent.** `/foo` shows "Unknown command /foo" with the closest match, and the input stays in the composer.
 3. **Names**: lowercase; words joined by `-` (`/setup-wizard`, `/settings ai-models`). A top-level command is either a noun that opens a menu (`/settings`, `/assistants`) or a verb that acts on the open session (`/rename`, `/export`).
-4. **Sub-commands use one verb set** across all menus: `new`, `edit`, `delete`, `search`, `enable`, `disable`, `install`, `import`, `export`, `retry`, `reset`. The same verb means the same thing in every menu.
+4. **Sub-commands use one verb set** across all menus: `new`, `edit`, `delete`, `search`, `enable`, `disable`, `install`, `import`, `export`, `retry`, `reset`, `save`, `discard`, `cancel`, `auth`, `logout`. The same verb means the same thing in every menu.
 5. **Arguments**: the object (id, name, path, URL) is positional. Filters are `--flag value`. `<n>` refers to the number shown in the S1 attachment, queue, or message lines.
-6. **No collisions**: every top-level name in §3.3 is unique, and no top-level name equals a sub-command of another command. `/import` and `/export` at the top level act on the open session; the org bundle and migration imports and exports are scoped as `/org …` and `/settings migration`.
+6. **No collisions**: every full command path in §3.3 is unique. A top-level verb acts on the open session; the same word under a menu acts on that menu's object — `/export` exports the open session while `/org export` writes an org bundle, `/delete` deletes the open session while `/org delete` deletes an org item, `/new` starts a session while `/assistants new` creates an assistant. The menu prefix is what disambiguates, so a word may repeat across levels but no two commands share a full path.
 7. **Commands follow their GUI control's rules.** For example `/model` works only while idle, and `/rename` needs a created session (in a draft it says "Send a message first").
 8. **Tab completion**: after `/`, Tab completes the command name; after a command, the sub-command; after that, argument values from live data (session ids with titles, assistant ids, extension names, file paths). One match fills in; several matches open a popup above the composer, the same popup as `@` mentions. ↑/↓ select, Tab or Enter accept, Esc closes.
 9. **`@` mentions** open the same popup with `@skill:`, `@file:`, `@tool:`, and `@playbook:` items, as in the GUI.
@@ -1268,7 +1268,7 @@ Names changed from the §2 placeholders:
 | Key                            | Where                       | Action                                                                                                                                                                                                           |
 | ------------------------------ | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Enter                          | composer                    | Send; queues while the agent is busy (as in the GUI). Ignored during IME composition.                                                                                                                            |
-| Shift+Enter, Alt+Enter, Ctrl+J | composer                    | New line. Shift+Enter needs a terminal that reports it; Alt+Enter and Ctrl+J always work.                                                                                                                        |
+| Shift+Enter, Alt+Enter, Ctrl+J | composer                    | New line. In terminals that do not report Shift+Enter, Alt+Enter and Ctrl+J are the alternatives.                                                                                                                |
 | Tab                            | composer                    | Completion (§3.2 rule 8).                                                                                                                                                                                        |
 | Esc                            | anywhere                    | Close the popup; else leave the current screen (S2–S4, S6); else, on S1 while a request runs, cancel it. Never cancels while an S5 prompt is open.                                                               |
 | Ctrl+C                         | S1                          | Running: same as Esc. Idle with text: clear the composer. Idle and empty: press twice within 2 s to quit.                                                                                                        |
@@ -1276,7 +1276,8 @@ Names changed from the §2 placeholders:
 | PgUp / PgDn                    | S1, S2, S6                  | Scroll. PgUp at the top of the S1 transcript loads 50 older messages.                                                                                                                                            |
 | End / Home                     | S1 (empty composer), S2, S6 | Jump to latest / oldest.                                                                                                                                                                                         |
 | Ctrl+O                         | S1                          | Browse mode: ↑/↓ select a message, thinking, tool, or compaction block; Enter expands or collapses; `p` opens the block's file or output in S6; `o` opens a deliverable externally; Esc returns to the composer. |
-| a / r                          | S5 approval, pairing        | Approve / reject.                                                                                                                                                                                                |
+| Alt+Y / Alt+N                  | S5 approval, pairing        | Approve / reject. Work regardless of focus; ordinary typing cannot produce them.                                                                                                                                 |
+| a / r                          | S5 approval, pairing        | Approve / reject, only while the prompt has focus; inert while the composer has text.                                                                                                                            |
 | Space / Enter                  | S5 question, S2 picker      | Toggle / choose.                                                                                                                                                                                                 |
 | Ctrl+S                         | S3                          | Save the form.                                                                                                                                                                                                   |
 | Ctrl+← / Ctrl+→                | S3                          | Previous / next page.                                                                                                                                                                                            |
@@ -1291,6 +1292,7 @@ Names changed from the §2 placeholders:
 - Same backend commands and events. Command results are the GUI action results, for example `/delete` calls the same delete command with the same child choice.
 - Same wording for errors, confirmations, and status words (from `src/locales/en/common.json` where a key exists).
 - Same rules: idle-only model change, Esc skipped while a prompt is open, oversize first-message guard, and refusal of sessions owned by another frontend.
+- Deliberate approval intent: a key that ordinary typing can produce never approves a tool call or pairing request. The GUI enforces this with Ctrl/Cmd+Enter (`PendingApprovalWidget.tsx`); the TUI enforces it with the `Alt+Y` / `Alt+N` chords plus focus-gated `a` / `r`. Hard approvals ("Hard Approval Required") behave the same way and are targeted first when several approvals wait.
 
 ### 3.6 Implementation split
 
@@ -1309,6 +1311,8 @@ Each ticket below depends on this issue (#2751). The first three already exist. 
 | #2764-f Session workspace and panels | `/panel`, `/files`, `/workspace`, `/import`                                                                                                                                                             | P1       |
 | #2764-g Chat extras                  | `/regenerate`, `/copy`, `/setup-wizard`; browse-mode actions                                                                                                                                            | P1       |
 | #2764-h Phase-2 extras               | `/org`, `/settings migration`, `/stats`, `/docker`, `/pairing`, `/morning-briefing`, `/tasks template`                                                                                                  | P2       |
+
+The P0 rows of #2764-a (Default AI Model, Provider API Keys) ship together with #2762: without them a first message cannot be sent, so #2762 alone is not a usable phase-1 chat.
 
 ### 3.7 Traceability
 
