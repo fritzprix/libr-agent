@@ -9,6 +9,7 @@
 use crate::server::backend_descriptor::{self, BackendDescriptor};
 use crate::server::frontend_attachments::{AttachResponse, HEARTBEAT_INTERVAL};
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -474,42 +475,71 @@ pub enum BackendStartup {
     Started,
 }
 
-/// The single backend startup path every frontend shares (#2756): attach to
-/// a live published backend and wait for real readiness (`ready: true`), or
-/// run `start_backend` to host one here (HTTP server, scheduler, session
-/// recovery) and then present the UI.
+/// How long the winner of the startup race waits for its own HTTP server to
+/// publish this process's backend record before releasing the startup lock
+/// (#2757). Binding is fast; the wait only matters when binding fails, and
+/// it keeps the loser from starting a second backend while a winner that is
+/// still publishing holds the lock.
+pub const OWN_PUBLISH_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// The single backend startup path every frontend shares (#2756), guarded
+/// against two frontends starting at the same moment (#2757).
+///
+/// Fast path: a live published backend exists, so attach to it and wait for
+/// real readiness (`ready: true`). Otherwise the check-then-start sequence is
+/// serialized on `lock_path`: the winner re-checks for a backend that
+/// appeared while it waited, then runs `start_backend` to host one here
+/// (HTTP server, scheduler, session recovery) and waits for this process's
+/// own record to go live before releasing the lock. The loser waits on the
+/// lock and then finds the winner's record, so it attaches instead of
+/// starting a second HTTP server, scheduler, or session executor.
+///
+/// `lock_path` is `None` before the descriptor namespace is initialized: a
+/// single-process fallback with the pre-#2757 behavior.
 ///
 /// A published backend that fails readiness is a hard error: its process
 /// already owns this profile, so starting a second backend here would
 /// double-execute live sessions.
-pub async fn attach_or_start_backend<S>(
+async fn attach_or_start_backend_with_race<S>(
     timeout: Duration,
+    lock_path: Option<PathBuf>,
+    find_live: impl Fn() -> Option<BackendDescriptor>,
     start_backend: S,
+    wait_own_publish: impl Fn(Duration),
 ) -> Result<BackendStartup, String>
 where
     S: FnOnce() -> Result<(), String>,
 {
-    attach_or_start_backend_with_finder(
-        timeout,
-        backend_descriptor::find_live_backend,
-        start_backend,
-    )
-    .await
-}
+    if let Some(descriptor) = find_live() {
+        return attach_to_descriptor(&descriptor, timeout).await;
+    }
 
-async fn attach_or_start_backend_with_finder<S, F>(
-    timeout: Duration,
-    find_live: F,
-    start_backend: S,
-) -> Result<BackendStartup, String>
-where
-    F: FnOnce() -> Option<BackendDescriptor>,
-    S: FnOnce() -> Result<(), String>,
-{
-    let Some(descriptor) = find_live() else {
+    let Some(path) = lock_path else {
         start_backend()?;
         return Ok(BackendStartup::Started);
     };
+
+    let guard = crate::server::startup_lock::acquire(&path, Instant::now() + timeout).await?;
+
+    // Under the lock: the winner of the race may have published (and
+    // released) while this process waited. Attach instead of starting.
+    if let Some(descriptor) = find_live() {
+        return attach_to_descriptor(&descriptor, timeout).await;
+    }
+
+    start_backend()?;
+    // Release the lock only once this process's record is live (or the wait
+    // gave up), so the loser's re-check under the lock sees this backend.
+    wait_own_publish(OWN_PUBLISH_TIMEOUT);
+    drop(guard);
+    Ok(BackendStartup::Started)
+}
+
+/// Attach to a discovered backend and wait until it reports readiness.
+async fn attach_to_descriptor(
+    descriptor: &BackendDescriptor,
+    timeout: Duration,
+) -> Result<BackendStartup, String> {
     let client = SharedBackendClient::new(descriptor.port)?;
     client.wait_until_ready(timeout).await.map_err(|err| {
         format!(
@@ -517,7 +547,30 @@ where
             descriptor.pid, descriptor.port
         )
     })?;
-    Ok(BackendStartup::Attached { descriptor, client })
+    Ok(BackendStartup::Attached {
+        descriptor: descriptor.clone(),
+        client,
+    })
+}
+
+/// The production entry: race on the profile's startup lock, prove holder
+/// death with the real process probes, and wait for this process's own
+/// descriptor record before releasing the lock.
+pub async fn attach_or_start_backend<S>(
+    timeout: Duration,
+    start_backend: S,
+) -> Result<BackendStartup, String>
+where
+    S: FnOnce() -> Result<(), String>,
+{
+    attach_or_start_backend_with_race(
+        timeout,
+        backend_descriptor::startup_lock_path(),
+        backend_descriptor::find_live_backend,
+        start_backend,
+        backend_descriptor::wait_until_own_record_live,
+    )
+    .await
 }
 
 #[cfg(test)]
@@ -662,13 +715,15 @@ mod tests {
         let started = Arc::new(AtomicBool::new(false));
         let flag = started.clone();
 
-        let outcome = attach_or_start_backend_with_finder(
+        let outcome = attach_or_start_backend_with_race(
             Duration::from_secs(1),
+            None,
             || None,
             move || {
                 flag.store(true, Ordering::Relaxed);
                 Ok(())
             },
+            |_| {},
         )
         .await
         .expect("startup succeeds");
@@ -686,13 +741,15 @@ mod tests {
         let started = Arc::new(AtomicBool::new(false));
         let flag = started.clone();
 
-        let outcome = attach_or_start_backend_with_finder(
+        let outcome = attach_or_start_backend_with_race(
             Duration::from_secs(2),
+            None,
             move || Some(live_descriptor(port)),
             move || {
                 flag.store(true, Ordering::Relaxed);
                 Ok(())
             },
+            |_| {},
         )
         .await
         .expect("attach succeeds");
@@ -717,13 +774,15 @@ mod tests {
         let started = Arc::new(AtomicBool::new(false));
         let flag = started.clone();
 
-        let err = attach_or_start_backend_with_finder(
+        let err = attach_or_start_backend_with_race(
             Duration::from_millis(250),
+            None,
             move || Some(live_descriptor(port)),
             move || {
                 flag.store(true, Ordering::Relaxed);
                 Ok(())
             },
+            |_| {},
         )
         .await
         .unwrap_err();
@@ -737,5 +796,160 @@ mod tests {
             "a failed attach must never start a second backend"
         );
         server.abort();
+    }
+
+    fn temp_lock_path(dir: &tempfile::TempDir) -> PathBuf {
+        dir.path().join("profile.db.backend.lock")
+    }
+
+    /// A real live process the OS probe reports as alive for the whole test.
+    fn live_holder_child() -> std::process::Child {
+        if cfg!(windows) {
+            std::process::Command::new("ping")
+                .args(["-n", "30", "127.0.0.1"])
+                .stdout(std::process::Stdio::null())
+                .spawn()
+                .expect("spawn a live holder stand-in")
+        } else {
+            std::process::Command::new("sleep")
+                .arg("30")
+                .spawn()
+                .expect("spawn a live holder stand-in")
+        }
+    }
+
+    /// #2757: while the startup lock is held by a live process, the loser
+    /// waits; once the holder releases it and its record is live, the loser
+    /// attaches and never starts its own backend.
+    #[tokio::test]
+    async fn startup_race_attaches_to_the_backend_published_by_the_lock_holder() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = temp_lock_path(&dir);
+        let (port, server) = health_server(true);
+        let published = Arc::new(AtomicBool::new(false));
+        let started = Arc::new(AtomicBool::new(false));
+
+        let mut holder = live_holder_child();
+        std::fs::write(
+            &path,
+            serde_json::json!({ "pid": holder.id(), "acquired_at_ms": 1 }).to_string(),
+        )
+        .unwrap();
+
+        let published_for_finder = published.clone();
+        let started_for_start = started.clone();
+        let path_for_race = path.clone();
+        let race = tokio::spawn(async move {
+            attach_or_start_backend_with_race(
+                Duration::from_secs(5),
+                Some(path_for_race),
+                move || {
+                    published_for_finder
+                        .load(Ordering::Relaxed)
+                        .then(|| live_descriptor(port))
+                },
+                move || {
+                    started_for_start.store(true, Ordering::Relaxed);
+                    Ok(())
+                },
+                |_| {},
+            )
+            .await
+        });
+
+        // The loser must wait on the lock even though no backend exists yet.
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        assert!(
+            !started.load(Ordering::Relaxed),
+            "the loser must not start a backend while the lock is held"
+        );
+
+        // The holder publishes its backend, then releases the lock.
+        published.store(true, Ordering::Relaxed);
+        let _ = holder.kill();
+        std::fs::remove_file(&path).unwrap();
+
+        let outcome = race
+            .await
+            .unwrap()
+            .expect("the loser attaches after the holder");
+        assert!(
+            matches!(outcome, BackendStartup::Attached { descriptor, .. } if descriptor.port == port),
+            "the loser must attach to the published backend"
+        );
+        assert!(
+            !started.load(Ordering::Relaxed),
+            "start_backend must not run for the loser"
+        );
+        server.abort();
+    }
+
+    /// #2757: a lock left by a definitively-dead process is swept, and the
+    /// next frontend starts the one backend.
+    #[tokio::test]
+    async fn startup_race_takes_over_after_sweeping_a_dead_holder() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = temp_lock_path(&dir);
+        std::fs::write(
+            &path,
+            serde_json::json!({ "pid": u32::MAX, "acquired_at_ms": 1 }).to_string(),
+        )
+        .unwrap();
+
+        let started = Arc::new(AtomicBool::new(false));
+        let flag = started.clone();
+        let outcome = attach_or_start_backend_with_race(
+            Duration::from_secs(2),
+            Some(path.clone()),
+            || None,
+            move || {
+                flag.store(true, Ordering::Relaxed);
+                Ok(())
+            },
+            |_| {},
+        )
+        .await
+        .expect("a dead holder must not block startup");
+
+        assert!(matches!(outcome, BackendStartup::Started));
+        assert!(started.load(Ordering::Relaxed));
+        assert!(!path.exists(), "the guard must release the lock");
+    }
+
+    /// #2757: a live holder that never publishes blocks the second frontend
+    /// until the timeout; a blocked startup never starts a second backend.
+    #[tokio::test]
+    async fn startup_race_gives_up_while_a_live_process_holds_the_lock() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = temp_lock_path(&dir);
+
+        let mut child = live_holder_child();
+        std::fs::write(
+            &path,
+            serde_json::json!({ "pid": child.id(), "acquired_at_ms": 1 }).to_string(),
+        )
+        .unwrap();
+
+        let started = Arc::new(AtomicBool::new(false));
+        let flag = started.clone();
+        let err = attach_or_start_backend_with_race(
+            Duration::from_millis(300),
+            Some(path),
+            || None,
+            move || {
+                flag.store(true, Ordering::Relaxed);
+                Ok(())
+            },
+            |_| {},
+        )
+        .await
+        .expect_err("a live holder must block a second backend");
+
+        let _ = child.kill();
+        assert!(err.contains("startup lock"), "unexpected error: {err}");
+        assert!(
+            !started.load(Ordering::Relaxed),
+            "a blocked startup must never start a second backend"
+        );
     }
 }
