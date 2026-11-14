@@ -1,5 +1,9 @@
 //! Per-runtime discovery records for running backends — not locks.
 //!
+//! The #2757 startup lock lives beside the records as
+//! `<db file>.backend.lock` and is owned by `server::startup_lock`;
+//! the records themselves stay lock-free.
+//!
 //! Every backend process writes its own small JSON file next to its
 //! database: `<db file>.backend.<pid>.json`, holding who it is (`pid`) and
 //! where it listens (`port`). Another process on the same profile reads the
@@ -19,7 +23,7 @@ use serde::{Deserialize, Serialize};
 use std::net::{Ipv4Addr, SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Middle of every record name, between the database file name and the pid.
 const RECORD_INFIX: &str = ".backend.";
@@ -201,6 +205,48 @@ fn unpublish_at(db_path: &Path, pid: u32) -> std::io::Result<()> {
 pub fn unpublish() {
     if let Some(db_path) = DB_PATH.get() {
         let _ = unpublish_at(db_path, std::process::id());
+    }
+}
+
+/// Startup lock file for this database's descriptor namespace (#2757).
+///
+/// Named like [`record_path_for`] but without a pid: one lock per
+/// profile. It does not end in the record suffix, so record scanners
+/// skip it.
+pub fn startup_lock_path() -> Option<PathBuf> {
+    let db_path = DB_PATH.get()?;
+    let mut name = db_path
+        .file_name()
+        .map(|name| name.to_os_string())
+        .unwrap_or_default();
+    name.push(".backend.lock");
+    Some(db_path.with_file_name(name))
+}
+
+/// True once this process has published its own record and its port
+/// accepts a loopback connection.
+fn own_record_is_live() -> bool {
+    let Some(db_path) = DB_PATH.get() else {
+        return false;
+    };
+    let path = record_path_for(db_path, std::process::id());
+    match read_descriptor(&path) {
+        Some(descriptor) => descriptor.port != 0 && loopback_port_accepts(descriptor.port),
+        None => false,
+    }
+}
+
+/// Block until this process's own backend record is live, or `timeout`
+/// elapses. The startup-race winner calls this before releasing the
+/// startup lock, so the loser's re-check under the lock can find the
+/// published record instead of starting a second backend (#2757).
+pub fn wait_until_own_record_live(timeout: Duration) {
+    let deadline = Instant::now() + timeout;
+    while !own_record_is_live() {
+        if Instant::now() >= deadline {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(50));
     }
 }
 

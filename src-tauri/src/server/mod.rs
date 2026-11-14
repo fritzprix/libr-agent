@@ -10,6 +10,7 @@ pub mod pairing;
 pub mod readiness;
 pub mod routes;
 pub mod shared_backend;
+pub mod startup_lock;
 pub mod wake;
 pub mod wake_listener;
 
