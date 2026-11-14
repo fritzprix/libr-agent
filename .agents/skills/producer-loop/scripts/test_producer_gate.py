@@ -4,11 +4,13 @@ import contextlib
 import io
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import producer_gate
 
@@ -21,6 +23,11 @@ class ProducerGateTest(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         self.state_file = Path(self._tmp.name) / "state.json"
         self.lock_file = Path(self._tmp.name) / "tick.lock"
+        # The skills-freshness gate runs real git; it is stubbed here and
+        # covered by its own tests below and in loop-shared test_skills_freshness.py.
+        env = mock.patch.dict(os.environ, {producer_gate.skills_freshness.SKIP_GATE_ENV: "1"})
+        env.start()
+        self.addCleanup(env.stop)
 
     def run_gate(self, *argv):
         out = io.StringIO()
@@ -93,6 +100,54 @@ class ProducerGateTest(unittest.TestCase):
 
     def test_state_path_uses_producer_loop_directory(self):
         self.assertEqual(producer_gate.default_state_path().parts[-2:], (".producer-loop", "state.json"))
+
+    # --- skills-freshness gate (setUp skips it; these tests re-enable it) ---
+
+    def run_gate_with_freshness(self, *argv):
+        """run_gate with the freshness-skip env removed; return (code, stderr)."""
+        os.environ.pop(producer_gate.skills_freshness.SKIP_GATE_ENV, None)
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            code, _ = self.run_gate(*argv)
+        return code, err.getvalue()
+
+    def test_stale_skills_exits_5_without_taking_the_lock(self):
+        # G1.1: stale skills exit 5 before tick.lock is acquired.
+        stale = (False, "skills under .agents/skills differ from origin/dev/0.9.x")
+        with mock.patch.object(producer_gate.skills_freshness, "resolve_base_branch", return_value="dev/0.9.x"), \
+             mock.patch.object(producer_gate.skills_freshness, "check_skills_fresh", return_value=stale):
+            code, err = self.run_gate_with_freshness("--lock", "--pid", str(os.getpid()))
+        self.assertEqual(code, producer_gate.skills_freshness.GATE_STALE_EXIT)
+        self.assertIn("differ", err)
+        self.assertFalse(self.lock_file.exists())
+
+    def test_unresolvable_dev_base_exits_error(self):
+        # G1.2: an unresolvable dev base is EXIT_ERROR, never a stale verdict.
+        error = producer_gate.skills_freshness.SkillsFreshnessError("could not resolve the dev base branch")
+        with mock.patch.object(producer_gate.skills_freshness, "resolve_base_branch", side_effect=error):
+            code, err = self.run_gate_with_freshness("--lock", "--pid", str(os.getpid()))
+        self.assertEqual(code, producer_gate.EXIT_ERROR)
+        self.assertIn("dev base", err)
+        self.assertFalse(self.lock_file.exists())
+
+    def test_git_fetch_failure_exits_error_not_stale(self):
+        # G1.3: a fetch failure is EXIT_ERROR, not stale (5).
+        error = producer_gate.skills_freshness.SkillsFreshnessError("git fetch origin dev/0.9.x failed")
+        with mock.patch.object(producer_gate.skills_freshness, "resolve_base_branch", return_value="dev/0.9.x"), \
+             mock.patch.object(producer_gate.skills_freshness, "check_skills_fresh", side_effect=error):
+            code, err = self.run_gate_with_freshness("--lock", "--pid", str(os.getpid()))
+        self.assertEqual(code, producer_gate.EXIT_ERROR)
+        self.assertIn("git fetch", err)
+        self.assertFalse(self.lock_file.exists())
+
+    def test_repo_root_failure_exits_error_without_traceback(self):
+        # G1.3: CalledProcessError from _repo_root must be a clean EXIT_ERROR.
+        root_error = subprocess.CalledProcessError(128, ["git", "rev-parse", "--show-toplevel"])
+        with mock.patch.object(producer_gate.skills_freshness, "_repo_root", side_effect=root_error):
+            code, err = self.run_gate_with_freshness("--lock", "--pid", str(os.getpid()))
+        self.assertEqual(code, producer_gate.EXIT_ERROR)
+        self.assertIn("skills freshness check error", err)
+        self.assertFalse(self.lock_file.exists())
 
 
 if __name__ == "__main__":

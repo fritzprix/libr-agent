@@ -47,7 +47,7 @@ Tasks: `security`, `e2e`, `uiux`, `regression`, `usage-logs`, `doc-drift`, `clea
 
 ## Tick procedure
 
-1. Gate and lock: `python3 .agents/skills/producer-loop/scripts/producer_gate.py --lock` (or `--task <task> --lock`).
+1. Gate and lock: `python3 .agents/skills/producer-loop/scripts/producer_gate.py --lock` (or `--task <task> --lock`). Exit 5 means `.agents/skills` differs from `origin/<dev base>`; stop and report.
    - `BUSY`: another tick runs. Stop. Do not unlock; the lock is not yours.
    - `NOOP`: print `NOOP` and stop.
    - `RUN <task>`: continue. The lock has the same TTL (30 min) and PID rules as `tick_gate.py`.

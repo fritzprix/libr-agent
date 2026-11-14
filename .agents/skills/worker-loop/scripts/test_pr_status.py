@@ -10,6 +10,7 @@ import pr_status
 
 class SelectNextActionTest(unittest.TestCase):
     base = dict(
+        turn="none",
         conflicting=False, gatekeeper=None,
         has_comments=False, failing=[], pending=[],
     )
@@ -19,6 +20,7 @@ class SelectNextActionTest(unittest.TestCase):
 
     def test_priority_order(self):
         everything = dict(
+            turn="worker",
             conflicting=True, gatekeeper={"awaitingWorker": True},
             has_comments=True, failing=["ci"], pending=["ci"],
         )
@@ -41,6 +43,23 @@ class SelectNextActionTest(unittest.TestCase):
 
     def test_a_clean_pr_needs_no_action(self):
         self.assertEqual(self.action(), "none")
+
+    def test_gatekeeper_turn_blocks_issue_work(self):
+        self.assertEqual(
+            self.action(turn="gatekeeper"),
+            "wait-gatekeeper",
+        )
+
+    def test_stale_verdict_on_new_head_waits_for_gatekeeper(self):
+        gk = {
+            "verdict": "changes-requested",
+            "head": "sha1",
+            "awaitingWorker": False,
+        }
+        self.assertEqual(
+            self.action(turn="gatekeeper", gatekeeper=gk),
+            "wait-gatekeeper",
+        )
 
 
 class MarkerAndGatekeeperStateTest(unittest.TestCase):

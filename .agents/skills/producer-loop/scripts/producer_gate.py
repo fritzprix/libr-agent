@@ -12,7 +12,7 @@ Usage:
   producer_gate.py --unlock             -> release tick.lock
   producer_gate.py --status             -> print periods and last runs
 
-Exit codes: 0 RUN or done, 1 NOOP, 2 BUSY, 3 ERROR.
+Exit codes: 0 RUN or done, 1 NOOP, 2 BUSY, 3 ERROR, 5 SKILLS STALE.
 """
 from __future__ import annotations
 
@@ -45,6 +45,12 @@ def _load_tick_gate():
 
 
 tick_gate = _load_tick_gate()
+
+_LOOP_SHARED = Path(__file__).resolve().parents[2] / "loop-shared" / "scripts"
+if str(_LOOP_SHARED) not in sys.path:
+    sys.path.insert(0, str(_LOOP_SHARED))
+
+import skills_freshness  # noqa: E402
 
 
 def default_state_path() -> Path:
@@ -109,6 +115,10 @@ def main(argv: list[str] | None = None) -> int:
         if tick_gate.check_lock(lock_path):
             print("BUSY (tick in progress)")
             return EXIT_BUSY
+
+        stale = skills_freshness.gate_skills_freshness()
+        if stale is not None:
+            return stale
 
         task = args.task or select_due_task(state, time.time())
         if task is None:

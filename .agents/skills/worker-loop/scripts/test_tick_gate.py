@@ -3,6 +3,7 @@
 import io
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import time
@@ -13,6 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import issue_candidates
 import tick_gate
+import worker_slots
 
 
 def approvals_issue(number, labels=(), assignees=()):
@@ -30,7 +32,10 @@ class TickGateTest(unittest.TestCase):
         self.tmp_dir = Path(self._tmp.name)
         self.state_file = self.tmp_dir / "state.json"
         self.lock_file = self.tmp_dir / "tick.lock"
-        self._loop_env = patch.dict(os.environ, {"LOOP_STATE_DIR": str(self.tmp_dir)})
+        self._loop_env = patch.dict(
+            os.environ,
+            {"LOOP_STATE_DIR": str(self.tmp_dir), tick_gate.skills_freshness.SKIP_GATE_ENV: "1"},
+        )
         self._loop_env.start()
         self.addCleanup(self._loop_env.stop)
         for name in ("WORKER_ID", "WORKER_LOOP_SESSION_ID", "CLAUDE_CODE_SESSION_ID", "WORKER_LOOP_HOLDER_PID",
@@ -267,6 +272,59 @@ class TickGateTest(unittest.TestCase):
             self.assertIsNone(saved.get("lastFingerprint"))
             self.assertNotIn("tickStartFingerprint", saved)
             self.assertEqual(self._run("--lock")[0], tick_gate.EXIT_RUN)
+
+    # --- skills-freshness gate (setUp skips it; these tests re-enable it) ---
+
+    def _no_freshness_skip(self):
+        # patch.dict in setUp restores the original env on cleanup, so popping
+        # here only affects this test.
+        os.environ.pop(tick_gate.skills_freshness.SKIP_GATE_ENV, None)
+
+    def test_lock_exits_skills_stale_without_taking_a_slot(self):
+        # G1.1: stale skills exit 5 before a slot or lease is taken.
+        self._no_freshness_skip()
+        stale = (False, "skills under .agents/skills differ from origin/dev/0.9.x")
+        with patch.object(tick_gate.skills_freshness, "resolve_base_branch", return_value="dev/0.9.x"), \
+             patch.object(tick_gate.skills_freshness, "check_skills_fresh", return_value=stale):
+            code, out = self._run("--lock")
+        self.assertEqual(code, tick_gate.skills_freshness.GATE_STALE_EXIT)
+        self.assertIn("differ", out)
+        self.assertNotIn("TOKEN", out)
+        self.assertEqual(worker_slots.load_slots(), {})
+
+    def test_lock_errors_when_dev_base_unresolvable(self):
+        # G1.2: an unresolvable dev base is EXIT_ERROR, never a stale verdict.
+        self._no_freshness_skip()
+        error = tick_gate.skills_freshness.SkillsFreshnessError("could not resolve the dev base branch")
+        with patch.object(tick_gate.skills_freshness, "resolve_base_branch", side_effect=error):
+            code, out = self._run("--lock")
+        self.assertEqual(code, tick_gate.EXIT_ERROR)
+        self.assertIn("dev base", out)
+        self.assertNotIn("TOKEN", out)
+        self.assertEqual(worker_slots.load_slots(), {})
+
+    def test_lock_errors_when_git_fetch_fails(self):
+        # G1.3: a fetch failure inside the check is EXIT_ERROR, not stale (5).
+        self._no_freshness_skip()
+        error = tick_gate.skills_freshness.SkillsFreshnessError("git fetch origin dev/0.9.x failed")
+        with patch.object(tick_gate.skills_freshness, "resolve_base_branch", return_value="dev/0.9.x"), \
+             patch.object(tick_gate.skills_freshness, "check_skills_fresh", side_effect=error):
+            code, out = self._run("--lock")
+        self.assertEqual(code, tick_gate.EXIT_ERROR)
+        self.assertIn("git fetch", out)
+        self.assertNotIn("TOKEN", out)
+        self.assertEqual(worker_slots.load_slots(), {})
+
+    def test_lock_errors_when_repo_root_fails(self):
+        # G1.3: CalledProcessError from _repo_root must be a clean EXIT_ERROR.
+        self._no_freshness_skip()
+        root_error = subprocess.CalledProcessError(128, ["git", "rev-parse", "--show-toplevel"])
+        with patch.object(tick_gate.skills_freshness, "_repo_root", side_effect=root_error):
+            code, out = self._run("--lock")
+        self.assertEqual(code, tick_gate.EXIT_ERROR)
+        self.assertIn("skills freshness check error", out)
+        self.assertNotIn("TOKEN", out)
+        self.assertEqual(worker_slots.load_slots(), {})
 
 
 class PendingApprovedIssueTest(unittest.TestCase):
