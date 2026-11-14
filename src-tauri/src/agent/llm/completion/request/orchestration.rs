@@ -1,6 +1,8 @@
 #![allow(clippy::result_large_err)]
 
+use crate::agent::events::AgentEventDispatcher;
 use crate::agent::state::AgentSession;
+use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
 use crate::repositories::compact_context_repository::CompactContextRepository;
@@ -662,7 +664,7 @@ async fn check_token_limit(
         session_id: session_id.to_string(),
         metrics: preflight_metrics,
     };
-    let _ = crate::agent::tauri_events::emit_agent_event(app_handle, event);
+    let _ = TauriEventDispatcher::from_handle(app_handle).emit_agent_event(event);
 
     if total_budget_tokens < safe_input_token_limit {
         return Ok(final_messages);

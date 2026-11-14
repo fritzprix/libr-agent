@@ -398,7 +398,7 @@ pub(crate) async fn try_trigger_preflight_compaction(
     } else {
         CompactionKind::Manual
     };
-    let dispatcher = TauriEventDispatcher::new((*app_handle).clone());
+    let dispatcher = TauriEventDispatcher::from_handle(app_handle);
     match compaction
         .try_begin(
             kind,

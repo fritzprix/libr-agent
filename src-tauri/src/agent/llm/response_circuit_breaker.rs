@@ -3,7 +3,7 @@
 //! Evaluates loop-prevention and experimental resample-then-break policy before
 //! assistant messages are cached, persisted, or executed.
 
-use crate::agent::events::AgentEvent;
+use crate::agent::events::{AgentEvent, AgentEventDispatcher};
 use crate::agent::llm::circuit_breaker;
 use crate::agent::llm::completion::request::apply_compact_summary_projection;
 use crate::agent::llm::natural_recovery::{LoopPreventionKind, LoopPreventionShortCircuit};
@@ -13,6 +13,7 @@ use crate::agent::llm::token_utils::{
     derive_measured_output_tokens_reserve, estimate_text_tokens, try_derive_bpe_calibration_ratio,
 };
 use crate::agent::state::{AgentSession, CompactionRecoveryPhase};
+use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::agent::tools::{
     create_tool_result_message, tool_result_inline_limit_bytes,
     tool_result_preview_content_limit_bytes,
@@ -589,8 +590,7 @@ fn emit_circuit_breaker_triggered(session_id: &str, tool_name: &str, count: usiz
     let Some(app_handle) = crate::state::get_app_handle() else {
         return;
     };
-    let _ = crate::agent::tauri_events::emit_agent_event(
-        app_handle,
+    let _ = TauriEventDispatcher::from_handle(app_handle).emit_agent_event(
         AgentEvent::CircuitBreakerTriggered {
             session_id: session_id.to_string(),
             tool_name: safe_tool,

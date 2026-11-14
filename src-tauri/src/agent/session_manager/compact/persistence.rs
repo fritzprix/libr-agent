@@ -234,7 +234,7 @@ pub(super) async fn abort_empty_delta_compaction_and_resume(
 
     // Still emit Failed so UI clears compacting/awaiting flags; frontend silences
     // the toast for EMPTY_DELTA_NOOP_ERROR (intentional skip, not a user error).
-    let dispatcher = TauriEventDispatcher::new((*context.app_handle).clone());
+    let dispatcher = TauriEventDispatcher::from_handle(context.app_handle);
     if let Err(error) = dispatcher.emit_compact_finished(
         context.session_id.to_string(),
         context.session_name,
@@ -342,7 +342,7 @@ pub(super) async fn persist_compact_summary_and_resume(
             CompactionResumeAction::ResumeCompletion => "resume_completion",
         }
     );
-    let dispatcher = TauriEventDispatcher::new((*context.app_handle).clone());
+    let dispatcher = TauriEventDispatcher::from_handle(context.app_handle);
     if let Err(error) = dispatcher.emit_compact_finished(
         context.session_id.to_string(),
         context.session_name,

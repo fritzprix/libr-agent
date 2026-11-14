@@ -1,8 +1,10 @@
+use crate::agent::events::AgentEventDispatcher;
 use crate::agent::llm::natural_recovery::{
     build_loop_prevention_guidance, loop_prevention_tool_result, LoopPreventionShortCircuit,
 };
 use crate::agent::state::AgentSession;
 use crate::agent::state::PendingApprovalKind;
+use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::agent::tool_approvals::{ToolApprovalRequest, ToolExecutionPolicyDecision};
 use crate::agent::types::{ToolCall, ToolCallFunction};
 use crate::commands::agent_commands::{ToolCancellation, ToolExecutionResult};
@@ -35,7 +37,9 @@ impl ToolExecutionContext<'_> {
             session_id: self.session_id.to_string(),
             tool_name: tool_name.to_string(),
         };
-        if let Err(error) = crate::agent::tauri_events::emit_agent_event(self.app_handle, event) {
+        if let Err(error) =
+            TauriEventDispatcher::from_handle(self.app_handle).emit_agent_event(event)
+        {
             log::error!("Failed to emit tool execution started event: {}", error);
         }
     }
@@ -177,7 +181,7 @@ impl ToolExecutionContext<'_> {
             input_preview: input_preview.clone(),
         };
         if let Err(error) =
-            crate::agent::tauri_events::emit_agent_event(self.app_handle, approval_event)
+            TauriEventDispatcher::from_handle(self.app_handle).emit_agent_event(approval_event)
         {
             log::error!(
                 "Failed to emit ToolExecutionRequiresApproval event: {}",
@@ -198,7 +202,7 @@ impl ToolExecutionContext<'_> {
                 input_preview: input_preview.clone(),
             };
             if let Err(error) =
-                crate::agent::tauri_events::emit_agent_event(self.app_handle, channel_event)
+                TauriEventDispatcher::from_handle(self.app_handle).emit_agent_event(channel_event)
             {
                 log::error!("Failed to emit ChannelPermissionRequest event: {}", error);
             }

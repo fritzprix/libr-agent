@@ -12,6 +12,15 @@ impl TauriEventDispatcher {
     pub fn new(app_handle: AppHandle) -> Self {
         Self { app_handle }
     }
+
+    /// The same dispatcher from a borrowed handle. Runtime code that only ever
+    /// holds `&AppHandle` (the llm paths do) takes the dispatcher from here
+    /// instead of spelling out the clone at every emit site (#2772).
+    pub fn from_handle(app_handle: &AppHandle) -> Self {
+        Self {
+            app_handle: (*app_handle).clone(),
+        }
+    }
 }
 
 impl AgentEventDispatcher for TauriEventDispatcher {
@@ -24,7 +33,11 @@ impl AgentEventDispatcher for TauriEventDispatcher {
     }
 
     fn emit_completion_cancel(&self, request: CompletionCancelRequest) -> Result<(), String> {
-        emit_completion_cancel(&self.app_handle, request)
+        // A call running in the Rust executor has no frontend stream to abort.
+        crate::agent::llm::rust_executor::cancel(&request.session_id);
+        self.app_handle
+            .emit("llm:completion-cancel", request)
+            .map_err(|e| format!("Failed to emit llm:completion-cancel: {}", e))
     }
 }
 
@@ -64,17 +77,6 @@ pub fn emit_compact_request(app_handle: &AppHandle, event: CompactRequest) -> Re
     app_handle
         .emit("llm:compact-request", event)
         .map_err(|e| format!("Failed to emit llm:compact-request: {}", e))
-}
-
-pub fn emit_completion_cancel(
-    app_handle: &AppHandle,
-    event: CompletionCancelRequest,
-) -> Result<(), String> {
-    // A call running in the Rust executor has no frontend stream to abort.
-    crate::agent::llm::rust_executor::cancel(&event.session_id);
-    app_handle
-        .emit("llm:completion-cancel", event)
-        .map_err(|e| format!("Failed to emit llm:completion-cancel: {}", e))
 }
 
 /// Emit a resource update event (convenience wrapper)
