@@ -1,4 +1,5 @@
 use super::AgentSessionManager;
+use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::repositories::planning_repository::PlanningRepository;
 use tauri::Manager;
 
@@ -94,7 +95,7 @@ pub(crate) async fn reset_session(
     // 5. Drop durable + in-memory pending waiters (clear is a hard reset)
     if let Err(e) = crate::agent::pending_queue::discard_all_pending_messages(
         &manager.active_sessions,
-        Some(&manager.app_handle),
+        Some(&TauriEventDispatcher::from_handle(&manager.app_handle)),
         session_id,
     )
     .await

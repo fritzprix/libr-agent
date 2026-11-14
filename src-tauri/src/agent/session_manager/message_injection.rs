@@ -324,7 +324,7 @@ impl AgentSessionManager {
         self.ensure_session_active(session_id).await?;
         crate::agent::pending_queue::cancel_pending_message(
             &self.active_sessions,
-            &self.app_handle,
+            &TauriEventDispatcher::from_handle(&self.app_handle),
             session_id,
             message_id,
         )

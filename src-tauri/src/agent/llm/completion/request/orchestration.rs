@@ -277,7 +277,7 @@ async fn process_pending_messages(
 ) -> Result<(), AgentRuntimeError> {
     match crate::agent::pending_queue::claim_all_pending_messages(
         active_sessions,
-        app_handle,
+        &TauriEventDispatcher::from_handle(app_handle),
         session_id,
     )
     .await

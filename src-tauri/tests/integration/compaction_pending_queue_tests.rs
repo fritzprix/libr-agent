@@ -21,6 +21,7 @@ use tauri_mcp_agent_lib::agent::state::{
     AgentSession, CompactionKind, CompactionPhase, CompactionResumeAction, CompactionRuntimeState,
     InFlightCompaction, PendingEvent, PendingEventManager,
 };
+use tauri_mcp_agent_lib::agent::tauri_events::TauriEventDispatcher;
 use tauri_mcp_agent_lib::agent::workflow::{
     compact_pending_continue_kind, CompactPendingContinueKind,
 };
@@ -452,7 +453,7 @@ async fn preflight_pending_is_claimed_on_resumed_turn() {
     let during_compact = build_user_message(&session_id, "msg-during-preflight", 2_000);
     tauri_mcp_agent_lib::agent::pending_queue::enqueue_pending_user_message(
         &active_sessions,
-        app_handle,
+        &TauriEventDispatcher::from_handle(app_handle),
         &session_id,
         &during_compact,
     )
@@ -477,7 +478,7 @@ async fn preflight_pending_is_claimed_on_resumed_turn() {
 
     let claimed = tauri_mcp_agent_lib::agent::pending_queue::claim_all_pending_messages(
         &active_sessions,
-        app_handle,
+        &TauriEventDispatcher::from_handle(app_handle),
         &session_id,
     )
     .await
@@ -526,7 +527,7 @@ async fn race_enqueue_after_claim_leaves_remainder_for_next_turn() {
     let first = build_user_message(&session_id, "race-first", 1_000);
     tauri_mcp_agent_lib::agent::pending_queue::enqueue_pending_user_message(
         &active_sessions,
-        app_handle,
+        &TauriEventDispatcher::from_handle(app_handle),
         &session_id,
         &first,
     )
@@ -535,7 +536,7 @@ async fn race_enqueue_after_claim_leaves_remainder_for_next_turn() {
 
     let claimed = tauri_mcp_agent_lib::agent::pending_queue::claim_all_pending_messages(
         &active_sessions,
-        app_handle,
+        &TauriEventDispatcher::from_handle(app_handle),
         &session_id,
     )
     .await
@@ -546,7 +547,7 @@ async fn race_enqueue_after_claim_leaves_remainder_for_next_turn() {
     let second = build_user_message(&session_id, "race-second", 2_000);
     tauri_mcp_agent_lib::agent::pending_queue::enqueue_pending_user_message(
         &active_sessions,
-        app_handle,
+        &TauriEventDispatcher::from_handle(app_handle),
         &session_id,
         &second,
     )

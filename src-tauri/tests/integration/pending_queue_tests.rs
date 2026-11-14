@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::test::MockRuntime;
 use tauri_mcp_agent_lib::agent::state::{AgentSession, PendingEvent, PendingEventManager};
+use tauri_mcp_agent_lib::agent::tauri_events::TauriEventDispatcher;
 use tauri_mcp_agent_lib::agent::ExecutionMode;
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
 use tauri_mcp_agent_lib::models::chat::Message;
@@ -161,7 +162,7 @@ async fn claim_all_pending_messages_promotes_every_queued_prompt_in_one_turn() {
     for msg in [&msg_a, &msg_b, &msg_c] {
         tauri_mcp_agent_lib::agent::pending_queue::enqueue_pending_user_message(
             &active_sessions,
-            app_handle,
+            &TauriEventDispatcher::from_handle(app_handle),
             &session_id,
             msg,
         )
@@ -179,7 +180,7 @@ async fn claim_all_pending_messages_promotes_every_queued_prompt_in_one_turn() {
 
     let claimed = tauri_mcp_agent_lib::agent::pending_queue::claim_all_pending_messages(
         &active_sessions,
-        app_handle,
+        &TauriEventDispatcher::from_handle(app_handle),
         &session_id,
     )
     .await
@@ -285,7 +286,7 @@ async fn claim_all_pending_messages_caps_batch_and_leaves_fifo_remainder() {
         );
         tauri_mcp_agent_lib::agent::pending_queue::enqueue_pending_user_message(
             &active_sessions,
-            app_handle,
+            &TauriEventDispatcher::from_handle(app_handle),
             &session_id,
             &msg,
         )
@@ -295,7 +296,7 @@ async fn claim_all_pending_messages_caps_batch_and_leaves_fifo_remainder() {
 
     let claimed = tauri_mcp_agent_lib::agent::pending_queue::claim_all_pending_messages(
         &active_sessions,
-        app_handle,
+        &TauriEventDispatcher::from_handle(app_handle),
         &session_id,
     )
     .await
@@ -911,7 +912,7 @@ async fn claim_all_pending_messages_preserves_non_user_messages_without_merging(
     for msg in [&tool_call_msg, &tool_result_msg] {
         tauri_mcp_agent_lib::agent::pending_queue::enqueue_pending_user_message(
             &active_sessions,
-            app_handle,
+            &TauriEventDispatcher::from_handle(app_handle),
             &session_id,
             msg,
         )
@@ -921,7 +922,7 @@ async fn claim_all_pending_messages_preserves_non_user_messages_without_merging(
 
     let claimed = tauri_mcp_agent_lib::agent::pending_queue::claim_all_pending_messages(
         &active_sessions,
-        app_handle,
+        &TauriEventDispatcher::from_handle(app_handle),
         &session_id,
     )
     .await
@@ -1060,7 +1061,7 @@ async fn claim_all_pending_messages_merges_consecutive_user_messages_in_mixed_ba
     for msg in [&user_1, &user_2, &tool_msg] {
         tauri_mcp_agent_lib::agent::pending_queue::enqueue_pending_user_message(
             &active_sessions,
-            app_handle,
+            &TauriEventDispatcher::from_handle(app_handle),
             &session_id,
             msg,
         )
@@ -1070,7 +1071,7 @@ async fn claim_all_pending_messages_merges_consecutive_user_messages_in_mixed_ba
 
     let claimed = tauri_mcp_agent_lib::agent::pending_queue::claim_all_pending_messages(
         &active_sessions,
-        app_handle,
+        &TauriEventDispatcher::from_handle(app_handle),
         &session_id,
     )
     .await
@@ -1210,7 +1211,7 @@ async fn take_pending_message_ids_leaves_arrivals_after_snapshot() {
     let second = build_user_message_with_text(&session_id, "snap-second", 2_000, "second");
     tauri_mcp_agent_lib::agent::pending_queue::enqueue_pending_user_message(
         &active_sessions,
-        app_handle,
+        &TauriEventDispatcher::from_handle(app_handle),
         &session_id,
         &first,
     )
@@ -1233,7 +1234,7 @@ async fn take_pending_message_ids_leaves_arrivals_after_snapshot() {
     // Arrival after snapshot must survive a targeted take.
     tauri_mcp_agent_lib::agent::pending_queue::enqueue_pending_user_message(
         &active_sessions,
-        app_handle,
+        &TauriEventDispatcher::from_handle(app_handle),
         &session_id,
         &second,
     )

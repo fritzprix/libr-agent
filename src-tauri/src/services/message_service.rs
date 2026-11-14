@@ -312,7 +312,7 @@ impl MessageService {
     ) -> Result<(), String> {
         crate::agent::pending_queue::enqueue_pending_user_message(
             active_sessions,
-            app_handle,
+            &TauriEventDispatcher::from_handle(app_handle),
             session_id,
             user_message,
         )
@@ -426,7 +426,7 @@ impl MessageService {
             for msg in user_messages {
                 crate::agent::pending_queue::enqueue_pending_user_message(
                     active_sessions,
-                    app_handle,
+                    &TauriEventDispatcher::from_handle(app_handle),
                     session_id,
                     &msg,
                 )
