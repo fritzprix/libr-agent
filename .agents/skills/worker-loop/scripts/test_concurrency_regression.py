@@ -653,6 +653,91 @@ class WorktreeIsolationTest(StateDirCase):
             _git(self.remote, "rev-parse", "refs/heads/fix/a-1"), _git(self.wt("worker"), "rev-parse", "HEAD")
         )
 
+    ORPHANED_AGE = worker_slots.DEFAULT_ORPHAN_AFTER_SECONDS + 60
+
+    def leave_orphan(self, owner=None, age=ORPHANED_AGE):
+        """A run in `worker` that committed, left changes, and died on fix/a-1."""
+        dead = lease.acquire(owner or anon("dead"), requested="worker")
+        wt = self.wt("worker")
+        _git(wt, "switch", "-q", "-C", "fix/a-1", "origin/fix/a-1")
+        (wt / "file.txt").write_text("committed, never pushed\n")
+        _git(wt, "commit", "-qam", "unpushed")
+        (wt / "file.txt").write_text("uncommitted\n")
+        (wt / "new.txt").write_text("untracked\n")
+        self.set_state("worker", {"current": {"ref": "issue:1", "branch": "fix/a-1"}})
+        self.assertIsNone(worker_claims.claim("worker", "issue:1"))
+        self.age("worker", age)
+        return dead
+
+    def takeover(self, held, *extra):
+        return self.run_tool("takeover", "--worker", held.worker, "--token", held.token,
+                             "--wt", str(self.wt(held.worker)), "--from", "worker", *extra)
+
+    def test_takeover_resumes_an_orphaned_slots_work(self):
+        dead = self.leave_orphan()
+        unpushed = _git(self.wt("worker"), "rev-parse", "HEAD")
+        me = lease.acquire(anon("me"), requested="worker-2")
+        code, out = self.takeover(me)
+        self.assertEqual(code, 0, out)
+        self.assertIn("TOOK OVER issue:1 from worker on fix/a-1", out)
+        mine = self.wt("worker-2")
+        self.assertEqual(_git(mine, "branch", "--show-current"), "fix/a-1")
+        self.assertEqual(_git(mine, "rev-parse", "HEAD~1"), unpushed)
+        self.assertEqual((mine / "file.txt").read_text(), "uncommitted\n")
+        self.assertEqual((mine / "new.txt").read_text(), "untracked\n")
+        self.assertEqual(_git(self.wt("worker"), "branch", "--show-current"), "")
+        self.assertEqual(worker_claims.load_claims()["issue:1"]["worker"], "worker-2")
+        self.assertIsNone(worker_state.read_json(worker_state.state_path("worker"))["current"])
+        self.assertEqual(
+            worker_state.read_json(worker_state.state_path("worker-2"))["current"],
+            {"ref": "issue:1", "branch": "fix/a-1"},
+        )
+        self.assertFalse(lease.renew("worker", dead.token), "the dead run must be fenced")
+        self.assertEqual(worker_slots.orphaned_slots(), [])
+
+    def test_recently_dead_slot_is_not_taken_over(self):
+        self.leave_orphan(age=worker_state.LEASE_TTL_SECONDS + 60)
+        me = lease.acquire(anon("me"), requested="worker-2")
+        code, out = self.takeover(me)
+        self.assertEqual(code, worker_worktree.EXIT_BRANCH_BUSY, out)
+        self.assertIn("NOT ORPHANED worker", out)
+        self.assertEqual(_git(self.wt("worker"), "branch", "--show-current"), "fix/a-1")
+        self.assertEqual(worker_claims.load_claims()["issue:1"]["worker"], "worker")
+
+    def test_orphan_threshold_is_configurable(self):
+        self.leave_orphan(age=worker_state.LEASE_TTL_SECONDS + 60)
+        me = lease.acquire(anon("me"), requested="worker-2")
+        with patch.dict(os.environ, {worker_slots.ORPHAN_AFTER_ENV: str(worker_state.LEASE_TTL_SECONDS)}):
+            self.assertEqual([o["worker"] for o in worker_slots.orphaned_slots()], ["worker"])
+        code, out = self.takeover(me, "--orphan-after", str(worker_state.LEASE_TTL_SECONDS))
+        self.assertEqual(code, 0, out)
+
+    def test_live_pid_bound_run_is_never_orphaned(self):
+        self.leave_orphan(owner=live_session("dead"))
+        self.assertEqual(worker_slots.orphaned_slots(), [])
+        code, out = self.takeover(lease.acquire(anon("me"), requested="worker-2"))
+        self.assertEqual(code, worker_worktree.EXIT_BRANCH_BUSY, out)
+        self.assertEqual((self.wt("worker") / "file.txt").read_text(), "uncommitted\n")
+
+    def test_slot_without_current_work_is_not_orphaned(self):
+        self.leave_orphan()
+        self.set_state("worker", {"current": None})
+        self.assertEqual(worker_slots.orphaned_slots(), [])
+
+    def test_takeover_refuses_while_this_slot_has_its_own_work(self):
+        self.leave_orphan()
+        me = lease.acquire(anon("me"), requested="worker-2")
+        self.set_state("worker-2", {"current": {"ref": "issue:2", "branch": "fix/b-2"}})
+        code, out = self.takeover(me)
+        self.assertEqual(code, worker_worktree.EXIT_ERROR, out)
+        self.assertEqual(worker_slots.orphaned_slots()[0]["worker"], "worker")
+
+    def test_status_reports_orphaned_slots(self):
+        self.leave_orphan()
+        report = worker_state.status()
+        self.assertEqual([(o["worker"], o["ref"]) for o in report["orphaned"]], [("worker", "issue:1")])
+        self.assertTrue(report["workers"]["worker"]["orphaned"])
+
 
 class LeaseRunTest(StateDirCase):
     def lease_run(self, *args, env=None, **kwargs):

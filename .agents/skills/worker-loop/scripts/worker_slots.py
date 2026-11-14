@@ -9,10 +9,12 @@ cannot disturb the next owner.
 """
 from __future__ import annotations
 
+import os
 import re
 import time
 from pathlib import Path
 
+import tick_lock
 import worker_state
 from worker_state import Owner, exclusive, lease_expired, lease_is_live, read_json
 
@@ -157,3 +159,85 @@ def find_worker_by_token(token: str, path: Path | None = None) -> str | None:
 
 def live_workers(path: Path | None = None) -> set[str]:
     return {name for name, record in load_slots(path).items() if lease_is_live(record)}
+
+
+ORPHAN_AFTER_ENV = "WORKER_LOOP_ORPHAN_SECONDS"
+DEFAULT_ORPHAN_AFTER_SECONDS = 7200
+
+
+def orphan_after_seconds() -> int:
+    """How long a dead slot must stay silent before its work may be taken over."""
+    raw = os.environ.get(ORPHAN_AFTER_ENV, "").strip()
+    if not raw:
+        return DEFAULT_ORPHAN_AFTER_SECONDS
+    try:
+        seconds = int(raw)
+    except ValueError:
+        raise ValueError(f"{ORPHAN_AFTER_ENV} must be a whole number of seconds, got {raw!r}") from None
+    if seconds <= 0:
+        raise ValueError(f"{ORPHAN_AFTER_ENV} must be positive, got {seconds}")
+    return seconds
+
+
+def _tick_lock_path(path: Path, name: str) -> Path:
+    return path.parent / name / "tick.lock"
+
+
+def _orphan(path: Path, name: str, record: object, threshold: int, now: float) -> dict | None:
+    """The orphan entry for this slot, or None when its work is not abandoned.
+
+    Orphaned: the slot record is still there (the run never unlocked), neither
+    the slot nor its tick lock is live, the run has been silent for longer than
+    `threshold`, and it left `current` work. A slot that unlocked cleanly has no
+    record; `_pick_free_slot` already hands its `current` to the next run.
+    """
+    if not isinstance(record, dict) or not record or lease_is_live(record):
+        return None
+    if lease_is_live(tick_lock.read(_tick_lock_path(path, name))):
+        return None
+    renewed_at = worker_state.lease_renewed_at(record)
+    if now - renewed_at <= threshold:
+        return None
+    current = _slot_current(path, name)
+    if not isinstance(current, dict) or not current.get("ref"):
+        return None
+    return {
+        "worker": name,
+        "ref": current["ref"],
+        "branch": current.get("branch"),
+        "token": record.get("token"),
+        "lastRenewedAt": int(renewed_at),
+    }
+
+
+def orphaned_slots(threshold: int | None = None, path: Path | None = None) -> list[dict]:
+    """Every slot whose run died with `current` work, oldest first."""
+    path = path or slots_path()
+    threshold = orphan_after_seconds() if threshold is None else threshold
+    now = time.time()
+    found = [
+        entry
+        for name, record in load_slots(path).items()
+        if (entry := _orphan(path, name, record, threshold, now)) is not None
+    ]
+    return sorted(found, key=lambda entry: entry["lastRenewedAt"])
+
+
+def fence_orphan(name: str, threshold: int | None = None, path: Path | None = None) -> dict | None:
+    """Remove an orphaned slot's lease so its run can never renew it again.
+
+    Return the orphan entry, or None when the slot is no longer orphaned (it
+    came back, was cleaned up, or another run fenced it first). The check and
+    the removal happen under the slots mutex, so exactly one caller wins.
+    """
+    path = path or slots_path()
+    threshold = orphan_after_seconds() if threshold is None else threshold
+    with exclusive(path.with_name(path.name + ".lock")):
+        slots = read_json(path)
+        entry = _orphan(path, name, slots.get(name), threshold, time.time())
+        if entry is None:
+            return None
+        del slots[name]
+        worker_state.atomic_write_json(path, slots)
+    tick_lock.release(_tick_lock_path(path, name), entry["token"])
+    return entry
