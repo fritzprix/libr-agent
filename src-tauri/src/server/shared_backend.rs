@@ -500,15 +500,22 @@ pub const OWN_PUBLISH_TIMEOUT: Duration = Duration::from_secs(10);
 /// A published backend that fails readiness is a hard error: its process
 /// already owns this profile, so starting a second backend here would
 /// double-execute live sessions.
-async fn attach_or_start_backend_with_race<S>(
+///
+/// Caveat (pre-existing, but reachable in a new way since #2757): if
+/// `start_backend` fails to bind the HTTP server, the bind error is only
+/// logged by the startup path, this function still waits
+/// [`OWN_PUBLISH_TIMEOUT`] and returns `Started`. A frontend that starts
+/// afterwards then finds no live record and may start its own backend.
+async fn attach_or_start_backend_with_race<S, W>(
     timeout: Duration,
     lock_path: Option<PathBuf>,
     find_live: impl Fn() -> Option<BackendDescriptor>,
     start_backend: S,
-    wait_own_publish: impl Fn(Duration),
+    wait_own_publish: W,
 ) -> Result<BackendStartup, String>
 where
     S: FnOnce() -> Result<(), String>,
+    W: Fn(Duration) + Send + 'static,
 {
     if let Some(descriptor) = find_live() {
         return attach_to_descriptor(&descriptor, timeout).await;
@@ -530,7 +537,10 @@ where
     start_backend()?;
     // Release the lock only once this process's record is live (or the wait
     // gave up), so the loser's re-check under the lock sees this backend.
-    wait_own_publish(OWN_PUBLISH_TIMEOUT);
+    // The poll blocks, so keep it off the async worker thread.
+    tokio::task::spawn_blocking(move || wait_own_publish(OWN_PUBLISH_TIMEOUT))
+        .await
+        .map_err(|err| format!("backend publish wait panicked: {err}"))?;
     drop(guard);
     Ok(BackendStartup::Started)
 }
@@ -553,9 +563,9 @@ async fn attach_to_descriptor(
     })
 }
 
-/// The production entry: race on the profile's startup lock, prove holder
-/// death with the real process probes, and wait for this process's own
-/// descriptor record before releasing the lock.
+/// The production entry: race on the profile's startup lock (an OS advisory
+/// lock, released by the OS if the holder dies), and wait for this process's
+/// own descriptor record before releasing the lock.
 pub async fn attach_or_start_backend<S>(
     timeout: Duration,
     start_backend: S,
@@ -576,7 +586,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use crate::server::startup_lock;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::Arc;
     use warp::Filter;
 
@@ -802,25 +813,19 @@ mod tests {
         dir.path().join("profile.db.backend.lock")
     }
 
-    /// A real live process the OS probe reports as alive for the whole test.
-    fn live_holder_child() -> std::process::Child {
-        if cfg!(windows) {
-            std::process::Command::new("ping")
-                .args(["-n", "30", "127.0.0.1"])
-                .stdout(std::process::Stdio::null())
-                .spawn()
-                .expect("spawn a live holder stand-in")
-        } else {
-            std::process::Command::new("sleep")
-                .arg("30")
-                .spawn()
-                .expect("spawn a live holder stand-in")
+    /// Hold the OS startup lock until the returned guard is dropped. OS
+    /// locks attach to an open file handle, so a second handle in this same
+    /// process contends exactly like a second process would.
+    fn hold_startup_lock(path: &std::path::Path) -> startup_lock::StartupLock {
+        match startup_lock::try_acquire(path) {
+            startup_lock::LockAttempt::Acquired(lock) => lock,
+            other => panic!("test holder must get the free lock, got {other:?}"),
         }
     }
 
-    /// #2757: while the startup lock is held by a live process, the loser
-    /// waits; once the holder releases it and its record is live, the loser
-    /// attaches and never starts its own backend.
+    /// #2757: while the startup lock is held, the loser waits; once the
+    /// holder releases it and its record is live, the loser attaches and
+    /// never starts its own backend.
     #[tokio::test]
     async fn startup_race_attaches_to_the_backend_published_by_the_lock_holder() {
         let dir = tempfile::tempdir().unwrap();
@@ -829,12 +834,7 @@ mod tests {
         let published = Arc::new(AtomicBool::new(false));
         let started = Arc::new(AtomicBool::new(false));
 
-        let mut holder = live_holder_child();
-        std::fs::write(
-            &path,
-            serde_json::json!({ "pid": holder.id(), "acquired_at_ms": 1 }).to_string(),
-        )
-        .unwrap();
+        let holder = hold_startup_lock(&path);
 
         let published_for_finder = published.clone();
         let started_for_start = started.clone();
@@ -866,8 +866,7 @@ mod tests {
 
         // The holder publishes its backend, then releases the lock.
         published.store(true, Ordering::Relaxed);
-        let _ = holder.kill();
-        std::fs::remove_file(&path).unwrap();
+        drop(holder);
 
         let outcome = race
             .await
@@ -884,17 +883,17 @@ mod tests {
         server.abort();
     }
 
-    /// #2757: a lock left by a definitively-dead process is swept, and the
-    /// next frontend starts the one backend.
+    /// #2757: a lock file left behind by a dead process carries no OS lock,
+    /// so the next frontend acquires it immediately and starts the one
+    /// backend. Nothing is probed and nothing is swept. (G1.4: the old
+    /// `u32::MAX` pid stand-in is gone — `kill -0 -1` succeeds on Unix, so
+    /// no pid value is reliably dead. With an OS lock, a dead holder is the
+    /// default case, not a probe.)
     #[tokio::test]
-    async fn startup_race_takes_over_after_sweeping_a_dead_holder() {
+    async fn startup_race_takes_over_a_leftover_lock_file() {
         let dir = tempfile::tempdir().unwrap();
         let path = temp_lock_path(&dir);
-        std::fs::write(
-            &path,
-            serde_json::json!({ "pid": u32::MAX, "acquired_at_ms": 1 }).to_string(),
-        )
-        .unwrap();
+        std::fs::write(&path, "leftover from a dead process").unwrap();
 
         let started = Arc::new(AtomicBool::new(false));
         let flag = started.clone();
@@ -909,26 +908,30 @@ mod tests {
             |_| {},
         )
         .await
-        .expect("a dead holder must not block startup");
+        .expect("a leftover lock file must not block startup");
 
         assert!(matches!(outcome, BackendStartup::Started));
         assert!(started.load(Ordering::Relaxed));
-        assert!(!path.exists(), "the guard must release the lock");
+        assert!(
+            path.exists(),
+            "the lock file stays in place; only the OS lock is released"
+        );
+        match startup_lock::try_acquire(&path) {
+            startup_lock::LockAttempt::Acquired(_) => {}
+            startup_lock::LockAttempt::Held => {
+                panic!("the race must have released the OS lock")
+            }
+            startup_lock::LockAttempt::Failed(err) => panic!("cannot re-lock: {err}"),
+        }
     }
 
     /// #2757: a live holder that never publishes blocks the second frontend
     /// until the timeout; a blocked startup never starts a second backend.
     #[tokio::test]
-    async fn startup_race_gives_up_while_a_live_process_holds_the_lock() {
+    async fn startup_race_gives_up_while_another_holder_holds_the_lock() {
         let dir = tempfile::tempdir().unwrap();
         let path = temp_lock_path(&dir);
-
-        let mut child = live_holder_child();
-        std::fs::write(
-            &path,
-            serde_json::json!({ "pid": child.id(), "acquired_at_ms": 1 }).to_string(),
-        )
-        .unwrap();
+        let holder = hold_startup_lock(&path);
 
         let started = Arc::new(AtomicBool::new(false));
         let flag = started.clone();
@@ -945,11 +948,130 @@ mod tests {
         .await
         .expect_err("a live holder must block a second backend");
 
-        let _ = child.kill();
+        drop(holder);
         assert!(err.contains("startup lock"), "unexpected error: {err}");
         assert!(
             !started.load(Ordering::Relaxed),
             "a blocked startup must never start a second backend"
         );
+    }
+
+    /// Start `callers` frontends together on one lock path and one health
+    /// server; return (Started outcomes, start_backend runs, Attached
+    /// outcomes). The winner's `wait_own_publish` marks its record live,
+    /// simulating publish-before-release.
+    async fn race_frontends(port: u16, path: PathBuf, callers: usize) -> (usize, usize, usize) {
+        let published = Arc::new(AtomicBool::new(false));
+        let starts = Arc::new(AtomicUsize::new(0));
+        let gate = Arc::new(tokio::sync::Barrier::new(callers));
+
+        let mut racers = Vec::new();
+        for _ in 0..callers {
+            let path = path.clone();
+            let published_for_finder = published.clone();
+            let starts_for_start = starts.clone();
+            let published_for_wait = published.clone();
+            let gate = gate.clone();
+            racers.push(tokio::spawn(async move {
+                gate.wait().await;
+                attach_or_start_backend_with_race(
+                    Duration::from_secs(5),
+                    Some(path),
+                    move || {
+                        published_for_finder
+                            .load(Ordering::Relaxed)
+                            .then(|| live_descriptor(port))
+                    },
+                    move || {
+                        starts_for_start.fetch_add(1, Ordering::Relaxed);
+                        Ok(())
+                    },
+                    move |_| {
+                        published_for_wait.store(true, Ordering::Relaxed);
+                    },
+                )
+                .await
+            }));
+        }
+
+        let mut started_count = 0;
+        let mut attached_count = 0;
+        for racer in racers {
+            match racer.await.expect("racer task").expect("race outcome") {
+                BackendStartup::Started => started_count += 1,
+                BackendStartup::Attached { .. } => attached_count += 1,
+            }
+        }
+        (
+            started_count,
+            starts.load(Ordering::Relaxed),
+            attached_count,
+        )
+    }
+
+    /// G1.3 / #2757 acceptance criterion: several frontends start at the
+    /// same moment on one profile. Exactly one runs `start_backend`; every
+    /// other one attaches. Repeated over many rounds so the interleavings
+    /// are real, not lucky.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn startup_race_starts_exactly_one_backend_for_concurrent_frontends() {
+        const CALLERS: usize = 4;
+        const ROUNDS: usize = 10;
+        for round in 0..ROUNDS {
+            let dir = tempfile::tempdir().unwrap();
+            let path = temp_lock_path(&dir);
+            let (port, server) = health_server(true);
+
+            let (started_count, start_runs, attached_count) =
+                race_frontends(port, path, CALLERS).await;
+            server.abort();
+
+            assert_eq!(
+                started_count, 1,
+                "round {round}: exactly one frontend must start the backend"
+            );
+            assert_eq!(
+                start_runs, 1,
+                "round {round}: start_backend must run exactly once"
+            );
+            assert_eq!(
+                attached_count,
+                CALLERS - 1,
+                "round {round}: every other frontend must attach"
+            );
+        }
+    }
+
+    /// G1.3 / #2757: the same concurrent race with a stale (unheld) lock
+    /// file already on disk. Crash residue must neither block the frontends
+    /// nor let two of them start.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn startup_race_starts_exactly_one_backend_with_a_leftover_lock_file() {
+        const CALLERS: usize = 4;
+        const ROUNDS: usize = 10;
+        for round in 0..ROUNDS {
+            let dir = tempfile::tempdir().unwrap();
+            let path = temp_lock_path(&dir);
+            std::fs::write(&path, "leftover from a previous run").unwrap();
+            let (port, server) = health_server(true);
+
+            let (started_count, start_runs, attached_count) =
+                race_frontends(port, path, CALLERS).await;
+            server.abort();
+
+            assert_eq!(
+                started_count, 1,
+                "round {round}: exactly one frontend must start the backend"
+            );
+            assert_eq!(
+                start_runs, 1,
+                "round {round}: stale residue must not let a second frontend start"
+            );
+            assert_eq!(
+                attached_count,
+                CALLERS - 1,
+                "round {round}: every other frontend must attach"
+            );
+        }
     }
 }
