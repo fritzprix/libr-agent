@@ -49,6 +49,14 @@ fn show_fatal_database_error(title: &str, guidance: &str, error: &DatabaseError)
 
 /// A synchronous wrapper to initialize and run the application with SQLite support.
 pub fn run_with_sqlite_sync(db_url: String) {
+    run_with_sqlite_sync_and_visibility(db_url, true);
+}
+
+/// The hidden-window variant for `libragent --tui` (#2761): the same backend
+/// bootstrap, migrations, and event loop, with the WebView window created
+/// invisible so no GUI window is presented while the hidden WebView still
+/// answers LLM calls (the phase-1 allowance).
+pub fn run_with_sqlite_sync_and_visibility(db_url: String, show_windows: bool) {
     start_startup_timer();
     // Set the SQLite URL
     set_sqlite_db_url(db_url.clone());
@@ -169,5 +177,5 @@ pub fn run_with_sqlite_sync(db_url: String) {
             elapsed_ms
         );
     }
-    crate::run();
+    crate::run_with_visibility(show_windows);
 }
