@@ -13,6 +13,10 @@ use std::time::{Duration, Instant};
 const HEALTH_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// How long a frontend waits for a discovered backend to report `ready: true`
+/// on the shared startup path (#2756).
+pub const ATTACH_READY_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// Parsed payload from `GET /api/health`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HealthStatus {
@@ -358,6 +362,69 @@ pub async fn attach_to_live_backend(
     Ok(Some((descriptor, client)))
 }
 
+/// How this frontend reached a backend through the shared startup path
+/// (#2756). Every frontend (the GUI now, `libragent --tui` later) enters the
+/// backend the same way.
+#[derive(Debug)]
+pub enum BackendStartup {
+    /// Another live process hosts the backend. Drive it through the returned
+    /// client; this process must not start a second HTTP server, scheduler,
+    /// or session executor.
+    Attached {
+        descriptor: BackendDescriptor,
+        client: SharedBackendClient,
+    },
+    /// No live backend was published, so `start_backend` ran and this process
+    /// now hosts the backend.
+    Started,
+}
+
+/// The single backend startup path every frontend shares (#2756): attach to
+/// a live published backend and wait for real readiness (`ready: true`), or
+/// run `start_backend` to host one here (HTTP server, scheduler, session
+/// recovery) and then present the UI.
+///
+/// A published backend that fails readiness is a hard error: its process
+/// already owns this profile, so starting a second backend here would
+/// double-execute live sessions.
+pub async fn attach_or_start_backend<S>(
+    timeout: Duration,
+    start_backend: S,
+) -> Result<BackendStartup, String>
+where
+    S: FnOnce() -> Result<(), String>,
+{
+    attach_or_start_backend_with_finder(
+        timeout,
+        backend_descriptor::find_live_backend,
+        start_backend,
+    )
+    .await
+}
+
+async fn attach_or_start_backend_with_finder<S, F>(
+    timeout: Duration,
+    find_live: F,
+    start_backend: S,
+) -> Result<BackendStartup, String>
+where
+    F: FnOnce() -> Option<BackendDescriptor>,
+    S: FnOnce() -> Result<(), String>,
+{
+    let Some(descriptor) = find_live() else {
+        start_backend()?;
+        return Ok(BackendStartup::Started);
+    };
+    let client = SharedBackendClient::new(descriptor.port)?;
+    client.wait_until_ready(timeout).await.map_err(|err| {
+        format!(
+            "Shared backend pid {} at port {} did not become ready: {err}",
+            descriptor.pid, descriptor.port
+        )
+    })?;
+    Ok(BackendStartup::Attached { descriptor, client })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -407,6 +474,112 @@ mod tests {
         assert!(status.ready);
         assert_eq!(status.recovery, "ok");
 
+        server.abort();
+    }
+
+    fn live_descriptor(port: u16) -> BackendDescriptor {
+        BackendDescriptor {
+            pid: 999_999,
+            port,
+            started_at_ms: 1,
+        }
+    }
+
+    /// A stand-in backend whose `/api/health` always answers with `ready`.
+    fn health_server(ready: bool) -> (u16, tokio::task::JoinHandle<()>) {
+        let route = warp::path!("api" / "health").and(warp::get()).map(move || {
+            warp::reply::json(&serde_json::json!({
+                "status": "ok",
+                "service": "libr-agent-session-api",
+                "version": "0.9.0",
+                "ready": ready,
+                "recovery": if ready { "ok" } else { "pending" }
+            }))
+        });
+        let (addr, server_fut) = warp::serve(route).bind_ephemeral(([127, 0, 0, 1], 0));
+        let server = tokio::spawn(server_fut);
+        (addr.port(), server)
+    }
+
+    #[tokio::test]
+    async fn startup_starts_locally_when_no_live_backend_exists() {
+        let started = Arc::new(AtomicBool::new(false));
+        let flag = started.clone();
+
+        let outcome = attach_or_start_backend_with_finder(
+            Duration::from_secs(1),
+            || None,
+            move || {
+                flag.store(true, Ordering::Relaxed);
+                Ok(())
+            },
+        )
+        .await
+        .expect("startup succeeds");
+
+        assert!(matches!(outcome, BackendStartup::Started));
+        assert!(
+            started.load(Ordering::Relaxed),
+            "start_backend must run when no backend is live"
+        );
+    }
+
+    #[tokio::test]
+    async fn startup_attaches_to_a_ready_backend_without_starting_one() {
+        let (port, server) = health_server(true);
+        let started = Arc::new(AtomicBool::new(false));
+        let flag = started.clone();
+
+        let outcome = attach_or_start_backend_with_finder(
+            Duration::from_secs(2),
+            move || Some(live_descriptor(port)),
+            move || {
+                flag.store(true, Ordering::Relaxed);
+                Ok(())
+            },
+        )
+        .await
+        .expect("attach succeeds");
+
+        match outcome {
+            BackendStartup::Attached { descriptor, client } => {
+                assert_eq!(descriptor.port, port);
+                assert_eq!(client.port(), port);
+            }
+            BackendStartup::Started => panic!("must attach to the live backend, not start one"),
+        }
+        assert!(
+            !started.load(Ordering::Relaxed),
+            "start_backend must not run when attaching"
+        );
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn startup_fails_hard_when_a_live_backend_never_becomes_ready() {
+        let (port, server) = health_server(false);
+        let started = Arc::new(AtomicBool::new(false));
+        let flag = started.clone();
+
+        let err = attach_or_start_backend_with_finder(
+            Duration::from_millis(250),
+            move || Some(live_descriptor(port)),
+            move || {
+                flag.store(true, Ordering::Relaxed);
+                Ok(())
+            },
+        )
+        .await
+        .unwrap_err();
+
+        assert!(
+            err.contains("did not become ready"),
+            "unexpected error: {err}"
+        );
+        assert!(
+            !started.load(Ordering::Relaxed),
+            "a failed attach must never start a second backend"
+        );
         server.abort();
     }
 }
