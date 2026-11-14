@@ -1,33 +1,55 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const require = createRequire(import.meta.url);
 const { listLocalBranches } = require('../cleanup-merged-branches.cjs') as {
   listLocalBranches: (opts?: { mergedInto?: string; cwd?: string }) => string[];
 };
 
+const gitEnv: NodeJS.ProcessEnv = {
+  ...process.env,
+  GIT_CONFIG_NOSYSTEM: '1',
+  GIT_TERMINAL_PROMPT: '0',
+  GIT_OPTIONAL_LOCKS: '0',
+  GIT_PAGER: '',
+  HUSKY: '0',
+  GIT_AUTHOR_NAME: 'Test',
+  GIT_AUTHOR_EMAIL: 'test@example.invalid',
+  GIT_COMMITTER_NAME: 'Test',
+  GIT_COMMITTER_EMAIL: 'test@example.invalid',
+};
+
 describe('cleanup-merged-branches listLocalBranches', () => {
   let repo: string;
 
   const git = (...args: string[]) =>
-    execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();
+    execFileSync('git', args, {
+      cwd: repo,
+      encoding: 'utf8',
+      env: gitEnv,
+      timeout: 15000,
+      windowsHide: true,
+    }).trim();
 
   const commit = (file: string) => {
     writeFileSync(join(repo, file), file);
     git('add', file);
-    git('commit', '-q', '-m', file);
+    git('commit', '-q', '--no-gpg-sign', '-m', file);
   };
 
-  beforeEach(() => {
+  // Windows git init/commit is slow under Defender; pay setup once and give
+  // the hook more than the 10s default. Two tests used to each rebuild the repo.
+  beforeAll(() => {
     repo = mkdtempSync(join(tmpdir(), 'cleanup-merged-branches-'));
     git('init', '-q', '-b', 'main');
-    git('config', 'user.email', 'test@example.invalid');
-    git('config', 'user.name', 'Test');
-    git('config', 'commit.gpgsign', 'false');
+    const hooksDir = join(repo, '.git', 'hooks-disabled');
+    mkdirSync(hooksDir);
+    git('config', 'core.hooksPath', hooksDir);
+    git('config', 'core.fsmonitor', 'false');
     commit('base.txt');
     git('branch', 'dev/0.9.x');
     // Merged: its tip is the base tip.
@@ -35,9 +57,9 @@ describe('cleanup-merged-branches listLocalBranches', () => {
     // Not merged: one commit ahead of main.
     git('switch', '-q', '-c', 'feat/unmerged');
     commit('extra.txt');
-  });
+  }, 30000);
 
-  afterEach(() => {
+  afterAll(() => {
     rmSync(repo, { recursive: true, force: true });
   });
 
