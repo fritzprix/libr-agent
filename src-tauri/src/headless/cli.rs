@@ -171,7 +171,14 @@ pub fn help_text() -> String {
 }
 
 pub fn version_text() -> String {
-    format!("liblet {}", env!("CARGO_PKG_VERSION"))
+    let dirty = crate::build_provenance::build_dirty();
+    let suffix = if dirty { " (dirty)" } else { "" };
+    format!(
+        "liblet {} (build {}){}",
+        env!("CARGO_PKG_VERSION"),
+        crate::build_provenance::BUILD_SHA,
+        suffix
+    )
 }
 
 fn take_option_value(

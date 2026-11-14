@@ -16,6 +16,8 @@ pub async fn health() -> Result<impl Reply, Rejection> {
             status: "ok".to_string(),
             service: "libr-agent-session-api".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
+            build_sha: crate::build_provenance::BUILD_SHA,
+            build_dirty: crate::build_provenance::build_dirty(),
             ready: readiness::is_ready(),
             recovery: readiness::recovery_state(),
         }),
@@ -51,5 +53,7 @@ mod tests {
             "{recovery}"
         );
         assert_eq!(json["ready"], recovery != "pending");
+        assert!(json["buildSha"].is_string());
+        assert!(json["buildDirty"].is_boolean());
     }
 }

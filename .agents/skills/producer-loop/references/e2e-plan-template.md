@@ -1,5 +1,7 @@
 # e2e-plan items template
 
+The harness follows [../../libr-e2e-verify/references/e2e-build-precondition.md](../../libr-e2e-verify/references/e2e-build-precondition.md) before any checklist item.
+
 `e2e_plan.py render` builds the issue body from `collected.json` and an `items.json` that you write. The body follows the #2565 format: Summary, Scope, Risk-first top 10, Checklist, Acceptance criteria, Notes. The script writes Summary, Scope, Acceptance criteria, the fixed Notes, the item IDs, and the range marker. You write only the items.
 
 Write in English, ASD-STE100 style. Use dummy secrets only (for example `dummy-token-abcd`).

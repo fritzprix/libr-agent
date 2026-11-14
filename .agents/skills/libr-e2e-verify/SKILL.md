@@ -29,9 +29,12 @@ this skill is the knowledge and the pass/fail discipline:
 
 ## Preconditions
 
+Follow [references/e2e-build-precondition.md](references/e2e-build-precondition.md) before any HTTP checks. The operator or external harness owns building and starting the app; this skill never builds or starts LibrAgent. If the running build is missing a required commit, report the verdict (`NOOP` / `blocked: not in build`) and stop.
+
 | Check | How | Meaning |
 | --- | --- | --- |
-| Health gate | `GET /api/health` → `status: ok` | Proceed. If unreachable, abort: the app is not up; the harness owns the app lifecycle, never start it here. |
+| Build provenance | `buildSha` / `buildDirty` on `GET /api/health` or `GET /api/e2e-control/status` | Record `buildSha` in results. PRs not in the build are `blocked: not in build`. |
+| Health gate | `GET /api/health` → `status: ok` | Proceed. If unreachable, abort. |
 | Control plane | `GET /api/e2e-control/status` with header `X-LibrAgent-E2E-Control: <cap>`, where `<cap>` is the content of `e2e_control.cap` under `LIBRAGENT_DATA_DIR` | `200` = debug build with `LIBRAGENT_E2E_CONTROL=1` and an explicit `LIBRAGENT_DATA_DIR`. `403` = plane enabled but the header is missing/wrong — re-read `e2e_control.cap` and check the data dir you are reading it from. `404`/`405` = absent (release build or debug without opt-in). |
 | Fallback | Control plane absent → run with `executionMode: yolo` (default; standard tools) or `unsafe` (also hard-approval tools; scratch workspace only) | Report `control plane absent — yolo/unsafe fallback`, do not fail the run. |
 
