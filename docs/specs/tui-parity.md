@@ -1,6 +1,6 @@
 # TUI parity spec
 
-Status: §1 is the GUI inventory for #2749 (part of epic #2698). §2 (classification and priority) is added by #2750. §3 (command and screen design) and §4 (E2E scenarios) are still to be added by #2751 and #2752.
+Status: §1 is the GUI inventory for #2749 (part of epic #2698). §2 (classification and priority) is added by #2750. §3 (command and screen design) is added by #2751. §4 (E2E scenarios) is still to be added by #2752.
 
 Goal of the whole spec: `libragent --tui` is functionally near-identical to the GUI. Menus are entered with `/{command}` (for example `/settings`), and sessions are switched with `/new` and `/resume`.
 
@@ -1079,7 +1079,517 @@ The P0 set is the full chat turn plus session entry, exactly as required:
 
 ## 3. Commands and TUI screens
 
-Added by #2751.
+Added by #2751. This section fixes the command names that §2 used as placeholders, the screen types, and the keys. §3.7 maps every direct or adapted §2 row to a command or screen.
+
+The TUI is built with `ratatui` and `crossterm` inside the `libragent` binary, with no Node runtime. It calls the same backend commands and receives the same `agent:event` stream as the GUI (§1.4.9). It adds no TUI-only backend path.
+
+### 3.1 Screen types
+
+Six screen types cover every command. Codes S1–S6 are used in the tables below.
+
+| Code | Screen        | Used for                                                                 |
+| ---- | ------------- | ------------------------------------------------------------------------ |
+| S1   | Chat          | Transcript, composer, header, and status line. The home screen.          |
+| S2   | List / picker | Session, assistant, extension, task, and setting-section lists; pickers. |
+| S3   | Form          | Editors and settings sections: one field per row, multi-page if needed.  |
+| S4   | Confirm       | Destructive or multi-choice decisions, as a centred box.                 |
+| S5   | Inline prompt | Tool approval, askUser question, secret input, pairing request.          |
+| S6   | Pager         | Read-only long text: file preview, tool output, diffs, process output.   |
+
+#### S1 Chat
+
+```text
+┌ Coder · Fix the login bug                          ★  gpt-5 · medium ┐
+│ You  Please fix the login redirect.                                  │
+│ AI   ▸ Thinking… (collapsed)                                         │
+│      Tool Executions (2)  ✓ workspace__readFile  ⟳ shell__run        │
+│      The redirect uses the old route. I changed …                    │
+│ ── Context compressed above ──                                       │
+│                                                                      │
+├ ⚠ Approve shell__run?  {"command":"pnpm test"}   [a]pprove [r]eject  ┤  ← S5, only while open
+├ 📎 1 notes.md  2 shot.png        ⏳ queued: 1 "and update docs"      ┤  ← only when not empty
+│ > _                                                                  │
+└ YOLO · tools 42 · 1 awaiting approval · 2 attention · v0.9.31        ┘
+```
+
+- **Header**: assistant, session title (or "New Session" in a draft), bookmark star, model and thinking effort.
+- **Transcript**: role prefix per message, Markdown and code rendered in the terminal, collapsed thinking and tool blocks, divider for compaction, and inline notice and error lines (these replace GUI toasts and banners).
+- **Prompt area (S5)**: shown above the composer only while a prompt is open.
+- **Attachment and queue line**: numbered so `/detach <n>` and `/queue cancel <n>` can address them.
+- **Composer**: one or more lines; grows up to a third of the screen.
+- **Status line**: execution mode, tool count, awaiting-approval and attention badges, workflow state (paused, retry available), panel hints ("planning updated"), update notice, version.
+
+#### S2 List / picker
+
+```text
+┌ /history · 128 sessions · sort: recent · status: all ────────────────┐
+│ filter: login_                                                       │
+│ ● running   Fix the login bug              Coder      2 min ago  ★   │
+│ ○ idle      Weekly report                  Writer     1 h ago        │
+│ ◐ elsewhere Research: TUI libraries        Research   3 h ago        │
+│   ├ child   Compare ratatui and cursive    Research   3 h ago        │
+├ Fix the login bug · 34 messages · workspace ~/src/app ───────────────┤
+└ Enter resume · d delete · b bookmark · / filter · r reload · Esc back┘
+```
+
+- Title line with the command, count, and active filters. A filter line edits the search text in place.
+- Rows have a status column and text badges. Status words match the GUI; sessions owned by another frontend show **open elsewhere** or **running** and cannot be opened (#2759, #2763).
+- The detail strip shows the selected row expanded (the GUI's card expand).
+- Footer lists the row actions for this list. Scrolling to the end loads more where the GUI has "Load more".
+- A picker is the same screen with Enter meaning "choose" and no row actions.
+
+#### S3 Form
+
+```text
+┌ /assistants edit coder · General  [Tools] [Skills] ──────── changed ─┐
+│ Name         Coder                                                   │
+│ Description  Writes and fixes code                                   │
+│ Prompt       ▸ 42 lines (Enter to edit)                              │
+│ Model        Use default  ▾                                          │
+│ ! Name is required                                                   │
+└ Tab next field · Ctrl+←/→ page · Ctrl+S save · Esc cancel ───────────┘
+```
+
+- Field kinds: text, multi-line text (opens a full-screen editor), masked secret, number, choice list, toggle, path, and `@`-aware message text.
+- Multi-page forms show the pages in the title line; the GUI's tabs become pages.
+- Validation messages appear under the form, with the same wording as the GUI.
+- Settings sections are S3 forms; changes are kept until `/settings save` or `/settings discard`, as in the GUI.
+
+#### S4 Confirm
+
+```text
+        ┌ Delete session ───────────────────────────────┐
+        │ "Fix the login bug" has 2 child sessions.     │
+        │                                               │
+        │ [d] Delete with children  [o] Delete only this│
+        │ [Esc] Cancel                                  │
+        └───────────────────────────────────────────────┘
+```
+
+- Same choices and wording as the GUI dialog. Esc always means the safe choice (cancel).
+- Type-to-confirm dialogs (Reset All Data) keep the typed word (`RESET`).
+
+#### S5 Inline prompt
+
+- **Tool approval**: tool name and arguments as JSON (scrollable). `Alt+Y` approves, `Alt+N` or Esc rejects; `a` / `r` also approve or reject, but only while the prompt has focus, which the prompt only ever gets from an explicit Tab (focus rule below). Hard approvals ("Hard Approval Required", the high-risk tools) behave the same way and are targeted first when several approvals wait. No "always allow". A keystroke the user means for composing can never approve — the intent of the GUI's Ctrl/Cmd+Enter rule (`PendingApprovalWidget.tsx`).
+- **Question (askUser)**: one question at a time; choices as a list (Space toggles in multi-select), plus the free-text field where the GUI has one. Enter submits.
+- **Secret**: masked input. Enter submits, Esc cancels.
+- **Pairing request**: shows the pairing code. `Alt+Y` approves, `Alt+N` or Esc rejects; `a` / `r` when the prompt has focus (explicit Tab only, same focus rule as tool approval).
+
+An open prompt never takes keyboard focus by itself: the composer keeps focus and its text, and until the user acts the prompt answers only the `Alt+Y` / `Alt+N` chords, shown in the prompt's footer. Tab moves focus to the prompt, Tab moves it back; while the prompt holds focus, composer completion is paused and `a` / `r` approve or reject. Because only an explicit Tab can move focus, a keystroke the user means for the composer can never reach the prompt — not even when the composer is empty as the prompt opens. Esc does not cancel the request (same rule as the GUI).
+
+#### S6 Pager
+
+Full-screen read-only view with a title line. PgUp/PgDn, Home/End, and `/` to search in the text. `o` opens the file with the OS default app when there is a file, and Esc or `q` returns.
+
+### 3.2 Input rules and naming
+
+1. **Plain text is always a chat message.** Input is a command only when its first character is `/`. To send text that starts with `/`, type `//`; the first `/` is removed.
+2. **Unknown commands are not sent.** `/foo` shows "Unknown command /foo" with the closest match, and the input stays in the composer.
+3. **Names**: lowercase; words joined by `-` (`/setup-wizard`, `/settings ai-models`). A top-level command is either a noun that opens a menu (`/settings`, `/assistants`) or a verb that acts on the open session (`/rename`, `/export`).
+4. **Sub-commands use one verb set** across all menus: `new`, `edit`, `delete`, `search`, `enable`, `disable`, `install`, `import`, `export`, `retry`, `reset`, `save`, `discard`, `cancel`, `auth`, `logout`. The same verb means the same thing in every menu.
+5. **Arguments**: the object (id, name, path, URL) is positional. Filters are `--flag value`. `<n>` refers to the number shown in the S1 attachment, queue, or message lines.
+6. **No collisions**: every full command path in §3.3 is unique. A top-level verb acts on the open session; the same word under a menu acts on that menu's object — `/export` exports the open session while `/org export` writes an org bundle, `/delete` deletes the open session while `/org delete` deletes an org item, `/new` starts a session while `/assistants new` creates an assistant. The menu prefix is what disambiguates, so a word may repeat across levels but no two commands share a full path.
+7. **Commands follow their GUI control's rules.** For example `/model` works only while idle, and `/rename` needs a created session (in a draft it says "Send a message first").
+8. **Tab completion**: after `/`, Tab completes the command name; after a command, the sub-command; after that, argument values from live data (session ids with titles, assistant ids, extension names, file paths). One match fills in; several matches open a popup above the composer, the same popup as `@` mentions. ↑/↓ select, Tab or Enter accept, Esc closes.
+9. **`@` mentions** open the same popup with `@skill:`, `@file:`, `@tool:`, and `@playbook:` items, as in the GUI.
+10. **`/help [command]`** lists commands with one-line descriptions, or one command's sub-commands and arguments.
+
+Names changed from the §2 placeholders:
+
+| §2 placeholder              | Final                                | Reason                                  |
+| --------------------------- | ------------------------------------ | --------------------------------------- |
+| `/mcp retry`                | `/extensions retry`                  | one menu for extensions; no `/mcp` noun |
+| `/extensions active <name>` | `/extensions enable\|disable <name>` | verb set (rule 4), same as `/tasks`     |
+| `/assistants <text>`        | `/assistants search <text>`          | text after a menu name is a sub-command |
+
+### 3.3 Command tree
+
+`[x]` is optional, `a|b` is a choice, `…` repeats. Priority is the highest §2 priority among the items the command covers.
+
+#### Session and chat (open session or draft)
+
+| Command                                                                                         | Screen       | P   | Covers (§2)                                          |
+| ----------------------------------------------------------------------------------------------- | ------------ | --- | ---------------------------------------------------- |
+| `/new [assistant-id] [--workspace <path>]`                                                      | S2 picker→S1 | P0  | §2.1, §2.2 Chat, §2.3 pickers, §2.11 New session     |
+| `/resume [session-id]`                                                                          | S2 picker→S1 | P0  | §2.1, §2.2 Recent Sessions, §2.11 resume rows        |
+| `/model [provider/model]`                                                                       | S2 picker    | P0  | §2.3, §2.5 Session model and batch update, §2.13     |
+| `/thinking off\|low\|medium\|high\|auto`                                                        | inline       | P0  | §2.3, §2.5                                           |
+| `/permission normal\|yolo\|unsafe`                                                              | inline       | P0  | §2.5, §2.6 (same as GUI)                             |
+| `/clear`                                                                                        | inline       | P0  | §2.6 (same as GUI)                                   |
+| `/reload`                                                                                       | inline       | P0  | §2.6 (same as GUI)                                   |
+| `/attach <path>…`                                                                               | inline       | P0  | §2.6 attach, drop, paste image                       |
+| `/detach <n>`                                                                                   | inline       | P0  | §2.6 attached files bar                              |
+| `/queue` · `/queue cancel <n>`                                                                  | inline       | P0  | §2.6 queued prompts                                  |
+| `/continue`                                                                                     | inline       | P0  | §2.5 workflow banner, §2.6 resume                    |
+| `/retry`                                                                                        | inline       | P0  | §2.5 workflow banner, §2.7 error bubble              |
+| `/rename <name>`                                                                                | inline       | P1  | §2.4, §2.11                                          |
+| `/bookmark`                                                                                     | inline       | P1  | §2.4, §2.11 (toggles)                                |
+| `/delete [session-id]`                                                                          | S4           | P1  | §2.11 delete, delete with children                   |
+| `/export md\|atif\|visible <path>`                                                              | inline       | P1  | §2.4, §2.7, §2.11 exports                            |
+| `/history [search <text>] [--sort <order>] [--status <status>] [--bookmarked] [--lineage <id>]` | S2           | P1  | §2.1, §2.2, §2.11 list rows                          |
+| `/attention`                                                                                    | S2           | P1  | §2.2 notifications, §2.11 attention                  |
+| `/regenerate`                                                                                   | inline       | P1  | §2.7                                                 |
+| `/copy <n> [path]` · `/copy tools <n> [path]`                                                   | inline       | P1  | §2.7 copy message, copy tool calls                   |
+| `/tools`                                                                                        | S2           | P1  | §2.5 tools count                                     |
+| `/files`                                                                                        | S2           | P1  | §2.4 session files                                   |
+| `/workspace <path>\|clear`                                                                      | inline       | P1  | §2.3, §2.10, §2.11 workspace rows                    |
+| `/import <path>`                                                                                | inline       | P1  | §2.10 upload zone                                    |
+| `/panel workspace\|processes\|planning\|schedules`                                              | S2 / S6      | P1  | §2.2, §2.4, §2.10                                    |
+| `/setup-wizard`                                                                                 | S1 (draft)   | P1  | §2.3 runtime banner                                  |
+| `/stats`                                                                                        | inline       | P2  | §2.5 token metrics                                   |
+| `/docker on\|off [image]`                                                                       | inline       | P2  | §2.3 isolation settings (draft only)                 |
+| `/pairing`                                                                                      | S6           | P2  | §2.4 copy pairing instructions                       |
+| `/help [command]`                                                                               | S6           | —   | rule 10                                              |
+| `/quit`                                                                                         | —            | —   | leaves the TUI; sessions keep running in the backend |
+
+"inline" means the command runs and prints a result line in the S1 transcript.
+
+#### Menus
+
+| Command and sub-commands                                                                                                                                                                                    | Screen                                    | P   | Covers (§2)                                                       |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- | --- | ----------------------------------------------------------------- |
+| `/settings` · `/settings general\|ai-models\|chat-interface\|system\|advanced\|experimental` · `/settings save` · `/settings discard`                                                                       | S2 sections → S3                          | P0  | §2.1, §2.2, §2.13 (Default AI Model and Provider API Keys are P0) |
+| `/settings migration`                                                                                                                                                                                       | S3 pages, S6                              | P2  | §2.1, §2.13 migration rows                                        |
+| `/update`                                                                                                                                                                                                   | S4                                        | P2  | §2.2 update toast, §2.13 About / Check for Updates                |
+| `/assistants [search <text>]` · `new` · `edit <id>` · `delete <id>`                                                                                                                                         | S2, S3 (General, Tools, Skills pages), S4 | P1  | §2.1, §2.2, §2.3, §2.12 assistants                                |
+| `/playbooks [search <text>] [--sort <order>]` · `delete <id>`                                                                                                                                               | S2, S4                                    | P1  | §2.1, §2.2, §2.3, §2.11, §2.12 playbooks                          |
+| `/extensions [search <text>]` · `new` · `edit <name>` · `delete <name>` · `enable <name>` · `disable <name>` · `tools <name>` · `retry [name]` · `auth <name>` · `logout <name>` · `presets` · `app-wizard` | S2, S3, S4, S6                            | P1  | §2.1, §2.2, §2.5 retry, §2.12 extensions                          |
+| `/skills` · `install <path\|url>` · `delete <name>` · `reset` · `folders`                                                                                                                                   | S2, S4                                    | P1  | §2.12 skills                                                      |
+| `/knowledge [search <text>] [--assistant <id>]` · `entity <id>`                                                                                                                                             | S2, S6, S4                                | P1  | §2.1, §2.2, §2.12 knowledge                                       |
+| `/tasks` · `new` · `edit <id>` · `delete <id>` · `enable <id>` · `disable <id>` · `template`                                                                                                                | S2, S3, S4                                | P1  | §2.1, §2.2, §2.11, §2.12 scheduled tasks                          |
+| `/morning-briefing`                                                                                                                                                                                         | S5 steps                                  | P2  | §2.3, §2.12 Morning Briefing                                      |
+| `/org [search <text>]` · `export <path>` · `import <path>` · `delete <id>`                                                                                                                                  | S2, S4                                    | P2  | §2.1, §2.2, §2.11 org rows                                        |
+
+`/extensions retry` without a name retries the failed servers of the open session (the status-bar action in §2.5); with a name it retries that server (the card action in §2.12).
+
+### 3.4 Keys
+
+| Key                            | Where                       | Action                                                                                                                                                                                                                               |
+| ------------------------------ | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Enter                          | composer                    | Send; queues while the agent is busy (as in the GUI). Ignored during IME composition.                                                                                                                                                |
+| Shift+Enter, Alt+Enter, Ctrl+J | composer                    | New line. In terminals that do not report Shift+Enter, Alt+Enter and Ctrl+J are the alternatives.                                                                                                                                    |
+| Tab                            | composer                    | Completion (§3.2 rule 8); while an S5 prompt is open, Tab moves focus to the prompt and back.                                                                                                                                        |
+| Esc                            | anywhere                    | Close the popup; else leave the current screen (S2–S4, S6); else, on S1 while a request runs, cancel it. Never cancels while an S5 prompt is open.                                                                                   |
+| Ctrl+C                         | S1                          | Running: same as Esc. Idle with text: clear the composer. Idle and empty: press twice within 2 s to quit.                                                                                                                            |
+| Ctrl+D                         | S1, empty composer          | Quit (same as `/quit`).                                                                                                                                                                                                              |
+| PgUp / PgDn                    | S1, S2, S6                  | Scroll. PgUp at the top of the S1 transcript loads 50 older messages.                                                                                                                                                                |
+| End / Home                     | S1 (empty composer), S2, S6 | Jump to latest / oldest.                                                                                                                                                                                                             |
+| Ctrl+O                         | S1                          | Browse mode: ↑/↓ select a message, thinking, tool, or compaction block; Enter expands or collapses; `p` opens the block's file or output in S6; `o` opens a deliverable externally; Esc returns to the composer.                     |
+| Alt+Y / Alt+N                  | S5 approval, pairing        | Approve / reject. Work regardless of focus; ordinary typing cannot produce them. macOS Terminal and iTerm2 send a character for Option+key unless Option is set as Meta, so the chord cannot be typed there; use Tab then `a` / `r`. |
+| a / r                          | S5 approval, pairing        | Approve / reject, only while the prompt has focus; the prompt takes focus only from Tab, never by itself.                                                                                                                            |
+| Space / Enter                  | S5 question, S2 picker      | Toggle / choose.                                                                                                                                                                                                                     |
+| Ctrl+S                         | S3                          | Save the form.                                                                                                                                                                                                                       |
+| Ctrl+← / Ctrl+→                | S3                          | Previous / next page.                                                                                                                                                                                                                |
+| `/`                            | S2, S6                      | Edit the filter (S2) or search the text (S6).                                                                                                                                                                                        |
+| F1                             | anywhere                    | Same as `/help`.                                                                                                                                                                                                                     |
+| Ctrl+L                         | anywhere                    | Redraw the screen.                                                                                                                                                                                                                   |
+
+**Leaving a menu and returning to the chat**: a menu command opens over S1. Esc goes back one level, and Esc at a menu's first level returns to S1 with the composer text unchanged. The session keeps streaming while a menu is open. If an S5 prompt arrives while a menu is open, the menu footer shows "Approval waiting — Esc to return". The TUI does not leave the menu by itself, so form input is not lost.
+
+### 3.5 What stays the same as the GUI
+
+- Same backend commands and events. Command results are the GUI action results, for example `/delete` calls the same delete command with the same child choice.
+- Same wording for errors, confirmations, and status words (from `src/locales/en/common.json` where a key exists).
+- Same rules: idle-only model change, Esc skipped while a prompt is open, oversize first-message guard, and refusal of sessions owned by another frontend.
+- Deliberate approval intent: a keystroke the user means for composing can never approve a tool call or pairing request — the prompt never takes focus by itself, so `a` and `r` keep writing into the composer until the user presses Tab. The GUI enforces deliberate intent with Ctrl/Cmd+Enter (`PendingApprovalWidget.tsx`); the TUI enforces it with the `Alt+Y` / `Alt+N` chords, which work regardless of focus, and `a` / `r` only under explicit Tab-given prompt focus. Hard approvals ("Hard Approval Required") behave the same way and are targeted first when several approvals wait.
+
+### 3.6 Implementation split
+
+Each ticket below depends on this issue (#2751). The first three already exist. The rest are the per-group split that #2764 asks for and are listed here so #2764 can open them.
+
+| Ticket                               | Scope                                                                                                                                                                                                   | Priority |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| #2761                                | `libragent --tui` entry; terminal set-up and restore                                                                                                                                                    | P0       |
+| #2762                                | S1, S5, S6 basics; composer, `@` popup, Tab completion, keys (§3.4); `/model`, `/thinking`, `/permission`, `/clear`, `/reload`, `/attach`, `/detach`, `/queue`, `/continue`, `/retry`, `/help`, `/quit` | P0       |
+| #2763                                | `/new`, `/resume`, `/history`, `/rename`, `/bookmark`, `/delete`, `/export`, `/attention`; open-elsewhere and running refusal                                                                           | P0–P1    |
+| #2764-a Settings                     | S3 field kinds; `/settings` sections, save, discard; `/update`. Must ship the P0 rows (Default AI Model, Provider API Keys) with #2762 so a first message can be sent                                   | P0–P1    |
+| #2764-b Assistants and playbooks     | `/assistants`, `/playbooks`                                                                                                                                                                             | P1       |
+| #2764-c Extensions and skills        | `/extensions`, `/skills`, `/tools`                                                                                                                                                                      | P1       |
+| #2764-d Knowledge                    | `/knowledge`                                                                                                                                                                                            | P1       |
+| #2764-e Scheduled tasks              | `/tasks`                                                                                                                                                                                                | P1       |
+| #2764-f Session workspace and panels | `/panel`, `/files`, `/workspace`, `/import`                                                                                                                                                             | P1       |
+| #2764-g Chat extras                  | `/regenerate`, `/copy`, `/setup-wizard`; browse-mode actions                                                                                                                                            | P1       |
+| #2764-h Phase-2 extras               | `/org`, `/settings migration`, `/stats`, `/docker`, `/pairing`, `/morning-briefing`, `/tasks template`                                                                                                  | P2       |
+
+The P0 rows of #2764-a (Default AI Model, Provider API Keys) ship together with #2762: without them a first message cannot be sent, so #2762 alone is not a usable phase-1 chat.
+
+### 3.7 Traceability
+
+Every §2 row classed direct or adapted is listed here with its command or screen. Excluded rows are in §2.15. Reference rows (class "—") have nothing to map. Counts: 270 mapped (133 direct, 137 adapted), 26 excluded, 11 reference.
+
+| §2   | Item                                       | Priority | Command → screen                                               |
+| ---- | ------------------------------------------ | -------- | -------------------------------------------------------------- |
+| 2.1  | `/`                                        | P0       | start → S1 Chat                                                |
+| 2.1  | `/agent`                                   | P0       | S1 Chat (start state)                                          |
+| 2.1  | `/agent/draft`                             | P0       | `/new` → S1 Chat (draft)                                       |
+| 2.1  | `/agent/:sessionId`                        | P0       | `/resume [id]` → S2 picker → S1 Chat                           |
+| 2.1  | `/assistants`                              | P1       | `/assistants` → S2 List                                        |
+| 2.1  | `/playbooks`                               | P1       | `/playbooks` → S2 List                                         |
+| 2.1  | `/history`                                 | P1       | `/history` → S2 List                                           |
+| 2.1  | `/org`                                     | P2       | `/org` → S2 List                                               |
+| 2.1  | `/settings`                                | P1       | `/settings` → S2 List of sections                              |
+| 2.1  | `/settings/migration`                      | P2       | `/settings migration` → S3 Form                                |
+| 2.1  | `/mcp-servers`                             | P1       | `/extensions` → S2 List                                        |
+| 2.1  | `/knowledge`                               | P1       | `/knowledge` → S2 List                                         |
+| 2.1  | `/scheduled-tasks`                         | P1       | `/tasks` → S2 List                                             |
+| 2.2  | History (§1.2.1)                           | P1       | `/history` → S2 List                                           |
+| 2.2  | Bookmarked (§1.2.1)                        | P1       | `/history --bookmarked` → S2 List                              |
+| 2.2  | Chat (§1.2.1)                              | P0       | `/new` → S2 picker → S1 Chat                                   |
+| 2.2  | Knowledge (§1.2.1)                         | P1       | `/knowledge` → S2 List                                         |
+| 2.2  | Assistants (§1.2.1)                        | P1       | `/assistants` → S2 List                                        |
+| 2.2  | Playbooks (§1.2.1)                         | P1       | `/playbooks` → S2 List                                         |
+| 2.2  | Extensions (§1.2.1)                        | P1       | `/extensions` → S2 List                                        |
+| 2.2  | Org (§1.2.1)                               | P2       | `/org` → S2 List                                               |
+| 2.2  | Scheduled Tasks (§1.2.1)                   | P1       | `/tasks` → S2 List                                             |
+| 2.2  | Recent Sessions (§1.2.1)                   | P0       | `/resume` → S2 picker                                          |
+| 2.2  | Settings (§1.2.1)                          | P1       | `/settings` → S2; version in S1 status line                    |
+| 2.2  | Notifications bell (§1.2.2)                | P1       | `/attention` → S2 List; badge in S1 status line                |
+| 2.2  | Agent Pairing Request dialog (§1.2.3)      | P1       | S5 Inline prompt (pairing)                                     |
+| 2.2  | Update toast (§1.2.3)                      | P2       | S1 status line notice; `/update` → S4 Confirm                  |
+| 2.2  | Toasts (§1.2.3)                            | P0       | S1 transcript notice line                                      |
+| 2.2  | Agent panel shortcuts (§1.2.3)             | P1       | `/panel workspace\|processes\|planning\|schedules`             |
+| 2.3  | AI model banner (§1.3.1)                   | P0       | S1 start warning line; `/settings ai-models`                   |
+| 2.3  | Runtime banner (§1.3.1)                    | P1       | S1 start warning line; `/setup-wizard`                         |
+| 2.3  | Morning Briefing recipe card (§1.3.1)      | P2       | `/morning-briefing` → S5 step prompts                          |
+| 2.3  | Built-in Assistants (§1.3.1)               | P0       | `/new` → S2 picker                                             |
+| 2.3  | My Assistants (§1.3.1)                     | P0       | `/new` → S2 picker                                             |
+| 2.3  | Manage Assistants (§1.3.1)                 | P1       | `/assistants` → S2 List                                        |
+| 2.3  | Empty / error state (§1.3.1)               | P0       | `/new` → S2 picker empty state                                 |
+| 2.3  | Playbook start (§1.3.1)                    | P1       | `/playbooks` → S2 row action Start                             |
+| 2.3  | Draft header (§1.3.2)                      | P0       | S1 header line                                                 |
+| 2.3  | Capabilities (§1.3.2)                      | P1       | S1 draft badge line                                            |
+| 2.3  | Add tools (§1.3.2)                         | P1       | `/assistants edit <id>` → S3 Tools page                        |
+| 2.3  | Model and thinking (§1.3.2)                | P0       | `/model`, `/thinking` → S2 picker                              |
+| 2.3  | Isolation Settings (§1.3.2)                | P2       | `/docker on\|off [image]`                                      |
+| 2.3  | Workspace by drop (§1.3.2)                 | P1       | `/workspace <path>` (draft) or `/new --workspace <path>`       |
+| 2.3  | Draft composer (§1.3.2)                    | P0       | S1 composer                                                    |
+| 2.3  | Create on send (§1.3.2)                    | P0       | S1 composer (first send creates the session)                   |
+| 2.3  | No-provider toast (§1.3.2)                 | P0       | S1 transcript error line with `/settings ai-models`            |
+| 2.3  | Docker error dialog (§1.3.2)               | P2       | S4 Confirm (four choices)                                      |
+| 2.4  | Loading overlay (§1.3.3)                   | P0       | S1 transcript status lines                                     |
+| 2.4  | Load error (§1.3.3)                        | P0       | S1 transcript error line                                       |
+| 2.4  | Playbook auto-start (§1.3.3)               | P1       | S1 transcript playbook strip                                   |
+| 2.4  | MCP discovery toasts (§1.3.3)              | P1       | S1 transcript notice lines                                     |
+| 2.4  | Keep-alive (§1.3.3)                        | P0       | backend behaviour; no TUI surface                              |
+| 2.4  | Title (§1.3.4)                             | P0       | S1 header line                                                 |
+| 2.4  | Rename session (§1.3.4)                    | P1       | `/rename <name>`                                               |
+| 2.4  | Bookmark (§1.3.4)                          | P1       | `/bookmark`                                                    |
+| 2.4  | Export session (§1.3.4)                    | P1       | `/export md\|atif <path>`                                      |
+| 2.4  | Copy pairing instructions (§1.3.4)         | P2       | `/pairing` → S6 Pager                                          |
+| 2.4  | Panel update badges (§1.3.4)               | P1       | S1 status line hint                                            |
+| 2.4  | Toggle agent panels (§1.3.4)               | P1       | `/panel workspace\|processes\|planning\|schedules`             |
+| 2.4  | Session files (§1.3.4)                     | P1       | `/files` → S2 List                                             |
+| 2.5  | Workflow banner (§1.3.5)                   | P0       | S1 status line; `/retry`, `/continue`                          |
+| 2.5  | Session model (§1.3.5)                     | P0       | `/model` → S2 picker                                           |
+| 2.5  | Sub-session batch update (§1.3.5)          | P2       | `/model` → S4 Confirm (three choices)                          |
+| 2.5  | Thinking effort (§1.3.5)                   | P0       | `/thinking off\|low\|medium\|high\|auto`                       |
+| 2.5  | Execution mode (§1.3.5)                    | P0       | `/permission normal\|yolo\|unsafe`                             |
+| 2.5  | Token metrics (§1.3.5)                     | P2       | `/stats`                                                       |
+| 2.5  | Tools count (§1.3.5)                       | P1       | `/tools` → S2 List                                             |
+| 2.5  | Retry failed MCP (§1.3.5)                  | P1       | `/extensions retry`                                            |
+| 2.6  | Mode badge (§1.3.6)                        | P0       | S1 status line                                                 |
+| 2.6  | Attached files bar (§1.3.6)                | P0       | S1 attachment line; `/detach <n>`                              |
+| 2.6  | Queued prompts (§1.3.6)                    | P0       | S1 queue line; `/queue cancel <n>`                             |
+| 2.6  | Input (§1.3.6)                             | P0       | S1 composer                                                    |
+| 2.6  | `@` mentions (§1.3.6)                      | P1       | S1 completion popup on `@`                                     |
+| 2.6  | `/clear` (§1.3.6)                          | P0       | `/clear`                                                       |
+| 2.6  | `/reload` (§1.3.6)                         | P0       | `/reload`                                                      |
+| 2.6  | `/permission …` (§1.3.6)                   | P0       | `/permission normal\|yolo\|unsafe`                             |
+| 2.6  | Attach file (§1.3.6)                       | P0       | `/attach <path>…`                                              |
+| 2.6  | Drop files (§1.3.6)                        | P0       | `/attach <path>…`                                              |
+| 2.6  | Paste image (§1.3.6)                       | P2       | `/attach <path>…` (saved file)                                 |
+| 2.6  | Cancel request (§1.3.6)                    | P0       | Esc / Ctrl+C on S1                                             |
+| 2.6  | Resume (§1.3.6)                            | P0       | `/continue`; hint in S1 status line                            |
+| 2.6  | Oversize guard (§1.3.6)                    | P0       | S1 composer error line                                         |
+| 2.7  | Load older (§1.3.7)                        | P0       | S1 transcript scroll (PgUp at top loads older)                 |
+| 2.7  | Jump to approvals (§1.3.7)                 | P0       | S1 status line badge; S5 prompt                                |
+| 2.7  | Scroll to latest (§1.3.7)                  | P0       | S1 End key                                                     |
+| 2.7  | Compact divider (§1.3.7)                   | P1       | S1 transcript divider; browse mode expand                      |
+| 2.7  | Role label (§1.3.7)                        | P0       | S1 transcript prefix                                           |
+| 2.7  | Copy message (§1.3.7)                      | P1       | `/copy <n> [path]`                                             |
+| 2.7  | Regenerate (§1.3.7)                        | P1       | `/regenerate`                                                  |
+| 2.7  | Copy tool calls (§1.3.7)                   | P2       | `/copy tools <n> [path]`                                       |
+| 2.7  | Export message (§1.3.7)                    | P2       | `/export md\|atif <path>`                                      |
+| 2.7  | Error bubble (§1.3.7)                      | P0       | S1 transcript error block; `/retry`, `/settings`               |
+| 2.7  | Thinking (§1.3.7)                          | P0       | S1 transcript block; browse mode expand                        |
+| 2.7  | Rich content (§1.3.7)                      | P0       | S1 transcript rendering; S6 Pager for files                    |
+| 2.8  | Tool group (§1.3.8)                        | P0       | S1 transcript block                                            |
+| 2.8  | Tool call row (§1.3.8)                     | P0       | S1 transcript block; browse mode expand; S6 Pager              |
+| 2.8  | MCP UI resource (§1.3.8)                   | P2       | S1 transcript block → S3 Form fallback                         |
+| 2.8  | Legacy form (§1.3.8)                       | P2       | S1 transcript text dump                                        |
+| 2.8  | File write card (§1.3.8)                   | P0       | S1 transcript diff; S6 Pager                                   |
+| 2.8  | String replace card (§1.3.8)               | P0       | S1 transcript diff                                             |
+| 2.8  | Shell output card (§1.3.8)                 | P0       | S1 transcript block; S6 Pager                                  |
+| 2.8  | Report result card (§1.3.8)                | P0       | S1 transcript block                                            |
+| 2.8  | Deliverable file actions (§1.3.8)          | P0       | browse mode actions: S6 Pager / open externally                |
+| 2.8  | Sub-agent card (§1.3.8)                    | P1       | S1 transcript block; `/resume <child-id>`                      |
+| 2.9  | Tool approval (§1.3.9)                     | P0       | S5 Inline prompt (approval)                                    |
+| 2.9  | Secret prompt (§1.3.9)                     | P0       | S5 Inline prompt (secret)                                      |
+| 2.9  | Question prompt (§1.3.9)                   | P0       | S5 Inline prompt (question)                                    |
+| 2.9  | Pairing request (§1.3.9)                   | P1       | S5 Inline prompt (pairing)                                     |
+| 2.10 | Workspace toolbar (§1.3.10)                | P1       | `/panel workspace` → S2 List actions                           |
+| 2.10 | Workspace override (§1.3.10)               | P1       | `/workspace <path>`, `/workspace clear`                        |
+| 2.10 | File tree (§1.3.10)                        | P1       | `/panel workspace` → S2 tree list                              |
+| 2.10 | Upload zone (§1.3.10)                      | P1       | `/import <path>`                                               |
+| 2.10 | File preview (§1.3.10)                     | P1       | `/panel workspace` → S6 Pager                                  |
+| 2.10 | Processes (§1.3.10)                        | P1       | `/panel processes` → S2 List                                   |
+| 2.10 | Process output (§1.3.10)                   | P1       | `/panel processes` → S6 Pager                                  |
+| 2.10 | Planning (§1.3.10)                         | P1       | `/panel planning` → S6 Pager                                   |
+| 2.10 | Session schedules (§1.3.10)                | P1       | `/panel schedules` → S2 List                                   |
+| 2.10 | Panel attention (§1.3.10)                  | P2       | S1 status line hint                                            |
+| 2.11 | New session (§1.4.1)                       | P0       | `/new`                                                         |
+| 2.11 | From playbook (§1.4.1)                     | P1       | `/playbooks` → S2 row action Start                             |
+| 2.11 | From scheduled task (§1.4.1)               | P0       | backend behaviour; no TUI surface                              |
+| 2.11 | Recent Sessions list (§1.4.2)              | P0       | `/resume` → S2 picker                                          |
+| 2.11 | History page (§1.4.2)                      | P1       | `/history` → S2 List                                           |
+| 2.11 | Search (§1.4.2)                            | P1       | `/history search <text>`                                       |
+| 2.11 | Sort (§1.4.2)                              | P1       | `/history --sort <order>`                                      |
+| 2.11 | Status filter (§1.4.2)                     | P1       | `/history --status <status>`                                   |
+| 2.11 | Bookmarked filter (§1.4.2)                 | P1       | `/history --bookmarked`                                        |
+| 2.11 | Bookmarked strip (§1.4.2)                  | P2       | `/history --bookmarked`                                        |
+| 2.11 | Lineage filter (§1.4.2)                    | P2       | `/history --lineage <id>`                                      |
+| 2.11 | Tree badges (§1.4.2)                       | P1       | `/history` → S2 row badges                                     |
+| 2.11 | Open from sidebar (§1.4.3)                 | P0       | `/resume`                                                      |
+| 2.11 | Resume from History (§1.4.3)               | P1       | `/history` → S2 row action Resume                              |
+| 2.11 | From notification (§1.4.3)                 | P1       | `/attention` → S2 row action Resume                            |
+| 2.11 | From Org (§1.4.3)                          | P2       | `/org` → S2 row action Resume                                  |
+| 2.11 | From sub-agent card (§1.4.3)               | P1       | `/resume <child-id>`                                           |
+| 2.11 | Rename (§1.4.4)                            | P1       | `/rename <name>`                                               |
+| 2.11 | Bookmark (§1.4.4)                          | P1       | `/bookmark`                                                    |
+| 2.11 | Delete (§1.4.4)                            | P1       | `/delete [id]` → S4 Confirm                                    |
+| 2.11 | Delete with children (§1.4.4)              | P1       | `/delete [id]` → S4 Confirm (two choices)                      |
+| 2.11 | Clear all sessions (§1.4.4)                | P2       | `/settings advanced` → S4 Confirm                              |
+| 2.11 | Markdown export (§1.4.5)                   | P1       | `/export md <path>`                                            |
+| 2.11 | ATIF export (§1.4.5)                       | P1       | `/export atif <path>`                                          |
+| 2.11 | Copy visible (§1.4.5)                      | P1       | `/export visible <path>`                                       |
+| 2.11 | Org bundle (§1.4.5)                        | P2       | `/org export <path>`, `/org import <path>`                     |
+| 2.11 | Sidebar status dot (§1.4.6)                | P0       | S2 status column in `/resume` and `/history`                   |
+| 2.11 | History status badge (§1.4.6)              | P1       | `/history` → S2 status column                                  |
+| 2.11 | Live updates (§1.4.6)                      | P0       | S1 and S2 refresh from `agent:event`                           |
+| 2.11 | Attention list (§1.4.6)                    | P1       | `/attention` → S2 List                                         |
+| 2.11 | Mark viewed (§1.4.6)                       | P1       | automatic on `/resume`                                         |
+| 2.11 | Import Org (§1.4.7)                        | P2       | `/org import <path>`                                           |
+| 2.11 | Org refresh / search (§1.4.7)              | P2       | `/org search <text>`; reload key                               |
+| 2.11 | Org card (§1.4.7)                          | P2       | `/org` → S2 row detail                                         |
+| 2.11 | Export Org (§1.4.7)                        | P2       | `/org export <path>`                                           |
+| 2.11 | Delete org (§1.4.7)                        | P2       | `/org delete <id>` → S4 Confirm                                |
+| 2.11 | Resume root (§1.4.7)                       | P2       | `/org` → S2 row action Resume                                  |
+| 2.11 | Workspace at creation (§1.4.8)             | P1       | `/new --workspace <path>`                                      |
+| 2.11 | Override after creation (§1.4.8)           | P1       | `/workspace <path>`                                            |
+| 2.11 | Scheduled task workspace (§1.4.8)          | P1       | `/tasks new\|edit` → S3 workspace field                        |
+| 2.12 | Assistants search (§1.5)                   | P1       | `/assistants search <text>`                                    |
+| 2.12 | Create (§1.5)                              | P1       | `/assistants new` → S3 Form                                    |
+| 2.12 | Card expand (§1.5)                         | P1       | `/assistants` → S2 row detail                                  |
+| 2.12 | Edit (§1.5)                                | P1       | `/assistants edit <id>` → S3 Form                              |
+| 2.12 | Delete (§1.5)                              | P1       | `/assistants delete <id>` → S4 Confirm                         |
+| 2.12 | Editor General (§1.5)                      | P1       | `/assistants new\|edit` → S3 General page                      |
+| 2.12 | Editor Tools (§1.5)                        | P1       | `/assistants new\|edit` → S3 Tools page                        |
+| 2.12 | Editor Skills (§1.5)                       | P1       | `/assistants new\|edit` → S3 Skills page                       |
+| 2.12 | Playbooks refresh (§1.6)                   | P1       | `/playbooks` → S2 reload key                                   |
+| 2.12 | Playbooks search (§1.6)                    | P1       | `/playbooks search <text>`                                     |
+| 2.12 | Playbooks display options (§1.6)           | P2       | `/playbooks --sort <order>`                                    |
+| 2.12 | Playbooks card (§1.6)                      | P1       | `/playbooks` → S2 row detail                                   |
+| 2.12 | Playbooks Start / Continue (§1.6)          | P1       | `/playbooks` → S2 row action                                   |
+| 2.12 | Playbooks delete (§1.6)                    | P1       | `/playbooks delete <id>` → S4 Confirm                          |
+| 2.12 | Extensions Add Extension (§1.7.1)          | P1       | `/extensions new` → S3 Form                                    |
+| 2.12 | Extensions server card (§1.7.1)            | P1       | `/extensions` → S2 row detail                                  |
+| 2.12 | Extensions Active switch (§1.7.1)          | P1       | `/extensions enable\|disable <name>`                           |
+| 2.12 | Extensions Tools list (§1.7.1)             | P1       | `/extensions tools <name>` → S6 Pager                          |
+| 2.12 | Extensions Edit (§1.7.1)                   | P1       | `/extensions edit <name>` → S3 Form                            |
+| 2.12 | Extensions Retry (§1.7.1)                  | P1       | `/extensions retry <name>`                                     |
+| 2.12 | Open App Wizard (§1.7.1)                   | P2       | `/extensions app-wizard`                                       |
+| 2.12 | Authorize / Disconnect (§1.7.1)            | P1       | `/extensions auth\|logout <name>`                              |
+| 2.12 | Extensions Delete (§1.7.1)                 | P1       | `/extensions delete <name>` → S4 Confirm                       |
+| 2.12 | Extensions Load more (§1.7.1)              | P1       | `/extensions` → S2 scroll loads more                           |
+| 2.12 | Recommended presets (§1.7.1)               | P1       | `/extensions presets` → S2 List                                |
+| 2.12 | Add / Edit / Install dialog (§1.7.1)       | P1       | `/extensions new\|edit` → S3 Form pages                        |
+| 2.12 | Skills refresh (§1.7.2)                    | P1       | `/skills` → S2 reload key                                      |
+| 2.12 | Installed skills (§1.7.2)                  | P1       | `/skills` → S2 List; `/skills delete <name>`                   |
+| 2.12 | Skills folders (§1.7.2)                    | P2       | `/skills folders`                                              |
+| 2.12 | Reset user skills (§1.7.2)                 | P1       | `/skills reset` → S4 Confirm                                   |
+| 2.12 | Install by drop (§1.7.2)                   | P1       | `/skills install <path>`                                       |
+| 2.12 | Install from GitHub (§1.7.2)               | P1       | `/skills install <url>`                                        |
+| 2.12 | Conflict dialog (§1.7.2)                   | P1       | `/skills install` → S4 Confirm (same choices)                  |
+| 2.12 | Knowledge refresh (§1.8)                   | P1       | `/knowledge` → S2 reload key                                   |
+| 2.12 | Knowledge search (§1.8)                    | P1       | `/knowledge search <text>`                                     |
+| 2.12 | Knowledge assistant filter (§1.8)          | P1       | `/knowledge --assistant <id>`                                  |
+| 2.12 | Knowledge graph (§1.8)                     | P2       | `/knowledge entity <id>` → S6 citation list                    |
+| 2.12 | Knowledge entity filter (§1.8)             | P1       | `/knowledge entity <id>`                                       |
+| 2.12 | Knowledge chunk list (§1.8)                | P1       | `/knowledge` → S2 List with load more                          |
+| 2.12 | Knowledge inspector (§1.8)                 | P1       | `/knowledge` → S6 detail; delete → S4 Confirm                  |
+| 2.12 | Scheduled tasks New task (§1.9.1)          | P1       | `/tasks new` → S3 Form                                         |
+| 2.12 | Starter templates (§1.9.1)                 | P2       | `/tasks template` → S2 picker                                  |
+| 2.12 | Morning Briefing link (§1.9.1)             | P2       | `/morning-briefing`                                            |
+| 2.12 | Scheduled tasks summary (§1.9.1)           | P1       | `/tasks` → S2 header line                                      |
+| 2.12 | Scheduled task row (§1.9.1)                | P1       | `/tasks` → S2 row; `/tasks enable\|disable\|edit\|delete <id>` |
+| 2.12 | Task form fields (§1.9.2)                  | P1       | `/tasks new\|edit` → S3 Form                                   |
+| 2.12 | Schedule builder (§1.9.2)                  | P1       | `/tasks new\|edit` → S3 schedule fields                        |
+| 2.12 | Workspace field (§1.9.2)                   | P1       | `/tasks new\|edit` → S3 path field                             |
+| 2.12 | Message field with mentions (§1.9.2)       | P1       | `/tasks new\|edit` → S3 field with `@` popup                   |
+| 2.12 | Execution mode field (§1.9.2)              | P1       | `/tasks new\|edit` → S3 choice field                           |
+| 2.12 | Reset planning switch (§1.9.2)             | P1       | `/tasks new\|edit` → S3 toggle                                 |
+| 2.12 | Morning Briefing walkthrough (§1.9.3)      | P2       | `/morning-briefing` → S5 step prompts                          |
+| 2.13 | Version (§1.10.1)                          | P1       | `/settings` → S2 header                                        |
+| 2.13 | Changed badge / tab dots (§1.10.1)         | P1       | `/settings` → S2 changed marks                                 |
+| 2.13 | Restart required (§1.10.1)                 | P1       | `/settings` → S2 notice line                                   |
+| 2.13 | Discard (§1.10.1)                          | P1       | `/settings discard` → S4 Confirm                               |
+| 2.13 | Close (§1.10.1)                            | P1       | Esc from `/settings` → S4 Confirm (unsaved changes)            |
+| 2.13 | Save Changes (§1.10.1)                     | P1       | `/settings save`                                               |
+| 2.13 | Language (§1.10.2)                         | P1       | `/settings general` → S3                                       |
+| 2.13 | Tool Detail Level (§1.10.2)                | P1       | `/settings general` → S3                                       |
+| 2.13 | Initial Response Speed Format (§1.10.2)    | P2       | `/settings general` → S3                                       |
+| 2.13 | Show Token Speed (§1.10.2)                 | P2       | `/settings general` → S3                                       |
+| 2.13 | Compact Metrics (§1.10.2)                  | P2       | `/settings general` → S3                                       |
+| 2.13 | Default AI Model (§1.10.3)                 | P0       | `/settings ai-models` → S3; `/model` → S2 picker               |
+| 2.13 | Backup AI Model (§1.10.3)                  | P1       | `/settings ai-models` → S3                                     |
+| 2.13 | Thinking Depth (§1.10.3)                   | P1       | `/settings ai-models` → S3                                     |
+| 2.13 | Override Temperature (§1.10.3)             | P1       | `/settings ai-models` → S3                                     |
+| 2.13 | Sub-Agent Model Routing (§1.10.3)          | P1       | `/settings ai-models` → S3                                     |
+| 2.13 | Provider API Keys (§1.10.3)                | P0       | `/settings ai-models` → S3 masked fields                       |
+| 2.13 | Custom OpenAI Providers (§1.10.3)          | P1       | `/settings ai-models` → S3 sub-form                            |
+| 2.13 | Context Management Strategy (§1.10.4)      | P1       | `/settings chat-interface` → S3                                |
+| 2.13 | Max Output Tokens (§1.10.4)                | P1       | `/settings chat-interface` → S3                                |
+| 2.13 | Message Window Size (§1.10.4)              | P1       | `/settings chat-interface` → S3                                |
+| 2.13 | Max Input Context (§1.10.4)                | P1       | `/settings chat-interface` → S3                                |
+| 2.13 | Tool Calls Visible Count (§1.10.4)         | P1       | `/settings chat-interface` → S3                                |
+| 2.13 | Code Diff Context Lines (§1.10.4)          | P1       | `/settings chat-interface` → S3                                |
+| 2.13 | Max File Upload Size (§1.10.5)             | P1       | `/settings system` → S3                                        |
+| 2.13 | Your Chrome (§1.10.5)                      | P2       | `/settings system` → S3 status lines                           |
+| 2.13 | Clear agent browser data (§1.10.5)         | P2       | `/settings system` → S4 Confirm                                |
+| 2.13 | Prevent sleep (§1.10.5)                    | P1       | `/settings system` → S3                                        |
+| 2.13 | Search Index Frequency (§1.10.5)           | P1       | `/settings system` → S3                                        |
+| 2.13 | Web Action Timeout (§1.10.5)               | P1       | `/settings system` → S3                                        |
+| 2.13 | Extension Discovery Timeout (§1.10.5)      | P1       | `/settings system` → S3                                        |
+| 2.13 | MCP Tool Execution Timeout (§1.10.5)       | P1       | `/settings system` → S3                                        |
+| 2.13 | Keep App Logs (§1.10.5)                    | P1       | `/settings system` → S3                                        |
+| 2.13 | Scheduled Task Minimum Interval (§1.10.5)  | P1       | `/settings system` → S3                                        |
+| 2.13 | HTTP Server Port (§1.10.5)                 | P1       | `/settings system` → S3                                        |
+| 2.13 | Expose HTTP Server (§1.10.5)               | P1       | `/settings system` → S3                                        |
+| 2.13 | Session API Keys (§1.10.5)                 | P1       | `/settings system` → S2 key list; revoke → S4 Confirm          |
+| 2.13 | Open Migration Dashboard (§1.10.5)         | P2       | `/settings migration`                                          |
+| 2.13 | Max Retry Attempts / Retry Delay (§1.10.6) | P1       | `/settings advanced` → S3                                      |
+| 2.13 | Loop and wait limits (§1.10.6)             | P1       | `/settings advanced` → S3                                      |
+| 2.13 | Session Branching / Child Limit (§1.10.6)  | P1       | `/settings advanced` → S3                                      |
+| 2.13 | Concurrency limits (§1.10.6)               | P1       | `/settings advanced` → S3                                      |
+| 2.13 | Recent Media Payload Messages (§1.10.6)    | P2       | `/settings advanced` → S3                                      |
+| 2.13 | Tool Result Inline Limit (§1.10.6)         | P2       | `/settings advanced` → S3                                      |
+| 2.13 | Shell Isolation Level (§1.10.6)            | P1       | `/settings advanced` → S3                                      |
+| 2.13 | Shell runtime bootstrap (§1.10.6)          | P2       | `/settings advanced` → S3                                      |
+| 2.13 | Linked git worktrees (§1.10.6)             | P2       | `/settings advanced` → S3                                      |
+| 2.13 | About / Check for Updates (§1.10.6)        | P2       | `/update` → S4 Confirm                                         |
+| 2.13 | Clear All Sessions & Workspace (§1.10.6)   | P2       | `/settings advanced` → S4 Confirm                              |
+| 2.13 | Reset All Data & Settings (§1.10.6)        | P2       | `/settings advanced` → S4 Confirm (type `RESET`)               |
+| 2.13 | Inline Audio Attachments (§1.10.7)         | P2       | `/settings experimental` → S3                                  |
+| 2.13 | Tool-loop recovery legacy (§1.10.7)        | P2       | `/settings experimental` → S3                                  |
+| 2.13 | Max resample retries (§1.10.7)             | P2       | `/settings experimental` → S3                                  |
+| 2.13 | Migration Back (§1.11)                     | P2       | Esc from `/settings migration`                                 |
+| 2.13 | Migration Export (§1.11)                   | P2       | `/settings migration` → S3 export page                         |
+| 2.13 | Migration Import (§1.11)                   | P2       | `/settings migration` → S3 import page                         |
+| 2.13 | Migration Password dialogs (§1.11)         | P2       | `/settings migration` → S3 masked fields                       |
+| 2.13 | Migration Progress (§1.11)                 | P2       | `/settings migration` → S3 progress line                       |
+| 2.13 | Migration Import preview (§1.11)           | P2       | `/settings migration` → S6 preview; S4 conflict choice         |
+| 2.13 | Migration Done (§1.11)                     | P2       | `/settings migration` → S6 result table                        |
 
 ## 4. E2E scenarios
 
