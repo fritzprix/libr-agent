@@ -223,7 +223,7 @@ pub(crate) fn stable_stringify(value: &Value) -> String {
         }
         Value::Object(map) => {
             let mut entries: Vec<(&String, &Value)> = map.iter().collect();
-            entries.sort_by(|(left, _), (right, _)| left.cmp(right));
+            entries.sort_by_key(|(key, _)| *key);
             let entries: Vec<String> = entries
                 .into_iter()
                 .map(|(key, value)| {
