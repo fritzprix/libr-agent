@@ -20,7 +20,7 @@ pub async fn delete_session(
     app_handle: &AppHandle,
     session_id: String,
 ) -> Result<Vec<String>, String> {
-    let dispatcher = TauriEventDispatcher::new(app_handle.clone());
+    let dispatcher = TauriEventDispatcher::new(app_handle);
     delete_session_with_dispatcher(
         session_repo,
         active_sessions,
@@ -125,7 +125,7 @@ pub async fn delete_session_only(
     app_handle: &AppHandle,
     session_id: String,
 ) -> Result<(String, Vec<String>), String> {
-    let dispatcher = TauriEventDispatcher::new(app_handle.clone());
+    let dispatcher = TauriEventDispatcher::new(app_handle);
     delete_session_only_with_dispatcher(
         session_repo,
         active_sessions,

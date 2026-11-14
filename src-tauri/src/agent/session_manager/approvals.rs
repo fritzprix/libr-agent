@@ -1,5 +1,7 @@
 use super::AgentSessionManager;
+use crate::agent::events::AgentEventDispatcher;
 use crate::agent::state::{AgentSession, PendingApprovalData, PendingApprovalKind};
+use crate::agent::tauri_events::TauriEventDispatcher;
 use std::collections::HashMap;
 use tokio::sync::RwLock;
 
@@ -99,7 +101,9 @@ pub(crate) async fn reemit_pending_approvals_on_resume(
     };
 
     for event in pending_events {
-        if let Err(e) = crate::agent::tauri_events::emit_agent_event(&manager.app_handle, event) {
+        if let Err(e) =
+            TauriEventDispatcher::from_handle(&manager.app_handle).emit_agent_event(event)
+        {
             log::error!("Failed to re-emit pending approval event on resume: {}", e);
         }
     }
@@ -119,7 +123,7 @@ fn complete_resolved_approval(
             tool_call_id,
             approved,
         };
-        if let Err(error) = crate::agent::tauri_events::emit_agent_event(app_handle, event) {
+        if let Err(error) = TauriEventDispatcher::from_handle(app_handle).emit_agent_event(event) {
             log::error!(
                 "Failed to emit ToolExecutionApprovalResolved event: {}",
                 error

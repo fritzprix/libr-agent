@@ -13,6 +13,35 @@ use tauri_mcp_agent_lib::repositories::{
 };
 use tokio::sync::RwLock;
 
+/// Test dispatcher for `pending_queue` (#2772 G1.1): the queue paths emit only
+/// through `AgentEventDispatcher`, so tests need no app handle at all — the old
+/// cast mock handle was unsound to clone and segfaulted the test binary.
+#[derive(Default)]
+struct NoopDispatcher;
+
+impl tauri_mcp_agent_lib::agent::events::AgentEventDispatcher for NoopDispatcher {
+    fn emit_agent_event(
+        &self,
+        _event: tauri_mcp_agent_lib::agent::events::AgentEvent,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn emit_compact_state(
+        &self,
+        _event: tauri_mcp_agent_lib::agent::llm::types::CompactStateEvent,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn emit_completion_cancel(
+        &self,
+        _request: tauri_mcp_agent_lib::agent::llm::types::CompletionCancelRequest,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+}
+
 fn build_session_metadata(session_id: &str) -> SessionMetadata {
     let now = chrono::Utc::now().timestamp_millis();
     SessionMetadata {
@@ -148,12 +177,6 @@ async fn claim_all_pending_messages_promotes_every_queued_prompt_in_one_turn() {
         .await
         .insert(session_id.clone(), build_agent_session(&session_id));
 
-    let mock_app = tauri::test::mock_app();
-    let mock_handle = mock_app.handle();
-    let app_handle: &tauri::AppHandle = unsafe {
-        &*(mock_handle as *const tauri::AppHandle<MockRuntime> as *const tauri::AppHandle)
-    };
-
     let msg_a = build_user_message_with_text(&session_id, "msg-a", 1_000, "first");
     let msg_b = build_user_message_with_text(&session_id, "msg-b", 2_000, "second");
     let msg_c = build_user_message_with_text(&session_id, "msg-c", 3_000, "third");
@@ -161,7 +184,7 @@ async fn claim_all_pending_messages_promotes_every_queued_prompt_in_one_turn() {
     for msg in [&msg_a, &msg_b, &msg_c] {
         tauri_mcp_agent_lib::agent::pending_queue::enqueue_pending_user_message(
             &active_sessions,
-            app_handle,
+            &NoopDispatcher,
             &session_id,
             msg,
         )
@@ -179,7 +202,7 @@ async fn claim_all_pending_messages_promotes_every_queued_prompt_in_one_turn() {
 
     let claimed = tauri_mcp_agent_lib::agent::pending_queue::claim_all_pending_messages(
         &active_sessions,
-        app_handle,
+        &NoopDispatcher,
         &session_id,
     )
     .await
@@ -268,12 +291,6 @@ async fn claim_all_pending_messages_caps_batch_and_leaves_fifo_remainder() {
         .await
         .insert(session_id.clone(), build_agent_session(&session_id));
 
-    let mock_app = tauri::test::mock_app();
-    let mock_handle = mock_app.handle();
-    let app_handle: &tauri::AppHandle = unsafe {
-        &*(mock_handle as *const tauri::AppHandle<MockRuntime> as *const tauri::AppHandle)
-    };
-
     let batch_cap = tauri_mcp_agent_lib::agent::pending_queue::MAX_PENDING_CLAIM_BATCH;
     let total = batch_cap + 2;
     for i in 0..total {
@@ -285,7 +302,7 @@ async fn claim_all_pending_messages_caps_batch_and_leaves_fifo_remainder() {
         );
         tauri_mcp_agent_lib::agent::pending_queue::enqueue_pending_user_message(
             &active_sessions,
-            app_handle,
+            &NoopDispatcher,
             &session_id,
             &msg,
         )
@@ -295,7 +312,7 @@ async fn claim_all_pending_messages_caps_batch_and_leaves_fifo_remainder() {
 
     let claimed = tauri_mcp_agent_lib::agent::pending_queue::claim_all_pending_messages(
         &active_sessions,
-        app_handle,
+        &NoopDispatcher,
         &session_id,
     )
     .await
@@ -891,12 +908,6 @@ async fn claim_all_pending_messages_preserves_non_user_messages_without_merging(
         .await
         .insert(session_id.clone(), build_agent_session(&session_id));
 
-    let mock_app = tauri::test::mock_app();
-    let mock_handle = mock_app.handle();
-    let app_handle: &tauri::AppHandle = unsafe {
-        &*(mock_handle as *const tauri::AppHandle<MockRuntime> as *const tauri::AppHandle)
-    };
-
     let mut tool_call_msg = build_user_message(&session_id, "tool-call-1", 1_000);
     tool_call_msg.role = "assistant".to_string();
     tool_call_msg.content = vec![];
@@ -911,7 +922,7 @@ async fn claim_all_pending_messages_preserves_non_user_messages_without_merging(
     for msg in [&tool_call_msg, &tool_result_msg] {
         tauri_mcp_agent_lib::agent::pending_queue::enqueue_pending_user_message(
             &active_sessions,
-            app_handle,
+            &NoopDispatcher,
             &session_id,
             msg,
         )
@@ -921,7 +932,7 @@ async fn claim_all_pending_messages_preserves_non_user_messages_without_merging(
 
     let claimed = tauri_mcp_agent_lib::agent::pending_queue::claim_all_pending_messages(
         &active_sessions,
-        app_handle,
+        &NoopDispatcher,
         &session_id,
     )
     .await
@@ -1042,12 +1053,6 @@ async fn claim_all_pending_messages_merges_consecutive_user_messages_in_mixed_ba
         .await
         .insert(session_id.clone(), build_agent_session(&session_id));
 
-    let mock_app = tauri::test::mock_app();
-    let mock_handle = mock_app.handle();
-    let app_handle: &tauri::AppHandle = unsafe {
-        &*(mock_handle as *const tauri::AppHandle<MockRuntime> as *const tauri::AppHandle)
-    };
-
     let user_1 = build_user_message_with_text(&session_id, "user-1", 1_000, "hello");
     let user_2 = build_user_message_with_text(&session_id, "user-2", 2_000, "world");
 
@@ -1060,7 +1065,7 @@ async fn claim_all_pending_messages_merges_consecutive_user_messages_in_mixed_ba
     for msg in [&user_1, &user_2, &tool_msg] {
         tauri_mcp_agent_lib::agent::pending_queue::enqueue_pending_user_message(
             &active_sessions,
-            app_handle,
+            &NoopDispatcher,
             &session_id,
             msg,
         )
@@ -1070,7 +1075,7 @@ async fn claim_all_pending_messages_merges_consecutive_user_messages_in_mixed_ba
 
     let claimed = tauri_mcp_agent_lib::agent::pending_queue::claim_all_pending_messages(
         &active_sessions,
-        app_handle,
+        &NoopDispatcher,
         &session_id,
     )
     .await
@@ -1200,17 +1205,11 @@ async fn take_pending_message_ids_leaves_arrivals_after_snapshot() {
         .await
         .insert(session_id.clone(), build_agent_session(&session_id));
 
-    let mock_app = tauri::test::mock_app();
-    let mock_handle = mock_app.handle();
-    let app_handle: &tauri::AppHandle = unsafe {
-        &*(mock_handle as *const tauri::AppHandle<MockRuntime> as *const tauri::AppHandle)
-    };
-
     let first = build_user_message_with_text(&session_id, "snap-first", 1_000, "first");
     let second = build_user_message_with_text(&session_id, "snap-second", 2_000, "second");
     tauri_mcp_agent_lib::agent::pending_queue::enqueue_pending_user_message(
         &active_sessions,
-        app_handle,
+        &NoopDispatcher,
         &session_id,
         &first,
     )
@@ -1233,7 +1232,7 @@ async fn take_pending_message_ids_leaves_arrivals_after_snapshot() {
     // Arrival after snapshot must survive a targeted take.
     tauri_mcp_agent_lib::agent::pending_queue::enqueue_pending_user_message(
         &active_sessions,
-        app_handle,
+        &NoopDispatcher,
         &session_id,
         &second,
     )

@@ -349,7 +349,7 @@ pub async fn settle_session_and_go_idle(
     terminal_message: Option<&Message>,
     completion_reason: WorkflowCompletionReason,
 ) -> Result<bool, String> {
-    let dispatcher = crate::agent::tauri_events::TauriEventDispatcher::new(app_handle.clone());
+    let dispatcher = crate::agent::tauri_events::TauriEventDispatcher::new(app_handle);
     settle_session_and_go_idle_with_dispatcher(
         session_repo,
         active_sessions,
@@ -415,7 +415,7 @@ pub async fn settle_session_and_finalize_error(
     terminal_message: Option<&Message>,
     error: AgentRuntimeError,
 ) -> Result<(), String> {
-    let dispatcher = crate::agent::tauri_events::TauriEventDispatcher::new(app_handle.clone());
+    let dispatcher = crate::agent::tauri_events::TauriEventDispatcher::new(app_handle);
     settle_session_and_finalize_error_with_dispatcher(
         session_repo,
         active_sessions,

@@ -154,7 +154,7 @@ pub async fn recover_sessions(
     app_handle: &AppHandle,
     context_registry: Arc<ContextRegistry>,
 ) -> Result<(), String> {
-    let dispatcher = TauriEventDispatcher::new(app_handle.clone());
+    let dispatcher = TauriEventDispatcher::new(app_handle);
     recover_sessions_with_dispatcher(session_repo, active_sessions, &dispatcher, context_registry)
         .await
 }

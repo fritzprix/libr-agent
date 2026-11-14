@@ -1,3 +1,4 @@
+use crate::agent::events::AgentEventDispatcher;
 use crate::agent::state::AgentSession;
 use crate::models::chat::Message;
 use crate::repositories::message_repository::MessageRepository as MessageRepositoryTrait;
@@ -5,7 +6,6 @@ use crate::repositories::pending_queue_repository::{PendingQueueEntry, PendingQu
 use crate::state::{get_message_repository, get_pending_queue_repository};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use tauri::AppHandle;
 use tokio::sync::RwLock;
 
 use super::operations::{
@@ -92,7 +92,7 @@ async fn promote_pending_message_id(
 /// so failure recovery can restore the original `queue_seq` / `created_at`.
 pub async fn claim_next_pending_message(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
-    app_handle: &AppHandle,
+    dispatcher: &dyn AgentEventDispatcher,
     session_id: &str,
 ) -> Result<Option<Message>, String> {
     let message_id = {
@@ -121,12 +121,12 @@ pub async fn claim_next_pending_message(
         };
 
     let PromotePendingOutcome::Promoted(message) = promoted else {
-        let _ = emit_pending_queue_updated(active_sessions, app_handle, session_id).await;
+        let _ = emit_pending_queue_updated(active_sessions, dispatcher, session_id).await;
         return Ok(None);
     };
 
-    emit_message_added(app_handle, session_id, &message).await?;
-    emit_pending_queue_updated(active_sessions, app_handle, session_id).await?;
+    emit_message_added(dispatcher, session_id, &message).await?;
+    emit_pending_queue_updated(active_sessions, dispatcher, session_id).await?;
     Ok(Some(*message))
 }
 
@@ -139,7 +139,7 @@ pub async fn claim_next_pending_message(
 /// runs in one DB transaction so failure leaves the queue intact.
 pub async fn claim_all_pending_messages(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
-    app_handle: &AppHandle,
+    dispatcher: &dyn AgentEventDispatcher,
     session_id: &str,
 ) -> Result<Vec<Message>, String> {
     let pending_events = {
@@ -172,7 +172,7 @@ pub async fn claim_all_pending_messages(
     if claim_ids.len() == 1 {
         return claim_single_pending_message(
             active_sessions,
-            app_handle,
+            dispatcher,
             session_id,
             claim_ids[0].clone(),
         )
@@ -200,14 +200,14 @@ pub async fn claim_all_pending_messages(
     }
 
     if fetched_messages.is_empty() {
-        emit_pending_queue_updated(active_sessions, app_handle, session_id).await?;
+        emit_pending_queue_updated(active_sessions, dispatcher, session_id).await?;
         return Ok(Vec::new());
     }
 
     if fetched_messages.len() == 1 {
         return claim_single_pending_message(
             active_sessions,
-            app_handle,
+            dispatcher,
             session_id,
             fetched_messages[0].id.clone(),
         )
@@ -229,7 +229,7 @@ pub async fn claim_all_pending_messages(
                 let promoted_id = user_slice[0].id.clone();
                 let res = match claim_single_pending_message(
                     active_sessions,
-                    app_handle,
+                    dispatcher,
                     session_id,
                     promoted_id.clone(),
                 )
@@ -282,7 +282,7 @@ pub async fn claim_all_pending_messages(
                 }
 
                 push_message_to_session_cache(active_sessions, session_id, &keeper).await;
-                emit_message_added(app_handle, session_id, &keeper).await?;
+                emit_message_added(dispatcher, session_id, &keeper).await?;
                 promoted_messages.push(keeper);
             }
             i = j;
@@ -296,7 +296,7 @@ pub async fn claim_all_pending_messages(
             let promoted_id = fetched_messages[i].id.clone();
             let res = match claim_single_pending_message(
                 active_sessions,
-                app_handle,
+                dispatcher,
                 session_id,
                 promoted_id.clone(),
             )
@@ -316,13 +316,13 @@ pub async fn claim_all_pending_messages(
         }
     }
 
-    emit_pending_queue_updated(active_sessions, app_handle, session_id).await?;
+    emit_pending_queue_updated(active_sessions, dispatcher, session_id).await?;
     Ok(promoted_messages)
 }
 
 async fn claim_single_pending_message(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
-    app_handle: &AppHandle,
+    dispatcher: &dyn AgentEventDispatcher,
     session_id: &str,
     message_id: String,
 ) -> Result<Vec<Message>, String> {
@@ -339,11 +339,11 @@ async fn claim_single_pending_message(
         };
 
     let PromotePendingOutcome::Promoted(message) = promoted else {
-        let _ = emit_pending_queue_updated(active_sessions, app_handle, session_id).await;
+        let _ = emit_pending_queue_updated(active_sessions, dispatcher, session_id).await;
         return Ok(Vec::new());
     };
 
-    emit_message_added(app_handle, session_id, &message).await?;
-    emit_pending_queue_updated(active_sessions, app_handle, session_id).await?;
+    emit_message_added(dispatcher, session_id, &message).await?;
+    emit_pending_queue_updated(active_sessions, dispatcher, session_id).await?;
     Ok(vec![*message])
 }

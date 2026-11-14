@@ -10,11 +10,12 @@
 //! 4. Log `checkpoint_seed_split_idx` separately from `preferred_split_idx` /
 //!    `chosen_split_idx` so regressions are visible in production logs.
 
+use crate::agent::events::AgentEventDispatcher;
 use crate::agent::llm::completion::request::normalize_request_messages;
 use crate::agent::state::{
     AgentSession, CompactionBeginOutcome, CompactionKind, CompactionReuseOutcome,
 };
-use crate::agent::tauri_events::{emit_compact_request, emit_compact_started};
+use crate::agent::tauri_events::{emit_compact_request, TauriEventDispatcher};
 use crate::models::chat::Message;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -397,6 +398,7 @@ pub(crate) async fn try_trigger_preflight_compaction(
     } else {
         CompactionKind::Manual
     };
+    let dispatcher = TauriEventDispatcher::from_handle(app_handle);
     match compaction
         .try_begin(
             kind,
@@ -410,8 +412,7 @@ pub(crate) async fn try_trigger_preflight_compaction(
                 .set_recovery_progress(recovery_phase, retry_attempt)
                 .await;
             compaction.set_current_request(compact_event.clone()).await;
-            if let Err(error) = emit_compact_started(
-                app_handle,
+            if let Err(error) = dispatcher.emit_compact_started(
                 session_id.to_string(),
                 Some(session_name.to_string()),
                 resume_completion_after_compact,
@@ -448,8 +449,7 @@ pub(crate) async fn try_trigger_preflight_compaction(
             } else {
                 CompactionReuseOutcome::NoChange
             };
-            emit_compact_started(
-                app_handle,
+            dispatcher.emit_compact_started(
                 session_id.to_string(),
                 Some(session_name.to_string()),
                 resume_completion_after_compact,

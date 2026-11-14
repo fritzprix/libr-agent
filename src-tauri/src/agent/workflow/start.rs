@@ -1,4 +1,6 @@
+use crate::agent::events::AgentEventDispatcher;
 use crate::agent::state::AgentSession;
+use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
 use crate::repositories::session_repository::SessionRepository;
@@ -152,7 +154,7 @@ pub async fn start_workflow(
         session_id: session_id.clone(),
     };
     log::info!("Emitting WorkflowStarted event for session: {}", session_id);
-    if let Err(e) = crate::agent::tauri_events::emit_agent_event(app_handle, event) {
+    if let Err(e) = TauriEventDispatcher::from_handle(app_handle).emit_agent_event(event) {
         log::error!("Failed to emit WorkflowStarted event: {}", e);
         return Err(format!("Failed to emit event: {}", e));
     }
@@ -198,7 +200,8 @@ pub async fn start_workflow(
                     )
                     .with_code("BACKGROUND_WORKFLOW_FAILED"),
                 };
-                let _ = crate::agent::tauri_events::emit_agent_event(&app_handle, error_event);
+                let _ =
+                    TauriEventDispatcher::from_handle(&app_handle).emit_agent_event(error_event);
                 return;
             }
         };
@@ -263,7 +266,7 @@ pub async fn start_workflow(
                 )
                 .with_code("BACKGROUND_WORKFLOW_FAILED"),
             };
-            let _ = crate::agent::tauri_events::emit_agent_event(&app_handle, error_event);
+            let _ = TauriEventDispatcher::from_handle(&app_handle).emit_agent_event(error_event);
             return;
         }
 
@@ -320,7 +323,7 @@ pub async fn start_workflow(
                 )
                 .with_code("BACKGROUND_WORKFLOW_FAILED"),
             };
-            let _ = crate::agent::tauri_events::emit_agent_event(&app_handle, error_event);
+            let _ = TauriEventDispatcher::from_handle(&app_handle).emit_agent_event(error_event);
             return;
         }
 
@@ -355,7 +358,7 @@ pub async fn start_workflow(
                 )
                 .with_code("BACKGROUND_WORKFLOW_FAILED"),
             };
-            let _ = crate::agent::tauri_events::emit_agent_event(&app_handle, error_event);
+            let _ = TauriEventDispatcher::from_handle(&app_handle).emit_agent_event(error_event);
         }
     });
 

@@ -17,7 +17,7 @@ pub async fn update_session_status(
     session_id: &str,
     status: SessionStatus,
 ) -> Result<(), String> {
-    let dispatcher = TauriEventDispatcher::new(app_handle.clone());
+    let dispatcher = TauriEventDispatcher::new(app_handle);
     update_session_status_with_dispatcher(
         session_repo,
         active_sessions,
@@ -37,7 +37,7 @@ pub async fn update_session_status_with_reason(
     status: SessionStatus,
     reason: &str,
 ) -> Result<(), String> {
-    let dispatcher = TauriEventDispatcher::new(app_handle.clone());
+    let dispatcher = TauriEventDispatcher::new(app_handle);
     apply_session_status(
         session_repo,
         active_sessions,
@@ -141,7 +141,7 @@ pub async fn promote_queued_session_to_busy(
     app_handle: &AppHandle,
     session_id: &str,
 ) -> Result<bool, String> {
-    let dispatcher = TauriEventDispatcher::new(app_handle.clone());
+    let dispatcher = TauriEventDispatcher::new(app_handle);
     promote_queued_session_to_busy_with_dispatcher(
         session_repo,
         active_sessions,
@@ -179,7 +179,7 @@ pub async fn end_fence_refused_wake(
     app_handle: &AppHandle,
     session_id: &str,
 ) -> Result<bool, String> {
-    let dispatcher = TauriEventDispatcher::new(app_handle.clone());
+    let dispatcher = TauriEventDispatcher::new(app_handle);
     end_fence_refused_wake_with_dispatcher(session_repo, active_sessions, &dispatcher, session_id)
         .await
 }

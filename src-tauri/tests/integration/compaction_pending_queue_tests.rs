@@ -446,13 +446,10 @@ async fn preflight_pending_is_claimed_on_resumed_turn() {
         ),
     );
 
-    let mock_app = tauri::test::mock_app();
-    let app_handle = mock_app_handle(&mock_app);
-
     let during_compact = build_user_message(&session_id, "msg-during-preflight", 2_000);
     tauri_mcp_agent_lib::agent::pending_queue::enqueue_pending_user_message(
         &active_sessions,
-        app_handle,
+        &NoopDispatcher,
         &session_id,
         &during_compact,
     )
@@ -477,7 +474,7 @@ async fn preflight_pending_is_claimed_on_resumed_turn() {
 
     let claimed = tauri_mcp_agent_lib::agent::pending_queue::claim_all_pending_messages(
         &active_sessions,
-        app_handle,
+        &NoopDispatcher,
         &session_id,
     )
     .await
@@ -520,13 +517,10 @@ async fn race_enqueue_after_claim_leaves_remainder_for_next_turn() {
         build_agent_session(metadata, CompactionPhase::Idle),
     );
 
-    let mock_app = tauri::test::mock_app();
-    let app_handle = mock_app_handle(&mock_app);
-
     let first = build_user_message(&session_id, "race-first", 1_000);
     tauri_mcp_agent_lib::agent::pending_queue::enqueue_pending_user_message(
         &active_sessions,
-        app_handle,
+        &NoopDispatcher,
         &session_id,
         &first,
     )
@@ -535,7 +529,7 @@ async fn race_enqueue_after_claim_leaves_remainder_for_next_turn() {
 
     let claimed = tauri_mcp_agent_lib::agent::pending_queue::claim_all_pending_messages(
         &active_sessions,
-        app_handle,
+        &NoopDispatcher,
         &session_id,
     )
     .await
@@ -546,7 +540,7 @@ async fn race_enqueue_after_claim_leaves_remainder_for_next_turn() {
     let second = build_user_message(&session_id, "race-second", 2_000);
     tauri_mcp_agent_lib::agent::pending_queue::enqueue_pending_user_message(
         &active_sessions,
-        app_handle,
+        &NoopDispatcher,
         &session_id,
         &second,
     )

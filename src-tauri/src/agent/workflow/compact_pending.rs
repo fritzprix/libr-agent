@@ -1,6 +1,7 @@
 //! Guarantee pending user prompts survive compaction settle/resume.
 
 use crate::agent::state::{AgentSession, CompactionResumeAction};
+use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
 use crate::repositories::message_repository::MessageRepository;
@@ -215,7 +216,7 @@ async fn start_workflow_from_pending_queue(
 
     let _ = crate::agent::pending_queue::emit_pending_queue_updated(
         active_sessions,
-        app_handle,
+        &TauriEventDispatcher::from_handle(app_handle),
         session_id,
     )
     .await;

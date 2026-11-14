@@ -1,4 +1,6 @@
-use crate::agent::llm::types::{AgentRuntimeError, CompactStateEvent, CompletionCancelRequest};
+use crate::agent::llm::types::{
+    AgentRuntimeError, CompactStateEvent, CompactStatePhase, CompletionCancelRequest,
+};
 use crate::agent::runtime_state::SessionRuntimeState;
 use crate::models::chat::Message;
 use crate::repositories::SessionStatus;
@@ -211,6 +213,44 @@ pub trait AgentEventDispatcher: Send + Sync {
     fn emit_agent_event(&self, event: AgentEvent) -> Result<(), String>;
     fn emit_compact_state(&self, event: CompactStateEvent) -> Result<(), String>;
     fn emit_completion_cancel(&self, request: CompletionCancelRequest) -> Result<(), String>;
+
+    /// Compact started for one session. Built on [`Self::emit_compact_state`] so an
+    /// implementation names its transport once and the phase shape stays in one place
+    /// (#2772: the compact-event family reaches the runtime through this trait only).
+    fn emit_compact_started(
+        &self,
+        session_id: String,
+        session_name: Option<String>,
+        awaiting_compact: bool,
+    ) -> Result<(), String> {
+        self.emit_compact_state(CompactStateEvent {
+            session_id,
+            session_name,
+            compacting: true,
+            awaiting_compact,
+            phase: CompactStatePhase::Started,
+            error: None,
+        })
+    }
+
+    /// Compact left the started phase. Same reasoning as
+    /// [`Self::emit_compact_started`].
+    fn emit_compact_finished(
+        &self,
+        session_id: String,
+        session_name: Option<String>,
+        phase: CompactStatePhase,
+        error: Option<String>,
+    ) -> Result<(), String> {
+        self.emit_compact_state(CompactStateEvent {
+            session_id,
+            session_name,
+            compacting: false,
+            awaiting_compact: false,
+            phase,
+            error,
+        })
+    }
 }
 
 pub(crate) fn summarize_agent_event(event: &AgentEvent) -> String {
@@ -349,5 +389,77 @@ pub(crate) fn summarize_agent_event(event: &AgentEvent) -> String {
             "PendingQueueUpdated(session={session_id}, count={})",
             messages.len()
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    /// Records what the trait's default methods build, so the compact phase shape
+    /// is pinned without a Tauri handle (#2772).
+    #[derive(Default)]
+    struct RecordingDispatcher {
+        states: Mutex<Vec<CompactStateEvent>>,
+    }
+
+    impl AgentEventDispatcher for RecordingDispatcher {
+        fn emit_agent_event(&self, _event: AgentEvent) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn emit_compact_state(&self, event: CompactStateEvent) -> Result<(), String> {
+            self.states.lock().unwrap().push(event);
+            Ok(())
+        }
+
+        fn emit_completion_cancel(&self, _request: CompletionCancelRequest) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    fn recorded(dispatcher: &RecordingDispatcher) -> Vec<CompactStateEvent> {
+        dispatcher.states.lock().unwrap().clone()
+    }
+
+    #[test]
+    fn compact_started_default_builds_started_state() {
+        let dispatcher = RecordingDispatcher::default();
+        dispatcher
+            .emit_compact_started("s-1".to_string(), Some("Chat".to_string()), true)
+            .unwrap();
+
+        let states = recorded(&dispatcher);
+        assert_eq!(states.len(), 1);
+        let state = &states[0];
+        assert_eq!(state.session_id, "s-1");
+        assert_eq!(state.session_name.as_deref(), Some("Chat"));
+        assert!(state.compacting, "started must keep the compacting flag on");
+        assert!(state.awaiting_compact);
+        assert!(matches!(state.phase, CompactStatePhase::Started));
+        assert_eq!(state.error, None);
+    }
+
+    #[test]
+    fn compact_finished_default_clears_compacting_and_keeps_phase_and_error() {
+        let dispatcher = RecordingDispatcher::default();
+        dispatcher
+            .emit_compact_finished(
+                "s-2".to_string(),
+                None,
+                CompactStatePhase::Failed,
+                Some("boom".to_string()),
+            )
+            .unwrap();
+
+        let states = recorded(&dispatcher);
+        assert_eq!(states.len(), 1);
+        let state = &states[0];
+        assert_eq!(state.session_id, "s-2");
+        assert!(!state.compacting, "finished must clear the compacting flag");
+        assert!(!state.awaiting_compact);
+        assert!(matches!(state.phase, CompactStatePhase::Failed));
+        assert_eq!(state.error.as_deref(), Some("boom"));
     }
 }

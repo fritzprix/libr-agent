@@ -1,4 +1,6 @@
+use crate::agent::events::AgentEventDispatcher;
 use crate::agent::state::{enforce_cached_message_limit, AgentSession};
+use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::agent::types::ToolCall;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
@@ -316,7 +318,8 @@ pub async fn handle_llm_response(
         let event = crate::agent::events::AgentEvent::WorkflowStarted {
             session_id: session_id.clone(),
         };
-        crate::agent::tauri_events::emit_agent_event(app_handle, event)
+        TauriEventDispatcher::from_handle(app_handle)
+            .emit_agent_event(event)
             .map_err(|e| format!("Failed to emit WorkflowStarted event: {}", e))?;
     }
 
@@ -486,7 +489,8 @@ pub async fn handle_llm_response(
         session_id: session_id.clone(),
         message: Box::new(assistant_message.clone()),
     };
-    crate::agent::tauri_events::emit_agent_event(app_handle, message_added_event)
+    TauriEventDispatcher::from_handle(app_handle)
+        .emit_agent_event(message_added_event)
         .map_err(|e| format!("Failed to emit MessageAdded event: {}", e))?;
 
     let msg_for_db = assistant_message.clone();
