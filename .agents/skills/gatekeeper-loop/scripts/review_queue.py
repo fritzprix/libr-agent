@@ -19,8 +19,8 @@ status values:
                green at the head, no newer owner comment.
   escalate   - round limit reached or unresolvable dispute; hand to the user.
 
-Each entry may include humanOnly: true when the diff touches
-`.agents/skills/gatekeeper-loop/` or `.agents/skills/worker-loop/`.
+Each entry may include humanOnly: true when the diff touches loop-skill
+paths (add `gatekeeper:needs-human` when posting approve; never skip review).
 
 The list is sorted by priority (worker response / new head / owner comment
 first), then oldest PR first. Every entry carries a one-line `reason`.
@@ -35,10 +35,14 @@ import subprocess
 import sys
 from pathlib import Path
 
+_LOOP_SHARED = Path(__file__).resolve().parents[2] / "loop-shared" / "scripts"
+if str(_LOOP_SHARED) not in sys.path:
+    sys.path.insert(0, str(_LOOP_SHARED))
+
+from comment_markers import START_MARKER, parse_markers  # noqa: E402
+from pr_turn import decide_pr_turn, format_turn_report  # noqa: E402
+
 MAX_ROUNDS = 5
-# Loop markers must appear at the very start of the comment (ignoring optional UTF-8 BOM and leading whitespace).
-# Quoted markers or mentions later in the comment are ignored.
-START_MARKER = re.compile(r"^(?:\ufeff)?\s*<!--\s*(gatekeeper-loop|worker-loop):\s*(.*?)\s*-->")
 FAILED = {"FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE"}
 PENDING = {"PENDING", "QUEUED", "IN_PROGRESS", "WAITING", "EXPECTED", "REQUESTED"}
 PROTECTED_SKILL_PREFIXES = (
@@ -91,21 +95,6 @@ def check_state(check: dict) -> str:
 def is_dev_base(base: str) -> bool:
     """True if CI runs on PRs targeting this base branch."""
     return base in ("main", "master") or base.startswith("dev/")
-
-
-def parse_markers(comments: list[dict], me: str) -> tuple[list[dict], list[dict]]:
-    """Return (gatekeeper markers incl. `clean`, worker responses) authored by me."""
-    verdicts, responses = [], []
-    for c in comments:
-        if (c.get("author") or {}).get("login") != me:
-            continue
-        match = START_MARKER.match(c.get("body") or "")
-        if not match:
-            continue
-        fields = dict(kv.split("=", 1) for kv in match.group(2).split() if "=" in kv)
-        entry = {**fields, "createdAt": c["createdAt"], "url": c.get("url")}
-        (verdicts if match.group(1) == "gatekeeper-loop" else responses).append(entry)
-    return verdicts, responses
 
 
 def owner_comments_after(comments: list[dict], me: str, since: str | None) -> list[dict]:
@@ -373,11 +362,26 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
     else:
         review_mode = "range-diff" if rebased else "incremental"
 
+    turn = decide_pr_turn(
+        head_sha=head,
+        mergeable=pr.get("mergeable"),
+        comments=comments,
+        me=me,
+        labels=labels,
+    )
+
     # Place review state first so the model and operator see review status before CI details.
     return {
         "number": pr["number"],
         "status": status,
         "humanOnly": human_only,
+        "whoseTurn": turn.turn,
+        "currentVerdict": turn.currentVerdict,
+        "verdictHeadSha": turn.verdictHead,
+        "atVerdictHead": turn.atVerdictHead,
+        "labelMismatch": turn.labelMismatch,
+        "noOwnerError": turn.noOwner,
+        "turnReport": format_turn_report(turn, pr_number=pr["number"]),
         "reason": reason,
         "priority": priority,
         "reviewMode": review_mode,

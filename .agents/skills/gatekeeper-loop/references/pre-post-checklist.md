@@ -42,8 +42,11 @@ When status is “reviewed clean; CI green” and you only issue `approve` (no f
 
 Add `gatekeeper:needs-human` when **any** of the following is true:
 
+- Queue output has `humanOnly: true` (loop-skill paths under gatekeeper-loop or worker-loop).
 - `securitySensitivePolicyPaths` or `securitySensitiveBehaviorHints` from the queue (path first pass — keep using it).
 - The diff's **behavior** touches secrets, credentials, API keys, auth surfaces, tool approval/shell policy/sandbox, or outbound transmission of user secrets — even if no path matched.
+
+Keep the verdict label (`gatekeeper:approved` or `gatekeeper:changes-requested`) for the code review outcome. `needs-human` is extra attention, not a substitute verdict.
 
 On `approve` for those PRs, `### Checked` must list bypass scenarios exercised (quoting, env, symlink, path traversal, etc.).
 

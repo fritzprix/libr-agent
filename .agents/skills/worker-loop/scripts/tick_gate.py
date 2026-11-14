@@ -21,6 +21,7 @@ Exit codes:
       `slot-held` or `no-free-slot` means other workers exist)
   3 - ERROR (authentication, network, or GraphQL failure; not NOOP)
   4 - LEASE LOST (this tick no longer owns its slot: stop working, touch nothing)
+  5 - SKILLS STALE (.agents/skills differs from origin/<base>; stop the tick)
 
 --lock prints `WORKER <name>` and `TOKEN <token>`. Pass both to every later
 command of the tick. --renew extends the lease and is the ownership check before
@@ -43,6 +44,14 @@ import tick_lock
 import worker_claims
 import worker_slots
 import worker_state
+
+_LOOP_SHARED = Path(__file__).resolve().parents[2] / "loop-shared" / "scripts"
+if str(_LOOP_SHARED) not in sys.path:
+    sys.path.insert(0, str(_LOOP_SHARED))
+
+import skills_freshness  # noqa: E402
+
+SKILLS_STALE_EXIT = 5
 
 EXIT_RUN = 0
 EXIT_NOOP = 1
@@ -284,7 +293,23 @@ def _gate(state: dict, state_path: Path, worker: str, locking: bool) -> tuple[in
     return EXIT_RUN, message
 
 
+def _require_fresh_skills() -> int | None:
+    """Exit code when skills are stale, or None when the tick may continue."""
+    fresh, message = skills_freshness.check_skills_fresh(
+        skills_freshness.resolve_base_branch(None),
+        fetch=True,
+    )
+    if fresh:
+        return None
+    print(message, file=sys.stderr)
+    return SKILLS_STALE_EXIT
+
+
 def _lock_and_gate(args: argparse.Namespace) -> int:
+    stale = _require_fresh_skills()
+    if stale is not None:
+        return stale
+
     requested = args.worker or os.environ.get("WORKER_ID")
     held = lease.inherited_lease(requested, args.state_file)
     if held is None:

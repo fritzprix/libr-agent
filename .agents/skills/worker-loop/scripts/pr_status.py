@@ -11,16 +11,19 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import subprocess
 import sys
+from pathlib import Path
 
 import worker_claims
 import worker_state
 
-# Loop markers must appear at the very start of the comment (ignoring optional UTF-8 BOM and leading whitespace).
-# Quoted markers or mentions later in the comment are ignored.
-START_MARKER = re.compile(r"^(?:\ufeff)?\s*<!--\s*(gatekeeper-loop|worker-loop):\s*(.*?)\s*-->")
+_LOOP_SHARED = Path(__file__).resolve().parents[2] / "loop-shared" / "scripts"
+if str(_LOOP_SHARED) not in sys.path:
+    sys.path.insert(0, str(_LOOP_SHARED))
+
+from comment_markers import START_MARKER  # noqa: E402
+from pr_turn import decide_pr_turn, format_turn_report  # noqa: E402
 
 THREADS_QUERY = """
 query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
@@ -87,16 +90,23 @@ def gatekeeper_state(comments: list[dict], me: str, head_sha: str) -> dict | Non
 
 def select_next_action(
     *,
+    turn: str,
     conflicting: bool,
     gatekeeper: dict | None,
     has_comments: bool,
     failing: list[str],
     pending: list[str],
 ) -> str:
+    if turn == "error":
+        return "no-owner"
     if conflicting:
         return "resolve-conflict"
-    if gatekeeper and gatekeeper["awaitingWorker"]:
+    if turn == "worker" and gatekeeper and gatekeeper["awaitingWorker"]:
         return "address-gatekeeper"
+    if turn == "gatekeeper":
+        return "wait-gatekeeper"
+    if turn == "human":
+        return "wait-human"
     if has_comments:
         return "triage-comments"
     if failing:
@@ -111,10 +121,20 @@ def summarize(number: int, owner: str, name: str, me: str, claimed_by: str | Non
         gh(
             "pr", "view", str(number), "--json",
             "number,title,url,headRefName,headRefOid,baseRefName,isDraft,mergeable,"
-            "mergeStateStatus,reviewDecision,statusCheckRollup,commits,comments",
+            "mergeStateStatus,reviewDecision,statusCheckRollup,commits,comments,labels",
         )
     )
-    gatekeeper = gatekeeper_state(pr.get("comments") or [], me, pr["headRefOid"])
+    comments = pr.get("comments") or []
+    head_sha = pr["headRefOid"]
+    labels = sorted(label["name"] for label in pr.get("labels") or [])
+    gatekeeper = gatekeeper_state(comments, me, head_sha)
+    turn = decide_pr_turn(
+        head_sha=head_sha,
+        mergeable=pr.get("mergeable"),
+        comments=comments,
+        me=me,
+        labels=labels,
+    )
     checks = pr.get("statusCheckRollup") or []
     failing = [c.get("name") or c.get("context") for c in checks if check_state(c) in FAILED]
     pending = [c.get("name") or c.get("context") for c in checks if check_state(c) in PENDING]
@@ -168,6 +188,7 @@ def summarize(number: int, owner: str, name: str, me: str, claimed_by: str | Non
             })
 
     next_action = select_next_action(
+        turn=turn.turn,
         conflicting=pr.get("mergeable") == "CONFLICTING",
         gatekeeper=gatekeeper,
         has_comments=bool(threads or new_comments),
@@ -192,6 +213,13 @@ def summarize(number: int, owner: str, name: str, me: str, claimed_by: str | Non
         "unresolvedThreads": threads,
         "newComments": new_comments,
         "gatekeeper": gatekeeper,
+        "whoseTurn": turn.turn,
+        "currentVerdict": turn.currentVerdict,
+        "verdictHeadSha": turn.verdictHead,
+        "currentHeadSha": head_sha,
+        "labelMismatch": turn.labelMismatch,
+        "noOwnerError": turn.noOwner,
+        "turnReport": format_turn_report(turn, pr_number=pr["number"]),
         "claimedBy": claimed_by,
         "nextAction": next_action,
     }

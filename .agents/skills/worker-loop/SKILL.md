@@ -62,6 +62,7 @@ Rust builds take a machine-wide slot, so a command may wait behind another workt
    - `BUSY reason=...`: stop. Do not unlock; this tick owns nothing.
    - `NOOP`: print `Idle: no changes.` and stop. The lease is already released.
    - Exit 3: report the error and stop. The lease is already released.
+   - Exit 5: skills differ from `origin/<dev base>`; stop and report (merge or reset `.agents/skills`).
 2. `git -C "$MAIN" fetch origin --prune`. If `current` is set, continue it. Else `python3 .agents/skills/worker-loop/scripts/worker_worktree.py reset --worker NAME --token TOKEN --wt "$WT"`. Never run `reset --hard` or `clean` yourself. `RESCUED <sha>` means an earlier run's uncommitted changes were saved in a stash; mention it in your report.
 3. **Fix PRs first.** Run `scripts/pr_status.py --worker NAME`. Ignore drafts and PRs claimed by other workers. Take the first PR that needs action and claim `pr:M`. Then get its head branch with `worker_worktree.py switch --worker NAME --token TOKEN --wt "$WT" --branch <head>`: `BRANCH BUSY` means another run needs it, so release the claim and take the next PR; `DETACHED` prints the push command to use; `SWITCHED` with `unpushed commits saved at <ref>` means the local branch was reset to the remote and its old commits are at that ref, so mention it in your report. Commit and push only through `LR`. On the head branch:
    - Conflict: `LR git rebase origin/<base>`, fix, `LR git push --force-with-lease`. Never merge the base into the branch.
@@ -70,7 +71,7 @@ Rust builds take a machine-wide slot, so a command may wait behind another workt
    - CI failed: read `gh run view <id> --log-failed`. Reproduce it locally, fix it, rerun the check that failed, and push only when it passes. There is no attempt limit. If you cannot reproduce it because the local environment differs (for example, CI fails only on another OS): try a fix, and count it with `worker_state.py ci-attempt --pr M`. After 3 attempts, set needsUser and write in the PR what passed locally and what failed only on CI.
    
    **When no PR needs action**:
-   If there are no PRs requiring worker fixes (or all open PRs are only waiting for CI, waiting for Gatekeeper approval/review, or awaiting maintainer decision), **do NOT wait for CI/gatekeeper and do NOT exit to step 6.** As long as there are remaining candidate issues, proceed immediately to **step 4** and implement the next issue.
+   If every open PR has `nextAction` `wait-gatekeeper`, `wait-human`, `wait-ci`, or `none` (use each entry's `turnReport`), **do NOT idle before step 4.** As long as approved issues remain, implement the next issue.
    *(Only skip directly to step 6 if a PR was fixed and pushed in this tick, respecting the one-push-per-tick rule, or if no candidate issues exist.)*
 4. **Else pick an issue (continue work on remaining issues).** Run `scripts/issue_candidates.py --worker NAME`. Whenever no PR required fixes in step 3, you MUST proceed here as long as any candidate issues remain. Take the first candidate you can claim: `claim` exit 1 means try the next one. Then `gh issue edit N --add-assignee @me`. Ignore `Depends on #N` text. Do not stack PRs.
 5. **Implement the whole issue in one PR.**
@@ -79,7 +80,7 @@ Rust builds take a machine-wide slot, so a command may wait behind another workt
    - Implement all of the issue. Do not split or stage it. Follow `agents.md` (KISS/YAGNI). Change only files the issue needs.
    - Run the local validation for the change. Fix failures.
    - Commit and push through `LR`, and open the PR with the `create-pr` skill: base `$BASE`, body with `Fixes #N`, summary, test plan. If the issue says `Depends on #X`, add one line: `Merge order: merge after the PR for #X.` Clear `current`, then `worker_state.py release` the `issue:N` claim (the open PR keeps any other worker off the issue) — do not unlock yet. After opening the PR, go back to step 3 and take the next item; leave the loop only when no PR needs action and no approved issue is free, then go to step 6, which is where you unlock.
-6. Report in 1-2 sentences with links. If `current` is clear, `LR git -C "$WT" switch --detach`, so the branch is free for other workers. Then unlock:
+6. Report with links. Include one `turnReport` line per open PR. If `current` is clear, `LR git -C "$WT" switch --detach`, so the branch is free for other workers. Then unlock:
    - Idle or stopped on needsUser: `tick_gate.py --worker NAME --token TOKEN --update --unlock`
    - Work done or error: `tick_gate.py --worker NAME --token TOKEN --unlock`
    - Unlock on every exit from the tick after a RUN, including errors. Only `LEASE LOST` skips it.
