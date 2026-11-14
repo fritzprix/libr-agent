@@ -316,7 +316,13 @@ impl WorkspaceServer {
         let cwd_result = if is_docker {
             utils::resolve_docker_shell_cwd(&docker_root, requested_cwd)
         } else {
-            utils::resolve_isolated_shell_cwd(&workspace_path, requested_cwd)
+            utils::resolve_isolated_shell_cwd(
+                &workspace_path,
+                requested_cwd,
+                crate::models::system_settings::SystemSettings::load_global()
+                    .await
+                    .allow_linked_worktrees,
+            )
         };
         let working_directory = match cwd_result {
             Ok(cwd) => cwd,

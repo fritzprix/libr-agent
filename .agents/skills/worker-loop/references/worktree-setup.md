@@ -8,7 +8,7 @@ All edits, builds, commits, and pushes happen in a dedicated, persistent worktre
   ```bash
   MAIN=$(git rev-parse --show-toplevel)       # the user's checkout
   WORKER="${WORKER_ID:?set WORKER_ID from tick_gate WORKER line or export before starting}"
-  WT="$MAIN/../$(basename "$MAIN").worktrees/$WORKER"
+  WT="$(cd "$MAIN/.." && pwd -P)/$(basename "$MAIN").worktrees/$WORKER"
   BASE=$(git branch -r --list "origin/dev/*" --sort=-v:refname | head -n 1 | sed 's/^[ *]*origin\///')
   python3 -c "import subprocess, sys; from pathlib import Path; out = subprocess.run(['git', '-C', sys.argv[1], 'worktree', 'list', '--porcelain'], capture_output=True, text=True).stdout; target = Path(sys.argv[2]).resolve(); sys.exit(0 if any(line.startswith('worktree ') and Path(line[9:].strip()).resolve() == target for line in out.splitlines()) else 1)" "$MAIN" "$WT" \
     || git -C "$MAIN" worktree add --detach "$WT" "origin/$BASE"

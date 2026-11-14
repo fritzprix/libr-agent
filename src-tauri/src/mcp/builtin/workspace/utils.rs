@@ -1,3 +1,4 @@
+use crate::mcp::builtin::utils::path_starts_with;
 use crate::models::system_settings::SystemSettings;
 use crate::models::workspace_isolation::DEFAULT_DOCKER_WORKDIR;
 use crate::session_isolation::IsolationLevel;
@@ -323,10 +324,12 @@ pub async fn effective_command_cwd(session_id: &str, host_workspace: &Path) -> S
 /// Resolve optional `cwd` for host-isolated `runShell` / `runPowerShell`.
 ///
 /// Relative paths are anchored at the session workspace. Absolute paths must stay
-/// inside that workspace. Returns `None` when `cwd` is omitted/blank.
+/// inside that workspace or, when `allow_linked_worktrees` is on (the same setting file
+/// tools follow), one of its linked git worktrees. Returns `None` when `cwd` is omitted/blank.
 pub fn resolve_isolated_shell_cwd(
     workspace: &Path,
     cwd: Option<&str>,
+    allow_linked_worktrees: bool,
 ) -> Result<Option<std::path::PathBuf>, String> {
     let Some(raw) = cwd.map(str::trim).filter(|s| !s.is_empty()) else {
         return Ok(None);
@@ -357,7 +360,12 @@ pub fn resolve_isolated_shell_cwd(
         ));
     }
 
-    if !canonical_cwd.starts_with(&canonical_workspace) {
+    let within_workspace = path_starts_with(&canonical_cwd, &canonical_workspace)
+        || (allow_linked_worktrees
+            && crate::mcp::builtin::utils::linked_worktree_roots(&canonical_workspace)
+                .iter()
+                .any(|root| path_starts_with(&canonical_cwd, root)));
+    if !within_workspace {
         return Err(format!(
             "cwd '{}' escapes the session workspace '{}'",
             canonical_cwd.display(),
@@ -575,7 +583,7 @@ mod tests {
         let nested = root.path().join("nested");
         std::fs::create_dir_all(&nested).expect("mkdir nested");
 
-        let resolved = resolve_isolated_shell_cwd(root.path(), Some("nested"))
+        let resolved = resolve_isolated_shell_cwd(root.path(), Some("nested"), true)
             .expect("resolve ok")
             .expect("some cwd");
         assert_eq!(
@@ -583,7 +591,7 @@ mod tests {
             std::fs::canonicalize(&nested).unwrap()
         );
 
-        assert!(resolve_isolated_shell_cwd(root.path(), None)
+        assert!(resolve_isolated_shell_cwd(root.path(), None, true)
             .unwrap()
             .is_none());
 
@@ -591,8 +599,31 @@ mod tests {
         let err = resolve_isolated_shell_cwd(
             root.path(),
             Some(outside.path().to_str().expect("utf8 path")),
+            true,
         )
         .expect_err("escape must fail");
+        assert!(
+            err.contains("escapes the session workspace"),
+            "unexpected err: {err}"
+        );
+    }
+
+    #[test]
+    fn test_resolve_isolated_shell_cwd_allows_linked_worktree() {
+        use crate::mcp::builtin::utils::linked_worktrees::test_support::{add_worktree, main_repo};
+
+        let parent = tempdir().expect("tempdir");
+        let repo = main_repo(parent.path());
+        let worktree = add_worktree(&repo, "worker");
+
+        let resolved =
+            resolve_isolated_shell_cwd(&repo, Some(worktree.to_str().expect("utf8")), true)
+                .expect("linked worktree cwd allowed")
+                .expect("some cwd");
+        assert_eq!(resolved, std::fs::canonicalize(&worktree).unwrap());
+
+        let err = resolve_isolated_shell_cwd(&repo, Some(worktree.to_str().expect("utf8")), false)
+            .expect_err("setting off must reject the sibling worktree");
         assert!(
             err.contains("escapes the session workspace"),
             "unexpected err: {err}"
