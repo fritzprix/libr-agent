@@ -336,6 +336,7 @@ pub fn get_routes(
         .or(preferred_model.boxed())
         .or(get_complexity_mapping.boxed())
         .or(put_complexity_mapping.boxed())
+        .or(crate::server::frontend_attachments::routes().boxed())
         .or(mcp_control_route.boxed())
         .or(mcp_auto_route.boxed())
         .or(mcp_route.boxed())

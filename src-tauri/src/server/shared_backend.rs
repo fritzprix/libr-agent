@@ -7,7 +7,9 @@
 //! the Session API so a live session never gets a second executor.
 
 use crate::server::backend_descriptor::{self, BackendDescriptor};
+use crate::server::frontend_attachments::{AttachResponse, HEARTBEAT_INTERVAL};
 use serde::{Deserialize, Serialize};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 const HEALTH_POLL_INTERVAL: Duration = Duration::from_millis(100);
@@ -333,6 +335,39 @@ impl SharedBackendClient {
         .await
     }
 
+    /// Register this frontend as attached to the backend (#2758).
+    pub async fn attach_frontend(&self) -> Result<String, String> {
+        let value = self
+            .send_json(reqwest::Method::POST, "/api/frontends", None)
+            .await?;
+        serde_json::from_value::<AttachResponse>(value)
+            .map(|resp| resp.id)
+            .map_err(|e| format!("Invalid attach response from shared backend: {e}"))
+    }
+
+    /// Refresh this frontend's attachment. `Ok(false)` means the backend no
+    /// longer knows the id (it dropped it as stale), so attach again.
+    pub async fn heartbeat_frontend(&self, attachment_id: &str) -> Result<bool, String> {
+        let (status, _) = self
+            .send_json_status(
+                reqwest::Method::POST,
+                &format!("/api/frontends/{attachment_id}/heartbeat"),
+                None,
+            )
+            .await?;
+        Ok(status != reqwest::StatusCode::NOT_FOUND)
+    }
+
+    pub async fn detach_frontend(&self, attachment_id: &str) -> Result<(), String> {
+        self.send_json_status(
+            reqwest::Method::DELETE,
+            &format!("/api/frontends/{attachment_id}"),
+            None,
+        )
+        .await
+        .map(|_| ())
+    }
+
     pub async fn respond_prompt(
         &self,
         session_id: &str,
@@ -344,6 +379,52 @@ impl SharedBackendClient {
             Some(body),
         )
         .await
+    }
+}
+
+/// This process's attachment id on the shared backend, while it holds one.
+static ATTACHMENT_ID: Mutex<Option<String>> = Mutex::new(None);
+
+fn attachment_id() -> std::sync::MutexGuard<'static, Option<String>> {
+    ATTACHMENT_ID
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Keep this frontend counted by the backend (#2758): attach, then send a
+/// heartbeat every [`HEARTBEAT_INTERVAL`]. When the backend no longer knows
+/// the id (for example after this process was suspended past the timeout),
+/// attach again. Runs until the process exits.
+pub async fn hold_frontend_attachment(client: SharedBackendClient) {
+    loop {
+        let current = attachment_id().clone();
+        let known = match current {
+            Some(id) => client.heartbeat_frontend(&id).await,
+            None => Ok(false),
+        };
+        match known {
+            Ok(true) => {}
+            Ok(false) => match client.attach_frontend().await {
+                Ok(id) => {
+                    log::info!("Attached to shared backend as frontend {id}");
+                    *attachment_id() = Some(id);
+                }
+                Err(err) => log::warn!("Failed to attach to shared backend: {err}"),
+            },
+            Err(err) => log::warn!("Shared backend heartbeat failed: {err}"),
+        }
+        tokio::time::sleep(HEARTBEAT_INTERVAL).await;
+    }
+}
+
+/// Release this frontend's attachment on clean exit. A crash skips this; the
+/// backend then drops the attachment when heartbeats stop.
+pub async fn detach_frontend(client: &SharedBackendClient) {
+    let Some(id) = attachment_id().take() else {
+        return;
+    };
+    if let Err(err) = client.detach_frontend(&id).await {
+        log::warn!("Failed to detach frontend {id} from shared backend: {err}");
     }
 }
 
@@ -499,6 +580,24 @@ mod tests {
         let (addr, server_fut) = warp::serve(route).bind_ephemeral(([127, 0, 0, 1], 0));
         let server = tokio::spawn(server_fut);
         (addr.port(), server)
+    }
+
+    #[tokio::test]
+    async fn client_attaches_heartbeats_and_detaches() {
+        let (addr, server_fut) = warp::serve(crate::server::frontend_attachments::routes())
+            .bind_ephemeral(([127, 0, 0, 1], 0));
+        let server = tokio::spawn(server_fut);
+        let client = SharedBackendClient::new(addr.port()).unwrap();
+
+        let id = client.attach_frontend().await.expect("attach succeeds");
+        assert!(client.heartbeat_frontend(&id).await.unwrap());
+
+        client.detach_frontend(&id).await.expect("detach succeeds");
+        assert!(
+            !client.heartbeat_frontend(&id).await.unwrap(),
+            "a detached id must be unknown, so the frontend attaches again"
+        );
+        server.abort();
     }
 
     #[tokio::test]

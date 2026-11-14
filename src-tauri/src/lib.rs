@@ -445,6 +445,7 @@ pub fn run() {
         configure_tauri_builder(builder)
             .setup(lifecycle::app_setup::setup_app)
             .on_window_event(|window, event| {
+                lifecycle::deferred_exit::on_window_event(window, event);
                 // Re-assert taskbar membership around minimize/focus changes on Windows.
                 // Native minimize can transiently drop the shell taskbar button when a
                 // tray host / tool-window style is also present in the process.
@@ -482,6 +483,15 @@ pub fn run() {
                     crate::utils::keep_awake::shutdown();
                     let app_handle_clone = app_handle.clone();
                     tauri::async_runtime::block_on(async move {
+                        if let Some(client) = crate::state::get_shared_backend_client() {
+                            let detach = crate::server::shared_backend::detach_frontend(client);
+                            if tokio::time::timeout(std::time::Duration::from_secs(2), detach)
+                                .await
+                                .is_err()
+                            {
+                                warn!("Timed out detaching from the shared backend on exit");
+                            }
+                        }
                         if let Some(browser_server) =
                             app_handle_clone.try_state::<InteractiveBrowserServer>()
                         {
