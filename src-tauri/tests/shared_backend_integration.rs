@@ -10,7 +10,9 @@ use tauri_mcp_agent_lib::execution_mode::ExecutionMode;
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
 use tauri_mcp_agent_lib::models::workspace_isolation::WorkspaceIsolationMode;
 use tauri_mcp_agent_lib::repositories::{SessionMetadata, SessionStatus};
-use tauri_mcp_agent_lib::server::handlers::{ListSessionsResponse, SessionStatusResponse};
+use tauri_mcp_agent_lib::server::handlers::{
+    ListSessionsResponse, SessionListItem, SessionStatusResponse,
+};
 use tauri_mcp_agent_lib::server::shared_backend::SharedBackendClient;
 use warp::Filter;
 
@@ -143,6 +145,10 @@ async fn shared_backend_client_surfaces_explicit_401() {
     server.abort();
 }
 
+/// Session id the stand-in backend reports as owned by another process.
+const OWNED_ELSEWHERE: &str = "owned-elsewhere";
+const OPEN_ELSEWHERE_REPLY: &str = "Session owned-elsewhere is open in another process";
+
 #[tokio::test]
 async fn shared_proxy_maps_real_shapes_and_surfaces_errors() {
     let sessions: Arc<Mutex<Vec<SessionMetadata>>> =
@@ -156,7 +162,16 @@ async fn shared_proxy_maps_real_shapes_and_surfaces_errors() {
     let list_route = warp::path!("api" / "sessions")
         .and(warp::get())
         .map(move || {
-            let sessions = list_store.lock().unwrap().clone();
+            let sessions = list_store
+                .lock()
+                .unwrap()
+                .iter()
+                .cloned()
+                .map(|session| SessionListItem {
+                    session,
+                    open_elsewhere: false,
+                })
+                .collect();
             let body = serde_json::to_value(ListSessionsResponse {
                 sessions,
                 next_cursor: None,
@@ -173,6 +188,12 @@ async fn shared_proxy_maps_real_shapes_and_surfaces_errors() {
                 return warp::reply::with_status(
                     warp::reply::json(&json!({ "error": "boom" })),
                     warp::http::StatusCode::INTERNAL_SERVER_ERROR,
+                );
+            }
+            if id == OWNED_ELSEWHERE {
+                return warp::reply::with_status(
+                    warp::reply::json(&json!({ "error": OPEN_ELSEWHERE_REPLY })),
+                    warp::http::StatusCode::CONFLICT,
                 );
             }
             let items = get_store.lock().unwrap();
@@ -196,19 +217,45 @@ async fn shared_proxy_maps_real_shapes_and_surfaces_errors() {
         .and(warp::get())
         .map(|_id: String| warp::reply::json(&json!({ "messages": [] })));
 
+    let open_route = warp::path!("api" / "sessions" / String / "open")
+        .and(warp::post())
+        .map(|id: String| {
+            if id == OWNED_ELSEWHERE {
+                warp::reply::with_status(
+                    warp::reply::json(&json!({ "error": OPEN_ELSEWHERE_REPLY })),
+                    warp::http::StatusCode::CONFLICT,
+                )
+            } else {
+                warp::reply::with_status(
+                    warp::reply::json(&json!({ "status": "open" })),
+                    warp::http::StatusCode::OK,
+                )
+            }
+        });
+
     let resume_counter = resume_count.clone();
     let resume_store = sessions.clone();
     let resume_route = warp::path!("api" / "sessions" / String / "resume")
         .and(warp::post())
         .map(move |id: String| {
+            if id == OWNED_ELSEWHERE {
+                return warp::reply::with_status(
+                    warp::reply::json(&json!({ "error": OPEN_ELSEWHERE_REPLY })),
+                    warp::http::StatusCode::CONFLICT,
+                );
+            }
             resume_counter.fetch_add(1, Ordering::SeqCst);
             let items = resume_store.lock().unwrap();
             let found = items.iter().find(|s| s.id == id).cloned().unwrap();
             let body = serde_json::to_value(&found).unwrap();
-            warp::reply::json(&body)
+            warp::reply::with_status(warp::reply::json(&body), warp::http::StatusCode::OK)
         });
 
-    let routes = list_route.or(get_route).or(msgs_route).or(resume_route);
+    let routes = list_route
+        .or(get_route)
+        .or(open_route)
+        .or(msgs_route)
+        .or(resume_route);
     let (addr, server_fut) = warp::serve(routes).bind_ephemeral(([127, 0, 0, 1], 0));
     let server = tokio::spawn(server_fut);
 
@@ -259,6 +306,28 @@ async fn shared_proxy_maps_real_shapes_and_surfaces_errors() {
     let resumed = client.resume_session("gui-session-1").await.unwrap();
     assert_eq!(resumed["id"], "gui-session-1");
     assert_eq!(resume_count.load(Ordering::SeqCst), 1);
+
+    // A 409 from the backend reaches every caller as the backend's message,
+    // never as a session body: open and resume refuse, and so would a read.
+    let open_err = shared_proxy::open_session(&client, OWNED_ELSEWHERE, 40)
+        .await
+        .unwrap_err();
+    assert_eq!(open_err, OPEN_ELSEWHERE_REPLY);
+    assert!(open_err.contains("is open in another process"));
+    assert_eq!(
+        client.resume_session(OWNED_ELSEWHERE).await.unwrap_err(),
+        OPEN_ELSEWHERE_REPLY
+    );
+    assert_eq!(
+        client.get_session_opt(OWNED_ELSEWHERE).await.unwrap_err(),
+        OPEN_ELSEWHERE_REPLY
+    );
+    assert_eq!(
+        shared_proxy::get_session(&client, OWNED_ELSEWHERE)
+            .await
+            .unwrap_err(),
+        OPEN_ELSEWHERE_REPLY
+    );
 
     server.abort();
 }

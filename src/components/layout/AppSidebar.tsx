@@ -9,7 +9,6 @@ import {
   Users,
   BookOpen,
   Blocks,
-  Circle,
   Clock,
   Database,
   ChevronDown,
@@ -42,45 +41,10 @@ import { useInfiniteScroll } from '@/features/agent/components/use-session-scrol
 import { useKnownDirectChildCounts } from '@/features/agent/components/use-known-direct-child-counts';
 import { getLogger } from '@/lib/logger';
 import { cn } from '@/lib/utils';
+import { SidebarSessionEntry } from './SidebarSessionEntry';
 import { buildSidebarSessionRows } from './sidebar-recent-sessions';
 
 const logger = getLogger('AppSidebar');
-
-/** Maps session status to a semantically meaningful dot */
-function StatusDot({ status }: { status: string }) {
-  if (status === 'busy') {
-    // Pulsing to signal active work
-    return (
-      <Circle
-        size={8}
-        className="fill-primary text-primary flex-shrink-0 animate-pulse"
-      />
-    );
-  }
-  if (status === 'queued') {
-    return (
-      <Circle
-        size={8}
-        className="fill-warning text-warning flex-shrink-0 animate-pulse"
-      />
-    );
-  }
-  if (status === 'error') {
-    return (
-      <Circle
-        size={8}
-        className="fill-destructive text-destructive flex-shrink-0"
-      />
-    );
-  }
-  // idle and paused: dimmed — just resting
-  return (
-    <Circle
-      size={8}
-      className="fill-muted-foreground text-muted-foreground flex-shrink-0 opacity-40"
-    />
-  );
-}
 
 export default function AppSidebar() {
   const { t } = useTranslation();
@@ -440,31 +404,12 @@ export default function AppSidebar() {
                                 aria-hidden="true"
                               />
                             )}
-                            <SidebarMenuButton
-                              asChild
+                            <SidebarSessionEntry
+                              session={session}
                               isActive={
                                 location.pathname === `/agent/${session.id}`
                               }
-                              tooltip={
-                                session.name ||
-                                `${t('sidebar.session')} ${session.id.slice(0, 8)}`
-                              }
-                              className="min-w-0 flex-1"
-                            >
-                              <Link
-                                to={`/agent/${session.id}`}
-                                className="flex min-w-0 items-center gap-2"
-                              >
-                                <StatusDot status={session.status} />
-                                <span className="truncate text-xs">
-                                  {session.name ||
-                                    `${t('sidebar.session')} ${session.id.slice(0, 8)}`}
-                                </span>
-                                {session.isBookmarked && (
-                                  <BookmarkCheck className="h-3.5 w-3.5 shrink-0 text-warning" />
-                                )}
-                              </Link>
-                            </SidebarMenuButton>
+                            />
                           </div>
                         </SidebarMenuItem>
                       );

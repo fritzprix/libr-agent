@@ -274,7 +274,8 @@
       "subagentsCount_one": "+{{count}}개의 하위 에이전트",
       "subagentsCount_other": "+{{count}}개의 하위 에이전트",
       "subagentsKept": "하위 에이전트 유지됨",
-      "bookmarkedBadge": "북마크됨"
+      "bookmarkedBadge": "북마크됨",
+      "openElsewhere": "다른 곳에서 열림"
     },
     "actions": {
       "view": "보기",
@@ -302,7 +303,8 @@
       "confirmDelete": "삭제 확인",
       "confirmDeleteAria": "삭제 확인",
       "cancel": "취소",
-      "cancelDeletionAria": "삭제 취소"
+      "cancelDeletionAria": "삭제 취소",
+      "openElsewhereAria": "세션 {{name}}이(가) 다른 프로세스에서 열려 있습니다"
     },
     "emptyState": {
       "title": "아직 세션이 없습니다",
@@ -1208,7 +1210,13 @@
           "잠재된 생각을",
           "설익은 아이디어를"
         ],
-        "flavors": ["...", " 🌪️", " 🥐", " 🐾", " ✨"]
+        "flavors": [
+          "...",
+          " 🌪️",
+          " 🥐",
+          " 🐾",
+          " ✨"
+        ]
       }
     },
     "messages": {

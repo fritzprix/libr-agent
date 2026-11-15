@@ -35,6 +35,12 @@ pub async fn agent_send_message(
             data: Some(data),
         });
     }
+    // Host path: sending to a session is opening it — refused while another
+    // live process owns it; otherwise this process takes ownership (#2759).
+    crate::server::session_ownership::claim(
+        &request.session_id,
+        crate::server::session_ownership::HOST_ATTACHMENT_ID,
+    )?;
     // Explicit user message: a previous force-stop fence ends here (issue #2633).
     manager
         .allow_explicit_message_after_terminate(&request.session_id)

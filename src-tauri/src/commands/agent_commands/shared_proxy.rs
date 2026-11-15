@@ -241,6 +241,8 @@ pub async fn open_session(
     session_id: &str,
     initial_message_limit: u64,
 ) -> Result<AgentOpenSessionResponse, String> {
+    // Opening claims the session for this frontend; the read below does not.
+    client.open_session(session_id).await?;
     let session_json = client.get_session(session_id).await?;
     let session: SessionMetadata = serde_json::from_value(session_json.clone())
         .map_err(|e| format!("Failed to parse session from shared backend: {e}"))?;
@@ -293,7 +295,7 @@ pub async fn list_sessions(
     let items_val = json.get("sessions").cloned().ok_or_else(|| {
         "Shared backend list_sessions response missing sessions array".to_string()
     })?;
-    let items: Vec<SessionMetadata> = serde_json::from_value(items_val)
+    let items: Vec<crate::server::handlers::SessionListItem> = serde_json::from_value(items_val)
         .map_err(|e| format!("Failed to parse sessions from shared backend: {e}"))?;
     Ok(AgentSessionListResponse {
         items,

@@ -9,6 +9,7 @@ pub mod mcp_handler;
 pub mod pairing;
 pub mod readiness;
 pub mod routes;
+pub mod session_ownership;
 pub mod shared_backend;
 pub mod startup_lock;
 pub mod wake;

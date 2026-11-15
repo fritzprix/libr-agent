@@ -39,6 +39,11 @@ export interface AgentSession {
   provisioningStep?: string;
   /** Why the session has its current status, for example a Docker setup failure. */
   statusReason?: string;
+  /**
+   * Owned by another frontend process (#2759): the backend refuses entry.
+   * Set only for session-list rows.
+   */
+  openElsewhere?: boolean;
 }
 /**
  * Agent configuration for creating a new session

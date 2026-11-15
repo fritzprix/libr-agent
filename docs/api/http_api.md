@@ -45,6 +45,7 @@ LibrAgent uses standard HTTP status codes to indicate the success or failure of 
 | `201` | **Created**: The resource (e.g., Session) was successfully created.                                   |
 | `400` | **Bad Request**: The request body is malformed or contains invalid values (e.g., non-absolute paths). |
 | `404` | **Not Found**: The requested resource (Assistant, Session) does not exist.                            |
+| `409` | **Conflict**: The session is open in another process (see [Session Ownership](#session-ownership)).   |
 | `500` | **Internal Error**: An unexpected server-side error occurred (e.g., DB failure, config corruption).   |
 
 ---
@@ -105,11 +106,11 @@ Creates a new isolated agent session and starts an initial workflow.
 
 #### Execution Mode & Tool Approval Matrix
 
-| Execution Mode | Standard Approval Tools | Hard Approval Tools |
-| :--- | :--- | :--- |
+| Execution Mode     | Standard Approval Tools                                                                                                                                                                                                                                                                                                                                                                                                                               | Hard Approval Tools                                                                                                                                                                                                                                |
+| :----------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `normal` (default) | **Requires approval** (`workspace__writeFile`, `workspace__strReplace`, `workspace__editFile`, `workspace__editObject`, `workspace__runShell`, `workspace__runInPersistentShell`, `workspace__spawnProcess`, `workspace__runPowerShell`, `workspace__runInPersistentPowerShell`, `workspace__runCmd`, `workspace__runInPersistentCmd`, `workspace__stopProcess`, `scheduled_task__*` write tools, `media__captureScreen`, `desktop__computerControl`) | **Requires hard approval** (`tool__registerServer` except unauthenticated curated catalog presets, `tool__updateServer`, `media__deployAssistPlugin`, and dynamic shell evaluation: `$(...)`, backticks, `<(...)`, `>(...)`, `eval`, and `source`) |
-| `yolo` | **Auto-approved** | **Requires hard approval** (waits for explicit approval or a raise to `unsafe`) |
-| `unsafe` | **Auto-approved** | **Auto-approved** |
+| `yolo`             | **Auto-approved**                                                                                                                                                                                                                                                                                                                                                                                                                                     | **Requires hard approval** (waits for explicit approval or a raise to `unsafe`)                                                                                                                                                                    |
+| `unsafe`           | **Auto-approved**                                                                                                                                                                                                                                                                                                                                                                                                                                     | **Auto-approved**                                                                                                                                                                                                                                  |
 
 > [!NOTE]
 > Destructive commands and sensitive or protected paths (such as `~/.ssh`, `~/.aws`, application database, and restricted system directories) are **blocked** in every execution mode, not routed to hard approval.
@@ -305,14 +306,15 @@ Lists sessions, most recent activity first.
       "status": "idle",
       "workspaceOverride": "string (nullable)",
       "updatedAt": 1739000000000,
-      "lastMessageAt": 1739000000000
+      "lastMessageAt": 1739000000000,
+      "openElsewhere": false
     }
   ],
   "nextCursor": { "updatedAt": 1739000000000, "id": "a1b2c3d4e5" }
 }
 ```
 
-Each entry has the session fields of [Get Session Status](#get-session-status), without `pendingApprovals`. `nextCursor` is `null` on the last page.
+Each entry has the session fields of [Get Session Status](#get-session-status), without `pendingApprovals`, plus `openElsewhere`: `true` when another frontend process owns the session (see [Session Ownership](#session-ownership)). `nextCursor` is `null` on the last page.
 
 ---
 
@@ -324,11 +326,11 @@ Follows one session as [server-sent events](https://developer.mozilla.org/en-US/
 - **Path**: `/api/sessions/:id/events`
 - **Response**: `text/event-stream`
 
-| Event     | Data                                                                                                   | Sent when                                                                                      |
-| :-------- | :----------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------- |
-| `status`  | The [Get Session Status](#get-session-status) body, including `pendingApprovals` and `pendingUserPrompt` | First, then whenever any field changes                                                         |
-| `message` | One [Message Object](#message-object)                                                                  | A message is stored, or a stored message changes. Replace any message you hold with the same `id` |
-| `end`     | `{}`                                                                                                   | The session no longer exists. The stream then closes                                           |
+| Event     | Data                                                                                                     | Sent when                                                                                         |
+| :-------- | :------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------ |
+| `status`  | The [Get Session Status](#get-session-status) body, including `pendingApprovals` and `pendingUserPrompt` | First, then whenever any field changes                                                            |
+| `message` | One [Message Object](#message-object)                                                                    | A message is stored, or a stored message changes. Replace any message you hold with the same `id` |
+| `end`     | `{}`                                                                                                     | The session no longer exists. The stream then closes                                              |
 
 Messages that existed when the stream opened are not replayed; read them with [Get Messages](#get-messages). The stream carries what the backend stores. Token-by-token model output is produced by the frontend that runs the LLM call and is not part of this stream.
 
@@ -348,6 +350,27 @@ Loads a paused/crashed session into active memory and resumes the workflow.
   "status": "resumed"
 }
 ```
+
+---
+
+### Session Ownership
+
+When several LibrAgent frontends share one backend, a session is open in one process at a time. Only the frontend that opened a session can open, resume, or send to it.
+
+A frontend identifies itself with the `x-frontend-attachment` header. Its value is the id from the frontend attach call. The attachment stays live while the frontend sends heartbeats (every 5 s). It expires after 15 s without one, and its sessions are then free to open again.
+
+- **Header**: `x-frontend-attachment: <attachment id>` (optional)
+- **Claiming routes**: `POST /api/sessions/:id/open`, `POST /api/sessions/:id/resume`, `POST /api/sessions/:id/messages`, and `POST /api/sessions` (the new session is claimed after it is created)
+- **Open**: `POST /api/sessions/:id/open` claims the session for the caller and returns `{ "status": "open" }`.
+- **Read-only routes** never claim and are never refused for ownership: `GET /api/sessions/:id`, `GET /api/sessions/:id/messages`, and the event stream. `GET /api/sessions` marks sessions owned by another process with `openElsewhere`.
+
+| Status | Body `error`                                         | Cause                                                                        |
+| :----- | :--------------------------------------------------- | :--------------------------------------------------------------------------- |
+| `409`  | `Session <id> is open in another process`            | Another live attachment owns the session.                                    |
+| `400`  | `Frontend attachment id 'host' is reserved`          | The `host` id belongs to the backend's own GUI and cannot be sent over HTTP. |
+| `400`  | `Frontend attachment <id> is not live; attach again` | The id is unknown or expired. A non-live id never claims a session.          |
+
+Requests without the header (scripts and other external clients) are not tracked: they neither claim a session nor get refused for ownership.
 
 ---
 
