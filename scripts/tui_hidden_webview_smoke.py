@@ -211,6 +211,16 @@ def spawn_tui(binary: Path, scratch: Path, log_path: Path):
     env = os.environ.copy()
     env["LIBRAGENT_DB_PATH"] = str(scratch / "smoke.db")
     env["LIBRAGENT_DATA_DIR"] = str(scratch / "data")
+    # Isolate the WebView runtime data folder, mirroring headless/mod.rs.
+    # A running GUI owns the default EBWebView folder; a second process
+    # sharing it never runs page JS, so "frontend-ready" never arrives
+    # (observed on Windows with the GUI live, #2784).
+    webview_dir = scratch / "webview-cache"
+    webview_dir.mkdir(parents=True, exist_ok=True)
+    if os.name == "nt":
+        env["WEBVIEW2_USER_DATA_FOLDER"] = str(webview_dir)
+    elif sys.platform == "linux":
+        env["XDG_CACHE_HOME"] = str(webview_dir)
     # Force the phase-1 frontend LLM path (#2760 / #2804 otherwise route
     # gemini/openai to Rust and the smoke would not touch the WebView).
     env["LIBRAGENT_LLM_EXECUTOR"] = "webview"
@@ -358,7 +368,15 @@ def wait_for_frontend_ready(log_path: Path, timeout: float) -> None:
                 print("frontend ready")
                 return
         time.sleep(0.5)
-    fail(f"frontend never signaled readiness within {timeout:.0f}s")
+    fail(
+        f"frontend never signaled readiness within {timeout:.0f}s — if this is "
+        "a cargo-built release binary, it may have been compiled without the "
+        "`custom-protocol` feature and therefore loads the Vite devUrl "
+        "(http://localhost:1420) instead of the embedded frontend. Build with "
+        "`pnpm tauri build --no-bundle --bin libragent-tui`, or "
+        "`node scripts/run-rust-command.cjs build --release --bin "
+        "libragent-tui --features tauri/custom-protocol`."
+    )
 
 
 def sse_collector(port: int, session_id: str, events: list, stop: threading.Event) -> None:
