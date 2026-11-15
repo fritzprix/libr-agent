@@ -14,9 +14,7 @@ use super::scanning::{copy_dir_recursive, parse_skill_metadata};
 use crate::services::hooks::registry::{
     get_user_plugins_directory, save_source, PluginSourceManifest,
 };
-use crate::services::hooks::schema::{
-    load_hooks_from_root, HookDispatchMode, HookEvent, HookHandler, HooksConfig,
-};
+use crate::services::hooks::schema::{load_hooks_from_root, HookDispatchMode, HooksConfig};
 use crate::session::get_session_manager;
 use crate::state::wait_for_managed_skills_sync;
 use log::warn;
@@ -806,42 +804,6 @@ fn plugin_source_id(source_key: &str) -> String {
     format!("plugin-{}", &format!("{:x}", digest)[..16])
 }
 
-fn compute_handler_approval_hashes(config: &HooksConfig) -> BTreeMap<String, String> {
-    let mut map = BTreeMap::new();
-    for (event, groups) in &config.events {
-        for group in groups {
-            for handler in &group.handlers {
-                let key = approval_hash_key(event, group.matcher.as_deref(), handler);
-                map.insert(key, approval_hash_value(handler));
-            }
-        }
-    }
-    map
-}
-
-fn approval_hash_key(event: &HookEvent, matcher: Option<&str>, handler: &HookHandler) -> String {
-    let digest = Sha256::digest(
-        format!(
-            "{}|{}|{}|{}",
-            event.as_str(),
-            matcher.unwrap_or("*"),
-            handler.command,
-            handler.powershell.as_deref().unwrap_or("")
-        )
-        .as_bytes(),
-    );
-    format!("{:x}", digest)
-}
-
-fn approval_hash_value(handler: &HookHandler) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(handler.command.as_bytes());
-    if let Some(ps) = &handler.powershell {
-        hasher.update(ps.as_bytes());
-    }
-    format!("{:x}", hasher.finalize())
-}
-
 fn install_plugin_source(
     scan_root: &Path,
     source_key: &str,
@@ -859,7 +821,7 @@ fn install_plugin_source(
     copy_dir_recursive(scan_root, &target)?;
 
     let approval_hashes = if approve_hooks {
-        compute_handler_approval_hashes(&config)
+        crate::services::hooks::registry::compute_handler_approval_hashes(&target, &config)
     } else {
         BTreeMap::new()
     };
