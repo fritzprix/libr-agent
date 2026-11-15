@@ -2,9 +2,8 @@
 //! #2755, #2760).
 //!
 //! By default, a session whose provider (and Base URL) `llm-client` supports
-//! is answered here. Providers the client does not support yet (groq, cerebras,
-//! ollama), and fixed-URL providers whose user Base URL the client would
-//! ignore, still go to the WebView via `llm:completion-request` /
+//! is answered here. Providers the client does not support yet (mistral, for
+//! example) still go to the WebView via `llm:completion-request` /
 //! `llm:compact-request`. Set `LIBRAGENT_LLM_EXECUTOR=webview` to force every
 //! call onto the frontend. [`configure`] replaces the variable, the endpoint
 //! lookup, the WebView check and the delivery target for the life of its

@@ -735,7 +735,7 @@ async fn fallback_skipped_when_unsupported() {
         ),
         (
             "fallbackModel",
-            json!({ "provider": "groq", "model": "llama" }),
+            json!({ "provider": "mistral", "model": "mistral-large" }),
         ),
     ])
     .await;
