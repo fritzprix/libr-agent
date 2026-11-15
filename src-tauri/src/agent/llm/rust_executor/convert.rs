@@ -26,21 +26,54 @@ fn is_compact_summary(message: &Message) -> bool {
         || message.id.starts_with("compact-summary-")
 }
 
+fn has_media_data(data: &Option<String>) -> bool {
+    data.as_ref().is_some_and(|value| !value.trim().is_empty())
+}
+
+/// Match the GUI path (`content.ts`): base64 data is sent as media; a uri-only
+/// part becomes an explicit text omission so the model is not told the image
+/// exists when it cannot see it (`[Image not available]`).
 fn content_part(item: &MCPContent) -> ContentPart {
     match item {
         MCPContent::Text { text } => ContentPart::Text(text.clone()),
         MCPContent::Image {
-            data, mime_type, ..
-        } => ContentPart::Image {
-            data: data.clone(),
-            mime_type: mime_type.clone(),
-        },
+            data,
+            uri,
+            mime_type,
+        } => {
+            if has_media_data(data) {
+                ContentPart::Image {
+                    data: data.clone(),
+                    mime_type: mime_type.clone(),
+                }
+            } else {
+                ContentPart::Text(format!(
+                    "[unresolved image omitted from multimodal request: {}]",
+                    uri.as_deref()
+                        .filter(|value| !value.is_empty())
+                        .unwrap_or("missing-uri")
+                ))
+            }
+        }
         MCPContent::Audio {
-            data, mime_type, ..
-        } => ContentPart::Audio {
-            data: data.clone(),
-            mime_type: mime_type.clone(),
-        },
+            data,
+            uri,
+            mime_type,
+        } => {
+            if has_media_data(data) {
+                ContentPart::Audio {
+                    data: data.clone(),
+                    mime_type: mime_type.clone(),
+                }
+            } else {
+                ContentPart::Text(format!(
+                    "[unresolved audio omitted from multimodal request: {}]",
+                    uri.as_deref()
+                        .filter(|value| !value.is_empty())
+                        .unwrap_or("missing-uri")
+                ))
+            }
+        }
         MCPContent::Resource { .. } => ContentPart::Unsupported("resource".to_string()),
         MCPContent::Thinking { .. } => ContentPart::Unsupported("thinking".to_string()),
         MCPContent::ToolCall { .. } => ContentPart::Unsupported("tool_call".to_string()),
@@ -279,6 +312,31 @@ mod tests {
         assert_eq!(request.max_tokens, Some(4096));
         assert_eq!(request.temperature, Some(0.3));
         assert_eq!(request.thinking_effort, ThinkingEffort::High);
+    }
+
+    #[test]
+    fn uri_only_media_becomes_an_explicit_text_omission() {
+        let messages = vec![message(json!({
+            "id": "t1", "sessionId": "s", "role": "tool", "toolCallId": "c1",
+            "content": [
+                { "type": "image", "uri": "file:///tmp/shot.png", "mimeType": "image/png" },
+                { "type": "audio", "mimeType": "audio/wav" },
+            ],
+        }))];
+        let request = request(None, &messages);
+        assert_eq!(
+            request.messages[0].content[0],
+            ContentPart::Text(
+                "[unresolved image omitted from multimodal request: file:///tmp/shot.png]"
+                    .to_string()
+            )
+        );
+        assert_eq!(
+            request.messages[0].content[1],
+            ContentPart::Text(
+                "[unresolved audio omitted from multimodal request: missing-uri]".to_string()
+            )
+        );
     }
 
     #[test]

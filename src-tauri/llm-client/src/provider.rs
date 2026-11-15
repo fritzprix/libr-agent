@@ -448,7 +448,7 @@ mod tests {
     }
 
     #[test]
-    fn anthropic_and_gemini_use_their_default_urls_and_configured_keys() {
+    fn anthropic_and_gemini_use_their_fixed_urls_and_configured_keys() {
         let configs = json!({
             "anthropic": { "apiKey": "sk-ant-key" },
             "gemini": { "apiKey": "gm-key" },

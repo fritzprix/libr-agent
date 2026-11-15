@@ -1,21 +1,17 @@
 //! LLM execution in Rust for the providers `llm-client` implements (#2704,
-//! #2755).
+//! #2755, #2760).
 //!
-//! By default the WebView runs every LLM call: Rust emits
-//! `llm:completion-request` / `llm:compact-request` and the frontend answers.
-//! With this executor enabled, requests for a provider the client supports are
-//! answered here instead, so a session can run with no WebView and no GUI
-//! window. Every other provider still goes to the frontend.
-//!
-//! Enable with `LIBRAGENT_LLM_EXECUTOR=rust`. Existing GUI sessions are not
-//! affected unless that variable is set. [`configure`] replaces the variable,
-//! the endpoint lookup, the WebView check and the delivery target for the life
-//! of its guard, so a test can run a whole turn without touching the process
+//! By default, a session whose provider (and Base URL) `llm-client` supports
+//! is answered here. Providers the client does not support yet (mistral, for
+//! example) still go to the WebView via `llm:completion-request` /
+//! `llm:compact-request`. Set `LIBRAGENT_LLM_EXECUTOR=webview` to force every
+//! call onto the frontend. [`configure`] replaces the variable, the endpoint
+//! lookup, the WebView check and the delivery target for the life of its
+//! guard, so a test can run a whole turn without touching the process
 //! environment or needing a window.
 //!
-//! With the executor on, a request that Rust cannot answer (any other provider)
-//! still goes to the WebView when there is one, and fails fast when there is
-//! none, because nothing would ever answer it.
+//! A request that Rust cannot answer still goes to the WebView when there is
+//! one, and fails fast when there is none, because nothing would ever answer it.
 //!
 //! The HTTP calls go through the Tauri-free `llm-client` crate, which the GUI,
 //! `libragent --tui`, and `liblet` share. This module decides who answers a
@@ -51,7 +47,9 @@ use crate::repositories::settings_repository::SettingsRepository;
 use convert::GenerationOptions;
 use dashmap::DashMap;
 pub use llm_client::Endpoint;
-use llm_client::{ChatProvider, CompletedChat, ErrorKind, LlmError, RetryPolicy, StreamDelta};
+use llm_client::{
+    ChatProvider, CompletedChat, ErrorKind, LlmError, RetryPolicy, StreamDelta, ThinkingEffort,
+};
 use serde_json::Value;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, RwLock};
@@ -59,7 +57,8 @@ use std::time::Duration;
 use tauri::{AppHandle, Manager};
 use tokio::sync::oneshot;
 
-/// Process-wide switch. Value `rust` turns the executor on.
+/// Process-wide override. Value `webview` forces every call onto the frontend;
+/// unset or `rust` keeps the default per-provider Rust routing (#2760).
 pub const EXECUTOR_ENV: &str = "LIBRAGENT_LLM_EXECUTOR";
 
 /// A call that is running for a session. `generation` tells a finished call
@@ -73,14 +72,15 @@ struct InFlight {
 static IN_FLIGHT: LazyLock<DashMap<String, InFlight>> = LazyLock::new(DashMap::new);
 static NEXT_GENERATION: AtomicU64 = AtomicU64::new(1);
 
-fn env_selects_rust(value: Option<&str>) -> bool {
-    value.is_some_and(|value| value.trim().eq_ignore_ascii_case("rust"))
+/// True unless the env forces the legacy all-WebView path.
+fn env_enables_rust(value: Option<&str>) -> bool {
+    !value.is_some_and(|value| value.trim().eq_ignore_ascii_case("webview"))
 }
 
 /// Settings of the executor. Production uses [`ExecutorConfig::from_env`].
 #[derive(Clone)]
 pub struct ExecutorConfig {
-    /// Answer requests for supported providers in Rust.
+    /// Answer requests for supported providers in Rust (default on).
     pub enabled: bool,
     /// Use this endpoint instead of reading Settings. For a fixed server, such
     /// as a loopback mock in a test.
@@ -92,7 +92,7 @@ pub struct ExecutorConfig {
 impl ExecutorConfig {
     pub fn from_env() -> Self {
         Self {
-            enabled: env_selects_rust(std::env::var(EXECUTOR_ENV).ok().as_deref()),
+            enabled: env_enables_rust(std::env::var(EXECUTOR_ENV).ok().as_deref()),
             endpoint_override: None,
             assume_no_webview: false,
         }
@@ -162,6 +162,9 @@ fn route(enabled: bool, has_webview: bool, provider: &str) -> Route {
     if !enabled {
         Route::Frontend
     } else if llm_client::is_supported(provider) {
+        // llm-client honors the configured Base URL for every built-in
+        // provider (#2797), so a custom URL no longer keeps a session on the
+        // WebView (#2760 criterion).
         Route::Rust
     } else if has_webview {
         Route::Frontend
@@ -170,7 +173,7 @@ fn route(enabled: bool, has_webview: bool, provider: &str) -> Route {
     }
 }
 
-fn route_for(app_handle: &AppHandle, provider: &str) -> (Route, ExecutorConfig) {
+async fn route_for(app_handle: &AppHandle, provider: &str) -> (Route, ExecutorConfig) {
     let config = current_config();
     let route = route(config.enabled, has_webview(app_handle, &config), provider);
     (route, config)
@@ -230,8 +233,9 @@ async fn provider_for(
     })
 }
 
-/// The temperature, thinking effort, and retry policy the GUI would use.
-async fn generation_settings() -> (GenerationOptions, RetryPolicy) {
+/// The temperature, thinking effort, retry policy, and default max tokens the
+/// GUI would use.
+async fn generation_settings() -> (GenerationOptions, RetryPolicy, Option<u32>) {
     let advanced = AdvancedSettings::load_global().await;
     let temperature = convert::temperature_override(
         read_setting("temperatureOverrideEnabled").await.as_ref(),
@@ -245,7 +249,33 @@ async fn generation_settings() -> (GenerationOptions, RetryPolicy) {
         max_retries: advanced.max_retries,
         base_delay: Duration::from_millis(advanced.retry_delay),
     };
-    (options, retry)
+    let default_max_tokens = u32::try_from(advanced.default_max_output_tokens)
+        .ok()
+        .filter(|tokens| *tokens > 0);
+    (options, retry, default_max_tokens)
+}
+
+fn chat_is_empty(chat: &CompletedChat) -> bool {
+    chat.content.trim().is_empty() && chat.tool_calls.is_empty() && chat.thinking.trim().is_empty()
+}
+
+#[derive(Debug, Clone)]
+struct FallbackModel {
+    provider: String,
+    model: String,
+}
+
+async fn read_fallback_model() -> Option<FallbackModel> {
+    let value = read_setting("fallbackModel").await?;
+    let provider = value.get("provider")?.as_str()?.trim();
+    let model = value.get("model")?.as_str()?.trim();
+    if provider.is_empty() || model.is_empty() {
+        return None;
+    }
+    Some(FallbackModel {
+        provider: provider.to_string(),
+        model: model.to_string(),
+    })
 }
 
 fn runtime_error(error: LlmError) -> Box<AgentRuntimeError> {
@@ -296,19 +326,24 @@ fn assistant_message(request: &CompletionRequest, chat: CompletedChat) -> Messag
     }
 }
 
-async fn run_completion(
+#[allow(clippy::too_many_arguments)] // 7-arg shape from #2804 plus the #2796 streaming sink
+async fn complete_once(
+    provider_id: &str,
+    model: &str,
     request: &CompletionRequest,
     config: &ExecutorConfig,
     sink: &dyn ResponseSink,
-) -> Result<Message, Box<AgentRuntimeError>> {
-    let provider = provider_for(&request.provider, config).await?;
-    let (options, retry) = generation_settings().await;
+    options: GenerationOptions,
+    retry: RetryPolicy,
+    max_tokens: Option<u32>,
+) -> Result<CompletedChat, Box<AgentRuntimeError>> {
+    let provider = provider_for(provider_id, config).await?;
     let chat_request = convert::chat_request(
-        &request.model,
+        model,
         request.system_prompt.as_deref(),
         &request.messages,
         request.available_tools.as_deref().unwrap_or(&[]),
-        request.max_tokens,
+        max_tokens,
         options,
     );
     // Each delta goes out as it is read, so a listener shows the turn live.
@@ -317,6 +352,91 @@ async fn run_completion(
     })
     .await
     .map_err(runtime_error)?;
+    if chat_is_empty(&chat) {
+        // One more try: empty completions are often transient.
+        let chat = llm_client::complete_with_deltas(
+            provider.as_ref(),
+            &chat_request,
+            RetryPolicy::NONE,
+            |delta| sink.llm_stream_delta(stream_delta_event(request, delta)),
+        )
+        .await
+        .map_err(runtime_error)?;
+        if chat_is_empty(&chat) {
+            return Err(Box::new(
+                AgentRuntimeError::new(
+                    AgentRuntimeErrorType::AiServiceError,
+                    "The AI model returned an empty response with no content, tool calls, or thinking."
+                        .to_string(),
+                )
+                .with_code("RUST_EXECUTOR_EMPTY_RESPONSE"),
+            ));
+        }
+        return Ok(chat);
+    }
+    Ok(chat)
+}
+
+async fn run_completion(
+    request: &CompletionRequest,
+    config: &ExecutorConfig,
+    sink: &dyn ResponseSink,
+) -> Result<Message, Box<AgentRuntimeError>> {
+    let (options, retry, default_max_tokens) = generation_settings().await;
+    let max_tokens = request.max_tokens.or(default_max_tokens);
+    let primary = complete_once(
+        &request.provider,
+        &request.model,
+        request,
+        config,
+        sink,
+        options,
+        retry,
+        max_tokens,
+    )
+    .await;
+    let chat = match primary {
+        Ok(chat) => chat,
+        Err(primary_error) => {
+            let Some(fallback) = read_fallback_model().await else {
+                return Err(primary_error);
+            };
+            if fallback.provider == request.provider && fallback.model == request.model {
+                return Err(primary_error);
+            }
+            // Fallback must also be answerable on the Rust path.
+            if !llm_client::is_supported(&fallback.provider) {
+                return Err(primary_error);
+            }
+            log::warn!(
+                "Rust LLM executor: primary {}:{} failed; trying fallback {}:{}",
+                request.provider,
+                request.model,
+                fallback.provider,
+                fallback.model
+            );
+            complete_once(
+                &fallback.provider,
+                &fallback.model,
+                request,
+                config,
+                sink,
+                options,
+                RetryPolicy::NONE,
+                max_tokens,
+            )
+            .await
+            .map_err(|fallback_error| {
+                log::warn!(
+                    "Rust LLM executor: fallback {}:{} also failed: {}",
+                    fallback.provider,
+                    fallback.model,
+                    fallback_error.display_message
+                );
+                primary_error
+            })?
+        }
+    };
     Ok(assistant_message(request, chat))
 }
 
@@ -459,21 +579,21 @@ where
 /// Answer `request` in Rust when the executor is enabled and the provider is
 /// one `llm-client` supports. `Ok(false)` means the frontend must handle it; an error
 /// means nothing can.
-pub fn try_dispatch_completion(
+pub async fn try_dispatch_completion(
     app_handle: &AppHandle,
     request: &CompletionRequest,
 ) -> Result<bool, Box<AgentRuntimeError>> {
-    dispatch_completion(app_handle, request, || manager_sink(app_handle))
+    dispatch_completion(app_handle, request, || manager_sink(app_handle)).await
 }
 
 /// [`try_dispatch_completion`] with the session-manager lookup passed in, for
 /// a caller (a test) that cannot reach app state through its handle.
-pub fn dispatch_completion(
+pub async fn dispatch_completion(
     app_handle: &AppHandle,
     request: &CompletionRequest,
     manager: impl FnOnce() -> Option<Arc<dyn ResponseSink>>,
 ) -> Result<bool, Box<AgentRuntimeError>> {
-    let (route, config) = route_for(app_handle, &request.provider);
+    let (route, config) = route_for(app_handle, &request.provider).await;
     match route {
         Route::Frontend => return Ok(false),
         Route::Unavailable => return Err(Box::new(unavailable(&request.provider))),
@@ -517,10 +637,18 @@ async fn run_compaction(
     config: &ExecutorConfig,
 ) -> Result<(String, CompactStreamMeta), Box<AgentRuntimeError>> {
     let provider = provider_for(provider, config).await?;
-    let (options, retry) = generation_settings().await;
+    let (mut options, retry, default_max_tokens) = generation_settings().await;
+    // Compaction summaries must not spend a thinking budget (#2760).
+    options.thinking_effort = ThinkingEffort::Off;
     // No tools: the summary must be plain text.
-    let chat_request =
-        convert::chat_request(model, system_prompt, &request.messages, &[], None, options);
+    let chat_request = convert::chat_request(
+        model,
+        system_prompt,
+        &request.messages,
+        &[],
+        default_max_tokens,
+        options,
+    );
     let chat = llm_client::complete(provider.as_ref(), &chat_request, retry)
         .await
         .map_err(runtime_error)?;
@@ -535,15 +663,15 @@ async fn run_compaction(
 }
 
 /// Compaction counterpart of [`try_dispatch_completion`].
-pub fn try_dispatch_compaction(
+pub async fn try_dispatch_compaction(
     app_handle: &AppHandle,
     request: &CompactRequest,
 ) -> Result<bool, Box<AgentRuntimeError>> {
-    dispatch_compaction(app_handle, request, || manager_sink(app_handle))
+    dispatch_compaction(app_handle, request, || manager_sink(app_handle)).await
 }
 
 /// [`try_dispatch_compaction`] with the session-manager lookup passed in.
-pub fn dispatch_compaction(
+pub async fn dispatch_compaction(
     app_handle: &AppHandle,
     request: &CompactRequest,
     manager: impl FnOnce() -> Option<Arc<dyn ResponseSink>>,
@@ -555,7 +683,7 @@ pub fn dispatch_compaction(
         .as_ref()
         .map(|parent| parent.provider.as_str())
         .unwrap_or_default();
-    let (route, config) = route_for(app_handle, provider);
+    let (route, config) = route_for(app_handle, provider).await;
     match route {
         Route::Frontend => return Ok(false),
         Route::Unavailable => return Err(Box::new(unavailable(provider))),
@@ -614,12 +742,13 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn only_the_value_rust_enables_the_executor() {
-        assert!(env_selects_rust(Some("rust")));
-        assert!(env_selects_rust(Some(" Rust ")));
-        assert!(!env_selects_rust(Some("webview")));
-        assert!(!env_selects_rust(Some("")));
-        assert!(!env_selects_rust(None));
+    fn webview_is_the_only_env_value_that_disables_rust() {
+        assert!(env_enables_rust(None));
+        assert!(env_enables_rust(Some("")));
+        assert!(env_enables_rust(Some("rust")));
+        assert!(env_enables_rust(Some(" Rust ")));
+        assert!(!env_enables_rust(Some("webview")));
+        assert!(!env_enables_rust(Some(" WebView ")));
     }
 
     #[test]
@@ -734,7 +863,12 @@ mod tests {
         // Off: everything goes to the WebView, with or without one.
         assert_eq!(route(false, true, "openai"), Route::Frontend);
         assert_eq!(route(false, false, "anthropic"), Route::Frontend);
-        // On: supported providers are answered in Rust either way.
+        // On: supported providers are answered in Rust either way. A
+        // configured Base URL is honored by llm-client for every built-in
+        // provider (#2797), so it never changes the route; see
+        // `every_built_in_provider_honors_its_configured_base_url` in
+        // llm-client and `configured_anthropic_base_url_routes_to_rust` in
+        // the integration tests.
         assert_eq!(route(true, true, "openai"), Route::Rust);
         assert_eq!(route(true, false, "custom:lmstudio"), Route::Rust);
         assert_eq!(route(true, false, "fireworks"), Route::Rust);

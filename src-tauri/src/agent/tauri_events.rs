@@ -77,8 +77,12 @@ fn emit_compact_state(app_handle: &AppHandle, event: CompactStateEvent) -> Resul
         .map_err(|e| format!("Failed to emit llm:compact-state: {}", e))
 }
 
-pub fn emit_compact_request(app_handle: &AppHandle, event: CompactRequest) -> Result<(), String> {
+pub async fn emit_compact_request(
+    app_handle: &AppHandle,
+    event: CompactRequest,
+) -> Result<(), String> {
     if crate::agent::llm::rust_executor::try_dispatch_compaction(app_handle, &event)
+        .await
         .map_err(|e| e.display_message)?
     {
         return Ok(());

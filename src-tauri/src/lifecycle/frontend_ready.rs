@@ -21,10 +21,11 @@ pub async fn wait_until_ready() {
 
 /// Wait until something can answer LLM requests.
 ///
-/// With the Rust executor on and no WebView, that is this process itself, so
-/// there is nothing to wait for. With a WebView the wait stays, whatever the
-/// executor setting: a provider the executor does not handle still goes to the
-/// WebView, which must have announced itself or the request would be lost.
+/// Rust-routed sessions need no frontend: when this process answers LLM calls
+/// without a WebView (#2760 default routing), return immediately. When a
+/// WebView is present, keep the `frontend-ready` wait — unsupported providers
+/// and ignored Base URLs still go there, and a request would be lost if the
+/// frontend had not announced itself.
 pub async fn wait_until_llm_executor_ready(app_handle: &tauri::AppHandle) {
     if crate::agent::llm::rust_executor::runs_without_webview(app_handle) {
         return;

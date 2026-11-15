@@ -244,9 +244,10 @@ pub async fn request_llm_completion(
         }
     }
 
-    // With the Rust executor enabled, OpenAI-compatible providers are answered
-    // in this process and no frontend listener is needed (#2704).
+    // Supported providers are answered in this process by default (#2760);
+    // unsupported ones (and ignored Base URLs) still go to the WebView.
     if crate::agent::llm::rust_executor::try_dispatch_completion(app_handle, &request)
+        .await
         .map_err(|e| *e)?
     {
         return Ok(());

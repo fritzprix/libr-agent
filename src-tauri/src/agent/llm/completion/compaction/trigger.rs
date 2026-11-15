@@ -437,7 +437,7 @@ pub(crate) async fn try_trigger_preflight_compaction(
                     },
                 )
                 .await;
-            if let Err(error) = emit_compact_request(app_handle, compact_event) {
+            if let Err(error) = emit_compact_request(app_handle, compact_event).await {
                 compaction.clear_runtime_state(true).await;
                 compaction.reset_recovery_progress().await;
                 return Err(error);
