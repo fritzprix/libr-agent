@@ -668,8 +668,19 @@ mod tests {
         );
     }
 
+    /// Serializes tests that read or write the process-global
+    /// `HTTP_BIND_ERROR` slot so a parallel test cannot drain it between
+    /// `note_http_bind_error` and `take_http_bind_error` (#2823).
+    static HTTP_BIND_ERROR_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn a_recorded_bind_error_ends_the_startup_wait_early() {
+        // Hold the lock for the whole note -> wait -> take sequence, and
+        // drain any leftover slot first so the starting state is exact.
+        let _serial = HTTP_BIND_ERROR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        super::super::take_http_bind_error();
         // With no live record of ours, the startup wait must surface the
         // bind error recorded by the failed HTTP init instead of waiting
         // out the full timeout (#2823).

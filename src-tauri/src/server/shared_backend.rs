@@ -578,6 +578,12 @@ pub enum BackendStartup {
 /// still publishing holds the lock.
 pub const OWN_PUBLISH_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// One-line log for a frontend that attached to another process's live
+/// backend (#2823).
+pub fn attached_frontend_log(frontend: &str, pid: u32, port: u16) -> String {
+    format!("{frontend} attached to live shared backend pid {pid} on port {port}")
+}
+
 /// The single backend startup path every frontend shares (#2756), guarded
 /// against two frontends starting at the same moment (#2757).
 ///
@@ -593,10 +599,6 @@ pub const OWN_PUBLISH_TIMEOUT: Duration = Duration::from_secs(10);
 /// `lock_path` is `None` before the descriptor namespace is initialized: a
 /// single-process fallback with the pre-#2757 behavior.
 ///
-pub fn attached_frontend_log(frontend: &str, pid: u32, port: u16) -> String {
-    format!("{frontend} attached to live shared backend pid {pid} on port {port}")
-}
-
 /// A published backend that fails readiness is a hard error: its process
 /// already owns this profile, so starting a second backend here would
 /// double-execute live sessions.
