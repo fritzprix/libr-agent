@@ -161,7 +161,10 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let log_dir = app.path().app_log_dir()?;
     let log_retention_days =
         tauri::async_runtime::block_on(SystemSettings::load_global()).log_retention_days;
-    logger::setup_file_logger(log_dir, log_retention_days)?;
+    // An attached frontend must not rename the host's open log (#2823).
+    let rotate_log = crate::server::backend_descriptor::find_live_backend().is_none()
+        && !crate::server::backend_descriptor::profile_has_other_backend();
+    logger::setup_file_logger_with_rotation(log_dir, log_retention_days, rotate_log)?;
 
     // Test if Rust logger is properly initialized
     log::info!("🔥 Logger initialized - testing Rust log to file");
@@ -312,24 +315,28 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         tauri::async_runtime::block_on(crate::server::shared_backend::attach_or_start_backend(
             crate::server::shared_backend::ATTACH_READY_TIMEOUT,
             || {
-                spawn_startup_maintenance_tasks(
-                    session_manager,
-                    startup_settings.search_index_frequency_minutes,
-                );
-
-                // Spawn HTTP Server for External Features
+                // HTTP bind runs first. Recovery and the scheduler start only
+                // after it succeeds, so a refused or failed bind cannot leave
+                // a second executor running (#2823).
                 let server_manager = app
                     .state::<agent::AgentSessionManager>()
                     .inner()
                     .clone_for_task();
+                let recovery_manager = app
+                    .state::<agent::AgentSessionManager>()
+                    .inner()
+                    .clone_for_task();
+                let app_handle = app.handle().clone();
+                let http_port = startup_settings.http_port;
+                let http_expose = startup_settings.http_expose;
+                let search_minutes = startup_settings.search_index_frequency_minutes;
                 tauri::async_runtime::spawn(async move {
                     let server_manager = std::sync::Arc::new(server_manager);
-                    // Binds on the first Docker session that needs a wake URL.
                     crate::server::wake_listener::install(server_manager.clone());
                     match crate::server::init(
                         server_manager,
-                        startup_settings.http_port,
-                        startup_settings.http_expose,
+                        http_port,
+                        http_expose,
                         mcp_enabled,
                         app_control_enabled,
                     )
@@ -338,11 +345,7 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
                         Ok(actual_port) => {
                             info!(
                                 "✅ HTTP Server spawned on {}:{} (mcp={} app_control={})",
-                                if startup_settings.http_expose {
-                                    "0.0.0.0"
-                                } else {
-                                    "127.0.0.1"
-                                },
+                                if http_expose { "0.0.0.0" } else { "127.0.0.1" },
                                 actual_port,
                                 mcp_enabled,
                                 app_control_enabled
@@ -351,41 +354,35 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
                         Err(e) => {
                             log::error!(
                                 "Failed to start HTTP server on port range starting from {}: {}",
-                                startup_settings.http_port,
+                                http_port,
                                 e
                             );
+                            return;
                         }
                     }
-                });
 
-                // Spawn session recovery in background
-                let recovery_manager = app
-                    .state::<agent::AgentSessionManager>()
-                    .inner()
-                    .clone_for_task();
-                tauri::async_runtime::spawn(async move {
-                    use crate::server::readiness::{mark_recovery, RecoveryState};
+                    spawn_startup_maintenance_tasks(session_manager, search_minutes);
 
-                    match recovery_manager.recover_sessions().await {
-                        Ok(_) => mark_recovery(RecoveryState::Ok),
-                        Err(e) => {
-                            log::error!("❌ Session recovery failed: {}", e);
-                            mark_recovery(RecoveryState::Failed);
+                    tauri::async_runtime::spawn(async move {
+                        use crate::server::readiness::{mark_recovery, RecoveryState};
+
+                        match recovery_manager.recover_sessions().await {
+                            Ok(_) => mark_recovery(RecoveryState::Ok),
+                            Err(e) => {
+                                log::error!("❌ Session recovery failed: {}", e);
+                                mark_recovery(RecoveryState::Failed);
+                            }
                         }
-                    }
+                    });
+                    info!("🔄 Session recovery initiated in background");
+
+                    let scheduler_worker = crate::scheduled::SchedulerWorker::new(
+                        app_handle.clone(),
+                        std::time::Duration::from_secs(60),
+                    );
+                    app_handle.manage(scheduler_worker);
+                    info!("✅ Scheduled task worker started");
                 });
-
-                info!("🔄 Session recovery initiated in background");
-
-                // Start scheduled task background worker (polls every 60s).
-                // Must be stored in managed state to prevent being dropped when setup_app returns.
-                let scheduler_app_handle = app.handle().clone();
-                let scheduler_worker = crate::scheduled::SchedulerWorker::new(
-                    scheduler_app_handle,
-                    std::time::Duration::from_secs(60),
-                );
-                app.manage(scheduler_worker);
-                info!("✅ Scheduled task worker started");
 
                 Ok(())
             },
@@ -394,9 +391,18 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
     if let crate::server::shared_backend::BackendStartup::Attached { descriptor, client } = startup
     {
+        let frontend = if crate::tui::wants_tui() {
+            "TUI"
+        } else {
+            "GUI"
+        };
         info!(
-            "🔗 GUI attached to live shared backend pid {} on port {}",
-            descriptor.pid, descriptor.port
+            "🔗 {}",
+            crate::server::shared_backend::attached_frontend_log(
+                frontend,
+                descriptor.pid,
+                descriptor.port
+            )
         );
         info!("✅ Shared backend at port {} is ready", descriptor.port);
         // When the shared backend dies this GUI exits with a clear message

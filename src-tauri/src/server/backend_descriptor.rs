@@ -160,6 +160,98 @@ pub fn find_live_backend() -> Option<BackendDescriptor> {
     )
 }
 
+/// Backend the chat screen should call.
+///
+/// [`find_live_backend`] skips this process, so the frontend that hosts the
+/// backend would otherwise wait forever for "another" record (#2823, B-01).
+/// An attached frontend still prefers the other process's record.
+pub fn find_chat_backend() -> Option<BackendDescriptor> {
+    let db_path = DB_PATH.get()?;
+    chat_backend_from(
+        db_path,
+        std::process::id(),
+        probe_pid,
+        loopback_port_accepts,
+    )
+}
+
+fn chat_backend_from(
+    db_path: &Path,
+    own_pid: u32,
+    pid_probe: impl Fn(u32) -> Option<bool>,
+    port_accepts: impl Fn(u16) -> bool,
+) -> Option<BackendDescriptor> {
+    if let Some(other) = find_live_backend_with_probes(db_path, own_pid, &pid_probe, &port_accepts)
+    {
+        return Some(other);
+    }
+    let descriptor = read_descriptor(&record_path_for(db_path, own_pid))?;
+    if descriptor.pid == own_pid && descriptor.port != 0 && port_accepts(descriptor.port) {
+        Some(descriptor)
+    } else {
+        None
+    }
+}
+
+/// True when some other runtime on this database still owns the profile.
+///
+/// A live pid blocks, and so does a pid the probe cannot prove dead: deleting
+/// that record and binding the next port is how a second backend starts
+/// (#2823). Dead pids do not block. This does not sweep files.
+pub fn profile_has_other_backend() -> bool {
+    let Some(db_path) = DB_PATH.get() else {
+        return false;
+    };
+    other_backend_blocks_second_server(db_path, std::process::id(), probe_pid)
+}
+
+fn other_backend_blocks_second_server(
+    db_path: &Path,
+    own_pid: u32,
+    pid_probe: impl Fn(u32) -> Option<bool>,
+) -> bool {
+    let prefix = format!(
+        "{}{RECORD_INFIX}",
+        db_path
+            .file_name()
+            .map(|n| n.to_string_lossy())
+            .unwrap_or_default()
+    );
+    let Some(dir) = db_path.parent() else {
+        return false;
+    };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return false;
+    };
+    for entry in entries.flatten() {
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        let Some(pid_part) = name
+            .strip_prefix(&prefix)
+            .and_then(|rest| rest.strip_suffix(RECORD_SUFFIX))
+        else {
+            continue;
+        };
+        let Ok(pid) = pid_part.parse::<u32>() else {
+            continue;
+        };
+        if pid == own_pid {
+            continue;
+        }
+        if pid_probe(pid) == Some(false) {
+            continue;
+        }
+        let Some(descriptor) = read_descriptor(&entry.path()) else {
+            continue;
+        };
+        if descriptor.pid == pid && descriptor.port != 0 {
+            return true;
+        }
+    }
+    false
+}
+
 fn publish_at(db_path: &Path, port: u16) -> std::io::Result<()> {
     let descriptor = BackendDescriptor {
         pid: std::process::id(),
@@ -240,14 +332,21 @@ fn own_record_is_live() -> bool {
 /// elapses. The startup-race winner calls this before releasing the
 /// startup lock, so the loser's re-check under the lock can find the
 /// published record instead of starting a second backend (#2757).
-pub fn wait_until_own_record_live(timeout: Duration) {
+pub fn wait_until_own_record_live(timeout: Duration) -> Result<(), String> {
     let deadline = Instant::now() + timeout;
     while !own_record_is_live() {
+        if let Some(err) = super::take_http_bind_error() {
+            return Err(err);
+        }
         if Instant::now() >= deadline {
-            return;
+            return Err(
+                "HTTP server did not publish this process's backend record; refusing to start a second backend"
+                    .to_string(),
+            );
         }
         std::thread::sleep(Duration::from_millis(50));
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -459,5 +558,49 @@ mod tests {
         assert!(record_path_for(&db, 200).exists());
         // Idempotent when already removed.
         unpublish_at(&db, 100).unwrap();
+    }
+
+    #[test]
+    fn host_chat_finds_its_own_backend_record() {
+        let dir = tempdir().unwrap();
+        let db = dir.path().join("app.db");
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let own = std::process::id();
+        write_record(&db, &record(own, port, 1));
+
+        let found = chat_backend_from(&db, own, probe_pid, loopback_port_accepts);
+        assert_eq!(found.map(|d| d.port), Some(port));
+        // The host is not "another" backend.
+        assert!(
+            find_live_backend_with_probes(&db, own, probe_pid, loopback_port_accepts).is_none()
+        );
+    }
+
+    #[test]
+    fn an_unproven_pid_still_blocks_a_second_server() {
+        let dir = tempdir().unwrap();
+        let db = dir.path().join("app.db");
+        write_record(&db, &record(100, 3030, 1));
+        assert!(other_backend_blocks_second_server(&db, 1, |_pid| None));
+        assert!(!other_backend_blocks_second_server(&db, 1, |_pid| {
+            Some(false)
+        }));
+    }
+
+    #[test]
+    fn a_different_database_does_not_block_this_profile() {
+        let dir = tempdir().unwrap();
+        let primary = dir.path().join("libragent_v2.db");
+        let isolated = dir.path().join("other.db");
+        write_record(&primary, &record(100, 3030, 1));
+        assert!(other_backend_blocks_second_server(
+            &primary,
+            1,
+            |_pid| Some(true)
+        ));
+        assert!(!other_backend_blocks_second_server(&isolated, 1, |_pid| {
+            Some(true)
+        }));
     }
 }

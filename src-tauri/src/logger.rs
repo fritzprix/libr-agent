@@ -174,6 +174,17 @@ fn formatted_dispatch() -> fern::Dispatch {
 }
 
 pub fn setup_file_logger(log_dir: PathBuf, log_retention_days: u64) -> Result<(), String> {
+    setup_file_logger_with_rotation(log_dir, log_retention_days, true)
+}
+
+/// `rotate_existing` renames `libragent.log` aside before opening a new file.
+/// An attached frontend passes `false` so it appends instead of rotating the
+/// host's log out from under it (#2823).
+pub fn setup_file_logger_with_rotation(
+    log_dir: PathBuf,
+    log_retention_days: u64,
+    rotate_existing: bool,
+) -> Result<(), String> {
     set_log_retention_days(log_retention_days);
 
     // Ensure log directory exists
@@ -185,8 +196,10 @@ pub fn setup_file_logger(log_dir: PathBuf, log_retention_days: u64) -> Result<()
     let _ = LOG_DIR.set(log_dir.clone());
     let log_file = log_dir.join(ACTIVE_LOG_FILE_NAME);
 
-    // Backup existing log file with datetime suffix
-    if log_file.exists() {
+    // Backup existing log file with datetime suffix. Skip this when another
+    // frontend already hosts the backend: renaming its open log fails on
+    // Windows and drops the lines it is still writing.
+    if rotate_existing && log_file.exists() {
         let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
         let backup_file = log_dir.join(format!("libragent_{}.log", timestamp));
         fs::rename(&log_file, &backup_file)
@@ -196,10 +209,14 @@ pub fn setup_file_logger(log_dir: PathBuf, log_retention_days: u64) -> Result<()
     let (pruned_files, pruned_bytes) = prune_archived_logs_in(&log_dir);
 
     // Create new log file (truncate mode for fresh start)
-    let file = OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
+    let mut file_options = OpenOptions::new();
+    file_options.create(true).write(true);
+    if rotate_existing {
+        file_options.truncate(true);
+    } else {
+        file_options.append(true);
+    }
+    let file = file_options
         .open(&log_file)
         .map_err(|e| format!("Failed to open log file: {}", e))?;
 

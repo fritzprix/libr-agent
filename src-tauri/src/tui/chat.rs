@@ -827,7 +827,7 @@ pub fn run_chat_front(stdout: &mut Stdout) {
 
     loop {
         if client.is_none() {
-            if let Some(descriptor) = crate::server::backend_descriptor::find_live_backend() {
+            if let Some(descriptor) = crate::server::backend_descriptor::find_chat_backend() {
                 match SharedBackendClient::new(descriptor.port) {
                     Ok(c) => {
                         state.status = format!("Backend on port {}", descriptor.port);

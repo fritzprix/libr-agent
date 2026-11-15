@@ -1733,11 +1733,13 @@ P1:
 
 All on one scratch profile, with `LIBRAGENT_LLM_EXECUTOR` unset (the phase-1 WebView path) unless the scenario says otherwise. "One backend" means one live descriptor file, one HTTP server answering `/api/health` with `ready: true`, and one scheduler.
 
-- [ ] **B-01 The TUI starts first** (#2756, #2761) — All · `[auto]`
+- [x] **B-01 The TUI starts first** (#2756, #2761) — All · `[auto]`
   - With no backend running, `libragent --tui` brings the backend up and attaches. One backend, and no GUI window.
   - A GUI started afterwards attaches to it and does not start a second one.
-- [ ] **B-02 The GUI starts first** (#2756) — All · `[auto]`
-  - With the GUI running, `libragent --tui` attaches. One backend.
+  - Evidence (#2823): `host_chat_finds_its_own_backend_record` (the hosting process sees its own record) and `second_process_attaches_to_the_live_backend_without_starting_one` (a second process attaches and does not start a backend).
+- [x] **B-02 The GUI starts first** (#2756) — All · `[auto]`
+  - With the GUI running, `libragent --tui` attaches. One backend. It does not create a hidden WebView, rotate the host log, or bind a second HTTP port.
+  - Evidence (#2823): `second_process_attaches_to_the_live_backend_without_starting_one`.
 - [ ] **B-03 Concurrent start** (#2757) — All · `[auto]`
   - Start two frontends at the same moment (GUI and TUI, and TUI and TUI), 20 times each. Every run ends with exactly one backend.
   - The loser of the descriptor lock attaches. It starts no second HTTP server, scheduler, or session executor.
@@ -1763,6 +1765,7 @@ All on one scratch profile, with `LIBRAGENT_LLM_EXECUTOR` unset (the phase-1 Web
 - [ ] **B-10 An isolated data dir** (#2701) — All · `[auto]`
   - A frontend started with a different `LIBRAGENT_DATA_DIR` runs its own backend next to the shared one. Neither sees the other's sessions.
   - Nothing prevents several apps from running on one device.
+  - A different database does not count as this profile's backend (`a_different_database_does_not_block_this_profile`, #2823), so that instance can still bind its own port.
 - [ ] **B-11 Hidden WebView LLM calls in the TUI** (#2761) — All · `[auto]`
   - With only the TUI attached and no GUI window, a turn on a provider that the Rust client does not cover (any provider outside OpenAI, Fireworks, OpenRouter, Groq, Cerebras, Ollama, custom OpenAI-compatible, Anthropic, and Gemini) completes through the phase-1 hidden WebView.
 
