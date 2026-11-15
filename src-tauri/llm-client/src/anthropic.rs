@@ -8,10 +8,10 @@
 
 use crate::openai::{object_schema, text_of};
 use crate::provider::{ChatProvider, Endpoint};
-use crate::stream::StreamParser;
+use crate::stream::{StreamParser, StreamStep};
 use crate::types::{
-    ChatMessage, ChatRequest, CompletedChat, ContentPart, Role, ThinkingEffort, ToolCall,
-    ToolCallFunction, Usage,
+    ChatMessage, ChatRequest, CompletedChat, ContentPart, Role, StreamDelta, ThinkingEffort,
+    ToolCall, ToolCallDelta, ToolCallFunction, ToolCallFunctionDelta, Usage,
 };
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
@@ -369,6 +369,33 @@ impl AnthropicStream {
             self.output_tokens = tokens;
         }
     }
+
+    /// The counts so far, or `None` before the stream reported any.
+    fn usage(&self) -> Option<Usage> {
+        self.saw_usage.then(|| {
+            let prompt_tokens = self.input_tokens
+                + self.cache_creation_tokens.unwrap_or(0)
+                + self.cache_read_tokens.unwrap_or(0);
+            Usage {
+                prompt_tokens,
+                completion_tokens: self.output_tokens,
+                total_tokens: prompt_tokens + self.output_tokens,
+                cached_prompt_tokens: self.cache_read_tokens,
+                details: None,
+            }
+        })
+    }
+}
+
+/// A stop reason in the OpenAI vocabulary the rest of the client uses.
+fn finish_reason_of(reason: &str) -> String {
+    match reason {
+        "end_turn" | "stop_sequence" => "stop",
+        "tool_use" => "tool_calls",
+        "max_tokens" => "length",
+        other => other,
+    }
+    .to_string()
 }
 
 fn text_field<'a>(value: &'a Value, key: &str) -> &'a str {
@@ -376,26 +403,32 @@ fn text_field<'a>(value: &'a Value, key: &str) -> &'a str {
 }
 
 impl StreamParser for AnthropicStream {
-    fn push_line(&mut self, line: &str) -> Result<bool, String> {
+    fn push_line(&mut self, line: &str) -> Result<StreamStep, String> {
         // `event:` lines repeat the `type` the data carries.
         let Some(data) = line.strip_prefix("data:") else {
-            return Ok(false);
+            return Ok(StreamStep::idle(false));
         };
         let data = data.trim();
         if data.is_empty() {
-            return Ok(false);
+            return Ok(StreamStep::idle(false));
         }
         let event: Value = serde_json::from_str(data)
             .map_err(|error| format!("Malformed stream event: {error}"))?;
         let index = event.get("index").and_then(Value::as_u64);
+        let mut added = StreamDelta::default();
 
         match event.get("type").and_then(Value::as_str) {
-            Some("message_start") => self.read_usage(&event["message"]["usage"]),
+            Some("message_start") => {
+                self.read_usage(&event["message"]["usage"]);
+                added.usage = self.usage();
+            }
             Some("message_delta") => {
                 if let Some(reason) = event["delta"].get("stop_reason").and_then(Value::as_str) {
                     self.stop_reason = Some(reason.to_string());
+                    added.finish_reason = Some(finish_reason_of(reason));
                 }
                 self.read_usage(&event["usage"]);
+                added.usage = self.usage();
             }
             Some("content_block_start") => {
                 let block = &event["content_block"];
@@ -404,11 +437,21 @@ impl StreamParser for AnthropicStream {
                         .get("input")
                         .filter(|input| input.as_object().is_some_and(|map| !map.is_empty()))
                         .map(Value::to_string);
+                    let id = text_field(block, "id").to_string();
+                    let name = text_field(block, "name").to_string();
+                    added.tool_calls.push(ToolCallDelta {
+                        index,
+                        id: Some(id.clone()).filter(|id| !id.is_empty()),
+                        function: ToolCallFunctionDelta {
+                            name: Some(name.clone()).filter(|name| !name.is_empty()),
+                            arguments: String::new(),
+                        },
+                    });
                     self.tool_uses.insert(
                         index,
                         PartialToolUse {
-                            id: text_field(block, "id").to_string(),
-                            name: text_field(block, "name").to_string(),
+                            id,
+                            name,
                             json: String::new(),
                             initial_input,
                         },
@@ -418,20 +461,44 @@ impl StreamParser for AnthropicStream {
             Some("content_block_delta") => {
                 let delta = &event["delta"];
                 match delta["type"].as_str() {
-                    Some("text_delta") => self.content.push_str(text_field(delta, "text")),
-                    Some("thinking_delta") => self.thinking.push_str(text_field(delta, "thinking")),
+                    Some("text_delta") => {
+                        let text = text_field(delta, "text");
+                        self.content.push_str(text);
+                        added.content = Some(text.to_string()).filter(|text| !text.is_empty());
+                    }
+                    Some("thinking_delta") => {
+                        let text = text_field(delta, "thinking");
+                        self.thinking.push_str(text);
+                        added.thinking = Some(text.to_string()).filter(|text| !text.is_empty());
+                    }
                     Some("signature_delta") => {
-                        self.signature.push_str(text_field(delta, "signature"))
+                        self.signature.push_str(text_field(delta, "signature"));
+                        // The whole signature so far: a reader keeps the latest.
+                        added.thinking_signature =
+                            Some(self.signature.clone()).filter(|signature| !signature.is_empty());
                     }
                     Some("input_json_delta") => {
-                        if let Some(tool_use) = index.and_then(|i| self.tool_uses.get_mut(&i)) {
-                            tool_use.json.push_str(text_field(delta, "partial_json"));
+                        if let Some((index, tool_use)) =
+                            index.and_then(|i| self.tool_uses.get_mut(&i).map(|t| (i, t)))
+                        {
+                            let piece = text_field(delta, "partial_json");
+                            tool_use.json.push_str(piece);
+                            if !piece.is_empty() {
+                                added.tool_calls.push(ToolCallDelta {
+                                    index,
+                                    id: None,
+                                    function: ToolCallFunctionDelta {
+                                        name: None,
+                                        arguments: piece.to_string(),
+                                    },
+                                });
+                            }
                         }
                     }
                     _ => {}
                 }
             }
-            Some("message_stop") => return Ok(true),
+            Some("message_stop") => return Ok(StreamStep::with(true, added)),
             Some("error") => {
                 let message = event["error"]
                     .get("message")
@@ -444,22 +511,11 @@ impl StreamParser for AnthropicStream {
             }
             _ => {}
         }
-        Ok(false)
+        Ok(StreamStep::with(false, added))
     }
 
     fn finish(self: Box<Self>) -> CompletedChat {
-        let usage = self.saw_usage.then(|| {
-            let prompt_tokens = self.input_tokens
-                + self.cache_creation_tokens.unwrap_or(0)
-                + self.cache_read_tokens.unwrap_or(0);
-            Usage {
-                prompt_tokens,
-                completion_tokens: self.output_tokens,
-                total_tokens: prompt_tokens + self.output_tokens,
-                cached_prompt_tokens: self.cache_read_tokens,
-                details: None,
-            }
-        });
+        let usage = self.usage();
         let tool_calls = self
             .tool_uses
             .into_values()
@@ -477,16 +533,7 @@ impl StreamParser for AnthropicStream {
                 },
             })
             .collect();
-        // In the OpenAI vocabulary the rest of the client uses.
-        let finish_reason = self.stop_reason.map(|reason| {
-            match reason.as_str() {
-                "end_turn" | "stop_sequence" => "stop",
-                "tool_use" => "tool_calls",
-                "max_tokens" => "length",
-                other => other,
-            }
-            .to_string()
-        });
+        let finish_reason = self.stop_reason.as_deref().map(finish_reason_of);
 
         CompletedChat {
             content: self.content,
@@ -539,14 +586,83 @@ mod tests {
     }
 
     fn replay(recording: &str) -> CompletedChat {
+        replay_with_deltas(recording).0
+    }
+
+    fn replay_with_deltas(recording: &str) -> (CompletedChat, Vec<StreamDelta>) {
         let mut lines = LineBuffer::default();
         let mut stream = Box::<AnthropicStream>::default();
+        let mut deltas = Vec::new();
         for line in lines.push(recording.as_bytes()) {
-            if stream.push_line(&line).expect("line accepted") {
+            let step = stream.push_line(&line).expect("line accepted");
+            deltas.extend(step.deltas);
+            if step.done {
                 break;
             }
         }
-        stream.finish()
+        (stream.finish(), deltas)
+    }
+
+    #[test]
+    fn thinking_stream_deltas_add_up_to_the_final_answer() {
+        let (chat, deltas) = replay_with_deltas(include_str!(
+            "../tests/fixtures/anthropic_thinking_text.sse"
+        ));
+
+        let thinking: String = deltas
+            .iter()
+            .filter_map(|d| d.thinking.as_deref())
+            .collect();
+        let content: String = deltas.iter().filter_map(|d| d.content.as_deref()).collect();
+        assert_eq!(thinking, chat.thinking);
+        assert_eq!(content, chat.content);
+        let first_thinking = deltas.iter().position(|d| d.thinking.is_some()).unwrap();
+        let first_content = deltas.iter().position(|d| d.content.is_some()).unwrap();
+        assert!(first_thinking < first_content);
+        // The signature is reported whole, and the last usage matches the final one.
+        let signature = deltas
+            .iter()
+            .rev()
+            .find_map(|d| d.thinking_signature.clone());
+        assert_eq!(signature, chat.thinking_signature);
+        assert_eq!(
+            deltas.iter().rev().find_map(|d| d.usage.clone()),
+            chat.usage
+        );
+        assert_eq!(
+            deltas.iter().rev().find_map(|d| d.finish_reason.as_deref()),
+            chat.finish_reason.as_deref()
+        );
+    }
+
+    #[test]
+    fn tool_use_fragments_add_up_to_the_final_calls() {
+        let (chat, deltas) =
+            replay_with_deltas(include_str!("../tests/fixtures/anthropic_tool_use.sse"));
+
+        let fragments: Vec<&ToolCallDelta> = deltas.iter().flat_map(|d| &d.tool_calls).collect();
+        assert_eq!(chat.tool_calls.len(), 2);
+        for call in &chat.tool_calls {
+            let start = fragments
+                .iter()
+                .find(|f| f.id.as_deref() == Some(call.id.as_str()))
+                .expect("a fragment opens the call");
+            assert_eq!(
+                start.function.name.as_deref(),
+                Some(call.function.name.as_str())
+            );
+            let arguments: String = fragments
+                .iter()
+                .filter(|f| f.index == start.index)
+                .map(|f| f.function.arguments.as_str())
+                .collect();
+            // A call with no arguments streams none; the final call has `{}`.
+            if arguments.is_empty() {
+                assert_eq!(call.function.arguments, "{}");
+            } else {
+                assert_eq!(arguments, call.function.arguments);
+            }
+        }
     }
 
     #[test]

@@ -207,6 +207,23 @@ pub enum AgentEvent {
         session_id: String,
         messages: Vec<Message>,
     },
+
+    /// A live piece of a turn the Rust LLM executor is answering (#2786).
+    ///
+    /// Deltas arrive in stream order while the call runs; the final message
+    /// still comes through `MessageAdded` once the call ends, so a listener may
+    /// drop deltas it cannot use. Carries no UI fields: a TUI reads the same
+    /// event. `provider` and `max_tokens` (the request's own value, if any)
+    /// let a listener apply the same loop and output-budget checks as the
+    /// WebView path.
+    #[serde(rename_all = "camelCase")]
+    LlmStreamDelta {
+        session_id: String,
+        response_message_id: String,
+        provider: String,
+        max_tokens: Option<u32>,
+        delta: llm_client::StreamDelta,
+    },
 }
 
 pub trait AgentEventDispatcher: Send + Sync {
@@ -389,6 +406,11 @@ pub(crate) fn summarize_agent_event(event: &AgentEvent) -> String {
             "PendingQueueUpdated(session={session_id}, count={})",
             messages.len()
         ),
+        AgentEvent::LlmStreamDelta {
+            session_id,
+            response_message_id,
+            ..
+        } => format!("LlmStreamDelta(session={session_id}, response={response_message_id})"),
     }
 }
 

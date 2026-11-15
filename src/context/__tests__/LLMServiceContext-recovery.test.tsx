@@ -298,26 +298,30 @@ describe('LLMServiceContext – SP4 Retry & Fallback Recovery', () => {
 
   describe('recovery cancel toast', () => {
     const registerCancelHandler = async () => {
-      let cancelHandler: ((event: unknown) => void) | undefined;
+      // More than one hook listens on this channel; keep every handler.
+      const cancelHandlers: Array<(event: unknown) => void> = [];
       (listen as ReturnType<typeof vi.fn>).mockImplementation(
         async (eventName, handler) => {
           if (eventName === 'llm:completion-cancel') {
-            cancelHandler = handler as (event: unknown) => void;
+            cancelHandlers.push(handler as (event: unknown) => void);
           }
           return mockUnlisten;
         },
       );
       renderHook(() => useLLMService(), { wrapper: TestWrapper });
-      await waitFor(() => expect(cancelHandler).toBeDefined());
-      return (willRetry: boolean) =>
-        cancelHandler?.({
-          payload: {
-            sessionId: 'sp4-session',
-            responseMessageId: 'resp-1',
-            reason: 'reasoning-budget-exceeded',
-            willRetry,
-          },
-        });
+      await waitFor(() => expect(cancelHandlers.length).toBeGreaterThan(0));
+      return (willRetry: boolean) => {
+        for (const handler of cancelHandlers) {
+          handler({
+            payload: {
+              sessionId: 'sp4-session',
+              responseMessageId: 'resp-1',
+              reason: 'reasoning-budget-exceeded',
+              willRetry,
+            },
+          });
+        }
+      };
     };
 
     beforeEach(() => {
@@ -390,14 +394,14 @@ describe('LLMServiceContext – SP4 Retry & Fallback Recovery', () => {
       );
 
     it('Rust cancel during the retry wait stops retries and the fallback', async () => {
-      let cancelHandler: ((event: unknown) => void) | undefined;
+      const cancelHandlers: Array<(event: unknown) => void> = [];
       (listen as ReturnType<typeof vi.fn>).mockImplementation(
         async (eventName, handler) => {
           if (eventName === 'llm:completion-request') {
             eventHandler = handler as (event: unknown) => Promise<void>;
           }
           if (eventName === 'llm:completion-cancel') {
-            cancelHandler = handler as (event: unknown) => void;
+            cancelHandlers.push(handler as (event: unknown) => void);
           }
           return mockUnlisten;
         },
@@ -407,19 +411,21 @@ describe('LLMServiceContext – SP4 Retry & Fallback Recovery', () => {
         throw new Error('api err');
       });
       vi.mocked(sleep).mockImplementationOnce(async () => {
-        cancelHandler?.({
-          payload: {
-            sessionId: 'sp4-session',
-            responseMessageId: 'resp-1',
-            reason: 'user',
-          },
-        });
+        for (const handler of cancelHandlers) {
+          handler({
+            payload: {
+              sessionId: 'sp4-session',
+              responseMessageId: 'resp-1',
+              reason: 'user',
+            },
+          });
+        }
       });
 
       renderHook(() => useLLMService(), { wrapper: WrapperWithFallback });
       await waitFor(() => {
         expect(eventHandler).toBeDefined();
-        expect(cancelHandler).toBeDefined();
+        expect(cancelHandlers.length).toBeGreaterThan(0);
       });
 
       await act(async () => {

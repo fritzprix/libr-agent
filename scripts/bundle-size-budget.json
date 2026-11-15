@@ -1,5 +1,6 @@
 {
   "totalCssBytes": 215000,
-  "largestJsBytes": 3000000,
-  "largestCssBytes": 185000
+  "largestJsBytes": 3050000,
+  "largestCssBytes": 185000,
+  "_comment_largestJsBytes": "Raised for #2796 (Rust-routed stream deltas; useRustStreamListener in main index chunk)"
 }

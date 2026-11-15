@@ -13,6 +13,7 @@ import { getLogger } from '@/lib/logger';
 import { useSettings } from './SettingsContext';
 import { useLLMExecution } from './llm/useLLMExecution';
 import { useLLMListener } from './llm/useLLMListener';
+import { useRustStreamListener } from './llm/useRustStreamListener';
 import type { LLMServiceContextValue, SessionStatus } from './llm/types';
 import { getAgentCompactContext } from '@/lib/backend/agent-commands';
 
@@ -175,6 +176,8 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
     setCompactedRangeForSession: setCompactedRange,
     setAwaitingCompactForSession: setAwaitingCompact,
   });
+
+  useRustStreamListener({ settingsRef, setStreamingMessages });
 
   const refreshCompactedRange = useCallback(
     async (sessionId: string) => {
