@@ -494,11 +494,24 @@ fn run_with_visibility(show_windows: bool) {
             .build({
                 let mut context = create_tauri_context();
                 if !show_windows {
-                    // Same hidden-window config the liblet hidden-WebView
-                    // path uses (headless/mod.rs): invisible, out of the
-                    // taskbar, never focused.
+                    // Keep a WebView HWND that page JS will actually run in.
+                    // On Windows, `visible=false` from creation often leaves
+                    // WebView2 without a document (#2784): no `frontend-ready`,
+                    // no LLM listener. Use an off-screen 1x1 window instead —
+                    // skip_taskbar + no focus so it is not a user-facing GUI.
                     for window_config in &mut context.config_mut().app.windows {
-                        window_config.visible = false;
+                        #[cfg(windows)]
+                        {
+                            window_config.visible = true;
+                            window_config.width = 1.0;
+                            window_config.height = 1.0;
+                            window_config.x = Some(-32_000.0);
+                            window_config.y = Some(-32_000.0);
+                        }
+                        #[cfg(not(windows))]
+                        {
+                            window_config.visible = false;
+                        }
                         window_config.skip_taskbar = true;
                         window_config.focus = false;
                     }
