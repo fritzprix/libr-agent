@@ -298,7 +298,7 @@ fn build_hook_command(plugin_root: &Path, handler: &HookHandler) -> Result<Comma
         cmd.env("CLAUDE_PLUGIN_ROOT", root_str.as_ref());
         cmd.env("CURSOR_PLUGIN_ROOT", root_str.as_ref());
         cmd.current_dir(plugin_root);
-        return Ok(cmd);
+        Ok(cmd)
     }
     #[cfg(not(target_os = "windows"))]
     {
