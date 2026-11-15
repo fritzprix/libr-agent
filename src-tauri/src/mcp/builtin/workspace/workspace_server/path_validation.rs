@@ -273,10 +273,56 @@ impl WorkspaceServer {
     }
 }
 
+impl WorkspaceServer {
+    /// Exact `@teamwork/<relative-path>` alias for an outside-workspace path that lies
+    /// inside the session teamwork artifact root. `None` for any other path or error.
+    async fn teamwork_alias_for_denied_path(
+        &self,
+        error: &str,
+        requested_path: &str,
+        session_id: &str,
+    ) -> Option<String> {
+        if !error.contains(crate::mcp::builtin::utils::OUTSIDE_WORKSPACE_ROOT_MARKER) {
+            return None;
+        }
+        let requested = std::path::Path::new(requested_path.trim());
+        if !requested.is_absolute() {
+            return None;
+        }
+        let teamwork_root = self.get_teamwork_artifact_root(session_id).await.ok()?;
+        let relative = Self::extract_absolute_teamwork_relative_path(requested, &teamwork_root)?;
+        Some(if relative == "." {
+            "@teamwork".to_string()
+        } else {
+            format!("@teamwork/{relative}")
+        })
+    }
+
+    /// Recovery guidance for a failed path validation of `requested_path`, including the
+    /// `@teamwork` alias hint only when the path is inside the session teamwork root.
+    pub(crate) async fn path_failure_guidance(
+        &self,
+        error: &str,
+        requested_path: &str,
+        session_id: &str,
+        fallback: Vec<String>,
+    ) -> Vec<String> {
+        let teamwork_alias = self
+            .teamwork_alias_for_denied_path(error, requested_path, session_id)
+            .await;
+        path_operation_failure_guidance(error, requested_path, teamwork_alias.as_deref(), fallback)
+    }
+}
+
 /// Recovery for path-validation failures. Outside-workdir mapping errors steer to
 /// `workspace__runShell` (file tools cannot map those paths); other failures keep
-/// the caller's fallback (often `listDirectory`).
-pub(crate) fn path_validation_failure_guidance(error: &str, fallback: Vec<String>) -> Vec<String> {
+/// the caller's fallback (often `listDirectory`). `teamwork_alias` is the exact
+/// `@teamwork/...` alias when the denied path is inside the session teamwork root.
+pub(crate) fn path_validation_failure_guidance(
+    error: &str,
+    teamwork_alias: Option<&str>,
+    fallback: Vec<String>,
+) -> Vec<String> {
     if error.contains(crate::session_isolation::OUTSIDE_DOCKER_WORKDIR_FILE_TOOL_MARKER) {
         vec![
             "Use workspace__runShell for this container path (ls/cat to inspect; mkdir -p + redirect or cp to write).".to_string(),
@@ -303,11 +349,17 @@ pub(crate) fn path_validation_failure_guidance(error: &str, fallback: Vec<String
             "After writing under `.libragent/skills/`, verify with workspace__readFile on the matching @workspace-skills/... alias.".to_string(),
         ]
     } else if error.contains(crate::mcp::builtin::utils::OUTSIDE_WORKSPACE_ROOT_MARKER) {
-        vec![
-            "Path is outside the workspace root and access is denied.".to_string(),
-            "For teamwork artifacts, use the '@teamwork/<relative-path>' alias instead of an external filesystem path.".to_string(),
-            "For other external files, ask the user to move or copy the file into the workspace (do not retry workspace file tools on external paths).".to_string(),
-        ]
+        let mut guidance =
+            vec!["Path is outside the workspace root and access is denied.".to_string()];
+        match teamwork_alias {
+            Some(alias) => guidance.push(format!(
+                "This path is inside the teamwork artifacts. Use '{alias}' instead of the external filesystem path."
+            )),
+            None => guidance.push(
+                "Do not retry workspace file tools on this external path. Ask the user to move or copy the file into the workspace.".to_string(),
+            ),
+        }
+        guidance
     } else {
         fallback
     }
@@ -349,9 +401,10 @@ pub(crate) fn confused_harness_alias_hint(path: &str) -> Option<String> {
 pub(crate) fn path_operation_failure_guidance(
     error: &str,
     requested_path: &str,
+    teamwork_alias: Option<&str>,
     fallback: Vec<String>,
 ) -> Vec<String> {
-    let mut guidance = path_validation_failure_guidance(error, fallback);
+    let mut guidance = path_validation_failure_guidance(error, teamwork_alias, fallback);
     if let Some(hint) = confused_harness_alias_hint(requested_path) {
         guidance.insert(0, hint);
     }
@@ -368,6 +421,7 @@ pub(crate) fn with_harness_alias_hint(path: &str, mut guidance: Vec<String>) -> 
 
 #[cfg(test)]
 mod guidance_tests {
+    use super::WorkspaceServer;
     use super::{
         confused_harness_alias_hint, looks_like_confused_harness_path,
         path_operation_failure_guidance, path_validation_failure_guidance,
@@ -380,11 +434,12 @@ mod guidance_tests {
     fn user_skills_refusal_guidance_names_deploy_and_other_errors_do_not() {
         use super::super::user_skills_guard::user_skills_write_rejected_error;
         let guidance =
-            path_validation_failure_guidance(&user_skills_write_rejected_error(), vec![]);
+            path_validation_failure_guidance(&user_skills_write_rejected_error(), None, vec![]);
         assert!(guidance.iter().any(|line| line.contains("skill.py deploy")));
 
         let fallback = vec!["listDirectory".to_string()];
-        let other = path_validation_failure_guidance("Security error: blocked", fallback.clone());
+        let other =
+            path_validation_failure_guidance("Security error: blocked", None, fallback.clone());
         assert_eq!(other, fallback);
     }
 
@@ -393,6 +448,7 @@ mod guidance_tests {
         let err = format!("… {OUTSIDE_DOCKER_WORKDIR_FILE_TOOL_MARKER} /app …");
         let guidance = path_validation_failure_guidance(
             &err,
+            None,
             vec!["Use workspace__listDirectory to see available paths".to_string()],
         );
         assert!(guidance
@@ -411,6 +467,7 @@ mod guidance_tests {
         );
         let guidance = path_validation_failure_guidance(
             &err,
+            None,
             vec!["Use workspace__listDirectory to see available paths".to_string()],
         );
         assert!(guidance
@@ -427,6 +484,7 @@ mod guidance_tests {
         assert!(err.contains(SKILL_ALIAS_WRITE_REJECTED_MARKER));
         let guidance = path_validation_failure_guidance(
             &err,
+            None,
             vec!["Use workspace__listDirectory to see available paths".to_string()],
         );
         assert!(guidance
@@ -444,22 +502,101 @@ mod guidance_tests {
         );
         let guidance = path_validation_failure_guidance(
             &err,
+            None,
             vec!["Use workspace__listDirectory to see available paths".to_string()],
         );
         assert!(guidance.iter().any(|line| {
             line.contains("outside the workspace root") && line.contains("access is denied")
         }));
-        assert!(guidance.iter().any(|line| line.contains("@teamwork/")));
+        assert!(guidance.iter().any(|line| line.contains("move or copy")));
+        assert!(guidance.iter().all(|line| !line.contains("teamwork")));
         assert!(guidance
             .iter()
             .all(|line| !line.contains("workspace__listDirectory")));
     }
 
     #[test]
+    fn outside_workspace_root_guidance_names_exact_teamwork_alias_when_given() {
+        let err = format!(
+            "Security error: {} Access denied",
+            crate::mcp::builtin::utils::OUTSIDE_WORKSPACE_ROOT_MARKER
+        );
+        let guidance = path_validation_failure_guidance(
+            &err,
+            Some("@teamwork/plan/notes.md"),
+            vec!["Use workspace__listDirectory to see available paths".to_string()],
+        );
+        assert!(guidance
+            .iter()
+            .any(|line| line.contains("'@teamwork/plan/notes.md'")));
+        assert!(guidance.iter().all(|line| !line.contains("move or copy")));
+    }
+
+    #[tokio::test]
+    async fn path_failure_guidance_hints_teamwork_alias_only_inside_teamwork_root() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let session_id = "teamwork-hint-session";
+        let session_manager =
+            crate::session::SessionManager::new_with_base_dir(temp_dir.path().to_path_buf())
+                .expect("session manager");
+        let server =
+            WorkspaceServer::new(session_id.to_string(), std::sync::Arc::new(session_manager));
+        let teamwork_root = server
+            .get_teamwork_artifact_root(session_id)
+            .await
+            .expect("teamwork root");
+        let outside_dir = tempfile::tempdir().expect("outside dir");
+        let err = format!(
+            "Security error: {} Access denied",
+            crate::mcp::builtin::utils::OUTSIDE_WORKSPACE_ROOT_MARKER
+        );
+        let fallback = vec!["fallback".to_string()];
+        let guide = |path: String, error: String| {
+            let server = &server;
+            let fallback = fallback.clone();
+            async move {
+                server
+                    .path_failure_guidance(&error, &path, session_id, fallback)
+                    .await
+            }
+        };
+
+        let inside = teamwork_root.join("plan").join("notes.md");
+        let inside_guidance = guide(inside.to_string_lossy().to_string(), err.clone()).await;
+        assert!(inside_guidance
+            .iter()
+            .any(|line| line.contains("'@teamwork/plan/notes.md'")));
+
+        let root_guidance = guide(teamwork_root.to_string_lossy().to_string(), err.clone()).await;
+        assert!(root_guidance
+            .iter()
+            .any(|line| line.contains("'@teamwork'")));
+
+        let outside = outside_dir.path().join("claims.json");
+        let outside_guidance = guide(outside.to_string_lossy().to_string(), err.clone()).await;
+        assert!(outside_guidance
+            .iter()
+            .all(|line| !line.contains("teamwork")));
+
+        let relative_guidance = guide("plan/notes.md".to_string(), err).await;
+        assert!(relative_guidance
+            .iter()
+            .all(|line| !line.contains("teamwork")));
+
+        // Non-outside-root errors keep the fallback even for teamwork paths.
+        let other = guide(
+            inside.to_string_lossy().to_string(),
+            "Security error: blocked".to_string(),
+        )
+        .await;
+        assert_eq!(other, fallback);
+    }
+
+    #[test]
     fn other_errors_keep_fallback() {
         let fallback = vec!["Use workspace__listDirectory to see available paths".to_string()];
         let guidance =
-            path_validation_failure_guidance("Security error: blocked", fallback.clone());
+            path_validation_failure_guidance("Security error: blocked", None, fallback.clone());
         assert_eq!(guidance, fallback);
     }
 
@@ -476,6 +613,7 @@ mod guidance_tests {
         let guidance = path_operation_failure_guidance(
             "Security error: blocked",
             ".harness",
+            None,
             vec!["Use workspace__listDirectory to see available paths".to_string()],
         );
         assert!(guidance[0].contains("@harness"));

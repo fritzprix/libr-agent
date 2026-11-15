@@ -1,4 +1,4 @@
-use super::super::workspace_server::{path_operation_failure_guidance, with_harness_alias_hint};
+use super::super::workspace_server::with_harness_alias_hint;
 use super::super::WorkspaceServer;
 use super::list_dir_format::{build_listing_message, listing_item, sort_listing_items};
 use super::utils::{is_not_found_io_error, normalize_workspace_path_input};
@@ -59,15 +59,19 @@ impl WorkspaceServer {
                     format!("Path validation failed: {}", e),
                     ToolGroup::Workspace,
                 )
-                .guidance(path_operation_failure_guidance(
-                    &e,
-                    &path_str,
-                    vec![
-                        "Verify the directory path is correct".to_string(),
-                        "Use workspace__listDirectory to see available files".to_string(),
-                        "Ensure you have read permissions for the directory".to_string(),
-                    ],
-                ))
+                .guidance(
+                    self.path_failure_guidance(
+                        &e,
+                        &path_str,
+                        &target_session_id,
+                        vec![
+                            "Verify the directory path is correct".to_string(),
+                            "Use workspace__listDirectory to see available files".to_string(),
+                            "Ensure you have read permissions for the directory".to_string(),
+                        ],
+                    )
+                    .await,
+                )
                 .to_mcp_result());
             }
         };
