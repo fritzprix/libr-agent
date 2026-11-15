@@ -5,6 +5,7 @@ pub mod keep_awake;
 pub mod pagination;
 pub mod platform;
 pub mod powershell_encoding;
+pub mod powershell_exit;
 pub mod process;
 pub mod security;
 pub mod session_id;

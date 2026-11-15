@@ -66,15 +66,17 @@ fn powershell_framed_script(command: &str, sentinel: &str) -> String {
     // commands. Without this reset, one `python ...; exit 2` made every later
     // cmdlet-only command (even `echo hello`) report exit 2 (#2706).
     script.push_str("$global:LASTEXITCODE = 0\n");
+    script.push_str(crate::utils::powershell_exit::ERROR_COUNT_BEFORE);
+    script.push('\n');
     script.push_str(&format!(
         "Invoke-Expression ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('{encoded}')))\n"
     ));
+    // Capture before any Write-Output so `$Error` / `$LASTEXITCODE` are not clobbered (#2805).
+    script.push_str(crate::utils::powershell_exit::CAPTURE_AND_ASSIGN_EXIT);
+    script.push('\n');
     script.push_str(&format!("Write-Output '{sentinel}'\n"));
     script.push_str("Write-Output \"__CWD__$((Get-Location).Path)\"\n");
-
-    // Exit code capture (PS 5.1 compatible, so no ternary operator):
-    // non-zero $LASTEXITCODE wins; if only `$?` is false, report 1; else 0.
-    script.push_str("Write-Output \"EXIT_CODE_$(if ($LASTEXITCODE -ne 0 -or -not $?) { if ($LASTEXITCODE -eq 0) { 1 } else { $LASTEXITCODE } } else { 0 })\"\n");
+    script.push_str("Write-Output \"EXIT_CODE_$__libr_exit\"\n");
     script
 }
 
@@ -530,7 +532,8 @@ impl PersistentShell {
                             if let Some(cwd_str) = clean_line.strip_prefix("__CWD__") {
                                 cwd = cwd_str.to_string();
                             } else if let Some(code_str) = clean_line.strip_prefix("EXIT_CODE_") {
-                                exit_code = code_str.parse().unwrap_or(0);
+                                // Unreadable codes are errors, not success (#2805).
+                                exit_code = code_str.parse().unwrap_or(-1);
                                 captured_code = true;
                             }
 
@@ -632,19 +635,22 @@ mod tests {
     use super::*;
     use std::ffi::OsStr;
 
-    /// #2706: `$LASTEXITCODE` keeps the last native exit code, so the frame must
-    /// clear it before the command and read it after.
+    /// #2706 / #2805: reset `$LASTEXITCODE`, clear `$Error`, run the command,
+    /// capture exit before any `Write-Output`, then emit sentinel / cwd / code.
     #[test]
     fn powershell_frame_resets_the_exit_code_before_the_command() {
         let script = powershell_framed_script("Write-Output hello", "SENTINEL_1");
         let lines: Vec<&str> = script.lines().collect();
 
-        assert_eq!(lines.len(), 5, "{script}");
+        assert_eq!(lines.len(), 7, "{script}");
         assert_eq!(lines[0], "$global:LASTEXITCODE = 0");
-        assert!(lines[1].starts_with("Invoke-Expression "), "{script}");
-        assert_eq!(lines[2], "Write-Output 'SENTINEL_1'");
-        assert!(lines[3].contains("__CWD__"), "{script}");
-        assert!(lines[4].contains("EXIT_CODE_"), "{script}");
+        assert_eq!(lines[1], "$Error.Clear()");
+        assert!(lines[2].starts_with("Invoke-Expression "), "{script}");
+        assert!(lines[3].contains("NativeCommandError"), "{script}");
+        assert!(lines[3].contains("$__libr_lec = $LASTEXITCODE"), "{script}");
+        assert_eq!(lines[4], "Write-Output 'SENTINEL_1'");
+        assert!(lines[5].contains("__CWD__"), "{script}");
+        assert_eq!(lines[6], "Write-Output \"EXIT_CODE_$__libr_exit\"");
         // The command travels Base64-encoded, never as raw text.
         assert!(!script.contains("Write-Output hello"), "{script}");
         assert!(script.ends_with('\n'));
