@@ -530,34 +530,15 @@ pub fn transcript_scroll_offset(content_rows: u16, view_rows: u16, from_bottom: 
     max_scroll.saturating_sub(from_bottom.min(max_scroll))
 }
 
-/// Soft-wrap one logical line to `width` columns (Unicode scalar count).
-pub fn wrap_line(line: &str, width: usize) -> Vec<String> {
-    if width == 0 {
-        return vec![line.to_string()];
-    }
-    if line.is_empty() {
-        return vec![String::new()];
-    }
-    let chars: Vec<char> = line.chars().collect();
-    chars
-        .chunks(width)
-        .map(|chunk| chunk.iter().collect())
-        .collect()
-}
-
-/// How many terminal rows `text` needs at `width` with the same wrap as
-/// `Paragraph` + `Wrap { trim: false }` (per logical line, no trim).
-pub fn wrapped_row_count(text: &str, width: u16) -> u16 {
-    let w = usize::from(width.max(1));
-    if text.is_empty() {
-        return 1;
-    }
-    let rows: usize = text
-        .lines()
-        .map(|line| wrap_line(line, w).len().max(1))
-        .sum();
-    // `str::lines` drops a trailing empty line; keep at least one row.
-    rows.max(1) as u16
+/// How many terminal rows `text` needs at `width`, counted by the very widget
+/// that draws it (`Paragraph` + `Wrap { trim: false }`), so the count cannot
+/// drift from the renderer on double-width text or word boundaries.
+pub fn paragraph_row_count(text: &str, width: u16) -> u16 {
+    Paragraph::new(text)
+        .wrap(Wrap { trim: false })
+        .line_count(width.max(1))
+        .try_into()
+        .unwrap_or(u16::MAX)
 }
 
 fn s5_body_lines(state: &ChatState) -> Vec<String> {
@@ -654,7 +635,7 @@ pub fn s5_layout(state: &ChatState, width: u16) -> (u16, String) {
         return (0, String::new());
     }
     let body = s5_body_lines(state).join("\n");
-    let total = wrapped_row_count(&body, width);
+    let total = paragraph_row_count(&body, width);
     if total <= S5_MAX_ROWS {
         return (total.clamp(1, S5_MAX_ROWS), body);
     }
@@ -692,7 +673,7 @@ pub fn draw_chat(frame: &mut Frame<'_>, state: &ChatState) {
         .map(|line| format!("{}  {}", line.role, line.text))
         .collect::<Vec<_>>()
         .join("\n");
-    let content_rows = wrapped_row_count(&body, chunks[1].width.max(1));
+    let content_rows = paragraph_row_count(&body, chunks[1].width.max(1));
     let view_rows = chunks[1].height.max(1);
     let scroll_y = transcript_scroll_offset(content_rows, view_rows, state.scroll_from_bottom);
     frame.render_widget(
@@ -1179,9 +1160,14 @@ mod tests {
     }
 
     #[test]
-    fn wrapped_row_count_splits_long_lines() {
-        assert_eq!(wrapped_row_count(&"x".repeat(120), 80), 2);
-        assert_eq!(wrapped_row_count(&"x".repeat(400), 80), 5);
+    fn paragraph_row_count_counts_display_width_like_the_renderer() {
+        // Double-width text: 204 Korean chars are 408 columns, so 80 columns
+        // fit 40 per row — six rows, where a Unicode scalar count saw three.
+        assert_eq!(paragraph_row_count(&"가".repeat(204), 80), 6);
+        // ASCII keeps the previous counts.
+        assert_eq!(paragraph_row_count(&"x".repeat(120), 80), 2);
+        assert_eq!(paragraph_row_count(&"x".repeat(400), 80), 5);
+        assert_eq!(paragraph_row_count("", 80), 1);
     }
 
     #[test]
@@ -1254,6 +1240,37 @@ mod tests {
         assert!(
             rendered.contains("TAIL"),
             "follow-tail must keep the newest transcript row visible"
+        );
+    }
+
+    #[test]
+    fn draw_chat_keeps_newest_korean_reply_and_s5_footer_visible() {
+        // Double-width text without spaces (the shipped ko locale): scalar
+        // counting would miss the clip marker entirely and follow-tail would
+        // stop short of the newest rows.
+        let mut state = ChatState::new();
+        state.pending_approval = Some(PendingApprovalSummary {
+            command_preview: "한국어".repeat(100),
+            ..approval()
+        });
+        state.transcript = vec![TranscriptLine {
+            role: "AI".to_string(),
+            text: format!("{}\nTAIL", "한국어 ".repeat(600)),
+        }];
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| draw_chat(frame, &state))
+            .expect("draw");
+        let buffer = terminal.backend().buffer().clone();
+        let rendered: String = buffer.content().iter().map(|c| c.symbol()).collect();
+        assert!(
+            rendered.contains("more rows (Tab"),
+            "double-width approval body must be recognized as clipped"
+        );
+        assert!(
+            rendered.contains("TAIL"),
+            "follow-tail must keep the newest Korean row visible"
         );
     }
 
