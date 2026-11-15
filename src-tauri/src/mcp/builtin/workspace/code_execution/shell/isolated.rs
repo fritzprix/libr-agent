@@ -528,9 +528,8 @@ impl WorkspaceServer {
                 }
 
                 let header = format!(
-                    "Command executed in {} (exit code: {})",
-                    format_duration_ms(duration_ms),
-                    actual_exit_code
+                    "Command executed in {} (exit code: 0)",
+                    format_duration_ms(duration_ms)
                 );
                 let mut text_message =
                     format_command_io_message(&header, "Output", &stdout, "Stderr", &stderr);

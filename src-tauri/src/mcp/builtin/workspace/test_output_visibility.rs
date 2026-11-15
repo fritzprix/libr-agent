@@ -363,5 +363,4 @@ mod tests {
         assert!(text.contains("hello-after-failure"), "{text}");
         assert!(text.contains("exit code: 0"), "{text}");
     }
-
 }

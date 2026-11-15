@@ -260,7 +260,8 @@ pub fn shell_command_failure_guidance(
 
 fn no_exit_status_guidance(command: &str, stdout: &str, stderr: &str) -> Vec<String> {
     // Output exists, so a pipeline that closed early (`| Select-Object -First N`, `| head`)
-    // or a native command stopped by it is likelier than a timeout (#2791).
+    // or a native command stopped by it is likelier than a timeout (#2791; confirming the
+    // "usually" on Windows is tracked in #2806).
     if !(stdout.trim().is_empty() && stderr.trim().is_empty()) && super::has_shell_pipeline(command)
     {
         return vec![
