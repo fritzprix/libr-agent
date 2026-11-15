@@ -4,6 +4,7 @@ use tauri::Manager;
 use crate::services::InteractiveBrowserServer;
 
 pub mod agent; // pub for integration tests (cancel_logic.rs)
+pub mod bootstrap; // shared entry-point bootstrap (dotenv, profile, dirs, descriptors)
 pub mod browser_extension_bridge;
 pub mod browser_sidecar;
 pub mod build_provenance;
@@ -28,6 +29,7 @@ pub mod session;
 pub mod session_export;
 pub mod session_isolation;
 mod state;
+pub mod tui; // `libragent --tui` entry and terminal set-up/restore (#2761)
 pub mod utils;
 
 // Re-export migration for use in MCP modules
@@ -418,8 +420,18 @@ pub(crate) fn configure_tauri_builder(
 /// - Graceful error handling for panics that may occur during application startup.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Set up custom panic handler for better error reporting
-    std::panic::set_hook(Box::new(|panic_info| {
+    run_with_visibility(true);
+}
+
+/// Run the application; `show_windows = false` creates the WebView windows
+/// invisible. That is the `libragent --tui` form (#2761): no GUI window is
+/// presented, while the hidden WebView keeps answering LLM calls (the
+/// phase-1 allowance) exactly like the GUI and `liblet` paths do.
+fn run_with_visibility(show_windows: bool) {
+    // Set up custom panic handler for better error reporting. It chains the
+    // previous hook, which in TUI mode restores the terminal.
+    let previous_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic_info| {
         error!("🚨 PANIC: {panic_info}");
         if let Some(location) = panic_info.location() {
             error!(
@@ -432,6 +444,7 @@ pub fn run() {
 
         // Attempt graceful shutdown
         error!("🔄 Attempting graceful shutdown...");
+        previous_hook(panic_info);
     }));
 
     // Configure Tauri builder with error handling
@@ -475,13 +488,27 @@ pub fn run() {
                     let _ = (window, event);
                 }
             })
-            .build(create_tauri_context())
+            .build({
+                let mut context = create_tauri_context();
+                if !show_windows {
+                    // Same hidden-window config the liblet hidden-WebView
+                    // path uses (headless/mod.rs): invisible, out of the
+                    // taskbar, never focused.
+                    for window_config in &mut context.config_mut().app.windows {
+                        window_config.visible = false;
+                        window_config.skip_taskbar = true;
+                        window_config.focus = false;
+                    }
+                }
+                context
+            })
             .expect("error while building tauri application")
             .run(|app_handle, event| {
                 if let tauri::RunEvent::ExitRequested { code, api, .. } = &event {
                     lifecycle::deferred_exit::on_exit_requested(app_handle, *code, api);
                 }
                 if let tauri::RunEvent::Exit = event {
+                    crate::tui::restore_terminal();
                     crate::server::backend_descriptor::unpublish();
                     crate::utils::keep_awake::shutdown();
                     let app_handle_clone = app_handle.clone();
