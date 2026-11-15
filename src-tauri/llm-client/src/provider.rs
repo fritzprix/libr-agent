@@ -306,43 +306,6 @@ pub fn is_supported(provider: &str) -> bool {
     is_openai_compatible(provider) || matches!(provider, ANTHROPIC_PROVIDER | GEMINI_PROVIDER)
 }
 
-/// The fixed Base URL this crate uses for `provider`, when Settings' Base URL
-/// is ignored (Fireworks, OpenRouter, Anthropic, Gemini). OpenAI and custom
-/// providers honor the configured URL, so they return `None`.
-pub fn fixed_base_url(provider: &str) -> Option<&'static str> {
-    match provider {
-        FIREWORKS_PROVIDER => Some(FIREWORKS_BASE_URL),
-        OPENROUTER_PROVIDER => Some(OPENROUTER_BASE_URL),
-        ANTHROPIC_PROVIDER => Some(ANTHROPIC_BASE_URL),
-        GEMINI_PROVIDER => Some(GEMINI_BASE_URL),
-        _ => None,
-    }
-}
-
-fn normalize_base_url(url: &str) -> String {
-    url.trim().trim_end_matches('/').to_ascii_lowercase()
-}
-
-/// True when Settings has a Base URL for `provider` that this crate would
-/// ignore (a proxy or compatible endpoint on a fixed-URL provider). Callers
-/// that route by provider should send those sessions to the WebView until the
-/// client honors the URL (#2787).
-pub fn ignores_configured_base_url(provider: &str, service_configs: Option<&Value>) -> bool {
-    let Some(fixed) = fixed_base_url(provider) else {
-        return false;
-    };
-    let configured = service_configs
-        .and_then(|configs| configs.get(provider))
-        .and_then(|config| config.get("baseUrl"))
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|text| !text.is_empty());
-    match configured {
-        Some(url) => normalize_base_url(url) != normalize_base_url(fixed),
-        None => false,
-    }
-}
-
 /// The provider `provider` talking to `endpoint`, or `None` for a provider
 /// this crate does not implement.
 pub fn provider_with_endpoint(provider: &str, endpoint: Endpoint) -> Option<Box<dyn ChatProvider>> {
@@ -482,31 +445,6 @@ mod tests {
             assert!(!is_supported(provider), "{provider}");
         }
         assert!(provider_with_endpoint("mistral", endpoint("http://x")).is_none());
-    }
-
-    #[test]
-    fn a_custom_base_url_on_a_fixed_provider_is_flagged_as_ignored() {
-        assert!(!ignores_configured_base_url("openai", None));
-        assert!(!ignores_configured_base_url(
-            "anthropic",
-            Some(&json!({ "anthropic": { "apiKey": "k" } }))
-        ));
-        assert!(!ignores_configured_base_url(
-            "anthropic",
-            Some(&json!({ "anthropic": { "baseUrl": "https://api.anthropic.com/v1/" } }))
-        ));
-        assert!(ignores_configured_base_url(
-            "anthropic",
-            Some(&json!({ "anthropic": { "baseUrl": "http://127.0.0.1:8080" } }))
-        ));
-        assert!(ignores_configured_base_url(
-            "gemini",
-            Some(&json!({ "gemini": { "baseUrl": "https://proxy.example/v1beta" } }))
-        ));
-        assert!(!ignores_configured_base_url(
-            "custom:x",
-            Some(&json!({ "custom:x": { "baseUrl": "http://local" } }))
-        ));
     }
 
     #[test]

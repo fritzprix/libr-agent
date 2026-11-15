@@ -384,6 +384,7 @@ async fn a_turn_streams_ordered_deltas_before_its_final_message() {
         &request(session_id, "resp-stream", PROVIDER, vec![user]),
         deliver_to(&sink),
     )
+    .await
     .unwrap());
     wait_for("the streamed turn", || {
         !sink.responses.lock().unwrap().is_empty()
@@ -738,50 +739,39 @@ async fn fallback_skipped_when_unsupported() {
 }
 
 #[tokio::test]
-async fn fallback_skipped_when_base_url_would_be_ignored() {
+async fn configured_anthropic_base_url_routes_to_rust() {
     let _guard = TEST_GUARD.lock().await;
-    let mock = fail_then_sse(1, text_reply("unused")).await;
+    let mock = mock_provider(vec![text_reply("ignored")]).await;
     let base = mock.endpoint.base_url.clone();
-    let _settings = install_settings(&[
-        (
-            "advancedSettings",
-            json!({ "maxRetries": 0, "retryDelay": 1 }),
-        ),
-        (
-            "fallbackModel",
-            json!({ "provider": "anthropic", "model": "claude" }),
-        ),
-        (
-            "serviceConfigs",
-            json!({
-                "openai": { "apiKey": "sk-test", "baseUrl": base },
-                "anthropic": { "apiKey": "sk-ant", "baseUrl": "http://127.0.0.1:9/v1" }
-            }),
-        ),
-    ])
+    let _settings = install_settings(&[(
+        "serviceConfigs",
+        json!({ "anthropic": { "apiKey": "sk-ant", "baseUrl": base } }),
+    )])
     .await;
-    // No endpoint_override: routing uses Settings URLs so ignore_base_url can fire.
+    // No endpoint_override: the Rust path must reach the Settings Base URL.
     let _config = configure(ExecutorConfig {
         enabled: true,
         endpoint_override: None,
         assume_no_webview: true,
     });
     let sink = Arc::new(RecordingSink::default());
-    let user = message("s-fb-ignore", "u1", "user", "hi", 1_000);
-    let mut req = request("s-fb-ignore", "resp-1", "openai", vec![user]);
-    req.model = "gpt-test".to_string();
-
-    assert!(dispatch_completion(app(), &req, deliver_to(&sink))
-        .await
-        .unwrap());
-    wait_for("the primary failure", || {
-        mock.requests.lock().unwrap().len() >= 1
-    })
+    let user = message("s-abase", "u1", "user", "hi", 1_000);
+    let _ = dispatch_completion(
+        app(),
+        &request("s-abase", "resp-1", "anthropic", vec![user]),
+        deliver_to(&sink),
+    )
     .await;
-    tokio::time::sleep(Duration::from_millis(200)).await;
-
-    assert_eq!(mock.requests.lock().unwrap().len(), 1);
-    assert!(sink.responses.lock().unwrap().is_empty());
+    // Before #2797 an Anthropic session with a custom Base URL stayed on the
+    // WebView (the URL would be ignored) and failed without one. Now the Rust
+    // executor honors the configured URL, so it must reach it. The mock's
+    // OpenAI-shaped body may fail the Anthropic parser — the request itself is
+    // the proof of the route.
+    wait_for(
+        "the Rust path to call the configured Anthropic Base URL",
+        || !mock.requests.lock().unwrap().is_empty(),
+    )
+    .await;
 }
 
 #[tokio::test]

@@ -159,17 +159,13 @@ enum Route {
     Unavailable,
 }
 
-fn route(enabled: bool, has_webview: bool, provider: &str, ignore_base_url: bool) -> Route {
+fn route(enabled: bool, has_webview: bool, provider: &str) -> Route {
     if !enabled {
         Route::Frontend
-    } else if ignore_base_url {
-        // User Base URL would be dropped on the Rust path: keep the WebView.
-        if has_webview {
-            Route::Frontend
-        } else {
-            Route::Unavailable
-        }
     } else if llm_client::is_supported(provider) {
+        // llm-client honors the configured Base URL for every built-in
+        // provider (#2797), so a custom URL no longer keeps a session on the
+        // WebView (#2760 criterion).
         Route::Rust
     } else if has_webview {
         Route::Frontend
@@ -178,24 +174,9 @@ fn route(enabled: bool, has_webview: bool, provider: &str, ignore_base_url: bool
     }
 }
 
-async fn ignore_base_url_for(provider: &str, config: &ExecutorConfig) -> bool {
-    if config.endpoint_override.is_some() {
-        // Tests and pinned endpoints already chose the URL Rust will call.
-        return false;
-    }
-    let service_configs = read_setting("serviceConfigs").await;
-    llm_client::ignores_configured_base_url(provider, service_configs.as_ref())
-}
-
 async fn route_for(app_handle: &AppHandle, provider: &str) -> (Route, ExecutorConfig) {
     let config = current_config();
-    let ignore_base_url = ignore_base_url_for(provider, &config).await;
-    let route = route(
-        config.enabled,
-        has_webview(app_handle, &config),
-        provider,
-        ignore_base_url,
-    );
+    let route = route(config.enabled, has_webview(app_handle, &config), provider);
     (route, config)
 }
 
@@ -425,9 +406,7 @@ async fn run_completion(
                 return Err(primary_error);
             }
             // Fallback must also be answerable on the Rust path.
-            if !llm_client::is_supported(&fallback.provider)
-                || ignore_base_url_for(&fallback.provider, config).await
-            {
+            if !llm_client::is_supported(&fallback.provider) {
                 return Err(primary_error);
             }
             log::warn!(
@@ -883,25 +862,27 @@ mod tests {
     #[test]
     fn routing_keeps_the_frontend_unless_rust_can_answer() {
         // Off: everything goes to the WebView, with or without one.
-        assert_eq!(route(false, true, "openai", false), Route::Frontend);
-        assert_eq!(route(false, false, "anthropic", false), Route::Frontend);
-        // On: supported providers are answered in Rust either way.
-        assert_eq!(route(true, true, "openai", false), Route::Rust);
-        assert_eq!(route(true, false, "custom:lmstudio", false), Route::Rust);
-        assert_eq!(route(true, false, "fireworks", false), Route::Rust);
-        assert_eq!(route(true, false, "openrouter", false), Route::Rust);
-        assert_eq!(route(true, false, "anthropic", false), Route::Rust);
-        assert_eq!(route(true, true, "gemini", false), Route::Rust);
-        assert_eq!(route(true, false, "groq", false), Route::Rust);
-        assert_eq!(route(true, false, "cerebras", false), Route::Rust);
-        assert_eq!(route(true, true, "ollama", false), Route::Rust);
+        assert_eq!(route(false, true, "openai"), Route::Frontend);
+        assert_eq!(route(false, false, "anthropic"), Route::Frontend);
+        // On: supported providers are answered in Rust either way. A
+        // configured Base URL is honored by llm-client for every built-in
+        // provider (#2797), so it never changes the route; see
+        // `every_built_in_provider_honors_its_configured_base_url` in
+        // llm-client and `configured_anthropic_base_url_routes_to_rust` in
+        // the integration tests.
+        assert_eq!(route(true, true, "openai"), Route::Rust);
+        assert_eq!(route(true, false, "custom:lmstudio"), Route::Rust);
+        assert_eq!(route(true, false, "fireworks"), Route::Rust);
+        assert_eq!(route(true, false, "openrouter"), Route::Rust);
+        assert_eq!(route(true, false, "anthropic"), Route::Rust);
+        assert_eq!(route(true, true, "gemini"), Route::Rust);
+        assert_eq!(route(true, false, "groq"), Route::Rust);
+        assert_eq!(route(true, false, "cerebras"), Route::Rust);
+        assert_eq!(route(true, true, "ollama"), Route::Rust);
         // On: any other provider needs the WebView, and fails fast without it.
-        assert_eq!(route(true, true, "mistral", false), Route::Frontend);
-        assert_eq!(route(true, false, "mistral", false), Route::Unavailable);
-        assert_eq!(route(true, false, "", false), Route::Unavailable);
-        // A Base URL Rust would ignore stays on the WebView when one exists.
-        assert_eq!(route(true, true, "anthropic", true), Route::Frontend);
-        assert_eq!(route(true, false, "anthropic", true), Route::Unavailable);
+        assert_eq!(route(true, true, "mistral"), Route::Frontend);
+        assert_eq!(route(true, false, "mistral"), Route::Unavailable);
+        assert_eq!(route(true, false, ""), Route::Unavailable);
     }
 
     #[test]

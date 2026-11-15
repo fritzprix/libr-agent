@@ -28,9 +28,8 @@ pub use client::{complete, complete_with_deltas, RetryPolicy};
 pub use error::{ErrorKind, LlmError};
 pub use gemini::{Gemini, GeminiStream};
 pub use provider::{
-    fixed_base_url, ignores_configured_base_url, is_openai_compatible, is_supported,
-    provider_with_endpoint, resolve_provider, ChatProvider, CustomOpenAi, Endpoint, Fireworks,
-    OpenAi, OpenRouter,
+    is_openai_compatible, is_supported, provider_with_endpoint, resolve_provider, ChatProvider,
+    CustomOpenAi, Endpoint, Fireworks, OpenAi, OpenRouter,
 };
 pub use stream::{OpenAiStream, StreamParser, StreamStep};
 pub use types::{
