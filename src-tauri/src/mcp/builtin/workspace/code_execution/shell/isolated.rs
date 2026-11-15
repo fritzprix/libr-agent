@@ -459,6 +459,18 @@ impl WorkspaceServer {
                     }
                 };
 
+                // `| Select-Object -First N` stops the upstream command and loses its exit
+                // status (-1) although the output is complete (#2791): not a failure.
+                // A non-zero exit is recorded as `Failed`, so only `Killed` (stopped by us,
+                // e.g. on timeout or cancel) is excluded.
+                let early_closed_pipeline = !retain_killed_process
+                    && validation::is_early_closed_select_pipeline(
+                        command,
+                        actual_exit_code,
+                        &stdout,
+                    );
+                let success = success || early_closed_pipeline;
+
                 let cwd = match &reported_cwd {
                     Some(cwd) => cwd.clone(),
                     None => {
@@ -528,13 +540,17 @@ impl WorkspaceServer {
                 }
 
                 let header = format!(
-                    "Command executed in {} (exit code: 0)",
-                    format_duration_ms(duration_ms)
+                    "Command executed in {} (exit code: {})",
+                    format_duration_ms(duration_ms),
+                    actual_exit_code
                 );
                 let mut text_message =
                     format_command_io_message(&header, "Output", &stdout, "Stderr", &stderr);
 
-                if let Some(warning) =
+                if early_closed_pipeline {
+                    text_message.push_str("\n\n");
+                    text_message.push_str(validation::EARLY_CLOSED_PIPELINE_NOTE);
+                } else if let Some(warning) =
                     validation::exit_zero_pipeline_failure_warning(command, &stdout, &stderr)
                 {
                     text_message.push_str("\n\n");

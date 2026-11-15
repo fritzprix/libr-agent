@@ -65,6 +65,31 @@ pub fn has_shell_pipeline(command: &str) -> bool {
     false
 }
 
+/// True when a pipeline stage is `Select-Object -First N` (alias `select`), which stops the
+/// upstream pipeline on purpose once it has enough items.
+pub fn has_select_first_stage(command: &str) -> bool {
+    let lowered = command.to_lowercase();
+    lowered.split('|').skip(1).any(|stage| {
+        let stage = stage.trim_start();
+        let is_select = stage.starts_with("select-object")
+            || stage.starts_with("select ")
+            || stage.starts_with("select\t");
+        is_select && stage.contains("-first")
+    })
+}
+
+/// True when exit code -1 comes from `... | Select-Object -First N` closing the pipeline early.
+///
+/// PowerShell stops the upstream native command once enough items arrived, so the exit status
+/// is lost (-1) even though the captured output is what the command produced. Requires
+/// non-empty stdout so a command that died without printing is still reported as failed.
+pub fn is_early_closed_select_pipeline(command: &str, exit_code: i32, stdout: &str) -> bool {
+    exit_code == -1 && !stdout.trim().is_empty() && has_select_first_stage(command)
+}
+
+/// Note appended when `Select-Object -First` ended the pipeline early (exit -1, output kept).
+pub const EARLY_CLOSED_PIPELINE_NOTE: &str = "Note: `| Select-Object -First N` closed the pipeline early, so the upstream command was stopped and no exit status was reported (exit code -1). The output above is what it printed before that. To see the real exit code, run the command without the pipeline or save its output to a file first.";
+
 /// Warning appended when a pipeline returns exit code 0 but output shows failure markers.
 ///
 /// Upstream commands often fail while the pipeline exit code stays 0 (rightmost command
@@ -185,6 +210,30 @@ index 111..222 100644
             "FileNotFoundError: [Errno 2] No such file or directory: 'foo'"
         )
         .is_none());
+    }
+
+    #[test]
+    fn test_early_closed_select_pipeline() {
+        let cmd = "python script.py --help 2>&1 | Select-Object -First 20";
+        assert!(is_early_closed_select_pipeline(cmd, -1, "usage: script\n"));
+        assert!(is_early_closed_select_pipeline(
+            "python s.py 2>&1 | select -first 5",
+            -1,
+            "x"
+        ));
+        // Needs output, exit -1, and a Select-Object -First stage.
+        assert!(!is_early_closed_select_pipeline(cmd, -1, "  \n"));
+        assert!(!is_early_closed_select_pipeline(cmd, 1, "usage"));
+        assert!(!is_early_closed_select_pipeline(
+            "python s.py | Select-Object -Last 5",
+            -1,
+            "x"
+        ));
+        assert!(!is_early_closed_select_pipeline(
+            "Select-Object -First 3 -InputObject $x",
+            -1,
+            "x"
+        ));
     }
 
     #[test]

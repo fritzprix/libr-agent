@@ -363,4 +363,35 @@ mod tests {
         assert!(text.contains("hello-after-failure"), "{text}");
         assert!(text.contains("exit code: 0"), "{text}");
     }
+
+    /// #2791: `| Select-Object -First N` can end the run with exit -1 although the
+    /// output is complete. That is a success with a note, not `OperationFailed`.
+    /// `exit -1` stands in for the lost exit status of the stopped native command.
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn select_object_first_pipeline_with_exit_minus_one_is_success() {
+        let harness = create_server().await;
+
+        let text = run(
+            &harness.server,
+            "runPowerShell",
+            "Write-Output help-line | Select-Object -First 1; exit -1",
+        )
+        .await;
+        assert!(text.contains("help-line"), "{text}");
+        assert!(text.contains("Command executed"), "{text}");
+        assert!(text.contains("closed the pipeline early"), "{text}");
+        assert!(!text.contains("Command failed"), "{text}");
+
+        // Same exit without the truncating stage stays a failure, and its guidance
+        // does not claim a pipeline closed early.
+        let failed = run(
+            &harness.server,
+            "runPowerShell",
+            "Write-Output help-line; exit -1",
+        )
+        .await;
+        assert!(failed.contains("Command failed"), "{failed}");
+        assert!(!failed.contains("closed the pipeline early"), "{failed}");
+    }
 }
