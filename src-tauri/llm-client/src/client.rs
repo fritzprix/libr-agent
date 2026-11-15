@@ -3,7 +3,7 @@
 use crate::error::{ErrorKind, LlmError};
 use crate::provider::ChatProvider;
 use crate::stream::LineBuffer;
-use crate::types::{ChatRequest, CompletedChat};
+use crate::types::{ChatRequest, CompletedChat, StreamDelta};
 use futures::StreamExt;
 use serde_json::Value;
 use std::sync::LazyLock;
@@ -160,6 +160,22 @@ pub async fn complete(
     request: &ChatRequest,
     retry: RetryPolicy,
 ) -> Result<CompletedChat, LlmError> {
+    complete_with_deltas(provider, request, retry, |_| {}).await
+}
+
+/// [`complete`], calling `on_delta` for each increment as the stream arrives.
+///
+/// Deltas come in stream order, each as soon as its line is read; the returned
+/// [`CompletedChat`] is the same one [`complete`] gives. A delta is only ever
+/// sent for a response that started, so a call that is retried reports none
+/// of the failed attempts. `on_delta` runs on the reading task and must not
+/// block.
+pub async fn complete_with_deltas(
+    provider: &dyn ChatProvider,
+    request: &ChatRequest,
+    retry: RetryPolicy,
+    mut on_delta: impl FnMut(StreamDelta) + Send,
+) -> Result<CompletedChat, LlmError> {
     let client = HTTP_CLIENT.as_ref().map_err(|e| {
         LlmError::new(
             ErrorKind::Network,
@@ -189,13 +205,16 @@ pub async fn complete(
             ))
         })?;
         for line in lines.push(&chunk) {
-            if parser.push_line(&line).map_err(stream_error)? {
+            let step = parser.push_line(&line).map_err(stream_error)?;
+            step.deltas.into_iter().for_each(&mut on_delta);
+            if step.done {
                 break 'read;
             }
         }
     }
     if let Some(rest) = lines.finish() {
-        parser.push_line(&rest).map_err(stream_error)?;
+        let step = parser.push_line(&rest).map_err(stream_error)?;
+        step.deltas.into_iter().for_each(&mut on_delta);
     }
 
     Ok(parser.finish())
@@ -289,6 +308,66 @@ mod tests {
             seen.headers.lock().unwrap()[0].0.as_deref(),
             Some("Bearer dummy-token-abcd")
         );
+    }
+
+    /// Runs both calls against one recording; returns what each produced.
+    async fn streamed_and_plain(
+        recording: &'static str,
+    ) -> (CompletedChat, Vec<StreamDelta>, CompletedChat) {
+        let (endpoint, _) = serve(move |_| recorded(recording)).await;
+        let provider = CustomOpenAi { endpoint };
+        let mut deltas = Vec::new();
+        let streamed =
+            complete_with_deltas(&provider, &request(), RetryPolicy::NONE, |d| deltas.push(d))
+                .await
+                .expect("streamed completion succeeds");
+        let plain = complete(&provider, &request(), RetryPolicy::NONE)
+            .await
+            .expect("plain completion succeeds");
+        (streamed, deltas, plain)
+    }
+
+    #[tokio::test]
+    async fn streamed_text_arrives_in_order_and_the_final_answer_equals_the_plain_call() {
+        let (streamed, deltas, plain) =
+            streamed_and_plain(include_str!("../tests/fixtures/vllm_reasoning.sse")).await;
+
+        assert_eq!(streamed, plain);
+        let pieces: Vec<&str> = deltas.iter().filter_map(|d| d.content.as_deref()).collect();
+        assert_eq!(pieces.concat(), plain.content);
+        let thinking: String = deltas
+            .iter()
+            .filter_map(|d| d.thinking.as_deref())
+            .collect();
+        assert_eq!(thinking, plain.thinking);
+        // Reasoning comes before the answer, and the finish comes last.
+        let last_thinking = deltas.iter().rposition(|d| d.thinking.is_some()).unwrap();
+        let first_content = deltas.iter().position(|d| d.content.is_some()).unwrap();
+        assert!(last_thinking < first_content);
+        let finish = deltas
+            .iter()
+            .position(|d| d.finish_reason.is_some())
+            .unwrap();
+        assert!(finish >= deltas.iter().rposition(|d| d.content.is_some()).unwrap());
+        assert_eq!(deltas[finish].finish_reason, plain.finish_reason);
+    }
+
+    #[tokio::test]
+    async fn streamed_tool_calls_add_up_to_the_plain_calls() {
+        let (streamed, deltas, plain) =
+            streamed_and_plain(include_str!("../tests/fixtures/openai_tool_calls.sse")).await;
+
+        assert_eq!(streamed, plain);
+        assert_eq!(plain.tool_calls.len(), 2);
+        for (index, call) in plain.tool_calls.iter().enumerate() {
+            let arguments: String = deltas
+                .iter()
+                .flat_map(|d| &d.tool_calls)
+                .filter(|fragment| fragment.index == index as u64)
+                .map(|fragment| fragment.function.arguments.as_str())
+                .collect();
+            assert_eq!(arguments, call.function.arguments);
+        }
     }
 
     #[tokio::test]

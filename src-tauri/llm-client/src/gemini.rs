@@ -8,10 +8,11 @@
 
 use crate::openai::{is_media, text_of, tool_name_for};
 use crate::provider::{ChatProvider, Endpoint};
-use crate::stream::StreamParser;
+use crate::stream::{StreamParser, StreamStep};
 use crate::types::{
-    ChatMessage, ChatRequest, CompletedChat, ContentPart, Role, ThinkingEffort, ToolCall,
-    ToolCallFunction, ToolSpec, Usage, UsageDetails,
+    ChatMessage, ChatRequest, CompletedChat, ContentPart, Role, StreamDelta, ThinkingEffort,
+    ToolCall, ToolCallDelta, ToolCallFunction, ToolCallFunctionDelta, ToolSpec, Usage,
+    UsageDetails,
 };
 use serde_json::{json, Map, Value};
 
@@ -375,8 +376,18 @@ fn usage_of(metadata: &Value) -> Usage {
     }
 }
 
+/// A finish reason in the OpenAI vocabulary the rest of the client uses.
+fn finish_reason_of(reason: &str, has_calls: bool) -> String {
+    match reason {
+        "STOP" if has_calls => "tool_calls".to_string(),
+        "STOP" => "stop".to_string(),
+        "MAX_TOKENS" => "length".to_string(),
+        other => other.to_lowercase(),
+    }
+}
+
 impl GeminiStream {
-    fn read_part(&mut self, part: &Value) {
+    fn read_part(&mut self, part: &Value, added: &mut StreamDelta) {
         let signature = part.get("thoughtSignature").and_then(Value::as_str);
         if let Some(signature) = signature {
             self.last_signature = Some(signature.to_string());
@@ -403,6 +414,15 @@ impl GeminiStream {
                 .filter(|args| !args.is_null())
                 .map(Value::to_string)
                 .unwrap_or_else(|| "{}".to_string());
+            // A Gemini call arrives whole, so one fragment carries all of it.
+            added.tool_calls.push(ToolCallDelta {
+                index: self.tool_calls.len() as u64,
+                id: Some(id.clone()),
+                function: ToolCallFunctionDelta {
+                    name: Some(name.to_string()),
+                    arguments: arguments.clone(),
+                },
+            });
             self.tool_calls.push(ToolCall {
                 id,
                 r#type: "function".to_string(),
@@ -414,21 +434,37 @@ impl GeminiStream {
         } else if let Some(text) = part.get("text").and_then(Value::as_str) {
             if part.get("thought").and_then(Value::as_bool) == Some(true) {
                 self.thinking.push_str(text);
+                if !text.is_empty() {
+                    added
+                        .thinking
+                        .get_or_insert_with(String::new)
+                        .push_str(text);
+                }
             } else {
                 self.content.push_str(text);
+                if !text.is_empty() {
+                    added.content.get_or_insert_with(String::new).push_str(text);
+                }
             }
+        }
+        if signature.is_some() {
+            // What the final turn will carry, so a reader keeping the latest agrees.
+            added.thinking_signature = self
+                .call_signature
+                .clone()
+                .or_else(|| self.last_signature.clone());
         }
     }
 }
 
 impl StreamParser for GeminiStream {
-    fn push_line(&mut self, line: &str) -> Result<bool, String> {
+    fn push_line(&mut self, line: &str) -> Result<StreamStep, String> {
         let Some(data) = line.strip_prefix("data:") else {
-            return Ok(false);
+            return Ok(StreamStep::idle(false));
         };
         let data = data.trim();
         if data.is_empty() {
-            return Ok(false);
+            return Ok(StreamStep::idle(false));
         }
         let chunk: Value = serde_json::from_str(data)
             .map_err(|error| format!("Malformed stream chunk: {error}"))?;
@@ -442,30 +478,35 @@ impl StreamParser for GeminiStream {
                 "Provider returned an error in the stream: {message}"
             ));
         }
+        let mut added = StreamDelta::default();
         if let Some(metadata) = chunk.get("usageMetadata").filter(|m| m.is_object()) {
-            self.usage = Some(usage_of(metadata));
+            let usage = usage_of(metadata);
+            self.usage = Some(usage.clone());
+            added.usage = Some(usage);
         }
         let candidate = &chunk["candidates"][0];
-        if let Some(reason) = candidate.get("finishReason").and_then(Value::as_str) {
+        let reason = candidate.get("finishReason").and_then(Value::as_str);
+        if let Some(reason) = reason {
             self.finish_reason = Some(reason.to_string());
         }
         if let Some(parts) = candidate["content"]["parts"].as_array() {
             for part in parts {
-                self.read_part(part);
+                self.read_part(part, &mut added);
             }
         }
-        Ok(false)
+        // After the parts: a call in this chunk decides `STOP` vs `tool_calls`.
+        if let Some(reason) = reason {
+            added.finish_reason = Some(finish_reason_of(reason, !self.tool_calls.is_empty()));
+        }
+        Ok(StreamStep::with(false, added))
     }
 
     fn finish(self: Box<Self>) -> CompletedChat {
-        // In the OpenAI vocabulary the rest of the client uses.
         let has_calls = !self.tool_calls.is_empty();
-        let finish_reason = self.finish_reason.map(|reason| match reason.as_str() {
-            "STOP" if has_calls => "tool_calls".to_string(),
-            "STOP" => "stop".to_string(),
-            "MAX_TOKENS" => "length".to_string(),
-            other => other.to_lowercase(),
-        });
+        let finish_reason = self
+            .finish_reason
+            .as_deref()
+            .map(|reason| finish_reason_of(reason, has_calls));
         CompletedChat {
             content: self.content,
             thinking: self.thinking,
@@ -516,12 +557,68 @@ mod tests {
     }
 
     fn replay(recording: &str) -> CompletedChat {
+        replay_with_deltas(recording).0
+    }
+
+    fn replay_with_deltas(recording: &str) -> (CompletedChat, Vec<StreamDelta>) {
         let mut lines = LineBuffer::default();
         let mut stream = Box::<GeminiStream>::default();
+        let mut deltas = Vec::new();
         for line in lines.push(recording.as_bytes()) {
-            stream.push_line(&line).expect("line accepted");
+            deltas.extend(stream.push_line(&line).expect("line accepted").deltas);
         }
-        stream.finish()
+        (stream.finish(), deltas)
+    }
+
+    #[test]
+    fn thinking_stream_deltas_add_up_to_the_final_answer() {
+        let (chat, deltas) =
+            replay_with_deltas(include_str!("../tests/fixtures/gemini_thinking_text.sse"));
+
+        let thinking: String = deltas
+            .iter()
+            .filter_map(|d| d.thinking.as_deref())
+            .collect();
+        let content: String = deltas.iter().filter_map(|d| d.content.as_deref()).collect();
+        assert_eq!(thinking, chat.thinking);
+        assert_eq!(content, chat.content);
+        assert_eq!(
+            deltas
+                .iter()
+                .rev()
+                .find_map(|d| d.thinking_signature.clone()),
+            chat.thinking_signature
+        );
+        assert_eq!(
+            deltas.iter().rev().find_map(|d| d.usage.clone()),
+            chat.usage
+        );
+        assert_eq!(
+            deltas.iter().rev().find_map(|d| d.finish_reason.clone()),
+            chat.finish_reason
+        );
+    }
+
+    #[test]
+    fn function_call_deltas_carry_each_whole_call_with_the_final_id() {
+        let (chat, deltas) =
+            replay_with_deltas(include_str!("../tests/fixtures/gemini_function_calls.sse"));
+
+        let fragments: Vec<&ToolCallDelta> = deltas.iter().flat_map(|d| &d.tool_calls).collect();
+        assert_eq!(fragments.len(), chat.tool_calls.len());
+        for (fragment, call) in fragments.iter().zip(&chat.tool_calls) {
+            assert_eq!(fragment.id.as_deref(), Some(call.id.as_str()));
+            assert_eq!(
+                fragment.function.name.as_deref(),
+                Some(call.function.name.as_str())
+            );
+            assert_eq!(fragment.function.arguments, call.function.arguments);
+        }
+        // A call in the stream makes the `STOP` finish read as `tool_calls`.
+        assert_eq!(
+            deltas.iter().rev().find_map(|d| d.finish_reason.as_deref()),
+            Some("tool_calls")
+        );
     }
 
     #[test]

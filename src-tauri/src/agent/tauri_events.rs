@@ -60,7 +60,12 @@ pub fn emit_agent_event(app_handle: &AppHandle, event: AgentEvent) -> Result<(),
 
     // Use emit_to() to broadcast to all windows (Tauri 2.x requirement)
     // EventTarget::app() sends to all webviews
-    info!("Emitting agent event: {}", summarize_agent_event(&event));
+    if matches!(event, AgentEvent::LlmStreamDelta { .. }) {
+        // One per streamed token batch: too many for the info log.
+        log::trace!("Emitting agent event: {}", summarize_agent_event(&event));
+    } else {
+        info!("Emitting agent event: {}", summarize_agent_event(&event));
+    }
     app_handle
         .emit_to(tauri::EventTarget::app(), "agent:event", event)
         .map_err(|e| format!("Failed to emit agent event: {}", e))

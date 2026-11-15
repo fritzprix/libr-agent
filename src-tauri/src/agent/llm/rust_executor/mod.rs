@@ -25,17 +25,24 @@
 //! `openrouter`, and `custom:<id>`, for example vLLM or LM Studio),
 //! `anthropic`, and `gemini`; streaming text, reasoning and its signature,
 //! tool calls, images and audio in the request, compaction, and the GUI's
-//! temperature, thinking-effort, retry, and prompt-cache behaviour. Not
-//! covered here (the frontend has them): mid-stream loop and reasoning-budget
-//! detection, retry with a fallback model, and Gemini's retry without tools
-//! after a malformed function call.
+//! temperature, thinking-effort, retry, and prompt-cache behaviour.
+//!
+//! While a call runs, each streamed piece goes out as an
+//! [`AgentEvent::LlmStreamDelta`] (#2786), so the GUI shows the turn live.
+//! Mid-stream loop and reasoning-budget detection is not done here: the GUI
+//! feeds those events into its `StreamAccumulator`, which reports an issue
+//! back and cancels the call. Not covered here (the frontend has them): retry
+//! with a fallback model, and Gemini's retry without tools after a malformed
+//! function call.
 
 mod convert;
 
+use crate::agent::events::{AgentEvent, AgentEventDispatcher};
 use crate::agent::llm::types::{
     AgentRuntimeError, AgentRuntimeErrorType, CompactRequest, CompletionRequest,
 };
 use crate::agent::session_manager::CompactStreamMeta;
+use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::agent::AgentSessionManager;
 use crate::mcp::types::MCPContent;
 use crate::models::advanced_settings::AdvancedSettings;
@@ -44,7 +51,7 @@ use crate::repositories::settings_repository::SettingsRepository;
 use convert::GenerationOptions;
 use dashmap::DashMap;
 pub use llm_client::Endpoint;
-use llm_client::{ChatProvider, CompletedChat, ErrorKind, LlmError, RetryPolicy};
+use llm_client::{ChatProvider, CompletedChat, ErrorKind, LlmError, RetryPolicy, StreamDelta};
 use serde_json::Value;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, RwLock};
@@ -292,6 +299,7 @@ fn assistant_message(request: &CompletionRequest, chat: CompletedChat) -> Messag
 async fn run_completion(
     request: &CompletionRequest,
     config: &ExecutorConfig,
+    sink: &dyn ResponseSink,
 ) -> Result<Message, Box<AgentRuntimeError>> {
     let provider = provider_for(&request.provider, config).await?;
     let (options, retry) = generation_settings().await;
@@ -303,10 +311,24 @@ async fn run_completion(
         request.max_tokens,
         options,
     );
-    let chat = llm_client::complete(provider.as_ref(), &chat_request, retry)
-        .await
-        .map_err(runtime_error)?;
+    // Each delta goes out as it is read, so a listener shows the turn live.
+    let chat = llm_client::complete_with_deltas(provider.as_ref(), &chat_request, retry, |delta| {
+        sink.llm_stream_delta(stream_delta_event(request, delta));
+    })
+    .await
+    .map_err(runtime_error)?;
     Ok(assistant_message(request, chat))
+}
+
+/// The event that carries `delta` of the call answering `request`.
+fn stream_delta_event(request: &CompletionRequest, delta: StreamDelta) -> AgentEvent {
+    AgentEvent::LlmStreamDelta {
+        session_id: request.session_id.clone(),
+        response_message_id: request.response_message_id.clone(),
+        provider: request.provider.clone(),
+        max_tokens: request.max_tokens,
+        delta,
+    }
 }
 
 /// Where an executor result is delivered: the session manager in the app.
@@ -315,6 +337,13 @@ async fn run_completion(
 /// full Tauri runtime, which cannot be cloned for a mock window in tests.
 #[async_trait::async_trait]
 pub trait ResponseSink: Send + Sync {
+    /// One live piece of the running call, as an [`AgentEvent::LlmStreamDelta`].
+    ///
+    /// Sync and best effort: a lost delta only makes the live view lag, because
+    /// the final message still arrives through [`Self::llm_response`]. The
+    /// default drops it, for a target that has no live view.
+    fn llm_stream_delta(&self, _event: AgentEvent) {}
+
     async fn llm_response(&self, session_id: String, message: Message) -> Result<(), String>;
     async fn llm_error(&self, session_id: String, error: AgentRuntimeError) -> Result<(), String>;
     async fn compact_response(
@@ -333,6 +362,13 @@ pub trait ResponseSink: Send + Sync {
 
 #[async_trait::async_trait]
 impl ResponseSink for AgentSessionManager {
+    fn llm_stream_delta(&self, event: AgentEvent) {
+        let dispatcher = TauriEventDispatcher::from_handle(self.app_handle());
+        if let Err(error) = dispatcher.emit_agent_event(event) {
+            log::debug!("Rust LLM executor: could not emit a stream delta: {error}");
+        }
+    }
+
     async fn llm_response(&self, session_id: String, message: Message) -> Result<(), String> {
         self.handle_llm_response(session_id, message).await
     }
@@ -453,7 +489,7 @@ pub fn dispatch_completion(
     let session_id = request.session_id.clone();
     spawn_tracked(&session_id, async move {
         let session_id = request.session_id.clone();
-        let delivered = match run_completion(&request, &config).await {
+        let delivered = match run_completion(&request, &config, sink.as_ref()).await {
             Ok(message) => sink.llm_response(session_id.clone(), message).await,
             Err(error) => {
                 log::warn!(
@@ -658,6 +694,38 @@ mod tests {
         assert_eq!(
             message.usage,
             Some(json!({ "promptTokens": 7, "completionTokens": 1, "totalTokens": 8 }))
+        );
+    }
+
+    #[test]
+    fn a_stream_delta_event_names_its_turn_and_serializes_for_the_frontend() {
+        let request = CompletionRequest {
+            session_id: "s1".to_string(),
+            response_message_id: "resp-1".to_string(),
+            messages: Vec::new(),
+            model: "m".to_string(),
+            provider: "anthropic".to_string(),
+            system_prompt: None,
+            max_tokens: Some(4096),
+            available_tools: None,
+        };
+        let delta = StreamDelta {
+            content: Some("hi".to_string()),
+            ..StreamDelta::default()
+        };
+
+        let event = serde_json::to_value(stream_delta_event(&request, delta)).unwrap();
+
+        assert_eq!(
+            event,
+            json!({
+                "type": "llmStreamDelta",
+                "sessionId": "s1",
+                "responseMessageId": "resp-1",
+                "provider": "anthropic",
+                "maxTokens": 4096,
+                "delta": { "content": "hi" },
+            })
         );
     }
 

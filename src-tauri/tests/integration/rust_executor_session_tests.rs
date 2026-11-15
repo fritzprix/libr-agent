@@ -18,6 +18,7 @@ use std::time::{Duration, Instant};
 use warp::Filter;
 
 use tauri::test::MockRuntime;
+use tauri_mcp_agent_lib::agent::events::AgentEvent;
 use tauri_mcp_agent_lib::agent::llm::rust_executor::{
     configure, dispatch_compaction, dispatch_completion, Endpoint, ExecutorConfig, ResponseSink,
 };
@@ -122,12 +123,16 @@ fn tool_call_reply(name: &str) -> Vec<Value> {
 #[derive(Default)]
 struct RecordingSink {
     responses: Mutex<Vec<Message>>,
+    stream_events: Mutex<Vec<AgentEvent>>,
     compactions: Mutex<Vec<(String, CompactStreamMeta)>>,
     compact_errors: Mutex<Vec<String>>,
 }
 
 #[async_trait::async_trait]
 impl ResponseSink for RecordingSink {
+    fn llm_stream_delta(&self, event: AgentEvent) {
+        self.stream_events.lock().unwrap().push(event);
+    }
     async fn llm_response(&self, _session_id: String, message: Message) -> Result<(), String> {
         self.responses.lock().unwrap().push(message);
         Ok(())
@@ -297,6 +302,69 @@ async fn a_tool_call_turn_is_delivered_and_its_result_is_sent_back_paired() {
         .find(|m| m["role"] == "tool")
         .expect("the tool result is sent back");
     assert_eq!(tool_message["tool_call_id"], calls[0].id.as_str());
+}
+
+/// The turn streams out as ordered deltas for the session and response, and
+/// the delivered message is the same answer the deltas add up to.
+#[tokio::test]
+async fn a_turn_streams_ordered_deltas_before_its_final_message() {
+    let _guard = TEST_GUARD.lock().await;
+    let session_id = "rust-executor-stream";
+    let provider = mock_provider(vec![vec![
+        json!({"choices":[{"delta":{"reasoning_content":"Think. "}}]}),
+        json!({"choices":[{"delta":{"reasoning_content":"Done."}}]}),
+        json!({"choices":[{"delta":{"content":"Hel"}}]}),
+        json!({"choices":[{"delta":{"content":"lo"},"finish_reason":"stop"}]}),
+        json!({"choices":[],"usage":{"prompt_tokens":5,"completion_tokens":3,"total_tokens":8}}),
+    ]])
+    .await;
+    let sink = Arc::new(RecordingSink::default());
+    let _config = configure(config(provider.endpoint.clone()));
+    let user = message(session_id, "u1", "user", "hi", 1_000);
+
+    assert!(dispatch_completion(
+        app(),
+        &request(session_id, "resp-stream", PROVIDER, vec![user]),
+        deliver_to(&sink),
+    )
+    .unwrap());
+    wait_for("the streamed turn", || {
+        !sink.responses.lock().unwrap().is_empty()
+    })
+    .await;
+
+    let events = sink.stream_events.lock().unwrap();
+    let mut thinking = String::new();
+    let mut content = String::new();
+    let mut last_phase = 0;
+    for event in events.iter() {
+        let AgentEvent::LlmStreamDelta {
+            session_id: event_session,
+            response_message_id,
+            provider: event_provider,
+            delta,
+            ..
+        } = event
+        else {
+            panic!("only stream deltas are expected: {event:?}");
+        };
+        assert_eq!(event_session, session_id);
+        assert_eq!(response_message_id, "resp-stream");
+        assert_eq!(event_provider, PROVIDER);
+        if let Some(text) = &delta.thinking {
+            assert_eq!(last_phase, 0, "reasoning comes before the answer");
+            thinking.push_str(text);
+        }
+        if let Some(text) = &delta.content {
+            last_phase = 1;
+            content.push_str(text);
+        }
+    }
+    assert_eq!(thinking, "Think. Done.");
+    assert_eq!(content, "Hello");
+    let delivered = sink.responses.lock().unwrap()[0].clone();
+    assert_eq!(text_of(&delivered), content);
+    assert_eq!(delivered.thinking.as_deref(), Some(thinking.as_str()));
 }
 
 #[tokio::test]

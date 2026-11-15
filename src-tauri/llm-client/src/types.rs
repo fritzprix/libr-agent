@@ -109,7 +109,7 @@ pub struct ChatRequest {
 }
 
 /// Token counts, in the shape the frontend stores.
-#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Usage {
     pub prompt_tokens: u64,
@@ -121,10 +121,61 @@ pub struct Usage {
     pub details: Option<UsageDetails>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageDetails {
     pub reasoning_tokens: Option<u64>,
+}
+
+/// One fragment of a streamed tool call. Fragments with the same `index`
+/// belong to one call: the first carries `id` and `name`, later ones carry
+/// more `arguments` text.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ToolCallDelta {
+    pub index: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    pub function: ToolCallFunctionDelta,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ToolCallFunctionDelta {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// A piece of the JSON arguments text; may be empty.
+    pub arguments: String,
+}
+
+/// What one stream line added to the answer.
+///
+/// Provider-neutral and free of UI types, so the GUI and the TUI read the same
+/// events. The JSON shape matches the chunk shape the frontend stream parser
+/// reads (`content`, `thinking`, `thinkingSignature`, `usage`, `tool_calls`).
+/// Every field is a change, not a running total, except `usage` and
+/// `thinkingSignature`, which replace the earlier value.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StreamDelta {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking_signature: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage: Option<Usage>,
+    #[serde(default, rename = "tool_calls", skip_serializing_if = "Vec::is_empty")]
+    pub tool_calls: Vec<ToolCallDelta>,
+    /// Why the answer ended, in the OpenAI words (`stop`, `tool_calls`, `length`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub finish_reason: Option<String>,
+}
+
+impl StreamDelta {
+    /// True when the line added nothing worth sending.
+    pub fn is_empty(&self) -> bool {
+        self == &Self::default()
+    }
 }
 
 /// What one completed call produced.
