@@ -12,8 +12,11 @@ lease.py combines the first two for one tick. A BUSY or a claim conflict says
 only what it says: see the `reason` it prints before concluding anything about
 other workers.
 
-State lives outside the user's checkout:
-`<repo>/../<repo-name>.worktrees/.worker-loop/` (override with $LOOP_STATE_DIR).
+State lives in the main checkout at `<repo>/.worker-loop/`, a git-ignored path
+shared by every worktree (override with $LOOP_STATE_DIR). State from the old
+`<repo>/../<repo-name>.worktrees/.worker-loop/` is copied there on first use.
+Agents inspect or change state only through this CLI, never by reading or
+writing the files.
 
 CLI:
   worker_state.py claim   --worker W --ref issue:N [--token T]   0 claimed, 1 held by another worker, 2 error, 4 lease lost
@@ -34,6 +37,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -78,6 +82,31 @@ def worker_name(explicit: str | None = None) -> str:
     return name
 
 
+_MIGRATED_MARKER = "migrated-to-main"
+
+
+def _migrate_legacy_state(legacy: Path, target: Path) -> None:
+    """Copy the pre-#2793 state dir to `target` once; the old dir is left untouched.
+
+    The copy is built beside `target` and renamed into place, so `target` never
+    exists half-filled. Mutex files are skipped (they are recreated empty), and
+    the copy holds the claims mutex so a claim cannot change mid-copy.
+    """
+    tmp = target.with_name(f"{target.name}.migrating-{os.getpid()}")
+    try:
+        with exclusive(legacy / "claims.json.lock"):
+            shutil.copytree(legacy, tmp, ignore=shutil.ignore_patterns("*.json.lock", "*.guard"))
+        os.replace(tmp, target)
+    except OSError:
+        # Another process won the race (target now exists), or the copy failed.
+        if not target.exists():
+            raise
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    # The marker lives in the old dir, so it survives deleting `target` (e.g. `git clean -fdx`).
+    (legacy / _MIGRATED_MARKER).write_text("state copied to the main checkout (#2793)\n", encoding="utf-8")
+
+
 def state_root() -> Path:
     env = os.environ.get("LOOP_STATE_DIR")
     if env:
@@ -87,7 +116,11 @@ def state_root() -> Path:
     ).stdout.strip()
     common = Path(out).resolve()
     repo_root = common.parent if common.name == ".git" else common
-    return repo_root.parent / f"{repo_root.name}.worktrees" / ".worker-loop"
+    root = repo_root / ".worker-loop"
+    legacy = repo_root.parent / f"{repo_root.name}.worktrees" / ".worker-loop"
+    if not root.exists() and legacy.is_dir() and not (legacy / _MIGRATED_MARKER).exists():
+        _migrate_legacy_state(legacy, root)
+    return root
 
 
 def worker_dir(worker: str) -> Path:
