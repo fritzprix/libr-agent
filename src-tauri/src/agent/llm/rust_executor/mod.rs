@@ -741,21 +741,24 @@ mod tests {
         assert_eq!(route(true, false, "openrouter"), Route::Rust);
         assert_eq!(route(true, false, "anthropic"), Route::Rust);
         assert_eq!(route(true, true, "gemini"), Route::Rust);
+        assert_eq!(route(true, false, "groq"), Route::Rust);
+        assert_eq!(route(true, false, "cerebras"), Route::Rust);
+        assert_eq!(route(true, true, "ollama"), Route::Rust);
         // On: any other provider needs the WebView, and fails fast without it.
-        assert_eq!(route(true, true, "groq"), Route::Frontend);
-        assert_eq!(route(true, false, "ollama"), Route::Unavailable);
+        assert_eq!(route(true, true, "mistral"), Route::Frontend);
+        assert_eq!(route(true, false, "mistral"), Route::Unavailable);
         assert_eq!(route(true, false, ""), Route::Unavailable);
     }
 
     #[test]
     fn an_unavailable_route_says_which_provider_cannot_run() {
-        let error = unavailable("groq");
+        let error = unavailable("mistral");
         let code = error
             .details
             .as_ref()
             .and_then(|details| details.error_code.as_deref());
         assert_eq!(code, Some("RUST_EXECUTOR_NO_WEBVIEW"));
-        assert!(error.display_message.contains("groq"));
+        assert!(error.display_message.contains("mistral"));
     }
 
     #[test]

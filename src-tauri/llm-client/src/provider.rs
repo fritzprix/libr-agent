@@ -85,6 +85,12 @@ pub trait ChatProvider: Send + Sync {
     fn http_error(&self, status: u16, body: &str) -> LlmError {
         LlmError::from_http_status(status, body)
     }
+
+    /// A body to send once more after `error` rejected `body`, or `None` when
+    /// no change can fix the error. The client sends the new body one time.
+    fn body_after_error(&self, _body: &Value, _error: &LlmError) -> Option<Value> {
+        None
+    }
 }
 
 /// The built-in `openai` provider: OpenAI or a server at its Base URL setting.
@@ -173,23 +179,123 @@ impl ChatProvider for OpenRouter {
     }
 }
 
+/// Groq: asks for reasoning to come back parsed, as the GUI does.
+#[derive(Debug, Clone)]
+pub struct Groq {
+    pub endpoint: Endpoint,
+}
+
+impl ChatProvider for Groq {
+    fn endpoint(&self) -> &Endpoint {
+        &self.endpoint
+    }
+
+    fn apply_thinking_effort(&self, body: &mut Value, effort: ThinkingEffort) {
+        if effort != ThinkingEffort::Off {
+            body["reasoning_format"] = json!("parsed");
+        }
+    }
+}
+
+/// Cerebras: plain OpenAI-compatible. Uses every default.
+#[derive(Debug, Clone)]
+pub struct Cerebras {
+    pub endpoint: Endpoint,
+}
+
+impl ChatProvider for Cerebras {
+    fn endpoint(&self) -> &Endpoint {
+        &self.endpoint
+    }
+}
+
+/// Ollama through its OpenAI-compatible API. Its Base URL is the server root
+/// (for example `http://127.0.0.1:11434`), as in the Settings screen.
+///
+/// The GUI uses the native `/api/chat`. Differences on this path:
+/// - Output limit: `/v1` takes `max_tokens` (the GUI's `num_predict`), and the
+///   GUI's default of 4096 is kept.
+/// - `keep_alive`: `/v1` has no such field, so the server's own default
+///   applies (5 minutes, the value the GUI sends, unless `OLLAMA_KEEP_ALIVE`
+///   says otherwise).
+/// - A model that rejects the effort level: the call is sent again without
+///   it, see [`ChatProvider::body_after_error`].
+#[derive(Debug, Clone)]
+pub struct Ollama {
+    pub endpoint: Endpoint,
+}
+
+/// The GUI's output limit when none is set (`config.maxTokens || 4096`).
+const OLLAMA_DEFAULT_MAX_TOKENS: u32 = 4096;
+
+impl ChatProvider for Ollama {
+    fn endpoint(&self) -> &Endpoint {
+        &self.endpoint
+    }
+
+    fn request_url(&self, _model: &str) -> String {
+        format!(
+            "{}/v1/chat/completions",
+            self.endpoint.base_url.trim_end_matches('/')
+        )
+    }
+
+    fn build_body(&self, request: &ChatRequest) -> Value {
+        let mut body = openai::request_body(&self.model_id(&request.model), request);
+        self.apply_thinking_effort(&mut body, request.thinking_effort);
+        if let Some(object) = body.as_object_mut() {
+            object.remove("max_completion_tokens");
+        }
+        body["max_tokens"] = json!(request
+            .max_tokens
+            .filter(|tokens| *tokens > 0)
+            .unwrap_or(OLLAMA_DEFAULT_MAX_TOKENS));
+        body
+    }
+
+    /// Some models take no effort level (`think value "low" is not supported`).
+    /// The GUI then sends `think: true`; `/v1` cannot say that, so the effort
+    /// is left out and the model thinks as it does by default.
+    fn body_after_error(&self, body: &Value, error: &LlmError) -> Option<Value> {
+        let rejected_effort =
+            error.message.contains("think value") && error.message.contains("is not supported");
+        if !rejected_effort {
+            return None;
+        }
+        let mut retry = body.clone();
+        retry.as_object_mut()?.remove("reasoning_effort")?;
+        Some(retry)
+    }
+}
+
 const OPENAI_PROVIDER: &str = "openai";
 const FIREWORKS_PROVIDER: &str = "fireworks";
 const OPENROUTER_PROVIDER: &str = "openrouter";
 const ANTHROPIC_PROVIDER: &str = "anthropic";
 const GEMINI_PROVIDER: &str = "gemini";
+const GROQ_PROVIDER: &str = "groq";
+const CEREBRAS_PROVIDER: &str = "cerebras";
+const OLLAMA_PROVIDER: &str = "ollama";
 const CUSTOM_PROVIDER_PREFIX: &str = "custom:";
 const OPENAI_DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 const FIREWORKS_BASE_URL: &str = "https://api.fireworks.ai/inference/v1";
 const OPENROUTER_BASE_URL: &str = "https://openrouter.ai/api/v1";
 const ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com/v1";
 const GEMINI_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
+const GROQ_BASE_URL: &str = "https://api.groq.com/openai/v1";
+const CEREBRAS_BASE_URL: &str = "https://api.cerebras.ai/v1";
+const OLLAMA_BASE_URL: &str = "http://127.0.0.1:11434";
 
 /// True for the providers that speak the OpenAI chat-completions API.
 pub fn is_openai_compatible(provider: &str) -> bool {
     matches!(
         provider,
-        OPENAI_PROVIDER | FIREWORKS_PROVIDER | OPENROUTER_PROVIDER
+        OPENAI_PROVIDER
+            | FIREWORKS_PROVIDER
+            | OPENROUTER_PROVIDER
+            | GROQ_PROVIDER
+            | CEREBRAS_PROVIDER
+            | OLLAMA_PROVIDER
     ) || provider
         .strip_prefix(CUSTOM_PROVIDER_PREFIX)
         .is_some_and(|id| !id.is_empty())
@@ -210,17 +316,36 @@ pub fn provider_with_endpoint(provider: &str, endpoint: Endpoint) -> Option<Box<
         OPENAI_PROVIDER => Box::new(OpenAi { endpoint }),
         FIREWORKS_PROVIDER => Box::new(Fireworks { endpoint }),
         OPENROUTER_PROVIDER => Box::new(OpenRouter { endpoint }),
+        GROQ_PROVIDER => Box::new(Groq { endpoint }),
+        CEREBRAS_PROVIDER => Box::new(Cerebras { endpoint }),
+        OLLAMA_PROVIDER => Box::new(Ollama { endpoint }),
         ANTHROPIC_PROVIDER => Box::new(Anthropic { endpoint }),
         GEMINI_PROVIDER => Box::new(Gemini { endpoint }),
         _ => Box::new(CustomOpenAi { endpoint }),
     })
 }
 
+/// The URL a built-in provider talks to unless Settings gives another.
+fn default_base_url(provider: &str) -> Option<&'static str> {
+    Some(match provider {
+        OPENAI_PROVIDER => OPENAI_DEFAULT_BASE_URL,
+        FIREWORKS_PROVIDER => FIREWORKS_BASE_URL,
+        OPENROUTER_PROVIDER => OPENROUTER_BASE_URL,
+        ANTHROPIC_PROVIDER => ANTHROPIC_BASE_URL,
+        GEMINI_PROVIDER => GEMINI_BASE_URL,
+        GROQ_PROVIDER => GROQ_BASE_URL,
+        CEREBRAS_PROVIDER => CEREBRAS_BASE_URL,
+        OLLAMA_PROVIDER => OLLAMA_BASE_URL,
+        _ => return None,
+    })
+}
+
 /// Builds `provider` from the `serviceConfigs` and `customProviders` settings
 /// values, the same data the frontend reads.
 ///
-/// Fireworks, OpenRouter, Anthropic, and Gemini have fixed URLs; only OpenAI
-/// and custom providers take a Base URL, as in the Settings screen.
+/// A built-in provider uses the `baseUrl` of its `serviceConfigs` entry when
+/// that is set, and its own default URL otherwise. A custom provider needs its
+/// own `baseUrl`.
 pub fn resolve_provider(
     provider: &str,
     service_configs: Option<&Value>,
@@ -251,14 +376,10 @@ pub fn resolve_provider(
         }
     } else {
         let config = service_configs.and_then(|configs| configs.get(provider));
-        let base_url = match provider {
-            FIREWORKS_PROVIDER => FIREWORKS_BASE_URL.to_string(),
-            OPENROUTER_PROVIDER => OPENROUTER_BASE_URL.to_string(),
-            ANTHROPIC_PROVIDER => ANTHROPIC_BASE_URL.to_string(),
-            GEMINI_PROVIDER => GEMINI_BASE_URL.to_string(),
-            _ => non_empty(config.and_then(|config| config.get("baseUrl")))
-                .unwrap_or_else(|| OPENAI_DEFAULT_BASE_URL.to_string()),
-        };
+        let default_url = default_base_url(provider)
+            .ok_or_else(|| format!("Provider '{provider}' is not supported"))?;
+        let base_url = non_empty(config.and_then(|config| config.get("baseUrl")))
+            .unwrap_or_else(|| default_url.to_string());
         Endpoint {
             base_url,
             api_key: non_empty(config.and_then(|config| config.get("apiKey"))),
@@ -304,23 +425,32 @@ mod tests {
 
     #[test]
     fn openai_compatible_providers_are_recognised() {
-        for provider in ["openai", "fireworks", "openrouter", "custom:abc123"] {
+        for provider in [
+            "openai",
+            "fireworks",
+            "openrouter",
+            "groq",
+            "cerebras",
+            "ollama",
+            "custom:abc123",
+        ] {
             assert!(is_openai_compatible(provider), "{provider}");
+            assert!(is_supported(provider), "{provider}");
         }
         for provider in ["anthropic", "gemini"] {
             assert!(!is_openai_compatible(provider), "{provider}");
             assert!(is_supported(provider), "{provider}");
         }
-        for provider in ["custom:", "groq", "cerebras", "ollama", ""] {
+        for provider in ["custom:", "mistral", ""] {
             assert!(!is_supported(provider), "{provider}");
         }
-        assert!(provider_with_endpoint("groq", endpoint("http://x")).is_none());
+        assert!(provider_with_endpoint("mistral", endpoint("http://x")).is_none());
     }
 
     #[test]
-    fn anthropic_and_gemini_use_their_fixed_urls_and_configured_keys() {
+    fn anthropic_and_gemini_use_their_default_urls_and_configured_keys() {
         let configs = json!({
-            "anthropic": { "apiKey": "sk-ant-key", "baseUrl": "http://ignored" },
+            "anthropic": { "apiKey": "sk-ant-key" },
             "gemini": { "apiKey": "gm-key" },
         });
         let anthropic = resolve_provider("anthropic", Some(&configs), None).unwrap();
@@ -363,10 +493,10 @@ mod tests {
     }
 
     #[test]
-    fn fireworks_and_openrouter_keep_their_fixed_urls() {
+    fn fireworks_and_openrouter_use_their_default_urls_when_none_is_set() {
         let configs = json!({
-            "fireworks": { "apiKey": "fw-key", "baseUrl": "http://ignored" },
-            "openrouter": { "apiKey": "sk-or-key" },
+            "fireworks": { "apiKey": "fw-key" },
+            "openrouter": { "apiKey": "sk-or-key", "baseUrl": "  " },
         });
         let fireworks = resolve_provider("fireworks", Some(&configs), None).unwrap();
         assert_eq!(fireworks.endpoint().base_url, FIREWORKS_BASE_URL);
@@ -376,6 +506,133 @@ mod tests {
             openrouter.request_url("m"),
             "https://openrouter.ai/api/v1/chat/completions"
         );
+    }
+
+    #[test]
+    fn every_built_in_provider_honors_its_configured_base_url() {
+        let default_urls = [
+            ("openai", OPENAI_DEFAULT_BASE_URL),
+            ("fireworks", FIREWORKS_BASE_URL),
+            ("openrouter", OPENROUTER_BASE_URL),
+            ("anthropic", ANTHROPIC_BASE_URL),
+            ("gemini", GEMINI_BASE_URL),
+            ("groq", GROQ_BASE_URL),
+            ("cerebras", CEREBRAS_BASE_URL),
+            ("ollama", OLLAMA_BASE_URL),
+        ];
+        for (provider, default_url) in default_urls {
+            let configs = json!({ provider: { "baseUrl": " http://proxy.local:9000/api " } });
+            let overridden = resolve_provider(provider, Some(&configs), None).unwrap();
+            assert_eq!(
+                overridden.endpoint().base_url,
+                "http://proxy.local:9000/api",
+                "{provider}"
+            );
+            assert!(
+                overridden
+                    .request_url("m")
+                    .starts_with("http://proxy.local:9000/api/"),
+                "{provider}"
+            );
+
+            let unset = resolve_provider(provider, None, None).unwrap();
+            assert_eq!(unset.endpoint().base_url, default_url, "{provider}");
+        }
+    }
+
+    #[test]
+    fn groq_cerebras_and_ollama_speak_chat_completions() {
+        let groq = resolve_provider("groq", None, None).unwrap();
+        assert_eq!(
+            groq.request_url("m"),
+            "https://api.groq.com/openai/v1/chat/completions"
+        );
+        let cerebras = resolve_provider("cerebras", None, None).unwrap();
+        assert_eq!(
+            cerebras.request_url("m"),
+            "https://api.cerebras.ai/v1/chat/completions"
+        );
+        // Ollama's Base URL is the server root, as in the GUI.
+        let ollama = resolve_provider("ollama", None, None).unwrap();
+        assert_eq!(
+            ollama.request_url("llama3.1"),
+            "http://127.0.0.1:11434/v1/chat/completions"
+        );
+        let configs = json!({ "ollama": { "baseUrl": "http://nas.local:11434/" } });
+        let remote = resolve_provider("ollama", Some(&configs), None).unwrap();
+        assert_eq!(
+            remote.request_url("llama3.1"),
+            "http://nas.local:11434/v1/chat/completions"
+        );
+        // No key is needed for a local server.
+        assert_eq!(remote.endpoint().api_key, None);
+    }
+
+    #[test]
+    fn groq_asks_for_parsed_reasoning_and_the_others_send_an_effort() {
+        let body = |provider: &str, effort| {
+            resolve_provider(provider, None, None)
+                .unwrap()
+                .build_body(&ChatRequest {
+                    thinking_effort: effort,
+                    ..ChatRequest::default()
+                })
+        };
+        let groq = body("groq", ThinkingEffort::High);
+        assert_eq!(groq["reasoning_format"], "parsed");
+        assert!(groq.get("reasoning_effort").is_none());
+        assert!(body("groq", ThinkingEffort::Off)
+            .get("reasoning_format")
+            .is_none());
+        for provider in ["cerebras", "ollama"] {
+            assert_eq!(
+                body(provider, ThinkingEffort::Low)["reasoning_effort"],
+                "low",
+                "{provider}"
+            );
+        }
+    }
+
+    #[test]
+    fn ollama_sends_the_output_limit_as_max_tokens_with_the_guis_default() {
+        let ollama = resolve_provider("ollama", None, None).unwrap();
+        let body = ollama.build_body(&ChatRequest::default());
+        assert_eq!(body["max_tokens"], 4096);
+        assert!(body.get("max_completion_tokens").is_none());
+
+        let body = ollama.build_body(&ChatRequest {
+            max_tokens: Some(1024),
+            ..ChatRequest::default()
+        });
+        assert_eq!(body["max_tokens"], 1024);
+        assert!(body.get("max_completion_tokens").is_none());
+    }
+
+    #[test]
+    fn ollama_drops_a_rejected_effort_level_and_nothing_else() {
+        let ollama = resolve_provider("ollama", None, None).unwrap();
+        let body = ollama.build_body(&ChatRequest {
+            thinking_effort: ThinkingEffort::High,
+            ..ChatRequest::default()
+        });
+        assert_eq!(body["reasoning_effort"], "high");
+
+        // The message Ollama gives, as the GUI matches it.
+        let rejected = LlmError::from_http_status(
+            400,
+            r#"{"error":{"message":"think value \"high\" is not supported for this model"}}"#,
+        );
+        let retry = ollama.body_after_error(&body, &rejected).expect("a retry");
+        let mut expected = body.clone();
+        expected.as_object_mut().unwrap().remove("reasoning_effort");
+        assert_eq!(retry, expected);
+
+        // Other errors, or a body with no effort, are not helped by a retry.
+        let other = LlmError::from_http_status(400, "model not found");
+        assert!(ollama.body_after_error(&body, &other).is_none());
+        assert!(ollama.body_after_error(&retry, &rejected).is_none());
+        let groq = resolve_provider("groq", None, None).unwrap();
+        assert!(groq.body_after_error(&body, &rejected).is_none());
     }
 
     #[test]
@@ -397,7 +654,7 @@ mod tests {
         let error = |id: &str| resolve_provider(id, None, Some(&providers)).err().unwrap();
         assert!(error("custom:broken").contains("no base URL"));
         assert!(error("custom:missing").contains("not in Settings"));
-        assert!(error("groq").contains("not supported"));
+        assert!(error("mistral").contains("not supported"));
     }
 
     #[test]

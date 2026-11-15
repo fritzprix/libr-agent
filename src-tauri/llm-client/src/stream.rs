@@ -436,6 +436,48 @@ mod tests {
         assert_eq!(usage.cached_prompt_tokens, None);
     }
 
+    // The `ollama_v1_*` fixtures follow the shape of Ollama's `/v1/chat/completions`
+    // stream (reasoning in `delta.reasoning`, a whole tool call in one chunk).
+    // They are written by hand, not captured from a server.
+
+    #[test]
+    fn ollama_v1_text_stream_is_read_like_the_native_chat_text() {
+        let chat = replay(include_str!("../tests/fixtures/ollama_v1_text.sse"));
+
+        assert_eq!(chat.content, "Hello! How can I help?");
+        assert_eq!(chat.thinking, "");
+        assert_eq!(chat.finish_reason.as_deref(), Some("stop"));
+        let usage = chat.usage.expect("usage chunk");
+        assert_eq!(usage.prompt_tokens, 23);
+        assert_eq!(usage.completion_tokens, 7);
+        assert!(chat.tool_calls.is_empty());
+    }
+
+    #[test]
+    fn ollama_v1_reasoning_stream_fills_thinking_like_message_thinking() {
+        let chat = replay(include_str!("../tests/fixtures/ollama_v1_reasoning.sse"));
+
+        assert_eq!(chat.thinking, "The user wants 2+2. That is 4.");
+        assert_eq!(chat.content, "2 + 2 = 4.");
+        assert_eq!(chat.usage.expect("usage chunk").total_tokens, 106);
+    }
+
+    #[test]
+    fn ollama_v1_tool_call_arrives_whole_with_its_reasoning() {
+        let chat = replay(include_str!("../tests/fixtures/ollama_v1_tool_call.sse"));
+
+        assert_eq!(chat.thinking, "I should read the file.");
+        assert_eq!(chat.content, "");
+        assert_eq!(chat.finish_reason.as_deref(), Some("tool_calls"));
+        assert_eq!(chat.tool_calls.len(), 1);
+        assert_eq!(chat.tool_calls[0].id, "call_k2d9x7q1");
+        assert_eq!(chat.tool_calls[0].function.name, "workspace__readFile");
+        assert_eq!(
+            chat.tool_calls[0].function.arguments,
+            r#"{"path":"notes/todo.md"}"#
+        );
+    }
+
     #[test]
     fn deepseek_style_cache_hits_are_read_too() {
         let chat = feed(&[

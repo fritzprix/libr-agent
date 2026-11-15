@@ -1764,7 +1764,7 @@ All on one scratch profile, with `LIBRAGENT_LLM_EXECUTOR` unset (the phase-1 Web
   - A frontend started with a different `LIBRAGENT_DATA_DIR` runs its own backend next to the shared one. Neither sees the other's sessions.
   - Nothing prevents several apps from running on one device.
 - [ ] **B-11 Hidden WebView LLM calls in the TUI** (#2761) — All · `[auto]`
-  - With only the TUI attached and no GUI window, a turn on a provider that the Rust client does not cover (for example Groq) completes through the phase-1 hidden WebView.
+  - With only the TUI attached and no GUI window, a turn on a provider that the Rust client does not cover (any provider outside OpenAI, Fireworks, OpenRouter, Groq, Cerebras, Ollama, custom OpenAI-compatible, Anthropic, and Gemini) completes through the phase-1 hidden WebView.
 
 ### 4.4 Windows console
 
