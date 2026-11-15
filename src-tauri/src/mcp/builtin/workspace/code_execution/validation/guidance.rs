@@ -244,9 +244,10 @@ pub fn shell_command_failure_guidance(
             "Verify the file is a valid executable".to_string(),
         ],
         Some(code) if is_signal_interrupt_exit(code) => shell_signal_interrupt_guidance(code),
-        // The shell executors report -1 when the process ended without an exit status. No
-        // rewrite-loop hint: a killed process says nothing about whether the script is wrong.
-        Some(-1) | None => no_exit_status_guidance(command, stdout, stderr),
+        // -1 / missing: timeout/kill/signal, or (on Windows PowerShell 5.1) an
+        // early pipeline stop of a still-running native (#2806). No rewrite-loop
+        // hint: the exit alone does not say the script is wrong.
+        Some(-1) | None => no_exit_status_guidance(stdout, stderr, command),
         Some(code) => {
             let mut guidance = vec![format!("Command failed with exit code: {code}")];
             if !(stdout.is_empty() && stderr.is_empty()) {
@@ -258,26 +259,31 @@ pub fn shell_command_failure_guidance(
     }
 }
 
-fn no_exit_status_guidance(command: &str, stdout: &str, stderr: &str) -> Vec<String> {
-    // Output exists, so a pipeline that closed early (`| Select-Object -First N`, `| head`)
-    // or a native command stopped by it is likelier than a timeout (#2791; confirming the
-    // "usually" on Windows is tracked in #2806).
-    if !(stdout.trim().is_empty() && stderr.trim().is_empty()) && super::has_shell_pipeline(command)
-    {
-        return vec![
-            "Exit code -1 (or no exit code) with captured output on a pipeline usually means a later pipeline stage (for example `Select-Object -First N`) closed the pipeline early and stopped the upstream native command; it is not necessarily a timeout."
+fn no_exit_status_guidance(stdout: &str, stderr: &str, command: &str) -> Vec<String> {
+    let has_output = !(stdout.is_empty() && stderr.is_empty());
+    let looks_like_pipeline = command.contains('|');
+
+    let mut guidance = if has_output && looks_like_pipeline {
+        // Confirmed on Windows PowerShell 5.1: `ping … | Select-Object -First N`
+        // leaves `$LASTEXITCODE = -1` while still printing lines. PowerShell 7
+        // on the same machine left `$LASTEXITCODE` null and reported success.
+        vec![
+            "Exit code -1 with output on a pipeline often means Windows PowerShell stopped an upstream native early (for example `| Select-Object -First`), not a timeout or an external kill. Success is still the exit code only — do not treat stdout alone as success."
                 .to_string(),
-            "Review the output above: it is what the command printed before the pipeline ended."
+        ]
+    } else if has_output {
+        vec![
+            "Exit code -1 (or no exit code) means the process ended without a normal status: it may have timed out, been killed, been stopped by a signal, or — on Windows PowerShell — been stopped early in a pipeline."
                 .to_string(),
-            "To get the real exit code, rerun without the truncating stage, or redirect output to a file and read it with `Get-Content -TotalCount N`."
+        ]
+    } else {
+        vec![
+            "Exit code -1 (or no exit code) with no output usually means the process timed out, was killed, or was stopped by a signal."
                 .to_string(),
-        ];
-    }
-    let mut guidance = vec![
-        "Exit code -1 (or no exit code) means the process ended without an exit status: it timed out, was killed, or was stopped by a signal."
-            .to_string(),
-    ];
-    if stdout.is_empty() && stderr.is_empty() {
+        ]
+    };
+
+    if !has_output {
         guidance.push("No output was captured, so there is no error output to review.".to_string());
     } else {
         guidance.push(
@@ -285,10 +291,18 @@ fn no_exit_status_guidance(command: &str, stdout: &str, stderr: &str) -> Vec<Str
                 .to_string(),
         );
     }
-    guidance.push(
-        "Do not retry the same command unchanged. Check whether it was stopped on purpose, ran out of memory, or waits for input that it cannot get."
-            .to_string(),
-    );
+
+    if has_output && looks_like_pipeline {
+        guidance.push(
+            "If you only needed the first lines, that early stop is expected on Windows PowerShell 5.1; read the printed lines and do not retry the same pipeline hoping for exit 0."
+                .to_string(),
+        );
+    } else {
+        guidance.push(
+            "Do not retry the same command unchanged. Check whether it was stopped on purpose, ran out of memory, or waits for input that it cannot get."
+                .to_string(),
+        );
+    }
     guidance
 }
 
@@ -570,11 +584,32 @@ mod tests {
             assert!(joined.contains("timed out, was killed, or was stopped by a signal"));
             assert!(joined.contains("No output was captured"));
             assert!(!joined.contains("Review error output above"), "{joined}");
+            assert!(!joined.contains("Select-Object -First"), "{joined}");
         }
 
         let with_output =
             shell_command_failure_guidance(Some(-1), "step 3 of 5", "", "make", false).join("\n");
         assert!(with_output.contains("Review the output above"));
+        assert!(with_output.contains("pipeline"));
+    }
+
+    #[test]
+    fn exit_minus_one_with_pipeline_output_points_at_early_stop() {
+        let joined = shell_command_failure_guidance(
+            Some(-1),
+            "Reply from 127.0.0.1",
+            "",
+            "ping -n 8 127.0.0.1 | Select-Object -First 1",
+            false,
+        )
+        .join("\n");
+        assert!(joined.contains("Select-Object -First"), "{joined}");
+        assert!(joined.contains("early"), "{joined}");
+        assert!(
+            !joined.contains("timed out, was killed, or was stopped by a signal"),
+            "{joined}"
+        );
+        assert!(joined.contains("exit code only"), "{joined}");
     }
 
     #[test]
