@@ -430,6 +430,70 @@ class ClaimRecoveryTest(StateDirCase):
         self.assertIn("issue:4", worker_claims.load_claims())
 
 
+class CurrentCliTest(StateDirCase):
+    def cli(self, *args):
+        """worker_state.py as a real process; return (exit code, output)."""
+        result = subprocess.run(
+            [sys.executable, str(SCRIPTS / "worker_state.py"), *args],
+            capture_output=True, text=True, env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        )
+        return result.returncode, result.stdout + result.stderr
+
+    def current(self, worker):
+        return worker_state.read_json(worker_state.state_path(worker)).get("current")
+
+    def test_set_and_clear_round_trip_reflected_in_status(self):
+        held = lease.acquire(anon())
+        auth = ("--worker", held.worker, "--token", held.token)
+        code, _ = self.cli("set-current", *auth, "--ref", "issue:7", "--branch", "feat/x-7")
+        self.assertEqual(code, 0)
+        expected = {"ref": "issue:7", "branch": "feat/x-7"}
+        self.assertEqual(self.current(held.worker), expected)
+        self.assertEqual(worker_state.status()["workers"][held.worker]["current"], expected)
+        code, _ = self.cli("clear-current", *auth)
+        self.assertEqual(code, 0)
+        self.assertIsNone(self.current(held.worker))
+        self.assertIsNone(worker_state.status()["workers"][held.worker]["current"])
+
+    def test_set_current_keeps_other_state_keys(self):
+        held = lease.acquire(anon())
+        self.set_state(held.worker, {"lastFingerprint": "abc"})
+        self.cli("set-current", "--worker", held.worker, "--token", held.token, "--ref", "issue:7")
+        state = worker_state.read_json(worker_state.state_path(held.worker))
+        self.assertEqual(state["lastFingerprint"], "abc")
+        self.assertEqual(state["current"], {"ref": "issue:7", "branch": None})
+
+    def test_lease_lost_blocks_set_and_clear(self):
+        held = lease.acquire(anon())
+        self.set_state(held.worker, {"current": {"ref": "issue:7", "branch": "b"}})
+        bad = ("--worker", held.worker, "--token", "not-the-token")
+        code, out = self.cli("clear-current", *bad)
+        self.assertEqual(code, worker_state.EXIT_LEASE_LOST)
+        self.assertIn("LEASE LOST", out)
+        code, _ = self.cli("set-current", *bad, "--ref", "issue:8")
+        self.assertEqual(code, worker_state.EXIT_LEASE_LOST)
+        self.assertEqual(self.current(held.worker), {"ref": "issue:7", "branch": "b"})
+
+    def test_set_current_rejects_bad_ref(self):
+        held = lease.acquire(anon())
+        for ref in (None, "7", "branch:x"):
+            extra = ("--ref", ref) if ref else ()
+            code, _ = self.cli("set-current", "--worker", held.worker, "--token", held.token, *extra)
+            self.assertEqual(code, 2)
+        self.assertIsNone(self.current(held.worker))
+
+    def test_release_finished_follows_current(self):
+        held = lease.acquire(anon())
+        auth = ("--worker", held.worker, "--token", held.token)
+        worker_claims.claim(held.worker, "issue:7")
+        self.cli("set-current", *auth, "--ref", "issue:7", "--branch", "feat/x-7")
+        state = worker_state.read_json(worker_state.state_path(held.worker))
+        self.assertEqual(worker_claims.release_finished(held.worker, state), [])
+        self.cli("clear-current", *auth)
+        state = worker_state.read_json(worker_state.state_path(held.worker))
+        self.assertEqual(worker_claims.release_finished(held.worker, state), ["issue:7"])
+
+
 class StatusTest(StateDirCase):
     def test_status_finds_every_worker(self):
         running = lease.acquire(live_session("a"), requested="worker-4")

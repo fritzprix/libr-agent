@@ -2,6 +2,7 @@
 """Tests for paths, JSON files, the mutex, claims, slots, and session identity."""
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -285,6 +286,14 @@ class StateRootTest(unittest.TestCase):
         (self.legacy / "claims.json").write_text("{}")
         worker_state.state_root()
         self.assertIn("issue:1", worker_claims.load_claims())
+
+    def test_deleted_new_dir_is_not_migrated_again(self):
+        self.seed_legacy()
+        root = worker_state.state_root()
+        shutil.rmtree(root)  # e.g. `git clean -fdx`
+        self.assertEqual(worker_state.state_root(), root)
+        self.assertFalse(root.exists())
+        self.assertTrue((self.legacy / "claims.json").exists())
 
     def test_no_legacy_dir_creates_nothing(self):
         worker_state.state_root()

@@ -21,6 +21,8 @@ writing the files.
 CLI:
   worker_state.py claim   --worker W --ref issue:N [--token T]   0 claimed, 1 held by another worker, 2 error, 4 lease lost
   worker_state.py release --worker W --ref pr:N                  release our own claim
+  worker_state.py set-current --worker W --ref issue:N [--branch B] [--token T]   set state.json `current`
+  worker_state.py clear-current --worker W [--token T]           clear `current` (the claim is released separately)
   worker_state.py list                                           print claims.json
   worker_state.py status                                         every slot, tick, claim, scheduler, and orphaned slot
   worker_state.py scheduler add --kind K --id I                  record an armed schedule
@@ -80,6 +82,9 @@ def worker_name(explicit: str | None = None) -> str:
     return name
 
 
+_MIGRATED_MARKER = "migrated-to-main"
+
+
 def _migrate_legacy_state(legacy: Path, target: Path) -> None:
     """Copy the pre-#2793 state dir to `target` once; the old dir is left untouched.
 
@@ -98,6 +103,8 @@ def _migrate_legacy_state(legacy: Path, target: Path) -> None:
             raise
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+    # The marker lives in the old dir, so it survives deleting `target` (e.g. `git clean -fdx`).
+    (legacy / _MIGRATED_MARKER).write_text("state copied to the main checkout (#2793)\n", encoding="utf-8")
 
 
 def state_root() -> Path:
@@ -111,7 +118,7 @@ def state_root() -> Path:
     repo_root = common.parent if common.name == ".git" else common
     root = repo_root / ".worker-loop"
     legacy = repo_root.parent / f"{repo_root.name}.worktrees" / ".worker-loop"
-    if not root.exists() and legacy.is_dir():
+    if not root.exists() and legacy.is_dir() and not (legacy / _MIGRATED_MARKER).exists():
         _migrate_legacy_state(legacy, root)
     return root
 
@@ -126,6 +133,14 @@ def state_path(worker: str) -> Path:
 
 def shared_path() -> Path:
     return state_root() / "shared.json"
+
+
+def set_current(worker: str, current: dict | None) -> None:
+    """Set or clear (None) the work a slot resumes after a crash, keeping the rest of state.json."""
+    path = state_path(worker)
+    state = read_json(path)
+    state["current"] = current
+    atomic_write_json(path, state)
 
 
 def _host() -> str:
@@ -597,12 +612,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
         "command",
-        choices=["claim", "release", "list", "status", "needs-user", "ci-attempt", "scheduler"],
+        choices=[
+            "claim", "release", "set-current", "clear-current", "list", "status",
+            "needs-user", "ci-attempt", "scheduler",
+        ],
     )
     parser.add_argument("action", nargs="?", choices=["add", "list", "clear"], help="With scheduler")
     parser.add_argument("--worker", default=None, help="Worker name (default: $WORKER_ID)")
     parser.add_argument("--token", default=None, help="Tick token from `tick_gate.py --lock`")
     parser.add_argument("--ref", default=None, help="issue:N or pr:N")
+    parser.add_argument("--branch", default=None, help="With set-current: the work's branch")
     parser.add_argument("--question", default=None)
     parser.add_argument("--pr", type=int, default=None)
     parser.add_argument("--clear", action="store_true")
@@ -633,6 +652,19 @@ def main() -> None:
             else:
                 entries = clear_schedulers() if args.action == "clear" else list_schedulers()
                 print(json.dumps(entries, ensure_ascii=False, indent=2))
+        elif args.command in ("set-current", "clear-current"):
+            worker = worker_name(args.worker)
+            if args.token and not worker_slots.holds_slot(worker, args.token):
+                print(f"LEASE LOST: {worker} no longer holds this tick; stop working")
+                sys.exit(EXIT_LEASE_LOST)
+            if args.command == "clear-current":
+                set_current(worker, None)
+                print(f"CLEARED current for {worker}")
+            else:
+                if not args.ref or not worker_claims.REF_FORMAT.match(args.ref):
+                    raise ValueError("--ref issue:N or pr:N is required")
+                set_current(worker, {"ref": args.ref, "branch": args.branch})
+                print(f"SET current for {worker}: {args.ref} on {args.branch or '(no branch)'}")
         else:
             if not args.ref:
                 raise ValueError("--ref is required")
