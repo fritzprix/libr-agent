@@ -183,13 +183,6 @@ def _commit_wip(dead_wt: Path, dead: str) -> str | None:
     return git(dead_wt, "rev-parse", "HEAD")
 
 
-def _set_current(worker: str, current: dict | None) -> None:
-    path = worker_state.state_path(worker)
-    state = worker_state.read_json(path)
-    state["current"] = current
-    worker_state.atomic_write_json(path, state)
-
-
 def takeover(wt: Path, worker: str, token: str, dead: str, threshold: int | None) -> tuple[int, str]:
     """Resume the `current` work of a slot whose run died without unlocking."""
     if dead == worker or not worker_slots.SLOT_NAME.match(dead):
@@ -237,8 +230,8 @@ def takeover(wt: Path, worker: str, token: str, dead: str, threshold: int | None
         holder = worker_claims.transfer(ref, dead, worker)
         if holder:
             return EXIT_BRANCH_BUSY, f"CLAIMED {ref} by {holder} (slot {dead} stays orphaned)"
-        _set_current(worker, {"ref": ref, "branch": branch})
-        _set_current(dead, None)
+        worker_state.set_current(worker, {"ref": ref, "branch": branch})
+        worker_state.set_current(dead, None)
         handed_over = True
     finally:
         worker_slots.end_handoff(dead, fenced, handed_over)
