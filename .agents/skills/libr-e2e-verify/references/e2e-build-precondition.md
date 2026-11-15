@@ -7,7 +7,7 @@ E2E runs against a debug build of a known commit. The operator or external harne
 1. Find the merge commit of each PR under test: `gh pr view <N> --json mergeCommit`.
 2. Check out a branch head that contains every merge commit. Use a dedicated worktree.
 3. Build debug from that checkout: `pnpm tauri build --debug` or the project’s documented debug build command.
-4. Start the binary with `LIBRAGENT_E2E_CONTROL=1` and an isolated `LIBRAGENT_DATA_DIR`.
+4. Start the binary with `LIBRAGENT_E2E_CONTROL=1` and an isolated `LIBRAGENT_DATA_DIR`. Do not use the user profile, and do not stop a LibrAgent process by image name. Stop only the PID this run started.
 
 The agent running E2E never performs steps 1–4. It verifies the result below and stops with a verdict instead: `NOOP` when the app is unreachable, `blocked: not in build` for each PR the running build is missing.
 

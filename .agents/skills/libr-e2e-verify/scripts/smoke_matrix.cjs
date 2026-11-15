@@ -12,14 +12,20 @@
  * Exit code 0 only when every step passes.
  *
  * Usage:
- *   node smoke_matrix.cjs --assistant <config-id> [--base-url http://localhost:3030]
- *     [--workspace <scratch-dir>] [--api-token <key>] [--execution-mode yolo|unsafe]
- *     [--data-dir <dir-with-e2e_control.cap>] [--timeout 180] [--keep-session]
+ *   node smoke_matrix.cjs --assistant <config-id> --data-dir <isolated-dir>
+ *     [--base-url http://127.0.0.1:<port>] [--workspace <scratch-dir>]
+ *     [--api-token <key>] [--execution-mode yolo|unsafe] [--timeout 180]
+ *     [--keep-session]
+ *
+ * --data-dir is required and must not be the user's prod/dev/demo data
+ * directory. There is no default port: pass --base-url, or put the isolated
+ * instance's port in <data-dir>/http_port. This script never stops a process.
  *
  * Default execution mode is `yolo`; `unsafe` also auto-approves hard-approval
  * tools and should run against a scratch --workspace, never the repo.
  */
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 const args = process.argv.slice(2);
@@ -31,7 +37,6 @@ function flag(name) {
   return args.includes(`--${name}`);
 }
 
-const baseUrl = (arg('base-url', 'http://localhost:3030')).replace(/\/$/, '');
 const assistantId = arg('assistant', null);
 const workspacePath = arg('workspace', null);
 const apiToken = arg('api-token', process.env.LIBRAGENT_API_KEY || null);
@@ -39,6 +44,51 @@ const executionMode = arg('execution-mode', 'yolo');
 const dataDir = arg('data-dir', process.env.LIBRAGENT_DATA_DIR || null);
 const timeoutSec = Number(arg('timeout', '180'));
 const keepSession = flag('keep-session');
+
+function userProfileDirs() {
+  const home = os.homedir();
+  const names = ['com.fritzprix.libragent', 'com.fritzprix.libragent-demo'];
+  let base;
+  if (process.platform === 'win32') {
+    base = process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
+  } else if (process.platform === 'darwin') {
+    base = path.join(home, 'Library', 'Application Support');
+  } else {
+    base = process.env.XDG_DATA_HOME || path.join(home, '.local', 'share');
+  }
+  return names.map((name) => path.resolve(base, name));
+}
+
+if (!dataDir) {
+  console.error(
+    'Missing --data-dir (or LIBRAGENT_DATA_DIR). The smoke matrix only talks to an isolated profile, never the user profile on port 3030.',
+  );
+  process.exit(2);
+}
+if (userProfileDirs().includes(path.resolve(dataDir))) {
+  console.error(
+    `Refusing ${dataDir}: that is a user profile. Pass an isolated LIBRAGENT_DATA_DIR.`,
+  );
+  process.exit(2);
+}
+
+let baseUrl = arg('base-url', null);
+if (!baseUrl) {
+  const portFile = path.join(dataDir, 'http_port');
+  if (!fs.existsSync(portFile)) {
+    console.error(
+      'Pass --base-url for this isolated instance, or write its port to <data-dir>/http_port. Port 3030 is not the default.',
+    );
+    process.exit(2);
+  }
+  const port = fs.readFileSync(portFile, 'utf8').trim();
+  if (!/^\d+$/.test(port)) {
+    console.error(`Isolated http_port is not a port number: ${portFile}`);
+    process.exit(2);
+  }
+  baseUrl = `http://127.0.0.1:${port}`;
+}
+baseUrl = baseUrl.replace(/\/$/, '');
 
 if (!assistantId) {
   console.error('Missing --assistant <config-id>. Run with --assistant <id>.');
