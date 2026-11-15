@@ -104,6 +104,15 @@ when every step passes; a release build passes the control-plane step as
 
 `--data-dir` is required and must be an isolated profile, not the user's
 prod, dev, or demo data directory. Write that instance's port to
-`<data-dir>/http_port`. `--base-url` is optional and must use the same port;
-the matrix does not default to port 3030 and will not open a session on any
-other port. The script never starts or stops LibrAgent.
+`<data-dir>/http_port`. `--base-url` is optional. When set, it must be a
+loopback URL (`127.0.0.1`, `localhost`, or `::1`) on that same port. The
+matrix does not default to port 3030 and will not open a session on any other
+port or host. The script never starts or stops LibrAgent.
+
+## Tests
+
+The guard tests use `node:test`, not Vitest. Run them with:
+
+```
+node --test .agents/skills/libr-e2e-verify/scripts/smoke_matrix.test.cjs
+```

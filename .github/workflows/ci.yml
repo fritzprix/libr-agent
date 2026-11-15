@@ -87,6 +87,9 @@ jobs:
       - name: Run frontend tests
         run: pnpm test:run
 
+      - name: Run smoke matrix guard tests
+        run: node --test .agents/skills/libr-e2e-verify/scripts/smoke_matrix.test.cjs
+
       - name: Check TypeScript
         run: pnpm tsc --noEmit
 

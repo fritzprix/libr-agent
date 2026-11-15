@@ -19,7 +19,8 @@
  *
  * --data-dir is required and must not be the user's prod/dev/demo data
  * directory. <data-dir>/http_port is required. --base-url, when passed, must
- * use that same port. This script never stops a process.
+ * be a loopback URL (127.0.0.1, localhost, or ::1) on that same port. This
+ * script never stops a process.
  *
  * Default execution mode is `yolo`; `unsafe` also auto-approves hard-approval
  * tools and should run against a scratch --workspace, never the repo.
@@ -92,7 +93,7 @@ function readIsolatedPort(dir) {
   return port;
 }
 
-function portOf(url) {
+function parsedHttpUrl(url) {
   let parsed;
   try {
     parsed = new URL(url);
@@ -100,8 +101,17 @@ function portOf(url) {
     return null;
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+  return parsed;
+}
+
+function portOf(parsed) {
   if (parsed.port) return parsed.port;
   return parsed.protocol === 'https:' ? '443' : '80';
+}
+
+function isLoopback(parsed) {
+  const host = parsed.hostname.toLowerCase();
+  return host === '127.0.0.1' || host === 'localhost' || host === '::1';
 }
 
 if (!dataDir) {
@@ -121,10 +131,17 @@ const isolatedPort = readIsolatedPort(dataDir);
 const requestedUrl = arg('base-url', null);
 let baseUrl;
 if (requestedUrl) {
-  const requestedPort = portOf(requestedUrl);
+  const parsed = parsedHttpUrl(requestedUrl);
+  const requestedPort = parsed ? portOf(parsed) : null;
   if (requestedPort !== isolatedPort) {
     console.error(
       `Refusing ${requestedUrl}: its port does not match ${path.join(dataDir, 'http_port')} (${isolatedPort}).`,
+    );
+    process.exit(2);
+  }
+  if (!isLoopback(parsed)) {
+    console.error(
+      `Refusing ${requestedUrl}: --base-url must use a loopback host (127.0.0.1, localhost, or ::1).`,
     );
     process.exit(2);
   }

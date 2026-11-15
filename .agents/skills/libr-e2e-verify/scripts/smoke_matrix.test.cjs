@@ -73,3 +73,19 @@ test('refuses a base-url whose port is not the isolated http_port', () => {
   assert.match(result.stderr, /does not match/);
   assert.equal(result.stdout, '');
 });
+
+test('refuses a base-url that is not loopback even when the port matches', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'libr-smoke-'));
+  fs.writeFileSync(path.join(dir, 'http_port'), '3999');
+  const result = run([
+    '--assistant',
+    'x',
+    '--data-dir',
+    dir,
+    '--base-url',
+    'http://example.com:3999',
+  ]);
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /loopback/);
+  assert.equal(result.stdout, '');
+});
