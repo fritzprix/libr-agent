@@ -9,7 +9,7 @@ mod syntax;
 
 pub use diagnostics::{
     exit_zero_pipeline_failure_warning, exit_zero_stderr_warning, has_shell_pipeline,
-    is_early_closed_select_pipeline, looks_like_waiting_prompt, EARLY_CLOSED_PIPELINE_NOTE,
+    looks_like_waiting_prompt,
 };
 pub use guidance::{
     is_signal_interrupt_exit, looks_like_docker_chdir_workdir_failure,
