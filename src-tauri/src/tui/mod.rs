@@ -154,8 +154,17 @@ fn install_terminal_panic_hook() {
 /// process-global, so this runs on the main thread before the backend
 /// starts: a terminal that cannot present the TUI must stop the process,
 /// not leave an invisible backend running.
+///
+/// When stdout is not a TTY (scripted smoke with redirected pipes), skip
+/// raw mode / alternate screen so the hidden WebView can still boot — the
+/// chat front would have nowhere to draw anyway.
 fn setup_terminal() -> Result<(), String> {
     install_terminal_panic_hook();
+    use std::io::IsTerminal;
+    if !std::io::stdout().is_terminal() {
+        // Keep TERMINAL_ACTIVE false so restore is a no-op.
+        return Ok(());
+    }
     TERMINAL_ACTIVE.store(true, Ordering::SeqCst);
     if crossterm::terminal::enable_raw_mode().is_err() {
         return Err(
@@ -193,15 +202,52 @@ pub fn run_tui() -> i32 {
     crate::bootstrap::load_dotenv_files();
     let db_url = crate::bootstrap::prepare_profile_runtime();
 
-    // Set the terminal before the backend boots: if this process cannot
-    // present a TUI, fail now instead of leaving an invisible backend.
-    if let Err(err) = setup_terminal() {
-        restore_terminal();
-        eprintln!("error: {err}");
-        return 1;
+    // On Windows, taking the console (raw mode + alternate screen) *before*
+    // Tauri starts prevents WebView2 from running page JS, so
+    // `frontend-ready` never arrives and LLM turns hang (#2784). When stdout
+    // is a real TTY, defer terminal setup until the hidden WebView has
+    // announced readiness. When stdout is redirected (scripted smoke), skip
+    // raw mode entirely and start the front immediately — same path that
+    // keeps WebView2 healthy under pipes.
+    // On other platforms, fail early if the terminal cannot present a TUI
+    // instead of leaving an invisible backend.
+    #[cfg(windows)]
+    {
+        use std::io::IsTerminal;
+        if std::io::stdout().is_terminal() {
+            install_terminal_panic_hook();
+            std::thread::spawn(|| {
+                let ready = crate::lifecycle::frontend_ready::wait_until_ready_blocking(
+                    std::time::Duration::from_secs(90),
+                );
+                if !ready {
+                    log::warn!(
+                        "frontend did not signal readiness within 90s; starting TUI front anyway"
+                    );
+                }
+                if let Err(err) = setup_terminal() {
+                    eprintln!("error: {err}");
+                    return;
+                }
+                front_of_house();
+            });
+        } else if let Err(err) = setup_terminal() {
+            restore_terminal();
+            eprintln!("error: {err}");
+            return 1;
+        } else {
+            std::thread::spawn(front_of_house);
+        }
     }
-
-    std::thread::spawn(front_of_house);
+    #[cfg(not(windows))]
+    {
+        if let Err(err) = setup_terminal() {
+            restore_terminal();
+            eprintln!("error: {err}");
+            return 1;
+        }
+        std::thread::spawn(front_of_house);
+    }
 
     // Tauri's App::run ends the process with std::process::exit; the
     // terminal is restored by the RunEvent::Exit handler, so nothing after
