@@ -1205,4 +1205,30 @@ mod tests {
             );
         }
     }
+
+    #[tokio::test]
+    async fn list_assistants_hits_assistants_route() {
+        let route = warp::path!("api" / "assistants")
+            .and(warp::get())
+            .map(|| warp::reply::json(&serde_json::json!([{"id": "asst_1", "name": "Default"}])));
+        let (addr, server_fut) = warp::serve(route).bind_ephemeral(([127, 0, 0, 1], 0));
+        let server = tokio::spawn(server_fut);
+        let client = SharedBackendClient::new(addr.port()).unwrap();
+
+        let body = client.list_assistants().await.expect("list_assistants");
+        let list = body.as_array().expect("array body");
+        assert_eq!(list[0]["id"], "asst_1");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn ensure_attached_attaches_when_no_id_is_held() {
+        let (client, server) = attachment_server();
+        *attachment_id() = None;
+        let id = client.ensure_attached().await.expect("ensure_attached");
+        assert!(!id.is_empty());
+        assert_eq!(attachment_id().as_deref(), Some(id.as_str()));
+        assert!(client.heartbeat_frontend(&id).await.unwrap());
+        server.abort();
+    }
 }
