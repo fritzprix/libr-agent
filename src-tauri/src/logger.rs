@@ -194,6 +194,44 @@ pub fn setup_file_logger_with_rotation(
     }
 
     let _ = LOG_DIR.set(log_dir.clone());
+
+    let (file, pruned_files, pruned_bytes) = prepare_log_file(&log_dir, rotate_existing)?;
+
+    let log_level = resolve_launch_log_level();
+
+    formatted_dispatch()
+        .level(log_level)
+        .chain(std::io::stdout()) // Keep stdout
+        .chain(file) // Add file output
+        .apply()
+        .map_err(|e| format!("Failed to set logger: {}", e))?;
+
+    log::info!(
+        "🔥 File logger initialized at: {} (level: {})",
+        log_dir.join(ACTIVE_LOG_FILE_NAME).display(),
+        resolve_launch_log_level_name()
+    );
+    if pruned_files > 0 {
+        log::info!(
+            "🧹 Pruned {} archived log file(s) ({} bytes)",
+            pruned_files,
+            pruned_bytes
+        );
+    }
+    Ok(())
+}
+
+/// Prepare the active log file: rotate `libragent.log` aside when
+/// `rotate_existing`, prune archives, then open the file — truncated for a
+/// fresh start when rotating, appended when not. An attached frontend passes
+/// `false` so it appends instead of rotating the host's log out from under
+/// it (#2823). Split out from [`setup_file_logger_with_rotation`] so the
+/// rotation behavior is testable without installing the global logger.
+/// Returns `(file, pruned_files, pruned_bytes)`.
+fn prepare_log_file(
+    log_dir: &Path,
+    rotate_existing: bool,
+) -> Result<(fs::File, usize, u64), String> {
     let log_file = log_dir.join(ACTIVE_LOG_FILE_NAME);
 
     // Backup existing log file with datetime suffix. Skip this when another
@@ -206,7 +244,7 @@ pub fn setup_file_logger_with_rotation(
             .map_err(|e| format!("Failed to backup log file: {}", e))?;
     }
 
-    let (pruned_files, pruned_bytes) = prune_archived_logs_in(&log_dir);
+    let (pruned_files, pruned_bytes) = prune_archived_logs_in(log_dir);
 
     // Create new log file (truncate mode for fresh start)
     let mut file_options = OpenOptions::new();
@@ -220,28 +258,7 @@ pub fn setup_file_logger_with_rotation(
         .open(&log_file)
         .map_err(|e| format!("Failed to open log file: {}", e))?;
 
-    let log_level = resolve_launch_log_level();
-
-    formatted_dispatch()
-        .level(log_level)
-        .chain(std::io::stdout()) // Keep stdout
-        .chain(file) // Add file output
-        .apply()
-        .map_err(|e| format!("Failed to set logger: {}", e))?;
-
-    log::info!(
-        "🔥 File logger initialized at: {} (level: {})",
-        log_file.display(),
-        resolve_launch_log_level_name()
-    );
-    if pruned_files > 0 {
-        log::info!(
-            "🧹 Pruned {} archived log file(s) ({} bytes)",
-            pruned_files,
-            pruned_bytes
-        );
-    }
-    Ok(())
+    Ok((file, pruned_files, pruned_bytes))
 }
 
 #[cfg(test)]
@@ -439,5 +456,53 @@ mod tests {
             Some(Duration::from_secs(7 * SECONDS_PER_DAY))
         );
         set_log_retention_days(0);
+    }
+
+    fn archived_logs(dir: &Path) -> Vec<PathBuf> {
+        fs::read_dir(dir)
+            .unwrap()
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| {
+                let name = path.file_name().unwrap().to_string_lossy().to_string();
+                name.starts_with("libragent_") && name.ends_with(".log")
+            })
+            .collect()
+    }
+
+    #[test]
+    fn attached_setup_appends_and_keeps_the_existing_log() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join(ACTIVE_LOG_FILE_NAME);
+        fs::write(&log, "host line\n").unwrap();
+
+        let (mut file, _, _) = prepare_log_file(dir.path(), false).unwrap();
+        file.write_all(b"attached line\n").unwrap();
+        drop(file);
+
+        assert_eq!(
+            fs::read_to_string(&log).unwrap(),
+            "host line\nattached line\n"
+        );
+        // No backup was taken: the host's log is never rotated aside.
+        assert!(archived_logs(dir.path()).is_empty());
+    }
+
+    #[test]
+    fn hosting_setup_rotates_the_existing_log() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join(ACTIVE_LOG_FILE_NAME);
+        fs::write(&log, "host line\n").unwrap();
+
+        let (mut file, _, _) = prepare_log_file(dir.path(), true).unwrap();
+        file.write_all(b"new line\n").unwrap();
+        drop(file);
+
+        assert_eq!(fs::read_to_string(&log).unwrap(), "new line\n");
+        let backups = archived_logs(dir.path());
+        assert_eq!(backups.len(), 1);
+        assert_eq!(fs::read_to_string(&backups[0]).unwrap(), "host line\n");
     }
 }

@@ -125,13 +125,19 @@ pub async fn init(
         std::net::Ipv4Addr::LOCALHOST
     };
 
+    // A bind error recorded by an earlier failed init must not fail a
+    // later startup's wait (S1.2 review).
+    take_http_bind_error();
+
     // A record for this database means this profile already has a backend.
     // Binding the next free port would be a second backend (#2823). A
     // different database (dev vs prod, or LIBRAGENT_DATA_DIR) does not match
     // this check, so it can still fall back to another port (B-10).
-    if backend_descriptor::profile_has_other_backend() {
-        let message =
-            "this profile already has a backend; refusing to bind a second HTTP server".to_string();
+    if let Some(record) = backend_descriptor::blocking_backend_record() {
+        let message = format!(
+            "this profile already has a backend (record: {}); refusing to bind a second HTTP server",
+            record.display()
+        );
         note_http_bind_error(message.clone());
         return Err(message.into());
     }
@@ -140,11 +146,8 @@ pub async fn init(
     // Keep the bound listener and serve through it: dropping it and asking
     // warp to re-bind the same port left a TOCTOU window where another
     // process could steal the port between the probe and the real bind.
-    let listener =
-        bind_first_available_listener(bind_addr, requested_port, max_attempts).map_err(|err| {
-            note_http_bind_error(err.clone());
-            err
-        })?;
+    let listener = bind_first_available_listener(bind_addr, requested_port, max_attempts)
+        .inspect_err(|err| note_http_bind_error(err.clone()))?;
     let bound_port = listener
         .local_addr()
         .map_err(|e| format!("Failed to read bound HTTP port: {e}"))?

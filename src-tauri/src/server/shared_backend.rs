@@ -593,6 +593,10 @@ pub const OWN_PUBLISH_TIMEOUT: Duration = Duration::from_secs(10);
 /// `lock_path` is `None` before the descriptor namespace is initialized: a
 /// single-process fallback with the pre-#2757 behavior.
 ///
+pub fn attached_frontend_log(frontend: &str, pid: u32, port: u16) -> String {
+    format!("{frontend} attached to live shared backend pid {pid} on port {port}")
+}
+
 /// A published backend that fails readiness is a hard error: its process
 /// already owns this profile, so starting a second backend here would
 /// double-execute live sessions.
@@ -601,10 +605,6 @@ pub const OWN_PUBLISH_TIMEOUT: Duration = Duration::from_secs(10);
 /// function does not report [`BackendStartup::Started`] unless this process's
 /// record is live. If a backend appears while startup is failing, the caller
 /// attaches to it instead.
-pub fn attached_frontend_log(frontend: &str, pid: u32, port: u16) -> String {
-    format!("{frontend} attached to live shared backend pid {pid} on port {port}")
-}
-
 async fn attach_or_start_backend_with_race<S, W>(
     timeout: Duration,
     lock_path: Option<PathBuf>,

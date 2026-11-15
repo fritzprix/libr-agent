@@ -244,6 +244,8 @@ pub fn run_tui() -> i32 {
             return 1;
         }
         front_of_house();
+        // The attach path never boots Tauri: this process exits here rather
+        // than joining a Tauri event loop it does not own (#2823).
         return 0;
     }
     if crate::server::backend_descriptor::profile_has_other_backend() {
