@@ -412,4 +412,69 @@ mod tests {
             );
         }
     }
+
+    /// #2805 / G1.1: native stderr under `2>&1` must not flip a 0 exit on PS 5.1.
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn a_successful_native_with_stderr_redirect_stays_exit_zero() {
+        let harness = create_server().await;
+        let command = r#"cmd /c "echo warn 1>&2 & exit 0" 2>&1"#;
+
+        for tool in [SHELL_TOOLS.0, SHELL_TOOLS.1] {
+            let text = run(&harness.server, tool, command).await;
+            assert!(
+                text.contains("exit code: 0"),
+                "{tool} should keep exit 0 when a native writes stderr under 2>&1: {text}"
+            );
+        }
+    }
+
+    /// #2805 / G1.2: after `$Error` hits the 256-record cap, a later cmdlet
+    /// failure in the persistent shell must still be exit 1.
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn a_cmdlet_failure_stays_nonzero_after_error_cap_in_persistent_shell() {
+        let harness = create_server().await;
+        let persistent = SHELL_TOOLS.1;
+
+        let fill = "1..300 | ForEach-Object { Get-Item -LiteralPath \"/libr-fill-$_\" -ErrorAction SilentlyContinue }";
+        let _ = run(&harness.server, persistent, fill).await;
+
+        let text = run(
+            &harness.server,
+            persistent,
+            "Get-Item -LiteralPath '/nonexistent-libr-2805-cap'",
+        )
+        .await;
+        assert!(
+            text.contains("exit code: 1"),
+            "persistent shell should still report exit 1 after $Error is capped: {text}"
+        );
+    }
+
+    /// #2805 / G1.3: isolated exit 130 uses the interrupted result shape.
+    #[tokio::test]
+    async fn an_isolated_signal_exit_is_reported_as_interrupted() {
+        let harness = create_server().await;
+        let isolated = SHELL_TOOLS.0;
+
+        #[cfg(unix)]
+        let command = "sh -c 'exit 130'";
+        #[cfg(windows)]
+        let command = "exit 130";
+
+        let text = run(&harness.server, isolated, command).await;
+        assert!(
+            text.contains("exit code: 130"),
+            "isolated interrupt should report exit 130: {text}"
+        );
+        assert!(
+            text.contains("interrupted") || text.contains("SIGINT") || text.contains("Notice:"),
+            "isolated interrupt should use the interrupt notice, not a plain failure: {text}"
+        );
+        assert!(
+            !text.contains('✗'),
+            "isolated interrupt must not look like a hard failure: {text}"
+        );
+    }
 }

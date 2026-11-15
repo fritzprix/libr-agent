@@ -71,7 +71,7 @@ fn powershell_framed_script(command: &str, sentinel: &str) -> String {
     script.push_str(&format!(
         "Invoke-Expression ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('{encoded}')))\n"
     ));
-    // Capture before any Write-Output so `$?` / `$Error` are not clobbered (#2805).
+    // Capture before any Write-Output so `$Error` / `$LASTEXITCODE` are not clobbered (#2805).
     script.push_str(crate::utils::powershell_exit::CAPTURE_AND_ASSIGN_EXIT);
     script.push('\n');
     script.push_str(&format!("Write-Output '{sentinel}'\n"));
@@ -635,8 +635,8 @@ mod tests {
     use super::*;
     use std::ffi::OsStr;
 
-    /// #2706 / #2805: reset `$LASTEXITCODE`, run the command, capture `$?` /
-    /// `$LASTEXITCODE` before any `Write-Output`, then emit sentinel / cwd / code.
+    /// #2706 / #2805: reset `$LASTEXITCODE`, clear `$Error`, run the command,
+    /// capture exit before any `Write-Output`, then emit sentinel / cwd / code.
     #[test]
     fn powershell_frame_resets_the_exit_code_before_the_command() {
         let script = powershell_framed_script("Write-Output hello", "SENTINEL_1");
@@ -644,9 +644,9 @@ mod tests {
 
         assert_eq!(lines.len(), 7, "{script}");
         assert_eq!(lines[0], "$global:LASTEXITCODE = 0");
-        assert_eq!(lines[1], "$__libr_err_before = $Error.Count");
+        assert_eq!(lines[1], "$Error.Clear()");
         assert!(lines[2].starts_with("Invoke-Expression "), "{script}");
-        assert!(lines[3].contains("$__libr_err_before"), "{script}");
+        assert!(lines[3].contains("NativeCommandError"), "{script}");
         assert!(lines[3].contains("$__libr_lec = $LASTEXITCODE"), "{script}");
         assert_eq!(lines[4], "Write-Output 'SENTINEL_1'");
         assert!(lines[5].contains("__CWD__"), "{script}");

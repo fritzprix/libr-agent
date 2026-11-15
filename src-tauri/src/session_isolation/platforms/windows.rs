@@ -115,10 +115,11 @@ pub async fn create_basic_isolated_command(
     // aborting pipelines like `cargo … 2>&1 | Select-Object` mid-stream and routing
     // into catch with fake failures.
     //
-    // Exit code: shared rule with persistent shells (#2805). Capture `$?` /
-    // `$LASTEXITCODE` immediately after the user command. Catch writes
-    // Exception.Message only (never ScriptStackTrace) to avoid
-    // `at <ScriptBlock>, …cmd_*.ps1` noise in agent-visible stderr.
+    // Exit code: shared rule with persistent shells (#2805). Capture
+    // `$LASTEXITCODE` / non-`NativeCommandError` `$Error` records immediately
+    // after the user command. Catch writes Exception.Message only (never
+    // ScriptStackTrace) to avoid `at <ScriptBlock>, …cmd_*.ps1` noise in
+    // agent-visible stderr.
     let script_content = format!(
         "$ErrorActionPreference = 'Continue'\n\
          [System.Threading.Thread]::CurrentThread.CurrentUICulture = 'en-US'\n\
@@ -322,7 +323,8 @@ mod tests {
         let script = build_script_content("Remove-Item -Path 'C:\\test' -Recurse -Force");
         assert!(script.contains("$ErrorActionPreference = 'Continue'"));
         assert!(script.contains("$global:LASTEXITCODE = 0"));
-        assert!(script.contains("$__libr_err_before = $Error.Count"));
+        assert!(script.contains("$Error.Clear()"));
+        assert!(script.contains("NativeCommandError"));
         assert!(script.contains("$__libr_lec = $LASTEXITCODE"));
         assert!(script.contains("try {"));
         assert!(script.contains("} catch {"));
