@@ -115,29 +115,29 @@ pub async fn create_basic_isolated_command(
     // aborting pipelines like `cargo … 2>&1 | Select-Object` mid-stream and routing
     // into catch with fake failures.
     //
-    // Exit code: prefer $LASTEXITCODE when set (including 0). Do not use bare `$?`
-    // alone after 2>&1 — NativeCommandError records set $? = false even on success.
-    // Catch writes Exception.Message only (never ScriptStackTrace) to avoid
+    // Exit code: shared rule with persistent shells (#2805). Capture `$?` /
+    // `$LASTEXITCODE` immediately after the user command. Catch writes
+    // Exception.Message only (never ScriptStackTrace) to avoid
     // `at <ScriptBlock>, …cmd_*.ps1` noise in agent-visible stderr.
     let script_content = format!(
         "$ErrorActionPreference = 'Continue'\n\
          [System.Threading.Thread]::CurrentThread.CurrentUICulture = 'en-US'\n\
          {}\n\
+         $global:LASTEXITCODE = 0\n\
          $__libr_exit = 0\n\
          try {{\n\
              {}\n\
-             if ($null -ne $LASTEXITCODE) {{\n\
-                 $__libr_exit = $LASTEXITCODE\n\
-             }} elseif (-not $?) {{\n\
-                 $__libr_exit = 1\n\
-             }}\n\
+             {}\n\
+             {}\n\
          }} catch {{\n\
              [Console]::Error.WriteLine($_.Exception.Message)\n\
              $__libr_exit = 1\n\
          }}\n\
          exit $__libr_exit\n",
         crate::utils::powershell_encoding::SET_UTF8_NO_BOM,
-        full_command
+        crate::utils::powershell_exit::ERROR_COUNT_BEFORE,
+        full_command,
+        crate::utils::powershell_exit::CAPTURE_AND_ASSIGN_EXIT
     );
 
     // File-level UTF-8 BOM is required for PowerShell 5.1 to parse this .ps1 as
@@ -270,21 +270,21 @@ mod tests {
             "$ErrorActionPreference = 'Continue'\n\
              [System.Threading.Thread]::CurrentThread.CurrentUICulture = 'en-US'\n\
              {}\n\
+             $global:LASTEXITCODE = 0\n\
              $__libr_exit = 0\n\
              try {{\n\
                  {}\n\
-                 if ($null -ne $LASTEXITCODE) {{\n\
-                     $__libr_exit = $LASTEXITCODE\n\
-                 }} elseif (-not $?) {{\n\
-                     $__libr_exit = 1\n\
-                 }}\n\
+                 {}\n\
+                 {}\n\
              }} catch {{\n\
                  [Console]::Error.WriteLine($_.Exception.Message)\n\
                  $__libr_exit = 1\n\
              }}\n\
              exit $__libr_exit\n",
             crate::utils::powershell_encoding::SET_UTF8_NO_BOM,
-            full_command
+            crate::utils::powershell_exit::ERROR_COUNT_BEFORE,
+            full_command,
+            crate::utils::powershell_exit::CAPTURE_AND_ASSIGN_EXIT
         )
     }
 
@@ -321,6 +321,9 @@ mod tests {
         // Script must capture exit codes, report terminating errors to stderr, and exit.
         let script = build_script_content("Remove-Item -Path 'C:\\test' -Recurse -Force");
         assert!(script.contains("$ErrorActionPreference = 'Continue'"));
+        assert!(script.contains("$global:LASTEXITCODE = 0"));
+        assert!(script.contains("$__libr_err_before = $Error.Count"));
+        assert!(script.contains("$__libr_lec = $LASTEXITCODE"));
         assert!(script.contains("try {"));
         assert!(script.contains("} catch {"));
         assert!(script.contains("[Console]::Error.WriteLine"));

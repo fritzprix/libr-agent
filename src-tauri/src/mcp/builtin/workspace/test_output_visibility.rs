@@ -363,4 +363,53 @@ mod tests {
         assert!(text.contains("hello-after-failure"), "{text}");
         assert!(text.contains("exit code: 0"), "{text}");
     }
+
+    /// #2805: cmdlet-only failure must be non-zero in both shells (capture `$?`
+    /// before any frame `Write-Output`).
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn a_cmdlet_only_failure_is_nonzero_in_both_powershell_tools() {
+        let harness = create_server().await;
+        let command = "Get-Item -LiteralPath '/nonexistent-libr-2805'";
+
+        for tool in [SHELL_TOOLS.0, SHELL_TOOLS.1] {
+            let text = run(&harness.server, tool, command).await;
+            assert!(
+                text.contains("exit code: 1"),
+                "{tool} should report exit 1 for a missing path: {text}"
+            );
+        }
+    }
+
+    /// #2805: a stale native `$LASTEXITCODE` of 0 must not mask a later cmdlet failure.
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn a_stale_native_zero_does_not_mask_a_later_cmdlet_failure() {
+        let harness = create_server().await;
+        let command = "cmd /c exit 0; Get-Item -LiteralPath '/nonexistent-libr-2805-stale'";
+
+        for tool in [SHELL_TOOLS.0, SHELL_TOOLS.1] {
+            let text = run(&harness.server, tool, command).await;
+            assert!(
+                text.contains("exit code: 1"),
+                "{tool} should report exit 1 when a cmdlet fails after a native 0: {text}"
+            );
+        }
+    }
+
+    /// #2805: a later successful native in a `;` chain wins (documented rule).
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn a_later_successful_native_overwrites_an_earlier_failure() {
+        let harness = create_server().await;
+        let command = "cmd /c exit 2; cmd /c exit 0";
+
+        for tool in [SHELL_TOOLS.0, SHELL_TOOLS.1] {
+            let text = run(&harness.server, tool, command).await;
+            assert!(
+                text.contains("exit code: 0"),
+                "{tool} should report exit 0 when the last native succeeds: {text}"
+            );
+        }
+    }
 }

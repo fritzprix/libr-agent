@@ -410,8 +410,9 @@ impl WorkspaceServer {
                 let actual_exit_code = entry.exit_code.unwrap_or(-1);
                 let success = entry.status == terminal_manager::ProcessStatus::Finished
                     && actual_exit_code == 0;
-                let interrupted = entry.status == terminal_manager::ProcessStatus::Finished
-                    && validation::is_signal_interrupt_exit(actual_exit_code);
+                // Signal exits are never `Finished` (that status is exit 0 only),
+                // so do not require Finished here — same meaning as persistent (#2805).
+                let interrupted = validation::is_signal_interrupt_exit(actual_exit_code);
                 let retain_killed_process = entry.status == terminal_manager::ProcessStatus::Killed;
 
                 if !retain_killed_process {
