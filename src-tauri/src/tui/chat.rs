@@ -1,13 +1,18 @@
-//! TUI chat core: transcript, composer, streaming poll, and S5 prompts (#2762).
+//! TUI chat core: transcript, composer, streaming poll, and S5 prompts (#2762),
+//! plus session slash commands (#2763).
 //!
 //! Drives the shared Session API from the TUI thread once the backend is live.
-//! Layout and key rules follow `docs/specs/tui-parity.md` §3 (S1 + S5).
+//! Layout and key rules follow `docs/specs/tui-parity.md` §3 (S1 + S2 + S5).
 
 use crate::agent::session_manager::PendingApprovalSummary;
 use crate::agent::state::{
     PendingUserPromptSummary, UserPromptKind, UserPromptPayload, UserQuestion,
 };
 use crate::server::shared_backend::SharedBackendClient;
+use crate::tui::sessions::{
+    create_new_session, delete_session, draw_picker, load_resume_picker, open_session_or_refuse,
+    parse_session_command, rename_session, PickerAction, SessionCommand, SessionPicker,
+};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
@@ -69,6 +74,10 @@ pub struct ChatState {
     /// Scroll inside a tall S5 body (approval JSON / ask list).
     pub s5_scroll: u16,
     ask: AskDraft,
+    /// S2 session picker (`/resume` / `/history`).
+    pub picker: Option<SessionPicker>,
+    /// Pending `/delete` confirmation (session id).
+    pub confirm_delete: Option<String>,
     last_ctrl_c: Option<Instant>,
 }
 
@@ -90,12 +99,46 @@ impl ChatState {
         if ctrl && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('C')) {
             return self.handle_ctrl_c();
         }
-        if ctrl
-            && matches!(key.code, KeyCode::Char('d') | KeyCode::Char('D'))
-            && self.composer.is_empty()
-            && self.focus == Focus::Composer
-        {
-            return ChatAction::Quit;
+        if ctrl && matches!(key.code, KeyCode::Char('d') | KeyCode::Char('D')) {
+            if self.composer.is_empty() && self.focus == Focus::Composer && self.picker.is_none() {
+                return ChatAction::Quit;
+            }
+        }
+
+        if let Some(id) = self.confirm_delete.clone() {
+            return match key.code {
+                KeyCode::Char('y') | KeyCode::Char('Y') => {
+                    self.confirm_delete = None;
+                    ChatAction::Session(SessionCommand::Delete {
+                        session_id: Some(id),
+                    })
+                }
+                KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                    self.confirm_delete = None;
+                    self.notice = Some("Delete cancelled".to_string());
+                    ChatAction::None
+                }
+                _ => ChatAction::None,
+            };
+        }
+
+        if let Some(picker) = self.picker.as_mut() {
+            return match picker.handle_key(key) {
+                PickerAction::None => ChatAction::None,
+                PickerAction::Cancel => {
+                    self.picker = None;
+                    ChatAction::None
+                }
+                PickerAction::Open(id) => {
+                    self.picker = None;
+                    ChatAction::OpenSession(id)
+                }
+                PickerAction::Refused { reason, .. } => {
+                    self.picker = None;
+                    self.notice = Some(reason);
+                    ChatAction::None
+                }
+            };
         }
 
         // Alt+Y / Alt+N always reach an open approval, even with composer focus.
@@ -144,16 +187,29 @@ impl ChatState {
                     return ChatAction::None;
                 }
                 // `//` sends a literal leading slash (parity §3.2).
-                let outbound = if let Some(rest) = text.strip_prefix("//") {
-                    format!("/{rest}")
-                } else if text.starts_with('/') {
-                    self.notice = Some(format!("Unknown command {text} (chat core: /help later)"));
+                if let Some(rest) = text.strip_prefix("//") {
+                    self.composer.clear();
+                    return ChatAction::Send(format!("/{rest}"));
+                }
+                if let Some(command) = parse_session_command(&text) {
+                    self.composer.clear();
+                    if matches!(command, SessionCommand::Delete { session_id: None }) {
+                        let Some(id) = self.session_id.clone() else {
+                            self.notice = Some("No open session to delete".to_string());
+                            return ChatAction::None;
+                        };
+                        self.confirm_delete = Some(id);
+                        self.notice = Some("Delete this session? y/N".to_string());
+                        return ChatAction::None;
+                    }
+                    return ChatAction::Session(command);
+                }
+                if text.starts_with('/') {
+                    self.notice = Some(format!("Unknown command {text}"));
                     return ChatAction::None;
-                } else {
-                    text
-                };
+                }
                 self.composer.clear();
-                ChatAction::Send(outbound)
+                ChatAction::Send(text)
             }
             KeyCode::Backspace => {
                 self.composer.pop();
@@ -411,6 +467,8 @@ pub enum ChatAction {
     Reject,
     AnswerPrompt(String),
     CancelPrompt,
+    Session(SessionCommand),
+    OpenSession(String),
 }
 
 /// How the chat front should leave when it is done.
@@ -648,6 +706,11 @@ pub fn s5_layout(state: &ChatState, width: u16) -> (u16, String) {
 
 /// Draw the S1 chat frame (and S5 strip when a prompt is open).
 pub fn draw_chat(frame: &mut Frame<'_>, state: &ChatState) {
+    if let Some(picker) = &state.picker {
+        draw_picker(frame, picker);
+        return;
+    }
+
     let width = frame.area().width.max(1);
     let (s5_rows, s5_text) = s5_layout(state, width);
     let chunks = Layout::default()
@@ -794,6 +857,20 @@ pub fn run_chat_front(stdout: &mut Stdout) {
                             state.notice = Some("Backend is not ready yet".to_string());
                         }
                     }
+                    ChatAction::Session(command) => {
+                        if let Some(ref api) = client {
+                            runtime.block_on(run_session_command(api, &mut state, command));
+                        } else {
+                            state.notice = Some("Backend is not ready yet".to_string());
+                        }
+                    }
+                    ChatAction::OpenSession(id) => {
+                        if let Some(ref api) = client {
+                            runtime.block_on(switch_to_session(api, &mut state, &id));
+                        } else {
+                            state.notice = Some("Backend is not ready yet".to_string());
+                        }
+                    }
                     ChatAction::Approve => {
                         if let (Some(api), Some(approval)) =
                             (client.as_ref(), state.pending_approval.clone())
@@ -910,6 +987,111 @@ async fn send_user_text(api: &SharedBackendClient, state: &mut ChatState, text: 
         }
         Err(err) => state.notice = Some(err),
     }
+}
+
+async fn run_session_command(
+    api: &SharedBackendClient,
+    state: &mut ChatState,
+    command: SessionCommand,
+) {
+    state.notice = None;
+    match command {
+        SessionCommand::New { assistant_id } => {
+            match create_new_session(api, assistant_id.as_deref()).await {
+                Ok((id, name)) => {
+                    state.session_id = Some(id.clone());
+                    state.session_title = name;
+                    state.transcript.clear();
+                    state.pending_approval = None;
+                    state.pending_prompt = None;
+                    state.scroll_from_bottom = 0;
+                    state.status = format!("idle · session {id}");
+                    state.notice = Some(format!("Started session {id}"));
+                }
+                Err(err) => state.notice = Some(err),
+            }
+        }
+        SessionCommand::Resume {
+            session_id: Some(id),
+        } => {
+            switch_to_session(api, state, &id).await;
+        }
+        SessionCommand::Resume { session_id: None } => match load_resume_picker(api).await {
+            Ok(picker) => {
+                if picker.rows.is_empty() {
+                    state.notice = Some("No sessions to resume".to_string());
+                } else {
+                    state.picker = Some(picker);
+                }
+            }
+            Err(err) => state.notice = Some(err),
+        },
+        SessionCommand::Rename { name } => {
+            let Some(session_id) = state.session_id.clone() else {
+                state.notice = Some("No open session to rename".to_string());
+                return;
+            };
+            match rename_session(api, &session_id, &name).await {
+                Ok(()) => {
+                    state.session_title = name.clone();
+                    state.notice = Some(format!("Renamed to {name}"));
+                }
+                Err(err) => state.notice = Some(err),
+            }
+        }
+        SessionCommand::Delete { session_id } => {
+            let Some(id) = session_id.or_else(|| state.session_id.clone()) else {
+                state.notice = Some("No session to delete".to_string());
+                return;
+            };
+            match delete_session(api, &id).await {
+                Ok(()) => {
+                    if state.session_id.as_deref() == Some(id.as_str()) {
+                        state.session_id = None;
+                        state.session_title = "New Session".to_string();
+                        state.transcript.clear();
+                        state.pending_approval = None;
+                        state.pending_prompt = None;
+                        state.status = "Session deleted".to_string();
+                    }
+                    state.notice = Some(format!("Deleted {id}"));
+                }
+                Err(err) => state.notice = Some(err),
+            }
+        }
+    }
+}
+
+async fn switch_to_session(api: &SharedBackendClient, state: &mut ChatState, session_id: &str) {
+    if let Err(err) = open_session_or_refuse(api, session_id).await {
+        state.notice = Some(err);
+        return;
+    }
+    // Resume a paused workflow when the session is not already driven.
+    if let Ok(session) = api.get_session(session_id).await {
+        let status = session
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown");
+        if matches!(status, "paused" | "error") {
+            if let Err(err) = api.resume_session(session_id).await {
+                state.notice = Some(err);
+                return;
+            }
+        }
+        if let Some(name) = session.get("name").and_then(Value::as_str) {
+            if !name.is_empty() {
+                state.session_title = name.to_string();
+            }
+        }
+    }
+    state.session_id = Some(session_id.to_string());
+    state.transcript.clear();
+    state.pending_approval = None;
+    state.pending_prompt = None;
+    state.scroll_from_bottom = 0;
+    state.notice = Some(format!("Opened {session_id}"));
+    poll_session(api, state).await;
 }
 
 async fn ensure_session(api: &SharedBackendClient, first_message: &str) -> Result<String, String> {
@@ -1058,6 +1240,35 @@ mod tests {
             ChatAction::None
         );
         assert!(state.notice.as_deref().unwrap_or("").contains("/foo"));
+    }
+
+    #[test]
+    fn slash_new_emits_session_command() {
+        let mut state = ChatState::new();
+        state.composer = "/new".to_string();
+        assert_eq!(
+            state.handle_key(KeyEvent::from(KeyCode::Enter)),
+            ChatAction::Session(SessionCommand::New { assistant_id: None })
+        );
+        assert!(state.composer.is_empty());
+    }
+
+    #[test]
+    fn slash_delete_asks_for_confirm_on_open_session() {
+        let mut state = ChatState::new();
+        state.session_id = Some("sess_1".into());
+        state.composer = "/delete".to_string();
+        assert_eq!(
+            state.handle_key(KeyEvent::from(KeyCode::Enter)),
+            ChatAction::None
+        );
+        assert_eq!(state.confirm_delete.as_deref(), Some("sess_1"));
+        assert_eq!(
+            state.handle_key(KeyEvent::from(KeyCode::Char('y'))),
+            ChatAction::Session(SessionCommand::Delete {
+                session_id: Some("sess_1".into())
+            })
+        );
     }
 
     #[test]

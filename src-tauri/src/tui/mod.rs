@@ -34,6 +34,7 @@
 //! Win32 console API for I/O that conhost provided above.
 
 mod chat;
+mod sessions;
 
 use crossterm::{
     execute,
