@@ -1,4 +1,6 @@
-//! TUI session commands: `/new`, `/resume`, list, `/rename`, `/delete` (#2763).
+//! TUI session commands: `/new`, `/resume`, list, `/rename`, `/delete` (#2763),
+//! plus the inline P0 verbs `/permission`, `/continue`, `/retry`, `/clear`,
+//! `/help` (#2764, parity §3.3).
 //!
 //! Ownership badges follow #2759: a live foreign owner is **open elsewhere**,
 //! or **running** when the workflow is still driven (`busy` / `queued` /
@@ -27,10 +29,30 @@ pub fn ownership_label(open_elsewhere: bool, status: &str) -> Option<&'static st
 /// Slash commands this module owns (parity §3.3 P0/P1 session verbs).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SessionCommand {
-    New { assistant_id: Option<String> },
-    Resume { session_id: Option<String> },
-    Rename { name: String },
-    Delete { session_id: Option<String> },
+    New {
+        assistant_id: Option<String>,
+    },
+    Resume {
+        session_id: Option<String>,
+    },
+    Rename {
+        name: String,
+    },
+    Delete {
+        session_id: Option<String>,
+    },
+    /// `/permission normal|yolo|unsafe` — execution mode of the open session (§2.5).
+    Permission {
+        mode: String,
+    },
+    /// `/continue` — resume the open session's paused workflow (§2.6).
+    Continue,
+    /// `/retry` — re-drive the open session after an error (§2.5/§2.7).
+    Retry,
+    /// `/clear` — clear the transcript view (§2.6, view-local).
+    Clear,
+    /// `/help` — command list (§3.3 rule 10).
+    Help,
 }
 
 /// Parse a leading `/…` composer line into a session command.
@@ -54,6 +76,13 @@ pub fn parse_session_command(text: &str) -> Option<SessionCommand> {
         "delete" => Some(SessionCommand::Delete {
             session_id: parts.next().map(str::to_string),
         }),
+        "permission" => Some(SessionCommand::Permission {
+            mode: parts.next().unwrap_or("").to_ascii_lowercase(),
+        }),
+        "continue" => Some(SessionCommand::Continue),
+        "retry" => Some(SessionCommand::Retry),
+        "clear" => Some(SessionCommand::Clear),
+        "help" => Some(SessionCommand::Help),
         _ => None,
     }
 }
@@ -341,6 +370,34 @@ mod tests {
         );
         assert_eq!(parse_session_command("/foo"), None);
         assert_eq!(parse_session_command("//new"), None);
+    }
+
+    #[test]
+    fn parse_parity_inline_commands() {
+        assert_eq!(
+            parse_session_command("/permission YOLO"),
+            Some(SessionCommand::Permission {
+                mode: "yolo".into()
+            })
+        );
+        assert_eq!(
+            parse_session_command("/permission"),
+            Some(SessionCommand::Permission {
+                mode: String::new()
+            })
+        );
+        assert_eq!(
+            parse_session_command("/continue"),
+            Some(SessionCommand::Continue)
+        );
+        assert_eq!(parse_session_command("/retry"), Some(SessionCommand::Retry));
+        assert_eq!(parse_session_command("/clear"), Some(SessionCommand::Clear));
+        assert_eq!(parse_session_command("/help"), Some(SessionCommand::Help));
+        // Trailing junk on a no-arg verb is ignored, not an error.
+        assert_eq!(
+            parse_session_command("/continue now"),
+            Some(SessionCommand::Continue)
+        );
     }
 
     #[test]

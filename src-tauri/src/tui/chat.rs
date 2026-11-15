@@ -214,6 +214,32 @@ impl ChatState {
                         self.notice = Some(format!("Delete session {id} and its children? y/N"));
                         return ChatAction::None;
                     }
+                    // View-local commands complete here; no backend call follows.
+                    match &command {
+                        SessionCommand::Clear => {
+                            self.transcript.clear();
+                            self.scroll_from_bottom = 0;
+                            self.notice = Some("Transcript cleared".to_string());
+                            return ChatAction::None;
+                        }
+                        SessionCommand::Help => {
+                            for line in help_lines() {
+                                self.transcript.push(TranscriptLine {
+                                    role: "Help".to_string(),
+                                    text: line.to_string(),
+                                });
+                            }
+                            return ChatAction::None;
+                        }
+                        SessionCommand::Permission { mode } => {
+                            if !matches!(mode.as_str(), "normal" | "yolo" | "unsafe") {
+                                self.notice =
+                                    Some("Usage: /permission normal|yolo|unsafe".to_string());
+                                return ChatAction::None;
+                            }
+                        }
+                        _ => {}
+                    }
                     return ChatAction::Session(command);
                 }
                 if text.starts_with('/') {
@@ -1001,6 +1027,16 @@ async fn send_user_text(api: &SharedBackendClient, state: &mut ChatState, text: 
     }
 }
 
+/// Command list shown by `/help` (rule 10 in parity §3.2). Grows with each
+/// implemented command group; only live commands are listed.
+fn help_lines() -> &'static [&'static str] {
+    &[
+        "commands: /new [assistant] · /resume [id] · /rename <name> · /delete [id]",
+        "/permission normal|yolo|unsafe · /continue · /retry · /clear · /help · /quit",
+        "keys: Alt+Y approve · Alt+N reject · Tab focus prompt · Esc reject/back · Ctrl+C twice quit",
+    ]
+}
+
 async fn run_session_command(
     api: &SharedBackendClient,
     state: &mut ChatState,
@@ -1070,6 +1106,44 @@ async fn run_session_command(
                 }
                 Err(err) => state.notice = Some(err),
             }
+        }
+        SessionCommand::Permission { mode } => {
+            let Some(id) = state.session_id.clone() else {
+                state.notice = Some("No open session to change execution mode".to_string());
+                return;
+            };
+            match api
+                .patch_session(&id, &json!({ "executionMode": mode }))
+                .await
+            {
+                Ok(response) => {
+                    let applied = response
+                        .get("executionMode")
+                        .and_then(Value::as_str)
+                        .unwrap_or(mode.as_str());
+                    state.notice = Some(format!("Execution mode: {applied}"));
+                }
+                Err(err) => state.notice = Some(err),
+            }
+        }
+        SessionCommand::Continue | SessionCommand::Retry => {
+            let Some(id) = state.session_id.clone() else {
+                state.notice = Some("No open session to resume".to_string());
+                return;
+            };
+            match api.resume_session(&id).await {
+                Ok(_) => {
+                    let verb = match command {
+                        SessionCommand::Retry => "Retry",
+                        _ => "Continue",
+                    };
+                    state.notice = Some(format!("{verb} requested for session {id}"));
+                }
+                Err(err) => state.notice = Some(err),
+            }
+        }
+        SessionCommand::Clear | SessionCommand::Help => {
+            // View-local commands complete in the composer handler.
         }
     }
 }
@@ -1314,6 +1388,99 @@ mod tests {
             .as_deref()
             .unwrap_or("")
             .contains("/rename <name>"));
+    }
+
+    #[test]
+    fn slash_permission_without_valid_mode_shows_usage() {
+        let mut state = ChatState::new();
+        state.composer = "/permission".to_string();
+        assert_eq!(
+            state.handle_key(KeyEvent::from(KeyCode::Enter)),
+            ChatAction::None
+        );
+        assert!(state
+            .notice
+            .as_deref()
+            .unwrap_or("")
+            .contains("/permission normal|yolo|unsafe"));
+        state.composer = "/permission turbo".to_string();
+        assert_eq!(
+            state.handle_key(KeyEvent::from(KeyCode::Enter)),
+            ChatAction::None
+        );
+        assert!(state
+            .notice
+            .as_deref()
+            .unwrap_or("")
+            .contains("/permission normal|yolo|unsafe"));
+    }
+
+    #[test]
+    fn slash_permission_dispatches_session_command() {
+        let mut state = ChatState::new();
+        state.composer = "/permission yolo".to_string();
+        assert_eq!(
+            state.handle_key(KeyEvent::from(KeyCode::Enter)),
+            ChatAction::Session(SessionCommand::Permission {
+                mode: "yolo".into()
+            })
+        );
+        assert!(state.composer.is_empty());
+    }
+
+    #[test]
+    fn slash_continue_and_retry_dispatch_session_commands() {
+        let mut state = ChatState::new();
+        state.composer = "/continue".to_string();
+        assert_eq!(
+            state.handle_key(KeyEvent::from(KeyCode::Enter)),
+            ChatAction::Session(SessionCommand::Continue)
+        );
+        state.composer = "/retry".to_string();
+        assert_eq!(
+            state.handle_key(KeyEvent::from(KeyCode::Enter)),
+            ChatAction::Session(SessionCommand::Retry)
+        );
+    }
+
+    #[test]
+    fn slash_clear_wipes_transcript_without_backend_call() {
+        let mut state = ChatState::new();
+        state.transcript.push(TranscriptLine {
+            role: "You".to_string(),
+            text: "hello".to_string(),
+        });
+        state.composer = "/clear".to_string();
+        assert_eq!(
+            state.handle_key(KeyEvent::from(KeyCode::Enter)),
+            ChatAction::None
+        );
+        assert!(state.transcript.is_empty());
+        assert!(state
+            .notice
+            .as_deref()
+            .unwrap_or("")
+            .contains("Transcript cleared"));
+    }
+
+    #[test]
+    fn slash_help_prints_command_list() {
+        let mut state = ChatState::new();
+        state.composer = "/help".to_string();
+        assert_eq!(
+            state.handle_key(KeyEvent::from(KeyCode::Enter)),
+            ChatAction::None
+        );
+        assert!(!state.transcript.is_empty());
+        assert!(state.transcript.iter().all(|l| l.role == "Help"));
+        let joined = state
+            .transcript
+            .iter()
+            .map(|l| l.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(joined.contains("/resume"));
+        assert!(joined.contains("/permission"));
     }
 
     #[test]
