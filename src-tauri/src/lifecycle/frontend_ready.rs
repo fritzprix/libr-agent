@@ -52,3 +52,21 @@ pub async fn wait_until_llm_executor_ready(app_handle: &tauri::AppHandle) {
     }
     wait_until_ready().await;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn blocking_wait_observes_the_readiness_flag() {
+        // IS_READY is one-way global state, so both sides run in one test,
+        // false before true. A sibling test that flipped the flag first
+        // still leaves this one deterministic.
+        if !is_ready() {
+            assert!(!wait_until_ready_blocking(Duration::from_millis(1)));
+        }
+        mark_as_ready();
+        assert!(is_ready());
+        assert!(wait_until_ready_blocking(Duration::from_millis(1)));
+    }
+}

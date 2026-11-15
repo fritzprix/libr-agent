@@ -419,6 +419,12 @@ def main() -> None:
     scratch = Path(tempfile.mkdtemp(prefix="libragent-tui-smoke-"))
     log_path = scratch / "tui.log"
     print(f"scratch: {scratch}")
+    if args.keep:
+        print(
+            f"WARNING: --keep leaves a full copy of the user's DB "
+            f"(provider API keys included) under {scratch} — delete it "
+            "when done."
+        )
     print(f"binary:  {binary}")
     print(f"db:      {source_db}")
 

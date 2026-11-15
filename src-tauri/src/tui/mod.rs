@@ -155,15 +155,22 @@ fn install_terminal_panic_hook() {
 /// starts: a terminal that cannot present the TUI must stop the process,
 /// not leave an invisible backend running.
 ///
-/// When stdout is not a TTY (scripted smoke with redirected pipes), skip
-/// raw mode / alternate screen so the hidden WebView can still boot — the
-/// chat front would have nowhere to draw anyway.
+/// Windows only: when stdout is not a TTY (scripted smoke with redirected
+/// pipes), skip raw mode / alternate screen so the hidden WebView can still
+/// boot — the chat front has nowhere to draw anyway, and taking the console
+/// is what breaks WebView2 page JS (#2784). Linux/macOS keep the original
+/// error for non-tty launches: scripts there attach a real pty
+/// (`spawn_tui` in `scripts/tui_hidden_webview_smoke.py`), so the
+/// "cannot enter raw mode" failure stays the coverage for that case.
 fn setup_terminal() -> Result<(), String> {
     install_terminal_panic_hook();
-    use std::io::IsTerminal;
-    if !std::io::stdout().is_terminal() {
-        // Keep TERMINAL_ACTIVE false so restore is a no-op.
-        return Ok(());
+    #[cfg(windows)]
+    {
+        use std::io::IsTerminal;
+        if !std::io::stdout().is_terminal() {
+            // Keep TERMINAL_ACTIVE false so restore stays a no-op.
+            return Ok(());
+        }
     }
     TERMINAL_ACTIVE.store(true, Ordering::SeqCst);
     if crossterm::terminal::enable_raw_mode().is_err() {
@@ -180,6 +187,18 @@ fn setup_terminal() -> Result<(), String> {
         );
     }
     Ok(())
+}
+
+/// Deferred Windows terminal setup (#2784) can only fail after the backend
+/// has already started. A hidden WebView with no usable terminal is the
+/// exact state `setup_terminal` promises never to leave running, so restore
+/// the terminal and take the whole process down with a non-zero code.
+/// Documented smoke case: a Windows TTY launch whose console cannot enter
+/// raw mode reaches this after the deferred readiness wait and exits 1.
+fn abort_without_terminal(err: &str) -> ! {
+    restore_terminal();
+    eprintln!("error: {err}");
+    std::process::exit(1);
 }
 
 /// The TUI front: chat core on an already-prepared terminal (#2762).
@@ -206,9 +225,10 @@ pub fn run_tui() -> i32 {
     // Tauri starts prevents WebView2 from running page JS, so
     // `frontend-ready` never arrives and LLM turns hang (#2784). When stdout
     // is a real TTY, defer terminal setup until the hidden WebView has
-    // announced readiness. When stdout is redirected (scripted smoke), skip
-    // raw mode entirely and start the front immediately — same path that
-    // keeps WebView2 healthy under pipes.
+    // announced readiness. When stdout is redirected (scripted smoke),
+    // setup_terminal's Windows-only skip leaves raw mode off and the front
+    // starts immediately — the same path that keeps WebView2 healthy under
+    // pipes.
     // On other platforms, fail early if the terminal cannot present a TUI
     // instead of leaving an invisible backend.
     #[cfg(windows)]
@@ -226,8 +246,7 @@ pub fn run_tui() -> i32 {
                     );
                 }
                 if let Err(err) = setup_terminal() {
-                    eprintln!("error: {err}");
-                    return;
+                    abort_without_terminal(&err);
                 }
                 front_of_house();
             });
@@ -267,6 +286,16 @@ mod tests {
             port,
             started_at_ms: 1,
         }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn setup_terminal_skips_raw_mode_when_stdout_is_not_a_tty() {
+        // `cargo test` runs with piped stdout — exactly the scripted-smoke
+        // case: the Windows skip must report success and leave
+        // TERMINAL_ACTIVE false so restore_terminal stays a no-op.
+        assert!(setup_terminal().is_ok());
+        assert!(!TERMINAL_ACTIVE.load(Ordering::SeqCst));
     }
 
     #[test]
