@@ -6,6 +6,7 @@ const {
   isTransientWindowsExecFailure,
   maxAttemptsFor,
   runCargoTestWithRetries,
+  writeCapturedOutput,
   MAX_ATTEMPTS_WINDOWS,
   RETRY_BASE_DELAY_MS,
 } = require('../run-rust-tests-sequential.cjs') as {
@@ -20,6 +21,15 @@ const {
       maxAttempts?: number;
     },
   ) => number;
+  writeCapturedOutput: (
+    stdout: string,
+    stderr: string,
+    deps?: {
+      writeSync?: (fd: number, data: string) => number;
+      stdoutFd?: number;
+      stderrFd?: number;
+    },
+  ) => void;
   MAX_ATTEMPTS_WINDOWS: number;
   RETRY_BASE_DELAY_MS: number;
 };
@@ -134,6 +144,42 @@ describe('rust-tests-sequential retry policy', () => {
       expect(status).toBe(1);
       expect(calls).toBe(1);
       expect(sleeps).toEqual([]);
+    });
+  });
+
+  describe('writeCapturedOutput', () => {
+    it('writes stdout and stderr through writeSync before returning', () => {
+      const writes: Array<{ fd: number; data: string }> = [];
+      // >64 KB so a piped async write would still be buffered when exit fires (#2776).
+      const stdout = `${'ok\n'.repeat(20_000)}failures:\n    big_suite::the_failing_test\ntest result: FAILED. 0 passed; 1 failed\n`;
+      const stderr = 'error: test failed, to rerun pass --lib\n';
+      writeCapturedOutput(stdout, stderr, {
+        writeSync: (fd, data) => {
+          writes.push({ fd, data });
+          return data.length;
+        },
+        stdoutFd: 1,
+        stderrFd: 2,
+      });
+      expect(writes).toEqual([
+        { fd: 1, data: stdout },
+        { fd: 2, data: stderr },
+      ]);
+      expect(writes[0]?.data).toContain('failures:');
+      expect(writes[0]?.data).toContain('test result: FAILED');
+    });
+
+    it('skips empty streams', () => {
+      const writes: Array<{ fd: number; data: string }> = [];
+      writeCapturedOutput('', 'only-err\n', {
+        writeSync: (fd, data) => {
+          writes.push({ fd, data });
+          return data.length;
+        },
+        stdoutFd: 1,
+        stderrFd: 2,
+      });
+      expect(writes).toEqual([{ fd: 2, data: 'only-err\n' }]);
     });
   });
 });

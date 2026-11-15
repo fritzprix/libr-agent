@@ -69,6 +69,25 @@ function isTransientWindowsExecFailure(output) {
   );
 }
 
+/**
+ * Write captured cargo output synchronously.
+ *
+ * `process.stdout.write` is async when stdout is a pipe (GitHub Actions).
+ * `process.exit` right after can drop the tail — including `failures:` and
+ * `test result:` — before Node drains its userspace buffer (#2776).
+ */
+function writeCapturedOutput(stdout, stderr, deps = {}) {
+  const writeSync = deps.writeSync ?? fs.writeSync;
+  const stdoutFd = deps.stdoutFd ?? process.stdout.fd;
+  const stderrFd = deps.stderrFd ?? process.stderr.fd;
+  if (stdout) {
+    writeSync(stdoutFd, stdout);
+  }
+  if (stderr) {
+    writeSync(stderrFd, stderr);
+  }
+}
+
 function runCargoTest(cargoArgs) {
   const env = { ...process.env };
   if (!env.CARGO_BUILD_JOBS) {
@@ -86,12 +105,7 @@ function runCargoTest(cargoArgs) {
   }
   const stdout = result.stdout ?? '';
   const stderr = result.stderr ?? '';
-  if (stdout) {
-    process.stdout.write(stdout);
-  }
-  if (stderr) {
-    process.stderr.write(stderr);
-  }
+  writeCapturedOutput(stdout, stderr);
   return {
     status: result.status ?? 1,
     output: `${stdout}${stderr}`,
@@ -224,6 +238,7 @@ module.exports = {
   isTransientWindowsExecFailure,
   maxAttemptsFor,
   runCargoTestWithRetries,
+  writeCapturedOutput,
   MAX_ATTEMPTS_WINDOWS,
   RETRY_BASE_DELAY_MS,
 };
