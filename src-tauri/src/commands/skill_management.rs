@@ -1,4 +1,6 @@
-use crate::services::skill_service::{self, SkillImportPreview, SkillImportResult};
+use crate::services::skill_service::{
+    self, PluginSourceOverview, SkillImportPreview, SkillImportResult,
+};
 
 #[tauri::command]
 pub async fn copy_global_to_assistant(
@@ -39,8 +41,15 @@ pub async fn import_user_skills(
     file_path: String,
     overwrite_existing: bool,
     excluded_skill_names: Option<Vec<String>>,
+    approve_hooks: Option<bool>,
 ) -> Result<SkillImportResult, String> {
-    skill_service::import_user_skills(file_path, overwrite_existing, excluded_skill_names).await
+    skill_service::import_user_skills(
+        file_path,
+        overwrite_existing,
+        excluded_skill_names,
+        approve_hooks,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -53,8 +62,25 @@ pub async fn install_github_skills(
     repo_url: String,
     overwrite_existing: bool,
     excluded_skill_names: Option<Vec<String>>,
+    approve_hooks: Option<bool>,
 ) -> Result<SkillImportResult, String> {
-    skill_service::install_github_skills(repo_url, overwrite_existing, excluded_skill_names).await
+    skill_service::install_github_skills(
+        repo_url,
+        overwrite_existing,
+        excluded_skill_names,
+        approve_hooks,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn list_plugin_sources() -> Result<Vec<PluginSourceOverview>, String> {
+    skill_service::list_plugin_source_overviews()
+}
+
+#[tauri::command]
+pub async fn delete_plugin_source(source_id: String) -> Result<(), String> {
+    skill_service::delete_plugin_source(source_id).await
 }
 
 #[tauri::command]

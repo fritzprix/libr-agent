@@ -236,6 +236,11 @@ async fn complete_docker_provisioning(
     )
     .await?;
 
+    crate::services::hooks::spawn_session_start(
+        session_id,
+        crate::services::hooks::SessionStartSource::Startup,
+    );
+
     drain_and_start_pending_workflows(deps, session_id).await
 }
 

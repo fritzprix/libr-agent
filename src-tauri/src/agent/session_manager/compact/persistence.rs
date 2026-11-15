@@ -381,5 +381,10 @@ pub(super) async fn persist_compact_summary_and_resume(
     )
     .await?;
 
+    crate::services::hooks::spawn_session_start(
+        context.session_id,
+        crate::services::hooks::SessionStartSource::Compact,
+    );
+
     Ok(CompactResponseOutcome { retried: false })
 }

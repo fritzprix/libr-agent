@@ -149,5 +149,11 @@ pub async fn resume_session(
     .await;
 
     log::info!("Resumed agent session: {}", session_id);
+
+    crate::services::hooks::spawn_session_start(
+        session_id,
+        crate::services::hooks::SessionStartSource::Resume,
+    );
+
     Ok(session)
 }

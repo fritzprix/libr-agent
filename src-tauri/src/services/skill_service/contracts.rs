@@ -36,12 +36,23 @@ pub struct SkillAliasRoot {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
+pub struct PluginSourceOverview {
+    pub id: String,
+    pub source_url: String,
+    pub skill_names: Vec<String>,
+    pub hook_events: Vec<String>,
+    pub hooks_approved: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct ManagedSkillsOverview {
     pub system_directory: String,
     pub user_directory: String,
     pub system_skills: Vec<SkillMetadata>,
     pub user_skills: Vec<SkillMetadata>,
     pub effective_skills: Vec<SkillMetadata>,
+    pub plugin_sources: Vec<PluginSourceOverview>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -59,11 +70,46 @@ pub struct SkillImportConflict {
     pub existing_path: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum SkillImportKind {
+    #[serde(rename = "skillBundle")]
+    SkillBundle,
+    #[serde(rename = "plugin")]
+    Plugin,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum HookPreviewExecutionStatus {
+    #[serde(rename = "executed")]
+    Executed,
+    #[serde(rename = "stubbed")]
+    Stubbed,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct HookPreviewEntry {
+    pub event: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub matcher: Option<String>,
+    pub command: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub powershell: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub script_body: Option<String>,
+    pub execution_status: HookPreviewExecutionStatus,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct SkillImportPreview {
+    pub kind: SkillImportKind,
     pub discovered_skills: Vec<SkillImportCandidate>,
     pub conflicts: Vec<SkillImportConflict>,
+    pub hooks: Vec<HookPreviewEntry>,
+    pub hooks_require_approval: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -89,6 +135,8 @@ pub(super) struct DiscoveredSkillRoot {
 #[derive(Debug)]
 pub(super) struct PreparedSkillImport {
     pub(super) _temp_dir: TempDir,
+    pub(super) scan_root: PathBuf,
+    pub(super) source_key: String,
     pub(super) discovered_skills: Vec<DiscoveredSkillRoot>,
 }
 

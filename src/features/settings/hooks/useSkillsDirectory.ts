@@ -33,6 +33,7 @@ export function useSkillsDirectory() {
     skills: data?.effectiveSkills ?? [],
     systemSkills: data?.systemSkills ?? [],
     userSkills: data?.userSkills ?? [],
+    pluginSources: data?.pluginSources ?? [],
     systemDirectory: data?.systemDirectory ?? '',
     userDirectory: data?.userDirectory ?? '',
     errorMessage,

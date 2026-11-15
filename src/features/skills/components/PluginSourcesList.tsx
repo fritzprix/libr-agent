@@ -1,0 +1,132 @@
+import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { ChevronDown, Loader2, RefreshCw, Trash2 } from 'lucide-react';
+import { Button } from '@/components/ui';
+import { cn } from '@/lib/utils';
+import type { PluginSourceOverview } from '@/types/skills';
+
+interface PluginSourcesListProps {
+  sources: PluginSourceOverview[];
+  isBusy: boolean;
+  removingId: string | null;
+  onUpdate: (sourceUrl: string) => void | Promise<void>;
+  onRemove: (sourceId: string) => void | Promise<void>;
+}
+
+export function PluginSourcesList({
+  sources,
+  isBusy,
+  removingId,
+  onUpdate,
+  onRemove,
+}: PluginSourcesListProps) {
+  const { t } = useTranslation('common');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  if (sources.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+      <p className="text-sm font-medium">
+        {t('settings.skills.pluginSourcesTitle', 'Installed plugin sources')}
+      </p>
+      <div className="space-y-2">
+        {sources.map((source) => {
+          const expanded = expandedId === source.id;
+          const canUpdate = source.sourceUrl.startsWith('https://github.com');
+          return (
+            <div key={source.id} className="rounded-md border bg-background p-3">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0 space-y-1">
+                  <p className="text-sm font-medium break-all">{source.id}</p>
+                  <p className="text-xs text-muted-foreground break-all">
+                    {source.sourceUrl}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {source.hooksApproved
+                      ? t(
+                          'settings.skills.hooksApproved',
+                          'Hooks approved and may run',
+                        )
+                      : t(
+                          'settings.skills.hooksNotApproved',
+                          'Hooks installed but not approved to run',
+                        )}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isBusy}
+                    onClick={() =>
+                      setExpandedId(expanded ? null : source.id)
+                    }
+                  >
+                    <ChevronDown
+                      className={cn(
+                        'w-4 h-4 transition-transform',
+                        expanded && 'rotate-180',
+                      )}
+                    />
+                  </Button>
+                  {canUpdate ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={isBusy}
+                      onClick={() => void onUpdate(source.sourceUrl)}
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                    </Button>
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isBusy || removingId === source.id}
+                    onClick={() => void onRemove(source.id)}
+                  >
+                    {removingId === source.id ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-4 h-4" />
+                    )}
+                  </Button>
+                </div>
+              </div>
+              {expanded ? (
+                <div className="mt-3 space-y-2 text-sm">
+                  <div>
+                    <p className="font-medium">
+                      {t('settings.skills.skillsToInstall', 'Skills')}
+                    </p>
+                    <ul className="list-disc pl-5 text-muted-foreground">
+                      {source.skillNames.map((name) => (
+                        <li key={name}>{name}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  {source.hookEvents.length > 0 ? (
+                    <div>
+                      <p className="font-medium">
+                        {t('settings.skills.hookEvents', 'Hook events')}
+                      </p>
+                      <p className="text-muted-foreground">
+                        {source.hookEvents.join(', ')}
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}

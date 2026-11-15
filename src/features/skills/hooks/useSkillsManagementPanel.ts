@@ -5,6 +5,7 @@ import { useSWRConfig } from 'swr';
 import { useDnDContext } from '@/context/DnDContext';
 import { safeInvoke } from '@/lib/backend/core';
 import {
+  deletePluginSource,
   deleteUserSkill,
   importUserSkills,
   installGitHubSkills,
@@ -18,6 +19,7 @@ import { isScopedSkillsKey } from '@/features/agent/hooks/useScopedSkills';
 import {
   formatImportSuccess,
   getSkillsStatusMessage,
+  shouldPromptSkillInstall,
 } from '../skills-management-utils';
 import type {
   PendingInstall,
@@ -36,6 +38,7 @@ export function useSkillsManagementPanel() {
     userSkills,
     systemDirectory,
     userDirectory,
+    pluginSources,
     errorMessage,
     refresh: refreshOverview,
   } = useSkillsDirectory();
@@ -81,6 +84,7 @@ export function useSkillsManagementPanel() {
       kind: PendingInstall['kind'],
       sourceValue: string,
       overwriteNames: string[],
+      approveHooks: boolean,
       extraExcludedNames: string[] = [],
     ) => {
       const userConflictNames = new Set(
@@ -98,8 +102,18 @@ export function useSkillsManagementPanel() {
       );
 
       return kind === 'local'
-        ? importUserSkills(sourceValue, shouldOverwrite, excludedNames)
-        : installGitHubSkills(sourceValue, shouldOverwrite, excludedNames);
+        ? importUserSkills(
+            sourceValue,
+            shouldOverwrite,
+            excludedNames,
+            approveHooks,
+          )
+        : installGitHubSkills(
+            sourceValue,
+            shouldOverwrite,
+            excludedNames,
+            approveHooks,
+          );
     },
     [pendingInstallSystemConflicts, pendingInstallUserConflicts],
   );
@@ -143,7 +157,7 @@ export function useSkillsManagementPanel() {
           const userConflicts = preview.conflicts.filter(
             (conflict) => conflict.existingOrigin === 'user',
           );
-          if (userConflicts.length > 0) {
+          if (shouldPromptSkillInstall(preview, userConflicts.length)) {
             setPendingInstall({
               kind: 'local',
               sourceValue: filePath,
@@ -151,6 +165,7 @@ export function useSkillsManagementPanel() {
               selectedOverwriteNames: userConflicts.map(
                 (conflict) => conflict.name,
               ),
+              approveHooks: false,
             });
             return;
           }
@@ -162,6 +177,7 @@ export function useSkillsManagementPanel() {
             preview.conflicts
               .filter((conflict) => conflict.existingOrigin === 'system')
               .map((conflict) => conflict.name),
+            false,
           );
           toast.success(
             formatImportSuccess(
@@ -223,7 +239,7 @@ export function useSkillsManagementPanel() {
       const userConflicts = preview.conflicts.filter(
         (conflict) => conflict.existingOrigin === 'user',
       );
-      if (userConflicts.length > 0) {
+      if (shouldPromptSkillInstall(preview, userConflicts.length)) {
         setPendingInstall({
           kind: 'github',
           sourceValue: trimmedRepoUrl,
@@ -231,6 +247,7 @@ export function useSkillsManagementPanel() {
           selectedOverwriteNames: userConflicts.map(
             (conflict) => conflict.name,
           ),
+          approveHooks: false,
         });
         return;
       }
@@ -241,6 +258,7 @@ export function useSkillsManagementPanel() {
         preview.conflicts
           .filter((conflict) => conflict.existingOrigin === 'system')
           .map((conflict) => conflict.name),
+        false,
       );
       toast.success(
         formatImportSuccess(
@@ -276,6 +294,7 @@ export function useSkillsManagementPanel() {
         kind,
         sourceValue,
         pendingInstall.selectedOverwriteNames,
+        pendingInstall.approveHooks,
       );
       toast.success(
         formatImportSuccess(
@@ -315,6 +334,119 @@ export function useSkillsManagementPanel() {
       };
     });
   }, []);
+
+  const setPendingApproveHooks = useCallback((approveHooks: boolean) => {
+    setPendingInstall((current) =>
+      current ? { ...current, approveHooks } : current,
+    );
+  }, []);
+
+  const confirmPendingInstallWithoutHooks = useCallback(async () => {
+    if (!pendingInstall) {
+      return;
+    }
+
+    const { kind, sourceValue } = pendingInstall;
+    setIsInstallingLocal(kind === 'local');
+    setIsInstallingGithub(kind === 'github');
+
+    try {
+      const result = await performInstall(
+        kind,
+        sourceValue,
+        pendingInstall.selectedOverwriteNames,
+        false,
+      );
+      toast.success(
+        formatImportSuccess(
+          t,
+          result.importedNames.length,
+          result.overwrittenNames.length,
+          result.skippedNames.length,
+        ),
+      );
+      if (kind === 'github') {
+        setRepoUrl('');
+      }
+      setPendingInstall(null);
+      await refresh();
+    } catch (error) {
+      logger.error('Failed to install skills without hook approval', error);
+      toast.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsInstallingLocal(false);
+      setIsInstallingGithub(false);
+    }
+  }, [pendingInstall, performInstall, refresh, t]);
+
+  const handleReinstallPluginSource = useCallback(
+    async (sourceUrl: string) => {
+      if (isInstallingGithub || isInstallingLocal) {
+        return;
+      }
+      setIsInstallingGithub(true);
+      const toastId = toast.loading(
+        t('settings.skills.githubInspecting', 'Inspecting GitHub repository...'),
+      );
+      try {
+        const preview = await previewGitHubSkillInstall(sourceUrl);
+        toast.dismiss(toastId);
+        const userConflicts = preview.conflicts.filter(
+          (c) => c.existingOrigin === 'user',
+        );
+        if (shouldPromptSkillInstall(preview, userConflicts.length)) {
+          setPendingInstall({
+            kind: 'github',
+            sourceValue: sourceUrl,
+            preview,
+            selectedOverwriteNames: userConflicts.map((c) => c.name),
+            approveHooks: false,
+          });
+          return;
+        }
+        await installGitHubSkills(
+          sourceUrl,
+          true,
+          preview.conflicts
+            .filter((c) => c.existingOrigin === 'system')
+            .map((c) => c.name),
+          false,
+        );
+        toast.success(t('settings.skills.pluginSourceUpdated', 'Plugin updated.'));
+        await refresh();
+      } catch (error) {
+        logger.error('Failed to update plugin source', error);
+        toast.error(error instanceof Error ? error.message : String(error), {
+          id: toastId,
+        });
+      } finally {
+        setIsInstallingGithub(false);
+      }
+    },
+    [isInstallingGithub, isInstallingLocal, refresh, t],
+  );
+
+  const handleDeletePluginSource = useCallback(
+    async (sourceId: string) => {
+      if (isDeletingSkill) {
+        return;
+      }
+      setIsDeletingSkill(sourceId);
+      try {
+        await deletePluginSource(sourceId);
+        toast.success(
+          t('settings.skills.pluginSourceRemoved', 'Plugin source removed.'),
+        );
+        await refresh();
+      } catch (error) {
+        logger.error('Failed to delete plugin source', error);
+        toast.error(error instanceof Error ? error.message : String(error));
+      } finally {
+        setIsDeletingSkill(null);
+      }
+    },
+    [isDeletingSkill, refresh, t],
+  );
 
   const handleDeleteUserSkill = useCallback(
     async (skillName: string) => {
@@ -378,6 +510,7 @@ export function useSkillsManagementPanel() {
     userSkills,
     systemDirectory,
     userDirectory,
+    pluginSources,
     isDragging,
     pendingInstall,
     pendingInstallSystemConflicts,
@@ -397,6 +530,10 @@ export function useSkillsManagementPanel() {
     handleGitHubInstall,
     confirmPendingInstall,
     togglePendingOverwrite,
+    setPendingApproveHooks,
+    confirmPendingInstallWithoutHooks,
+    handleReinstallPluginSource,
+    handleDeletePluginSource,
     handleDeleteUserSkill,
     handleResetUserSkills,
   };

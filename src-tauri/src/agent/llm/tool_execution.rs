@@ -673,6 +673,20 @@ pub async fn execute_tool_calls(
             }
         }
 
+        let mut pre_tool_params = crate::services::hooks::HookEnvelopeParams::new(
+            &session_id,
+            std::path::PathBuf::from("."),
+            crate::services::hooks::HookEvent::PreToolUse,
+        );
+        pre_tool_params.tool_name = Some(tool_name.clone());
+        pre_tool_params.tool_input = Some(args.clone());
+        crate::services::hooks::notify_stub_event(
+            crate::services::hooks::HookEvent::PreToolUse,
+            &session_id,
+            pre_tool_params,
+        )
+        .await;
+
         let execution_started = std::time::Instant::now();
         let (mut result, process_was_cancelled) = proxy_manager
             .run_with_process_cancel_scope(

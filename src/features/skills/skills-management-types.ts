@@ -5,6 +5,7 @@ export interface PendingInstall {
   sourceValue: string;
   preview: SkillImportPreview;
   selectedOverwriteNames: string[];
+  approveHooks: boolean;
 }
 
 export type SkillsDirectoryScope = 'system' | 'user';

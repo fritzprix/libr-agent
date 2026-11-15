@@ -56,6 +56,7 @@ describe('skills backend wrapper', () => {
       systemSkills: [],
       userSkills: [],
       effectiveSkills: [],
+      pluginSources: [],
     };
     vi.mocked(safeInvoke).mockResolvedValueOnce(mockResponse);
 
@@ -66,7 +67,13 @@ describe('skills backend wrapper', () => {
   });
 
   it('previewUserSkillImport calls safeInvoke with correct arguments', async () => {
-    const mockResponse = { discoveredSkills: [], conflicts: [] };
+    const mockResponse = {
+      kind: 'skillBundle',
+      discoveredSkills: [],
+      conflicts: [],
+      hooks: [],
+      hooksRequireApproval: false,
+    };
     vi.mocked(safeInvoke).mockResolvedValueOnce(mockResponse);
 
     const result = await previewUserSkillImport('/path/to/skill.skill');
@@ -91,12 +98,19 @@ describe('skills backend wrapper', () => {
       filePath: '/path/to/skill.skill',
       overwriteExisting: true,
       excludedSkillNames: ['skip-me'],
+      approveHooks: undefined,
     });
     expect(result).toEqual(mockResponse);
   });
 
   it('previewGitHubSkillInstall calls safeInvoke with correct arguments', async () => {
-    const mockResponse = { discoveredSkills: [], conflicts: [] };
+    const mockResponse = {
+      kind: 'skillBundle',
+      discoveredSkills: [],
+      conflicts: [],
+      hooks: [],
+      hooksRequireApproval: false,
+    };
     vi.mocked(safeInvoke).mockResolvedValueOnce(mockResponse);
 
     const result = await previewGitHubSkillInstall(
@@ -127,6 +141,7 @@ describe('skills backend wrapper', () => {
       repoUrl: 'https://github.com/example/skills',
       overwriteExisting: false,
       excludedSkillNames: ['skip-me'],
+      approveHooks: undefined,
     });
     expect(result).toEqual(mockResponse);
   });

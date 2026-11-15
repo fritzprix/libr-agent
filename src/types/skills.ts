@@ -29,12 +29,21 @@ export interface SkillMetadata {
   origin?: 'system' | 'user' | 'assistant' | 'workspace';
 }
 
+export interface PluginSourceOverview {
+  id: string;
+  sourceUrl: string;
+  skillNames: string[];
+  hookEvents: string[];
+  hooksApproved: boolean;
+}
+
 export interface ManagedSkillsOverview {
   systemDirectory: string;
   userDirectory: string;
   systemSkills: SkillMetadata[];
   userSkills: SkillMetadata[];
   effectiveSkills: SkillMetadata[];
+  pluginSources: PluginSourceOverview[];
 }
 
 export interface SkillImportCandidate {
@@ -48,9 +57,25 @@ export interface SkillImportConflict {
   existingPath: string;
 }
 
+export type SkillImportKind = 'skillBundle' | 'plugin';
+
+export type HookPreviewExecutionStatus = 'executed' | 'stubbed';
+
+export interface HookPreviewEntry {
+  event: string;
+  matcher?: string;
+  command: string;
+  powershell?: string;
+  scriptBody?: string;
+  executionStatus: HookPreviewExecutionStatus;
+}
+
 export interface SkillImportPreview {
+  kind: SkillImportKind;
   discoveredSkills: SkillImportCandidate[];
   conflicts: SkillImportConflict[];
+  hooks: HookPreviewEntry[];
+  hooksRequireApproval: boolean;
 }
 
 export interface SkillImportResult {

@@ -55,6 +55,7 @@ const mockOverview = {
       origin: 'user' as const,
     },
   ],
+  pluginSources: [],
 };
 
 const wrapper = ({ children }: { children: ReactNode }) => (

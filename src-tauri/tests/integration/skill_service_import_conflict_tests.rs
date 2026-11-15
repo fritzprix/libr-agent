@@ -130,6 +130,7 @@ async fn import_user_skills_skips_system_conflicts_even_with_overwrite() {
         import_source.path().to_string_lossy().to_string(),
         true,
         None,
+        None,
     )
     .await
     .expect("import result");
@@ -160,6 +161,7 @@ async fn import_user_skills_skips_excluded_user_conflicts_without_overwrite() {
         import_source.path().to_string_lossy().to_string(),
         false,
         Some(vec![existing_skill_name.clone()]),
+        None,
     )
     .await
     .expect("import result");
@@ -184,6 +186,7 @@ async fn import_user_skills_requires_overwrite_for_included_user_conflicts() {
         import_source.path().to_string_lossy().to_string(),
         false,
         None,
+        None,
     )
     .await
     .expect_err("conflict should require overwrite");
@@ -192,6 +195,7 @@ async fn import_user_skills_requires_overwrite_for_included_user_conflicts() {
     let overwrite_result = import_user_skills(
         import_source.path().to_string_lossy().to_string(),
         true,
+        None,
         None,
     )
     .await

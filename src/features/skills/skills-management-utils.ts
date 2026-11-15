@@ -1,8 +1,20 @@
 import type { TFunction } from 'i18next';
+import type { SkillImportPreview } from '@/types/skills';
 import type {
   SkillsStatusMessage,
   SkillsVerificationStatus,
 } from './skills-management-types';
+
+export function shouldPromptSkillInstall(
+  preview: SkillImportPreview,
+  userConflictCount: number,
+): boolean {
+  return (
+    preview.kind === 'plugin' ||
+    preview.hooks.length > 0 ||
+    userConflictCount > 0
+  );
+}
 
 export function formatImportSuccess(
   t: TFunction,
