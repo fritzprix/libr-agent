@@ -31,12 +31,12 @@ this skill is the knowledge and the pass/fail discipline:
 
 Follow [references/e2e-build-precondition.md](references/e2e-build-precondition.md) before any HTTP checks. The operator or external harness owns building and starting the app; this skill never builds or starts LibrAgent. If the running build is missing a required commit, report the verdict (`NOOP` / `blocked: not in build`) and stop.
 
-| Check | How | Meaning |
-| --- | --- | --- |
-| Build provenance | `buildSha` / `buildDirty` on `GET /api/health` or `GET /api/e2e-control/status` | Record `buildSha` in results. PRs not in the build are `blocked: not in build`. |
-| Health gate | `GET /api/health` → `status: ok` | Proceed. If unreachable, abort. |
-| Control plane | `GET /api/e2e-control/status` with header `X-LibrAgent-E2E-Control: <cap>`, where `<cap>` is the content of `e2e_control.cap` under `LIBRAGENT_DATA_DIR` | `200` = debug build with `LIBRAGENT_E2E_CONTROL=1` and an explicit `LIBRAGENT_DATA_DIR`. `403` = plane enabled but the header is missing/wrong — re-read `e2e_control.cap` and check the data dir you are reading it from. `404`/`405` = absent (release build or debug without opt-in). |
-| Fallback | Control plane absent → run with `executionMode: yolo` (default; standard tools) or `unsafe` (also hard-approval tools; scratch workspace only) | Report `control plane absent — yolo/unsafe fallback`, do not fail the run. |
+| Check            | How                                                                                                                                                      | Meaning                                                                                                                                                                                                                                                                                  |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Build provenance | `buildSha` / `buildDirty` on `GET /api/health` or `GET /api/e2e-control/status`                                                                          | Record `buildSha` in results. PRs not in the build are `blocked: not in build`.                                                                                                                                                                                                          |
+| Health gate      | `GET /api/health` → `status: ok`                                                                                                                         | Proceed. If unreachable, abort.                                                                                                                                                                                                                                                          |
+| Control plane    | `GET /api/e2e-control/status` with header `X-LibrAgent-E2E-Control: <cap>`, where `<cap>` is the content of `e2e_control.cap` under `LIBRAGENT_DATA_DIR` | `200` = debug build with `LIBRAGENT_E2E_CONTROL=1` and an explicit `LIBRAGENT_DATA_DIR`. `403` = plane enabled but the header is missing/wrong — re-read `e2e_control.cap` and check the data dir you are reading it from. `404`/`405` = absent (release build or debug without opt-in). |
+| Fallback         | Control plane absent → run with `executionMode: yolo` (default; standard tools) or `unsafe` (also hard-approval tools; scratch workspace only)           | Report `control plane absent — yolo/unsafe fallback`, do not fail the run.                                                                                                                                                                                                               |
 
 - The control plane is debug-only and loopback-only. Never expect it on a release build.
 - `Authorization: Bearer <key>` on the Session API is configuration-dependent; send it only when the user provides an API key.
@@ -58,11 +58,11 @@ DELETE /api/sessions/:id
 
 ## Blocking interactions over HTTP (debug control plane)
 
-| Need | Call |
-| --- | --- |
-| See what blocks a session | `GET /api/e2e-control/sessions/:ref/interactions` → pending user prompt + pending approvals |
-| Answer or cancel a `ui__askUser` / storeAs prompt | `POST /api/e2e-control/sessions/:ref/user-prompts` with `{"requestId": "...", "action": "answer"|"cancel", "value": "..."}` |
-| Approve or deny a tool approval | `POST /api/e2e-control/sessions/:ref/tool-approvals` with `{"toolCallId": "...", "approved": true|false}` |
+| Need                                              | Call                                                                                                                                              |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| See what blocks a session                         | `GET /api/e2e-control/sessions/:ref/interactions` → pending user prompt + pending approvals                                                       |
+| Answer or cancel a `ui__askUser` / storeAs prompt | `POST /api/e2e-control/sessions/:ref/user-prompts` with `{"requestId": "...", "action": "answer"}` or `"cancel"`, plus `"value"`                  |
+| Approve or deny a tool approval                   | `POST /api/e2e-control/sessions/:ref/tool-approvals` with `{"toolCallId": "...", "approved": true}` or `{"toolCallId": "...", "approved": false}` |
 
 Without the control plane, prompts and approvals block until a human answers or
 `yolo`/`unsafe` auto-approves them.
@@ -91,7 +91,8 @@ Without the control plane, prompts and approvals block until a human answers or
 
 ```
 node .agents/skills/libr-e2e-verify/scripts/smoke_matrix.cjs --assistant <config-id> \
-  [--base-url http://localhost:3030] [--workspace <scratch-dir>] [--api-token <key>] \
+  --data-dir <isolated-dir> [--base-url http://127.0.0.1:<port>] \
+  [--workspace <scratch-dir>] [--api-token <key>] \
   [--execution-mode yolo|unsafe] [--timeout 180] [--keep-session]
 ```
 
@@ -100,3 +101,18 @@ approvals and user prompts through the control plane while the session is busy) 
 transcript check → terminate + delete, and prints one pass/fail table. Exit `0` only
 when every step passes; a release build passes the control-plane step as
 `absent (yolo/unsafe fallback)`, not as a failure.
+
+`--data-dir` is required and must be an isolated profile, not the user's
+prod, dev, or demo data directory. Write that instance's port to
+`<data-dir>/http_port`. `--base-url` is optional. When set, it must be a
+loopback URL (`127.0.0.1`, `localhost`, or `::1`) on that same port. The
+matrix does not default to port 3030 and will not open a session on any other
+port or host. The script never starts or stops LibrAgent.
+
+## Tests
+
+The guard tests use `node:test`, not Vitest. Run them with:
+
+```
+node --test .agents/skills/libr-e2e-verify/scripts/smoke_matrix.test.cjs
+```

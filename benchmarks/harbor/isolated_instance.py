@@ -718,6 +718,12 @@ def _owns_pid(layout: InstanceLayout, pid: int, proc_root: Path = Path("/proc"))
 
 
 def stop(layout: InstanceLayout, *, grace_sec: float = 10.0) -> None:
+    """Stop this bench instance only.
+
+    Kills the PID recorded at launch when that PID still belongs to this
+    data dir, plus processes whose environment contains this instance's
+    ``LIBRAGENT_DATA_DIR``. Never selects a process by the ``libragent`` name.
+    """
     pid = _read_pid(layout)
     if pid is not None and _pid_alive(pid) and _owns_pid(layout, pid):
         with contextlib.suppress(ProcessLookupError):

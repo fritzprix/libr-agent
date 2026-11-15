@@ -12,14 +12,21 @@
  * Exit code 0 only when every step passes.
  *
  * Usage:
- *   node smoke_matrix.cjs --assistant <config-id> [--base-url http://localhost:3030]
- *     [--workspace <scratch-dir>] [--api-token <key>] [--execution-mode yolo|unsafe]
- *     [--data-dir <dir-with-e2e_control.cap>] [--timeout 180] [--keep-session]
+ *   node smoke_matrix.cjs --assistant <config-id> --data-dir <isolated-dir>
+ *     [--base-url http://127.0.0.1:<port>] [--workspace <scratch-dir>]
+ *     [--api-token <key>] [--execution-mode yolo|unsafe] [--timeout 180]
+ *     [--keep-session]
+ *
+ * --data-dir is required and must not be the user's prod/dev/demo data
+ * directory. <data-dir>/http_port is required. --base-url, when passed, must
+ * be a loopback URL (127.0.0.1, localhost, or ::1) on that same port. This
+ * script never stops a process.
  *
  * Default execution mode is `yolo`; `unsafe` also auto-approves hard-approval
  * tools and should run against a scratch --workspace, never the repo.
  */
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 const args = process.argv.slice(2);
@@ -31,7 +38,6 @@ function flag(name) {
   return args.includes(`--${name}`);
 }
 
-const baseUrl = (arg('base-url', 'http://localhost:3030')).replace(/\/$/, '');
 const assistantId = arg('assistant', null);
 const workspacePath = arg('workspace', null);
 const apiToken = arg('api-token', process.env.LIBRAGENT_API_KEY || null);
@@ -39,6 +45,110 @@ const executionMode = arg('execution-mode', 'yolo');
 const dataDir = arg('data-dir', process.env.LIBRAGENT_DATA_DIR || null);
 const timeoutSec = Number(arg('timeout', '180'));
 const keepSession = flag('keep-session');
+
+function canonicalPath(value) {
+  const resolved = path.resolve(value);
+  try {
+    return fs.realpathSync(resolved);
+  } catch {
+    return resolved;
+  }
+}
+
+function samePath(left, right) {
+  const a = canonicalPath(left);
+  const b = canonicalPath(right);
+  if (process.platform === 'win32') return a.toLowerCase() === b.toLowerCase();
+  return a === b;
+}
+
+function userProfileDirs() {
+  const home = os.homedir();
+  const names = ['com.fritzprix.libragent', 'com.fritzprix.libragent-demo'];
+  let base;
+  if (process.platform === 'win32') {
+    base = process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
+  } else if (process.platform === 'darwin') {
+    base = path.join(home, 'Library', 'Application Support');
+  } else {
+    base = process.env.XDG_DATA_HOME || path.join(home, '.local', 'share');
+  }
+  return names.map((name) => path.resolve(base, name));
+}
+
+function readIsolatedPort(dir) {
+  const portFile = path.join(dir, 'http_port');
+  if (!fs.existsSync(portFile)) {
+    console.error(
+      'Missing <data-dir>/http_port. The smoke matrix will not guess a port, including 3030.',
+    );
+    process.exit(2);
+  }
+  const port = fs.readFileSync(portFile, 'utf8').trim();
+  const number = Number(port);
+  if (!/^\d+$/.test(port) || number < 1 || number > 65535) {
+    console.error(`Isolated http_port is not a port number: ${portFile}`);
+    process.exit(2);
+  }
+  return port;
+}
+
+function parsedHttpUrl(url) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+  return parsed;
+}
+
+function portOf(parsed) {
+  if (parsed.port) return parsed.port;
+  return parsed.protocol === 'https:' ? '443' : '80';
+}
+
+function isLoopback(parsed) {
+  const host = parsed.hostname.toLowerCase();
+  return host === '127.0.0.1' || host === 'localhost' || host === '::1';
+}
+
+if (!dataDir) {
+  console.error(
+    'Missing --data-dir (or LIBRAGENT_DATA_DIR). The smoke matrix only talks to an isolated profile, never the user profile on port 3030.',
+  );
+  process.exit(2);
+}
+if (userProfileDirs().some((dir) => samePath(dir, dataDir))) {
+  console.error(
+    `Refusing ${dataDir}: that is a user profile. Pass an isolated LIBRAGENT_DATA_DIR.`,
+  );
+  process.exit(2);
+}
+
+const isolatedPort = readIsolatedPort(dataDir);
+const requestedUrl = arg('base-url', null);
+let baseUrl;
+if (requestedUrl) {
+  const parsed = parsedHttpUrl(requestedUrl);
+  const requestedPort = parsed ? portOf(parsed) : null;
+  if (requestedPort !== isolatedPort) {
+    console.error(
+      `Refusing ${requestedUrl}: its port does not match ${path.join(dataDir, 'http_port')} (${isolatedPort}).`,
+    );
+    process.exit(2);
+  }
+  if (!isLoopback(parsed)) {
+    console.error(
+      `Refusing ${requestedUrl}: --base-url must use a loopback host (127.0.0.1, localhost, or ::1).`,
+    );
+    process.exit(2);
+  }
+  baseUrl = requestedUrl.replace(/\/$/, '');
+} else {
+  baseUrl = `http://127.0.0.1:${isolatedPort}`;
+}
 
 if (!assistantId) {
   console.error('Missing --assistant <config-id>. Run with --assistant <id>.');
