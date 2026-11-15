@@ -22,6 +22,7 @@ function SkillsManagementPanelComponent({
     userSkills,
     systemDirectory,
     userDirectory,
+    pluginSources,
     isDragging,
     pendingInstall,
     pendingInstallSystemConflicts,
@@ -40,7 +41,11 @@ function SkillsManagementPanelComponent({
     handleOpenDirectory,
     handleGitHubInstall,
     confirmPendingInstall,
+    confirmPendingInstallWithoutHooks,
     togglePendingOverwrite,
+    setPendingApproveHooks,
+    handleReinstallPluginSource,
+    handleDeletePluginSource,
     handleDeleteUserSkill,
     handleResetUserSkills,
   } = useSkillsManagementPanel();
@@ -61,6 +66,10 @@ function SkillsManagementPanelComponent({
         isInstallingGithub={isInstallingGithub}
         isInstallingLocal={isInstallingLocal}
         isResettingUserSkills={isResettingUserSkills}
+        pluginSources={pluginSources}
+        removingPluginSourceId={isDeletingSkill}
+        onUpdatePluginSource={(url) => void handleReinstallPluginSource(url)}
+        onRemovePluginSource={(id) => void handleDeletePluginSource(id)}
         onRepoUrlChange={setRepoUrl}
         onRefresh={() => void refresh()}
         onViewInstalled={() => setIsModalOpen(true)}
@@ -90,7 +99,9 @@ function SkillsManagementPanelComponent({
           }
         }}
         onToggleOverwrite={togglePendingOverwrite}
+        onApproveHooksChange={setPendingApproveHooks}
         onConfirm={confirmPendingInstall}
+        onConfirmWithoutHooks={confirmPendingInstallWithoutHooks}
       />
 
       <SkillsResetDialog

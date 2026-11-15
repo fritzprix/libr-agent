@@ -149,5 +149,16 @@ pub async fn resume_session(
     .await;
 
     log::info!("Resumed agent session: {}", session_id);
+
+    let hook_session_id = session_id.to_string();
+    tauri::async_runtime::spawn(async move {
+        crate::services::hooks::run_session_start(
+            &hook_session_id,
+            crate::services::hooks::SessionStartSource::Resume,
+            None,
+        )
+        .await;
+    });
+
     Ok(session)
 }

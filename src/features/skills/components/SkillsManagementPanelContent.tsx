@@ -20,6 +20,8 @@ import {
 } from '@/components/ui';
 import { formatSkillDisplayPath } from '@/features/settings/components/SkillsListModal';
 import { cn } from '@/lib/utils';
+import type { PluginSourceOverview } from '@/types/skills';
+import { PluginSourcesList } from './PluginSourcesList';
 import type {
   SkillsDirectoryScope,
   SkillsManagementDirectories,
@@ -38,6 +40,10 @@ interface SkillsManagementPanelContentProps
   isInstallingGithub: boolean;
   isInstallingLocal: boolean;
   isResettingUserSkills: boolean;
+  pluginSources: PluginSourceOverview[];
+  removingPluginSourceId: string | null;
+  onUpdatePluginSource: (sourceUrl: string) => void | Promise<void>;
+  onRemovePluginSource: (sourceId: string) => void | Promise<void>;
   onRepoUrlChange: (value: string) => void;
   onRefresh: () => void;
   onViewInstalled: () => void;
@@ -75,6 +81,10 @@ export function SkillsManagementPanelContent({
   isInstallingGithub,
   isInstallingLocal,
   isResettingUserSkills,
+  pluginSources,
+  removingPluginSourceId,
+  onUpdatePluginSource,
+  onRemovePluginSource,
   onRepoUrlChange,
   onRefresh,
   onViewInstalled,
@@ -253,6 +263,14 @@ export function SkillsManagementPanelContent({
           </p>
         </div>
       </div>
+
+      <PluginSourcesList
+        sources={pluginSources}
+        isBusy={isInstallingGithub || isInstallingLocal}
+        removingId={removingPluginSourceId}
+        onUpdate={onUpdatePluginSource}
+        onRemove={onRemovePluginSource}
+      />
 
       <div className="space-y-3">
         <div className="rounded-lg border bg-background p-3 space-y-2">

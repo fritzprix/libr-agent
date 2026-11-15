@@ -1,6 +1,7 @@
 import { safeInvoke } from './core';
 import type {
   ManagedSkillsOverview,
+  PluginSourceOverview,
   SkillImportPreview,
   SkillImportResult,
   SkillMetadata,
@@ -67,11 +68,13 @@ export async function importUserSkills(
   filePath: string,
   overwriteExisting: boolean,
   excludedSkillNames?: string[],
+  approveHooks?: boolean,
 ): Promise<SkillImportResult> {
   return safeInvoke<SkillImportResult>('import_user_skills', {
     filePath,
     overwriteExisting,
     excludedSkillNames,
+    approveHooks,
   });
 }
 
@@ -87,12 +90,22 @@ export async function installGitHubSkills(
   repoUrl: string,
   overwriteExisting: boolean,
   excludedSkillNames?: string[],
+  approveHooks?: boolean,
 ): Promise<SkillImportResult> {
   return safeInvoke<SkillImportResult>('install_github_skills', {
     repoUrl,
     overwriteExisting,
     excludedSkillNames,
+    approveHooks,
   });
+}
+
+export async function listPluginSources(): Promise<PluginSourceOverview[]> {
+  return safeInvoke<PluginSourceOverview[]>('list_plugin_sources');
+}
+
+export async function deletePluginSource(sourceId: string): Promise<void> {
+  return safeInvoke<void>('delete_plugin_source', { sourceId });
 }
 
 /**

@@ -226,9 +226,13 @@ pub(crate) async fn build_session_system_prompt_split(
 
     // --- Build per-turn sections fresh each call ---
     let proxy = proxy_manager.get_proxy(session_id).await;
-    let (cacheable_context, volatile) =
-        build_volatile_sections_split(Some(context_registry), proxy, agent_config.id.as_deref())
-            .await;
+    let (cacheable_context, volatile) = build_volatile_sections_split(
+        Some(context_registry),
+        proxy,
+        agent_config.id.as_deref(),
+        Some(session_id),
+    )
+    .await;
 
     let stable_prompt = if cacheable_context.trim().is_empty() {
         stable_prefix
@@ -333,7 +337,8 @@ pub async fn build_system_prompt(
         workspace_instructions,
     );
     let (cacheable_context, volatile) =
-        build_volatile_sections_split(context_registry, proxy, agent_config.id.as_deref()).await;
+        build_volatile_sections_split(context_registry, proxy, agent_config.id.as_deref(), None)
+            .await;
 
     let stable = if cacheable_context.trim().is_empty() {
         stable
@@ -488,9 +493,20 @@ async fn build_volatile_sections_split(
     context_registry: Option<Arc<crate::agent::context::registry::ContextRegistry>>,
     proxy: Option<Arc<MCPServiceProxy>>,
     assistant_id: Option<&str>,
+    session_id: Option<&str>,
 ) -> (String, String) {
     let mut cacheable_parts: Vec<String> = Vec::new();
     let mut volatile_parts: Vec<String> = Vec::new();
+
+    if let Some(session_id) = session_id {
+        if let Some(hook_context) = crate::services::hooks::get_hook_context(session_id) {
+            let trimmed = hook_context.trim();
+            if !trimmed.is_empty() {
+                cacheable_parts.push("\n\n## Plugin Hook Context\n".to_string());
+                cacheable_parts.push(trimmed.to_string());
+            }
+        }
+    }
 
     // 5. Read-only Context Providers (time, skills, documentation, etc.)
     // Context providers currently emit one merged block without per-provider

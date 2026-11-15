@@ -70,10 +70,15 @@ describe('useSkillsManagementPanel scoped-skills revalidation', () => {
       userSkills: [],
       systemDirectory: '',
       userDirectory: '',
+      pluginSources: [],
     });
     skillsBackend.getAggregatedSkills.mockResolvedValue([]);
     skillsBackend.previewGitHubSkillInstall.mockResolvedValue({
+      kind: 'skillBundle',
       conflicts: [],
+      discoveredSkills: [],
+      hooks: [],
+      hooksRequireApproval: false,
     });
     skillsBackend.installGitHubSkills.mockResolvedValue({
       importedNames: ['new-skill'],

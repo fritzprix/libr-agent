@@ -227,6 +227,8 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
         .await
         .map_err(|e| format!("Failed to create session: {}", e))?;
 
+    let spawn_session_start_hooks = session.status != SessionStatus::Provisioning;
+
     if session.workspace_isolation == WorkspaceIsolationMode::Docker {
         crate::services::docker_provisioning::spawn_docker_provisioning(
             crate::services::docker_provisioning::DockerProvisioningDeps {
@@ -282,6 +284,18 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
     .await;
 
     log::info!("Created agent session: {}", session_id);
+
+    if spawn_session_start_hooks {
+        let hook_session_id = session_id.clone();
+        tauri::async_runtime::spawn(async move {
+            crate::services::hooks::run_session_start(
+                &hook_session_id,
+                crate::services::hooks::SessionStartSource::Startup,
+                None,
+            )
+            .await;
+        });
+    }
 
     // Emit resource updated event for frontend cache revalidation
     crate::agent::tauri_events::emit_resource_updated(

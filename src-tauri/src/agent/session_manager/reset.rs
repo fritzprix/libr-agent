@@ -143,6 +143,16 @@ pub(crate) async fn reset_session(
         }
     });
 
+    let hook_session_id = session_id.to_string();
+    tauri::async_runtime::spawn(async move {
+        crate::services::hooks::run_session_start(
+            &hook_session_id,
+            crate::services::hooks::SessionStartSource::Clear,
+            None,
+        )
+        .await;
+    });
+
     Ok(())
 }
 

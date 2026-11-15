@@ -381,5 +381,15 @@ pub(super) async fn persist_compact_summary_and_resume(
     )
     .await?;
 
+    let hook_session_id = context.session_id.to_string();
+    tauri::async_runtime::spawn(async move {
+        crate::services::hooks::run_session_start(
+            &hook_session_id,
+            crate::services::hooks::SessionStartSource::Compact,
+            None,
+        )
+        .await;
+    });
+
     Ok(CompactResponseOutcome { retried: false })
 }

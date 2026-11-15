@@ -254,12 +254,15 @@ pub async fn get_managed_skills_overview_for_directories(
     system_skills.sort_by_cached_key(|skill| skill.name.to_lowercase());
     user_skills.sort_by_cached_key(|skill| skill.name.to_lowercase());
 
+    let plugin_sources = super::plugin_sources::list_plugin_source_overviews()?;
+
     Ok(ManagedSkillsOverview {
         system_directory: system_dir.to_string_lossy().to_string(),
         user_directory: user_dir.to_string_lossy().to_string(),
         system_skills,
         user_skills,
         effective_skills,
+        plugin_sources,
     })
 }
 

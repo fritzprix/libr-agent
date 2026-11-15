@@ -1,7 +1,8 @@
 use super::cache::{invalidate_skill_scan_cache, scan_skills_internal_cached};
 use super::contracts::{
-    DiscoveredSkillRoot, PreparedSkillImport, SkillImportCandidate, SkillImportConflict,
-    SkillImportPreview, SkillImportResult, SkillMetadata, GITHUB_DOWNLOAD_CONNECT_TIMEOUT_SECS,
+    DiscoveredSkillRoot, HookPreviewEntry, HookPreviewExecutionStatus, PreparedSkillImport,
+    SkillImportCandidate, SkillImportConflict, SkillImportKind, SkillImportPreview,
+    SkillImportResult, SkillMetadata, GITHUB_DOWNLOAD_CONNECT_TIMEOUT_SECS,
     GITHUB_DOWNLOAD_TIMEOUT_SECS, MAX_GITHUB_ARCHIVE_BYTES, SKILL_FILE_NAME,
 };
 use super::directories::{
@@ -10,12 +11,18 @@ use super::directories::{
 };
 use super::github::parse_github_repo_url;
 use super::scanning::{copy_dir_recursive, parse_skill_metadata};
+use crate::services::hooks::registry::{
+    get_user_plugins_directory, save_source, PluginSourceManifest,
+};
+use crate::services::hooks::schema::{
+    load_hooks_from_root, HookDispatchMode, HookEvent, HookHandler, HooksConfig,
+};
 use crate::session::get_session_manager;
 use crate::state::wait_for_managed_skills_sync;
 use log::warn;
 use reqwest::header::USER_AGENT;
 use sha2::{Digest, Sha256};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::{self};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -25,42 +32,46 @@ use walkdir::WalkDir;
 
 pub async fn preview_user_skill_import(file_path: String) -> Result<SkillImportPreview, String> {
     let prepared = prepare_local_skill_import(file_path).await?;
-    build_user_import_preview(&prepared.discovered_skills).await
+    build_user_import_preview(&prepared).await
 }
 
 pub async fn import_user_skills(
     file_path: String,
     overwrite_existing: bool,
     excluded_skill_names: Option<Vec<String>>,
+    approve_hooks: Option<bool>,
 ) -> Result<SkillImportResult, String> {
     let prepared = prepare_local_skill_import(file_path).await?;
-    let preview = build_user_import_preview(&prepared.discovered_skills).await?;
+    let preview = build_user_import_preview(&prepared).await?;
     install_user_prepared_skills(
         prepared,
         preview,
         overwrite_existing,
         excluded_skill_names.unwrap_or_default(),
+        approve_hooks.unwrap_or(false),
     )
     .await
 }
 
 pub async fn preview_github_skill_install(repo_url: String) -> Result<SkillImportPreview, String> {
     let prepared = prepare_github_skill_import(repo_url).await?;
-    build_user_import_preview(&prepared.discovered_skills).await
+    build_user_import_preview(&prepared).await
 }
 
 pub async fn install_github_skills(
     repo_url: String,
     overwrite_existing: bool,
     excluded_skill_names: Option<Vec<String>>,
+    approve_hooks: Option<bool>,
 ) -> Result<SkillImportResult, String> {
     let prepared = prepare_github_skill_import(repo_url).await?;
-    let preview = build_user_import_preview(&prepared.discovered_skills).await?;
+    let preview = build_user_import_preview(&prepared).await?;
     install_user_prepared_skills(
         prepared,
         preview,
         overwrite_existing,
         excluded_skill_names.unwrap_or_default(),
+        approve_hooks.unwrap_or(false),
     )
     .await
 }
@@ -248,11 +259,14 @@ fn prepare_local_skill_import_blocking(
     let discovered_skills = discover_skill_roots(&staging_dir)?;
     Ok(PreparedSkillImport {
         _temp_dir: temp_dir,
+        scan_root: staging_dir,
+        source_key: file_path.to_string(),
         discovered_skills,
     })
 }
 
 async fn prepare_github_skill_import(repo_url: String) -> Result<PreparedSkillImport, String> {
+    let source_key = repo_url.clone();
     let repo_spec = parse_github_repo_url(&repo_url)?;
     let temp_root = build_temp_root()?;
     let temp_dir = tempfile::Builder::new()
@@ -351,6 +365,8 @@ async fn prepare_github_skill_import(repo_url: String) -> Result<PreparedSkillIm
         let discovered_skills = discover_skill_roots(&scan_root)?;
         Ok(PreparedSkillImport {
             _temp_dir: temp_dir,
+            scan_root,
+            source_key,
             discovered_skills,
         })
     })
@@ -359,8 +375,9 @@ async fn prepare_github_skill_import(repo_url: String) -> Result<PreparedSkillIm
 }
 
 async fn build_user_import_preview(
-    discovered_skills: &[DiscoveredSkillRoot],
+    prepared: &PreparedSkillImport,
 ) -> Result<SkillImportPreview, String> {
+    let discovered_skills = &prepared.discovered_skills;
     wait_for_managed_skills_sync().await;
 
     let system_dir = get_system_skills_directory()?;
@@ -388,9 +405,24 @@ async fn build_user_import_preview(
     let conflicts =
         build_skill_import_conflicts(&discovered_candidates, &system_skills, &user_skills);
 
+    let hooks_config = try_load_plugin_hooks(&prepared.scan_root)?;
+    let hooks = hooks_config
+        .as_ref()
+        .map(build_hook_preview_entries)
+        .unwrap_or_default();
+    let kind = if hooks.is_empty() {
+        SkillImportKind::SkillBundle
+    } else {
+        SkillImportKind::Plugin
+    };
+    let hooks_require_approval = !hooks.is_empty();
+
     Ok(SkillImportPreview {
+        kind,
         discovered_skills: discovered_candidates,
         conflicts,
+        hooks,
+        hooks_require_approval,
     })
 }
 
@@ -449,6 +481,7 @@ async fn install_user_prepared_skills(
     preview: SkillImportPreview,
     overwrite_existing: bool,
     excluded_skill_names: Vec<String>,
+    approve_hooks: bool,
 ) -> Result<SkillImportResult, String> {
     let mut excluded_names = excluded_skill_names
         .into_iter()
@@ -482,6 +515,8 @@ async fn install_user_prepared_skills(
 
     let PreparedSkillImport {
         _temp_dir,
+        scan_root,
+        source_key,
         discovered_skills,
     } = prepared;
     let mut skipped_names = Vec::new();
@@ -500,9 +535,20 @@ async fn install_user_prepared_skills(
     let user_dir = get_user_skills_directory()?;
     let prepared = PreparedSkillImport {
         _temp_dir,
+        scan_root: scan_root.clone(),
+        source_key: source_key.clone(),
         discovered_skills: selected_skills,
     };
     let mut result = install_prepared_skills_to_directory(prepared, user_dir, overwrite_existing)?;
+
+    if preview.kind == SkillImportKind::Plugin {
+        install_plugin_source(
+            &scan_root,
+            &source_key,
+            &result.imported_names,
+            approve_hooks,
+        )?;
+    }
 
     if overwrite_existing {
         let conflict_names = retained_conflicts
@@ -710,5 +756,197 @@ fn find_archive_root(extract_dir: &Path) -> Result<PathBuf, String> {
         Ok(child_dirs.remove(0))
     } else {
         Ok(extract_dir.to_path_buf())
+    }
+}
+
+fn try_load_plugin_hooks(scan_root: &Path) -> Result<Option<HooksConfig>, String> {
+    let hooks_dir = scan_root.join("hooks");
+    if !hooks_dir.is_dir() {
+        return Ok(None);
+    }
+    let has_config =
+        hooks_dir.join("hooks.json").is_file() || hooks_dir.join("hooks-cursor.json").is_file();
+    if !has_config {
+        return Ok(None);
+    }
+    load_hooks_from_root(scan_root).map(Some)
+}
+
+fn build_hook_preview_entries(config: &HooksConfig) -> Vec<HookPreviewEntry> {
+    let mut entries = Vec::new();
+    for (event, groups) in &config.events {
+        let execution_status = match event.dispatch_mode() {
+            HookDispatchMode::Execute => HookPreviewExecutionStatus::Executed,
+            HookDispatchMode::Stub => HookPreviewExecutionStatus::Stubbed,
+        };
+        for group in groups {
+            for handler in &group.handlers {
+                entries.push(HookPreviewEntry {
+                    event: event.as_str().to_string(),
+                    matcher: group.matcher.clone(),
+                    command: handler.command.clone(),
+                    powershell: handler.powershell.clone(),
+                    script_body: None,
+                    execution_status,
+                });
+            }
+        }
+    }
+    entries.sort_by(|a, b| {
+        a.event
+            .cmp(&b.event)
+            .then_with(|| a.matcher.cmp(&b.matcher))
+            .then_with(|| a.command.cmp(&b.command))
+    });
+    entries
+}
+
+fn plugin_source_id(source_key: &str) -> String {
+    let digest = Sha256::digest(source_key.as_bytes());
+    format!("plugin-{}", &format!("{:x}", digest)[..16])
+}
+
+fn compute_handler_approval_hashes(config: &HooksConfig) -> BTreeMap<String, String> {
+    let mut map = BTreeMap::new();
+    for (event, groups) in &config.events {
+        for group in groups {
+            for handler in &group.handlers {
+                let key = approval_hash_key(event, group.matcher.as_deref(), handler);
+                map.insert(key, approval_hash_value(handler));
+            }
+        }
+    }
+    map
+}
+
+fn approval_hash_key(event: &HookEvent, matcher: Option<&str>, handler: &HookHandler) -> String {
+    let digest = Sha256::digest(
+        format!(
+            "{}|{}|{}|{}",
+            event.as_str(),
+            matcher.unwrap_or("*"),
+            handler.command,
+            handler.powershell.as_deref().unwrap_or("")
+        )
+        .as_bytes(),
+    );
+    format!("{:x}", digest)
+}
+
+fn approval_hash_value(handler: &HookHandler) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(handler.command.as_bytes());
+    if let Some(ps) = &handler.powershell {
+        hasher.update(ps.as_bytes());
+    }
+    format!("{:x}", hasher.finalize())
+}
+
+fn install_plugin_source(
+    scan_root: &Path,
+    source_key: &str,
+    skill_names: &[String],
+    approve_hooks: bool,
+) -> Result<(), String> {
+    let config = try_load_plugin_hooks(scan_root)?
+        .ok_or_else(|| "Plugin hooks configuration missing during install".to_string())?;
+
+    let source_id = plugin_source_id(source_key);
+    let target = get_user_plugins_directory()?.join(&source_id);
+    if target.exists() {
+        fs::remove_dir_all(&target).map_err(|e| e.to_string())?;
+    }
+    copy_dir_recursive(scan_root, &target)?;
+
+    let approval_hashes = if approve_hooks {
+        compute_handler_approval_hashes(&config)
+    } else {
+        BTreeMap::new()
+    };
+
+    save_source(PluginSourceManifest {
+        source_url: source_key.to_string(),
+        source_id,
+        skill_names: skill_names.to_vec(),
+        hooks: Some(crate::services::hooks::registry::HooksConfigSnapshot {
+            version: config.version,
+            validated: true,
+        }),
+        hooks_approved: approve_hooks,
+        approval_hashes,
+        created_at: chrono::Utc::now().timestamp(),
+    })?;
+
+    Ok(())
+}
+
+pub(super) fn remove_skill_names_from_user_skills(
+    user_dir: &Path,
+    skill_names: &[String],
+) -> Result<(), String> {
+    let mut cache_invalidation_guard = SkillCacheInvalidationGuard::new();
+    for name in skill_names {
+        if remove_skill_name_from_directory(user_dir, name).is_ok() {
+            cache_invalidation_guard.mark_mutated();
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod hook_preview_tests {
+    use super::*;
+    use std::fs;
+
+    fn write_valid_skill(dir: &Path, name: &str) {
+        fs::create_dir_all(dir).unwrap();
+        fs::write(
+            dir.join("SKILL.md"),
+            format!("---\nname: {name}\ndescription: test\n---\n"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn skill_bundle_when_no_hooks_present() {
+        let dir = tempfile::tempdir().unwrap();
+        write_valid_skill(dir.path(), "alpha");
+        let hooks = try_load_plugin_hooks(dir.path()).unwrap();
+        assert!(hooks.is_none());
+    }
+
+    #[test]
+    fn plugin_preview_when_hooks_valid() {
+        let dir = tempfile::tempdir().unwrap();
+        write_valid_skill(dir.path(), "alpha");
+        let hooks_dir = dir.path().join("hooks");
+        fs::create_dir_all(&hooks_dir).unwrap();
+        fs::write(
+            hooks_dir.join("hooks.json"),
+            r#"{"hooks":{"SessionStart":[{"command":"echo hi"}]}}"#,
+        )
+        .unwrap();
+        let cfg = try_load_plugin_hooks(dir.path()).unwrap().expect("hooks");
+        let entries = build_hook_preview_entries(&cfg);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            entries[0].execution_status,
+            HookPreviewExecutionStatus::Executed
+        );
+    }
+
+    #[test]
+    fn invalid_hooks_fail_preview_load() {
+        let dir = tempfile::tempdir().unwrap();
+        write_valid_skill(dir.path(), "alpha");
+        let hooks_dir = dir.path().join("hooks");
+        fs::create_dir_all(&hooks_dir).unwrap();
+        fs::write(
+            hooks_dir.join("hooks.json"),
+            r#"{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"x","timeout":0}]}]}}"#,
+        )
+        .unwrap();
+        let err = try_load_plugin_hooks(dir.path()).unwrap_err();
+        assert!(err.contains("timeout"));
     }
 }
