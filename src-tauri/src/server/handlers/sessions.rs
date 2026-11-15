@@ -315,6 +315,29 @@ async fn patch_session_reply(
         );
     }
 
+    // Validate every field before mutating so a bad mode cannot leave a
+    // half-applied rename (#2763 G1.2).
+    let validated_mode = match body.execution_mode.as_ref() {
+        Some(raw_mode) => match raw_mode.parse::<ExecutionMode>() {
+            Ok(mode) => Some(mode),
+            Err(error) => return resolve_error_reply(StatusCode::BAD_REQUEST, error),
+        },
+        None => None,
+    };
+    let validated_name = match body.name.as_ref() {
+        Some(raw_name) => {
+            let name = raw_name.trim();
+            if name.is_empty() {
+                return resolve_error_reply(
+                    StatusCode::BAD_REQUEST,
+                    "name must not be empty".to_string(),
+                );
+            }
+            Some(name.to_string())
+        }
+        None => None,
+    };
+
     let mut response = PatchSessionResponse {
         id: display_session_id(&id),
         execution_mode: None,
@@ -322,25 +345,7 @@ async fn patch_session_reply(
         resolved_approval_ids: Vec::new(),
     };
 
-    if let Some(raw_name) = body.name.as_ref() {
-        let name = raw_name.trim();
-        if name.is_empty() {
-            return resolve_error_reply(
-                StatusCode::BAD_REQUEST,
-                "name must not be empty".to_string(),
-            );
-        }
-        if let Err(error) = session_repo.update_name(&id, name.to_string()).await {
-            return resolve_error_reply(StatusCode::INTERNAL_SERVER_ERROR, error.to_string());
-        }
-        response.name = Some(name.to_string());
-    }
-
-    if let Some(raw_mode) = body.execution_mode.as_ref() {
-        let mode = match raw_mode.parse::<ExecutionMode>() {
-            Ok(mode) => mode,
-            Err(error) => return resolve_error_reply(StatusCode::BAD_REQUEST, error),
-        };
+    if let Some(mode) = validated_mode {
         match set_execution_mode_in(active_sessions, session_repo, app_handle, &id, mode).await {
             Ok(resolved_approval_ids) => {
                 response.execution_mode = Some(mode);
@@ -348,6 +353,13 @@ async fn patch_session_reply(
             }
             Err(error) => return resolve_error_reply(StatusCode::INTERNAL_SERVER_ERROR, error),
         }
+    }
+
+    if let Some(name) = validated_name {
+        if let Err(error) = session_repo.update_name(&id, name.clone()).await {
+            return resolve_error_reply(StatusCode::INTERNAL_SERVER_ERROR, error.to_string());
+        }
+        response.name = Some(name);
     }
 
     warp::reply::with_status(warp::reply::json(&response), StatusCode::OK)
@@ -853,6 +865,115 @@ mod tests {
             repo.get_session(id).await.unwrap().unwrap().execution_mode,
             ExecutionMode::Normal
         );
+    }
+
+    #[tokio::test]
+    async fn patch_session_renames_without_changing_execution_mode() {
+        let repo = sqlite_session_repo().await;
+        let id = "rename01abc";
+        let mut metadata = SessionMetadata::test_fixture(id);
+        metadata.name = Some("Old Name".to_string());
+        metadata.execution_mode = ExecutionMode::Normal;
+        repo.upsert_session(&metadata).await.expect("store");
+        let active_sessions = RwLock::new(HashMap::new());
+
+        let (status, json) = reply_to_json(
+            patch_session_reply(
+                id,
+                PatchSessionRequest {
+                    execution_mode: None,
+                    name: Some("New Name".to_string()),
+                },
+                &active_sessions,
+                &repo,
+                None,
+            )
+            .await,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(json["name"], "New Name");
+        assert!(json.get("executionMode").is_none() || json["executionMode"].is_null());
+        assert_eq!(
+            repo.get_session(id).await.unwrap().unwrap().name.as_deref(),
+            Some("New Name")
+        );
+    }
+
+    #[tokio::test]
+    async fn patch_session_rejects_empty_name_and_empty_body() {
+        let repo = sqlite_session_repo().await;
+        let id = "rename02def";
+        let mut metadata = SessionMetadata::test_fixture(id);
+        metadata.name = Some("Keep".to_string());
+        repo.upsert_session(&metadata).await.expect("store");
+        let active_sessions = RwLock::new(HashMap::new());
+
+        let (status, _) = reply_to_json(
+            patch_session_reply(
+                id,
+                PatchSessionRequest {
+                    execution_mode: None,
+                    name: Some("   ".to_string()),
+                },
+                &active_sessions,
+                &repo,
+                None,
+            )
+            .await,
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(
+            repo.get_session(id).await.unwrap().unwrap().name.as_deref(),
+            Some("Keep")
+        );
+
+        let (status, _) = reply_to_json(
+            patch_session_reply(
+                id,
+                PatchSessionRequest {
+                    execution_mode: None,
+                    name: None,
+                },
+                &active_sessions,
+                &repo,
+                None,
+            )
+            .await,
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn patch_session_invalid_mode_does_not_apply_a_pending_rename() {
+        let repo = sqlite_session_repo().await;
+        let id = "rename03ghi";
+        let mut metadata = SessionMetadata::test_fixture(id);
+        metadata.name = Some("Original".to_string());
+        metadata.execution_mode = ExecutionMode::Normal;
+        repo.upsert_session(&metadata).await.expect("store");
+        let active_sessions = RwLock::new(HashMap::new());
+
+        let (status, _) = reply_to_json(
+            patch_session_reply(
+                id,
+                PatchSessionRequest {
+                    execution_mode: Some("not-a-mode".to_string()),
+                    name: Some("Should Not Stick".to_string()),
+                },
+                &active_sessions,
+                &repo,
+                None,
+            )
+            .await,
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        let stored = repo.get_session(id).await.unwrap().unwrap();
+        assert_eq!(stored.name.as_deref(), Some("Original"));
+        assert_eq!(stored.execution_mode, ExecutionMode::Normal);
     }
 
     // ---- Session ownership over the Session API (#2759) ----

@@ -45,17 +45,12 @@ pub fn parse_session_command(text: &str) -> Option<SessionCommand> {
         "new" => Some(SessionCommand::New {
             assistant_id: parts.next().map(str::to_string),
         }),
-        "resume" | "history" => Some(SessionCommand::Resume {
+        "resume" => Some(SessionCommand::Resume {
             session_id: parts.next().map(str::to_string),
         }),
-        "rename" => {
-            let name = parts.collect::<Vec<_>>().join(" ");
-            if name.is_empty() {
-                None
-            } else {
-                Some(SessionCommand::Rename { name })
-            }
-        }
+        "rename" => Some(SessionCommand::Rename {
+            name: parts.collect::<Vec<_>>().join(" "),
+        }),
         "delete" => Some(SessionCommand::Delete {
             session_id: parts.next().map(str::to_string),
         }),
@@ -235,6 +230,17 @@ pub async fn create_new_session(
     Ok((id, name))
 }
 
+/// Map a Session API open error to a TUI notice when ownership refuses entry.
+pub fn map_open_refusal(session_id: &str, err: &str) -> Result<(), String> {
+    if err.contains(crate::server::session_ownership::OPEN_ELSEWHERE_MESSAGE) {
+        Err(format!(
+            "Session {session_id} is open elsewhere or running — entry refused"
+        ))
+    } else {
+        Err(err.to_string())
+    }
+}
+
 /// Open a session for this frontend; map ownership refusal to a clear notice.
 pub async fn open_session_or_refuse(
     api: &SharedBackendClient,
@@ -242,10 +248,7 @@ pub async fn open_session_or_refuse(
 ) -> Result<(), String> {
     match api.open_session(session_id).await {
         Ok(_) => Ok(()),
-        Err(err) if err.contains("open in another process") => Err(format!(
-            "Session {session_id} is open elsewhere or running — entry refused"
-        )),
-        Err(err) => Err(err),
+        Err(err) => map_open_refusal(session_id, &err),
     }
 }
 
@@ -313,10 +316,7 @@ mod tests {
             parse_session_command("/resume"),
             Some(SessionCommand::Resume { session_id: None })
         );
-        assert_eq!(
-            parse_session_command("/history"),
-            Some(SessionCommand::Resume { session_id: None })
-        );
+        assert_eq!(parse_session_command("/history"), None);
         assert_eq!(
             parse_session_command("/resume abc"),
             Some(SessionCommand::Resume {
@@ -329,7 +329,12 @@ mod tests {
                 name: "Hello World".into()
             })
         );
-        assert_eq!(parse_session_command("/rename"), None);
+        assert_eq!(
+            parse_session_command("/rename"),
+            Some(SessionCommand::Rename {
+                name: String::new()
+            })
+        );
         assert_eq!(
             parse_session_command("/delete"),
             Some(SessionCommand::Delete { session_id: None })
@@ -372,5 +377,20 @@ mod tests {
             picker.handle_key(KeyEvent::from(KeyCode::Enter)),
             PickerAction::Open("s1".into())
         );
+    }
+
+    #[test]
+    fn map_open_refusal_uses_the_real_ownership_message() {
+        let id = "sess_owned";
+        let server_err = format!(
+            "Session {id} {}",
+            crate::server::session_ownership::OPEN_ELSEWHERE_MESSAGE
+        );
+        let refused = map_open_refusal(id, &server_err).unwrap_err();
+        assert!(refused.contains("open elsewhere or running"));
+        assert!(refused.contains(id));
+
+        let other = map_open_refusal(id, "boom").unwrap_err();
+        assert_eq!(other, "boom");
     }
 }

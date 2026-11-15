@@ -193,13 +193,22 @@ impl ChatState {
                 }
                 if let Some(command) = parse_session_command(&text) {
                     self.composer.clear();
-                    if matches!(command, SessionCommand::Delete { session_id: None }) {
-                        let Some(id) = self.session_id.clone() else {
-                            self.notice = Some("No open session to delete".to_string());
+                    if let SessionCommand::Rename { name } = &command {
+                        if name.is_empty() {
+                            self.notice = Some("Usage: /rename <name>".to_string());
                             return ChatAction::None;
+                        }
+                    }
+                    if let SessionCommand::Delete { session_id } = &command {
+                        let id = match session_id.clone().or_else(|| self.session_id.clone()) {
+                            Some(id) => id,
+                            None => {
+                                self.notice = Some("No open session to delete".to_string());
+                                return ChatAction::None;
+                            }
                         };
-                        self.confirm_delete = Some(id);
-                        self.notice = Some("Delete this session? y/N".to_string());
+                        self.confirm_delete = Some(id.clone());
+                        self.notice = Some(format!("Delete session {id} and its children? y/N"));
                         return ChatAction::None;
                     }
                     return ChatAction::Session(command);
@@ -1263,12 +1272,45 @@ mod tests {
             ChatAction::None
         );
         assert_eq!(state.confirm_delete.as_deref(), Some("sess_1"));
+        assert!(state.notice.as_deref().unwrap_or("").contains("children"));
         assert_eq!(
             state.handle_key(KeyEvent::from(KeyCode::Char('y'))),
             ChatAction::Session(SessionCommand::Delete {
                 session_id: Some("sess_1".into())
             })
         );
+    }
+
+    #[test]
+    fn slash_delete_with_id_also_asks_for_confirm_and_n_cancels() {
+        let mut state = ChatState::new();
+        state.composer = "/delete other_sess".to_string();
+        assert_eq!(
+            state.handle_key(KeyEvent::from(KeyCode::Enter)),
+            ChatAction::None
+        );
+        assert_eq!(state.confirm_delete.as_deref(), Some("other_sess"));
+        assert_eq!(
+            state.handle_key(KeyEvent::from(KeyCode::Char('n'))),
+            ChatAction::None
+        );
+        assert!(state.confirm_delete.is_none());
+        assert!(state.notice.as_deref().unwrap_or("").contains("cancelled"));
+    }
+
+    #[test]
+    fn slash_rename_without_name_shows_usage() {
+        let mut state = ChatState::new();
+        state.composer = "/rename".to_string();
+        assert_eq!(
+            state.handle_key(KeyEvent::from(KeyCode::Enter)),
+            ChatAction::None
+        );
+        assert!(state
+            .notice
+            .as_deref()
+            .unwrap_or("")
+            .contains("/rename <name>"));
     }
 
     #[test]
