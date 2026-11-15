@@ -10,8 +10,9 @@ use crate::agent::state::{
 };
 use crate::server::shared_backend::SharedBackendClient;
 use crate::tui::sessions::{
-    create_new_session, delete_session, draw_picker, load_resume_picker, open_session_or_refuse,
-    parse_session_command, rename_session, PickerAction, SessionCommand, SessionPicker,
+    create_new_session, delete_session, draw_picker, load_history_picker, load_resume_picker,
+    open_session_or_refuse, parse_session_command, rename_session, PickerAction, SessionCommand,
+    SessionPicker,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::prelude::*;
@@ -1031,8 +1032,8 @@ async fn send_user_text(api: &SharedBackendClient, state: &mut ChatState, text: 
 /// implemented command group; only live commands are listed.
 fn help_lines() -> &'static [&'static str] {
     &[
-        "commands: /new [assistant] · /resume [id] · /rename <name> · /delete [id]",
-        "/permission normal|yolo|unsafe · /continue · /retry · /clear · /help · /quit",
+        "commands: /new [assistant] · /resume [id] · /history [search <text>] · /rename <name> · /delete [id]",
+        "/permission normal|yolo|unsafe · /continue · /retry · /reload · /clear · /help · /quit",
         "keys: Alt+Y approve · Alt+N reject · Tab focus prompt · Esc reject/back · Ctrl+C twice quit",
     ]
 }
@@ -1144,6 +1145,38 @@ async fn run_session_command(
         }
         SessionCommand::Clear | SessionCommand::Help => {
             // View-local commands complete in the composer handler.
+        }
+        SessionCommand::History { query } => match load_history_picker(api, query.as_deref()).await
+        {
+            Ok(picker) => {
+                if picker.rows.is_empty() {
+                    state.notice = match query {
+                        Some(q) => Some(format!("No sessions match \"{q}\"")),
+                        None => Some("No sessions to list".to_string()),
+                    };
+                } else {
+                    state.picker = Some(picker);
+                }
+            }
+            Err(err) => state.notice = Some(err),
+        },
+        SessionCommand::Reload => {
+            let Some(id) = state.session_id.clone() else {
+                state.notice = Some("No open session to reload".to_string());
+                return;
+            };
+            match api.get_messages(&id, Some(100)).await {
+                Ok(payload) => {
+                    if let Some(messages) = payload.get("messages").and_then(Value::as_array) {
+                        let count = messages.len();
+                        state.apply_messages(messages);
+                        state.notice = Some(format!("Reloaded {count} messages"));
+                    } else {
+                        state.notice = Some("Reload: unexpected messages payload".to_string());
+                    }
+                }
+                Err(err) => state.notice = Some(err),
+            }
         }
     }
 }
@@ -1481,6 +1514,43 @@ mod tests {
             .join("\n");
         assert!(joined.contains("/resume"));
         assert!(joined.contains("/permission"));
+    }
+
+    #[test]
+    fn slash_history_and_reload_dispatch_session_commands() {
+        let mut state = ChatState::new();
+        state.composer = "/history".to_string();
+        assert_eq!(
+            state.handle_key(KeyEvent::from(KeyCode::Enter)),
+            ChatAction::Session(SessionCommand::History { query: None })
+        );
+        state.composer = "/history search weekly".to_string();
+        assert_eq!(
+            state.handle_key(KeyEvent::from(KeyCode::Enter)),
+            ChatAction::Session(SessionCommand::History {
+                query: Some("weekly".into())
+            })
+        );
+        state.composer = "/reload".to_string();
+        assert_eq!(
+            state.handle_key(KeyEvent::from(KeyCode::Enter)),
+            ChatAction::Session(SessionCommand::Reload)
+        );
+    }
+
+    #[test]
+    fn slash_history_with_unwired_flag_is_unknown() {
+        let mut state = ChatState::new();
+        state.composer = "/history --sort recent".to_string();
+        assert_eq!(
+            state.handle_key(KeyEvent::from(KeyCode::Enter)),
+            ChatAction::None
+        );
+        assert!(state
+            .notice
+            .as_deref()
+            .unwrap_or("")
+            .contains("Unknown command"));
     }
 
     #[test]

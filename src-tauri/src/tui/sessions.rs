@@ -1,6 +1,6 @@
 //! TUI session commands: `/new`, `/resume`, list, `/rename`, `/delete` (#2763),
 //! plus the inline P0 verbs `/permission`, `/continue`, `/retry`, `/clear`,
-//! `/help` (#2764, parity §3.3).
+//! `/help`, `/history`, `/reload` (#2764, parity §3.3).
 //!
 //! Ownership badges follow #2759: a live foreign owner is **open elsewhere**,
 //! or **running** when the workflow is still driven (`busy` / `queued` /
@@ -53,6 +53,14 @@ pub enum SessionCommand {
     Clear,
     /// `/help` — command list (§3.3 rule 10).
     Help,
+    /// `/history [search <text>]` — session list picker (§2.11 list rows).
+    /// Search filters rows client-side; the §2.11 sort/status/lineage flags
+    /// are not wired yet and parse as unknown commands.
+    History {
+        query: Option<String>,
+    },
+    /// `/reload` — refetch the open session's messages into the transcript.
+    Reload,
 }
 
 /// Parse a leading `/…` composer line into a session command.
@@ -83,6 +91,20 @@ pub fn parse_session_command(text: &str) -> Option<SessionCommand> {
         "retry" => Some(SessionCommand::Retry),
         "clear" => Some(SessionCommand::Clear),
         "help" => Some(SessionCommand::Help),
+        "reload" => Some(SessionCommand::Reload),
+        "history" => {
+            let tokens: Vec<&str> = parts.collect();
+            match tokens.as_slice() {
+                [] => Some(SessionCommand::History { query: None }),
+                [word, rest @ ..] if *word == "search" && !rest.is_empty() => {
+                    Some(SessionCommand::History {
+                        query: Some(rest.join(" ")),
+                    })
+                }
+                // Sort/status/lineage flags (§2.11) are not wired yet.
+                _ => None,
+            }
+        }
         _ => None,
     }
 }
@@ -301,6 +323,25 @@ pub async fn load_resume_picker(api: &SharedBackendClient) -> Result<SessionPick
     SessionPicker::from_list_payload("/resume", &payload)
 }
 
+/// `/history [search <text>]` — session list, search filtered client-side
+/// against row name and id (§2.11 list rows).
+pub async fn load_history_picker(
+    api: &SharedBackendClient,
+    query: Option<&str>,
+) -> Result<SessionPicker, String> {
+    let mut picker = {
+        let payload = api.list_sessions(Some(50)).await?;
+        SessionPicker::from_list_payload("/history", &payload)?
+    };
+    if let Some(query) = query {
+        let needle = query.to_lowercase();
+        picker.rows.retain(|row| {
+            row.name.to_lowercase().contains(&needle) || row.id.to_lowercase().contains(&needle)
+        });
+    }
+    Ok(picker)
+}
+
 async fn first_assistant_id(api: &SharedBackendClient) -> Result<String, String> {
     let assistants = api.list_assistants().await?;
     let list = assistants
@@ -345,7 +386,10 @@ mod tests {
             parse_session_command("/resume"),
             Some(SessionCommand::Resume { session_id: None })
         );
-        assert_eq!(parse_session_command("/history"), None);
+        assert_eq!(
+            parse_session_command("/history"),
+            Some(SessionCommand::History { query: None })
+        );
         assert_eq!(
             parse_session_command("/resume abc"),
             Some(SessionCommand::Resume {
@@ -397,6 +441,28 @@ mod tests {
         assert_eq!(
             parse_session_command("/continue now"),
             Some(SessionCommand::Continue)
+        );
+    }
+
+    #[test]
+    fn parse_history_and_reload() {
+        assert_eq!(
+            parse_session_command("/history"),
+            Some(SessionCommand::History { query: None })
+        );
+        assert_eq!(
+            parse_session_command("/history search korean report"),
+            Some(SessionCommand::History {
+                query: Some("korean report".into())
+            })
+        );
+        // §2.11 sort/status/lineage flags are not wired yet — parse as
+        // unknown so the composer shows "Unknown command", not a silent miss.
+        assert_eq!(parse_session_command("/history --sort recent"), None);
+        assert_eq!(parse_session_command("/history search"), None);
+        assert_eq!(
+            parse_session_command("/reload"),
+            Some(SessionCommand::Reload)
         );
     }
 
