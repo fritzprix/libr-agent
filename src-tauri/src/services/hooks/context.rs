@@ -157,14 +157,17 @@ pub async fn wait_for_hook_run(session_id: &str, cap: Duration) -> bool {
     true
 }
 
-/// Prompt-build gate (#2812 G3.1): when a SessionStart hook is still running
-/// and nothing has landed in the context store yet, the first LLM request
-/// waits for it — bounded by the default hook timeout. A hook that exits 2,
-/// times out, or fails releases the marker, so the wait never outlives the
-/// run. Sessions that already have context (e.g. a compact re-run keeping
-/// the previous bootstrap) never wait.
+/// Prompt-build gate (#2812 G3.1 / G4.1): when a SessionStart hook is still
+/// running and no non-empty context is stored yet, the first LLM request
+/// waits for it — bounded by the default hook timeout. A blank placeholder
+/// armed before the first run produces output is not context, so it must
+/// not skip the wait. A hook that exits 2, times out, or fails releases the
+/// marker, so the wait never outlives the run. Sessions that already have
+/// non-empty context (e.g. a compact re-run keeping the previous bootstrap)
+/// never wait.
 pub async fn await_hook_run(session_id: &str) {
-    if get_hook_context(session_id).is_some() || !hook_run_pending(session_id) {
+    let has_context = get_hook_context(session_id).is_some_and(|text| !text.trim().is_empty());
+    if has_context || !hook_run_pending(session_id) {
         return;
     }
     // The run itself is bounded by each handler's timeout (default

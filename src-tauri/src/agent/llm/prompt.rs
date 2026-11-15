@@ -583,6 +583,85 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn first_prompt_waits_through_session_start_runner() {
+        // #2812 G4.1: `run_session_start_in` arms a blank placeholder before
+        // the command finishes. The prompt path must still wait and carry
+        // the hook output. Observing the blank entry first proves the call
+        // happens inside that window, not before the runner starts.
+        use crate::services::hooks::context::{
+            begin_hook_run, clear_hook_context, end_hook_run, get_hook_context,
+        };
+        use crate::services::hooks::envelope::SessionStartSource;
+        use crate::services::hooks::execute::run_session_start_in;
+        use crate::services::hooks::registry::{
+            compute_handler_approval_hashes, save_source_in, PluginSourceManifest,
+        };
+        use crate::services::hooks::schema::load_hooks_from_root;
+        use std::fs;
+        use std::time::{Duration, Instant};
+
+        #[cfg(target_os = "windows")]
+        let hooks_json = r#"{ "hooks": { "SessionStart": [ { "command": "ping -n 3 127.0.0.1 >nul && echo slow hook body" } ] } }"#;
+        #[cfg(not(target_os = "windows"))]
+        let hooks_json = r#"{ "hooks": { "SessionStart": [ { "command": "sleep 0.8 && echo slow hook body" } ] } }"#;
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source_id = "plugin-0123456789abcdef".to_string();
+        let root = temp.path().join(&source_id);
+        fs::create_dir_all(root.join("hooks")).unwrap();
+        fs::write(root.join("hooks").join("hooks.json"), hooks_json).unwrap();
+        let cfg = load_hooks_from_root(&root).unwrap();
+        let hashes = compute_handler_approval_hashes(&root, &cfg);
+        save_source_in(
+            temp.path(),
+            PluginSourceManifest {
+                source_url: "test://local".to_string(),
+                source_id,
+                skill_names: vec![],
+                hooks: None,
+                hooks_approved: true,
+                approval_hashes: hashes,
+                created_at: 0,
+            },
+        )
+        .unwrap();
+
+        let sid = format!("prompt-runner-{}", uuid::Uuid::new_v4());
+        clear_hook_context(&sid);
+        begin_hook_run(&sid);
+        let dir = temp.path().to_path_buf();
+        let run_sid = sid.clone();
+        let run_root = root.clone();
+        let run = tokio::spawn(async move {
+            run_session_start_in(&dir, &run_sid, SessionStartSource::Startup, Some(run_root)).await;
+            end_hook_run(&run_sid);
+        });
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let blank = get_hook_context(&sid).is_some_and(|text| text.trim().is_empty());
+            if blank {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "runner never stored the blank placeholder"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        let (cacheable, _volatile) =
+            build_volatile_sections_split(None, None, None, Some(&sid)).await;
+        assert!(
+            cacheable.contains("slow hook body"),
+            "first prompt must carry the hook output: {cacheable}"
+        );
+        assert!(cacheable.contains("## Plugin Hook Context"));
+        run.await.unwrap();
+        clear_hook_context(&sid);
+    }
+
+    #[tokio::test]
     async fn prompt_without_hook_run_does_not_wait() {
         // No marker, no context: the prompt path proceeds immediately.
         let sid = "test-prompt-hook-wait-none";
