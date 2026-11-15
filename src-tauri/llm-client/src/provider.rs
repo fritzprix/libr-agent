@@ -173,23 +173,84 @@ impl ChatProvider for OpenRouter {
     }
 }
 
+/// Groq: asks for reasoning to come back parsed, as the GUI does.
+#[derive(Debug, Clone)]
+pub struct Groq {
+    pub endpoint: Endpoint,
+}
+
+impl ChatProvider for Groq {
+    fn endpoint(&self) -> &Endpoint {
+        &self.endpoint
+    }
+
+    fn apply_thinking_effort(&self, body: &mut Value, effort: ThinkingEffort) {
+        if effort != ThinkingEffort::Off {
+            body["reasoning_format"] = json!("parsed");
+        }
+    }
+}
+
+/// Cerebras: plain OpenAI-compatible. Uses every default.
+#[derive(Debug, Clone)]
+pub struct Cerebras {
+    pub endpoint: Endpoint,
+}
+
+impl ChatProvider for Cerebras {
+    fn endpoint(&self) -> &Endpoint {
+        &self.endpoint
+    }
+}
+
+/// Ollama through its OpenAI-compatible API. Its Base URL is the server root
+/// (for example `http://127.0.0.1:11434`), as in the Settings screen.
+#[derive(Debug, Clone)]
+pub struct Ollama {
+    pub endpoint: Endpoint,
+}
+
+impl ChatProvider for Ollama {
+    fn endpoint(&self) -> &Endpoint {
+        &self.endpoint
+    }
+
+    fn request_url(&self, _model: &str) -> String {
+        format!(
+            "{}/v1/chat/completions",
+            self.endpoint.base_url.trim_end_matches('/')
+        )
+    }
+}
+
 const OPENAI_PROVIDER: &str = "openai";
 const FIREWORKS_PROVIDER: &str = "fireworks";
 const OPENROUTER_PROVIDER: &str = "openrouter";
 const ANTHROPIC_PROVIDER: &str = "anthropic";
 const GEMINI_PROVIDER: &str = "gemini";
+const GROQ_PROVIDER: &str = "groq";
+const CEREBRAS_PROVIDER: &str = "cerebras";
+const OLLAMA_PROVIDER: &str = "ollama";
 const CUSTOM_PROVIDER_PREFIX: &str = "custom:";
 const OPENAI_DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 const FIREWORKS_BASE_URL: &str = "https://api.fireworks.ai/inference/v1";
 const OPENROUTER_BASE_URL: &str = "https://openrouter.ai/api/v1";
 const ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com/v1";
 const GEMINI_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
+const GROQ_BASE_URL: &str = "https://api.groq.com/openai/v1";
+const CEREBRAS_BASE_URL: &str = "https://api.cerebras.ai/v1";
+const OLLAMA_BASE_URL: &str = "http://127.0.0.1:11434";
 
 /// True for the providers that speak the OpenAI chat-completions API.
 pub fn is_openai_compatible(provider: &str) -> bool {
     matches!(
         provider,
-        OPENAI_PROVIDER | FIREWORKS_PROVIDER | OPENROUTER_PROVIDER
+        OPENAI_PROVIDER
+            | FIREWORKS_PROVIDER
+            | OPENROUTER_PROVIDER
+            | GROQ_PROVIDER
+            | CEREBRAS_PROVIDER
+            | OLLAMA_PROVIDER
     ) || provider
         .strip_prefix(CUSTOM_PROVIDER_PREFIX)
         .is_some_and(|id| !id.is_empty())
@@ -210,17 +271,36 @@ pub fn provider_with_endpoint(provider: &str, endpoint: Endpoint) -> Option<Box<
         OPENAI_PROVIDER => Box::new(OpenAi { endpoint }),
         FIREWORKS_PROVIDER => Box::new(Fireworks { endpoint }),
         OPENROUTER_PROVIDER => Box::new(OpenRouter { endpoint }),
+        GROQ_PROVIDER => Box::new(Groq { endpoint }),
+        CEREBRAS_PROVIDER => Box::new(Cerebras { endpoint }),
+        OLLAMA_PROVIDER => Box::new(Ollama { endpoint }),
         ANTHROPIC_PROVIDER => Box::new(Anthropic { endpoint }),
         GEMINI_PROVIDER => Box::new(Gemini { endpoint }),
         _ => Box::new(CustomOpenAi { endpoint }),
     })
 }
 
+/// The URL a built-in provider talks to unless Settings gives another.
+fn default_base_url(provider: &str) -> Option<&'static str> {
+    Some(match provider {
+        OPENAI_PROVIDER => OPENAI_DEFAULT_BASE_URL,
+        FIREWORKS_PROVIDER => FIREWORKS_BASE_URL,
+        OPENROUTER_PROVIDER => OPENROUTER_BASE_URL,
+        ANTHROPIC_PROVIDER => ANTHROPIC_BASE_URL,
+        GEMINI_PROVIDER => GEMINI_BASE_URL,
+        GROQ_PROVIDER => GROQ_BASE_URL,
+        CEREBRAS_PROVIDER => CEREBRAS_BASE_URL,
+        OLLAMA_PROVIDER => OLLAMA_BASE_URL,
+        _ => return None,
+    })
+}
+
 /// Builds `provider` from the `serviceConfigs` and `customProviders` settings
 /// values, the same data the frontend reads.
 ///
-/// Fireworks, OpenRouter, Anthropic, and Gemini have fixed URLs; only OpenAI
-/// and custom providers take a Base URL, as in the Settings screen.
+/// A built-in provider uses the `baseUrl` of its `serviceConfigs` entry when
+/// that is set, and its own default URL otherwise. A custom provider needs its
+/// own `baseUrl`.
 pub fn resolve_provider(
     provider: &str,
     service_configs: Option<&Value>,
@@ -251,14 +331,10 @@ pub fn resolve_provider(
         }
     } else {
         let config = service_configs.and_then(|configs| configs.get(provider));
-        let base_url = match provider {
-            FIREWORKS_PROVIDER => FIREWORKS_BASE_URL.to_string(),
-            OPENROUTER_PROVIDER => OPENROUTER_BASE_URL.to_string(),
-            ANTHROPIC_PROVIDER => ANTHROPIC_BASE_URL.to_string(),
-            GEMINI_PROVIDER => GEMINI_BASE_URL.to_string(),
-            _ => non_empty(config.and_then(|config| config.get("baseUrl")))
-                .unwrap_or_else(|| OPENAI_DEFAULT_BASE_URL.to_string()),
-        };
+        let default_url = default_base_url(provider)
+            .ok_or_else(|| format!("Provider '{provider}' is not supported"))?;
+        let base_url = non_empty(config.and_then(|config| config.get("baseUrl")))
+            .unwrap_or_else(|| default_url.to_string());
         Endpoint {
             base_url,
             api_key: non_empty(config.and_then(|config| config.get("apiKey"))),
@@ -304,23 +380,32 @@ mod tests {
 
     #[test]
     fn openai_compatible_providers_are_recognised() {
-        for provider in ["openai", "fireworks", "openrouter", "custom:abc123"] {
+        for provider in [
+            "openai",
+            "fireworks",
+            "openrouter",
+            "groq",
+            "cerebras",
+            "ollama",
+            "custom:abc123",
+        ] {
             assert!(is_openai_compatible(provider), "{provider}");
+            assert!(is_supported(provider), "{provider}");
         }
         for provider in ["anthropic", "gemini"] {
             assert!(!is_openai_compatible(provider), "{provider}");
             assert!(is_supported(provider), "{provider}");
         }
-        for provider in ["custom:", "groq", "cerebras", "ollama", ""] {
+        for provider in ["custom:", "mistral", ""] {
             assert!(!is_supported(provider), "{provider}");
         }
-        assert!(provider_with_endpoint("groq", endpoint("http://x")).is_none());
+        assert!(provider_with_endpoint("mistral", endpoint("http://x")).is_none());
     }
 
     #[test]
-    fn anthropic_and_gemini_use_their_fixed_urls_and_configured_keys() {
+    fn anthropic_and_gemini_use_their_default_urls_and_configured_keys() {
         let configs = json!({
-            "anthropic": { "apiKey": "sk-ant-key", "baseUrl": "http://ignored" },
+            "anthropic": { "apiKey": "sk-ant-key" },
             "gemini": { "apiKey": "gm-key" },
         });
         let anthropic = resolve_provider("anthropic", Some(&configs), None).unwrap();
@@ -363,10 +448,10 @@ mod tests {
     }
 
     #[test]
-    fn fireworks_and_openrouter_keep_their_fixed_urls() {
+    fn fireworks_and_openrouter_use_their_default_urls_when_none_is_set() {
         let configs = json!({
-            "fireworks": { "apiKey": "fw-key", "baseUrl": "http://ignored" },
-            "openrouter": { "apiKey": "sk-or-key" },
+            "fireworks": { "apiKey": "fw-key" },
+            "openrouter": { "apiKey": "sk-or-key", "baseUrl": "  " },
         });
         let fireworks = resolve_provider("fireworks", Some(&configs), None).unwrap();
         assert_eq!(fireworks.endpoint().base_url, FIREWORKS_BASE_URL);
@@ -376,6 +461,91 @@ mod tests {
             openrouter.request_url("m"),
             "https://openrouter.ai/api/v1/chat/completions"
         );
+    }
+
+    #[test]
+    fn every_built_in_provider_honors_its_configured_base_url() {
+        let default_urls = [
+            ("openai", OPENAI_DEFAULT_BASE_URL),
+            ("fireworks", FIREWORKS_BASE_URL),
+            ("openrouter", OPENROUTER_BASE_URL),
+            ("anthropic", ANTHROPIC_BASE_URL),
+            ("gemini", GEMINI_BASE_URL),
+            ("groq", GROQ_BASE_URL),
+            ("cerebras", CEREBRAS_BASE_URL),
+            ("ollama", OLLAMA_BASE_URL),
+        ];
+        for (provider, default_url) in default_urls {
+            let configs = json!({ provider: { "baseUrl": " http://proxy.local:9000/api " } });
+            let overridden = resolve_provider(provider, Some(&configs), None).unwrap();
+            assert_eq!(
+                overridden.endpoint().base_url,
+                "http://proxy.local:9000/api",
+                "{provider}"
+            );
+            assert!(
+                overridden
+                    .request_url("m")
+                    .starts_with("http://proxy.local:9000/api/"),
+                "{provider}"
+            );
+
+            let unset = resolve_provider(provider, None, None).unwrap();
+            assert_eq!(unset.endpoint().base_url, default_url, "{provider}");
+        }
+    }
+
+    #[test]
+    fn groq_cerebras_and_ollama_speak_chat_completions() {
+        let groq = resolve_provider("groq", None, None).unwrap();
+        assert_eq!(
+            groq.request_url("m"),
+            "https://api.groq.com/openai/v1/chat/completions"
+        );
+        let cerebras = resolve_provider("cerebras", None, None).unwrap();
+        assert_eq!(
+            cerebras.request_url("m"),
+            "https://api.cerebras.ai/v1/chat/completions"
+        );
+        // Ollama's Base URL is the server root, as in the GUI.
+        let ollama = resolve_provider("ollama", None, None).unwrap();
+        assert_eq!(
+            ollama.request_url("llama3.1"),
+            "http://127.0.0.1:11434/v1/chat/completions"
+        );
+        let configs = json!({ "ollama": { "baseUrl": "http://nas.local:11434/" } });
+        let remote = resolve_provider("ollama", Some(&configs), None).unwrap();
+        assert_eq!(
+            remote.request_url("llama3.1"),
+            "http://nas.local:11434/v1/chat/completions"
+        );
+        // No key is needed for a local server.
+        assert_eq!(remote.endpoint().api_key, None);
+    }
+
+    #[test]
+    fn groq_asks_for_parsed_reasoning_and_the_others_send_an_effort() {
+        let body = |provider: &str, effort| {
+            resolve_provider(provider, None, None)
+                .unwrap()
+                .build_body(&ChatRequest {
+                    thinking_effort: effort,
+                    ..ChatRequest::default()
+                })
+        };
+        let groq = body("groq", ThinkingEffort::High);
+        assert_eq!(groq["reasoning_format"], "parsed");
+        assert!(groq.get("reasoning_effort").is_none());
+        assert!(body("groq", ThinkingEffort::Off)
+            .get("reasoning_format")
+            .is_none());
+        for provider in ["cerebras", "ollama"] {
+            assert_eq!(
+                body(provider, ThinkingEffort::Low)["reasoning_effort"],
+                "low",
+                "{provider}"
+            );
+        }
     }
 
     #[test]
@@ -397,7 +567,7 @@ mod tests {
         let error = |id: &str| resolve_provider(id, None, Some(&providers)).err().unwrap();
         assert!(error("custom:broken").contains("no base URL"));
         assert!(error("custom:missing").contains("not in Settings"));
-        assert!(error("groq").contains("not supported"));
+        assert!(error("mistral").contains("not supported"));
     }
 
     #[test]
