@@ -17,7 +17,7 @@ pub fn ownership_label(open_elsewhere: bool, status: &str) -> Option<&'static st
     if !open_elsewhere {
         return None;
     }
-    if DRIVEN_STATUSES.iter().any(|s| *s == status) {
+    if DRIVEN_STATUSES.contains(&status) {
         Some("running")
     } else {
         Some("open elsewhere")

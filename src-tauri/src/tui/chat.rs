@@ -99,10 +99,13 @@ impl ChatState {
         if ctrl && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('C')) {
             return self.handle_ctrl_c();
         }
-        if ctrl && matches!(key.code, KeyCode::Char('d') | KeyCode::Char('D')) {
-            if self.composer.is_empty() && self.focus == Focus::Composer && self.picker.is_none() {
-                return ChatAction::Quit;
-            }
+        if ctrl
+            && matches!(key.code, KeyCode::Char('d') | KeyCode::Char('D'))
+            && self.composer.is_empty()
+            && self.focus == Focus::Composer
+            && self.picker.is_none()
+        {
+            return ChatAction::Quit;
         }
 
         if let Some(id) = self.confirm_delete.clone() {
@@ -837,7 +840,7 @@ pub fn run_chat_front(stdout: &mut Stdout) {
 
         if last_poll.elapsed() >= POLL_EVERY {
             last_poll = Instant::now();
-            if let Some(ref api) = client {
+            if let Some(api) = client.as_ref() {
                 if let Err(err) = runtime.block_on(api.ensure_attached()) {
                     state.notice = Some(err);
                 } else {
@@ -860,21 +863,21 @@ pub fn run_chat_front(stdout: &mut Stdout) {
                 match state.handle_key(key) {
                     ChatAction::Quit => leave_front(),
                     ChatAction::Send(text) => {
-                        if let Some(ref api) = client {
+                        if let Some(api) = client.as_ref() {
                             runtime.block_on(send_user_text(api, &mut state, &text));
                         } else {
                             state.notice = Some("Backend is not ready yet".to_string());
                         }
                     }
                     ChatAction::Session(command) => {
-                        if let Some(ref api) = client {
+                        if let Some(api) = client.as_ref() {
                             runtime.block_on(run_session_command(api, &mut state, command));
                         } else {
                             state.notice = Some("Backend is not ready yet".to_string());
                         }
                     }
                     ChatAction::OpenSession(id) => {
-                        if let Some(ref api) = client {
+                        if let Some(api) = client.as_ref() {
                             runtime.block_on(switch_to_session(api, &mut state, &id));
                         } else {
                             state.notice = Some("Backend is not ready yet".to_string());
