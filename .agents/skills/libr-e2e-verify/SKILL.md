@@ -58,11 +58,11 @@ DELETE /api/sessions/:id
 
 ## Blocking interactions over HTTP (debug control plane)
 
-| Need                                              | Call                                                                                              |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------- | -------------------------- |
-| See what blocks a session                         | `GET /api/e2e-control/sessions/:ref/interactions` → pending user prompt + pending approvals       |
-| Answer or cancel a `ui__askUser` / storeAs prompt | `POST /api/e2e-control/sessions/:ref/user-prompts` with `{"requestId": "...", "action": "answer"  | "cancel", "value": "..."}` |
-| Approve or deny a tool approval                   | `POST /api/e2e-control/sessions/:ref/tool-approvals` with `{"toolCallId": "...", "approved": true | false}`                    |
+| Need                                              | Call                                                                                                                                              |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| See what blocks a session                         | `GET /api/e2e-control/sessions/:ref/interactions` → pending user prompt + pending approvals                                                       |
+| Answer or cancel a `ui__askUser` / storeAs prompt | `POST /api/e2e-control/sessions/:ref/user-prompts` with `{"requestId": "...", "action": "answer"}` or `"cancel"`, plus `"value"`                  |
+| Approve or deny a tool approval                   | `POST /api/e2e-control/sessions/:ref/tool-approvals` with `{"toolCallId": "...", "approved": true}` or `{"toolCallId": "...", "approved": false}` |
 
 Without the control plane, prompts and approvals block until a human answers or
 `yolo`/`unsafe` auto-approves them.
@@ -103,6 +103,7 @@ when every step passes; a release build passes the control-plane step as
 `absent (yolo/unsafe fallback)`, not as a failure.
 
 `--data-dir` is required and must be an isolated profile, not the user's
-prod, dev, or demo data directory. The matrix does not default to port 3030:
-pass `--base-url`, or write the isolated instance's port to
-`<data-dir>/http_port`. The script never starts or stops LibrAgent.
+prod, dev, or demo data directory. Write that instance's port to
+`<data-dir>/http_port`. `--base-url` is optional and must use the same port;
+the matrix does not default to port 3030 and will not open a session on any
+other port. The script never starts or stops LibrAgent.

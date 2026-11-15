@@ -18,8 +18,8 @@
  *     [--keep-session]
  *
  * --data-dir is required and must not be the user's prod/dev/demo data
- * directory. There is no default port: pass --base-url, or put the isolated
- * instance's port in <data-dir>/http_port. This script never stops a process.
+ * directory. <data-dir>/http_port is required. --base-url, when passed, must
+ * use that same port. This script never stops a process.
  *
  * Default execution mode is `yolo`; `unsafe` also auto-approves hard-approval
  * tools and should run against a scratch --workspace, never the repo.
@@ -45,6 +45,22 @@ const dataDir = arg('data-dir', process.env.LIBRAGENT_DATA_DIR || null);
 const timeoutSec = Number(arg('timeout', '180'));
 const keepSession = flag('keep-session');
 
+function canonicalPath(value) {
+  const resolved = path.resolve(value);
+  try {
+    return fs.realpathSync(resolved);
+  } catch {
+    return resolved;
+  }
+}
+
+function samePath(left, right) {
+  const a = canonicalPath(left);
+  const b = canonicalPath(right);
+  if (process.platform === 'win32') return a.toLowerCase() === b.toLowerCase();
+  return a === b;
+}
+
 function userProfileDirs() {
   const home = os.homedir();
   const names = ['com.fritzprix.libragent', 'com.fritzprix.libragent-demo'];
@@ -59,36 +75,63 @@ function userProfileDirs() {
   return names.map((name) => path.resolve(base, name));
 }
 
+function readIsolatedPort(dir) {
+  const portFile = path.join(dir, 'http_port');
+  if (!fs.existsSync(portFile)) {
+    console.error(
+      'Missing <data-dir>/http_port. The smoke matrix will not guess a port, including 3030.',
+    );
+    process.exit(2);
+  }
+  const port = fs.readFileSync(portFile, 'utf8').trim();
+  const number = Number(port);
+  if (!/^\d+$/.test(port) || number < 1 || number > 65535) {
+    console.error(`Isolated http_port is not a port number: ${portFile}`);
+    process.exit(2);
+  }
+  return port;
+}
+
+function portOf(url) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+  if (parsed.port) return parsed.port;
+  return parsed.protocol === 'https:' ? '443' : '80';
+}
+
 if (!dataDir) {
   console.error(
     'Missing --data-dir (or LIBRAGENT_DATA_DIR). The smoke matrix only talks to an isolated profile, never the user profile on port 3030.',
   );
   process.exit(2);
 }
-if (userProfileDirs().includes(path.resolve(dataDir))) {
+if (userProfileDirs().some((dir) => samePath(dir, dataDir))) {
   console.error(
     `Refusing ${dataDir}: that is a user profile. Pass an isolated LIBRAGENT_DATA_DIR.`,
   );
   process.exit(2);
 }
 
-let baseUrl = arg('base-url', null);
-if (!baseUrl) {
-  const portFile = path.join(dataDir, 'http_port');
-  if (!fs.existsSync(portFile)) {
+const isolatedPort = readIsolatedPort(dataDir);
+const requestedUrl = arg('base-url', null);
+let baseUrl;
+if (requestedUrl) {
+  const requestedPort = portOf(requestedUrl);
+  if (requestedPort !== isolatedPort) {
     console.error(
-      'Pass --base-url for this isolated instance, or write its port to <data-dir>/http_port. Port 3030 is not the default.',
+      `Refusing ${requestedUrl}: its port does not match ${path.join(dataDir, 'http_port')} (${isolatedPort}).`,
     );
     process.exit(2);
   }
-  const port = fs.readFileSync(portFile, 'utf8').trim();
-  if (!/^\d+$/.test(port)) {
-    console.error(`Isolated http_port is not a port number: ${portFile}`);
-    process.exit(2);
-  }
-  baseUrl = `http://127.0.0.1:${port}`;
+  baseUrl = requestedUrl.replace(/\/$/, '');
+} else {
+  baseUrl = `http://127.0.0.1:${isolatedPort}`;
 }
-baseUrl = baseUrl.replace(/\/$/, '');
 
 if (!assistantId) {
   console.error('Missing --assistant <config-id>. Run with --assistant <id>.');
