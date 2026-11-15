@@ -296,6 +296,7 @@ pub fn create_run_powershell_tool() -> MCPTool {
         description: "Execute a synchronous PowerShell command on Windows. This is the primary tool for Windows command-line tasks.\n\
                        Guidelines:\n\
                        - Use ';' to chain multiple commands (e.g. 'cd src; pnpm test'). Note: '&&' is not supported in PowerShell 5.1.\n\
+                       - With ';' or '|', the exit code comes from the LAST statement only, so an earlier failure (e.g. a bad CLI argument) can still show exit code 0. Run diagnostics or critical commands in a separate call, and read stderr.\n\
                        - Access environment variables using '$env:VARNAME'.\n\
                        - Each call starts fresh at the workspace root (or at optional cwd). `cd`/`Set-Location` does NOT persist across tool calls.\n\
                        - Prefer cwd='subdir' when the next commands need a different directory, or use workspace__runInPersistentPowerShell for sticky state.\n\

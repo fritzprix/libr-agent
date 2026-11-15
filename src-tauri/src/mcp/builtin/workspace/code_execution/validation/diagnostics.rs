@@ -70,12 +70,17 @@ pub fn has_shell_pipeline(command: &str) -> bool {
 /// Upstream commands often fail while the pipeline exit code stays 0 (rightmost command
 /// wins). Agents commonly use `cmd 2>&1 | tail`, which moves failure text onto stdout, so
 /// both streams are scanned.
+///
+/// The same applies to `;` chains (e.g. `python tool.py --bad; ... | Select-String x`):
+/// only the last statement decides the exit code. Argparse-style usage errors
+/// (`usage:`, `invalid choice`) are checked on stderr only, because `usage:` on stdout is
+/// normal `--help` output.
 pub fn exit_zero_pipeline_failure_warning(
     command: &str,
     stdout: &str,
     stderr: &str,
 ) -> Option<&'static str> {
-    if !has_shell_pipeline(command) {
+    if !has_shell_pipeline(command) && !command.contains(';') {
         return None;
     }
     if stdout.trim().is_empty() && stderr.trim().is_empty() {
@@ -83,14 +88,17 @@ pub fn exit_zero_pipeline_failure_warning(
     }
 
     let combined = format!("{stdout}\n{stderr}").to_lowercase();
+    let stderr_lower = stderr.to_lowercase();
     let has_failure_marker = combined.contains("no such file")
         || combined.contains("command not found")
         || combined.contains("error:")
         || combined.contains("cannot open")
-        || combined.contains("permission denied");
+        || combined.contains("permission denied")
+        || stderr_lower.contains("invalid choice")
+        || stderr_lower.contains("usage:");
 
     if has_failure_marker {
-        Some("⚠️ Note: Output reports errors despite exit code 0. In a shell pipeline, exit code 0 reflects the last command; an upstream command may have failed. Consider `set -o pipefail` or running commands separately.")
+        Some("⚠️ Note: Output reports errors despite exit code 0. In a shell pipeline or `;` chain, exit code 0 reflects the last command; an earlier command may have failed. Consider `set -o pipefail` (bash), `$ErrorActionPreference = 'Stop'` (PowerShell), or running commands separately.")
     } else {
         None
     }
@@ -216,6 +224,48 @@ index 111..222 100644
             "ffmpeg -i video.mp4",
             "bash: line 1: ffmpeg: command not found",
             "",
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn test_exit_zero_warning_for_semicolon_chain_with_argparse_error() {
+        // #2794: failing stage followed by a succeeding Select-String stage -> exit 0
+        let warning = exit_zero_pipeline_failure_warning(
+            "python tool.py --mode bogus; Get-Content out.txt | Select-String ok",
+            "",
+            "usage: tool.py [-h] {a,b}\ntool.py: error: argument mode: invalid choice: 'bogus'",
+        );
+        assert!(warning.is_some());
+        assert!(warning.unwrap().contains("pipeline"));
+
+        // `;` chain without a pipe, argparse markers only on stderr
+        assert!(exit_zero_pipeline_failure_warning(
+            "python tool.py --bad; echo done",
+            "done\n",
+            "usage: tool.py [-h]\n",
+        )
+        .is_some());
+        assert!(exit_zero_pipeline_failure_warning(
+            "python tool.py --bad; echo done",
+            "done\n",
+            "tool.py: invalid choice: 'x'",
+        )
+        .is_some());
+
+        // `usage:` on stdout is normal --help output
+        assert!(exit_zero_pipeline_failure_warning(
+            "python tool.py --help; echo done",
+            "usage: tool.py [-h]\n",
+            "",
+        )
+        .is_none());
+
+        // Neither `;` nor `|`: no warning
+        assert!(exit_zero_pipeline_failure_warning(
+            "python tool.py --bad",
+            "",
+            "usage: tool.py [-h]\n",
         )
         .is_none());
     }
