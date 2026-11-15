@@ -274,7 +274,8 @@
       "subagentsCount_one": "+{{count}} 個のサブエージェント",
       "subagentsCount_other": "+{{count}} 個のサブエージェント",
       "subagentsKept": "保持されたサブエージェント",
-      "bookmarkedBadge": "ブックマーク済み"
+      "bookmarkedBadge": "ブックマーク済み",
+      "openElsewhere": "他の場所で開かれています"
     },
     "actions": {
       "view": "表示",
@@ -302,7 +303,8 @@
       "confirmDelete": "削除を確定",
       "confirmDeleteAria": "削除を確定",
       "cancel": "キャンセル",
-      "cancelDeletionAria": "削除をキャンセル"
+      "cancelDeletionAria": "削除をキャンセル",
+      "openElsewhereAria": "セッション {{name}} は他のプロセスで開かれています"
     },
     "emptyState": {
       "title": "セッションはまだありません",

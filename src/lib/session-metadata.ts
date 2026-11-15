@@ -46,6 +46,7 @@ export function mapSessionMetadataToAgentSession(
     workspaceIsolation: metadata.workspaceIsolation,
     dockerConfig: metadata.dockerConfig,
     statusReason: metadata.statusReason ?? undefined,
+    openElsewhere: metadata.openElsewhere ?? undefined,
   };
 }
 

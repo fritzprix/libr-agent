@@ -9,6 +9,7 @@ use crate::mcp::types::{MCPTool, ServiceContext};
 use crate::repositories::message_repository::MessageRepository;
 use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::SessionMetadata;
+use crate::server::session_ownership;
 use crate::services::agent_service::remove_lineage;
 use crate::services::AgentService;
 use crate::state::get_session_repository;
@@ -64,7 +65,11 @@ pub async fn agent_create_session(
     if let Some(client) = crate::state::get_shared_backend_client() {
         return super::shared_proxy::create_session(client, request).await;
     }
-    AgentService::create_session(&manager, request).await
+    let created = AgentService::create_session(&manager, request).await?;
+    // Host path: creating a session is opening it, so this process owns it
+    // for its lifetime (#2759). The id is brand new, so the claim cannot fail.
+    let _ = session_ownership::claim(&created.id, session_ownership::HOST_ATTACHMENT_ID);
+    Ok(created)
 }
 
 /// Resume an existing agent session
@@ -86,6 +91,9 @@ pub async fn agent_resume_session(
         return serde_json::from_value::<SessionMetadata>(json)
             .map_err(|e| format!("Failed to parse resumed session from shared backend: {e}"));
     }
+    // Resuming is opening: refused while another live process owns it (#2759).
+    // Checked before the fence lift so a refusal changes nothing.
+    session_ownership::claim(&session_id, session_ownership::HOST_ATTACHMENT_ID)?;
     manager
         .allow_explicit_message_after_terminate(&session_id)
         .await;
@@ -107,6 +115,10 @@ pub async fn agent_open_session(
         return super::shared_proxy::open_session(client, &session_id, message_limit).await;
     }
 
+    // Host path: opening claims the session for this process lifetime
+    // (#2759); refused while another live frontend owns it.
+    session_ownership::claim(&session_id, session_ownership::HOST_ATTACHMENT_ID)?;
+
     // Warm reopen when the route already carries the storage id.
     if let Some(warm) = try_open_warm_session(&manager, &session_id, message_limit).await? {
         return Ok(warm);
@@ -114,6 +126,9 @@ pub async fn agent_open_session(
 
     // Legacy short / session- prefixed routes → storage key.
     let session_id = resolve_tauri_session_ref(&session_id).await?;
+    // Re-claim under the canonical id: a legacy reference must not carry a
+    // separate ownership entry.
+    session_ownership::claim(&session_id, session_ownership::HOST_ATTACHMENT_ID)?;
 
     if let Some(warm) = try_open_warm_session(&manager, &session_id, message_limit).await? {
         return Ok(warm);
@@ -263,6 +278,8 @@ pub async fn agent_create_session_with_initial_message(
     if let Some(client) = crate::state::get_shared_backend_client() {
         return super::shared_proxy::create_session_with_initial_message(client, request).await;
     }
+    // Host path: this process opens the new session (#2759).
+    session_ownership::claim(&request.session_id, session_ownership::HOST_ATTACHMENT_ID)?;
     AgentService::create_session_with_initial_message(&manager, request).await
 }
 
@@ -349,7 +366,7 @@ pub async fn agent_list_sessions(
         .map(str::trim)
         .filter(|value| !value.is_empty());
 
-    manager
+    let mut response: AgentSessionListResponse = manager
         .list_sessions(
             request.cursor.map(Into::into),
             limit,
@@ -358,7 +375,16 @@ pub async fn agent_list_sessions(
             status,
         )
         .await
-        .map(Into::into)
+        .map(Into::into)?;
+    // Host path: report sessions owned by *other* (attached) frontend
+    // processes so the GUI list can show them and refuse entry (#2759).
+    for item in &mut response.items {
+        item.open_elsewhere = session_ownership::is_open_elsewhere(
+            &item.session.id,
+            Some(session_ownership::HOST_ATTACHMENT_ID),
+        );
+    }
+    Ok(response)
 }
 
 /// List sessions with unread attention for the notifications UI.
@@ -706,6 +732,9 @@ pub async fn agent_submit_user_prompt(
             data: Some(data),
         });
     }
+    // Answering a waiting prompt drives the session, so it is refused while
+    // another live process owns it (#2759).
+    session_ownership::claim(&request.session_id, session_ownership::HOST_ATTACHMENT_ID)?;
     let pending =
         crate::agent::session_manager::pending_user_prompt_in(manager.inner(), &request.session_id)
             .await

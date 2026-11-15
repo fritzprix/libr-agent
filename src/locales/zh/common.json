@@ -274,7 +274,8 @@
       "subagentsCount_one": "+{{count}} 个子代理",
       "subagentsCount_other": "+{{count}} 个子代理",
       "subagentsKept": "保留子代理",
-      "bookmarkedBadge": "已收藏"
+      "bookmarkedBadge": "已收藏",
+      "openElsewhere": "已在其他地方打开"
     },
     "actions": {
       "view": "查看",
@@ -302,7 +303,8 @@
       "confirmDelete": "确认删除",
       "confirmDeleteAria": "确认删除",
       "cancel": "取消",
-      "cancelDeletionAria": "取消删除"
+      "cancelDeletionAria": "取消删除",
+      "openElsewhereAria": "会话 {{name}} 正在另一个进程中打开"
     },
     "emptyState": {
       "title": "暂无会话",

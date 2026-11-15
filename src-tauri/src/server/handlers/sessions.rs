@@ -12,13 +12,15 @@ use super::helpers::{
 };
 use super::types::{
     ChildSessionsResponse, CreateSessionRequest, ErrorResponse, ListSessionsQuery,
-    ListSessionsResponse, PatchSessionRequest, PatchSessionResponse, SessionStatusResponse,
+    ListSessionsResponse, PatchSessionRequest, PatchSessionResponse, SessionListItem,
+    SessionStatusResponse,
 };
 use crate::agent::session_manager::approvals::list_pending_approvals_in;
 use crate::agent::session_manager::execution_mode::set_execution_mode_in;
 use crate::agent::state::AgentSession;
 use crate::execution_mode::ExecutionMode;
 use crate::repositories::session_repository::SessionListCursor;
+use crate::server::session_ownership;
 use std::collections::HashMap;
 use tokio::sync::RwLock;
 
@@ -47,6 +49,7 @@ fn classify_spawn_error(err: &str) -> (StatusCode, String) {
 pub async fn create_session(
     manager: Arc<AgentSessionManager>,
     body: CreateSessionRequest,
+    attachment: Option<String>,
 ) -> Result<impl Reply, Rejection> {
     let body = match resolve_create_session_body_refs(body).await {
         Ok(body) => body,
@@ -60,10 +63,18 @@ pub async fn create_session(
     )
     .await
     {
-        Ok(response) => Ok(warp::reply::with_status(
-            warp::reply::json(&map_create_session_response_for_http(response)),
-            StatusCode::CREATED,
-        )),
+        Ok(response) => {
+            // Creating a session is opening it: the creator's frontend owns
+            // it for its process lifetime (#2759). The id is brand new, so
+            // the claim cannot be refused.
+            if let Some(attachment_id) = attachment.as_deref() {
+                let _ = session_ownership::claim(&response.id, attachment_id);
+            }
+            Ok(warp::reply::with_status(
+                warp::reply::json(&map_create_session_response_for_http(response)),
+                StatusCode::CREATED,
+            ))
+        }
         Err(e) => {
             let (status, sanitized_err) = classify_spawn_error(&e);
             Ok(warp::reply::with_status(
@@ -79,9 +90,11 @@ pub async fn create_session(
 pub async fn get_session(
     id: String,
     manager: Arc<AgentSessionManager>,
+    attachment: Option<String>,
 ) -> Result<impl Reply, Rejection> {
     Ok(get_session_reply(
         &id,
+        attachment.as_deref(),
         Some(manager.active_sessions().as_ref()),
         &manager.repositories().session,
     )
@@ -90,6 +103,7 @@ pub async fn get_session(
 
 async fn get_session_reply(
     id: &str,
+    attachment: Option<&str>,
     active_sessions: Option<&RwLock<HashMap<String, AgentSession>>>,
     session_repo: &Arc<dyn SessionRepository>,
 ) -> warp::reply::WithStatus<warp::reply::Json> {
@@ -97,6 +111,12 @@ async fn get_session_reply(
         Ok(id) => id,
         Err((status, error)) => return resolve_error_reply(status, error),
     };
+    // Opening a session claims it for the requesting frontend (#2759).
+    if let Some(attachment_id) = attachment {
+        if let Err(error) = session_ownership::claim(&id, attachment_id) {
+            return resolve_error_reply(StatusCode::CONFLICT, error);
+        }
+    }
 
     match session_status_snapshot(&id, active_sessions, session_repo).await {
         Ok(Some(snapshot)) => {
@@ -161,13 +181,20 @@ const MAX_SESSIONS_LIMIT: u64 = 200;
 pub async fn list_sessions(
     query: ListSessionsQuery,
     manager: Arc<AgentSessionManager>,
+    attachment: Option<String>,
 ) -> Result<impl Reply, Rejection> {
-    Ok(list_sessions_reply(query, &manager.repositories().session).await)
+    Ok(list_sessions_reply(
+        query,
+        &manager.repositories().session,
+        attachment.as_deref(),
+    )
+    .await)
 }
 
 async fn list_sessions_reply(
     query: ListSessionsQuery,
     session_repo: &Arc<dyn SessionRepository>,
+    attachment: Option<&str>,
 ) -> warp::reply::WithStatus<warp::reply::Json> {
     let limit = query.limit.unwrap_or(DEFAULT_SESSIONS_LIMIT);
     if !(1..=MAX_SESSIONS_LIMIT).contains(&limit) {
@@ -202,7 +229,16 @@ async fn list_sessions_reply(
                 sessions: page
                     .items
                     .into_iter()
-                    .map(map_session_metadata_for_http)
+                    .map(|meta| {
+                        // Ownership is keyed by the storage id, so check it
+                        // before the display-id rewrite (#2759).
+                        let open_elsewhere =
+                            session_ownership::is_open_elsewhere(&meta.id, attachment);
+                        SessionListItem {
+                            session: map_session_metadata_for_http(meta),
+                            open_elsewhere,
+                        }
+                    })
                     .collect(),
                 next_cursor: page.next_cursor,
             }),
@@ -266,11 +302,19 @@ async fn patch_session_reply(
 pub async fn resume_session_workflow(
     id: String,
     manager: Arc<AgentSessionManager>,
+    attachment: Option<String>,
 ) -> Result<impl Reply, Rejection> {
     let id = match resolve_http_session_ref(&id).await {
         Ok(id) => id,
         Err((status, error)) => return Ok(resolve_error_reply(status, error)),
     };
+
+    // Resuming is opening: refused while another live process owns it (#2759).
+    if let Some(attachment_id) = attachment.as_deref() {
+        if let Err(error) = session_ownership::claim(&id, attachment_id) {
+            return Ok(resolve_error_reply(StatusCode::CONFLICT, error));
+        }
+    }
 
     // Reload the session (runtime + MCP proxy), then resume from existing messages.
     if let Err(error) = manager.resume_session_and_workflow(&id).await {
@@ -422,7 +466,9 @@ mod tests {
         id: &str,
         repo: &Arc<dyn SessionRepository>,
     ) -> (StatusCode, serde_json::Value) {
-        let response = get_session_reply(id, None, repo).await.into_response();
+        let response = get_session_reply(id, None, None, repo)
+            .await
+            .into_response();
         let status = response.status();
         let body = warp::hyper::body::to_bytes(response.into_body())
             .await
@@ -462,6 +508,7 @@ mod tests {
                     ..Default::default()
                 },
                 &repo,
+                None,
             )
             .await,
         )
@@ -489,6 +536,7 @@ mod tests {
                     ..Default::default()
                 },
                 &repo,
+                None,
             )
             .await,
         )
@@ -517,6 +565,7 @@ mod tests {
                     ..Default::default()
                 },
                 &repo,
+                None,
             )
             .await,
         )
@@ -530,6 +579,7 @@ mod tests {
                     ..Default::default()
                 },
                 &repo,
+                None,
             )
             .await,
         )
@@ -631,7 +681,7 @@ mod tests {
         let active_sessions = RwLock::new(HashMap::from([(id.to_string(), agent_session)]));
 
         let (status, json) =
-            reply_to_json(get_session_reply(id, Some(&active_sessions), &repo).await).await;
+            reply_to_json(get_session_reply(id, None, Some(&active_sessions), &repo).await).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(json["status"], "busy");
         assert_eq!(json["lastAttentionReason"], "pendingApproval");

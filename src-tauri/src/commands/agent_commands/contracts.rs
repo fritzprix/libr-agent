@@ -281,7 +281,7 @@ pub struct SessionListCursorDto {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentSessionListResponse {
-    pub items: Vec<SessionMetadata>,
+    pub items: Vec<crate::server::handlers::SessionListItem>,
     pub next_cursor: Option<SessionListCursorDto>,
 }
 
@@ -306,7 +306,14 @@ impl From<SessionListCursorDto> for SessionListCursor {
 impl From<SessionListPage> for AgentSessionListResponse {
     fn from(value: SessionListPage) -> Self {
         Self {
-            items: value.items,
+            items: value
+                .items
+                .into_iter()
+                .map(|session| crate::server::handlers::SessionListItem {
+                    session,
+                    open_elsewhere: false,
+                })
+                .collect(),
             next_cursor: value.next_cursor.map(Into::into),
         }
     }

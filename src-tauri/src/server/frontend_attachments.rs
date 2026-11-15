@@ -53,6 +53,12 @@ impl AttachmentRegistry {
         self.last_seen.remove(id);
     }
 
+    /// True when `id` currently holds a live attachment (heartbeat not lapsed).
+    fn contains_live(&mut self, id: &str, now: Instant) -> bool {
+        self.prune(now);
+        self.last_seen.contains_key(id)
+    }
+
     /// Attachments that sent a heartbeat within [`HEARTBEAT_TIMEOUT`].
     pub fn live_count(&mut self, now: Instant) -> usize {
         self.prune(now);
@@ -78,6 +84,23 @@ fn with_registry<T>(f: impl FnOnce(&mut AttachmentRegistry) -> T) -> T {
 /// Live attachments of other frontends to this backend.
 pub fn live_count() -> usize {
     with_registry(|registry| registry.live_count(Instant::now()))
+}
+
+/// True when `id` currently holds a live attachment (never attached, detached,
+/// or heartbeat-lapsed ids are not live). Session ownership (#2759) derives the
+/// liveness of an owner from this, so a dead frontend releases its sessions.
+pub fn is_live(id: &str) -> bool {
+    with_registry(|registry| registry.contains_live(id, Instant::now()))
+}
+
+/// Test support: register `id` as a live attachment without going through the
+/// attach route, so tests can hold a known attachment id. Production ids
+/// always come from the `POST /api/frontends` handler.
+#[cfg(test)]
+pub fn register_live(id: &str) {
+    with_registry(|registry| {
+        registry.last_seen.insert(id.to_string(), Instant::now());
+    });
 }
 
 /// Response of `POST /api/frontends`.
@@ -106,6 +129,9 @@ async fn heartbeat_handler(id: String) -> Result<impl Reply, Rejection> {
 
 async fn detach_handler(id: String) -> Result<impl Reply, Rejection> {
     with_registry(|registry| registry.detach(&id));
+    // Clean exit releases every session this frontend owned (#2759). A crash
+    // skips this call; ownership then lapses with the heartbeat.
+    crate::server::session_ownership::release_attachment(&id);
     Ok(StatusCode::NO_CONTENT)
 }
 

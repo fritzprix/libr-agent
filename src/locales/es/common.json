@@ -274,7 +274,8 @@
       "subagentsCount_one": "+{{count}} subagente",
       "subagentsCount_other": "+{{count}} subagentes",
       "subagentsKept": "Subagentes conservados",
-      "bookmarkedBadge": "Favorita"
+      "bookmarkedBadge": "Favorita",
+      "openElsewhere": "Abierta en otro lugar"
     },
     "actions": {
       "view": "Ver",
@@ -302,7 +303,8 @@
       "confirmDelete": "Confirmar eliminación",
       "confirmDeleteAria": "Confirmar eliminación",
       "cancel": "Cancelar",
-      "cancelDeletionAria": "Cancelar eliminación"
+      "cancelDeletionAria": "Cancelar eliminación",
+      "openElsewhereAria": "La sesión {{name}} está abierta en otro proceso"
     },
     "emptyState": {
       "title": "No hay sesiones todavía",

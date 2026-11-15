@@ -339,6 +339,15 @@ export const SessionCard = memo(function SessionCard({
                 {t('sessionHistory.card.bookmarkedBadge', 'Bookmarked')}
               </Badge>
             )}
+            {session.openElsewhere && (
+              <Badge
+                variant="outline"
+                className="h-5 px-1.5 text-[10px] text-muted-foreground"
+              >
+                <Eye className="h-3 w-3" aria-hidden="true" />
+                {t('sessionHistory.card.openElsewhere', 'Open elsewhere')}
+              </Badge>
+            )}
             <Badge
               variant={statusConfig.variant}
               className={cn('h-5 px-1.5 text-[10px]', statusConfig.className)}
@@ -507,10 +516,17 @@ export const SessionCard = memo(function SessionCard({
           <Button
             size="sm"
             variant={isActive ? 'default' : 'outline'}
+            disabled={session.openElsewhere}
             onClick={() => onResume(session.id)}
             className="h-8 min-w-[7.5rem] flex-1 justify-center sm:flex-none"
             aria-label={
-              isViewOnly
+              session.openElsewhere
+                ? t(
+                    'sessionHistory.actions.openElsewhereAria',
+                    'Session {{name}} is open in another process',
+                    { name: sessionNameFallback },
+                  )
+                : isViewOnly
                 ? t(
                     'sessionHistory.actions.viewAria',
                     'View session {{name}}',

@@ -274,7 +274,8 @@
       "subagentsCount_one": "+{{count}} subagent",
       "subagentsCount_other": "+{{count}} subagents",
       "subagentsKept": "Subagents kept",
-      "bookmarkedBadge": "Bookmarked"
+      "bookmarkedBadge": "Bookmarked",
+      "openElsewhere": "Open elsewhere"
     },
     "actions": {
       "view": "View",
@@ -302,7 +303,8 @@
       "confirmDelete": "Confirm Delete",
       "confirmDeleteAria": "Confirm deletion",
       "cancel": "Cancel",
-      "cancelDeletionAria": "Cancel deletion"
+      "cancelDeletionAria": "Cancel deletion",
+      "openElsewhereAria": "Session {{name}} is open in another process"
     },
     "emptyState": {
       "title": "No sessions yet",

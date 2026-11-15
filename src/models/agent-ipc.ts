@@ -334,6 +334,12 @@ export interface AgentSessionMetadata {
   dockerHostWorkspacePath?: string;
   /** Why the session has its current status, for example a Docker setup failure. */
   statusReason?: string | null;
+  /**
+   * True while a different frontend process owns the session (#2759).
+   * Only present on `agent_list_sessions` items; opening/resuming/sending to
+   * such a session is refused by the backend.
+   */
+  openElsewhere?: boolean;
 }
 
 export interface AgentSessionListCursor {

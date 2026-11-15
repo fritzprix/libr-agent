@@ -150,6 +150,12 @@ impl SharedBackendClient {
     ) -> Result<(reqwest::StatusCode, serde_json::Value), String> {
         let url = format!("{}{}", self.base_url, path);
         let mut req = self.client.request(method, &url);
+        // Tag every request with this frontend's attachment id so the backend
+        // can attribute ownership to it (#2759). Before the first attach (or
+        // after a failed one) the id is unknown and the header is omitted.
+        if let Some(id) = attachment_id().clone() {
+            req = req.header(crate::server::routes::FRONTEND_ATTACHMENT_HEADER, id);
+        }
         if let Some(payload) = body {
             req = req.json(payload);
         }

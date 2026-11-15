@@ -88,10 +88,23 @@ pub struct ListSessionsQuery {
     pub bookmarked: Option<bool>,
 }
 
+/// One entry of `GET /api/sessions` (#2759): the session metadata plus the
+/// ownership view. `open_elsewhere` is true while a live frontend process
+/// other than the requester owns the session, so lists can show it and the
+/// GUI can refuse entry.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionListItem {
+    #[serde(flatten)]
+    pub session: SessionMetadata,
+    #[serde(default)]
+    pub open_elsewhere: bool,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListSessionsResponse {
-    pub sessions: Vec<SessionMetadata>,
+    pub sessions: Vec<SessionListItem>,
     /// `null` on the last page.
     pub next_cursor: Option<crate::repositories::session_repository::SessionListCursor>,
 }

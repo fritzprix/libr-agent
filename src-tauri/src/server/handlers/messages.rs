@@ -86,11 +86,20 @@ pub async fn send_message(
     id: String,
     manager: Arc<AgentSessionManager>,
     body: SendMessageRequest,
+    attachment: Option<String>,
 ) -> Result<impl Reply, Rejection> {
     let id = match resolve_http_session_ref(&id).await {
         Ok(id) => id,
         Err((status, error)) => return Ok(resolve_error_reply(status, error)),
     };
+
+    // Sending to a session is opening it: refused while another live process
+    // owns it; otherwise this frontend takes ownership (#2759).
+    if let Some(attachment_id) = attachment.as_deref() {
+        if let Err(error) = crate::server::session_ownership::claim(&id, attachment_id) {
+            return Ok(resolve_error_reply(StatusCode::CONFLICT, error));
+        }
+    }
 
     match crate::services::AgentService::send_message_to_session(
         &manager,

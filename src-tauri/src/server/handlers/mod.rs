@@ -30,5 +30,5 @@ pub use sessions::{
 pub use settings::{
     get_complexity_model_mapping, get_preferred_model, put_complexity_model_mapping,
 };
-pub use types::{ListSessionsResponse, SessionStatusResponse};
+pub use types::{ListSessionsResponse, SessionListItem, SessionStatusResponse};
 pub use wake::wake_session;
