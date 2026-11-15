@@ -83,6 +83,8 @@ path-clean = "1.0"
 tempfile = "3.27"
 # Terminal raw mode, alternate screen, and key events for `libragent --tui` (#2761).
 crossterm = "0.28"
+# Chat layout for `libragent --tui` (#2762). Pin a release that tracks crossterm 0.28.
+ratatui = { version = "0.29", default-features = false, features = ["crossterm"] }
 thiserror = "2.0"
 tracing = "0.1"
 async-trait = "0.1"

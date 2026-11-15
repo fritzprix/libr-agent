@@ -1,11 +1,11 @@
-//! `libragent --tui` entry point and terminal set-up/restore (#2761).
+//! `libragent --tui` entry point, terminal set-up/restore (#2761), and chat
+//! core (#2762).
 //!
-//! Phase 1 scope: no GUI window is created, the backend is reached through
-//! the shared startup path (#2756 — attach to a live backend or host one
-//! here), and LLM calls keep working through the hidden WebView (the phase-1
-//! allowance, the same mechanism `liblet` uses). The chat UI itself is
-//! #2762; this module presents the terminal, shows backend state, and quits
-//! cleanly on `q` / Ctrl+C.
+//! No GUI window is created. The backend is reached through the shared
+//! startup path (#2756 — attach to a live backend or host one here). LLM
+//! calls keep working through the Rust path / hidden WebView. The chat
+//! screen (transcript, composer, streaming poll, tool approval, askUser,
+//! secret) lives in [`chat`].
 //!
 //! # Windows console spike (issue #2761, acceptance criterion 3)
 //!
@@ -33,13 +33,12 @@
 //! PE subsystem (independent of terminal host), and WT implements the same
 //! Win32 console API for I/O that conhost provided above.
 
+mod chat;
+
 use crossterm::{
-    cursor::MoveTo,
-    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
-    execute, queue,
-    terminal::{Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
+    execute,
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen},
 };
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -116,8 +115,7 @@ pub fn forward_to_console_launcher() -> i32 {
     }
 }
 
-/// The backend state line shown in the TUI, given the live descriptor (if
-/// any) and this process's pid. Pure so it is testable without a terminal.
+/// The backend state line shown while the chat waits for a live record.
 pub fn status_line(
     descriptor: Option<&crate::server::backend_descriptor::BackendDescriptor>,
     own_pid: u32,
@@ -129,30 +127,6 @@ pub fn status_line(
         }
         Some(d) => format!("Backend: attached to pid {} at port {}", d.pid, d.port),
     }
-}
-
-/// Lines the TUI prints above the prompt. Pure for the same reason.
-pub fn status_screen(
-    descriptor: Option<&crate::server::backend_descriptor::BackendDescriptor>,
-    own_pid: u32,
-) -> Vec<String> {
-    vec![
-        " LibrAgent TUI (phase 1)".to_string(),
-        String::new(),
-        status_line(descriptor, own_pid),
-        String::new(),
-        " q or Ctrl+C quits. The chat screen lands with #2762.".to_string(),
-    ]
-}
-
-/// Draw one frame from the top-left corner. Raw mode on Unix turns off
-/// output post-processing, so every line ends with an explicit `\r\n`.
-fn render_frame(out: &mut impl Write, lines: &[String]) -> std::io::Result<()> {
-    queue!(out, MoveTo(0, 0), Clear(ClearType::FromCursorDown))?;
-    for line in lines {
-        write!(out, "{line}\r\n")?;
-    }
-    out.flush()
 }
 
 /// Restore the terminal to cooked, non-alternate-screen mode if the TUI set
@@ -198,52 +172,12 @@ fn setup_terminal() -> Result<(), String> {
     Ok(())
 }
 
-/// The TUI front: backend status and quit keys on an already-prepared
-/// terminal. Runs on a background thread; the main thread owns the Tauri
-/// event loop (the WebView requires the main thread on Windows).
-///
-/// stdout is locked per render frame only, never across the event poll:
-/// the debug-only MCP bridge plugin logs with `println!` from the main
-/// thread during plugin init, and holding the stdout lock here would
-/// deadlock that `println!` (the backend would never boot).
+/// The TUI front: chat core on an already-prepared terminal (#2762).
+/// Runs on a background thread; the main thread owns the Tauri event loop
+/// (the WebView requires the main thread on Windows).
 fn front_of_house() {
-    let stdout = std::io::stdout();
-    let own_pid = std::process::id();
-    let mut quit_requested = false;
-    loop {
-        let descriptor = crate::server::backend_descriptor::find_live_backend();
-        let mut lines = status_screen(descriptor.as_ref(), own_pid);
-        if quit_requested {
-            lines.push(" Quitting (waiting for the backend to shut down)...".to_string());
-        }
-
-        render_frame(&mut stdout.lock(), &lines).ok();
-
-        if event::poll(TUI_POLL_INTERVAL).unwrap_or(false) {
-            if let Ok(Event::Key(key)) = event::read() {
-                // Windows and Linux both deliver repeat/press events only
-                // in raw mode; ignore releases for cleanliness.
-                if key.kind == KeyEventKind::Press || key.kind == KeyEventKind::Repeat {
-                    let ctrl_c = key.modifiers.contains(KeyModifiers::CONTROL)
-                        && matches!(key.code, KeyCode::Char('c'));
-                    if ctrl_c || matches!(key.code, KeyCode::Char('q') | KeyCode::Char('Q')) {
-                        quit_requested = true;
-                    }
-                }
-            }
-        }
-
-        if quit_requested {
-            // Graceful exit only: the RunEvent::Exit handler unpublishes the
-            // backend record and restores the terminal. Until the app handle
-            // exists (still starting), keep looping so a very early q is
-            // honoured, not dropped.
-            if let Some(handle) = crate::state::get_app_handle() {
-                handle.exit(0);
-                return;
-            }
-        }
-    }
+    let mut stdout = std::io::stdout();
+    chat::run_chat_front(&mut stdout);
 }
 
 /// Run `libragent --tui` in this process: bootstrap like every entry point,
@@ -299,21 +233,6 @@ mod tests {
     }
 
     #[test]
-    fn render_frame_returns_to_column_zero_after_every_line() {
-        let lines = status_screen(None, 100);
-        let mut buffer = Vec::new();
-        render_frame(&mut buffer, &lines).unwrap();
-        let output = String::from_utf8(buffer).unwrap();
-
-        let body = format!("{}\r\n", lines.join("\r\n"));
-        assert!(output.ends_with(&body), "frame body: {output:?}");
-        let bare_newlines = output
-            .match_indices('\n')
-            .filter(|(index, _)| !output[..*index].ends_with('\r'))
-            .count();
-        assert_eq!(bare_newlines, 0, "frame has a bare \\n: {output:?}");
-    }
-    #[test]
     fn launcher_path_uses_sibling_name_for_platform() {
         let dir = Path::new(if cfg!(windows) { "C:\\app" } else { "/opt/app" });
         let path = console_launcher_path_in(dir);
@@ -340,13 +259,5 @@ mod tests {
             status_line(Some(&descriptor(200, 8420)), 100),
             "Backend: attached to pid 200 at port 8420"
         );
-    }
-
-    #[test]
-    fn status_screen_keeps_the_quit_hint() {
-        let lines = status_screen(None, 100);
-        assert!(lines[0].contains("LibrAgent TUI"));
-        assert!(lines[2].contains("starting"));
-        assert!(lines.last().unwrap().contains("Ctrl+C"));
     }
 }

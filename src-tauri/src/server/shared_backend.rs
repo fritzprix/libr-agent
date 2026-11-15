@@ -216,6 +216,27 @@ impl SharedBackendClient {
         self.send_json(reqwest::Method::GET, &path, None).await
     }
 
+    pub async fn list_assistants(&self) -> Result<serde_json::Value, String> {
+        self.send_json(reqwest::Method::GET, "/api/assistants", None)
+            .await
+    }
+
+    /// Attach (or re-attach) and remember the id for later Session API calls.
+    pub async fn ensure_attached(&self) -> Result<String, String> {
+        let current = attachment_id().clone();
+        if let Some(id) = current {
+            match self.heartbeat_frontend(&id).await {
+                Ok(true) => return Ok(id),
+                Ok(false) | Err(_) => {
+                    // Fall through and attach again.
+                }
+            }
+        }
+        let id = self.attach_frontend().await?;
+        remember_attachment_id(id.clone());
+        Ok(id)
+    }
+
     pub async fn create_session(
         &self,
         body: &serde_json::Value,
@@ -408,6 +429,18 @@ fn attachment_id() -> std::sync::MutexGuard<'static, Option<String>> {
     ATTACHMENT_ID
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Record this process's frontend attachment id so Session API calls carry
+/// [`crate::server::routes::FRONTEND_ATTACHMENT_HEADER`]. Used by the TUI chat
+/// front (#2762) when it attaches without running [`hold_frontend_attachment`].
+pub fn remember_attachment_id(id: String) {
+    *attachment_id() = Some(id);
+}
+
+/// Clear the remembered attachment id (tests and clean detach).
+pub fn clear_attachment_id() {
+    *attachment_id() = None;
 }
 
 /// Consecutive failed heartbeat steps after which the shared backend counts
