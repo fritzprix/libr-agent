@@ -49,7 +49,9 @@ fn content_part(item: &MCPContent) -> ContentPart {
             } else {
                 ContentPart::Text(format!(
                     "[unresolved image omitted from multimodal request: {}]",
-                    uri.as_deref().filter(|value| !value.is_empty()).unwrap_or("missing-uri")
+                    uri.as_deref()
+                        .filter(|value| !value.is_empty())
+                        .unwrap_or("missing-uri")
                 ))
             }
         }
@@ -66,7 +68,9 @@ fn content_part(item: &MCPContent) -> ContentPart {
             } else {
                 ContentPart::Text(format!(
                     "[unresolved audio omitted from multimodal request: {}]",
-                    uri.as_deref().filter(|value| !value.is_empty()).unwrap_or("missing-uri")
+                    uri.as_deref()
+                        .filter(|value| !value.is_empty())
+                        .unwrap_or("missing-uri")
                 ))
             }
         }

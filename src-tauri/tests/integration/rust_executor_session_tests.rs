@@ -10,6 +10,8 @@
 //! the `Wry` one cannot be cloned (it crashes). So results are delivered to a
 //! recording sink here, and the session loop itself is covered by its own tests.
 
+use crate::common;
+
 use serde_json::{json, Value};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -28,6 +30,8 @@ use tauri_mcp_agent_lib::agent::llm::types::{
 use tauri_mcp_agent_lib::agent::session_manager::CompactStreamMeta;
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
 use tauri_mcp_agent_lib::models::chat::Message;
+use tauri_mcp_agent_lib::repositories::{SettingsRepository, SqliteSettingsRepository};
+use tauri_mcp_agent_lib::set_settings_repository;
 use tokio::sync::Mutex as AsyncMutex;
 
 static TEST_GUARD: AsyncMutex<()> = AsyncMutex::const_new(());
@@ -86,6 +90,54 @@ fn text_reply(text: &str) -> Vec<Value> {
     ]
 }
 
+fn empty_reply() -> Vec<Value> {
+    vec![
+        json!({"choices":[{"delta":{},"finish_reason":"stop"}]}),
+        json!({"choices":[],"usage":{"prompt_tokens":1,"completion_tokens":0,"total_tokens":1}}),
+    ]
+}
+
+/// First `fail_count` POSTs get `status`; later ones get `reply` as SSE.
+async fn fail_then_sse(fail_count: usize, reply: Vec<Value>) -> MockProvider {
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let seen = requests.clone();
+    let counter = Arc::new(AtomicUsize::new(0));
+    let route = warp::post()
+        .and(warp::path!("v1" / "chat" / "completions"))
+        .and(warp::body::json())
+        .map(move |body: Value| {
+            seen.lock().unwrap().push(body);
+            let index = counter.fetch_add(1, Ordering::SeqCst);
+            if index < fail_count {
+                return warp::http::Response::builder()
+                    .status(500)
+                    .header("content-type", "text/plain")
+                    .body("provider exploded".to_string())
+                    .unwrap();
+            }
+            sse(&reply)
+        });
+    let (addr, server): (SocketAddr, _) = warp::serve(route).bind_ephemeral(([127, 0, 0, 1], 0));
+    tokio::spawn(server);
+    MockProvider {
+        endpoint: Endpoint {
+            base_url: format!("http://{addr}/v1"),
+            api_key: None,
+        },
+        requests,
+    }
+}
+
+async fn install_settings(pairs: &[(&str, Value)]) -> SqliteSettingsRepository {
+    let db = common::setup_test_db_with_migrations().await;
+    let repo = SqliteSettingsRepository::new(db);
+    for (key, value) in pairs {
+        repo.set(key, value.clone()).await.expect("set setting");
+    }
+    set_settings_repository(repo.clone());
+    repo
+}
+
 /// A loopback server that always answers POST /v1/chat/completions with
 /// `status`, and keeps the request bodies it saw.
 async fn failing_provider(status: u16) -> (Endpoint, Arc<Mutex<Vec<Value>>>) {
@@ -124,6 +176,7 @@ fn tool_call_reply(name: &str) -> Vec<Value> {
 struct RecordingSink {
     responses: Mutex<Vec<Message>>,
     stream_events: Mutex<Vec<AgentEvent>>,
+    llm_errors: Mutex<Vec<AgentRuntimeError>>,
     compactions: Mutex<Vec<(String, CompactStreamMeta)>>,
     compact_errors: Mutex<Vec<String>>,
 }
@@ -138,7 +191,8 @@ impl ResponseSink for RecordingSink {
         Ok(())
     }
     async fn llm_error(&self, _session_id: String, error: AgentRuntimeError) -> Result<(), String> {
-        Err(error.display_message)
+        self.llm_errors.lock().unwrap().push(error);
+        Ok(())
     }
     async fn compact_response(
         &self,
@@ -272,7 +326,8 @@ async fn a_tool_call_turn_is_delivered_and_its_result_is_sent_back_paired() {
         handle,
         &request(session_id, "resp-1", PROVIDER, vec![user.clone()]),
         deliver_to(&sink),
-    ).await
+    )
+    .await
     .unwrap());
     wait_for("the tool-call turn", || {
         !sink.responses.lock().unwrap().is_empty()
@@ -288,7 +343,9 @@ async fn a_tool_call_turn_is_delivered_and_its_result_is_sent_back_paired() {
     let mut result = message(session_id, "t1", "tool", "[]", 2_000);
     result.tool_call_id = Some(calls[0].id.clone());
     let follow_up = request(session_id, "resp-2", PROVIDER, vec![user, turn, result]);
-    assert!(dispatch_completion(handle, &follow_up, deliver_to(&sink)).await.unwrap());
+    assert!(dispatch_completion(handle, &follow_up, deliver_to(&sink))
+        .await
+        .unwrap());
     wait_for("the final answer", || {
         sink.responses.lock().unwrap().len() == 2
     })
@@ -419,7 +476,11 @@ async fn a_compaction_round_trip_delivers_the_summary_and_its_usage() {
     let sink = Arc::new(RecordingSink::default());
     let _config = configure(config(provider.endpoint.clone()));
 
-    assert!(dispatch_compaction(app(), &compact_request(session_id), deliver_to(&sink)).await.unwrap());
+    assert!(
+        dispatch_compaction(app(), &compact_request(session_id), deliver_to(&sink))
+            .await
+            .unwrap()
+    );
     wait_for("the compaction summary", || {
         !sink.compactions.lock().unwrap().is_empty()
     })
@@ -454,7 +515,11 @@ async fn a_failing_compaction_call_is_reported_through_compact_error() {
     let sink = Arc::new(RecordingSink::default());
     let _config = configure(config(endpoint));
 
-    assert!(dispatch_compaction(app(), &compact_request(session_id), deliver_to(&sink)).await.unwrap());
+    assert!(
+        dispatch_compaction(app(), &compact_request(session_id), deliver_to(&sink))
+            .await
+            .unwrap()
+    );
     wait_for("the compaction error", || {
         !sink.compact_errors.lock().unwrap().is_empty()
     })
@@ -485,7 +550,8 @@ async fn a_completion_without_a_session_manager_fails_with_a_named_error() {
 
     let error = dispatch_completion(app(), &request("s", "resp-1", PROVIDER, vec![user]), || {
         None
-    }).await
+    })
+    .await
     .expect_err("no session manager means nothing can receive the result");
 
     assert_eq!(error_code(&error), Some("RUST_EXECUTOR_NO_SESSION_MANAGER"));
@@ -501,9 +567,311 @@ async fn a_compaction_without_a_session_manager_fails_with_a_named_error() {
     let provider = mock_provider(vec![text_reply("unused")]).await;
     let _config = configure(config(provider.endpoint.clone()));
 
-    let error = dispatch_compaction(app(), &compact_request("s"), || None).await
+    let error = dispatch_compaction(app(), &compact_request("s"), || None)
+        .await
         .expect_err("no session manager means nothing can receive the summary");
 
     assert_eq!(error_code(&error), Some("RUST_EXECUTOR_NO_SESSION_MANAGER"));
     assert!(provider.requests.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn empty_completion_is_retried_once_then_delivers_text() {
+    let _guard = TEST_GUARD.lock().await;
+    let _settings = install_settings(&[("advancedSettings", json!({ "maxRetries": 0 }))]).await;
+    let provider = mock_provider(vec![empty_reply(), text_reply("recovered")]).await;
+    let sink = Arc::new(RecordingSink::default());
+    let _config = configure(config(provider.endpoint.clone()));
+    let user = message("s-empty-ok", "u1", "user", "hi", 1_000);
+
+    assert!(dispatch_completion(
+        app(),
+        &request("s-empty-ok", "resp-1", PROVIDER, vec![user]),
+        deliver_to(&sink),
+    )
+    .await
+    .unwrap());
+    wait_for("the recovered answer", || {
+        !sink.responses.lock().unwrap().is_empty()
+    })
+    .await;
+
+    assert_eq!(text_of(&sink.responses.lock().unwrap()[0]), "recovered");
+    assert_eq!(provider.requests.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn empty_completion_twice_fails_with_empty_response_code() {
+    let _guard = TEST_GUARD.lock().await;
+    let _settings = install_settings(&[("advancedSettings", json!({ "maxRetries": 0 }))]).await;
+    let provider = mock_provider(vec![empty_reply(), empty_reply()]).await;
+    let sink = Arc::new(RecordingSink::default());
+    let _config = configure(config(provider.endpoint.clone()));
+    let user = message("s-empty-err", "u1", "user", "hi", 1_000);
+
+    assert!(dispatch_completion(
+        app(),
+        &request("s-empty-err", "resp-1", PROVIDER, vec![user]),
+        deliver_to(&sink),
+    )
+    .await
+    .unwrap());
+    wait_for("the empty-response error", || {
+        !sink.llm_errors.lock().unwrap().is_empty()
+    })
+    .await;
+
+    assert_eq!(provider.requests.lock().unwrap().len(), 2);
+    assert!(sink.responses.lock().unwrap().is_empty());
+    assert_eq!(
+        error_code(&sink.llm_errors.lock().unwrap()[0]),
+        Some("RUST_EXECUTOR_EMPTY_RESPONSE")
+    );
+}
+
+#[tokio::test]
+async fn fallback_model_answers_when_primary_fails() {
+    let _guard = TEST_GUARD.lock().await;
+    let _settings = install_settings(&[
+        (
+            "advancedSettings",
+            json!({ "maxRetries": 0, "retryDelay": 1 }),
+        ),
+        (
+            "fallbackModel",
+            json!({ "provider": "openai", "model": "fallback-model" }),
+        ),
+    ])
+    .await;
+    // Primary attempt fails once; fallback (RetryPolicy::NONE) then succeeds.
+    let provider = fail_then_sse(1, text_reply("from fallback")).await;
+    let sink = Arc::new(RecordingSink::default());
+    let _config = configure(config(provider.endpoint.clone()));
+    let user = message("s-fb-ok", "u1", "user", "hi", 1_000);
+
+    assert!(dispatch_completion(
+        app(),
+        &request("s-fb-ok", "resp-1", PROVIDER, vec![user]),
+        deliver_to(&sink),
+    )
+    .await
+    .unwrap());
+    wait_for("the fallback answer", || {
+        !sink.responses.lock().unwrap().is_empty()
+    })
+    .await;
+
+    assert_eq!(text_of(&sink.responses.lock().unwrap()[0]), "from fallback");
+    assert_eq!(provider.requests.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn fallback_skipped_when_same_provider_and_model() {
+    let _guard = TEST_GUARD.lock().await;
+    let _settings = install_settings(&[
+        (
+            "advancedSettings",
+            json!({ "maxRetries": 0, "retryDelay": 1 }),
+        ),
+        (
+            "fallbackModel",
+            json!({ "provider": PROVIDER, "model": "mock-model" }),
+        ),
+    ])
+    .await;
+    let provider = fail_then_sse(1, text_reply("unused")).await;
+    let sink = Arc::new(RecordingSink::default());
+    let _config = configure(config(provider.endpoint.clone()));
+    let user = message("s-fb-same", "u1", "user", "hi", 1_000);
+
+    assert!(dispatch_completion(
+        app(),
+        &request("s-fb-same", "resp-1", PROVIDER, vec![user]),
+        deliver_to(&sink),
+    )
+    .await
+    .unwrap());
+    wait_for("the primary failure", || {
+        provider.requests.lock().unwrap().len() >= 1
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    assert_eq!(provider.requests.lock().unwrap().len(), 1);
+    assert!(sink.responses.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn fallback_skipped_when_unsupported() {
+    let _guard = TEST_GUARD.lock().await;
+    let _settings = install_settings(&[
+        (
+            "advancedSettings",
+            json!({ "maxRetries": 0, "retryDelay": 1 }),
+        ),
+        (
+            "fallbackModel",
+            json!({ "provider": "groq", "model": "llama" }),
+        ),
+    ])
+    .await;
+    let provider = fail_then_sse(1, text_reply("unused")).await;
+    let sink = Arc::new(RecordingSink::default());
+    let _config = configure(config(provider.endpoint.clone()));
+    let user = message("s-fb-unsup", "u1", "user", "hi", 1_000);
+
+    assert!(dispatch_completion(
+        app(),
+        &request("s-fb-unsup", "resp-1", PROVIDER, vec![user]),
+        deliver_to(&sink),
+    )
+    .await
+    .unwrap());
+    wait_for("the primary failure", || {
+        provider.requests.lock().unwrap().len() >= 1
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    assert_eq!(provider.requests.lock().unwrap().len(), 1);
+    assert!(sink.responses.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn fallback_skipped_when_base_url_would_be_ignored() {
+    let _guard = TEST_GUARD.lock().await;
+    let mock = fail_then_sse(1, text_reply("unused")).await;
+    let base = mock.endpoint.base_url.clone();
+    let _settings = install_settings(&[
+        (
+            "advancedSettings",
+            json!({ "maxRetries": 0, "retryDelay": 1 }),
+        ),
+        (
+            "fallbackModel",
+            json!({ "provider": "anthropic", "model": "claude" }),
+        ),
+        (
+            "serviceConfigs",
+            json!({
+                "openai": { "apiKey": "sk-test", "baseUrl": base },
+                "anthropic": { "apiKey": "sk-ant", "baseUrl": "http://127.0.0.1:9/v1" }
+            }),
+        ),
+    ])
+    .await;
+    // No endpoint_override: routing uses Settings URLs so ignore_base_url can fire.
+    let _config = configure(ExecutorConfig {
+        enabled: true,
+        endpoint_override: None,
+        assume_no_webview: true,
+    });
+    let sink = Arc::new(RecordingSink::default());
+    let user = message("s-fb-ignore", "u1", "user", "hi", 1_000);
+    let mut req = request("s-fb-ignore", "resp-1", "openai", vec![user]);
+    req.model = "gpt-test".to_string();
+
+    assert!(dispatch_completion(app(), &req, deliver_to(&sink))
+        .await
+        .unwrap());
+    wait_for("the primary failure", || {
+        mock.requests.lock().unwrap().len() >= 1
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    assert_eq!(mock.requests.lock().unwrap().len(), 1);
+    assert!(sink.responses.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn fallback_returns_primary_error_when_fallback_also_fails() {
+    let _guard = TEST_GUARD.lock().await;
+    let _settings = install_settings(&[
+        (
+            "advancedSettings",
+            json!({ "maxRetries": 0, "retryDelay": 1 }),
+        ),
+        (
+            "fallbackModel",
+            json!({ "provider": "openai", "model": "fallback-model" }),
+        ),
+    ])
+    .await;
+    let (endpoint, requests) = failing_provider(500).await;
+    let sink = Arc::new(RecordingSink::default());
+    let _config = configure(config(endpoint));
+    let user = message("s-fb-both", "u1", "user", "hi", 1_000);
+
+    assert!(dispatch_completion(
+        app(),
+        &request("s-fb-both", "resp-1", PROVIDER, vec![user]),
+        deliver_to(&sink),
+    )
+    .await
+    .unwrap());
+    wait_for("primary and fallback attempts", || {
+        requests.lock().unwrap().len() >= 2
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    assert_eq!(requests.lock().unwrap().len(), 2);
+    assert!(sink.responses.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn default_max_output_tokens_is_sent_when_request_omits_max_tokens() {
+    let _guard = TEST_GUARD.lock().await;
+    let _settings = install_settings(&[(
+        "advancedSettings",
+        json!({ "defaultMaxOutputTokens": 2048, "maxRetries": 0 }),
+    )])
+    .await;
+    let provider = mock_provider(vec![text_reply("ok")]).await;
+    let sink = Arc::new(RecordingSink::default());
+    let _config = configure(config(provider.endpoint.clone()));
+    let user = message("s-max", "u1", "user", "hi", 1_000);
+
+    assert!(dispatch_completion(
+        app(),
+        &request("s-max", "resp-1", PROVIDER, vec![user]),
+        deliver_to(&sink),
+    )
+    .await
+    .unwrap());
+    wait_for("the answer", || !sink.responses.lock().unwrap().is_empty()).await;
+
+    let body = &provider.requests.lock().unwrap()[0];
+    assert_eq!(body["max_completion_tokens"], 2048);
+}
+
+#[tokio::test]
+async fn compaction_request_carries_no_thinking_parameter() {
+    let _guard = TEST_GUARD.lock().await;
+    let _settings = install_settings(&[(
+        "advancedSettings",
+        json!({ "thinkingEffort": "high", "defaultMaxOutputTokens": 1024 }),
+    )])
+    .await;
+    let provider = mock_provider(vec![text_reply("summary")]).await;
+    let sink = Arc::new(RecordingSink::default());
+    let _config = configure(config(provider.endpoint.clone()));
+
+    assert!(dispatch_compaction(
+        app(),
+        &compact_request("s-compact-think"),
+        deliver_to(&sink),
+    )
+    .await
+    .unwrap());
+    wait_for("the compaction summary", || {
+        !sink.compactions.lock().unwrap().is_empty()
+    })
+    .await;
+
+    let body = &provider.requests.lock().unwrap()[0];
+    assert!(body.get("reasoning_effort").is_none());
+    assert!(body.get("thinking").is_none());
+    assert_eq!(body["max_completion_tokens"], 1024);
 }

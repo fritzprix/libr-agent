@@ -346,6 +346,7 @@ fn assistant_message(request: &CompletionRequest, chat: CompletedChat) -> Messag
     }
 }
 
+#[allow(clippy::too_many_arguments)] // 7-arg shape from #2804 plus the #2796 streaming sink
 async fn complete_once(
     provider_id: &str,
     model: &str,
@@ -447,7 +448,15 @@ async fn run_completion(
                 max_tokens,
             )
             .await
-            .map_err(|_| primary_error)?
+            .map_err(|fallback_error| {
+                log::warn!(
+                    "Rust LLM executor: fallback {}:{} also failed: {}",
+                    fallback.provider,
+                    fallback.model,
+                    fallback_error.display_message
+                );
+                primary_error
+            })?
         }
     };
     Ok(assistant_message(request, chat))
