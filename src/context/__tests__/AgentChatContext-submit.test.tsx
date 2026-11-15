@@ -160,15 +160,18 @@ describe('AgentChatContext', () => {
     });
 
     it('updates pending queue from backend events and clears on session change', async () => {
+      // Several hooks listen on `agent:event`; keep every handler for it.
       const eventHandlers: Array<
         (event: { payload: Record<string, unknown> }) => void
       > = [];
       (listen as ReturnType<typeof vi.fn>).mockImplementation(
         (
-          _event: string,
+          eventName: string,
           handler: (event: { payload: Record<string, unknown> }) => void,
         ) => {
-          eventHandlers.push(handler);
+          if (eventName === 'agent:event') {
+            eventHandlers.push(handler);
+          }
           return Promise.resolve(mockUnlisten);
         },
       );

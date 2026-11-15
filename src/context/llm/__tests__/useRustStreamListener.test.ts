@@ -1,9 +1,17 @@
+import { renderHook, waitFor } from '@testing-library/react';
+import { listen } from '@tauri-apps/api/event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { LlmStreamDeltaPayload } from '@/context/agent-session/types';
+import type {
+  AgentEventPayload,
+  LlmStreamDeltaPayload,
+} from '@/context/agent-session/types';
 import { REASONING_BUDGET_CHARS_PER_TOKEN } from '@/lib/ai-service/openai/reasoning-budget';
 import type { Settings } from '@/lib/services/settings-service';
 import type { Message } from '@/models/chat';
-import { createRustStreamHandler } from '../useRustStreamListener';
+import {
+  createRustStreamHandler,
+  useRustStreamListener,
+} from '../useRustStreamListener';
 
 const reportLLMStreamingIssue = vi.fn().mockResolvedValue(undefined);
 
@@ -25,7 +33,11 @@ function setup() {
   const handler = createRustStreamHandler(settingsRef, (update) => {
     streaming = typeof update === 'function' ? update(streaming) : update;
   });
-  return { handler, current: () => streaming.get(SESSION) };
+  return {
+    handler,
+    current: () => streaming.get(SESSION),
+    hasEntry: () => streaming.has(SESSION),
+  };
 }
 
 function delta(
@@ -167,5 +179,101 @@ describe('Rust stream handler', () => {
     handler.handleDelta(delta({ finishReason: 'stop' }));
 
     expect(current()).toBe(before);
+  });
+
+  it('clears the live message when the cancelled turn is dropped', () => {
+    const { handler, hasEntry } = setup();
+
+    handler.handleDelta(delta({ content: 'partial' }));
+    expect(hasEntry()).toBe(true);
+    handler.handleCancel(SESSION, RESPONSE);
+
+    expect(hasEntry()).toBe(false);
+  });
+
+  it('keeps a newer turn when an old turn is cancelled', () => {
+    const { handler, current } = setup();
+
+    handler.handleDelta(delta({ content: 'new' }, { responseMessageId: 'r-2' }));
+    handler.handleCancel(SESSION, RESPONSE);
+
+    expect(current()?.id).toBe('r-2');
+  });
+
+  it('clears the live message when the final message is saved', () => {
+    const { handler, hasEntry } = setup();
+
+    handler.handleDelta(delta({ content: 'done' }));
+    handler.handleDelta(delta({ finishReason: 'stop' }));
+    expect(hasEntry()).toBe(true);
+    handler.handleMessageAdded(SESSION, RESPONSE);
+
+    expect(hasEntry()).toBe(false);
+  });
+
+  it('keeps the live message when another message is saved', () => {
+    const { handler, hasEntry } = setup();
+
+    handler.handleDelta(delta({ content: 'streaming' }));
+    handler.handleMessageAdded(SESSION, 'some-other-message');
+
+    expect(hasEntry()).toBe(true);
+  });
+});
+
+describe('useRustStreamListener', () => {
+  it('clears the live message on the saved assistant message and on cancel', async () => {
+    const handlers = new Map<string, (event: { payload: unknown }) => void>();
+    vi.mocked(listen).mockImplementation(async (eventName, handler) => {
+      handlers.set(
+        eventName,
+        handler as (event: { payload: unknown }) => void,
+      );
+      return () => {};
+    });
+
+    let streaming = new Map<string, Partial<Message>>();
+    const setStreamingMessages = (
+      update: React.SetStateAction<Map<string, Partial<Message>>>,
+    ) => {
+      streaming = typeof update === 'function' ? update(streaming) : update;
+    };
+    const settingsRef = { current: { advanced: {} } as Settings };
+    renderHook(() =>
+      useRustStreamListener({ settingsRef, setStreamingMessages }),
+    );
+    await waitFor(() => expect(handlers.size).toBe(2));
+
+    const emitAgentEvent = (payload: AgentEventPayload) =>
+      handlers.get('agent:event')?.({ payload });
+
+    emitAgentEvent(delta({ content: 'hi' }));
+    expect(streaming.has(SESSION)).toBe(true);
+    emitAgentEvent({
+      type: 'messageAdded',
+      sessionId: SESSION,
+      message: {
+        id: RESPONSE,
+        sessionId: SESSION,
+        role: 'assistant',
+        content: [{ type: 'text', text: 'hi' }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    });
+    expect(streaming.has(SESSION)).toBe(false);
+
+    emitAgentEvent(
+      delta({ content: 'again' }, { responseMessageId: 'response-2' }),
+    );
+    expect(streaming.has(SESSION)).toBe(true);
+    handlers.get('llm:completion-cancel')?.({
+      payload: {
+        sessionId: SESSION,
+        responseMessageId: 'response-2',
+        reason: 'user',
+      },
+    });
+    expect(streaming.has(SESSION)).toBe(false);
   });
 });

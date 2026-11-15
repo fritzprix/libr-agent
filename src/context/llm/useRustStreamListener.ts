@@ -117,6 +117,18 @@ export function createRustStreamHandler(
     });
   };
 
+  /** Drop the live message of a finished turn, unless a newer turn replaced it. */
+  const clearStreaming = (sessionId: string, responseMessageId: string) => {
+    setStreamingMessages((prev) => {
+      if (prev.get(sessionId)?.id !== responseMessageId) {
+        return prev;
+      }
+      const next = new Map(prev);
+      next.delete(sessionId);
+      return next;
+    });
+  };
+
   return {
     handleDelta(payload: LlmStreamDeltaPayload) {
       const { sessionId, responseMessageId, delta } = payload;
@@ -158,11 +170,24 @@ export function createRustStreamHandler(
       }
     },
 
-    /** Forget a turn the backend cancelled so a late delta cannot revive it. */
+    /**
+     * The saved message replaces the live one. Without this the live message
+     * would stay on screen next to its stored copy.
+     */
+    handleMessageAdded(sessionId: string, messageId: string) {
+      const turn = turns.get(sessionId);
+      if (turn && turn.responseMessageId === messageId) {
+        turn.stopped = true;
+        clearStreaming(sessionId, messageId);
+      }
+    },
+
+    /** Drop a turn the backend cancelled so a late delta cannot revive it. */
     handleCancel(sessionId: string, responseMessageId: string) {
       const turn = turns.get(sessionId);
-      if (turn?.responseMessageId === responseMessageId) {
+      if (turn && turn.responseMessageId === responseMessageId) {
         turn.stopped = true;
+        clearStreaming(sessionId, responseMessageId);
       }
     },
   };
@@ -188,8 +213,14 @@ export function useRustStreamListener({
       const unlistenDelta = await listen<AgentEventPayload>(
         'agent:event',
         (event) => {
-          if (event.payload.type === 'llmStreamDelta') {
-            handler.handleDelta(event.payload);
+          const payload = event.payload;
+          if (payload.type === 'llmStreamDelta') {
+            handler.handleDelta(payload);
+          } else if (
+            payload.type === 'messageAdded' &&
+            payload.message.role === 'assistant'
+          ) {
+            handler.handleMessageAdded(payload.sessionId, payload.message.id);
           }
         },
       );
