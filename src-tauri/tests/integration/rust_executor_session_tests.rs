@@ -272,7 +272,7 @@ async fn a_tool_call_turn_is_delivered_and_its_result_is_sent_back_paired() {
         handle,
         &request(session_id, "resp-1", PROVIDER, vec![user.clone()]),
         deliver_to(&sink),
-    )
+    ).await
     .unwrap());
     wait_for("the tool-call turn", || {
         !sink.responses.lock().unwrap().is_empty()
@@ -288,7 +288,7 @@ async fn a_tool_call_turn_is_delivered_and_its_result_is_sent_back_paired() {
     let mut result = message(session_id, "t1", "tool", "[]", 2_000);
     result.tool_call_id = Some(calls[0].id.clone());
     let follow_up = request(session_id, "resp-2", PROVIDER, vec![user, turn, result]);
-    assert!(dispatch_completion(handle, &follow_up, deliver_to(&sink)).unwrap());
+    assert!(dispatch_completion(handle, &follow_up, deliver_to(&sink)).await.unwrap());
     wait_for("the final answer", || {
         sink.responses.lock().unwrap().len() == 2
     })
@@ -380,6 +380,7 @@ async fn a_provider_the_executor_cannot_run_fails_fast_without_a_webview() {
         &request("s", "resp-1", "mistral", vec![user]),
         deliver_to(&sink),
     )
+    .await
     .expect_err("nothing can answer a Mistral request without a WebView");
 
     assert!(error.display_message.contains("mistral"));
@@ -418,7 +419,7 @@ async fn a_compaction_round_trip_delivers_the_summary_and_its_usage() {
     let sink = Arc::new(RecordingSink::default());
     let _config = configure(config(provider.endpoint.clone()));
 
-    assert!(dispatch_compaction(app(), &compact_request(session_id), deliver_to(&sink)).unwrap());
+    assert!(dispatch_compaction(app(), &compact_request(session_id), deliver_to(&sink)).await.unwrap());
     wait_for("the compaction summary", || {
         !sink.compactions.lock().unwrap().is_empty()
     })
@@ -453,7 +454,7 @@ async fn a_failing_compaction_call_is_reported_through_compact_error() {
     let sink = Arc::new(RecordingSink::default());
     let _config = configure(config(endpoint));
 
-    assert!(dispatch_compaction(app(), &compact_request(session_id), deliver_to(&sink)).unwrap());
+    assert!(dispatch_compaction(app(), &compact_request(session_id), deliver_to(&sink)).await.unwrap());
     wait_for("the compaction error", || {
         !sink.compact_errors.lock().unwrap().is_empty()
     })
@@ -484,7 +485,7 @@ async fn a_completion_without_a_session_manager_fails_with_a_named_error() {
 
     let error = dispatch_completion(app(), &request("s", "resp-1", PROVIDER, vec![user]), || {
         None
-    })
+    }).await
     .expect_err("no session manager means nothing can receive the result");
 
     assert_eq!(error_code(&error), Some("RUST_EXECUTOR_NO_SESSION_MANAGER"));
@@ -500,7 +501,7 @@ async fn a_compaction_without_a_session_manager_fails_with_a_named_error() {
     let provider = mock_provider(vec![text_reply("unused")]).await;
     let _config = configure(config(provider.endpoint.clone()));
 
-    let error = dispatch_compaction(app(), &compact_request("s"), || None)
+    let error = dispatch_compaction(app(), &compact_request("s"), || None).await
         .expect_err("no session manager means nothing can receive the summary");
 
     assert_eq!(error_code(&error), Some("RUST_EXECUTOR_NO_SESSION_MANAGER"));

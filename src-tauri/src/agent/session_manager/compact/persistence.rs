@@ -183,7 +183,7 @@ pub(super) async fn retry_invalid_compact_summary_if_possible(
         retry_count,
         validation_error
     );
-    emit_compact_request(app_handle, compact_event)?;
+    emit_compact_request(app_handle, compact_event).await?;
     Ok(Some(CompactResponseOutcome { retried: true }))
 }
 
