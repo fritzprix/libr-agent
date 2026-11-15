@@ -230,5 +230,66 @@ class WindowsProbeTest(unittest.TestCase):
             child.wait()
 
 
+class StateRootTest(unittest.TestCase):
+    """Default state dir lives in the main checkout and absorbs the old one (#2793)."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        base = Path(self._tmp.name).resolve()
+        self.repo = base / "repo"
+        self.repo.mkdir()
+        subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
+        self.legacy = base / "repo.worktrees" / ".worker-loop"
+        env = {k: v for k, v in os.environ.items() if k != "LOOP_STATE_DIR"}
+        patcher = patch.dict(os.environ, env, clear=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self._cwd = os.getcwd()
+        os.chdir(self.repo)
+        self.addCleanup(os.chdir, self._cwd)
+
+    def seed_legacy(self):
+        (self.legacy / "worker-2").mkdir(parents=True)
+        (self.legacy / "claims.json").write_text('{"issue:1": {"worker": "worker"}}')
+        (self.legacy / "worker-2" / "state.json").write_text('{"current": null}')
+        (self.legacy / "claims.json.lock").write_text("")
+        (self.legacy / "worker-2" / "tick.lock.guard").write_text("")
+
+    def test_default_is_inside_the_main_checkout(self):
+        self.assertEqual(worker_state.state_root(), self.repo / ".worker-loop")
+
+    def test_repo_ignores_the_state_dir(self):
+        gitignore = Path(__file__).resolve().parents[4] / ".gitignore"
+        lines = gitignore.read_text(encoding="utf-8").splitlines()
+        self.assertIn("/.worker-loop/", lines)
+        self.assertIn("/.worker-loop.migrating-*/", lines)
+
+    def test_env_override_wins_and_skips_migration(self):
+        self.seed_legacy()
+        other = Path(self._tmp.name) / "elsewhere"
+        with patch.dict(os.environ, {"LOOP_STATE_DIR": str(other)}):
+            self.assertEqual(worker_state.state_root(), other)
+        self.assertFalse((self.repo / ".worker-loop").exists())
+
+    def test_legacy_state_is_copied_once_and_kept(self):
+        self.seed_legacy()
+        root = worker_state.state_root()
+        self.assertEqual(json.loads((root / "claims.json").read_text()), {"issue:1": {"worker": "worker"}})
+        self.assertTrue((root / "worker-2" / "state.json").exists())
+        self.assertFalse((root / "claims.json.lock").exists())
+        self.assertFalse((root / "worker-2" / "tick.lock.guard").exists())
+        self.assertTrue((self.legacy / "claims.json").exists())
+        self.assertEqual([p.name for p in self.repo.glob(".worker-loop*")], [".worker-loop"])
+        # Later changes to the old dir are not re-imported.
+        (self.legacy / "claims.json").write_text("{}")
+        worker_state.state_root()
+        self.assertIn("issue:1", worker_claims.load_claims())
+
+    def test_no_legacy_dir_creates_nothing(self):
+        worker_state.state_root()
+        self.assertFalse((self.repo / ".worker-loop").exists())
+
+
 if __name__ == "__main__":
     unittest.main()
