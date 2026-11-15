@@ -246,7 +246,7 @@ pub fn shell_command_failure_guidance(
         Some(code) if is_signal_interrupt_exit(code) => shell_signal_interrupt_guidance(code),
         // The shell executors report -1 when the process ended without an exit status. No
         // rewrite-loop hint: a killed process says nothing about whether the script is wrong.
-        Some(-1) | None => no_exit_status_guidance(stdout, stderr),
+        Some(-1) | None => no_exit_status_guidance(command, stdout, stderr),
         Some(code) => {
             let mut guidance = vec![format!("Command failed with exit code: {code}")];
             if !(stdout.is_empty() && stderr.is_empty()) {
@@ -258,7 +258,21 @@ pub fn shell_command_failure_guidance(
     }
 }
 
-fn no_exit_status_guidance(stdout: &str, stderr: &str) -> Vec<String> {
+fn no_exit_status_guidance(command: &str, stdout: &str, stderr: &str) -> Vec<String> {
+    // Output exists, so a pipeline that closed early (`| Select-Object -First N`, `| head`)
+    // or a native command stopped by it is likelier than a timeout (#2791; confirming the
+    // "usually" on Windows is tracked in #2806).
+    if !(stdout.trim().is_empty() && stderr.trim().is_empty()) && super::has_shell_pipeline(command)
+    {
+        return vec![
+            "Exit code -1 (or no exit code) with captured output on a pipeline usually means a later pipeline stage (for example `Select-Object -First N`) closed the pipeline early and stopped the upstream native command; it is not necessarily a timeout."
+                .to_string(),
+            "Review the output above: it is what the command printed before the pipeline ended."
+                .to_string(),
+            "To get the real exit code, rerun without the truncating stage, or redirect output to a file and read it with `Get-Content -TotalCount N`."
+                .to_string(),
+        ];
+    }
     let mut guidance = vec![
         "Exit code -1 (or no exit code) means the process ended without an exit status: it timed out, was killed, or was stopped by a signal."
             .to_string(),
@@ -561,6 +575,32 @@ mod tests {
         let with_output =
             shell_command_failure_guidance(Some(-1), "step 3 of 5", "", "make", false).join("\n");
         assert!(with_output.contains("Review the output above"));
+    }
+
+    #[test]
+    fn exit_minus_one_with_output_on_pipeline_names_early_pipeline_close() {
+        let joined = shell_command_failure_guidance(
+            Some(-1),
+            "usage: script.py",
+            "",
+            "python script.py --help 2>&1 | Select-Object -First 20",
+            false,
+        )
+        .join("\n");
+        assert!(joined.contains("closed the pipeline early"), "{joined}");
+        assert!(joined.contains("not necessarily a timeout"), "{joined}");
+        assert!(!joined.contains("timed out, was killed"), "{joined}");
+
+        // Pipeline but no output: still the generic no-exit-status guidance.
+        let empty = shell_command_failure_guidance(
+            Some(-1),
+            "",
+            "",
+            "python script.py | Select-Object -First 20",
+            false,
+        )
+        .join("\n");
+        assert!(empty.contains("No output was captured"), "{empty}");
     }
 
     #[test]

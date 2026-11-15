@@ -299,6 +299,7 @@ pub fn create_run_powershell_tool() -> MCPTool {
                        - Access environment variables using '$env:VARNAME'.\n\
                        - Each call starts fresh at the workspace root (or at optional cwd). `cd`/`Set-Location` does NOT persist across tool calls.\n\
                        - Prefer cwd='subdir' when the next commands need a different directory, or use workspace__runInPersistentPowerShell for sticky state.\n\
+                       - Avoid `| Select-Object -First N` after a native command: it stops that command early and its real exit code is lost (reported as -1). Use a separate command, or `Get-Content -TotalCount N` on saved output.\n\
                        - The shell never sends input to a command. For a password or token, set requireUserInput=true with storeAs=NAME: the UI asks once, the value is kept as $env:NAME for this session (later calls see it too), then the command runs.\n\
                        Two outcomes:\n\
                        1) Finished within timeout (exit success or failure): this response already has stdout/stderr and exit code. No processId — do not call workspace__waitForProcess/workspace__readProcessOutput for this run.\n\
