@@ -244,9 +244,10 @@ pub fn shell_command_failure_guidance(
             "Verify the file is a valid executable".to_string(),
         ],
         Some(code) if is_signal_interrupt_exit(code) => shell_signal_interrupt_guidance(code),
-        // The shell executors report -1 when the process ended without an exit status. No
-        // rewrite-loop hint: a killed process says nothing about whether the script is wrong.
-        Some(-1) | None => no_exit_status_guidance(command, stdout, stderr),
+        // -1 / missing: timeout/kill/signal, or (on Windows PowerShell 5.1) an
+        // early pipeline stop of a still-running native (#2806). No rewrite-loop
+        // hint: the exit alone does not say the script is wrong.
+        Some(-1) | None => no_exit_status_guidance(stdout, stderr, command),
         Some(code) => {
             let mut guidance = vec![format!("Command failed with exit code: {code}")];
             if !(stdout.is_empty() && stderr.is_empty()) {
@@ -258,26 +259,42 @@ pub fn shell_command_failure_guidance(
     }
 }
 
-fn no_exit_status_guidance(command: &str, stdout: &str, stderr: &str) -> Vec<String> {
-    // Output exists, so a pipeline that closed early (`| Select-Object -First N`, `| head`)
-    // or a native command stopped by it is likelier than a timeout (#2791; confirming the
-    // "usually" on Windows is tracked in #2806).
-    if !(stdout.trim().is_empty() && stderr.trim().is_empty()) && super::has_shell_pipeline(command)
-    {
-        return vec![
-            "Exit code -1 (or no exit code) with captured output on a pipeline usually means a later pipeline stage (for example `Select-Object -First N`) closed the pipeline early and stopped the upstream native command; it is not necessarily a timeout."
+/// Early-closing pipeline stages whose behavior was confirmed in #2806:
+/// Windows PowerShell 5.1 kills the still-running upstream native command and
+/// leaves `$LASTEXITCODE = -1` while the printed lines remain.
+fn has_early_closing_stage(command: &str) -> bool {
+    let lower = command.to_lowercase();
+    lower.contains("select-object -first") || lower.contains("select -first")
+}
+
+fn no_exit_status_guidance(stdout: &str, stderr: &str, command: &str) -> Vec<String> {
+    let has_output = !(stdout.is_empty() && stderr.is_empty());
+    // The early-stop wording applies only to the shape confirmed in #2806:
+    // Windows, a real pipeline (not `||`), an early-closing stage, and output.
+    // Every other `-1` keeps the hedged timeout / kill / signal text — on
+    // Linux and macOS `-1` is genuinely the no-exit-status value for a killed
+    // or timed-out process, and telling the agent not to retry can hide that.
+    let early_stop = cfg!(windows)
+        && has_output
+        && super::has_shell_pipeline(command)
+        && has_early_closing_stage(command);
+
+    let mut guidance = if early_stop {
+        // Confirmed on Windows PowerShell 5.1: `ping … | Select-Object -First N`
+        // leaves `$LASTEXITCODE = -1` while still printing lines. PowerShell 7
+        // on the same machine left `$LASTEXITCODE` null and reported success.
+        vec![
+            "Exit code -1 with output on a pipeline often means Windows PowerShell stopped an upstream native early (for example `| Select-Object -First`), not a timeout or an external kill. Success is still the exit code only — do not treat stdout alone as success."
                 .to_string(),
-            "Review the output above: it is what the command printed before the pipeline ended."
+        ]
+    } else {
+        vec![
+            "Exit code -1 (or no exit code) means the process ended without an exit status: it timed out, was killed, or was stopped by a signal."
                 .to_string(),
-            "To get the real exit code, rerun without the truncating stage, or redirect output to a file and read it with `Get-Content -TotalCount N`."
-                .to_string(),
-        ];
-    }
-    let mut guidance = vec![
-        "Exit code -1 (or no exit code) means the process ended without an exit status: it timed out, was killed, or was stopped by a signal."
-            .to_string(),
-    ];
-    if stdout.is_empty() && stderr.is_empty() {
+        ]
+    };
+
+    if !has_output {
         guidance.push("No output was captured, so there is no error output to review.".to_string());
     } else {
         guidance.push(
@@ -285,10 +302,18 @@ fn no_exit_status_guidance(command: &str, stdout: &str, stderr: &str) -> Vec<Str
                 .to_string(),
         );
     }
-    guidance.push(
-        "Do not retry the same command unchanged. Check whether it was stopped on purpose, ran out of memory, or waits for input that it cannot get."
-            .to_string(),
-    );
+
+    if early_stop {
+        guidance.push(
+            "If you only needed the first lines, that early stop is expected on Windows PowerShell 5.1; read the printed lines and do not retry the same pipeline hoping for exit 0."
+                .to_string(),
+        );
+    } else {
+        guidance.push(
+            "Do not retry the same command unchanged. Check whether it was stopped on purpose, ran out of memory, or waits for input that it cannot get."
+                .to_string(),
+        );
+    }
     guidance
 }
 
@@ -570,28 +595,110 @@ mod tests {
             assert!(joined.contains("timed out, was killed, or was stopped by a signal"));
             assert!(joined.contains("No output was captured"));
             assert!(!joined.contains("Review error output above"), "{joined}");
+            assert!(!joined.contains("Select-Object -First"), "{joined}");
         }
 
         let with_output =
             shell_command_failure_guidance(Some(-1), "step 3 of 5", "", "make", false).join("\n");
+        assert!(
+            with_output.contains("ended without an exit status"),
+            "{with_output}"
+        );
         assert!(with_output.contains("Review the output above"));
+        assert!(
+            !with_output.contains("Select-Object -First"),
+            "{with_output}"
+        );
     }
 
     #[test]
-    fn exit_minus_one_with_output_on_pipeline_names_early_pipeline_close() {
+    fn double_pipe_is_not_treated_as_an_early_stop_pipeline() {
+        // `make || true` has no pipeline; it must keep the hedged text (G1.1).
+        let joined =
+            shell_command_failure_guidance(Some(-1), "some output", "", "make -j4 || true", false)
+                .join("\n");
+        assert!(joined.contains("ended without an exit status"), "{joined}");
+        assert!(!joined.contains("Select-Object -First"), "{joined}");
+        assert!(!joined.contains("early stop is expected"), "{joined}");
+    }
+
+    #[test]
+    fn head_pipeline_does_not_get_the_windows_early_stop_text() {
+        // `cmd | head -1` on bash: -1 there really means killed or timed out
+        // (G1.2); the early-stop wording must not appear.
         let joined = shell_command_failure_guidance(
             Some(-1),
-            "usage: script.py",
+            "line 1\nline 2",
             "",
-            "python script.py --help 2>&1 | Select-Object -First 20",
+            "tail -f app.log | head -1",
             false,
         )
         .join("\n");
-        assert!(joined.contains("closed the pipeline early"), "{joined}");
-        assert!(joined.contains("not necessarily a timeout"), "{joined}");
-        assert!(!joined.contains("timed out, was killed"), "{joined}");
+        assert!(joined.contains("ended without an exit status"), "{joined}");
+        assert!(!joined.contains("Select-Object -First"), "{joined}");
+        assert!(!joined.contains("early stop is expected"), "{joined}");
+    }
 
-        // Pipeline but no output: still the generic no-exit-status guidance.
+    #[test]
+    fn pipeline_without_first_stage_keeps_hedged_text() {
+        // A Windows-style pipeline without an early-closing stage can still be
+        // killed for real (G1.2); keep the timeout / kill wording.
+        let joined = shell_command_failure_guidance(
+            Some(-1),
+            "test result: FAILED",
+            "",
+            "cargo test | Select-String x",
+            false,
+        )
+        .join("\n");
+        assert!(joined.contains("ended without an exit status"), "{joined}");
+        assert!(!joined.contains("Select-Object -First"), "{joined}");
+        assert!(!joined.contains("early stop is expected"), "{joined}");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn exit_minus_one_with_first_stage_points_at_early_stop() {
+        let joined = shell_command_failure_guidance(
+            Some(-1),
+            "Reply from 127.0.0.1",
+            "",
+            "ping -n 8 127.0.0.1 | Select-Object -First 1",
+            false,
+        )
+        .join("\n");
+        assert!(joined.contains("Select-Object -First"), "{joined}");
+        assert!(joined.contains("early"), "{joined}");
+        assert!(
+            !joined.contains("timed out, was killed, or was stopped by a signal"),
+            "{joined}"
+        );
+        assert!(joined.contains("exit code only"), "{joined}");
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn first_stage_pipeline_off_windows_keeps_hedged_text() {
+        // Off Windows the -1 early-stop shape was never confirmed; the
+        // guidance must stay the hedged timeout / kill text.
+        let joined = shell_command_failure_guidance(
+            Some(-1),
+            "Reply from 127.0.0.1",
+            "",
+            "ping -n 8 127.0.0.1 | Select-Object -First 1",
+            false,
+        )
+        .join("\n");
+        assert!(joined.contains("ended without an exit status"), "{joined}");
+        assert!(!joined.contains("early stop is expected"), "{joined}");
+    }
+
+    #[test]
+    fn exit_minus_one_pipeline_without_output_keeps_generic_guidance() {
+        // The with-output pipeline shape is covered by the cfg(windows) /
+        // cfg(not(windows)) pair above; what remains unique here is that a
+        // pipeline with no output still falls through to the generic
+        // no-exit-status guidance.
         let empty = shell_command_failure_guidance(
             Some(-1),
             "",
