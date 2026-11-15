@@ -1,4 +1,7 @@
-use super::context::{append_hook_context, clear_hook_context};
+use super::context::{
+    append_hook_context, begin_hook_replacement, begin_hook_run, end_hook_run,
+    finish_hook_replacement,
+};
 use super::envelope::{build_envelope_value, HookEnvelopeParams, SessionStartSource};
 use super::output::{normalize, HookOutput};
 use super::registry::{
@@ -28,13 +31,43 @@ pub async fn run_session_start(session_id: &str, source: SessionStartSource, cwd
     run_session_start_in(&plugins_dir, session_id, source, cwd).await;
 }
 
+/// Releases the in-flight marker for a SessionStart hook run when the task
+/// finishes — including on panic and early return — so `await_hook_run` can
+/// never hang a completion past the hook run (#2812 G3.1).
+struct HookRunGuard(String);
+
+impl Drop for HookRunGuard {
+    fn drop(&mut self) {
+        end_hook_run(&self.0);
+    }
+}
+
+/// Spawn the SessionStart hooks for a session off the caller's path.
+///
+/// Registers the in-flight marker synchronously before spawning, so the
+/// first LLM request of a new session sees the wait even when it arrives
+/// before the spawned task starts (#2812 G3.1).
+pub fn spawn_session_start(session_id: &str, source: SessionStartSource) {
+    begin_hook_run(session_id);
+    let hook_session_id = session_id.to_string();
+    tauri::async_runtime::spawn(async move {
+        let _guard = HookRunGuard(hook_session_id.clone());
+        run_session_start(&hook_session_id, source, None).await;
+    });
+}
+
 pub async fn run_session_start_in(
     plugins_dir: &Path,
     session_id: &str,
     source: SessionStartSource,
     cwd: Option<PathBuf>,
 ) {
-    clear_hook_context(session_id);
+    // Do NOT clear the previous context up front (#2812 G3.2): a slow,
+    // failing, or exit-2 re-run must not erase a bootstrap that is already
+    // in effect. Arm one-shot replacement instead — the first output of
+    // this run replaces the stored text; without output, finish disarms
+    // and the previous text survives.
+    begin_hook_replacement(session_id);
     let cwd = match resolve_session_cwd(session_id, cwd).await {
         Ok(p) => p,
         Err(e) => {
@@ -42,6 +75,7 @@ pub async fn run_session_start_in(
                 "SessionStart hooks skipped for {}: workspace cwd unavailable: {e}",
                 session_id
             );
+            finish_hook_replacement(session_id);
             return;
         }
     };
@@ -58,6 +92,7 @@ pub async fn run_session_start_in(
         session_id,
     )
     .await;
+    finish_hook_replacement(session_id);
 }
 
 pub async fn notify_stub_event(event: HookEvent, session_id: &str, mut params: HookEnvelopeParams) {
@@ -368,13 +403,35 @@ async fn resolve_session_cwd(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::hooks::context::get_hook_context;
+    use crate::services::hooks::context::{await_hook_run, clear_hook_context, get_hook_context};
     use crate::services::hooks::registry::{
         compute_handler_approval_hashes, save_source_in, PluginSourceManifest,
     };
     use crate::services::hooks::schema::load_hooks_from_root;
     use std::fs;
     use tempfile::TempDir;
+
+    /// Rewrite a source's hooks.json and re-approve it, simulating a plugin
+    /// update between two SessionStart runs of the same session.
+    fn reapprove_source(temp: &Path, root: &Path, hooks_json: &str) {
+        fs::write(root.join("hooks").join("hooks.json"), hooks_json).unwrap();
+        let source_id = root.file_name().unwrap().to_string_lossy().to_string();
+        let cfg = load_hooks_from_root(root).unwrap();
+        let hashes = compute_handler_approval_hashes(root, &cfg);
+        save_source_in(
+            temp,
+            PluginSourceManifest {
+                source_url: "test://local".to_string(),
+                source_id,
+                skill_names: vec![],
+                hooks: None,
+                hooks_approved: true,
+                approval_hashes: hashes,
+                created_at: 0,
+            },
+        )
+        .unwrap();
+    }
 
     fn setup_approved_plugin(hooks_json: &str) -> (TempDir, PathBuf) {
         let temp = tempfile::tempdir().expect("tempdir");
@@ -511,6 +568,101 @@ mod tests {
         clear_hook_context(&sid);
         run_session_start_in(temp.path(), &sid, SessionStartSource::Startup, Some(root)).await;
         assert!(get_hook_context(&sid).is_none());
+        clear_hook_context(&sid);
+    }
+
+    #[tokio::test]
+    async fn failed_compact_rerun_keeps_previous_context() {
+        // #2812 G3.2: a compaction re-run that fails (exit 2) must not erase
+        // the bootstrap already in effect for the session.
+        let hooks_json =
+            r#"{ "hooks": { "SessionStart": [ { "command": "echo first bootstrap" } ] } }"#;
+        let (temp, root) = setup_approved_plugin(hooks_json);
+        let sid = format!("hook-keep-{}", uuid::Uuid::new_v4());
+        clear_hook_context(&sid);
+        run_session_start_in(
+            temp.path(),
+            &sid,
+            SessionStartSource::Startup,
+            Some(root.clone()),
+        )
+        .await;
+        assert_eq!(
+            get_hook_context(&sid).as_deref(),
+            Some("first bootstrap"),
+            "first run stores its output"
+        );
+
+        #[cfg(target_os = "windows")]
+        let failing = r#"{ "hooks": { "SessionStart": [ { "command": "cmd /c exit 2" } ] } }"#;
+        #[cfg(not(target_os = "windows"))]
+        let failing = r#"{ "hooks": { "SessionStart": [ { "command": "exit 2" } ] } }"#;
+        reapprove_source(temp.path(), &root, failing);
+        run_session_start_in(temp.path(), &sid, SessionStartSource::Compact, Some(root)).await;
+        assert_eq!(
+            get_hook_context(&sid).as_deref(),
+            Some("first bootstrap"),
+            "failed re-run must keep the previous context"
+        );
+        clear_hook_context(&sid);
+    }
+
+    #[tokio::test]
+    async fn successful_compact_rerun_replaces_previous_context() {
+        // #2812 G3.2 counterpart: a successful re-run replaces (not appends
+        // to) the previous text, so no duplicate bootstrap accumulates.
+        let hooks_json =
+            r#"{ "hooks": { "SessionStart": [ { "command": "echo first bootstrap" } ] } }"#;
+        let (temp, root) = setup_approved_plugin(hooks_json);
+        let sid = format!("hook-replace-{}", uuid::Uuid::new_v4());
+        clear_hook_context(&sid);
+        run_session_start_in(
+            temp.path(),
+            &sid,
+            SessionStartSource::Startup,
+            Some(root.clone()),
+        )
+        .await;
+
+        let updated =
+            r#"{ "hooks": { "SessionStart": [ { "command": "echo second bootstrap" } ] } }"#;
+        reapprove_source(temp.path(), &root, updated);
+        run_session_start_in(temp.path(), &sid, SessionStartSource::Compact, Some(root)).await;
+        assert_eq!(
+            get_hook_context(&sid).as_deref(),
+            Some("second bootstrap"),
+            "successful re-run must replace the previous context"
+        );
+        clear_hook_context(&sid);
+    }
+
+    #[tokio::test]
+    async fn slow_hook_wait_lands_context_before_prompt() {
+        // #2812 G3.1: while a hook run is in flight, await_hook_run (the
+        // prompt-build gate) waits for it and the bootstrap is then visible.
+        #[cfg(target_os = "windows")]
+        let hooks_json = r#"{ "hooks": { "SessionStart": [ { "command": "ping -n 2 127.0.0.1 >nul && echo slow hook body" } ] } }"#;
+        #[cfg(not(target_os = "windows"))]
+        let hooks_json = r#"{ "hooks": { "SessionStart": [ { "command": "sleep 0.4 && echo slow hook body" } ] } }"#;
+
+        let (temp, root) = setup_approved_plugin(hooks_json);
+        let sid = format!("hook-slow-{}", uuid::Uuid::new_v4());
+        clear_hook_context(&sid);
+        begin_hook_run(&sid);
+        let dir = temp.path().to_path_buf();
+        let run_sid = sid.clone();
+        let run = tokio::spawn(async move {
+            run_session_start_in(&dir, &run_sid, SessionStartSource::Startup, Some(root)).await;
+            end_hook_run(&run_sid);
+        });
+
+        await_hook_run(&sid).await;
+        assert_eq!(
+            get_hook_context(&sid).as_deref(),
+            Some("slow hook body"),
+            "the first prompt waits for the in-flight hook"
+        );
+        run.await.unwrap();
         clear_hook_context(&sid);
     }
 

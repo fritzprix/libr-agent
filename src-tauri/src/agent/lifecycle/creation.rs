@@ -286,15 +286,12 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
     log::info!("Created agent session: {}", session_id);
 
     if spawn_session_start_hooks {
-        let hook_session_id = session_id.clone();
-        tauri::async_runtime::spawn(async move {
-            crate::services::hooks::run_session_start(
-                &hook_session_id,
-                crate::services::hooks::SessionStartSource::Startup,
-                None,
-            )
-            .await;
-        });
+        // #2812 G3.1: the marker is registered here, synchronously, before
+        // the spawn — the first prompt of this session waits on it.
+        crate::services::hooks::spawn_session_start(
+            &session_id,
+            crate::services::hooks::SessionStartSource::Startup,
+        );
     }
 
     // Emit resource updated event for frontend cache revalidation

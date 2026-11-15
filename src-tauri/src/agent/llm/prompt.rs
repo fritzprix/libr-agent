@@ -499,6 +499,10 @@ async fn build_volatile_sections_split(
     let mut volatile_parts: Vec<String> = Vec::new();
 
     if let Some(session_id) = session_id {
+        // #2812 G3.1: a SessionStart hook that is still running has an
+        // in-flight marker; wait for it (bounded) before the first prompt so
+        // the bootstrap lands on the first LLM request, not the second.
+        crate::services::hooks::await_hook_run(session_id).await;
         if let Some(hook_context) = crate::services::hooks::get_hook_context(session_id) {
             let trimmed = hook_context.trim();
             if !trimmed.is_empty() {
@@ -547,6 +551,46 @@ mod tests {
     use crate::agent::context::registry::ContextRegistry;
     use crate::mcp::service_proxy::MCPServiceProxy;
     use std::sync::Arc;
+
+    #[tokio::test]
+    async fn first_prompt_waits_for_inflight_hook_context() {
+        // #2812 G3.1: the prompt path must wait for an in-flight SessionStart
+        // hook and carry its context on the very first LLM request.
+        use crate::services::hooks::context::{
+            begin_hook_run, clear_hook_context, end_hook_run, set_hook_context,
+        };
+        use std::time::Duration;
+
+        let sid = "test-prompt-hook-wait-1";
+        clear_hook_context(sid);
+        begin_hook_run(sid);
+        let sid_task = sid.to_string();
+        let task = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            set_hook_context(&sid_task, "superpowers bootstrap".to_string());
+            end_hook_run(&sid_task);
+        });
+
+        let (cacheable, _volatile) =
+            build_volatile_sections_split(None, None, None, Some(sid)).await;
+        assert!(cacheable.contains("## Plugin Hook Context"));
+        assert!(
+            cacheable.contains("superpowers bootstrap"),
+            "first prompt must carry the hook output: {cacheable}"
+        );
+        task.await.unwrap();
+        clear_hook_context(sid);
+    }
+
+    #[tokio::test]
+    async fn prompt_without_hook_run_does_not_wait() {
+        // No marker, no context: the prompt path proceeds immediately.
+        let sid = "test-prompt-hook-wait-none";
+        crate::services::hooks::clear_hook_context(sid);
+        let (cacheable, _volatile) =
+            build_volatile_sections_split(None, None, None, Some(sid)).await;
+        assert!(!cacheable.contains("## Plugin Hook Context"));
+    }
 
     #[tokio::test]
     async fn test_build_system_prompt_all_sections() {
