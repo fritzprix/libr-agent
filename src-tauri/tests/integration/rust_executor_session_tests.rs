@@ -128,6 +128,29 @@ async fn fail_then_sse(fail_count: usize, reply: Vec<Value>) -> MockProvider {
     }
 }
 
+/// A loopback server that records POST /v1/messages (the Anthropic Messages
+/// path, `{base_url}/messages`) and answers with an empty Messages body.
+async fn mock_anthropic_messages() -> (Endpoint, Arc<Mutex<Vec<Value>>>) {
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let seen = requests.clone();
+    let route = warp::post()
+        .and(warp::path!("v1" / "messages"))
+        .and(warp::body::json())
+        .map(move |body: Value| {
+            seen.lock().unwrap().push(body);
+            warp::reply::json(&json!({"content": []}))
+        });
+    let (addr, server): (SocketAddr, _) = warp::serve(route).bind_ephemeral(([127, 0, 0, 1], 0));
+    tokio::spawn(server);
+    (
+        Endpoint {
+            base_url: format!("http://{addr}/v1"),
+            api_key: None,
+        },
+        requests,
+    )
+}
+
 async fn install_settings(pairs: &[(&str, Value)]) -> SqliteSettingsRepository {
     let db = common::setup_test_db_with_migrations().await;
     let repo = SqliteSettingsRepository::new(db);
@@ -741,11 +764,10 @@ async fn fallback_skipped_when_unsupported() {
 #[tokio::test]
 async fn configured_anthropic_base_url_routes_to_rust() {
     let _guard = TEST_GUARD.lock().await;
-    let mock = mock_provider(vec![text_reply("ignored")]).await;
-    let base = mock.endpoint.base_url.clone();
+    let (endpoint, requests) = mock_anthropic_messages().await;
     let _settings = install_settings(&[(
         "serviceConfigs",
-        json!({ "anthropic": { "apiKey": "sk-ant", "baseUrl": base } }),
+        json!({ "anthropic": { "apiKey": "sk-ant", "baseUrl": endpoint.base_url.clone() } }),
     )])
     .await;
     // No endpoint_override: the Rust path must reach the Settings Base URL.
@@ -764,14 +786,15 @@ async fn configured_anthropic_base_url_routes_to_rust() {
     .await;
     // Before #2797 an Anthropic session with a custom Base URL stayed on the
     // WebView (the URL would be ignored) and failed without one. Now the Rust
-    // executor honors the configured URL, so it must reach it. The mock's
-    // OpenAI-shaped body may fail the Anthropic parser — the request itself is
-    // the proof of the route.
+    // executor honors the configured URL, so the Messages request must reach
+    // it — the recorded body is the proof of the route.
     wait_for(
         "the Rust path to call the configured Anthropic Base URL",
-        || !mock.requests.lock().unwrap().is_empty(),
+        || !requests.lock().unwrap().is_empty(),
     )
     .await;
+    let body = requests.lock().unwrap()[0].clone();
+    assert_eq!(body["model"], "mock-model");
 }
 
 #[tokio::test]
