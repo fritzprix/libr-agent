@@ -21,8 +21,9 @@ const CTRL_C_QUIT_WINDOW: Duration = Duration::from_secs(2);
 const S5_MAX_ROWS: u16 = 8;
 
 /// Where keyboard focus sits while an S5 prompt is open.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Focus {
+    #[default]
     Composer,
     Prompt,
 }
@@ -69,12 +70,6 @@ pub struct ChatState {
     pub s5_scroll: u16,
     ask: AskDraft,
     last_ctrl_c: Option<Instant>,
-}
-
-impl Default for Focus {
-    fn default() -> Self {
-        Self::Composer
-    }
 }
 
 impl ChatState {
@@ -427,7 +422,10 @@ pub enum FrontExitKind {
     Process,
 }
 
-/// Pick the exit path for the front thread. Pure so tests can cover G1.4.
+/// How long to wait for Tauri's graceful `RunEvent::Exit` before force-exiting.
+pub const APP_HANDLE_EXIT_WAIT: Duration = Duration::from_secs(3);
+
+/// Pick the exit path for the front thread. Pure so tests can cover G1.4 / G2.2.
 pub fn decide_front_exit(has_app_handle: bool) -> FrontExitKind {
     if has_app_handle {
         FrontExitKind::AppHandle
@@ -436,19 +434,25 @@ pub fn decide_front_exit(has_app_handle: bool) -> FrontExitKind {
     }
 }
 
-/// Restore the terminal, then end the process (or ask Tauri to).
+/// True when the AppHandle path must wait for graceful Exit before `process::exit`.
+pub fn app_handle_exit_waits(kind: FrontExitKind) -> bool {
+    matches!(kind, FrontExitKind::AppHandle)
+}
+
+/// Request a clean exit. With an app handle, wait for `RunEvent::Exit` (restore +
+/// unpublish) before falling back to `process::exit`.
 fn leave_front() -> ! {
-    crate::tui::restore_terminal();
-    match decide_front_exit(crate::state::get_app_handle().is_some()) {
-        FrontExitKind::AppHandle => {
-            if let Some(handle) = crate::state::get_app_handle() {
-                handle.exit(0);
-            }
-            // `exit` may not stop this thread; fall through.
-            std::process::exit(0);
+    let kind = decide_front_exit(crate::state::get_app_handle().is_some());
+    if app_handle_exit_waits(kind) {
+        if let Some(handle) = crate::state::get_app_handle() {
+            handle.exit(0);
+            // Let RunEvent::Exit restore the terminal and drop the backend
+            // descriptor; only force-exit if that never arrives.
+            std::thread::sleep(APP_HANDLE_EXIT_WAIT);
         }
-        FrontExitKind::Process => std::process::exit(0),
     }
+    crate::tui::restore_terminal();
+    std::process::exit(0);
 }
 
 fn current_ask_answer(question: &UserQuestion, draft: &AskDraft) -> Result<Value, String> {
@@ -524,6 +528,36 @@ pub fn pick_pending_approval(list: Vec<PendingApprovalSummary>) -> Option<Pendin
 pub fn transcript_scroll_offset(content_rows: u16, view_rows: u16, from_bottom: u16) -> u16 {
     let max_scroll = content_rows.saturating_sub(view_rows);
     max_scroll.saturating_sub(from_bottom.min(max_scroll))
+}
+
+/// Soft-wrap one logical line to `width` columns (Unicode scalar count).
+pub fn wrap_line(line: &str, width: usize) -> Vec<String> {
+    if width == 0 {
+        return vec![line.to_string()];
+    }
+    if line.is_empty() {
+        return vec![String::new()];
+    }
+    let chars: Vec<char> = line.chars().collect();
+    chars
+        .chunks(width)
+        .map(|chunk| chunk.iter().collect())
+        .collect()
+}
+
+/// How many terminal rows `text` needs at `width` with the same wrap as
+/// `Paragraph` + `Wrap { trim: false }` (per logical line, no trim).
+pub fn wrapped_row_count(text: &str, width: u16) -> u16 {
+    let w = usize::from(width.max(1));
+    if text.is_empty() {
+        return 1;
+    }
+    let rows: usize = text
+        .lines()
+        .map(|line| wrap_line(line, w).len().max(1))
+        .sum();
+    // `str::lines` drops a trailing empty line; keep at least one row.
+    rows.max(1) as u16
 }
 
 fn s5_body_lines(state: &ChatState) -> Vec<String> {
@@ -614,17 +648,27 @@ fn ask_user_lines(state: &ChatState, questions: &[UserQuestion]) -> Vec<String> 
     lines
 }
 
-fn s5_height(state: &ChatState) -> u16 {
+/// S5 strip height and body text for `width`, with a clip marker when needed.
+pub fn s5_layout(state: &ChatState, width: u16) -> (u16, String) {
     if !state.has_s5() {
-        return 0;
+        return (0, String::new());
     }
-    let lines = s5_body_lines(state).len() as u16;
-    lines.clamp(1, S5_MAX_ROWS)
+    let body = s5_body_lines(state).join("\n");
+    let total = wrapped_row_count(&body, width);
+    if total <= S5_MAX_ROWS {
+        return (total.clamp(1, S5_MAX_ROWS), body);
+    }
+    // Reserve the last row for the marker; content scrolls in the rest.
+    let content_rows = S5_MAX_ROWS.saturating_sub(1).max(1);
+    let hidden = total.saturating_sub(content_rows);
+    let marker = format!("… {hidden} more rows (Tab, ↑↓)");
+    (S5_MAX_ROWS, format!("{body}\n{marker}"))
 }
 
 /// Draw the S1 chat frame (and S5 strip when a prompt is open).
 pub fn draw_chat(frame: &mut Frame<'_>, state: &ChatState) {
-    let s5_rows = s5_height(state);
+    let width = frame.area().width.max(1);
+    let (s5_rows, s5_text) = s5_layout(state, width);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -648,7 +692,7 @@ pub fn draw_chat(frame: &mut Frame<'_>, state: &ChatState) {
         .map(|line| format!("{}  {}", line.role, line.text))
         .collect::<Vec<_>>()
         .join("\n");
-    let content_rows = body.lines().count().max(1) as u16;
+    let content_rows = wrapped_row_count(&body, chunks[1].width.max(1));
     let view_rows = chunks[1].height.max(1);
     let scroll_y = transcript_scroll_offset(content_rows, view_rows, state.scroll_from_bottom);
     frame.render_widget(
@@ -660,14 +704,29 @@ pub fn draw_chat(frame: &mut Frame<'_>, state: &ChatState) {
     );
 
     if s5_rows > 0 {
-        let lines = s5_body_lines(state);
-        let text = lines.join("\n");
-        frame.render_widget(
-            Paragraph::new(text)
-                .wrap(Wrap { trim: false })
-                .scroll((state.s5_scroll, 0)),
-            chunks[2],
-        );
+        let clipped = s5_text.contains("more rows (Tab");
+        if clipped {
+            let (content, marker) = s5_text.rsplit_once('\n').unwrap_or((s5_text.as_str(), ""));
+            let content_height = s5_rows.saturating_sub(1).max(1);
+            let s5_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Length(content_height), Constraint::Length(1)])
+                .split(chunks[2]);
+            frame.render_widget(
+                Paragraph::new(content)
+                    .wrap(Wrap { trim: false })
+                    .scroll((state.s5_scroll, 0)),
+                s5_chunks[0],
+            );
+            frame.render_widget(Paragraph::new(marker), s5_chunks[1]);
+        } else {
+            frame.render_widget(
+                Paragraph::new(s5_text)
+                    .wrap(Wrap { trim: false })
+                    .scroll((state.s5_scroll, 0)),
+                chunks[2],
+            );
+        }
     }
 
     let composer_title = if state.focus == Focus::Composer {
@@ -1108,7 +1167,42 @@ mod tests {
     #[test]
     fn decide_front_exit_uses_process_without_app_handle() {
         assert_eq!(decide_front_exit(false), FrontExitKind::Process);
+        assert!(!app_handle_exit_waits(FrontExitKind::Process));
         assert_eq!(decide_front_exit(true), FrontExitKind::AppHandle);
+        assert!(app_handle_exit_waits(FrontExitKind::AppHandle));
+        assert!(APP_HANDLE_EXIT_WAIT > Duration::ZERO);
+    }
+
+    #[test]
+    fn focus_defaults_to_composer() {
+        assert_eq!(Focus::default(), Focus::Composer);
+    }
+
+    #[test]
+    fn wrapped_row_count_splits_long_lines() {
+        assert_eq!(wrapped_row_count(&"x".repeat(120), 80), 2);
+        assert_eq!(wrapped_row_count(&"x".repeat(400), 80), 5);
+    }
+
+    #[test]
+    fn s5_layout_keeps_clip_marker_for_long_approval() {
+        // Header + footer + ~10 wrapped command rows at width 80 → over S5_MAX_ROWS.
+        let long = "x".repeat(800);
+        let mut state = ChatState::new();
+        state.pending_approval = Some(PendingApprovalSummary {
+            command_preview: long,
+            ..approval()
+        });
+        let (height, text) = s5_layout(&state, 80);
+        assert_eq!(height, S5_MAX_ROWS);
+        assert!(
+            text.contains("more rows (Tab"),
+            "clipped S5 must show a scroll hint, got: {text}"
+        );
+        assert!(
+            text.contains("Approve workspace__runPowerShell?"),
+            "header stays in the body"
+        );
     }
 
     #[test]
@@ -1129,6 +1223,37 @@ mod tests {
         assert!(
             rendered.contains(&long),
             "full command preview must appear without truncation"
+        );
+    }
+
+    #[test]
+    fn draw_chat_keeps_marker_and_newest_reply_visible() {
+        let long = "x".repeat(800);
+        let mut state = ChatState::new();
+        state.pending_approval = Some(PendingApprovalSummary {
+            command_preview: long,
+            ..approval()
+        });
+        // One logical line that wraps to many rows — follow-tail must still
+        // land on the newest content.
+        state.transcript = vec![TranscriptLine {
+            role: "AI".to_string(),
+            text: format!("{}\nTAIL", "paragraph ".repeat(40)),
+        }];
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| draw_chat(frame, &state))
+            .expect("draw");
+        let buffer = terminal.backend().buffer().clone();
+        let rendered: String = buffer.content().iter().map(|c| c.symbol()).collect();
+        assert!(
+            rendered.contains("more rows (Tab"),
+            "S5 clip marker must stay on screen"
+        );
+        assert!(
+            rendered.contains("TAIL"),
+            "follow-tail must keep the newest transcript row visible"
         );
     }
 
