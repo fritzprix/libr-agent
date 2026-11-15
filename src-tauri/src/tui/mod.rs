@@ -195,6 +195,12 @@ fn setup_terminal() -> Result<(), String> {
 /// the terminal and take the whole process down with a non-zero code.
 /// Documented smoke case: a Windows TTY launch whose console cannot enter
 /// raw mode reaches this after the deferred readiness wait and exits 1.
+///
+/// `process::exit(1)` skips Tauri shutdown; the backend descriptor left
+/// behind is crash residue that `find_live_backend`'s sweep handles.
+/// Windows-only: the sole caller lives in the `#[cfg(windows)]` branch of
+/// `run_tui`, and compiling it elsewhere trips `dead_code` under CI.
+#[cfg(windows)]
 fn abort_without_terminal(err: &str) -> ! {
     restore_terminal();
     eprintln!("error: {err}");
@@ -291,6 +297,12 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn setup_terminal_skips_raw_mode_when_stdout_is_not_a_tty() {
+        use std::io::IsTerminal;
+        if std::io::stdout().is_terminal() {
+            // Launched from an interactive console (e.g. `--nocapture`):
+            // the case under test is the redirected-pipe launch, so skip.
+            return;
+        }
         // `cargo test` runs with piped stdout — exactly the scripted-smoke
         // case: the Windows skip must report success and leave
         // TERMINAL_ACTIVE false so restore_terminal stays a no-op.
