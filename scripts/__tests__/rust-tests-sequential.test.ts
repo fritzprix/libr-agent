@@ -1,7 +1,9 @@
+import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const require = createRequire(import.meta.url);
+const RUNNER_PATH = require.resolve('../run-rust-tests-sequential.cjs');
 const {
   isTransientWindowsExecFailure,
   maxAttemptsFor,
@@ -16,7 +18,10 @@ const {
     cargoArgs: string[],
     targetLabel: string,
     deps?: {
-      runCargoTest?: (cargoArgs: string[]) => { status: number; output: string };
+      runCargoTest?: (cargoArgs: string[]) => {
+        status: number;
+        output: string;
+      };
       sleepMs?: (ms: number) => void;
       maxAttempts?: number;
     },
@@ -25,9 +30,16 @@ const {
     stdout: string,
     stderr: string,
     deps?: {
-      writeSync?: (fd: number, data: string) => number;
+      writeSync?: (
+        fd: number,
+        buffer: Buffer,
+        offset: number,
+        length: number,
+        position: number | null,
+      ) => number;
       stdoutFd?: number;
       stderrFd?: number;
+      sleepMs?: (ms: number) => void;
     },
   ) => void;
   MAX_ATTEMPTS_WINDOWS: number;
@@ -55,7 +67,9 @@ describe('rust-tests-sequential retry policy', () => {
       expect(isTransientWindowsExecFailure(TRANSIENT_OUTPUT)).toBe(true);
       expect(isTransientWindowsExecFailure('never executed')).toBe(true);
       expect(isTransientWindowsExecFailure('Access is denied.')).toBe(true);
-      expect(isTransientWindowsExecFailure('액세스가 거부되었습니다')).toBe(true);
+      expect(isTransientWindowsExecFailure('액세스가 거부되었습니다')).toBe(
+        true,
+      );
     });
 
     it('does not classify real test failures as transient', () => {
@@ -148,21 +162,27 @@ describe('rust-tests-sequential retry policy', () => {
   });
 
   describe('writeCapturedOutput', () => {
+    /** >64 KB so a single pipe write cannot accept the whole payload. */
+    const CARGO_TAIL =
+      'failures:\n    big_suite::the_failing_test\ntest result: FAILED. 0 passed; 1 failed\n';
+    const BIG_STDOUT = `${'ok\n'.repeat(20_000)}${CARGO_TAIL}`;
+
     it('writes stdout and stderr through writeSync before returning', () => {
       const writes: Array<{ fd: number; data: string }> = [];
-      // >64 KB so a piped async write would still be buffered when exit fires (#2776).
-      const stdout = `${'ok\n'.repeat(20_000)}failures:\n    big_suite::the_failing_test\ntest result: FAILED. 0 passed; 1 failed\n`;
       const stderr = 'error: test failed, to rerun pass --lib\n';
-      writeCapturedOutput(stdout, stderr, {
-        writeSync: (fd, data) => {
-          writes.push({ fd, data });
-          return data.length;
+      writeCapturedOutput(BIG_STDOUT, stderr, {
+        writeSync: (fd, buffer, offset, length) => {
+          writes.push({
+            fd,
+            data: buffer.subarray(offset, offset + length).toString(),
+          });
+          return length;
         },
         stdoutFd: 1,
         stderrFd: 2,
       });
       expect(writes).toEqual([
-        { fd: 1, data: stdout },
+        { fd: 1, data: BIG_STDOUT },
         { fd: 2, data: stderr },
       ]);
       expect(writes[0]?.data).toContain('failures:');
@@ -172,14 +192,99 @@ describe('rust-tests-sequential retry policy', () => {
     it('skips empty streams', () => {
       const writes: Array<{ fd: number; data: string }> = [];
       writeCapturedOutput('', 'only-err\n', {
-        writeSync: (fd, data) => {
-          writes.push({ fd, data });
-          return data.length;
+        writeSync: (fd, buffer, offset, length) => {
+          writes.push({
+            fd,
+            data: buffer.subarray(offset, offset + length).toString(),
+          });
+          return length;
         },
         stdoutFd: 1,
         stderrFd: 2,
       });
       expect(writes).toEqual([{ fd: 2, data: 'only-err\n' }]);
+    });
+
+    it('keeps writing after a short write until the payload is complete (#2776)', () => {
+      // A pipe that accepts at most one pipe-buffer per call: exactly the
+      // CI failure mode where a single fs.writeSync dropped the tail.
+      const MAX_CHUNK = 8 * 1024;
+      const chunks: string[] = [];
+      let calls = 0;
+      writeCapturedOutput(BIG_STDOUT, '', {
+        writeSync: (fd, buffer, offset, length) => {
+          calls += 1;
+          const written = Math.min(length, MAX_CHUNK);
+          chunks.push(buffer.subarray(offset, offset + written).toString());
+          return written;
+        },
+        stdoutFd: 1,
+        stderrFd: 2,
+      });
+      expect(calls).toBeGreaterThan(1);
+      const joined = chunks.join('');
+      expect(joined).toBe(BIG_STDOUT);
+      expect(joined.endsWith(CARGO_TAIL)).toBe(true);
+    });
+
+    it('retries once on EAGAIN and still writes every byte (#2776)', () => {
+      const sleeps: number[] = [];
+      const written: string[] = [];
+      let first = true;
+      writeCapturedOutput('hello cargo\n', '', {
+        writeSync: (fd, buffer, offset, length) => {
+          if (first) {
+            first = false;
+            throw Object.assign(new Error('resource temporarily unavailable'), {
+              code: 'EAGAIN',
+            });
+          }
+          written.push(buffer.subarray(offset, offset + length).toString());
+          return length;
+        },
+        sleepMs: (ms) => sleeps.push(ms),
+        stdoutFd: 1,
+        stderrFd: 2,
+      });
+      expect(written.join('')).toBe('hello cargo\n');
+      expect(sleeps).toHaveLength(1);
+    });
+
+    it('throws instead of spinning forever when the fd takes nothing', () => {
+      expect(() =>
+        writeCapturedOutput('x', '', {
+          writeSync: () => 0,
+          sleepMs: () => {},
+          stdoutFd: 1,
+          stderrFd: 2,
+        }),
+      ).toThrow(/no progress/);
+    });
+  });
+
+  describe('piped-output acceptance check (#2776)', () => {
+    it('survives process.exit with >64 KB piped stdout and a deliberate failure', () => {
+      // Real production path: a child process writes the captured cargo
+      // output with writeCapturedOutput, then exits 101 like a failing
+      // cargo test run, while stdout is an OS pipe (as in GitHub Actions).
+      const tail =
+        'failures:\n    big_suite::the_failing_test\ntest result: FAILED. 0 passed; 1 failed\n';
+      const driver = `
+        const { writeCapturedOutput } = require(${JSON.stringify(RUNNER_PATH)});
+        const tail = 'failures:\\n    big_suite::the_failing_test\\ntest result: FAILED. 0 passed; 1 failed\\n';
+        writeCapturedOutput('x'.repeat(200_000) + tail, 'captured stderr tail\\n');
+        process.exit(101);
+      `;
+      const child = spawnSync(process.execPath, ['-e', driver], {
+        encoding: 'utf8',
+        maxBuffer: 16 * 1024 * 1024,
+      });
+      expect(child.status).toBe(101);
+      expect(child.stdout.length).toBeGreaterThan(64 * 1024);
+      // The whole payload must be there, tail included — the #2776 symptom
+      // was stdout ending mid-line with no `failures:` section.
+      expect(child.stdout.endsWith(tail)).toBe(true);
+      expect(child.stderr).toContain('captured stderr tail');
     });
   });
 });

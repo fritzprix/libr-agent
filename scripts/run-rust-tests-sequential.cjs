@@ -69,23 +69,54 @@ function isTransientWindowsExecFailure(output) {
   );
 }
 
+/** Backoff between EAGAIN retries while a full non-blocking pipe drains. */
+const EAGAIN_RETRY_DELAY_MS = 10;
+
 /**
- * Write captured cargo output synchronously.
+ * Push one captured stream fully onto its fd.
  *
- * `process.stdout.write` is async when stdout is a pipe (GitHub Actions).
- * `process.exit` right after can drop the tail — including `failures:` and
- * `test result:` — before Node drains its userspace buffer (#2776).
+ * Two truncation mechanisms had to die (#2776):
+ * - `process.stdout.write` is async on a pipe; `process.exit` right after
+ *   drops Node's userspace tail. Synchronous `fs.writeSync` avoids that.
+ * - `fs.writeSync` performs a single write call, which a pipe may accept
+ *   only partially; the remainder of the payload must be written in a loop
+ *   until the fd has taken every byte. A non-blocking pipe reports EAGAIN
+ *   instead, so retry after a short backoff.
  */
+function writeAllSync(writeSync, fd, text, sleep) {
+  if (!text) {
+    return;
+  }
+  const buffer = Buffer.from(text);
+  let offset = 0;
+  while (offset < buffer.length) {
+    let written;
+    try {
+      // position=null: append at the fd's current offset, never seek.
+      written = writeSync(fd, buffer, offset, buffer.length - offset, null);
+    } catch (err) {
+      if (err && err.code === 'EAGAIN') {
+        sleep(EAGAIN_RETRY_DELAY_MS);
+        continue;
+      }
+      throw err;
+    }
+    if (typeof written !== 'number' || written <= 0) {
+      throw new Error(
+        `[rust-test-sequential] write to fd ${fd} made no progress at offset ${offset}`,
+      );
+    }
+    offset += written;
+  }
+}
+
 function writeCapturedOutput(stdout, stderr, deps = {}) {
   const writeSync = deps.writeSync ?? fs.writeSync;
   const stdoutFd = deps.stdoutFd ?? process.stdout.fd;
   const stderrFd = deps.stderrFd ?? process.stderr.fd;
-  if (stdout) {
-    writeSync(stdoutFd, stdout);
-  }
-  if (stderr) {
-    writeSync(stderrFd, stderr);
-  }
+  const sleep = deps.sleepMs ?? sleepMs;
+  writeAllSync(writeSync, stdoutFd, stdout, sleep);
+  writeAllSync(writeSync, stderrFd, stderr, sleep);
 }
 
 function runCargoTest(cargoArgs) {
