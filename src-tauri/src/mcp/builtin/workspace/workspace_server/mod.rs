@@ -9,10 +9,7 @@ mod user_skills_guard;
 
 pub use retained::release_session_workspace_state;
 
-pub(crate) use path_validation::{
-    looks_like_confused_harness_path, path_operation_failure_guidance,
-    path_validation_failure_guidance, with_harness_alias_hint,
-};
+pub(crate) use path_validation::{looks_like_confused_harness_path, with_harness_alias_hint};
 
 use super::persistent_shell;
 use super::terminal_manager;
