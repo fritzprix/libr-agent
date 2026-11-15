@@ -49,14 +49,21 @@ pub struct ChannelPermissionRequestBody {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PatchSessionRequest {
-    pub execution_mode: String,
+    /// When set, updates the session execution mode (existing Session API).
+    pub execution_mode: Option<String>,
+    /// When set, renames the session (#2763 TUI `/rename`).
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PatchSessionResponse {
     pub id: String,
-    pub execution_mode: ExecutionMode,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution_mode: Option<ExecutionMode>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default)]
     pub resolved_approval_ids: Vec<String>,
 }
 
