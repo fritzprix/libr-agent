@@ -241,6 +241,8 @@ pub async fn open_session(
     session_id: &str,
     initial_message_limit: u64,
 ) -> Result<AgentOpenSessionResponse, String> {
+    // Opening claims the session for this frontend; the read below does not.
+    client.open_session(session_id).await?;
     let session_json = client.get_session(session_id).await?;
     let session: SessionMetadata = serde_json::from_value(session_json.clone())
         .map_err(|e| format!("Failed to parse session from shared backend: {e}"))?;

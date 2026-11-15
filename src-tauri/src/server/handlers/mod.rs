@@ -24,8 +24,8 @@ pub use messages::{get_messages, send_message};
 pub use pairing::handle_pairing_request;
 pub use prompts::respond_channel_prompt;
 pub use sessions::{
-    create_session, delete_session, get_child_sessions, get_session, list_sessions, patch_session,
-    resume_session_workflow, terminate_session,
+    create_session, delete_session, get_child_sessions, get_session, list_sessions, open_session,
+    patch_session, resume_session_workflow, terminate_session,
 };
 pub use settings::{
     get_complexity_model_mapping, get_preferred_model, put_complexity_model_mapping,

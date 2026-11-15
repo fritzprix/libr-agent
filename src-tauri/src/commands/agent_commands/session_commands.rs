@@ -115,21 +115,15 @@ pub async fn agent_open_session(
         return super::shared_proxy::open_session(client, &session_id, message_limit).await;
     }
 
+    // Legacy short / session- prefixed routes → storage key. Resolve before
+    // claiming so ownership is only ever keyed by the storage id.
+    let session_id = resolve_tauri_session_ref(&session_id).await?;
+
     // Host path: opening claims the session for this process lifetime
     // (#2759); refused while another live frontend owns it.
     session_ownership::claim(&session_id, session_ownership::HOST_ATTACHMENT_ID)?;
 
-    // Warm reopen when the route already carries the storage id.
-    if let Some(warm) = try_open_warm_session(&manager, &session_id, message_limit).await? {
-        return Ok(warm);
-    }
-
-    // Legacy short / session- prefixed routes → storage key.
-    let session_id = resolve_tauri_session_ref(&session_id).await?;
-    // Re-claim under the canonical id: a legacy reference must not carry a
-    // separate ownership entry.
-    session_ownership::claim(&session_id, session_ownership::HOST_ATTACHMENT_ID)?;
-
+    // Warm reopen when the session is already active.
     if let Some(warm) = try_open_warm_session(&manager, &session_id, message_limit).await? {
         return Ok(warm);
     }
@@ -279,8 +273,14 @@ pub async fn agent_create_session_with_initial_message(
         return super::shared_proxy::create_session_with_initial_message(client, request).await;
     }
     // Host path: this process opens the new session (#2759).
-    session_ownership::claim(&request.session_id, session_ownership::HOST_ATTACHMENT_ID)?;
-    AgentService::create_session_with_initial_message(&manager, request).await
+    let session_id = request.session_id.clone();
+    session_ownership::claim(&session_id, session_ownership::HOST_ATTACHMENT_ID)?;
+    let result = AgentService::create_session_with_initial_message(&manager, request).await;
+    if result.is_err() {
+        // No session was created, so no ownership entry may outlive the call.
+        session_ownership::release_session(&session_id);
+    }
+    result
 }
 
 /// Update session model/provider/assistant binding for a session

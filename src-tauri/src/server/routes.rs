@@ -36,13 +36,16 @@ pub fn wake_route(
 }
 
 /// Session API header carrying the caller's #2758 frontend attachment id.
-/// Frontends opened by a GUI/TUI process send it on open/resume/send/list so
-/// the backend can enforce per-process session ownership (#2759). External
-/// callers omit it and keep the pre-#2759 behavior (no ownership, no refusal).
+/// Frontends opened by a GUI/TUI process send it on create/open/resume/send/
+/// list so the backend can enforce per-process session ownership (#2759).
+/// External callers omit it and keep the pre-#2759 behavior (no ownership, no
+/// refusal). The reserved id `host` is rejected with `400`, and so is an id
+/// that is not a live attachment on the routes that claim (see
+/// `session_ownership::claim_http`).
 pub const FRONTEND_ATTACHMENT_HEADER: &str = "x-frontend-attachment";
 
 /// Optional [`FRONTEND_ATTACHMENT_HEADER`] extractor for Session API routes.
-fn frontend_attachment_header(
+pub(crate) fn frontend_attachment_header(
 ) -> impl Filter<Extract = (Option<String>,), Error = warp::Rejection> + Copy {
     warp::header::optional::<String>(FRONTEND_ATTACHMENT_HEADER)
 }
@@ -92,8 +95,20 @@ pub fn get_routes(
         .and(warp::path::param())
         .and(warp::path::end())
         .and(agent_manager.clone())
-        .and(frontend_attachment_header())
         .and_then(handlers::get_session);
+
+    // POST /api/sessions/:id/open — claim the session for the calling
+    // frontend (#2759). `GET /api/sessions/:id` is a plain metadata read and
+    // never claims or refuses.
+    let open_session = warp::post()
+        .and(warp::path("api"))
+        .and(warp::path("sessions"))
+        .and(warp::path::param())
+        .and(warp::path("open"))
+        .and(warp::path::end())
+        .and(agent_manager.clone())
+        .and(frontend_attachment_header())
+        .and_then(handlers::open_session);
 
     // PATCH /api/sessions/:id
     let patch_session = warp::patch()
@@ -334,6 +349,7 @@ pub fn get_routes(
         .boxed()
         .or(list_sessions.boxed())
         .or(get_session.boxed())
+        .or(open_session.boxed())
         .or(get_session_events.boxed())
         .or(patch_session.boxed())
         .or(get_compact_context.boxed())

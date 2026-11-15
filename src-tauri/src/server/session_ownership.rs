@@ -17,6 +17,7 @@ use crate::server::frontend_attachments;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::sync::Mutex;
+use warp::http::StatusCode;
 
 /// Attachment id used by the backend-hosting process for its own session
 /// operations. Always live: the backend dies together with this process.
@@ -86,6 +87,64 @@ pub fn release_attachment(attachment_id: &str) {
     owners().retain(|_, owner| owner != attachment_id);
 }
 
+/// Drop the ownership entry of one session. Used when opening a brand-new
+/// session fails after its claim, so no entry outlives a session that was
+/// never created.
+pub fn release_session(session_id: &str) {
+    owners().remove(session_id);
+}
+
+type HttpRefusal = (StatusCode, String);
+
+/// Reject the reserved [`HOST_ATTACHMENT_ID`] on the Session API. Only the
+/// backend-hosting process may use it, in-process; an HTTP caller sending it
+/// would otherwise impersonate the host and own or probe its sessions.
+pub fn reject_reserved_attachment(header: Option<&str>) -> Result<(), HttpRefusal> {
+    match header {
+        Some(HOST_ATTACHMENT_ID) => Err((
+            StatusCode::BAD_REQUEST,
+            format!("Frontend attachment id '{HOST_ATTACHMENT_ID}' is reserved"),
+        )),
+        _ => Ok(()),
+    }
+}
+
+/// Claim `session_id` for the Session API caller identified by the
+/// `x-frontend-attachment` header value. Only open paths (create, open,
+/// resume, send) call this; metadata reads never claim.
+///
+/// - No header: an external caller (script, CLI) outside the ownership
+///   model. No claim and no refusal, keeping the pre-#2759 behavior.
+/// - The reserved `host` id, or an id that is not a live attachment
+///   (unknown, detached, or heartbeat-lapsed): `400`. A caller must hold a
+///   live attachment to own anything; a lapsed frontend re-attaches on its
+///   next heartbeat and retries.
+/// - A different live process owns the session: `409` with
+///   [`OPEN_ELSEWHERE_MESSAGE`].
+pub fn claim_http(session_id: &str, header: Option<&str>) -> Result<(), HttpRefusal> {
+    match http_attachment(header)? {
+        Some(attachment_id) => {
+            claim(session_id, attachment_id).map_err(|message| (StatusCode::CONFLICT, message))
+        }
+        None => Ok(()),
+    }
+}
+
+/// Validate the attachment of a claiming Session API caller: `None` for an
+/// external caller, `Some(id)` for a live attachment, `400` for the reserved
+/// `host` id or an id that is not live. Routes that create a session call
+/// this before spawning, so a bad header never leaves a session behind.
+pub fn http_attachment(header: Option<&str>) -> Result<Option<&str>, HttpRefusal> {
+    reject_reserved_attachment(header)?;
+    match header {
+        Some(attachment_id) if !frontend_attachments::is_live(attachment_id) => Err((
+            StatusCode::BAD_REQUEST,
+            format!("Frontend attachment {attachment_id} is not live; attach again"),
+        )),
+        other => Ok(other),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -138,16 +197,95 @@ mod tests {
     }
 
     #[test]
-    fn dead_owner_is_replaced() {
-        // An attachment id the registry has never seen models a frontend
-        // whose heartbeat lapsed (the registry pruned it).
+    fn owner_with_a_lapsed_heartbeat_is_replaced() {
         let session = unique_id("session");
-        let dead = unique_id("att");
+        let crashed = live_att("att");
         let alive = live_att("att");
 
-        assert!(claim(&session, &dead).is_ok());
+        assert!(claim(&session, &crashed).is_ok());
+        assert!(claim(&session, &alive).is_err(), "owner is still live");
+
+        // The owner stops sending heartbeats for longer than the timeout.
+        frontend_attachments::lapse(&crashed);
+        assert_eq!(owner(&session), None);
+        assert!(!is_open_elsewhere(&session, Some(&alive)));
         assert!(claim(&session, &alive).is_ok());
         assert_eq!(owner(&session).as_deref(), Some(alive.as_str()));
+    }
+
+    #[test]
+    fn release_session_drops_one_entry() {
+        let att = live_att("att");
+        let kept = unique_id("session");
+        let dropped = unique_id("session");
+        assert!(claim(&kept, &att).is_ok());
+        assert!(claim(&dropped, &att).is_ok());
+
+        release_session(&dropped);
+        assert_eq!(owner(&dropped), None);
+        assert_eq!(owner(&kept).as_deref(), Some(att.as_str()));
+    }
+
+    #[test]
+    fn http_claim_rejects_the_reserved_host_id() {
+        let session = unique_id("session");
+        let (status, message) = claim_http(&session, Some(HOST_ATTACHMENT_ID)).unwrap_err();
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(message.contains("reserved"), "{message}");
+        assert_eq!(owner(&session), None, "a refused claim must not register");
+
+        // A host-owned session is not reachable by sending the host id either.
+        assert!(claim(&session, HOST_ATTACHMENT_ID).is_ok());
+        let (status, _) = claim_http(&session, Some(HOST_ATTACHMENT_ID)).unwrap_err();
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(reject_reserved_attachment(Some(HOST_ATTACHMENT_ID)).is_err());
+        assert!(reject_reserved_attachment(Some("any-other-id")).is_ok());
+        assert!(reject_reserved_attachment(None).is_ok());
+    }
+
+    #[test]
+    fn http_claim_rejects_an_attachment_that_is_not_live() {
+        let session = unique_id("session");
+
+        let (status, message) =
+            claim_http(&session, Some(&unique_id("never-attached"))).unwrap_err();
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(message.contains("not live"), "{message}");
+        assert_eq!(owner(&session), None);
+
+        let lapsed = live_att("att");
+        frontend_attachments::lapse(&lapsed);
+        let (status, _) = claim_http(&session, Some(&lapsed)).unwrap_err();
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(owner(&session), None);
+    }
+
+    #[test]
+    fn http_claim_without_a_header_neither_claims_nor_refuses() {
+        let session = unique_id("session");
+        assert!(claim_http(&session, None).is_ok());
+        assert_eq!(owner(&session), None);
+
+        let att = live_att("att");
+        assert!(claim(&session, &att).is_ok());
+        assert!(
+            claim_http(&session, None).is_ok(),
+            "external callers keep the old behavior"
+        );
+        assert_eq!(owner(&session).as_deref(), Some(att.as_str()));
+    }
+
+    #[test]
+    fn http_claim_refuses_a_second_live_attachment_with_409() {
+        let session = unique_id("session");
+        let first = live_att("att");
+        let second = live_att("att");
+
+        assert!(claim_http(&session, Some(&first)).is_ok());
+        let (status, message) = claim_http(&session, Some(&second)).unwrap_err();
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert!(message.contains(OPEN_ELSEWHERE_MESSAGE), "{message}");
+        assert!(claim_http(&session, Some(&first)).is_ok());
     }
 
     #[test]

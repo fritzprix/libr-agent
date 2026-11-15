@@ -103,6 +103,22 @@ pub fn register_live(id: &str) {
     });
 }
 
+/// Test support: make `id` miss its heartbeats for longer than
+/// [`HEARTBEAT_TIMEOUT`] by moving its last-seen time back. Liveness then
+/// flips through the registry's own prune path, as after a real crash, and
+/// only this id is affected, so parallel tests keep their attachments.
+#[cfg(test)]
+pub fn lapse(id: &str) {
+    with_registry(|registry| {
+        let lapsed_at = Instant::now()
+            .checked_sub(HEARTBEAT_TIMEOUT + Duration::from_secs(1))
+            .expect("monotonic clock has run longer than the heartbeat timeout");
+        if let Some(seen) = registry.last_seen.get_mut(id) {
+            *seen = lapsed_at;
+        }
+    });
+}
+
 /// Response of `POST /api/frontends`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

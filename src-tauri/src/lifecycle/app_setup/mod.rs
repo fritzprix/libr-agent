@@ -137,6 +137,25 @@ fn should_sweep_stale_containers(data_dir_override: Option<&std::ffi::OsStr>) ->
     data_dir_override.is_none_or(|value| value.is_empty())
 }
 
+/// Tell the user the shared backend died, then exit this attached GUI. The
+/// exit happens when the dialog is dismissed, so the message is never lost
+/// to an instant close.
+fn exit_after_backend_loss(app_handle: &tauri::AppHandle) {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+
+    log::error!(
+        "{} Exiting.",
+        crate::server::shared_backend::BACKEND_LOST_MESSAGE
+    );
+    let exit_handle = app_handle.clone();
+    app_handle
+        .dialog()
+        .message(crate::server::shared_backend::BACKEND_LOST_MESSAGE)
+        .title("LibrAgent")
+        .kind(MessageDialogKind::Error)
+        .show(move |_| exit_handle.exit(1));
+}
+
 pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     // Setup custom file logger FIRST (before any log calls)
     let log_dir = app.path().app_log_dir()?;
@@ -380,9 +399,15 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
             descriptor.pid, descriptor.port
         );
         info!("✅ Shared backend at port {} is ready", descriptor.port);
-        tauri::async_runtime::spawn(crate::server::shared_backend::hold_frontend_attachment(
-            client.clone(),
-        ));
+        // When the shared backend dies this GUI exits with a clear message
+        // instead of reconnecting (#2759): a fresh backend starts with an
+        // empty ownership table, so nothing is re-registered.
+        let backend_lost_handle = app.handle().clone();
+        let backend_client = client.clone();
+        tauri::async_runtime::spawn(async move {
+            crate::server::shared_backend::hold_frontend_attachment(backend_client).await;
+            exit_after_backend_loss(&backend_lost_handle);
+        });
         crate::state::init_shared_backend_client(client);
         crate::server::readiness::mark_recovery(crate::server::readiness::RecoveryState::Skipped);
     }
