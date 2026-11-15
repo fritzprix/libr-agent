@@ -174,7 +174,15 @@ pub async fn complete(
     };
     let url = provider.request_url(&provider.model_id(&request.model));
     let body = provider.build_body(request);
-    let response = send_with_retries(client, provider, &url, &body, retry).await?;
+    let response = match send_with_retries(client, provider, &url, &body, retry).await {
+        Ok(response) => response,
+        // A provider may know a change to the body that fixes the error; it is
+        // sent once, whatever `retry` says.
+        Err(error) => match provider.body_after_error(&body, &error) {
+            Some(fixed) => send_with_retries(client, provider, &url, &fixed, retry).await?,
+            None => return Err(error),
+        },
+    };
 
     let stream_error =
         |message: String| LlmError::new(ErrorKind::Service, "RUST_EXECUTOR_STREAM", message);
@@ -204,7 +212,8 @@ pub async fn complete(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provider::{CustomOpenAi, Endpoint, OpenRouter};
+    use crate::provider::{CustomOpenAi, Endpoint, Ollama, OpenRouter};
+    use crate::types::ThinkingEffort;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
     use warp::Filter;
@@ -351,6 +360,64 @@ mod tests {
         let response = complete_with_retries(&provider, QUICK_RETRY).await;
 
         assert!(response.unwrap().status().is_success());
+        assert_eq!(seen.calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn ollama_sends_again_without_the_effort_level_a_model_rejects() {
+        let (mock, seen) = serve(|call| match call {
+            0 => status(
+                400,
+                r#"{"error":{"message":"think value \"low\" is not supported for this model"}}"#,
+            ),
+            _ => recorded(include_str!("../tests/fixtures/ollama_v1_reasoning.sse")),
+        })
+        .await;
+        // Ollama's Base URL is the server root; the provider adds `/v1`.
+        let provider = Ollama {
+            endpoint: Endpoint {
+                base_url: mock.base_url.trim_end_matches("/v1/").to_string(),
+                api_key: None,
+            },
+        };
+        let request = ChatRequest {
+            thinking_effort: ThinkingEffort::Low,
+            ..request()
+        };
+
+        let chat = complete(&provider, &request, RetryPolicy::NONE)
+            .await
+            .expect("the second call succeeds");
+
+        assert_eq!(chat.content, "2 + 2 = 4.");
+        let bodies = seen.bodies.lock().unwrap();
+        assert_eq!(bodies.len(), 2);
+        assert_eq!(bodies[0]["reasoning_effort"], "low");
+        assert!(bodies[1].get("reasoning_effort").is_none());
+        assert_eq!(bodies[1]["max_tokens"], 4096);
+    }
+
+    #[tokio::test]
+    async fn a_rejected_effort_level_is_fixed_once_only() {
+        let rejected =
+            r#"{"error":{"message":"think value \"low\" is not supported for this model"}}"#;
+        let (mock, seen) = serve(move |_| status(400, rejected)).await;
+        let provider = Ollama {
+            endpoint: Endpoint {
+                base_url: mock.base_url.trim_end_matches("/v1/").to_string(),
+                api_key: None,
+            },
+        };
+        let request = ChatRequest {
+            thinking_effort: ThinkingEffort::Low,
+            ..request()
+        };
+
+        let error = complete(&provider, &request, RetryPolicy::NONE)
+            .await
+            .unwrap_err();
+
+        assert!(error.message.contains("HTTP 400"));
         assert_eq!(seen.calls.load(Ordering::SeqCst), 2);
     }
 

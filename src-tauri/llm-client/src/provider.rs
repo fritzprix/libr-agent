@@ -85,6 +85,12 @@ pub trait ChatProvider: Send + Sync {
     fn http_error(&self, status: u16, body: &str) -> LlmError {
         LlmError::from_http_status(status, body)
     }
+
+    /// A body to send once more after `error` rejected `body`, or `None` when
+    /// no change can fix the error. The client sends the new body one time.
+    fn body_after_error(&self, _body: &Value, _error: &LlmError) -> Option<Value> {
+        None
+    }
 }
 
 /// The built-in `openai` provider: OpenAI or a server at its Base URL setting.
@@ -205,10 +211,22 @@ impl ChatProvider for Cerebras {
 
 /// Ollama through its OpenAI-compatible API. Its Base URL is the server root
 /// (for example `http://127.0.0.1:11434`), as in the Settings screen.
+///
+/// The GUI uses the native `/api/chat`. Differences on this path:
+/// - Output limit: `/v1` takes `max_tokens` (the GUI's `num_predict`), and the
+///   GUI's default of 4096 is kept.
+/// - `keep_alive`: `/v1` has no such field, so the server's own default
+///   applies (5 minutes, the value the GUI sends, unless `OLLAMA_KEEP_ALIVE`
+///   says otherwise).
+/// - A model that rejects the effort level: the call is sent again without
+///   it, see [`ChatProvider::body_after_error`].
 #[derive(Debug, Clone)]
 pub struct Ollama {
     pub endpoint: Endpoint,
 }
+
+/// The GUI's output limit when none is set (`config.maxTokens || 4096`).
+const OLLAMA_DEFAULT_MAX_TOKENS: u32 = 4096;
 
 impl ChatProvider for Ollama {
     fn endpoint(&self) -> &Endpoint {
@@ -220,6 +238,33 @@ impl ChatProvider for Ollama {
             "{}/v1/chat/completions",
             self.endpoint.base_url.trim_end_matches('/')
         )
+    }
+
+    fn build_body(&self, request: &ChatRequest) -> Value {
+        let mut body = openai::request_body(&self.model_id(&request.model), request);
+        self.apply_thinking_effort(&mut body, request.thinking_effort);
+        if let Some(object) = body.as_object_mut() {
+            object.remove("max_completion_tokens");
+        }
+        body["max_tokens"] = json!(request
+            .max_tokens
+            .filter(|tokens| *tokens > 0)
+            .unwrap_or(OLLAMA_DEFAULT_MAX_TOKENS));
+        body
+    }
+
+    /// Some models take no effort level (`think value "low" is not supported`).
+    /// The GUI then sends `think: true`; `/v1` cannot say that, so the effort
+    /// is left out and the model thinks as it does by default.
+    fn body_after_error(&self, body: &Value, error: &LlmError) -> Option<Value> {
+        let rejected_effort =
+            error.message.contains("think value") && error.message.contains("is not supported");
+        if !rejected_effort {
+            return None;
+        }
+        let mut retry = body.clone();
+        retry.as_object_mut()?.remove("reasoning_effort")?;
+        Some(retry)
     }
 }
 
@@ -546,6 +591,48 @@ mod tests {
                 "{provider}"
             );
         }
+    }
+
+    #[test]
+    fn ollama_sends_the_output_limit_as_max_tokens_with_the_guis_default() {
+        let ollama = resolve_provider("ollama", None, None).unwrap();
+        let body = ollama.build_body(&ChatRequest::default());
+        assert_eq!(body["max_tokens"], 4096);
+        assert!(body.get("max_completion_tokens").is_none());
+
+        let body = ollama.build_body(&ChatRequest {
+            max_tokens: Some(1024),
+            ..ChatRequest::default()
+        });
+        assert_eq!(body["max_tokens"], 1024);
+        assert!(body.get("max_completion_tokens").is_none());
+    }
+
+    #[test]
+    fn ollama_drops_a_rejected_effort_level_and_nothing_else() {
+        let ollama = resolve_provider("ollama", None, None).unwrap();
+        let body = ollama.build_body(&ChatRequest {
+            thinking_effort: ThinkingEffort::High,
+            ..ChatRequest::default()
+        });
+        assert_eq!(body["reasoning_effort"], "high");
+
+        // The message Ollama gives, as the GUI matches it.
+        let rejected = LlmError::from_http_status(
+            400,
+            r#"{"error":{"message":"think value \"high\" is not supported for this model"}}"#,
+        );
+        let retry = ollama.body_after_error(&body, &rejected).expect("a retry");
+        let mut expected = body.clone();
+        expected.as_object_mut().unwrap().remove("reasoning_effort");
+        assert_eq!(retry, expected);
+
+        // Other errors, or a body with no effort, are not helped by a retry.
+        let other = LlmError::from_http_status(400, "model not found");
+        assert!(ollama.body_after_error(&body, &other).is_none());
+        assert!(ollama.body_after_error(&retry, &rejected).is_none());
+        let groq = resolve_provider("groq", None, None).unwrap();
+        assert!(groq.body_after_error(&body, &rejected).is_none());
     }
 
     #[test]

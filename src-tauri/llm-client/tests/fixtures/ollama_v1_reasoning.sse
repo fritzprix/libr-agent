@@ -1,0 +1,14 @@
+data: {"id":"chatcmpl-873","object":"chat.completion.chunk","created":1763100210,"model":"gpt-oss:20b","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"role":"assistant","content":"","reasoning":"The user wants"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-873","object":"chat.completion.chunk","created":1763100210,"model":"gpt-oss:20b","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"role":"assistant","content":"","reasoning":" 2+2. That is 4."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-873","object":"chat.completion.chunk","created":1763100210,"model":"gpt-oss:20b","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"role":"assistant","content":"2 + 2"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-873","object":"chat.completion.chunk","created":1763100210,"model":"gpt-oss:20b","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"role":"assistant","content":" = 4."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-873","object":"chat.completion.chunk","created":1763100210,"model":"gpt-oss:20b","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":"stop"}]}
+
+data: {"id":"chatcmpl-873","object":"chat.completion.chunk","created":1763100210,"model":"gpt-oss:20b","system_fingerprint":"fp_ollama","choices":[],"usage":{"prompt_tokens":75,"completion_tokens":31,"total_tokens":106}}
+
+data: [DONE]
+
