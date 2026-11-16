@@ -26,8 +26,9 @@ const MAX_HOLD_MS = 6 * 60 * 60 * 1000;
 // Reading a start time spawns a process outside Linux, and waiters poll every second.
 const IDENTITY_RECHECK_MS = 30000;
 const GUARD_STALE_MS = 30000;
-// PowerShell cold-start on Windows CI can take several seconds; never hang forever.
-const PID_START_TIMEOUT_MS = 15000;
+// PowerShell cold-start on Windows CI can take several seconds; never hang
+// past a 5s Vitest default. Identity rechecks run at most every 30s.
+const PID_START_TIMEOUT_MS = 4000;
 
 const identityCheckedAt = new Map();
 let ownPidStart;
@@ -72,6 +73,11 @@ function readHolder(file) {
 
 /** A value that changes when `pid` is reused; null where it cannot be read. */
 function pidStart(pid) {
+  // Dead PIDs have no start time. Skip PowerShell/`ps` so tests and waiters
+  // do not stall on Get-Process for a process that already exited.
+  if (!pidAlive(pid)) {
+    return null;
+  }
   if (process.platform === 'linux') {
     try {
       const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
@@ -106,7 +112,9 @@ function pidStart(pid) {
 function startTimeFor(pid) {
   if (pid === process.pid) {
     if (ownPidStart === undefined) {
-      ownPidStart = pidStart(pid);
+      // PowerShell can return null on a cold Windows runner. A per-process
+      // fallback still changes when the PID is reused by a later process.
+      ownPidStart = pidStart(pid) ?? `fallback:${process.pid}:${Date.now()}`;
     }
     return ownPidStart;
   }

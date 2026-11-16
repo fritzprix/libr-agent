@@ -35,7 +35,7 @@ function deadPid(): number {
   return spawnSync(process.execPath, ['-e', '0']).pid;
 }
 
-describe('rust build slot', () => {
+describe('rust build slot', { timeout: 15000 }, () => {
   let dir: string;
 
   // Windows shells out to PowerShell for process start times. Pay that once
