@@ -26,8 +26,9 @@ const MAX_HOLD_MS = 6 * 60 * 60 * 1000;
 // Reading a start time spawns a process outside Linux, and waiters poll every second.
 const IDENTITY_RECHECK_MS = 30000;
 const GUARD_STALE_MS = 30000;
-// PowerShell cold-start on Windows CI can take several seconds; never hang
-// past a 5s Vitest default. Identity rechecks run at most every 30s.
+// Waiters call pidStart from tryAcquire (reclaimIfStale) on the hot path.
+// A hung PowerShell must fail open (null) instead of stalling every cargo
+// waiter; identity then falls back to pidAlive + MAX_HOLD_MS.
 const PID_START_TIMEOUT_MS = 4000;
 
 const identityCheckedAt = new Map();
@@ -112,9 +113,10 @@ function pidStart(pid) {
 function startTimeFor(pid) {
   if (pid === process.pid) {
     if (ownPidStart === undefined) {
-      // PowerShell can return null on a cold Windows runner. A per-process
-      // fallback still changes when the PID is reused by a later process.
-      ownPidStart = pidStart(pid) ?? `fallback:${process.pid}:${Date.now()}`;
+      // Leave null when the OS value cannot be read. Inventing an identity
+      // would not match pidStart() in other processes, so they would reclaim
+      // a live slot.
+      ownPidStart = pidStart(pid);
     }
     return ownPidStart;
   }
@@ -250,6 +252,7 @@ function releaseBuildSlot(slot) {
 module.exports = {
   acquireBuildSlot,
   maxConcurrent,
+  pidStart,
   releaseBuildSlot,
   slotDir,
   tryAcquire,

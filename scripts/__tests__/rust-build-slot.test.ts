@@ -15,9 +15,10 @@ import path from 'node:path';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 const require = createRequire(import.meta.url);
-const { maxConcurrent, releaseBuildSlot, tryAcquire } =
+const { maxConcurrent, pidStart, releaseBuildSlot, tryAcquire } =
   require('../rust-build-slot.cjs') as {
     maxConcurrent: (env: NodeJS.ProcessEnv, totalMem: number) => number;
+    pidStart: (pid: number) => string | null;
     releaseBuildSlot: (slot: { file: string; token: string }) => void;
     tryAcquire: (
       dir: string,
@@ -39,7 +40,7 @@ describe('rust build slot', { timeout: 15000 }, () => {
   let dir: string;
 
   // Windows shells out to PowerShell for process start times. Pay that once
-  // here so the 5s default test timeout is not racing a cold runner.
+  // so later tests reuse the cached lookup.
   beforeAll(() => {
     const warmupDir = mkdtempSync(path.join(tmpdir(), 'rust-slot-warmup-'));
     try {
@@ -107,7 +108,12 @@ describe('rust build slot', { timeout: 15000 }, () => {
     expect(tryAcquire(dir, 1, 'next')).not.toBeNull();
   });
 
-  it('takes a slot whose live PID now belongs to another process', () => {
+  it('takes a slot whose live PID now belongs to another process', (ctx) => {
+    const currentStart = pidStart(process.pid);
+    if (currentStart == null) {
+      ctx.skip();
+      return;
+    }
     mkdirSync(dir, { recursive: true });
     writeFileSync(
       path.join(dir, 'slot-0.json'),
@@ -121,13 +127,36 @@ describe('rust build slot', { timeout: 15000 }, () => {
     expect(tryAcquire(dir, 1, 'next')).not.toBeNull();
   });
 
-  it('keeps a slot whose holder start time matches', () => {
+  it('keeps a live holder even when its start time cannot be read', () => {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      path.join(dir, 'slot-0.json'),
+      JSON.stringify({
+        pid: process.pid,
+        pidStart: null,
+        token: 'unknown-start',
+        since: Date.now(),
+      }),
+    );
+    expect(tryAcquire(dir, 1, 'next')).toBeNull();
+  });
+
+  it('refuses a second slot while this process still holds one', () => {
     const held = tryAcquire(dir, 1, 'a');
     const record = JSON.parse(readFileSync(held!.file, 'utf8')) as {
       pidStart: string | null;
     };
-    expect(record.pidStart).toBeTruthy();
+    expect(record.pidStart === null || typeof record.pidStart === 'string').toBe(
+      true,
+    );
     expect(tryAcquire(dir, 1, 'b')).toBeNull();
+  });
+
+  it('returns no start time for a dead PID without waiting on a spawn', () => {
+    const dead = deadPid();
+    const started = Date.now();
+    expect(pidStart(dead)).toBeNull();
+    expect(Date.now() - started).toBeLessThan(1000);
   });
 
   it('leaves a stale slot alone while another contender reclaims it', () => {
