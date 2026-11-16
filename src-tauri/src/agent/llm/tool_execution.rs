@@ -189,6 +189,27 @@ impl ToolExecutionContext<'_> {
             );
         }
 
+        // Notification hook stub (#2812): tool-approval requests dispatch
+        // the Notification event so the stub path is exercised; no command
+        // runs in v1.
+        let mut notification_params = crate::services::hooks::HookEnvelopeParams::new(
+            self.session_id,
+            std::path::PathBuf::from("."),
+            crate::services::hooks::HookEvent::Notification,
+        );
+        notification_params.notification_type = Some("permission".to_string());
+        notification_params.notification_message = Some(format!(
+            "Tool {} requires approval: {}",
+            tool_name,
+            description.as_deref().unwrap_or_default()
+        ));
+        crate::services::hooks::notify_stub_event(
+            crate::services::hooks::HookEvent::Notification,
+            self.session_id,
+            notification_params,
+        )
+        .await;
+
         if let (Some(request_id), Some(description), Some(input_preview)) =
             (request_id, description, input_preview)
         {
@@ -687,6 +708,9 @@ pub async fn execute_tool_calls(
         )
         .await;
 
+        // `args` is moved into `execute_tool` below; keep a copy for the
+        // PostToolUse hook envelope.
+        let post_tool_input = args.clone();
         let execution_started = std::time::Instant::now();
         let (mut result, process_was_cancelled) = proxy_manager
             .run_with_process_cancel_scope(
@@ -705,9 +729,28 @@ pub async fn execute_tool_calls(
         {
             result.cancellation = Some(ToolCancellation::user());
         }
+        let tool_ended_with_error = result.is_error;
         context
             .continue_after_tool(tool_call_id, result, "tool execution")
             .await;
+
+        // PostToolUse hook stub (#2812): dispatched after each tool
+        // completes; no command runs and no output is applied in v1.
+        let mut post_tool_params = crate::services::hooks::HookEnvelopeParams::new(
+            &session_id,
+            std::path::PathBuf::from("."),
+            crate::services::hooks::HookEvent::PostToolUse,
+        );
+        post_tool_params.tool_name = Some(tool_name.clone());
+        post_tool_params.tool_input = Some(post_tool_input);
+        post_tool_params.tool_response =
+            Some(serde_json::json!({ "is_error": tool_ended_with_error }));
+        crate::services::hooks::notify_stub_event(
+            crate::services::hooks::HookEvent::PostToolUse,
+            &session_id,
+            post_tool_params,
+        )
+        .await;
         index += 1;
     }
 }

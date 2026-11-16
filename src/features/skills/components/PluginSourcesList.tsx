@@ -116,9 +116,24 @@ export function PluginSourcesList({
                       <p className="font-medium">
                         {t('settings.skills.hookEvents', 'Hook events')}
                       </p>
-                      <p className="text-muted-foreground">
-                        {source.hookEvents.join(', ')}
-                      </p>
+                      <ul className="list-disc pl-5 text-muted-foreground">
+                        {source.hookEvents.map((event) => (
+                          <li key={event}>
+                            {event}
+                            <span className="ml-2 text-xs">
+                              ({event === 'SessionStart'
+                                ? t(
+                                    'settings.skills.hookStatusExecuted',
+                                    'Runs on SessionStart',
+                                  )
+                                : t(
+                                    'settings.skills.hookStatusStubbed',
+                                    'Not yet executed',
+                                  )})
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                   ) : null}
                 </div>

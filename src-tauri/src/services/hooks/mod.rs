@@ -6,7 +6,8 @@ pub mod registry;
 pub mod schema;
 
 pub use context::{
-    append_hook_context, await_hook_run, clear_hook_context, get_hook_context, set_hook_context,
+    append_hook_context, await_hook_run, clear_all_hook_contexts, clear_hook_context,
+    get_hook_context, set_hook_context,
 };
 pub use envelope::{
     build_envelope_value, HookEnvelopeParams, HookPlatform, SessionEndReason, SessionStartSource,

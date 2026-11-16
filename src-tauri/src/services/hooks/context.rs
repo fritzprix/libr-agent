@@ -56,6 +56,16 @@ pub fn clear_hook_context(session_id: &str) {
     }
 }
 
+/// Drop every session's hook-context slot (#2812 criterion 4). Called when
+/// a plugin source is uninstalled: the removed source's bootstrap must not
+/// keep living in any open session's prompt. Remaining sources re-inject on
+/// their next SessionStart firing (resume / clear / compact).
+pub fn clear_all_hook_contexts() {
+    if let Ok(mut map) = store().write() {
+        map.clear();
+    }
+}
+
 pub fn append_hook_context(session_id: &str, text: &str) {
     if text.trim().is_empty() {
         return;

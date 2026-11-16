@@ -49,6 +49,9 @@ pub async fn delete_plugin_source(source_id: String) -> Result<(), String> {
     let user_dir = get_user_skills_directory()?;
     remove_skill_names_from_user_skills(&user_dir, &record.manifest.skill_names)?;
     delete_source(&source_id)?;
+    // #2812 criterion 4: uninstalling a source must not leave its hook
+    // bootstrap in any open session's prompt slot.
+    crate::services::hooks::clear_all_hook_contexts();
     super::cache::invalidate_skill_scan_cache();
     Ok(())
 }

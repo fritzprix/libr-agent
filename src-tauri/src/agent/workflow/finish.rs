@@ -333,6 +333,10 @@ pub async fn settle_session_and_go_idle_with_dispatcher(
     )
     .await?;
 
+    // Stop / SubagentStop hook stub (#2812): dispatched once the session
+    // has actually settled to Idle; no command runs in v1.
+    notify_settle_hook_stub(active_sessions, session_id).await;
+
     Ok(false)
 }
 
@@ -361,6 +365,37 @@ pub async fn settle_session_and_go_idle(
         completion_reason,
     )
     .await
+}
+
+/// Dispatch the `Stop` (top-level session) or `SubagentStop` (session
+/// spawned by `agent__spawnSession`) plugin hook stub once a workflow has
+/// settled to Idle (#2812). The stub only logs "not yet executed" and
+/// prepares the stdin envelope; no hook command runs in v1.
+async fn notify_settle_hook_stub(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+) {
+    let is_child = {
+        let active = active_sessions.read().await;
+        active
+            .get(session_id)
+            .map(|s| s.metadata.parent_session_id.is_some())
+            .unwrap_or(false)
+    };
+    let event = if is_child {
+        crate::services::hooks::HookEvent::SubagentStop
+    } else {
+        crate::services::hooks::HookEvent::Stop
+    };
+    let mut params = crate::services::hooks::HookEnvelopeParams::new(
+        session_id,
+        std::path::PathBuf::from("."),
+        event,
+    );
+    if is_child {
+        params.child_session_id = Some(session_id.to_string());
+    }
+    crate::services::hooks::notify_stub_event(event, session_id, params).await;
 }
 
 /// Finalize a failed workflow only after terminal messages are durable.
