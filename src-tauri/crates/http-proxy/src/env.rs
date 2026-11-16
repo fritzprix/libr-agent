@@ -38,9 +38,7 @@ pub fn no_proxy_bypasses(url: &str) -> bool {
 
 pub(crate) fn host_matches_no_proxy_entry(host: &str, port: Option<u16>, entry: &str) -> bool {
     let (entry_host, entry_port) = match entry.rsplit_once(':') {
-        Some((h, p)) if p.chars().all(|c| c.is_ascii_digit()) => {
-            (h, p.parse::<u16>().ok())
-        }
+        Some((h, p)) if p.chars().all(|c| c.is_ascii_digit()) => (h, p.parse::<u16>().ok()),
         _ => (entry, None),
     };
 

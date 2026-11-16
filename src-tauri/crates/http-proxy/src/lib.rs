@@ -10,7 +10,9 @@ mod parse;
 mod windows;
 
 pub use client::configure_reqwest_builder;
-pub use parse::{parse_proxy_list, parse_static_proxy_for_scheme, proxy_bypass_matches, ResolvedProxy};
+pub use parse::{
+    parse_proxy_list, parse_static_proxy_for_scheme, proxy_bypass_matches, ResolvedProxy,
+};
 
 use std::sync::{Arc, LazyLock};
 use url::Url;
@@ -58,10 +60,7 @@ mod tests {
         let list = parse_proxy_list("PROXY a:8080; PROXY b:9090; DIRECT");
         assert_eq!(
             list,
-            vec![
-                "http://a:8080".to_string(),
-                "http://b:9090".to_string(),
-            ]
+            vec!["http://a:8080".to_string(), "http://b:9090".to_string(),]
         );
     }
 

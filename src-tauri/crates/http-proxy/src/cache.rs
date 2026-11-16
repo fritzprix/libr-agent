@@ -14,10 +14,7 @@ const FAILURE_TTL: Duration = Duration::from_secs(30);
 #[derive(Debug, Clone)]
 enum CacheEntry {
     /// Cached proxy URL (`None` = DIRECT).
-    Ok {
-        proxy: Option<String>,
-        at: Instant,
-    },
+    Ok { proxy: Option<String>, at: Instant },
     /// Recent resolve failure — stay direct briefly to avoid hammering WinHTTP.
     Err { at: Instant },
 }
@@ -192,9 +189,9 @@ mod tests {
     #[tokio::test]
     async fn caches_success_proxy() {
         let resolver = Resolver::with_resolve_fn(|_| {
-            Ok(ResolvedProxy::Proxies(vec![
-                "http://proxy.corp:8080".into()
-            ]))
+            Ok(ResolvedProxy::Proxies(
+                vec!["http://proxy.corp:8080".into()],
+            ))
         });
         resolver
             .ensure_resolved("https://api.example.com/v1")

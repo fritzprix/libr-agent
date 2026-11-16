@@ -7,9 +7,9 @@ use windows::core::{HSTRING, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{GetLastError, GlobalFree, HGLOBAL};
 use windows::Win32::Networking::WinHttp::{
     WinHttpCloseHandle, WinHttpGetIEProxyConfigForCurrentUser, WinHttpGetProxyForUrl, WinHttpOpen,
-    WINHTTP_ACCESS_TYPE_NAMED_PROXY, WINHTTP_ACCESS_TYPE_NO_PROXY, WINHTTP_AUTO_DETECT_TYPE_DHCP,
-    WINHTTP_AUTO_DETECT_TYPE_DNS_A, WINHTTP_AUTOPROXY_AUTO_DETECT, WINHTTP_AUTOPROXY_CONFIG_URL,
-    WINHTTP_AUTOPROXY_OPTIONS, WINHTTP_CURRENT_USER_IE_PROXY_CONFIG, WINHTTP_PROXY_INFO,
+    WINHTTP_ACCESS_TYPE_NAMED_PROXY, WINHTTP_ACCESS_TYPE_NO_PROXY, WINHTTP_AUTOPROXY_AUTO_DETECT,
+    WINHTTP_AUTOPROXY_CONFIG_URL, WINHTTP_AUTOPROXY_OPTIONS, WINHTTP_AUTO_DETECT_TYPE_DHCP,
+    WINHTTP_AUTO_DETECT_TYPE_DNS_A, WINHTTP_CURRENT_USER_IE_PROXY_CONFIG, WINHTTP_PROXY_INFO,
 };
 
 fn pwstr_to_string(ptr: PWSTR) -> Option<String> {
@@ -137,10 +137,9 @@ fn open_session() -> Result<*mut c_void, String> {
         )
     };
     if session.is_null() {
-        Err(format!(
-            "WinHttpOpen failed: {:?}",
-            unsafe { GetLastError() }
-        ))
+        Err(format!("WinHttpOpen failed: {:?}", unsafe {
+            GetLastError()
+        }))
     } else {
         Ok(session)
     }
