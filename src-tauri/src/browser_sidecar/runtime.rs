@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -322,15 +322,69 @@ pub fn browser_runtime_cache_root() -> PathBuf {
         .join("browser-runtime")
 }
 
-/// Per-process app-data Chromium profile for agent sticky logins (not everyday
-/// Chrome User Data). Suffixing with pid keeps multiple backends on one
-/// profile from sharing a SingletonLock (#2858).
-pub fn agent_sticky_user_data_dir() -> Result<PathBuf, String> {
-    let dir_name = format!("{AGENT_STICKY_PROFILE_DIR}.{}", std::process::id());
+/// App-data base dir that holds the agent sticky Chromium profiles.
+fn agent_sticky_base_dir() -> PathBuf {
     if let Ok(manager) = get_session_manager() {
-        return Ok(manager.get_base_data_dir().join(dir_name));
+        return manager.get_base_data_dir().clone();
     }
-    Ok(crate::profile::data_dir(crate::profile::resolve_profile()).join(dir_name))
+    crate::profile::data_dir(crate::profile::resolve_profile())
+}
+
+/// Name of the agent sticky Chromium profile directory.
+///
+/// The first backend on a profile keeps the un-suffixed name, so agent logins
+/// survive a restart (#1984). A backend that finds another live one takes
+/// `browser_agent_profile.<pid>`, so two Chromium instances never share a
+/// SingletonLock; that suffix is a collision guard, not a permanent identity
+/// (#2858 G1.2).
+pub fn agent_sticky_profile_dir_name(has_other_backend: bool, pid: u32) -> String {
+    if has_other_backend {
+        format!("{AGENT_STICKY_PROFILE_DIR}.{pid}")
+    } else {
+        AGENT_STICKY_PROFILE_DIR.to_string()
+    }
+}
+
+/// Remove `browser_agent_profile.<pid>` dirs whose process is gone. A suffixed
+/// dir is only ever used by a second backend, so it is safe to drop once that
+/// process is dead (#2858 G1.2).
+fn sweep_dead_agent_sticky_profiles(
+    base_dir: &Path,
+    own_pid: u32,
+    pid_alive: impl Fn(u32) -> bool,
+) -> usize {
+    let prefix = format!("{AGENT_STICKY_PROFILE_DIR}.");
+    let Ok(entries) = std::fs::read_dir(base_dir) else {
+        return 0;
+    };
+    let mut removed = 0;
+    for entry in entries.flatten() {
+        let Some(pid) = entry
+            .file_name()
+            .to_str()
+            .and_then(|name| name.strip_prefix(&prefix))
+            .and_then(|pid| pid.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        if pid == own_pid || pid_alive(pid) {
+            continue;
+        }
+        if std::fs::remove_dir_all(entry.path()).is_ok() {
+            removed += 1;
+        }
+    }
+    removed
+}
+
+/// Per-profile app-data Chromium profile for agent sticky logins (not everyday
+/// Chrome User Data).
+pub fn agent_sticky_user_data_dir() -> Result<PathBuf, String> {
+    let dir_name = agent_sticky_profile_dir_name(
+        crate::server::backend_descriptor::profile_has_other_backend(),
+        std::process::id(),
+    );
+    Ok(agent_sticky_base_dir().join(dir_name))
 }
 
 async fn ensure_agent_sticky_user_data_dir() -> Result<PathBuf, String> {
@@ -343,6 +397,15 @@ async fn ensure_agent_sticky_user_data_dir() -> Result<PathBuf, String> {
                 user_data_dir.display()
             )
         })?;
+    let removed =
+        sweep_dead_agent_sticky_profiles(&agent_sticky_base_dir(), std::process::id(), |pid| {
+            crate::utils::process::process_is_alive(pid).ok() == Some(true)
+        });
+    if removed > 0 {
+        emit_sidecar_diagnostic(format!(
+            "Removed {removed} stale agent browser profile dir(s) left by dead processes"
+        ));
+    }
     emit_sidecar_diagnostic(format!(
         "Using sticky agent browser profile directory: {}",
         user_data_dir.display()
@@ -508,4 +571,45 @@ pub(crate) async fn shutdown_runtime(runtime: SharedBrowserRuntime) {
         "Preserving sticky agent browser profile directory: {}",
         runtime.user_data_dir.display()
     );
+}
+
+#[cfg(test)]
+mod sticky_profile_tests {
+    use super::*;
+
+    /// #2858 G1.2: a dir left by a dead second backend is dropped at the next
+    /// start, while the first backend's un-suffixed profile and live ones stay.
+    #[test]
+    fn sweep_removes_only_dead_pid_sticky_profiles() {
+        let base = std::env::temp_dir().join(format!("sticky-sweep-{}", std::process::id()));
+        let own = base.join("browser_agent_profile.1000");
+        let dead = base.join("browser_agent_profile.2000");
+        let live = base.join("browser_agent_profile.3000");
+        let first_backend = base.join("browser_agent_profile");
+        for dir in [&own, &dead, &live, &first_backend] {
+            std::fs::create_dir_all(dir).expect("create sticky dir");
+        }
+        std::fs::write(dead.join("SingletonLock"), b"x").expect("write lock file");
+
+        let removed = sweep_dead_agent_sticky_profiles(&base, 1000, |pid| pid == 3000);
+
+        assert_eq!(removed, 1);
+        assert!(own.exists(), "own dir must survive");
+        assert!(!dead.exists(), "dead backend dir must be removed");
+        assert!(live.exists(), "live backend dir must survive");
+        assert!(
+            first_backend.exists(),
+            "the un-suffixed first-backend profile must never be swept"
+        );
+
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn profile_dir_name_is_un_suffixed_for_the_first_backend() {
+        assert_eq!(
+            agent_sticky_profile_dir_name(false, 7),
+            "browser_agent_profile"
+        );
+    }
 }

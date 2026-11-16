@@ -72,12 +72,54 @@ pub fn active_log_file_name() -> String {
 }
 
 fn is_active_log_file_name(name: &str) -> bool {
-    if name == LEGACY_ACTIVE_LOG_FILE_NAME {
-        return true;
-    }
+    name == LEGACY_ACTIVE_LOG_FILE_NAME || active_log_pid(name).is_some()
+}
+
+/// The pid in a per-process active log name (`libragent.<pid>.log`). `None` for
+/// the legacy single-process name and for anything else.
+fn active_log_pid(name: &str) -> Option<u32> {
     name.strip_prefix("libragent.")
         .and_then(|rest| rest.strip_suffix(".log"))
-        .is_some_and(|pid| !pid.is_empty() && pid.chars().all(|c| c.is_ascii_digit()))
+        .and_then(|pid| pid.parse::<u32>().ok())
+}
+
+/// Rename per-process logs left behind by dead processes to the archived form,
+/// so the existing retention policy covers them (#2858 G1.3).
+///
+/// Rotation only renames *this* process's `libragent.<pid>.log`, which never
+/// exists at startup because the pid is new. Without this sweep every earlier
+/// run's `libragent.<oldpid>.log` keeps matching [`is_active_log_file_name`],
+/// is never archived and never pruned, so `log_retention_days`,
+/// `MAX_ARCHIVED_LOG_FILES` and `MAX_ARCHIVED_LOG_BYTES` silently stop applying.
+///
+/// The pid stays in the archived name so two dead logs archived within the same
+/// second cannot collide.
+fn archive_dead_process_logs_with(
+    log_dir: &Path,
+    own_pid: u32,
+    pid_alive: impl Fn(u32) -> bool,
+) -> usize {
+    let Ok(entries) = fs::read_dir(log_dir) else {
+        return 0;
+    };
+    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
+    let mut archived = 0;
+    for entry in entries.flatten() {
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        let Some(pid) = active_log_pid(&name) else {
+            continue;
+        };
+        if pid == own_pid || pid_alive(pid) {
+            continue;
+        }
+        let target = log_dir.join(format!("libragent_{timestamp}_{pid}.log"));
+        if fs::rename(entry.path(), &target).is_ok() {
+            archived += 1;
+        }
+    }
+    archived
 }
 
 /// Mirrors `SystemSettings::log_retention_days`; `0` means no age limit.
@@ -259,6 +301,12 @@ fn prepare_log_file(
         fs::rename(&log_file, &backup_file)
             .map_err(|e| format!("Failed to backup log file: {}", e))?;
     }
+
+    // Archive logs of processes that are gone before pruning, so retention
+    // applies to them (#2858 G1.3).
+    archive_dead_process_logs_with(log_dir, std::process::id(), |pid| {
+        crate::utils::process::process_is_alive(pid).ok() == Some(true)
+    });
 
     let (pruned_files, pruned_bytes) = prune_archived_logs_in(log_dir);
 
@@ -509,22 +557,31 @@ mod tests {
         use std::io::Write;
         let dir = tempfile::tempdir().unwrap();
         let log = dir.path().join(active_log_file_name());
-        let other_pid_log = dir.path().join("libragent.999999.log");
+        // A log left by a process that is gone is archived rather than kept as
+        // an active file (#2858 G1.3). A live process's log is never renamed;
+        // that case is asserted in
+        // `dead_process_logs_are_archived_and_live_ones_are_kept`.
+        let stale_other_log = dir.path().join("libragent.999999.log");
         fs::write(&log, "host line\n").unwrap();
-        fs::write(&other_pid_log, "other process\n").unwrap();
+        fs::write(&stale_other_log, "other process\n").unwrap();
 
         let (mut file, _, _) = prepare_log_file(dir.path(), true).unwrap();
         file.write_all(b"new line\n").unwrap();
         drop(file);
 
         assert_eq!(fs::read_to_string(&log).unwrap(), "new line\n");
-        assert_eq!(
-            fs::read_to_string(&other_pid_log).unwrap(),
-            "other process\n"
+        assert!(
+            !stale_other_log.exists(),
+            "a dead process's log must be archived, not left as an active file"
         );
         let backups = archived_logs(dir.path());
-        assert_eq!(backups.len(), 1);
-        assert_eq!(fs::read_to_string(&backups[0]).unwrap(), "host line\n");
+        assert_eq!(backups.len(), 2, "{backups:?}");
+        assert!(backups
+            .iter()
+            .any(|path| fs::read_to_string(path).unwrap() == "host line\n"));
+        assert!(backups
+            .iter()
+            .any(|path| fs::read_to_string(path).unwrap() == "other process\n"));
     }
 
     #[test]
@@ -535,5 +592,59 @@ mod tests {
         assert!(is_active_log_file_name(&name));
         assert!(is_active_log_file_name(LEGACY_ACTIVE_LOG_FILE_NAME));
         assert!(!is_active_log_file_name("libragent_20240101_000000.log"));
+    }
+
+    /// #2858 G1.3: a dead process's `libragent.<pid>.log` must stop counting as
+    /// an active file, or one file per launch survives every retention rule.
+    #[test]
+    fn dead_process_logs_are_archived_and_live_ones_are_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let dead_pid = 4_242u32;
+        let live_pid = 4_243u32;
+        let own_pid = std::process::id();
+        write_archive(dir.path(), &format!("libragent.{dead_pid}.log"), 10, 400);
+        write_archive(dir.path(), &format!("libragent.{live_pid}.log"), 10, 400);
+        write_archive(dir.path(), &active_log_file_name(), 10, 400);
+
+        let archived = archive_dead_process_logs_with(dir.path(), own_pid, |pid| pid == live_pid);
+
+        assert_eq!(archived, 1);
+        assert!(
+            !dir.path()
+                .join(format!("libragent.{dead_pid}.log"))
+                .exists(),
+            "a dead process's log must stop being an active file"
+        );
+        assert!(
+            dir.path()
+                .join(format!("libragent.{live_pid}.log"))
+                .exists(),
+            "a live process's log must never be renamed"
+        );
+        assert!(
+            dir.path().join(active_log_file_name()).exists(),
+            "this process's own log must never be renamed"
+        );
+
+        let names: Vec<String> = fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter_map(|entry| entry.file_name().to_str().map(str::to_owned))
+            .collect();
+        assert!(
+            names.iter().any(|name| name.starts_with("libragent_")
+                && name.ends_with(&format!("_{dead_pid}.log"))),
+            "the dead log must be renamed with its pid: {names:?}"
+        );
+        assert!(
+            names.iter().all(|name| !is_active_log_file_name(name)
+                || active_log_pid(name) == Some(own_pid)
+                || active_log_pid(name) == Some(live_pid)),
+            "no dead log may keep an active name: {names:?}"
+        );
+        assert!(
+            names.iter().any(|name| is_archived_log_file_name(name)),
+            "the archived name must now be visible to the retention policy: {names:?}"
+        );
     }
 }
