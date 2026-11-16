@@ -133,6 +133,15 @@ fn spawn_startup_maintenance_tasks(
     info!("✅ Background message indexing worker started");
 }
 
+/// Whether this process may run startup session recovery (#2855 G1.1).
+///
+/// When another live backend already serves the same profile, recovery would
+/// reset that backend's Busy/Queued sessions. Skip until #2856 ownership
+/// replaces this temporary guard.
+pub(crate) fn should_run_startup_session_recovery(has_other_backend: bool) -> bool {
+    !has_other_backend
+}
+
 /// One GUI's in-process backend hosting sequence (#2853). Steps are
 /// injected so tests can pin the contract: the HTTP bind runs first;
 /// recovery and the scheduler start only after the bind succeeds (#2823);
@@ -365,6 +374,18 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
             spawn_startup_maintenance_tasks(session_manager, search_minutes);
             tauri::async_runtime::spawn(async move {
                 use crate::server::readiness::{mark_recovery, RecoveryState};
+
+                // Temporary until #2856: a second backend must not recover
+                // sessions still owned by the first (#2855 G1.1).
+                if !should_run_startup_session_recovery(
+                    crate::server::backend_descriptor::profile_has_other_backend(),
+                ) {
+                    mark_recovery(RecoveryState::Skipped);
+                    info!(
+                        "Skipping session recovery: another live backend is on this profile (#2855; replaced by #2856)"
+                    );
+                    return;
+                }
 
                 match recovery_manager.recover_sessions().await {
                     Ok(_) => mark_recovery(RecoveryState::Ok),

@@ -6,7 +6,7 @@
 //! last and fails startup when it fails, and the second-GUI refusal is
 //! classified for the user-facing dialog (#2863 G1.1/G1.2).
 
-use super::run_gui_host_startup;
+use super::{run_gui_host_startup, should_run_startup_session_recovery};
 use std::sync::{Arc, Mutex};
 
 fn bind_ok(
@@ -112,5 +112,18 @@ async fn failed_publish_wait_fails_startup_after_started_steps() {
     assert_eq!(
         steps_of(&steps),
         vec!["bind", "recovery", "scheduler", "wait"],
+    );
+}
+
+#[test]
+fn startup_recovery_runs_only_without_another_live_backend() {
+    // #2855 G1.1: second GUI must skip recover_sessions until #2856.
+    assert!(
+        should_run_startup_session_recovery(false),
+        "sole backend on the profile runs recovery"
+    );
+    assert!(
+        !should_run_startup_session_recovery(true),
+        "another live backend skips recovery"
     );
 }
