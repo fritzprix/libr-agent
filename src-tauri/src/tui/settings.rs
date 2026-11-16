@@ -261,10 +261,7 @@ const FIELDS: &[FieldSpec] = &[
         label: "Temperature",
         row: "temperature",
         path: "",
-        kind: FieldKind::Number(NumberKind::Float {
-            min: 0.0,
-            max: 2.0,
-        }),
+        kind: FieldKind::Number(NumberKind::Float { min: 0.0, max: 2.0 }),
     },
     // Chat interface
     FieldSpec {
@@ -279,7 +276,10 @@ const FIELDS: &[FieldSpec] = &[
         label: "Window size",
         row: "windowSize",
         path: "",
-        kind: FieldKind::Number(NumberKind::Int { min: 1, max: 10_000 }),
+        kind: FieldKind::Number(NumberKind::Int {
+            min: 1,
+            max: 10_000,
+        }),
     },
     FieldSpec {
         section: SettingsSection::ChatInterface,
@@ -314,7 +314,10 @@ const FIELDS: &[FieldSpec] = &[
         label: "HTTP server port",
         row: "systemSettings",
         path: "httpServerPort",
-        kind: FieldKind::Number(NumberKind::Int { min: 1, max: 65_535 }),
+        kind: FieldKind::Number(NumberKind::Int {
+            min: 1,
+            max: 65_535,
+        }),
     },
     FieldSpec {
         section: SettingsSection::System,
@@ -350,7 +353,10 @@ const FIELDS: &[FieldSpec] = &[
         label: "Retry delay (ms)",
         row: "advancedSettings",
         path: "retryDelay",
-        kind: FieldKind::Number(NumberKind::Int { min: 0, max: 600_000 }),
+        kind: FieldKind::Number(NumberKind::Int {
+            min: 0,
+            max: 600_000,
+        }),
     },
     FieldSpec {
         section: SettingsSection::Advanced,
@@ -1897,10 +1903,8 @@ mod tests {
             "serviceConfigs".to_string(),
             json!({ "openai": { "apiKey": "sk-test" } }),
         );
-        let mut screen = SettingsScreen::new_with_draft_for_test(
-            baseline,
-            Some(SettingsSection::AiModels),
-        );
+        let mut screen =
+            SettingsScreen::new_with_draft_for_test(baseline, Some(SettingsSection::AiModels));
         // Default AI Model is first field in AiModels
         screen.handle_key(KeyEvent::from(KeyCode::Enter));
         screen.handle_key(KeyEvent::from(KeyCode::Enter)); // pick first catalog model
