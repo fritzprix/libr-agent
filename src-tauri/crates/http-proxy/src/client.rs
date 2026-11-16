@@ -13,7 +13,7 @@ pub fn configure_reqwest_builder(
     {
         use reqwest::Proxy;
         let proxy = Proxy::custom(move |url| resolver.proxy_for_url(url));
-        return Ok(builder.proxy(proxy));
+        Ok(builder.proxy(proxy))
     }
     #[cfg(not(windows))]
     {
