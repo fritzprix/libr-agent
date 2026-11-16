@@ -103,11 +103,15 @@ when every step passes; a release build passes the control-plane step as
 `absent (yolo/unsafe fallback)`, not as a failure.
 
 `--data-dir` is required and must be an isolated profile, not the user's
-prod, dev, or demo data directory. Write that instance's port to
-`<data-dir>/http_port`. `--base-url` is optional. When set, it must be a
-loopback URL (`127.0.0.1`, `localhost`, or `::1`) on that same port. The
-matrix does not default to port 3030 and will not open a session on any other
-port or host. The script never starts or stops LibrAgent.
+prod, dev, or demo data directory. For the smoke matrix, record that
+instance's bound port in `<data-dir>/http_port` (one backend per isolated
+dir). On a normal profile without `LIBRAGENT_DATA_DIR`, each process instead
+publishes `~/.libragent/http_port.<pid>` and
+`<db>.backend.<pid>.json` — the matrix does not scan those. `--base-url` is
+optional. When set, it must be a loopback URL (`127.0.0.1`, `localhost`, or
+`::1`) on the same port as `<data-dir>/http_port`. The matrix does not
+default to port 3030 or probe other hosts. The script never starts or stops
+LibrAgent.
 
 ## Tests
 
