@@ -891,9 +891,7 @@ mod tests {
             op.abort();
         }
 
-        use crate::services::skill_service::{
-            SkillImportKind, SkillImportPreview,
-        };
+        use crate::services::skill_service::{SkillImportKind, SkillImportPreview};
         screen.view = View::ConfirmInstall;
         screen.confirm_install = Some(InstallConfirmState {
             source: "https://example.com/skills.git".into(),

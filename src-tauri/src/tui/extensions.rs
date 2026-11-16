@@ -447,13 +447,10 @@ impl ExtensionsScreen {
         let row = resolve_server_by_name(repo, name)?;
         let row_id = row.id.clone();
         let name_clone = name.to_string();
-        self.background_op = Some(BackgroundOp::spawn(
-            format!("Probing {name}"),
-            async move {
-                let tools = McpServerService::probe_server(repo, &row_id).await?;
-                Ok(format!("Verified {name_clone} · {} tool(s)", tools.len()))
-            },
-        ));
+        self.background_op = Some(BackgroundOp::spawn(format!("Probing {name}"), async move {
+            let tools = McpServerService::probe_server(repo, &row_id).await?;
+            Ok(format!("Verified {name_clone} · {} tool(s)", tools.len()))
+        }));
         Ok(())
     }
 
