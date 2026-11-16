@@ -12,6 +12,10 @@ Upstream: [tauri-plugin-http 2.6.1](https://crates.io/crates/tauri-plugin-http/2
 
 Also keep unmodified upstream files: `api-iife.js`, `LICENSE_MIT`, `LICENSE_APACHE-2.0`, `LICENSE.spdx` (required by `build.rs` / license notice).
 
+## Required non-Rust assets
+
+The crate `build.rs` calls `global_api_script_path("./api-iife.js")`. Keep `api-iife.js` from the upstream crate tarball in this directory (it is excluded from the published crate manifest but required at build time).
+
 ## Upgrade checklist
 
 1. Copy upstream 2.6.x sources over this tree (including `api-iife.js` and LICENSE*).
