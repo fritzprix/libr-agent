@@ -157,6 +157,37 @@ fn create_integration_manager() -> SessionMCPManager {
     create_integration_manager_with_workspace(std::env::current_dir().unwrap())
 }
 
+/// Points a manager's mock server at the file where it writes its own pid.
+fn record_child_pid(manager: &mut SessionMCPManager, pid_file: &Path) {
+    let config = manager
+        .server_configs
+        .get_mut("test-server")
+        .expect("test-server config");
+    match &mut config.transport {
+        TransportConfig::Stdio { env, .. } => {
+            env.insert(
+                "MOCK_SERVER_PID_FILE".to_string(),
+                pid_file.to_string_lossy().to_string(),
+            );
+        }
+        _ => panic!("Expected Stdio transport"),
+    }
+}
+
+/// True once the pid is gone, or once the deadline passes with it still alive.
+async fn child_is_alive(pid: u32) -> bool {
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    loop {
+        if !crate::utils::process::process_is_alive(pid).unwrap_or(false) {
+            return false;
+        }
+        if std::time::Instant::now() >= deadline {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
 #[tokio::test]
 async fn test_lazy_spawn() {
     // Skip if python3 is not available in this environment (CI/CD safety).
@@ -242,6 +273,96 @@ async fn test_multiple_spawn_attempts_are_serialized() {
             "Should have exactly 1 process despite concurrent spawn attempts"
         );
     }
+}
+
+/// #2858 S6: two backends can run on one profile at the same time. Each must
+/// spawn its own stdio child, and stopping one must leave the other's child
+/// running and answering — neither may share a child, a pid file, or a lock.
+#[tokio::test]
+async fn two_backends_on_one_profile_each_run_their_own_stdio_child() {
+    if !std::process::Command::new("python3")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+    {
+        eprintln!("Skipping integration test: python3 not available");
+        return;
+    }
+
+    let _state = lock_spawn_test_state().await;
+
+    // One profile directory, shared by both "backends", as two app instances would.
+    let profile_dir =
+        std::env::temp_dir().join(format!("libragent-two-backends-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&profile_dir).expect("shared profile directory");
+    let first_pid_file = profile_dir.join("backend-a.pid");
+    let second_pid_file = profile_dir.join("backend-b.pid");
+
+    let mut first = create_integration_manager_with_workspace(profile_dir.clone());
+    let mut second = create_integration_manager_with_workspace(profile_dir.clone());
+    record_child_pid(&mut first, &first_pid_file);
+    record_child_pid(&mut second, &second_pid_file);
+
+    let read_pid = |path: &Path| -> u32 {
+        std::fs::read_to_string(path)
+            .unwrap_or_else(|e| panic!("{} was never written: {e}", path.display()))
+            .trim()
+            .parse()
+            .unwrap_or_else(|e| panic!("{} does not hold a pid: {e}", path.display()))
+    };
+
+    first
+        .ensure_process_running("test-server")
+        .await
+        .expect("first backend spawns its child");
+    second
+        .ensure_process_running("test-server")
+        .await
+        .expect("second backend spawns its own child");
+
+    let first_pid = read_pid(&first_pid_file);
+    let second_pid = read_pid(&second_pid_file);
+
+    assert_eq!(
+        first.active_processes.read().await.len(),
+        1,
+        "first backend owns exactly one child"
+    );
+    assert_eq!(
+        second.active_processes.read().await.len(),
+        1,
+        "second backend owns its own child"
+    );
+    assert_ne!(
+        first_pid, second_pid,
+        "two backends must not share one stdio child"
+    );
+    assert!(child_is_alive(first_pid).await, "first child is running");
+    assert!(
+        child_is_alive(second_pid).await,
+        "second child is running next to the first"
+    );
+
+    // Stopping one backend tears down only its own child.
+    first.shutdown_all().await;
+    assert!(
+        !child_is_alive(first_pid).await,
+        "the stopped backend's child must exit"
+    );
+    assert!(
+        child_is_alive(second_pid).await,
+        "the other backend's child was killed by the first backend"
+    );
+    let tools = second
+        .list_tools_with_init_timeout("test-server", Duration::from_secs(10))
+        .await
+        .expect("the surviving backend still answers after the other stopped");
+    let _ = tools;
+
+    second.shutdown_all().await;
+    let _ = child_is_alive(second_pid).await;
+    let _ = std::fs::remove_dir_all(&profile_dir);
 }
 
 #[tokio::test]
