@@ -133,13 +133,31 @@ fn spawn_startup_maintenance_tasks(
     info!("✅ Background message indexing worker started");
 }
 
-/// Whether this process may run startup session recovery (#2855 G1.1).
+/// Startup session recovery with the multi-backend guard (#2855 G1.1 / G2.1).
 ///
 /// When another live backend already serves the same profile, recovery would
-/// reset that backend's Busy/Queued sessions. Skip until #2856 ownership
-/// replaces this temporary guard.
-pub(crate) fn should_run_startup_session_recovery(has_other_backend: bool) -> bool {
-    !has_other_backend
+/// reset that backend's Busy/Queued sessions — mark `Skipped` and return
+/// without calling `recover`. Temporary until #2856 ownership replaces this.
+///
+/// Two GUIs that start in the same grace window may each see the other as
+/// booting and both skip, leaving prior crash residue as Busy (rare; #2856).
+pub(crate) async fn run_startup_recovery<R, Fut, M>(has_other_backend: bool, recover: R, mark: M)
+where
+    R: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = Result<(), String>>,
+    M: FnOnce(crate::server::readiness::RecoveryState),
+{
+    use crate::server::readiness::RecoveryState;
+
+    if has_other_backend {
+        mark(RecoveryState::Skipped);
+        return;
+    }
+
+    match recover().await {
+        Ok(()) => mark(RecoveryState::Ok),
+        Err(_) => mark(RecoveryState::Failed),
+    }
 }
 
 /// One GUI's in-process backend hosting sequence (#2853). Steps are
@@ -373,27 +391,25 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         move || {
             spawn_startup_maintenance_tasks(session_manager, search_minutes);
             tauri::async_runtime::spawn(async move {
-                use crate::server::readiness::{mark_recovery, RecoveryState};
+                use crate::server::readiness::mark_recovery;
 
-                // Temporary until #2856: a second backend must not recover
-                // sessions still owned by the first (#2855 G1.1).
-                if !should_run_startup_session_recovery(
-                    crate::server::backend_descriptor::profile_has_other_backend(),
-                ) {
-                    mark_recovery(RecoveryState::Skipped);
+                let has_other = crate::server::backend_descriptor::profile_has_other_backend();
+                if has_other {
                     info!(
                         "Skipping session recovery: another live backend is on this profile (#2855; replaced by #2856)"
                     );
-                    return;
                 }
-
-                match recovery_manager.recover_sessions().await {
-                    Ok(_) => mark_recovery(RecoveryState::Ok),
-                    Err(e) => {
-                        log::error!("❌ Session recovery failed: {}", e);
-                        mark_recovery(RecoveryState::Failed);
-                    }
-                }
+                run_startup_recovery(
+                    has_other,
+                    || async {
+                        recovery_manager.recover_sessions().await.map_err(|e| {
+                            log::error!("❌ Session recovery failed: {}", e);
+                            e.to_string()
+                        })
+                    },
+                    mark_recovery,
+                )
+                .await;
             });
             info!("🔄 Session recovery initiated in background");
         },
