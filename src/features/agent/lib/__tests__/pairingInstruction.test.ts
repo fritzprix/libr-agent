@@ -6,7 +6,7 @@ describe('pairingInstruction', () => {
     const instruction = getAgentIntegrationInstruction(3030);
     expect(instruction).toContain('/api/pairings');
     expect(instruction).toContain('xxx-yyy');
-    expect(instruction).toContain('http_port');
+    expect(instruction).toContain('http_port.<pid>');
     expect(instruction).toContain('3030');
     expect(instruction).toContain('Authorization: Bearer <apiKey>');
   });

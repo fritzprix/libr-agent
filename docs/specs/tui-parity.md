@@ -758,7 +758,7 @@ slash commands, and each entry is classified in the table below.
 | Load error (§1.3.3)                | direct  | P0       | inline error text                                                |
 | Playbook auto-start (§1.3.3)       | adapted | P1       | `/playbooks` start action prints the same strip                  |
 | MCP discovery toasts (§1.3.3)      | direct  | P1       | inline lines per server                                          |
-| Keep-alive (§1.3.3)                | direct  | P0       | no client-side work: the shared backend runs sessions regardless |
+| Keep-alive (§1.3.3)                | direct  | P0       | no client-side work: the hosting backend keeps sessions running regardless of TUI visibility |
 | Title (§1.3.4)                     | direct  | P0       | header line                                                      |
 | Rename session (§1.3.4)            | direct  | P1       | `/rename <name>`                                                 |
 | Bookmark (§1.3.4)                  | direct  | P1       | `/bookmark`                                                      |
@@ -1723,17 +1723,19 @@ P1:
   - A turn keeps streaming while a menu is open. An approval that arrives then shows "Approval waiting — Esc to return" in the menu footer, and form input is kept (§3.4).
 - [ ] **P-23 Start, quit, and the terminal** — All
   - `/quit`, Ctrl+D, and Ctrl+C pressed twice within 2 s each leave the TUI and restore the terminal: cursor, echo, line mode, and the alternate screen.
-  - A running session keeps running in the backend after the TUI quits, and the GUI or a new TUI sees it.
+  - A running session keeps running in the **hosting** backend after the TUI quits; another frontend on **that same** backend (or a new TUI attach) sees it.
   - F1 and `/help [command]` show the command list. Ctrl+L redraws.
 - [ ] **P-24 Backend-only behaviour** — All · `[auto]`
-  - A scheduled task run and keep-alive work the same while only the TUI is attached as while only the GUI is attached. Session status and messages are checked over HTTP.
+  - A scheduled task run and keep-alive work the same whether the TUI or the hosting GUI is the active frontend on **that** backend. Session status and messages are checked over HTTP.
   - Covers: §2.4 keep-alive; §2.11 from scheduled task.
 
-### 4.3 Shared backend
+### 4.3 Shared-backend attach matrix (obsolete — #2855)
+
+> **Archived 2026-11 (#2862 / epic #2852).** Items **B-01–B-11** assumed exactly one Session API backend per profile and that a later GUI or TUI **attached** to it. Since **#2855**, each `libragent` process hosts its own backend (distinct `http_port.<pid>` and `.backend.<pid>.json`); a second GUI is a second backend, not an attach client. Do **not** use this matrix for release gates. Keep it only as historical context for #2756–#2761. Replacement ownership work: **#2856**.
 
 All on one scratch profile, with `LIBRAGENT_LLM_EXECUTOR` unset (the phase-1 WebView path) unless the scenario says otherwise. "One backend" means one live descriptor file, one HTTP server answering `/api/health` with `ready: true`, and one scheduler.
 
-- [x] **B-01 The TUI starts first** (#2756, #2761) — All · `[auto]`
+- [x] **B-01 The TUI starts first** (#2756, #2761) — All · `[auto]` — *obsolete*
   - With no backend running, `libragent --tui` brings the backend up and attaches. One backend, and no GUI window.
   - A GUI started afterwards attaches to it and does not start a second one.
   - Evidence (#2823): `host_chat_finds_its_own_backend_record` (the hosting process sees its own record) and `second_process_attaches_to_the_live_backend_without_starting_one` (a second process attaches and does not start a backend).
@@ -1797,8 +1799,8 @@ Per `docs/specs/liblet-cli-interface.md` §3.2–§3.6, on the headless binary f
   - `--execution-mode yolo` runs standard tools without stopping. The mode cannot be raised during the run.
   - Without the flag, the profile's approval policy applies.
 - [ ] **H-06 Ephemeral and parallel** — All · `[auto]`
-  - The headless session never appears in the shared list (GUI, TUI, or Session API) and is gone after exit, on every exit path in H-04.
-  - Two headless runs and a running GUI on the same profile do not block each other.
+  - The headless session never appears in the profile session list (GUI, TUI, or Session API of any hosting backend) and is gone after exit, on every exit path in H-04.
+  - Two headless runs and a running GUI backend on the same profile do not block each other.
 
 ### 4.6 LLM client provider parity
 
@@ -1828,5 +1830,5 @@ The Rust LLM client (`src-tauri/llm-client`, #2754 and #2755) is compared with t
 
 Not covered in this checklist:
 
-- `liblet --list-sessions` (`liblet-cli-interface.md` §3.2) reads the shared sessions, but #2701 says liblet does not use the shared session store. Add a scenario once that conflict is settled.
+- `liblet --list-sessions` (`liblet-cli-interface.md` §3.2) reads persisted profile sessions over HTTP from a chosen backend; headless `-p` remains ephemeral. Add an explicit scenario once TUI backend selection (#2702) is settled.
 - Gemini's retry without tools after `MALFORMED_FUNCTION_CALL`, because the Rust client does not have it yet (#2755).

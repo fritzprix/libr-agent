@@ -12,8 +12,8 @@ export function getAgentIntegrationInstruction(
 You are integrating with LibrAgent's Session API running locally on this machine. Follow these steps autonomously:
 
 1. **Locate HTTP Port**:
-   - Check file: \`~/.libragent/http_port\` (or \`%USERPROFILE%/.libragent/http_port\` on Windows).
-   - If present, read the port number from that file. Otherwise, default to port \`${httpPort}\`.
+   - Each backend writes \`~/.libragent/http_port.<pid>\` (or \`%USERPROFILE%\\.libragent\\http_port.<pid>\` on Windows) when it binds. Several backends may run at once; probe each file until \`GET http://127.0.0.1:<port>/api/health\` succeeds, or set \`LIBRAGENT_HTTP_PORT\` when you already know the target backend.
+   - If no file answers, default to port \`${httpPort}\` (single-backend dev fallback only).
 
 2. **Generate a 1-Time Pairing Code**:
    - Generate a 6-character code formatted as \`xxx-yyy\` using alphanumeric characters (e.g. \`a7b-3k9\`).

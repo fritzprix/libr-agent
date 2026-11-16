@@ -104,11 +104,13 @@ No tool documents an exit code for "waiting on approval", because none of them w
 ### 3.1 Shape
 
 - `liblet` is its own binary. The build produces two artifacts: the GUI app, and `liblet`, a TUI that also supports headless runs. There are no subcommands.
-- The GUI and the TUI are equal frontends of one shared local backend and see the same sessions. Whichever starts first starts the backend; a later one connects to it. A session opened in one can be resumed in the other.
-- The Session API (`docs/api/http_api.md`) is the contract between that shared backend and its frontends. It is not a way for a thin client to attach to a hidden GUI instance.
-- A headless run is self-contained. It hosts its own **ephemeral session** and does not connect to the shared backend. The session is not in the shared session list, cannot be resumed, and is removed when the process exits. Headless runs can proceed in parallel with the GUI, the TUI, and each other.
-- A headless run may read its initial settings, including the approval policy, from the profile (see 3.5).
-- Several apps may run on one device. Nothing may enforce "one app instance per device"; the only single-owner rule is that a live session has exactly one executor.
+- Each `libragent` GUI window hosts **its own** Session API backend (#2855). Several backends may run on one profile; they share the profile database file but bind distinct loopback ports. The TUI (when wired in #2702) is a frontend of the backend it hosts or attaches to — not a second executor hidden inside the GUI.
+- The Session API (`docs/api/http_api.md`) is the local HTTP contract for **that** backend. It is not a remote control plane for another app's window.
+- A **headless** run (`-p` / `--prompt`, or a piped prompt per §3.2) is self-contained: it never attaches to a GUI backend and never lists its session in the profile's shared session store.
+  - **Shipped today (#2703)**: copy the profile SQLite into a per-run `TempDir`, delete session/message/scheduled-task rows in the copy, then `VACUUM` so prior session bytes are scrubbed from the ephemeral file; run one ephemeral session; tear down the temp tree on exit. **No rows are written back** to the profile database.
+  - **Planned (#2859 / #2860)**: optional **insert-only** write-back of approved headless artifacts into the profile DB, with redaction of secrets and env — not implemented yet; until then, treat headless output on stdout / `json` / `stream-json` as the only durable record of the run.
+- A headless run may read its initial settings, including the approval policy, from the profile snapshot (see 3.5).
+- Several app processes may run on one device. Cross-process session exclusivity for **interactive** GUIs is by separate backends (#2855). Within one backend, at most one live frontend attachment may drive a given session (`docs/api/http_api.md` Session Ownership).
 
 ### 3.2 Invocation
 
@@ -237,17 +239,17 @@ These are inputs to #2702, not a layout.
 
 Checked against `src-tauri/src/server/routes.rs` on `dev/0.9.x` at `dc94e17c3`.
 
-### 4.1 Shared-backend contract (TUI)
+### 4.1 TUI Session API gaps (#2700 / #2702)
 
-The TUI cannot be a full frontend without these. All three are in #2700's work list as revised on 2026-11-12.
+Independent of the multi-backend model (#2855), a TUI frontend still needs these Session API features (unchanged from #2700):
 
-1. **No session list.** `--continue`, `--list-sessions`, and the resume picker need the shared sessions with their workspace path and last message time.
-2. **No streaming.** The API has `GET /api/sessions/:id` and `GET /api/sessions/:id/messages` only. The TUI needs an event stream for model output.
-3. **No release-build route for user questions.** Seeing and answering a pending `ui__askUser` prompt exists only in the debug-only E2E control plane (`src-tauri/src/server/e2e_control`).
+1. **Session list** for `--continue`, `--list-sessions`, and the resume picker (workspace path, last message time).
+2. **Streaming** — today only `GET /api/sessions/:id` and `GET /api/sessions/:id/messages`; the TUI needs the event stream (`GET /api/sessions/:id/events`).
+3. **User-question route in release builds** — answering `ui__askUser` over HTTP is still debug-only (`e2e_control`).
 
-### 4.2 Headless requirement (#2703)
+### 4.2 Headless (#2703)
 
-There is no ephemeral session today: a session is persisted and visible to every frontend. #2703 has to provide a session that a headless process hosts itself, that never enters the shared list, and that is removed when the run ends. This is not a gap in the shared-backend contract, because a headless run does not use that backend. The `stream-json` trace comes from the headless process's own run, not from a backend stream.
+Ephemeral headless runs are **implemented** in `src-tauri/src/headless/` (snapshot + isolated executor). Remaining epic work is insert-only profile write-back with redaction (#2859 / #2860), not replacing the ephemeral runtime. The `stream-json` trace is emitted by the headless process, not by a hosted backend's SSE stream.
 
 ## 5. Maintainer decisions (2026-11-12)
 
@@ -256,7 +258,7 @@ The first draft listed five open decisions. They are settled as follows.
 1. **Headless flag.** `-p` / `--prompt`, the familiar spelling. No subcommand is needed.
 2. **Approvals in headless mode.** Approvals follow the configuration the run started with. If a further approval is needed, the run stops (fail). Approvals are never skipped by default.
 3. **Mode selection.** No automatic headless. The TUI runs only when there is a terminal. Headless runs only with `-p` or when the prompt is piped in. With neither, liblet exits with a usage error.
-4. **Architecture.** liblet is an independent binary. The build produces one GUI and one TUI that supports headless. The TUI and the GUI share the backend and the sessions; headless uses a separate, ephemeral session. A single-instance lock that would block running several apps on one device is removed; only the executor of a live session is single. The Session API is needed only as the contract between the shared backend and its frontends, not as a way for an extra client to attach to the GUI.
+4. **Architecture.** liblet is an independent binary. The GUI and TUI each host (or, for legacy `liblet` TUI stubs, discover) a local backend; they do not require one shared attach point (#2855). Headless uses a separate ephemeral session. No single-instance lock blocks several apps on one device; within one backend, session driving remains single-attachment. The Session API is the contract for that process's HTTP server, not remote control of another window.
 5. **Callbacks and output.** `--hook` is not supported. The final result goes to the process's standard output, as when a sub-session returns its final result. A full trace must be available according to the initial configuration.
 
 ### 5.1 How section 3 reads those decisions
@@ -273,8 +275,8 @@ These are this document's interpretations. Correct them here if they are wrong.
 
 The maintainer revised #2698, #2700, #2701, #2702, and #2703 on 2026-11-12 to match these decisions. Nothing in them is known to be out of date:
 
-- **#2698** describes equal frontends on a shared backend, ephemeral headless, and no `--hook`.
-- **#2700** forbids a single-instance or data-dir lock and adds the session list, streaming, and user-question routes of section 4.1.
-- **#2701** is the shared backend for the GUI and the TUI, with headless out of scope.
+- **#2698** describes equal frontends, ephemeral headless, and no `--hook` (backend topology revised by #2855).
+- **#2700** adds the session list, streaming, and user-question routes of section 4.1.
+- **#2701** / **#2855**: each runtime hosts its own backend; TUI attach-to-live-backend remains a transitional `liblet` path only, not a second GUI attaching to the first.
 - **#2703** is the ephemeral headless path: `-p` or a piped prompt, result on stdout, no callback, a distinct exit status when a human is needed.
 - **#2702** says reserved subcommands take precedence "if the interface proposal keeps that shape". This proposal has no subcommands (5.1), so that clause does not apply.

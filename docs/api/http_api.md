@@ -49,6 +49,10 @@ LibrAgent provides a robust HTTP API for remote management of AI agents, session
 
 - **OAuth / deep links with multiple GUIs**: each GUI registers the `libr-agent://` deep-link handler and MCP OAuth may bind a fixed loopback callback port. With more than one GUI on the same profile, the OS may deliver a custom-scheme callback to any instance, and two concurrent loopback OAuth flows can collide on the callback port. Prefer a single GUI for custom-scheme or loopback OAuth, or run concurrent flows only after ensuring distinct callback ports.
 
+### Headless `liblet` (not this HTTP server)
+
+One-shot `liblet -p` / `libragent -p` runs use an **ephemeral** SQLite copy of the profile (session tables cleared, then `VACUUM`), not this per-process HTTP API. Output is stdout (`text`, `json`, or `stream-json`). That path is **exempt** from [Session Ownership](#session-ownership). **Insert-only write-back** of approved artifacts into the profile DB with redaction is planned (#2859 / #2860) and is **not** implemented yet.
+
 ---
 
 ## ⚠️ Error Handling
