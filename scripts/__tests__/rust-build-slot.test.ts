@@ -16,17 +16,21 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 const require = createRequire(import.meta.url);
 const {
+  ageFailedOwnStartForTests,
   maxConcurrent,
   pidStart,
   releaseBuildSlot,
   resetIdentityCacheForTests,
+  setStartTimeReaderForTests,
   startTimeFor,
   tryAcquire,
 } = require('../rust-build-slot.cjs') as {
+  ageFailedOwnStartForTests: () => void;
   maxConcurrent: (env: NodeJS.ProcessEnv, totalMem: number) => number;
   pidStart: (pid: number) => string | null;
   releaseBuildSlot: (slot: { file: string; token: string }) => void;
   resetIdentityCacheForTests: () => void;
+  setStartTimeReaderForTests: (reader: (pid: number) => string | null) => void;
   startTimeFor: (pid: number) => string | null;
   tryAcquire: (
     dir: string,
@@ -125,12 +129,8 @@ describe('rust build slot', { timeout: 15000 }, () => {
     mkdirSync(dir, { recursive: true });
     // Use the cached production path (startTimeFor), not a separate pidStart
     // call: a second PowerShell spawn on a loaded Windows runner can time out
-    // and leave ownPidStart stuck as null while this check still sees a value
-    // (#2848).
-    let realStart: string | null = null;
-    for (let i = 0; i < 5 && realStart == null; i += 1) {
-      realStart = startTimeFor(process.pid);
-    }
+    // while this check still sees a value (#2848). beforeAll warms the lookup.
+    const realStart = startTimeFor(process.pid);
     expect(
       realStart,
       'need a readable process start time for PID-reuse detection',
@@ -146,6 +146,21 @@ describe('rust build slot', { timeout: 15000 }, () => {
       }),
     );
     expect(tryAcquire(dir, 1, 'next')).not.toBeNull();
+  });
+
+  it('remembers a failed own-PID start read for IDENTITY_RECHECK_MS then retries', () => {
+    let calls = 0;
+    setStartTimeReaderForTests(() => {
+      calls += 1;
+      return null;
+    });
+    expect(startTimeFor(process.pid)).toBeNull();
+    expect(startTimeFor(process.pid)).toBeNull();
+    expect(calls).toBe(1);
+
+    ageFailedOwnStartForTests();
+    expect(startTimeFor(process.pid)).toBeNull();
+    expect(calls).toBe(2);
   });
 
   it('keeps a live holder even when its start time cannot be read', () => {
