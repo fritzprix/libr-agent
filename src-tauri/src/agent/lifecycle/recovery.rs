@@ -179,10 +179,8 @@ pub async fn recover_sessions_with_dispatcher(
 
 /// Recover BUSY sessions with optional injected message repository for isolated testing.
 ///
-/// Owner guard: the caller (`lifecycle::app_setup`) does not run this pass when
-/// `server::backend_descriptor::find_live_backend` reports another live
-/// backend for this database, so a second app starting on the same profile
-/// never rewrites that backend's `Busy` / `Queued` sessions.
+/// Each GUI startup runs this pass in-process (#2853). A second window does
+/// not skip recovery because it attached to another process.
 pub async fn recover_sessions_with_dispatcher_and_message_repo(
     session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
