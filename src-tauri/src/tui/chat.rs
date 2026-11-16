@@ -1,5 +1,5 @@
 //! TUI chat core: transcript, composer, streaming poll, and S5 prompts (#2762),
-//! plus session slash commands (#2763).
+//! session slash commands (#2763), and extensions/skills/tools (#2817).
 //!
 //! Drives the shared Session API from the TUI thread once the backend is live.
 //! Layout and key rules follow `docs/specs/tui-parity.md` §3 (S1 + S2 + S5).
@@ -9,10 +9,18 @@ use crate::agent::state::{
     PendingUserPromptSummary, UserPromptKind, UserPromptPayload, UserQuestion,
 };
 use crate::server::shared_backend::SharedBackendClient;
+use crate::tui::extensions::{
+    draw_extensions, parse_extensions_command, ExtensionsAction, ExtensionsCommand,
+    ExtensionsScreen,
+};
 use crate::tui::sessions::{
     create_new_session, delete_session, draw_picker, load_resume_picker, open_session_or_refuse,
     parse_session_command, rename_session, PickerAction, SessionCommand, SessionPicker,
 };
+use crate::tui::skills::{
+    draw_skills, parse_skills_command, SkillsAction, SkillsCommand, SkillsScreen,
+};
+use crate::tui::tools::{draw_tools, parse_tools_command, ToolsAction, ToolsCommand, ToolsScreen};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
@@ -76,6 +84,12 @@ pub struct ChatState {
     ask: AskDraft,
     /// S2 session picker (`/resume` / `/history`).
     pub picker: Option<SessionPicker>,
+    /// `/extensions` overlay (#2817).
+    pub extensions: Option<ExtensionsScreen>,
+    /// `/skills` overlay (#2817).
+    pub skills: Option<SkillsScreen>,
+    /// `/tools` overlay (#2817).
+    pub tools: Option<ToolsScreen>,
     /// Pending `/delete` confirmation (session id).
     pub confirm_delete: Option<String>,
     last_ctrl_c: Option<Instant>,
@@ -104,8 +118,39 @@ impl ChatState {
             && self.composer.is_empty()
             && self.focus == Focus::Composer
             && self.picker.is_none()
+            && self.extensions.is_none()
+            && self.skills.is_none()
+            && self.tools.is_none()
         {
             return ChatAction::Quit;
+        }
+
+        if let Some(screen) = self.extensions.as_mut() {
+            return match screen.handle_key(key) {
+                ExtensionsAction::None => ChatAction::None,
+                ExtensionsAction::Closed => {
+                    self.extensions = None;
+                    ChatAction::None
+                }
+            };
+        }
+        if let Some(screen) = self.skills.as_mut() {
+            return match screen.handle_key(key) {
+                SkillsAction::None => ChatAction::None,
+                SkillsAction::Closed => {
+                    self.skills = None;
+                    ChatAction::None
+                }
+            };
+        }
+        if let Some(screen) = self.tools.as_mut() {
+            return match screen.handle_key(key) {
+                ToolsAction::None => ChatAction::None,
+                ToolsAction::Closed => {
+                    self.tools = None;
+                    ChatAction::None
+                }
+            };
         }
 
         if let Some(id) = self.confirm_delete.clone() {
@@ -215,6 +260,18 @@ impl ChatState {
                         return ChatAction::None;
                     }
                     return ChatAction::Session(command);
+                }
+                if let Some(command) = parse_extensions_command(&text) {
+                    self.composer.clear();
+                    return ChatAction::Extensions(command);
+                }
+                if let Some(command) = parse_skills_command(&text) {
+                    self.composer.clear();
+                    return ChatAction::Skills(command);
+                }
+                if let Some(command) = parse_tools_command(&text) {
+                    self.composer.clear();
+                    return ChatAction::Tools(command);
                 }
                 if text.starts_with('/') {
                     self.notice = Some(format!("Unknown command {text}"));
@@ -481,6 +538,9 @@ pub enum ChatAction {
     CancelPrompt,
     Session(SessionCommand),
     OpenSession(String),
+    Extensions(ExtensionsCommand),
+    Skills(SkillsCommand),
+    Tools(ToolsCommand),
 }
 
 /// How the chat front should leave when it is done.
@@ -718,6 +778,18 @@ pub fn s5_layout(state: &ChatState, width: u16) -> (u16, String) {
 
 /// Draw the S1 chat frame (and S5 strip when a prompt is open).
 pub fn draw_chat(frame: &mut Frame<'_>, state: &ChatState) {
+    if let Some(screen) = &state.extensions {
+        draw_extensions(frame, screen);
+        return;
+    }
+    if let Some(screen) = &state.skills {
+        draw_skills(frame, screen);
+        return;
+    }
+    if let Some(screen) = &state.tools {
+        draw_tools(frame, screen);
+        return;
+    }
     if let Some(picker) = &state.picker {
         draw_picker(frame, picker);
         return;
@@ -923,6 +995,15 @@ pub fn run_chat_front(stdout: &mut Stdout) {
                             ));
                         }
                     }
+                    ChatAction::Extensions(command) => {
+                        apply_extensions_command(&mut state, command);
+                    }
+                    ChatAction::Skills(command) => {
+                        apply_skills_command(&mut state, command);
+                    }
+                    ChatAction::Tools(command) => {
+                        apply_tools_command(&mut state, command);
+                    }
                     ChatAction::None => {}
                 }
             }
@@ -1071,6 +1152,113 @@ async fn run_session_command(
                 Err(err) => state.notice = Some(err),
             }
         }
+    }
+}
+
+fn clear_menu_overlays(state: &mut ChatState) {
+    state.extensions = None;
+    state.skills = None;
+    state.tools = None;
+    state.picker = None;
+}
+
+fn apply_extensions_command(state: &mut ChatState, command: ExtensionsCommand) {
+    clear_menu_overlays(state);
+    state.notice = None;
+    let result = match command {
+        ExtensionsCommand::List { query } => ExtensionsScreen::open(query).map(Some),
+        ExtensionsCommand::New => ExtensionsScreen::open_new().map(Some),
+        ExtensionsCommand::Edit { name } => ExtensionsScreen::open_edit(&name).map(Some),
+        ExtensionsCommand::Delete { name } => ExtensionsScreen::open_delete(&name).map(Some),
+        ExtensionsCommand::Enable { name } => match ExtensionsScreen::apply_enable(&name, true) {
+            Ok(msg) => {
+                state.notice = Some(msg);
+                Ok(None)
+            }
+            Err(err) => Err(err),
+        },
+        ExtensionsCommand::Disable { name } => match ExtensionsScreen::apply_enable(&name, false) {
+            Ok(msg) => {
+                state.notice = Some(msg);
+                Ok(None)
+            }
+            Err(err) => Err(err),
+        },
+        ExtensionsCommand::Tools { name } => ExtensionsScreen::open_tools(&name).map(Some),
+        ExtensionsCommand::Retry { name: None } => match state.session_id.as_deref() {
+            Some(session_id) => match ExtensionsScreen::apply_session_retry(session_id) {
+                Ok(msg) => {
+                    state.notice = Some(msg);
+                    Ok(None)
+                }
+                Err(err) => Err(err),
+            },
+            None => Err("Open a session first to retry failed servers".into()),
+        },
+        ExtensionsCommand::Retry { name: Some(name) } => {
+            match ExtensionsScreen::apply_probe(&name) {
+                Ok(msg) => {
+                    state.notice = Some(msg);
+                    Ok(None)
+                }
+                Err(err) => Err(err),
+            }
+        }
+        ExtensionsCommand::Auth { name } => match ExtensionsScreen::apply_auth(&name) {
+            Ok(msg) => {
+                state.notice = Some(msg);
+                Ok(None)
+            }
+            Err(err) => Err(err),
+        },
+        ExtensionsCommand::Logout { name } => match ExtensionsScreen::apply_logout(&name) {
+            Ok(msg) => {
+                state.notice = Some(msg);
+                Ok(None)
+            }
+            Err(err) => Err(err),
+        },
+        ExtensionsCommand::Presets => Ok(Some(ExtensionsScreen::open_presets())),
+        ExtensionsCommand::AppWizard => Ok(Some(ExtensionsScreen::open_app_wizard())),
+    };
+    match result {
+        Ok(Some(screen)) => state.extensions = Some(screen),
+        Ok(None) => {}
+        Err(err) => state.notice = Some(err),
+    }
+}
+
+fn apply_skills_command(state: &mut ChatState, command: SkillsCommand) {
+    clear_menu_overlays(state);
+    state.notice = None;
+    let result = match command {
+        SkillsCommand::List => SkillsScreen::open().map(Some),
+        SkillsCommand::Install { source } => match SkillsScreen::apply_install(&source) {
+            Ok(msg) => {
+                state.notice = Some(msg);
+                Ok(None)
+            }
+            Err(err) => Err(err),
+        },
+        SkillsCommand::Delete { name } => SkillsScreen::open_delete(&name).map(Some),
+        SkillsCommand::Reset => SkillsScreen::open_reset().map(Some),
+        SkillsCommand::Folders => SkillsScreen::open_folders().map(Some),
+    };
+    match result {
+        Ok(Some(screen)) => state.skills = Some(screen),
+        Ok(None) => {}
+        Err(err) => state.notice = Some(err),
+    }
+}
+
+fn apply_tools_command(state: &mut ChatState, command: ToolsCommand) {
+    clear_menu_overlays(state);
+    state.notice = None;
+    match command {
+        ToolsCommand::List => match ToolsScreen::open(state.session_id.as_deref()) {
+            Ok(screen) => state.tools = Some(screen),
+            Err(err) => state.notice = Some(err),
+        },
     }
 }
 
