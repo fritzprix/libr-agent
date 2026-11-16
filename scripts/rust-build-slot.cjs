@@ -29,7 +29,8 @@ const GUARD_STALE_MS = 30000;
 // Waiters call pidStart from tryAcquire (reclaimIfStale) on the hot path.
 // A hung PowerShell must fail open (null) instead of stalling every cargo
 // waiter; identity then falls back to pidAlive + MAX_HOLD_MS.
-const PID_START_TIMEOUT_MS = 4000;
+// On loaded Windows CI runners, PowerShell startup can take 4-6s.
+const PID_START_TIMEOUT_MS = 8000;
 
 const identityCheckedAt = new Map();
 let ownPidStart;
@@ -109,18 +110,30 @@ function pidStart(pid) {
   return result.status === 0 ? result.stdout.trim() || null : null;
 }
 
-/** Cache this process's start time so Windows does not spawn PowerShell twice. */
+/**
+ * Cache this process's start time so Windows does not spawn PowerShell twice.
+ * Never permanently cache a failed read — a later call may succeed after
+ * PowerShell warms up (#2848). Inventing an identity would not match
+ * pidStart() in other processes, so they would reclaim a live slot.
+ */
 function startTimeFor(pid) {
   if (pid === process.pid) {
     if (ownPidStart === undefined) {
-      // Leave null when the OS value cannot be read. Inventing an identity
-      // would not match pidStart() in other processes, so they would reclaim
-      // a live slot.
-      ownPidStart = pidStart(pid);
+      const value = pidStart(pid);
+      if (value !== null) {
+        ownPidStart = value;
+      }
+      return value;
     }
     return ownPidStart;
   }
   return pidStart(pid);
+}
+
+/** Test helper: drop cached identity so the next acquire re-reads start time. */
+function resetIdentityCacheForTests() {
+  ownPidStart = undefined;
+  identityCheckedAt.clear();
 }
 
 function pidWasReused(holder) {
@@ -254,6 +267,8 @@ module.exports = {
   maxConcurrent,
   pidStart,
   releaseBuildSlot,
+  resetIdentityCacheForTests,
   slotDir,
+  startTimeFor,
   tryAcquire,
 };
