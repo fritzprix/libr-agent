@@ -1,5 +1,5 @@
 //! TUI chat core: transcript, composer, streaming poll, and S5 prompts (#2762),
-//! plus session slash commands (#2763).
+//! session slash commands (#2763), and assistants/playbooks library (#2816).
 //!
 //! Drives the shared Session API from the TUI thread once the backend is live.
 //! Layout and key rules follow `docs/specs/tui-parity.md` §3 (S1 + S2 + S5).
@@ -9,6 +9,13 @@ use crate::agent::state::{
     PendingUserPromptSummary, UserPromptKind, UserPromptPayload, UserQuestion,
 };
 use crate::server::shared_backend::SharedBackendClient;
+use crate::tui::assistants::{
+    draw_assistants, parse_assistants_command, AssistantsAction, AssistantsCommand,
+    AssistantsScreen,
+};
+use crate::tui::playbooks::{
+    draw_playbooks, parse_playbooks_command, PlaybooksAction, PlaybooksCommand, PlaybooksScreen,
+};
 use crate::tui::sessions::{
     create_new_session, delete_session, draw_picker, load_resume_picker, open_session_or_refuse,
     parse_session_command, rename_session, PickerAction, SessionCommand, SessionPicker,
@@ -78,6 +85,10 @@ pub struct ChatState {
     pub picker: Option<SessionPicker>,
     /// Pending `/delete` confirmation (session id).
     pub confirm_delete: Option<String>,
+    /// `/assistants` library overlay (#2816).
+    pub assistants: Option<AssistantsScreen>,
+    /// `/playbooks` library overlay (#2816).
+    pub playbooks: Option<PlaybooksScreen>,
     last_ctrl_c: Option<Instant>,
 }
 
@@ -104,6 +115,8 @@ impl ChatState {
             && self.composer.is_empty()
             && self.focus == Focus::Composer
             && self.picker.is_none()
+            && self.assistants.is_none()
+            && self.playbooks.is_none()
         {
             return ChatAction::Quit;
         }
@@ -152,6 +165,25 @@ impl ChatState {
             if alt && matches!(key.code, KeyCode::Char('n') | KeyCode::Char('N')) {
                 return ChatAction::Reject;
             }
+        }
+
+        if let Some(screen) = self.assistants.as_mut() {
+            return match screen.handle_key(key) {
+                AssistantsAction::None => ChatAction::None,
+                AssistantsAction::Closed => {
+                    self.assistants = None;
+                    ChatAction::None
+                }
+            };
+        }
+        if let Some(screen) = self.playbooks.as_mut() {
+            return match screen.handle_key(key) {
+                PlaybooksAction::None => ChatAction::None,
+                PlaybooksAction::Closed => {
+                    self.playbooks = None;
+                    ChatAction::None
+                }
+            };
         }
 
         match self.focus {
@@ -215,6 +247,14 @@ impl ChatState {
                         return ChatAction::None;
                     }
                     return ChatAction::Session(command);
+                }
+                if let Some(command) = parse_assistants_command(&text) {
+                    self.composer.clear();
+                    return ChatAction::Assistants(command);
+                }
+                if let Some(command) = parse_playbooks_command(&text) {
+                    self.composer.clear();
+                    return ChatAction::Playbooks(command);
                 }
                 if text.starts_with('/') {
                     self.notice = Some(format!("Unknown command {text}"));
@@ -481,6 +521,8 @@ pub enum ChatAction {
     CancelPrompt,
     Session(SessionCommand),
     OpenSession(String),
+    Assistants(AssistantsCommand),
+    Playbooks(PlaybooksCommand),
 }
 
 /// How the chat front should leave when it is done.
@@ -722,6 +764,14 @@ pub fn draw_chat(frame: &mut Frame<'_>, state: &ChatState) {
         draw_picker(frame, picker);
         return;
     }
+    if let Some(screen) = &state.assistants {
+        draw_assistants(frame, screen);
+        return;
+    }
+    if let Some(screen) = &state.playbooks {
+        draw_playbooks(frame, screen);
+        return;
+    }
 
     let width = frame.area().width.max(1);
     let (s5_rows, s5_text) = s5_layout(state, width);
@@ -923,6 +973,12 @@ pub fn run_chat_front(stdout: &mut Stdout) {
                             ));
                         }
                     }
+                    ChatAction::Assistants(command) => {
+                        apply_assistants_command(&mut state, command);
+                    }
+                    ChatAction::Playbooks(command) => {
+                        apply_playbooks_command(&mut state, command);
+                    }
                     ChatAction::None => {}
                 }
             }
@@ -967,6 +1023,34 @@ async fn poll_session(api: &SharedBackendClient, state: &mut ChatState) {
                 state.apply_messages(messages);
             }
         }
+        Err(err) => state.notice = Some(err),
+    }
+}
+
+fn apply_assistants_command(state: &mut ChatState, command: AssistantsCommand) {
+    state.playbooks = None;
+    state.notice = None;
+    let result = match command {
+        AssistantsCommand::List { query } => AssistantsScreen::open(query),
+        AssistantsCommand::New => AssistantsScreen::open_new(),
+        AssistantsCommand::Edit { id } => AssistantsScreen::open_edit(&id),
+        AssistantsCommand::Delete { id } => AssistantsScreen::open_delete(&id),
+    };
+    match result {
+        Ok(screen) => state.assistants = Some(screen),
+        Err(err) => state.notice = Some(err),
+    }
+}
+
+fn apply_playbooks_command(state: &mut ChatState, command: PlaybooksCommand) {
+    state.assistants = None;
+    state.notice = None;
+    let result = match command {
+        PlaybooksCommand::List { query, sort } => PlaybooksScreen::open(query, sort),
+        PlaybooksCommand::Delete { id } => PlaybooksScreen::open_delete(&id),
+    };
+    match result {
+        Ok(screen) => state.playbooks = Some(screen),
         Err(err) => state.notice = Some(err),
     }
 }

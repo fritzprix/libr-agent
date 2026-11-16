@@ -33,7 +33,9 @@
 //! PE subsystem (independent of terminal host), and WT implements the same
 //! Win32 console API for I/O that conhost provided above.
 
+mod assistants;
 mod chat;
+mod playbooks;
 mod sessions;
 
 use crossterm::{

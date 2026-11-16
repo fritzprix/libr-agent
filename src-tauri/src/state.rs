@@ -430,6 +430,11 @@ pub fn get_assistant_repository() -> &'static SqliteAssistantRepository {
         .expect("Assistant repository not initialized. Call set_assistant_repository() first.")
 }
 
+/// Non-panicking access for TUI overlays that may open before init finishes.
+pub fn try_get_assistant_repository() -> Option<&'static SqliteAssistantRepository> {
+    ASSISTANT_REPOSITORY.get()
+}
+
 /// Sets the global playbook repository instance.
 ///
 /// # Panics
@@ -451,6 +456,11 @@ pub fn get_playbook_repository() -> &'static SqlitePlaybookRepository {
     PLAYBOOK_REPOSITORY
         .get()
         .expect("Playbook repository not initialized. Call set_playbook_repository() first.")
+}
+
+/// Non-panicking access for TUI overlays that may open before init finishes.
+pub fn try_get_playbook_repository() -> Option<&'static SqlitePlaybookRepository> {
+    PLAYBOOK_REPOSITORY.get()
 }
 
 /// Sets the global knowledge repository instance.
