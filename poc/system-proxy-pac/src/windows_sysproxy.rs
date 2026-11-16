@@ -28,13 +28,12 @@ fn free_pwstr(ptr: PWSTR) {
 fn discover_ie_config() -> Result<WINHTTP_CURRENT_USER_IE_PROXY_CONFIG, String> {
     let mut config = WINHTTP_CURRENT_USER_IE_PROXY_CONFIG::default();
     unsafe {
-        WinHttpGetIEProxyConfigForCurrentUser(&mut config)
-            .map_err(|_| {
-                format!(
-                    "WinHttpGetIEProxyConfigForCurrentUser failed: {:?}",
-                    unsafe { GetLastError() }
-                )
-            })?;
+        WinHttpGetIEProxyConfigForCurrentUser(&mut config).map_err(|_| {
+            format!(
+                "WinHttpGetIEProxyConfigForCurrentUser failed: {:?}",
+                GetLastError()
+            )
+        })?;
     }
     Ok(config)
 }
@@ -42,7 +41,7 @@ fn discover_ie_config() -> Result<WINHTTP_CURRENT_USER_IE_PROXY_CONFIG, String> 
 pub fn discover() -> Result<SystemProxyDiscovery, String> {
     let config = discover_ie_config()?;
 
-    let auto_detect = Some(unsafe { config.fAutoDetect.as_bool() });
+    let auto_detect = Some(config.fAutoDetect.as_bool());
     let pac_url_s = pwstr_to_string(config.lpszAutoConfigUrl);
     let static_proxy_s = pwstr_to_string(config.lpszProxy);
     let bypass_s = pwstr_to_string(config.lpszProxyBypass);
@@ -65,7 +64,7 @@ pub fn discover() -> Result<SystemProxyDiscovery, String> {
 pub fn resolve(url: &str) -> Result<ResolvedProxy, String> {
     let config = discover_ie_config()?;
 
-    let auto_detect = unsafe { config.fAutoDetect.as_bool() };
+    let auto_detect = config.fAutoDetect.as_bool();
     let pac_url_s = pwstr_to_string(config.lpszAutoConfigUrl);
     let static_proxy_s = pwstr_to_string(config.lpszProxy);
 
@@ -105,7 +104,7 @@ pub fn resolve(url: &str) -> Result<ResolvedProxy, String> {
         if let Err(err) = proxy_result {
             return Err(format!(
                 "WinHttpGetProxyForUrl failed: {err:?} (last error {:?})",
-                unsafe { GetLastError() }
+                unsafe { GetLastError() } // GetLastError is only meaningful immediately after the failed Win32 call.
             ));
         }
 

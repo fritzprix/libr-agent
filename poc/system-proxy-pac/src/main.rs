@@ -61,11 +61,11 @@ async fn run() -> Result<(), String> {
             elapsed: Duration::ZERO,
             detail: "Skipped: resolved proxy is DIRECT".into(),
         }),
-        ResolvedProxy::Proxies(list) => {
-            let proxy_url = list
-                .first()
+        ResolvedProxy::Proxies(_) => {
+            let proxy_url = resolved
+                .first_reqwest_proxy_url()
                 .ok_or_else(|| "Resolved proxy list was empty".to_string())?;
-            fetch_via_proxy(&cli.url, proxy_url, timeout).await
+            fetch_via_proxy(&cli.url, &proxy_url, timeout).await
         }
     };
     print_fetch_result(&proxied_result);
@@ -119,10 +119,11 @@ async fn fetch_via_proxy(url: &str, proxy_url: &str, timeout: Duration) -> Resul
         detail: format!("invalid proxy URL: {e}"),
     })?;
 
+    // Do not call `.no_proxy()` here: in reqwest it clears every proxy on the builder,
+    // including the one added with `.proxy()`, so Request B would still go direct.
     let client = reqwest::Client::builder()
         .timeout(timeout)
         .proxy(proxy)
-        .no_proxy()
         .redirect(reqwest::redirect::Policy::limited(10))
         .build()
         .map_err(|e| FetchOutcome {

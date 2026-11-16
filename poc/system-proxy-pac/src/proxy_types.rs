@@ -34,6 +34,7 @@ impl ResolvedProxy {
 }
 
 /// Parse WinHTTP / PAC-style proxy list strings into reqwest-ready HTTP proxy URLs.
+#[cfg_attr(not(windows), allow(dead_code))]
 pub fn parse_proxy_list(raw: &str) -> Vec<String> {
     let mut out = Vec::new();
     for part in raw.split(';') {
