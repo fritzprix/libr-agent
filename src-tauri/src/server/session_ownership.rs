@@ -81,20 +81,14 @@ type HttpRefusal = (StatusCode, String);
 const ATTACHMENT_HEADER_REMOVED: &str =
     "x-frontend-attachment is not supported; attachment registry removed";
 
-/// Claim via the Session API for an HTTP caller (#2854).
+/// Refuse any HTTP caller that sends an `x-frontend-attachment` header (#2854).
 ///
-/// - No `x-frontend-attachment` header: external caller; no claim and no refusal.
+/// - No header: external caller; the request continues and claims nothing.
 /// - Any header value: `400` — cross-process attachment registration is gone;
 ///   only the in-process host may own sessions.
-pub fn claim_http(_session_id: &str, header: Option<&str>) -> Result<(), HttpRefusal> {
-    http_attachment(header).map(|_| ())
-}
-
-/// Validate an optional `x-frontend-attachment` header: `None` when absent,
-/// `400` when present (#2854).
-pub fn http_attachment(header: Option<&str>) -> Result<Option<&str>, HttpRefusal> {
+pub fn reject_attachment_header(header: Option<&str>) -> Result<(), HttpRefusal> {
     match header {
-        None => Ok(None),
+        None => Ok(()),
         Some(_) => Err((
             StatusCode::BAD_REQUEST,
             ATTACHMENT_HEADER_REMOVED.to_string(),
@@ -161,24 +155,22 @@ mod tests {
     }
 
     #[test]
-    fn http_claim_rejects_any_attachment_header() {
-        let session = unique_id("session");
+    fn any_attachment_header_is_rejected() {
         for header in [HOST_ATTACHMENT_ID, unique_id("att").as_str()] {
-            let (status, message) = claim_http(&session, Some(header)).unwrap_err();
+            let (status, message) = reject_attachment_header(Some(header)).unwrap_err();
             assert_eq!(status, StatusCode::BAD_REQUEST);
             assert!(message.contains("attachment registry removed"), "{message}");
-            assert_eq!(owner(&session), None);
         }
     }
 
     #[test]
-    fn http_claim_without_a_header_neither_claims_nor_refuses() {
+    fn a_header_less_request_neither_claims_nor_refuses() {
         let session = unique_id("session");
-        assert!(claim_http(&session, None).is_ok());
+        assert!(reject_attachment_header(None).is_ok());
         assert_eq!(owner(&session), None);
 
         assert!(claim(&session, HOST_ATTACHMENT_ID).is_ok());
-        assert!(claim_http(&session, None).is_ok());
+        assert!(reject_attachment_header(None).is_ok());
         assert_eq!(owner(&session).as_deref(), Some(HOST_ATTACHMENT_ID));
     }
 

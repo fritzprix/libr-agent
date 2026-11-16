@@ -52,11 +52,11 @@ pub async fn create_session(
     attachment: Option<String>,
 ) -> Result<impl Reply, Rejection> {
     // Validate the caller's attachment before spawning, so a bad header never
-    // leaves a session behind.
-    let attachment = match session_ownership::http_attachment(attachment.as_deref()) {
-        Ok(attachment) => attachment,
-        Err((status, error)) => return Ok(resolve_error_reply(status, error)),
-    };
+    // leaves a session behind. HTTP callers never claim (#2854).
+    if let Err((status, error)) = session_ownership::reject_attachment_header(attachment.as_deref())
+    {
+        return Ok(resolve_error_reply(status, error));
+    }
     let body = match resolve_create_session_body_refs(body).await {
         Ok(body) => body,
         Err((status, error)) => return Ok(resolve_error_reply(status, error)),
@@ -69,14 +69,10 @@ pub async fn create_session(
     )
     .await
     {
-        Ok(response) => {
-            // HTTP callers never claim (#2854). Host GUI claims via IPC.
-            let _ = attachment;
-            Ok(warp::reply::with_status(
-                warp::reply::json(&map_create_session_response_for_http(response)),
-                StatusCode::CREATED,
-            ))
-        }
+        Ok(response) => Ok(warp::reply::with_status(
+            warp::reply::json(&map_create_session_response_for_http(response)),
+            StatusCode::CREATED,
+        )),
         Err(e) => {
             let (status, sanitized_err) = classify_spawn_error(&e);
             Ok(warp::reply::with_status(
@@ -219,7 +215,7 @@ async fn list_sessions_reply(
     attachment: Option<&str>,
 ) -> warp::reply::WithStatus<warp::reply::Json> {
     // Any attachment header is refused (#2854); no header leaves list open.
-    if let Err((status, error)) = session_ownership::http_attachment(attachment) {
+    if let Err((status, error)) = session_ownership::reject_attachment_header(attachment) {
         return resolve_error_reply(status, error);
     }
     let limit = query.limit.unwrap_or(DEFAULT_SESSIONS_LIMIT);

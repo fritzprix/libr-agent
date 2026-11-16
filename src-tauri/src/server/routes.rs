@@ -36,12 +36,10 @@ pub fn wake_route(
 }
 
 /// Session API header carrying the caller's #2758 frontend attachment id.
-/// Frontends opened by a GUI/TUI process send it on create/open/resume/send/
-/// list so the backend can enforce per-process session ownership (#2759).
-/// External callers omit it and keep the pre-#2759 behavior (no ownership, no
-/// refusal). The reserved id `host` is rejected with `400`, and so is an id
-/// that is not a live attachment on the routes that claim (see
-/// `session_ownership::claim_http`).
+/// After #2854 no cross-process attachment exists, so any caller that sends
+/// this header is refused with `400`; external callers omit it and keep the
+/// pre-#2759 behavior (no ownership, no refusal). See
+/// `session_ownership::reject_attachment_header`.
 pub const FRONTEND_ATTACHMENT_HEADER: &str = "x-frontend-attachment";
 
 /// Optional [`FRONTEND_ATTACHMENT_HEADER`] extractor for Session API routes.

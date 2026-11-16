@@ -372,10 +372,10 @@ Each process hosts its own backend (#2853). Session ownership is in-process: the
 - **Claiming routes** (`POST /api/sessions/:id/open`, `resume`, `messages`, and `POST /api/sessions`): without the header, HTTP callers neither claim nor are refused for ownership. Host ownership still applies to the GUI process that opened the session.
 - **Read-only routes** never claim: `GET /api/sessions/:id`, `GET /api/sessions/:id/messages`, and the event stream. `GET /api/sessions` sets `openElsewhere: true` on sessions owned by the local host process when the list caller is an external (headerless) client.
 
-| Status | Body `error`                                                              | Cause                                                                 |
-| :----- | :------------------------------------------------------------------------ | :-------------------------------------------------------------------- |
-| `409`  | `Session <id> is open in another process`                                 | The local host process already owns the session (in-process claim). |
-| `400`  | `x-frontend-attachment is not supported; attachment registry removed`     | Any `x-frontend-attachment` header is rejected.                       |
+| Status | Body `error`                                                          | Cause                                                                                                                                                                  |
+| :----- | :-------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `409`  | `Session <id> is open in another process`                             | The local host process already owns the session (in-process claim). A headerless HTTP caller never triggers it; it only shows up as `openElsewhere` on the list reply. |
+| `400`  | `x-frontend-attachment is not supported; attachment registry removed` | Any `x-frontend-attachment` header is rejected.                                                                                                                        |
 
 ---
 
