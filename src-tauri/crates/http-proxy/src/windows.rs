@@ -1,13 +1,15 @@
-use crate::parse::{parse_proxy_list, ResolvedProxy};
+use crate::parse::{
+    parse_proxy_list, parse_static_proxy_for_scheme, proxy_bypass_matches, ResolvedProxy,
+};
 use std::ffi::c_void;
+use url::Url;
 use windows::core::{HSTRING, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{GetLastError, GlobalFree, HGLOBAL};
 use windows::Win32::Networking::WinHttp::{
     WinHttpCloseHandle, WinHttpGetIEProxyConfigForCurrentUser, WinHttpGetProxyForUrl, WinHttpOpen,
-    WINHTTP_ACCESS_TYPE_NAMED_PROXY, WINHTTP_ACCESS_TYPE_NO_PROXY,
-    WINHTTP_AUTO_DETECT_TYPE_DHCP, WINHTTP_AUTO_DETECT_TYPE_DNS_A, WINHTTP_AUTOPROXY_AUTO_DETECT,
-    WINHTTP_AUTOPROXY_CONFIG_URL, WINHTTP_AUTOPROXY_OPTIONS, WINHTTP_CURRENT_USER_IE_PROXY_CONFIG,
-    WINHTTP_PROXY_INFO,
+    WINHTTP_ACCESS_TYPE_NAMED_PROXY, WINHTTP_ACCESS_TYPE_NO_PROXY, WINHTTP_AUTO_DETECT_TYPE_DHCP,
+    WINHTTP_AUTO_DETECT_TYPE_DNS_A, WINHTTP_AUTOPROXY_AUTO_DETECT, WINHTTP_AUTOPROXY_CONFIG_URL,
+    WINHTTP_AUTOPROXY_OPTIONS, WINHTTP_CURRENT_USER_IE_PROXY_CONFIG, WINHTTP_PROXY_INFO,
 };
 
 fn pwstr_to_string(ptr: PWSTR) -> Option<String> {
@@ -38,26 +40,49 @@ fn discover_ie_config() -> Result<WINHTTP_CURRENT_USER_IE_PROXY_CONFIG, String> 
     Ok(config)
 }
 
+fn request_scheme(url: &str) -> &str {
+    Url::parse(url)
+        .ok()
+        .map(|u| {
+            // Keep the lifetime of the static scheme literals only; fall back below.
+            match u.scheme() {
+                "https" => "https",
+                "http" => "http",
+                _ => "http",
+            }
+        })
+        .unwrap_or("http")
+}
+
+/// Resolve the system proxy for `url` via WinHTTP (PAC / auto-detect / static).
 pub fn resolve(url: &str) -> Result<ResolvedProxy, String> {
     let config = discover_ie_config()?;
 
     let auto_detect = config.fAutoDetect.as_bool();
     let pac_url_s = pwstr_to_string(config.lpszAutoConfigUrl);
     let static_proxy_s = pwstr_to_string(config.lpszProxy);
+    let bypass_s = pwstr_to_string(config.lpszProxyBypass);
+
+    if let Some(ref bypass) = bypass_s {
+        if proxy_bypass_matches(url, bypass) {
+            free_ie_config_strings(&config);
+            return Ok(ResolvedProxy::Direct);
+        }
+    }
 
     let session = open_session()?;
 
     let resolved = if auto_detect || pac_url_s.is_some() {
         let mut options = WINHTTP_AUTOPROXY_OPTIONS::default();
+        // Corporate PAC files often require NTLM for the PAC fetch itself.
+        options.fAutoLogonIfChallenged = windows::Win32::Foundation::TRUE;
         if auto_detect {
             options.dwFlags |= WINHTTP_AUTOPROXY_AUTO_DETECT;
             options.dwAutoDetectFlags =
                 WINHTTP_AUTO_DETECT_TYPE_DHCP | WINHTTP_AUTO_DETECT_TYPE_DNS_A;
         }
 
-        let pac_h = pac_url_s
-            .as_ref()
-            .map(|pac| HSTRING::from(pac.as_str()));
+        let pac_h = pac_url_s.as_ref().map(|pac| HSTRING::from(pac.as_str()));
 
         if let Some(ref pac) = pac_h {
             options.dwFlags |= WINHTTP_AUTOPROXY_CONFIG_URL;
@@ -91,12 +116,7 @@ pub fn resolve(url: &str) -> Result<ResolvedProxy, String> {
     } else if let Some(ref raw) = static_proxy_s {
         free_ie_config_strings(&config);
         close_session(session);
-        let proxies = parse_proxy_list(raw);
-        if proxies.is_empty() {
-            ResolvedProxy::Direct
-        } else {
-            ResolvedProxy::Proxies(proxies)
-        }
+        parse_static_proxy_for_scheme(raw, request_scheme(url))
     } else {
         free_ie_config_strings(&config);
         close_session(session);

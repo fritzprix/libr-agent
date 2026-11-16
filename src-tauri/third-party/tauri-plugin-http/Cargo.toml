@@ -69,6 +69,7 @@ default = [
     "http2",
     "charset",
     "cookies",
+    "system-proxy",
     "libragent-pac-proxy",
 ]
 deflate = ["reqwest/deflate"]
