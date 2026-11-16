@@ -1845,6 +1845,8 @@ mod tests {
             json!(8080),
             "rejected edit must not overwrite"
         );
+        // Invalid Enter leaves editing mode active — Esc before navigating.
+        screen.handle_key(KeyEvent::from(KeyCode::Esc));
 
         // Round-trip through SystemSettings::from_stored
         let stored = screen.draft.get_path("systemSettings", "");
@@ -1866,6 +1868,10 @@ mod tests {
         if steps > 0 {
             for _ in 0..steps {
                 screen.handle_key(KeyEvent::from(KeyCode::Down));
+            }
+        } else if steps < 0 {
+            for _ in 0..(-steps) {
+                screen.handle_key(KeyEvent::from(KeyCode::Up));
             }
         }
         screen.handle_key(KeyEvent::from(KeyCode::Enter));
