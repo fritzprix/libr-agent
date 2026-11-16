@@ -133,27 +133,56 @@ fn spawn_startup_maintenance_tasks(
     info!("✅ Background message indexing worker started");
 }
 
-fn should_sweep_stale_containers(data_dir_override: Option<&std::ffi::OsStr>) -> bool {
-    data_dir_override.is_none_or(|value| value.is_empty())
+/// One GUI's in-process backend hosting sequence (#2853). Steps are
+/// injected so tests can pin the contract: the HTTP bind runs first;
+/// recovery and the scheduler start only after the bind succeeds (#2823);
+/// the own-record publish wait runs last and its failure fails startup.
+pub(crate) async fn run_gui_host_startup<B, R, S, W>(
+    bind: B,
+    start_recovery: R,
+    start_scheduler: S,
+    publish_wait: W,
+) -> Result<(), String>
+where
+    B: std::future::Future<Output = Result<u16, String>>,
+    R: FnOnce(),
+    S: FnOnce(),
+    W: std::future::Future<Output = Result<(), String>>,
+{
+    bind.await?;
+    start_recovery();
+    start_scheduler();
+    publish_wait.await
 }
 
-/// Tell the user the shared backend died, then exit this attached GUI. The
-/// exit happens when the dialog is dismissed, so the message is never lost
-/// to an instant close.
-fn exit_after_backend_loss(app_handle: &tauri::AppHandle) {
+/// True when a hosting failure means this profile already hosts another
+/// LibrAgent backend: `server::init` refuses the second bind until S3
+/// (#2855) lands, so a second GUI window is an expected case, not a
+/// crash (#2863 G1.1).
+fn is_second_backend_refusal(message: &str) -> bool {
+    message.starts_with(crate::server::SECOND_BACKEND_REFUSAL_PREFIX)
+}
+
+/// Tell the user this profile already runs a LibrAgent backend, then exit
+/// this second GUI. The exit happens when the dialog is dismissed, so the
+/// message is never lost to an instant close (#2863 G1.1).
+fn show_second_backend_dialog_and_exit(app_handle: &tauri::AppHandle) {
     use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
-    log::error!(
-        "{} Exiting.",
-        crate::server::shared_backend::BACKEND_LOST_MESSAGE
-    );
+    const MESSAGE: &str = "LibrAgent is already running on this profile. \
+        Close the other window, or start this one with a different data directory.";
+    log::error!("{MESSAGE} Exiting.");
     let exit_handle = app_handle.clone();
     app_handle
         .dialog()
-        .message(crate::server::shared_backend::BACKEND_LOST_MESSAGE)
+        .message(MESSAGE)
         .title("LibrAgent")
         .kind(MessageDialogKind::Error)
         .show(move |_| exit_handle.exit(1));
+}
+
+fn should_sweep_stale_containers(data_dir_override: Option<&std::ffi::OsStr>) -> bool {
+    data_dir_override.is_none_or(|value| value.is_empty())
 }
 
 pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
@@ -306,116 +335,101 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     crate::state::init_app_handle(app.handle().clone());
     info!("✅ Global AppHandle initialized for event emission");
 
-    // Attach-or-start on the shared backend startup path (#2756), the same
-    // entry every frontend uses. Checked before this process publishes
-    // itself, so "another backend" can only mean a different process: if one
-    // is live, this GUI attaches to it via the Session API instead of
-    // starting a second HTTP server, scheduler, or session executor.
-    let startup =
-        tauri::async_runtime::block_on(crate::server::shared_backend::attach_or_start_backend(
-            crate::server::shared_backend::ATTACH_READY_TIMEOUT,
-            || {
-                // HTTP bind runs first. Recovery and the scheduler start only
-                // after it succeeds, so a refused or failed bind cannot leave
-                // a second executor running (#2823).
-                let server_manager = app
-                    .state::<agent::AgentSessionManager>()
-                    .inner()
-                    .clone_for_task();
-                let recovery_manager = app
-                    .state::<agent::AgentSessionManager>()
-                    .inner()
-                    .clone_for_task();
-                let app_handle = app.handle().clone();
-                let http_port = startup_settings.http_port;
-                let http_expose = startup_settings.http_expose;
-                let search_minutes = startup_settings.search_index_frequency_minutes;
-                tauri::async_runtime::spawn(async move {
-                    let server_manager = std::sync::Arc::new(server_manager);
-                    crate::server::wake_listener::install(server_manager.clone());
-                    match crate::server::init(
-                        server_manager,
-                        http_port,
-                        http_expose,
-                        mcp_enabled,
-                        app_control_enabled,
-                    )
-                    .await
-                    {
-                        Ok(actual_port) => {
-                            info!(
-                                "✅ HTTP Server spawned on {}:{} (mcp={} app_control={})",
-                                if http_expose { "0.0.0.0" } else { "127.0.0.1" },
-                                actual_port,
-                                mcp_enabled,
-                                app_control_enabled
-                            );
-                        }
-                        Err(e) => {
-                            log::error!(
-                                "Failed to start HTTP server on port range starting from {}: {}",
-                                http_port,
-                                e
-                            );
-                            return;
-                        }
-                    }
-
-                    spawn_startup_maintenance_tasks(session_manager, search_minutes);
-
-                    tauri::async_runtime::spawn(async move {
-                        use crate::server::readiness::{mark_recovery, RecoveryState};
-
-                        match recovery_manager.recover_sessions().await {
-                            Ok(_) => mark_recovery(RecoveryState::Ok),
-                            Err(e) => {
-                                log::error!("❌ Session recovery failed: {}", e);
-                                mark_recovery(RecoveryState::Failed);
-                            }
-                        }
-                    });
-                    info!("🔄 Session recovery initiated in background");
-
-                    let scheduler_worker = crate::scheduled::SchedulerWorker::new(
-                        app_handle.clone(),
-                        std::time::Duration::from_secs(60),
-                    );
-                    app_handle.manage(scheduler_worker);
-                    info!("✅ Scheduled task worker started");
-                });
-
-                Ok(())
-            },
-        ))
-        .map_err(std::io::Error::other)?;
-
-    if let crate::server::shared_backend::BackendStartup::Attached { descriptor, client } = startup
-    {
-        let frontend = if crate::tui::wants_tui() {
-            "TUI"
-        } else {
-            "GUI"
-        };
-        info!(
-            "🔗 {}",
-            crate::server::shared_backend::attached_frontend_log(
-                frontend,
-                descriptor.pid,
-                descriptor.port
+    // Each GUI hosts its own backend (#2853). A new window starts its own
+    // HTTP server, scheduler, and session recovery. It does not attach to
+    // another process. HTTP bind runs first. Recovery and the scheduler
+    // start only after it succeeds, so a refused or failed bind cannot leave
+    // an executor running (#2823).
+    let server_manager = app
+        .state::<agent::AgentSessionManager>()
+        .inner()
+        .clone_for_task();
+    let recovery_manager = app
+        .state::<agent::AgentSessionManager>()
+        .inner()
+        .clone_for_task();
+    let app_handle = app.handle().clone();
+    let http_port = startup_settings.http_port;
+    let http_expose = startup_settings.http_expose;
+    let search_minutes = startup_settings.search_index_frequency_minutes;
+    let host_backend = run_gui_host_startup(
+        async move {
+            let server_manager = std::sync::Arc::new(server_manager);
+            crate::server::wake_listener::install(server_manager.clone());
+            match crate::server::init(
+                server_manager,
+                http_port,
+                http_expose,
+                mcp_enabled,
+                app_control_enabled,
             )
-        );
-        info!("✅ Shared backend at port {} is ready", descriptor.port);
-        // When the shared backend dies this GUI exits with a clear message
-        // instead of reconnecting (#2759): a fresh backend starts with an
-        // empty ownership table, so nothing is re-registered.
-        let backend_lost_handle = app.handle().clone();
-        let backend_client = client.clone();
-        tauri::async_runtime::spawn(async move {
-            crate::server::shared_backend::hold_frontend_attachment(backend_client).await;
-            exit_after_backend_loss(&backend_lost_handle);
-        });
-        crate::state::init_shared_backend_client(client);
-        crate::server::readiness::mark_recovery(crate::server::readiness::RecoveryState::Skipped);
+            .await
+            {
+                Ok(actual_port) => {
+                    info!(
+                        "✅ HTTP Server spawned on {}:{} (mcp={} app_control={})",
+                        if http_expose { "0.0.0.0" } else { "127.0.0.1" },
+                        actual_port,
+                        mcp_enabled,
+                        app_control_enabled
+                    );
+                    Ok(actual_port)
+                }
+                Err(e) => {
+                    let message = e.to_string();
+                    log::error!(
+                        "Failed to start HTTP server on port range starting from {}: {}",
+                        http_port,
+                        message
+                    );
+                    Err(message)
+                }
+            }
+        },
+        move || {
+            spawn_startup_maintenance_tasks(session_manager, search_minutes);
+            tauri::async_runtime::spawn(async move {
+                use crate::server::readiness::{mark_recovery, RecoveryState};
+
+                match recovery_manager.recover_sessions().await {
+                    Ok(_) => mark_recovery(RecoveryState::Ok),
+                    Err(e) => {
+                        log::error!("❌ Session recovery failed: {}", e);
+                        mark_recovery(RecoveryState::Failed);
+                    }
+                }
+            });
+            info!("🔄 Session recovery initiated in background");
+        },
+        move || {
+            let scheduler_worker = crate::scheduled::SchedulerWorker::new(
+                app_handle.clone(),
+                std::time::Duration::from_secs(60),
+            );
+            app_handle.manage(scheduler_worker);
+            info!("✅ Scheduled task worker started");
+        },
+        async {
+            tokio::task::spawn_blocking(|| {
+                crate::server::backend_descriptor::wait_until_own_record_live(
+                    crate::server::shared_backend::OWN_PUBLISH_TIMEOUT,
+                )
+            })
+            .await
+            .map_err(|err| format!("backend publish wait panicked: {err}"))?
+        },
+    );
+
+    // Same publish gate the single-instance path used: setup fails when this
+    // process never publishes a live record (bind failure or timeout). A
+    // refusal because another GUI already hosts this profile's backend gets
+    // a dialog instead of a raw setup error (#2863 G1.1).
+    if let Err(message) = tauri::async_runtime::block_on(host_backend) {
+        if is_second_backend_refusal(&message) {
+            show_second_backend_dialog_and_exit(app.handle());
+            return Ok(());
+        }
+        return Err(std::io::Error::other(message).into());
     }
 
     info!("✅ Builtin servers initialized with SessionManager support");
@@ -460,6 +474,9 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     info!("✅ LibrAgent setup completed successfully");
     Ok(())
 }
+
+#[cfg(test)]
+mod gui_host_policy;
 
 #[cfg(test)]
 mod sweep_rule_tests {

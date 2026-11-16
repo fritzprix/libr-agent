@@ -95,12 +95,8 @@ static STARTUP_TIMER: OnceLock<Instant> = OnceLock::new();
 static SHARED_BACKEND_CLIENT: OnceLock<crate::server::shared_backend::SharedBackendClient> =
     OnceLock::new();
 
-pub fn init_shared_backend_client(client: crate::server::shared_backend::SharedBackendClient) {
-    if SHARED_BACKEND_CLIENT.set(client).is_err() {
-        log::warn!("SharedBackendClient already initialized");
-    }
-}
-
+/// GUI startup no longer installs a shared client (#2853). Command paths that
+/// still branch on this value take the in-process path. S2 removes the client.
 pub fn get_shared_backend_client(
 ) -> Option<&'static crate::server::shared_backend::SharedBackendClient> {
     SHARED_BACKEND_CLIENT.get()
