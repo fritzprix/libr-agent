@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use chromiumoxide::browser::{Browser, BrowserConfig};
@@ -345,13 +345,14 @@ pub fn agent_sticky_profile_dir_name(has_other_backend: bool, pid: u32) -> Strin
     }
 }
 
-/// Remove `browser_agent_profile.<pid>` dirs whose process is gone. A suffixed
-/// dir is only ever used by a second backend, so it is safe to drop once that
-/// process is dead (#2858 G1.2).
+/// Remove `browser_agent_profile.<pid>` dirs whose process is *proven* dead.
+/// A suffixed dir is only ever used by a second backend, so it is safe to
+/// drop once that process is provably gone; an unprovable pid keeps it
+/// (#2858 G1.2, G2.2).
 fn sweep_dead_agent_sticky_profiles(
     base_dir: &Path,
     own_pid: u32,
-    pid_alive: impl Fn(u32) -> bool,
+    pid_proven_dead: impl Fn(u32) -> bool,
 ) -> usize {
     let prefix = format!("{AGENT_STICKY_PROFILE_DIR}.");
     let Ok(entries) = std::fs::read_dir(base_dir) else {
@@ -367,7 +368,7 @@ fn sweep_dead_agent_sticky_profiles(
         else {
             continue;
         };
-        if pid == own_pid || pid_alive(pid) {
+        if pid == own_pid || !pid_proven_dead(pid) {
             continue;
         }
         if std::fs::remove_dir_all(entry.path()).is_ok() {
@@ -377,10 +378,40 @@ fn sweep_dead_agent_sticky_profiles(
     removed
 }
 
+/// This run's fixed agent sticky profile dir name. Decided once at startup
+/// by [`init_agent_sticky_profile_dir_name`] (bootstrap), before this process
+/// publishes its own backend record (#2858 G2.1).
+static AGENT_STICKY_PROFILE_DIR_NAME: OnceLock<String> = OnceLock::new();
+
+/// Evaluate the sticky profile dir name exactly once per `OnceLock`: the
+/// first evaluation wins, and every later call — even after another backend
+/// appears or exits — returns the same fixed name.
+fn sticky_name_once(decided: &OnceLock<String>, has_other_backend: bool, pid: u32) -> String {
+    decided
+        .get_or_init(|| agent_sticky_profile_dir_name(has_other_backend, pid))
+        .clone()
+}
+
+/// Fix this run's sticky Chromium profile dir name. Called once from
+/// bootstrap, before this process publishes its own backend record, so the
+/// first-backend rule is evaluated exactly once per run: another backend
+/// starting or exiting later must never move agent logins to a different
+/// directory mid-run (#2858 G2.1).
+pub fn init_agent_sticky_profile_dir_name() {
+    let _ = sticky_name_once(
+        &AGENT_STICKY_PROFILE_DIR_NAME,
+        crate::server::backend_descriptor::profile_has_other_backend(),
+        std::process::id(),
+    );
+}
+
 /// Per-profile app-data Chromium profile for agent sticky logins (not everyday
-/// Chrome User Data).
+/// Chrome User Data). The directory name is fixed for this run
+/// (#2858 G2.1); entries that never went through bootstrap's startup decision
+/// (tests, tools) evaluate it at first use and keep it from then on.
 pub fn agent_sticky_user_data_dir() -> Result<PathBuf, String> {
-    let dir_name = agent_sticky_profile_dir_name(
+    let dir_name = sticky_name_once(
+        &AGENT_STICKY_PROFILE_DIR_NAME,
         crate::server::backend_descriptor::profile_has_other_backend(),
         std::process::id(),
     );
@@ -397,10 +428,11 @@ async fn ensure_agent_sticky_user_data_dir() -> Result<PathBuf, String> {
                 user_data_dir.display()
             )
         })?;
-    let removed =
-        sweep_dead_agent_sticky_profiles(&agent_sticky_base_dir(), std::process::id(), |pid| {
-            crate::utils::process::process_is_alive(pid).ok() == Some(true)
-        });
+    let removed = sweep_dead_agent_sticky_profiles(
+        &agent_sticky_base_dir(),
+        std::process::id(),
+        crate::utils::process::pid_is_proven_dead,
+    );
     if removed > 0 {
         emit_sidecar_diagnostic(format!(
             "Removed {removed} stale agent browser profile dir(s) left by dead processes"
@@ -591,12 +623,14 @@ mod sticky_profile_tests {
         }
         std::fs::write(dead.join("SingletonLock"), b"x").expect("write lock file");
 
-        let removed = sweep_dead_agent_sticky_profiles(&base, 1000, |pid| pid == 3000);
+        // Proof-of-death predicate: only pid 2000 is proven gone; 3000 is
+        // unproven here, like a failed probe, and must survive.
+        let removed = sweep_dead_agent_sticky_profiles(&base, 1000, |pid| pid == 2000);
 
         assert_eq!(removed, 1);
         assert!(own.exists(), "own dir must survive");
         assert!(!dead.exists(), "dead backend dir must be removed");
-        assert!(live.exists(), "live backend dir must survive");
+        assert!(live.exists(), "live or unproven backend dir must survive");
         assert!(
             first_backend.exists(),
             "the un-suffixed first-backend profile must never be swept"
@@ -610,6 +644,37 @@ mod sticky_profile_tests {
         assert_eq!(
             agent_sticky_profile_dir_name(false, 7),
             "browser_agent_profile"
+        );
+    }
+
+    /// #2858 G2.1: the name is decided once; a backend that starts alone and
+    /// later sees another one appear must keep using the same directory, or
+    /// its agent logins vanish mid-run.
+    #[test]
+    fn sticky_name_stays_fixed_when_another_backend_appears() {
+        let decided = OnceLock::new();
+        assert_eq!(
+            sticky_name_once(&decided, false, 42),
+            "browser_agent_profile",
+            "first backend takes the plain name"
+        );
+        assert_eq!(
+            sticky_name_once(&decided, true, 42),
+            "browser_agent_profile",
+            "another backend appearing later must not flip the name"
+        );
+
+        // The reverse flip is equally forbidden: a second backend must not
+        // migrate to the plain name when the other one exits.
+        let decided = OnceLock::new();
+        assert_eq!(
+            sticky_name_once(&decided, true, 42),
+            "browser_agent_profile.42"
+        );
+        assert_eq!(
+            sticky_name_once(&decided, false, 42),
+            "browser_agent_profile.42",
+            "the other backend exiting must not flip the name back"
         );
     }
 }

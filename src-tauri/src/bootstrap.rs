@@ -24,12 +24,13 @@ fn webview_user_data_dir_for(
     has_other_backend.then(|| data_dir.join("webview").join(pid.to_string()))
 }
 
-/// Remove `webview/<pid>` dirs whose process is gone. A directory can only be
-/// removed once its owner is dead, so the sweep runs at start (#2858).
+/// Remove `webview/<pid>` dirs whose process is *proven* dead. A directory
+/// can only be removed once its owner is provably gone, so the sweep runs at
+/// start (#2858, G2.2: an unprovable pid keeps the dir).
 fn sweep_dead_webview_dirs_with(
     webview_root: &Path,
     own_pid: u32,
-    pid_alive: impl Fn(u32) -> bool,
+    pid_proven_dead: impl Fn(u32) -> bool,
 ) -> usize {
     let Ok(entries) = std::fs::read_dir(webview_root) else {
         return 0;
@@ -43,7 +44,7 @@ fn sweep_dead_webview_dirs_with(
         else {
             continue;
         };
-        if pid == own_pid || pid_alive(pid) {
+        if pid == own_pid || !pid_proven_dead(pid) {
             continue;
         }
         if std::fs::remove_dir_all(entry.path()).is_ok() {
@@ -51,10 +52,6 @@ fn sweep_dead_webview_dirs_with(
         }
     }
     removed
-}
-
-fn pid_is_alive(pid: u32) -> bool {
-    crate::utils::process::process_is_alive(pid).ok() == Some(true)
 }
 
 /// Isolate this backend's WebView user-data only when another live backend on
@@ -67,7 +64,11 @@ fn pid_is_alive(pid: u32) -> bool {
 /// second backend says so out loud instead of corrupting silently.
 fn isolate_webview_user_data(data_dir: &Path) {
     let webview_root = data_dir.join("webview");
-    sweep_dead_webview_dirs_with(&webview_root, std::process::id(), pid_is_alive);
+    sweep_dead_webview_dirs_with(
+        &webview_root,
+        std::process::id(),
+        crate::utils::process::pid_is_proven_dead,
+    );
 
     let target_dir = webview_user_data_dir_for(
         data_dir,
@@ -135,12 +136,14 @@ mod tests {
         std::fs::write(dead.join("Cache"), b"x").expect("write cache file");
         std::fs::write(root.join("not-a-pid"), b"x").expect("write stray file");
 
-        let removed = sweep_dead_webview_dirs_with(&root, 1000, |pid| pid == 3000);
+        // Proof-of-death predicate: only pid 2000 is proven gone. 3000 is
+        // unproven here, exactly like a failed probe, and must survive.
+        let removed = sweep_dead_webview_dirs_with(&root, 1000, |pid| pid == 2000);
 
         assert_eq!(removed, 1);
         assert!(own.exists(), "own dir must survive");
         assert!(!dead.exists(), "dead process dir must be removed");
-        assert!(live.exists(), "live process dir must survive");
+        assert!(live.exists(), "live or unproven process dir must survive");
         assert!(
             root.join("not-a-pid").exists(),
             "non-pid entry must survive"
@@ -289,6 +292,12 @@ pub fn prepare_profile_runtime() -> String {
     // The first backend keeps the default WebView user-data dir; a backend
     // that finds another live one takes a private dir (#2858 G1.1).
     isolate_webview_user_data(&data_dir);
+
+    // Fix this run's agent sticky Chromium profile dir name now, while the
+    // check still sees only *other* backends. A later re-evaluation would
+    // flip the name mid-run when another backend starts or exits and silently
+    // move agent logins (#2858 G2.1).
+    crate::browser_sidecar::init_agent_sticky_profile_dir_name();
 
     let db_url = crate::utils::sqlite::format_sqlite_url(db_path.to_string_lossy().as_ref());
 

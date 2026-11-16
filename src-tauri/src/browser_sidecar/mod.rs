@@ -15,6 +15,7 @@ pub use page::{
 pub use runtime::{
     agent_sticky_profile_dir_name, agent_sticky_user_data_dir, browser_runtime_cache_root,
     browser_runtime_profile_dir, browser_runtime_profile_root, clear_agent_sticky_profile_dir,
+    init_agent_sticky_profile_dir_name,
 };
 pub use server::run_sidecar_mode;
 

@@ -97,7 +97,7 @@ fn active_log_pid(name: &str) -> Option<u32> {
 fn archive_dead_process_logs_with(
     log_dir: &Path,
     own_pid: u32,
-    pid_alive: impl Fn(u32) -> bool,
+    pid_proven_dead: impl Fn(u32) -> bool,
 ) -> usize {
     let Ok(entries) = fs::read_dir(log_dir) else {
         return 0;
@@ -111,7 +111,7 @@ fn archive_dead_process_logs_with(
         let Some(pid) = active_log_pid(&name) else {
             continue;
         };
-        if pid == own_pid || pid_alive(pid) {
+        if pid == own_pid || !pid_proven_dead(pid) {
             continue;
         }
         let target = log_dir.join(format!("libragent_{timestamp}_{pid}.log"));
@@ -305,7 +305,7 @@ fn prepare_log_file(
     // Archive logs of processes that are gone before pruning, so retention
     // applies to them (#2858 G1.3).
     archive_dead_process_logs_with(log_dir, std::process::id(), |pid| {
-        crate::utils::process::process_is_alive(pid).ok() == Some(true)
+        crate::utils::process::pid_is_proven_dead(pid)
     });
 
     let (pruned_files, pruned_bytes) = prune_archived_logs_in(log_dir);
@@ -606,7 +606,10 @@ mod tests {
         write_archive(dir.path(), &format!("libragent.{live_pid}.log"), 10, 400);
         write_archive(dir.path(), &active_log_file_name(), 10, 400);
 
-        let archived = archive_dead_process_logs_with(dir.path(), own_pid, |pid| pid == live_pid);
+        // Proof-of-death predicate: only the dead pid is proven gone; the
+        // live pid is unproven here, exactly like a failed probe, and must
+        // be kept.
+        let archived = archive_dead_process_logs_with(dir.path(), own_pid, |pid| pid == dead_pid);
 
         assert_eq!(archived, 1);
         assert!(
