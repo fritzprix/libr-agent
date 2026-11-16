@@ -62,9 +62,6 @@ pub async fn agent_create_session(
     manager: State<'_, AgentSessionManager>,
     request: CreateAgentSessionRequest,
 ) -> Result<SessionMetadata, String> {
-    if let Some(client) = crate::state::get_shared_backend_client() {
-        return super::shared_proxy::create_session(client, request).await;
-    }
     let created = AgentService::create_session(&manager, request).await?;
     // Host path: creating a session is opening it, so this process owns it
     // for its lifetime (#2759). The id is brand new, so the claim cannot fail.
@@ -85,12 +82,6 @@ pub async fn agent_resume_session(
     manager: State<'_, AgentSessionManager>,
     session_id: String,
 ) -> Result<SessionMetadata, String> {
-    if let Some(client) = crate::state::get_shared_backend_client() {
-        let json = client.resume_session(&session_id).await?;
-        super::shared_proxy::ensure_session_event_stream(client, &session_id);
-        return serde_json::from_value::<SessionMetadata>(json)
-            .map_err(|e| format!("Failed to parse resumed session from shared backend: {e}"));
-    }
     // Resuming is opening: refused while another live process owns it (#2759).
     // Checked before the fence lift so a refusal changes nothing.
     session_ownership::claim(&session_id, session_ownership::HOST_ATTACHMENT_ID)?;
@@ -110,10 +101,6 @@ pub async fn agent_open_session(
     initial_message_limit: Option<u64>,
 ) -> Result<AgentOpenSessionResponse, String> {
     let message_limit = initial_message_limit.unwrap_or(DEFAULT_INITIAL_MESSAGE_LIMIT);
-
-    if let Some(client) = crate::state::get_shared_backend_client() {
-        return super::shared_proxy::open_session(client, &session_id, message_limit).await;
-    }
 
     // Legacy short / session- prefixed routes → storage key. Resolve before
     // claiming so ownership is only ever keyed by the storage id.
@@ -252,7 +239,6 @@ pub async fn agent_init_session_with_messages(
     manager: State<'_, AgentSessionManager>,
     session_id: String,
 ) -> Result<AgentResponse, String> {
-    super::shared_proxy::reject_if_attached("agent_init_session_with_messages")?;
     manager.init_session_with_messages(&session_id).await?;
 
     Ok(AgentResponse {
@@ -269,9 +255,6 @@ pub async fn agent_create_session_with_initial_message(
     manager: State<'_, AgentSessionManager>,
     request: CreateAgentSessionWithMessageRequest,
 ) -> Result<AgentResponse, String> {
-    if let Some(client) = crate::state::get_shared_backend_client() {
-        return super::shared_proxy::create_session_with_initial_message(client, request).await;
-    }
     // Host path: this process opens the new session (#2759).
     let session_id = request.session_id.clone();
     session_ownership::claim(&session_id, session_ownership::HOST_ATTACHMENT_ID)?;
@@ -289,7 +272,6 @@ pub async fn agent_update_session_config(
     manager: State<'_, AgentSessionManager>,
     request: UpdateAgentConfigRequest,
 ) -> Result<AgentResponse, String> {
-    super::shared_proxy::reject_if_attached("agent_update_session_config")?;
     manager
         .update_session_config(
             request.session_id.clone(),
@@ -313,9 +295,6 @@ pub async fn agent_get_session(
     manager: State<'_, AgentSessionManager>,
     session_id: String,
 ) -> Result<Option<SessionMetadata>, String> {
-    if let Some(client) = crate::state::get_shared_backend_client() {
-        return super::shared_proxy::get_session(client, &session_id).await;
-    }
     let resolved = match resolve_tauri_session_ref(&session_id).await {
         Ok(id) => id,
         Err(_) => return Ok(None),
@@ -328,9 +307,6 @@ pub async fn agent_get_session(
 pub async fn agent_get_all_sessions(
     manager: State<'_, AgentSessionManager>,
 ) -> Result<Vec<SessionMetadata>, String> {
-    if let Some(client) = crate::state::get_shared_backend_client() {
-        return super::shared_proxy::get_all_sessions(client).await;
-    }
     manager.get_all_sessions().await
 }
 
@@ -340,9 +316,6 @@ pub async fn agent_list_sessions(
     manager: State<'_, AgentSessionManager>,
     request: Option<ListAgentSessionsRequest>,
 ) -> Result<AgentSessionListResponse, String> {
-    if let Some(client) = crate::state::get_shared_backend_client() {
-        return super::shared_proxy::list_sessions(client, request).await;
-    }
     let request = request.unwrap_or(ListAgentSessionsRequest {
         cursor: None,
         limit: None,
@@ -403,7 +376,6 @@ pub async fn agent_call_builtin_tool(
     tool_name: String,
     args: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    super::shared_proxy::reject_if_attached("agent_call_builtin_tool")?;
     AgentService::call_builtin_tool(session_id, tool_name, args).await
 }
 
@@ -413,7 +385,6 @@ pub async fn agent_add_attachment(
     session_id: String,
     args: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    super::shared_proxy::reject_if_attached("agent_add_attachment")?;
     AgentService::add_attachment(session_id, args).await
 }
 
@@ -423,7 +394,6 @@ pub async fn agent_delete_attachment(
     session_id: String,
     args: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    super::shared_proxy::reject_if_attached("agent_delete_attachment")?;
     AgentService::delete_attachment(session_id, args).await
 }
 
@@ -441,14 +411,6 @@ pub async fn agent_delete_session(
     manager: State<'_, AgentSessionManager>,
     session_id: String,
 ) -> Result<AgentResponse, String> {
-    if let Some(client) = crate::state::get_shared_backend_client() {
-        let data = client.delete_session(&session_id).await?;
-        return Ok(AgentResponse {
-            success: true,
-            message: format!("Session deleted: {}", session_id),
-            data: Some(data),
-        });
-    }
     let deleted_ids = manager.delete_session(session_id.clone()).await?;
     for deleted_id in &deleted_ids {
         remove_lineage(deleted_id).await;
@@ -467,7 +429,6 @@ pub async fn agent_delete_session_only(
     manager: State<'_, AgentSessionManager>,
     session_id: String,
 ) -> Result<AgentResponse, String> {
-    super::shared_proxy::reject_if_attached("agent_delete_session_only")?;
     let (deleted_id, orphaned_ids) = manager.delete_session_only(session_id.clone()).await?;
     remove_lineage(&deleted_id).await;
 
@@ -506,7 +467,6 @@ pub async fn agent_get_tools(
 pub async fn agent_clear_all_sessions(
     manager: State<'_, AgentSessionManager>,
 ) -> Result<AgentResponse, String> {
-    super::shared_proxy::reject_if_attached("agent_clear_all_sessions")?;
     let count = AgentService::clear_all_sessions(&manager).await?;
 
     Ok(AgentResponse {
@@ -522,7 +482,6 @@ pub async fn agent_toggle_session_bookmark(
     session_id: String,
     bookmarked: bool,
 ) -> Result<(), String> {
-    super::shared_proxy::reject_if_attached("agent_toggle_session_bookmark")?;
     let repo = get_session_repository();
     repo.toggle_bookmark(&session_id, bookmarked)
         .await
@@ -536,7 +495,6 @@ pub async fn agent_update_session_name(
     session_id: String,
     name: String,
 ) -> Result<(), String> {
-    super::shared_proxy::reject_if_attached("agent_update_session_name")?;
     let trimmed_name = name.trim();
     if trimmed_name.is_empty() {
         return Err("Session title cannot be empty".to_string());
@@ -566,7 +524,6 @@ pub async fn agent_mark_session_viewed(
     session_id: String,
     viewed_at: Option<i64>,
 ) -> Result<(), String> {
-    super::shared_proxy::reject_if_attached("agent_mark_session_viewed")?;
     let repo = get_session_repository();
     let viewed_at = viewed_at.unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
     repo.update_last_viewed_at(&session_id, viewed_at)
@@ -583,16 +540,6 @@ pub async fn agent_set_execution_mode(
     session_id: String,
     mode: String,
 ) -> Result<Vec<String>, String> {
-    if let Some(client) = crate::state::get_shared_backend_client() {
-        let res = client
-            .patch_session(&session_id, &serde_json::json!({ "executionMode": mode }))
-            .await?;
-        return Ok(res
-            .get("resolvedApprovalIds")
-            .cloned()
-            .and_then(|v| serde_json::from_value(v).ok())
-            .unwrap_or_default());
-    }
     manager
         .set_execution_mode(&session_id, mode.parse::<ExecutionMode>()?)
         .await
@@ -604,7 +551,6 @@ pub async fn agent_set_execution_mode(
 pub async fn agent_factory_reset(
     manager: State<'_, AgentSessionManager>,
 ) -> Result<AgentResponse, String> {
-    super::shared_proxy::reject_if_attached("agent_factory_reset")?;
     AgentService::factory_reset(&manager).await?;
 
     Ok(AgentResponse {
@@ -628,7 +574,6 @@ pub async fn agent_execute_command(
     session_id: String,
     command_text: String,
 ) -> Result<CommandResult, String> {
-    super::shared_proxy::reject_if_attached("agent_execute_command")?;
     use crate::agent::command_parser::{Command, PluginCommand};
     use crate::services::skill_service::{self, PluginScope};
 
@@ -751,22 +696,6 @@ pub async fn agent_submit_user_prompt(
     manager: State<'_, AgentSessionManager>,
     request: SubmitUserPromptRequest,
 ) -> Result<AgentResponse, String> {
-    if let Some(client) = crate::state::get_shared_backend_client() {
-        let data = client
-            .respond_prompt(
-                &request.session_id,
-                &serde_json::json!({
-                    "requestId": request.request_id,
-                    "value": request.value,
-                }),
-            )
-            .await?;
-        return Ok(AgentResponse {
-            success: true,
-            message: "Answer delivered to shared backend".to_string(),
-            data: Some(data),
-        });
-    }
     // Answering a waiting prompt drives the session, so it is refused while
     // another live process owns it (#2759).
     session_ownership::claim(&request.session_id, session_ownership::HOST_ATTACHMENT_ID)?;
@@ -809,22 +738,6 @@ pub async fn agent_cancel_user_prompt(
     manager: State<'_, AgentSessionManager>,
     request: CancelUserPromptRequest,
 ) -> Result<AgentResponse, String> {
-    if let Some(client) = crate::state::get_shared_backend_client() {
-        let data = client
-            .respond_prompt(
-                &request.session_id,
-                &serde_json::json!({
-                    "requestId": request.request_id,
-                    "cancelled": true,
-                }),
-            )
-            .await?;
-        return Ok(AgentResponse {
-            success: true,
-            message: "Prompt cancelled".to_string(),
-            data: Some(data),
-        });
-    }
     let delivered = manager
         .cancel_user_prompt(&request.session_id, &request.request_id)
         .await?;

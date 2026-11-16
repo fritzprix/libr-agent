@@ -841,11 +841,7 @@ pub fn run_chat_front(stdout: &mut Stdout) {
         if last_poll.elapsed() >= POLL_EVERY {
             last_poll = Instant::now();
             if let Some(api) = client.as_ref() {
-                if let Err(err) = runtime.block_on(api.ensure_attached()) {
-                    state.notice = Some(err);
-                } else {
-                    runtime.block_on(poll_session(api, &mut state));
-                }
+                runtime.block_on(poll_session(api, &mut state));
             }
         }
 

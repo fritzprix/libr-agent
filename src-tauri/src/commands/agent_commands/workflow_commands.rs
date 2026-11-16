@@ -17,24 +17,6 @@ pub async fn agent_send_message(
     manager: State<'_, AgentSessionManager>,
     request: SendUserMessageRequest,
 ) -> Result<AgentResponse, String> {
-    if let Some(client) = crate::state::get_shared_backend_client() {
-        let content = super::shared_proxy::extract_text_content(&request.message.content)?;
-        let data = client
-            .send_message(
-                &request.session_id,
-                &serde_json::json!({
-                    "content": content,
-                    "source": request.message.source,
-                }),
-            )
-            .await?;
-        super::shared_proxy::ensure_session_event_stream(client, &request.session_id);
-        return Ok(AgentResponse {
-            success: true,
-            message: "Message sent".to_string(),
-            data: Some(data),
-        });
-    }
     // Host path: sending to a session is opening it — refused while another
     // live process owns it; otherwise this process takes ownership (#2759).
     crate::server::session_ownership::claim(
@@ -61,7 +43,6 @@ pub async fn agent_inject_messages(
     manager: State<'_, AgentSessionManager>,
     request: InjectMessagesRequest,
 ) -> Result<AgentResponse, String> {
-    super::shared_proxy::reject_if_attached("agent_inject_messages")?;
     // Explicit UI inject: a previous force-stop fence ends here (issue #2633).
     // Automatic inject callers (MCP channel notification, scheduled runner) do
     // not clear the fence, so they cannot revive a terminated session.
@@ -95,7 +76,6 @@ pub async fn agent_append_tool_messages(
     manager: State<'_, AgentSessionManager>,
     request: InjectMessagesRequest,
 ) -> Result<AgentResponse, String> {
-    super::shared_proxy::reject_if_attached("agent_append_tool_messages")?;
     manager
         .append_messages(&request.session_id, request.messages)
         .await?;
@@ -128,7 +108,6 @@ pub async fn agent_cancel_pending_prompt(
     session_id: String,
     message_id: String,
 ) -> Result<AgentResponse, String> {
-    super::shared_proxy::reject_if_attached("agent_cancel_pending_prompt")?;
     let removed = manager
         .cancel_pending_prompt(&session_id, &message_id)
         .await?;
@@ -150,7 +129,6 @@ pub async fn agent_handle_llm_response(
     session_id: String,
     assistant_message: Message,
 ) -> Result<AgentResponse, String> {
-    super::shared_proxy::reject_if_attached("agent_handle_llm_response")?;
     log::info!(
         "📥 Received LLM response from frontend: session={}, message_id={}, has_tool_calls={}, tool_call_count={}, content_len={}",
         session_id,
@@ -182,7 +160,6 @@ pub async fn agent_report_llm_streaming_issue(
     manager: State<'_, AgentSessionManager>,
     report: crate::agent::llm::types::StreamingIssueReport,
 ) -> Result<AgentResponse, String> {
-    super::shared_proxy::reject_if_attached("agent_report_llm_streaming_issue")?;
     let outcome = manager.report_llm_streaming_issue(report.clone()).await?;
     let (message, action) = match outcome {
         crate::agent::llm::StreamingIssueOutcome::Ignored => (
@@ -259,7 +236,6 @@ pub async fn agent_pause_workflow(
     manager: State<'_, AgentSessionManager>,
     session_id: String,
 ) -> Result<AgentResponse, String> {
-    super::shared_proxy::reject_if_attached("agent_pause_workflow")?;
     manager.pause_workflow(session_id.clone()).await?;
 
     Ok(AgentResponse {
@@ -275,15 +251,6 @@ pub async fn agent_resume_workflow(
     manager: State<'_, AgentSessionManager>,
     session_id: String,
 ) -> Result<AgentResponse, String> {
-    if let Some(client) = crate::state::get_shared_backend_client() {
-        let data = client.resume_session(&session_id).await?;
-        super::shared_proxy::ensure_session_event_stream(client, &session_id);
-        return Ok(AgentResponse {
-            success: true,
-            message: format!("Workflow resumed: {}", session_id),
-            data: Some(data),
-        });
-    }
     manager.resume_session_and_workflow(&session_id).await?;
 
     Ok(AgentResponse {
@@ -300,7 +267,6 @@ pub async fn agent_regenerate_last_turn(
     manager: State<'_, AgentSessionManager>,
     session_id: String,
 ) -> Result<AgentResponse, String> {
-    super::shared_proxy::reject_if_attached("agent_regenerate_last_turn")?;
     let plan = manager.regenerate_last_turn(session_id.clone()).await?;
 
     Ok(AgentResponse {
@@ -319,14 +285,6 @@ pub async fn agent_terminate_workflow(
     manager: State<'_, AgentSessionManager>,
     session_id: String,
 ) -> Result<AgentResponse, String> {
-    if let Some(client) = crate::state::get_shared_backend_client() {
-        let data = client.terminate_session(&session_id).await?;
-        return Ok(AgentResponse {
-            success: true,
-            message: format!("Workflow terminated for session: {}", session_id),
-            data: Some(data),
-        });
-    }
     manager.terminate_session(session_id.clone()).await?;
     remove_lineage(&session_id).await;
 
@@ -343,14 +301,6 @@ pub async fn agent_cancel_workflow(
     manager: State<'_, AgentSessionManager>,
     session_id: String,
 ) -> Result<AgentResponse, String> {
-    if let Some(client) = crate::state::get_shared_backend_client() {
-        let data = client.terminate_session(&session_id).await?;
-        return Ok(AgentResponse {
-            success: true,
-            message: format!("Workflow cancel requested for session: {}", session_id),
-            data: Some(data),
-        });
-    }
     let cancellation_result = manager.cancel_workflow(session_id.clone()).await?;
 
     Ok(AgentResponse {
@@ -371,7 +321,6 @@ pub async fn agent_handle_tool_result(
     tool_call_id: String,
     result: ToolExecutionResult,
 ) -> Result<AgentResponse, String> {
-    super::shared_proxy::reject_if_attached("agent_handle_tool_result")?;
     manager
         .handle_tool_result(session_id.clone(), tool_call_id, result)
         .await?;
@@ -391,22 +340,6 @@ pub async fn agent_respond_tool_approval(
     tool_call_id: String,
     approved: bool,
 ) -> Result<AgentResponse, String> {
-    if let Some(client) = crate::state::get_shared_backend_client() {
-        let data = client
-            .respond_permission(
-                &session_id,
-                &serde_json::json!({
-                    "toolCallId": tool_call_id,
-                    "behavior": if approved { "allow" } else { "deny" },
-                }),
-            )
-            .await?;
-        return Ok(AgentResponse {
-            success: true,
-            message: format!("Tool approval responded for {}: {}", tool_call_id, approved),
-            data: Some(data),
-        });
-    }
     manager
         .respond_tool_approval(&session_id, &tool_call_id, approved)
         .await?;
@@ -425,7 +358,6 @@ pub async fn agent_handle_llm_error(
     session_id: String,
     error: crate::agent::llm::types::AgentRuntimeError,
 ) -> Result<AgentResponse, String> {
-    super::shared_proxy::reject_if_attached("agent_handle_llm_error")?;
     manager.handle_llm_error(session_id.clone(), error).await?;
 
     Ok(AgentResponse {

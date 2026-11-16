@@ -1,8 +1,6 @@
 //! Per-runtime discovery records for running backends — not locks.
 //!
-//! The #2757 startup lock lives beside the records as
-//! `<db file>.backend.lock` and is owned by `server::startup_lock`;
-//! the records themselves stay lock-free.
+//! The records themselves stay lock-free.
 //!
 //! Every backend process writes its own small JSON file next to its
 //! database: `<db file>.backend.<pid>.json`, holding who it is (`pid`) and
@@ -328,21 +326,6 @@ pub fn unpublish() {
     if let Some(db_path) = DB_PATH.get() {
         let _ = unpublish_at(db_path, std::process::id());
     }
-}
-
-/// Startup lock file for this database's descriptor namespace (#2757).
-///
-/// Named like [`record_path_for`] but without a pid: one lock per
-/// profile. It does not end in the record suffix, so record scanners
-/// skip it.
-pub fn startup_lock_path() -> Option<PathBuf> {
-    let db_path = DB_PATH.get()?;
-    let mut name = db_path
-        .file_name()
-        .map(|name| name.to_os_string())
-        .unwrap_or_default();
-    name.push(".backend.lock");
-    Some(db_path.with_file_name(name))
 }
 
 /// True once this process has published its own record and its port

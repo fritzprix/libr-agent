@@ -227,30 +227,9 @@ pub fn run_tui() -> i32 {
     crate::bootstrap::load_dotenv_files();
     let db_url = crate::bootstrap::prepare_profile_runtime();
 
-    // A live backend means this TUI attaches. Do not boot Tauri: that would
-    // create a second hidden WebView on the host's user-data directory (#2823).
-    if let Some(descriptor) = crate::server::backend_descriptor::find_live_backend() {
-        eprintln!(
-            "🔗 {}",
-            crate::server::shared_backend::attached_frontend_log(
-                "TUI",
-                descriptor.pid,
-                descriptor.port
-            )
-        );
-        if let Err(err) = setup_terminal() {
-            restore_terminal();
-            eprintln!("error: {err}");
-            return 1;
-        }
-        front_of_house();
-        // The attach path never boots Tauri: this process exits here rather
-        // than joining a Tauri event loop it does not own (#2823).
-        return 0;
-    }
     if crate::server::backend_descriptor::profile_has_other_backend() {
         eprintln!(
-            "error: this profile already has a backend that is not reachable; refusing to start a second one"
+            "error: this profile already has another live backend; the TUI no longer attaches to it (#2854)"
         );
         return 1;
     }
