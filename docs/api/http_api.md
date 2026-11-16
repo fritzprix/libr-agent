@@ -34,6 +34,19 @@ LibrAgent provides a robust HTTP API for remote management of AI agents, session
   : "${PORT:=3030}"
   ```
 
+- **Per-process resources (#2858)**: when several backends run on one profile, each process also isolates:
+
+  | Resource | Artifact |
+  | -------- | -------- |
+  | File log | `libragent.<pid>.log` under the app log dir (never rotates another process's file) |
+  | Extension bridge | binds `3847` then the next free port; writes `~/.libragent/extension_bridge_port.<pid>` |
+  | Sticky Chromium profile | `browser_agent_profile.<pid>` under the profile data dir |
+  | WebView cache | `<data_dir>/webview/<pid>` via `WEBVIEW2_USER_DATA_FOLDER` (Windows) / `XDG_CACHE_HOME` (Linux) |
+
+  Point the Chrome extension Options port at the backend you intend to control (Settings → System → Chrome extension bridge shows the bound port). Set `LIBRAGENT_EXTENSION_BRIDGE_PORT` to pin a preferred start port.
+
+- **OAuth / deep links with multiple GUIs**: each GUI registers the `libr-agent://` deep-link handler and MCP OAuth may bind a fixed loopback callback port. With more than one GUI on the same profile, the OS may deliver a custom-scheme callback to any instance, and two concurrent loopback OAuth flows can collide on the callback port. Prefer a single GUI for custom-scheme or loopback OAuth, or run concurrent flows only after ensuring distinct callback ports.
+
 ---
 
 ## ⚠️ Error Handling

@@ -5,7 +5,41 @@
 //! the data directories, and the backend descriptor namespace. Extracting
 //! it keeps the entries one screen long and impossible to drift apart.
 
+use std::path::Path;
+
 use crate::profile::{self, AppProfile};
+
+/// Point WebView2 / WebKit at a per-pid cache under the profile data dir so
+/// concurrent GUIs do not share user-data (#2858).
+fn isolate_webview_user_data(data_dir: &Path) {
+    let webview_dir = data_dir
+        .join("webview")
+        .join(std::process::id().to_string());
+    if let Err(error) = std::fs::create_dir_all(&webview_dir) {
+        eprintln!(
+            "⚠️  Warning: Failed to create WebView user-data dir {}: {error}",
+            webview_dir.display()
+        );
+        return;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        if std::env::var_os("WEBVIEW2_USER_DATA_FOLDER").is_none() {
+            std::env::set_var("WEBVIEW2_USER_DATA_FOLDER", &webview_dir);
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        // WebKitGTK reads XDG_CACHE_HOME; leave an explicit override alone
+        // (headless / smoke tests set their own ephemeral cache).
+        if std::env::var_os("XDG_CACHE_HOME").is_none() {
+            std::env::set_var("XDG_CACHE_HOME", &webview_dir);
+        }
+    }
+    // macOS WKWebView has no equivalent env override; multi-GUI cache
+    // contention there remains a documented limitation (#2858).
+}
 
 /// True when the arguments or environment ask for the `demo` profile.
 fn wants_demo_profile() -> bool {
@@ -133,6 +167,10 @@ pub fn prepare_profile_runtime() -> String {
     } else {
         std::fs::create_dir_all(&data_dir).expect("Failed to create data directory");
     }
+
+    // Isolate WebView/WebKit user-data per process so two GUIs on one profile
+    // do not share EBWebView / WebKit cache (#2858; same pattern as headless).
+    isolate_webview_user_data(&data_dir);
 
     // Not a lock: this only tells the server where to publish its own record
     // and where to look for the records of other running backends (#2700).

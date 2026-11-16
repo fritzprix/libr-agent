@@ -1,6 +1,16 @@
+use crate::logger::active_log_file_name;
 use crate::session::get_session_manager;
 use chrono::Utc;
+use std::path::{Path, PathBuf};
 use tokio::fs;
+
+fn resolve_current_log_file(log_dir: &Path) -> PathBuf {
+    let per_pid = log_dir.join(active_log_file_name());
+    if per_pid.exists() {
+        return per_pid;
+    }
+    log_dir.join("libragent.log")
+}
 
 pub struct LogService;
 
@@ -9,8 +19,8 @@ impl LogService {
     pub async fn backup_current_log() -> Result<String, String> {
         let log_dir = get_session_manager()?.get_logs_dir();
 
-        // Find the current log file (using the specified filename)
-        let log_file = log_dir.join("libragent.log");
+        // Prefer this process's per-pid log (#2858); fall back to the legacy name.
+        let log_file = resolve_current_log_file(&log_dir);
 
         if !log_file.exists() {
             return Err("No current log file found".to_string());
@@ -35,7 +45,7 @@ impl LogService {
     /// Clears the content of the current main log file.
     pub async fn clear_current_log() -> Result<(), String> {
         let log_dir = get_session_manager()?.get_logs_dir();
-        let log_file = log_dir.join("libragent.log");
+        let log_file = resolve_current_log_file(&log_dir);
 
         if log_file.exists() {
             fs::write(&log_file, "")

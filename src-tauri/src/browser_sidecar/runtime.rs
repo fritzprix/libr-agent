@@ -322,12 +322,15 @@ pub fn browser_runtime_cache_root() -> PathBuf {
         .join("browser-runtime")
 }
 
-/// Fixed app-data Chromium profile for agent sticky logins (not everyday Chrome User Data).
+/// Per-process app-data Chromium profile for agent sticky logins (not everyday
+/// Chrome User Data). Suffixing with pid keeps multiple backends on one
+/// profile from sharing a SingletonLock (#2858).
 pub fn agent_sticky_user_data_dir() -> Result<PathBuf, String> {
+    let dir_name = format!("{AGENT_STICKY_PROFILE_DIR}.{}", std::process::id());
     if let Ok(manager) = get_session_manager() {
-        return Ok(manager.get_base_data_dir().join(AGENT_STICKY_PROFILE_DIR));
+        return Ok(manager.get_base_data_dir().join(dir_name));
     }
-    Ok(crate::profile::data_dir(crate::profile::resolve_profile()).join(AGENT_STICKY_PROFILE_DIR))
+    Ok(crate::profile::data_dir(crate::profile::resolve_profile()).join(dir_name))
 }
 
 async fn ensure_agent_sticky_user_data_dir() -> Result<PathBuf, String> {

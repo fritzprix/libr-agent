@@ -21,27 +21,44 @@ const __dirname = path.dirname(__filename);
 // Application configuration from tauri.conf.json
 const APP_NAME = 'LibrAgent';
 const APP_ID = 'com.fritzprix.libragent';
-const LOG_FILE_NAME = 'libragent.log';
+const LEGACY_LOG_FILE_NAME = 'libragent.log';
 
 /**
- * Gets the platform-specific path where Tauri stores logs
+ * Platform-specific Tauri log directory (no filename).
  */
-function getLogSourcePath() {
+function getLogDir() {
   const platform = os.platform();
   const home = os.homedir();
 
   if (platform === 'win32') {
-    // Windows: %LOCALAPPDATA%\<app-id>\logs\<app-name>.log
     const localAppData =
       process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
-    return path.join(localAppData, APP_ID, 'logs', LOG_FILE_NAME);
+    return path.join(localAppData, APP_ID, 'logs');
   } else if (platform === 'darwin') {
-    // macOS: ~/Library/Logs/<app-id>/<app-name>.log
-    return path.join(home, 'Library', 'Logs', APP_ID, LOG_FILE_NAME);
-  } else {
-    // Linux: ~/.local/share/<app-id>/logs/<app-name>.log
-    return path.join(home, '.local', 'share', APP_ID, 'logs', LOG_FILE_NAME);
+    return path.join(home, 'Library', 'Logs', APP_ID);
   }
+  return path.join(home, '.local', 'share', APP_ID, 'logs');
+}
+
+/**
+ * Prefer the newest per-pid `libragent.<pid>.log` (#2858); fall back to legacy.
+ */
+function getLogSourcePath() {
+  const logDir = getLogDir();
+  if (fs.existsSync(logDir)) {
+    const perPid = fs
+      .readdirSync(logDir)
+      .filter((name) => /^libragent\.\d+\.log$/.test(name))
+      .map((name) => {
+        const full = path.join(logDir, name);
+        return { full, mtime: fs.statSync(full).mtimeMs };
+      })
+      .sort((a, b) => b.mtime - a.mtime);
+    if (perPid.length > 0) {
+      return perPid[0].full;
+    }
+  }
+  return path.join(logDir, LEGACY_LOG_FILE_NAME);
 }
 
 /**

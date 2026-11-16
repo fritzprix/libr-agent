@@ -187,15 +187,13 @@ fn should_sweep_stale_containers(data_dir_override: Option<&std::ffi::OsStr>) ->
 }
 
 pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
-    // Setup custom file logger FIRST (before any log calls)
+    // Setup custom file logger FIRST (before any log calls).
+    // Each process writes `libragent.<pid>.log`, so rotation never touches
+    // another backend's open file (#2858).
     let log_dir = app.path().app_log_dir()?;
     let log_retention_days =
         tauri::async_runtime::block_on(SystemSettings::load_global()).log_retention_days;
-    // Only the first backend on this profile may rename the shared log;
-    // a second host must not rotate the first one's open log (#2823, #2855).
-    let rotate_log = crate::server::backend_descriptor::find_live_backend().is_none()
-        && !crate::server::backend_descriptor::profile_has_other_backend();
-    logger::setup_file_logger_with_rotation(log_dir, log_retention_days, rotate_log)?;
+    logger::setup_file_logger(log_dir, log_retention_days)?;
 
     // Test if Rust logger is properly initialized
     log::info!("🔥 Logger initialized - testing Rust log to file");
