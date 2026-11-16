@@ -43,11 +43,18 @@ def main():
                 sys.stdout.write(json.dumps(response) + "\n")
                 sys.stdout.flush()
             elif request.get("method") == "tools/list":
+                tools = []
+                if os.environ.get("MOCK_SERVER_EMIT_TOOLS") == "1":
+                    tools = [{
+                        "name": "mock_echo",
+                        "description": "Static tool proving this child answers tools/list",
+                        "inputSchema": {"type": "object", "properties": {}},
+                    }]
                 response = {
                     "jsonrpc": "2.0",
                     "id": request.get("id"),
                     "result": {
-                        "tools": []
+                        "tools": tools
                     }
                 }
                 sys.stdout.write(json.dumps(response) + "\n")

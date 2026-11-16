@@ -42,7 +42,7 @@ LibrAgent provides a robust HTTP API for remote management of AI agents, session
   | Extension bridge        | binds `3847` then the next free port; writes `~/.libragent/extension_bridge_port.<pid>`                                                                                                         |
   | Sticky Chromium profile | the first backend keeps `browser_agent_profile`; only a second live backend takes `browser_agent_profile.<pid>`, and it is removed once that pid is dead                                        |
   | WebView cache           | Windows: the first backend keeps the default profile, a second live backend takes `<data_dir>/webview/<pid>` via `WEBVIEW2_USER_DATA_FOLDER`. Linux and macOS: shared — a documented limitation |
-  | MCP host                | each backend owns its own stdio server children; the shared pending keychain-delete file is replaced with a per-write temp name                                                                 |
+  | MCP host                | each backend owns its own stdio server children; the shared pending keychain-delete file is replaced with a per-write temp name (concurrent updates are last-writer-wins)                       |
 
   Point the Chrome extension Options port at the backend you intend to control (Settings → System → Chrome extension bridge shows the bound port). Set `LIBRAGENT_EXTENSION_BRIDGE_PORT` to pin a preferred start port.
 

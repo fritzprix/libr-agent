@@ -174,17 +174,46 @@ fn record_child_pid(manager: &mut SessionMCPManager, pid_file: &Path) {
     }
 }
 
-/// True once the pid is gone, or once the deadline passes with it still alive.
-async fn child_is_alive(pid: u32) -> bool {
-    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+/// Instant check: is this process id currently running?
+fn pid_is_alive(pid: u32) -> bool {
+    crate::utils::process::process_is_alive(pid).unwrap_or(false)
+}
+
+/// Waits up to `timeout` for the process id to exit; true once it is gone.
+async fn wait_until_dead(pid: u32, timeout: Duration) -> bool {
+    let deadline = std::time::Instant::now() + timeout;
     loop {
-        if !crate::utils::process::process_is_alive(pid).unwrap_or(false) {
-            return false;
-        }
-        if std::time::Instant::now() >= deadline {
+        if !pid_is_alive(pid) {
             return true;
         }
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
         tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+/// Removes a temp directory when dropped, so a failed assertion cannot leak it.
+struct TempDirGuard(PathBuf);
+
+impl Drop for TempDirGuard {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Makes the mock server list a static tool so a `tools/list` answer can be
+/// asserted on its content instead of discarded.
+fn emit_mock_tool(manager: &mut SessionMCPManager) {
+    let config = manager
+        .server_configs
+        .get_mut("test-server")
+        .expect("test-server config");
+    match &mut config.transport {
+        TransportConfig::Stdio { env, .. } => {
+            env.insert("MOCK_SERVER_EMIT_TOOLS".to_string(), "1".to_string());
+        }
+        _ => panic!("Expected Stdio transport"),
     }
 }
 
@@ -296,6 +325,7 @@ async fn two_backends_on_one_profile_each_run_their_own_stdio_child() {
     let profile_dir =
         std::env::temp_dir().join(format!("libragent-two-backends-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&profile_dir).expect("shared profile directory");
+    let _profile_guard = TempDirGuard(profile_dir.clone());
     let first_pid_file = profile_dir.join("backend-a.pid");
     let second_pid_file = profile_dir.join("backend-b.pid");
 
@@ -303,6 +333,8 @@ async fn two_backends_on_one_profile_each_run_their_own_stdio_child() {
     let mut second = create_integration_manager_with_workspace(profile_dir.clone());
     record_child_pid(&mut first, &first_pid_file);
     record_child_pid(&mut second, &second_pid_file);
+    emit_mock_tool(&mut first);
+    emit_mock_tool(&mut second);
 
     let read_pid = |path: &Path| -> u32 {
         std::fs::read_to_string(path)
@@ -338,31 +370,37 @@ async fn two_backends_on_one_profile_each_run_their_own_stdio_child() {
         first_pid, second_pid,
         "two backends must not share one stdio child"
     );
-    assert!(child_is_alive(first_pid).await, "first child is running");
+    assert!(pid_is_alive(first_pid), "first child is running");
     assert!(
-        child_is_alive(second_pid).await,
+        pid_is_alive(second_pid),
         "second child is running next to the first"
     );
 
     // Stopping one backend tears down only its own child.
     first.shutdown_all().await;
     assert!(
-        !child_is_alive(first_pid).await,
+        wait_until_dead(first_pid, Duration::from_secs(10)).await,
         "the stopped backend's child must exit"
     );
     assert!(
-        child_is_alive(second_pid).await,
+        pid_is_alive(second_pid),
         "the other backend's child was killed by the first backend"
     );
     let tools = second
         .list_tools_with_init_timeout("test-server", Duration::from_secs(10))
         .await
         .expect("the surviving backend still answers after the other stopped");
-    let _ = tools;
+    let tool_names: Vec<&str> = tools.iter().map(|tool| tool.name.as_str()).collect();
+    assert!(
+        tool_names.contains(&"mock_echo"),
+        "surviving backend must still answer tools/list, got: {tool_names:?}"
+    );
 
     second.shutdown_all().await;
-    let _ = child_is_alive(second_pid).await;
-    let _ = std::fs::remove_dir_all(&profile_dir);
+    assert!(
+        wait_until_dead(second_pid, Duration::from_secs(10)).await,
+        "the second child exits when its own backend stops"
+    );
 }
 
 #[tokio::test]
