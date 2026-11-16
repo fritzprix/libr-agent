@@ -227,6 +227,17 @@ Write-Host "Available tools: python3, typescript/deno, shell commands"
                 .await
                 .map_err(|e| format!("Failed to remove workspace directory: {e}"))?;
         }
+
+        // Session-scoped plugin store (#2825) lives outside the workspace.
+        let plugins_dir = self
+            .base_data_dir
+            .join(crate::services::hooks::registry::SESSION_PLUGINS_DIR_NAME)
+            .join(session_id);
+        if plugins_dir.exists() {
+            tokio::fs::remove_dir_all(&plugins_dir)
+                .await
+                .map_err(|e| format!("Failed to remove session plugins directory: {e}"))?;
+        }
         Ok(())
     }
 
@@ -301,5 +312,23 @@ mod tests {
             !resolved.starts_with(base),
             "platform default should not be the data dir"
         );
+    }
+
+    #[tokio::test]
+    async fn remove_workspace_also_removes_session_plugin_store() {
+        let temp = tempfile::tempdir().unwrap();
+        let service = super::SessionDirectoryService::new(temp.path().to_path_buf()).unwrap();
+        let workspace = temp.path().join("workspaces").join("s1");
+        let plugins = temp.path().join("session_plugins").join("s1");
+        let other = temp.path().join("session_plugins").join("s2");
+        for dir in [&workspace, &plugins, &other] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+
+        service.remove_workspace("s1").await.unwrap();
+
+        assert!(!workspace.exists());
+        assert!(!plugins.exists(), "session plugin store must be cleaned up");
+        assert!(other.exists(), "other sessions' stores must be untouched");
     }
 }

@@ -322,4 +322,71 @@ describe('useChatSubmit', () => {
       await firstSubmit;
     });
   });
+
+  const baseProps = () => ({
+    session: { id: 'session-1' },
+    submit: mockState.submit,
+    pendingFiles: [],
+    commitPendingFiles: mockState.commitPendingFiles,
+    clearPendingFiles: mockState.clearPendingFiles,
+    refetchSessionFiles: mockState.refetchSessionFiles,
+    hasPersistedMessages: true,
+  });
+
+  it('routes /plugin install to the approval flow instead of agent_execute_command', async () => {
+    const onPluginInstall = vi.fn().mockResolvedValue(true);
+    const { result } = renderHook(() =>
+      useChatSubmit({ ...baseProps(), onPluginInstall }),
+    );
+
+    act(() => {
+      result.current.setInput('/plugin install https://github.com/o/r');
+    });
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    expect(onPluginInstall).toHaveBeenCalledWith('https://github.com/o/r');
+    expect(mockState.safeInvoke).not.toHaveBeenCalled();
+    expect(result.current.input).toBe('');
+  });
+
+  it('restores the input when /plugin install is not consumed', async () => {
+    const onPluginInstall = vi.fn().mockResolvedValue(false);
+    const { result } = renderHook(() =>
+      useChatSubmit({ ...baseProps(), onPluginInstall }),
+    );
+
+    act(() => {
+      result.current.setInput('/plugin install https://github.com/o/r');
+    });
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    expect(result.current.input).toBe('/plugin install https://github.com/o/r');
+  });
+
+  it('sends /plugin list and /plugin uninstall through agent_execute_command', async () => {
+    const onPluginInstall = vi.fn();
+    const { result } = renderHook(() =>
+      useChatSubmit({ ...baseProps(), onPluginInstall }),
+    );
+
+    for (const command of ['/plugin list', '/plugin uninstall my-plugin']) {
+      act(() => {
+        result.current.setInput(command);
+      });
+      await act(async () => {
+        await result.current.handleSubmit();
+      });
+    }
+
+    expect(onPluginInstall).not.toHaveBeenCalled();
+    expect(mockState.safeInvoke).toHaveBeenCalledTimes(2);
+    expect(mockState.safeInvoke).toHaveBeenLastCalledWith(
+      'agent_execute_command',
+      { sessionId: 'session-1', commandText: '/plugin uninstall my-plugin' },
+    );
+  });
 });

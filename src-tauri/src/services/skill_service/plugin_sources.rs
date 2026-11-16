@@ -28,7 +28,7 @@ pub fn list_plugin_source_overviews() -> Result<Vec<PluginSourceOverview>, Strin
     Ok(out)
 }
 
-fn hook_events_for_root(root: &std::path::Path) -> Vec<String> {
+pub(super) fn hook_events_for_root(root: &std::path::Path) -> Vec<String> {
     load_hooks_from_root(root)
         .ok()
         .map(|cfg| {

@@ -629,7 +629,8 @@ pub async fn agent_execute_command(
     command_text: String,
 ) -> Result<CommandResult, String> {
     super::shared_proxy::reject_if_attached("agent_execute_command")?;
-    use crate::agent::command_parser::Command;
+    use crate::agent::command_parser::{Command, PluginCommand};
+    use crate::services::skill_service::{self, PluginScope};
 
     let command = Command::parse(&command_text)
         .ok_or_else(|| format!("Invalid or unrecognized command: {}", command_text))?;
@@ -669,6 +670,40 @@ pub async fn agent_execute_command(
             Ok(CommandResult {
                 success: true,
                 message: format!("Permission mode updated to {}.", mode_str),
+            })
+        }
+        Command::Plugin(PluginCommand::Install { .. }) => Err(
+            "/plugin install needs hook approval; run it from the chat input of the desktop app."
+                .to_string(),
+        ),
+        Command::Plugin(PluginCommand::Uninstall { target }) => {
+            let removed = skill_service::uninstall_session_plugin(&session_id, &target)?;
+            Ok(CommandResult {
+                success: true,
+                message: format!("Removed session plugin {}.", removed.source_url),
+            })
+        }
+        Command::Plugin(PluginCommand::List) => {
+            let overview = skill_service::list_session_plugins(&session_id)?;
+            let message = if overview.active.is_empty() {
+                "No plugins active in this session.".to_string()
+            } else {
+                overview
+                    .active
+                    .iter()
+                    .map(|plugin| {
+                        let scope = match plugin.scope {
+                            PluginScope::Global => "global",
+                            PluginScope::Session => "session",
+                        };
+                        format!("[{scope}] {}", plugin.source_url)
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            };
+            Ok(CommandResult {
+                success: true,
+                message,
             })
         }
     }

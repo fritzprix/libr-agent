@@ -23,6 +23,8 @@ import { cn } from '@/lib/utils';
 import { useTranslation } from 'react-i18next';
 import { useAgentFileAttachment } from '../hooks/useAgentFileAttachment';
 import { useChatSubmit } from '../hooks/useChatSubmit';
+import { useSessionPluginInstall } from '../hooks/useSessionPluginInstall';
+import { SkillsConflictDialog } from '@/features/skills/components/SkillsConflictDialog';
 import { useInputToken } from '../hooks/useInputToken';
 import { usePlaybookSearch } from '../hooks/usePlaybookSearch';
 import { InputTokenDropdown } from './InputTokenDropdown';
@@ -125,6 +127,9 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     await refreshSkills();
   }, [refreshSkills]);
 
+  const { startInstall: startPluginInstall, dialogProps: pluginDialogProps } =
+    useSessionPluginInstall(session?.id);
+
   const { input, setInput, handleSubmit } = useChatSubmit({
     session,
     submit,
@@ -137,6 +142,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     onSubmitted: refreshScopedSkills,
     onClearSession: clearSessionHistory,
     onExecutionModeChange: applyExecutionMode,
+    onPluginInstall: startPluginInstall,
   });
 
   const attachedFiles = pendingFiles;
@@ -641,6 +647,9 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
           </Tooltip>
         )}
       </form>
+      {pluginDialogProps.pendingInstall ? (
+        <SkillsConflictDialog {...pluginDialogProps} />
+      ) : null}
     </div>
   );
 }

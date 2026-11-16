@@ -1,10 +1,26 @@
 use crate::agent::ExecutionMode;
 
+/// `/plugin` subcommands (#2825). Plugins installed this way are scoped to
+/// the current session only.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PluginCommand {
+    /// Needs an interactive hook-approval step, so it is handled by the
+    /// desktop input (preview → approval modal → install IPC), never here.
+    Install {
+        source: String,
+    },
+    Uninstall {
+        target: String,
+    },
+    List,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     Clear,
     Reload,
     Permission { mode: ExecutionMode },
+    Plugin(PluginCommand),
 }
 
 impl Command {
@@ -40,6 +56,21 @@ impl Command {
                     _ => None,
                 }
             }
+            "/plugin" => {
+                let action = parts.get(1)?.to_lowercase();
+                // Keep the original casing/spacing of the argument (URLs).
+                let arg = parts.get(2..)?.join(" ");
+                match action.as_str() {
+                    "list" if arg.is_empty() => Some(Command::Plugin(PluginCommand::List)),
+                    "install" if !arg.is_empty() => {
+                        Some(Command::Plugin(PluginCommand::Install { source: arg }))
+                    }
+                    "uninstall" if !arg.is_empty() => {
+                        Some(Command::Plugin(PluginCommand::Uninstall { target: arg }))
+                    }
+                    _ => None,
+                }
+            }
             _ => None,
         }
     }
@@ -53,6 +84,9 @@ impl Command {
                 ExecutionMode::Unsafe => "/permission unsafe".to_string(),
                 ExecutionMode::Normal => "/permission normal".to_string(),
             },
+            Command::Plugin(PluginCommand::Install { .. }) => "/plugin install".to_string(),
+            Command::Plugin(PluginCommand::Uninstall { .. }) => "/plugin uninstall".to_string(),
+            Command::Plugin(PluginCommand::List) => "/plugin list".to_string(),
         }
     }
 
@@ -75,6 +109,15 @@ impl Command {
                     "Require standard approval for tool executions".to_string()
                 }
             },
+            Command::Plugin(PluginCommand::Install { .. }) => {
+                "Install a plugin (git URL) for this session only".to_string()
+            }
+            Command::Plugin(PluginCommand::Uninstall { .. }) => {
+                "Remove a session plugin by git URL or name".to_string()
+            }
+            Command::Plugin(PluginCommand::List) => {
+                "List plugins active in this session (global or session)".to_string()
+            }
         }
     }
 }
@@ -122,5 +165,30 @@ mod tests {
         );
         assert_eq!(Command::parse("/permission invalid"), None);
         assert_eq!(Command::parse("/permission"), None);
+    }
+
+    #[test]
+    fn test_parse_plugin() {
+        assert_eq!(
+            Command::parse("/plugin list"),
+            Some(Command::Plugin(PluginCommand::List))
+        );
+        assert_eq!(
+            Command::parse("  /plugin install https://github.com/Obra/Superpowers  "),
+            Some(Command::Plugin(PluginCommand::Install {
+                source: "https://github.com/Obra/Superpowers".to_string()
+            }))
+        );
+        assert_eq!(
+            Command::parse("/plugin UNINSTALL superpowers"),
+            Some(Command::Plugin(PluginCommand::Uninstall {
+                target: "superpowers".to_string()
+            }))
+        );
+        assert_eq!(Command::parse("/plugin"), None);
+        assert_eq!(Command::parse("/plugin install"), None);
+        assert_eq!(Command::parse("/plugin uninstall"), None);
+        assert_eq!(Command::parse("/plugin list extra"), None);
+        assert_eq!(Command::parse("/plugin bogus x"), None);
     }
 }

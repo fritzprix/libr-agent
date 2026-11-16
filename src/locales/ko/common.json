@@ -1564,7 +1564,20 @@
       "badgeBuiltin": "내장",
       "badgeMcp": "mcp",
       "viewDescription": "설명 보기",
-      "viewSchema": "입력 스키마 보기"
+      "viewSchema": "입력 스키마 보기",
+      "plugins": {
+        "title": "플러그인",
+        "empty": "이 세션에서 활성화된 플러그인이 없습니다. /plugin install <git-url> 명령으로 추가하세요.",
+        "scopeGlobal": "전역",
+        "scopeSession": "세션",
+        "installedAt": "설치 시각: {{time}}",
+        "skills": "스킬",
+        "hooks": "훅",
+        "hooksNotApproved": "승인되지 않음",
+        "history": "설치 기록",
+        "actionInstall": "설치됨",
+        "actionUninstall": "제거됨"
+      }
     },
     "panels": {
       "shellTitle": "에이전트 패널",

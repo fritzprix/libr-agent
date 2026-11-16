@@ -5,7 +5,8 @@ use super::context::{
 use super::envelope::{build_envelope_value, HookEnvelopeParams, SessionStartSource};
 use super::output::{normalize, HookOutput};
 use super::registry::{
-    approval_hash_key, approval_hash_value, get_user_plugins_directory, list_approved_sources_in,
+    approval_hash_key, approval_hash_value, get_session_plugins_directory,
+    get_user_plugins_directory, list_effective_approved_sources_in,
 };
 use super::schema::{HookDispatchMode, HookEvent, HookHandler, DEFAULT_HOOK_TIMEOUT_SECS};
 use crate::session::{get_session_manager, resolve_session_workspace_dir};
@@ -28,7 +29,15 @@ pub async fn run_session_start(session_id: &str, source: SessionStartSource, cwd
             return;
         }
     };
-    run_session_start_in(&plugins_dir, session_id, source, cwd).await;
+    let session_plugins_dir = get_session_plugins_directory(session_id).ok();
+    run_session_start_with_sources(
+        &plugins_dir,
+        session_plugins_dir.as_deref(),
+        session_id,
+        source,
+        cwd,
+    )
+    .await;
 }
 
 /// Releases the in-flight marker for a SessionStart hook run when the task
@@ -62,6 +71,18 @@ pub async fn run_session_start_in(
     source: SessionStartSource,
     cwd: Option<PathBuf>,
 ) {
+    run_session_start_with_sources(plugins_dir, None, session_id, source, cwd).await;
+}
+
+/// Run SessionStart hooks from the global plugin store plus an optional
+/// session-scoped store (session installs shadow global ones, #2825).
+pub async fn run_session_start_with_sources(
+    plugins_dir: &Path,
+    session_plugins_dir: Option<&Path>,
+    session_id: &str,
+    source: SessionStartSource,
+    cwd: Option<PathBuf>,
+) {
     // Do NOT clear the previous context up front (#2812 G3.2): a slow,
     // failing, or exit-2 re-run must not erase a bootstrap that is already
     // in effect. Arm one-shot replacement instead — the first output of
@@ -84,8 +105,9 @@ pub async fn run_session_start_in(
     params.session_start_source = Some(source);
     params.matcher = Some(matcher_value.to_string());
 
-    dispatch_hook_event_in(
+    dispatch_hook_event_with_sources(
         plugins_dir,
+        session_plugins_dir,
         HookEvent::SessionStart,
         matcher_value,
         &params,
@@ -134,8 +156,10 @@ pub async fn dispatch_hook_event(
             return;
         }
     };
-    dispatch_hook_event_in(
+    let session_plugins_dir = get_session_plugins_directory(session_id).ok();
+    dispatch_hook_event_with_sources(
         &plugins_dir,
+        session_plugins_dir.as_deref(),
         event,
         matcher_value,
         envelope_params,
@@ -146,6 +170,25 @@ pub async fn dispatch_hook_event(
 
 pub async fn dispatch_hook_event_in(
     plugins_dir: &Path,
+    event: HookEvent,
+    matcher_value: &str,
+    envelope_params: &HookEnvelopeParams,
+    session_id: &str,
+) {
+    dispatch_hook_event_with_sources(
+        plugins_dir,
+        None,
+        event,
+        matcher_value,
+        envelope_params,
+        session_id,
+    )
+    .await;
+}
+
+pub async fn dispatch_hook_event_with_sources(
+    plugins_dir: &Path,
+    session_plugins_dir: Option<&Path>,
     event: HookEvent,
     matcher_value: &str,
     envelope_params: &HookEnvelopeParams,
@@ -175,7 +218,7 @@ pub async fn dispatch_hook_event_in(
         }
     };
 
-    for record in list_approved_sources_in(plugins_dir) {
+    for record in list_effective_approved_sources_in(plugins_dir, session_plugins_dir) {
         let root = &record.root_dir;
         let config = match super::schema::load_hooks_from_root(root) {
             Ok(c) => c,
@@ -781,5 +824,110 @@ mod tests {
             HookDispatchMode::Stub
         );
         clear_hook_context(&sid);
+    }
+    // --- #2825 session-scoped plugin sources ---------------------------------
+
+    fn write_source(base: &Path, source_id: &str, echo: &str, approved: bool) -> PathBuf {
+        let root = base.join(source_id);
+        fs::create_dir_all(root.join("hooks")).unwrap();
+        let hooks_json =
+            format!(r#"{{ "hooks": {{ "SessionStart": [ {{ "command": "echo {echo}" }} ] }} }}"#);
+        fs::write(root.join("hooks").join("hooks.json"), hooks_json).unwrap();
+        let cfg = load_hooks_from_root(&root).unwrap();
+        let hashes = if approved {
+            compute_handler_approval_hashes(&root, &cfg)
+        } else {
+            Default::default()
+        };
+        save_source_in(
+            base,
+            PluginSourceManifest {
+                source_url: format!("test://{echo}"),
+                source_id: source_id.to_string(),
+                skill_names: vec![],
+                hooks: None,
+                hooks_approved: approved,
+                approval_hashes: hashes,
+                created_at: 0,
+            },
+        )
+        .unwrap();
+        root
+    }
+
+    async fn run_with_sources(global: &Path, session: Option<&Path>) -> Option<String> {
+        let sid = format!("hook-scope-{}", uuid::Uuid::new_v4());
+        clear_hook_context(&sid);
+        run_session_start_with_sources(
+            global,
+            session,
+            &sid,
+            SessionStartSource::Resume,
+            Some(global.to_path_buf()),
+        )
+        .await;
+        let out = get_hook_context(&sid);
+        clear_hook_context(&sid);
+        out
+    }
+
+    #[tokio::test]
+    async fn session_plugin_wins_over_same_global_source_and_runs_once() {
+        let global = tempfile::tempdir().unwrap();
+        let session = tempfile::tempdir().unwrap();
+        let id = "plugin-aaaaaaaaaaaaaaaa";
+        write_source(global.path(), id, "from-global", true);
+        write_source(session.path(), id, "from-session", true);
+
+        let out = run_with_sources(global.path(), Some(session.path()))
+            .await
+            .expect("hook output");
+        assert_eq!(out, "from-session", "hooks must run once, session wins");
+    }
+
+    #[tokio::test]
+    async fn unapproved_session_install_still_suppresses_global_copy() {
+        let global = tempfile::tempdir().unwrap();
+        let session = tempfile::tempdir().unwrap();
+        let id = "plugin-bbbbbbbbbbbbbbbb";
+        write_source(global.path(), id, "from-global", true);
+        write_source(session.path(), id, "from-session", false);
+
+        let out = run_with_sources(global.path(), Some(session.path())).await;
+        assert!(
+            out.as_deref().is_none_or(|text| text.trim().is_empty()),
+            "global hooks must stay suppressed in this session: {out:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn session_plugin_does_not_leak_into_other_sessions() {
+        let global = tempfile::tempdir().unwrap();
+        let session_a = tempfile::tempdir().unwrap();
+        let session_b = tempfile::tempdir().unwrap();
+        write_source(
+            global.path(),
+            "plugin-cccccccccccccccc",
+            "global-hook",
+            true,
+        );
+        write_source(
+            session_a.path(),
+            "plugin-dddddddddddddddd",
+            "session-a-hook",
+            true,
+        );
+
+        let a = run_with_sources(global.path(), Some(session_a.path()))
+            .await
+            .expect("session A output");
+        let b = run_with_sources(global.path(), Some(session_b.path()))
+            .await
+            .expect("session B output");
+        assert!(a.contains("global-hook") && a.contains("session-a-hook"));
+        assert_eq!(
+            b, "global-hook",
+            "session B must only see the global plugin"
+        );
     }
 }

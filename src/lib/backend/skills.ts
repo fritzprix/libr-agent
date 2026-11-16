@@ -4,6 +4,7 @@ import type {
   PluginSourceOverview,
   SkillImportPreview,
   SkillImportResult,
+  SessionPluginsOverview,
   SkillMetadata,
 } from '@/types/skills';
 
@@ -106,6 +107,43 @@ export async function listPluginSources(): Promise<PluginSourceOverview[]> {
 
 export async function deletePluginSource(sourceId: string): Promise<void> {
   return safeInvoke<void>('delete_plugin_source', { sourceId });
+}
+
+/** Previews a GitHub plugin install scoped to a single session. */
+export async function previewSessionPluginInstall(
+  sessionId: string,
+  repoUrl: string,
+): Promise<SkillImportPreview> {
+  return safeInvoke<SkillImportPreview>('preview_session_plugin_install', {
+    sessionId,
+    repoUrl,
+  });
+}
+
+/** Installs a GitHub plugin for one session only (survives resume). */
+export async function installSessionPlugin(
+  sessionId: string,
+  repoUrl: string,
+  overwriteExisting: boolean,
+  excludedSkillNames?: string[],
+  approveHooks?: boolean,
+): Promise<SkillImportResult> {
+  return safeInvoke<SkillImportResult>('install_session_plugin', {
+    sessionId,
+    repoUrl,
+    overwriteExisting,
+    excludedSkillNames,
+    approveHooks,
+  });
+}
+
+/** Lists active (global + session) plugins and the session install history. */
+export async function listSessionPlugins(
+  sessionId: string,
+): Promise<SessionPluginsOverview> {
+  return safeInvoke<SessionPluginsOverview>('list_session_plugins', {
+    sessionId,
+  });
 }
 
 /**

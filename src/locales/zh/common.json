@@ -1552,7 +1552,20 @@
       "badgeBuiltin": "内置",
       "badgeMcp": "mcp",
       "viewDescription": "查看说明",
-      "viewSchema": "查看输入模式"
+      "viewSchema": "查看输入模式",
+      "plugins": {
+        "title": "插件",
+        "empty": "此会话中没有启用的插件。使用 /plugin install <git-url> 添加。",
+        "scopeGlobal": "全局",
+        "scopeSession": "会话",
+        "installedAt": "安装时间：{{time}}",
+        "skills": "技能",
+        "hooks": "钩子",
+        "hooksNotApproved": "未批准",
+        "history": "安装记录",
+        "actionInstall": "已安装",
+        "actionUninstall": "已卸载"
+      }
     },
     "panels": {
       "shellTitle": "智能体面板",
