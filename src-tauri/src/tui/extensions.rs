@@ -1273,13 +1273,15 @@ mod tests {
             .unwrap_err()
             .contains("Extensions require the primary backend process"));
 
-        let probe_res = ExtensionsScreen::apply_probe("any");
+        // Probe/auth are background entry points now (apply_* removed in G3.1).
+        let mut screen = ExtensionsScreen::open_presets();
+        let probe_res = screen.start_probe("any");
         assert!(probe_res.is_err());
         assert!(probe_res
             .unwrap_err()
             .contains("Extensions require the primary backend process"));
 
-        let auth_res = ExtensionsScreen::apply_auth("any");
+        let auth_res = screen.start_auth("any");
         assert!(auth_res.is_err());
         assert!(auth_res
             .unwrap_err()
