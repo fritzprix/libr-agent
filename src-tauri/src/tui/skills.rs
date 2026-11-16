@@ -94,12 +94,18 @@ impl BackgroundOp {
         let outcome = std::sync::Arc::new(std::sync::Mutex::new(None));
         let finished_task = finished.clone();
         let outcome_task = outcome.clone();
+        struct FinishGuard(std::sync::Arc<std::sync::atomic::AtomicBool>);
+        impl Drop for FinishGuard {
+            fn drop(&mut self) {
+                self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
         let handle = tauri::async_runtime::spawn(async move {
+            let _guard = FinishGuard(finished_task);
             let result = fut.await;
             if let Ok(mut slot) = outcome_task.lock() {
                 *slot = Some(BackgroundOutcome::Notice(result));
             }
-            finished_task.store(true, std::sync::atomic::Ordering::SeqCst);
         });
         Self {
             label,
@@ -121,7 +127,14 @@ impl BackgroundOp {
         let outcome = std::sync::Arc::new(std::sync::Mutex::new(None));
         let finished_task = finished.clone();
         let outcome_task = outcome.clone();
+        struct FinishGuard(std::sync::Arc<std::sync::atomic::AtomicBool>);
+        impl Drop for FinishGuard {
+            fn drop(&mut self) {
+                self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
         let handle = tauri::async_runtime::spawn(async move {
+            let _guard = FinishGuard(finished_task);
             let preview = fut.await;
             if let Ok(mut slot) = outcome_task.lock() {
                 *slot = Some(BackgroundOutcome::Preview {
@@ -130,7 +143,6 @@ impl BackgroundOp {
                     preview,
                 });
             }
-            finished_task.store(true, std::sync::atomic::Ordering::SeqCst);
         });
         Self {
             label,
@@ -277,41 +289,6 @@ impl SkillsScreen {
             },
         ));
         Ok(())
-    }
-
-    #[allow(dead_code)]
-    pub fn apply_install(
-        source: &str,
-        overwrite_existing: bool,
-        approve_hooks: bool,
-    ) -> Result<String, String> {
-        let source = source.trim();
-        if source.is_empty() {
-            return Err("Usage: /skills install <path|url>".into());
-        }
-        let is_url = source.starts_with("http://")
-            || source.starts_with("https://")
-            || source.starts_with("git@");
-        let result = if is_url {
-            tauri::async_runtime::block_on(skill_service::install_github_skills(
-                source.to_string(),
-                overwrite_existing,
-                None,
-                Some(approve_hooks),
-            ))?
-        } else {
-            tauri::async_runtime::block_on(skill_service::import_user_skills(
-                source.to_string(),
-                overwrite_existing,
-                None,
-                Some(approve_hooks),
-            ))?
-        };
-        Ok(format!(
-            "Installed {} skill(s) from {source} (overwrote: {}, hooks approved: {approve_hooks})",
-            result.imported_names.len(),
-            result.overwritten_names.len(),
-        ))
     }
 
     pub fn poll_background(&mut self) {

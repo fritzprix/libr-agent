@@ -128,12 +128,18 @@ impl BackgroundOp {
         let outcome = std::sync::Arc::new(std::sync::Mutex::new(None));
         let finished_task = finished.clone();
         let outcome_task = outcome.clone();
+        struct FinishGuard(std::sync::Arc<std::sync::atomic::AtomicBool>);
+        impl Drop for FinishGuard {
+            fn drop(&mut self) {
+                self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
         let handle = tauri::async_runtime::spawn(async move {
+            let _guard = FinishGuard(finished_task);
             let result = fut.await;
             if let Ok(mut slot) = outcome_task.lock() {
                 *slot = Some(result);
             }
-            finished_task.store(true, std::sync::atomic::Ordering::SeqCst);
         });
         Self {
             label,
@@ -423,52 +429,6 @@ impl ExtensionsScreen {
             "{} {}",
             if enable { "Enabled" } else { "Disabled" },
             name
-        ))
-    }
-
-    #[allow(dead_code)]
-    pub fn apply_probe(name: &str) -> Result<String, String> {
-        let repo = crate::state::try_get_mcp_server_repository()
-            .ok_or_else(|| "Extensions require the primary backend process (not available in attached TUI mode)".to_string())?;
-        let row = resolve_server_by_name(repo, name)?;
-        let tools = tauri::async_runtime::block_on(McpServerService::probe_server(repo, &row.id))?;
-        Ok(format!("Verified {name} · {} tool(s)", tools.len()))
-    }
-
-    #[allow(dead_code)]
-    pub fn apply_session_retry(session_id: &str) -> Result<String, String> {
-        let mgr = crate::state::get_mcp_service_proxy_manager();
-        let runtime = tauri::async_runtime::block_on(mgr.get_runtime_state(session_id));
-        let failed = select_failed_servers(&runtime);
-        if failed.is_empty() {
-            return Ok("No failed session servers to retry".into());
-        }
-        let handle = crate::state::get_app_handle();
-        for name in &failed {
-            tauri::async_runtime::block_on(mgr.retry_failed_server(session_id, name, handle))?;
-        }
-        Ok(format!("Retried {} failed server(s)", failed.len()))
-    }
-
-    #[allow(dead_code)]
-    pub fn apply_auth(name: &str) -> Result<String, String> {
-        let repo = crate::state::try_get_mcp_server_repository()
-            .ok_or_else(|| "Extensions require the primary backend process (not available in attached TUI mode)".to_string())?;
-        let row = resolve_server_by_name(repo, name)?;
-        let config: Value = serde_json::from_str(&row.config)
-            .map_err(|e| format!("Invalid config for {name}: {e}"))?;
-        let auth: OAuthConfig = serde_json::from_value(
-            config
-                .get("authentication")
-                .cloned()
-                .ok_or_else(|| format!("{name} has no OAuth authentication config"))?,
-        )
-        .map_err(|e| format!("Invalid OAuth config: {e}"))?;
-        let handle = crate::state::get_app_handle()
-            .ok_or_else(|| "App handle not ready for OAuth browser open".to_string())?
-            .clone();
-        tauri::async_runtime::block_on(crate::commands::mcp_commands::start_oauth_flow(
-            handle, row.id, auth,
         ))
     }
 
@@ -1460,5 +1420,13 @@ mod tests {
         if let Some(op) = screen.background_op.take() {
             op.abort();
         }
+    }
+
+    #[test]
+    fn start_probe_returns_attached_tui_error_without_repo() {
+        let mut screen = ExtensionsScreen::open_presets();
+        let res = screen.start_probe("any");
+        assert!(res.is_err());
+        assert!(res.unwrap_err().contains("attached TUI"));
     }
 }
