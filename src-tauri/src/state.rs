@@ -490,6 +490,11 @@ pub fn get_knowledge_v2_repository() -> &'static SqliteKnowledgeV2Repository {
     )
 }
 
+/// Optional knowledge v2 repository (None in attached TUI before host boot).
+pub fn try_get_knowledge_v2_repository() -> Option<&'static SqliteKnowledgeV2Repository> {
+    KNOWLEDGE_V2_REPOSITORY.get()
+}
+
 /// Sets the global planning repository instance.
 ///
 /// # Panics

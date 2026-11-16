@@ -9,6 +9,10 @@ use crate::agent::state::{
     PendingUserPromptSummary, UserPromptKind, UserPromptPayload, UserQuestion,
 };
 use crate::server::shared_backend::SharedBackendClient;
+use crate::tui::knowledge::{
+    draw_knowledge, parse_knowledge_command, run_knowledge_command, KnowledgeAction,
+    KnowledgeCommand, KnowledgeScreen,
+};
 use crate::tui::sessions::{
     create_new_session, delete_session, draw_picker, load_resume_picker, open_session_or_refuse,
     parse_session_command, rename_session, PickerAction, SessionCommand, SessionPicker,
@@ -76,6 +80,8 @@ pub struct ChatState {
     ask: AskDraft,
     /// S2 session picker (`/resume` / `/history`).
     pub picker: Option<SessionPicker>,
+    /// Knowledge overlay (`/knowledge`).
+    pub knowledge: Option<KnowledgeScreen>,
     /// Pending `/delete` confirmation (session id).
     pub confirm_delete: Option<String>,
     last_ctrl_c: Option<Instant>,
@@ -104,6 +110,7 @@ impl ChatState {
             && self.composer.is_empty()
             && self.focus == Focus::Composer
             && self.picker.is_none()
+            && self.knowledge.is_none()
         {
             return ChatAction::Quit;
         }
@@ -122,6 +129,28 @@ impl ChatState {
                     ChatAction::None
                 }
                 _ => ChatAction::None,
+            };
+        }
+
+        if let Some(screen) = self.knowledge.as_mut() {
+            return match screen.handle_key(key) {
+                KnowledgeAction::None => ChatAction::None,
+                KnowledgeAction::Close => {
+                    self.knowledge = None;
+                    ChatAction::None
+                }
+                KnowledgeAction::Reload => ChatAction::KnowledgeReload,
+                KnowledgeAction::LoadMore => ChatAction::KnowledgeLoadMore,
+                KnowledgeAction::OpenChunk(id) => ChatAction::KnowledgeOpenChunk(id),
+                KnowledgeAction::ConfirmDelete(id) => {
+                    screen.begin_confirm_delete(id);
+                    ChatAction::None
+                }
+                KnowledgeAction::Delete(id) => ChatAction::KnowledgeDelete(id),
+                KnowledgeAction::CancelDelete => {
+                    screen.cancel_confirm_delete();
+                    ChatAction::None
+                }
             };
         }
 
@@ -193,6 +222,10 @@ impl ChatState {
                 if let Some(rest) = text.strip_prefix("//") {
                     self.composer.clear();
                     return ChatAction::Send(format!("/{rest}"));
+                }
+                if let Some(command) = parse_knowledge_command(&text) {
+                    self.composer.clear();
+                    return ChatAction::Knowledge(command);
                 }
                 if let Some(command) = parse_session_command(&text) {
                     self.composer.clear();
@@ -481,6 +514,11 @@ pub enum ChatAction {
     CancelPrompt,
     Session(SessionCommand),
     OpenSession(String),
+    Knowledge(KnowledgeCommand),
+    KnowledgeReload,
+    KnowledgeLoadMore,
+    KnowledgeOpenChunk(i32),
+    KnowledgeDelete(i32),
 }
 
 /// How the chat front should leave when it is done.
@@ -718,6 +756,10 @@ pub fn s5_layout(state: &ChatState, width: u16) -> (u16, String) {
 
 /// Draw the S1 chat frame (and S5 strip when a prompt is open).
 pub fn draw_chat(frame: &mut Frame<'_>, state: &ChatState) {
+    if let Some(screen) = &state.knowledge {
+        draw_knowledge(frame, screen);
+        return;
+    }
     if let Some(picker) = &state.picker {
         draw_picker(frame, picker);
         return;
@@ -874,6 +916,40 @@ pub fn run_chat_front(stdout: &mut Stdout) {
                             runtime.block_on(run_session_command(api, &mut state, command));
                         } else {
                             state.notice = Some("Backend is not ready yet".to_string());
+                        }
+                    }
+                    ChatAction::Knowledge(command) => {
+                        match runtime.block_on(run_knowledge_command(command)) {
+                            Ok(screen) => state.knowledge = Some(screen),
+                            Err(err) => state.notice = Some(err),
+                        }
+                    }
+                    ChatAction::KnowledgeReload => {
+                        if let Some(screen) = state.knowledge.as_mut() {
+                            if let Err(err) = runtime.block_on(screen.reload()) {
+                                state.notice = Some(err);
+                            }
+                        }
+                    }
+                    ChatAction::KnowledgeLoadMore => {
+                        if let Some(screen) = state.knowledge.as_mut() {
+                            if let Err(err) = runtime.block_on(screen.load_more()) {
+                                state.notice = Some(err);
+                            }
+                        }
+                    }
+                    ChatAction::KnowledgeOpenChunk(id) => {
+                        if let Some(screen) = state.knowledge.as_mut() {
+                            if let Err(err) = runtime.block_on(screen.open_chunk(id)) {
+                                state.notice = Some(err);
+                            }
+                        }
+                    }
+                    ChatAction::KnowledgeDelete(id) => {
+                        if let Some(screen) = state.knowledge.as_mut() {
+                            if let Err(err) = runtime.block_on(screen.delete_chunk(id)) {
+                                state.notice = Some(err);
+                            }
                         }
                     }
                     ChatAction::OpenSession(id) => {
