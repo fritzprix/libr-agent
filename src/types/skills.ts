@@ -83,3 +83,35 @@ export interface SkillImportResult {
   overwrittenNames: string[];
   skippedNames: string[];
 }
+
+/** Where an active plugin was installed. Mirrors Rust `PluginScope`. */
+export type PluginScope = 'global' | 'session';
+
+/** Mirrors Rust `SessionPluginEntry` (camelCase). */
+export interface SessionPluginEntry {
+  id: string;
+  sourceUrl: string;
+  scope: PluginScope;
+  /** ISO-8601 timestamp of the install. */
+  installedAt: string;
+  skillNames: string[];
+  hookEvents: string[];
+  hooksApproved: boolean;
+}
+
+export type SessionPluginAction = 'install' | 'uninstall';
+
+/** Mirrors Rust `SessionPluginHistoryEntry` (camelCase). */
+export interface SessionPluginHistoryEntry {
+  sourceId: string;
+  sourceUrl: string;
+  action: SessionPluginAction;
+  /** ISO-8601 timestamp of the action. */
+  at: string;
+}
+
+/** Mirrors Rust `SessionPluginsOverview` (camelCase). */
+export interface SessionPluginsOverview {
+  active: SessionPluginEntry[];
+  history: SessionPluginHistoryEntry[];
+}

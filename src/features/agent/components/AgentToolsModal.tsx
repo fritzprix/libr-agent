@@ -10,6 +10,8 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import { useAgentSessionState } from '@/context/AgentSessionContext';
+import { SessionPluginsSection } from './SessionPluginsSection';
 import { useSessionAgentTools } from '@/features/agent/hooks/useSessionAgentTools';
 import { Button } from '@/components/ui/button';
 import { parseToolName, isBuiltinTool } from '@/lib/tool-call-utils';
@@ -56,6 +58,7 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
 }) => {
   const { t } = useTranslation();
   const { availableTools, isLoading, error } = useSessionAgentTools();
+  const { session } = useAgentSessionState();
 
   const { builtinTools, mcpTools } = useMemo(() => {
     const builtin = availableTools.filter((t) => isBuiltinTool(t.name));
@@ -149,6 +152,7 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
               }}
             >
               <div className="min-w-0 max-w-full px-6 py-5">
+                <SessionPluginsSection sessionId={session?.id} />
                 {totalCount === 0 ? (
                   <div className="flex min-h-[260px] flex-col items-center justify-center gap-3 rounded-xl border border-border/40 bg-muted/[0.16] px-6 py-10 text-center">
                     <div className="rounded-full border border-border/50 bg-background/80 p-3 text-muted-foreground">

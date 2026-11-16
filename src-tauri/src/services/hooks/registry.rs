@@ -2,11 +2,16 @@ use super::schema::{load_hooks_from_root, HookEvent, HookHandler, HooksConfig};
 use crate::session::get_session_manager;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 pub const USER_PLUGINS_DIR_NAME: &str = "user_plugins";
+/// Per-session plugin stores live at `{data_dir}/session_plugins/{session_id}/`.
+/// They are deliberately kept outside the agent-writable workspace so the agent
+/// cannot rewrite a hook script together with its approval manifest. Session
+/// deletion removes the store (`SessionDirectoryService::remove_workspace`).
+pub const SESSION_PLUGINS_DIR_NAME: &str = "session_plugins";
 const MANIFEST_FILE: &str = "manifest.json";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -38,6 +43,24 @@ pub fn get_user_plugins_directory() -> Result<PathBuf, String> {
     Ok(session_manager
         .get_base_data_dir()
         .join(USER_PLUGINS_DIR_NAME))
+}
+
+/// Directory holding the plugins installed for one session only (#2825).
+///
+/// Anchored at the app data dir (see [`SESSION_PLUGINS_DIR_NAME`]).
+pub fn get_session_plugins_directory(session_id: &str) -> Result<PathBuf, String> {
+    if session_id.is_empty()
+        || session_id == "."
+        || session_id == ".."
+        || session_id.contains(['/', '\\'])
+    {
+        return Err(format!("invalid session id: {:?}", session_id));
+    }
+    let session_manager = get_session_manager()?;
+    Ok(session_manager
+        .get_base_data_dir()
+        .join(SESSION_PLUGINS_DIR_NAME)
+        .join(session_id))
 }
 
 pub fn validate_source_id(source_id: &str) -> Result<(), String> {
@@ -287,6 +310,44 @@ pub fn list_approved_sources_in(base: &Path) -> Vec<PluginSourceRecord> {
         .into_iter()
         .filter(|r| r.manifest.hooks_approved)
         .collect()
+}
+
+/// Approved plugin sources effective for one session: the session's own
+/// installs plus global installs that the session has not shadowed.
+///
+/// A session install wins over a global install with the same `source_id`
+/// even when the session copy is not hook-approved, so a plugin's hooks never
+/// run twice and a session can opt out of a global plugin's hooks (#2825).
+pub fn list_effective_approved_sources_in(
+    global_base: &Path,
+    session_base: Option<&Path>,
+) -> Vec<PluginSourceRecord> {
+    let session_sources = match session_base {
+        Some(base) => list_sources_in(base).unwrap_or_else(|error| {
+            // An unreadable session store must not silently re-enable the
+            // global plugins this session opted out of (#2825 review S1.1).
+            log::warn!(
+                "Failed to read session plugin store at {}: {error}; global plugins apply unshadowed",
+                base.display()
+            );
+            Vec::new()
+        }),
+        None => Vec::new(),
+    };
+    let shadowed: HashSet<String> = session_sources
+        .iter()
+        .map(|r| r.manifest.source_id.clone())
+        .collect();
+    let mut out: Vec<PluginSourceRecord> = list_approved_sources_in(global_base)
+        .into_iter()
+        .filter(|r| !shadowed.contains(&r.manifest.source_id))
+        .collect();
+    out.extend(
+        session_sources
+            .into_iter()
+            .filter(|r| r.manifest.hooks_approved),
+    );
+    out
 }
 
 pub fn list_approved_plugin_roots() -> Vec<PathBuf> {

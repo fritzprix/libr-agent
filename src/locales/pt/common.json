@@ -1552,7 +1552,20 @@
       "badgeBuiltin": "integrada",
       "badgeMcp": "mcp",
       "viewDescription": "Ver Descrição",
-      "viewSchema": "Ver Esquema de Entrada"
+      "viewSchema": "Ver Esquema de Entrada",
+      "plugins": {
+        "title": "Plugins",
+        "empty": "Nenhum plugin ativo nesta sessão. Use /plugin install <git-url> para adicionar um.",
+        "scopeGlobal": "global",
+        "scopeSession": "sessão",
+        "installedAt": "Instalado em {{time}}",
+        "skills": "Skills",
+        "hooks": "Hooks",
+        "hooksNotApproved": "não aprovados",
+        "history": "Histórico de instalação",
+        "actionInstall": "Instalado",
+        "actionUninstall": "Desinstalado"
+      }
     },
     "panels": {
       "shellTitle": "Painéis do agente",

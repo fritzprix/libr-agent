@@ -11,6 +11,7 @@ import type { useAgentResourceAttachment } from '@/features/agent/hooks/useAgent
 import { safeInvoke } from '@/lib/backend/core';
 import type { ExecutionMode } from '@/context/agent-session/types';
 import { isExecutionMode } from '@/lib/generated/execution-mode';
+import { parsePluginInstallCommand } from '../lib/plugin-command';
 
 const logger = getLogger('useChatSubmit');
 const OBVIOUS_OVERSIZE_CHAR_MULTIPLIER = 2;
@@ -46,6 +47,11 @@ interface UseChatSubmitProps {
   onSubmitted?: () => void | Promise<void>;
   onClearSession?: () => void;
   onExecutionModeChange?: (mode: ExecutionMode) => void;
+  /**
+   * Handles `/plugin install <git-url>` (needs the hook-approval dialog).
+   * Resolves true when the command was consumed.
+   */
+  onPluginInstall?: (repoUrl: string) => Promise<boolean>;
 }
 
 export function useChatSubmit({
@@ -60,6 +66,7 @@ export function useChatSubmit({
   onSubmitted,
   onClearSession,
   onExecutionModeChange,
+  onPluginInstall,
 }: UseChatSubmitProps) {
   const { t } = useTranslation();
   const { value: settings } = useSettings();
@@ -86,6 +93,26 @@ export function useChatSubmit({
       }
       if (!session?.id) {
         logger.info('Submit ignored: no session');
+        return;
+      }
+
+      const pluginInstallUrl = parsePluginInstallCommand(messageText);
+      if (pluginInstallUrl && onPluginInstall) {
+        isSubmittingRef.current = true;
+        setIsSubmitting(true);
+        const currentInput = input;
+        setInput('');
+        try {
+          const consumed = await onPluginInstall(pluginInstallUrl);
+          if (consumed) {
+            clearPendingFiles();
+          } else {
+            setInput(currentInput);
+          }
+        } finally {
+          isSubmittingRef.current = false;
+          setIsSubmitting(false);
+        }
         return;
       }
 
@@ -269,6 +296,7 @@ export function useChatSubmit({
       onSubmitted,
       onClearSession,
       onExecutionModeChange,
+      onPluginInstall,
       settings.maxInputContext,
       isProxyReady,
       t,

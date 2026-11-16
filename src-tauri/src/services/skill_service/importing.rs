@@ -12,7 +12,7 @@ use super::directories::{
 use super::github::parse_github_repo_url;
 use super::scanning::{copy_dir_recursive, parse_skill_metadata};
 use crate::services::hooks::registry::{
-    get_user_plugins_directory, save_source, PluginSourceManifest,
+    get_user_plugins_directory, save_source_in, PluginSourceManifest,
 };
 use crate::services::hooks::schema::{load_hooks_from_root, HookDispatchMode, HooksConfig};
 use crate::session::get_session_manager;
@@ -196,7 +196,7 @@ pub async fn import_assistant_skills(
 ) -> Result<String, String> {
     let assistant_skills_dir = get_assistant_skills_directory(&assistant_id)?;
     let prepared = prepare_local_skill_import(file_path).await?;
-    let result = install_prepared_skills_to_directory(prepared, assistant_skills_dir, true)?;
+    let result = install_prepared_skills_to_directory(&prepared, assistant_skills_dir, true)?;
     Ok(format!(
         "Successfully imported {} skills",
         result.imported_names.len()
@@ -219,7 +219,7 @@ async fn prepare_local_skill_import(file_path: String) -> Result<PreparedSkillIm
         .map_err(|error| format!("Task join error: {}", error))?
 }
 
-fn prepare_local_skill_import_blocking(
+pub(super) fn prepare_local_skill_import_blocking(
     temp_root: &Path,
     file_path: &str,
 ) -> Result<PreparedSkillImport, String> {
@@ -263,7 +263,9 @@ fn prepare_local_skill_import_blocking(
     })
 }
 
-async fn prepare_github_skill_import(repo_url: String) -> Result<PreparedSkillImport, String> {
+pub(super) async fn prepare_github_skill_import(
+    repo_url: String,
+) -> Result<PreparedSkillImport, String> {
     let source_key = repo_url.clone();
     let repo_spec = parse_github_repo_url(&repo_url)?;
     let temp_root = build_temp_root()?;
@@ -375,11 +377,23 @@ async fn prepare_github_skill_import(repo_url: String) -> Result<PreparedSkillIm
 async fn build_user_import_preview(
     prepared: &PreparedSkillImport,
 ) -> Result<SkillImportPreview, String> {
+    let user_dir = get_user_skills_directory()?;
+    build_import_preview(prepared, &user_dir, "global", "user").await
+}
+
+/// Build an import preview whose conflicts are computed against the bundled
+/// system skills plus the target skills directory (`source_tag`/`origin_tag`
+/// label that directory's existing skills in the reported conflicts).
+pub(super) async fn build_import_preview(
+    prepared: &PreparedSkillImport,
+    target_skills_dir: &Path,
+    source_tag: &str,
+    origin_tag: &str,
+) -> Result<SkillImportPreview, String> {
     let discovered_skills = &prepared.discovered_skills;
     wait_for_managed_skills_sync().await;
 
     let system_dir = get_system_skills_directory()?;
-    let user_dir = get_user_skills_directory()?;
     let system_skills = scan_skills_internal_cached(
         &system_dir,
         Some("global".to_string()),
@@ -387,9 +401,9 @@ async fn build_user_import_preview(
     )
     .await?;
     let user_skills = scan_skills_internal_cached(
-        &user_dir,
-        Some("global".to_string()),
-        Some("user".to_string()),
+        target_skills_dir,
+        Some(source_tag.to_string()),
+        Some(origin_tag.to_string()),
     )
     .await?;
 
@@ -474,12 +488,44 @@ fn blocked_system_conflict_names(conflicts: &[SkillImportConflict]) -> Vec<Strin
         .collect()
 }
 
+/// Where an import lands: skills directory + plugin-source store.
+pub(super) struct ImportTarget {
+    pub(super) skills_dir: PathBuf,
+    pub(super) plugins_dir: PathBuf,
+    /// Record a plugin-source manifest even for hook-less skill bundles, so
+    /// the install is listable and removable (session-scoped installs).
+    pub(super) always_record_source: bool,
+}
+
 async fn install_user_prepared_skills(
     prepared: PreparedSkillImport,
     preview: SkillImportPreview,
     overwrite_existing: bool,
     excluded_skill_names: Vec<String>,
     approve_hooks: bool,
+) -> Result<SkillImportResult, String> {
+    let target = ImportTarget {
+        skills_dir: get_user_skills_directory()?,
+        plugins_dir: get_user_plugins_directory()?,
+        always_record_source: false,
+    };
+    install_prepared_import(
+        prepared,
+        preview,
+        overwrite_existing,
+        excluded_skill_names,
+        approve_hooks,
+        target,
+    )
+}
+
+pub(super) fn install_prepared_import(
+    prepared: PreparedSkillImport,
+    preview: SkillImportPreview,
+    overwrite_existing: bool,
+    excluded_skill_names: Vec<String>,
+    approve_hooks: bool,
+    target: ImportTarget,
 ) -> Result<SkillImportResult, String> {
     let mut excluded_names = excluded_skill_names
         .into_iter()
@@ -530,21 +576,22 @@ async fn install_user_prepared_skills(
         })
         .collect::<Vec<_>>();
 
-    let user_dir = get_user_skills_directory()?;
     let prepared = PreparedSkillImport {
         _temp_dir,
         scan_root: scan_root.clone(),
         source_key: source_key.clone(),
         discovered_skills: selected_skills,
     };
-    let mut result = install_prepared_skills_to_directory(prepared, user_dir, overwrite_existing)?;
+    let mut result =
+        install_prepared_skills_to_directory(&prepared, target.skills_dir, overwrite_existing)?;
 
-    if preview.kind == SkillImportKind::Plugin {
+    if preview.kind == SkillImportKind::Plugin || target.always_record_source {
         install_plugin_source(
             &scan_root,
             &source_key,
             &result.imported_names,
             approve_hooks,
+            &target.plugins_dir,
         )?;
     }
 
@@ -564,8 +611,10 @@ async fn install_user_prepared_skills(
     Ok(result)
 }
 
+/// Borrows `prepared` so the caller keeps its staging temp dir alive until
+/// follow-up steps (e.g. copying the plugin source) are done.
 fn install_prepared_skills_to_directory(
-    prepared: PreparedSkillImport,
+    prepared: &PreparedSkillImport,
     target_dir: PathBuf,
     overwrite_existing: bool,
 ) -> Result<SkillImportResult, String> {
@@ -576,7 +625,7 @@ fn install_prepared_skills_to_directory(
     let mut overwritten_names = Vec::new();
     let mut imported_names = Vec::new();
 
-    for skill in prepared.discovered_skills {
+    for skill in &prepared.discovered_skills {
         let normalized_name = skill.metadata.name.to_lowercase();
         if let Some(existing_root) = existing_skill_roots.remove(&normalized_name) {
             if !overwrite_existing {
@@ -799,7 +848,7 @@ fn build_hook_preview_entries(config: &HooksConfig) -> Vec<HookPreviewEntry> {
     entries
 }
 
-fn plugin_source_id(source_key: &str) -> String {
+pub(super) fn plugin_source_id(source_key: &str) -> String {
     let digest = Sha256::digest(source_key.as_bytes());
     format!("plugin-{}", &format!("{:x}", digest)[..16])
 }
@@ -809,35 +858,42 @@ fn install_plugin_source(
     source_key: &str,
     skill_names: &[String],
     approve_hooks: bool,
+    plugins_dir: &Path,
 ) -> Result<(), String> {
-    let config = try_load_plugin_hooks(scan_root)?
-        .ok_or_else(|| "Plugin hooks configuration missing during install".to_string())?;
+    let config = try_load_plugin_hooks(scan_root)?;
 
     let source_id = plugin_source_id(source_key);
-    let target = get_user_plugins_directory()?.join(&source_id);
+    let target = plugins_dir.join(&source_id);
     if target.exists() {
         fs::remove_dir_all(&target).map_err(|e| e.to_string())?;
     }
     copy_dir_recursive(scan_root, &target)?;
 
-    let approval_hashes = if approve_hooks {
-        crate::services::hooks::registry::compute_handler_approval_hashes(&target, &config)
-    } else {
-        BTreeMap::new()
+    let hooks_approved = approve_hooks && config.is_some();
+    let approval_hashes = match &config {
+        Some(config) if hooks_approved => {
+            crate::services::hooks::registry::compute_handler_approval_hashes(&target, config)
+        }
+        _ => BTreeMap::new(),
     };
 
-    save_source(PluginSourceManifest {
-        source_url: source_key.to_string(),
-        source_id,
-        skill_names: skill_names.to_vec(),
-        hooks: Some(crate::services::hooks::registry::HooksConfigSnapshot {
-            version: config.version,
-            validated: true,
-        }),
-        hooks_approved: approve_hooks,
-        approval_hashes,
-        created_at: chrono::Utc::now().timestamp(),
-    })?;
+    save_source_in(
+        plugins_dir,
+        PluginSourceManifest {
+            source_url: source_key.to_string(),
+            source_id,
+            skill_names: skill_names.to_vec(),
+            hooks: config.as_ref().map(|config| {
+                crate::services::hooks::registry::HooksConfigSnapshot {
+                    version: config.version,
+                    validated: true,
+                }
+            }),
+            hooks_approved,
+            approval_hashes,
+            created_at: chrono::Utc::now().timestamp(),
+        },
+    )?;
 
     Ok(())
 }

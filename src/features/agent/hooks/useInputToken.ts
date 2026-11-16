@@ -249,6 +249,23 @@ export function useInputToken(
         label: '/permission normal',
         description: 'Require standard approval for tool executions',
       },
+      {
+        id: '/plugin install',
+        label: '/plugin install',
+        description:
+          'Install a plugin from a git URL for this session only (/plugin install <git-url>)',
+      },
+      {
+        id: '/plugin uninstall',
+        label: '/plugin uninstall',
+        description:
+          'Remove a session plugin (/plugin uninstall <git-url|name>)',
+      },
+      {
+        id: '/plugin list',
+        label: '/plugin list',
+        description: 'List active global and session plugins',
+      },
     ];
     if (stage.kind === 'typing-command') {
       return commands.filter((c) =>

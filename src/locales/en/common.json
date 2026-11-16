@@ -1568,7 +1568,20 @@
       "badgeBuiltin": "builtin",
       "badgeMcp": "mcp",
       "viewDescription": "View Description",
-      "viewSchema": "View Input Schema"
+      "viewSchema": "View Input Schema",
+      "plugins": {
+        "title": "Plugins",
+        "empty": "No plugins are active in this session. Use /plugin install <git-url> to add one.",
+        "scopeGlobal": "global",
+        "scopeSession": "session",
+        "installedAt": "Installed {{time}}",
+        "skills": "Skills",
+        "hooks": "Hooks",
+        "hooksNotApproved": "not approved",
+        "history": "Install history",
+        "actionInstall": "Installed",
+        "actionUninstall": "Uninstalled"
+      }
     },
     "panels": {
       "shellTitle": "Agent panels",

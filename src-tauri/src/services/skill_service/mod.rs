@@ -6,6 +6,7 @@ mod importing;
 mod outbox;
 mod plugin_sources;
 mod scanning;
+mod session_plugins;
 
 pub use cache::{
     clear_skill_scan_cache_entries, invalidate_skill_scan_cache, prewarm_managed_skill_scans,
@@ -39,6 +40,11 @@ pub use plugin_sources::{delete_plugin_source, list_plugin_source_overviews};
 pub use scanning::{
     copy_dir_recursive, get_skill_content, get_skill_content_from_roots, parse_skill_metadata,
     scan_skills_directory,
+};
+pub use session_plugins::{
+    install_session_plugin, list_session_plugins, preview_session_plugin_install,
+    uninstall_session_plugin, PluginScope, SessionPluginAction, SessionPluginEntry,
+    SessionPluginHistoryEntry, SessionPluginsOverview,
 };
 
 pub(crate) use cache::scan_skills_internal_cached;
