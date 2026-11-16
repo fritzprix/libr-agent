@@ -75,7 +75,7 @@ LibrAgent uses standard HTTP status codes to indicate the success or failure of 
 | `201` | **Created**: The resource (e.g., Session) was successfully created.                                   |
 | `400` | **Bad Request**: The request body is malformed or contains invalid values (e.g., non-absolute paths). |
 | `404` | **Not Found**: The requested resource (Assistant, Session) does not exist.                            |
-| `409` | **Conflict**: The session is open in another process (see [Session Ownership](#session-ownership)).   |
+| `409` | **Conflict**: A GUI open was refused because the session is open in another process (see [Session Ownership](#session-ownership)). |
 | `500` | **Internal Error**: An unexpected server-side error occurred (e.g., DB failure, config corruption).   |
 
 ---
@@ -344,7 +344,7 @@ Lists sessions, most recent activity first.
 }
 ```
 
-Each entry has the session fields of [Get Session Status](#get-session-status), without `pendingApprovals`, plus `openElsewhere`: `true` when the local host process owns the session and the caller is an external (headerless) client (see [Session Ownership](#session-ownership)). `nextCursor` is `null` on the last page.
+Each entry has the session fields of [Get Session Status](#get-session-status), without `pendingApprovals`, plus `openElsewhere`: `true` when the session is held by a live process — for an external HTTP caller that includes the host's own sessions (see [Session Ownership](#session-ownership)). `nextCursor` is `null` on the last page.
 
 ---
 
@@ -387,16 +387,17 @@ Loads a paused/crashed session into active memory and resumes the workflow.
 
 Each `libragent` GUI process hosts its own Session API backend (#2855). A profile may run several backends at once (each with its own `http_port.<pid>` and `.backend.<pid>.json` record). They share the profile SQLite file for persisted data, but session **execution** and ownership are scoped to **one backend process**.
 
-Ownership today is **in-process**: the GUI that opens a session claims it as `host` over IPC, and HTTP clients never claim sessions. The cross-process **GUI-to-GUI** guard — a GUI refuses a session a live sibling GUI holds, or shows it as `openElsewhere` until reclaim is safe — belongs to #2856 and is **planned**, not shipped.
+Ownership lives in the profile database and belongs to the backend **process**, not to a window: a GUI refuses to open a session a live sibling backend holds (`409` on its own open path) and lists it as `openElsewhere` until the owner's process is proven dead or its ownership row goes stale (#2856). A process that runs no HTTP server (headless `liblet` / `libragent -p`) never participates in ownership.
 
 - **Header**: do not send `x-frontend-attachment`. Any value returns `400`; the attachment registry, its heartbeats, and `POST /api/frontends` were removed (#2854).
-- **Claiming routes** (`POST /api/sessions/:id/open`, `POST /api/sessions/:id/resume`, `POST /api/sessions/:id/messages`, and `POST /api/sessions`): an HTTP caller neither claims a session nor is refused for ownership. Host ownership still applies to the GUI process that opened the session.
-- **Read-only routes** never claim: `GET /api/sessions/:id`, `GET /api/sessions/:id/messages`, and the event stream. `GET /api/sessions` sets `openElsewhere: true` on sessions owned by the local host process when the caller is an external (headerless) client.
+- **Claiming routes** (`POST /api/sessions/:id/open`, `POST /api/sessions/:id/resume`, `POST /api/sessions/:id/messages`, and `POST /api/sessions`): an HTTP caller neither claims a session nor is refused for ownership. Process ownership applies to the GUI that opened the session.
+- **Read-only routes** never claim and are never refused for ownership: `GET /api/sessions/:id`, `GET /api/sessions/:id/messages`, and the event stream. `GET /api/sessions` sets `openElsewhere: true` on sessions held by any live process — for an external (headerless) caller that includes the host's own sessions.
+- **Liveness**: the owner's heartbeat runs every 5 s; an ownership row is stale after 15 s without one, and a foreign row is released only when its process is proven dead — a probe that cannot prove death keeps it live.
 
-| Status | Body `error`                                                          | Cause                                                                                                                                                                   |
-| :----- | :-------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `409`  | `Session <id> is open in another process`                             | The local host process already owns the session (in-process claim). A headerless HTTP caller does not trigger it; it only appears as `openElsewhere` on the list reply. |
-| `400`  | `x-frontend-attachment is not supported; attachment registry removed` | Any `x-frontend-attachment` header is rejected (#2854).                                                                                                                 |
+| Status | Body `error`                                                          | Cause                                                                                                                                    |
+| :----- | :-------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------- |
+| `409`  | `Session <id> is open in another process`                             | The GUI/IPC open path only: a live sibling process owns the session. HTTP claiming routes never return it; ownership shows as `openElsewhere` on the list reply. |
+| `400`  | `x-frontend-attachment is not supported; attachment registry removed` | Any `x-frontend-attachment` header is rejected (#2854).                                                                                  |
 
 **Exempt (no ownership checks on claiming routes):**
 

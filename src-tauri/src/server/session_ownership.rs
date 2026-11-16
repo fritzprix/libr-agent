@@ -5,9 +5,13 @@
 //! the same profile could open the same session at once. Ownership now
 //! lives in the shared profile database (`session_ownership`, migration
 //! `m20261116_000050`) and is **GUI-to-GUI only**: the claiming actor is
-//! this process's backend run, never an individual frontend window. A
-//! frontend attached to this backend (#2758) acts on its behalf, so a
-//! clean detach no longer releases anything.
+//! this process's backend run, and claims come from the GUI IPC paths.
+//!
+//! HTTP callers are outside the ownership model: a Session API caller
+//! neither claims a session nor is refused for ownership (any
+//! `x-frontend-attachment` header is rejected outright, #2854/#2866). The
+//! list routes surface ownership instead — see [`open_elsewhere_ids`] and
+//! [`live_owned_ids`].
 //!
 //! Headless `liblet` (#2703) never starts the backend HTTP server and
 //! therefore never initializes this module, so every claim there is a
@@ -16,32 +20,48 @@
 //! Liveness: an owned row is live while its heartbeat is fresh
 //! ([`STALE_AFTER`]); each backend process refreshes the heartbeats of the
 //! sessions it owns every [`HEARTBEAT_INTERVAL`]. A row whose pid is
-//! definitively gone — or whose pid now belongs to a process started at a
-//! different OS time (pid reuse) — is dead at once, so a crashed GUI
-//! releases its sessions without waiting for the heartbeat to lapse. An
-//! owner whose heartbeat lapses loses the lock even while its process
-//! exists: that is the hung-owner path.
+//! definitively gone — or whose pid now belongs to a process with a
+//! different OS start marker (pid reuse) — is dead at once, so a crashed
+//! GUI releases its sessions without waiting for the heartbeat to lapse.
+//! An owner whose heartbeat lapses loses the lock even while its process
+//! exists: that is the hung-owner path. A row owned by this very run is
+//! live without any probe (#2856 G1.2).
 //!
 //! When a lock is taken from under its owner (a takeover while the owner
 //! was hung), the previous owner notices on its next heartbeat, forgets
 //! the session, and stops its local run.
 
 use crate::agent::AgentSessionManager;
-use crate::server::frontend_attachments;
 use once_cell::sync::Lazy;
 use sea_orm::{ConnectionTrait, DatabaseConnection, Statement, Value};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::io;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
-use warp::http::StatusCode;
-
-/// Attachment id used by the backend-hosting process for its own session
-/// operations. Always live: the backend dies together with this process.
-/// It is also the reserved value external callers must never send (#2759).
-pub const HOST_ATTACHMENT_ID: &str = "host";
 
 /// Exact refusal wording the GUI shows when entry is refused (#2759).
 pub const OPEN_ELSEWHERE_MESSAGE: &str = "is open in another process";
+
+/// A ready-made HTTP refusal: status code and body message.
+pub type HttpRefusal = (warp::http::StatusCode, String);
+
+const ATTACHMENT_HEADER_REMOVED: &str =
+    "x-frontend-attachment is not supported; attachment registry removed";
+
+/// Refuse any HTTP caller that sends an `x-frontend-attachment` header (#2854).
+///
+/// - No header: external caller; the request continues and claims nothing.
+/// - Any header value: `400` — cross-process attachment registration is gone;
+///   only the in-process host may own sessions.
+pub fn reject_attachment_header(header: Option<&str>) -> Result<(), HttpRefusal> {
+    match header {
+        None => Ok(()),
+        Some(_) => Err((
+            warp::http::StatusCode::BAD_REQUEST,
+            ATTACHMENT_HEADER_REMOVED.to_string(),
+        )),
+    }
+}
 
 /// How often the backend refreshes the heartbeats of the sessions it owns.
 pub const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
@@ -51,13 +71,15 @@ pub const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 pub const STALE_AFTER: Duration = Duration::from_secs(15);
 
 /// Identity of one backend process run: the actor that owns sessions in
-/// the database. `started_at_ms` is the OS process start time, so a row
-/// whose pid the OS later reuses is detected instead of trusted.
+/// the database. `started_marker` is the OS process start marker (see
+/// [`crate::utils::process::process_start_marker`] — platform units, only
+/// equality is meaningful), so a row whose pid the OS later reuses is
+/// detected instead of trusted.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunIdentity {
     pub run_id: String,
     pub pid: u32,
-    pub started_at_ms: i64,
+    pub started_marker: i64,
 }
 
 struct Store {
@@ -80,7 +102,7 @@ fn current_identity() -> RunIdentity {
     RunIdentity {
         run_id: uuid::Uuid::new_v4().to_string(),
         pid,
-        started_at_ms: crate::utils::process::process_start_time_ms(pid).unwrap_or(0),
+        started_marker: crate::utils::process::process_start_marker(pid).unwrap_or(0),
     }
 }
 
@@ -88,21 +110,22 @@ fn stale_before_ms() -> i64 {
     now_ms() - STALE_AFTER.as_millis() as i64
 }
 
-const SELECT_OWNER: &str = "SELECT owner_run, owner_pid, owner_started_at, heartbeat_at FROM session_ownership WHERE session_id = ?";
-const INSERT_OWNER: &str = "INSERT INTO session_ownership (session_id, owner_run, owner_pid, owner_started_at, heartbeat_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(session_id) DO NOTHING";
-const TAKEOVER_OWNER: &str = "UPDATE session_ownership SET owner_run = ?, owner_pid = ?, owner_started_at = ?, heartbeat_at = ? WHERE session_id = ? AND owner_run = ?";
+const SELECT_OWNER: &str = "SELECT owner_run, owner_pid, owner_started_marker, heartbeat_at FROM session_ownership WHERE session_id = ?";
+const INSERT_OWNER: &str = "INSERT INTO session_ownership (session_id, owner_run, owner_pid, owner_started_marker, heartbeat_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(session_id) DO NOTHING";
+const TAKEOVER_OWNER: &str = "UPDATE session_ownership SET owner_run = ?, owner_pid = ?, owner_started_marker = ?, heartbeat_at = ? WHERE session_id = ? AND owner_run = ?";
 const REFRESH_OWNER: &str =
     "UPDATE session_ownership SET heartbeat_at = ? WHERE session_id = ? AND owner_run = ?";
 const HEARTBEAT_RUN: &str = "UPDATE session_ownership SET heartbeat_at = ? WHERE owner_run = ?";
 const SELECT_OWNED: &str = "SELECT session_id FROM session_ownership WHERE owner_run = ?";
 const DELETE_OWNER: &str = "DELETE FROM session_ownership WHERE session_id = ? AND owner_run = ?";
+const SELECT_OWNED_MANY_PREFIX: &str = "SELECT session_id, owner_run, owner_pid, owner_started_marker, heartbeat_at FROM session_ownership WHERE session_id IN (";
 
 /// Stored ownership of one session.
 #[derive(Debug)]
 struct OwnerRow {
     owner_run: String,
     owner_pid: i64,
-    owner_started_at: i64,
+    owner_started_marker: i64,
     heartbeat_at: i64,
 }
 
@@ -123,8 +146,8 @@ async fn read_owner(db: &DatabaseConnection, session_id: &str) -> Result<Option<
         owner_pid: row
             .try_get::<i64>("", "owner_pid")
             .map_err(|e| format!("session ownership row unreadable: {e}"))?,
-        owner_started_at: row
-            .try_get::<i64>("", "owner_started_at")
+        owner_started_marker: row
+            .try_get::<i64>("", "owner_started_marker")
             .map_err(|e| format!("session ownership row unreadable: {e}"))?,
         heartbeat_at: row
             .try_get::<i64>("", "heartbeat_at")
@@ -132,23 +155,22 @@ async fn read_owner(db: &DatabaseConnection, session_id: &str) -> Result<Option<
     }))
 }
 
-/// True when the row's process is definitively gone: its pid no longer
-/// exists, or the pid now belongs to a process with a different OS start
-/// time. An unprovable pid is not proof of death (#2823 contract): only a
-/// positive `Ok(false)` from the liveness probe kills the row, so a broken
-/// probe can never destroy a live backend's lock (#2858 G2.2 rule).
-fn owner_is_dead(row: &OwnerRow) -> bool {
-    let Ok(pid) = u32::try_from(row.owner_pid) else {
-        return true; // a pid that cannot name a process is a broken row
-    };
-    match crate::utils::process::process_is_alive(pid) {
+/// True when `pid` is definitively gone: it no longer exists, or it now
+/// belongs to a process with a different OS start marker (pid reuse). An
+/// unprovable pid is not proof of death (#2823 contract): only a positive
+/// `Ok(false)` from the liveness probe kills the row, so a broken probe can
+/// never destroy a live backend's lock (#2858 G2.2 rule).
+fn owner_is_dead_with_marker(
+    pid: u32,
+    recorded_marker: i64,
+    is_alive: fn(u32) -> io::Result<bool>,
+) -> bool {
+    match is_alive(pid) {
         Ok(false) => true,
         Ok(true) => match (
-            row.owner_started_at,
-            crate::utils::process::process_start_time_ms(pid),
+            recorded_marker,
+            crate::utils::process::process_start_marker(pid),
         ) {
-            // Pid reuse: the OS gave this pid to a process started at a
-            // different time than the recorded owner's.
             (recorded, Some(current)) if recorded != 0 => recorded != current,
             _ => false,
         },
@@ -156,8 +178,16 @@ fn owner_is_dead(row: &OwnerRow) -> bool {
     }
 }
 
+fn owner_is_dead_with(row: &OwnerRow, is_alive: fn(u32) -> io::Result<bool>) -> bool {
+    let Ok(pid) = u32::try_from(row.owner_pid) else {
+        return true; // a pid that cannot name a process is a broken row
+    };
+    owner_is_dead_with_marker(pid, row.owner_started_marker, is_alive)
+}
+
 fn row_is_live(row: &OwnerRow) -> bool {
-    row.heartbeat_at > stale_before_ms() && !owner_is_dead(row)
+    row.heartbeat_at > stale_before_ms()
+        && !owner_is_dead_with(row, crate::utils::process::process_is_alive)
 }
 
 fn note_claim(who: &RunIdentity, session_id: &str) {
@@ -197,7 +227,7 @@ pub async fn claim_by(
                         Value::from(session_id),
                         Value::from(who.run_id.as_str()),
                         Value::from(who.pid as i64),
-                        Value::from(who.started_at_ms),
+                        Value::from(who.started_marker),
                         Value::from(now_ms()),
                     ],
                 );
@@ -227,14 +257,17 @@ pub async fn claim_by(
                 note_claim(who, session_id);
                 return Ok(());
             }
-            Some(row) if row.heartbeat_at <= stale_before_ms() || owner_is_dead(&row) => {
+            Some(row)
+                if row.heartbeat_at <= stale_before_ms()
+                    || owner_is_dead_with(&row, crate::utils::process::process_is_alive) =>
+            {
                 let stmt = Statement::from_sql_and_values(
                     db.get_database_backend(),
                     TAKEOVER_OWNER,
                     [
                         Value::from(who.run_id.as_str()),
                         Value::from(who.pid as i64),
-                        Value::from(who.started_at_ms),
+                        Value::from(who.started_marker),
                         Value::from(now_ms()),
                         Value::from(session_id),
                         Value::from(row.owner_run.as_str()),
@@ -316,22 +349,131 @@ pub async fn owner(session_id: &str) -> Option<String> {
     owner_of(&store.db, session_id).await
 }
 
-/// True when a live process other than the caller's side owns the session.
-///
-/// - `external_caller == false` (this backend, or a frontend attached to
-///   it): only sessions owned by *other* processes are flagged.
-/// - `external_caller == true` (Session API caller without an attachment
-///   header): any live owner is flagged.
-pub async fn is_open_elsewhere(session_id: &str, external_caller: bool) -> bool {
+/// The sessions of `session_ids` that a live process **other than this
+/// run** owns — the GUI list view (#2856). One query for the whole page;
+/// rows owned by this run are live without a probe, and the liveness
+/// probe for foreign rows runs on the blocking pool so a page of sessions
+/// never spawns `kill -0` children on the async runtime (#2856 G1.2).
+pub async fn open_elsewhere_ids(session_ids: &[String]) -> HashSet<String> {
     let Some(store) = store() else {
-        return false;
+        return HashSet::new();
     };
-    match read_owner(&store.db, session_id).await {
-        Ok(Some(row)) => {
-            row_is_live(&row) && (external_caller || row.owner_run != store.identity.run_id)
-        }
-        Ok(None) | Err(_) => false,
+    let my_run = store.identity.run_id.clone();
+    live_owners(
+        &store.db,
+        &my_run,
+        session_ids,
+        crate::utils::process::process_is_alive,
+    )
+    .await
+    .into_iter()
+    .filter(|(_, owner_run)| owner_run != &my_run)
+    .map(|(session_id, _)| session_id)
+    .collect()
+}
+
+/// The sessions of `session_ids` with **any** live owner — the external
+/// Session API caller's view: every session a process holds, including
+/// this backend's own (`docs/api/http_api.md`, #2856). A headerless HTTP
+/// caller is outside the ownership model, so "open elsewhere" means "held
+/// by some live process".
+pub async fn live_owned_ids(session_ids: &[String]) -> HashSet<String> {
+    let Some(store) = store() else {
+        return HashSet::new();
+    };
+    let my_run = store.identity.run_id.clone();
+    live_owners(
+        &store.db,
+        &my_run,
+        session_ids,
+        crate::utils::process::process_is_alive,
+    )
+    .await
+    .into_keys()
+    .collect()
+}
+
+/// One `SELECT ... WHERE session_id IN (...)` for the whole page: returns
+/// every session whose row is live. Stale rows are never live (the lock is
+/// up for grabs regardless of liveness); rows owned by `my_run` are live
+/// without a probe; foreign fresh rows are probed on the blocking pool,
+/// and a probe that cannot prove death keeps the row live (#2823).
+async fn live_owners(
+    db: &DatabaseConnection,
+    my_run: &str,
+    session_ids: &[String],
+    is_alive: fn(u32) -> io::Result<bool>,
+) -> HashMap<String, String> {
+    if session_ids.is_empty() {
+        return HashMap::new();
     }
+    let placeholders = vec!["?"; session_ids.len()].join(", ");
+    let sql = format!("{SELECT_OWNED_MANY_PREFIX}{placeholders})");
+    let values: Vec<Value> = session_ids
+        .iter()
+        .map(|session_id| Value::from(session_id.as_str()))
+        .collect();
+    let stmt = Statement::from_sql_and_values(db.get_database_backend(), sql, values);
+    let rows = match db.query_all(stmt).await {
+        Ok(rows) => rows,
+        Err(e) => {
+            log::warn!("session ownership list read failed: {e}");
+            return HashMap::new();
+        }
+    };
+
+    let cutoff = stale_before_ms();
+    let mut live: HashMap<String, String> = HashMap::new();
+    let mut probes: Vec<(String, u32, i64)> = Vec::new();
+    for row in &rows {
+        let parsed = (
+            row.try_get::<String>("", "session_id"),
+            row.try_get::<String>("", "owner_run"),
+            row.try_get::<i64>("", "owner_pid"),
+            row.try_get::<i64>("", "owner_started_marker"),
+            row.try_get::<i64>("", "heartbeat_at"),
+        );
+        let (Ok(session_id), Ok(owner_run), Ok(owner_pid), Ok(started_marker), Ok(heartbeat_at)) =
+            parsed
+        else {
+            log::warn!("session ownership list row failed to parse; treated as not live");
+            continue;
+        };
+        if heartbeat_at <= cutoff {
+            continue; // heartbeat lapsed: the lock is up for grabs regardless of liveness
+        }
+        if owner_run == my_run {
+            live.insert(session_id, owner_run); // our own rows need no probe (#2856 G1.2)
+            continue;
+        }
+        // Foreign rows start live; the probe below removes them only on
+        // proven death (#2823). A pid that cannot name a process is a
+        // broken row: not live, so it is simply never inserted.
+        if let Ok(pid) = u32::try_from(owner_pid) {
+            live.insert(session_id.clone(), owner_run);
+            probes.push((session_id, pid, started_marker));
+        }
+    }
+
+    if !probes.is_empty() {
+        // The probe spawns a `kill -0` child (Linux) or opens a process
+        // handle (Windows): synchronous work that must stay off the async
+        // runtime (#2856 G1.2). A join failure proves no death, so the
+        // rows stay live (#2823).
+        let dead: HashSet<String> = tokio::task::spawn_blocking(move || {
+            probes
+                .into_iter()
+                .filter(|(_, pid, marker)| owner_is_dead_with_marker(*pid, *marker, is_alive))
+                .map(|(session_id, _, _)| session_id)
+                .collect()
+        })
+        .await
+        .unwrap_or_default();
+        for session_id in dead {
+            live.remove(&session_id);
+        }
+    }
+    live
 }
 
 /// Drop this process's ownership of one session. Used when opening a
@@ -409,60 +551,6 @@ pub fn spawn_heartbeat_loop(manager: Arc<AgentSessionManager>) {
     });
 }
 
-type HttpRefusal = (StatusCode, String);
-
-/// Reject the reserved [`HOST_ATTACHMENT_ID`] on the Session API. Only the
-/// backend-hosting process may use it, in-process; an HTTP caller sending
-/// it would otherwise impersonate the host and probe or claim its
-/// sessions.
-pub fn reject_reserved_attachment(header: Option<&str>) -> Result<(), HttpRefusal> {
-    match header {
-        Some(HOST_ATTACHMENT_ID) => Err((
-            StatusCode::BAD_REQUEST,
-            format!("Frontend attachment id '{HOST_ATTACHMENT_ID}' is reserved"),
-        )),
-        _ => Ok(()),
-    }
-}
-
-/// Validate the attachment of a claiming Session API caller: `None` for an
-/// external caller, `Some(id)` for a live attachment, `400` for the
-/// reserved `host` id or an id that is not live. Routes that create a
-/// session call this before spawning, so a bad header never leaves a
-/// session behind.
-pub fn http_attachment(header: Option<&str>) -> Result<Option<&str>, HttpRefusal> {
-    reject_reserved_attachment(header)?;
-    match header {
-        Some(attachment_id) if !frontend_attachments::is_live(attachment_id) => Err((
-            StatusCode::BAD_REQUEST,
-            format!("Frontend attachment {attachment_id} is not live; attach again"),
-        )),
-        other => Ok(other),
-    }
-}
-
-/// Claim `session_id` for the Session API caller identified by the
-/// `x-frontend-attachment` header value. Only open paths (create, open,
-/// resume, send) call this; metadata reads never claim.
-///
-/// - No header: an external caller (script, CLI) outside the ownership
-///   model. No claim and no refusal, keeping the pre-#2759 behavior.
-/// - The reserved `host` id, or an id that is not a live attachment
-///   (unknown, detached, or heartbeat-lapsed): `400`. A caller must hold
-///   a live attachment; a lapsed frontend re-attaches on its next
-///   heartbeat and retries.
-/// - A different live process owns the session: `409` with
-///   [`OPEN_ELSEWHERE_MESSAGE`]. A live attachment acts on behalf of this
-///   backend's run (#2856), so the claim is this process's.
-pub async fn claim_http(session_id: &str, header: Option<&str>) -> Result<(), HttpRefusal> {
-    match http_attachment(header)? {
-        Some(_) => claim(session_id)
-            .await
-            .map_err(|message| (StatusCode::CONFLICT, message)),
-        None => Ok(()),
-    }
-}
-
 /// One temp-file database, migrated once, shared by every ownership test
 /// in this binary: the store is a process-wide `OnceLock`, so all tests
 /// must agree on one database. Session ids are unique, so isolation holds.
@@ -517,19 +605,19 @@ pub(crate) async fn shared_test_store() -> DatabaseConnection {
 }
 
 /// A run identity that reads as a live *other* process: a distinct run id
-/// on this machine's pid with the current OS start time.
+/// on this machine's pid with the current OS start marker.
 #[cfg(test)]
 pub(crate) fn live_foreign_identity() -> RunIdentity {
     let pid = std::process::id();
     RunIdentity {
         run_id: format!("foreign-{}", uuid::Uuid::new_v4()),
         pid,
-        started_at_ms: crate::utils::process::process_start_time_ms(pid).unwrap_or(0),
+        started_marker: crate::utils::process::process_start_marker(pid).unwrap_or(0),
     }
 }
 
 /// Move a row's heartbeat past the stale cutoff, as a hung owner's would
-/// be after its timeout elapsed.
+/// be after its ownership timeout elapsed.
 #[cfg(test)]
 pub(crate) async fn backdate_row(db: &DatabaseConnection, session_id: &str) {
     let stmt = Statement::from_sql_and_values(
@@ -546,6 +634,17 @@ pub(crate) async fn backdate_row(db: &DatabaseConnection, session_id: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_attachment_header_is_refused_and_none_passes() {
+        assert!(reject_attachment_header(None).is_ok());
+        for header in ["host", "fabricated-id"] {
+            let (status, message) =
+                reject_attachment_header(Some(header)).expect_err("any header is refused");
+            assert_eq!(status, warp::http::StatusCode::BAD_REQUEST, "{header}");
+            assert!(message.contains("not supported"), "{message}");
+        }
+    }
 
     fn unique(tag: &str) -> String {
         format!("{tag}-{}", uuid::Uuid::new_v4())
@@ -602,7 +701,7 @@ mod tests {
         let crashed = RunIdentity {
             run_id: unique("run"),
             pid: 1 << 31,
-            started_at_ms: 0,
+            started_marker: 0,
         };
         claim_by(&db, &crashed, &session)
             .await
@@ -614,9 +713,9 @@ mod tests {
 
     #[tokio::test]
     async fn pid_reuse_is_refused_despite_a_fresh_heartbeat() {
-        let own_start = crate::utils::process::process_start_time_ms(std::process::id());
+        let own_start = crate::utils::process::process_start_marker(std::process::id());
         let Some(own_start) = own_start else {
-            return; // platform without a start-time probe
+            return; // platform without a start-marker probe
         };
         let db = shared_test_store().await;
         let session = unique("session");
@@ -682,7 +781,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn is_open_elsewhere_sees_foreign_runs_only() {
+    async fn the_list_views_separate_foreign_from_own_live_rows() {
         let db = shared_test_store().await;
         let ours = unique("session");
         let foreign = unique("session");
@@ -693,13 +792,49 @@ mod tests {
             .await
             .expect("foreign claim");
 
-        assert!(!is_open_elsewhere(&ours, false).await, "this side owns it");
-        assert!(
-            is_open_elsewhere(&ours, true).await,
-            "external callers see owners"
+        let all = vec![ours.clone(), foreign.clone(), free.clone()];
+
+        // GUI view: only foreign live owners are "open elsewhere".
+        let open = open_elsewhere_ids(&all).await;
+        assert_eq!(open, [foreign.clone()].into_iter().collect());
+
+        // External caller view: any live owner, this backend's own included.
+        let live = live_owned_ids(&all).await;
+        assert_eq!(live, [ours, foreign].into_iter().collect());
+    }
+
+    #[tokio::test]
+    async fn a_page_of_own_rows_never_calls_the_liveness_probe() {
+        // #2856 G1.2: a list of sessions owned by this run must not probe
+        // at all. The injected probe panics, so any probe call fails the
+        // test through the panic, not a flaky assertion.
+        let db = shared_test_store().await;
+        let ours = unique("session");
+        claim(&ours).await.expect("store claim");
+        let run_id = store().expect("store").identity.run_id.clone();
+
+        fn poisoned_probe(_pid: u32) -> io::Result<bool> {
+            panic!("the liveness probe must not run for rows owned by this run");
+        }
+
+        let live = live_owners(&db, &run_id, &[ours.clone()], poisoned_probe).await;
+        assert_eq!(
+            live.get(&ours).map(String::as_str),
+            Some(run_id.as_str()),
+            "our own row is live without a probe"
         );
-        assert!(is_open_elsewhere(&foreign, false).await);
-        assert!(!is_open_elsewhere(&free, false).await);
-        assert!(!is_open_elsewhere(&free, true).await);
+    }
+
+    #[tokio::test]
+    async fn a_stale_foreign_row_is_not_live_in_the_list_views() {
+        let db = shared_test_store().await;
+        let foreign = unique("session");
+        claim_by(&db, &live_foreign_identity(), &foreign)
+            .await
+            .expect("foreign claim");
+        backdate_row(&db, &foreign).await;
+
+        assert!(open_elsewhere_ids(&[foreign.clone()]).await.is_empty());
+        assert!(live_owned_ids(&[foreign]).await.is_empty());
     }
 }

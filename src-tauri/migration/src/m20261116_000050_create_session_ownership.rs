@@ -3,7 +3,8 @@ use sea_orm_migration::prelude::*;
 /// Cross-process session ownership (#2856).
 ///
 /// One row per session currently opened by a GUI backend process. The
-/// owner is identified by its run UUID, pid, and OS process start time;
+/// owner is identified by its run UUID, pid, and OS process start
+/// marker (`owner_started_marker`, platform units, equality only);
 /// `heartbeat_at` (Unix ms) is refreshed by the owning backend while it
 /// lives, and a stale or dead owner loses the lock to the next claimer.
 #[derive(DeriveMigrationName)]
@@ -40,7 +41,7 @@ impl MigrationTrait for Migration {
                             .not_null(),
                     )
                     .col(
-                        ColumnDef::new(SessionOwnership::OwnerStartedAt)
+                        ColumnDef::new(SessionOwnership::OwnerStartedMarker)
                             .big_integer()
                             .not_null(),
                     )
@@ -85,7 +86,7 @@ enum SessionOwnership {
     SessionId,
     OwnerRun,
     OwnerPid,
-    OwnerStartedAt,
+    OwnerStartedMarker,
     HeartbeatAt,
 }
 

@@ -64,8 +64,8 @@ pub async fn agent_create_session(
 ) -> Result<SessionMetadata, String> {
     let created = AgentService::create_session(&manager, request).await?;
     // Host path: creating a session is opening it, so this process owns it
-    // for its lifetime (#2759). The id is brand new, so the claim cannot fail.
-    let _ = session_ownership::claim(&created.id, session_ownership::HOST_ATTACHMENT_ID);
+    // for its run (#2856). The id is brand new, so the claim cannot fail.
+    let _ = session_ownership::claim(&created.id).await;
     Ok(created)
 }
 
@@ -82,9 +82,9 @@ pub async fn agent_resume_session(
     manager: State<'_, AgentSessionManager>,
     session_id: String,
 ) -> Result<SessionMetadata, String> {
-    // Resuming is opening: refused while another live process owns it (#2759).
+    // Resuming is opening: refused while another live process owns it (#2856).
     // Checked before the fence lift so a refusal changes nothing.
-    session_ownership::claim(&session_id, session_ownership::HOST_ATTACHMENT_ID)?;
+    session_ownership::claim(&session_id).await?;
     manager
         .allow_explicit_message_after_terminate(&session_id)
         .await;
@@ -106,9 +106,9 @@ pub async fn agent_open_session(
     // claiming so ownership is only ever keyed by the storage id.
     let session_id = resolve_tauri_session_ref(&session_id).await?;
 
-    // Host path: opening claims the session for this process lifetime
-    // (#2759); refused while another live frontend owns it.
-    session_ownership::claim(&session_id, session_ownership::HOST_ATTACHMENT_ID)?;
+    // Host path: opening claims the session for this process's run
+    // (#2856); refused while another live process owns it.
+    session_ownership::claim(&session_id).await?;
 
     // Warm reopen when the session is already active.
     if let Some(warm) = try_open_warm_session(&manager, &session_id, message_limit).await? {
@@ -255,13 +255,13 @@ pub async fn agent_create_session_with_initial_message(
     manager: State<'_, AgentSessionManager>,
     request: CreateAgentSessionWithMessageRequest,
 ) -> Result<AgentResponse, String> {
-    // Host path: this process opens the new session (#2759).
+    // Host path: this process opens the new session (#2856).
     let session_id = request.session_id.clone();
-    session_ownership::claim(&session_id, session_ownership::HOST_ATTACHMENT_ID)?;
+    session_ownership::claim(&session_id).await?;
     let result = AgentService::create_session_with_initial_message(&manager, request).await;
     if result.is_err() {
-        // No session was created, so no ownership entry may outlive the call.
-        session_ownership::release_session(&session_id);
+        // No session was created, so no ownership row may outlive the call.
+        session_ownership::release_session(&session_id).await;
     }
     result
 }
@@ -349,13 +349,17 @@ pub async fn agent_list_sessions(
         )
         .await
         .map(Into::into)?;
-    // Host path: report sessions owned by *other* (attached) frontend
-    // processes so the GUI list can show them and refuse entry (#2759).
+    // Host path: report sessions owned by *other* processes so the GUI list
+    // can show them and refuse entry (#2856). One batched liveness read for
+    // the whole page instead of a probe per row (#2856 G1.2).
+    let ids: Vec<String> = response
+        .items
+        .iter()
+        .map(|item| item.session.id.clone())
+        .collect();
+    let elsewhere = session_ownership::open_elsewhere_ids(&ids).await;
     for item in &mut response.items {
-        item.open_elsewhere = session_ownership::is_open_elsewhere(
-            &item.session.id,
-            Some(session_ownership::HOST_ATTACHMENT_ID),
-        );
+        item.open_elsewhere = elsewhere.contains(&item.session.id);
     }
     Ok(response)
 }
@@ -697,8 +701,8 @@ pub async fn agent_submit_user_prompt(
     request: SubmitUserPromptRequest,
 ) -> Result<AgentResponse, String> {
     // Answering a waiting prompt drives the session, so it is refused while
-    // another live process owns it (#2759).
-    session_ownership::claim(&request.session_id, session_ownership::HOST_ATTACHMENT_ID)?;
+    // another live process owns it (#2856).
+    session_ownership::claim(&request.session_id).await?;
     let pending =
         crate::agent::session_manager::pending_user_prompt_in(manager.inner(), &request.session_id)
             .await
