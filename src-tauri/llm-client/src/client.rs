@@ -15,11 +15,11 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// One client for every call, so connections to a provider are reused.
 static HTTP_CLIENT: LazyLock<Result<reqwest::Client, String>> = LazyLock::new(|| {
-    reqwest::Client::builder()
+    let builder = reqwest::Client::builder()
         .connect_timeout(CONNECT_TIMEOUT)
-        .read_timeout(READ_IDLE_TIMEOUT)
-        .build()
-        .map_err(|e| e.to_string())
+        .read_timeout(READ_IDLE_TIMEOUT);
+    let builder = http_proxy::configure_client_builder(builder).map_err(|e| e.to_string())?;
+    builder.build().map_err(|e| e.to_string())
 });
 
 /// How often a failed call is tried again before the response starts.
@@ -189,6 +189,9 @@ pub async fn complete_with_deltas(
         retry
     };
     let url = provider.request_url(&provider.model_id(&request.model));
+    if let Err(e) = http_proxy::ensure_proxy_resolved(&url).await {
+        log::warn!("system proxy pre-resolve failed for LLM URL: {e}");
+    }
     let body = provider.build_body(request);
     let response = match send_with_retries(client, provider, &url, &body, retry).await {
         Ok(response) => response,
