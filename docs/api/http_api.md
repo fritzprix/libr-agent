@@ -34,6 +34,21 @@ LibrAgent provides a robust HTTP API for remote management of AI agents, session
   : "${PORT:=3030}"
   ```
 
+- **Per-process resources (#2858)**: when several backends run on one profile, each process also isolates:
+
+  | Resource                | Artifact                                                                                                                                                                                        |
+  | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | File log                | `libragent.<pid>.log` under the app log dir; a dead process's log is archived to `libragent_<timestamp>_<pid>.log` at the next start so retention applies                                       |
+  | Extension bridge        | binds `3847` then the next free port; writes `~/.libragent/extension_bridge_port.<pid>`                                                                                                         |
+  | Sticky Chromium profile | the first backend keeps `browser_agent_profile`; only a second live backend takes `browser_agent_profile.<pid>`, and it is removed once that pid is dead                                        |
+  | WebView cache           | Windows: the first backend keeps the default profile, a second live backend takes `<data_dir>/webview/<pid>` via `WEBVIEW2_USER_DATA_FOLDER`. Linux and macOS: shared — a documented limitation |
+
+  Point the Chrome extension Options port at the backend you intend to control (Settings → System → Chrome extension bridge shows the bound port). Set `LIBRAGENT_EXTENSION_BRIDGE_PORT` to pin a preferred start port.
+
+  The first backend on a profile always keeps the shared resource, so a single GUI keeps its WebView storage (localStorage, IndexedDB, cookies) and agent logins across restarts. Isolation switches on only when a second live backend is detected.
+
+- **OAuth / deep links with multiple GUIs**: each GUI registers the `libr-agent://` deep-link handler and MCP OAuth may bind a fixed loopback callback port. With more than one GUI on the same profile, the OS may deliver a custom-scheme callback to any instance, and two concurrent loopback OAuth flows can collide on the callback port. Prefer a single GUI for custom-scheme or loopback OAuth, or run concurrent flows only after ensuring distinct callback ports.
+
 ---
 
 ## ⚠️ Error Handling

@@ -15,17 +15,11 @@ pub use messages::{
 
 use std::path::PathBuf;
 
-/// Start the bridge server if this process is the first backend up.
+/// Start this process's extension bridge (idempotent).
 ///
-/// The bridge binds a fixed port, so only one backend can own it; with
-/// multiple backends on one profile, later hosts leave the port to the
-/// first one (#2823, #2855).
+/// Each backend binds its own loopback port, falling back from
+/// [`DEFAULT_BRIDGE_PORT`] when the preferred port is taken (#2858).
 pub fn ensure_started() {
-    if crate::server::backend_descriptor::find_live_backend().is_some()
-        || crate::server::backend_descriptor::profile_has_other_backend()
-    {
-        return;
-    }
     ExtensionBridge::global().ensure_started();
 }
 

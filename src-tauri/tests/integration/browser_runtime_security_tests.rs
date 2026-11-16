@@ -1,9 +1,9 @@
 use serde_json::json;
 #[allow(deprecated)]
 use tauri_mcp_agent_lib::browser_sidecar::{
-    agent_sticky_user_data_dir, browser_runtime_profile_dir, browser_runtime_profile_root,
-    classify_browser_page, clear_agent_sticky_profile_dir, serialize_browser_result_value,
-    BrowserAutomationClient, PageClassification,
+    agent_sticky_profile_dir_name, agent_sticky_user_data_dir, browser_runtime_profile_dir,
+    browser_runtime_profile_root, classify_browser_page, clear_agent_sticky_profile_dir,
+    serialize_browser_result_value, BrowserAutomationClient, PageClassification,
 };
 use tauri_mcp_agent_lib::services::interactive_browser_server::{
     BrowserSession, NavigationUpdateOutcome, SessionStatus,
@@ -195,9 +195,10 @@ fn agent_sticky_user_data_dir_is_stable_and_under_app_data() {
 
     assert_eq!(first, second);
     assert_ne!(first, chromiumoxide_default);
-    assert!(
-        first.file_name().and_then(|name| name.to_str()) == Some("browser_agent_profile"),
-        "sticky profile must use fixed browser_agent_profile dir, got {}",
+    assert_eq!(
+        first.file_name().and_then(|name| name.to_str()),
+        Some("browser_agent_profile"),
+        "the only backend on a profile must keep the un-suffixed sticky dir so logins survive a restart (#2858 G1.2), got {}",
         first.display()
     );
     assert!(
@@ -211,7 +212,22 @@ fn agent_sticky_user_data_dir_is_stable_and_under_app_data() {
     );
 }
 
-/// #1984 contract: sticky profile is wiped only via explicit clear, never via UUID cache helpers.
+/// #2858 G1.2: only a backend that finds another live one takes a pid suffix.
+/// A suffix is a collision guard, not the permanent name, so it cannot break
+/// the sticky-profile guarantee of #1984.
+#[test]
+fn agent_sticky_profile_dir_name_suffixes_only_a_second_backend() {
+    assert_eq!(
+        agent_sticky_profile_dir_name(false, 4242),
+        "browser_agent_profile"
+    );
+    assert_eq!(
+        agent_sticky_profile_dir_name(true, 4242),
+        "browser_agent_profile.4242"
+    );
+}
+
+/// #1984 / #2858: sticky profile is wiped only via explicit clear, never via UUID cache helpers.
 #[test]
 fn sticky_profile_is_not_the_legacy_uuid_cache_layout() {
     let sticky = agent_sticky_user_data_dir().expect("sticky dir");

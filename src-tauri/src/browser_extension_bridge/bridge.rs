@@ -1,7 +1,7 @@
 //! In-process Chrome MV3 extension WebSocket bridge (loopback only).
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
@@ -28,7 +28,8 @@ struct PendingSlot {
 
 struct BridgeInner {
     connected: AtomicBool,
-    port: u16,
+    /// Bound port after [`ExtensionBridge::serve`]; preferred port until then.
+    port: AtomicU16,
     token: String,
     /// Active outbound sink to the single connected extension.
     outbound: Mutex<Option<futures::stream::SplitSink<WebSocket, Message>>>,
@@ -49,7 +50,7 @@ impl ExtensionBridge {
         Self {
             inner: Arc::new(BridgeInner {
                 connected: AtomicBool::new(false),
-                port,
+                port: AtomicU16::new(port),
                 token,
                 outbound: Mutex::new(None),
                 pending: dashmap::DashMap::new(),
@@ -81,10 +82,10 @@ impl ExtensionBridge {
         }
 
         let bridge = self.clone();
-        let port = self.inner.port;
+        let preferred_port = self.inner.port.load(Ordering::SeqCst);
         tauri::async_runtime::spawn(async move {
             let bridge_for_reset = bridge.clone();
-            if let Err(error) = bridge.serve(port).await {
+            if let Err(error) = bridge.serve(preferred_port).await {
                 warn!("Extension bridge server exited: {error}");
                 bridge_for_reset
                     .inner
@@ -96,10 +97,6 @@ impl ExtensionBridge {
                     .store(false, Ordering::SeqCst);
             }
         });
-        info!(
-            "Chrome extension bridge listening on ws://127.0.0.1:{port}/extension-bridge (token hint: {})",
-            token_hint(&self.inner.token)
-        );
     }
 
     pub fn is_connected(&self) -> bool {
@@ -109,7 +106,7 @@ impl ExtensionBridge {
     pub fn status(&self) -> ExtensionBridgeStatus {
         ExtensionBridgeStatus {
             connected: self.is_connected(),
-            port: self.inner.port,
+            port: self.inner.port.load(Ordering::SeqCst),
             token_hint: token_hint(&self.inner.token),
             backend_mode: resolve_backend_mode(),
         }
@@ -358,7 +355,7 @@ impl ExtensionBridge {
         }
     }
 
-    async fn serve(self, port: u16) -> Result<(), String> {
+    async fn serve(self, preferred_port: u16) -> Result<(), String> {
         let bridge = self.clone();
         let expected_token = self.inner.token.clone();
 
@@ -385,10 +382,43 @@ impl ExtensionBridge {
 
         let routes = ws_route.or(health);
 
-        let addr: std::net::SocketAddr = ([127, 0, 0, 1], port).into();
-        info!("Binding Chrome extension bridge on {addr}");
-        warp::serve(routes).try_bind(addr).await;
-        Err(format!("Chrome extension bridge server on {addr} stopped"))
+        let max_attempts = 10u16;
+        let std_listener = bind_first_available_bridge_listener(preferred_port, max_attempts)?;
+        let bound_port = std_listener
+            .local_addr()
+            .map_err(|e| format!("Failed to read extension bridge port: {e}"))?
+            .port();
+        self.inner.port.store(bound_port, Ordering::SeqCst);
+        persist_extension_bridge_port(bound_port);
+        info!(
+            "Chrome extension bridge listening on ws://127.0.0.1:{bound_port}/extension-bridge (token hint: {})",
+            token_hint(&self.inner.token)
+        );
+
+        std_listener
+            .set_nonblocking(true)
+            .map_err(|e| format!("Failed to set extension bridge listener non-blocking: {e}"))?;
+        let listener = tokio::net::TcpListener::from_std(std_listener)
+            .map_err(|e| format!("Failed to adopt extension bridge listener: {e}"))?;
+        let incoming = futures::stream::unfold(listener, |listener| async move {
+            loop {
+                match listener.accept().await {
+                    Ok((stream, _addr)) => {
+                        let _ = stream.set_nodelay(true);
+                        break Some((Ok::<_, std::io::Error>(stream), listener));
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                    Err(e) => {
+                        warn!("Extension bridge accept failed, stopping server: {e}");
+                        break None;
+                    }
+                }
+            }
+        });
+        warp::serve(routes).serve_incoming(incoming).await;
+        Err(format!(
+            "Chrome extension bridge server on 127.0.0.1:{bound_port} stopped"
+        ))
     }
 
     async fn mark_disconnected(&self) {
@@ -411,6 +441,64 @@ impl ExtensionBridge {
                     .send(Err("Chrome extension disconnected".to_string()));
             }
         }
+    }
+}
+
+/// Bind the first free loopback port in `preferred..preferred + max_attempts`
+/// (same pattern as the HTTP server in `server/mod.rs`, #2858).
+fn bind_first_available_bridge_listener(
+    preferred_port: u16,
+    max_attempts: u16,
+) -> Result<std::net::TcpListener, String> {
+    for offset in 0..max_attempts {
+        let attempt_port = preferred_port.saturating_add(offset);
+        match std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, attempt_port)) {
+            Ok(listener) => {
+                if attempt_port != preferred_port {
+                    warn!(
+                        "Extension bridge port {preferred_port} was in use; falling back to {attempt_port}"
+                    );
+                }
+                return Ok(listener);
+            }
+            Err(e) => {
+                log::debug!("Extension bridge port {attempt_port} unavailable: {e}");
+            }
+        }
+    }
+    Err(format!(
+        "Failed to bind Chrome extension bridge on port range {}..{}",
+        preferred_port,
+        preferred_port.saturating_add(max_attempts)
+    ))
+}
+
+fn home_extension_bridge_port_file(home: &std::path::Path, pid: u32) -> std::path::PathBuf {
+    home.join(".libragent")
+        .join(format!("extension_bridge_port.{pid}"))
+}
+
+fn should_persist_home_extension_bridge_port(data_dir_override: Option<&std::ffi::OsStr>) -> bool {
+    data_dir_override.is_none_or(|value| value.is_empty())
+}
+
+fn persist_extension_bridge_port(port: u16) {
+    if !should_persist_home_extension_bridge_port(std::env::var_os("LIBRAGENT_DATA_DIR").as_deref())
+    {
+        return;
+    }
+    let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) else {
+        return;
+    };
+    let path = home_extension_bridge_port_file(std::path::Path::new(&home), std::process::id());
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    if let Err(error) = std::fs::write(&path, port.to_string()) {
+        warn!(
+            "Failed to persist extension bridge port to {}: {error}",
+            path.display()
+        );
     }
 }
 
@@ -557,5 +645,34 @@ fn strip_data_url_base64(raw: &str) -> String {
         raw[idx + "base64,".len()..].to_string()
     } else {
         raw.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsStr;
+
+    #[test]
+    fn occupied_bridge_port_falls_back_to_next_free() {
+        let first = bind_first_available_bridge_listener(0, 1).expect("seed bind");
+        let first_port = first.local_addr().unwrap().port();
+        let second = bind_first_available_bridge_listener(first_port, 10).expect("fallback bind");
+        let second_port = second.local_addr().unwrap().port();
+        assert_ne!(first_port, second_port);
+        assert!(second_port > first_port);
+    }
+
+    #[test]
+    fn home_extension_bridge_port_file_is_per_process() {
+        let path = home_extension_bridge_port_file(std::path::Path::new("/home/u"), 4242);
+        assert_eq!(
+            path,
+            std::path::PathBuf::from("/home/u/.libragent/extension_bridge_port.4242")
+        );
+        assert!(should_persist_home_extension_bridge_port(None));
+        assert!(!should_persist_home_extension_bridge_port(Some(
+            OsStr::new("/tmp/isolated")
+        )));
     }
 }

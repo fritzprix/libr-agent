@@ -363,6 +363,46 @@ pub(crate) fn force_kill_process(pid: u32) -> io::Result<()> {
     }
 }
 
+/// True only when a liveness probe positively proves the process gone.
+///
+/// `Ok(true)` (alive) and `Err` (the probe itself failed, or the pid cannot
+/// be proven either way) both keep the entry: a destructive sweep must
+/// require *proof* of death, never infer it from a broken probe (#2823
+/// contract, #2858 G2.2).
+pub(crate) fn probe_proves_dead(probe: io::Result<bool>) -> bool {
+    matches!(probe, Ok(false))
+}
+
+/// True when `pid` is proven dead by the platform probe. An unprovable pid
+/// is not dead: sweeps that delete per-process state must use this, not
+/// `process_is_alive(..).ok() == Some(true)` (#2858 G2.2).
+pub(crate) fn pid_is_proven_dead(pid: u32) -> bool {
+    probe_proves_dead(process_is_alive(pid))
+}
+
+#[cfg(test)]
+mod proven_dead_tests {
+    use super::*;
+    use std::io;
+
+    #[test]
+    fn alive_and_unprovable_pids_are_not_dead() {
+        assert!(
+            !probe_proves_dead(Ok(true)),
+            "a live process must never count as dead"
+        );
+        assert!(
+            !probe_proves_dead(Err(io::Error::other("probe broken"))),
+            "an unprovable pid must never count as dead"
+        );
+    }
+
+    #[test]
+    fn only_a_positive_death_proof_counts_as_dead() {
+        assert!(probe_proves_dead(Ok(false)));
+    }
+}
+
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;

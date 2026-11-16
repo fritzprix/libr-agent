@@ -57,8 +57,14 @@ agent. Only install from a source you trust.
 
 | Setting | Default         | Override                                                            |
 | ------- | --------------- | ------------------------------------------------------------------- |
-| Port    | `3847`          | Extension Options, or `LIBRAGENT_EXTENSION_BRIDGE_PORT` in the app  |
-| Token   | `libragent-dev` | Extension Options, or `LIBRAGENT_EXTENSION_BRIDGE_TOKEN` in the app |
+| Port    | `3847` (then next free) | Extension Options, or `LIBRAGENT_EXTENSION_BRIDGE_PORT` in the app  |
+| Token   | `libragent-dev`         | Extension Options, or `LIBRAGENT_EXTENSION_BRIDGE_TOKEN` in the app |
+
+Each LibrAgent backend binds its own bridge port (fallback when `3847` is
+taken) and records it at `~/.libragent/extension_bridge_port.<pid>`. With
+multiple GUIs, set the extension Options port to the backend you want (the
+app Settings → System → Chrome extension bridge status shows the bound
+port).
 
 When the app env token is unset, LibrAgent uses the fixed development token
 `libragent-dev`. A rotating production token is a follow-up for Store hardening.
