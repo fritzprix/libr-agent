@@ -3,8 +3,11 @@
 //! Implements the accepted contract in `docs/specs/liblet-cli-interface.md`:
 //! - Headless mode requires an explicit `-p` / `--prompt <text>` or non-empty
 //!   piped `stdin` (when no positional prompt is given).
-//! - TUI mode requires both `stdin` and `stdout` to be a TTY and `-p` to be
-//!   absent.
+//! - The terminal TUI is a developer-only mode after #2861: user help does not
+//!   advertise `--continue` / `--resume` / `--name`, and an interactive TTY
+//!   selects TUI only when the hidden `LIBRAGENT_ENABLE_TUI=1` flag is set.
+//!   Without that flag an interactive invocation is a usage error that points
+//!   at `-p`.
 //! - No TTY and no prompt is a usage error (exit code `2`); there is no
 //!   auto-headless fallback.
 //! - There is no `--hook` flag.
@@ -152,9 +155,6 @@ pub fn help_text() -> String {
         "  <command> | liblet [OPTIONS] [-p <TEXT>]\n\n",
         "CORE FLAGS:\n",
         "  -p, --prompt <text>           Run one prompt in headless mode and exit\n",
-        "  -c, --continue                Resume the most recent session for the current directory (TUI)\n",
-        "  -r, --resume [id]             Resume a session by ID or open picker (TUI)\n",
-        "      --name <title>            Set the display title for a new session (TUI)\n",
         "  -C, --cd <dir>                Workspace directory for a new session (default: cwd)\n",
         "      --assistant <id-or-name>  Assistant preset for a new session\n",
         "      --model <name>            Model override for this invocation\n",
@@ -198,10 +198,25 @@ fn take_option_value(
 }
 
 /// Parse CLI arguments (excluding `argv[0]`), TTY state, and optional piped `stdin`.
+///
+/// The terminal TUI is a developer-only mode after #2861, so this reads the
+/// hidden `LIBRAGENT_ENABLE_TUI` flag before deciding that an interactive
+/// invocation means TUI. Everything else is unaffected by the flag.
 pub fn parse_cli(
     args: &[String],
     tty: TtyState,
     piped_stdin: Option<&str>,
+) -> Result<LibletCommand, CliUsageError> {
+    parse_cli_with_tui_gate(args, tty, piped_stdin, crate::tui::dev_tui_enabled())
+}
+
+/// [`parse_cli`] with the developer TUI gate passed in, so tests never touch
+/// process-wide environment variables.
+pub fn parse_cli_with_tui_gate(
+    args: &[String],
+    tty: TtyState,
+    piped_stdin: Option<&str>,
+    dev_tui: bool,
 ) -> Result<LibletCommand, CliUsageError> {
     let mut prompt_flag: Option<String> = None;
     let mut continue_flag = false;
@@ -428,6 +443,16 @@ pub fn parse_cli(
         ));
     }
 
+    // The TUI is a developer-only mode after #2861: its flags still parse, but
+    // only with the hidden flag, so a user who never reads a dev doc cannot
+    // enter it by accident.
+    if (continue_flag || resume_flag.is_some() || name_flag.is_some()) && !dev_tui {
+        return Err(CliUsageError::new(
+            "--continue, --resume, and --name drive the terminal TUI, which is a developer-only mode; \
+             pass -p / --prompt <text> for headless execution, or set LIBRAGENT_ENABLE_TUI=1 to use the TUI",
+        ));
+    }
+
     let has_tui_only_flags =
         continue_flag || resume_flag.is_some() || name_flag.is_some() || list_sessions;
     let has_headless_only_flags = output_format.is_some() || timeout_secs.is_some();
@@ -509,6 +534,12 @@ pub fn parse_cli(
         if pos_prompt.trim().is_empty() {
             return Err(CliUsageError::new("initial prompt cannot be empty"));
         }
+        if !dev_tui {
+            return Err(CliUsageError::new(
+                "a positional prompt opens the terminal TUI, which is a developer-only mode; \
+                 pass -p / --prompt <text> for headless execution, or set LIBRAGENT_ENABLE_TUI=1 to use the TUI",
+            ));
+        }
 
         let resume = if continue_flag {
             Some(TuiResumeTarget::ContinueLatest)
@@ -567,6 +598,13 @@ pub fn parse_cli(
     if has_headless_only_flags {
         return Err(CliUsageError::new(
             "--output-format and --timeout are only valid in headless mode (use -p / --prompt)",
+        ));
+    }
+
+    if !dev_tui {
+        return Err(CliUsageError::new(
+            "stdin is a TTY and no prompt was provided; pass -p / --prompt <text> for headless execution \
+             (the terminal TUI is a developer-only mode: set LIBRAGENT_ENABLE_TUI=1 to use it)",
         ));
     }
 
@@ -714,8 +752,65 @@ mod tests {
     }
 
     #[test]
-    fn interactive_tty_without_prompt_selects_tui() {
-        let cmd = parse_cli(&vec_args(&[]), BOTH_TTY, None).expect("TUI mode");
+    fn user_help_does_not_advertise_the_tui() {
+        let help = help_text();
+        for hidden in ["--continue", "--resume", "--name", "(TUI)", "--tui"] {
+            assert!(
+                !help.contains(hidden),
+                "user help must not advertise the developer TUI, found {hidden}:\n{help}"
+            );
+        }
+        assert!(help.contains("-p, --prompt"));
+        assert!(help.contains("--list-sessions"));
+    }
+
+    #[test]
+    fn interactive_tty_without_a_prompt_asks_for_prompt_without_the_dev_flag() {
+        let err = parse_cli_with_tui_gate(&vec_args(&[]), BOTH_TTY, None, false)
+            .expect_err("interactive TTY without the dev flag must not open the TUI");
+        assert_eq!(err.exit_code(), exit_codes::USAGE_ERROR);
+        assert!(err.message.contains("-p / --prompt"));
+    }
+
+    #[test]
+    fn dev_flag_keeps_the_interactive_tui_reachable_for_engineers() {
+        let cmd = parse_cli_with_tui_gate(&vec_args(&[]), BOTH_TTY, None, true)
+            .expect("TUI mode with the developer flag");
+        assert!(matches!(cmd, LibletCommand::Tui(_)));
+    }
+
+    #[test]
+    fn positional_prompt_is_a_usage_error_without_the_dev_flag() {
+        let err = parse_cli_with_tui_gate(&vec_args(&["summarize"]), BOTH_TTY, None, false)
+            .expect_err("positional prompt must not open the TUI without the dev flag");
+        assert_eq!(err.exit_code(), exit_codes::USAGE_ERROR);
+        assert!(err.message.contains("-p / --prompt"));
+
+        let cmd = parse_cli_with_tui_gate(&vec_args(&["summarize"]), BOTH_TTY, None, true)
+            .expect("positional prompt reaches the TUI with the developer flag");
+        match cmd {
+            LibletCommand::Tui(args) => {
+                assert_eq!(args.initial_prompt.as_deref(), Some("summarize"))
+            }
+            other => panic!("expected Tui, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tui_only_flags_stay_hidden_without_the_dev_flag() {
+        for args in [
+            vec!["--continue"],
+            vec!["--resume"],
+            vec!["--name", "titled"],
+        ] {
+            let err = parse_cli_with_tui_gate(&vec_args(&args), BOTH_TTY, None, false)
+                .expect_err("TUI-only flag without the dev flag must fail");
+            assert_eq!(err.exit_code(), exit_codes::USAGE_ERROR);
+            assert!(err.message.contains("developer-only"), "{}", err.message);
+        }
+
+        let cmd = parse_cli_with_tui_gate(&vec_args(&["--continue"]), BOTH_TTY, None, true)
+            .expect("dev flag keeps --continue reachable");
         assert!(matches!(cmd, LibletCommand::Tui(_)));
     }
 }
