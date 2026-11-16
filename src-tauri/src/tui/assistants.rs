@@ -215,11 +215,12 @@ impl AssistantsScreen {
                     || r.id.to_lowercase().contains(&q)
             });
         }
+        let keep = self.rows.get(self.selected).map(|r| r.id.clone());
         rows.sort_by_key(|a| a.name.to_lowercase());
         self.rows = rows;
-        if self.selected >= self.rows.len() {
-            self.selected = self.rows.len().saturating_sub(1);
-        }
+        self.selected = keep
+            .and_then(|id| self.rows.iter().position(|r| r.id == id))
+            .unwrap_or_else(|| self.selected.min(self.rows.len().saturating_sub(1)));
         Ok(())
     }
 

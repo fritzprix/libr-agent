@@ -170,7 +170,7 @@ impl PlaybooksScreen {
                     .iter()
                     .position(|r| r.id == id && r.assistant_id == assistant_id)
             })
-            .unwrap_or_else(|| self.rows.len().saturating_sub(1));
+            .unwrap_or_else(|| self.selected.min(self.rows.len().saturating_sub(1)));
         Ok(())
     }
 
@@ -649,5 +649,42 @@ mod tests {
         assert_eq!(screen.rows[0].id, "p1");
         screen.handle_key(key(KeyCode::Char('s')));
         assert_eq!(screen.sort, "assistant");
+    }
+
+    #[test]
+    fn reload_selection_cursor_open_and_delete() {
+        let repo = MemPlaybookRepo::new();
+        repo.seed("p1", "asst-a", "Goal 1", false);
+        repo.seed("p2", "asst-b", "Goal 2", false);
+        repo.seed("p3", "asst-c", "Goal 3", false);
+
+        // 1. Opening a three-row list has selected == 0
+        let mut screen = PlaybooksScreen::open_with_repo(
+            None,
+            None,
+            Some(repo.clone() as Arc<dyn PlaybookRepository>),
+        )
+        .expect("open");
+        assert_eq!(screen.rows.len(), 3);
+        assert_eq!(screen.selected, 0);
+
+        // 2. Deleting the first of three keeps selected == 0 on the next row
+        let first_id = screen.rows[0].id.clone();
+        screen.handle_key(key(KeyCode::Char('d')));
+        assert!(screen.confirm.is_some());
+        screen.handle_key(key(KeyCode::Char('y')));
+        assert_eq!(screen.rows.len(), 2);
+        assert_eq!(screen.selected, 0);
+        assert_ne!(screen.rows[0].id, first_id);
+
+        // 3. Move to the last row, then delete it: moves to the new last row
+        screen.selected = 1; // pointing to the last row of 2
+        let last_id = screen.rows[1].id.clone();
+        screen.handle_key(key(KeyCode::Char('d')));
+        assert!(screen.confirm.is_some());
+        screen.handle_key(key(KeyCode::Char('y')));
+        assert_eq!(screen.rows.len(), 1);
+        assert_eq!(screen.selected, 0); // new last row is index 0
+        assert_ne!(screen.rows[0].id, last_id);
     }
 }
