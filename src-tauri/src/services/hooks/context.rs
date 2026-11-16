@@ -56,6 +56,16 @@ pub fn clear_hook_context(session_id: &str) {
     }
 }
 
+/// Drop every session's hook-context slot (#2812 criterion 4). Called when
+/// a plugin source is uninstalled: the removed source's bootstrap must not
+/// keep living in any open session's prompt. Remaining sources re-inject on
+/// their next SessionStart firing (resume / clear / compact).
+pub fn clear_all_hook_contexts() {
+    if let Ok(mut map) = store().write() {
+        map.clear();
+    }
+}
+
 pub fn append_hook_context(session_id: &str, text: &str) {
     if text.trim().is_empty() {
         return;
@@ -250,5 +260,21 @@ mod tests {
         assert!(!waiter.is_finished());
         end_hook_run(sid);
         assert!(waiter.await.unwrap());
+    }
+
+    #[test]
+    fn clear_all_hook_contexts_empties_every_slot() {
+        // Criterion 4 / uninstall purge: every session slot must drop.
+        let a = "test-session-hook-clear-all-a";
+        let b = "test-session-hook-clear-all-b";
+        clear_hook_context(a);
+        clear_hook_context(b);
+        set_hook_context(a, "bootstrap-a".to_string());
+        set_hook_context(b, "bootstrap-b".to_string());
+        assert!(get_hook_context(a).is_some());
+        assert!(get_hook_context(b).is_some());
+        clear_all_hook_contexts();
+        assert!(get_hook_context(a).is_none());
+        assert!(get_hook_context(b).is_none());
     }
 }

@@ -98,6 +98,13 @@ pub async fn delete_session_with_dispatcher(
         descendant_ids.len()
     );
 
+    // SessionEnd hook stub (#2812): dispatch so the stub path is exercised,
+    // but no command runs in v1. Also drop the in-memory hook-context slots.
+    for id in std::iter::once(&session_id).chain(&descendant_ids) {
+        notify_session_end_stub(id).await;
+        crate::services::hooks::clear_hook_context(id);
+    }
+
     let mut deleted_ids = vec![session_id.clone()];
     deleted_ids.extend(descendant_ids);
 
@@ -171,6 +178,10 @@ pub async fn delete_session_only_with_dispatcher(
         session_id
     );
 
+    // SessionEnd hook stub (#2812), same rationale as the cascade path.
+    notify_session_end_stub(&session_id).await;
+    crate::services::hooks::clear_hook_context(&session_id);
+
     crate::agent::tauri_events::emit_resource_updated(
         "session",
         "delete",
@@ -178,4 +189,22 @@ pub async fn delete_session_only_with_dispatcher(
     );
 
     Ok((session_id, orphaned_ids))
+}
+
+/// Dispatch the `SessionEnd` plugin hook stub for a deleted session
+/// (#2812). The stub only logs "not yet executed" and prepares the stdin
+/// envelope; no hook command runs in v1.
+async fn notify_session_end_stub(session_id: &str) {
+    let mut params = crate::services::hooks::HookEnvelopeParams::new(
+        session_id,
+        std::path::PathBuf::from("."),
+        crate::services::hooks::HookEvent::SessionEnd,
+    );
+    params.session_end_reason = Some(crate::services::hooks::SessionEndReason::Delete);
+    crate::services::hooks::notify_stub_event(
+        crate::services::hooks::HookEvent::SessionEnd,
+        session_id,
+        params,
+    )
+    .await;
 }

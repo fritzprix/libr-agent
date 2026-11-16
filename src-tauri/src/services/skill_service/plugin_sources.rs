@@ -49,6 +49,34 @@ pub async fn delete_plugin_source(source_id: String) -> Result<(), String> {
     let user_dir = get_user_skills_directory()?;
     remove_skill_names_from_user_skills(&user_dir, &record.manifest.skill_names)?;
     delete_source(&source_id)?;
+    // #2812 criterion 4: uninstalling a source must not leave its hook
+    // bootstrap in any open session's prompt slot.
+    on_plugin_source_uninstalled();
     super::cache::invalidate_skill_scan_cache();
     Ok(())
+}
+
+/// Drop every session's hook-context slot after a plugin source uninstall.
+/// Kept as a named step so criterion-4 tests can exercise the same path
+/// `delete_plugin_source` uses without needing a live SessionManager.
+pub(crate) fn on_plugin_source_uninstalled() {
+    crate::services::hooks::clear_all_hook_contexts();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::on_plugin_source_uninstalled;
+    use crate::services::hooks::{clear_hook_context, get_hook_context, set_hook_context};
+
+    #[test]
+    fn uninstall_purge_clears_hook_contexts() {
+        let sid = "test-plugin-uninstall-purge";
+        clear_hook_context(sid);
+        set_hook_context(sid, "stale bootstrap".to_string());
+        on_plugin_source_uninstalled();
+        assert!(
+            get_hook_context(sid).is_none(),
+            "delete_plugin_source must clear hook contexts via on_plugin_source_uninstalled"
+        );
+    }
 }

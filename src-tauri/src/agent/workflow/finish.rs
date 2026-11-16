@@ -333,6 +333,10 @@ pub async fn settle_session_and_go_idle_with_dispatcher(
     )
     .await?;
 
+    // Stop / SubagentStop hook stub (#2812): dispatched once the session
+    // has actually settled to Idle; no command runs in v1.
+    notify_settle_hook_stub(active_sessions, session_id).await;
+
     Ok(false)
 }
 
@@ -361,6 +365,45 @@ pub async fn settle_session_and_go_idle(
         completion_reason,
     )
     .await
+}
+
+/// Choose `Stop` vs `SubagentStop` from whether the session has a parent
+/// (#2812 settle stub). Pure so unit tests cover the branch without a full
+/// AgentSession.
+pub(crate) fn settle_stub_event(
+    parent_session_id: Option<&str>,
+) -> crate::services::hooks::HookEvent {
+    if parent_session_id.is_some() {
+        crate::services::hooks::HookEvent::SubagentStop
+    } else {
+        crate::services::hooks::HookEvent::Stop
+    }
+}
+
+/// Dispatch the `Stop` (top-level session) or `SubagentStop` (session
+/// spawned by `agent__spawnSession`) plugin hook stub once a workflow has
+/// settled to Idle (#2812). The stub only logs "not yet executed" and
+/// prepares the stdin envelope; no hook command runs in v1.
+async fn notify_settle_hook_stub(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+) {
+    let parent_session_id = {
+        let active = active_sessions.read().await;
+        active
+            .get(session_id)
+            .and_then(|s| s.metadata.parent_session_id.clone())
+    };
+    let event = settle_stub_event(parent_session_id.as_deref());
+    let mut params = crate::services::hooks::HookEnvelopeParams::new(
+        session_id,
+        std::path::PathBuf::from("."),
+        event,
+    );
+    if parent_session_id.is_some() {
+        params.child_session_id = Some(session_id.to_string());
+    }
+    crate::services::hooks::notify_stub_event(event, session_id, params).await;
 }
 
 /// Finalize a failed workflow only after terminal messages are durable.
@@ -828,5 +871,21 @@ mod tests {
             panic!("expected text content");
         };
         assert_eq!(text, "final answer");
+    }
+
+    #[test]
+    fn settle_stub_event_picks_stop_for_top_level_session() {
+        assert_eq!(
+            settle_stub_event(None),
+            crate::services::hooks::HookEvent::Stop
+        );
+    }
+
+    #[test]
+    fn settle_stub_event_picks_subagent_stop_when_parent_set() {
+        assert_eq!(
+            settle_stub_event(Some("parent-session")),
+            crate::services::hooks::HookEvent::SubagentStop
+        );
     }
 }

@@ -169,6 +169,29 @@ pub async fn start_workflow(
     )
     .await?;
 
+    // UserPromptSubmit hook stub (#2812): dispatched so the stub path is
+    // exercised on every real prompt submit; no command runs in v1.
+    let prompt_text = user_message
+        .content
+        .iter()
+        .find_map(|c| match c {
+            crate::mcp::types::MCPContent::Text { text } => Some(text.clone()),
+            _ => None,
+        })
+        .unwrap_or_default();
+    let mut prompt_submit_params = crate::services::hooks::HookEnvelopeParams::new(
+        &session_id,
+        std::path::PathBuf::from("."),
+        crate::services::hooks::HookEvent::UserPromptSubmit,
+    );
+    prompt_submit_params.prompt = Some(prompt_text);
+    crate::services::hooks::notify_stub_event(
+        crate::services::hooks::HookEvent::UserPromptSubmit,
+        &session_id,
+        prompt_submit_params,
+    )
+    .await;
+
     log::info!(
         "Queued workflow for session: {} with message: {}",
         session_id,
