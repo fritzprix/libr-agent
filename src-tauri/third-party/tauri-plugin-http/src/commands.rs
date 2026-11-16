@@ -269,7 +269,7 @@ pub async fn fetch<R: Runtime>(
                     // Match llm-client: warn and continue direct if PAC/system
                     // resolve fails (e.g. laptop off VPN). Never fail the fetch.
                     if let Err(e) = http_proxy::ensure_proxy_resolved(url.as_str()).await {
-                        log::warn!("system proxy pre-resolve failed for plugin-http: {e}");
+                        tracing::warn!("system proxy pre-resolve failed for plugin-http: {e}");
                     }
                     builder = http_proxy::configure_client_builder(builder)
                         .map_err(|e| Error::Message(e.to_string()))?;

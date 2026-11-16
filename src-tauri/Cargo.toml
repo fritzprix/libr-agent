@@ -66,7 +66,7 @@ oauth2 = "4.4"
 keyring = "4.1"
 reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"], default-features = false }
 tauri-plugin-log = "2"
-tauri-plugin-http = { version = "2", features = ["unsafe-headers", "stream"] }
+tauri-plugin-http = { version = "2", features = ["unsafe-headers", "stream", "tracing"] }
 log = "0.4.30"
 fern = "0.7"
 tauri-plugin-dialog = "2"
