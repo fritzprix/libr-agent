@@ -749,4 +749,37 @@ mod tests {
         assert!(!marker.exists(), "stub event must not spawn a process");
         clear_hook_context(sid);
     }
+
+    /// Criterion 7: a source that declares a stub event with a command that
+    /// would write a marker must not create that file when routed through
+    /// `notify_stub_event` (no spawn, no stdout apply).
+    #[tokio::test]
+    async fn notify_stub_event_does_not_run_declared_handler() {
+        let marker_dir = tempfile::tempdir().expect("marker dir");
+        let marker = marker_dir.path().join("session-end-ran.txt");
+        let marker_str = marker.to_string_lossy().replace('\\', "\\\\");
+        #[cfg(windows)]
+        let command = format!("cmd /c echo ran> \"{}\"", marker_str);
+        #[cfg(not(windows))]
+        let command = format!("sh -c 'echo ran > \"{}\"'", marker_str);
+        let hooks_json = format!(
+            r#"{{ "hooks": {{ "SessionEnd": [ {{ "command": "{}" }} ] }} }}"#,
+            command.replace('\\', "\\\\").replace('"', "\\\"")
+        );
+        let (_temp, root) = setup_approved_plugin(&hooks_json);
+
+        let sid = format!("stub-session-end-{}", uuid::Uuid::new_v4());
+        let params = HookEnvelopeParams::new(&sid, root, HookEvent::SessionEnd);
+        notify_stub_event(HookEvent::SessionEnd, &sid, params).await;
+
+        assert!(
+            !marker.exists(),
+            "notify_stub_event must not spawn the declared SessionEnd command"
+        );
+        assert_eq!(
+            HookEvent::SessionEnd.dispatch_mode(),
+            HookDispatchMode::Stub
+        );
+        clear_hook_context(&sid);
+    }
 }

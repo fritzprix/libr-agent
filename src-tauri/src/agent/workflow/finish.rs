@@ -367,6 +367,19 @@ pub async fn settle_session_and_go_idle(
     .await
 }
 
+/// Choose `Stop` vs `SubagentStop` from whether the session has a parent
+/// (#2812 settle stub). Pure so unit tests cover the branch without a full
+/// AgentSession.
+pub(crate) fn settle_stub_event(
+    parent_session_id: Option<&str>,
+) -> crate::services::hooks::HookEvent {
+    if parent_session_id.is_some() {
+        crate::services::hooks::HookEvent::SubagentStop
+    } else {
+        crate::services::hooks::HookEvent::Stop
+    }
+}
+
 /// Dispatch the `Stop` (top-level session) or `SubagentStop` (session
 /// spawned by `agent__spawnSession`) plugin hook stub once a workflow has
 /// settled to Idle (#2812). The stub only logs "not yet executed" and
@@ -375,24 +388,19 @@ async fn notify_settle_hook_stub(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     session_id: &str,
 ) {
-    let is_child = {
+    let parent_session_id = {
         let active = active_sessions.read().await;
         active
             .get(session_id)
-            .map(|s| s.metadata.parent_session_id.is_some())
-            .unwrap_or(false)
+            .and_then(|s| s.metadata.parent_session_id.clone())
     };
-    let event = if is_child {
-        crate::services::hooks::HookEvent::SubagentStop
-    } else {
-        crate::services::hooks::HookEvent::Stop
-    };
+    let event = settle_stub_event(parent_session_id.as_deref());
     let mut params = crate::services::hooks::HookEnvelopeParams::new(
         session_id,
         std::path::PathBuf::from("."),
         event,
     );
-    if is_child {
+    if parent_session_id.is_some() {
         params.child_session_id = Some(session_id.to_string());
     }
     crate::services::hooks::notify_stub_event(event, session_id, params).await;
@@ -863,5 +871,21 @@ mod tests {
             panic!("expected text content");
         };
         assert_eq!(text, "final answer");
+    }
+
+    #[test]
+    fn settle_stub_event_picks_stop_for_top_level_session() {
+        assert_eq!(
+            settle_stub_event(None),
+            crate::services::hooks::HookEvent::Stop
+        );
+    }
+
+    #[test]
+    fn settle_stub_event_picks_subagent_stop_when_parent_set() {
+        assert_eq!(
+            settle_stub_event(Some("parent-session")),
+            crate::services::hooks::HookEvent::SubagentStop
+        );
     }
 }

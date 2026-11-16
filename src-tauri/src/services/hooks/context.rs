@@ -261,4 +261,20 @@ mod tests {
         end_hook_run(sid);
         assert!(waiter.await.unwrap());
     }
+
+    #[test]
+    fn clear_all_hook_contexts_empties_every_slot() {
+        // Criterion 4 / uninstall purge: every session slot must drop.
+        let a = "test-session-hook-clear-all-a";
+        let b = "test-session-hook-clear-all-b";
+        clear_hook_context(a);
+        clear_hook_context(b);
+        set_hook_context(a, "bootstrap-a".to_string());
+        set_hook_context(b, "bootstrap-b".to_string());
+        assert!(get_hook_context(a).is_some());
+        assert!(get_hook_context(b).is_some());
+        clear_all_hook_contexts();
+        assert!(get_hook_context(a).is_none());
+        assert!(get_hook_context(b).is_none());
+    }
 }
