@@ -578,6 +578,12 @@ pub enum BackendStartup {
 /// still publishing holds the lock.
 pub const OWN_PUBLISH_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// One-line log for a frontend that attached to another process's live
+/// backend (#2823).
+pub fn attached_frontend_log(frontend: &str, pid: u32, port: u16) -> String {
+    format!("{frontend} attached to live shared backend pid {pid} on port {port}")
+}
+
 /// The single backend startup path every frontend shares (#2756), guarded
 /// against two frontends starting at the same moment (#2757).
 ///
@@ -597,11 +603,10 @@ pub const OWN_PUBLISH_TIMEOUT: Duration = Duration::from_secs(10);
 /// already owns this profile, so starting a second backend here would
 /// double-execute live sessions.
 ///
-/// Caveat (pre-existing, but reachable in a new way since #2757): if
-/// `start_backend` fails to bind the HTTP server, the bind error is only
-/// logged by the startup path, this function still waits
-/// [`OWN_PUBLISH_TIMEOUT`] and returns `Started`. A frontend that starts
-/// afterwards then finds no live record and may start its own backend.
+/// A bind failure or a publish timeout is also a hard error (#2823). This
+/// function does not report [`BackendStartup::Started`] unless this process's
+/// record is live. If a backend appears while startup is failing, the caller
+/// attaches to it instead.
 async fn attach_or_start_backend_with_race<S, W>(
     timeout: Duration,
     lock_path: Option<PathBuf>,
@@ -611,15 +616,14 @@ async fn attach_or_start_backend_with_race<S, W>(
 ) -> Result<BackendStartup, String>
 where
     S: FnOnce() -> Result<(), String>,
-    W: Fn(Duration) + Send + 'static,
+    W: Fn(Duration) -> Result<(), String> + Send + 'static,
 {
     if let Some(descriptor) = find_live() {
         return attach_to_descriptor(&descriptor, timeout).await;
     }
 
     let Some(path) = lock_path else {
-        start_backend()?;
-        return Ok(BackendStartup::Started);
+        return finish_start(timeout, find_live, start_backend, wait_own_publish).await;
     };
 
     let guard = crate::server::startup_lock::acquire(&path, Instant::now() + timeout).await?;
@@ -630,14 +634,38 @@ where
         return attach_to_descriptor(&descriptor, timeout).await;
     }
 
-    start_backend()?;
-    // Release the lock only once this process's record is live (or the wait
-    // gave up), so the loser's re-check under the lock sees this backend.
-    // The poll blocks, so keep it off the async worker thread.
-    tokio::task::spawn_blocking(move || wait_own_publish(OWN_PUBLISH_TIMEOUT))
+    let outcome = finish_start(timeout, &find_live, start_backend, wait_own_publish).await;
+    drop(guard);
+    outcome
+}
+
+/// Run `start_backend`, then require its record to be live. A failure that
+/// leaves a live backend in place attaches to that backend.
+async fn finish_start<S, W>(
+    timeout: Duration,
+    find_live: impl Fn() -> Option<BackendDescriptor>,
+    start_backend: S,
+    wait_own_publish: W,
+) -> Result<BackendStartup, String>
+where
+    S: FnOnce() -> Result<(), String>,
+    W: Fn(Duration) -> Result<(), String> + Send + 'static,
+{
+    if let Err(err) = start_backend() {
+        if let Some(descriptor) = find_live() {
+            return attach_to_descriptor(&descriptor, timeout).await;
+        }
+        return Err(err);
+    }
+    let publish_result = tokio::task::spawn_blocking(move || wait_own_publish(OWN_PUBLISH_TIMEOUT))
         .await
         .map_err(|err| format!("backend publish wait panicked: {err}"))?;
-    drop(guard);
+    if let Err(err) = publish_result {
+        if let Some(descriptor) = find_live() {
+            return attach_to_descriptor(&descriptor, timeout).await;
+        }
+        return Err(err);
+    }
     Ok(BackendStartup::Started)
 }
 
@@ -682,6 +710,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::server::backend_descriptor;
     use crate::server::startup_lock;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::Arc;
@@ -868,7 +897,7 @@ mod tests {
                 flag.store(true, Ordering::Relaxed);
                 Ok(())
             },
-            |_| {},
+            |_| Ok(()),
         )
         .await
         .expect("startup succeeds");
@@ -894,7 +923,7 @@ mod tests {
                 flag.store(true, Ordering::Relaxed);
                 Ok(())
             },
-            |_| {},
+            |_| Ok(()),
         )
         .await
         .expect("attach succeeds");
@@ -927,7 +956,7 @@ mod tests {
                 flag.store(true, Ordering::Relaxed);
                 Ok(())
             },
-            |_| {},
+            |_| Ok(()),
         )
         .await
         .unwrap_err();
@@ -986,7 +1015,7 @@ mod tests {
                     started_for_start.store(true, Ordering::Relaxed);
                     Ok(())
                 },
-                |_| {},
+                |_| Ok(()),
             )
             .await
         });
@@ -1036,7 +1065,7 @@ mod tests {
                 flag.store(true, Ordering::Relaxed);
                 Ok(())
             },
-            |_| {},
+            |_| Ok(()),
         )
         .await
         .expect("a leftover lock file must not block startup");
@@ -1074,7 +1103,7 @@ mod tests {
                 flag.store(true, Ordering::Relaxed);
                 Ok(())
             },
-            |_| {},
+            |_| Ok(()),
         )
         .await
         .expect_err("a live holder must block a second backend");
@@ -1119,6 +1148,7 @@ mod tests {
                     },
                     move |_| {
                         published_for_wait.store(true, Ordering::Relaxed);
+                        Ok(())
                     },
                 )
                 .await
@@ -1230,5 +1260,148 @@ mod tests {
         assert_eq!(attachment_id().as_deref(), Some(id.as_str()));
         assert!(client.heartbeat_frontend(&id).await.unwrap());
         server.abort();
+    }
+
+    #[test]
+    fn attached_log_names_the_frontend_that_attached() {
+        let line = attached_frontend_log("TUI", 7, 3030);
+        assert_eq!(
+            line,
+            "TUI attached to live shared backend pid 7 on port 3030"
+        );
+        assert!(!attached_frontend_log("GUI", 7, 3030).contains("TUI attached"));
+    }
+
+    #[tokio::test]
+    async fn startup_does_not_report_started_when_publish_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = temp_lock_path(&dir);
+        let err = attach_or_start_backend_with_race(
+            Duration::from_secs(2),
+            Some(path),
+            || None,
+            || Ok(()),
+            |_| Err("bind failed".to_string()),
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("bind failed"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn startup_attaches_when_start_fails_and_a_backend_is_already_live() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = temp_lock_path(&dir);
+        let (port, server) = health_server(true);
+        let phase = Arc::new(AtomicUsize::new(0));
+        let phase_find = phase.clone();
+        let phase_start = phase.clone();
+
+        let outcome = attach_or_start_backend_with_race(
+            Duration::from_secs(2),
+            Some(path),
+            move || (phase_find.load(Ordering::SeqCst) >= 1).then(|| live_descriptor(port)),
+            move || {
+                phase_start.store(1, Ordering::SeqCst);
+                Err("this profile already has a backend".into())
+            },
+            |_| Ok(()),
+        )
+        .await
+        .expect("attaches after the refused bind");
+
+        assert!(matches!(outcome, BackendStartup::Attached { .. }));
+        server.abort();
+    }
+
+    /// #2823: a second OS process that already published a live record is
+    /// attached to. This process does not start its own backend.
+    #[tokio::test]
+    async fn second_process_attaches_to_the_live_backend_without_starting_one() {
+        if std::env::var("LIBRAGENT_ATTACH_FIXTURE").ok().as_deref() == Some("child") {
+            serve_fixture_backend();
+            return;
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("app.db");
+        let mut child = std::process::Command::new(std::env::current_exe().expect("test exe"))
+            .arg("second_process_attaches_to_the_live_backend_without_starting_one")
+            .env("LIBRAGENT_ATTACH_FIXTURE", "child")
+            .env("LIBRAGENT_ATTACH_DB", &db)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("fixture process");
+
+        let ready = db.with_extension("ready");
+        let deadline = std::time::Instant::now() + Duration::from_secs(20);
+        while !ready.exists() {
+            if std::time::Instant::now() >= deadline {
+                let _ = child.kill();
+                panic!("fixture backend did not become ready");
+            }
+            if let Some(status) = child.try_wait().expect("child status") {
+                panic!("fixture backend exited early: {status}");
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+
+        backend_descriptor::init(&db);
+        let started = Arc::new(AtomicBool::new(false));
+        let flag = started.clone();
+        let outcome = attach_or_start_backend_with_race(
+            Duration::from_secs(5),
+            None,
+            backend_descriptor::find_live_backend,
+            move || {
+                flag.store(true, Ordering::Relaxed);
+                Ok(())
+            },
+            |_| Ok(()),
+        )
+        .await
+        .expect("second process attaches");
+
+        let _ = child.kill();
+        let _ = child.wait();
+
+        match outcome {
+            BackendStartup::Attached { descriptor, .. } => {
+                assert!(descriptor.port != 0);
+            }
+            BackendStartup::Started => panic!("must attach to the child backend, not start one"),
+        }
+        assert!(
+            !started.load(Ordering::Relaxed),
+            "start_backend must not run when the other process is live"
+        );
+    }
+
+    fn serve_fixture_backend() {
+        let db = std::path::PathBuf::from(
+            std::env::var("LIBRAGENT_ATTACH_DB").expect("LIBRAGENT_ATTACH_DB"),
+        );
+        backend_descriptor::init(&db);
+        let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .expect("fixture listener");
+        let port = listener.local_addr().expect("fixture port").port();
+        backend_descriptor::publish(port).expect("fixture publish");
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+                let mut buf = [0u8; 2048];
+                let _ = std::io::Read::read(&mut stream, &mut buf);
+                let body = r#"{"status":"ok","service":"libr-agent-session-api","version":"0.9.0","ready":true,"recovery":"ok"}"#;
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = std::io::Write::write_all(&mut stream, response.as_bytes());
+            }
+        });
+        std::fs::write(db.with_extension("ready"), b"1").expect("ready file");
+        std::thread::sleep(Duration::from_secs(30));
     }
 }

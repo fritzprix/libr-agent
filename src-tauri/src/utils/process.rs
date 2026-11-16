@@ -38,7 +38,16 @@ pub(crate) fn process_is_alive(pid: u32) -> io::Result<bool> {
 
     let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
     if handle.is_null() {
-        return Ok(false);
+        // A failed open is not proof the pid is dead. Treating it as dead makes
+        // the next frontend delete a live backend's record and start a second
+        // server (#2823). 87 = no such process. 5 = it exists, but this process
+        // may not query it.
+        let err = io::Error::last_os_error();
+        return match err.raw_os_error() {
+            Some(87) => Ok(false),
+            Some(5) => Ok(true),
+            _ => Err(err),
+        };
     }
 
     let mut exit_code = 0;

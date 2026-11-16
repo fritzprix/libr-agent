@@ -34,6 +34,13 @@ const RECORD_SUFFIX: &str = ".json";
 /// How long the loopback port probe may take.
 const PORT_PROBE_TIMEOUT: Duration = Duration::from_millis(300);
 
+/// How long a freshly published record may block a second server even
+/// before its port answers: the window in which the hosting process is
+/// still binding its HTTP server. Past it, a record whose port does not
+/// answer is stale (crash residue, pid reuse) and must not block startup
+/// forever (#2823).
+const STARTUP_GRACE_MS: i64 = 30_000;
+
 static DB_PATH: OnceLock<PathBuf> = OnceLock::new();
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -160,6 +167,116 @@ pub fn find_live_backend() -> Option<BackendDescriptor> {
     )
 }
 
+/// Backend the chat screen should call.
+///
+/// [`find_live_backend`] skips this process, so the frontend that hosts the
+/// backend would otherwise wait forever for "another" record (#2823, B-01).
+/// An attached frontend still prefers the other process's record.
+pub fn find_chat_backend() -> Option<BackendDescriptor> {
+    let db_path = DB_PATH.get()?;
+    chat_backend_from(
+        db_path,
+        std::process::id(),
+        probe_pid,
+        loopback_port_accepts,
+    )
+}
+
+fn chat_backend_from(
+    db_path: &Path,
+    own_pid: u32,
+    pid_probe: impl Fn(u32) -> Option<bool>,
+    port_accepts: impl Fn(u16) -> bool,
+) -> Option<BackendDescriptor> {
+    if let Some(other) = find_live_backend_with_probes(db_path, own_pid, &pid_probe, &port_accepts)
+    {
+        return Some(other);
+    }
+    let descriptor = read_descriptor(&record_path_for(db_path, own_pid))?;
+    if descriptor.pid == own_pid && descriptor.port != 0 && port_accepts(descriptor.port) {
+        Some(descriptor)
+    } else {
+        None
+    }
+}
+
+/// The record file of another backend that blocks a second HTTP server on
+/// this profile, if one does.
+///
+/// Only a record whose pid is alive can block, and only while its port
+/// accepts or it was published within [`STARTUP_GRACE_MS`]: a crashed
+/// backend's record whose pid the OS later reuses must not refuse startup
+/// forever (#2823). An unprovable pid blocks nothing — per [`probe_pid`]'s
+/// contract, recovery must not be blocked forever by a record nobody can
+/// verify. This does not sweep files.
+pub fn blocking_backend_record() -> Option<PathBuf> {
+    let db_path = DB_PATH.get()?;
+    blocking_backend_record_for(
+        db_path,
+        std::process::id(),
+        probe_pid,
+        loopback_port_accepts,
+        chrono::Utc::now().timestamp_millis(),
+    )
+}
+
+/// True when some other runtime on this database still owns the profile.
+pub fn profile_has_other_backend() -> bool {
+    blocking_backend_record().is_some()
+}
+
+fn blocking_backend_record_for(
+    db_path: &Path,
+    own_pid: u32,
+    pid_probe: impl Fn(u32) -> Option<bool>,
+    port_accepts: impl Fn(u16) -> bool,
+    now_ms: i64,
+) -> Option<PathBuf> {
+    let prefix = format!(
+        "{}{RECORD_INFIX}",
+        db_path
+            .file_name()
+            .map(|n| n.to_string_lossy())
+            .unwrap_or_default()
+    );
+    let dir = db_path.parent()?;
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return None;
+    };
+    for entry in entries.flatten() {
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        let Some(pid_part) = name
+            .strip_prefix(&prefix)
+            .and_then(|rest| rest.strip_suffix(RECORD_SUFFIX))
+        else {
+            continue;
+        };
+        let Ok(pid) = pid_part.parse::<u32>() else {
+            continue;
+        };
+        if pid == own_pid {
+            continue;
+        }
+        // Dead or unprovable pids do not block (#2823, G1.1).
+        if pid_probe(pid) != Some(true) {
+            continue;
+        }
+        let Some(descriptor) = read_descriptor(&entry.path()) else {
+            continue;
+        };
+        if descriptor.pid != pid || descriptor.port == 0 {
+            continue;
+        }
+        let booting = now_ms.saturating_sub(descriptor.started_at_ms) < STARTUP_GRACE_MS;
+        if port_accepts(descriptor.port) || booting {
+            return Some(entry.path());
+        }
+    }
+    None
+}
+
 fn publish_at(db_path: &Path, port: u16) -> std::io::Result<()> {
     let descriptor = BackendDescriptor {
         pid: std::process::id(),
@@ -240,14 +357,21 @@ fn own_record_is_live() -> bool {
 /// elapses. The startup-race winner calls this before releasing the
 /// startup lock, so the loser's re-check under the lock can find the
 /// published record instead of starting a second backend (#2757).
-pub fn wait_until_own_record_live(timeout: Duration) {
+pub fn wait_until_own_record_live(timeout: Duration) -> Result<(), String> {
     let deadline = Instant::now() + timeout;
     while !own_record_is_live() {
+        if let Some(err) = super::take_http_bind_error() {
+            return Err(err);
+        }
         if Instant::now() >= deadline {
-            return;
+            return Err(
+                "HTTP server did not publish this process's backend record; refusing to start a second backend"
+                    .to_string(),
+            );
         }
         std::thread::sleep(Duration::from_millis(50));
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -459,5 +583,114 @@ mod tests {
         assert!(record_path_for(&db, 200).exists());
         // Idempotent when already removed.
         unpublish_at(&db, 100).unwrap();
+    }
+
+    #[test]
+    fn host_chat_finds_its_own_backend_record() {
+        let dir = tempdir().unwrap();
+        let db = dir.path().join("app.db");
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let own = std::process::id();
+        write_record(&db, &record(own, port, 1));
+
+        let found = chat_backend_from(&db, own, probe_pid, loopback_port_accepts);
+        assert_eq!(found.map(|d| d.port), Some(port));
+        // The host is not "another" backend.
+        assert!(
+            find_live_backend_with_probes(&db, own, probe_pid, loopback_port_accepts).is_none()
+        );
+    }
+
+    #[test]
+    fn an_unprovable_or_stale_record_does_not_block_a_second_server() {
+        let dir = tempdir().unwrap();
+        let db = dir.path().join("app.db");
+        write_record(&db, &record(100, 3030, 1));
+        let now_ms = 1_000_000_000_000i64;
+        // A pid the probe cannot prove dead blocks nothing: `probe_pid`
+        // promises recovery is never blocked by a record nobody can verify.
+        assert!(blocking_backend_record_for(&db, 1, |_pid| None, |_port| true, now_ms).is_none());
+        // A definitively dead pid blocks nothing.
+        assert!(
+            blocking_backend_record_for(&db, 1, |_pid| Some(false), |_port| true, now_ms).is_none()
+        );
+        // Pid reuse: the pid is alive, but the recorded port never answers
+        // and the record is older than the startup grace window.
+        assert!(
+            blocking_backend_record_for(&db, 1, |_pid| Some(true), |_port| false, now_ms).is_none()
+        );
+        // A live pid whose port answers blocks, and the caller gets the
+        // record path to name in its refusal.
+        assert_eq!(
+            blocking_backend_record_for(&db, 1, |_pid| Some(true), |_port| true, now_ms),
+            Some(record_path_for(&db, 100))
+        );
+    }
+
+    #[test]
+    fn a_booting_backend_blocks_until_its_grace_window_passes() {
+        let dir = tempdir().unwrap();
+        let db = dir.path().join("app.db");
+        let now_ms = 1_700_000_000_000i64;
+        write_record(&db, &record(100, 3030, now_ms - 1_000));
+        // Port not answering yet, but the record was published a second ago:
+        // that backend may still be binding its HTTP server.
+        assert_eq!(
+            blocking_backend_record_for(&db, 1, |_pid| Some(true), |_port| false, now_ms),
+            Some(record_path_for(&db, 100))
+        );
+        // Past the grace window the same record is stale and must not block.
+        assert!(blocking_backend_record_for(
+            &db,
+            1,
+            |_pid| Some(true),
+            |_port| false,
+            now_ms + STARTUP_GRACE_MS
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn a_different_database_does_not_block_this_profile() {
+        let dir = tempdir().unwrap();
+        let primary = dir.path().join("libragent_v2.db");
+        let isolated = dir.path().join("other.db");
+        write_record(&primary, &record(100, 3030, 1));
+        let now_ms = 1_000_000_000_000i64;
+        assert!(
+            blocking_backend_record_for(&primary, 1, |_pid| Some(true), |_port| true, now_ms)
+                .is_some()
+        );
+        assert!(
+            blocking_backend_record_for(&isolated, 1, |_pid| Some(true), |_port| true, now_ms)
+                .is_none()
+        );
+    }
+
+    /// Serializes tests that read or write the process-global
+    /// `HTTP_BIND_ERROR` slot so a parallel test cannot drain it between
+    /// `note_http_bind_error` and `take_http_bind_error` (#2823).
+    static HTTP_BIND_ERROR_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn a_recorded_bind_error_ends_the_startup_wait_early() {
+        // Hold the lock for the whole note -> wait -> take sequence, and
+        // drain any leftover slot first so the starting state is exact.
+        let _serial = HTTP_BIND_ERROR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        super::super::take_http_bind_error();
+        // With no live record of ours, the startup wait must surface the
+        // bind error recorded by the failed HTTP init instead of waiting
+        // out the full timeout (#2823).
+        super::super::note_http_bind_error("simulated bind failure".to_string());
+        let started = Instant::now();
+        let err = wait_until_own_record_live(Duration::from_secs(30))
+            .expect_err("a recorded bind error must end the wait");
+        assert_eq!(err, "simulated bind failure");
+        assert!(started.elapsed() < Duration::from_secs(5));
+        // The slot is consumed; nothing is left over for a later startup.
+        assert!(super::super::take_http_bind_error().is_none());
     }
 }

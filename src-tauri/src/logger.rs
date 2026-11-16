@@ -174,6 +174,17 @@ fn formatted_dispatch() -> fern::Dispatch {
 }
 
 pub fn setup_file_logger(log_dir: PathBuf, log_retention_days: u64) -> Result<(), String> {
+    setup_file_logger_with_rotation(log_dir, log_retention_days, true)
+}
+
+/// `rotate_existing` renames `libragent.log` aside before opening a new file.
+/// An attached frontend passes `false` so it appends instead of rotating the
+/// host's log out from under it (#2823).
+pub fn setup_file_logger_with_rotation(
+    log_dir: PathBuf,
+    log_retention_days: u64,
+    rotate_existing: bool,
+) -> Result<(), String> {
     set_log_retention_days(log_retention_days);
 
     // Ensure log directory exists
@@ -183,25 +194,8 @@ pub fn setup_file_logger(log_dir: PathBuf, log_retention_days: u64) -> Result<()
     }
 
     let _ = LOG_DIR.set(log_dir.clone());
-    let log_file = log_dir.join(ACTIVE_LOG_FILE_NAME);
 
-    // Backup existing log file with datetime suffix
-    if log_file.exists() {
-        let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-        let backup_file = log_dir.join(format!("libragent_{}.log", timestamp));
-        fs::rename(&log_file, &backup_file)
-            .map_err(|e| format!("Failed to backup log file: {}", e))?;
-    }
-
-    let (pruned_files, pruned_bytes) = prune_archived_logs_in(&log_dir);
-
-    // Create new log file (truncate mode for fresh start)
-    let file = OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open(&log_file)
-        .map_err(|e| format!("Failed to open log file: {}", e))?;
+    let (file, pruned_files, pruned_bytes) = prepare_log_file(&log_dir, rotate_existing)?;
 
     let log_level = resolve_launch_log_level();
 
@@ -214,7 +208,7 @@ pub fn setup_file_logger(log_dir: PathBuf, log_retention_days: u64) -> Result<()
 
     log::info!(
         "🔥 File logger initialized at: {} (level: {})",
-        log_file.display(),
+        log_dir.join(ACTIVE_LOG_FILE_NAME).display(),
         resolve_launch_log_level_name()
     );
     if pruned_files > 0 {
@@ -225,6 +219,46 @@ pub fn setup_file_logger(log_dir: PathBuf, log_retention_days: u64) -> Result<()
         );
     }
     Ok(())
+}
+
+/// Prepare the active log file: rotate `libragent.log` aside when
+/// `rotate_existing`, prune archives, then open the file — truncated for a
+/// fresh start when rotating, appended when not. An attached frontend passes
+/// `false` so it appends instead of rotating the host's log out from under
+/// it (#2823). Split out from [`setup_file_logger_with_rotation`] so the
+/// rotation behavior is testable without installing the global logger.
+/// Returns `(file, pruned_files, pruned_bytes)`.
+fn prepare_log_file(
+    log_dir: &Path,
+    rotate_existing: bool,
+) -> Result<(fs::File, usize, u64), String> {
+    let log_file = log_dir.join(ACTIVE_LOG_FILE_NAME);
+
+    // Backup existing log file with datetime suffix. Skip this when another
+    // frontend already hosts the backend: renaming its open log fails on
+    // Windows and drops the lines it is still writing.
+    if rotate_existing && log_file.exists() {
+        let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+        let backup_file = log_dir.join(format!("libragent_{}.log", timestamp));
+        fs::rename(&log_file, &backup_file)
+            .map_err(|e| format!("Failed to backup log file: {}", e))?;
+    }
+
+    let (pruned_files, pruned_bytes) = prune_archived_logs_in(log_dir);
+
+    // Create new log file (truncate mode for fresh start)
+    let mut file_options = OpenOptions::new();
+    file_options.create(true).write(true);
+    if rotate_existing {
+        file_options.truncate(true);
+    } else {
+        file_options.append(true);
+    }
+    let file = file_options
+        .open(&log_file)
+        .map_err(|e| format!("Failed to open log file: {}", e))?;
+
+    Ok((file, pruned_files, pruned_bytes))
 }
 
 #[cfg(test)]
@@ -422,5 +456,53 @@ mod tests {
             Some(Duration::from_secs(7 * SECONDS_PER_DAY))
         );
         set_log_retention_days(0);
+    }
+
+    fn archived_logs(dir: &Path) -> Vec<PathBuf> {
+        fs::read_dir(dir)
+            .unwrap()
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| {
+                let name = path.file_name().unwrap().to_string_lossy().to_string();
+                name.starts_with("libragent_") && name.ends_with(".log")
+            })
+            .collect()
+    }
+
+    #[test]
+    fn attached_setup_appends_and_keeps_the_existing_log() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join(ACTIVE_LOG_FILE_NAME);
+        fs::write(&log, "host line\n").unwrap();
+
+        let (mut file, _, _) = prepare_log_file(dir.path(), false).unwrap();
+        file.write_all(b"attached line\n").unwrap();
+        drop(file);
+
+        assert_eq!(
+            fs::read_to_string(&log).unwrap(),
+            "host line\nattached line\n"
+        );
+        // No backup was taken: the host's log is never rotated aside.
+        assert!(archived_logs(dir.path()).is_empty());
+    }
+
+    #[test]
+    fn hosting_setup_rotates_the_existing_log() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join(ACTIVE_LOG_FILE_NAME);
+        fs::write(&log, "host line\n").unwrap();
+
+        let (mut file, _, _) = prepare_log_file(dir.path(), true).unwrap();
+        file.write_all(b"new line\n").unwrap();
+        drop(file);
+
+        assert_eq!(fs::read_to_string(&log).unwrap(), "new line\n");
+        let backups = archived_logs(dir.path());
+        assert_eq!(backups.len(), 1);
+        assert_eq!(fs::read_to_string(&backups[0]).unwrap(), "host line\n");
     }
 }

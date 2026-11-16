@@ -17,12 +17,26 @@ pub mod wake_listener;
 
 use log::info;
 use std::sync::atomic::{AtomicU16, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use crate::agent::AgentSessionManager;
 
 /// Process-wide bound HTTP port (`0` = not set yet).
 static ACTIVE_HTTP_PORT: AtomicU16 = AtomicU16::new(0);
+
+/// Bind failure from [`init`], so startup can fail immediately instead of
+/// reporting a started backend after the publish wait (#2823).
+static HTTP_BIND_ERROR: Mutex<Option<String>> = Mutex::new(None);
+
+fn note_http_bind_error(message: String) {
+    if let Ok(mut slot) = HTTP_BIND_ERROR.lock() {
+        *slot = Some(message);
+    }
+}
+
+pub(crate) fn take_http_bind_error() -> Option<String> {
+    HTTP_BIND_ERROR.lock().ok().and_then(|mut slot| slot.take())
+}
 
 /// Record the port the HTTP server actually bound (may differ from Settings request).
 pub fn set_active_http_port(port: u16) {
@@ -111,11 +125,29 @@ pub async fn init(
         std::net::Ipv4Addr::LOCALHOST
     };
 
+    // A bind error recorded by an earlier failed init must not fail a
+    // later startup's wait (S1.2 review).
+    take_http_bind_error();
+
+    // A record for this database means this profile already has a backend.
+    // Binding the next free port would be a second backend (#2823). A
+    // different database (dev vs prod, or LIBRAGENT_DATA_DIR) does not match
+    // this check, so it can still fall back to another port (B-10).
+    if let Some(record) = backend_descriptor::blocking_backend_record() {
+        let message = format!(
+            "this profile already has a backend (record: {}); refusing to bind a second HTTP server",
+            record.display()
+        );
+        note_http_bind_error(message.clone());
+        return Err(message.into());
+    }
+
     let max_attempts = 10u16;
     // Keep the bound listener and serve through it: dropping it and asking
     // warp to re-bind the same port left a TOCTOU window where another
     // process could steal the port between the probe and the real bind.
-    let listener = bind_first_available_listener(bind_addr, requested_port, max_attempts)?;
+    let listener = bind_first_available_listener(bind_addr, requested_port, max_attempts)
+        .inspect_err(|err| note_http_bind_error(err.clone()))?;
     let bound_port = listener
         .local_addr()
         .map_err(|e| format!("Failed to read bound HTTP port: {e}"))?

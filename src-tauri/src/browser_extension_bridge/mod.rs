@@ -15,8 +15,16 @@ pub use messages::{
 
 use std::path::PathBuf;
 
-/// Start the bridge server if it is not already running.
+/// Start the bridge server if this process hosts the backend.
+///
+/// The bridge binds a fixed port. An attached frontend leaves that port to
+/// the host (#2823).
 pub fn ensure_started() {
+    if crate::server::backend_descriptor::find_live_backend().is_some()
+        || crate::server::backend_descriptor::profile_has_other_backend()
+    {
+        return;
+    }
     ExtensionBridge::global().ensure_started();
 }
 
