@@ -73,9 +73,11 @@ pub fn resolve(url: &str) -> Result<ResolvedProxy, String> {
     let session = open_session()?;
 
     let resolved = if auto_detect || pac_url_s.is_some() {
-        let mut options = WINHTTP_AUTOPROXY_OPTIONS::default();
         // Corporate PAC files often require NTLM for the PAC fetch itself.
-        options.fAutoLogonIfChallenged = windows::Win32::Foundation::TRUE;
+        let mut options = WINHTTP_AUTOPROXY_OPTIONS {
+            fAutoLogonIfChallenged: windows::Win32::Foundation::TRUE,
+            ..Default::default()
+        };
         if auto_detect {
             options.dwFlags |= WINHTTP_AUTOPROXY_AUTO_DETECT;
             options.dwAutoDetectFlags =
