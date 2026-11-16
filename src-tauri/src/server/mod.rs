@@ -178,6 +178,12 @@ pub async fn init(
     #[cfg(debug_assertions)]
     crate::server::e2e_control::init_capability_token();
 
+    // Start the cross-process session ownership guard (#2856). Only
+    // processes that run this HTTP server participate: a headless liblet
+    // never reaches this point and therefore never claims anything.
+    session_ownership::init(crate::state::get_database_connection().clone());
+    session_ownership::spawn_heartbeat_loop(agent_manager.clone());
+
     let routes = routes::get_routes(agent_manager, mcp_enabled, app_control_enabled, expose);
 
     // Serve through the already-bound listener. Letting warp bind the port
