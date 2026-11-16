@@ -34,7 +34,7 @@ pub fn parse_knowledge_command(text: &str) -> Option<KnowledgeCommand> {
     }
     let rest = trimmed[1..].trim_start();
     let mut tokens = rest.split_whitespace();
-    if tokens.next()?.to_ascii_lowercase() != "knowledge" {
+    if !tokens.next()?.eq_ignore_ascii_case("knowledge") {
         return None;
     }
 
@@ -134,10 +134,7 @@ pub enum KnowledgeAction {
 }
 
 impl KnowledgeScreen {
-    pub async fn open(
-        query: Option<String>,
-        assistant_id: Option<String>,
-    ) -> Result<Self, String> {
+    pub async fn open(query: Option<String>, assistant_id: Option<String>) -> Result<Self, String> {
         let mut screen = Self {
             query,
             assistant_id,
@@ -186,8 +183,8 @@ impl KnowledgeScreen {
             })
             .collect::<Vec<_>>();
 
-        let mut screen = Self::open(Some(entity.name.clone()), Some(entity.assistant_id.clone()))
-            .await?;
+        let mut screen =
+            Self::open(Some(entity.name.clone()), Some(entity.assistant_id.clone())).await?;
         screen.view = View::EntityDetail {
             entity,
             related,
@@ -244,8 +241,7 @@ impl KnowledgeScreen {
             )
             .await
             .map_err(|e| e.to_string())?;
-        let mut seen: std::collections::HashSet<i32> =
-            self.items.iter().map(|r| r.id).collect();
+        let mut seen: std::collections::HashSet<i32> = self.items.iter().map(|r| r.id).collect();
         for chunk in page.items {
             if seen.insert(chunk.id) {
                 self.items.push(ChunkRow {
@@ -265,14 +261,8 @@ impl KnowledgeScreen {
             "Knowledge requires the primary backend process (not available in attached TUI mode)"
                 .to_string()
         })?;
-        let detail = repo
-            .get_chunk_detail(id)
-            .await
-            .map_err(|e| e.to_string())?;
-        self.view = View::ChunkDetail {
-            detail,
-            scroll: 0,
-        };
+        let detail = repo.get_chunk_detail(id).await.map_err(|e| e.to_string())?;
+        self.view = View::ChunkDetail { detail, scroll: 0 };
         Ok(())
     }
 
@@ -433,7 +423,10 @@ pub fn draw_knowledge(frame: &mut Frame<'_>, screen: &KnowledgeScreen) {
                 detail.chunk.id, detail.chunk.assistant_id
             );
             let mut lines = vec![
-                format!("source: {}", detail.chunk.source.as_deref().unwrap_or("(none)")),
+                format!(
+                    "source: {}",
+                    detail.chunk.source.as_deref().unwrap_or("(none)")
+                ),
                 format!(
                     "tags: {}",
                     parse_db_tags(detail.chunk.tags.as_ref()).join(", ")
@@ -525,10 +518,7 @@ pub fn draw_knowledge(frame: &mut Frame<'_>, screen: &KnowledgeScreen) {
 }
 
 fn draw_list(frame: &mut Frame<'_>, screen: &KnowledgeScreen) {
-    let assistant = screen
-        .assistant_id
-        .as_deref()
-        .unwrap_or("all");
+    let assistant = screen.assistant_id.as_deref().unwrap_or("all");
     let q = screen.query.as_deref().unwrap_or("");
     let title = format!(
         " /knowledge · {} chunks · assistant: {assistant} · q:{q} ",
@@ -606,9 +596,7 @@ fn centered_rect(percent_x: u16, height: u16, area: Rect) -> Rect {
 }
 
 /// Run a knowledge slash command against the in-process repository.
-pub async fn run_knowledge_command(
-    command: KnowledgeCommand,
-) -> Result<KnowledgeScreen, String> {
+pub async fn run_knowledge_command(command: KnowledgeCommand) -> Result<KnowledgeScreen, String> {
     match command {
         KnowledgeCommand::Open {
             query,
