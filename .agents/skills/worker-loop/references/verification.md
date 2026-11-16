@@ -13,3 +13,7 @@ Run every command from `$WT`.
   `python3 src-tauri/bundled_skills/skill-creator/scripts/validate_skill.py --strict <dir>`.
 - **Full pipeline**:
   Never run `pnpm refactor:validate` unless explicitly requested by the user.
+
+## CI after skipped local checks
+
+When a local check was skipped and CI later fails, follow Tick step 3 **CI failed** in `SKILL.md` (read `gh run view <id> --log-failed` before any fix, push, or response).

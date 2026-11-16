@@ -55,6 +55,9 @@ All the checks you chose must pass before you push. In the PR test plan, list wh
 
 Rust builds take a machine-wide slot, so a command may wait behind another worktree's build; that is normal. Never run raw `cargo test/build/clippy`: it skips that limit. Never run bare `pnpm test` (it starts watch mode) — use `pnpm vitest run`. `pnpm audit` is advisory in CI (`continue-on-error`): do not run it for a change that leaves dependencies alone.
 
+> [!CAUTION]
+> Skipped local checks do not waive CI ownership — see Tick step 3 **CI failed**.
+
 ## Tick
 
 1. `python3 .agents/skills/worker-loop/scripts/tick_gate.py --lock`
@@ -73,7 +76,7 @@ Rust builds take a machine-wide slot, so a command may wait behind another workt
    - `mergeableUnknown` true: GitHub still computes mergeability after the retries in `pr_status.py`. Do not treat the PR as clean; list it in the report and check it again next tick.
    - Gatekeeper changes requested: fix or decline each item (with a reason from code). Push. Post a `<!-- worker-loop: response -->` comment with the round and the new head SHA.
    - Review comments: fix the valid ones, reply to the others. Resolve a thread only after its fix is pushed.
-   - CI failed: read `gh run view <id> --log-failed`. Reproduce it locally, fix it, rerun the check that failed, and push only when it passes. There is no attempt limit. If you cannot reproduce it because the local environment differs (for example, CI fails only on another OS): try a fix, and start your PR comment for it with `<!-- worker-loop: ci-attempt n=K -->`, where K is the PR's `ciAttempts` from `pr_status.py` plus 1. When `ciAttempts` is already 3, do not try again: ask the owner on the PR (see [Owner questions](#owner-questions)) and say what passed locally and what fails only on CI.
+   - CI failed: **first** run `gh run view <id> --log-failed` (or open each failing check's job log) and identify the root cause from that output. Do not push or post `<!-- worker-loop: response -->` until you have read the log for every failing check on the current head. Reproduce locally when possible, fix it, rerun the check that failed, and push only when it passes. There is no attempt limit. If you cannot reproduce it because the local environment differs (for example, CI fails only on another OS): try a fix grounded in the log, and start your PR comment for it with `<!-- worker-loop: ci-attempt n=K -->`, where K is the PR's `ciAttempts` from `pr_status.py` plus 1. When `ciAttempts` is already 3, do not try again: ask the owner on the PR (see [Owner questions](#owner-questions)) and say what passed locally, what the CI log shows, and what fails only on CI. Skipping local Rust/tests because of a build-slot wait **does not** waive this — CI is then the proof you must read. If the log shows a clear, fixable cause in this PR's diff while a gatekeeper round is also awaiting a response, fix CI and address the gatekeeper items in the **same** push and `<!-- worker-loop: response -->` (do not leave the round unanswered). If the failure is unrelated to this PR's diff, report the failing job and log line in the PR comment and leave filing a follow-up issue to the gatekeeper (do not open the issue yourself; link an existing gatekeeper-filed issue if one already exists).
    - `ownerAnswer` set (the PR has `needs-owner` and the owner answered): `gh pr edit M --remove-label needs-owner`, then do what the answer says.
 
    **When no PR needs action**:
