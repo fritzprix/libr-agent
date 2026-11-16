@@ -150,13 +150,6 @@ impl Resolver {
             _ => None,
         }
     }
-
-    /// Drop a cached success so the next ensure can re-resolve (e.g. after connect fail).
-    pub fn invalidate_origin(&self, url: &str) {
-        if let Ok(key) = Self::origin_key(url) {
-            self.by_origin.remove(&key);
-        }
-    }
 }
 
 #[cfg(windows)]

@@ -21,12 +21,6 @@ pub fn no_proxy_bypasses(url: &str) -> bool {
     let Some(host) = parsed.host_str() else {
         return false;
     };
-    let host_port = match parsed.port() {
-        Some(port) => format!("{host}:{port}"),
-        None => host.to_string(),
-    };
-
-    let _ = host_port; // port-aware matching happens per entry
     for entry in list.split([',', ';']) {
         let entry = entry.trim();
         if entry.is_empty() {
@@ -85,12 +79,11 @@ pub fn env_http_proxy_for_url(url: &Url) -> Option<String> {
         return None;
     }
     let proxy = if url.scheme() == "https" {
+        // Match reqwest: HTTPS_PROXY / ALL_PROXY only (no HTTP_PROXY fallback).
         env_option("HTTPS_PROXY")
             .or_else(|| env_option("https_proxy"))
             .or_else(|| env_option("ALL_PROXY"))
             .or_else(|| env_option("all_proxy"))
-            .or_else(|| env_option("HTTP_PROXY"))
-            .or_else(|| env_option("http_proxy"))
     } else if url.scheme() == "http" {
         env_option("HTTP_PROXY")
             .or_else(|| env_option("http_proxy"))
@@ -142,5 +135,18 @@ mod tests {
         let url = Url::parse("http://example.com/").unwrap();
         assert!(env_http_proxy_for_url(&url).is_none());
         std::env::remove_var("HTTPS_PROXY");
+    }
+
+    #[test]
+    fn https_urls_do_not_fall_back_to_http_proxy() {
+        let _g = ENV_LOCK.lock().unwrap();
+        std::env::remove_var("HTTPS_PROXY");
+        std::env::remove_var("https_proxy");
+        std::env::remove_var("ALL_PROXY");
+        std::env::remove_var("all_proxy");
+        std::env::set_var("HTTP_PROXY", "http://http-only:8080");
+        let url = Url::parse("https://example.com/").unwrap();
+        assert!(env_http_proxy_for_url(&url).is_none());
+        std::env::remove_var("HTTP_PROXY");
     }
 }
