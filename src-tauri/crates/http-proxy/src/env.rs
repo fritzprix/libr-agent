@@ -53,9 +53,8 @@ pub(crate) fn host_matches_no_proxy_entry(host: &str, port: Option<u16>, entry: 
     let host_l = host.to_ascii_lowercase();
     let entry_l = entry_host.to_ascii_lowercase();
 
-    if entry_l.starts_with('.') {
-        let suffix = &entry_l[1..];
-        return host_l == *suffix || host_l.ends_with(&entry_l);
+    if let Some(suffix) = entry_l.strip_prefix('.') {
+        return host_l == suffix || host_l.ends_with(&entry_l);
     }
     if let Some(suffix) = entry_l.strip_prefix("*.") {
         return host_l == *suffix || host_l.ends_with(&format!(".{suffix}"));
