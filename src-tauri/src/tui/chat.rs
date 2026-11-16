@@ -1,5 +1,5 @@
 //! TUI chat core: transcript, composer, streaming poll, and S5 prompts (#2762),
-//! plus session slash commands (#2763).
+//! session slash commands (#2763), and `/settings` (#2815).
 //!
 //! Drives the shared Session API from the TUI thread once the backend is live.
 //! Layout and key rules follow `docs/specs/tui-parity.md` §3 (S1 + S2 + S5).
@@ -12,6 +12,10 @@ use crate::server::shared_backend::SharedBackendClient;
 use crate::tui::sessions::{
     create_new_session, delete_session, draw_picker, load_resume_picker, open_session_or_refuse,
     parse_session_command, rename_session, PickerAction, SessionCommand, SessionPicker,
+};
+use crate::tui::settings::{
+    draw_settings, parse_settings_command, providers_ready_blocking, SettingsAction,
+    SettingsCommand, SettingsScreen,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::prelude::*;
@@ -78,6 +82,8 @@ pub struct ChatState {
     pub picker: Option<SessionPicker>,
     /// Pending `/delete` confirmation (session id).
     pub confirm_delete: Option<String>,
+    /// `/settings` overlay (#2815).
+    pub settings: Option<SettingsScreen>,
     last_ctrl_c: Option<Instant>,
 }
 
@@ -104,6 +110,7 @@ impl ChatState {
             && self.composer.is_empty()
             && self.focus == Focus::Composer
             && self.picker.is_none()
+            && self.settings.is_none()
         {
             return ChatAction::Quit;
         }
@@ -152,6 +159,27 @@ impl ChatState {
             if alt && matches!(key.code, KeyCode::Char('n') | KeyCode::Char('N')) {
                 return ChatAction::Reject;
             }
+        }
+
+        if let Some(settings) = self.settings.as_mut() {
+            settings.set_approval_waiting(self.pending_approval.is_some());
+            return match settings.handle_key(key) {
+                SettingsAction::None => ChatAction::None,
+                SettingsAction::Closed => {
+                    self.settings = None;
+                    ChatAction::None
+                }
+                SettingsAction::ClosedSaved => {
+                    self.settings = None;
+                    self.notice = Some("Settings saved successfully".to_string());
+                    ChatAction::None
+                }
+                SettingsAction::ClosedDiscarded => {
+                    self.settings = None;
+                    self.notice = Some("Settings changes discarded".to_string());
+                    ChatAction::None
+                }
+            };
         }
 
         match self.focus {
@@ -215,6 +243,10 @@ impl ChatState {
                         return ChatAction::None;
                     }
                     return ChatAction::Session(command);
+                }
+                if let Some(command) = parse_settings_command(&text) {
+                    self.composer.clear();
+                    return ChatAction::Settings(command);
                 }
                 if text.starts_with('/') {
                     self.notice = Some(format!("Unknown command {text}"));
@@ -481,6 +513,7 @@ pub enum ChatAction {
     CancelPrompt,
     Session(SessionCommand),
     OpenSession(String),
+    Settings(SettingsCommand),
 }
 
 /// How the chat front should leave when it is done.
@@ -722,6 +755,10 @@ pub fn draw_chat(frame: &mut Frame<'_>, state: &ChatState) {
         draw_picker(frame, picker);
         return;
     }
+    if let Some(settings) = &state.settings {
+        draw_settings(frame, settings);
+        return;
+    }
 
     let width = frame.area().width.max(1);
     let (s5_rows, s5_text) = s5_layout(state, width);
@@ -736,6 +773,7 @@ pub fn draw_chat(frame: &mut Frame<'_>, state: &ChatState) {
         ])
         .split(frame.area());
 
+    // Avoid hitting the DB on every redraw; refresh via send / settings close.
     let header = format!(" {} ", state.session_title);
     frame.render_widget(
         Paragraph::new(header).block(Block::default().borders(Borders::BOTTOM)),
@@ -831,6 +869,11 @@ pub fn run_chat_front(stdout: &mut Stdout) {
                 match SharedBackendClient::new(descriptor.port) {
                     Ok(c) => {
                         state.status = format!("Backend on port {}", descriptor.port);
+                        if providers_ready_blocking().ok() == Some(false) {
+                            state.notice = Some(
+                                "AI Model Configuration Required — /settings ai-models".to_string(),
+                            );
+                        }
                         client = Some(c);
                     }
                     Err(err) => state.status = err,
@@ -923,6 +966,9 @@ pub fn run_chat_front(stdout: &mut Stdout) {
                             ));
                         }
                     }
+                    ChatAction::Settings(command) => {
+                        apply_settings_command(&mut state, command);
+                    }
                     ChatAction::None => {}
                 }
             }
@@ -971,8 +1017,67 @@ async fn poll_session(api: &SharedBackendClient, state: &mut ChatState) {
     }
 }
 
+fn apply_settings_command(state: &mut ChatState, command: SettingsCommand) {
+    state.notice = None;
+    match command {
+        SettingsCommand::Update if state.settings.is_none() => {
+            state.settings = Some(SettingsScreen::open_update_notice());
+        }
+        SettingsCommand::Open | SettingsCommand::Section(_) | SettingsCommand::Update => {
+            if let Some(settings) = state.settings.as_mut() {
+                let _ = settings.apply_command(&command);
+                return;
+            }
+            let section = match &command {
+                SettingsCommand::Section(section) => Some(*section),
+                SettingsCommand::Update => {
+                    state.settings = Some(SettingsScreen::open_update_notice());
+                    return;
+                }
+                _ => None,
+            };
+            match SettingsScreen::open(section) {
+                Ok(mut screen) => {
+                    if matches!(command, SettingsCommand::Update) {
+                        let _ = screen.apply_command(&SettingsCommand::Update);
+                    }
+                    state.settings = Some(screen);
+                }
+                Err(err) => state.notice = Some(err),
+            }
+        }
+        SettingsCommand::Save | SettingsCommand::Discard => {
+            if let Some(settings) = state.settings.as_mut() {
+                let _ = settings.apply_command(&command);
+            } else {
+                match SettingsScreen::open(None) {
+                    Ok(mut screen) => {
+                        let _ = screen.apply_command(&command);
+                        state.settings = Some(screen);
+                    }
+                    Err(err) => state.notice = Some(err),
+                }
+            }
+        }
+    }
+}
+
 async fn send_user_text(api: &SharedBackendClient, state: &mut ChatState, text: &str) {
     state.notice = None;
+    match providers_ready_blocking() {
+        Ok(false) => {
+            state.notice = Some(
+                "AI Model Configuration Required — run /settings ai-models to add a provider key"
+                    .to_string(),
+            );
+            return;
+        }
+        Err(err) => {
+            state.notice = Some(err);
+            return;
+        }
+        Ok(true) => {}
+    }
     if state.session_id.is_none() {
         match ensure_session(api, text).await {
             Ok(id) => {
@@ -1261,6 +1366,19 @@ mod tests {
         assert_eq!(
             state.handle_key(KeyEvent::from(KeyCode::Enter)),
             ChatAction::Session(SessionCommand::New { assistant_id: None })
+        );
+        assert!(state.composer.is_empty());
+    }
+
+    #[test]
+    fn slash_settings_emits_settings_command() {
+        let mut state = ChatState::new();
+        state.composer = "/settings ai-models".to_string();
+        assert_eq!(
+            state.handle_key(KeyEvent::from(KeyCode::Enter)),
+            ChatAction::Settings(SettingsCommand::Section(
+                crate::tui::settings::SettingsSection::AiModels
+            ))
         );
         assert!(state.composer.is_empty());
     }

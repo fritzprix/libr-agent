@@ -35,6 +35,7 @@
 
 mod chat;
 mod sessions;
+mod settings;
 
 use crossterm::{
     execute,
