@@ -69,10 +69,97 @@ pub struct InstallConfirmState {
     pub overwrite_existing: bool,
 }
 
-#[derive(Debug)]
+enum BackgroundOutcome {
+    Notice(Result<String, String>),
+    Preview {
+        source: String,
+        is_url: bool,
+        preview: Result<skill_service::SkillImportPreview, String>,
+    },
+}
+
 pub struct BackgroundOp {
     pub label: String,
-    pub handle: tokio::task::JoinHandle<Result<String, String>>,
+    finished: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    outcome: std::sync::Arc<std::sync::Mutex<Option<BackgroundOutcome>>>,
+    handle: tauri::async_runtime::JoinHandle<()>,
+}
+
+impl BackgroundOp {
+    fn spawn_notice(
+        label: String,
+        fut: impl std::future::Future<Output = Result<String, String>> + Send + 'static,
+    ) -> Self {
+        let finished = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let outcome = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let finished_task = finished.clone();
+        let outcome_task = outcome.clone();
+        let handle = tauri::async_runtime::spawn(async move {
+            let result = fut.await;
+            if let Ok(mut slot) = outcome_task.lock() {
+                *slot = Some(BackgroundOutcome::Notice(result));
+            }
+            finished_task.store(true, std::sync::atomic::Ordering::SeqCst);
+        });
+        Self {
+            label,
+            finished,
+            outcome,
+            handle,
+        }
+    }
+
+    fn spawn_preview(
+        label: String,
+        source: String,
+        is_url: bool,
+        fut: impl std::future::Future<Output = Result<skill_service::SkillImportPreview, String>>
+            + Send
+            + 'static,
+    ) -> Self {
+        let finished = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let outcome = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let finished_task = finished.clone();
+        let outcome_task = outcome.clone();
+        let handle = tauri::async_runtime::spawn(async move {
+            let preview = fut.await;
+            if let Ok(mut slot) = outcome_task.lock() {
+                *slot = Some(BackgroundOutcome::Preview {
+                    source,
+                    is_url,
+                    preview,
+                });
+            }
+            finished_task.store(true, std::sync::atomic::Ordering::SeqCst);
+        });
+        Self {
+            label,
+            finished,
+            outcome,
+            handle,
+        }
+    }
+
+    fn is_finished(&self) -> bool {
+        self.finished.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    fn abort(&self) {
+        self.handle.abort();
+    }
+
+    fn take_outcome(&self) -> Option<BackgroundOutcome> {
+        self.outcome.lock().ok().and_then(|mut slot| slot.take())
+    }
+}
+
+impl std::fmt::Debug for BackgroundOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BackgroundOp")
+            .field("label", &self.label)
+            .field("finished", &self.is_finished())
+            .finish()
+    }
 }
 
 #[derive(Debug)]
@@ -153,18 +240,6 @@ impl SkillsScreen {
         if source.is_empty() {
             return Err("Usage: /skills install <path|url>".into());
         }
-        let is_url = source.starts_with("http://")
-            || source.starts_with("https://")
-            || source.starts_with("git@");
-        let preview = if is_url {
-            tauri::async_runtime::block_on(skill_service::preview_github_skill_install(
-                source.to_string(),
-            ))?
-        } else {
-            tauri::async_runtime::block_on(skill_service::preview_user_skill_import(
-                source.to_string(),
-            ))?
-        };
         let mut screen = Self::open().unwrap_or_else(|_| Self {
             view: View::List,
             rows: Vec::new(),
@@ -175,15 +250,33 @@ impl SkillsScreen {
             background_op: None,
             notice: None,
         });
-        screen.view = View::ConfirmInstall;
-        screen.confirm_install = Some(InstallConfirmState {
-            source: source.to_string(),
-            is_url,
-            preview,
-            approve_hooks: false,
-            overwrite_existing: false,
-        });
+        screen.start_preview(source)?;
         Ok(screen)
+    }
+
+    pub fn start_preview(&mut self, source: &str) -> Result<(), String> {
+        let source = source.trim();
+        if source.is_empty() {
+            return Err("Usage: /skills install <path|url>".into());
+        }
+        let is_url = source.starts_with("http://")
+            || source.starts_with("https://")
+            || source.starts_with("git@");
+        let source_owned = source.to_string();
+        let source_for_task = source_owned.clone();
+        self.background_op = Some(BackgroundOp::spawn_preview(
+            format!("Previewing skills from {source_owned}"),
+            source_owned,
+            is_url,
+            async move {
+                if is_url {
+                    skill_service::preview_github_skill_install(source_for_task).await
+                } else {
+                    skill_service::preview_user_skill_import(source_for_task).await
+                }
+            },
+        ));
+        Ok(())
     }
 
     #[allow(dead_code)]
@@ -223,19 +316,40 @@ impl SkillsScreen {
 
     pub fn poll_background(&mut self) {
         if let Some(op) = &self.background_op {
-            if op.handle.is_finished() {
-                let op = self.background_op.take().unwrap();
-                match tauri::async_runtime::block_on(op.handle) {
-                    Ok(Ok(msg)) => {
-                        self.notice = Some(msg);
-                        let _ = self.reload();
-                    }
-                    Ok(Err(err)) => {
-                        self.notice = Some(err);
-                    }
-                    Err(_) => {
-                        self.notice = Some("Operation cancelled".into());
-                    }
+            if !op.is_finished() {
+                return;
+            }
+            let op = self.background_op.take().unwrap();
+            match op.take_outcome() {
+                Some(BackgroundOutcome::Notice(Ok(msg))) => {
+                    self.notice = Some(msg);
+                    let _ = self.reload();
+                }
+                Some(BackgroundOutcome::Notice(Err(err))) => {
+                    self.notice = Some(err);
+                }
+                Some(BackgroundOutcome::Preview {
+                    source,
+                    is_url,
+                    preview: Ok(preview),
+                }) => {
+                    self.view = View::ConfirmInstall;
+                    self.confirm_install = Some(InstallConfirmState {
+                        source,
+                        is_url,
+                        preview,
+                        approve_hooks: false,
+                        overwrite_existing: false,
+                    });
+                    self.notice = None;
+                }
+                Some(BackgroundOutcome::Preview {
+                    preview: Err(err), ..
+                }) => {
+                    self.notice = Some(err);
+                }
+                None => {
+                    self.notice = Some("Operation cancelled".into());
                 }
             }
         }
@@ -262,9 +376,9 @@ impl SkillsScreen {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> SkillsAction {
-        if let Some(op) = &mut self.background_op {
+        if let Some(op) = &self.background_op {
             if key.code == KeyCode::Esc {
-                op.handle.abort();
+                op.abort();
                 self.background_op = None;
                 self.notice = Some("Operation cancelled".into());
                 return SkillsAction::None;
@@ -336,7 +450,7 @@ impl SkillsScreen {
                 KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
                     if let Some(confirm) = self.confirm_install.take() {
                         let label = format!("Installing skills from {}", confirm.source);
-                        let handle = tokio::spawn(async move {
+                        self.background_op = Some(BackgroundOp::spawn_notice(label, async move {
                             let res = if confirm.is_url {
                                 skill_service::install_github_skills(
                                     confirm.source.clone(),
@@ -361,8 +475,7 @@ impl SkillsScreen {
                                 res.overwritten_names.len(),
                                 confirm.approve_hooks
                             ))
-                        });
-                        self.background_op = Some(BackgroundOp { label, handle });
+                        }));
                     }
                     self.view = View::List;
                     SkillsAction::None
@@ -772,5 +885,62 @@ mod tests {
         assert_eq!(screen.view, View::List);
         assert!(screen.confirm_install.is_none());
         assert_eq!(screen.notice.as_deref(), Some("Install cancelled"));
+    }
+
+    #[test]
+    fn preview_and_install_spawn_on_plain_thread_without_panic() {
+        // Gatekeeper G2.1 / G2.2: preview + confirm install must use the app runtime.
+        let mut screen = SkillsScreen {
+            view: View::List,
+            rows: Vec::new(),
+            selected: 0,
+            folders_text: String::new(),
+            confirm_name: None,
+            confirm_install: None,
+            background_op: None,
+            notice: None,
+        };
+        screen
+            .start_preview("https://example.com/skills.git")
+            .expect("preview spawn must not panic on a plain std thread");
+        assert!(screen.background_op.is_some());
+        assert!(screen
+            .background_op
+            .as_ref()
+            .unwrap()
+            .label
+            .contains("Previewing"));
+        if let Some(op) = screen.background_op.take() {
+            op.abort();
+        }
+
+        use crate::services::skill_service::{
+            SkillImportKind, SkillImportPreview,
+        };
+        screen.view = View::ConfirmInstall;
+        screen.confirm_install = Some(InstallConfirmState {
+            source: "https://example.com/skills.git".into(),
+            is_url: true,
+            preview: SkillImportPreview {
+                kind: SkillImportKind::Plugin,
+                discovered_skills: Vec::new(),
+                conflicts: Vec::new(),
+                hooks: Vec::new(),
+                hooks_require_approval: false,
+            },
+            approve_hooks: false,
+            overwrite_existing: false,
+        });
+        screen.handle_key(KeyEvent::from(KeyCode::Char('y')));
+        assert!(screen.background_op.is_some());
+        assert!(screen
+            .background_op
+            .as_ref()
+            .unwrap()
+            .label
+            .contains("Installing"));
+        if let Some(op) = screen.background_op.take() {
+            op.abort();
+        }
     }
 }

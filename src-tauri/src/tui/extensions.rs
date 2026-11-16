@@ -112,10 +112,57 @@ pub struct FormState {
     pub field: FormField,
 }
 
-#[derive(Debug)]
 pub struct BackgroundOp {
     pub label: String,
-    pub handle: tokio::task::JoinHandle<Result<String, String>>,
+    finished: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    outcome: std::sync::Arc<std::sync::Mutex<Option<Result<String, String>>>>,
+    handle: tauri::async_runtime::JoinHandle<()>,
+}
+
+impl BackgroundOp {
+    fn spawn(
+        label: String,
+        fut: impl std::future::Future<Output = Result<String, String>> + Send + 'static,
+    ) -> Self {
+        let finished = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let outcome = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let finished_task = finished.clone();
+        let outcome_task = outcome.clone();
+        let handle = tauri::async_runtime::spawn(async move {
+            let result = fut.await;
+            if let Ok(mut slot) = outcome_task.lock() {
+                *slot = Some(result);
+            }
+            finished_task.store(true, std::sync::atomic::Ordering::SeqCst);
+        });
+        Self {
+            label,
+            finished,
+            outcome,
+            handle,
+        }
+    }
+
+    fn is_finished(&self) -> bool {
+        self.finished.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    fn abort(&self) {
+        self.handle.abort();
+    }
+
+    fn take_outcome(&self) -> Option<Result<String, String>> {
+        self.outcome.lock().ok().and_then(|mut slot| slot.take())
+    }
+}
+
+impl std::fmt::Debug for BackgroundOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BackgroundOp")
+            .field("label", &self.label)
+            .field("finished", &self.is_finished())
+            .finish()
+    }
 }
 
 #[derive(Debug)]
@@ -440,14 +487,13 @@ impl ExtensionsScreen {
         let row = resolve_server_by_name(repo, name)?;
         let row_id = row.id.clone();
         let name_clone = name.to_string();
-        let handle = tokio::spawn(async move {
-            let tools = McpServerService::probe_server(repo, &row_id).await?;
-            Ok(format!("Verified {name_clone} · {} tool(s)", tools.len()))
-        });
-        self.background_op = Some(BackgroundOp {
-            label: format!("Probing {name}"),
-            handle,
-        });
+        self.background_op = Some(BackgroundOp::spawn(
+            format!("Probing {name}"),
+            async move {
+                let tools = McpServerService::probe_server(repo, &row_id).await?;
+                Ok(format!("Verified {name_clone} · {} tool(s)", tools.len()))
+            },
+        ));
         Ok(())
     }
 
@@ -470,54 +516,61 @@ impl ExtensionsScreen {
             .ok_or_else(|| "App handle not ready for OAuth browser open".to_string())?
             .clone();
         let row_id = row.id.clone();
-        let handle = tokio::spawn(async move {
-            crate::commands::mcp_commands::start_oauth_flow(app_handle, row_id, auth).await
-        });
-        self.background_op = Some(BackgroundOp {
-            label: format!("Authenticating {name} in browser"),
-            handle,
-        });
+        self.background_op = Some(BackgroundOp::spawn(
+            format!("Authenticating {name} in browser"),
+            async move {
+                crate::commands::mcp_commands::start_oauth_flow(app_handle, row_id, auth).await
+            },
+        ));
         Ok(())
     }
 
     pub fn start_session_retry(&mut self, session_id: &str) -> Result<(), String> {
+        // Avoid get_mcp_service_proxy_manager()'s panic when the manager is unset
+        // (unit tests / attached TUI before boot).
+        if crate::state::try_get_mcp_server_repository().is_none() {
+            return Err(
+                "Extensions require the primary backend process (not available in attached TUI mode)"
+                    .into(),
+            );
+        }
         let mgr = crate::state::get_mcp_service_proxy_manager();
         let session_id = session_id.to_string();
-        let handle = tokio::spawn(async move {
-            let runtime = mgr.get_runtime_state(&session_id).await;
-            let failed = select_failed_servers(&runtime);
-            if failed.is_empty() {
-                return Ok("No failed session servers to retry".into());
-            }
-            let app_handle = crate::state::get_app_handle();
-            for name in &failed {
-                mgr.retry_failed_server(&session_id, name, app_handle)
-                    .await?;
-            }
-            Ok(format!("Retried {} failed server(s)", failed.len()))
-        });
-        self.background_op = Some(BackgroundOp {
-            label: "Retrying failed session servers".into(),
-            handle,
-        });
+        self.background_op = Some(BackgroundOp::spawn(
+            "Retrying failed session servers".into(),
+            async move {
+                let runtime = mgr.get_runtime_state(&session_id).await;
+                let failed = select_failed_servers(&runtime);
+                if failed.is_empty() {
+                    return Ok("No failed session servers to retry".into());
+                }
+                let app_handle = crate::state::get_app_handle();
+                for name in &failed {
+                    mgr.retry_failed_server(&session_id, name, app_handle)
+                        .await?;
+                }
+                Ok(format!("Retried {} failed server(s)", failed.len()))
+            },
+        ));
         Ok(())
     }
 
     pub fn poll_background(&mut self) {
         if let Some(op) = &self.background_op {
-            if op.handle.is_finished() {
-                let op = self.background_op.take().unwrap();
-                match tauri::async_runtime::block_on(op.handle) {
-                    Ok(Ok(msg)) => {
-                        self.notice = Some(msg);
-                        let _ = self.reload();
-                    }
-                    Ok(Err(err)) => {
-                        self.notice = Some(err);
-                    }
-                    Err(_) => {
-                        self.notice = Some("Operation cancelled".into());
-                    }
+            if !op.is_finished() {
+                return;
+            }
+            let op = self.background_op.take().unwrap();
+            match op.take_outcome() {
+                Some(Ok(msg)) => {
+                    self.notice = Some(msg);
+                    let _ = self.reload();
+                }
+                Some(Err(err)) => {
+                    self.notice = Some(err);
+                }
+                None => {
+                    self.notice = Some("Operation cancelled".into());
                 }
             }
         }
@@ -575,9 +628,9 @@ impl ExtensionsScreen {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> ExtensionsAction {
-        if let Some(op) = &mut self.background_op {
+        if let Some(op) = &self.background_op {
             if key.code == KeyCode::Esc {
-                op.handle.abort();
+                op.abort();
                 self.background_op = None;
                 self.notice = Some("Operation cancelled".into());
                 return ExtensionsAction::None;
@@ -1385,5 +1438,27 @@ mod tests {
 
         let act = screen.handle_key(KeyEvent::from(KeyCode::Esc));
         assert_eq!(act, ExtensionsAction::Closed);
+    }
+
+    #[test]
+    fn background_spawn_on_plain_thread_without_panic() {
+        // Gatekeeper G2.1: BackgroundOp must use tauri::async_runtime::spawn on a
+        // plain std thread (no #[tokio::test]). start_session_retry itself needs a
+        // booted backend; exercise the same spawn path directly.
+        let mut screen = ExtensionsScreen::open_presets();
+        screen.background_op = Some(BackgroundOp::spawn(
+            "Retrying failed session servers".into(),
+            async { Ok("ok".into()) },
+        ));
+        assert!(screen.background_op.is_some());
+        assert!(screen
+            .background_op
+            .as_ref()
+            .unwrap()
+            .label
+            .contains("Retrying"));
+        if let Some(op) = screen.background_op.take() {
+            op.abort();
+        }
     }
 }
