@@ -1710,4 +1710,95 @@ mod tests {
             other => panic!("expected AnswerPrompt, got {other:?}"),
         }
     }
+
+    #[test]
+    fn assistants_overlay_consumes_keys_and_closes_on_esc() {
+        use crate::entity::assistant::Model as AssistantModel;
+        use crate::repositories::error::DbError;
+        use crate::repositories::AssistantRepository;
+        use crate::tui::assistants::AssistantsScreen;
+        use std::sync::Arc;
+
+        struct EmptyAssistantRepo;
+        #[async_trait::async_trait]
+        impl AssistantRepository for EmptyAssistantRepo {
+            async fn create_assistant(
+                &self,
+                id: String,
+                name: String,
+                config: String,
+            ) -> Result<AssistantModel, DbError> {
+                Ok(AssistantModel {
+                    id,
+                    name,
+                    config,
+                    created_at: 0,
+                    updated_at: 0,
+                })
+            }
+            async fn get_assistant(&self, _id: &str) -> Result<Option<AssistantModel>, DbError> {
+                Ok(None)
+            }
+            async fn list_assistants(&self) -> Result<Vec<AssistantModel>, DbError> {
+                Ok(vec![])
+            }
+            async fn list_assistants_paginated(
+                &self,
+                _limit: u64,
+                _offset: u64,
+            ) -> Result<Vec<AssistantModel>, DbError> {
+                Ok(vec![])
+            }
+            async fn update_assistant(
+                &self,
+                id: &str,
+                name: Option<String>,
+                config: Option<String>,
+            ) -> Result<AssistantModel, DbError> {
+                Ok(AssistantModel {
+                    id: id.to_string(),
+                    name: name.unwrap_or_default(),
+                    config: config.unwrap_or_else(|| "{}".into()),
+                    created_at: 0,
+                    updated_at: 0,
+                })
+            }
+            async fn delete_assistant(&self, _id: &str) -> Result<(), DbError> {
+                Ok(())
+            }
+            async fn check_assistant_exists(&self, _name: &str) -> Result<bool, DbError> {
+                Ok(false)
+            }
+            async fn search_assistants(
+                &self,
+                _query: &str,
+            ) -> Result<Vec<AssistantModel>, DbError> {
+                Ok(vec![])
+            }
+            async fn count_assistants(&self) -> Result<u64, DbError> {
+                Ok(0)
+            }
+        }
+
+        let mut state = ChatState::default();
+        state.composer = "should-stay".into();
+        state.assistants = Some(
+            AssistantsScreen::open_with_repo(
+                None,
+                Some(Arc::new(EmptyAssistantRepo) as Arc<dyn AssistantRepository>),
+            )
+            .expect("assistants"),
+        );
+        assert_eq!(
+            state.handle_key(KeyEvent::from(KeyCode::Char('x'))),
+            ChatAction::None
+        );
+        assert_eq!(state.composer, "should-stay");
+        assert!(state.assistants.is_some());
+        assert_eq!(
+            state.handle_key(KeyEvent::from(KeyCode::Esc)),
+            ChatAction::None
+        );
+        assert!(state.assistants.is_none());
+    }
 }

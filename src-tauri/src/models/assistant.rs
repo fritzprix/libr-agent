@@ -24,7 +24,7 @@ impl From<AssistantModel> for AssistantDto {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AssistantSummaryDto {
     pub id: String,

@@ -1,9 +1,16 @@
 //! TUI `/playbooks` library screens (issue #2816 / parity §3.3).
+//!
+//! Persistence uses the in-process playbook repository. An attached second TUI
+//! that does not boot the backend (#2827) has no local repository, so these
+//! screens return "Playbooks not ready yet" until HTTP CRUD exists on the
+//! shared Session API.
 
+use crate::repositories::PlaybookRepository;
 use crate::services::playbook_service::{PlaybookDto, PlaybookService};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph, Wrap};
+use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PlaybooksCommand {
@@ -67,7 +74,6 @@ enum View {
     ConfirmDelete,
 }
 
-#[derive(Debug)]
 pub struct PlaybooksScreen {
     view: View,
     rows: Vec<PlaybookDto>,
@@ -76,6 +82,8 @@ pub struct PlaybooksScreen {
     selected: usize,
     confirm: Option<(String, String)>, // id, assistant_id
     notice: Option<String>,
+    /// Injected for tests; production uses [`try_get_playbook_repository`].
+    repo: Option<Arc<dyn PlaybookRepository>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -86,6 +94,14 @@ pub enum PlaybooksAction {
 
 impl PlaybooksScreen {
     pub fn open(query: Option<String>, sort: Option<String>) -> Result<Self, String> {
+        Self::open_with_repo(query, sort, None)
+    }
+
+    pub fn open_with_repo(
+        query: Option<String>,
+        sort: Option<String>,
+        repo: Option<Arc<dyn PlaybookRepository>>,
+    ) -> Result<Self, String> {
         let mut screen = Self {
             view: View::List,
             rows: Vec::new(),
@@ -94,6 +110,7 @@ impl PlaybooksScreen {
             selected: 0,
             confirm: None,
             notice: None,
+            repo,
         };
         screen.reload()?;
         Ok(screen)
@@ -111,15 +128,29 @@ impl PlaybooksScreen {
         Ok(screen)
     }
 
+    fn with_repo<T>(
+        &self,
+        f: impl FnOnce(&dyn PlaybookRepository) -> Result<T, String>,
+    ) -> Result<T, String> {
+        if let Some(repo) = &self.repo {
+            f(repo.as_ref())
+        } else {
+            let repo = crate::state::try_get_playbook_repository()
+                .ok_or_else(|| "Playbooks not ready yet".to_string())?;
+            f(repo)
+        }
+    }
+
     fn reload(&mut self) -> Result<(), String> {
-        let repo = crate::state::try_get_playbook_repository()
-            .ok_or_else(|| "Playbooks not ready yet".to_string())?;
-        let mut rows = tauri::async_runtime::block_on(PlaybookService::list_playbooks(
-            repo,
-            String::new(),
-            Some(self.sort.clone()),
-            Some(true),
-        ))?;
+        let sort = self.sort.clone();
+        let mut rows = self.with_repo(|repo| {
+            tauri::async_runtime::block_on(PlaybookService::list_playbooks(
+                repo,
+                String::new(),
+                Some(sort),
+                Some(true),
+            ))
+        })?;
         if !self.filter.is_empty() {
             let q = self.filter.to_lowercase();
             rows.retain(|r| {
@@ -224,9 +255,9 @@ impl PlaybooksScreen {
     }
 
     fn delete_one(&self, id: &str, assistant_id: &str) -> Result<(), String> {
-        let repo = crate::state::try_get_playbook_repository()
-            .ok_or_else(|| "Playbooks not ready yet".to_string())?;
-        tauri::async_runtime::block_on(PlaybookService::delete_playbook(repo, id, assistant_id))
+        self.with_repo(|repo| {
+            tauri::async_runtime::block_on(PlaybookService::delete_playbook(repo, id, assistant_id))
+        })
     }
 
     fn toggle_bookmark(
@@ -235,14 +266,29 @@ impl PlaybooksScreen {
         assistant_id: &str,
         bookmarked: bool,
     ) -> Result<(), String> {
-        let repo = crate::state::try_get_playbook_repository()
-            .ok_or_else(|| "Playbooks not ready yet".to_string())?;
-        tauri::async_runtime::block_on(PlaybookService::toggle_playbook_bookmark(
-            repo,
-            id,
-            assistant_id,
-            bookmarked,
-        ))
+        self.with_repo(|repo| {
+            tauri::async_runtime::block_on(PlaybookService::toggle_playbook_bookmark(
+                repo,
+                id,
+                assistant_id,
+                bookmarked,
+            ))
+        })
+    }
+}
+
+impl std::fmt::Debug for PlaybooksScreen {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PlaybooksScreen")
+            .field("view", &self.view)
+            .field("rows", &self.rows.len())
+            .field("filter", &self.filter)
+            .field("sort", &self.sort)
+            .field("selected", &self.selected)
+            .field("confirm", &self.confirm)
+            .field("notice", &self.notice)
+            .field("repo", &self.repo.as_ref().map(|_| "Some(..)"))
+            .finish()
     }
 }
 
@@ -334,6 +380,13 @@ fn centered(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entity::playbook::Model as PlaybookModel;
+    use crate::repositories::error::DbError;
+    use crate::repositories::PaginationParams;
+    use crate::utils::pagination::Page;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use std::collections::HashMap;
+    use std::sync::Mutex;
 
     #[test]
     fn parse_playbooks_commands() {
@@ -356,5 +409,237 @@ mod tests {
             })
         );
         assert_eq!(parse_playbooks_command("/assistants"), None);
+    }
+
+    #[test]
+    fn open_without_repo_reports_not_ready() {
+        let err = match PlaybooksScreen::open_with_repo(None, None, None) {
+            Ok(_) => panic!("expected not-ready error"),
+            Err(e) => e,
+        };
+        assert!(err.contains("not ready"), "{err}");
+    }
+
+    struct MemPlaybookRepo {
+        rows: Mutex<HashMap<(String, String), PlaybookModel>>,
+    }
+
+    impl MemPlaybookRepo {
+        fn new() -> Arc<Self> {
+            Arc::new(Self {
+                rows: Mutex::new(HashMap::new()),
+            })
+        }
+
+        fn seed(self: &Arc<Self>, id: &str, assistant_id: &str, goal: &str, bookmarked: bool) {
+            let key = (id.to_string(), assistant_id.to_string());
+            self.rows.lock().unwrap().insert(
+                key,
+                PlaybookModel {
+                    id: id.to_string(),
+                    assistant_id: assistant_id.to_string(),
+                    goal: goal.to_string(),
+                    initial_command: None,
+                    workflow: "[]".into(),
+                    success_criteria: None,
+                    default_target_session: None,
+                    created_at: 10,
+                    updated_at: 10,
+                    is_bookmarked: bookmarked,
+                },
+            );
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl PlaybookRepository for MemPlaybookRepo {
+        async fn create_playbook(
+            &self,
+            id: String,
+            assistant_id: String,
+            goal: String,
+            workflow: String,
+            default_target_session: Option<String>,
+        ) -> Result<PlaybookModel, DbError> {
+            let model = PlaybookModel {
+                id: id.clone(),
+                assistant_id: assistant_id.clone(),
+                goal,
+                initial_command: None,
+                workflow,
+                success_criteria: None,
+                default_target_session,
+                created_at: 1,
+                updated_at: 1,
+                is_bookmarked: false,
+            };
+            self.rows
+                .lock()
+                .unwrap()
+                .insert((id, assistant_id), model.clone());
+            Ok(model)
+        }
+
+        async fn get_playbook(
+            &self,
+            id: &str,
+            assistant_id: &str,
+        ) -> Result<Option<PlaybookModel>, DbError> {
+            Ok(self
+                .rows
+                .lock()
+                .unwrap()
+                .get(&(id.to_string(), assistant_id.to_string()))
+                .cloned())
+        }
+
+        async fn list_playbooks(
+            &self,
+            assistant_id: Option<&str>,
+            _pagination: PaginationParams,
+        ) -> Result<Page<PlaybookModel>, DbError> {
+            let items: Vec<_> = self
+                .rows
+                .lock()
+                .unwrap()
+                .values()
+                .filter(|r| assistant_id.is_none_or(|a| r.assistant_id == a))
+                .cloned()
+                .collect();
+            let total = items.len() as u64;
+            Ok(Page::new(items, 1, total.max(1), total))
+        }
+
+        async fn update_playbook(
+            &self,
+            id: &str,
+            assistant_id: &str,
+            goal: Option<String>,
+            workflow: Option<String>,
+            default_target_session: Option<Option<String>>,
+            is_bookmarked: Option<bool>,
+        ) -> Result<PlaybookModel, DbError> {
+            let key = (id.to_string(), assistant_id.to_string());
+            let mut map = self.rows.lock().unwrap();
+            let row = map
+                .get_mut(&key)
+                .ok_or_else(|| DbError::NotFound(format!("playbook {id}")))?;
+            if let Some(g) = goal {
+                row.goal = g;
+            }
+            if let Some(w) = workflow {
+                row.workflow = w;
+            }
+            if let Some(pin) = default_target_session {
+                row.default_target_session = pin;
+            }
+            if let Some(b) = is_bookmarked {
+                row.is_bookmarked = b;
+            }
+            Ok(row.clone())
+        }
+
+        async fn delete_playbook(&self, id: &str, assistant_id: &str) -> Result<(), DbError> {
+            self.rows
+                .lock()
+                .unwrap()
+                .remove(&(id.to_string(), assistant_id.to_string()));
+            Ok(())
+        }
+
+        async fn delete_by_assistant(&self, assistant_id: &str) -> Result<u64, DbError> {
+            let mut map = self.rows.lock().unwrap();
+            let before = map.len();
+            map.retain(|(_, a), _| a != assistant_id);
+            Ok((before - map.len()) as u64)
+        }
+
+        async fn search_playbooks(
+            &self,
+            _assistant_id: &str,
+            _query: &str,
+        ) -> Result<Vec<PlaybookModel>, DbError> {
+            Ok(self.rows.lock().unwrap().values().cloned().collect())
+        }
+
+        async fn get_bookmarked_playbooks(
+            &self,
+            _assistant_id: &str,
+        ) -> Result<Vec<PlaybookModel>, DbError> {
+            Ok(self
+                .rows
+                .lock()
+                .unwrap()
+                .values()
+                .filter(|r| r.is_bookmarked)
+                .cloned()
+                .collect())
+        }
+
+        async fn count_playbooks(&self, assistant_id: &str) -> Result<u64, DbError> {
+            Ok(self
+                .rows
+                .lock()
+                .unwrap()
+                .values()
+                .filter(|r| r.assistant_id == assistant_id)
+                .count() as u64)
+        }
+    }
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn delete_confirm_and_bookmark_toggle() {
+        let repo = MemPlaybookRepo::new();
+        repo.seed("p1", "asst-a", "Write report", false);
+        repo.seed("p2", "asst-b", "Other", true);
+        let mut screen = PlaybooksScreen::open_with_repo(
+            None,
+            None,
+            Some(repo.clone() as Arc<dyn PlaybookRepository>),
+        )
+        .expect("open");
+        assert_eq!(screen.rows.len(), 2);
+
+        screen.selected = screen.rows.iter().position(|r| r.id == "p1").unwrap();
+        screen.handle_key(key(KeyCode::Char('b')));
+        assert!(
+            repo.rows
+                .lock()
+                .unwrap()
+                .get(&("p1".into(), "asst-a".into()))
+                .unwrap()
+                .is_bookmarked
+        );
+
+        screen.handle_key(key(KeyCode::Char('d')));
+        assert!(screen.confirm.is_some());
+        screen.handle_key(key(KeyCode::Char('y')));
+        assert!(repo
+            .rows
+            .lock()
+            .unwrap()
+            .get(&("p1".into(), "asst-a".into()))
+            .is_none());
+    }
+
+    #[test]
+    fn sort_key_cycles_and_filter_applies() {
+        let repo = MemPlaybookRepo::new();
+        repo.seed("p1", "asst-z", "Alpha goal", false);
+        repo.seed("p2", "asst-a", "Zulu goal", false);
+        let mut screen = PlaybooksScreen::open_with_repo(
+            Some("alpha".into()),
+            Some("created_at".into()),
+            Some(repo as Arc<dyn PlaybookRepository>),
+        )
+        .expect("open");
+        assert_eq!(screen.rows.len(), 1);
+        assert_eq!(screen.rows[0].id, "p1");
+        screen.handle_key(key(KeyCode::Char('s')));
+        assert_eq!(screen.sort, "assistant");
     }
 }

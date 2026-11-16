@@ -1,11 +1,18 @@
 //! TUI `/assistants` library screens (issue #2816 / parity §3.3).
+//!
+//! Persistence uses the in-process assistant repository (same SQLite path as the
+//! GUI). An attached second TUI that does not boot the backend (#2827) has no
+//! local repository, so these screens return "Assistants not ready yet" until
+//! HTTP CRUD for assistants exists on the shared Session API.
 
 use crate::models::assistant::{AssistantDto, AssistantSummaryDto};
+use crate::repositories::AssistantRepository;
 use crate::services::AssistantService;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph, Wrap};
 use serde_json::{json, Value};
+use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AssistantsCommand {
@@ -101,10 +108,10 @@ struct EditForm {
     name: String,
     description: String,
     system_prompt: String,
-    /// Comma-separated MCP server ids (Tools page).
-    tool_servers: String,
-    /// Comma-separated skill names (Skills page).
-    skills: String,
+    /// Comma-separated `mcpServerIds` (Tools page; GUI key).
+    mcp_server_ids: String,
+    /// Comma-separated `disabledSkills` exclusion list (Skills page; GUI key).
+    disabled_skills: String,
     page: EditPage,
     field: usize,
     editing: bool,
@@ -112,7 +119,6 @@ struct EditForm {
     baseline_config: Value,
 }
 
-#[derive(Debug)]
 pub struct AssistantsScreen {
     view: View,
     rows: Vec<AssistantSummaryDto>,
@@ -121,6 +127,8 @@ pub struct AssistantsScreen {
     edit: Option<EditForm>,
     confirm_id: Option<String>,
     notice: Option<String>,
+    /// Injected for tests; production uses [`try_get_assistant_repository`].
+    repo: Option<Arc<dyn AssistantRepository>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -131,6 +139,14 @@ pub enum AssistantsAction {
 
 impl AssistantsScreen {
     pub fn open(query: Option<String>) -> Result<Self, String> {
+        Self::open_with_repo(query, None)
+    }
+
+    /// Test / injectable entry: pass a repository when the process has none.
+    pub fn open_with_repo(
+        query: Option<String>,
+        repo: Option<Arc<dyn AssistantRepository>>,
+    ) -> Result<Self, String> {
         let mut screen = Self {
             view: View::List,
             rows: Vec::new(),
@@ -139,6 +155,7 @@ impl AssistantsScreen {
             edit: None,
             confirm_id: None,
             notice: None,
+            repo,
         };
         screen.reload()?;
         Ok(screen)
@@ -168,10 +185,23 @@ impl AssistantsScreen {
         Ok(screen)
     }
 
+    fn with_repo<T>(
+        &self,
+        f: impl FnOnce(&dyn AssistantRepository) -> Result<T, String>,
+    ) -> Result<T, String> {
+        if let Some(repo) = &self.repo {
+            f(repo.as_ref())
+        } else {
+            let repo = crate::state::try_get_assistant_repository()
+                .ok_or_else(|| "Assistants not ready yet".to_string())?;
+            f(repo)
+        }
+    }
+
     fn reload(&mut self) -> Result<(), String> {
-        let repo = crate::state::try_get_assistant_repository()
-            .ok_or_else(|| "Assistants not ready yet".to_string())?;
-        let models = tauri::async_runtime::block_on(AssistantService::list_assistants(repo))?;
+        let models = self.with_repo(|repo| {
+            tauri::async_runtime::block_on(AssistantService::list_assistants(repo))
+        })?;
         let mut rows: Vec<AssistantSummaryDto> = models.into_iter().map(|m| m.into()).collect();
         if !self.filter.is_empty() {
             let q = self.filter.to_lowercase();
@@ -185,7 +215,7 @@ impl AssistantsScreen {
                     || r.id.to_lowercase().contains(&q)
             });
         }
-        rows.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        rows.sort_by_key(|a| a.name.to_lowercase());
         self.rows = rows;
         if self.selected >= self.rows.len() {
             self.selected = self.rows.len().saturating_sub(1);
@@ -200,8 +230,8 @@ impl AssistantsScreen {
             name: String::new(),
             description: String::new(),
             system_prompt: String::new(),
-            tool_servers: String::new(),
-            skills: String::new(),
+            mcp_server_ids: String::new(),
+            disabled_skills: String::new(),
             page: EditPage::General,
             field: 0,
             editing: false,
@@ -212,9 +242,10 @@ impl AssistantsScreen {
     }
 
     fn begin_edit(&mut self, id: &str) -> Result<(), String> {
-        let repo = crate::state::try_get_assistant_repository()
-            .ok_or_else(|| "Assistants not ready yet".to_string())?;
-        let model = tauri::async_runtime::block_on(AssistantService::get_assistant(repo, id))?
+        let model = self
+            .with_repo(|repo| {
+                tauri::async_runtime::block_on(AssistantService::get_assistant(repo, id))
+            })?
             .ok_or_else(|| format!("Assistant not found: {id}"))?;
         let dto: AssistantDto = model.into();
         let config = dto.config.clone();
@@ -228,34 +259,15 @@ impl AssistantsScreen {
             .and_then(Value::as_str)
             .unwrap_or("")
             .to_string();
-        let tool_servers = config
-            .get("mcpServers")
-            .and_then(Value::as_array)
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(Value::as_str)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            })
-            .unwrap_or_default();
-        let skills = config
-            .get("skills")
-            .and_then(Value::as_array)
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(Value::as_str)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            })
-            .unwrap_or_default();
+        let (mcp_server_ids, disabled_skills) = read_tools_skills_csv(&config);
         self.edit = Some(EditForm {
             id: dto.id,
             is_new: false,
             name: dto.name,
             description,
             system_prompt,
-            tool_servers,
-            skills,
+            mcp_server_ids,
+            disabled_skills,
             page: EditPage::General,
             field: 0,
             editing: false,
@@ -432,8 +444,8 @@ impl AssistantsScreen {
                     (EditPage::General, 0) => edit.name.clone(),
                     (EditPage::General, 1) => edit.description.clone(),
                     (EditPage::General, 2) => edit.system_prompt.clone(),
-                    (EditPage::Tools, _) => edit.tool_servers.clone(),
-                    (EditPage::Skills, _) => edit.skills.clone(),
+                    (EditPage::Tools, _) => edit.mcp_server_ids.clone(),
+                    (EditPage::Skills, _) => edit.disabled_skills.clone(),
                     _ => String::new(),
                 };
                 edit.editing = true;
@@ -448,8 +460,8 @@ impl AssistantsScreen {
             (EditPage::General, 0) => edit.name = edit.buf.clone(),
             (EditPage::General, 1) => edit.description = edit.buf.clone(),
             (EditPage::General, 2) => edit.system_prompt = edit.buf.clone(),
-            (EditPage::Tools, _) => edit.tool_servers = edit.buf.clone(),
-            (EditPage::Skills, _) => edit.skills = edit.buf.clone(),
+            (EditPage::Tools, _) => edit.mcp_server_ids = edit.buf.clone(),
+            (EditPage::Skills, _) => edit.disabled_skills = edit.buf.clone(),
             _ => {}
         }
     }
@@ -463,55 +475,123 @@ impl AssistantsScreen {
         if name.is_empty() {
             return Err("Name is required".into());
         }
-        let mut config = edit.baseline_config.clone();
-        if !config.is_object() {
-            config = json!({});
-        }
-        let obj = config.as_object_mut().expect("object");
-        obj.insert("description".into(), json!(edit.description));
-        obj.insert("systemPrompt".into(), json!(edit.system_prompt));
-        let servers: Vec<Value> = edit
-            .tool_servers
-            .split(',')
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(|s| Value::String(s.to_string()))
-            .collect();
-        obj.insert("mcpServers".into(), Value::Array(servers));
-        let skills: Vec<Value> = edit
-            .skills
-            .split(',')
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(|s| Value::String(s.to_string()))
-            .collect();
-        obj.insert("skills".into(), Value::Array(skills));
+        let config = build_assistant_config(
+            &edit.baseline_config,
+            &edit.description,
+            &edit.system_prompt,
+            &edit.mcp_server_ids,
+            &edit.disabled_skills,
+        )?;
 
-        let repo = crate::state::try_get_assistant_repository()
-            .ok_or_else(|| "Assistants not ready yet".to_string())?;
-        if edit.is_new {
-            tauri::async_runtime::block_on(AssistantService::create_assistant(
-                repo,
-                edit.id.clone(),
-                name.to_string(),
-                config,
-            ))?;
-        } else {
-            tauri::async_runtime::block_on(AssistantService::update_assistant(
-                repo,
-                &edit.id,
-                Some(name.to_string()),
-                Some(config),
-            ))?;
-        }
-        Ok(())
+        let id = edit.id.clone();
+        let is_new = edit.is_new;
+        let name = name.to_string();
+        self.with_repo(|repo| {
+            if is_new {
+                tauri::async_runtime::block_on(AssistantService::create_assistant(
+                    repo, id, name, config,
+                ))
+                .map(|_| ())
+            } else {
+                tauri::async_runtime::block_on(AssistantService::update_assistant(
+                    repo,
+                    &id,
+                    Some(name),
+                    Some(config),
+                ))
+                .map(|_| ())
+            }
+        })
     }
 
     fn delete_by_id(&self, id: &str) -> Result<(), String> {
-        let repo = crate::state::try_get_assistant_repository()
-            .ok_or_else(|| "Assistants not ready yet".to_string())?;
-        tauri::async_runtime::block_on(AssistantService::delete_assistant(repo, id))
+        self.with_repo(|repo| {
+            tauri::async_runtime::block_on(AssistantService::delete_assistant(repo, id))
+        })
     }
+}
+
+impl std::fmt::Debug for AssistantsScreen {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AssistantsScreen")
+            .field("view", &self.view)
+            .field("rows", &self.rows)
+            .field("filter", &self.filter)
+            .field("selected", &self.selected)
+            .field("edit", &self.edit)
+            .field("confirm_id", &self.confirm_id)
+            .field("notice", &self.notice)
+            .field("repo", &self.repo.as_ref().map(|_| "Some(..)"))
+            .finish()
+    }
+}
+
+/// Parse a comma-separated id list; reject tokens that contain whitespace.
+fn parse_id_csv(csv: &str) -> Result<Vec<String>, String> {
+    let mut out = Vec::new();
+    for raw in csv.split(',') {
+        let id = raw.trim();
+        if id.is_empty() {
+            continue;
+        }
+        if id.chars().any(char::is_whitespace) {
+            return Err(format!("Invalid id (contains whitespace): {id}"));
+        }
+        out.push(id.to_string());
+    }
+    Ok(out)
+}
+
+fn string_array_csv(config: &Value, key: &str) -> String {
+    config
+        .get(key)
+        .and_then(Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(Value::as_str)
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .unwrap_or_default()
+}
+
+/// Read GUI-shaped Tools/Skills fields from an assistant config.
+pub(crate) fn read_tools_skills_csv(config: &Value) -> (String, String) {
+    (
+        string_array_csv(config, "mcpServerIds"),
+        string_array_csv(config, "disabledSkills"),
+    )
+}
+
+/// Merge form fields into a GUI-shaped assistant config (`mcpServerIds`,
+/// `disabledSkills` exclusion list). Removes the legacy TUI-only keys.
+pub(crate) fn build_assistant_config(
+    baseline: &Value,
+    description: &str,
+    system_prompt: &str,
+    mcp_server_ids_csv: &str,
+    disabled_skills_csv: &str,
+) -> Result<Value, String> {
+    let mut config = baseline.clone();
+    if !config.is_object() {
+        config = json!({});
+    }
+    let obj = config.as_object_mut().expect("object");
+    obj.insert("description".into(), json!(description));
+    obj.insert("systemPrompt".into(), json!(system_prompt));
+    let servers = parse_id_csv(mcp_server_ids_csv)?;
+    let disabled = parse_id_csv(disabled_skills_csv)?;
+    obj.insert(
+        "mcpServerIds".into(),
+        Value::Array(servers.into_iter().map(Value::String).collect()),
+    );
+    obj.insert(
+        "disabledSkills".into(),
+        Value::Array(disabled.into_iter().map(Value::String).collect()),
+    );
+    obj.remove("mcpServers");
+    obj.remove("skills");
+    Ok(config)
 }
 
 pub fn draw_assistants(frame: &mut Frame<'_>, screen: &AssistantsScreen) {
@@ -614,16 +694,16 @@ fn draw_edit(frame: &mut Frame<'_>, screen: &AssistantsScreen) {
             0,
             edit.field,
             edit.editing,
-            "MCP servers (comma-separated)",
-            &edit.tool_servers,
+            "MCP server IDs (comma-separated)",
+            &edit.mcp_server_ids,
             &edit.buf,
         )],
         EditPage::Skills => vec![field_line(
             0,
             edit.field,
             edit.editing,
-            "Skills (comma-separated)",
-            &edit.skills,
+            "Disabled skills (comma-separated exclusion list)",
+            &edit.disabled_skills,
             &edit.buf,
         )],
     };
@@ -690,6 +770,11 @@ fn centered(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entity::assistant::Model as AssistantModel;
+    use crate::repositories::error::DbError;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use std::collections::HashMap;
+    use std::sync::Mutex;
 
     #[test]
     fn parse_assistants_commands() {
@@ -722,5 +807,258 @@ mod tests {
             })
         );
         assert_eq!(parse_assistants_command("/new"), None);
+    }
+
+    #[test]
+    fn gui_shaped_config_round_trips_without_loss() {
+        let baseline = json!({
+            "description": "d0",
+            "systemPrompt": "p0",
+            "mcpServerIds": ["srv-a", "srv-b"],
+            "disabledSkills": ["skill-x"],
+            "allowedBuiltInServiceAliases": ["browser"],
+            "deletionProtected": false
+        });
+        let (mcp_csv, disabled_csv) = read_tools_skills_csv(&baseline);
+        assert_eq!(mcp_csv, "srv-a, srv-b");
+        assert_eq!(disabled_csv, "skill-x");
+        let rebuilt =
+            build_assistant_config(&baseline, "d1", "p1", &mcp_csv, &disabled_csv).expect("build");
+        assert_eq!(
+            rebuilt.get("mcpServerIds"),
+            Some(&json!(["srv-a", "srv-b"]))
+        );
+        assert_eq!(rebuilt.get("disabledSkills"), Some(&json!(["skill-x"])));
+        assert_eq!(
+            rebuilt.get("allowedBuiltInServiceAliases"),
+            Some(&json!(["browser"]))
+        );
+        assert!(rebuilt.get("mcpServers").is_none());
+        assert!(rebuilt.get("skills").is_none());
+    }
+
+    #[test]
+    fn open_without_repo_reports_not_ready() {
+        let err = match AssistantsScreen::open_with_repo(None, None) {
+            Ok(_) => panic!("expected not-ready error"),
+            Err(e) => e,
+        };
+        assert!(
+            err.contains("not ready"),
+            "attached TUI without local repos must fail clearly: {err}"
+        );
+    }
+
+    struct MemAssistantRepo {
+        rows: Mutex<HashMap<String, AssistantModel>>,
+    }
+
+    impl MemAssistantRepo {
+        fn new() -> Arc<Self> {
+            Arc::new(Self {
+                rows: Mutex::new(HashMap::new()),
+            })
+        }
+
+        fn seed(self: &Arc<Self>, id: &str, name: &str, config: Value) {
+            let now = 1;
+            self.rows.lock().unwrap().insert(
+                id.to_string(),
+                AssistantModel {
+                    id: id.to_string(),
+                    name: name.to_string(),
+                    config: config.to_string(),
+                    created_at: now,
+                    updated_at: now,
+                },
+            );
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl AssistantRepository for MemAssistantRepo {
+        async fn create_assistant(
+            &self,
+            id: String,
+            name: String,
+            config: String,
+        ) -> Result<AssistantModel, DbError> {
+            let now = 2;
+            let model = AssistantModel {
+                id: id.clone(),
+                name,
+                config,
+                created_at: now,
+                updated_at: now,
+            };
+            self.rows.lock().unwrap().insert(id, model.clone());
+            Ok(model)
+        }
+
+        async fn get_assistant(&self, id: &str) -> Result<Option<AssistantModel>, DbError> {
+            Ok(self.rows.lock().unwrap().get(id).cloned())
+        }
+
+        async fn list_assistants(&self) -> Result<Vec<AssistantModel>, DbError> {
+            Ok(self.rows.lock().unwrap().values().cloned().collect())
+        }
+
+        async fn list_assistants_paginated(
+            &self,
+            _limit: u64,
+            _offset: u64,
+        ) -> Result<Vec<AssistantModel>, DbError> {
+            self.list_assistants().await
+        }
+
+        async fn update_assistant(
+            &self,
+            id: &str,
+            name: Option<String>,
+            config: Option<String>,
+        ) -> Result<AssistantModel, DbError> {
+            let mut map = self.rows.lock().unwrap();
+            let row = map
+                .get_mut(id)
+                .ok_or_else(|| DbError::NotFound(format!("assistant {id}")))?;
+            if let Some(n) = name {
+                row.name = n;
+            }
+            if let Some(c) = config {
+                row.config = c;
+            }
+            row.updated_at = 3;
+            Ok(row.clone())
+        }
+
+        async fn delete_assistant(&self, id: &str) -> Result<(), DbError> {
+            self.rows.lock().unwrap().remove(id);
+            Ok(())
+        }
+
+        async fn check_assistant_exists(&self, name: &str) -> Result<bool, DbError> {
+            Ok(self.rows.lock().unwrap().values().any(|r| r.name == name))
+        }
+
+        async fn search_assistants(&self, _query: &str) -> Result<Vec<AssistantModel>, DbError> {
+            self.list_assistants().await
+        }
+
+        async fn count_assistants(&self) -> Result<u64, DbError> {
+            Ok(self.rows.lock().unwrap().len() as u64)
+        }
+    }
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    fn ctrl(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::CONTROL)
+    }
+
+    #[test]
+    fn create_edit_save_and_reject_empty_name() {
+        let repo = MemAssistantRepo::new();
+        let mut screen = AssistantsScreen::open_with_repo(
+            None,
+            Some(repo.clone() as Arc<dyn AssistantRepository>),
+        )
+        .expect("open");
+        screen.begin_new();
+        assert!(matches!(screen.save_edit(), Err(e) if e.contains("Name is required")));
+
+        let edit = screen.edit.as_mut().unwrap();
+        edit.name = "Demo".into();
+        edit.mcp_server_ids = "mcp-1".into();
+        edit.disabled_skills = "skip-me".into();
+        screen.save_edit().expect("save");
+        screen.reload().expect("reload");
+        assert_eq!(screen.rows.len(), 1);
+        assert_eq!(screen.rows[0].name, "Demo");
+
+        let id = screen.rows[0].id.clone();
+        screen.begin_edit(&id).expect("edit");
+        let edit = screen.edit.as_mut().unwrap();
+        assert_eq!(edit.mcp_server_ids, "mcp-1");
+        assert_eq!(edit.disabled_skills, "skip-me");
+        edit.description = "updated".into();
+        screen.save_edit().expect("update");
+        let stored = repo.rows.lock().unwrap().get(&id).unwrap().clone();
+        let cfg: Value = serde_json::from_str(&stored.config).unwrap();
+        assert_eq!(cfg.get("description"), Some(&json!("updated")));
+        assert_eq!(cfg.get("mcpServerIds"), Some(&json!(["mcp-1"])));
+        assert_eq!(cfg.get("disabledSkills"), Some(&json!(["skip-me"])));
+    }
+
+    #[test]
+    fn delete_protected_refused_and_confirm_deletes() {
+        let repo = MemAssistantRepo::new();
+        repo.seed(
+            "prot",
+            "Protected",
+            json!({ "deletionProtected": true, "description": "x" }),
+        );
+        repo.seed(
+            "free",
+            "Free",
+            json!({ "deletionProtected": false, "description": "y" }),
+        );
+        let mut screen = AssistantsScreen::open_with_repo(
+            None,
+            Some(repo.clone() as Arc<dyn AssistantRepository>),
+        )
+        .expect("open");
+
+        // Select protected row and press d.
+        screen.selected = screen
+            .rows
+            .iter()
+            .position(|r| r.id == "prot")
+            .expect("prot");
+        screen.handle_key(key(KeyCode::Char('d')));
+        assert!(screen.confirm_id.is_none());
+        assert!(screen
+            .notice
+            .as_deref()
+            .unwrap_or("")
+            .contains("deletion-protected"));
+
+        screen.selected = screen
+            .rows
+            .iter()
+            .position(|r| r.id == "free")
+            .expect("free");
+        screen.handle_key(key(KeyCode::Char('d')));
+        assert_eq!(screen.confirm_id.as_deref(), Some("free"));
+        screen.handle_key(key(KeyCode::Char('y')));
+        assert!(repo.rows.lock().unwrap().get("free").is_none());
+        assert!(repo.rows.lock().unwrap().get("prot").is_some());
+    }
+
+    #[test]
+    fn list_filter_keeps_matching_rows() {
+        let repo = MemAssistantRepo::new();
+        repo.seed("a", "Alpha Bot", json!({ "description": "one" }));
+        repo.seed("b", "Beta", json!({ "description": "alpha-ish" }));
+        let screen = AssistantsScreen::open_with_repo(
+            Some("alpha".into()),
+            Some(repo as Arc<dyn AssistantRepository>),
+        )
+        .expect("open");
+        assert_eq!(screen.rows.len(), 2);
+    }
+
+    #[test]
+    fn ctrl_s_saves_from_edit_view() {
+        let repo = MemAssistantRepo::new();
+        let mut screen =
+            AssistantsScreen::open_with_repo(None, Some(repo as Arc<dyn AssistantRepository>))
+                .expect("open");
+        screen.begin_new();
+        screen.edit.as_mut().unwrap().name = "Saved".into();
+        screen.handle_key(ctrl(KeyCode::Char('s')));
+        assert!(matches!(screen.view, View::List));
+        assert_eq!(screen.rows.len(), 1);
     }
 }
