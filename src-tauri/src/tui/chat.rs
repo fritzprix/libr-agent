@@ -14,8 +14,8 @@ use crate::tui::sessions::{
     parse_session_command, rename_session, PickerAction, SessionCommand, SessionPicker,
 };
 use crate::tui::settings::{
-    draw_settings, parse_settings_command, providers_ready_blocking, SettingsAction,
-    SettingsCommand, SettingsScreen,
+    draw_settings, parse_settings_command, providers_ready, SettingsAction, SettingsCommand,
+    SettingsScreen,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::prelude::*;
@@ -869,7 +869,7 @@ pub fn run_chat_front(stdout: &mut Stdout) {
                 match SharedBackendClient::new(descriptor.port) {
                     Ok(c) => {
                         state.status = format!("Backend on port {}", descriptor.port);
-                        if providers_ready_blocking().ok() == Some(false) {
+                        if runtime.block_on(providers_ready()).ok() == Some(false) {
                             state.notice = Some(
                                 "AI Model Configuration Required — /settings ai-models".to_string(),
                             );
@@ -1064,7 +1064,7 @@ fn apply_settings_command(state: &mut ChatState, command: SettingsCommand) {
 
 async fn send_user_text(api: &SharedBackendClient, state: &mut ChatState, text: &str) {
     state.notice = None;
-    match providers_ready_blocking() {
+    match providers_ready().await {
         Ok(false) => {
             state.notice = Some(
                 "AI Model Configuration Required — run /settings ai-models to add a provider key"

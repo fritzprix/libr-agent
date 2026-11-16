@@ -381,15 +381,17 @@ const FIELDS: &[FieldSpec] = &[
 ];
 
 #[derive(Debug, Clone)]
-struct SettingsDraft {
+pub struct SettingsDraft {
     baseline: HashMap<String, Value>,
     draft: HashMap<String, Value>,
 }
 
 impl SettingsDraft {
     fn load_blocking() -> Result<Self, String> {
-        let repo = crate::state::try_get_settings_repository()
-            .ok_or_else(|| "Settings not ready yet".to_string())?;
+        let repo = crate::state::try_get_settings_repository().ok_or_else(|| {
+            "Settings require the primary backend process (not available in attached TUI mode)"
+                .to_string()
+        })?;
         let rows = tauri::async_runtime::block_on(repo.list())
             .map_err(|e| format!("Failed to list settings: {e}"))?;
         let mut map = HashMap::new();
@@ -404,30 +406,55 @@ impl SettingsDraft {
         })
     }
 
-    fn is_dirty(&self) -> bool {
+    pub fn is_dirty(&self) -> bool {
         self.draft != self.baseline
     }
 
-    fn section_dirty(&self, section: SettingsSection) -> bool {
+    pub fn section_dirty(&self, section: SettingsSection) -> bool {
         fields_for(section)
             .iter()
             .any(|field| self.draft.get(field.row) != self.baseline.get(field.row))
     }
 
-    fn dirty_section_count(&self) -> usize {
+    pub fn dirty_section_count(&self) -> usize {
         SettingsSection::all()
             .iter()
             .filter(|s| self.section_dirty(**s))
             .count()
     }
 
-    fn discard(&mut self) {
+    pub fn discard(&mut self) {
         self.draft = self.baseline.clone();
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub async fn save_to_repo(&mut self, repo: &dyn SettingsRepository) -> Result<usize, String> {
+        let mut changed = HashMap::new();
+        for (key, value) in &self.draft {
+            if self.baseline.get(key) != Some(value) {
+                changed.insert(key.clone(), value.clone());
+            }
+        }
+        if changed.is_empty() {
+            return Ok(0);
+        }
+        let count = changed.len();
+        let system = changed.get("systemSettings").cloned();
+        repo.set_many(changed)
+            .await
+            .map_err(|e| format!("Failed to save settings: {e}"))?;
+        if let Some(value) = system {
+            apply_system_side_effects(&value);
+        }
+        self.baseline = self.draft.clone();
+        Ok(count)
+    }
+
     fn save_blocking(&mut self) -> Result<(), String> {
-        let repo = crate::state::try_get_settings_repository()
-            .ok_or_else(|| "Settings not ready yet".to_string())?;
+        let repo = crate::state::try_get_settings_repository().ok_or_else(|| {
+            "Settings require the primary backend process (not available in attached TUI mode)"
+                .to_string()
+        })?;
         let mut changed = HashMap::new();
         for (key, value) in &self.draft {
             if self.baseline.get(key) != Some(value) {
@@ -447,7 +474,7 @@ impl SettingsDraft {
         Ok(())
     }
 
-    fn get_path(&self, row: &str, path: &str) -> Value {
+    pub fn get_path(&self, row: &str, path: &str) -> Value {
         let root = self.draft.get(row).cloned().unwrap_or(Value::Null);
         if path.is_empty() {
             return root;
@@ -455,7 +482,7 @@ impl SettingsDraft {
         walk_get(&root, path).cloned().unwrap_or(Value::Null)
     }
 
-    fn set_path(&mut self, row: &str, path: &str, value: Value) {
+    pub fn set_path(&mut self, row: &str, path: &str, value: Value) {
         if path.is_empty() {
             self.draft.insert(row.to_string(), value);
             return;
@@ -471,50 +498,31 @@ impl SettingsDraft {
 }
 
 fn seed_structured_defaults(map: &mut HashMap<String, Value>) {
-    if !map.contains_key("advancedSettings") {
-        map.insert(
-            "advancedSettings".into(),
+    let defaults: [(&str, Value); 12] = [
+        (
+            "advancedSettings",
             serde_json::to_value(AdvancedSettings::default()).unwrap_or(Value::Null),
-        );
-    }
-    if !map.contains_key("systemSettings") {
-        map.insert(
-            "systemSettings".into(),
+        ),
+        (
+            "systemSettings",
             serde_json::to_value(SystemSettings::default()).unwrap_or(Value::Null),
-        );
-    }
-    if !map.contains_key("experimentalSettings") {
-        map.insert(
-            "experimentalSettings".into(),
+        ),
+        (
+            "experimentalSettings",
             serde_json::to_value(ExperimentalSettings::default()).unwrap_or(Value::Null),
-        );
-    }
-    if !map.contains_key("serviceConfigs") {
-        map.insert("serviceConfigs".into(), Value::Object(Map::new()));
-    }
-    if !map.contains_key("preferredModel") {
-        map.insert("preferredModel".into(), Value::Null);
-    }
-    if !map.contains_key("uiLanguage") {
-        map.insert("uiLanguage".into(), json!("en"));
-    }
-    if !map.contains_key("contextStrategy") {
-        map.insert("contextStrategy".into(), json!("full"));
-    }
-    if !map.contains_key("windowSize") {
-        map.insert("windowSize".into(), json!(40));
-    }
-    if !map.contains_key("maxInputContext") {
-        map.insert("maxInputContext".into(), json!(128000));
-    }
-    if !map.contains_key("toolCallGroupVisibleCount") {
-        map.insert("toolCallGroupVisibleCount".into(), json!(3));
-    }
-    if !map.contains_key("temperatureOverrideEnabled") {
-        map.insert("temperatureOverrideEnabled".into(), json!(false));
-    }
-    if !map.contains_key("temperature") {
-        map.insert("temperature".into(), json!(0.7));
+        ),
+        ("serviceConfigs", Value::Object(Map::new())),
+        ("preferredModel", Value::Null),
+        ("uiLanguage", json!("en")),
+        ("contextStrategy", json!("full")),
+        ("windowSize", json!(40)),
+        ("maxInputContext", json!(128000)),
+        ("toolCallGroupVisibleCount", json!(3)),
+        ("temperatureOverrideEnabled", json!(false)),
+        ("temperature", json!(0.7)),
+    ];
+    for (key, val) in defaults {
+        map.entry(key.to_string()).or_insert(val);
     }
 }
 
@@ -640,6 +648,8 @@ fn display_value(field: &FieldSpec, value: &Value, reveal: bool) -> String {
 }
 
 /// Provider configured enough to appear in model pickers (GUI parity).
+/// Note: The GUI counterpart lives in `src/lib/llm/providers.ts` (`isProviderConfigured`)
+/// and `src/features/settings/components/ai-models/` to ensure parity across frontend and TUI.
 pub fn is_provider_configured(provider_id: &str, service_configs: &Value) -> bool {
     let Some(cfg) = service_configs
         .as_object()
@@ -795,6 +805,56 @@ impl SettingsScreen {
 
     pub fn set_approval_waiting(&mut self, waiting: bool) {
         self.approval_waiting = waiting;
+    }
+
+    #[cfg(test)]
+    pub fn new_with_draft_for_test(
+        draft: HashMap<String, Value>,
+        section: Option<SettingsSection>,
+    ) -> Self {
+        let mut map = draft;
+        seed_structured_defaults(&mut map);
+        let mut screen = Self {
+            draft: SettingsDraft {
+                baseline: map.clone(),
+                draft: map,
+            },
+            view: View::Sections,
+            section_cursor: 0,
+            form_section: SettingsSection::AiModels,
+            form_cursor: 0,
+            form_page: 0,
+            editing: false,
+            edit_buf: String::new(),
+            reveal_secrets: false,
+            model_pick: None,
+            notice: None,
+            approval_waiting: false,
+        };
+        if let Some(section) = section {
+            screen.open_section(section);
+        }
+        screen
+    }
+
+    #[cfg(test)]
+    pub fn is_dirty(&self) -> bool {
+        self.draft.is_dirty()
+    }
+
+    #[cfg(test)]
+    pub fn is_reveal_secrets(&self) -> bool {
+        self.reveal_secrets
+    }
+
+    #[cfg(test)]
+    pub fn view_is_leave_confirm(&self) -> bool {
+        matches!(self.view, View::LeaveConfirm)
+    }
+
+    #[cfg(test)]
+    pub fn draft_mut(&mut self) -> &mut SettingsDraft {
+        &mut self.draft
     }
 
     fn open_section(&mut self, section: SettingsSection) {
@@ -1388,14 +1448,93 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
 }
 
 /// Snapshot whether providers are configured without opening the full screen.
-pub fn providers_ready_blocking() -> Result<bool, String> {
-    let draft = SettingsDraft::load_blocking()?;
-    Ok(!no_provider_configured(&draft.draft))
+///
+/// Async to avoid nested `block_on` panics inside tokio runtimes (G1.1).
+/// In attached TUI mode (when repository is None), returns Ok(true) so message sending
+/// is delegated to the primary backend process (G1.2).
+pub async fn providers_ready() -> Result<bool, String> {
+    let Some(repo) = crate::state::try_get_settings_repository() else {
+        return Ok(true);
+    };
+    providers_ready_from_repo(repo).await
+}
+
+pub async fn providers_ready_from_repo(repo: &dyn SettingsRepository) -> Result<bool, String> {
+    let rows = repo
+        .list()
+        .await
+        .map_err(|e| format!("Failed to list settings: {e}"))?;
+    let mut map = HashMap::new();
+    for row in rows {
+        let value = serde_json::from_str(&row.value).unwrap_or(Value::Null);
+        map.insert(row.key, value);
+    }
+    seed_structured_defaults(&mut map);
+    Ok(!no_provider_configured(&map))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entity::settings as settings_entity;
+    use crate::repositories::error::DbError;
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Clone, Default)]
+    struct MockSettingsRepo {
+        storage: Arc<Mutex<HashMap<String, settings_entity::Model>>>,
+        saved_batches: Arc<Mutex<Vec<HashMap<String, Value>>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl SettingsRepository for MockSettingsRepo {
+        async fn get(&self, key: &str) -> Result<Option<settings_entity::Model>, DbError> {
+            let guard = self.storage.lock().unwrap();
+            Ok(guard.get(key).cloned())
+        }
+
+        async fn set(&self, key: &str, value: Value) -> Result<settings_entity::Model, DbError> {
+            let mut guard = self.storage.lock().unwrap();
+            let model = settings_entity::Model {
+                key: key.to_string(),
+                value: value.to_string(),
+                created_at: 0,
+                updated_at: 0,
+            };
+            guard.insert(key.to_string(), model.clone());
+            Ok(model)
+        }
+
+        async fn set_many(
+            &self,
+            settings: HashMap<String, Value>,
+        ) -> Result<Vec<settings_entity::Model>, DbError> {
+            self.saved_batches.lock().unwrap().push(settings.clone());
+            let mut guard = self.storage.lock().unwrap();
+            let mut out = Vec::new();
+            for (k, v) in settings {
+                let model = settings_entity::Model {
+                    key: k.clone(),
+                    value: v.to_string(),
+                    created_at: 0,
+                    updated_at: 0,
+                };
+                guard.insert(k, model.clone());
+                out.push(model);
+            }
+            Ok(out)
+        }
+
+        async fn delete(&self, key: &str) -> Result<(), DbError> {
+            self.storage.lock().unwrap().remove(key);
+            Ok(())
+        }
+
+        async fn list(&self) -> Result<Vec<settings_entity::Model>, DbError> {
+            let guard = self.storage.lock().unwrap();
+            Ok(guard.values().cloned().collect())
+        }
+    }
 
     #[test]
     fn parse_settings_commands() {
@@ -1458,5 +1597,160 @@ mod tests {
         walk_set(&mut root, "openai.baseUrl", json!("https://example"));
         assert_eq!(root["openai"]["apiKey"], json!("sk-1"));
         assert_eq!(root["openai"]["baseUrl"], json!("https://example"));
+    }
+
+    #[test]
+    fn draft_dirty_and_discard() {
+        let mut draft = SettingsDraft {
+            baseline: HashMap::new(),
+            draft: HashMap::new(),
+        };
+        seed_structured_defaults(&mut draft.baseline);
+        draft.draft = draft.baseline.clone();
+        assert!(!draft.is_dirty());
+        assert_eq!(draft.dirty_section_count(), 0);
+
+        draft.set_path("serviceConfigs", "openai.apiKey", json!("sk-test"));
+        assert!(draft.is_dirty());
+        assert!(draft.section_dirty(SettingsSection::AiModels));
+        assert!(!draft.section_dirty(SettingsSection::General));
+        assert_eq!(draft.dirty_section_count(), 1);
+
+        draft.discard();
+        assert!(!draft.is_dirty());
+        assert_eq!(draft.dirty_section_count(), 0);
+    }
+
+    #[test]
+    fn save_to_repo_writes_only_changed_rows() {
+        let repo = MockSettingsRepo::default();
+        let mut draft = SettingsDraft {
+            baseline: HashMap::new(),
+            draft: HashMap::new(),
+        };
+        seed_structured_defaults(&mut draft.baseline);
+        draft.draft = draft.baseline.clone();
+
+        // Modify only preferredModel
+        draft.set_path(
+            "preferredModel",
+            "",
+            json!({"provider": "openai", "model": "gpt-4o"}),
+        );
+        assert!(draft.is_dirty());
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let count = rt.block_on(draft.save_to_repo(&repo)).unwrap();
+        assert_eq!(count, 1);
+        assert!(!draft.is_dirty());
+
+        let batches = repo.saved_batches.lock().unwrap();
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].len(), 1);
+        assert!(batches[0].contains_key("preferredModel"));
+        assert!(!batches[0].contains_key("advancedSettings"));
+    }
+
+    #[test]
+    fn settings_screen_leave_confirm_and_discard() {
+        let mut screen = SettingsScreen::new_with_draft_for_test(
+            HashMap::new(),
+            Some(SettingsSection::AiModels),
+        );
+        assert!(!screen.is_dirty());
+
+        // Edit OpenAI API key
+        screen
+            .draft_mut()
+            .set_path("serviceConfigs", "openai.apiKey", json!("sk-test"));
+        assert!(screen.is_dirty());
+
+        // First Esc returns from Form to Sections view
+        let act = screen.handle_key(KeyEvent::from(KeyCode::Esc));
+        assert_eq!(act, SettingsAction::None);
+
+        // Second Esc from Sections triggers LeaveConfirm view because draft is dirty
+        let act = screen.handle_key(KeyEvent::from(KeyCode::Esc));
+        assert_eq!(act, SettingsAction::None);
+        assert!(screen.view_is_leave_confirm());
+
+        // Press 'd' -> discards and closes
+        let act = screen.handle_key(KeyEvent::from(KeyCode::Char('d')));
+        assert_eq!(act, SettingsAction::ClosedDiscarded);
+        assert!(!screen.is_dirty());
+    }
+
+    #[test]
+    fn secret_reveal_toggle() {
+        let spec = FieldSpec {
+            section: SettingsSection::AiModels,
+            label: "OpenAI API Key",
+            row: "serviceConfigs",
+            path: "openai.apiKey",
+            kind: FieldKind::Secret,
+        };
+        let val = json!("sk-123456789");
+        assert_eq!(display_value(&spec, &val, false), "••••6789");
+        assert_eq!(display_value(&spec, &val, true), "sk-123456789");
+
+        let mut screen = SettingsScreen::new_with_draft_for_test(
+            HashMap::new(),
+            Some(SettingsSection::AiModels),
+        );
+        assert!(!screen.is_reveal_secrets());
+        screen.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL));
+        assert!(screen.is_reveal_secrets());
+        screen.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL));
+        assert!(!screen.is_reveal_secrets());
+    }
+
+    #[test]
+    fn attached_tui_mode_refusal_and_guard() {
+        // In unit test context without primary backend booted, repo is None
+        let open_res = SettingsScreen::open(None);
+        assert!(open_res.is_err());
+        assert!(open_res
+            .unwrap_err()
+            .contains("Settings require the primary backend process"));
+
+        // Providers ready should not block message sending in attached mode
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let ready = rt.block_on(providers_ready()).unwrap();
+        assert!(
+            ready,
+            "Attached TUI mode must return ready to allow message sending"
+        );
+    }
+
+    #[test]
+    fn first_send_guard_in_tokio_without_panic() {
+        let repo = MockSettingsRepo::default();
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        // Driving guard inside runtime.block_on does not panic (G1.1)
+        let ready = rt.block_on(async { providers_ready_from_repo(&repo).await.unwrap() });
+        assert!(!ready, "No providers configured by default");
+
+        // Configure openai apiKey
+        let mut configs = HashMap::new();
+        configs.insert(
+            "serviceConfigs".to_string(),
+            json!({
+                "openai": { "apiKey": "sk-real-key" }
+            }),
+        );
+        rt.block_on(repo.set_many(configs)).unwrap();
+
+        let ready_now = rt.block_on(async { providers_ready_from_repo(&repo).await.unwrap() });
+        assert!(ready_now, "Provider with API key should be ready");
     }
 }
