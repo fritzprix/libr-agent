@@ -157,7 +157,7 @@ TUI only:
 
 `--continue` and `--resume` are rejected with `-C`, and are a usage error in headless mode, because a headless session is ephemeral.
 
-**Developer-only after #2861 (#2852 S9).** None of the three flags above appear in `liblet --help`, and an interactive TTY no longer selects the TUI on its own. Every TUI entry point (`liblet` with an interactive TTY, `liblet "prompt"`, `--continue`, `--resume`, `--name`, `libragent --tui`, `libragent-tui`) needs the hidden `LIBRAGENT_ENABLE_TUI=1` flag; without it the CLI exits `2` with a usage error that points at `-p` / `--prompt`, and the binaries print why they did not start. The TUI code stays in the build behind that flag so engineers can still debug it, and `scripts/tui_hidden_webview_smoke.py` sets the flag for its own run.
+**Developer-only after #2861 (#2852 S9).** None of the three flags above appear in `liblet --help`, and an interactive TTY no longer selects the TUI on its own. On `liblet`, `--continue`, `--resume`, `--name`, a positional prompt, or a bare interactive TTY exits `2` with a usage error that points at `-p` / `--prompt`; the interactive `liblet` branch stays an error until #2702 wires it. The hidden `LIBRAGENT_ENABLE_TUI=1` flag opens the TUI only through the developer entry points `libragent --tui` and `libragent-tui`, whose refusals explain the flag. The TUI code stays in the build behind that flag so engineers can still debug it, and `scripts/tui_hidden_webview_smoke.py` sets the flag for its own run.
 
 Headless only:
 

@@ -448,8 +448,8 @@ pub fn parse_cli_with_tui_gate(
     // enter it by accident.
     if (continue_flag || resume_flag.is_some() || name_flag.is_some()) && !dev_tui {
         return Err(CliUsageError::new(
-            "--continue, --resume, and --name drive the terminal TUI, which is a developer-only mode; \
-             pass -p / --prompt <text> for headless execution, or set LIBRAGENT_ENABLE_TUI=1 to use the TUI",
+            "--continue, --resume, and --name drive the terminal TUI, which is not available from liblet; \
+             pass -p / --prompt <text> for headless execution",
         ));
     }
 
@@ -536,8 +536,8 @@ pub fn parse_cli_with_tui_gate(
         }
         if !dev_tui {
             return Err(CliUsageError::new(
-                "a positional prompt opens the terminal TUI, which is a developer-only mode; \
-                 pass -p / --prompt <text> for headless execution, or set LIBRAGENT_ENABLE_TUI=1 to use the TUI",
+                "a positional prompt opens the terminal TUI, which is not available from liblet; \
+                 pass -p / --prompt <text> for headless execution",
             ));
         }
 
@@ -603,8 +603,8 @@ pub fn parse_cli_with_tui_gate(
 
     if !dev_tui {
         return Err(CliUsageError::new(
-            "stdin is a TTY and no prompt was provided; pass -p / --prompt <text> for headless execution \
-             (the terminal TUI is a developer-only mode: set LIBRAGENT_ENABLE_TUI=1 to use it)",
+            "stdin is a TTY and no prompt was provided; the terminal TUI is not available from liblet; \
+             pass -p / --prompt <text> for headless execution",
         ));
     }
 
@@ -806,7 +806,12 @@ mod tests {
             let err = parse_cli_with_tui_gate(&vec_args(&args), BOTH_TTY, None, false)
                 .expect_err("TUI-only flag without the dev flag must fail");
             assert_eq!(err.exit_code(), exit_codes::USAGE_ERROR);
-            assert!(err.message.contains("developer-only"), "{}", err.message);
+            assert!(err.message.contains("-p / --prompt"), "{}", err.message);
+            assert!(
+                !err.message.contains("LIBRAGENT_ENABLE_TUI"),
+                "liblet usage errors must not advertise the developer flag: {}",
+                err.message
+            );
         }
 
         let cmd = parse_cli_with_tui_gate(&vec_args(&["--continue"]), BOTH_TTY, None, true)
