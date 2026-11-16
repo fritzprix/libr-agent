@@ -23,17 +23,17 @@ pub fn parse_tools_command(text: &str) -> Option<ToolsCommand> {
 }
 
 #[derive(Debug, Clone)]
-struct ToolRow {
-    name: String,
-    description: String,
+pub struct ToolRow {
+    pub name: String,
+    pub description: String,
 }
 
 #[derive(Debug)]
 pub struct ToolsScreen {
-    rows: Vec<ToolRow>,
-    selected: usize,
-    filter: String,
-    notice: Option<String>,
+    pub rows: Vec<ToolRow>,
+    pub selected: usize,
+    pub filter: String,
+    pub notice: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -46,8 +46,10 @@ impl ToolsScreen {
     pub fn open(session_id: Option<&str>) -> Result<Self, String> {
         let session_id =
             session_id.ok_or_else(|| "Open a session first (/new or /resume)".to_string())?;
-        let manager = crate::state::try_get_channel_dispatch_agent()
-            .ok_or_else(|| "Agent session manager not ready yet".to_string())?;
+        let manager = crate::state::try_get_channel_dispatch_agent().ok_or_else(|| {
+            "Tools require the primary backend process (not available in attached TUI mode)"
+                .to_string()
+        })?;
         let tools = tauri::async_runtime::block_on(manager.get_available_tools(session_id))?;
         let rows: Vec<ToolRow> = tools
             .into_iter()
@@ -169,5 +171,66 @@ mod tests {
             Some(ToolsCommand::List)
         );
         assert_eq!(parse_tools_command("/tool"), None);
+    }
+
+    #[test]
+    fn tools_requires_open_session() {
+        let err = ToolsScreen::open(None).unwrap_err();
+        assert!(err.contains("Open a session first"));
+    }
+
+    #[test]
+    fn tools_attached_mode_limitation() {
+        let err = ToolsScreen::open(Some("non-existent-session-id")).unwrap_err();
+        assert!(
+            err.contains("Tools require the primary backend process")
+                || err.contains("not available in attached TUI mode")
+        );
+    }
+
+    #[test]
+    fn tools_filter_and_key_navigation() {
+        let mut screen = ToolsScreen {
+            rows: vec![
+                ToolRow {
+                    name: "read_file".into(),
+                    description: "Read file contents".into(),
+                },
+                ToolRow {
+                    name: "write_file".into(),
+                    description: "Write content to disk".into(),
+                },
+                ToolRow {
+                    name: "search_web".into(),
+                    description: "Search online".into(),
+                },
+            ],
+            selected: 0,
+            filter: String::new(),
+            notice: None,
+        };
+
+        assert_eq!(screen.visible().len(), 3);
+
+        // Move down
+        let act = screen.handle_key(KeyEvent::from(KeyCode::Down));
+        assert_eq!(act, ToolsAction::None);
+        assert_eq!(screen.selected, 1);
+
+        // Filter 'file'
+        screen.handle_key(KeyEvent::from(KeyCode::Char('/')));
+        screen.handle_key(KeyEvent::from(KeyCode::Char('f')));
+        screen.handle_key(KeyEvent::from(KeyCode::Char('i')));
+        screen.handle_key(KeyEvent::from(KeyCode::Char('l')));
+        screen.handle_key(KeyEvent::from(KeyCode::Char('e')));
+        assert_eq!(screen.visible().len(), 2);
+
+        // Backspace
+        screen.handle_key(KeyEvent::from(KeyCode::Backspace));
+        assert_eq!(screen.filter, "fil");
+
+        // Esc closes
+        let act = screen.handle_key(KeyEvent::from(KeyCode::Esc));
+        assert_eq!(act, ToolsAction::Closed);
     }
 }

@@ -51,12 +51,28 @@ enum View {
     Folders,
     ConfirmDelete,
     ConfirmReset,
+    ConfirmInstall,
 }
 
 #[derive(Debug, Clone)]
 struct SkillRow {
     meta: SkillMetadata,
     locked: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct InstallConfirmState {
+    pub source: String,
+    pub is_url: bool,
+    pub preview: skill_service::SkillImportPreview,
+    pub approve_hooks: bool,
+    pub overwrite_existing: bool,
+}
+
+#[derive(Debug)]
+pub struct BackgroundOp {
+    pub label: String,
+    pub handle: tokio::task::JoinHandle<Result<String, String>>,
 }
 
 #[derive(Debug)]
@@ -66,6 +82,8 @@ pub struct SkillsScreen {
     selected: usize,
     folders_text: String,
     confirm_name: Option<String>,
+    confirm_install: Option<InstallConfirmState>,
+    pub background_op: Option<BackgroundOp>,
     notice: Option<String>,
 }
 
@@ -83,6 +101,8 @@ impl SkillsScreen {
             selected: 0,
             folders_text: String::new(),
             confirm_name: None,
+            confirm_install: None,
+            background_op: None,
             notice: None,
         };
         screen.reload()?;
@@ -101,6 +121,8 @@ impl SkillsScreen {
                 overview.system_directory, overview.user_directory
             ),
             confirm_name: None,
+            confirm_install: None,
+            background_op: None,
             notice: None,
         })
     }
@@ -126,7 +148,50 @@ impl SkillsScreen {
         Ok(screen)
     }
 
-    pub fn apply_install(source: &str) -> Result<String, String> {
+    pub fn open_install(source: &str) -> Result<Self, String> {
+        let source = source.trim();
+        if source.is_empty() {
+            return Err("Usage: /skills install <path|url>".into());
+        }
+        let is_url = source.starts_with("http://")
+            || source.starts_with("https://")
+            || source.starts_with("git@");
+        let preview = if is_url {
+            tauri::async_runtime::block_on(skill_service::preview_github_skill_install(
+                source.to_string(),
+            ))?
+        } else {
+            tauri::async_runtime::block_on(skill_service::preview_user_skill_import(
+                source.to_string(),
+            ))?
+        };
+        let mut screen = Self::open().unwrap_or_else(|_| Self {
+            view: View::List,
+            rows: Vec::new(),
+            selected: 0,
+            folders_text: String::new(),
+            confirm_name: None,
+            confirm_install: None,
+            background_op: None,
+            notice: None,
+        });
+        screen.view = View::ConfirmInstall;
+        screen.confirm_install = Some(InstallConfirmState {
+            source: source.to_string(),
+            is_url,
+            preview,
+            approve_hooks: false,
+            overwrite_existing: false,
+        });
+        Ok(screen)
+    }
+
+    #[allow(dead_code)]
+    pub fn apply_install(
+        source: &str,
+        overwrite_existing: bool,
+        approve_hooks: bool,
+    ) -> Result<String, String> {
         let source = source.trim();
         if source.is_empty() {
             return Err("Usage: /skills install <path|url>".into());
@@ -137,22 +202,43 @@ impl SkillsScreen {
         let result = if is_url {
             tauri::async_runtime::block_on(skill_service::install_github_skills(
                 source.to_string(),
-                true,
+                overwrite_existing,
                 None,
-                Some(true),
+                Some(approve_hooks),
             ))?
         } else {
             tauri::async_runtime::block_on(skill_service::import_user_skills(
                 source.to_string(),
-                true,
+                overwrite_existing,
                 None,
-                Some(true),
+                Some(approve_hooks),
             ))?
         };
         Ok(format!(
-            "Installed {} skill(s) from {source}",
-            result.imported_names.len()
+            "Installed {} skill(s) from {source} (overwrote: {}, hooks approved: {approve_hooks})",
+            result.imported_names.len(),
+            result.overwritten_names.len(),
         ))
+    }
+
+    pub fn poll_background(&mut self) {
+        if let Some(op) = &self.background_op {
+            if op.handle.is_finished() {
+                let op = self.background_op.take().unwrap();
+                match tauri::async_runtime::block_on(op.handle) {
+                    Ok(Ok(msg)) => {
+                        self.notice = Some(msg);
+                        let _ = self.reload();
+                    }
+                    Ok(Err(err)) => {
+                        self.notice = Some(err);
+                    }
+                    Err(_) => {
+                        self.notice = Some("Operation cancelled".into());
+                    }
+                }
+            }
+        }
     }
 
     fn reload(&mut self) -> Result<(), String> {
@@ -167,7 +253,7 @@ impl SkillsScreen {
             meta,
             locked: false,
         }));
-        rows.sort_by(|a, b| a.meta.name.to_lowercase().cmp(&b.meta.name.to_lowercase()));
+        rows.sort_by_key(|a| a.meta.name.to_lowercase());
         self.rows = rows;
         if self.selected >= self.rows.len() {
             self.selected = self.rows.len().saturating_sub(1);
@@ -176,6 +262,16 @@ impl SkillsScreen {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> SkillsAction {
+        if let Some(op) = &mut self.background_op {
+            if key.code == KeyCode::Esc {
+                op.handle.abort();
+                self.background_op = None;
+                self.notice = Some("Operation cancelled".into());
+                return SkillsAction::None;
+            }
+            return SkillsAction::None;
+        }
+
         match self.view {
             View::Folders => match key.code {
                 KeyCode::Esc | KeyCode::Enter => SkillsAction::Closed,
@@ -220,6 +316,61 @@ impl SkillsScreen {
                 KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
                     self.view = View::List;
                     self.notice = Some("Reset cancelled".into());
+                    SkillsAction::None
+                }
+                _ => SkillsAction::None,
+            },
+            View::ConfirmInstall => match key.code {
+                KeyCode::Char('a') | KeyCode::Char('A') => {
+                    if let Some(confirm) = self.confirm_install.as_mut() {
+                        confirm.approve_hooks = !confirm.approve_hooks;
+                    }
+                    SkillsAction::None
+                }
+                KeyCode::Char('o') | KeyCode::Char('O') => {
+                    if let Some(confirm) = self.confirm_install.as_mut() {
+                        confirm.overwrite_existing = !confirm.overwrite_existing;
+                    }
+                    SkillsAction::None
+                }
+                KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
+                    if let Some(confirm) = self.confirm_install.take() {
+                        let label = format!("Installing skills from {}", confirm.source);
+                        let handle = tokio::spawn(async move {
+                            let res = if confirm.is_url {
+                                skill_service::install_github_skills(
+                                    confirm.source.clone(),
+                                    confirm.overwrite_existing,
+                                    None,
+                                    Some(confirm.approve_hooks),
+                                )
+                                .await?
+                            } else {
+                                skill_service::import_user_skills(
+                                    confirm.source.clone(),
+                                    confirm.overwrite_existing,
+                                    None,
+                                    Some(confirm.approve_hooks),
+                                )
+                                .await?
+                            };
+                            Ok(format!(
+                                "Installed {} skill(s) from {} (overwrote: {}, hooks approved: {})",
+                                res.imported_names.len(),
+                                confirm.source,
+                                res.overwritten_names.len(),
+                                confirm.approve_hooks
+                            ))
+                        });
+                        self.background_op = Some(BackgroundOp { label, handle });
+                    }
+                    self.view = View::List;
+                    SkillsAction::None
+                }
+                KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                    self.confirm_install = None;
+                    self.view = View::List;
+                    self.notice = Some("Install cancelled".into());
                     SkillsAction::None
                 }
                 _ => SkillsAction::None,
@@ -296,6 +447,84 @@ pub fn draw_skills(frame: &mut Frame<'_>, screen: &SkillsScreen) {
                 frame.area(),
             );
         }
+        View::ConfirmInstall => {
+            if let Some(confirm) = &screen.confirm_install {
+                let mut lines = Vec::new();
+                lines.push(format!("Source: {}", confirm.source));
+                lines.push(String::new());
+
+                lines.push(format!(
+                    "Skills found ({}):",
+                    confirm.preview.discovered_skills.len()
+                ));
+                if confirm.preview.discovered_skills.is_empty() {
+                    lines.push("  (no skills found)".to_string());
+                } else {
+                    for s in &confirm.preview.discovered_skills {
+                        lines.push(format!("  • {} — {}", s.name, s.description));
+                    }
+                }
+                lines.push(String::new());
+
+                if !confirm.preview.conflicts.is_empty() {
+                    lines.push(format!("Conflicts ({}):", confirm.preview.conflicts.len()));
+                    for c in &confirm.preview.conflicts {
+                        lines.push(format!(
+                            "  ⚠ {} (already exists at {})",
+                            c.name, c.existing_path
+                        ));
+                    }
+                    lines.push(
+                        "  Note: Overwrite is OFF by default to protect existing user skills."
+                            .to_string(),
+                    );
+                    lines.push(String::new());
+                }
+
+                if !confirm.preview.hooks.is_empty() {
+                    lines.push(format!("Hooks detected ({}):", confirm.preview.hooks.len()));
+                    for h in &confirm.preview.hooks {
+                        let matcher = h
+                            .matcher
+                            .as_deref()
+                            .map(|m| format!(" [{m}]"))
+                            .unwrap_or_default();
+                        lines.push(format!(
+                            "  ⚡ Event: {}{matcher} -> Command: {}",
+                            h.event, h.command
+                        ));
+                    }
+                    lines.push("  ⚠ Hooks run executable commands on your system! Explicit approval required.".to_string());
+                    lines.push(String::new());
+                }
+
+                let hook_status = if confirm.approve_hooks {
+                    "[x] YES"
+                } else {
+                    "[ ] NO (default)"
+                };
+                let overwrite_status = if confirm.overwrite_existing {
+                    "[x] YES"
+                } else {
+                    "[ ] NO (default)"
+                };
+                lines.push(format!("Options: [a] Approve hooks: {hook_status}   [o] Overwrite existing: {overwrite_status}"));
+                lines.push(String::new());
+                lines.push("[y/Enter] Confirm Install    [n]/Esc Cancel".to_string());
+
+                let content = lines.join("\n");
+                frame.render_widget(
+                    Paragraph::new(content)
+                        .block(
+                            Block::default()
+                                .borders(Borders::ALL)
+                                .title(" Confirm Skill Installation "),
+                        )
+                        .wrap(Wrap { trim: false }),
+                    frame.area(),
+                );
+            }
+        }
         View::List => {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
@@ -323,10 +552,16 @@ pub fn draw_skills(frame: &mut Frame<'_>, screen: &SkillsScreen) {
                 List::new(items).block(Block::default().borders(Borders::ALL)),
                 chunks[1],
             );
-            let footer = screen
-                .notice
-                .as_deref()
-                .unwrap_or("↑/↓ · d delete · r reset · f folders · Esc");
+            let footer_text;
+            let footer = if let Some(op) = &screen.background_op {
+                footer_text = format!("Working: {}... (Esc to cancel)", op.label);
+                &footer_text
+            } else {
+                screen
+                    .notice
+                    .as_deref()
+                    .unwrap_or("↑/↓ · d delete · r reset · f folders · Esc")
+            };
             frame.render_widget(Paragraph::new(format!(" {footer} ")), chunks[2]);
         }
     }
@@ -359,5 +594,183 @@ mod tests {
             parse_skills_command("/skills folders"),
             Some(SkillsCommand::Folders)
         );
+    }
+
+    #[test]
+    fn open_delete_locked_system_skill_refusal() {
+        let screen = SkillsScreen {
+            view: View::List,
+            rows: vec![
+                SkillRow {
+                    meta: SkillMetadata {
+                        name: "sys-skill".into(),
+                        description: "Builtin system skill".into(),
+                        path: "/path/to/sys".into(),
+                        alias_path: None,
+                        source: None,
+                        origin: None,
+                    },
+                    locked: true,
+                },
+                SkillRow {
+                    meta: SkillMetadata {
+                        name: "user-skill".into(),
+                        description: "User installed skill".into(),
+                        path: "/path/to/user".into(),
+                        alias_path: None,
+                        source: None,
+                        origin: None,
+                    },
+                    locked: false,
+                },
+            ],
+            selected: 0,
+            folders_text: String::new(),
+            confirm_name: None,
+            confirm_install: None,
+            background_op: None,
+            notice: None,
+        };
+
+        // Attempting to delete locked system skill
+        let row = screen
+            .rows
+            .iter()
+            .find(|r| r.meta.name.eq_ignore_ascii_case("sys-skill"))
+            .unwrap();
+        assert!(row.locked);
+    }
+
+    #[test]
+    fn confirm_delete_key_handling() {
+        let mut screen = SkillsScreen {
+            view: View::ConfirmDelete,
+            rows: Vec::new(),
+            selected: 0,
+            folders_text: String::new(),
+            confirm_name: Some("my-skill".into()),
+            confirm_install: None,
+            background_op: None,
+            notice: None,
+        };
+
+        // Press 'n'
+        let act = screen.handle_key(KeyEvent::from(KeyCode::Char('n')));
+        assert_eq!(act, SkillsAction::None);
+        assert_eq!(screen.view, View::List);
+        assert_eq!(screen.confirm_name, None);
+        assert_eq!(screen.notice.as_deref(), Some("Delete cancelled"));
+
+        // Press Esc
+        screen.view = View::ConfirmDelete;
+        screen.confirm_name = Some("my-skill".into());
+        let act = screen.handle_key(KeyEvent::from(KeyCode::Esc));
+        assert_eq!(act, SkillsAction::None);
+        assert_eq!(screen.view, View::List);
+        assert_eq!(screen.confirm_name, None);
+        assert_eq!(screen.notice.as_deref(), Some("Delete cancelled"));
+    }
+
+    #[test]
+    fn confirm_reset_key_handling() {
+        let mut screen = SkillsScreen {
+            view: View::ConfirmReset,
+            rows: Vec::new(),
+            selected: 0,
+            folders_text: String::new(),
+            confirm_name: None,
+            confirm_install: None,
+            background_op: None,
+            notice: None,
+        };
+
+        // Press 'n'
+        let act = screen.handle_key(KeyEvent::from(KeyCode::Char('n')));
+        assert_eq!(act, SkillsAction::None);
+        assert_eq!(screen.view, View::List);
+        assert_eq!(screen.notice.as_deref(), Some("Reset cancelled"));
+
+        // Press Esc
+        screen.view = View::ConfirmReset;
+        let act = screen.handle_key(KeyEvent::from(KeyCode::Esc));
+        assert_eq!(act, SkillsAction::None);
+        assert_eq!(screen.view, View::List);
+        assert_eq!(screen.notice.as_deref(), Some("Reset cancelled"));
+    }
+
+    #[test]
+    fn confirm_install_toggles_and_defaults() {
+        use crate::services::skill_service::{
+            HookPreviewEntry, HookPreviewExecutionStatus, SkillImportCandidate,
+            SkillImportConflict, SkillImportKind, SkillImportPreview,
+        };
+
+        let preview = SkillImportPreview {
+            kind: SkillImportKind::Plugin,
+            discovered_skills: vec![SkillImportCandidate {
+                name: "test-skill".into(),
+                description: "Test skill description".into(),
+            }],
+            conflicts: vec![SkillImportConflict {
+                name: "conflict-skill".into(),
+                existing_origin: "user".into(),
+                existing_path: "/path/conflict".into(),
+            }],
+            hooks: vec![HookPreviewEntry {
+                event: "session:start".into(),
+                matcher: None,
+                command: "echo test".into(),
+                powershell: None,
+                script_body: None,
+                execution_status: HookPreviewExecutionStatus::Executed,
+            }],
+            hooks_require_approval: true,
+        };
+
+        let mut screen = SkillsScreen {
+            view: View::ConfirmInstall,
+            rows: Vec::new(),
+            selected: 0,
+            folders_text: String::new(),
+            confirm_name: None,
+            confirm_install: Some(InstallConfirmState {
+                source: "https://github.com/example/repo".into(),
+                is_url: true,
+                preview,
+                approve_hooks: false,      // Must default to false!
+                overwrite_existing: false, // Must default to false!
+            }),
+            background_op: None,
+            notice: None,
+        };
+
+        // Check defaults
+        let confirm = screen.confirm_install.as_ref().unwrap();
+        assert!(
+            !confirm.approve_hooks,
+            "Hooks must NOT be approved by default"
+        );
+        assert!(
+            !confirm.overwrite_existing,
+            "Overwrite must NOT be true by default"
+        );
+
+        // Toggle hooks with 'a'
+        screen.handle_key(KeyEvent::from(KeyCode::Char('a')));
+        assert!(screen.confirm_install.as_ref().unwrap().approve_hooks);
+        screen.handle_key(KeyEvent::from(KeyCode::Char('a')));
+        assert!(!screen.confirm_install.as_ref().unwrap().approve_hooks);
+
+        // Toggle overwrite with 'o'
+        screen.handle_key(KeyEvent::from(KeyCode::Char('o')));
+        assert!(screen.confirm_install.as_ref().unwrap().overwrite_existing);
+        screen.handle_key(KeyEvent::from(KeyCode::Char('o')));
+        assert!(!screen.confirm_install.as_ref().unwrap().overwrite_existing);
+
+        // Cancel with Esc
+        screen.handle_key(KeyEvent::from(KeyCode::Esc));
+        assert_eq!(screen.view, View::List);
+        assert!(screen.confirm_install.is_none());
+        assert_eq!(screen.notice.as_deref(), Some("Install cancelled"));
     }
 }

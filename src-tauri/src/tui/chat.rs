@@ -921,6 +921,13 @@ pub fn run_chat_front(stdout: &mut Stdout) {
             }
         }
 
+        if let Some(screen) = state.extensions.as_mut() {
+            screen.poll_background();
+        }
+        if let Some(screen) = state.skills.as_mut() {
+            screen.poll_background();
+        }
+
         if terminal.draw(|frame| draw_chat(frame, &state)).is_err() {
             leave_front();
         }
@@ -1165,7 +1172,7 @@ fn clear_menu_overlays(state: &mut ChatState) {
 fn apply_extensions_command(state: &mut ChatState, command: ExtensionsCommand) {
     clear_menu_overlays(state);
     state.notice = None;
-    let result = match command {
+    let result: Result<Option<ExtensionsScreen>, String> = (|| match command {
         ExtensionsCommand::List { query } => ExtensionsScreen::open(query).map(Some),
         ExtensionsCommand::New => ExtensionsScreen::open_new().map(Some),
         ExtensionsCommand::Edit { name } => ExtensionsScreen::open_edit(&name).map(Some),
@@ -1185,32 +1192,24 @@ fn apply_extensions_command(state: &mut ChatState, command: ExtensionsCommand) {
             Err(err) => Err(err),
         },
         ExtensionsCommand::Tools { name } => ExtensionsScreen::open_tools(&name).map(Some),
-        ExtensionsCommand::Retry { name: None } => match state.session_id.as_deref() {
-            Some(session_id) => match ExtensionsScreen::apply_session_retry(session_id) {
-                Ok(msg) => {
-                    state.notice = Some(msg);
-                    Ok(None)
-                }
-                Err(err) => Err(err),
-            },
-            None => Err("Open a session first to retry failed servers".into()),
-        },
-        ExtensionsCommand::Retry { name: Some(name) } => {
-            match ExtensionsScreen::apply_probe(&name) {
-                Ok(msg) => {
-                    state.notice = Some(msg);
-                    Ok(None)
-                }
-                Err(err) => Err(err),
-            }
+        ExtensionsCommand::Retry { name: None } => {
+            let Some(session_id) = state.session_id.as_deref() else {
+                return Err("Open a session first to retry failed servers".into());
+            };
+            let mut screen = ExtensionsScreen::open(None)?;
+            screen.start_session_retry(session_id)?;
+            Ok(Some(screen))
         }
-        ExtensionsCommand::Auth { name } => match ExtensionsScreen::apply_auth(&name) {
-            Ok(msg) => {
-                state.notice = Some(msg);
-                Ok(None)
-            }
-            Err(err) => Err(err),
-        },
+        ExtensionsCommand::Retry { name: Some(name) } => {
+            let mut screen = ExtensionsScreen::open(None)?;
+            screen.start_probe(&name)?;
+            Ok(Some(screen))
+        }
+        ExtensionsCommand::Auth { name } => {
+            let mut screen = ExtensionsScreen::open(None)?;
+            screen.start_auth(&name)?;
+            Ok(Some(screen))
+        }
         ExtensionsCommand::Logout { name } => match ExtensionsScreen::apply_logout(&name) {
             Ok(msg) => {
                 state.notice = Some(msg);
@@ -1220,7 +1219,7 @@ fn apply_extensions_command(state: &mut ChatState, command: ExtensionsCommand) {
         },
         ExtensionsCommand::Presets => Ok(Some(ExtensionsScreen::open_presets())),
         ExtensionsCommand::AppWizard => Ok(Some(ExtensionsScreen::open_app_wizard())),
-    };
+    })();
     match result {
         Ok(Some(screen)) => state.extensions = Some(screen),
         Ok(None) => {}
@@ -1233,13 +1232,7 @@ fn apply_skills_command(state: &mut ChatState, command: SkillsCommand) {
     state.notice = None;
     let result = match command {
         SkillsCommand::List => SkillsScreen::open().map(Some),
-        SkillsCommand::Install { source } => match SkillsScreen::apply_install(&source) {
-            Ok(msg) => {
-                state.notice = Some(msg);
-                Ok(None)
-            }
-            Err(err) => Err(err),
-        },
+        SkillsCommand::Install { source } => SkillsScreen::open_install(&source).map(Some),
         SkillsCommand::Delete { name } => SkillsScreen::open_delete(&name).map(Some),
         SkillsCommand::Reset => SkillsScreen::open_reset().map(Some),
         SkillsCommand::Folders => SkillsScreen::open_folders().map(Some),
@@ -1813,5 +1806,41 @@ mod tests {
             }
             other => panic!("expected AnswerPrompt, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_menu_overlays_key_routing() {
+        let mut state = ChatState::default();
+
+        // 1. Extensions overlay routing
+        state.extensions = Some(ExtensionsScreen::open_presets());
+        assert!(state.extensions.is_some());
+        let act = state.handle_key(KeyEvent::from(KeyCode::Esc));
+        assert_eq!(act, ChatAction::None);
+        assert!(
+            state.extensions.is_none(),
+            "Esc must close extensions overlay"
+        );
+
+        // 2. Skills overlay routing
+        state.skills = Some(
+            SkillsScreen::open_folders().unwrap_or_else(|_| SkillsScreen::open_reset().unwrap()),
+        );
+        assert!(state.skills.is_some());
+        let act = state.handle_key(KeyEvent::from(KeyCode::Esc));
+        assert_eq!(act, ChatAction::None);
+        assert!(state.skills.is_none(), "Esc must close skills overlay");
+
+        // 3. Tools overlay routing
+        state.tools = Some(crate::tui::tools::ToolsScreen {
+            rows: vec![],
+            selected: 0,
+            filter: String::new(),
+            notice: None,
+        });
+        assert!(state.tools.is_some());
+        let act = state.handle_key(KeyEvent::from(KeyCode::Esc));
+        assert_eq!(act, ChatAction::None);
+        assert!(state.tools.is_none(), "Esc must close tools overlay");
     }
 }

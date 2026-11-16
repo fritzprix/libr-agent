@@ -2,6 +2,7 @@
 
 use crate::entity::mcp_server::Model as McpServerModel;
 use crate::mcp::types::OAuthConfig;
+use crate::repositories::MCPServerRepository;
 use crate::services::mcp_server_service::{McpServerService, SaveVerification};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::prelude::*;
@@ -93,7 +94,7 @@ enum View {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum FormField {
+pub enum FormField {
     Name,
     Transport,
     CommandOrUrl,
@@ -101,14 +102,20 @@ enum FormField {
 }
 
 #[derive(Debug)]
-struct FormState {
-    editing_id: Option<String>,
-    name: String,
+pub struct FormState {
+    pub editing_id: Option<String>,
+    pub name: String,
     /// `stdio` or `http`
-    transport: String,
-    command_or_url: String,
-    args: String,
-    field: FormField,
+    pub transport: String,
+    pub command_or_url: String,
+    pub args: String,
+    pub field: FormField,
+}
+
+#[derive(Debug)]
+pub struct BackgroundOp {
+    pub label: String,
+    pub handle: tokio::task::JoinHandle<Result<String, String>>,
 }
 
 #[derive(Debug)]
@@ -123,6 +130,7 @@ pub struct ExtensionsScreen {
     presets: Vec<(String, String)>,
     confirm_name: Option<String>,
     form: Option<FormState>,
+    pub background_op: Option<BackgroundOp>,
     notice: Option<String>,
 }
 
@@ -130,6 +138,27 @@ pub struct ExtensionsScreen {
 pub enum ExtensionsAction {
     None,
     Closed,
+}
+
+pub fn resolve_server_by_name(
+    repo: &dyn MCPServerRepository,
+    name: &str,
+) -> Result<McpServerModel, String> {
+    let rows = tauri::async_runtime::block_on(McpServerService::list_server_configs(repo))?;
+    rows.into_iter()
+        .find(|r| r.name.eq_ignore_ascii_case(name))
+        .ok_or_else(|| format!("Extension not found: {name}"))
+}
+
+pub fn select_failed_servers(
+    runtime: &crate::agent::runtime_state::SessionRuntimeState,
+) -> Vec<String> {
+    runtime
+        .servers
+        .iter()
+        .filter(|s| s.status == crate::agent::runtime_state::SessionRuntimeServerStatus::Failed)
+        .map(|s| s.name.clone())
+        .collect()
 }
 
 fn is_active(config_json: &str) -> bool {
@@ -151,7 +180,7 @@ fn set_active(config_json: &str, active: bool) -> Result<Value, String> {
     Ok(value)
 }
 
-fn build_config(form: &FormState) -> Result<Value, String> {
+pub fn build_config(form: &FormState) -> Result<Value, String> {
     let name = form.name.trim();
     if name.is_empty() {
         return Err("Name is required".into());
@@ -198,6 +227,7 @@ impl ExtensionsScreen {
             presets: Vec::new(),
             confirm_name: None,
             form: None,
+            background_op: None,
             notice: None,
         };
         screen.reload()?;
@@ -283,6 +313,7 @@ impl ExtensionsScreen {
             presets,
             confirm_name: None,
             form: None,
+            background_op: None,
             notice: Some("Enter installs the highlighted preset · Esc closes".into()),
         }
     }
@@ -299,6 +330,7 @@ impl ExtensionsScreen {
             presets: Vec::new(),
             confirm_name: None,
             form: None,
+            background_op: None,
             notice: None,
         }
     }
@@ -315,6 +347,7 @@ impl ExtensionsScreen {
             presets: Vec::new(),
             confirm_name: None,
             form: None,
+            background_op: None,
             notice: Some(message.to_string()),
         }
     }
@@ -329,12 +362,8 @@ impl ExtensionsScreen {
 
     pub fn apply_enable(name: &str, enable: bool) -> Result<String, String> {
         let repo = crate::state::try_get_mcp_server_repository()
-            .ok_or_else(|| "Extensions not ready yet".to_string())?;
-        let rows = tauri::async_runtime::block_on(McpServerService::list_server_configs(repo))?;
-        let row = rows
-            .into_iter()
-            .find(|r| r.name.eq_ignore_ascii_case(name))
-            .ok_or_else(|| format!("Extension not found: {name}"))?;
+            .ok_or_else(|| "Extensions require the primary backend process (not available in attached TUI mode)".to_string())?;
+        let row = resolve_server_by_name(repo, name)?;
         let config = set_active(&row.config, enable)?;
         tauri::async_runtime::block_on(McpServerService::update_server_config(
             repo,
@@ -350,27 +379,20 @@ impl ExtensionsScreen {
         ))
     }
 
+    #[allow(dead_code)]
     pub fn apply_probe(name: &str) -> Result<String, String> {
         let repo = crate::state::try_get_mcp_server_repository()
-            .ok_or_else(|| "Extensions not ready yet".to_string())?;
-        let rows = tauri::async_runtime::block_on(McpServerService::list_server_configs(repo))?;
-        let row = rows
-            .into_iter()
-            .find(|r| r.name.eq_ignore_ascii_case(name))
-            .ok_or_else(|| format!("Extension not found: {name}"))?;
+            .ok_or_else(|| "Extensions require the primary backend process (not available in attached TUI mode)".to_string())?;
+        let row = resolve_server_by_name(repo, name)?;
         let tools = tauri::async_runtime::block_on(McpServerService::probe_server(repo, &row.id))?;
         Ok(format!("Verified {name} · {} tool(s)", tools.len()))
     }
 
+    #[allow(dead_code)]
     pub fn apply_session_retry(session_id: &str) -> Result<String, String> {
         let mgr = crate::state::get_mcp_service_proxy_manager();
         let runtime = tauri::async_runtime::block_on(mgr.get_runtime_state(session_id));
-        let failed: Vec<String> = runtime
-            .servers
-            .iter()
-            .filter(|s| s.status == crate::agent::runtime_state::SessionRuntimeServerStatus::Failed)
-            .map(|s| s.name.clone())
-            .collect();
+        let failed = select_failed_servers(&runtime);
         if failed.is_empty() {
             return Ok("No failed session servers to retry".into());
         }
@@ -381,14 +403,11 @@ impl ExtensionsScreen {
         Ok(format!("Retried {} failed server(s)", failed.len()))
     }
 
+    #[allow(dead_code)]
     pub fn apply_auth(name: &str) -> Result<String, String> {
         let repo = crate::state::try_get_mcp_server_repository()
-            .ok_or_else(|| "Extensions not ready yet".to_string())?;
-        let rows = tauri::async_runtime::block_on(McpServerService::list_server_configs(repo))?;
-        let row = rows
-            .into_iter()
-            .find(|r| r.name.eq_ignore_ascii_case(name))
-            .ok_or_else(|| format!("Extension not found: {name}"))?;
+            .ok_or_else(|| "Extensions require the primary backend process (not available in attached TUI mode)".to_string())?;
+        let row = resolve_server_by_name(repo, name)?;
         let config: Value = serde_json::from_str(&row.config)
             .map_err(|e| format!("Invalid config for {name}: {e}"))?;
         let auth: OAuthConfig = serde_json::from_value(
@@ -408,13 +427,100 @@ impl ExtensionsScreen {
 
     pub fn apply_logout(name: &str) -> Result<String, String> {
         let repo = crate::state::try_get_mcp_server_repository()
-            .ok_or_else(|| "Extensions not ready yet".to_string())?;
-        let rows = tauri::async_runtime::block_on(McpServerService::list_server_configs(repo))?;
-        let row = rows
-            .into_iter()
-            .find(|r| r.name.eq_ignore_ascii_case(name))
-            .ok_or_else(|| format!("Extension not found: {name}"))?;
+            .ok_or_else(|| "Extensions require the primary backend process (not available in attached TUI mode)".to_string())?;
+        let row = resolve_server_by_name(repo, name)?;
         tauri::async_runtime::block_on(crate::commands::mcp_commands::revoke_oauth_token(row.id))
+    }
+
+    pub fn start_probe(&mut self, name: &str) -> Result<(), String> {
+        let repo = crate::state::try_get_mcp_server_repository().ok_or_else(|| {
+            "Extensions require the primary backend process (not available in attached TUI mode)"
+                .to_string()
+        })?;
+        let row = resolve_server_by_name(repo, name)?;
+        let row_id = row.id.clone();
+        let name_clone = name.to_string();
+        let handle = tokio::spawn(async move {
+            let tools = McpServerService::probe_server(repo, &row_id).await?;
+            Ok(format!("Verified {name_clone} · {} tool(s)", tools.len()))
+        });
+        self.background_op = Some(BackgroundOp {
+            label: format!("Probing {name}"),
+            handle,
+        });
+        Ok(())
+    }
+
+    pub fn start_auth(&mut self, name: &str) -> Result<(), String> {
+        let repo = crate::state::try_get_mcp_server_repository().ok_or_else(|| {
+            "Extensions require the primary backend process (not available in attached TUI mode)"
+                .to_string()
+        })?;
+        let row = resolve_server_by_name(repo, name)?;
+        let config: Value = serde_json::from_str(&row.config)
+            .map_err(|e| format!("Invalid config for {name}: {e}"))?;
+        let auth: OAuthConfig = serde_json::from_value(
+            config
+                .get("authentication")
+                .cloned()
+                .ok_or_else(|| format!("{name} has no OAuth authentication config"))?,
+        )
+        .map_err(|e| format!("Invalid OAuth config: {e}"))?;
+        let app_handle = crate::state::get_app_handle()
+            .ok_or_else(|| "App handle not ready for OAuth browser open".to_string())?
+            .clone();
+        let row_id = row.id.clone();
+        let handle = tokio::spawn(async move {
+            crate::commands::mcp_commands::start_oauth_flow(app_handle, row_id, auth).await
+        });
+        self.background_op = Some(BackgroundOp {
+            label: format!("Authenticating {name} in browser"),
+            handle,
+        });
+        Ok(())
+    }
+
+    pub fn start_session_retry(&mut self, session_id: &str) -> Result<(), String> {
+        let mgr = crate::state::get_mcp_service_proxy_manager();
+        let session_id = session_id.to_string();
+        let handle = tokio::spawn(async move {
+            let runtime = mgr.get_runtime_state(&session_id).await;
+            let failed = select_failed_servers(&runtime);
+            if failed.is_empty() {
+                return Ok("No failed session servers to retry".into());
+            }
+            let app_handle = crate::state::get_app_handle();
+            for name in &failed {
+                mgr.retry_failed_server(&session_id, name, app_handle)
+                    .await?;
+            }
+            Ok(format!("Retried {} failed server(s)", failed.len()))
+        });
+        self.background_op = Some(BackgroundOp {
+            label: "Retrying failed session servers".into(),
+            handle,
+        });
+        Ok(())
+    }
+
+    pub fn poll_background(&mut self) {
+        if let Some(op) = &self.background_op {
+            if op.handle.is_finished() {
+                let op = self.background_op.take().unwrap();
+                match tauri::async_runtime::block_on(op.handle) {
+                    Ok(Ok(msg)) => {
+                        self.notice = Some(msg);
+                        let _ = self.reload();
+                    }
+                    Ok(Err(err)) => {
+                        self.notice = Some(err);
+                    }
+                    Err(_) => {
+                        self.notice = Some("Operation cancelled".into());
+                    }
+                }
+            }
+        }
     }
 
     pub fn open_tools(name: &str) -> Result<Self, String> {
@@ -447,13 +553,13 @@ impl ExtensionsScreen {
 
     fn reload(&mut self) -> Result<(), String> {
         let repo = crate::state::try_get_mcp_server_repository()
-            .ok_or_else(|| "Extensions not ready yet".to_string())?;
+            .ok_or_else(|| "Extensions require the primary backend process (not available in attached TUI mode)".to_string())?;
         let mut rows = tauri::async_runtime::block_on(McpServerService::list_server_configs(repo))?;
         if !self.filter.is_empty() {
             let q = self.filter.to_lowercase();
             rows.retain(|r| r.name.to_lowercase().contains(&q));
         }
-        rows.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        rows.sort_by_key(|a| a.name.to_lowercase());
         self.rows = rows;
         if self.selected >= self.rows.len() {
             self.selected = self.rows.len().saturating_sub(1);
@@ -469,6 +575,16 @@ impl ExtensionsScreen {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> ExtensionsAction {
+        if let Some(op) = &mut self.background_op {
+            if key.code == KeyCode::Esc {
+                op.handle.abort();
+                self.background_op = None;
+                self.notice = Some("Operation cancelled".into());
+                return ExtensionsAction::None;
+            }
+            return ExtensionsAction::None;
+        }
+
         match self.view {
             View::Notice => match key.code {
                 KeyCode::Esc | KeyCode::Enter => ExtensionsAction::Closed,
@@ -651,7 +767,7 @@ impl ExtensionsScreen {
         let repo = match crate::state::try_get_mcp_server_repository() {
             Some(r) => r,
             None => {
-                self.notice = Some("Extensions not ready yet".into());
+                self.notice = Some("Extensions require the primary backend process (not available in attached TUI mode)".into());
                 return ExtensionsAction::None;
             }
         };
@@ -730,9 +846,9 @@ impl ExtensionsScreen {
             }
             KeyCode::Char('r') => {
                 if let Some(row) = self.rows.get(self.selected) {
-                    match Self::apply_probe(&row.name) {
-                        Ok(msg) => self.notice = Some(msg),
-                        Err(err) => self.notice = Some(err),
+                    let name = row.name.clone();
+                    if let Err(err) = self.start_probe(&name) {
+                        self.notice = Some(err);
                     }
                 }
                 ExtensionsAction::None
@@ -750,7 +866,7 @@ impl ExtensionsScreen {
 
     fn delete_named(&self, name: &str) -> Result<(), String> {
         let repo = crate::state::try_get_mcp_server_repository()
-            .ok_or_else(|| "Extensions not ready yet".to_string())?;
+            .ok_or_else(|| "Extensions require the primary backend process (not available in attached TUI mode)".to_string())?;
         let row = self.resolve(name)?;
         tauri::async_runtime::block_on(McpServerService::delete_server_config(repo, &row.id))
     }
@@ -761,8 +877,10 @@ fn install_preset(name: &str) -> Result<String, String> {
         .into_iter()
         .find(|p| p.name.eq_ignore_ascii_case(name))
         .ok_or_else(|| format!("Preset not found: {name}"))?;
-    let repo = crate::state::try_get_mcp_server_repository()
-        .ok_or_else(|| "Extensions not ready yet".to_string())?;
+    let repo = crate::state::try_get_mcp_server_repository().ok_or_else(|| {
+        "Extensions require the primary backend process (not available in attached TUI mode)"
+            .to_string()
+    })?;
     let mut config = json!({
         "name": preset.name,
         "transport": if preset.transport_type == "sse" || preset.url.is_some() {
@@ -955,10 +1073,16 @@ pub fn draw_extensions(frame: &mut Frame<'_>, screen: &ExtensionsScreen) {
                 List::new(items).block(Block::default().borders(Borders::ALL)),
                 chunks[1],
             );
-            let footer = screen
-                .notice
-                .as_deref()
-                .unwrap_or("↑/↓ · Enter/t tools · e enable/disable · r retry · d delete · Esc");
+            let footer_text;
+            let footer = if let Some(op) = &screen.background_op {
+                footer_text = format!("Working: {}... (Esc to cancel)", op.label);
+                &footer_text
+            } else {
+                screen
+                    .notice
+                    .as_deref()
+                    .unwrap_or("↑/↓ · Enter/t tools · e enable/disable · r retry · d delete · Esc")
+            };
             frame.render_widget(
                 Paragraph::new(format!(" {footer} ")).wrap(Wrap { trim: true }),
                 chunks[2],
@@ -999,5 +1123,267 @@ mod tests {
             parse_extensions_command("/extensions app-wizard"),
             Some(ExtensionsCommand::AppWizard)
         );
+    }
+
+    #[test]
+    fn build_config_validation() {
+        // Missing name
+        let form_empty_name = FormState {
+            editing_id: None,
+            name: "   ".into(),
+            transport: "stdio".into(),
+            command_or_url: "cat".into(),
+            args: "".into(),
+            field: FormField::Name,
+        };
+        assert_eq!(
+            build_config(&form_empty_name).unwrap_err(),
+            "Name is required"
+        );
+
+        // Missing command for stdio
+        let form_empty_cmd = FormState {
+            editing_id: None,
+            name: "srv".into(),
+            transport: "stdio".into(),
+            command_or_url: "".into(),
+            args: "".into(),
+            field: FormField::CommandOrUrl,
+        };
+        assert_eq!(
+            build_config(&form_empty_cmd).unwrap_err(),
+            "Command is required"
+        );
+
+        // Missing url for http
+        let form_empty_url = FormState {
+            editing_id: None,
+            name: "srv".into(),
+            transport: "http".into(),
+            command_or_url: "".into(),
+            args: "".into(),
+            field: FormField::CommandOrUrl,
+        };
+        assert_eq!(
+            build_config(&form_empty_url).unwrap_err(),
+            "URL is required"
+        );
+
+        // Valid stdio with multiple arguments
+        let form_stdio = FormState {
+            editing_id: None,
+            name: "my_tool".into(),
+            transport: "stdio".into(),
+            command_or_url: "python".into(),
+            args: "script.py --arg 123".into(),
+            field: FormField::Name,
+        };
+        let cfg = build_config(&form_stdio).unwrap();
+        assert_eq!(cfg["name"], "my_tool");
+        assert_eq!(cfg["transport"]["type"], "stdio");
+        assert_eq!(cfg["transport"]["command"], "python");
+        assert_eq!(
+            cfg["transport"]["args"],
+            json!(["script.py", "--arg", "123"])
+        );
+        assert_eq!(cfg["isActive"], true);
+
+        // Valid http
+        let form_http = FormState {
+            editing_id: None,
+            name: "http_tool".into(),
+            transport: "http".into(),
+            command_or_url: "https://api.example.com/mcp".into(),
+            args: "".into(),
+            field: FormField::Name,
+        };
+        let cfg_http = build_config(&form_http).unwrap();
+        assert_eq!(cfg_http["transport"]["type"], "http");
+        assert_eq!(cfg_http["transport"]["url"], "https://api.example.com/mcp");
+    }
+
+    #[test]
+    fn select_failed_servers_only() {
+        use crate::agent::runtime_state::{
+            SessionRuntimeServerState, SessionRuntimeServerStatus, SessionRuntimeState,
+            SessionRuntimeTransport,
+        };
+
+        let mut runtime = SessionRuntimeState::default();
+        runtime.servers = vec![
+            SessionRuntimeServerState {
+                name: "ready_server".into(),
+                transport: SessionRuntimeTransport::Stdio,
+                status: SessionRuntimeServerStatus::Ready,
+                tool_count: 3,
+                error: None,
+            },
+            SessionRuntimeServerState {
+                name: "failed_server_1".into(),
+                transport: SessionRuntimeTransport::Stdio,
+                status: SessionRuntimeServerStatus::Failed,
+                tool_count: 0,
+                error: Some("crash".into()),
+            },
+            SessionRuntimeServerState {
+                name: "not_started_server".into(),
+                transport: SessionRuntimeTransport::Stdio,
+                status: SessionRuntimeServerStatus::NotStarted,
+                tool_count: 0,
+                error: None,
+            },
+            SessionRuntimeServerState {
+                name: "failed_server_2".into(),
+                transport: SessionRuntimeTransport::Stdio,
+                status: SessionRuntimeServerStatus::Failed,
+                tool_count: 0,
+                error: Some("timeout".into()),
+            },
+        ];
+
+        let failed = select_failed_servers(&runtime);
+        assert_eq!(failed, vec!["failed_server_1", "failed_server_2"]);
+    }
+
+    #[test]
+    fn attached_tui_mode_refusal() {
+        // In unit test context, MCP_SERVER_REPOSITORY is unset, mimicking an attached TUI
+        let open_res = ExtensionsScreen::open(None);
+        assert!(open_res.is_err());
+        assert!(open_res
+            .unwrap_err()
+            .contains("Extensions require the primary backend process"));
+
+        let enable_res = ExtensionsScreen::apply_enable("any", true);
+        assert!(enable_res.is_err());
+        assert!(enable_res
+            .unwrap_err()
+            .contains("Extensions require the primary backend process"));
+
+        let probe_res = ExtensionsScreen::apply_probe("any");
+        assert!(probe_res.is_err());
+        assert!(probe_res
+            .unwrap_err()
+            .contains("Extensions require the primary backend process"));
+
+        let auth_res = ExtensionsScreen::apply_auth("any");
+        assert!(auth_res.is_err());
+        assert!(auth_res
+            .unwrap_err()
+            .contains("Extensions require the primary backend process"));
+
+        let logout_res = ExtensionsScreen::apply_logout("any");
+        assert!(logout_res.is_err());
+        assert!(logout_res
+            .unwrap_err()
+            .contains("Extensions require the primary backend process"));
+    }
+
+    #[test]
+    fn delete_confirmation_key_handling() {
+        let mut screen = ExtensionsScreen {
+            view: View::ConfirmDelete,
+            rows: Vec::new(),
+            filter: String::new(),
+            selected: 0,
+            tools_title: String::new(),
+            tools_lines: Vec::new(),
+            tools_scroll: 0,
+            presets: Vec::new(),
+            confirm_name: Some("test-srv".into()),
+            form: None,
+            background_op: None,
+            notice: None,
+        };
+
+        // Press 'n' cancels
+        let act = screen.handle_key(KeyEvent::from(KeyCode::Char('n')));
+        assert_eq!(act, ExtensionsAction::None);
+        assert_eq!(screen.view, View::List);
+        assert_eq!(screen.confirm_name, None);
+        assert_eq!(screen.notice.as_deref(), Some("Delete cancelled"));
+
+        // Press Esc cancels
+        screen.view = View::ConfirmDelete;
+        screen.confirm_name = Some("test-srv".into());
+        let act = screen.handle_key(KeyEvent::from(KeyCode::Esc));
+        assert_eq!(act, ExtensionsAction::None);
+        assert_eq!(screen.view, View::List);
+        assert_eq!(screen.confirm_name, None);
+        assert_eq!(screen.notice.as_deref(), Some("Delete cancelled"));
+    }
+
+    #[test]
+    fn form_key_navigation() {
+        let mut screen = ExtensionsScreen {
+            view: View::Form,
+            rows: Vec::new(),
+            filter: String::new(),
+            selected: 0,
+            tools_title: String::new(),
+            tools_lines: Vec::new(),
+            tools_scroll: 0,
+            presets: Vec::new(),
+            confirm_name: None,
+            form: Some(FormState {
+                editing_id: None,
+                name: "initial".into(),
+                transport: "stdio".into(),
+                command_or_url: "cmd".into(),
+                args: "".into(),
+                field: FormField::Name,
+            }),
+            background_op: None,
+            notice: None,
+        };
+
+        // Tab forwards
+        screen.handle_key(KeyEvent::from(KeyCode::Tab));
+        assert_eq!(screen.form.as_ref().unwrap().field, FormField::Transport);
+        screen.handle_key(KeyEvent::from(KeyCode::Tab));
+        assert_eq!(screen.form.as_ref().unwrap().field, FormField::CommandOrUrl);
+        screen.handle_key(KeyEvent::from(KeyCode::Tab));
+        assert_eq!(screen.form.as_ref().unwrap().field, FormField::Args);
+        screen.handle_key(KeyEvent::from(KeyCode::Tab));
+        assert_eq!(screen.form.as_ref().unwrap().field, FormField::Name);
+
+        // BackTab backwards
+        screen.handle_key(KeyEvent::from(KeyCode::BackTab));
+        assert_eq!(screen.form.as_ref().unwrap().field, FormField::Args);
+
+        // Esc cancels form
+        let act = screen.handle_key(KeyEvent::from(KeyCode::Esc));
+        assert_eq!(act, ExtensionsAction::None);
+        assert_eq!(screen.view, View::List);
+        assert!(screen.form.is_none());
+    }
+
+    #[test]
+    fn presets_key_navigation() {
+        let mut screen = ExtensionsScreen {
+            view: View::Presets,
+            rows: Vec::new(),
+            filter: String::new(),
+            selected: 0,
+            tools_title: "Presets".into(),
+            tools_lines: Vec::new(),
+            tools_scroll: 0,
+            presets: vec![
+                ("p1".into(), "preset 1".into()),
+                ("p2".into(), "preset 2".into()),
+            ],
+            confirm_name: None,
+            form: None,
+            background_op: None,
+            notice: None,
+        };
+
+        screen.handle_key(KeyEvent::from(KeyCode::Down));
+        assert_eq!(screen.selected, 1);
+        screen.handle_key(KeyEvent::from(KeyCode::Up));
+        assert_eq!(screen.selected, 0);
+
+        let act = screen.handle_key(KeyEvent::from(KeyCode::Esc));
+        assert_eq!(act, ExtensionsAction::Closed);
     }
 }
