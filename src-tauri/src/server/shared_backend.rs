@@ -10,13 +10,8 @@ use std::time::{Duration, Instant};
 const HEALTH_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// How long a frontend waits for a discovered backend to report `ready: true`
-/// on startup (#2756).
-pub const ATTACH_READY_TIMEOUT: Duration = Duration::from_secs(30);
-
-/// How long the winner of the startup race waits for its own HTTP server to
-/// publish this process's backend record before releasing the startup lock
-/// (#2757).
+/// How long this process waits for its own HTTP server to publish a live
+/// backend record after bind (#2757, #2853).
 pub const OWN_PUBLISH_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Parsed payload from `GET /api/health`.

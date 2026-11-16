@@ -229,7 +229,7 @@ pub fn run_tui() -> i32 {
 
     if crate::server::backend_descriptor::profile_has_other_backend() {
         eprintln!(
-            "error: this profile already has a backend that is not reachable; refusing to start a second one"
+            "error: this profile already has another live backend; the TUI no longer attaches to it (#2854)"
         );
         return 1;
     }

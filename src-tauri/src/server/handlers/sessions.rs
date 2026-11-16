@@ -70,12 +70,8 @@ pub async fn create_session(
     .await
     {
         Ok(response) => {
-            // Creating a session is opening it: the creator's frontend owns
-            // it for its process lifetime (#2759). The id is brand new, so
-            // the claim cannot be refused.
-            if let Some(attachment_id) = attachment {
-                let _ = session_ownership::claim(&response.id, attachment_id);
-            }
+            // HTTP callers never claim (#2854). Host GUI claims via IPC.
+            let _ = attachment;
             Ok(warp::reply::with_status(
                 warp::reply::json(&map_create_session_response_for_http(response)),
                 StatusCode::CREATED,
@@ -222,8 +218,8 @@ async fn list_sessions_reply(
     session_repo: &Arc<dyn SessionRepository>,
     attachment: Option<&str>,
 ) -> warp::reply::WithStatus<warp::reply::Json> {
-    // The reserved host id must not read ownership as the host process.
-    if let Err((status, error)) = session_ownership::reject_reserved_attachment(attachment) {
+    // Any attachment header is refused (#2854); no header leaves list open.
+    if let Err((status, error)) = session_ownership::http_attachment(attachment) {
         return resolve_error_reply(status, error);
     }
     let limit = query.limit.unwrap_or(DEFAULT_SESSIONS_LIMIT);
@@ -1092,43 +1088,31 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_reserved_host_attachment_id_is_rejected_on_the_http_path() {
+    async fn any_attachment_header_is_rejected_on_the_http_path() {
         let repo = sqlite_session_repo().await;
         let api = ownership_routes(repo.clone());
         let id = stored_session(&repo).await;
-        let host = session_ownership::HOST_ATTACHMENT_ID;
 
-        for path in [
-            format!("/api/sessions/{id}/open"),
-            format!("/api/sessions/{id}/resume"),
-            format!("/api/sessions/{id}/messages"),
-        ] {
-            let (status, json) = call(&api, "POST", &path, Some(host)).await;
-            assert_eq!(status, StatusCode::BAD_REQUEST, "{path}: {json}");
-            assert!(
-                json["error"].as_str().unwrap().contains("reserved"),
-                "{json}"
-            );
+        for header in [session_ownership::HOST_ATTACHMENT_ID, "never-attached"] {
+            for path in [
+                format!("/api/sessions/{id}/open"),
+                format!("/api/sessions/{id}/resume"),
+                format!("/api/sessions/{id}/messages"),
+            ] {
+                let (status, json) = call(&api, "POST", &path, Some(header)).await;
+                assert_eq!(status, StatusCode::BAD_REQUEST, "{path}/{header}: {json}");
+                assert!(
+                    json["error"]
+                        .as_str()
+                        .unwrap()
+                        .contains("attachment registry removed"),
+                    "{json}"
+                );
+            }
+            let (status, json) = call(&api, "GET", "/api/sessions", Some(header)).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{header}: {json}");
         }
-        let (status, _) = call(&api, "GET", "/api/sessions", Some(host)).await;
-        assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(session_ownership::owner(&id), None, "nothing was claimed");
-    }
-
-    #[tokio::test]
-    async fn an_attachment_header_cannot_claim_over_http_without_registry() {
-        let repo = sqlite_session_repo().await;
-        let api = ownership_routes(repo.clone());
-        let id = stored_session(&repo).await;
-        let path = format!("/api/sessions/{id}/open");
-
-        let (status, json) = call(&api, "POST", &path, Some("never-attached")).await;
-        assert_eq!(status, StatusCode::BAD_REQUEST, "{json}");
-        assert!(
-            json["error"].as_str().unwrap().contains("invalid"),
-            "{json}"
-        );
-        assert_eq!(session_ownership::owner(&id), None);
     }
 
     #[tokio::test]

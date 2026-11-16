@@ -366,22 +366,16 @@ Loads a paused/crashed session into active memory and resumes the workflow.
 
 ### Session Ownership
 
-When several LibrAgent frontends share one backend, a session is open in one process at a time. Only the frontend that opened a session can open, resume, or send to it.
+Each process hosts its own backend (#2853). Session ownership is in-process: the GUI that opened a session claims it as `host` over IPC. HTTP clients do not participate in that model.
 
-A frontend identifies itself with the `x-frontend-attachment` header. Its value is the id from the frontend attach call. The attachment stays live while the frontend sends heartbeats (every 5 s). It expires after 15 s without one, and its sessions are then free to open again.
+- **Header**: do not send `x-frontend-attachment`. Any value returns `400` (attachment registry removed, #2854).
+- **Claiming routes** (`POST /api/sessions/:id/open`, `resume`, `messages`, and `POST /api/sessions`): without the header, HTTP callers neither claim nor are refused for ownership. Host ownership still applies to the GUI process that opened the session.
+- **Read-only routes** never claim: `GET /api/sessions/:id`, `GET /api/sessions/:id/messages`, and the event stream. `GET /api/sessions` sets `openElsewhere: true` on sessions owned by the local host process when the list caller is an external (headerless) client.
 
-- **Header**: `x-frontend-attachment: <attachment id>` (optional)
-- **Claiming routes**: `POST /api/sessions/:id/open`, `POST /api/sessions/:id/resume`, `POST /api/sessions/:id/messages`, and `POST /api/sessions` (the new session is claimed after it is created)
-- **Open**: `POST /api/sessions/:id/open` claims the session for the caller and returns `{ "status": "open" }`.
-- **Read-only routes** never claim and are never refused for ownership: `GET /api/sessions/:id`, `GET /api/sessions/:id/messages`, and the event stream. `GET /api/sessions` marks sessions owned by another process with `openElsewhere`.
-
-| Status | Body `error`                                         | Cause                                                                        |
-| :----- | :--------------------------------------------------- | :--------------------------------------------------------------------------- |
-| `409`  | `Session <id> is open in another process`            | Another live attachment owns the session.                                    |
-| `400`  | `Frontend attachment id 'host' is reserved`          | The `host` id belongs to the backend's own GUI and cannot be sent over HTTP. |
-| `400`  | `Frontend attachment <id> is not live; attach again` | The id is unknown or expired. A non-live id never claims a session.          |
-
-Requests without the header (scripts and other external clients) are not tracked: they neither claim a session nor get refused for ownership.
+| Status | Body `error`                                                              | Cause                                                                 |
+| :----- | :------------------------------------------------------------------------ | :-------------------------------------------------------------------- |
+| `409`  | `Session <id> is open in another process`                                 | The local host process already owns the session (in-process claim). |
+| `400`  | `x-frontend-attachment is not supported; attachment registry removed`     | Any `x-frontend-attachment` header is rejected.                       |
 
 ---
 

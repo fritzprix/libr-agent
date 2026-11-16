@@ -69,12 +69,6 @@ pub fn is_open_elsewhere(session_id: &str, requester: Option<&str>) -> bool {
     }
 }
 
-/// Drop ownership entries of a cleanly detached attachment. With no attachment
-/// registry, only [`HOST_ATTACHMENT_ID`] remains live in production.
-pub fn release_attachment(attachment_id: &str) {
-    owners().retain(|_, owner| owner != attachment_id);
-}
-
 /// Drop the ownership entry of one session. Used when opening a brand-new
 /// session fails after its claim, so no entry outlives a session that was
 /// never created.
@@ -84,49 +78,27 @@ pub fn release_session(session_id: &str) {
 
 type HttpRefusal = (StatusCode, String);
 
-/// Reject the reserved [`HOST_ATTACHMENT_ID`] on the Session API. Only the
-/// backend-hosting process may use it, in-process; an HTTP caller sending it
-/// would otherwise impersonate the host and own or probe its sessions.
-pub fn reject_reserved_attachment(header: Option<&str>) -> Result<(), HttpRefusal> {
-    match header {
-        Some(HOST_ATTACHMENT_ID) => Err((
-            StatusCode::BAD_REQUEST,
-            format!("Frontend attachment id '{HOST_ATTACHMENT_ID}' is reserved"),
-        )),
-        _ => Ok(()),
-    }
-}
+const ATTACHMENT_HEADER_REMOVED: &str =
+    "x-frontend-attachment is not supported; attachment registry removed";
 
-/// Claim `session_id` for the Session API caller identified by the
-/// `x-frontend-attachment` header value. Only open paths (create, open,
-/// resume, send) call this; metadata reads never claim.
+/// Claim via the Session API for an HTTP caller (#2854).
 ///
-/// - No header: an external caller (script, CLI) outside the ownership
-///   model. No claim and no refusal, keeping the pre-#2759 behavior.
-/// - The reserved `host` id, or any attachment id (#2854): `400`. Cross-process
-///   attachment registration is removed; only the in-process host may own.
-/// - A different live process owns the session: `409` with
-///   [`OPEN_ELSEWHERE_MESSAGE`].
-pub fn claim_http(session_id: &str, header: Option<&str>) -> Result<(), HttpRefusal> {
-    match http_attachment(header)? {
-        Some(attachment_id) => {
-            claim(session_id, attachment_id).map_err(|message| (StatusCode::CONFLICT, message))
-        }
-        None => Ok(()),
-    }
+/// - No `x-frontend-attachment` header: external caller; no claim and no refusal.
+/// - Any header value: `400` — cross-process attachment registration is gone;
+///   only the in-process host may own sessions.
+pub fn claim_http(_session_id: &str, header: Option<&str>) -> Result<(), HttpRefusal> {
+    http_attachment(header).map(|_| ())
 }
 
-/// Validate the attachment of a claiming Session API caller: `None` for an
-/// external caller, `Some(id)` for a live attachment, `400` for the reserved
-/// `host` id or any other id (registry removed, #2854).
+/// Validate an optional `x-frontend-attachment` header: `None` when absent,
+/// `400` when present (#2854).
 pub fn http_attachment(header: Option<&str>) -> Result<Option<&str>, HttpRefusal> {
-    reject_reserved_attachment(header)?;
     match header {
-        Some(attachment_id) if !attachment_is_live(attachment_id) => Err((
+        None => Ok(None),
+        Some(_) => Err((
             StatusCode::BAD_REQUEST,
-            format!("Frontend attachment {attachment_id} is invalid; attachment registry removed"),
+            ATTACHMENT_HEADER_REMOVED.to_string(),
         )),
-        other => Ok(other),
     }
 }
 
@@ -189,22 +161,14 @@ mod tests {
     }
 
     #[test]
-    fn http_claim_rejects_the_reserved_host_id() {
-        let session = unique_id("session");
-        let (status, message) = claim_http(&session, Some(HOST_ATTACHMENT_ID)).unwrap_err();
-        assert_eq!(status, StatusCode::BAD_REQUEST);
-        assert!(message.contains("reserved"), "{message}");
-        assert_eq!(owner(&session), None);
-    }
-
-    #[test]
     fn http_claim_rejects_any_attachment_header() {
         let session = unique_id("session");
-        let id = unique_id("att");
-        let (status, message) = claim_http(&session, Some(&id)).unwrap_err();
-        assert_eq!(status, StatusCode::BAD_REQUEST);
-        assert!(message.contains("invalid"), "{message}");
-        assert_eq!(owner(&session), None);
+        for header in [HOST_ATTACHMENT_ID, unique_id("att").as_str()] {
+            let (status, message) = claim_http(&session, Some(header)).unwrap_err();
+            assert_eq!(status, StatusCode::BAD_REQUEST);
+            assert!(message.contains("attachment registry removed"), "{message}");
+            assert_eq!(owner(&session), None);
+        }
     }
 
     #[test]
