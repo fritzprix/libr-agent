@@ -104,13 +104,14 @@ No tool documents an exit code for "waiting on approval", because none of them w
 ### 3.1 Shape
 
 - `liblet` is its own binary. The build produces two artifacts: the GUI app, and `liblet`, a TUI that also supports headless runs. There are no subcommands.
-- Each `libragent` GUI window hosts **its own** Session API backend (#2855). Several backends may run on one profile; they share the profile database file but bind distinct loopback ports. The TUI (when wired in #2702) is a frontend of the backend it hosts or attaches to — not a second executor hidden inside the GUI.
+- Each `libragent` GUI window hosts **its own** Session API backend (#2855). Several backends may run on one profile; they share the profile database file but bind distinct loopback ports. The `liblet` TUI is hidden (#2861); when it is wired back in (#2702) it is a frontend of the backend it hosts — not a second executor hidden inside the GUI.
 - The Session API (`docs/api/http_api.md`) is the local HTTP contract for **that** backend. It is not a remote control plane for another app's window.
 - A **headless** run (`-p` / `--prompt`, or a piped prompt per §3.2) is self-contained: it never attaches to a GUI backend and never lists its session in the profile's shared session store.
   - **Shipped today (#2703)**: copy the profile SQLite into a per-run `TempDir`, delete session/message/scheduled-task rows in the copy, then `VACUUM` so prior session bytes are scrubbed from the ephemeral file; run one ephemeral session; tear down the temp tree on exit. **No rows are written back** to the profile database.
-  - **Planned (#2859 / #2860)**: optional **insert-only** write-back of approved headless artifacts into the profile DB, with redaction of secrets and env — not implemented yet; until then, treat headless output on stdout / `json` / `stream-json` as the only durable record of the run.
+  - **Planned (#2859 / #2860)**: end-of-run **merge-or-fork** write-back into the profile DB. A run without `--session` inserts one new session row. A `--session <id>` run merges into the original when the original's version is unchanged and no live GUI owns it; otherwise it inserts a new session row holding the forked history with `forked_from` set to the original id and leaves the original untouched. The version check and the write happen in one transaction. Secrets are redacted before any insert or append, and there are **no JSONL** history files. Until this lands, treat headless output on stdout / `json` / `stream-json` as the only durable record of the run.
+- A headless run **never runs a scheduler**. Scheduled tasks belong to a hosted profile; an ephemeral run must not enqueue work that no process will observe.
 - A headless run may read its initial settings, including the approval policy, from the profile snapshot (see 3.5).
-- Several app processes may run on one device. Cross-process session exclusivity for **interactive** GUIs is by separate backends (#2855). Within one backend, at most one live frontend attachment may drive a given session (`docs/api/http_api.md` Session Ownership).
+- Several app processes may run on one device. Cross-process session exclusivity for **interactive** GUIs is the DB ownership guard in #2856 (`docs/api/http_api.md` Session Ownership). No HTTP client claims a session; `x-frontend-attachment` is refused.
 
 ### 3.2 Invocation
 
@@ -249,7 +250,7 @@ Independent of the multi-backend model (#2855), a TUI frontend still needs these
 
 ### 4.2 Headless (#2703)
 
-Ephemeral headless runs are **implemented** in `src-tauri/src/headless/` (snapshot + isolated executor). Remaining epic work is insert-only profile write-back with redaction (#2859 / #2860), not replacing the ephemeral runtime. The `stream-json` trace is emitted by the headless process, not by a hosted backend's SSE stream.
+Ephemeral headless runs are **implemented** in `src-tauri/src/headless/` (snapshot + isolated executor). Remaining epic work is merge-or-fork profile write-back with redaction (#2859 / #2860), not replacing the ephemeral runtime. The `stream-json` trace is emitted by the headless process, not by a hosted backend's SSE stream.
 
 ## 5. Maintainer decisions (2026-11-12)
 
@@ -258,7 +259,7 @@ The first draft listed five open decisions. They are settled as follows.
 1. **Headless flag.** `-p` / `--prompt`, the familiar spelling. No subcommand is needed.
 2. **Approvals in headless mode.** Approvals follow the configuration the run started with. If a further approval is needed, the run stops (fail). Approvals are never skipped by default.
 3. **Mode selection.** No automatic headless. The TUI runs only when there is a terminal. Headless runs only with `-p` or when the prompt is piped in. With neither, liblet exits with a usage error.
-4. **Architecture.** liblet is an independent binary. The GUI and TUI each host (or, for legacy `liblet` TUI stubs, discover) a local backend; they do not require one shared attach point (#2855). Headless uses a separate ephemeral session. No single-instance lock blocks several apps on one device; within one backend, session driving remains single-attachment. The Session API is the contract for that process's HTTP server, not remote control of another window.
+4. **Architecture.** liblet is an independent binary. The GUI hosts a local backend; the `liblet` TUI is hidden (#2861) and, when it returns (#2702), is a frontend of a backend it hosts. There is no shared attach point (#2855). Headless uses a separate ephemeral session. No single-instance lock blocks several apps on one device; GUI-to-GUI session ownership is the DB guard in #2856. The Session API is the contract for that process's HTTP server, not remote control of another window.
 5. **Callbacks and output.** `--hook` is not supported. The final result goes to the process's standard output, as when a sub-session returns its final result. A full trace must be available according to the initial configuration.
 
 ### 5.1 How section 3 reads those decisions

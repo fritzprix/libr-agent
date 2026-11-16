@@ -51,7 +51,7 @@ LibrAgent provides a robust HTTP API for remote management of AI agents, session
 
 ### Headless `liblet` (not this HTTP server)
 
-One-shot `liblet -p` / `libragent -p` runs use an **ephemeral** SQLite copy of the profile (session tables cleared, then `VACUUM`), not this per-process HTTP API. Output is stdout (`text`, `json`, or `stream-json`). That path is **exempt** from [Session Ownership](#session-ownership). **Insert-only write-back** of approved artifacts into the profile DB with redaction is planned (#2859 / #2860) and is **not** implemented yet.
+One-shot `liblet -p` / `libragent -p` runs use an **ephemeral** SQLite copy of the profile (session tables cleared, then `VACUUM`), not this per-process HTTP API. Output is stdout (`text`, `json`, or `stream-json`). That path is **exempt** from [Session Ownership](#session-ownership) and starts no scheduler. **Merge-or-fork write-back** into the profile DB with secret redaction and no JSONL history — insert a new session, or merge into `--session <id>` when its version is unchanged and no live GUI owns it, else insert a fork with `forked_from` — is planned (#2859 / #2860) and is **not** implemented yet.
 
 ---
 
@@ -344,7 +344,7 @@ Lists sessions, most recent activity first.
 }
 ```
 
-Each entry has the session fields of [Get Session Status](#get-session-status), without `pendingApprovals`, plus `openElsewhere`: `true` when another frontend process owns the session (see [Session Ownership](#session-ownership)). `nextCursor` is `null` on the last page.
+Each entry has the session fields of [Get Session Status](#get-session-status), without `pendingApprovals`, plus `openElsewhere`: `true` when the local host process owns the session and the caller is an external (headerless) client (see [Session Ownership](#session-ownership)). `nextCursor` is `null` on the last page.
 
 ---
 
@@ -385,16 +385,23 @@ Loads a paused/crashed session into active memory and resumes the workflow.
 
 ### Session Ownership
 
-Each process hosts its own backend (#2853). Session ownership is in-process: the GUI that opened a session claims it as `host` over IPC. HTTP clients do not participate in that model.
+Each `libragent` GUI process hosts its own Session API backend (#2855). A profile may run several backends at once (each with its own `http_port.<pid>` and `.backend.<pid>.json` record). They share the profile SQLite file for persisted data, but session **execution** and ownership are scoped to **one backend process**.
 
-- **Header**: do not send `x-frontend-attachment`. Any value returns `400` (attachment registry removed, #2854).
-- **Claiming routes** (`POST /api/sessions/:id/open`, `resume`, `messages`, and `POST /api/sessions`): without the header, HTTP callers neither claim nor are refused for ownership. Host ownership still applies to the GUI process that opened the session.
-- **Read-only routes** never claim: `GET /api/sessions/:id`, `GET /api/sessions/:id/messages`, and the event stream. `GET /api/sessions` sets `openElsewhere: true` on sessions owned by the local host process when the list caller is an external (headerless) client.
+Ownership today is **in-process**: the GUI that opens a session claims it as `host` over IPC, and HTTP clients never claim sessions. The cross-process **GUI-to-GUI** guard — a GUI refuses a session a live sibling GUI holds, or shows it as `openElsewhere` until reclaim is safe — belongs to #2856 and is **planned**, not shipped.
 
-| Status | Body `error`                                                          | Cause                                                                                                                                                                  |
-| :----- | :-------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `409`  | `Session <id> is open in another process`                             | The local host process already owns the session (in-process claim). A headerless HTTP caller never triggers it; it only shows up as `openElsewhere` on the list reply. |
-| `400`  | `x-frontend-attachment is not supported; attachment registry removed` | Any `x-frontend-attachment` header is rejected.                                                                                                                        |
+- **Header**: do not send `x-frontend-attachment`. Any value returns `400`; the attachment registry, its heartbeats, and `POST /api/frontends` were removed (#2854).
+- **Claiming routes** (`POST /api/sessions/:id/open`, `POST /api/sessions/:id/resume`, `POST /api/sessions/:id/messages`, and `POST /api/sessions`): an HTTP caller neither claims a session nor is refused for ownership. Host ownership still applies to the GUI process that opened the session.
+- **Read-only routes** never claim: `GET /api/sessions/:id`, `GET /api/sessions/:id/messages`, and the event stream. `GET /api/sessions` sets `openElsewhere: true` on sessions owned by the local host process when the caller is an external (headerless) client.
+
+| Status | Body `error`                                                          | Cause                                                                                                                                                                   |
+| :----- | :-------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `409`  | `Session <id> is open in another process`                             | The local host process already owns the session (in-process claim). A headerless HTTP caller does not trigger it; it only appears as `openElsewhere` on the list reply. |
+| `400`  | `x-frontend-attachment is not supported; attachment registry removed` | Any `x-frontend-attachment` header is rejected (#2854).                                                                                                                 |
+
+**Exempt (no ownership checks on claiming routes):**
+
+- **Headless `liblet` / `libragent -p`**: ephemeral runtime only; it never participates in the ownership guard and runs no scheduler (see `docs/specs/liblet-cli-interface.md` §3.1).
+- **External scripts** without `x-frontend-attachment`: they neither claim a session nor receive `409` for ownership (pre-#2759 automation behavior).
 
 ---
 

@@ -13,6 +13,7 @@ You are integrating with LibrAgent's Session API running locally on this machine
 
 1. **Locate HTTP Port**:
    - Each backend writes \`~/.libragent/http_port.<pid>\` (or \`%USERPROFILE%\\.libragent\\http_port.<pid>\` on Windows) when it binds. Several backends may run at once; probe each file until \`GET http://127.0.0.1:<port>/api/health\` succeeds, or set \`LIBRAGENT_HTTP_PORT\` when you already know the target backend.
+   - A file can remain after a crash. If a probe fails, skip that file and keep probing; do not stop at the first \`http_port.<pid>\` file.
    - If no file answers, default to port \`${httpPort}\` (single-backend dev fallback only).
 
 2. **Generate a 1-Time Pairing Code**:
