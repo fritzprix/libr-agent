@@ -31,7 +31,7 @@ fn discover_ie_config() -> Result<WINHTTP_CURRENT_USER_IE_PROXY_CONFIG, String> 
         WinHttpGetIEProxyConfigForCurrentUser(&mut config).map_err(|_| {
             format!(
                 "WinHttpGetIEProxyConfigForCurrentUser failed: {:?}",
-                unsafe { GetLastError() }
+                GetLastError()
             )
         })?;
     }
@@ -70,7 +70,7 @@ pub fn resolve(url: &str) -> Result<ResolvedProxy, String> {
             WinHttpGetProxyForUrl(
                 session,
                 PCWSTR(url_h.as_ptr()),
-                &options,
+                &mut options,
                 &mut proxy_info,
             )
         };
