@@ -53,7 +53,7 @@ tauri-plugin-dialog = "2"
 # Version pinned to the rfd already in the graph via tauri-plugin-dialog; no
 # default features because rfd rejects `gtk3` (tauri-plugin-dialog's choice)
 # together with its default `xdg-portal`.
-rfd = { version = "0.16", default-features = false }
+rfd = { version = "0.18", default-features = false }
 tauri-plugin-updater = "2"
 # Block WebView browser shortcuts (F5 / Ctrl+R reload). platform-windows disables
 # WebView2 accelerator keys so F5 cannot bypass JS preventDefault on Windows.
