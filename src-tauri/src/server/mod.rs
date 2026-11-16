@@ -38,12 +38,6 @@ pub(crate) fn take_http_bind_error() -> Option<String> {
     HTTP_BIND_ERROR.lock().ok().and_then(|mut slot| slot.take())
 }
 
-/// Prefix of the message [`init`] records when this profile already has a
-/// live backend and a second HTTP server would be started (#2823).
-/// `lifecycle::app_setup` matches this prefix to tell a second GUI launch
-/// apart from a genuine bind failure (#2853, #2863 G1.1).
-pub const SECOND_BACKEND_REFUSAL_PREFIX: &str = "this profile already has a backend";
-
 /// Record the port the HTTP server actually bound (may differ from Settings request).
 pub fn set_active_http_port(port: u16) {
     ACTIVE_HTTP_PORT.store(port, Ordering::Relaxed);
@@ -51,7 +45,9 @@ pub fn set_active_http_port(port: u16) {
 
 /// Active LibrAgent HTTP port for external inject / wake URLs.
 ///
-/// Prefers the in-process bound port, then `~/.libragent/http_port`, else **3030**.
+/// Prefers the in-process bound port, then this process's own persisted
+/// record `~/.libragent/http_port.<pid>`, else **3030**. Records are per
+/// pid (#2855), so this never answers with another process's port.
 pub fn active_http_port() -> u16 {
     let bound = ACTIVE_HTTP_PORT.load(Ordering::Relaxed);
     if bound != 0 {
@@ -60,10 +56,17 @@ pub fn active_http_port() -> u16 {
     read_persisted_http_port().unwrap_or(3030)
 }
 
-/// `~/.libragent/http_port` is shared by every instance under one HOME. An instance
-/// with an overridden data dir (e.g. an isolated bench instance) must not clobber the
-/// primary instance's port.
-fn should_persist_global_http_port(data_dir_override: Option<&std::ffi::OsStr>) -> bool {
+/// Per-process port record inside `~/.libragent`: a second backend on the
+/// same profile writes its own file instead of overwriting the first
+/// one's artifact (#2855).
+fn home_http_port_file(home: &std::path::Path, pid: u32) -> std::path::PathBuf {
+    home.join(".libragent").join(format!("http_port.{pid}"))
+}
+
+/// An instance with an overridden data dir (e.g. an isolated bench
+/// instance) keeps its port record out of the shared `~/.libragent`
+/// directory, as before #2855.
+fn should_persist_home_http_port(data_dir_override: Option<&std::ffi::OsStr>) -> bool {
     data_dir_override.is_none_or(|value| value.is_empty())
 }
 
@@ -71,11 +74,10 @@ fn read_persisted_http_port() -> Option<u16> {
     let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
         .ok()?;
-    let raw = std::fs::read_to_string(
-        std::path::PathBuf::from(home)
-            .join(".libragent")
-            .join("http_port"),
-    )
+    let raw = std::fs::read_to_string(home_http_port_file(
+        std::path::Path::new(&home),
+        std::process::id(),
+    ))
     .ok()?;
     let port: u16 = raw.trim().parse().ok()?;
     (port > 0).then_some(port)
@@ -135,18 +137,10 @@ pub async fn init(
     // later startup's wait (S1.2 review).
     take_http_bind_error();
 
-    // A record for this database means this profile already has a backend.
-    // Binding the next free port would be a second backend (#2823). A
-    // different database (dev vs prod, or LIBRAGENT_DATA_DIR) does not match
-    // this check, so it can still fall back to another port (B-10).
-    if let Some(record) = backend_descriptor::blocking_backend_record() {
-        let message = format!(
-            "{SECOND_BACKEND_REFUSAL_PREFIX} (record: {}); refusing to bind a second HTTP server",
-            record.display()
-        );
-        note_http_bind_error(message.clone());
-        return Err(message.into());
-    }
+    // Multiple backends may run on one profile (#2855): a second process
+    // binds the next free port through the fallback below instead of being
+    // refused. Backend descriptor records stay per-pid discovery, never a
+    // bind gate.
 
     let max_attempts = 10u16;
     // Keep the bound listener and serve through it: dropping it and asking
@@ -170,12 +164,16 @@ pub async fn init(
         log::warn!("Failed to publish backend descriptor: {error}");
     }
 
-    // Persist active HTTP port to ~/.libragent/http_port for external scripts/tools
-    if should_persist_global_http_port(std::env::var_os("LIBRAGENT_DATA_DIR").as_deref()) {
+    // Persist this process's port to `~/.libragent/http_port.<pid>` for
+    // external scripts/tools. Each backend writes only its own record, so
+    // several backends on one profile never clobber each other (#2855).
+    if should_persist_home_http_port(std::env::var_os("LIBRAGENT_DATA_DIR").as_deref()) {
         if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
-            let dir = std::path::PathBuf::from(home).join(".libragent");
-            let _ = std::fs::create_dir_all(&dir);
-            let _ = std::fs::write(dir.join("http_port"), bound_port.to_string());
+            let path = home_http_port_file(std::path::Path::new(&home), std::process::id());
+            if let Some(dir) = path.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            let _ = std::fs::write(&path, bound_port.to_string());
         }
     }
 
@@ -219,7 +217,9 @@ pub async fn init(
 
 #[cfg(test)]
 mod tests {
-    use super::{bind_first_available_listener, should_persist_global_http_port};
+    use super::{
+        bind_first_available_listener, home_http_port_file, should_persist_home_http_port,
+    };
     use std::ffi::OsStr;
     use std::net::Ipv4Addr;
 
@@ -243,15 +243,30 @@ mod tests {
     }
 
     #[test]
-    fn default_data_dir_persists_global_port() {
-        assert!(should_persist_global_http_port(None));
-        assert!(should_persist_global_http_port(Some(OsStr::new(""))));
+    fn default_data_dir_persists_home_port_record() {
+        assert!(should_persist_home_http_port(None));
+        assert!(should_persist_home_http_port(Some(OsStr::new(""))));
     }
 
     #[test]
-    fn overridden_data_dir_does_not_clobber_global_port() {
-        assert!(!should_persist_global_http_port(Some(OsStr::new(
+    fn overridden_data_dir_does_not_write_home_port_record() {
+        assert!(!should_persist_home_http_port(Some(OsStr::new(
             "/tmp/bench/com.fritzprix.libragent"
         ))));
+    }
+
+    #[test]
+    fn persisted_port_record_is_per_process() {
+        let home = std::path::Path::new("/home/u");
+        assert_eq!(
+            home_http_port_file(home, 4242),
+            std::path::PathBuf::from("/home/u/.libragent/http_port.4242")
+        );
+        // Two backends on one profile get distinct files: neither
+        // overwrites the other's port artifact (#2855).
+        assert_ne!(
+            home_http_port_file(home, 4242),
+            home_http_port_file(home, 4243)
+        );
     }
 }

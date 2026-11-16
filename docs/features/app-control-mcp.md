@@ -29,7 +29,7 @@ libragent --demo --mcp --app-control
 Desktop UI must be open (AppHandle emits `libragent:app-control` to the React bridge).
 
 Endpoint: `http://127.0.0.1:<http_port>/mcp/control`  
-Port: Settings HTTP port, or `~/.libragent/http_port`.
+Port: Settings HTTP port. Each backend writes its bound port to `~/.libragent/http_port.<pid>`; with several backends running, pick the one that answers `GET /api/health`.
 
 ## Tools (v1)
 
@@ -60,8 +60,12 @@ There is **no** composite scenario tool. Demo shot lists live in the bundled [de
 ## Example JSON-RPC
 
 ```bash
-PORT=$(cat ~/.libragent/http_port 2>/dev/null || echo 3030)
-curl -sS -X POST "http://127.0.0.1:${PORT}/mcp/control" \
+PORT=""
+for f in "$HOME"/.libragent/http_port.*; do
+  p=$(cat "$f" 2>/dev/null) || continue
+  curl -sf -m 1 "http://127.0.0.1:$p/api/health" >/dev/null 2>&1 && PORT=$p && break
+done
+curl -sS -X POST "http://127.0.0.1:${PORT:-3030}/mcp/control" \
   -H 'content-type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"app__highlight","arguments":{"target":"preset","name":"hn","ms":2500}}}'
 ```

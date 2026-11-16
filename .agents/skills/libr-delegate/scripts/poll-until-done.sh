@@ -13,8 +13,14 @@ if [[ -z "$SID" ]]; then
 fi
 
 if [[ -z "$BASE" ]]; then
-  PORT="$(cat "${HOME}/.libragent/http_port" 2>/dev/null || echo 3030)"
-  BASE="http://127.0.0.1:${PORT}"
+  # Each backend writes its port to ~/.libragent/http_port.<pid>; pick the
+  # first record that answers health (multiple backends may coexist).
+  PORT=""
+  for f in "$HOME"/.libragent/http_port.*; do
+    p=$(cat "$f" 2>/dev/null) || continue
+    curl -sf -m 1 "http://127.0.0.1:$p/api/health" >/dev/null 2>&1 && PORT=$p && break
+  done
+  BASE="http://127.0.0.1:${PORT:-3030}"
 fi
 
 normalize() {

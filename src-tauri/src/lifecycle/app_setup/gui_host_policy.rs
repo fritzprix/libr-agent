@@ -6,7 +6,7 @@
 //! last and fails startup when it fails, and the second-GUI refusal is
 //! classified for the user-facing dialog (#2863 G1.1/G1.2).
 
-use super::{is_second_backend_refusal, run_gui_host_startup};
+use super::run_gui_host_startup;
 use std::sync::{Arc, Mutex};
 
 fn bind_ok(
@@ -112,30 +112,5 @@ async fn failed_publish_wait_fails_startup_after_started_steps() {
     assert_eq!(
         steps_of(&steps),
         vec!["bind", "recovery", "scheduler", "wait"],
-    );
-}
-
-#[test]
-fn second_backend_refusal_is_classified_from_the_bind_message() {
-    // server::init records exactly this shape when another live backend
-    // already owns the profile; app_setup must route it to the dialog.
-    let refusal = format!(
-        "{} (record: C:\\data\\backend.json); refusing to bind a second HTTP server",
-        crate::server::SECOND_BACKEND_REFUSAL_PREFIX
-    );
-    assert!(
-        is_second_backend_refusal(&refusal),
-        "the second-backend refusal must be classified for the dialog"
-    );
-
-    assert!(
-        !is_second_backend_refusal("Failed to bind HTTP server on port range 3030..3040"),
-        "a plain bind failure is a setup error, not the second-GUI case"
-    );
-    assert!(
-        !is_second_backend_refusal(
-            "HTTP server did not publish this process's backend record; refusing to start a second backend"
-        ),
-        "a publish timeout is a setup error, not the second-GUI case"
     );
 }

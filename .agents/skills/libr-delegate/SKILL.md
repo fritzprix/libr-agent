@@ -30,11 +30,17 @@ LibrAgent `bundled_skills`.
 ## Base URL
 
 ```bash
-PORT=$(cat ~/.libragent/http_port 2>/dev/null || echo 3030)
-BASE="http://127.0.0.1:${PORT}"
+PORT=""
+for f in "$HOME"/.libragent/http_port.*; do
+  p=$(cat "$f" 2>/dev/null) || continue
+  curl -sf -m 1 "http://127.0.0.1:$p/api/health" >/dev/null 2>&1 && PORT=$p && break
+done
+BASE="http://127.0.0.1:${PORT:-3030}"
 ```
 
-Port file is written when LibrAgent’s HTTP server binds; fallback is `3030`.
+Each backend writes its bound port to `~/.libragent/http_port.<pid>` when
+its HTTP server binds; several backends on one profile coexist, so the loop
+picks the first port that answers health. Fallback is `3030`.
 
 ## Workflow
 

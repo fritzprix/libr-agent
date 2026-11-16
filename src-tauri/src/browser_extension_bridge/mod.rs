@@ -15,10 +15,11 @@ pub use messages::{
 
 use std::path::PathBuf;
 
-/// Start the bridge server if this process hosts the backend.
+/// Start the bridge server if this process is the first backend up.
 ///
-/// The bridge binds a fixed port. An attached frontend leaves that port to
-/// the host (#2823).
+/// The bridge binds a fixed port, so only one backend can own it; with
+/// multiple backends on one profile, later hosts leave the port to the
+/// first one (#2823, #2855).
 pub fn ensure_started() {
     if crate::server::backend_descriptor::find_live_backend().is_some()
         || crate::server::backend_descriptor::profile_has_other_backend()

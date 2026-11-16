@@ -1,10 +1,14 @@
 # Session API (curl)
 
-Load when making HTTP calls. Base URL: see SKILL.md (`~/.libragent/http_port` or `3030`).
+Load when making HTTP calls. Base URL: see SKILL.md (per-pid port files under `~/.libragent/` or `3030`).
 
 ```bash
-PORT=$(cat ~/.libragent/http_port 2>/dev/null || echo 3030)
-BASE="http://127.0.0.1:${PORT}"
+PORT=""
+for f in "$HOME"/.libragent/http_port.*; do
+  p=$(cat "$f" 2>/dev/null) || continue
+  curl -sf -m 1 "http://127.0.0.1:$p/api/health" >/dev/null 2>&1 && PORT=$p && break
+done
+BASE="http://127.0.0.1:${PORT:-3030}"
 ```
 
 ## Health / assistants
