@@ -38,6 +38,12 @@ pub(crate) fn take_http_bind_error() -> Option<String> {
     HTTP_BIND_ERROR.lock().ok().and_then(|mut slot| slot.take())
 }
 
+/// Prefix of the message [`init`] records when this profile already has a
+/// live backend and a second HTTP server would be started (#2823).
+/// `lifecycle::app_setup` matches this prefix to tell a second GUI launch
+/// apart from a genuine bind failure (#2853, #2863 G1.1).
+pub const SECOND_BACKEND_REFUSAL_PREFIX: &str = "this profile already has a backend";
+
 /// Record the port the HTTP server actually bound (may differ from Settings request).
 pub fn set_active_http_port(port: u16) {
     ACTIVE_HTTP_PORT.store(port, Ordering::Relaxed);
@@ -135,7 +141,7 @@ pub async fn init(
     // this check, so it can still fall back to another port (B-10).
     if let Some(record) = backend_descriptor::blocking_backend_record() {
         let message = format!(
-            "this profile already has a backend (record: {}); refusing to bind a second HTTP server",
+            "{SECOND_BACKEND_REFUSAL_PREFIX} (record: {}); refusing to bind a second HTTP server",
             record.display()
         );
         note_http_bind_error(message.clone());
