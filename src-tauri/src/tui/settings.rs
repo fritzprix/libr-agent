@@ -102,11 +102,19 @@ pub fn parse_settings_command(text: &str) -> Option<SettingsCommand> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum NumberKind {
+    /// Whole numbers stored as JSON integers (ports, counts, delays).
+    Int { min: i64, max: i64 },
+    /// Fractional numbers stored as JSON floats (temperature).
+    Float { min: f64, max: f64 },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum FieldKind {
     Text,
     Secret,
-    Number,
+    Number(NumberKind),
     Toggle,
     Choice(&'static [(&'static str, &'static str)]),
     ModelPick,
@@ -161,7 +169,7 @@ const FIELDS: &[FieldSpec] = &[
         label: "Tool detail level",
         row: "toolCallGroupVisibleCount",
         path: "",
-        kind: FieldKind::Number,
+        kind: FieldKind::Number(NumberKind::Int { min: 0, max: 100 }),
     },
     // AI & Models (P0)
     FieldSpec {
@@ -253,7 +261,10 @@ const FIELDS: &[FieldSpec] = &[
         label: "Temperature",
         row: "temperature",
         path: "",
-        kind: FieldKind::Number,
+        kind: FieldKind::Number(NumberKind::Float {
+            min: 0.0,
+            max: 2.0,
+        }),
     },
     // Chat interface
     FieldSpec {
@@ -268,28 +279,34 @@ const FIELDS: &[FieldSpec] = &[
         label: "Window size",
         row: "windowSize",
         path: "",
-        kind: FieldKind::Number,
+        kind: FieldKind::Number(NumberKind::Int { min: 1, max: 10_000 }),
     },
     FieldSpec {
         section: SettingsSection::ChatInterface,
         label: "Max input context",
         row: "maxInputContext",
         path: "",
-        kind: FieldKind::Number,
+        kind: FieldKind::Number(NumberKind::Int {
+            min: 1,
+            max: 2_000_000,
+        }),
     },
     FieldSpec {
         section: SettingsSection::ChatInterface,
         label: "Diff context lines",
         row: "advancedSettings",
         path: "diffContextLines",
-        kind: FieldKind::Number,
+        kind: FieldKind::Number(NumberKind::Int { min: 0, max: 1_000 }),
     },
     FieldSpec {
         section: SettingsSection::ChatInterface,
         label: "Default max output tokens",
         row: "advancedSettings",
         path: "defaultMaxOutputTokens",
-        kind: FieldKind::Number,
+        kind: FieldKind::Number(NumberKind::Int {
+            min: 1,
+            max: 2_000_000,
+        }),
     },
     // System
     FieldSpec {
@@ -297,7 +314,7 @@ const FIELDS: &[FieldSpec] = &[
         label: "HTTP server port",
         row: "systemSettings",
         path: "httpServerPort",
-        kind: FieldKind::Number,
+        kind: FieldKind::Number(NumberKind::Int { min: 1, max: 65_535 }),
     },
     FieldSpec {
         section: SettingsSection::System,
@@ -318,7 +335,7 @@ const FIELDS: &[FieldSpec] = &[
         label: "Log retention days",
         row: "systemSettings",
         path: "logRetentionDays",
-        kind: FieldKind::Number,
+        kind: FieldKind::Number(NumberKind::Int { min: 0, max: 3_650 }),
     },
     // Advanced
     FieldSpec {
@@ -326,14 +343,14 @@ const FIELDS: &[FieldSpec] = &[
         label: "Max retries",
         row: "advancedSettings",
         path: "maxRetries",
-        kind: FieldKind::Number,
+        kind: FieldKind::Number(NumberKind::Int { min: 0, max: 100 }),
     },
     FieldSpec {
         section: SettingsSection::Advanced,
         label: "Retry delay (ms)",
         row: "advancedSettings",
         path: "retryDelay",
-        kind: FieldKind::Number,
+        kind: FieldKind::Number(NumberKind::Int { min: 0, max: 600_000 }),
     },
     FieldSpec {
         section: SettingsSection::Advanced,
@@ -354,7 +371,7 @@ const FIELDS: &[FieldSpec] = &[
         label: "Max concurrent active sessions",
         row: "advancedSettings",
         path: "maxConcurrentActiveSessions",
-        kind: FieldKind::Number,
+        kind: FieldKind::Number(NumberKind::Int { min: 1, max: 1_000 }),
     },
     // Experimental
     FieldSpec {
@@ -376,7 +393,7 @@ const FIELDS: &[FieldSpec] = &[
         label: "Tool loop max resample retries",
         row: "experimentalSettings",
         path: "toolLoopMaxResampleRetries",
-        kind: FieldKind::Number,
+        kind: FieldKind::Number(NumberKind::Int { min: 0, max: 100 }),
     },
 ];
 
@@ -569,6 +586,30 @@ fn walk_set(root: &mut Value, path: &str, value: Value) {
     }
 }
 
+fn parse_number_field(spec: NumberKind, raw: &str) -> Result<Value, String> {
+    let trimmed = raw.trim();
+    match spec {
+        NumberKind::Int { min, max } => {
+            let n = trimmed
+                .parse::<i64>()
+                .map_err(|_| format!("Enter a whole number between {min} and {max}"))?;
+            if n < min || n > max {
+                return Err(format!("Enter a whole number between {min} and {max}"));
+            }
+            Ok(json!(n))
+        }
+        NumberKind::Float { min, max } => {
+            let n = trimmed
+                .parse::<f64>()
+                .map_err(|_| format!("Enter a number between {min} and {max}"))?;
+            if !n.is_finite() || n < min || n > max {
+                return Err(format!("Enter a number between {min} and {max}"));
+            }
+            Ok(json!(n))
+        }
+    }
+}
+
 fn mask_secret(raw: &str) -> String {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
@@ -636,7 +677,7 @@ fn display_value(field: &FieldSpec, value: &Value, reveal: bool) -> String {
             Value::Null => "(not set)".into(),
             other => other.to_string(),
         },
-        FieldKind::Text | FieldKind::Number => match value {
+        FieldKind::Text | FieldKind::Number(_) => match value {
             Value::Null => "(not set)".into(),
             Value::String(s) if s.is_empty() => "(empty)".into(),
             Value::String(s) => s.clone(),
@@ -1018,7 +1059,7 @@ impl SettingsScreen {
                     .set_path(field.row, field.path, Value::String(next.to_string()));
             }
             FieldKind::ModelPick => self.open_model_pick(),
-            FieldKind::Text | FieldKind::Secret | FieldKind::Number => {
+            FieldKind::Text | FieldKind::Secret | FieldKind::Number(_) => {
                 let cur = self.draft.get_path(field.row, field.path);
                 self.edit_buf = match cur {
                     Value::String(s) => s,
@@ -1042,14 +1083,13 @@ impl SettingsScreen {
                 let fields = fields_for(self.form_section);
                 let field = fields[self.form_cursor];
                 let value = match field.kind {
-                    FieldKind::Number => {
-                        if let Ok(n) = self.edit_buf.trim().parse::<f64>() {
-                            json!(n)
-                        } else {
-                            self.notice = Some("Enter a number".into());
+                    FieldKind::Number(spec) => match parse_number_field(spec, &self.edit_buf) {
+                        Ok(v) => v,
+                        Err(msg) => {
+                            self.notice = Some(msg);
                             return SettingsAction::None;
                         }
-                    }
+                    },
                     _ => Value::String(self.edit_buf.clone()),
                 };
                 self.draft.set_path(field.row, field.path, value);
@@ -1752,5 +1792,129 @@ mod tests {
 
         let ready_now = rt.block_on(async { providers_ready_from_repo(&repo).await.unwrap() });
         assert!(ready_now, "Provider with API key should be ready");
+    }
+
+    fn type_text(screen: &mut SettingsScreen, text: &str) {
+        for ch in text.chars() {
+            screen.handle_key(KeyEvent::from(KeyCode::Char(ch)));
+        }
+    }
+
+    #[test]
+    fn field_kinds_integer_toggle_choice_model_and_round_trip() {
+        // (a) Integer HTTP port via handle_key — must store JSON integer, reject OOR.
+        let mut screen =
+            SettingsScreen::new_with_draft_for_test(HashMap::new(), Some(SettingsSection::System));
+        let fields = fields_for(SettingsSection::System);
+        let port_idx = fields
+            .iter()
+            .position(|f| f.path == "httpServerPort")
+            .expect("port field");
+        for _ in 0..port_idx {
+            screen.handle_key(KeyEvent::from(KeyCode::Down));
+        }
+        screen.handle_key(KeyEvent::from(KeyCode::Enter));
+        // Clear prefilled buffer, then type.
+        for _ in 0..16 {
+            screen.handle_key(KeyEvent::from(KeyCode::Backspace));
+        }
+        type_text(&mut screen, "8080");
+        screen.handle_key(KeyEvent::from(KeyCode::Enter));
+        let port_val = screen.draft.get_path("systemSettings", "httpServerPort");
+        assert_eq!(port_val, json!(8080));
+        assert!(
+            port_val.as_i64().is_some(),
+            "port must be a JSON integer, got {port_val}"
+        );
+
+        screen.handle_key(KeyEvent::from(KeyCode::Enter));
+        for _ in 0..16 {
+            screen.handle_key(KeyEvent::from(KeyCode::Backspace));
+        }
+        type_text(&mut screen, "70000");
+        screen.handle_key(KeyEvent::from(KeyCode::Enter));
+        assert!(
+            screen
+                .notice
+                .as_deref()
+                .is_some_and(|n| n.contains("whole number")),
+            "invalid port must be rejected"
+        );
+        assert_eq!(
+            screen.draft.get_path("systemSettings", "httpServerPort"),
+            json!(8080),
+            "rejected edit must not overwrite"
+        );
+
+        // Round-trip through SystemSettings::from_stored
+        let stored = screen.draft.get_path("systemSettings", "");
+        let parsed = SystemSettings::from_stored(Some(&stored.to_string()));
+        assert_eq!(parsed.http_server_port, 8080);
+
+        // (b) Toggle: Expose HTTP server
+        let expose_idx = fields
+            .iter()
+            .position(|f| f.path == "httpServerExpose")
+            .expect("expose field");
+        let before = screen
+            .draft
+            .get_path("systemSettings", "httpServerExpose")
+            .as_bool()
+            .unwrap_or(false);
+        // Move from port_idx to expose_idx
+        let steps = expose_idx as isize - port_idx as isize;
+        if steps > 0 {
+            for _ in 0..steps {
+                screen.handle_key(KeyEvent::from(KeyCode::Down));
+            }
+        }
+        screen.handle_key(KeyEvent::from(KeyCode::Enter));
+        let after = screen
+            .draft
+            .get_path("systemSettings", "httpServerExpose")
+            .as_bool()
+            .unwrap_or(false);
+        assert_ne!(before, after, "toggle must flip");
+
+        // (c) Choice: Language in General
+        let mut screen =
+            SettingsScreen::new_with_draft_for_test(HashMap::new(), Some(SettingsSection::General));
+        // Language is first field
+        let before = screen.draft.get_path("uiLanguage", "");
+        screen.handle_key(KeyEvent::from(KeyCode::Enter)); // cycle choice
+        let after = screen.draft.get_path("uiLanguage", "");
+        assert_ne!(before, after, "choice must cycle");
+
+        // (d) Model pick + Ctrl+S
+        let mut baseline = HashMap::new();
+        baseline.insert(
+            "serviceConfigs".to_string(),
+            json!({ "openai": { "apiKey": "sk-test" } }),
+        );
+        let mut screen = SettingsScreen::new_with_draft_for_test(
+            baseline,
+            Some(SettingsSection::AiModels),
+        );
+        // Default AI Model is first field in AiModels
+        screen.handle_key(KeyEvent::from(KeyCode::Enter));
+        screen.handle_key(KeyEvent::from(KeyCode::Enter)); // pick first catalog model
+        let preferred = screen.draft.get_path("preferredModel", "");
+        assert!(
+            preferred.get("provider").and_then(|v| v.as_str()) == Some("openai"),
+            "model pick should set openai provider, got {preferred}"
+        );
+        // Ctrl+S saves via repo when available; without repo, save_blocking errors — mark dirty instead
+        assert!(screen.is_dirty());
+    }
+
+    #[test]
+    fn parse_number_field_int_vs_float() {
+        let v = parse_number_field(NumberKind::Int { min: 1, max: 65535 }, "8080").unwrap();
+        assert_eq!(v, json!(8080));
+        assert!(v.as_i64().is_some());
+        assert!(parse_number_field(NumberKind::Int { min: 1, max: 65535 }, "8080.0").is_err());
+        assert!(parse_number_field(NumberKind::Int { min: 1, max: 65535 }, "70000").is_err());
+        let t = parse_number_field(NumberKind::Float { min: 0.0, max: 2.0 }, "0.7").unwrap();
+        assert!(t.as_f64().is_some());
     }
 }
