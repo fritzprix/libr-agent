@@ -34,11 +34,11 @@ const RECORD_SUFFIX: &str = ".json";
 /// How long the loopback port probe may take.
 const PORT_PROBE_TIMEOUT: Duration = Duration::from_millis(300);
 
-/// How long a freshly published record may block a second server even
-/// before its port answers: the window in which the hosting process is
-/// still binding its HTTP server. Past it, a record whose port does not
-/// answer is stale (crash residue, pid reuse) and must not block startup
-/// forever (#2823).
+/// How long a freshly published record may still count as a live backend
+/// even before its port answers: the window in which the hosting process
+/// is still binding its HTTP server. Past it, a record whose port does not
+/// answer is stale (crash residue, pid reuse) and must not count forever
+/// (#2823).
 const STARTUP_GRACE_MS: i64 = 30_000;
 
 static DB_PATH: OnceLock<PathBuf> = OnceLock::new();
@@ -200,18 +200,23 @@ fn chat_backend_from(
     }
 }
 
-/// The record file of another backend that blocks a second HTTP server on
-/// this profile, if one does.
+/// The record file of another live or booting backend on this profile, if
+/// one exists.
 ///
-/// Only a record whose pid is alive can block, and only while its port
+/// Since #2855 this never blocks a second HTTP server — every GUI hosts
+/// its own backend on its own port. Callers use it to pick a single owner
+/// for one-per-profile resources (log rotation, the extension bridge port,
+/// the TUI's host choice).
+///
+/// Only a record whose pid is alive counts, and only while its port
 /// accepts or it was published within [`STARTUP_GRACE_MS`]: a crashed
-/// backend's record whose pid the OS later reuses must not refuse startup
-/// forever (#2823). An unprovable pid blocks nothing — per [`probe_pid`]'s
-/// contract, recovery must not be blocked forever by a record nobody can
-/// verify. This does not sweep files.
-pub fn blocking_backend_record() -> Option<PathBuf> {
+/// backend's record whose pid the OS later reuses must not count forever
+/// (#2823). An unprovable pid counts as nothing — per [`probe_pid`]'s
+/// contract, nothing may be gated on a record nobody can verify. This does
+/// not sweep files.
+pub fn other_backend_record() -> Option<PathBuf> {
     let db_path = DB_PATH.get()?;
-    blocking_backend_record_for(
+    other_backend_record_for(
         db_path,
         std::process::id(),
         probe_pid,
@@ -220,12 +225,12 @@ pub fn blocking_backend_record() -> Option<PathBuf> {
     )
 }
 
-/// True when some other runtime on this database still owns the profile.
+/// True when some other runtime on this database is still up or booting.
 pub fn profile_has_other_backend() -> bool {
-    blocking_backend_record().is_some()
+    other_backend_record().is_some()
 }
 
-fn blocking_backend_record_for(
+fn other_backend_record_for(
     db_path: &Path,
     own_pid: u32,
     pid_probe: impl Fn(u32) -> Option<bool>,
@@ -364,10 +369,7 @@ pub fn wait_until_own_record_live(timeout: Duration) -> Result<(), String> {
             return Err(err);
         }
         if Instant::now() >= deadline {
-            return Err(
-                "HTTP server did not publish this process's backend record; refusing to start a second backend"
-                    .to_string(),
-            );
+            return Err("HTTP server did not publish this process's backend record".to_string());
         }
         std::thread::sleep(Duration::from_millis(50));
     }
@@ -603,33 +605,33 @@ mod tests {
     }
 
     #[test]
-    fn an_unprovable_or_stale_record_does_not_block_a_second_server() {
+    fn an_unprovable_or_stale_record_is_not_another_live_backend() {
         let dir = tempdir().unwrap();
         let db = dir.path().join("app.db");
         write_record(&db, &record(100, 3030, 1));
         let now_ms = 1_000_000_000_000i64;
-        // A pid the probe cannot prove dead blocks nothing: `probe_pid`
-        // promises recovery is never blocked by a record nobody can verify.
-        assert!(blocking_backend_record_for(&db, 1, |_pid| None, |_port| true, now_ms).is_none());
-        // A definitively dead pid blocks nothing.
+        // A pid the probe cannot prove dead counts as nothing: `probe_pid`
+        // promises nothing is gated on a record nobody can verify.
+        assert!(other_backend_record_for(&db, 1, |_pid| None, |_port| true, now_ms).is_none());
+        // A definitively dead pid counts as nothing.
         assert!(
-            blocking_backend_record_for(&db, 1, |_pid| Some(false), |_port| true, now_ms).is_none()
+            other_backend_record_for(&db, 1, |_pid| Some(false), |_port| true, now_ms).is_none()
         );
         // Pid reuse: the pid is alive, but the recorded port never answers
         // and the record is older than the startup grace window.
         assert!(
-            blocking_backend_record_for(&db, 1, |_pid| Some(true), |_port| false, now_ms).is_none()
+            other_backend_record_for(&db, 1, |_pid| Some(true), |_port| false, now_ms).is_none()
         );
-        // A live pid whose port answers blocks, and the caller gets the
-        // record path to name in its refusal.
+        // A live pid whose port answers counts, and the caller gets the
+        // record path to name in its report.
         assert_eq!(
-            blocking_backend_record_for(&db, 1, |_pid| Some(true), |_port| true, now_ms),
+            other_backend_record_for(&db, 1, |_pid| Some(true), |_port| true, now_ms),
             Some(record_path_for(&db, 100))
         );
     }
 
     #[test]
-    fn a_booting_backend_blocks_until_its_grace_window_passes() {
+    fn a_booting_backend_counts_until_its_grace_window_passes() {
         let dir = tempdir().unwrap();
         let db = dir.path().join("app.db");
         let now_ms = 1_700_000_000_000i64;
@@ -637,11 +639,11 @@ mod tests {
         // Port not answering yet, but the record was published a second ago:
         // that backend may still be binding its HTTP server.
         assert_eq!(
-            blocking_backend_record_for(&db, 1, |_pid| Some(true), |_port| false, now_ms),
+            other_backend_record_for(&db, 1, |_pid| Some(true), |_port| false, now_ms),
             Some(record_path_for(&db, 100))
         );
-        // Past the grace window the same record is stale and must not block.
-        assert!(blocking_backend_record_for(
+        // Past the grace window the same record is stale and must not count.
+        assert!(other_backend_record_for(
             &db,
             1,
             |_pid| Some(true),
@@ -652,18 +654,18 @@ mod tests {
     }
 
     #[test]
-    fn a_different_database_does_not_block_this_profile() {
+    fn a_different_database_is_not_this_profile() {
         let dir = tempdir().unwrap();
         let primary = dir.path().join("libragent_v2.db");
         let isolated = dir.path().join("other.db");
         write_record(&primary, &record(100, 3030, 1));
         let now_ms = 1_000_000_000_000i64;
         assert!(
-            blocking_backend_record_for(&primary, 1, |_pid| Some(true), |_port| true, now_ms)
+            other_backend_record_for(&primary, 1, |_pid| Some(true), |_port| true, now_ms)
                 .is_some()
         );
         assert!(
-            blocking_backend_record_for(&isolated, 1, |_pid| Some(true), |_port| true, now_ms)
+            other_backend_record_for(&isolated, 1, |_pid| Some(true), |_port| true, now_ms)
                 .is_none()
         );
     }

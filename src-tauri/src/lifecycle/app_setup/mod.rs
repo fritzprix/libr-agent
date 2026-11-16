@@ -133,6 +133,33 @@ fn spawn_startup_maintenance_tasks(
     info!("✅ Background message indexing worker started");
 }
 
+/// Startup session recovery with the multi-backend guard (#2855 G1.1 / G2.1).
+///
+/// When another live backend already serves the same profile, recovery would
+/// reset that backend's Busy/Queued sessions — mark `Skipped` and return
+/// without calling `recover`. Temporary until #2856 ownership replaces this.
+///
+/// Two GUIs that start in the same grace window may each see the other as
+/// booting and both skip, leaving prior crash residue as Busy (rare; #2856).
+pub(crate) async fn run_startup_recovery<R, Fut, M>(has_other_backend: bool, recover: R, mark: M)
+where
+    R: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = Result<(), String>>,
+    M: FnOnce(crate::server::readiness::RecoveryState),
+{
+    use crate::server::readiness::RecoveryState;
+
+    if has_other_backend {
+        mark(RecoveryState::Skipped);
+        return;
+    }
+
+    match recover().await {
+        Ok(()) => mark(RecoveryState::Ok),
+        Err(_) => mark(RecoveryState::Failed),
+    }
+}
+
 /// One GUI's in-process backend hosting sequence (#2853). Steps are
 /// injected so tests can pin the contract: the HTTP bind runs first;
 /// recovery and the scheduler start only after the bind succeeds (#2823);
@@ -155,32 +182,6 @@ where
     publish_wait.await
 }
 
-/// True when a hosting failure means this profile already hosts another
-/// LibrAgent backend: `server::init` refuses the second bind until S3
-/// (#2855) lands, so a second GUI window is an expected case, not a
-/// crash (#2863 G1.1).
-fn is_second_backend_refusal(message: &str) -> bool {
-    message.starts_with(crate::server::SECOND_BACKEND_REFUSAL_PREFIX)
-}
-
-/// Tell the user this profile already runs a LibrAgent backend, then exit
-/// this second GUI. The exit happens when the dialog is dismissed, so the
-/// message is never lost to an instant close (#2863 G1.1).
-fn show_second_backend_dialog_and_exit(app_handle: &tauri::AppHandle) {
-    use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
-
-    const MESSAGE: &str = "LibrAgent is already running on this profile. \
-        Close the other window, or start this one with a different data directory.";
-    log::error!("{MESSAGE} Exiting.");
-    let exit_handle = app_handle.clone();
-    app_handle
-        .dialog()
-        .message(MESSAGE)
-        .title("LibrAgent")
-        .kind(MessageDialogKind::Error)
-        .show(move |_| exit_handle.exit(1));
-}
-
 fn should_sweep_stale_containers(data_dir_override: Option<&std::ffi::OsStr>) -> bool {
     data_dir_override.is_none_or(|value| value.is_empty())
 }
@@ -190,7 +191,8 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let log_dir = app.path().app_log_dir()?;
     let log_retention_days =
         tauri::async_runtime::block_on(SystemSettings::load_global()).log_retention_days;
-    // An attached frontend must not rename the host's open log (#2823).
+    // Only the first backend on this profile may rename the shared log;
+    // a second host must not rotate the first one's open log (#2823, #2855).
     let rotate_log = crate::server::backend_descriptor::find_live_backend().is_none()
         && !crate::server::backend_descriptor::profile_has_other_backend();
     logger::setup_file_logger_with_rotation(log_dir, log_retention_days, rotate_log)?;
@@ -389,15 +391,25 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         move || {
             spawn_startup_maintenance_tasks(session_manager, search_minutes);
             tauri::async_runtime::spawn(async move {
-                use crate::server::readiness::{mark_recovery, RecoveryState};
+                use crate::server::readiness::mark_recovery;
 
-                match recovery_manager.recover_sessions().await {
-                    Ok(_) => mark_recovery(RecoveryState::Ok),
-                    Err(e) => {
-                        log::error!("❌ Session recovery failed: {}", e);
-                        mark_recovery(RecoveryState::Failed);
-                    }
+                let has_other = crate::server::backend_descriptor::profile_has_other_backend();
+                if has_other {
+                    info!(
+                        "Skipping session recovery: another live backend is on this profile (#2855; replaced by #2856)"
+                    );
                 }
+                run_startup_recovery(
+                    has_other,
+                    || async {
+                        recovery_manager.recover_sessions().await.map_err(|e| {
+                            log::error!("❌ Session recovery failed: {}", e);
+                            e.to_string()
+                        })
+                    },
+                    mark_recovery,
+                )
+                .await;
             });
             info!("🔄 Session recovery initiated in background");
         },
@@ -420,15 +432,11 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         },
     );
 
-    // Same publish gate the single-instance path used: setup fails when this
-    // process never publishes a live record (bind failure or timeout). A
-    // refusal because another GUI already hosts this profile's backend gets
-    // a dialog instead of a raw setup error (#2863 G1.1).
+    // Setup fails when this process never publishes a live record (bind
+    // failure or timeout): a started-but-unreachable backend is never
+    // reported as ready (#2823). Every GUI hosts its own backend now, so a
+    // second GUI window is a normal startup, not a refusal (#2855).
     if let Err(message) = tauri::async_runtime::block_on(host_backend) {
-        if is_second_backend_refusal(&message) {
-            show_second_backend_dialog_and_exit(app.handle());
-            return Ok(());
-        }
         return Err(std::io::Error::other(message).into());
     }
 

@@ -21,7 +21,18 @@ LibrAgent provides a robust HTTP API for remote management of AI agents, session
   { "pid": 12345, "port": 3030, "startedAtMs": 1739000000000 }
   ```
 
-  Every running backend publishes a record of its own, so a second runtime never hides the first. Another process on the same profile scans these records and picks the newest one that is live: `pid` is a running process and the port accepts a connection. Records whose pid is definitively dead are deleted on scan. The records are not a lock: a second app is never refused because of them. A process that finds a live backend does not run startup session recovery, so it never resets that backend's busy or queued sessions.
+  Every running backend publishes a record of its own, so a second runtime never hides the first. Another process on the same profile scans these records and picks the newest one that is live: `pid` is a running process and the port accepts a connection. Records whose pid is definitively dead are deleted on scan. The records are not a lock: a second app is never refused because of them. Multiple backends may run on one profile — the second binds the next free port instead of being turned away (#2855). Only the first live backend on a profile runs startup session recovery; a later process skips recovery (`recovery: "skipped"`) so it never resets the first backend's busy or queued sessions (temporary until #2856 ownership). Script probes that walk `http_port.*` may land on any healthy port (glob/pid order), not necessarily the newest live record — set `LIBRAGENT_HTTP_PORT` / `BASE` explicitly when targeting a specific backend.
+
+- **Finding the port from a script**: each backend also writes its bound port to `~/.libragent/http_port.<pid>` (one file per process, so several backends never overwrite each other). A crashed process can leave its file behind, so probe each candidate until one answers:
+
+  ```bash
+  PORT=""
+  for f in "$HOME"/.libragent/http_port.*; do
+    p=$(cat "$f" 2>/dev/null) || continue
+    curl -sf -m 1 "http://127.0.0.1:$p/api/health" >/dev/null 2>&1 && PORT=$p && break
+  done
+  : "${PORT:=3030}"
+  ```
 
 ---
 

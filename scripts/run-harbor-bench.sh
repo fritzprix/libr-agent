@@ -27,7 +27,18 @@ INCLUDE=""
 N_TASKS=0
 N_ATTEMPTS="${LIBRAGENT_N_ATTEMPTS:-1}"
 CONCURRENT=1
-ACTIVE_HTTP_PORT="$(cat "$HOME/.libragent/http_port" 2>/dev/null || echo "3030")"
+# Resolve the port from per-process records ~/.libragent/http_port.<pid>;
+# several backends may coexist, so pick the first that answers health.
+resolve_libragent_port() {
+  local f p
+  for f in "$HOME"/.libragent/http_port.*; do
+    p=$(cat "$f" 2>/dev/null) || continue
+    curl -sf -m 1 "http://127.0.0.1:$p/api/health" >/dev/null 2>&1 && { echo "$p"; return 0; }
+  done
+  echo 3030
+}
+
+ACTIVE_HTTP_PORT="$(resolve_libragent_port)"
 API_URL="${LIBRAGENT_API_URL:-http://localhost:${ACTIVE_HTTP_PORT}/api}"
 ASSISTANT_ID="${LIBRAGENT_ASSISTANT_ID:-}"
 # Harbor -m. Prefer explicit CLI/env; otherwise read global preferredModel from LibrAgent.

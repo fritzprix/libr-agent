@@ -104,8 +104,12 @@ Create session → poll to Idle/Error/Paused → on Paused resume once.
 ### 2. Extract transcript
 
 ```bash
-PORT=$(cat ~/.libragent/http_port 2>/dev/null || echo 3030)
-BASE="http://127.0.0.1:${PORT}"
+PORT=""
+for f in "$HOME"/.libragent/http_port.*; do
+  p=$(cat "$f" 2>/dev/null) || continue
+  curl -sf -m 1 "http://127.0.0.1:$p/api/health" >/dev/null 2>&1 && PORT=$p && break
+done
+BASE="http://127.0.0.1:${PORT:-3030}"
 curl -sS "$BASE/api/sessions/$SID/messages?limit=500" \
   > ".libragent/work/tool-e2e-harness/<cycle-id>/messages.json"
 # save final assistant markdown as report-raw.md
