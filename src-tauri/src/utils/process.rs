@@ -58,6 +58,70 @@ pub(crate) fn process_is_alive(pid: u32) -> io::Result<bool> {
     Ok(is_alive)
 }
 
+/// The OS start time of `pid` in a platform's own comparable unit, or
+/// `None` when it cannot be read. Two equal readings identify the same
+/// process lifetime; different readings for the same pid mean pid reuse.
+///
+/// Session ownership (#2856) uses this to drop an ownership row whose pid
+/// the OS has already handed to a new process, without waiting for the
+/// owner's heartbeat to lapse.
+#[cfg(target_os = "linux")]
+pub(crate) fn process_start_time_ms(pid: u32) -> Option<i64> {
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    // Field 2 (comm) may contain spaces and parentheses, so parse only
+    // after the last ')'. Field 22 (starttime) is then the 20th token.
+    let after_comm = stat.rfind(')').map(|idx| &stat[idx + 1..])?;
+    let starttime_ticks: i64 = after_comm.split_whitespace().nth(19)?.parse().ok()?;
+    // Clock ticks since boot: comparable between processes of one boot,
+    // which is exactly the pid-reuse window this guards.
+    Some(starttime_ticks)
+}
+
+/// See the [`process_start_time_ms`] contract above.
+#[cfg(windows)]
+pub(crate) fn process_start_time_ms(pid: u32) -> Option<i64> {
+    use windows_sys::Win32::Foundation::{CloseHandle, FILETIME};
+    use windows_sys::Win32::System::Threading::{
+        GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+
+    let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    if handle.is_null() {
+        return None;
+    }
+    let mut creation = FILETIME {
+        dwLowDateTime: 0,
+        dwHighDateTime: 0,
+    };
+    let mut exit_time = creation;
+    let mut kernel_time = creation;
+    let mut user_time = creation;
+    let ok = unsafe {
+        GetProcessTimes(
+            handle,
+            &mut creation,
+            &mut exit_time,
+            &mut kernel_time,
+            &mut user_time,
+        )
+    };
+    unsafe {
+        CloseHandle(handle);
+    }
+    if ok == 0 {
+        return None;
+    }
+    Some(((creation.dwHighDateTime as i64) << 32) | (creation.dwLowDateTime as i64))
+}
+
+/// See the [`process_start_time_ms`] contract above: no probe available.
+#[cfg(not(any(target_os = "linux", windows)))]
+pub(crate) fn process_start_time_ms(_pid: u32) -> Option<i64> {
+    // No dependency-free probe exists here (e.g. macOS). Ownership then
+    // relies on the heartbeat timeout instead, which is the universal path.
+    None
+}
+
 #[cfg(unix)]
 fn process_group_id(pid: u32) -> Option<u32> {
     let output = Command::new("ps")

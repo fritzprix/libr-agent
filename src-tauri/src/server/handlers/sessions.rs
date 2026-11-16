@@ -52,11 +52,11 @@ pub async fn create_session(
     attachment: Option<String>,
 ) -> Result<impl Reply, Rejection> {
     // Validate the caller's attachment before spawning, so a bad header never
-    // leaves a session behind. HTTP callers never claim (#2854).
-    if let Err((status, error)) = session_ownership::reject_attachment_header(attachment.as_deref())
-    {
-        return Ok(resolve_error_reply(status, error));
-    }
+    // leaves a session behind.
+    let attachment = match session_ownership::http_attachment(attachment.as_deref()) {
+        Ok(attachment) => attachment,
+        Err((status, error)) => return Ok(resolve_error_reply(status, error)),
+    };
     let body = match resolve_create_session_body_refs(body).await {
         Ok(body) => body,
         Err((status, error)) => return Ok(resolve_error_reply(status, error)),
@@ -69,10 +69,19 @@ pub async fn create_session(
     )
     .await
     {
-        Ok(response) => Ok(warp::reply::with_status(
-            warp::reply::json(&map_create_session_response_for_http(response)),
-            StatusCode::CREATED,
-        )),
+        Ok(response) => {
+            // Creating a session is opening it: a caller holding a live
+            // frontend attachment opens it on behalf of this backend's run,
+            // so this process owns it (#2856). The id is brand new, so the
+            // claim cannot be refused.
+            if attachment.is_some() {
+                let _ = session_ownership::claim(&response.id).await;
+            }
+            Ok(warp::reply::with_status(
+                warp::reply::json(&map_create_session_response_for_http(response)),
+                StatusCode::CREATED,
+            ))
+        }
         Err(e) => {
             let (status, sanitized_err) = classify_spawn_error(&e);
             Ok(warp::reply::with_status(
@@ -214,8 +223,8 @@ async fn list_sessions_reply(
     session_repo: &Arc<dyn SessionRepository>,
     attachment: Option<&str>,
 ) -> warp::reply::WithStatus<warp::reply::Json> {
-    // Any attachment header is refused (#2854); no header leaves list open.
-    if let Err((status, error)) = session_ownership::reject_attachment_header(attachment) {
+    // The reserved host id must not read ownership as the host process.
+    if let Err((status, error)) = session_ownership::reject_reserved_attachment(attachment) {
         return resolve_error_reply(status, error);
     }
     let limit = query.limit.unwrap_or(DEFAULT_SESSIONS_LIMIT);
@@ -246,26 +255,28 @@ async fn list_sessions_reply(
         )
         .await
     {
-        Ok(page) => warp::reply::with_status(
-            warp::reply::json(&ListSessionsResponse {
-                sessions: page
-                    .items
-                    .into_iter()
-                    .map(|meta| {
-                        // Ownership is keyed by the storage id, so check it
-                        // before the display-id rewrite (#2759).
-                        let open_elsewhere =
-                            session_ownership::is_open_elsewhere(&meta.id, attachment);
-                        SessionListItem {
-                            session: map_session_metadata_for_http(meta),
-                            open_elsewhere,
-                        }
-                    })
-                    .collect(),
-                next_cursor: page.next_cursor,
-            }),
-            StatusCode::OK,
-        ),
+        Ok(page) => {
+            let mut items = Vec::with_capacity(page.items.len());
+            for meta in page.items {
+                // Ownership is keyed by the storage id, so check it before
+                // the display-id rewrite. A caller without an attachment is
+                // external; a live attachment acts on behalf of this
+                // backend's run (#2856).
+                let open_elsewhere =
+                    session_ownership::is_open_elsewhere(&meta.id, attachment.is_none()).await;
+                items.push(SessionListItem {
+                    session: map_session_metadata_for_http(meta),
+                    open_elsewhere,
+                });
+            }
+            warp::reply::with_status(
+                warp::reply::json(&ListSessionsResponse {
+                    sessions: items,
+                    next_cursor: page.next_cursor,
+                }),
+                StatusCode::OK,
+            )
+        }
         Err(e) => resolve_error_reply(
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to list sessions: {e}"),
@@ -968,13 +979,34 @@ mod tests {
         assert_eq!(stored.execution_mode, ExecutionMode::Normal);
     }
 
-    // ---- Session ownership over the Session API (#2759) ----
+    // ---- Session ownership over the Session API (#2856) ----
 
+    use crate::server::frontend_attachments;
     use crate::server::routes::{frontend_attachment_header, FRONTEND_ATTACHMENT_HEADER};
     use warp::Filter;
 
+    /// Repo and ownership store share one database, as in production where
+    /// sessions and ownership rows live in the same SQLite file.
+    async fn ownership_repo() -> (Arc<dyn SessionRepository>, sea_orm::DatabaseConnection) {
+        let db = session_ownership::shared_test_store().await;
+        (Arc::new(SqliteSessionRepository::new(db.clone())), db)
+    }
+
     fn unique_session_id() -> String {
         format!("own-{}", uuid::Uuid::new_v4())
+    }
+
+    /// A live attachment obtained through the real attach route.
+    async fn attach_over_http() -> String {
+        let resp = warp::test::request()
+            .method("POST")
+            .path("/api/frontends")
+            .reply(&frontend_attachments::routes())
+            .await;
+        assert_eq!(resp.status(), StatusCode::CREATED);
+        serde_json::from_slice::<frontend_attachments::AttachResponse>(resp.body())
+            .expect("attach response")
+            .id
     }
 
     /// The ownership-relevant Session API routes, built from the real
@@ -1072,53 +1104,260 @@ mod tests {
         id
     }
 
-    #[tokio::test]
-    async fn a_metadata_read_never_claims_and_is_never_refused() {
-        let repo = sqlite_session_repo().await;
-        let api = ownership_routes(repo.clone());
-        let id = stored_session(&repo).await;
-
-        let (status, json) = call(&api, "GET", &format!("/api/sessions/{id}"), None).await;
-        assert_eq!(status, StatusCode::OK, "{json}");
-        assert_eq!(session_ownership::owner(&id), None);
+    fn assert_open_elsewhere(status: StatusCode, json: &serde_json::Value) {
+        assert_eq!(status, StatusCode::CONFLICT, "{json}");
+        assert!(
+            json["error"]
+                .as_str()
+                .expect("error message")
+                .contains("is open in another process"),
+            "{json}"
+        );
     }
 
     #[tokio::test]
-    async fn any_attachment_header_is_rejected_on_the_http_path() {
-        let repo = sqlite_session_repo().await;
+    async fn open_resume_and_send_are_refused_while_another_process_owns_the_session() {
+        let (repo, db) = ownership_repo().await;
+        let api = ownership_routes(repo.clone());
+        let id = stored_session(&repo).await;
+        let foreign = session_ownership::live_foreign_identity();
+        session_ownership::claim_by(&db, &foreign, &id)
+            .await
+            .expect("foreign claim");
+        let attachment = attach_over_http().await;
+
+        for path in [
+            format!("/api/sessions/{id}/open"),
+            format!("/api/sessions/{id}/resume"),
+            format!("/api/sessions/{id}/messages"),
+        ] {
+            // A live attachment acts on behalf of this backend's run, so a
+            // foreign live owner refuses it on every open path.
+            let (status, json) = call(&api, "POST", &path, Some(attachment.as_str())).await;
+            assert_open_elsewhere(status, &json);
+
+            // An external caller (no header) is outside the ownership model:
+            // no claim, no refusal.
+            let (status, json) = call(&api, "POST", &path, None).await;
+            assert_eq!(status, StatusCode::OK, "{path}: {json}");
+        }
+        assert_eq!(
+            session_ownership::owner_of(&db, &id).await.as_deref(),
+            Some(foreign.run_id.as_str()),
+            "the external caller claimed nothing"
+        );
+
+        // Once the foreign run releases, this process may open and owns it.
+        session_ownership::release_by(&db, &foreign, &id).await;
+        let (status, json) = call(
+            &api,
+            "POST",
+            &format!("/api/sessions/{id}/open"),
+            Some(attachment.as_str()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{json}");
+        assert_eq!(
+            session_ownership::owner(&id).await,
+            session_ownership::owner_of(&db, &id).await,
+            "this process now owns the session"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_metadata_read_never_claims_and_is_never_refused() {
+        let (repo, db) = ownership_repo().await;
         let api = ownership_routes(repo.clone());
         let id = stored_session(&repo).await;
 
-        for header in [session_ownership::HOST_ATTACHMENT_ID, "never-attached"] {
-            for path in [
-                format!("/api/sessions/{id}/open"),
-                format!("/api/sessions/{id}/resume"),
-                format!("/api/sessions/{id}/messages"),
-            ] {
-                let (status, json) = call(&api, "POST", &path, Some(header)).await;
-                assert_eq!(status, StatusCode::BAD_REQUEST, "{path}/{header}: {json}");
-                assert!(
-                    json["error"]
-                        .as_str()
-                        .unwrap()
-                        .contains("attachment registry removed"),
-                    "{json}"
-                );
-            }
-            let (status, json) = call(&api, "GET", "/api/sessions", Some(header)).await;
-            assert_eq!(status, StatusCode::BAD_REQUEST, "{header}: {json}");
+        // Reading an unowned session claims nothing.
+        let (status, json) = call(&api, "GET", &format!("/api/sessions/{id}"), None).await;
+        assert_eq!(status, StatusCode::OK, "{json}");
+        assert_eq!(session_ownership::owner(&id).await, None);
+
+        // Even with a live attachment header the read does not claim ...
+        let reader = attach_over_http().await;
+        let (status, _) = call(
+            &api,
+            "GET",
+            &format!("/api/sessions/{id}"),
+            Some(reader.as_str()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(session_ownership::owner(&id).await, None);
+
+        // ... and a session owned by another process is still readable.
+        let foreign = session_ownership::live_foreign_identity();
+        session_ownership::claim_by(&db, &foreign, &id)
+            .await
+            .expect("foreign claim");
+        let (status, json) = call(
+            &api,
+            "GET",
+            &format!("/api/sessions/{id}"),
+            Some(reader.as_str()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{json}");
+        assert_eq!(json["id"], id.as_str());
+        assert_eq!(
+            session_ownership::owner_of(&db, &id).await.as_deref(),
+            Some(foreign.run_id.as_str()),
+            "the read did not touch ownership"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_list_flags_foreign_owners_for_every_attached_caller() {
+        let (repo, db) = ownership_repo().await;
+        let api = ownership_routes(repo.clone());
+        let foreign_owned = stored_session(&repo).await;
+        let host_owned = stored_session(&repo).await;
+        let free = stored_session(&repo).await;
+
+        let foreign = session_ownership::live_foreign_identity();
+        session_ownership::claim_by(&db, &foreign, &foreign_owned)
+            .await
+            .expect("foreign claim");
+        let attachment = attach_over_http().await;
+        let (status, _) = call(
+            &api,
+            "POST",
+            &format!("/api/sessions/{host_owned}/open"),
+            Some(attachment.as_str()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+
+        let flags = |json: &serde_json::Value| -> (bool, bool, bool) {
+            let find = |id: &str| {
+                json["sessions"]
+                    .as_array()
+                    .expect("sessions array")
+                    .iter()
+                    .find(|session| session["id"] == id)
+                    .unwrap_or_else(|| panic!("{id} missing from {json}"))["openElsewhere"]
+                    .as_bool()
+                    .expect("openElsewhere flag")
+            };
+            (find(&foreign_owned), find(&host_owned), find(&free))
+        };
+
+        // An attached caller acts on behalf of this backend's run: foreign
+        // owners are flagged, this run's own sessions are not.
+        let (status, json) = call(&api, "GET", "/api/sessions", Some(attachment.as_str())).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(flags(&json), (true, false, false));
+
+        // An external caller has no side of the ownership model to compare
+        // against: every live owner is flagged, this backend's included.
+        let (status, json) = call(&api, "GET", "/api/sessions", None).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(flags(&json), (true, true, false));
+    }
+
+    #[tokio::test]
+    async fn a_stale_foreign_owner_is_taken_over_on_the_next_open() {
+        let (repo, db) = ownership_repo().await;
+        let api = ownership_routes(repo.clone());
+        let id = stored_session(&repo).await;
+        let foreign = session_ownership::live_foreign_identity();
+        session_ownership::claim_by(&db, &foreign, &id)
+            .await
+            .expect("foreign claim");
+        let successor = attach_over_http().await;
+        let path = format!("/api/sessions/{id}/open");
+
+        let (status, json) = call(&api, "POST", &path, Some(successor.as_str())).await;
+        assert_open_elsewhere(status, &json);
+
+        // The owner's heartbeat goes past the stale cutoff, as a hung
+        // process's would after its ownership timeout elapsed.
+        session_ownership::backdate_row(&db, &id).await;
+
+        let (_, json) = call(&api, "GET", "/api/sessions", Some(successor.as_str())).await;
+        let listed = json["sessions"]
+            .as_array()
+            .expect("sessions array")
+            .iter()
+            .find(|session| session["id"] == id.as_str())
+            .expect("session listed");
+        assert_eq!(listed["openElsewhere"], false);
+
+        let (status, json) = call(&api, "POST", &path, Some(successor.as_str())).await;
+        assert_eq!(status, StatusCode::OK, "{json}");
+        assert_ne!(
+            session_ownership::owner_of(&db, &id).await.as_deref(),
+            Some(foreign.run_id.as_str()),
+            "the stale lock was taken over"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_reserved_host_attachment_id_is_rejected_on_the_http_path() {
+        let (repo, _db) = ownership_repo().await;
+        let api = ownership_routes(repo.clone());
+        let id = stored_session(&repo).await;
+        let host = session_ownership::HOST_ATTACHMENT_ID;
+
+        for path in [
+            format!("/api/sessions/{id}/open"),
+            format!("/api/sessions/{id}/resume"),
+            format!("/api/sessions/{id}/messages"),
+        ] {
+            let (status, json) = call(&api, "POST", &path, Some(host)).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{path}: {json}");
+            assert!(
+                json["error"].as_str().unwrap().contains("reserved"),
+                "{json}"
+            );
         }
-        assert_eq!(session_ownership::owner(&id), None, "nothing was claimed");
+        let (status, _) = call(&api, "GET", "/api/sessions", Some(host)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(
+            session_ownership::owner(&id).await,
+            None,
+            "nothing was claimed"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_attachment_that_is_not_live_cannot_claim_over_http() {
+        let (repo, _db) = ownership_repo().await;
+        let api = ownership_routes(repo.clone());
+        let id = stored_session(&repo).await;
+        let path = format!("/api/sessions/{id}/open");
+
+        let (status, json) = call(&api, "POST", &path, Some("never-attached")).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{json}");
+        assert!(
+            json["error"].as_str().unwrap().contains("not live"),
+            "{json}"
+        );
+
+        let lapsed = attach_over_http().await;
+        frontend_attachments::lapse(&lapsed);
+        let (status, _) = call(&api, "POST", &path, Some(lapsed.as_str())).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(session_ownership::owner(&id).await, None);
     }
 
     #[tokio::test]
     async fn opening_a_missing_session_is_404_and_claims_nothing() {
-        let repo = sqlite_session_repo().await;
+        let (repo, _db) = ownership_repo().await;
         let api = ownership_routes(repo);
+        let owner = attach_over_http().await;
         let missing = unique_session_id();
 
-        let (status, _) = call(&api, "POST", &format!("/api/sessions/{missing}/open"), None).await;
+        let (status, _) = call(
+            &api,
+            "POST",
+            &format!("/api/sessions/{missing}/open"),
+            Some(owner.as_str()),
+        )
+        .await;
         assert_eq!(status, StatusCode::NOT_FOUND);
-        assert_eq!(session_ownership::owner(&missing), None);
+        assert_eq!(session_ownership::owner(&missing).await, None);
     }
 }

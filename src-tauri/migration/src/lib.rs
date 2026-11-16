@@ -51,6 +51,7 @@ mod m20261018_000046_add_sessions_status_index;
 mod m20261030_000047_add_status_reason_to_sessions;
 mod m20261104_000048_add_secret_names_to_mcp_servers;
 mod m20261105_000049_add_encrypted_secrets_to_mcp_servers;
+mod m20261116_000050_create_session_ownership;
 
 pub struct Migrator;
 
@@ -107,6 +108,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261030_000047_add_status_reason_to_sessions::Migration),
             Box::new(m20261104_000048_add_secret_names_to_mcp_servers::Migration),
             Box::new(m20261105_000049_add_encrypted_secrets_to_mcp_servers::Migration),
+            Box::new(m20261116_000050_create_session_ownership::Migration),
         ]
     }
 }
