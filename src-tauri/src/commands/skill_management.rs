@@ -112,7 +112,6 @@ pub async fn install_session_plugin(
     excluded_skill_names: Option<Vec<String>>,
     approve_hooks: Option<bool>,
 ) -> Result<SkillImportResult, String> {
-    super::agent_commands::shared_proxy::reject_if_attached("install_session_plugin")?;
     skill_service::install_session_plugin(
         session_id,
         repo_url,

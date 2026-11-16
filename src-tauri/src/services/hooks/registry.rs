@@ -322,9 +322,18 @@ pub fn list_effective_approved_sources_in(
     global_base: &Path,
     session_base: Option<&Path>,
 ) -> Vec<PluginSourceRecord> {
-    let session_sources = session_base
-        .map(|base| list_sources_in(base).unwrap_or_default())
-        .unwrap_or_default();
+    let session_sources = match session_base {
+        Some(base) => list_sources_in(base).unwrap_or_else(|error| {
+            // An unreadable session store must not silently re-enable the
+            // global plugins this session opted out of (#2825 review S1.1).
+            log::warn!(
+                "Failed to read session plugin store at {}: {error}; global plugins apply unshadowed",
+                base.display()
+            );
+            Vec::new()
+        }),
+        None => Vec::new(),
+    };
     let shadowed: HashSet<String> = session_sources
         .iter()
         .map(|r| r.manifest.source_id.clone())
