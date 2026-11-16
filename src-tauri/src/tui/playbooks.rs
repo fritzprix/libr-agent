@@ -159,10 +159,18 @@ impl PlaybooksScreen {
                     || r.assistant_id.to_lowercase().contains(&q)
             });
         }
+        let keep = self
+            .rows
+            .get(self.selected)
+            .map(|r| (r.id.clone(), r.assistant_id.clone()));
         self.rows = rows;
-        if self.selected >= self.rows.len() {
-            self.selected = self.rows.len().saturating_sub(1);
-        }
+        self.selected = keep
+            .and_then(|(id, assistant_id)| {
+                self.rows
+                    .iter()
+                    .position(|r| r.id == id && r.assistant_id == assistant_id)
+            })
+            .unwrap_or_else(|| self.rows.len().saturating_sub(1));
         Ok(())
     }
 
