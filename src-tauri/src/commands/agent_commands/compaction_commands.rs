@@ -23,7 +23,6 @@ pub async fn agent_handle_compact_response(
     summary: String,
     stream_meta: Option<crate::agent::session_manager::CompactStreamMeta>,
 ) -> Result<AgentResponse, String> {
-    super::shared_proxy::reject_if_attached("agent_handle_compact_response")?;
     let outcome = manager
         .handle_compact_response(
             &session_id,
@@ -49,7 +48,6 @@ pub async fn agent_handle_compact_error(
     error: crate::agent::llm::types::AgentRuntimeError,
     partial_output: Option<String>,
 ) -> Result<AgentResponse, String> {
-    super::shared_proxy::reject_if_attached("agent_handle_compact_error")?;
     manager
         .handle_compact_error(session_id.clone(), error, partial_output)
         .await?;
