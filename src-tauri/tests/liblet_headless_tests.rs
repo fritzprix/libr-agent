@@ -28,10 +28,14 @@ use tauri_mcp_agent_lib::headless::{init_ephemeral_database, EphemeralHeadlessRu
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
 use tauri_mcp_agent_lib::models::chat::Message;
 use tauri_mcp_agent_lib::models::workspace_isolation::WorkspaceIsolationMode;
+use tauri_mcp_agent_lib::repositories::scheduled_task_repository::{
+    CreateScheduledTaskParams, ScheduledTaskRepository, SqliteScheduledTaskRepository,
+};
 use tauri_mcp_agent_lib::repositories::{
     AssistantRepository, SessionMetadata, SessionRepository, SessionStatus, SettingsRepository,
     SqliteAssistantRepository, SqliteSessionRepository, SqliteSettingsRepository,
 };
+use tauri_mcp_agent_lib::scheduled::TASK_CATEGORY_GLOBAL;
 use tempfile::TempDir;
 use tokio::sync::{oneshot, watch};
 
@@ -907,4 +911,89 @@ fn list_sessions_for_a_missing_directory_is_an_error() {
 
     assert_eq!(code, exit_codes::ERROR);
     assert!(String::from_utf8(err).unwrap().contains("does not exist"));
+}
+
+// ── #2857: headless runs never start the scheduler ─────────────────────────
+
+#[tokio::test]
+async fn headless_run_never_starts_the_scheduler() {
+    // The scheduler belongs to the GUI backend (#2857): a headless run must
+    // never fire scheduled tasks, even when the profile carries a due
+    // GLOBAL task whose assistant exists and whose cron window is open.
+    let shared_dir = TempDir::new().unwrap();
+    let workspace_dir = TempDir::new().unwrap();
+    let shared_db_path = shared_dir.path().join("shared_profile.db");
+
+    let shared_db = init_ephemeral_database(&shared_db_path).await.unwrap();
+    let shared_assistants = SqliteAssistantRepository::new(shared_db.clone());
+    shared_assistants
+        .create_assistant(
+            "asst-scheduler".to_string(),
+            "Scheduler Assistant".to_string(),
+            json!({
+                "name": "Scheduler Assistant",
+                "systemPrompt": "You keep the schedule."
+            })
+            .to_string(),
+        )
+        .await
+        .unwrap();
+
+    let due_at = chrono::Utc::now().timestamp_millis() - 60_000;
+    let shared_tasks = SqliteScheduledTaskRepository::new(shared_db.clone());
+    shared_tasks
+        .create_scheduled_task(CreateScheduledTaskParams {
+            id: "task-headless-guard".to_string(),
+            name: "Headless guard".to_string(),
+            task_category: TASK_CATEGORY_GLOBAL.to_string(),
+            cron_expression: Some("0 * * * *".to_string()),
+            schedule_timezone: "local".to_string(),
+            assistant_id: "asst-scheduler".to_string(),
+            message: "fire only if a scheduler is running".to_string(),
+            execution_mode: ExecutionMode::Normal,
+            created_by_session_id: None,
+            session_id: None,
+            workspace_override: None,
+            reset_planning_state: false,
+            next_run_at: Some(due_at),
+        })
+        .await
+        .unwrap();
+
+    let args = default_headless_args("guard prompt", workspace_dir.path());
+    let runtime = EphemeralHeadlessRuntime::bootstrap(Some(&shared_db_path), &args)
+        .await
+        .expect("bootstrap ephemeral headless runtime");
+
+    // Any scheduler in this process would run its immediate startup check
+    // and fire the due task well inside this window.
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
+    let guarded = shared_tasks
+        .get_scheduled_task("task-headless-guard")
+        .await
+        .unwrap()
+        .expect("the task must stay in the shared profile DB");
+    assert_eq!(
+        guarded.last_run_at, None,
+        "a headless run must never execute scheduled tasks"
+    );
+    assert_eq!(
+        guarded.next_run_at,
+        Some(due_at),
+        "a headless run must not rewrite the schedule"
+    );
+    assert_eq!(
+        guarded.run_claim_run, None,
+        "a headless run must not claim tasks for execution"
+    );
+
+    let ephemeral_tasks = SqliteScheduledTaskRepository::new(runtime.db.clone())
+        .list_scheduled_tasks(None)
+        .await
+        .unwrap();
+    assert!(
+        ephemeral_tasks.is_empty(),
+        "the ephemeral runtime must not carry profile tasks"
+    );
 }

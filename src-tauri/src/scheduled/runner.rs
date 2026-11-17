@@ -129,6 +129,13 @@ pub async fn sync_task_workspace_override(
 }
 
 /// Execute all tasks whose `next_run_at <= now_ms`.
+///
+/// Every GUI process on a profile runs its own scheduler, so each due task
+/// is claimed in the shared profile DB before it fires (#2857): only the
+/// process whose conditional claim lands executes the task, the others
+/// skip it and wait for the next tick. The claim is released right after
+/// the run (success or failure); a crashed holder loses it once its expiry
+/// lapses, so the task is never stranded.
 pub async fn execute_due_tasks(app_handle: &AppHandle, now_ms: i64) -> Result<(), String> {
     let repo = get_scheduled_task_repository();
     let due = repo
@@ -141,9 +148,48 @@ pub async fn execute_due_tasks(app_handle: &AppHandle, now_ms: i64) -> Result<()
     }
 
     let manager: tauri::State<'_, AgentSessionManager> = app_handle.state();
+    let run_id = scheduler_run_id();
 
     for task in due {
-        if let Err(e) = execute_task(&manager, &task, now_ms).await {
+        let claimed = match repo
+            .try_claim_run(&task.id, run_id, now_ms, now_ms + RUN_CLAIM_TTL_MS)
+            .await
+        {
+            Ok(true) => true,
+            Ok(false) => {
+                log::info!(
+                    "⏰ Scheduled task '{}' ({}) is claimed by another process; skipping this tick",
+                    task.name,
+                    task.id
+                );
+                false
+            }
+            Err(e) => {
+                log::error!(
+                    "⏰ Failed to claim scheduled task '{}' ({}) for execution: {}; skipping this tick",
+                    task.name,
+                    task.id,
+                    e
+                );
+                false
+            }
+        };
+        if !claimed {
+            continue;
+        }
+
+        let result = execute_task(&manager, &task, now_ms).await;
+
+        if let Err(e) = repo.release_run_claim(&task.id, run_id).await {
+            log::warn!(
+                "⏰ Failed to release execution claim for scheduled task '{}' ({}): {}",
+                task.name,
+                task.id,
+                e
+            );
+        }
+
+        if let Err(e) = result {
             log::error!(
                 "⏰ Failed to execute scheduled task '{}' ({}): {}",
                 task.name,
@@ -154,6 +200,18 @@ pub async fn execute_due_tasks(app_handle: &AppHandle, now_ms: i64) -> Result<()
     }
 
     Ok(())
+}
+
+/// How long an in-flight execution claim survives before another process may
+/// take it over (#2857). Far larger than the execution window (session
+/// resolve/create + message inject), and only relevant for a crashed holder.
+const RUN_CLAIM_TTL_MS: i64 = 10 * 60 * 1000;
+
+/// This process's scheduler identity for execution claims (#2857). One run
+/// id per backend process, created lazily on the first due tick.
+fn scheduler_run_id() -> &'static str {
+    static RUN_ID: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    RUN_ID.get_or_init(|| Uuid::new_v4().to_string())
 }
 
 async fn execute_task(

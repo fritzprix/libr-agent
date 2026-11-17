@@ -127,6 +127,8 @@ fn disabled_legacy_utc_tasks_expose_a_future_display_run() {
         enabled: false,
         last_run_at: None,
         next_run_at: None,
+        run_claim_run: None,
+        run_claim_expires_at: None,
         created_at: 0,
         updated_at: 0,
     });

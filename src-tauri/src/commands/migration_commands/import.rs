@@ -686,6 +686,8 @@ async fn import_tasks_data(
                 enabled: Set(r.enabled),
                 last_run_at: Set(r.last_run_at),
                 next_run_at: Set(r.next_run_at),
+                run_claim_run: Set(None),
+                run_claim_expires_at: Set(None),
                 created_at: Set(r.created_at),
                 updated_at: Set(now),
             };
