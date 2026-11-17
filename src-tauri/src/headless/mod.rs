@@ -692,8 +692,9 @@ fn inspect_preview(raw: &str) -> String {
 
 /// Decode the persisted `content` column (JSON of `Vec<MCPContent>`, see
 /// `repositories/message_repository/persist.rs`) into the concatenated text
-/// parts a postmortem reader wants. A malformed column falls back to the
-/// trimmed raw value so inspect never loses data to a decode error.
+/// parts a postmortem reader wants. This is the only place inspect tolerates
+/// non-production formats: a malformed column falls back to the trimmed raw
+/// value so inspect never loses data to a decode error.
 fn persisted_content_text(content_json: &str) -> String {
     match serde_json::from_str::<Vec<crate::mcp::types::MCPContent>>(content_json) {
         Ok(parts) => parts
@@ -786,20 +787,26 @@ fn query_inspect_session(
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )?;
     // A profile DB that predates the forked_from migration must still be
-    // inspectable: degrade to `forkedFrom: null` instead of failing (S1.1).
-    let has_forked_from: bool = conn
+    // inspectable: select `NULL AS forked_from` when the column is absent so
+    // the row maps once either way (S1.1, #2877 G2.1). A failed pragma read
+    // propagates — a broken profile must not look like an old one (S2.1).
+    let has_forked_from = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = 'forked_from'",
+        [],
+        |row| row.get::<_, i64>(0),
+    )? > 0;
+    let forked_from_column = if has_forked_from {
+        "forked_from"
+    } else {
+        "NULL AS forked_from"
+    };
+    let meta = conn
         .query_row(
-            "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = 'forked_from'",
-            [],
-            |row| row.get::<_, i64>(0),
-        )
-        .map(|count| count > 0)
-        .unwrap_or(false);
-    let meta = if has_forked_from {
-        conn.query_row(
-            "SELECT id, status, status_reason, model, provider, workspace_override, \
-             created_at, updated_at, forked_from \
-             FROM sessions WHERE id = ?1",
+            &format!(
+                "SELECT id, status, status_reason, model, provider, workspace_override, \
+                 created_at, updated_at, {forked_from_column} \
+                 FROM sessions WHERE id = ?1"
+            ),
             [id],
             |row| {
                 Ok(InspectSessionMeta {
@@ -815,29 +822,7 @@ fn query_inspect_session(
                 })
             },
         )
-        .optional()?
-    } else {
-        conn.query_row(
-            "SELECT id, status, status_reason, model, provider, workspace_override, \
-             created_at, updated_at \
-             FROM sessions WHERE id = ?1",
-            [id],
-            |row| {
-                Ok(InspectSessionMeta {
-                    id: row.get(0)?,
-                    forked_from: None,
-                    status: row.get(1)?,
-                    status_reason: row.get(2)?,
-                    workspace_path: row.get(5)?,
-                    model: row.get(3)?,
-                    provider: row.get(4)?,
-                    created_at: row.get(6)?,
-                    updated_at: row.get(7)?,
-                })
-            },
-        )
-        .optional()?
-    };
+        .optional()?;
     let Some(meta) = meta else {
         return Ok(None);
     };

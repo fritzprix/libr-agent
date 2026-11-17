@@ -2324,6 +2324,41 @@ async fn inspect_session_reports_forked_from() {
     assert!(text.contains("statusReason: user-stop"), "{text}");
 }
 
+/// A profile DB whose `sessions` table predates the forked_from migration
+/// (no such column) must still inspect cleanly with `forkedFrom: null`
+/// instead of failing (#2877 G2.2).
+#[tokio::test]
+async fn inspect_session_degrades_on_legacy_schema_without_forked_from() {
+    use tauri_mcp_agent_lib::headless::run_inspect_session;
+    let db_dir = TempDir::new().unwrap();
+    let db_path = db_dir.path().join("profile.db");
+    profile_db_for_inspect(&db_path).await;
+    {
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        conn.execute("ALTER TABLE sessions DROP COLUMN forked_from", [])
+            .unwrap();
+    }
+
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    let code = run_inspect_session(
+        &inspect_args("s-main", None, None, OutputFormat::Json),
+        &db_path,
+        &mut out,
+        &mut err,
+    );
+
+    assert_eq!(
+        code,
+        exit_codes::SUCCESS,
+        "legacy schema must inspect cleanly: {}",
+        String::from_utf8_lossy(&err)
+    );
+    assert!(err.is_empty());
+    let digest: Value = serde_json::from_slice(&out).unwrap();
+    assert!(digest["session"]["forkedFrom"].is_null());
+    assert_eq!(digest["turns"].as_array().unwrap().len(), 5);
+}
+
 #[tokio::test]
 async fn inspect_session_errors_exit_one() {
     use tauri_mcp_agent_lib::headless::run_inspect_session;
