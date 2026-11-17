@@ -1,6 +1,7 @@
 pub use sea_orm_migration::prelude::*;
 
 pub mod helpers; // Shared migration utilities (idempotency helpers, etc.)
+pub mod session_version; // sessions.version trigger SQL (#2878), shared with the write-back
 
 mod m20260206_000001_create_all_tables;
 mod m20260208_000002_add_llm_fields_to_sessions;

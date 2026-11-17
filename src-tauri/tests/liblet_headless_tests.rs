@@ -1550,6 +1550,81 @@ async fn write_back_session_run_forks_when_newest_message_edited_in_place() {
     );
 }
 
+/// #2878 G1.2: a profile database that predates the migration has neither
+/// the `version` column nor the triggers. The write-back must install both,
+/// and the counter must be live immediately: a raw in-place `UPDATE` on the
+/// profile bumps `sessions.version`.
+#[tokio::test]
+async fn write_back_installs_legacy_schema_keeps_version_live() {
+    let src_dir = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+    let src = src_dir.path().join("profile.db");
+    seed_continuable_session(&src, workspace.path()).await;
+
+    // Simulate a profile that predates m20261117_000053: drop the triggers
+    // first (they reference the column), then the column itself, and un-apply
+    // the migration so the ephemeral copy re-runs it like a real legacy
+    // profile's first start would.
+    {
+        let conn = rusqlite::Connection::open(&src).unwrap();
+        conn.execute_batch(
+            "DROP TRIGGER messages_session_version_ai;
+             DROP TRIGGER messages_session_version_au;
+             DROP TRIGGER messages_session_version_ad;
+             ALTER TABLE sessions DROP COLUMN version;
+             DELETE FROM seaql_migrations WHERE version = 'm20261117_000053_add_version_to_sessions';",
+        )
+        .unwrap();
+    }
+
+    let mut args = default_headless_args("continue", workspace.path());
+    args.session = Some("s-cont".to_string());
+    let runtime = EphemeralHeadlessRuntime::bootstrap(Some(&src), &args)
+        .await
+        .expect("bootstrap --session from legacy profile");
+    insert_session_messages(&runtime.env.db_path, "s-cont", &[("m-3", 900)]);
+
+    let outcome = write_back_run(&runtime).unwrap();
+
+    // Column and triggers are now installed on the profile.
+    assert_eq!(
+        query_i64(
+            &src,
+            "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = 'version'"
+        ),
+        1,
+        "write-back must add the version column to a legacy profile"
+    );
+    assert_eq!(
+        query_i64(
+            &src,
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' \
+             AND name LIKE 'messages_session_version_%'"
+        ),
+        3,
+        "write-back must install the three version triggers"
+    );
+
+    // The counter is live: a raw in-place edit bumps it. (Both the profile's
+    // re-added column and the ephemeral snapshot re-anchor at version 0, and
+    // nothing changed on the profile after the snapshot, so the run merges —
+    // the legacy install path must not force a spurious fork.)
+    assert_eq!(outcome.session_id, "s-cont");
+    assert_eq!(outcome.forked_from, None);
+    let before = query_i64(&src, "SELECT version FROM sessions WHERE id = 's-cont'");
+    rusqlite::Connection::open(&src)
+        .unwrap()
+        .execute("UPDATE messages SET updated_at = 1000 WHERE id = 'm-1'", [])
+        .unwrap();
+    assert_eq!(
+        query_i64(&src, "SELECT version FROM sessions WHERE id = 's-cont'"),
+        before + 1,
+        "the installed triggers must bump the counter immediately"
+    );
+
+    drop(runtime);
+}
+
 #[tokio::test]
 async fn write_back_session_run_forks_while_gui_owns_the_session() {
     let src_dir = TempDir::new().unwrap();

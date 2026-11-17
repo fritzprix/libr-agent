@@ -1,4 +1,5 @@
 use crate::helpers::column_exists;
+use crate::session_version::{SESSION_VERSION_TRIGGERS, SESSION_VERSION_TRIGGER_NAMES};
 use sea_orm_migration::prelude::*;
 use sea_orm_migration::sea_orm::Statement;
 
@@ -12,18 +13,6 @@ use sea_orm_migration::sea_orm::Statement;
 /// to the session's history moves the counter.
 #[derive(DeriveMigrationName)]
 pub struct Migration;
-
-const TRIGGER_SQLS: [&str; 3] = [
-    "CREATE TRIGGER IF NOT EXISTS messages_session_version_ai AFTER INSERT ON messages BEGIN
-      UPDATE sessions SET version = version + 1 WHERE id = NEW.session_id;
-    END;",
-    "CREATE TRIGGER IF NOT EXISTS messages_session_version_au AFTER UPDATE ON messages BEGIN
-      UPDATE sessions SET version = version + 1 WHERE id = NEW.session_id;
-    END;",
-    "CREATE TRIGGER IF NOT EXISTS messages_session_version_ad AFTER DELETE ON messages BEGIN
-      UPDATE sessions SET version = version + 1 WHERE id = OLD.session_id;
-    END;",
-];
 
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
@@ -45,7 +34,7 @@ impl MigrationTrait for Migration {
         }
 
         let db = manager.get_connection();
-        for sql in TRIGGER_SQLS {
+        for sql in SESSION_VERSION_TRIGGERS {
             db.execute(Statement::from_string(
                 db.get_database_backend(),
                 sql.to_owned(),
@@ -57,11 +46,7 @@ impl MigrationTrait for Migration {
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let db = manager.get_connection();
-        for name in [
-            "messages_session_version_ai",
-            "messages_session_version_au",
-            "messages_session_version_ad",
-        ] {
+        for name in SESSION_VERSION_TRIGGER_NAMES {
             db.execute(Statement::from_string(
                 db.get_database_backend(),
                 format!("DROP TRIGGER IF EXISTS {name};"),

@@ -179,15 +179,18 @@ async fn capture_fork_base(
     use crate::entity::session;
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QuerySelect};
 
-    let version: i64 = session::Entity::find()
+    let version: Option<i64> = session::Entity::find()
         .filter(session::Column::Id.eq(session_id))
         .select_only()
         .column(session::Column::Version)
         .into_tuple()
         .one(db)
         .await
-        .map_err(|e| format!("Failed to read version of session {session_id}: {e}"))?
-        .unwrap_or(0);
+        .map_err(|e| format!("Failed to read version of session {session_id}: {e}"))?;
+    // A resumed run's session row always exists in the snapshot; a missing
+    // row means the snapshot is broken and must not look like version 0.
+    let version = version
+        .ok_or_else(|| format!("Cannot capture fork base: session {session_id} is missing"))?;
     Ok(SessionForkBase {
         session_id: session_id.to_string(),
         version,

@@ -207,32 +207,39 @@ fn ensure_forked_from_column(conn: &Connection) -> Result<(), String> {
 /// Install the `version` column and the message-change triggers (#2878) on an
 /// older profile database that predates the migration; the GUI's next start
 /// runs migrations anyway, so this only keeps the write-back's own SQL valid
-/// and keeps the counter live for writes that happen before that start.
+/// and keeps the counter live for writes that happen before that start. When
+/// the schema is already installed (the common case), no DDL runs, so the
+/// write-back never takes a schema write lock against a running GUI.
 fn ensure_version_column_and_triggers(conn: &Connection) -> Result<(), String> {
     let has_column = column_names(conn, "sessions")?
         .iter()
         .any(|name| name == "version");
+    let names = migration::session_version::SESSION_VERSION_TRIGGER_NAMES;
+    let placeholders = names.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+    let installed_triggers: i64 = conn
+        .query_row(
+            &format!(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name IN ({placeholders})"
+            ),
+            rusqlite::params_from_iter(names.iter()),
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("Failed to inspect session version triggers on profile DB: {e}"))?;
+    if has_column && installed_triggers == names.len() as i64 {
+        return Ok(());
+    }
+
     if !has_column {
         conn.execute_batch("ALTER TABLE sessions ADD COLUMN version INTEGER NOT NULL DEFAULT 0;")
             .map_err(|e| format!("Failed to add version column to profile DB: {e}"))?;
     }
-    conn.execute_batch(SESSION_VERSION_TRIGGERS)
-        .map_err(|e| format!("Failed to install session version triggers on profile DB: {e}"))
+    for sql in migration::session_version::SESSION_VERSION_TRIGGERS {
+        conn.execute_batch(sql).map_err(|e| {
+            format!("Failed to install session version triggers on profile DB: {e}")
+        })?;
+    }
+    Ok(())
 }
-
-/// Same trigger SQL as migration m20261117_000053: the profile database may
-/// not have been migrated since the GUI last ran, and the counter must still
-/// be live for writes that happen before its next start.
-const SESSION_VERSION_TRIGGERS: &str = "
-CREATE TRIGGER IF NOT EXISTS messages_session_version_ai AFTER INSERT ON messages BEGIN
-  UPDATE sessions SET version = version + 1 WHERE id = NEW.session_id;
-END;
-CREATE TRIGGER IF NOT EXISTS messages_session_version_au AFTER UPDATE ON messages BEGIN
-  UPDATE sessions SET version = version + 1 WHERE id = NEW.session_id;
-END;
-CREATE TRIGGER IF NOT EXISTS messages_session_version_ad AFTER DELETE ON messages BEGIN
-  UPDATE sessions SET version = version + 1 WHERE id = OLD.session_id;
-END;";
 
 fn column_names(conn: &Connection, table: &str) -> Result<Vec<String>, String> {
     let mut stmt = conn
