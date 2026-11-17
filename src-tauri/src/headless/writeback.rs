@@ -4,10 +4,11 @@
 //! Rules (from the issue):
 //! - A fresh run inserts exactly one new `sessions` row plus its messages.
 //! - A `--session <id>` run **merges** into the original session when the
-//!   profile's message set is unchanged since the run started (same count and
-//!   same newest id as the captured [`SessionForkBase`]) and no GUI process
-//!   currently owns the session; otherwise it **forks**: a brand-new session
-//!   row whose `forked_from` names the original id.
+//!   profile's message history is unchanged since the run started (same
+//!   `sessions.version` counter as the captured [`SessionForkBase`], bumped by
+//!   the message-change triggers (#2878)) and no GUI process currently owns
+//!   the session; otherwise it **forks**: a brand-new session row whose
+//!   `forked_from` names the original id.
 //! - The version check and the writes share one `BEGIN IMMEDIATE`
 //!   transaction, so a concurrent GUI write cannot slip between them.
 //! - Secrets that reached the ephemeral copy (provider configs, MCP env,
@@ -97,6 +98,7 @@ pub fn write_back_run(runtime: &EphemeralHeadlessRuntime) -> Result<WriteBackOut
     let mut profile = open_read_write(profile_db_path)?;
     let _ = profile.busy_timeout(Duration::from_secs(5));
     ensure_forked_from_column(&profile)?;
+    ensure_version_column_and_triggers(&profile)?;
 
     if !runtime.resumed {
         let session_id = runtime.session_id.clone();
@@ -202,6 +204,43 @@ fn ensure_forked_from_column(conn: &Connection) -> Result<(), String> {
         .map_err(|e| format!("Failed to add forked_from column to profile DB: {e}"))
 }
 
+/// Install the `version` column and the message-change triggers (#2878) on an
+/// older profile database that predates the migration; the GUI's next start
+/// runs migrations anyway, so this only keeps the write-back's own SQL valid
+/// and keeps the counter live for writes that happen before that start. When
+/// the schema is already installed (the common case), no DDL runs, so the
+/// write-back never takes a schema write lock against a running GUI.
+fn ensure_version_column_and_triggers(conn: &Connection) -> Result<(), String> {
+    let has_column = column_names(conn, "sessions")?
+        .iter()
+        .any(|name| name == "version");
+    let names = migration::session_version::SESSION_VERSION_TRIGGER_NAMES;
+    let placeholders = names.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+    let installed_triggers: i64 = conn
+        .query_row(
+            &format!(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name IN ({placeholders})"
+            ),
+            rusqlite::params_from_iter(names.iter()),
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("Failed to inspect session version triggers on profile DB: {e}"))?;
+    if has_column && installed_triggers == names.len() as i64 {
+        return Ok(());
+    }
+
+    if !has_column {
+        conn.execute_batch("ALTER TABLE sessions ADD COLUMN version INTEGER NOT NULL DEFAULT 0;")
+            .map_err(|e| format!("Failed to add version column to profile DB: {e}"))?;
+    }
+    for sql in migration::session_version::SESSION_VERSION_TRIGGERS {
+        conn.execute_batch(sql).map_err(|e| {
+            format!("Failed to install session version triggers on profile DB: {e}")
+        })?;
+    }
+    Ok(())
+}
+
 fn column_names(conn: &Connection, table: &str) -> Result<Vec<String>, String> {
     let mut stmt = conn
         .prepare(&format!("PRAGMA table_info({table})"))
@@ -272,32 +311,21 @@ fn has_live_owner(conn: &Connection, id: &str) -> Result<bool, String> {
     .map_err(|e| format!("Failed to check ownership of session {id}: {e}"))
 }
 
-/// The profile is still at the snapshot the run started from: same message
-/// count and same newest message id.
+/// The profile is still at the snapshot the run started from: the session's
+/// message-change counter (#2878) has not moved since [`SessionForkBase`] was
+/// captured.
 fn fork_base_matches(
     conn: &Connection,
     id: &str,
     base: &crate::headless::SessionForkBase,
 ) -> Result<bool, String> {
-    let count: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM messages WHERE session_id = ?1",
-            [id],
-            |row| row.get(0),
-        )
-        .map_err(|e| format!("Failed to count messages of session {id}: {e}"))?;
-    if count != base.message_count {
-        return Ok(false);
-    }
-    let last_id: Option<String> = conn
-        .query_row(
-            "SELECT id FROM messages WHERE session_id = ?1 ORDER BY created_at DESC, id DESC LIMIT 1",
-            [id],
-            |row| row.get(0),
-        )
+    let version: Option<i64> = conn
+        .query_row("SELECT version FROM sessions WHERE id = ?1", [id], |row| {
+            row.get(0)
+        })
         .optional()
-        .map_err(|e| format!("Failed to read newest message id of session {id}: {e}"))?;
-    Ok(last_id == base.last_message_id)
+        .map_err(|e| format!("Failed to read version of session {id} in profile DB: {e}"))?;
+    Ok(version == Some(base.version))
 }
 
 fn existing_message_ids(conn: &Connection, id: &str) -> Result<HashSet<String>, String> {

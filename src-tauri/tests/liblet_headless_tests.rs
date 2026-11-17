@@ -961,8 +961,9 @@ async fn bootstrap_session_continuation_keeps_identity_and_fork_base() {
         runtime.fork_base,
         tauri_mcp_agent_lib::headless::SessionForkBase {
             session_id: "s-cont".to_string(),
-            message_count: 2,
-            last_message_id: Some("m-2".to_string()),
+            // Two raw inserts through the seed connection; the
+            // messages_session_version_* triggers bumped the counter (#2878).
+            version: 2,
         }
     );
 
@@ -1477,6 +1478,149 @@ async fn write_back_session_run_forks_when_profile_changed_after_snapshot() {
             "SELECT id FROM messages WHERE session_id = 's-cont' ORDER BY created_at"
         ),
         vec!["m-1".to_string(), "m-2".to_string(), "m-9".to_string()]
+    );
+
+    drop(runtime);
+}
+
+// ---------------------------------------------------------------------------
+// #2878 repro: the GUI edits an existing message in place after the headless
+// snapshot. Message count and newest id stay equal, so the old count+newest-id
+// fork base could not see the change and merged. The `sessions.version`
+// counter bumped by the message triggers does: the run must fork and the
+// original must keep the GUI edit.
+// ---------------------------------------------------------------------------
+
+async fn edit_then_write_back(edited_id: &str) -> (String, Option<String>, String) {
+    let src_dir = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+    let src = src_dir.path().join("profile.db");
+    seed_continuable_session(&src, workspace.path()).await; // s-cont: m-1, m-2
+
+    let mut args = default_headless_args("continue", workspace.path());
+    args.session = Some("s-cont".to_string());
+    let runtime = EphemeralHeadlessRuntime::bootstrap(Some(&src), &args)
+        .await
+        .expect("bootstrap --session");
+
+    // GUI (not holding a live ownership row) rewrites an existing message.
+    rusqlite::Connection::open(&src)
+        .unwrap()
+        .execute(
+            "UPDATE messages SET content = '[{\"type\":\"text\",\"text\":\"GUI EDIT\"}]', updated_at = 999 WHERE id = ?1",
+            rusqlite::params![edited_id],
+        )
+        .unwrap();
+    insert_session_messages(&runtime.env.db_path, "s-cont", &[("m-3", 900)]);
+
+    let outcome = write_back_run(&runtime).unwrap();
+    let content = query_strings(
+        &src,
+        &format!("SELECT content FROM messages WHERE id = '{edited_id}'"),
+    )
+    .remove(0);
+    drop(runtime);
+    (outcome.session_id, outcome.forked_from, content)
+}
+
+#[tokio::test]
+async fn write_back_session_run_forks_when_older_message_edited_in_place() {
+    let (session_id, forked_from, content) = edit_then_write_back("m-1").await;
+    assert_eq!(
+        forked_from.as_deref(),
+        Some("s-cont"),
+        "merged into s-cont (session_id={session_id}) although m-1 changed after the snapshot"
+    );
+    assert_eq!(
+        content, "[{\"type\":\"text\",\"text\":\"GUI EDIT\"}]",
+        "the fork must leave the GUI's edit of the original untouched"
+    );
+}
+
+#[tokio::test]
+async fn write_back_session_run_forks_when_newest_message_edited_in_place() {
+    let (session_id, forked_from, content) = edit_then_write_back("m-2").await;
+    assert_eq!(
+        forked_from.as_deref(),
+        Some("s-cont"),
+        "merged into s-cont (session_id={session_id}) although m-2 changed after the snapshot"
+    );
+    assert_eq!(
+        content, "[{\"type\":\"text\",\"text\":\"GUI EDIT\"}]",
+        "the fork must leave the GUI's edit of the original untouched"
+    );
+}
+
+/// #2878 G1.2: a profile database that predates the migration has neither
+/// the `version` column nor the triggers. The write-back must install both,
+/// and the counter must be live immediately: a raw in-place `UPDATE` on the
+/// profile bumps `sessions.version`.
+#[tokio::test]
+async fn write_back_installs_legacy_schema_keeps_version_live() {
+    let src_dir = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+    let src = src_dir.path().join("profile.db");
+    seed_continuable_session(&src, workspace.path()).await;
+
+    // Simulate a profile that predates m20261117_000053: drop the triggers
+    // first (they reference the column), then the column itself, and un-apply
+    // the migration so the ephemeral copy re-runs it like a real legacy
+    // profile's first start would.
+    {
+        let conn = rusqlite::Connection::open(&src).unwrap();
+        conn.execute_batch(
+            "DROP TRIGGER messages_session_version_ai;
+             DROP TRIGGER messages_session_version_au;
+             DROP TRIGGER messages_session_version_ad;
+             ALTER TABLE sessions DROP COLUMN version;
+             DELETE FROM seaql_migrations WHERE version = 'm20261117_000053_add_version_to_sessions';",
+        )
+        .unwrap();
+    }
+
+    let mut args = default_headless_args("continue", workspace.path());
+    args.session = Some("s-cont".to_string());
+    let runtime = EphemeralHeadlessRuntime::bootstrap(Some(&src), &args)
+        .await
+        .expect("bootstrap --session from legacy profile");
+    insert_session_messages(&runtime.env.db_path, "s-cont", &[("m-3", 900)]);
+
+    let outcome = write_back_run(&runtime).unwrap();
+
+    // Column and triggers are now installed on the profile.
+    assert_eq!(
+        query_i64(
+            &src,
+            "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = 'version'"
+        ),
+        1,
+        "write-back must add the version column to a legacy profile"
+    );
+    assert_eq!(
+        query_i64(
+            &src,
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' \
+             AND name LIKE 'messages_session_version_%'"
+        ),
+        3,
+        "write-back must install the three version triggers"
+    );
+
+    // The counter is live: a raw in-place edit bumps it. (Both the profile's
+    // re-added column and the ephemeral snapshot re-anchor at version 0, and
+    // nothing changed on the profile after the snapshot, so the run merges —
+    // the legacy install path must not force a spurious fork.)
+    assert_eq!(outcome.session_id, "s-cont");
+    assert_eq!(outcome.forked_from, None);
+    let before = query_i64(&src, "SELECT version FROM sessions WHERE id = 's-cont'");
+    rusqlite::Connection::open(&src)
+        .unwrap()
+        .execute("UPDATE messages SET updated_at = 1000 WHERE id = 'm-1'", [])
+        .unwrap();
+    assert_eq!(
+        query_i64(&src, "SELECT version FROM sessions WHERE id = 's-cont'"),
+        before + 1,
+        "the installed triggers must bump the counter immediately"
     );
 
     drop(runtime);

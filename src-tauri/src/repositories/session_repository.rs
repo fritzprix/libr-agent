@@ -453,6 +453,9 @@ impl SqliteSessionRepository {
             docker_host_workspace_path: Set(session.docker_host_workspace_path.clone()),
             status_reason: Set(session.status_reason.clone()),
             forked_from: Set(session.forked_from.clone()),
+            // `sessions.version` is owned by the message-change triggers
+            // (#2878): never write it from application code.
+            version: sea_orm::ActiveValue::NotSet,
         })
     }
 
