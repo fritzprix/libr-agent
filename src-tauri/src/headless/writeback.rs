@@ -16,7 +16,7 @@
 use crate::headless::EphemeralHeadlessRuntime;
 use crate::mcp::secret_templates::mask_values;
 use rusqlite::types::Value;
-use rusqlite::{params, Connection, OpenFlags};
+use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
 use std::collections::HashSet;
 use std::path::Path;
 use std::time::Duration;
@@ -29,10 +29,10 @@ pub struct WriteBackOutcome {
     pub forked_from: Option<String>,
 }
 
-/// A claimed ownership row older than this is dead; mirrors
-/// `session_ownership::STALE_AFTER`. Headless never claims, so any live row
-/// means a GUI has the session open.
-const STALE_AFTER_MS: i64 = 15_000;
+/// Secrets shorter than this are too ambiguous to mask: the same short text
+/// occurs as ordinary content (`maxTokens = "4096"`) and masking it would
+/// silently corrupt history.
+const MIN_SECRET_LEN: usize = 8;
 
 /// `sessions` columns written by the write-back, in fixed order. `forked_from`
 /// is appended separately because older profile databases predate it.
@@ -63,7 +63,7 @@ pub fn write_back_run(runtime: &EphemeralHeadlessRuntime) -> Result<WriteBackOut
     })?;
 
     let ephemeral = open_read_only(&runtime.env.db_path)?;
-    let secrets = collect_secret_keys(&ephemeral);
+    let secrets = collect_secret_keys(&ephemeral)?;
     let session_row = read_row(
         &ephemeral,
         &format!("SELECT {SESSION_COLUMNS} FROM sessions WHERE id = ?1"),
@@ -260,7 +260,9 @@ fn has_live_owner(conn: &Connection, id: &str) -> Result<bool, String> {
     if !table_exists(conn, "session_ownership")? {
         return Ok(false);
     }
-    let stale_before = chrono::Utc::now().timestamp_millis() - STALE_AFTER_MS;
+    // Headless never claims, so any live row means a GUI has the session
+    // open. The stale rule comes from session_ownership so both sides agree.
+    let stale_before = crate::server::session_ownership::stale_before_ms();
     conn.query_row(
         "SELECT COUNT(*) FROM session_ownership WHERE session_id = ?1 AND heartbeat_at >= ?2",
         params![id, stale_before],
@@ -293,7 +295,8 @@ fn fork_base_matches(
             [id],
             |row| row.get(0),
         )
-        .ok();
+        .optional()
+        .map_err(|e| format!("Failed to read newest message id of session {id}: {e}"))?;
     Ok(last_id == base.last_message_id)
 }
 
@@ -420,38 +423,55 @@ fn redact_row(row: &[Value], text_fields: &[usize], secrets: &[String]) -> Vec<V
 /// and MCP credentials found in the ephemeral snapshot, plus this process's
 /// credential environment variables. Keychain-backed and already-encrypted
 /// stores are safe by construction and are not read here.
-fn collect_secret_keys(ephemeral: &Connection) -> Vec<String> {
+///
+/// Fails closed: if a secret source cannot be read, the caller aborts the
+/// write-back instead of persisting rows that might be unredacted.
+fn collect_secret_keys(ephemeral: &Connection) -> Result<Vec<String>, String> {
     let mut secrets: Vec<String> = Vec::new();
 
-    if let Ok(mut stmt) = ephemeral.prepare("SELECT key, value FROM settings") {
-        if let Ok(rows) = stmt.query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-        }) {
-            for (key, value) in rows.flatten() {
-                if is_secret_key_name(&key) && !value.trim().is_empty() {
-                    secrets.push(value.clone());
-                }
-                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&value) {
-                    collect_json_secrets(&parsed, Some(&key), &mut secrets);
-                }
+    let mut stmt = ephemeral
+        .prepare("SELECT key, value FROM settings")
+        .map_err(|e| format!("Failed to read settings for redaction: {e}"))?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+        })
+        .map_err(|e| format!("Failed to read settings rows for redaction: {e}"))?;
+    for row in rows {
+        let (key, value) =
+            row.map_err(|e| format!("Failed to decode settings row for redaction: {e}"))?;
+        if let Some(value) = value {
+            if is_secret_key_name(&key) && value.trim().len() >= MIN_SECRET_LEN {
+                secrets.push(value.clone());
+            }
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&value) {
+                collect_json_secrets(&parsed, Some(&key), &mut secrets);
             }
         }
     }
 
-    if let Ok(columns) = column_names(ephemeral, "mcp_servers") {
-        for column in columns {
-            let sql = format!("SELECT \"{}\" FROM mcp_servers", column.replace('"', ""));
-            if let Ok(mut stmt) = ephemeral.prepare(&sql) {
-                if let Ok(rows) = stmt.query_map([], |row| row.get::<_, Option<String>>(0)) {
-                    for value in rows.flatten().flatten() {
-                        if is_secret_key_name(&column) && !value.trim().is_empty() {
-                            secrets.push(value.clone());
-                        }
-                        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&value) {
-                            collect_json_secrets(&parsed, None, &mut secrets);
-                        }
-                    }
-                }
+    for column in column_names(ephemeral, "mcp_servers")? {
+        let sql = format!("SELECT \"{}\" FROM mcp_servers", column.replace('"', ""));
+        let mut stmt = ephemeral
+            .prepare(&sql)
+            .map_err(|e| format!("Failed to read mcp_servers.{column} for redaction: {e}"))?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, Option<Value>>(0))
+            .map_err(|e| format!("Failed to read mcp_servers.{column} rows for redaction: {e}"))?;
+        for row in rows {
+            let value = row.map_err(|e| {
+                format!("Failed to decode mcp_servers.{column} row for redaction: {e}")
+            })?;
+            // Only TEXT can carry a secret; integers (`tool_count`) and NULLs
+            // are skipped without failing the read.
+            let Value::Text(text) = value.unwrap_or(Value::Null) else {
+                continue;
+            };
+            if is_secret_key_name(&column) && text.trim().len() >= MIN_SECRET_LEN {
+                secrets.push(text.clone());
+            }
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text) {
+                collect_json_secrets(&parsed, None, &mut secrets);
             }
         }
     }
@@ -462,14 +482,14 @@ fn collect_secret_keys(ephemeral: &Connection) -> Vec<String> {
             || upper.ends_with("_APIKEY")
             || upper.ends_with("_TOKEN")
             || upper.ends_with("_SECRET");
-        if credential_var && value.trim().len() >= 8 {
+        if credential_var && value.trim().len() >= MIN_SECRET_LEN {
             secrets.push(value);
         }
     }
 
     secrets.sort();
     secrets.dedup();
-    secrets
+    Ok(secrets)
 }
 
 fn is_secret_key_name(name: &str) -> bool {
@@ -492,7 +512,7 @@ fn collect_json_secrets(value: &serde_json::Value, parent: Option<&str>, out: &m
             }
         }
         serde_json::Value::String(text)
-            if parent.is_some_and(is_secret_key_name) && !text.trim().is_empty() =>
+            if parent.is_some_and(is_secret_key_name) && text.trim().len() >= MIN_SECRET_LEN =>
         {
             out.push(text.clone());
         }

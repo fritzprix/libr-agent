@@ -1643,3 +1643,366 @@ async fn write_back_creates_the_profile_database_when_none_exists() {
 
     drop(runtime);
 }
+
+// --- Gatekeeper round 1 fixes (#2876) ------------------------------------
+
+#[tokio::test]
+async fn write_back_fails_closed_when_the_secret_source_is_unreadable() {
+    let src_dir = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+    let src = src_dir.path().join("profile.db");
+    seed_continuable_session(&src, workspace.path()).await;
+
+    let args = default_headless_args("fresh run", workspace.path());
+    let runtime = EphemeralHeadlessRuntime::bootstrap(Some(&src), &args)
+        .await
+        .expect("fresh bootstrap");
+    insert_session_messages(&runtime.env.db_path, &runtime.session_id, &[("u-m-1", 900)]);
+
+    // Break the redaction key source: without `settings` the secret list
+    // cannot be built, so the write-back must abort rather than persist
+    // rows that might be unredacted.
+    {
+        let conn = rusqlite::Connection::open(&runtime.env.db_path).unwrap();
+        conn.execute_batch("DROP TABLE settings;").unwrap();
+    }
+
+    let err = write_back_run(&runtime).expect_err("unreadable secret source must abort write-back");
+    assert!(
+        err.contains("settings"),
+        "the error must name the failed source: {err}"
+    );
+    assert_eq!(
+        count_rows(&src, "sessions"),
+        2,
+        "nothing may be written when redaction is impossible"
+    );
+    assert_eq!(count_rows(&src, "messages"), 3);
+
+    drop(runtime);
+}
+
+#[tokio::test]
+async fn write_back_leaves_short_values_under_secret_like_keys_intact() {
+    let src_dir = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+    let src = src_dir.path().join("profile.db");
+    seed_continuable_session(&src, workspace.path()).await;
+
+    // `maxTokens` matches the secret key heuristic but its value is an
+    // ordinary short number; masking "4096" would corrupt history.
+    {
+        let conn = rusqlite::Connection::open(&src).unwrap();
+        conn.execute(
+            "INSERT INTO settings (key, value, created_at, updated_at) \
+             VALUES ('maxTokens', '4096', 0, 0)",
+            [],
+        )
+        .unwrap();
+    }
+
+    let mut args = default_headless_args("continue", workspace.path());
+    args.session = Some("s-cont".to_string());
+    let runtime = EphemeralHeadlessRuntime::bootstrap(Some(&src), &args)
+        .await
+        .expect("bootstrap --session");
+
+    {
+        let conn = rusqlite::Connection::open(&runtime.env.db_path).unwrap();
+        conn.execute(
+            "INSERT INTO messages (id, session_id, role, content, created_at, updated_at) \
+             VALUES ('sv-m-1', 's-cont', 'assistant', ?1, 900, 900)",
+            [r#"[{"type":"text","text":"used 4096 tokens total"}]"#],
+        )
+        .unwrap();
+    }
+
+    let outcome = write_back_run(&runtime).unwrap();
+    assert_eq!(outcome.session_id, "s-cont");
+
+    let stored = query_strings(&src, "SELECT content FROM messages WHERE id = 'sv-m-1'");
+    assert_eq!(stored.len(), 1);
+    assert!(
+        stored[0].contains("4096"),
+        "a short value under a key-like name must not be masked: {}",
+        stored[0]
+    );
+    assert!(
+        !stored[0].contains("***"),
+        "no masking expected: {}",
+        stored[0]
+    );
+
+    drop(runtime);
+}
+
+/// #2860 acceptance: every terminal outcome writes back before cleanup —
+/// through `run_with_driver`, not just by calling `write_back_run` directly.
+#[tokio::test]
+async fn write_back_persists_error_timeout_and_interrupted_runs() {
+    // 1. Driver error -> the session row lands in the profile DB.
+    let src_dir = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+    let src = src_dir.path().join("err_profile.db");
+    seed_continuable_session(&src, workspace.path()).await;
+
+    let mut err_args = default_headless_args("failing task", workspace.path());
+    err_args.output_format = OutputFormat::Json;
+    let runtime = EphemeralHeadlessRuntime::bootstrap(Some(&src), &err_args)
+        .await
+        .expect("bootstrap for error run");
+    let (_tx, rx) = watch::channel(None);
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let payload = runtime
+        .run_with_driver(
+            &err_args,
+            rx,
+            |_session_id, _repo, _active, _resolved| async move {
+                Err("simulated driver failure".to_string())
+            },
+            &mut stdout,
+            &mut stderr,
+        )
+        .await;
+    assert_eq!(payload.status, HeadlessStatus::Error);
+    assert_eq!(
+        query_i64(
+            &src,
+            &format!(
+                "SELECT COUNT(*) FROM sessions WHERE id = '{}'",
+                payload.session_id
+            )
+        ),
+        1,
+        "an Error run must still write back its session row"
+    );
+
+    // 2. Timeout -> the session row lands in the profile DB.
+    let src2_dir = TempDir::new().unwrap();
+    let src2 = src2_dir.path().join("timeout_profile.db");
+    seed_continuable_session(&src2, workspace.path()).await;
+    let mut to_args = default_headless_args("long task", workspace.path());
+    to_args.output_format = OutputFormat::Json;
+    to_args.timeout_secs = Some(1);
+    let runtime2 = EphemeralHeadlessRuntime::bootstrap(Some(&src2), &to_args)
+        .await
+        .expect("bootstrap for timeout run");
+    let (_tx2, rx2) = watch::channel(None);
+    let mut stdout2 = Vec::new();
+    let mut stderr2 = Vec::new();
+    let payload2 = runtime2
+        .run_with_driver(
+            &to_args,
+            rx2,
+            |session_id, _repo, active_sessions, _resolved| async move {
+                {
+                    let mut active = active_sessions.write().await;
+                    let session = active.get_mut(&session_id).unwrap();
+                    session.metadata.status = SessionStatus::Busy;
+                }
+                tokio::time::sleep(Duration::from_secs(10)).await;
+                Ok(())
+            },
+            &mut stdout2,
+            &mut stderr2,
+        )
+        .await;
+    assert_eq!(payload2.status, HeadlessStatus::Timeout);
+    assert_eq!(
+        query_i64(
+            &src2,
+            &format!(
+                "SELECT COUNT(*) FROM sessions WHERE id = '{}'",
+                payload2.session_id
+            )
+        ),
+        1,
+        "a Timeout run must still write back its session row"
+    );
+
+    // 3. Interrupt -> the session row lands in the profile DB.
+    let src3_dir = TempDir::new().unwrap();
+    let src3 = src3_dir.path().join("interrupt_profile.db");
+    seed_continuable_session(&src3, workspace.path()).await;
+    let mut int_args = default_headless_args("interruptible task", workspace.path());
+    int_args.output_format = OutputFormat::Json;
+    let runtime3 = EphemeralHeadlessRuntime::bootstrap(Some(&src3), &int_args)
+        .await
+        .expect("bootstrap for interrupt run");
+    let (tx3, rx3) = watch::channel(None);
+    let mut stdout3 = Vec::new();
+    let mut stderr3 = Vec::new();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(40)).await;
+        let _ = tx3.send(Some(InterruptSignal::SigInt));
+    });
+    let payload3 = runtime3
+        .run_with_driver(
+            &int_args,
+            rx3,
+            |session_id, _repo, active_sessions, _resolved| async move {
+                {
+                    let mut active = active_sessions.write().await;
+                    let session = active.get_mut(&session_id).unwrap();
+                    session.metadata.status = SessionStatus::Busy;
+                }
+                tokio::time::sleep(Duration::from_secs(10)).await;
+                Ok(())
+            },
+            &mut stdout3,
+            &mut stderr3,
+        )
+        .await;
+    assert_eq!(payload3.status, HeadlessStatus::Interrupted);
+    assert_eq!(
+        query_i64(
+            &src3,
+            &format!(
+                "SELECT COUNT(*) FROM sessions WHERE id = '{}'",
+                payload3.session_id
+            )
+        ),
+        1,
+        "an Interrupted run must still write back its session row"
+    );
+}
+
+/// The merge-or-fork decision must be taken inside the write-back's own
+/// `BEGIN IMMEDIATE` transaction, on the state the concurrent writer has
+/// committed — never on the pre-transaction snapshot.
+#[tokio::test]
+async fn write_back_decides_fork_on_concurrent_writer_commit() {
+    let src_dir = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+    let src = src_dir.path().join("profile.db");
+    seed_continuable_session(&src, workspace.path()).await;
+
+    let mut args = default_headless_args("continue", workspace.path());
+    args.session = Some("s-cont".to_string());
+    let runtime = EphemeralHeadlessRuntime::bootstrap(Some(&src), &args)
+        .await
+        .expect("bootstrap --session");
+    insert_session_messages(&runtime.env.db_path, "s-cont", &[("m-3", 900)]);
+
+    // A second connection (a GUI backend stand-in) holds the write lock.
+    // The write-back's BEGIN IMMEDIATE must then wait (busy_timeout) and
+    // decide after this writer commits its own message.
+    let writer = rusqlite::Connection::open(&src).unwrap();
+    writer.execute_batch("BEGIN IMMEDIATE;").unwrap();
+
+    let outcome = std::thread::scope(|scope| {
+        let handle = scope.spawn(|| write_back_run(&runtime));
+        std::thread::sleep(Duration::from_millis(300));
+        writer
+            .execute(
+                "INSERT INTO messages (id, session_id, role, content, created_at, updated_at) \
+                 VALUES ('m-9', 's-cont', 'user', '[]', 800, 800)",
+                [],
+            )
+            .unwrap();
+        writer.execute_batch("COMMIT;").unwrap();
+        handle.join().unwrap()
+    })
+    .expect("write-back must succeed under contention");
+
+    // The writer's m-9 was committed before the transaction began, so the
+    // profile no longer matches the snapshot: fork, not merge.
+    assert_eq!(outcome.forked_from.as_deref(), Some("s-cont"));
+    assert_ne!(outcome.session_id, "s-cont");
+    assert_eq!(
+        query_strings(
+            &src,
+            "SELECT id FROM messages WHERE session_id = 's-cont' ORDER BY created_at"
+        ),
+        vec!["m-1".to_string(), "m-2".to_string(), "m-9".to_string()]
+    );
+
+    drop(runtime);
+}
+
+/// A `--session` run that forks through `run_with_driver` must surface the
+/// fork in the payload and the serialized JSON result (#2860).
+#[tokio::test]
+async fn run_with_driver_fork_reports_forked_from_in_payload_and_json() {
+    let src_dir = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+    let src = src_dir.path().join("profile.db");
+    seed_continuable_session(&src, workspace.path()).await;
+
+    let mut args = default_headless_args("continue", workspace.path());
+    args.session = Some("s-cont".to_string());
+    args.output_format = OutputFormat::Json;
+    let runtime = EphemeralHeadlessRuntime::bootstrap(Some(&src), &args)
+        .await
+        .expect("bootstrap --session");
+
+    // The GUI appended its own message after the snapshot was taken (a
+    // committed write through a second connection).
+    insert_session_messages(&src, "s-cont", &[("m-9", 800)]);
+
+    // The test driver persists its own message to the ephemeral snapshot
+    // exactly like a real driver run does, so the fork must carry it.
+    let ephemeral_db = runtime.env.db_path.clone();
+    let (_tx, rx) = watch::channel(None);
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let payload = runtime
+        .run_with_driver(
+            &args,
+            rx,
+            move |session_id, _repo, active_sessions, _resolved| async move {
+                {
+                    let mut active = active_sessions.write().await;
+                    let session = active.get_mut(&session_id).unwrap();
+                    session.metadata.status = SessionStatus::Busy;
+                    session.messages.write().await.push(make_assistant_message(
+                        &session_id,
+                        "msg-final",
+                        "finished the titled session.",
+                        None,
+                    ));
+                    session.metadata.status = SessionStatus::Idle;
+                }
+                insert_session_messages(&ephemeral_db, &session_id, &[("msg-final", 900)]);
+                Ok(())
+            },
+            &mut stdout,
+            &mut stderr,
+        )
+        .await;
+
+    assert_eq!(payload.status, HeadlessStatus::Completed);
+    assert_eq!(payload.forked_from.as_deref(), Some("s-cont"));
+    assert_ne!(payload.session_id, "s-cont");
+    assert!(payload.session_id.starts_with("headless-"));
+
+    let parsed: Value = serde_json::from_slice(&stdout).unwrap();
+    assert_eq!(parsed["type"], "result");
+    assert_eq!(parsed["status"], "completed");
+    assert_eq!(parsed["sessionId"], payload.session_id.as_str());
+    assert_eq!(parsed["forkedFrom"], "s-cont");
+
+    // The fork row exists with forked_from set and carries the full history
+    // (snapshot + the run's message) under fresh ids.
+    assert_eq!(
+        query_strings(
+            &src,
+            &format!(
+                "SELECT forked_from FROM sessions WHERE id = '{}'",
+                payload.session_id
+            )
+        ),
+        vec!["s-cont".to_string()]
+    );
+    assert_eq!(
+        query_i64(
+            &src,
+            &format!(
+                "SELECT COUNT(*) FROM messages WHERE session_id = '{}'",
+                payload.session_id
+            )
+        ),
+        3
+    );
+}

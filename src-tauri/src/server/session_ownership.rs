@@ -106,7 +106,10 @@ fn current_identity() -> RunIdentity {
     }
 }
 
-fn stale_before_ms() -> i64 {
+/// Milliseconds timestamp before which an ownership heartbeat counts as
+/// stale, derived from [`STALE_AFTER`]. Single source of truth for the rule
+/// so other readers (e.g. the headless write-back) cannot drift.
+pub fn stale_before_ms() -> i64 {
     now_ms() - STALE_AFTER.as_millis() as i64
 }
 
