@@ -43,7 +43,10 @@ pub(super) fn write_pending_deletes(path: &Path, pending: &PendingDeletes) -> Re
         std::fs::create_dir_all(dir).map_err(|e| failed(&e))?;
     }
     let json = serde_json::to_vec(pending).map_err(|e| failed(&e))?;
-    let temp = path.with_extension("json.tmp");
+    // Two backends can share one profile, so the temporary name must belong to
+    // this write alone. A fixed name let one process rename the other's
+    // half-written file, then lose its own rename (#2858 S6).
+    let temp = path.with_extension(format!("json.tmp.{}", uuid::Uuid::new_v4()));
     std::fs::write(&temp, json)
         .and_then(|()| std::fs::rename(&temp, path))
         .map_err(|e| failed(&e))
