@@ -75,6 +75,10 @@ pub struct HeadlessArgs {
     pub execution_mode: Option<ExecutionMode>,
     pub output_format: OutputFormat,
     pub timeout_secs: Option<u64>,
+    /// Persisted session to continue (#2859). The snapshot keeps this session's
+    /// rows; the run executes under its id and the write-back seam merges it
+    /// back into the profile DB.
+    pub session: Option<String>,
 }
 
 /// Resume target for TUI mode (`#2702`).
@@ -163,6 +167,8 @@ pub fn help_text() -> String {
         "      --execution-mode <mode>   Tool approval policy: normal (default), yolo, or unsafe\n",
         "      --output-format <fmt>     Headless stdout format: text (default), json, or stream-json\n",
         "      --timeout <seconds>       Wall-clock limit for a headless run\n",
+        "      --headless                Run one command without opening the GUI (with -p or piped stdin)\n",
+        "      --session <id>            Continue a persisted session (implies --headless)\n",
         "      --list-sessions           Print persisted sessions for the current directory and exit\n",
         "  -h, --help                    Print help and exit\n",
         "  -V, --version                 Print version and exit\n"
@@ -231,6 +237,8 @@ pub fn parse_cli_with_tui_gate(
     let mut output_format: Option<OutputFormat> = None;
     let mut timeout_secs: Option<u64> = None;
     let mut list_sessions = false;
+    let mut headless_flag = false;
+    let mut session_flag: Option<String> = None;
     let mut positional: Vec<String> = Vec::new();
     let mut after_double_dash = false;
 
@@ -395,6 +403,21 @@ pub fn parse_cli_with_tui_gate(
                 }
                 list_sessions = true;
             }
+            "--headless" => {
+                if inline_val.is_some() {
+                    return Err(CliUsageError::new(
+                        "option '--headless' does not take a value",
+                    ));
+                }
+                headless_flag = true;
+            }
+            "--session" => {
+                let value = take_option_value(flag, inline_val, &mut iter)?;
+                if value.trim().is_empty() {
+                    return Err(CliUsageError::new("--session cannot be empty"));
+                }
+                session_flag = Some(value);
+            }
             "--profile" => {
                 let value = take_option_value(flag, inline_val, &mut iter)?;
                 if crate::profile::AppProfile::parse(&value).is_none() {
@@ -437,6 +460,12 @@ pub fn parse_cli_with_tui_gate(
         ));
     }
 
+    if session_flag.is_some() && cd_flag.is_some() {
+        return Err(CliUsageError::new(
+            "--cd cannot be combined with --session (a continued session keeps its own workspace)",
+        ));
+    }
+
     if (continue_flag || resume_flag.is_some()) && name_flag.is_some() {
         return Err(CliUsageError::new(
             "--name applies only to a new session and cannot be combined with --continue or --resume",
@@ -455,7 +484,8 @@ pub fn parse_cli_with_tui_gate(
 
     let has_tui_only_flags =
         continue_flag || resume_flag.is_some() || name_flag.is_some() || list_sessions;
-    let has_headless_only_flags = output_format.is_some() || timeout_secs.is_some();
+    let has_headless_only_flags =
+        output_format.is_some() || timeout_secs.is_some() || session_flag.is_some();
 
     if list_sessions {
         if prompt_flag.is_some()
@@ -516,6 +546,7 @@ pub fn parse_cli_with_tui_gate(
             execution_mode,
             output_format: output_format.unwrap_or_default(),
             timeout_secs,
+            session: session_flag.clone(),
         }));
     }
 
@@ -528,7 +559,7 @@ pub fn parse_cli_with_tui_gate(
         }
         if has_headless_only_flags {
             return Err(CliUsageError::new(
-                "--output-format and --timeout are only valid in headless mode (use -p / --prompt)",
+                "--output-format, --timeout, and --session are only valid in headless mode (use -p / --prompt)",
             ));
         }
         if pos_prompt.trim().is_empty() {
@@ -581,6 +612,7 @@ pub fn parse_cli_with_tui_gate(
                 execution_mode,
                 output_format: output_format.unwrap_or_default(),
                 timeout_secs,
+                session: session_flag.clone(),
             }));
         }
 
@@ -595,9 +627,9 @@ pub fn parse_cli_with_tui_gate(
         ));
     }
 
-    if has_headless_only_flags {
+    if has_headless_only_flags || headless_flag {
         return Err(CliUsageError::new(
-            "--output-format and --timeout are only valid in headless mode (use -p / --prompt)",
+            "--output-format, --timeout, and --session are only valid in headless mode (use -p / --prompt)",
         ));
     }
 
@@ -740,6 +772,80 @@ mod tests {
             .expect_err("--hook must be rejected");
         assert_eq!(err.exit_code(), exit_codes::USAGE_ERROR);
         assert!(err.message.contains("--hook"));
+    }
+
+    #[test]
+    fn headless_flag_and_session_continue_parse() {
+        let cmd = parse_cli(
+            &vec_args(&[
+                "--headless",
+                "--session",
+                "abc-123",
+                "-p",
+                "continue the work",
+            ]),
+            BOTH_TTY,
+            None,
+        )
+        .expect("--headless and --session parse with an explicit prompt");
+        match cmd {
+            LibletCommand::Headless(args) => {
+                assert_eq!(args.session.as_deref(), Some("abc-123"));
+                assert_eq!(args.prompt, "continue the work");
+            }
+            other => panic!("expected Headless, got {other:?}"),
+        }
+
+        let cmd = parse_cli(
+            &vec_args(&["--session=abc-123"]),
+            NO_TTY,
+            Some("piped prompt\n"),
+        )
+        .expect("--session with a piped prompt runs headless");
+        match cmd {
+            LibletCommand::Headless(args) => {
+                assert_eq!(args.session.as_deref(), Some("abc-123"))
+            }
+            other => panic!("expected Headless, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn session_or_headless_without_a_prompt_is_a_usage_error() {
+        for args in [vec!["--session", "abc-123"], vec!["--headless"]] {
+            let err = parse_cli(&vec_args(&args), BOTH_TTY, None)
+                .expect_err("headless flag without a prompt must fail");
+            assert_eq!(err.exit_code(), exit_codes::USAGE_ERROR);
+            assert!(err.message.contains("-p / --prompt"), "{}", err.message);
+        }
+
+        let err = parse_cli_with_tui_gate(&vec_args(&["--headless"]), BOTH_TTY, None, true)
+            .expect_err("--headless must never open the TUI, even with the dev flag");
+        assert_eq!(err.exit_code(), exit_codes::USAGE_ERROR);
+
+        let err_empty = parse_cli(&vec_args(&["--session", "  ", "-p", "hi"]), BOTH_TTY, None)
+            .expect_err("blank --session must fail");
+        assert_eq!(err_empty.exit_code(), exit_codes::USAGE_ERROR);
+    }
+
+    #[test]
+    fn session_conflicts_with_cd_and_list_sessions() {
+        let err = parse_cli(
+            &vec_args(&["--session", "abc", "-C", ".", "-p", "hi"]),
+            BOTH_TTY,
+            None,
+        )
+        .expect_err("--session + --cd must fail");
+        assert_eq!(err.exit_code(), exit_codes::USAGE_ERROR);
+        assert!(err.message.contains("--session"), "{}", err.message);
+
+        let err = parse_cli(
+            &vec_args(&["--list-sessions", "--session", "abc"]),
+            BOTH_TTY,
+            None,
+        )
+        .expect_err("--list-sessions + --session must fail");
+        assert_eq!(err.exit_code(), exit_codes::USAGE_ERROR);
     }
 
     #[test]

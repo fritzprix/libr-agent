@@ -23,6 +23,17 @@ fn main() {
         return;
     }
 
+    // `libragent --headless -p "..."` (#2859): run one headless command in
+    // this process instead of opening the GUI. `--session <id>` implies this
+    // mode. On Windows there is no bundled console-subsystem sibling to
+    // forward to (unlike `--tui`), so join the launching console first; the
+    // shell still cannot wait on a GUI-subsystem process, as the PE subsystem
+    // is fixed at link time (spike evidence in `tauri_mcp_agent_lib::tui`).
+    if tauri_mcp_agent_lib::headless::wants_headless() {
+        tauri_mcp_agent_lib::headless::attach_parent_console();
+        std::process::exit(tauri_mcp_agent_lib::headless::run_liblet_main());
+    }
+
     // `libragent --tui` (#2761). The TUI is a developer-only mode (#2861):
     // nothing user-facing advertises it, and it opens only with the hidden
     // `LIBRAGENT_ENABLE_TUI=1` flag. Windows forwards to the

@@ -42,7 +42,14 @@ pub struct EphemeralEnvironment {
 
 impl EphemeralEnvironment {
     /// Create a fresh ephemeral environment, snapshotting `source_db_path` if it exists.
-    pub fn create(source_db_path: Option<&Path>) -> Result<Self, String> {
+    ///
+    /// `keep_session` retains that session's `sessions` and `messages` rows in
+    /// the snapshot (`--session <id>` continuation, #2859); every other
+    /// session's rows are stripped and scrubbed as usual.
+    pub fn create(
+        source_db_path: Option<&Path>,
+        keep_session: Option<&str>,
+    ) -> Result<Self, String> {
         let temp_dir = tempfile::Builder::new()
             .prefix("liblet-headless-")
             .tempdir()
@@ -56,7 +63,7 @@ impl EphemeralEnvironment {
 
         if let Some(src) = source_db_path {
             if src.exists() && src.is_file() {
-                snapshot_sqlite_db_stripping_sessions(src, &db_path)?;
+                snapshot_sqlite_db_stripping_sessions(src, &db_path, keep_session)?;
             }
         }
 
@@ -71,9 +78,14 @@ impl EphemeralEnvironment {
 /// Copy `source_db` into `dest_db` using SQLite's transactionally consistent
 /// `VACUUM INTO` (read-only on `source_db`) and strip persisted session/message/task
 /// rows in `dest_db`.
+///
+/// With `keep_session`, that session's `sessions` and `messages` rows survive
+/// the strip (`--session <id>` continuation, #2859); all other rows are
+/// deleted and physically scrubbed exactly as before.
 pub fn snapshot_sqlite_db_stripping_sessions(
     source_db: &Path,
     dest_db: &Path,
+    keep_session: Option<&str>,
 ) -> Result<(), String> {
     if dest_db.exists() {
         let _ = std::fs::remove_file(dest_db);
@@ -100,7 +112,16 @@ pub fn snapshot_sqlite_db_stripping_sessions(
     let _ = dst_conn.execute_batch("PRAGMA foreign_keys = OFF;");
     for table in EPHEMERAL_RUNTIME_TABLES {
         // Ignore "no such table" if the source DB is from an older migration state.
-        let _ = dst_conn.execute(&format!("DELETE FROM {table};"), []);
+        let delete = match (keep_session, *table) {
+            (Some(session_id), "sessions") => {
+                dst_conn.execute("DELETE FROM sessions WHERE id <> ?1;", [session_id])
+            }
+            (Some(session_id), "messages") => {
+                dst_conn.execute("DELETE FROM messages WHERE session_id <> ?1;", [session_id])
+            }
+            _ => dst_conn.execute(&format!("DELETE FROM {table};"), []),
+        };
+        let _ = delete;
     }
     let _ = dst_conn.execute_batch("PRAGMA foreign_keys = ON;");
 

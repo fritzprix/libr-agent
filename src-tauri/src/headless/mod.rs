@@ -40,6 +40,53 @@ use tauri::Manager;
 use tempfile::TempDir;
 use tokio::sync::{watch, RwLock};
 
+/// Flag that selects in-process headless execution on `libragent` (#2859).
+pub const HEADLESS_FLAG: &str = "--headless";
+
+/// Session continuation flag; selecting it also selects headless dispatch on
+/// `libragent`, so `libragent --session <id> -p "..."` works without the
+/// marker (#2859).
+pub const SESSION_CONTINUATION_FLAG: &str = "--session";
+
+/// True when the given arguments select in-process headless execution.
+pub fn args_want_headless(args: impl IntoIterator<Item = impl AsRef<str>>) -> bool {
+    args.into_iter().any(|arg| {
+        let arg = arg.as_ref();
+        arg == HEADLESS_FLAG
+            || arg == SESSION_CONTINUATION_FLAG
+            || arg.starts_with(&format!("{SESSION_CONTINUATION_FLAG}="))
+    })
+}
+
+/// True when this process was started with [`HEADLESS_FLAG`] or `--session`.
+pub fn wants_headless() -> bool {
+    args_want_headless(std::env::args())
+}
+
+/// Windows: join the launching terminal so a GUI-subsystem `libragent` can
+/// write to its console in-process (#2859).
+///
+/// `libragent.exe` is `windows_subsystem = "windows"` and starts without a
+/// console. Rust opens its standard streams lazily on first use, so attaching
+/// before the first write is enough: `AttachConsole(ATTACH_PARENT_PROCESS)`
+/// points the process standard handles at the launching terminal and the
+/// streams pick them up there. No parent console (e.g. a double-click launch)
+/// is not an error — the run proceeds without terminal output, like any
+/// redirected headless process. Unlike `--tui`, this cannot forward to a
+/// console-subsystem sibling: `liblet` is not bundled with the release app.
+#[cfg(windows)]
+pub fn attach_parent_console() {
+    use windows_sys::Win32::System::Console::{AttachConsole, ATTACH_PARENT_PROCESS};
+
+    // SAFETY: ATTACH_PARENT_PROCESS is the documented "join my parent's
+    // console" argument; a failure just means there is no console to join.
+    unsafe { AttachConsole(ATTACH_PARENT_PROCESS) };
+}
+
+/// Non-Windows: console semantics are native, there is nothing to attach.
+#[cfg(not(windows))]
+pub fn attach_parent_console() {}
+
 /// Determine whether `liblet` should read piped `stdin` before parsing CLI flags.
 pub fn should_read_piped_stdin(args: &[String], tty: TtyState) -> bool {
     if tty.stdin_is_tty {
@@ -68,6 +115,64 @@ pub async fn init_ephemeral_database(db_path: &Path) -> Result<DatabaseConnectio
         .map_err(|e| format!("Failed to initialize ephemeral database: {e}"))
 }
 
+/// Point-in-time marker of the persisted history a run started from (#2859).
+///
+/// S8 (#2860) uses it as the merge-or-fork base when a `--session` run is
+/// written back to the profile DB. A fresh-session run captures an empty base.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionForkBase {
+    pub session_id: String,
+    pub message_count: i64,
+    pub last_message_id: Option<String>,
+}
+
+/// Count the session's persisted messages in the snapshot and find its newest
+/// one, so the fork base is identical whether the session was continued or
+/// just created.
+async fn capture_fork_base(
+    db: &DatabaseConnection,
+    session_id: &str,
+) -> Result<SessionForkBase, String> {
+    use crate::entity::message;
+    use sea_orm::sea_query::Expr;
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
+
+    let message_count: i64 = message::Entity::find()
+        .filter(message::Column::SessionId.eq(session_id))
+        .select_only()
+        .column_as(Expr::count(Expr::col(message::Column::Id)), "message_count")
+        .into_tuple()
+        .one(db)
+        .await
+        .map_err(|e| format!("Failed to count messages of session {session_id}: {e}"))?
+        .unwrap_or(0);
+    let last_message_id: Option<String> = message::Entity::find()
+        .filter(message::Column::SessionId.eq(session_id))
+        .select_only()
+        .column(message::Column::Id)
+        .order_by_desc(message::Column::CreatedAt)
+        .order_by_desc(message::Column::Id)
+        .limit(1)
+        .into_tuple()
+        .one(db)
+        .await
+        .map_err(|e| format!("Failed to read the last message of session {session_id}: {e}"))?;
+    Ok(SessionForkBase {
+        session_id: session_id.to_string(),
+        message_count,
+        last_message_id,
+    })
+}
+
+/// S8 (#2860) seam: merge or fork a finished headless run back into the
+/// profile database from its [`SessionForkBase`].
+///
+/// No-op in S7 — the run's rows live only in the ephemeral snapshot and are
+/// removed by [`cleanup_headless_run`].
+pub fn write_back_run(_runtime: &EphemeralHeadlessRuntime) -> Result<(), String> {
+    Ok(())
+}
+
 /// Self-contained ephemeral runtime context for a single headless run.
 ///
 /// Holds the isolated `TempDir` (`EphemeralEnvironment`), SeaORM connection to
@@ -82,15 +187,25 @@ pub struct EphemeralHeadlessRuntime {
     pub active_sessions: Arc<RwLock<HashMap<String, AgentSession>>>,
     pub resolved: ResolvedHeadlessConfig,
     pub session_id: String,
+    /// Persisted history the run started from, for the S8 write-back seam.
+    pub fork_base: SessionForkBase,
+    /// True when `--session <id>` continued an existing persisted session.
+    pub resumed: bool,
 }
 
 impl EphemeralHeadlessRuntime {
     /// Bootstrap an isolated ephemeral runtime from `source_db_path` and `HeadlessArgs`.
+    ///
+    /// With `args.session`, the run continues that persisted session (#2859):
+    /// the snapshot kept its rows, an unknown id fails clearly, and the
+    /// session's own model/provider/assistant/workspace win over profile
+    /// defaults (CLI flags still override). Otherwise a fresh
+    /// `headless-<uuid>` session is created as before.
     pub async fn bootstrap(
         source_db_path: Option<&Path>,
         args: &HeadlessArgs,
     ) -> Result<Self, String> {
-        let env = EphemeralEnvironment::create(source_db_path)?;
+        let env = EphemeralEnvironment::create(source_db_path, args.session.as_deref())?;
         let db = init_ephemeral_database(&env.db_path).await?;
 
         let settings_repo = SqliteSettingsRepository::new(db.clone());
@@ -98,46 +213,80 @@ impl EphemeralHeadlessRuntime {
         let session_repo: Arc<dyn SessionRepository> =
             Arc::new(SqliteSessionRepository::new(db.clone()));
 
-        let resolved = resolve_headless_config(args, &settings_repo, &assistant_repo).await?;
-        let session_id = format!("headless-{}", uuid::Uuid::new_v4());
+        let mut resolved = resolve_headless_config(args, &settings_repo, &assistant_repo).await?;
+        let existing_session = match args.session.as_deref() {
+            Some(id) => Some(
+                session_repo
+                    .get_session(id)
+                    .await
+                    .map_err(|e| format!("Failed to load session {id}: {e}"))?
+                    .ok_or_else(|| format!("Session not found: {id}"))?,
+            ),
+            None => None,
+        };
+        if let Some(existing) = existing_session.as_ref() {
+            Self::merge_resolved_with_session(args, &mut resolved, existing)?;
+        }
+
+        let resumed = existing_session.is_some();
+        let session_id = match existing_session.as_ref() {
+            Some(existing) => existing.id.clone(),
+            None => format!("headless-{}", uuid::Uuid::new_v4()),
+        };
         let now = chrono::Utc::now().timestamp_millis();
         let workspace_str = resolved.workspace_path.to_string_lossy().to_string();
 
-        let metadata = SessionMetadata {
-            id: session_id.clone(),
-            name: None,
-            status: SessionStatus::Idle,
-            model: resolved.model.clone(),
-            provider: resolved.provider.clone(),
-            assistant_id: resolved.assistant_id.clone(),
-            parent_session_id: None,
-            lineage_id: Some(session_id.clone()),
-            depth: Some(0),
-            max_depth: None,
-            max_fanout: None,
-            org_id: None,
-            org_name: None,
-            org_root_session_id: None,
-            created_at: now,
-            updated_at: now,
-            last_viewed_at: None,
-            last_message_at: None,
-            last_attention_at: None,
-            last_attention_reason: None,
-            is_bookmarked: false,
-            execution_mode: resolved.execution_mode,
-            workspace_override: Some(workspace_str),
-            workspace_isolation: args.isolation,
-            docker_config: None,
-            docker_container_name: None,
-            docker_host_workspace_path: None,
-            status_reason: None,
+        let metadata = match existing_session.as_ref() {
+            Some(existing) => SessionMetadata {
+                status: SessionStatus::Idle,
+                status_reason: None,
+                model: resolved.model.clone(),
+                provider: resolved.provider.clone(),
+                assistant_id: resolved.assistant_id.clone(),
+                execution_mode: resolved.execution_mode,
+                workspace_override: Some(workspace_str),
+                workspace_isolation: args.isolation,
+                updated_at: now,
+                ..(*existing).clone()
+            },
+            None => SessionMetadata {
+                id: session_id.clone(),
+                name: None,
+                status: SessionStatus::Idle,
+                model: resolved.model.clone(),
+                provider: resolved.provider.clone(),
+                assistant_id: resolved.assistant_id.clone(),
+                parent_session_id: None,
+                lineage_id: Some(session_id.clone()),
+                depth: Some(0),
+                max_depth: None,
+                max_fanout: None,
+                org_id: None,
+                org_name: None,
+                org_root_session_id: None,
+                created_at: now,
+                updated_at: now,
+                last_viewed_at: None,
+                last_message_at: None,
+                last_attention_at: None,
+                last_attention_reason: None,
+                is_bookmarked: false,
+                execution_mode: resolved.execution_mode,
+                workspace_override: Some(workspace_str),
+                workspace_isolation: args.isolation,
+                docker_config: None,
+                docker_container_name: None,
+                docker_host_workspace_path: None,
+                status_reason: None,
+            },
         };
 
         session_repo
             .upsert_session(&metadata)
             .await
             .map_err(|e| format!("Failed to create ephemeral session record: {e}"))?;
+
+        let fork_base = capture_fork_base(&db, &session_id).await?;
 
         let active_sessions = Arc::new(RwLock::new(HashMap::new()));
         let session = AgentSession::new(metadata, Arc::new(ContextRegistry::new()), None);
@@ -164,7 +313,33 @@ impl EphemeralHeadlessRuntime {
             active_sessions,
             resolved,
             session_id,
+            fork_base,
+            resumed,
         })
+    }
+
+    /// A continued session keeps its own model, provider, assistant, and
+    /// workspace; CLI flags still win, and profile defaults never replace the
+    /// session's own configuration (#2859).
+    fn merge_resolved_with_session(
+        args: &HeadlessArgs,
+        resolved: &mut ResolvedHeadlessConfig,
+        existing: &SessionMetadata,
+    ) -> Result<(), String> {
+        if args.model.is_none() {
+            resolved.model = existing.model.clone();
+        }
+        if args.provider.is_none() {
+            resolved.provider = existing.provider.clone();
+        }
+        if args.assistant.is_none() && existing.assistant_id.is_some() {
+            resolved.assistant_id = existing.assistant_id.clone();
+        }
+        if let Some(stored) = existing.workspace_override.as_deref() {
+            resolved.workspace_path = resolve_workspace_path(Some(Path::new(stored)))
+                .map_err(|e| format!("Workspace of session {} is unavailable: {e}", existing.id))?;
+        }
+        Ok(())
     }
 
     /// Run a headless turn using a custom async turn driver and monitor it to completion.
@@ -251,6 +426,12 @@ impl EphemeralHeadlessRuntime {
         // still hold a pooled SQLite connection, and Windows (unlike Linux)
         // refuses to delete a file while a handle to it is open.
         let _ = driver_handle.await;
+
+        // S8 (#2860) seam: the run's rows are still present here, so the
+        // write-back must happen before cleanup removes them.
+        if let Err(err) = write_back_run(&self) {
+            eprintln!("warning: headless write-back failed: {err}");
+        }
 
         cleanup_headless_run(
             &self.session_id,
@@ -489,6 +670,21 @@ pub fn run_headless_with_hidden_webview(args: HeadlessArgs) -> i32 {
         let _ = crate::services::assistant_init::ensure_default_assistants_hardcoded().await;
         runtime.resolved =
             resolve_headless_config(&args, &runtime.settings_repo, &runtime.assistant_repo).await?;
+        if let Some(id) = args.session.as_deref() {
+            // Re-apply the continued session's own configuration: re-resolution
+            // above reads profile defaults, which must not replace the session.
+            let existing = runtime
+                .session_repo
+                .get_session(id)
+                .await
+                .map_err(|e| format!("Failed to load session {id}: {e}"))?
+                .ok_or_else(|| format!("Session not found: {id}"))?;
+            EphemeralHeadlessRuntime::merge_resolved_with_session(
+                &args,
+                &mut runtime.resolved,
+                &existing,
+            )?;
+        }
         Ok::<(), String>(())
     }) {
         tauri::async_runtime::block_on(cleanup_headless_run(
@@ -667,18 +863,25 @@ async fn run_hidden_webview_turn(
             .await;
     }
 
-    agent_manager
-        .create_session_with_repo(
-            agent_manager.repositories().session.clone(),
-            session_id.to_string(),
-            None,
-            Some(resolved.model.clone()),
-            Some(resolved.provider.clone()),
-            resolved.agent_config.clone(),
-            args.isolation,
-            None,
-        )
-        .await?;
+    if args.session.is_some() {
+        // Continue the persisted session (#2859): resume loads its metadata,
+        // MCP bindings, and compact context from the snapshot instead of
+        // re-creating the row, which would reset name/lineage/created_at.
+        agent_manager.resume_session(session_id).await?;
+    } else {
+        agent_manager
+            .create_session_with_repo(
+                agent_manager.repositories().session.clone(),
+                session_id.to_string(),
+                None,
+                Some(resolved.model.clone()),
+                Some(resolved.provider.clone()),
+                resolved.agent_config.clone(),
+                args.isolation,
+                None,
+            )
+            .await?;
+    }
 
     let _ = crate::agent::session_manager::execution_mode::set_execution_mode(
         agent_manager,
