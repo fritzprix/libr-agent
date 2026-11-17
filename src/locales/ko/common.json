@@ -275,7 +275,9 @@
       "subagentsCount_other": "+{{count}}개의 하위 에이전트",
       "subagentsKept": "하위 에이전트 유지됨",
       "bookmarkedBadge": "북마크됨",
-      "openElsewhere": "다른 곳에서 열림"
+      "openElsewhere": "다른 곳에서 열림",
+      "forked": "포크됨",
+      "forkedFrom": "세션 {{id}}에서 포크됨"
     },
     "actions": {
       "view": "보기",

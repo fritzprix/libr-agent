@@ -275,7 +275,9 @@
       "subagentsCount_other": "+{{count}} Subagenten",
       "subagentsKept": "Subagenten behalten",
       "bookmarkedBadge": "Gespeichert",
-      "openElsewhere": "Anderweitig geöffnet"
+      "openElsewhere": "Anderweitig geöffnet",
+      "forked": "Fork",
+      "forkedFrom": "Von Sitzung {{id}} geforkt"
     },
     "actions": {
       "view": "Ansehen",

@@ -39,6 +39,8 @@ export interface AgentSession {
   provisioningStep?: string;
   /** Why the session has its current status, for example a Docker setup failure. */
   statusReason?: string;
+  /** Forked from another session id by a headless write-back (#2860). */
+  forkedFrom?: string;
   /**
    * Owned by another frontend process (#2759): the backend refuses entry.
    * Set only for session-list rows.

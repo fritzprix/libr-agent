@@ -335,6 +335,11 @@ export interface AgentSessionMetadata {
   /** Why the session has its current status, for example a Docker setup failure. */
   statusReason?: string | null;
   /**
+   * Original session id when a `--session` headless run was written back as
+   * a fork instead of a merge (#2860).
+   */
+  forkedFrom?: string | null;
+  /**
    * True while a different frontend process owns the session (#2759).
    * Only present on `agent_list_sessions` items; opening/resuming/sending to
    * such a session is refused by the backend.

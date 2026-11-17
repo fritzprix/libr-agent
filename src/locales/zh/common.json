@@ -275,7 +275,9 @@
       "subagentsCount_other": "+{{count}} 个子代理",
       "subagentsKept": "保留子代理",
       "bookmarkedBadge": "已收藏",
-      "openElsewhere": "已在其他地方打开"
+      "openElsewhere": "已在其他地方打开",
+      "forked": "已分叉",
+      "forkedFrom": "从会话 {{id}} 分叉而来"
     },
     "actions": {
       "view": "查看",

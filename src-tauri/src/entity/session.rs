@@ -32,6 +32,9 @@ pub struct Model {
     pub docker_container_name: Option<String>,
     pub docker_host_workspace_path: Option<String>,
     pub status_reason: Option<String>,
+    /// Original session id when this session was written back as a fork by a
+    /// `--session` headless run (#2860); NULL for merged or fresh sessions.
+    pub forked_from: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

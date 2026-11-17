@@ -42,6 +42,7 @@ fn build_session(id: &str, updated_at: i64) -> SessionMetadata {
         docker_container_name: None,
         docker_host_workspace_path: None,
         status_reason: None,
+        forked_from: None,
     }
 }
 

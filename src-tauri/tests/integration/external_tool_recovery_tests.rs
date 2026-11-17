@@ -147,6 +147,7 @@ async fn detached_external_server_returns_delegate_or_attach_guidance() {
             docker_container_name: None,
             docker_host_workspace_path: None,
             status_reason: None,
+            forked_from: None,
         })
         .await
         .expect("session should insert");
@@ -277,6 +278,7 @@ async fn external_call_reconfigures_existing_builtin_only_proxy() {
             docker_container_name: None,
             docker_host_workspace_path: None,
             status_reason: None,
+            forked_from: None,
         })
         .await
         .expect("session should insert");

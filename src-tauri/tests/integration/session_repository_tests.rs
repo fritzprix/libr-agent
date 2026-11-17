@@ -44,6 +44,7 @@ fn build_session(id: &str, updated_at: i64) -> SessionMetadata {
         docker_container_name: None,
         docker_host_workspace_path: None,
         status_reason: None,
+        forked_from: None,
     }
 }
 
@@ -362,6 +363,7 @@ async fn get_session_reads_execution_mode_column() {
         docker_container_name: Set(None),
         docker_host_workspace_path: Set(None),
         status_reason: Set(None),
+        forked_from: Set(None),
     }
     .insert(&db)
     .await

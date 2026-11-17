@@ -191,6 +191,10 @@ pub struct SessionMetadata {
     /// Any status change without a reason clears it.
     #[serde(default)]
     pub status_reason: Option<String>,
+    /// Original session id when a `--session` headless run was written back
+    /// as a fork instead of merging (#2860); `None` for merged or fresh sessions.
+    #[serde(default)]
+    pub forked_from: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -263,6 +267,7 @@ impl TryFrom<session::Model> for SessionMetadata {
             docker_container_name: model.docker_container_name,
             docker_host_workspace_path: model.docker_host_workspace_path,
             status_reason: model.status_reason,
+            forked_from: model.forked_from,
         })
     }
 }
@@ -447,6 +452,7 @@ impl SqliteSessionRepository {
             docker_container_name: Set(session.docker_container_name.clone()),
             docker_host_workspace_path: Set(session.docker_host_workspace_path.clone()),
             status_reason: Set(session.status_reason.clone()),
+            forked_from: Set(session.forked_from.clone()),
         })
     }
 
@@ -874,6 +880,7 @@ impl SessionMetadata {
             docker_container_name: None,
             docker_host_workspace_path: None,
             status_reason: None,
+            forked_from: None,
         }
     }
 }

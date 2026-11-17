@@ -10,6 +10,7 @@ pub mod cli;
 pub mod ephemeral_db;
 pub mod output;
 pub mod runner;
+pub mod writeback;
 
 use crate::agent::context::registry::ContextRegistry;
 use crate::agent::session_manager::execution_mode::set_execution_mode_in;
@@ -203,13 +204,14 @@ async fn capture_fork_base(
     })
 }
 
-/// S8 (#2860) seam: merge or fork a finished headless run back into the
-/// profile database from its [`SessionForkBase`].
-///
-/// No-op in S7 — the run's rows live only in the ephemeral snapshot and are
-/// removed by [`cleanup_headless_run`].
-pub fn write_back_run(_runtime: &EphemeralHeadlessRuntime) -> Result<(), String> {
-    Ok(())
+/// Write a finished headless run's history back into the profile database
+/// (#2860): merge into the original `--session` when it is unchanged and not
+/// open elsewhere, fork it otherwise, and insert a fresh run's rows as one
+/// new session. See [`writeback`] for the full rules.
+pub fn write_back_run(
+    runtime: &EphemeralHeadlessRuntime,
+) -> Result<writeback::WriteBackOutcome, String> {
+    writeback::write_back_run(runtime)
 }
 
 /// Self-contained ephemeral runtime context for a single headless run.
@@ -317,6 +319,7 @@ impl EphemeralHeadlessRuntime {
                 docker_container_name: None,
                 docker_host_workspace_path: None,
                 status_reason: None,
+                forked_from: None,
             },
         };
 
@@ -458,7 +461,7 @@ impl EphemeralHeadlessRuntime {
             poll_interval: Duration::from_millis(15),
         };
 
-        let payload = monitor_headless_session(monitor_params, interrupt_rx, stdout).await;
+        let mut payload = monitor_headless_session(monitor_params, interrupt_rx, stdout).await;
 
         driver_handle.abort();
         // Reap the aborted driver task before teardown: an unreaped task can
@@ -466,11 +469,16 @@ impl EphemeralHeadlessRuntime {
         // refuses to delete a file while a handle to it is open.
         let _ = driver_handle.await;
 
-        // S8 (#2860) seam: the run's rows are still present here, so the
-        // write-back must happen before cleanup removes them.
-        if let Err(err) = write_back_run(&self) {
-            eprintln!("warning: headless write-back failed: {err}");
-        }
+        // S8 (#2860): the run's rows are still present here, so the
+        // write-back must happen before cleanup removes them. It covers
+        // every terminal status: the monitor returned, so the run is over.
+        let write_back = match write_back_run(&self) {
+            Ok(outcome) => Some(outcome),
+            Err(err) => {
+                eprintln!("warning: headless write-back failed: {err}");
+                None
+            }
+        };
 
         cleanup_headless_run(
             &self.session_id,
@@ -480,6 +488,13 @@ impl EphemeralHeadlessRuntime {
             &self.env.temp_dir,
         )
         .await;
+
+        // Report the profile-database session this run ended as, before the
+        // final result line is emitted (#2860).
+        if let Some(outcome) = write_back {
+            payload.session_id = outcome.session_id;
+            payload.forked_from = outcome.forked_from;
+        }
 
         let _ = write_final_output(args.output_format, &payload, stdout, stderr);
         payload
