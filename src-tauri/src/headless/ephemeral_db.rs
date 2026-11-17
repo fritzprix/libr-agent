@@ -75,13 +75,31 @@ impl EphemeralEnvironment {
     }
 }
 
+/// Session-owned tables whose rows are filtered by `session_id` instead of
+/// emptied when `keep_session` continues a session (#2859). Everything else in
+/// [`EPHEMERAL_RUNTIME_TABLES`] is always emptied:
+/// - `pending_queue` — its rows are in-flight approvals of a run that no
+///   longer exists; replaying them in a new run would surface dead prompts.
+/// - `scheduled_tasks` — the scheduler belongs to the GUI backend (#2857); a
+///   headless run must not see or fire tasks.
+const KEEP_SESSION_TABLES: &[&str] = &[
+    "messages",
+    "compact_contexts",
+    "planning_todos",
+    "planning_goals",
+    "planning_scratchpad",
+];
+
 /// Copy `source_db` into `dest_db` using SQLite's transactionally consistent
 /// `VACUUM INTO` (read-only on `source_db`) and strip persisted session/message/task
 /// rows in `dest_db`.
 ///
-/// With `keep_session`, that session's `sessions` and `messages` rows survive
-/// the strip (`--session <id>` continuation, #2859); all other rows are
-/// deleted and physically scrubbed exactly as before.
+/// With `keep_session`, that session's `sessions` row survives, plus its rows
+/// in [`KEEP_SESSION_TABLES`] (message history, compact context, and planning
+/// state), so a continued session resumes exactly where the GUI left it
+/// (`--session <id>` continuation, #2859). `pending_queue` and
+/// `scheduled_tasks` are emptied entirely (reasons in [`KEEP_SESSION_TABLES`]);
+/// all other sessions' rows are deleted and physically scrubbed as before.
 pub fn snapshot_sqlite_db_stripping_sessions(
     source_db: &Path,
     dest_db: &Path,
@@ -116,9 +134,10 @@ pub fn snapshot_sqlite_db_stripping_sessions(
             (Some(session_id), "sessions") => {
                 dst_conn.execute("DELETE FROM sessions WHERE id <> ?1;", [session_id])
             }
-            (Some(session_id), "messages") => {
-                dst_conn.execute("DELETE FROM messages WHERE session_id <> ?1;", [session_id])
-            }
+            (Some(session_id), table) if KEEP_SESSION_TABLES.contains(&table) => dst_conn.execute(
+                &format!("DELETE FROM {table} WHERE session_id <> ?1;"),
+                [session_id],
+            ),
             _ => dst_conn.execute(&format!("DELETE FROM {table};"), []),
         };
         let _ = delete;

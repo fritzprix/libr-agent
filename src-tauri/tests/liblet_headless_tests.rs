@@ -799,6 +799,51 @@ async fn seed_continuable_session(db_path: &std::path::Path, workspace: &std::pa
 
     insert_session_messages(db_path, "s-cont", &[("m-1", 500), ("m-2", 600)]);
     insert_session_messages(db_path, "s-other", &[("m-other", 700)]);
+    seed_per_session_state(db_path, "s-cont", "m-1", 1);
+    seed_per_session_state(db_path, "s-other", "m-other", 2);
+}
+
+/// One row per session-owned state table for one session, so the snapshot
+/// keep-filters can be verified by counting rows (#2859 G1.1). The
+/// `pending_queue` row references a real message (`pending_queue.message_id`
+/// has a foreign key to `messages.id`).
+fn seed_per_session_state(
+    db_path: &std::path::Path,
+    session_id: &str,
+    message_id: &str,
+    queue_seq: i64,
+) {
+    let conn = rusqlite::Connection::open(db_path).unwrap();
+    conn.execute(
+        "INSERT INTO compact_contexts (id, session_id, to_id, summary, created_at) \
+         VALUES (?1, ?2, 'to-1', 'summary', 1000)",
+        rusqlite::params![format!("cc-{session_id}"), session_id],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO planning_goals (session_id, goal_text, status, created_at) \
+         VALUES (?1, 'goal', 'active', 1000)",
+        [session_id],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO planning_todos (session_id, content, priority, is_checked, status, \
+         created_at, updated_at) VALUES (?1, 'todo', 'medium', 0, 'pending', 1000, 1000)",
+        [session_id],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO planning_scratchpad (session_id, content, created_at, updated_at) \
+         VALUES (?1, 'note', 1000, 1000)",
+        [session_id],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO pending_queue (message_id, session_id, created_at, queue_seq) \
+         VALUES (?1, ?2, 1000, ?3)",
+        rusqlite::params![message_id, session_id, queue_seq],
+    )
+    .unwrap();
 }
 
 fn session_template() -> SessionMetadata {
@@ -851,6 +896,22 @@ async fn snapshot_keep_session_retains_only_that_sessions_rows() {
 
     assert_eq!(count_rows(&dst, "sessions"), 1);
     assert_eq!(count_rows(&dst, "messages"), 2);
+    // The continued session keeps its compact context and planning state;
+    // the other session's rows in the same tables are stripped (#2859 G1.1).
+    for table in [
+        "compact_contexts",
+        "planning_todos",
+        "planning_goals",
+        "planning_scratchpad",
+    ] {
+        assert_eq!(
+            count_rows(&dst, table),
+            1,
+            "kept session's {table} row survives"
+        );
+    }
+    // pending_queue belongs to a run that no longer exists: always emptied.
+    assert_eq!(count_rows(&dst, "pending_queue"), 0);
     // The source is opened read-only: continuation must not touch it.
     assert_eq!(count_rows(&src, "sessions"), 2);
     assert_eq!(count_rows(&src, "messages"), 3);
@@ -902,6 +963,27 @@ async fn bootstrap_session_continuation_keeps_identity_and_fork_base() {
     let snapshot_rows = count_rows(&runtime.env.db_path, "messages");
     assert_eq!(snapshot_rows, 2);
     assert_eq!(count_rows(&src, "messages"), 3);
+
+    drop(runtime);
+}
+
+#[tokio::test]
+async fn bootstrap_session_cli_flags_override_the_sessions_own_config() {
+    let src_dir = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+    let src = src_dir.path().join("profile.db");
+    seed_continuable_session(&src, workspace.path()).await;
+
+    let mut args = default_headless_args("continue", workspace.path());
+    args.session = Some("s-cont".to_string());
+    args.model = Some("flag-model".to_string());
+    let runtime = EphemeralHeadlessRuntime::bootstrap(Some(&src), &args)
+        .await
+        .expect("bootstrap --session with --model");
+
+    // `--model` wins; the un-flagged provider falls back to the session's own.
+    assert_eq!(runtime.resolved.model, "flag-model");
+    assert_eq!(runtime.resolved.provider, "openai");
 
     drop(runtime);
 }

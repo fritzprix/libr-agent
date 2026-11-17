@@ -48,14 +48,53 @@ pub const HEADLESS_FLAG: &str = "--headless";
 /// marker (#2859).
 pub const SESSION_CONTINUATION_FLAG: &str = "--session";
 
+/// Flags whose next argv token is their value, never a flag. Mirrors the
+/// value-taking options of [`cli::parse_cli`]; keep the two in sync.
+const ARGS_TAKING_VALUE: &[&str] = &[
+    "-p",
+    "--prompt",
+    "-C",
+    "--cd",
+    "--assistant",
+    "--model",
+    "--provider",
+    "--isolation",
+    "--execution-mode",
+    "--output-format",
+    "--timeout",
+    "--resume",
+    "--name",
+    "--profile",
+];
+
 /// True when the given arguments select in-process headless execution.
+///
+/// Scans argv like flags, not like substrings: scanning stops at the first
+/// `--`, and the value token of a value-taking option is skipped, so a prompt
+/// that happens to read `--headless` or `--session` never dispatches here.
 pub fn args_want_headless(args: impl IntoIterator<Item = impl AsRef<str>>) -> bool {
-    args.into_iter().any(|arg| {
+    let mut skip_value = false;
+    for arg in args {
         let arg = arg.as_ref();
-        arg == HEADLESS_FLAG
+        if arg == "--" {
+            break;
+        }
+        if skip_value {
+            skip_value = false;
+            continue;
+        }
+        if arg == HEADLESS_FLAG
             || arg == SESSION_CONTINUATION_FLAG
             || arg.starts_with(&format!("{SESSION_CONTINUATION_FLAG}="))
-    })
+        {
+            return true;
+        }
+        // `--flag=value` carries its value inline and consumes no next token.
+        if !arg.contains('=') && ARGS_TAKING_VALUE.contains(&arg) {
+            skip_value = true;
+        }
+    }
+    false
 }
 
 /// True when this process was started with [`HEADLESS_FLAG`] or `--session`.
@@ -973,4 +1012,32 @@ fn run_liblet_tui_entry() -> i32 {
         "error: interactive TUI / shared-backend attach is not available; pass -p / --prompt <text> for headless execution."
     );
     exit_codes::ERROR
+}
+
+#[cfg(test)]
+mod tests {
+    use super::args_want_headless;
+
+    fn argv(args: &[&str]) -> Vec<String> {
+        args.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    #[test]
+    fn headless_and_session_flags_select_headless_dispatch() {
+        assert!(args_want_headless(argv(&["--headless", "-p", "hi"])));
+        assert!(args_want_headless(argv(&["-p", "hi", "--headless"])));
+        assert!(args_want_headless(argv(&["--session", "s-1", "-p", "hi"])));
+        assert!(args_want_headless(argv(&["--session=s-1"])));
+    }
+
+    #[test]
+    fn option_values_never_select_headless_dispatch() {
+        // A value token that reads like a flag is still just a value.
+        assert!(!args_want_headless(argv(&["-p", "--session"])));
+        assert!(!args_want_headless(argv(&["--assistant", "--headless"])));
+        // After `--`, everything is a positional prompt.
+        assert!(!args_want_headless(argv(&["--", "--headless"])));
+        assert!(!args_want_headless(argv(&[])));
+        assert!(!args_want_headless(argv(&["--headlined"])));
+    }
 }
