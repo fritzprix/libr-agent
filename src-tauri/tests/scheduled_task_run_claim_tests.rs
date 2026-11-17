@@ -244,3 +244,72 @@ async fn a_claim_without_an_expiry_self_heals_to_free() {
         "a holder-without-expiry claim is treated as free"
     );
 }
+
+#[tokio::test]
+async fn a_released_after_record_run_claim_cannot_refire_the_task() {
+    // Gatekeeper G1.1 (#2857): backend B listed the due row before backend A
+    // ran it. A claims, records its run (next_run_at moves to the future),
+    // and releases. B reaches the task from its stale list afterwards — the
+    // claim's due re-check must refuse B so the task fires exactly once.
+    let db = setup_isolated_db().await;
+    let repo = SqliteScheduledTaskRepository::new(db);
+    let due_at = now_ms() - 1_000;
+    seed_due_task(&repo, "task-refire", due_at).await;
+
+    let now = now_ms();
+    assert!(repo
+        .try_claim_run("task-refire", "run-a", now, now + 600_000)
+        .await
+        .expect("claim a"));
+    let next = now + 60_000;
+    repo.record_run("task-refire", None, now, Some(next))
+        .await
+        .expect("record run");
+    repo.release_run_claim("task-refire", "run-a")
+        .await
+        .expect("release a");
+
+    assert!(
+        !repo
+            .try_claim_run("task-refire", "run-b", now, now + 600_000)
+            .await
+            .expect("late claim b"),
+        "a released claim must not let a stale due-list re-fire the recorded run"
+    );
+}
+
+#[tokio::test]
+async fn a_disabled_task_cannot_be_claimed() {
+    let db = setup_isolated_db().await;
+    let repo = SqliteScheduledTaskRepository::new(db.clone());
+    seed_due_task(&repo, "task-disabled", now_ms() - 1_000).await;
+
+    // (disabled between list and claim: the claim re-checks enabled too)
+    let now = now_ms();
+    assert!(repo
+        .try_claim_run("task-disabled", "run-a", now, now + 600_000)
+        .await
+        .expect("claim while enabled"));
+    repo.release_run_claim("task-disabled", "run-a")
+        .await
+        .expect("release");
+
+    use sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, Set};
+    use tauri_mcp_agent_lib::entity::scheduled_task;
+    let mut active = scheduled_task::Entity::find_by_id("task-disabled")
+        .one(&db)
+        .await
+        .expect("find")
+        .expect("exists")
+        .into_active_model();
+    active.enabled = Set(false);
+    active.save(&db).await.expect("disable");
+
+    assert!(
+        !repo
+            .try_claim_run("task-disabled", "run-b", now, now + 600_000)
+            .await
+            .expect("claim disabled"),
+        "a task disabled between list and claim must not be claimed"
+    );
+}

@@ -83,12 +83,17 @@ pub trait ScheduledTaskRepository: Send + Sync {
 
     /// Atomically claim this task's next execution for `run_id` (#2857).
     ///
-    /// One conditional `UPDATE` grants the claim only while the row carries no
-    /// live claim: free (`run_claim_run` NULL), lapsed (`run_claim_expires_at`
-    /// <= `now_ms`), or already held by `run_id` (re-entrant refresh). Two
-    /// backends on one profile therefore never both fire the same due task —
-    /// the loser reads `rows_affected == 0` and skips. `updated_at` is left
-    /// untouched: one-shot pause semantics read it as the pause timestamp.
+    /// One conditional `UPDATE` carries the whole "due" decision: it grants
+    /// the claim only while the row is enabled, still due (`next_run_at`
+    /// <= `now_ms`), and carries no live claim — free (`run_claim_run` NULL),
+    /// lapsed (`run_claim_expires_at` <= `now_ms`), or already held by
+    /// `run_id` (re-entrant refresh). Two backends on one profile therefore
+    /// never both fire the same due task: the loser reads
+    /// `rows_affected == 0` and skips. The due re-check also closes the
+    /// stale-list window — a scheduler whose `list_due_tasks` predates the
+    /// winner's `record_run` (which advanced `next_run_at`) claims nothing
+    /// even after the winner released. `updated_at` is left untouched:
+    /// one-shot pause semantics read it as the pause timestamp.
     async fn try_claim_run(
         &self,
         id: &str,
@@ -283,6 +288,11 @@ impl ScheduledTaskRepository for SqliteScheduledTaskRepository {
                 Expr::value(expires_at),
             )
             .filter(scheduled_task::Column::Id.eq(id))
+            // The claim carries the whole due decision (#2857 G1.1): a row
+            // that `record_run` already advanced, or that was disabled in
+            // the meantime, claims nothing even after the holder released.
+            .filter(scheduled_task::Column::Enabled.eq(true))
+            .filter(scheduled_task::Column::NextRunAt.lte(now_ms))
             .filter(
                 Condition::any()
                     .add(scheduled_task::Column::RunClaimRun.is_null())

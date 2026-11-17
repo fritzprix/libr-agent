@@ -1035,6 +1035,8 @@ fn sample_session_task(
         enabled,
         last_run_at: None,
         next_run_at,
+        run_claim_run: None,
+        run_claim_expires_at: None,
         created_at: 1_000,
         updated_at,
     }
