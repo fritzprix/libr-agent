@@ -33,8 +33,9 @@ use tauri_mcp_agent_lib::repositories::scheduled_task_repository::{
     CreateScheduledTaskParams, ScheduledTaskRepository, SqliteScheduledTaskRepository,
 };
 use tauri_mcp_agent_lib::repositories::{
-    AssistantRepository, SessionMetadata, SessionRepository, SessionStatus, SettingsRepository,
-    SqliteAssistantRepository, SqliteSessionRepository, SqliteSettingsRepository,
+    AssistantRepository, MessageRepository, SessionMetadata, SessionRepository, SessionStatus,
+    SettingsRepository, SqliteAssistantRepository, SqliteSessionRepository,
+    SqliteSettingsRepository,
 };
 use tauri_mcp_agent_lib::scheduled::TASK_CATEGORY_GLOBAL;
 use tempfile::TempDir;
@@ -2005,4 +2006,416 @@ async fn run_with_driver_fork_reports_forked_from_in_payload_and_json() {
         ),
         3
     );
+}
+
+// ---------------------------------------------------------------------------
+// `--inspect-session` (#2874): read-only digest and single-turn drill-down.
+// The fixture writes every row through the production writer (migrations +
+// repositories), so inspect reads exactly the persisted JSON formats (#2877
+// G1.2).
+// ---------------------------------------------------------------------------
+
+fn inspect_args(
+    session_id: &str,
+    turn: Option<usize>,
+    message: Option<String>,
+    output_format: OutputFormat,
+) -> tauri_mcp_agent_lib::headless::cli::InspectSessionArgs {
+    tauri_mcp_agent_lib::headless::cli::InspectSessionArgs {
+        session_id: session_id.to_string(),
+        turn,
+        message,
+        output_format,
+    }
+}
+
+fn inspect_text(text: &str) -> Vec<MCPContent> {
+    vec![MCPContent::Text {
+        text: text.to_string(),
+    }]
+}
+
+fn inspect_message(
+    id: &str,
+    session_id: &str,
+    role: &str,
+    content: Vec<MCPContent>,
+    created_at: i64,
+) -> Message {
+    Message {
+        id: id.to_string(),
+        session_id: session_id.to_string(),
+        role: role.to_string(),
+        content,
+        tool_calls: None,
+        tool_call_id: None,
+        is_streaming: None,
+        thinking: None,
+        thinking_signature: None,
+        assistant_id: None,
+        attachments: None,
+        tool_use: None,
+        usage: None,
+        prompt_tokens: None,
+        created_at,
+        updated_at: created_at,
+        source: None,
+        error: None,
+        metadata: None,
+    }
+}
+
+/// A profile database holding one inspectable session (`s-main`), one forked
+/// session (`s-fork`, forked from `s-main`), and a foreign session
+/// (`s-other`) whose messages must never leak into the digest. Sessions go
+/// through `SqliteSessionRepository` and messages through
+/// `SqliteMessageRepository`, so `content` lands as the JSON of
+/// `Vec<MCPContent>` and tool failures as the `{"toolError":true}` error
+/// envelope exactly as production persists them.
+async fn profile_db_for_inspect(db_path: &std::path::Path) {
+    let db = init_ephemeral_database(db_path).await.unwrap();
+    let sessions = SqliteSessionRepository::new(db.clone());
+    for (id, status, reason, workspace, forked_from) in [
+        ("s-main", SessionStatus::Idle, None, "/ws/main", None),
+        (
+            "s-fork",
+            SessionStatus::Paused,
+            Some("user-stop"),
+            "/ws/fork",
+            Some("s-main"),
+        ),
+        ("s-other", SessionStatus::Idle, None, "/ws/other", None),
+    ] {
+        sessions
+            .upsert_session(&SessionMetadata {
+                id: id.to_string(),
+                status,
+                status_reason: reason.map(str::to_string),
+                workspace_override: Some(workspace.to_string()),
+                forked_from: forked_from.map(str::to_string),
+                created_at: 100,
+                updated_at: 900,
+                ..session_template()
+            })
+            .await
+            .unwrap();
+    }
+
+    // a-1 carries two tool calls: call-1 fails (toolError envelope), call-2
+    // succeeds with only structuredContent — a non-null error column that
+    // must NOT be reported as an error (G1.1). Both bodies are long enough
+    // that the digest preview truncates their marker tails.
+    let long_content = format!(
+        "lorem ipsum {} FULL_BODY_MARKER_ZX9 tail",
+        "lorem ".repeat(40)
+    );
+    let tool_body = format!("ls output {} TOOL_BODY_MARKER_Q7", "out ".repeat(60));
+    let messages = tauri_mcp_agent_lib::repositories::SqliteMessageRepository::new(db.clone());
+    let mut a_1 = inspect_message(
+        "a-1",
+        "s-main",
+        "assistant",
+        inspect_text(&long_content),
+        900,
+    );
+    a_1.tool_calls = Some(vec![
+        ToolCall {
+            id: "call-1".to_string(),
+            r#type: "function".to_string(),
+            function: ToolCallFunction {
+                name: "exec_command".to_string(),
+                arguments: r#"{"command":"ls -la"}"#.to_string(),
+            },
+        },
+        ToolCall {
+            id: "call-2".to_string(),
+            r#type: "function".to_string(),
+            function: ToolCallFunction {
+                name: "read_file".to_string(),
+                arguments: r#"{"path":"README.md"}"#.to_string(),
+            },
+        },
+    ]);
+    let mut t_1 = inspect_message(
+        "t-1",
+        "s-main",
+        "tool",
+        inspect_text("command failed: no such file"),
+        901,
+    );
+    t_1.tool_call_id = Some("call-1".to_string());
+    t_1.metadata = Some(json!({"toolError": true}));
+    let mut t_2 = inspect_message("t-2", "s-main", "tool", inspect_text(&tool_body), 902);
+    t_2.tool_call_id = Some("call-2".to_string());
+    t_2.metadata = Some(json!({"structuredContent": {"count": 2}}));
+    for message in [
+        inspect_message("m-1", "s-main", "user", inspect_text("hello world"), 500),
+        inspect_message("m-2", "s-main", "user", inspect_text("second prompt"), 600),
+        a_1,
+        t_1,
+        t_2,
+        inspect_message("f-1", "s-fork", "user", inspect_text("forked msg"), 700),
+        inspect_message("o-1", "s-other", "user", inspect_text("foreign msg"), 800),
+    ] {
+        messages.insert(&message).await.unwrap();
+    }
+    drop(db);
+}
+
+#[tokio::test]
+async fn inspect_session_digest_summarizes_without_full_bodies() {
+    use tauri_mcp_agent_lib::headless::run_inspect_session;
+    let db_dir = TempDir::new().unwrap();
+    let db_path = db_dir.path().join("profile.db");
+    profile_db_for_inspect(&db_path).await;
+
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    let code = run_inspect_session(
+        &inspect_args("s-main", None, None, OutputFormat::Json),
+        &db_path,
+        &mut out,
+        &mut err,
+    );
+
+    assert_eq!(code, exit_codes::SUCCESS);
+    assert!(err.is_empty());
+    let digest: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(digest["type"], "session-digest");
+    assert_eq!(digest["session"]["id"], "s-main");
+    assert!(digest["session"]["forkedFrom"].is_null());
+    // Only s-main's five messages, in persisted order.
+    let turns = digest["turns"].as_array().unwrap();
+    assert_eq!(turns.len(), 5);
+    assert_eq!(turns[0]["messageId"], "m-1");
+    assert_eq!(turns[4]["messageId"], "t-2");
+    // Plain text previews, not the persisted JSON wrapper.
+    assert_eq!(turns[0]["contentPreview"], "hello world");
+    let assistant = &turns[2];
+    assert_eq!(assistant["role"], "assistant");
+    let preview = assistant["contentPreview"].as_str().unwrap();
+    assert!(preview.starts_with("lorem ipsum"), "{preview}");
+    assert!(
+        preview.chars().count() <= 121,
+        "preview too long: {preview}"
+    );
+    assert!(preview.ends_with('…'));
+    // Failed call reports the tool's error text; the structuredContent-only
+    // success is not an error even though its error column is non-null.
+    let calls = assistant["toolCalls"].as_array().unwrap();
+    assert_eq!(calls.len(), 2);
+    assert_eq!(calls[0]["toolCallId"], "call-1");
+    assert_eq!(calls[0]["toolName"], "exec_command");
+    assert_eq!(calls[0]["isError"], true);
+    assert_eq!(calls[0]["errorPreview"], "command failed: no such file");
+    assert_eq!(calls[1]["toolCallId"], "call-2");
+    assert_eq!(calls[1]["isError"], false);
+    assert!(calls[1]["errorPreview"].is_null());
+    // Previews drop the tails: no full bodies anywhere in a digest.
+    let json = String::from_utf8(out).unwrap();
+    assert!(
+        !json.contains("FULL_BODY_MARKER_ZX9"),
+        "digest leaked full body"
+    );
+    assert!(
+        !json.contains("TOOL_BODY_MARKER_Q7"),
+        "digest leaked tool result body"
+    );
+}
+
+#[tokio::test]
+async fn inspect_session_digest_text_lists_turns_and_tools() {
+    use tauri_mcp_agent_lib::headless::run_inspect_session;
+    let db_dir = TempDir::new().unwrap();
+    let db_path = db_dir.path().join("profile.db");
+    profile_db_for_inspect(&db_path).await;
+
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    let code = run_inspect_session(
+        &inspect_args("s-main", None, None, OutputFormat::Text),
+        &db_path,
+        &mut out,
+        &mut err,
+    );
+
+    assert_eq!(code, exit_codes::SUCCESS);
+    assert!(err.is_empty());
+    let text = String::from_utf8(out).unwrap();
+    assert!(text.contains("session s-main"), "{text}");
+    assert!(text.contains("turns: 5"), "{text}");
+    assert!(text.contains("[2] assistant"), "{text}");
+    assert!(
+        text.contains("tools=[exec_command(error), read_file(ok)]"),
+        "{text}"
+    );
+}
+
+#[tokio::test]
+async fn inspect_session_turn_detail_by_index_and_message_id_match() {
+    use tauri_mcp_agent_lib::headless::run_inspect_session;
+    let db_dir = TempDir::new().unwrap();
+    let db_path = db_dir.path().join("profile.db");
+    profile_db_for_inspect(&db_path).await;
+
+    let (mut out_by_turn, mut err) = (Vec::new(), Vec::new());
+    let code = run_inspect_session(
+        &inspect_args("s-main", Some(2), None, OutputFormat::Json),
+        &db_path,
+        &mut out_by_turn,
+        &mut err,
+    );
+    assert_eq!(code, exit_codes::SUCCESS);
+    assert!(err.is_empty());
+
+    let (mut out_by_id, mut err) = (Vec::new(), Vec::new());
+    let code = run_inspect_session(
+        &inspect_args("s-main", None, Some("a-1".to_string()), OutputFormat::Json),
+        &db_path,
+        &mut out_by_id,
+        &mut err,
+    );
+    assert_eq!(code, exit_codes::SUCCESS);
+    assert!(err.is_empty());
+    assert_eq!(out_by_turn, out_by_id, "--turn and --message must agree");
+
+    let detail: Value = serde_json::from_slice(&out_by_turn).unwrap();
+    assert_eq!(detail["type"], "session-turn");
+    assert_eq!(detail["turnIndex"], 2);
+    assert_eq!(detail["session"]["id"], "s-main");
+    let message = &detail["message"];
+    assert_eq!(message["messageId"], "a-1");
+    assert_eq!(message["role"], "assistant");
+    // Detail carries the decoded full content and full tool bodies.
+    let content = message["content"].as_str().unwrap();
+    assert!(content.starts_with("lorem ipsum"), "{content}");
+    assert!(content.contains("FULL_BODY_MARKER_ZX9"));
+    assert!(message["error"].is_null());
+    let calls = message["toolCalls"].as_array().unwrap();
+    assert_eq!(calls.len(), 2);
+    assert_eq!(calls[0]["arguments"], r#"{"command":"ls -la"}"#);
+    assert_eq!(calls[0]["result"], "command failed: no such file");
+    assert_eq!(calls[0]["isError"], true);
+    assert_eq!(calls[1]["arguments"], r#"{"path":"README.md"}"#);
+    assert!(calls[1]["result"]
+        .as_str()
+        .unwrap()
+        .contains("TOOL_BODY_MARKER_Q7"));
+    assert_eq!(calls[1]["isError"], false);
+}
+
+#[tokio::test]
+async fn inspect_session_reports_forked_from() {
+    use tauri_mcp_agent_lib::headless::run_inspect_session;
+    let db_dir = TempDir::new().unwrap();
+    let db_path = db_dir.path().join("profile.db");
+    profile_db_for_inspect(&db_path).await;
+
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    let code = run_inspect_session(
+        &inspect_args("s-fork", None, None, OutputFormat::Text),
+        &db_path,
+        &mut out,
+        &mut err,
+    );
+
+    assert_eq!(code, exit_codes::SUCCESS);
+    assert!(err.is_empty());
+    let text = String::from_utf8(out).unwrap();
+    assert!(text.contains("forkedFrom: s-main"), "{text}");
+    assert!(text.contains("statusReason: user-stop"), "{text}");
+}
+
+/// A profile DB whose `sessions` table predates the forked_from migration
+/// (no such column) must still inspect cleanly with `forkedFrom: null`
+/// instead of failing (#2877 G2.2).
+#[tokio::test]
+async fn inspect_session_degrades_on_legacy_schema_without_forked_from() {
+    use tauri_mcp_agent_lib::headless::run_inspect_session;
+    let db_dir = TempDir::new().unwrap();
+    let db_path = db_dir.path().join("profile.db");
+    profile_db_for_inspect(&db_path).await;
+    {
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        conn.execute("ALTER TABLE sessions DROP COLUMN forked_from", [])
+            .unwrap();
+    }
+
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    let code = run_inspect_session(
+        &inspect_args("s-main", None, None, OutputFormat::Json),
+        &db_path,
+        &mut out,
+        &mut err,
+    );
+
+    assert_eq!(
+        code,
+        exit_codes::SUCCESS,
+        "legacy schema must inspect cleanly: {}",
+        String::from_utf8_lossy(&err)
+    );
+    assert!(err.is_empty());
+    let digest: Value = serde_json::from_slice(&out).unwrap();
+    assert!(digest["session"]["forkedFrom"].is_null());
+    assert_eq!(digest["turns"].as_array().unwrap().len(), 5);
+}
+
+#[tokio::test]
+async fn inspect_session_errors_exit_one() {
+    use tauri_mcp_agent_lib::headless::run_inspect_session;
+    let db_dir = TempDir::new().unwrap();
+    let db_path = db_dir.path().join("profile.db");
+    profile_db_for_inspect(&db_path).await;
+
+    // Unknown session.
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    let code = run_inspect_session(
+        &inspect_args("s-ghost", None, None, OutputFormat::Json),
+        &db_path,
+        &mut out,
+        &mut err,
+    );
+    assert_eq!(code, exit_codes::ERROR);
+    assert!(out.is_empty());
+    assert!(String::from_utf8_lossy(&err).contains("session 's-ghost' not found"));
+
+    // Message index out of range.
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    let code = run_inspect_session(
+        &inspect_args("s-main", Some(9), None, OutputFormat::Json),
+        &db_path,
+        &mut out,
+        &mut err,
+    );
+    assert_eq!(code, exit_codes::ERROR);
+    assert!(out.is_empty());
+    assert!(String::from_utf8_lossy(&err).contains("turn 9 out of range"));
+
+    // Unknown message id.
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    let code = run_inspect_session(
+        &inspect_args(
+            "s-main",
+            None,
+            Some("m-ghost".to_string()),
+            OutputFormat::Json,
+        ),
+        &db_path,
+        &mut out,
+        &mut err,
+    );
+    assert_eq!(code, exit_codes::ERROR);
+    assert!(out.is_empty());
+    assert!(String::from_utf8_lossy(&err).contains("message 'm-ghost' not found"));
+
+    // No profile database at all.
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    let code = run_inspect_session(
+        &inspect_args("s-main", None, None, OutputFormat::Json),
+        &db_dir.path().join("missing.db"),
+        &mut out,
+        &mut err,
+    );
+    assert_eq!(code, exit_codes::ERROR);
+    assert!(out.is_empty());
+    assert!(String::from_utf8_lossy(&err).contains("no profile database yet"));
 }

@@ -123,6 +123,10 @@ No tool documents an exit code for "waiting on approval", because none of them w
 | `cat file \| liblet -p "prompt"` | Any                        | Headless: piped stdin is appended to the prompt as context                                     | Claude Code, Codex CLI, Gemini CLI                     |
 | `echo "prompt" \| liblet`        | stdin is a pipe            | Headless: the piped text is the prompt                                                         | Codex CLI (`codex exec` with no prompt reads stdin)    |
 | `liblet --list-sessions`         | Any                        | Print the shared sessions (id, name, status, workspace path, last message time), then exit     | Gemini CLI                                             |
+| `liblet --inspect-session <id>`  | Any                        | Print a compact digest of one persisted session (metadata + per-turn summaries), then exit     | LibrAgent extension                                    |
+| `... --turn <N>` / `--message <id>` | Any                   | Drill into one message of that session with full content and tool bodies; the two are exclusive | LibrAgent extension                                    |
+
+`--inspect-session` reads the profile database read-only, so it works while the GUI holds the same profile, and it never starts a backend. `--turn N` selects by **message index** — the position among all persisted messages of the session, tool results included. Unknown session ids, unknown message ids, and out-of-range message indices exit `1` with a diagnostic on stderr. The drill-down (`--turn` / `--message`) prints full persisted tool arguments and results without redaction, so treat its output as sensitive.
 
 Mode selection is explicit and has exactly three outcomes:
 

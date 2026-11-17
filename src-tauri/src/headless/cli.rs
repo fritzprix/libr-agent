@@ -109,6 +109,19 @@ pub struct ListSessionsArgs {
     pub cd: Option<PathBuf>,
 }
 
+/// Validated arguments for `--inspect-session` (#2874): a read-only
+/// postmortem view of one persisted session. Without `turn`/`message` the
+/// run prints a compact digest; with one, the full detail of that message.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InspectSessionArgs {
+    pub session_id: String,
+    /// Zero-based turn index to drill into (mutually exclusive with `message`).
+    pub turn: Option<usize>,
+    /// Message id to drill into (mutually exclusive with `turn`).
+    pub message: Option<String>,
+    pub output_format: OutputFormat,
+}
+
 /// Top-level command resolved from CLI flags, TTY state, and piped `stdin`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LibletCommand {
@@ -117,6 +130,7 @@ pub enum LibletCommand {
     Headless(HeadlessArgs),
     Tui(TuiArgs),
     ListSessions(ListSessionsArgs),
+    InspectSession(InspectSessionArgs),
 }
 
 /// Usage error mapped to exit code `2`.
@@ -170,6 +184,9 @@ pub fn help_text() -> String {
         "      --headless                Run one command without opening the GUI (with -p or piped stdin)\n",
         "      --session <id>            Continue a persisted session (implies --headless)\n",
         "      --list-sessions           Print persisted sessions for the current directory and exit\n",
+        "      --inspect-session <id>    Print a persisted session digest (turn summaries) and exit\n",
+        "      --turn <N>                Select turn N (zero-based) of --inspect-session, with full detail\n",
+        "      --message <id>            Select message <id> of --inspect-session, with full detail\n",
         "  -h, --help                    Print help and exit\n",
         "  -V, --version                 Print version and exit\n"
     )
@@ -237,6 +254,9 @@ pub fn parse_cli_with_tui_gate(
     let mut output_format: Option<OutputFormat> = None;
     let mut timeout_secs: Option<u64> = None;
     let mut list_sessions = false;
+    let mut inspect_session: Option<String> = None;
+    let mut turn_flag: Option<usize> = None;
+    let mut message_flag: Option<String> = None;
     let mut headless_flag = false;
     let mut session_flag: Option<String> = None;
     let mut positional: Vec<String> = Vec::new();
@@ -403,6 +423,32 @@ pub fn parse_cli_with_tui_gate(
                 }
                 list_sessions = true;
             }
+            "--inspect-session" => {
+                let value = take_option_value(flag, inline_val, &mut iter)?;
+                if value.trim().is_empty() {
+                    return Err(CliUsageError::new("--inspect-session cannot be empty"));
+                }
+                inspect_session = Some(value);
+            }
+            "--turn" => {
+                let value = take_option_value(flag, inline_val, &mut iter)?;
+                match value.trim().parse::<usize>() {
+                    Ok(index) => turn_flag = Some(index),
+                    Err(_) => {
+                        return Err(CliUsageError::new(format!(
+                            "invalid --turn value '{}' (expected a zero-based turn index)",
+                            value.trim()
+                        )))
+                    }
+                }
+            }
+            "--message" => {
+                let value = take_option_value(flag, inline_val, &mut iter)?;
+                if value.trim().is_empty() {
+                    return Err(CliUsageError::new("--message cannot be empty"));
+                }
+                message_flag = Some(value);
+            }
             "--headless" => {
                 if inline_val.is_some() {
                     return Err(CliUsageError::new(
@@ -486,6 +532,50 @@ pub fn parse_cli_with_tui_gate(
         continue_flag || resume_flag.is_some() || name_flag.is_some() || list_sessions;
     let has_headless_only_flags =
         output_format.is_some() || timeout_secs.is_some() || session_flag.is_some();
+
+    // `--inspect-session` is a read-only view (#2874): it never runs a prompt
+    // and never combines with run or TUI flags. Checked before the
+    // `--list-sessions` block so `--list-sessions --inspect-session` fails
+    // here instead of silently listing sessions.
+    if turn_flag.is_some() || message_flag.is_some() {
+        if inspect_session.is_none() {
+            return Err(CliUsageError::new(
+                "--turn and --message require --inspect-session <id>",
+            ));
+        }
+        if turn_flag.is_some() && message_flag.is_some() {
+            return Err(CliUsageError::new(
+                "--turn and --message cannot be used together",
+            ));
+        }
+    }
+
+    if let Some(session_id) = inspect_session {
+        if prompt_flag.is_some()
+            || positional_prompt.is_some()
+            || continue_flag
+            || resume_flag.is_some()
+            || name_flag.is_some()
+            || list_sessions
+            || session_flag.is_some()
+            || timeout_secs.is_some()
+        {
+            return Err(CliUsageError::new(
+                "--inspect-session cannot be combined with prompts, resume flags, or run options",
+            ));
+        }
+        if output_format == Some(OutputFormat::StreamJson) {
+            return Err(CliUsageError::new(
+                "--inspect-session supports --output-format text or json",
+            ));
+        }
+        return Ok(LibletCommand::InspectSession(InspectSessionArgs {
+            session_id,
+            turn: turn_flag,
+            message: message_flag,
+            output_format: output_format.unwrap_or_default(),
+        }));
+    }
 
     if list_sessions {
         if prompt_flag.is_some()
@@ -868,6 +958,97 @@ mod tests {
         }
         assert!(help.contains("-p, --prompt"));
         assert!(help.contains("--list-sessions"));
+        assert!(help.contains("--inspect-session"));
+    }
+
+    #[test]
+    fn inspect_session_flags_parse() {
+        let cmd = parse_cli(
+            &vec_args(&[
+                "--inspect-session",
+                "s-1",
+                "--turn",
+                "2",
+                "--output-format",
+                "json",
+            ]),
+            BOTH_TTY,
+            None,
+        )
+        .expect("--inspect-session with --turn must parse");
+        match cmd {
+            LibletCommand::InspectSession(args) => {
+                assert_eq!(args.session_id, "s-1");
+                assert_eq!(args.turn, Some(2));
+                assert_eq!(args.message, None);
+                assert_eq!(args.output_format, OutputFormat::Json);
+            }
+            other => panic!("expected InspectSession, got {other:?}"),
+        }
+
+        let cmd = parse_cli(&vec_args(&["--inspect-session", "s-1"]), BOTH_TTY, None)
+            .expect("bare --inspect-session must parse");
+        match cmd {
+            LibletCommand::InspectSession(args) => {
+                assert_eq!(args.turn, None);
+                assert_eq!(args.output_format, OutputFormat::Text);
+            }
+            other => panic!("expected InspectSession, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn inspect_session_validation_errors() {
+        let err = parse_cli(&vec_args(&["--turn", "1"]), BOTH_TTY, None)
+            .expect_err("--turn requires --inspect-session");
+        assert!(err.message.contains("--inspect-session"), "{}", err.message);
+
+        let err = parse_cli(
+            &vec_args(&[
+                "--inspect-session",
+                "s-1",
+                "--turn",
+                "1",
+                "--message",
+                "m-1",
+            ]),
+            BOTH_TTY,
+            None,
+        )
+        .expect_err("--turn and --message are exclusive");
+        assert!(
+            err.message.contains("cannot be used together"),
+            "{}",
+            err.message
+        );
+
+        let err = parse_cli(
+            &vec_args(&["--inspect-session", "s-1", "--output-format", "stream-json"]),
+            BOTH_TTY,
+            None,
+        )
+        .expect_err("stream-json is not a digest format");
+        assert!(err.message.contains("text or json"), "{}", err.message);
+
+        let err = parse_cli(
+            &vec_args(&["--inspect-session", "s-1", "-p", "hi"]),
+            BOTH_TTY,
+            None,
+        )
+        .expect_err("--inspect-session excludes prompts");
+        assert!(
+            err.message.contains("cannot be combined"),
+            "{}",
+            err.message
+        );
+
+        let err = parse_cli(
+            &vec_args(&["--inspect-session", "s-1", "--turn", "x"]),
+            BOTH_TTY,
+            None,
+        )
+        .expect_err("--turn must be a number");
+        assert!(err.message.contains("--turn"), "{}", err.message);
     }
 
     #[test]

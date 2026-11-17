@@ -472,3 +472,157 @@ mod tests {
         assert!(stderr.is_empty());
     }
 }
+
+// ---------------------------------------------------------------------------
+// Session inspection output (#2874): `--inspect-session` digest and turn
+// detail. Read-only postmortem view: the digest never carries full bodies,
+// the turn detail carries exactly one message in full.
+// ---------------------------------------------------------------------------
+
+/// Session metadata block shared by the digest and the turn detail.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InspectSessionMeta {
+    pub id: String,
+    pub forked_from: Option<String>,
+    pub status: String,
+    pub status_reason: Option<String>,
+    pub workspace_path: Option<String>,
+    pub model: String,
+    pub provider: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+/// One tool call as seen in the digest: identity and error state only.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InspectToolCallSummary {
+    pub tool_call_id: String,
+    pub tool_name: String,
+    pub is_error: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_preview: Option<String>,
+}
+
+/// One turn (message) of the session digest, with a bounded content preview.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InspectTurnSummary {
+    pub turn_index: usize,
+    pub message_id: String,
+    pub role: String,
+    pub tool_calls: Vec<InspectToolCallSummary>,
+    pub content_preview: String,
+}
+
+/// `--inspect-session <id>` result: metadata plus a per-turn summary list.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InspectSessionDigest {
+    #[serde(rename = "type")]
+    pub event_type: String,
+    pub session: InspectSessionMeta,
+    pub turns: Vec<InspectTurnSummary>,
+}
+
+/// One tool call in the turn detail, with full arguments and result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InspectToolCallDetail {
+    pub tool_call_id: String,
+    pub tool_name: String,
+    pub arguments: String,
+    pub result: Option<String>,
+    pub is_error: bool,
+}
+
+/// The selected message with its complete persisted content.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InspectMessageDetail {
+    pub message_id: String,
+    pub role: String,
+    pub content: String,
+    pub tool_calls: Vec<InspectToolCallDetail>,
+    pub error: Option<String>,
+    pub created_at: i64,
+}
+
+/// `--inspect-session <id> --turn N` (or `--message <id>`) result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InspectSessionTurn {
+    #[serde(rename = "type")]
+    pub event_type: String,
+    pub session: InspectSessionMeta,
+    pub turn_index: usize,
+    pub message: InspectMessageDetail,
+}
+
+/// Human-readable rendering of the digest (default `--output-format text`).
+pub fn inspect_digest_text(digest: &InspectSessionDigest) -> String {
+    let session = &digest.session;
+    let mut out = format!(
+        "session {}  status={}  model={}  provider={}\n",
+        session.id, session.status, session.model, session.provider
+    );
+    if let Some(forked_from) = &session.forked_from {
+        out.push_str(&format!("  forkedFrom: {forked_from}\n"));
+    }
+    if let Some(reason) = &session.status_reason {
+        out.push_str(&format!("  statusReason: {reason}\n"));
+    }
+    if let Some(workspace) = &session.workspace_path {
+        out.push_str(&format!("  workspace: {workspace}\n"));
+    }
+    out.push_str(&format!("  turns: {}\n", digest.turns.len()));
+    for turn in &digest.turns {
+        let tools = if turn.tool_calls.is_empty() {
+            String::new()
+        } else {
+            let rendered = turn
+                .tool_calls
+                .iter()
+                .map(|call| {
+                    format!(
+                        "{}({})",
+                        call.tool_name,
+                        if call.is_error { "error" } else { "ok" }
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("  tools=[{rendered}]")
+        };
+        out.push_str(&format!(
+            "[{}] {:<9} {}{tools}  {}\n",
+            turn.turn_index, turn.role, turn.message_id, turn.content_preview
+        ));
+    }
+    out
+}
+
+/// Human-readable rendering of a single turn detail.
+pub fn inspect_turn_text(turn: &InspectSessionTurn) -> String {
+    let message = &turn.message;
+    let mut out = format!(
+        "session {}  turn {}  message {}  role={}\n",
+        turn.session.id, turn.turn_index, message.message_id, message.role
+    );
+    out.push_str(&format!("content:\n{}\n", message.content));
+    for call in &message.tool_calls {
+        out.push_str(&format!(
+            "tool_call {} {} arguments: {}\n",
+            call.tool_call_id, call.tool_name, call.arguments
+        ));
+        if let Some(result) = &call.result {
+            let marker = if call.is_error { " (error)" } else { "" };
+            out.push_str(&format!("  result{marker}: {result}\n"));
+        }
+    }
+    if let Some(err) = &message.error {
+        out.push_str(&format!("error: {err}\n"));
+    }
+    out
+}
