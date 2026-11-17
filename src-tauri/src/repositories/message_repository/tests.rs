@@ -406,3 +406,55 @@ async fn test_get_page_uses_persisted_row_order_when_created_at_is_inverted() {
         ]
     );
 }
+
+async fn session_version(db: &DatabaseConnection, session_id: &str) -> i64 {
+    use sea_orm::QuerySelect;
+    SessionEntity::find_by_id(session_id)
+        .select_only()
+        .column(session::Column::Version)
+        .into_tuple::<i64>()
+        .one(db)
+        .await
+        .expect("Failed to read session version")
+        .unwrap_or(0)
+}
+
+/// #2878: every message write must bump `sessions.version` — including a
+/// re-persist of an existing id (upsert-on-conflict) and deletes — because
+/// the headless `--session` write-back uses the counter as its merge-or-fork
+/// base.
+#[tokio::test]
+async fn test_upsert_and_delete_bump_session_version() {
+    let repo = setup_test_db().await;
+    create_test_session(&repo.db, "session1").await;
+    assert_eq!(session_version(&repo.db, "session1").await, 0);
+
+    let message = create_dummy_message("msg1", "session1");
+    repo.insert(&message).await.expect("Failed to insert");
+    assert_eq!(session_version(&repo.db, "session1").await, 1);
+
+    // Re-persisting the same id goes through the upsert-on-conflict path.
+    repo.insert(&message)
+        .await
+        .expect("Failed to re-insert same id");
+    assert_eq!(session_version(&repo.db, "session1").await, 2);
+
+    repo.insert_many(vec![create_dummy_message("msg2", "session1")])
+        .await
+        .expect("Failed to insert second message");
+    assert_eq!(session_version(&repo.db, "session1").await, 3);
+
+    repo.delete_by_id("msg1")
+        .await
+        .expect("Failed to delete msg1");
+    assert_eq!(session_version(&repo.db, "session1").await, 4);
+
+    repo.delete_by_session("session1")
+        .await
+        .expect("Failed to delete session messages");
+    assert_eq!(session_version(&repo.db, "session1").await, 5);
+
+    // Other sessions' counters never move.
+    create_test_session(&repo.db, "session2").await;
+    assert_eq!(session_version(&repo.db, "session2").await, 0);
+}

@@ -159,48 +159,38 @@ pub async fn init_ephemeral_database(db_path: &Path) -> Result<DatabaseConnectio
 ///
 /// S8 (#2860) uses it as the merge-or-fork base when a `--session` run is
 /// written back to the profile DB. A fresh-session run captures an empty base.
+/// #2878: the base is the session's `version` counter, which every message
+/// insert, update (including upsert-on-conflict), and delete bumps — so an
+/// in-place edit of an existing message cannot hide behind an unchanged
+/// message count and newest id.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionForkBase {
     pub session_id: String,
-    pub message_count: i64,
-    pub last_message_id: Option<String>,
+    pub version: i64,
 }
 
-/// Count the session's persisted messages in the snapshot and find its newest
-/// one, so the fork base is identical whether the session was continued or
-/// just created.
+/// Read the session's persisted message-change counter from the snapshot, so
+/// the fork base is identical whether the session was continued or just
+/// created.
 async fn capture_fork_base(
     db: &DatabaseConnection,
     session_id: &str,
 ) -> Result<SessionForkBase, String> {
-    use crate::entity::message;
-    use sea_orm::sea_query::Expr;
-    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
+    use crate::entity::session;
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QuerySelect};
 
-    let message_count: i64 = message::Entity::find()
-        .filter(message::Column::SessionId.eq(session_id))
+    let version: i64 = session::Entity::find()
+        .filter(session::Column::Id.eq(session_id))
         .select_only()
-        .column_as(Expr::count(Expr::col(message::Column::Id)), "message_count")
+        .column(session::Column::Version)
         .into_tuple()
         .one(db)
         .await
-        .map_err(|e| format!("Failed to count messages of session {session_id}: {e}"))?
+        .map_err(|e| format!("Failed to read version of session {session_id}: {e}"))?
         .unwrap_or(0);
-    let last_message_id: Option<String> = message::Entity::find()
-        .filter(message::Column::SessionId.eq(session_id))
-        .select_only()
-        .column(message::Column::Id)
-        .order_by_desc(message::Column::CreatedAt)
-        .order_by_desc(message::Column::Id)
-        .limit(1)
-        .into_tuple()
-        .one(db)
-        .await
-        .map_err(|e| format!("Failed to read the last message of session {session_id}: {e}"))?;
     Ok(SessionForkBase {
         session_id: session_id.to_string(),
-        message_count,
-        last_message_id,
+        version,
     })
 }
 

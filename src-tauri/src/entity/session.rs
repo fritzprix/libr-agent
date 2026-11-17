@@ -35,6 +35,10 @@ pub struct Model {
     /// Original session id when this session was written back as a fork by a
     /// `--session` headless run (#2860); NULL for merged or fresh sessions.
     pub forked_from: Option<String>,
+    /// Monotonic counter of message row changes for this session (#2878).
+    /// Maintained by the `messages_session_version_*` triggers; the headless
+    /// write-back uses it as the merge-or-fork base.
+    pub version: i64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
