@@ -690,6 +690,47 @@ fn inspect_preview(raw: &str) -> String {
     preview
 }
 
+/// Decode the persisted `content` column (JSON of `Vec<MCPContent>`, see
+/// `repositories/message_repository/persist.rs`) into the concatenated text
+/// parts a postmortem reader wants. A malformed column falls back to the
+/// trimmed raw value so inspect never loses data to a decode error.
+fn persisted_content_text(content_json: &str) -> String {
+    match serde_json::from_str::<Vec<crate::mcp::types::MCPContent>>(content_json) {
+        Ok(parts) => parts
+            .iter()
+            .filter_map(|part| match part {
+                crate::mcp::types::MCPContent::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
+        Err(_) => content_json.trim().to_string(),
+    }
+}
+
+/// Decode the persisted `error` column and content into
+/// `(tool_failed, service_error_text)` via the production envelope decoder:
+/// `toolError == true` (column envelope or legacy content item) marks tool
+/// failure; the UI envelope itself is never surfaced as error text.
+fn persisted_tool_error(content_json: &str, error_json: Option<&str>) -> (bool, Option<String>) {
+    let raw_error: Option<serde_json::Value> =
+        error_json.and_then(|raw| serde_json::from_str(raw).ok());
+    let (error, metadata) = crate::repositories::message_repository::decode_persisted_tool_error(
+        content_json,
+        raw_error,
+    );
+    let is_error = metadata
+        .as_ref()
+        .and_then(|meta| meta.get("toolError"))
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    let service_error = error.map(|value| match value {
+        serde_json::Value::String(text) => text,
+        other => other.to_string(),
+    });
+    (is_error, service_error)
+}
+
 /// Parse the persisted `tool_calls` JSON column into
 /// `(tool_call_id, tool_name, raw_arguments)` triples. A missing, malformed,
 /// or non-array value yields no calls.
@@ -715,16 +756,20 @@ fn parse_persisted_tool_calls(raw: &str) -> Vec<(String, String, String)> {
         .collect()
 }
 
-/// Index tool-result messages by the tool call id they answer.
-fn tool_results_by_call(
-    messages: &[InspectMessageRow],
-) -> HashMap<String, (String, Option<String>)> {
+/// Index tool-result messages by the tool call id they answer, as
+/// `(decoded text, tool failed)`. Decoding happens here once, so the digest
+/// and the detail view never read the raw persisted columns.
+fn tool_results_by_call(messages: &[InspectMessageRow]) -> HashMap<String, (String, bool)> {
     messages
         .iter()
         .filter(|message| message.role == "tool")
         .filter_map(|message| {
             let call_id = message.tool_call_id.clone()?;
-            Some((call_id, (message.content.clone(), message.error.clone())))
+            let (is_error, _) = persisted_tool_error(&message.content, message.error.as_deref());
+            Some((
+                call_id,
+                (persisted_content_text(&message.content), is_error),
+            ))
         })
         .collect()
 }
@@ -740,8 +785,18 @@ fn query_inspect_session(
         db_path,
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )?;
-    let meta = conn
+    // A profile DB that predates the forked_from migration must still be
+    // inspectable: degrade to `forkedFrom: null` instead of failing (S1.1).
+    let has_forked_from: bool = conn
         .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = 'forked_from'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .map(|count| count > 0)
+        .unwrap_or(false);
+    let meta = if has_forked_from {
+        conn.query_row(
             "SELECT id, status, status_reason, model, provider, workspace_override, \
              created_at, updated_at, forked_from \
              FROM sessions WHERE id = ?1",
@@ -760,7 +815,29 @@ fn query_inspect_session(
                 })
             },
         )
-        .optional()?;
+        .optional()?
+    } else {
+        conn.query_row(
+            "SELECT id, status, status_reason, model, provider, workspace_override, \
+             created_at, updated_at \
+             FROM sessions WHERE id = ?1",
+            [id],
+            |row| {
+                Ok(InspectSessionMeta {
+                    id: row.get(0)?,
+                    forked_from: None,
+                    status: row.get(1)?,
+                    status_reason: row.get(2)?,
+                    workspace_path: row.get(5)?,
+                    model: row.get(3)?,
+                    provider: row.get(4)?,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
+                })
+            },
+        )
+        .optional()?
+    };
     let Some(meta) = meta else {
         return Ok(None);
     };
@@ -869,7 +946,7 @@ pub fn run_inspect_session<Out: Write, ErrOut: Write>(
                     turn_index,
                     message_id: message.id.clone(),
                     role: message.role.clone(),
-                    content_preview: inspect_preview(&message.content),
+                    content_preview: inspect_preview(&persisted_content_text(&message.content)),
                     tool_calls: parse_persisted_tool_calls(&message.tool_calls)
                         .into_iter()
                         .map(|(tool_call_id, tool_name, _)| {
@@ -877,10 +954,10 @@ pub fn run_inspect_session<Out: Write, ErrOut: Write>(
                             InspectToolCallSummary {
                                 tool_call_id,
                                 tool_name,
-                                is_error: result.and_then(|(_, err)| err.as_ref()).is_some(),
+                                is_error: result.map(|(_, is_error)| *is_error).unwrap_or(false),
                                 error_preview: result
-                                    .and_then(|(_, err)| err.as_ref())
-                                    .map(|err| inspect_preview(err)),
+                                    .filter(|(_, is_error)| *is_error)
+                                    .map(|(content, _)| inspect_preview(content)),
                             }
                         })
                         .collect(),
@@ -917,7 +994,7 @@ pub fn run_inspect_session<Out: Write, ErrOut: Write>(
                         tool_name,
                         arguments,
                         result: result.map(|(content, _)| content.clone()),
-                        is_error: result.and_then(|(_, err)| err.as_ref()).is_some(),
+                        is_error: result.map(|(_, is_error)| *is_error).unwrap_or(false),
                     }
                 })
                 .collect();
@@ -928,9 +1005,9 @@ pub fn run_inspect_session<Out: Write, ErrOut: Write>(
                 message: InspectMessageDetail {
                     message_id: message.id.clone(),
                     role: message.role.clone(),
-                    content: message.content.clone(),
+                    content: persisted_content_text(&message.content),
                     tool_calls,
-                    error: message.error.clone(),
+                    error: persisted_tool_error(&message.content, message.error.as_deref()).1,
                     created_at: message.created_at,
                 },
             };

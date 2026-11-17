@@ -155,7 +155,7 @@ pub(super) fn build_forward_page(
 ///
 /// When the column only holds this envelope, `Message.error` stays `None`
 /// (that field is reserved for LLM/service failure UI payloads).
-pub(super) fn decode_persisted_tool_error(
+pub(crate) fn decode_persisted_tool_error(
     content_json: &str,
     error: Option<serde_json::Value>,
 ) -> (Option<serde_json::Value>, Option<serde_json::Value>) {
