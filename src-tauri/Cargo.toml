@@ -37,6 +37,11 @@ test = false
 # terminals, pipes, and scripts wait for it and see its exit code — the
 # release `libragent` binary must stay `windows_subsystem = "windows"` for the
 # GUI and can never satisfy that on Windows (spike evidence, #2761).
+#
+# Developer-only after #2861 (#2852 S9): the binary stays in the build because
+# the TUI smoke and engine debugging use it, but it refuses to start unless
+# `LIBRAGENT_ENABLE_TUI=1` is set, so no user-facing surface advertises or
+# reaches it. Do not add it to packaging or installer shortcuts.
 [[bin]]
 name = "libragent-tui"
 path = "src/bin/libragent_tui.rs"

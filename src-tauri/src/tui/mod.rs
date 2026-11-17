@@ -51,6 +51,29 @@ static TERMINAL_ACTIVE: AtomicBool = AtomicBool::new(false);
 /// Flag that selects TUI mode on any entry binary.
 pub const TUI_FLAG: &str = "--tui";
 
+/// Environment variable that opens the TUI (#2861).
+///
+/// The terminal TUI is a developer-only mode: no user-facing help advertises
+/// it and the liblet CLI no longer selects it from an interactive TTY. Setting
+/// this variable to `1` keeps the whole TUI reachable for debugging.
+pub const DEV_TUI_ENV: &str = "LIBRAGENT_ENABLE_TUI";
+
+/// True when the hidden developer flag opens the TUI (#2861).
+pub fn dev_tui_enabled() -> bool {
+    std::env::var(DEV_TUI_ENV).ok().as_deref() == Some("1")
+}
+
+/// Explains that the TUI needs the developer flag and returns the usage error
+/// code, so an unadvertised entry fails loudly instead of opening a UI nobody
+/// documented (#2861).
+pub fn refuse_hidden_tui(entry: &str) -> i32 {
+    eprintln!(
+        "error: {entry} starts the terminal TUI, which is a developer-only mode after #2852. \
+         Set {DEV_TUI_ENV}=1 to use it, or start the desktop app for the supported interface."
+    );
+    2
+}
+
 /// Poll interval while waiting for terminal input or a backend record.
 pub const TUI_POLL_INTERVAL: Duration = Duration::from_millis(200);
 

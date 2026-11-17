@@ -224,6 +224,11 @@ def spawn_tui(binary: Path, scratch: Path, log_path: Path):
     # Force the phase-1 frontend LLM path (#2760 / #2804 otherwise route
     # gemini/openai to Rust and the smoke would not touch the WebView).
     env["LIBRAGENT_LLM_EXECUTOR"] = "webview"
+    # The terminal TUI is a developer-only mode after #2861 (#2852 S9): every
+    # TUI entry point refuses to start without this hidden flag, so a smoke run
+    # sets it explicitly. This script is the developer path this flag exists
+    # for; nothing user-facing advertises it.
+    env["LIBRAGENT_ENABLE_TUI"] = "1"
     # Guarantee an open Session API on the scratch backend (no injected key).
     env.pop("LIBRAGENT_SESSION_API_KEY", None)
     env.pop("LIBRAGENT_SESSION_API_KEY_FILE", None)

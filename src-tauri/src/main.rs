@@ -23,12 +23,19 @@ fn main() {
         return;
     }
 
-    // `libragent --tui` (#2761). Windows forwards to the console-subsystem
-    // `libragent-tui` sibling so the launching shell waits for the TUI and
-    // sees its exit code (spike evidence in `tauri_mcp_agent_lib::tui`);
-    // other platforms run the TUI in this process, where console semantics
-    // are native.
+    // `libragent --tui` (#2761). The TUI is a developer-only mode (#2861):
+    // nothing user-facing advertises it, and it opens only with the hidden
+    // `LIBRAGENT_ENABLE_TUI=1` flag. Windows forwards to the
+    // console-subsystem `libragent-tui` sibling so the launching shell waits
+    // for the TUI and sees its exit code (spike evidence in
+    // `tauri_mcp_agent_lib::tui`); other platforms run the TUI in this
+    // process, where console semantics are native.
     if tauri_mcp_agent_lib::tui::wants_tui() {
+        if !tauri_mcp_agent_lib::tui::dev_tui_enabled() {
+            std::process::exit(tauri_mcp_agent_lib::tui::refuse_hidden_tui(
+                "`libragent --tui`",
+            ));
+        }
         #[cfg(windows)]
         std::process::exit(tauri_mcp_agent_lib::tui::forward_to_console_launcher());
         #[cfg(not(windows))]
