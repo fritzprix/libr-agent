@@ -364,6 +364,7 @@ async fn get_session_reads_execution_mode_column() {
         docker_host_workspace_path: Set(None),
         status_reason: Set(None),
         forked_from: Set(None),
+        version: Set(0),
     }
     .insert(&db)
     .await
