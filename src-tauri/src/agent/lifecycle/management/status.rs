@@ -433,6 +433,7 @@ mod tests {
         let session = SessionMetadata {
             status: SessionStatus::Error,
             status_reason: Some("container libr-old was removed".to_string()),
+            forked_from: None,
             ..SessionMetadata::test_fixture("errored-session")
         };
         repo.upsert_session(&session).await.expect("upsert");

@@ -275,7 +275,9 @@
       "subagentsCount_other": "+{{count}} 個のサブエージェント",
       "subagentsKept": "保持されたサブエージェント",
       "bookmarkedBadge": "ブックマーク済み",
-      "openElsewhere": "他の場所で開かれています"
+      "openElsewhere": "他の場所で開かれています",
+      "forked": "フォーク",
+      "forkedFrom": "セッション{{id}}からフォーク"
     },
     "actions": {
       "view": "表示",

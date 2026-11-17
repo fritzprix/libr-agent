@@ -104,6 +104,7 @@ async fn upsert_inventory_session(db: &DatabaseConnection, session_id: &str) {
             docker_container_name: None,
             docker_host_workspace_path: None,
             status_reason: None,
+            forked_from: None,
         })
         .await
         .expect("session should insert");

@@ -38,6 +38,10 @@ pub struct EphemeralEnvironment {
     pub temp_dir: TempDir,
     pub data_dir: PathBuf,
     pub db_path: PathBuf,
+    /// Profile database this run's snapshot came from, for the S8 write-back
+    /// (#2860). `None` only when the caller passed no source path at all,
+    /// which leaves the run purely ephemeral with nothing to write back to.
+    pub profile_db_path: Option<PathBuf>,
 }
 
 impl EphemeralEnvironment {
@@ -71,6 +75,7 @@ impl EphemeralEnvironment {
             temp_dir,
             data_dir,
             db_path,
+            profile_db_path: source_db_path.map(PathBuf::from),
         })
     }
 }

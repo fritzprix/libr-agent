@@ -46,6 +46,7 @@ fn build_session(session_id: &str) -> AgentSession {
             docker_container_name: None,
             docker_host_workspace_path: None,
             status_reason: None,
+            forked_from: None,
         },
         is_running: true,
         active_permit: None,

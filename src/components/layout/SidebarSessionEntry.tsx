@@ -1,4 +1,4 @@
-import { BookmarkCheck, Circle, Eye } from 'lucide-react';
+import { BookmarkCheck, Circle, Eye, GitBranch } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { Badge } from '../ui/badge';
@@ -96,6 +96,20 @@ export function SidebarSessionEntry({
       >
         <StatusDot status={session.status} />
         <span className="truncate text-xs">{label}</span>
+        {session.forkedFrom && (
+          <Badge
+            variant="outline"
+            className="h-5 shrink-0 gap-1 px-1.5 text-[10px] text-muted-foreground"
+            title={t(
+              'sessionHistory.card.forkedFrom',
+              'Forked from session {{id}}',
+              { id: session.forkedFrom },
+            )}
+          >
+            <GitBranch className="h-3 w-3" aria-hidden="true" />
+            {t('sessionHistory.card.forked', 'Forked')}
+          </Badge>
+        )}
         {session.isBookmarked && (
           <BookmarkCheck className="h-3.5 w-3.5 shrink-0 text-warning" />
         )}

@@ -71,6 +71,14 @@ pub struct HeadlessResultPayload {
     pub workspace_path: String,
     pub execution_mode: ExecutionMode,
     pub pending_approvals: Vec<HeadlessPendingApproval>,
+    /// Session row this run was written back to in the profile database
+    /// (#2860). Empty when the write-back failed or was skipped.
+    #[serde(default)]
+    pub session_id: String,
+    /// Set when a `--session` run was forked instead of merged: the original
+    /// session id the new session was forked from (#2860).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forked_from: Option<String>,
     pub exit_code: i32,
 }
 
@@ -89,6 +97,8 @@ impl HeadlessResultPayload {
             workspace_path,
             execution_mode,
             pending_approvals: Vec::new(),
+            session_id: String::new(),
+            forked_from: None,
             exit_code: crate::headless::cli::exit_codes::SUCCESS,
         }
     }
@@ -107,6 +117,8 @@ impl HeadlessResultPayload {
             workspace_path,
             execution_mode,
             pending_approvals: Vec::new(),
+            session_id: String::new(),
+            forked_from: None,
             exit_code: crate::headless::cli::exit_codes::ERROR,
         }
     }
@@ -125,6 +137,8 @@ impl HeadlessResultPayload {
             workspace_path,
             execution_mode,
             pending_approvals,
+            session_id: String::new(),
+            forked_from: None,
             exit_code: crate::headless::cli::exit_codes::APPROVAL_REQUIRED,
         }
     }
@@ -143,6 +157,8 @@ impl HeadlessResultPayload {
             workspace_path,
             execution_mode,
             pending_approvals: Vec::new(),
+            session_id: String::new(),
+            forked_from: None,
             exit_code: crate::headless::cli::exit_codes::QUESTION_REQUIRED,
         }
     }
@@ -157,6 +173,8 @@ impl HeadlessResultPayload {
             workspace_path,
             execution_mode,
             pending_approvals: Vec::new(),
+            session_id: String::new(),
+            forked_from: None,
             exit_code: crate::headless::cli::exit_codes::TIMEOUT,
         }
     }
@@ -175,6 +193,9 @@ impl HeadlessResultPayload {
             workspace_path,
             execution_mode,
             pending_approvals: Vec::new(),
+
+            session_id: String::new(),
+            forked_from: None,
             exit_code,
         }
     }

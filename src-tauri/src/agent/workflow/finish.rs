@@ -555,6 +555,7 @@ mod tests {
             docker_container_name: None,
             docker_host_workspace_path: None,
             status_reason: None,
+            forked_from: None,
         };
         session_repo
             .upsert_session(&metadata)
@@ -746,6 +747,7 @@ mod tests {
                 docker_container_name: None,
                 docker_host_workspace_path: None,
                 status_reason: None,
+                forked_from: None,
             },
             is_running: true,
             active_permit: None,

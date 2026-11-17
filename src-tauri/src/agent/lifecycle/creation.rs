@@ -219,6 +219,7 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
         docker_container_name,
         docker_host_workspace_path,
         status_reason: None,
+        forked_from: None,
     };
 
     // Persist to database using injected repository
