@@ -54,6 +54,7 @@ fn default_headless_args(prompt: &str, workspace: &std::path::Path) -> HeadlessA
         execution_mode: None,
         output_format: OutputFormat::Text,
         timeout_secs: Some(10),
+        session: None,
     }
 }
 
@@ -723,6 +724,287 @@ async fn snapshot_scrubs_session_rows_from_raw_pages_not_just_rows() {
     assert_eq!(sessions[0].id, runtime.session_id);
 
     drop(runtime);
+}
+
+/// Insert plain user rows into a migrated database for snapshot tests.
+fn insert_session_messages(db_path: &std::path::Path, session_id: &str, ids: &[(&str, i64)]) {
+    let conn = rusqlite::Connection::open(db_path).unwrap();
+    for (id, created) in ids {
+        conn.execute(
+            "INSERT INTO messages (id, session_id, role, content, created_at, updated_at) \
+             VALUES (?1, ?2, 'user', '[]', ?3, ?3)",
+            rusqlite::params![id, session_id, created],
+        )
+        .unwrap();
+    }
+}
+
+fn count_rows(db_path: &std::path::Path, table: &str) -> i64 {
+    let conn = rusqlite::Connection::open_with_flags(
+        db_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .unwrap();
+    conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+        row.get(0)
+    })
+    .unwrap()
+}
+
+/// A persisted session with its own workspace, used by the `--session` tests.
+async fn seed_continuable_session(db_path: &std::path::Path, workspace: &std::path::Path) {
+    let db = init_ephemeral_database(db_path).await.unwrap();
+    let repo = SqliteSessionRepository::new(db.clone());
+    repo.upsert_session(&SessionMetadata {
+        id: "s-cont".to_string(),
+        name: Some("Titled".to_string()),
+        status: SessionStatus::Idle,
+        model: "gpt-4o".to_string(),
+        provider: "openai".to_string(),
+        assistant_id: None,
+        parent_session_id: None,
+        lineage_id: Some("s-cont".to_string()),
+        depth: Some(0),
+        max_depth: None,
+        max_fanout: None,
+        org_id: None,
+        org_name: None,
+        org_root_session_id: None,
+        created_at: 100,
+        updated_at: 100,
+        last_viewed_at: None,
+        last_attention_at: None,
+        last_attention_reason: None,
+        last_message_at: None,
+        is_bookmarked: false,
+        execution_mode: ExecutionMode::Normal,
+        workspace_override: Some(workspace.to_string_lossy().to_string()),
+        workspace_isolation: WorkspaceIsolationMode::Host,
+        docker_config: None,
+        docker_container_name: None,
+        docker_host_workspace_path: None,
+        status_reason: None,
+    })
+    .await
+    .unwrap();
+    repo.upsert_session(&SessionMetadata {
+        id: "s-other".to_string(),
+        created_at: 50,
+        updated_at: 50,
+        ..session_template()
+    })
+    .await
+    .unwrap();
+    drop(db);
+
+    insert_session_messages(db_path, "s-cont", &[("m-1", 500), ("m-2", 600)]);
+    insert_session_messages(db_path, "s-other", &[("m-other", 700)]);
+    seed_per_session_state(db_path, "s-cont", "m-1", 1);
+    seed_per_session_state(db_path, "s-other", "m-other", 2);
+}
+
+/// One row per session-owned state table for one session, so the snapshot
+/// keep-filters can be verified by counting rows (#2859 G1.1). The
+/// `pending_queue` row references a real message (`pending_queue.message_id`
+/// has a foreign key to `messages.id`).
+fn seed_per_session_state(
+    db_path: &std::path::Path,
+    session_id: &str,
+    message_id: &str,
+    queue_seq: i64,
+) {
+    let conn = rusqlite::Connection::open(db_path).unwrap();
+    conn.execute(
+        "INSERT INTO compact_contexts (id, session_id, to_id, summary, created_at) \
+         VALUES (?1, ?2, 'to-1', 'summary', 1000)",
+        rusqlite::params![format!("cc-{session_id}"), session_id],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO planning_goals (session_id, goal_text, status, created_at) \
+         VALUES (?1, 'goal', 'active', 1000)",
+        [session_id],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO planning_todos (session_id, content, priority, is_checked, status, \
+         created_at, updated_at) VALUES (?1, 'todo', 'medium', 0, 'pending', 1000, 1000)",
+        [session_id],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO planning_scratchpad (session_id, content, created_at, updated_at) \
+         VALUES (?1, 'note', 1000, 1000)",
+        [session_id],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO pending_queue (message_id, session_id, created_at, queue_seq) \
+         VALUES (?1, ?2, 1000, ?3)",
+        rusqlite::params![message_id, session_id, queue_seq],
+    )
+    .unwrap();
+}
+
+fn session_template() -> SessionMetadata {
+    SessionMetadata {
+        id: "template".to_string(),
+        name: None,
+        status: SessionStatus::Idle,
+        model: "gpt-4o".to_string(),
+        provider: "openai".to_string(),
+        assistant_id: None,
+        parent_session_id: None,
+        lineage_id: None,
+        depth: Some(0),
+        max_depth: None,
+        max_fanout: None,
+        org_id: None,
+        org_name: None,
+        org_root_session_id: None,
+        created_at: 0,
+        updated_at: 0,
+        last_viewed_at: None,
+        last_attention_at: None,
+        last_attention_reason: None,
+        last_message_at: None,
+        is_bookmarked: false,
+        execution_mode: ExecutionMode::Normal,
+        workspace_override: None,
+        workspace_isolation: WorkspaceIsolationMode::Host,
+        docker_config: None,
+        docker_container_name: None,
+        docker_host_workspace_path: None,
+        status_reason: None,
+    }
+}
+
+#[tokio::test]
+async fn snapshot_keep_session_retains_only_that_sessions_rows() {
+    let src_dir = TempDir::new().unwrap();
+    let src = src_dir.path().join("profile.db");
+    let workspace = TempDir::new().unwrap();
+    seed_continuable_session(&src, workspace.path()).await;
+
+    let dst = src_dir.path().join("snapshot.db");
+    tauri_mcp_agent_lib::headless::ephemeral_db::snapshot_sqlite_db_stripping_sessions(
+        &src,
+        &dst,
+        Some("s-cont"),
+    )
+    .unwrap();
+
+    assert_eq!(count_rows(&dst, "sessions"), 1);
+    assert_eq!(count_rows(&dst, "messages"), 2);
+    // The continued session keeps its compact context and planning state;
+    // the other session's rows in the same tables are stripped (#2859 G1.1).
+    for table in [
+        "compact_contexts",
+        "planning_todos",
+        "planning_goals",
+        "planning_scratchpad",
+    ] {
+        assert_eq!(
+            count_rows(&dst, table),
+            1,
+            "kept session's {table} row survives"
+        );
+    }
+    // pending_queue belongs to a run that no longer exists: always emptied.
+    assert_eq!(count_rows(&dst, "pending_queue"), 0);
+    // The source is opened read-only: continuation must not touch it.
+    assert_eq!(count_rows(&src, "sessions"), 2);
+    assert_eq!(count_rows(&src, "messages"), 3);
+}
+
+#[tokio::test]
+async fn bootstrap_session_continuation_keeps_identity_and_fork_base() {
+    let src_dir = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+    let src = src_dir.path().join("profile.db");
+    seed_continuable_session(&src, workspace.path()).await;
+
+    let mut args = default_headless_args("continue the work", workspace.path());
+    args.session = Some("s-cont".to_string());
+    let runtime = EphemeralHeadlessRuntime::bootstrap(Some(&src), &args)
+        .await
+        .expect("bootstrap --session");
+
+    assert_eq!(runtime.session_id, "s-cont");
+    assert!(runtime.resumed);
+    assert_eq!(
+        runtime.fork_base,
+        tauri_mcp_agent_lib::headless::SessionForkBase {
+            session_id: "s-cont".to_string(),
+            message_count: 2,
+            last_message_id: Some("m-2".to_string()),
+        }
+    );
+
+    // The continued session keeps its own configuration and metadata; the run
+    // executes under the session's workspace, not the invocation cwd.
+    let meta = runtime
+        .session_repo
+        .get_session("s-cont")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(meta.name.as_deref(), Some("Titled"));
+    assert_eq!(meta.created_at, 100);
+    assert_eq!(runtime.resolved.model, "gpt-4o");
+    assert_eq!(runtime.resolved.provider, "openai");
+    assert_eq!(
+        runtime.resolved.workspace_path,
+        workspace.path().canonicalize().unwrap()
+    );
+
+    // The snapshot holds only this session's two history rows (plus nothing
+    // of the other session), and the source profile DB is untouched.
+    let snapshot_rows = count_rows(&runtime.env.db_path, "messages");
+    assert_eq!(snapshot_rows, 2);
+    assert_eq!(count_rows(&src, "messages"), 3);
+
+    drop(runtime);
+}
+
+#[tokio::test]
+async fn bootstrap_session_cli_flags_override_the_sessions_own_config() {
+    let src_dir = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+    let src = src_dir.path().join("profile.db");
+    seed_continuable_session(&src, workspace.path()).await;
+
+    let mut args = default_headless_args("continue", workspace.path());
+    args.session = Some("s-cont".to_string());
+    args.model = Some("flag-model".to_string());
+    let runtime = EphemeralHeadlessRuntime::bootstrap(Some(&src), &args)
+        .await
+        .expect("bootstrap --session with --model");
+
+    // `--model` wins; the un-flagged provider falls back to the session's own.
+    assert_eq!(runtime.resolved.model, "flag-model");
+    assert_eq!(runtime.resolved.provider, "openai");
+
+    drop(runtime);
+}
+
+#[tokio::test]
+async fn bootstrap_unknown_session_id_fails_with_clear_error() {
+    let src_dir = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+    let src = src_dir.path().join("profile.db");
+    seed_continuable_session(&src, workspace.path()).await;
+
+    let mut args = default_headless_args("continue", workspace.path());
+    args.session = Some("no-such-session".to_string());
+    let err = EphemeralHeadlessRuntime::bootstrap(Some(&src), &args)
+        .await
+        .err()
+        .expect("unknown --session id must fail");
+    assert!(err.contains("Session not found: no-such-session"), "{err}");
+
+    // Failure happens after the read-only snapshot: the profile is intact.
+    assert_eq!(count_rows(&src, "sessions"), 2);
 }
 
 fn list_sessions_args(
