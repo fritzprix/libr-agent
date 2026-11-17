@@ -37,7 +37,10 @@ pub struct Model {
     pub forked_from: Option<String>,
     /// Monotonic counter of message row changes for this session (#2878).
     /// Maintained by the `messages_session_version_*` triggers; the headless
-    /// write-back uses it as the merge-or-fork base.
+    /// write-back uses it as the merge-or-fork base. `default_value` keeps
+    /// entity-generated test schemas (create_table_from_entity) insertable
+    /// without an explicit version, matching the migration's DEFAULT 0.
+    #[sea_orm(default_value = 0)]
     pub version: i64,
 }
 
