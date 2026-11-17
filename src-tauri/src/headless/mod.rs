@@ -17,12 +17,17 @@ use crate::agent::session_manager::execution_mode::set_execution_mode_in;
 use crate::agent::state::AgentSession;
 use crate::execution_mode::ExecutionMode;
 use crate::headless::cli::{
-    exit_codes, parse_cli, HeadlessArgs, LibletCommand, ListSessionsArgs, TtyState,
+    exit_codes, parse_cli, HeadlessArgs, InspectSessionArgs, LibletCommand, ListSessionsArgs,
+    OutputFormat, TtyState,
 };
 use crate::headless::ephemeral_db::{
     resolve_headless_config, resolve_workspace_path, EphemeralEnvironment, ResolvedHeadlessConfig,
 };
-use crate::headless::output::{write_final_output, HeadlessResultPayload};
+use crate::headless::output::{
+    inspect_digest_text, inspect_turn_text, write_final_output, HeadlessResultPayload,
+    InspectMessageDetail, InspectSessionDigest, InspectSessionMeta, InspectSessionTurn,
+    InspectToolCallDetail, InspectToolCallSummary, InspectTurnSummary,
+};
 use crate::headless::runner::{
     monitor_headless_session, spawn_interrupt_watcher, HeadlessMonitorParams, InterruptSignal,
 };
@@ -661,6 +666,292 @@ fn query_sessions_of(db_path: &Path, workspace: &Path) -> Result<Vec<SessionRow>
     .collect()
 }
 
+/// Character cap for `--inspect-session` digest previews (#2874).
+const INSPECT_PREVIEW_CHARS: usize = 120;
+
+/// One message row as read for `--inspect-session`.
+struct InspectMessageRow {
+    id: String,
+    role: String,
+    content: String,
+    tool_calls: String,
+    tool_call_id: Option<String>,
+    error: Option<String>,
+    created_at: i64,
+}
+
+/// Truncate to [`INSPECT_PREVIEW_CHARS`] characters on a char boundary.
+fn inspect_preview(raw: &str) -> String {
+    let trimmed = raw.trim();
+    let mut preview: String = trimmed.chars().take(INSPECT_PREVIEW_CHARS).collect();
+    if trimmed.chars().count() > INSPECT_PREVIEW_CHARS {
+        preview.push('…');
+    }
+    preview
+}
+
+/// Parse the persisted `tool_calls` JSON column into
+/// `(tool_call_id, tool_name, raw_arguments)` triples. A missing, malformed,
+/// or non-array value yields no calls.
+fn parse_persisted_tool_calls(raw: &str) -> Vec<(String, String, String)> {
+    let Ok(parsed) = serde_json::from_str::<serde_json::Value>(raw) else {
+        return Vec::new();
+    };
+    let Some(items) = parsed.as_array() else {
+        return Vec::new();
+    };
+    items
+        .iter()
+        .filter_map(|item| {
+            let tool_call_id = item.get("id")?.as_str()?.to_string();
+            let function = item.get("function")?;
+            let tool_name = function.get("name")?.as_str()?.to_string();
+            let arguments = match function.get("arguments")? {
+                serde_json::Value::String(text) => text.clone(),
+                other => other.to_string(),
+            };
+            Some((tool_call_id, tool_name, arguments))
+        })
+        .collect()
+}
+
+/// Index tool-result messages by the tool call id they answer.
+fn tool_results_by_call(
+    messages: &[InspectMessageRow],
+) -> HashMap<String, (String, Option<String>)> {
+    messages
+        .iter()
+        .filter(|message| message.role == "tool")
+        .filter_map(|message| {
+            let call_id = message.tool_call_id.clone()?;
+            Some((call_id, (message.content.clone(), message.error.clone())))
+        })
+        .collect()
+}
+
+/// Read one session's metadata and its ordered messages, read-only.
+/// `Ok(None)` means the session id is not in the profile database.
+fn query_inspect_session(
+    db_path: &Path,
+    id: &str,
+) -> Result<Option<(InspectSessionMeta, Vec<InspectMessageRow>)>, rusqlite::Error> {
+    use rusqlite::OptionalExtension;
+    let conn = rusqlite::Connection::open_with_flags(
+        db_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )?;
+    let meta = conn
+        .query_row(
+            "SELECT id, status, status_reason, model, provider, workspace_override, \
+             created_at, updated_at, forked_from \
+             FROM sessions WHERE id = ?1",
+            [id],
+            |row| {
+                Ok(InspectSessionMeta {
+                    id: row.get(0)?,
+                    forked_from: row.get(8)?,
+                    status: row.get(1)?,
+                    status_reason: row.get(2)?,
+                    workspace_path: row.get(5)?,
+                    model: row.get(3)?,
+                    provider: row.get(4)?,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
+                })
+            },
+        )
+        .optional()?;
+    let Some(meta) = meta else {
+        return Ok(None);
+    };
+
+    let mut stmt = conn.prepare(
+        "SELECT id, role, COALESCE(content, ''), COALESCE(tool_calls, ''), \
+         tool_call_id, error, created_at \
+         FROM messages WHERE session_id = ?1 ORDER BY created_at, id",
+    )?;
+    let rows = stmt.query_map([id], |row| {
+        Ok(InspectMessageRow {
+            id: row.get(0)?,
+            role: row.get(1)?,
+            content: row.get(2)?,
+            tool_calls: row.get(3)?,
+            tool_call_id: row.get(4)?,
+            error: row.get(5)?,
+            created_at: row.get(6)?,
+        })
+    })?;
+    let mut messages = Vec::new();
+    for row in rows {
+        messages.push(row?);
+    }
+    Ok(Some((meta, messages)))
+}
+
+/// Execute `--inspect-session` against the profile database, read-only:
+/// without `--turn` / `--message` a compact digest (session metadata plus
+/// per-turn summaries with bounded content previews and no full tool
+/// bodies); with one, the full persisted detail of that single message.
+/// No backend, scheduler, or MCP host starts, so it works while a GUI owns
+/// the same profile. Unknown sessions, unknown message ids, and
+/// out-of-range turns exit `1` with a diagnostic on stderr (#2874).
+pub fn run_inspect_session<Out: Write, ErrOut: Write>(
+    inspect_args: &InspectSessionArgs,
+    source_db_path: &Path,
+    stdout: &mut Out,
+    stderr: &mut ErrOut,
+) -> i32 {
+    if !source_db_path.exists() {
+        let _ = writeln!(
+            stderr,
+            "error: session '{}' not found (no profile database yet)",
+            inspect_args.session_id
+        );
+        return exit_codes::ERROR;
+    }
+
+    let (meta, messages) = match query_inspect_session(source_db_path, &inspect_args.session_id) {
+        Ok(Some(pair)) => pair,
+        Ok(None) => {
+            let _ = writeln!(
+                stderr,
+                "error: session '{}' not found",
+                inspect_args.session_id
+            );
+            return exit_codes::ERROR;
+        }
+        Err(err) => {
+            let _ = writeln!(
+                stderr,
+                "error: failed to inspect session {}: {err}",
+                inspect_args.session_id
+            );
+            return exit_codes::ERROR;
+        }
+    };
+
+    let selected: Option<usize> = if let Some(turn) = inspect_args.turn {
+        if turn >= messages.len() {
+            let _ = writeln!(
+                stderr,
+                "error: turn {turn} out of range: session '{}' has {} turns",
+                meta.id,
+                messages.len()
+            );
+            return exit_codes::ERROR;
+        }
+        Some(turn)
+    } else if let Some(message_id) = &inspect_args.message {
+        match messages.iter().position(|m| &m.id == message_id) {
+            Some(index) => Some(index),
+            None => {
+                let _ = writeln!(
+                    stderr,
+                    "error: message '{message_id}' not found in session '{}'",
+                    meta.id
+                );
+                return exit_codes::ERROR;
+            }
+        }
+    } else {
+        None
+    };
+
+    let results = tool_results_by_call(&messages);
+    let json_output = inspect_args.output_format == OutputFormat::Json;
+
+    match selected {
+        None => {
+            let turns = messages
+                .iter()
+                .enumerate()
+                .map(|(turn_index, message)| InspectTurnSummary {
+                    turn_index,
+                    message_id: message.id.clone(),
+                    role: message.role.clone(),
+                    content_preview: inspect_preview(&message.content),
+                    tool_calls: parse_persisted_tool_calls(&message.tool_calls)
+                        .into_iter()
+                        .map(|(tool_call_id, tool_name, _)| {
+                            let result = results.get(&tool_call_id);
+                            InspectToolCallSummary {
+                                tool_call_id,
+                                tool_name,
+                                is_error: result.and_then(|(_, err)| err.as_ref()).is_some(),
+                                error_preview: result
+                                    .and_then(|(_, err)| err.as_ref())
+                                    .map(|err| inspect_preview(err)),
+                            }
+                        })
+                        .collect(),
+                })
+                .collect();
+            let digest = InspectSessionDigest {
+                event_type: "session-digest".to_string(),
+                session: meta,
+                turns,
+            };
+            if json_output {
+                match serde_json::to_string_pretty(&digest) {
+                    Ok(json) => {
+                        let _ = writeln!(stdout, "{json}");
+                    }
+                    Err(err) => {
+                        let _ = writeln!(stderr, "error: failed to render digest: {err}");
+                        return exit_codes::ERROR;
+                    }
+                }
+            } else {
+                let _ = write!(stdout, "{}", inspect_digest_text(&digest));
+            }
+            exit_codes::SUCCESS
+        }
+        Some(index) => {
+            let message = &messages[index];
+            let tool_calls = parse_persisted_tool_calls(&message.tool_calls)
+                .into_iter()
+                .map(|(tool_call_id, tool_name, arguments)| {
+                    let result = results.get(&tool_call_id);
+                    InspectToolCallDetail {
+                        tool_call_id,
+                        tool_name,
+                        arguments,
+                        result: result.map(|(content, _)| content.clone()),
+                        is_error: result.and_then(|(_, err)| err.as_ref()).is_some(),
+                    }
+                })
+                .collect();
+            let detail = InspectSessionTurn {
+                event_type: "session-turn".to_string(),
+                session: meta,
+                turn_index: index,
+                message: InspectMessageDetail {
+                    message_id: message.id.clone(),
+                    role: message.role.clone(),
+                    content: message.content.clone(),
+                    tool_calls,
+                    error: message.error.clone(),
+                    created_at: message.created_at,
+                },
+            };
+            if json_output {
+                match serde_json::to_string_pretty(&detail) {
+                    Ok(json) => {
+                        let _ = writeln!(stdout, "{json}");
+                    }
+                    Err(err) => {
+                        let _ = writeln!(stderr, "error: failed to render turn detail: {err}");
+                        return exit_codes::ERROR;
+                    }
+                }
+            } else {
+                let _ = write!(stdout, "{}", inspect_turn_text(&detail));
+            }
+            exit_codes::SUCCESS
+        }
+    }
+}
+
 /// Run a full headless invocation using the hidden Tauri WebView runtime.
 ///
 /// Shares the bootstrap (`EphemeralHeadlessRuntime::bootstrap`), the run
@@ -1006,6 +1297,13 @@ pub fn run_liblet_main() -> i32 {
             let mut stdout = std::io::stdout();
             let mut stderr = std::io::stderr();
             run_list_sessions(&list_args, &source_db_path, &mut stdout, &mut stderr)
+        }
+        Ok(LibletCommand::InspectSession(inspect_args)) => {
+            let profile = crate::profile::resolve_profile();
+            let source_db_path = crate::profile::db_path(profile);
+            let mut stdout = std::io::stdout();
+            let mut stderr = std::io::stderr();
+            run_inspect_session(&inspect_args, &source_db_path, &mut stdout, &mut stderr)
         }
         Ok(LibletCommand::Headless(headless_args)) => {
             run_headless_with_hidden_webview(headless_args)
