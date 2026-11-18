@@ -323,6 +323,155 @@ async fn resume_workflow_rejects_while_compaction_in_flight() {
     assert_eq!(session.metadata.status, SessionStatus::Paused);
 }
 
+/// Issue #2898: `POST /api/sessions/:id/resume` (via `resume_workflow`) on an
+/// idle session whose last message is a completed assistant turn must not
+/// start an LLM turn. The session settles back to `Idle` instead of going
+/// Queued -> Busy -> Error.
+#[tokio::test]
+async fn resume_workflow_is_noop_for_idle_completed_session() {
+    let _guard = TEST_GUARD.lock().await;
+    init_runtime_primitives();
+
+    let session_id = "resume-idle-completed";
+    let metadata = build_session_metadata(session_id, SessionStatus::Idle);
+    let repo = Arc::new(InMemorySessionRepository::new());
+    repo.upsert_session(&metadata)
+        .await
+        .expect("session upsert");
+    let session_repo: Arc<dyn SessionRepository> = repo;
+
+    let session = build_agent_session(metadata, CompactionPhase::Idle);
+    {
+        let mut messages = session.messages.write().await;
+        messages.push(build_user_message(session_id, "u1", 1));
+        let mut assistant = build_user_message(session_id, "a1", 2);
+        assistant.role = "assistant".to_string();
+        messages.push(assistant);
+    }
+    let active_sessions = Arc::new(RwLock::new(HashMap::from([(
+        session_id.to_string(),
+        session,
+    )])));
+
+    let mock_app = tauri::test::mock_app();
+    let app_handle = mock_app_handle(&mock_app);
+    let temp_dir = tempfile::TempDir::new().expect("temp dir");
+    let session_workspace_manager = Arc::new(
+        tauri_mcp_agent_lib::session::SessionManager::new_with_base_dir(
+            temp_dir.path().join("session-root"),
+        )
+        .expect("session manager"),
+    );
+    let db = common::setup_test_db_with_migrations().await;
+    let proxy_manager = Arc::new(tauri_mcp_agent_lib::mcp::MCPServiceProxyManager::new(
+        Arc::new(db),
+        session_workspace_manager,
+    ));
+
+    tauri_mcp_agent_lib::agent::workflow::resume_workflow(
+        &session_repo,
+        &active_sessions,
+        &proxy_manager,
+        app_handle,
+        session_id.to_string(),
+    )
+    .await
+    .expect("resume of an idle completed session must succeed");
+
+    // A queued turn would have moved the status to Queued synchronously before
+    // spawning the background task; staying Idle proves no turn was started.
+    let active = active_sessions.read().await;
+    let session = active.get(session_id).expect("session");
+    assert_eq!(
+        session.metadata.status,
+        SessionStatus::Idle,
+        "idle completed session must stay Idle after resume"
+    );
+}
+
+/// Issue #2898 (gatekeeper G1.1): the cold-session case — the session is
+/// already active in memory but its transcript has not been loaded from the
+/// database yet (`cache_initialized == false`, e.g. after an app restart).
+/// The resume guard must evaluate the transcript after `ensure_cache_initialized`
+/// has loaded it, so the session still settles back to Idle instead of running
+/// an LLM turn on the unchanged stack.
+#[tokio::test]
+async fn resume_workflow_is_noop_for_cold_idle_completed_session() {
+    let _guard = TEST_GUARD.lock().await;
+    init_runtime_primitives();
+
+    let db = common::setup_test_db_with_migrations().await;
+    let session_id = format!("resume-cold-completed-{}", uuid::Uuid::new_v4());
+    let metadata = build_session_metadata(&session_id, SessionStatus::Idle);
+    let session_repo = SqliteSessionRepository::new(db.clone());
+    session_repo
+        .upsert_session(&metadata)
+        .await
+        .expect("session create");
+    let message_repo = SqliteMessageRepository::new(db.clone());
+    tauri_mcp_agent_lib::set_message_repository(message_repo.clone());
+    tauri_mcp_agent_lib::set_pending_queue_repository(SqlitePendingQueueRepository::new(
+        db.clone(),
+    ));
+    tauri_mcp_agent_lib::set_session_repository(session_repo.clone());
+    tauri_mcp_agent_lib::set_compact_context_repository(
+        tauri_mcp_agent_lib::repositories::SqliteCompactContextRepository::new(db.clone()),
+    );
+    let session_repo_dyn: Arc<dyn SessionRepository> = Arc::new(session_repo.clone());
+
+    // A completed turn persisted in the database only; nothing in memory yet.
+    message_repo
+        .insert(&build_user_message(&session_id, "cold-u1", 1))
+        .await
+        .expect("persist user message");
+    let mut assistant = build_user_message(&session_id, "cold-a1", 2);
+    assistant.role = "assistant".to_string();
+    message_repo
+        .insert(&assistant)
+        .await
+        .expect("persist assistant message");
+
+    let session = build_agent_session(metadata, CompactionPhase::Idle);
+    session
+        .cache_initialized
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    let active_sessions = Arc::new(RwLock::new(HashMap::from([(session_id.clone(), session)])));
+
+    let mock_app = tauri::test::mock_app();
+    let app_handle = mock_app_handle(&mock_app);
+    let temp_dir = tempfile::TempDir::new().expect("temp dir");
+    let session_workspace_manager = Arc::new(
+        tauri_mcp_agent_lib::session::SessionManager::new_with_base_dir(
+            temp_dir.path().join("session-root"),
+        )
+        .expect("session manager"),
+    );
+    let proxy_manager = Arc::new(tauri_mcp_agent_lib::mcp::MCPServiceProxyManager::new(
+        Arc::new(db),
+        session_workspace_manager,
+    ));
+
+    tauri_mcp_agent_lib::agent::workflow::resume_workflow(
+        &session_repo_dyn,
+        &active_sessions,
+        &proxy_manager,
+        app_handle,
+        session_id.clone(),
+    )
+    .await
+    .expect("cold resume of an idle completed session must succeed");
+
+    let active = active_sessions.read().await;
+    let session = active.get(&session_id).expect("session");
+    assert_eq!(
+        session.metadata.status,
+        SessionStatus::Idle,
+        "cold idle completed session must stay Idle after resume"
+    );
+    // The transcript was loaded by the cache init that runs before the guard.
+    assert_eq!(session.messages.read().await.len(), 2);
+}
+
 #[tokio::test]
 async fn user_message_during_manual_compaction_is_enqueued_without_clearing_inflight() {
     let _guard = TEST_GUARD.lock().await;
