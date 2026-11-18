@@ -21,12 +21,34 @@ pub(crate) fn describe_join_error(error: tokio::task::JoinError) -> String {
     format!("blocking process task failed: {error}")
 }
 
+/// Liveness via `kill(2)` with signal 0 — an existence check that delivers
+/// no signal.
+///
+/// The syscall replaces spawning `/usr/bin/kill -0`, whose child inherited
+/// our stderr: every probe of a dead pid leaked
+/// `kill: (<pid>): No such process` onto the terminal at startup (#2882).
+///
+/// Matches the Windows probe's #2823 contract: `EPERM` means the pid exists
+/// but we may not signal it (alive), `ESRCH` is positive proof of death, and
+/// any other errno is `Err` — which `probe_proves_dead` never counts as dead.
 #[cfg(unix)]
 pub(crate) fn process_is_alive(pid: u32) -> io::Result<bool> {
-    Ok(Command::new("kill")
-        .args(["-0", &pid.to_string()])
-        .status()?
-        .success())
+    // `pid_t` is `c_int`; a pid above it cannot exist on this platform, so
+    // it is positively gone. (Without this guard a huge `u32` pid wraps to a
+    // negative `pid_t` and `kill(2)` would address a process *group*.)
+    let Ok(pid_t) = i32::try_from(pid) else {
+        return Ok(false);
+    };
+    // Safety: kill(2) with signal 0 only checks existence and permission.
+    if unsafe { libc::kill(pid_t, 0) } == 0 {
+        return Ok(true);
+    }
+    let err = io::Error::last_os_error();
+    match err.raw_os_error() {
+        Some(libc::ESRCH) => Ok(false),
+        Some(libc::EPERM) => Ok(true),
+        _ => Err(err),
+    }
 }
 
 #[cfg(windows)]
@@ -399,15 +421,18 @@ pub(crate) fn force_kill_process(pid: u32) -> io::Result<()> {
 
     #[cfg(unix)]
     {
-        let status = Command::new("kill")
-            .args(["-KILL", &pid.to_string()])
-            .status()?;
-        if status.success() || !process_is_alive(pid)? {
-            return Ok(());
+        // `kill(2)` instead of spawning `/usr/bin/kill -KILL`: the child
+        // inherited our stderr and leaked shell errors for pids that died
+        // concurrently (#2882). `signal_kill` already uses the syscall.
+        if let Err(err) = signal_kill(pid as i32) {
+            // ESRCH: the target exited concurrently with us — already gone.
+            if err.raw_os_error() != Some(libc::ESRCH) && process_is_alive(pid)? {
+                return Err(io::Error::other(format!(
+                    "failed to kill process {pid}: {err}"
+                )));
+            }
         }
-        Err(io::Error::other(format!(
-            "failed to kill process {pid}: {status}"
-        )))
+        Ok(())
     }
 
     #[cfg(windows)]
@@ -620,5 +645,57 @@ mod tests {
         assert_eq!(map.get(&100), Some(&vec![200, 201]));
         // Invalid lines ignored
         assert_eq!(map.get(&999), None);
+    }
+
+    /// Issue #2882: the Unix liveness probe must write nothing to our
+    /// stderr. The old implementation spawned `/usr/bin/kill -0 <dead pid>`,
+    /// whose child inherited our stderr and printed
+    /// `kill: (<pid>): No such process` on every startup.
+    ///
+    /// The probe's own stderr can only be observed from outside, so this
+    /// test re-executes the test binary once in "helper" mode (probe a pid
+    /// the OS has already reaped, then exit) and asserts the helper child's
+    /// captured stderr is empty.
+    #[test]
+    fn probe_of_dead_pid_writes_nothing_to_stderr() {
+        const HELPER_ENV: &str = "LIBRAGENT_PROBE_STDERR_HELPER";
+        if std::env::var_os(HELPER_ENV).is_some() {
+            // Helper mode: probe a pid the OS has reaped, then report
+            // success. The parent asserts on our captured stderr.
+            let mut child = Command::new("sleep")
+                .arg("0")
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .expect("spawn sleep");
+            let dead_pid = child.id();
+            child.wait().expect("reap sleep");
+            let dead = process_is_alive(dead_pid).expect("probe a reaped pid");
+            assert!(!dead, "reaped pid {dead_pid} must be proven dead");
+            return;
+        }
+
+        let exe = std::env::current_exe().expect("test binary path");
+        let output = Command::new(exe)
+            .args([
+                "--exact",
+                "utils::process::tests::probe_of_dead_pid_writes_nothing_to_stderr",
+                "--test-threads=1",
+                "--nocapture",
+            ])
+            .env(HELPER_ENV, "1")
+            .output()
+            .expect("re-execute test binary as probe helper");
+        assert!(
+            output.status.success(),
+            "helper probe run failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&output.stderr).trim(),
+            "",
+            "probing a dead pid must write nothing to stderr (#2882)"
+        );
     }
 }
