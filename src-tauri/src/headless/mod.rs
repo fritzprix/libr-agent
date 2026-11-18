@@ -21,13 +21,16 @@ mod launch;
 mod runtime;
 mod webview;
 
-use self::inspect::{run_inspect_session, run_list_sessions};
 use self::launch::should_read_piped_stdin;
 use self::webview::run_headless_with_hidden_webview;
 use crate::headless::cli::{exit_codes, parse_cli, LibletCommand, TtyState};
 use std::io::{IsTerminal, Read, Write};
 
+// The integration tests (`tests/liblet_headless_tests.rs`) drive these directly, so
+// they stay on the `crate::headless` root even though they now live in submodules.
+pub use inspect::{run_inspect_session, run_list_sessions};
 pub use launch::{attach_parent_console, wants_headless};
+pub use runtime::{init_ephemeral_database, EphemeralHeadlessRuntime, SessionForkBase};
 
 /// Entry point for the `liblet` binary.
 pub fn run_liblet_main() -> i32 {
