@@ -356,7 +356,7 @@ pub async fn owner(session_id: &str) -> Option<String> {
 /// run** owns — the GUI list view (#2856). One query for the whole page;
 /// rows owned by this run are live without a probe, and the liveness
 /// probe for foreign rows runs on the blocking pool so a page of sessions
-/// never spawns `kill -0` children on the async runtime (#2856 G1.2).
+/// never runs its liveness probes on the async runtime (#2856 G1.2).
 pub async fn open_elsewhere_ids(session_ids: &[String]) -> HashSet<String> {
     let Some(store) = store() else {
         return HashSet::new();
@@ -401,6 +401,10 @@ pub async fn live_owned_ids(session_ids: &[String]) -> HashSet<String> {
 /// up for grabs regardless of liveness); rows owned by `my_run` are live
 /// without a probe; foreign fresh rows are probed on the blocking pool,
 /// and a probe that cannot prove death keeps the row live (#2823).
+///
+/// Rows whose owner is *positively proved* gone are deleted here (guarded
+/// on the observed `owner_run`), so the same dead pid is not probed again
+/// on every later render or start (#2882).
 async fn live_owners(
     db: &DatabaseConnection,
     my_run: &str,
@@ -427,7 +431,7 @@ async fn live_owners(
 
     let cutoff = stale_before_ms();
     let mut live: HashMap<String, String> = HashMap::new();
-    let mut probes: Vec<(String, u32, i64)> = Vec::new();
+    let mut probes: Vec<(String, String, u32, i64)> = Vec::new();
     for row in &rows {
         let parsed = (
             row.try_get::<String>("", "session_id"),
@@ -453,27 +457,42 @@ async fn live_owners(
         // proven death (#2823). A pid that cannot name a process is a
         // broken row: not live, so it is simply never inserted.
         if let Ok(pid) = u32::try_from(owner_pid) {
-            live.insert(session_id.clone(), owner_run);
-            probes.push((session_id, pid, started_marker));
+            live.insert(session_id.clone(), owner_run.clone());
+            probes.push((session_id, owner_run, pid, started_marker));
         }
     }
 
     if !probes.is_empty() {
-        // The probe spawns a `kill -0` child (Linux) or opens a process
-        // handle (Windows): synchronous work that must stay off the async
+        // The probe is a synchronous `kill(2)` syscall (Linux/macOS) or
+        // process handle open (Windows): work that must stay off the async
         // runtime (#2856 G1.2). A join failure proves no death, so the
         // rows stay live (#2823).
-        let dead: HashSet<String> = tokio::task::spawn_blocking(move || {
+        let dead: Vec<(String, String)> = tokio::task::spawn_blocking(move || {
             probes
                 .into_iter()
-                .filter(|(_, pid, marker)| owner_is_dead_with_marker(*pid, *marker, is_alive))
-                .map(|(session_id, _, _)| session_id)
+                .filter(|(_, _, pid, marker)| owner_is_dead_with_marker(*pid, *marker, is_alive))
+                .map(|(session_id, owner_run, _, _)| (session_id, owner_run))
                 .collect()
         })
         .await
         .unwrap_or_default();
-        for session_id in dead {
+        for (session_id, owner_run) in dead {
             live.remove(&session_id);
+            // #2882: a proven-dead row left in the database is probed again
+            // on every later render and every start. Remove it once. The
+            // delete is guarded on the `owner_run` observed above, so a
+            // takeover that replaced the row since then is left untouched.
+            let stmt = Statement::from_sql_and_values(
+                db.get_database_backend(),
+                DELETE_OWNER,
+                [
+                    Value::from(session_id.as_str()),
+                    Value::from(owner_run.as_str()),
+                ],
+            );
+            if let Err(error) = db.execute(stmt).await {
+                log::warn!("session ownership dead-owner sweep failed: {error}");
+            }
         }
     }
     live
@@ -694,11 +713,10 @@ mod tests {
 
     #[tokio::test]
     async fn a_dead_owner_pid_loses_the_lock_immediately() {
-        // A pid far above every real pid, yet small enough that procps
-        // `kill` parses it without sign wraparound (u32::MAX reads as -1
-        // and hits the broadcast pid): the probe reads the row's owner as
-        // definitively gone, so the lock is taken over without waiting for
-        // the heartbeat to lapse.
+        // A pid far above every real pid (and above `pid_t`'s range, which
+        // the probe rejects without ever signalling): the probe reads the
+        // row's owner as definitively gone, so the lock is taken over
+        // without waiting for the heartbeat to lapse.
         let db = shared_test_store().await;
         let session = unique("session");
         let crashed = RunIdentity {
@@ -839,5 +857,51 @@ mod tests {
 
         assert!(open_elsewhere_ids(&[foreign.clone()]).await.is_empty());
         assert!(live_owned_ids(&[foreign]).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_dead_owner_row_is_swept_after_the_list_view_probes_it() {
+        // #2882: a proven-dead ownership row used to stay in the database
+        // forever, so every later list render — and every app start —
+        // probed the same dead pid again. The first list view that proves
+        // the owner gone must remove the row.
+        let db = shared_test_store().await;
+        let session = unique("session");
+        let dead_run = unique("run");
+        // A pid far above every real pid: the probe proves it gone at once
+        // (same stand-in as `a_dead_owner_pid_loses_the_lock_immediately`).
+        let stmt = Statement::from_sql_and_values(
+            db.get_database_backend(),
+            INSERT_OWNER,
+            [
+                Value::from(session.as_str()),
+                Value::from(dead_run.as_str()),
+                Value::from(1i64 << 31),
+                Value::from(0i64),
+                Value::from(now_ms()),
+            ],
+        );
+        db.execute(stmt).await.expect("insert dead-owner row");
+
+        let live = live_owned_ids(&[session.clone()]).await;
+        assert!(
+            live.is_empty(),
+            "the proven-dead owner must not count as live: {live:?}"
+        );
+
+        let row = db
+            .query_one(Statement::from_sql_and_values(
+                db.get_database_backend(),
+                "SELECT COUNT(*) AS c FROM session_ownership WHERE session_id = ?",
+                [Value::from(session.as_str())],
+            ))
+            .await
+            .expect("count ownership rows")
+            .expect("COUNT always returns a row");
+        let remaining: i64 = row.try_get("", "c").expect("count readable");
+        assert_eq!(
+            remaining, 0,
+            "the proven-dead row must be swept so later starts do not re-probe it (#2882)"
+        );
     }
 }
