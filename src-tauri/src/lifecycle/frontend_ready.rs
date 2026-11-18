@@ -17,12 +17,22 @@ pub fn is_ready() -> bool {
     IS_READY.load(Ordering::SeqCst)
 }
 
-/// Wait until the frontend is ready
+/// Wait until the frontend is ready.
+///
+/// The notification is registered before the flag is read again: `notify_waiters`
+/// drops a wakeup that nobody is waiting for, so a frontend that signals
+/// readiness between the first check and the wait would otherwise hang the
+/// caller until its timeout.
 pub async fn wait_until_ready() {
-    if IS_READY.load(Ordering::SeqCst) {
-        return;
+    while !is_ready() {
+        let notified = READY_NOTIFY.notified();
+        tokio::pin!(notified);
+        notified.as_mut().enable();
+        if is_ready() {
+            return;
+        }
+        notified.await;
     }
-    READY_NOTIFY.notified().await;
 }
 
 /// Blocking wait for frontend readiness (TUI front thread on Windows).
