@@ -233,16 +233,34 @@ fn formatted_dispatch() -> fern::Dispatch {
 }
 
 pub fn setup_file_logger(log_dir: PathBuf, log_retention_days: u64) -> Result<(), String> {
-    setup_file_logger_with_rotation(log_dir, log_retention_days, true)
+    setup_logger_with_console(log_dir, log_retention_days, true, ConsoleTarget::Stdout)
+}
+
+/// Headless CLI logger (#2885): logs go to **stderr** and the log file,
+/// never stdout. In headless mode stdout carries only the selected
+/// `--output-format` document, so `libragent --headless --output-format
+/// json` output stays parseable as a single JSON value.
+pub fn setup_headless_file_logger(log_dir: PathBuf, log_retention_days: u64) -> Result<(), String> {
+    setup_logger_with_console(log_dir, log_retention_days, true, ConsoleTarget::Stderr)
+}
+
+/// Console stream the logger mirrors to, chosen by the entry point.
+enum ConsoleTarget {
+    /// GUI backend: terminal-launched users see logs on stdout alongside
+    /// the window (existing behavior).
+    Stdout,
+    /// Headless CLI: stdout is reserved for formatter output (#2885).
+    Stderr,
 }
 
 /// `rotate_existing` renames this process's `libragent.<pid>.log` aside before
 /// opening a new file. Pass `false` only in tests that need append mode; each
 /// backend owns its own file so rotation never touches another process (#2858).
-pub fn setup_file_logger_with_rotation(
+fn setup_logger_with_console(
     log_dir: PathBuf,
     log_retention_days: u64,
     rotate_existing: bool,
+    console: ConsoleTarget,
 ) -> Result<(), String> {
     set_log_retention_days(log_retention_days);
 
@@ -258,10 +276,13 @@ pub fn setup_file_logger_with_rotation(
 
     let log_level = resolve_launch_log_level();
 
-    formatted_dispatch()
-        .level(log_level)
-        .chain(std::io::stdout()) // Keep stdout
-        .chain(file) // Add file output
+    let dispatch = formatted_dispatch().level(log_level).chain(file); // Add file output
+    let dispatch = match console {
+        ConsoleTarget::Stdout => dispatch.chain(std::io::stdout()), // Keep stdout
+        // #2885: headless stdout is only the formatter output.
+        ConsoleTarget::Stderr => dispatch.chain(std::io::stderr()),
+    };
+    dispatch
         .apply()
         .map_err(|e| format!("Failed to set logger: {}", e))?;
 
@@ -283,7 +304,7 @@ pub fn setup_file_logger_with_rotation(
 /// Prepare this process's active log file: rotate `libragent.<pid>.log` aside
 /// when `rotate_existing`, prune archives, then open the file — truncated for
 /// a fresh start when rotating, appended when not. Split out from
-/// [`setup_file_logger_with_rotation`] so the rotation behavior is testable
+/// [`setup_logger_with_console`] so the rotation behavior is testable
 /// without installing the global logger.
 /// Returns `(file, pruned_files, pruned_bytes)`.
 fn prepare_log_file(
