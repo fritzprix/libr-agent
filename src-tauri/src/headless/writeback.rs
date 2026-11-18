@@ -14,7 +14,7 @@
 //! - Secrets that reached the ephemeral copy (provider configs, MCP env,
 //!   process environment) are redacted from every row before it is inserted.
 
-use crate::headless::EphemeralHeadlessRuntime;
+use crate::headless::runtime::EphemeralHeadlessRuntime;
 use crate::mcp::secret_templates::mask_values;
 use rusqlite::types::Value;
 use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
@@ -317,7 +317,7 @@ fn has_live_owner(conn: &Connection, id: &str) -> Result<bool, String> {
 fn fork_base_matches(
     conn: &Connection,
     id: &str,
-    base: &crate::headless::SessionForkBase,
+    base: &crate::headless::runtime::SessionForkBase,
 ) -> Result<bool, String> {
     let version: Option<i64> = conn
         .query_row("SELECT version FROM sessions WHERE id = ?1", [id], |row| {
