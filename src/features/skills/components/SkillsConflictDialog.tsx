@@ -90,12 +90,12 @@ export function SkillsConflictDialog({
                   {pendingInstall?.preview.hooks.map((hook, index) => (
                     <div
                       key={`${hook.event}-${hook.command}-${index}`}
-                      className="space-y-1 border-t border-border/60 pt-2 first:border-t-0 first:pt-0"
+                      className="min-w-0 space-y-1 border-t border-border/60 pt-2 first:border-t-0 first:pt-0"
                     >
-                      <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
                         <span className="font-medium">{hook.event}</span>
                         {hook.matcher ? (
-                          <span className="text-xs text-muted-foreground">
+                          <span className="min-w-0 break-all text-xs text-muted-foreground">
                             {hook.matcher}
                           </span>
                         ) : null}
@@ -207,7 +207,7 @@ export function SkillsConflictDialog({
             </div>
           </ScrollArea>
         </div>
-        <AlertDialogFooter className="px-6 pt-4 pb-6 flex-col sm:flex-row gap-2">
+        <AlertDialogFooter className="min-w-0 px-6 pt-4 pb-6 flex-col sm:flex-row sm:flex-wrap sm:justify-end gap-2">
           <AlertDialogCancel disabled={isInstallingLocal || isInstallingGithub}>
             {t('common.cancel', 'Cancel')}
           </AlertDialogCancel>
@@ -245,7 +245,10 @@ export function SkillsConflictDialog({
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
             )}
             {hasHooks
-              ? t('settings.skills.installWithHooks', 'Install and approve hooks')
+              ? t(
+                  'settings.skills.installWithHooks',
+                  'Install and approve hooks',
+                )
               : userConflicts.length > 0 &&
                   (pendingInstall?.selectedOverwriteNames.length ?? 0) > 0
                 ? t('settings.skills.replaceConflicts', 'Replace and install')
