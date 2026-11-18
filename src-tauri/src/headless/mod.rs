@@ -138,4 +138,88 @@ mod tests {
         assert!(!args_want_headless(argv(&["-p", "--list-sessions"])));
         assert!(!args_want_headless(argv(&["--", "--inspect-session"])));
     }
+
+    /// Issue #2885: headless stdout carries only the `--output-format`
+    /// document. The logger used to mirror every line to stdout, so
+    /// `--output-format json` printed 40+ `[time][target][LEVEL]` lines
+    /// before the result line and the stream failed to parse.
+    ///
+    /// stdout purity can only be observed from outside, so this test
+    /// re-executes the test binary in "helper" mode — headless logger, a
+    /// few log lines (including a `[webview]` frontend log), and one JSON
+    /// final output — then asserts the helper child's captured stdout is a
+    /// single JSON value and its stderr holds the log lines.
+    #[test]
+    fn json_output_stdout_stays_a_single_json_value() {
+        use crate::execution_mode::ExecutionMode;
+        use crate::headless::cli::OutputFormat;
+        use crate::headless::output::{write_final_output, HeadlessResultPayload};
+
+        const HELPER_ENV: &str = "LIBRAGENT_JSON_STDOUT_HELPER";
+        if std::env::var_os(HELPER_ENV).is_some() {
+            // Helper mode: mimic a headless run's output path — logger to
+            // stderr + file, formatter result to stdout.
+            let log_dir = tempfile::tempdir().expect("log dir");
+            crate::logger::setup_headless_file_logger(log_dir.path().to_path_buf(), 1)
+                .expect("headless logger");
+            log::info!("startup log line");
+            log::info!(target: "[webview]", "frontend ready log line");
+            let payload = HeadlessResultPayload::completed(
+                "42".to_string(),
+                "/tmp/ws".to_string(),
+                ExecutionMode::Normal,
+            );
+            let mut stdout = std::io::stdout();
+            let mut stderr = std::io::stderr();
+            write_final_output(OutputFormat::Json, &payload, &mut stdout, &mut stderr)
+                .expect("write json output"); // flushes stdout
+                                              // Exit right after the result so the harness prints no trailing
+                                              // `ok`/summary after the JSON document.
+            std::process::exit(0);
+        }
+
+        let exe = std::env::current_exe().expect("test binary path");
+        let output = std::process::Command::new(exe)
+            .args([
+                "--exact",
+                "headless::tests::json_output_stdout_stays_a_single_json_value",
+                "--test-threads=1",
+            ])
+            .env(HELPER_ENV, "1")
+            .output()
+            .expect("re-execute test binary as json stdout helper");
+        assert!(
+            output.status.success(),
+            "helper run failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        // The harness writes `running 1 test` and a `test <name> ... `
+        // prefix (no newline) before the helper body runs; the helper then
+        // exits right after the JSON, so the first `{` starts the result
+        // document and nothing may follow it but whitespace. Log lines
+        // mirroring to stdout would sit in the prefix or after the JSON
+        // and fail one of the two assertions below.
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let prefix = stdout.split('{').next().expect("split at first brace");
+        assert!(
+            !prefix.contains("startup log line")
+                && !prefix.contains("frontend ready log line")
+                && !prefix.contains("[INFO]"),
+            "log lines must never reach stdout: {stdout:?}"
+        );
+        let json_start = stdout
+            .find('{')
+            .unwrap_or_else(|| panic!("expected one JSON result on stdout; got: {stdout:?}"));
+        let value: serde_json::Value = serde_json::from_str(stdout[json_start..].trim())
+            .unwrap_or_else(|e| panic!("stdout must hold one JSON value ({e}); got: {stdout:?}"));
+        assert_eq!(value["type"], "result");
+        assert_eq!(value["status"], "completed");
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("startup log line") && stderr.contains("frontend ready log line"),
+            "logs must go to stderr, not be lost: {stderr:?}"
+        );
+    }
 }
