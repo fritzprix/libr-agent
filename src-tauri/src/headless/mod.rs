@@ -54,6 +54,13 @@ pub const HEADLESS_FLAG: &str = "--headless";
 /// marker (#2859).
 pub const SESSION_CONTINUATION_FLAG: &str = "--session";
 
+/// Read-only CLI views that also select in-process dispatch on `libragent`
+/// (#2885): `libragent --inspect-session <id>` and `libragent --list-sessions`
+/// print and exit like `liblet` — they must never boot a second GUI on the
+/// profile.
+pub const INSPECT_SESSION_FLAG: &str = "--inspect-session";
+pub const LIST_SESSIONS_FLAG: &str = "--list-sessions";
+
 /// Flags whose next argv token is their value, never a flag. Mirrors the
 /// value-taking options of [`cli::parse_cli`]; keep the two in sync.
 const ARGS_TAKING_VALUE: &[&str] = &[
@@ -71,6 +78,7 @@ const ARGS_TAKING_VALUE: &[&str] = &[
     "--resume",
     "--name",
     "--profile",
+    INSPECT_SESSION_FLAG,
 ];
 
 /// True when the given arguments select in-process headless execution.
@@ -91,6 +99,8 @@ pub fn args_want_headless(args: impl IntoIterator<Item = impl AsRef<str>>) -> bo
         }
         if arg == HEADLESS_FLAG
             || arg == SESSION_CONTINUATION_FLAG
+            || arg == INSPECT_SESSION_FLAG
+            || arg == LIST_SESSIONS_FLAG
             || arg.starts_with(&format!("{SESSION_CONTINUATION_FLAG}="))
         {
             return true;
@@ -103,7 +113,8 @@ pub fn args_want_headless(args: impl IntoIterator<Item = impl AsRef<str>>) -> bo
     false
 }
 
-/// True when this process was started with [`HEADLESS_FLAG`] or `--session`.
+/// True when this process was started with [`HEADLESS_FLAG`],
+/// `--session`, [`INSPECT_SESSION_FLAG`], or [`LIST_SESSIONS_FLAG`].
 pub fn wants_headless() -> bool {
     args_want_headless(std::env::args())
 }
@@ -143,7 +154,12 @@ pub fn should_read_piped_stdin(args: &[String], tty: TtyState) -> bool {
         }
         if matches!(
             arg.as_str(),
-            "-h" | "--help" | "-V" | "--version" | "--list-sessions" | "--hook"
+            "-h" | "--help"
+                | "-V"
+                | "--version"
+                | "--list-sessions"
+                | "--inspect-session"
+                | "--hook"
         ) || arg.starts_with("--hook=")
         {
             return false;
@@ -1179,7 +1195,9 @@ fn setup_hidden_headless_app(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let ephemeral_data_dir = runtime.env.data_dir.clone();
     let log_dir = ephemeral_data_dir.join("logs");
-    let _ = crate::logger::setup_file_logger(log_dir, 1);
+    // #2885: headless stdout carries only the `--output-format` document;
+    // logs go to stderr and the ephemeral log file.
+    let _ = crate::logger::setup_headless_file_logger(log_dir, 1);
 
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.hide();
@@ -1458,5 +1476,106 @@ mod tests {
         assert!(!args_want_headless(argv(&["--", "--headless"])));
         assert!(!args_want_headless(argv(&[])));
         assert!(!args_want_headless(argv(&["--headlined"])));
+    }
+
+    #[test]
+    fn read_only_view_flags_select_headless_dispatch() {
+        // #2885: `libragent --inspect-session` and `libragent --list-sessions`
+        // must run in-process like `liblet` — never boot a second GUI.
+        assert!(args_want_headless(argv(&["--inspect-session", "s-1"])));
+        assert!(args_want_headless(argv(&[
+            "--turn",
+            "2",
+            "--inspect-session",
+            "s-1"
+        ])));
+        assert!(args_want_headless(argv(&["--list-sessions"])));
+        // Values that merely read like these flags are still just values.
+        assert!(!args_want_headless(argv(&["-p", "--list-sessions"])));
+        assert!(!args_want_headless(argv(&["--", "--inspect-session"])));
+    }
+
+    /// Issue #2885: headless stdout carries only the `--output-format`
+    /// document. The logger used to mirror every line to stdout, so
+    /// `--output-format json` printed 40+ `[time][target][LEVEL]` lines
+    /// before the result line and the stream failed to parse.
+    ///
+    /// stdout purity can only be observed from outside, so this test
+    /// re-executes the test binary in "helper" mode — headless logger, a
+    /// few log lines (including a `[webview]` frontend log), and one JSON
+    /// final output — then asserts the helper child's captured stdout is a
+    /// single JSON value and its stderr holds the log lines.
+    #[test]
+    fn json_output_stdout_stays_a_single_json_value() {
+        use crate::execution_mode::ExecutionMode;
+        use crate::headless::cli::OutputFormat;
+        use crate::headless::output::{write_final_output, HeadlessResultPayload};
+
+        const HELPER_ENV: &str = "LIBRAGENT_JSON_STDOUT_HELPER";
+        if std::env::var_os(HELPER_ENV).is_some() {
+            // Helper mode: mimic a headless run's output path — logger to
+            // stderr + file, formatter result to stdout.
+            let log_dir = tempfile::tempdir().expect("log dir");
+            crate::logger::setup_headless_file_logger(log_dir.path().to_path_buf(), 1)
+                .expect("headless logger");
+            log::info!("startup log line");
+            log::info!(target: "[webview]", "frontend ready log line");
+            let payload = HeadlessResultPayload::completed(
+                "42".to_string(),
+                "/tmp/ws".to_string(),
+                ExecutionMode::Normal,
+            );
+            let mut stdout = std::io::stdout();
+            let mut stderr = std::io::stderr();
+            write_final_output(OutputFormat::Json, &payload, &mut stdout, &mut stderr)
+                .expect("write json output"); // flushes stdout
+                                              // Exit right after the result so the harness prints no trailing
+                                              // `ok`/summary after the JSON document.
+            std::process::exit(0);
+        }
+
+        let exe = std::env::current_exe().expect("test binary path");
+        let output = std::process::Command::new(exe)
+            .args([
+                "--exact",
+                "headless::tests::json_output_stdout_stays_a_single_json_value",
+                "--test-threads=1",
+            ])
+            .env(HELPER_ENV, "1")
+            .output()
+            .expect("re-execute test binary as json stdout helper");
+        assert!(
+            output.status.success(),
+            "helper run failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        // The harness writes `running 1 test` and a `test <name> ... `
+        // prefix (no newline) before the helper body runs; the helper then
+        // exits right after the JSON, so the first `{` starts the result
+        // document and nothing may follow it but whitespace. Log lines
+        // mirroring to stdout would sit in the prefix or after the JSON
+        // and fail one of the two assertions below.
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let prefix = stdout.split('{').next().expect("split at first brace");
+        assert!(
+            !prefix.contains("startup log line")
+                && !prefix.contains("frontend ready log line")
+                && !prefix.contains("[INFO]"),
+            "log lines must never reach stdout: {stdout:?}"
+        );
+        let json_start = stdout
+            .find('{')
+            .unwrap_or_else(|| panic!("expected one JSON result on stdout; got: {stdout:?}"));
+        let value: serde_json::Value = serde_json::from_str(stdout[json_start..].trim())
+            .unwrap_or_else(|e| panic!("stdout must hold one JSON value ({e}); got: {stdout:?}"));
+        assert_eq!(value["type"], "result");
+        assert_eq!(value["status"], "completed");
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("startup log line") && stderr.contains("frontend ready log line"),
+            "logs must go to stderr, not be lost: {stderr:?}"
+        );
     }
 }
