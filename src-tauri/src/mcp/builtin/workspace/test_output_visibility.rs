@@ -343,6 +343,123 @@ mod tests {
         }
     }
 
+    /// #2880: for a command that exits in milliseconds, the stderr pipe can still
+    /// hold data when the stdout sentinel arrives. Looping the fast-failing
+    /// command exercises that race repeatedly, and the trailing clean call catches
+    /// any stderr left unread in the pipe (it would leak into the next command).
+    #[tokio::test]
+    async fn a_fast_nonzero_exit_never_drops_or_leaks_stderr_in_the_persistent_shell() {
+        let harness = create_server().await;
+
+        for round in 0..20 {
+            let text = run(&harness.server, SHELL_TOOLS.1, EXIT_2_COMMAND).await;
+            assert!(
+                text.contains("out-line"),
+                "round {round} dropped stdout: {text}"
+            );
+            assert!(
+                text.contains("err-line"),
+                "round {round} dropped stderr: {text}"
+            );
+            assert!(text.contains("exit code: 2"), "round {round}: {text}");
+        }
+
+        let clean = run(&harness.server, SHELL_TOOLS.1, "echo clean-after").await;
+        assert!(
+            clean.contains("clean-after"),
+            "clean run lost stdout: {clean}"
+        );
+        assert!(
+            !clean.contains("err-line"),
+            "stderr from a previous round leaked into the next command: {clean}"
+        );
+    }
+
+    /// #2881: a command that redirects the shell's own stderr away
+    /// (`exec 2>/dev/null`, `exec 2>&1`) must not swallow the per-command end
+    /// marker — the marker travels on a private fd — so neither the redirecting
+    /// command nor any following command may hang, and later output stays
+    /// correct. Each call is wrapped in a generous timeout so a hang fails the
+    /// test instead of blocking the suite.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn stderr_exec_redirections_do_not_hang_the_persistent_shell() {
+        let harness = create_server().await;
+
+        let hide = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            run(
+                &harness.server,
+                SHELL_TOOLS.1,
+                "echo before-exec; exec 2>/dev/null; echo after-exec 1>&2",
+            ),
+        )
+        .await
+        .expect("exec 2>/dev/null hung the persistent shell reader");
+        assert!(hide.contains("before-exec"), "{hide}");
+        assert!(hide.contains("exit code: 0"), "{hide}");
+
+        let merge = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            run(
+                &harness.server,
+                SHELL_TOOLS.1,
+                "exec 2>&1; echo merged-stderr 1>&2",
+            ),
+        )
+        .await
+        .expect("exec 2>&1 hung the persistent shell reader");
+        assert!(merge.contains("exit code: 0"), "{merge}");
+        assert!(
+            merge.contains("merged-stderr"),
+            "stderr merged into stdout must still be reported: {merge}"
+        );
+
+        let next = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            run(&harness.server, SHELL_TOOLS.1, "echo after-redirect"),
+        )
+        .await
+        .expect("the command after stderr redirects hung the persistent shell reader");
+        assert!(next.contains("after-redirect"), "{next}");
+        assert!(next.contains("exit code: 0"), "{next}");
+    }
+
+    /// #2881 backstop: even when the end marker cannot reach the reader at
+    /// all (here: the PowerShell host's `[Console]::Error` writer is replaced
+    /// with a null one, which the fd trick does not cover), the bounded drain
+    /// grace must return instead of hanging, and the session must stay usable.
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn a_lost_stderr_marker_still_returns_within_the_drain_grace() {
+        let harness = create_server().await;
+
+        let rebound = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            run(
+                &harness.server,
+                SHELL_TOOLS.1,
+                "[Console]::SetError([System.IO.TextWriter]::Null); Write-Output marker-lost",
+            ),
+        )
+        .await
+        .expect("a lost stderr marker hung the persistent shell reader");
+        assert!(rebound.contains("marker-lost"), "{rebound}");
+        assert!(rebound.contains("exit code: 0"), "{rebound}");
+
+        let next = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            run(
+                &harness.server,
+                SHELL_TOOLS.1,
+                "Write-Output session-still-alive",
+            ),
+        )
+        .await
+        .expect("the session was unusable after a lost marker");
+        assert!(next.contains("session-still-alive"), "{next}");
+    }
+
     /// #2706: an exit code from one command must not leak into the next one. On
     /// PowerShell `$LASTEXITCODE` used to stay at 2, so `Write-Output hello`
     /// looked like a failure with no output.
