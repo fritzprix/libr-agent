@@ -1157,6 +1157,20 @@ pub fn build_agent_manager(
     )
 }
 
+/// Listen for the hidden WebView's readiness signal.
+///
+/// Split from [`setup_hidden_headless_app`] so the wiring can be checked
+/// without a full app: the handler runs on the frontend's `frontend-ready`
+/// emit and on nothing else.
+pub fn register_hidden_frontend_ready<R: tauri::Runtime, F>(app: &tauri::AppHandle<R>, on_ready: F)
+where
+    F: Fn() + Send + 'static,
+{
+    use tauri::Listener;
+
+    app.listen("frontend-ready", move |_| on_ready());
+}
+
 fn setup_hidden_headless_app(
     app: &mut tauri::App,
     args: HeadlessArgs,
@@ -1171,6 +1185,16 @@ fn setup_hidden_headless_app(
         let _ = window.hide();
         let _ = window.set_skip_taskbar(true);
     }
+
+    // The GUI marks readiness from `lifecycle::app_setup`, and the TUI reaches
+    // that setup too. A hidden headless app never runs it, so without this
+    // listener the frontend's `frontend-ready` emit is observed by nobody,
+    // `run_hidden_webview_turn` waits out its whole timeout, and the prompt is
+    // never sent (#2884).
+    register_hidden_frontend_ready(
+        app.handle(),
+        crate::lifecycle::frontend_ready::mark_as_ready,
+    );
 
     let file_manager = crate::services::SecureFileManager::new_with_base_dir(
         ephemeral_data_dir.join("global_shared"),
@@ -1388,6 +1412,33 @@ mod tests {
 
     fn argv(args: &[&str]) -> Vec<String> {
         args.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    /// #2884: the hidden-WebView setup must observe `frontend-ready`.
+    ///
+    /// The turn driver waits for that mark, and no other setup runs in this
+    /// process, so a missing listener makes every headless run time out before
+    /// the prompt is sent. The handler is watched through a spy instead of the
+    /// global readiness flag, which is one-way process state.
+    #[test]
+    fn hidden_setup_listens_for_frontend_ready() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+        use tauri::Emitter;
+
+        let app = tauri::test::mock_app();
+        let marks = Arc::new(AtomicUsize::new(0));
+        let spy = marks.clone();
+        super::register_hidden_frontend_ready(app.handle(), move || {
+            spy.fetch_add(1, Ordering::SeqCst);
+        });
+
+        // Another event must not read as readiness.
+        app.emit("frontend-ready-typo", ()).unwrap();
+        assert_eq!(marks.load(Ordering::SeqCst), 0);
+
+        app.emit("frontend-ready", ()).unwrap();
+        assert_eq!(marks.load(Ordering::SeqCst), 1);
     }
 
     #[test]
