@@ -343,6 +343,38 @@ mod tests {
         }
     }
 
+    /// #2880: for a command that exits in milliseconds, the stderr pipe can still
+    /// hold data when the stdout sentinel arrives. Looping the fast-failing
+    /// command exercises that race repeatedly, and the trailing clean call catches
+    /// any stderr left unread in the pipe (it would leak into the next command).
+    #[tokio::test]
+    async fn a_fast_nonzero_exit_never_drops_or_leaks_stderr_in_the_persistent_shell() {
+        let harness = create_server().await;
+
+        for round in 0..20 {
+            let text = run(&harness.server, SHELL_TOOLS.1, EXIT_2_COMMAND).await;
+            assert!(
+                text.contains("out-line"),
+                "round {round} dropped stdout: {text}"
+            );
+            assert!(
+                text.contains("err-line"),
+                "round {round} dropped stderr: {text}"
+            );
+            assert!(text.contains("exit code: 2"), "round {round}: {text}");
+        }
+
+        let clean = run(&harness.server, SHELL_TOOLS.1, "echo clean-after").await;
+        assert!(
+            clean.contains("clean-after"),
+            "clean run lost stdout: {clean}"
+        );
+        assert!(
+            !clean.contains("err-line"),
+            "stderr from a previous round leaked into the next command: {clean}"
+        );
+    }
+
     /// #2706: an exit code from one command must not leak into the next one. On
     /// PowerShell `$LASTEXITCODE` used to stay at 2, so `Write-Output hello`
     /// looked like a failure with no output.
