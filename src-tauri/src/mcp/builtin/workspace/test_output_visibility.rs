@@ -375,7 +375,7 @@ mod tests {
         );
     }
 
-    /// #2881 G1.2: a command that redirects the shell's own stderr away
+    /// #2881: a command that redirects the shell's own stderr away
     /// (`exec 2>/dev/null`, `exec 2>&1`) must not swallow the per-command end
     /// marker — the marker travels on a private fd — so neither the redirecting
     /// command nor any following command may hang, and later output stays
@@ -425,7 +425,7 @@ mod tests {
         assert!(next.contains("exit code: 0"), "{next}");
     }
 
-    /// #2881 G1.1 backstop: even when the end marker cannot reach the reader at
+    /// #2881 backstop: even when the end marker cannot reach the reader at
     /// all (here: the PowerShell host's `[Console]::Error` writer is replaced
     /// with a null one, which the fd trick does not cover), the bounded drain
     /// grace must return instead of hanging, and the session must stay usable.
