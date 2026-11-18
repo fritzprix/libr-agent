@@ -2,6 +2,7 @@ use crate::agent::events::AgentEventDispatcher;
 use crate::agent::state::AgentSession;
 use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::mcp::MCPServiceProxyManager;
+use crate::models::chat::Message;
 use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::SessionStatus;
 use std::collections::HashMap;
@@ -28,7 +29,21 @@ pub async fn pause_workflow(
     Ok(())
 }
 
+/// True when the transcript ends with a completed assistant turn, i.e. an
+/// explicit resume has nothing left to continue (issue #2898).
+fn has_completed_assistant_tail(messages: &[Message]) -> bool {
+    matches!(
+        messages.last(),
+        Some(last) if last.role == "assistant" && last.is_streaming != Some(true)
+    )
+}
+
 /// Resume a paused workflow
+///
+/// An `Idle` session whose transcript already ends with a completed assistant
+/// turn has nothing to continue: the resume settles back to `Idle` without
+/// starting an LLM turn (issue #2898). The caller is still responsible for
+/// reloading the runtime (`resume_session`).
 pub async fn resume_workflow(
     session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
@@ -44,6 +59,23 @@ pub async fn resume_workflow(
                     "Cannot resume workflow for session {} while compaction is in flight",
                     session_id
                 ));
+            }
+
+            // Issue #2898: resuming an Idle session whose transcript already
+            // ends with a completed assistant turn has nothing to continue.
+            // Starting an LLM turn on the unchanged stack can fail (e.g.
+            // thinking-only retries) and settle the session in `Error` with no
+            // explanation. The caller already reloaded the runtime, so settle
+            // back to Idle instead of starting a turn.
+            if session.metadata.status == SessionStatus::Idle
+                && session.pending_approvals.read().await.is_empty()
+                && has_completed_assistant_tail(&session.messages.read().await)
+            {
+                log::info!(
+                    "Nothing to resume for session {}: idle with a completed assistant turn; staying Idle",
+                    session_id
+                );
+                return Ok(());
             }
         }
     }
@@ -259,4 +291,66 @@ pub async fn resume_workflow(
     });
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::chat::Message;
+
+    fn msg(id: &str, role: &str, is_streaming: Option<bool>) -> Message {
+        Message {
+            id: id.to_string(),
+            session_id: "s1".to_string(),
+            role: role.to_string(),
+            content: vec![],
+            tool_calls: None,
+            tool_call_id: None,
+            is_streaming,
+            thinking: None,
+            thinking_signature: None,
+            assistant_id: None,
+            attachments: None,
+            tool_use: None,
+            usage: None,
+            prompt_tokens: None,
+            created_at: 1,
+            updated_at: 1,
+            source: None,
+            error: None,
+            metadata: None,
+        }
+    }
+
+    #[test]
+    fn completed_assistant_tail_detects_finished_turn() {
+        let messages = vec![msg("u1", "user", Some(false)), msg("a1", "assistant", None)];
+        assert!(has_completed_assistant_tail(&messages));
+    }
+
+    #[test]
+    fn completed_assistant_tail_rejects_streaming_assistant() {
+        let messages = vec![
+            msg("u1", "user", Some(false)),
+            msg("a1", "assistant", Some(true)),
+        ];
+        assert!(!has_completed_assistant_tail(&messages));
+    }
+
+    #[test]
+    fn completed_assistant_tail_rejects_pending_user_message() {
+        let messages = vec![msg("u1", "user", Some(false))];
+        assert!(!has_completed_assistant_tail(&messages));
+    }
+
+    #[test]
+    fn completed_assistant_tail_rejects_tool_tail() {
+        let messages = vec![msg("a1", "assistant", Some(false)), msg("t1", "tool", None)];
+        assert!(!has_completed_assistant_tail(&messages));
+    }
+
+    #[test]
+    fn completed_assistant_tail_rejects_empty_transcript() {
+        assert!(!has_completed_assistant_tail(&[]));
+    }
 }

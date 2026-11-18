@@ -323,6 +323,72 @@ async fn resume_workflow_rejects_while_compaction_in_flight() {
     assert_eq!(session.metadata.status, SessionStatus::Paused);
 }
 
+/// Issue #2898: `POST /api/sessions/:id/resume` (via `resume_workflow`) on an
+/// idle session whose last message is a completed assistant turn must not
+/// start an LLM turn. The session settles back to `Idle` instead of going
+/// Queued -> Busy -> Error.
+#[tokio::test]
+async fn resume_workflow_is_noop_for_idle_completed_session() {
+    let _guard = TEST_GUARD.lock().await;
+    init_runtime_primitives();
+
+    let session_id = "resume-idle-completed";
+    let metadata = build_session_metadata(session_id, SessionStatus::Idle);
+    let repo = Arc::new(InMemorySessionRepository::new());
+    repo.upsert_session(&metadata)
+        .await
+        .expect("session upsert");
+    let session_repo: Arc<dyn SessionRepository> = repo;
+
+    let session = build_agent_session(metadata, CompactionPhase::Idle);
+    {
+        let mut messages = session.messages.write().await;
+        messages.push(build_user_message(session_id, "u1", 1));
+        let mut assistant = build_user_message(session_id, "a1", 2);
+        assistant.role = "assistant".to_string();
+        messages.push(assistant);
+    }
+    let active_sessions = Arc::new(RwLock::new(HashMap::from([(
+        session_id.to_string(),
+        session,
+    )])));
+
+    let mock_app = tauri::test::mock_app();
+    let app_handle = mock_app_handle(&mock_app);
+    let temp_dir = tempfile::TempDir::new().expect("temp dir");
+    let session_workspace_manager = Arc::new(
+        tauri_mcp_agent_lib::session::SessionManager::new_with_base_dir(
+            temp_dir.path().join("session-root"),
+        )
+        .expect("session manager"),
+    );
+    let db = common::setup_test_db_with_migrations().await;
+    let proxy_manager = Arc::new(tauri_mcp_agent_lib::mcp::MCPServiceProxyManager::new(
+        Arc::new(db),
+        session_workspace_manager,
+    ));
+
+    tauri_mcp_agent_lib::agent::workflow::resume_workflow(
+        &session_repo,
+        &active_sessions,
+        &proxy_manager,
+        app_handle,
+        session_id.to_string(),
+    )
+    .await
+    .expect("resume of an idle completed session must succeed");
+
+    // A queued turn would have moved the status to Queued synchronously before
+    // spawning the background task; staying Idle proves no turn was started.
+    let active = active_sessions.read().await;
+    let session = active.get(session_id).expect("session");
+    assert_eq!(
+        session.metadata.status,
+        SessionStatus::Idle,
+        "idle completed session must stay Idle after resume"
+    );
+}
+
 #[tokio::test]
 async fn user_message_during_manual_compaction_is_enqueued_without_clearing_inflight() {
     let _guard = TEST_GUARD.lock().await;
