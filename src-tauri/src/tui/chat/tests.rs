@@ -1,6 +1,7 @@
 //! Unit tests for the TUI chat front (#2886).
 
-use super::render::S5_MAX_ROWS;
+use super::render::*;
+use super::state::*;
 use super::*;
 use crate::agent::session_manager::PendingApprovalSummary;
 use crate::agent::state::{

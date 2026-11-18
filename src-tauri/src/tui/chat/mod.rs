@@ -7,13 +7,15 @@
 //! Split by responsibility (#2886): `state` holds the transcript/composer state and
 //! its transitions, `render` the pure layout and S5 rendering, `backend` the async
 //! Session API calls, and this module the front loop that ties them together.
-//! The re-exports keep `crate::tui::chat::*` callers unchanged.
+//! `run_chat_front` is the only entry point other modules call; everything else
+//! stays inside `chat/`, so the submodules need no crate-wide re-exports.
 
 use self::backend::{
     poll_session, respond_approval, respond_user_prompt, run_session_command, send_user_text,
     switch_to_session,
 };
-use self::state::POLL_EVERY;
+use self::render::draw_chat;
+use self::state::{ChatAction, ChatState, POLL_EVERY};
 use crate::server::shared_backend::SharedBackendClient;
 use ratatui::prelude::*;
 use std::io::Stdout;
@@ -25,16 +27,6 @@ mod state;
 
 #[cfg(test)]
 mod tests;
-
-// `Focus`, `TranscriptLine`, and the pure layout helpers are this module's public
-// surface even though only its own tests read them today; keep the re-exports so
-// `crate::tui::chat::*` stays unchanged (#2886).
-#[allow(unused_imports)]
-pub use render::{
-    draw_chat, paragraph_row_count, pick_pending_approval, s5_layout, transcript_scroll_offset,
-};
-#[allow(unused_imports)]
-pub use state::{ChatAction, ChatState, Focus, TranscriptLine};
 
 /// How the chat front should leave when it is done.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
