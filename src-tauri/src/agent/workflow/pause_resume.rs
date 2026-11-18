@@ -30,11 +30,16 @@ pub async fn pause_workflow(
 }
 
 /// True when the transcript ends with a completed assistant turn, i.e. an
-/// explicit resume has nothing left to continue (issue #2898).
+/// explicit resume has nothing left to continue (issue #2898). An assistant
+/// message still carrying `tool_calls` is an unanswered turn, not a completed
+/// one, so it does not count.
 fn has_completed_assistant_tail(messages: &[Message]) -> bool {
     matches!(
         messages.last(),
-        Some(last) if last.role == "assistant" && last.is_streaming != Some(true)
+        Some(last)
+            if last.role == "assistant"
+                && last.is_streaming != Some(true)
+                && last.tool_calls.as_deref().unwrap_or_default().is_empty()
     )
 }
 
@@ -60,7 +65,17 @@ pub async fn resume_workflow(
                     session_id
                 ));
             }
+        }
+    }
 
+    // Load the transcript before evaluating the resume guard (issue #2898):
+    // a cold session (e.g. after an app restart) has no in-memory messages
+    // yet, and the guard must see the persisted tail. Preserve if initialized.
+    crate::agent::lifecycle::ensure_cache_initialized(active_sessions, &session_id).await?;
+
+    {
+        let active = active_sessions.read().await;
+        if let Some(session) = active.get(&session_id) {
             // Issue #2898: resuming an Idle session whose transcript already
             // ends with a completed assistant turn has nothing to continue.
             // Starting an LLM turn on the unchanged stack can fail (e.g.
@@ -86,9 +101,6 @@ pub async fn resume_workflow(
             crate::agent::workflow::start::reset_session_execution_state(session).await;
         }
     }
-
-    // Ensure cache is initialized before resuming (lazy load if needed, preserve if exists)
-    crate::agent::lifecycle::ensure_cache_initialized(active_sessions, &session_id).await?;
 
     // Transition status to Queued immediately
     crate::agent::lifecycle::update_session_status(
@@ -296,6 +308,7 @@ pub async fn resume_workflow(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent::types::{ToolCall, ToolCallFunction};
     use crate::models::chat::Message;
 
     fn msg(id: &str, role: &str, is_streaming: Option<bool>) -> Message {
@@ -347,6 +360,29 @@ mod tests {
     fn completed_assistant_tail_rejects_tool_tail() {
         let messages = vec![msg("a1", "assistant", Some(false)), msg("t1", "tool", None)];
         assert!(!has_completed_assistant_tail(&messages));
+    }
+
+    #[test]
+    fn completed_assistant_tail_rejects_unanswered_tool_calls() {
+        let mut tail = msg("a1", "assistant", Some(false));
+        tail.tool_calls = Some(vec![ToolCall {
+            id: "call-1".to_string(),
+            function: ToolCallFunction {
+                name: "example__tool".to_string(),
+                arguments: "{}".to_string(),
+            },
+            r#type: "function".to_string(),
+        }]);
+        let messages = vec![msg("u1", "user", Some(false)), tail];
+        assert!(!has_completed_assistant_tail(&messages));
+    }
+
+    #[test]
+    fn completed_assistant_tail_accepts_empty_tool_calls() {
+        let mut tail = msg("a1", "assistant", Some(false));
+        tail.tool_calls = Some(vec![]);
+        let messages = vec![msg("u1", "user", Some(false)), tail];
+        assert!(has_completed_assistant_tail(&messages));
     }
 
     #[test]
