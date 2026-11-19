@@ -307,9 +307,9 @@
     },
     {
       "id": "O-7",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-win-docs-doctor-o7 (requires_host_os=windows, #2905): docs skill convert.py --doctor runs headlessly on Windows, prints Doctor: OK, and asserts no NTFS junction/mount error",
+      "harbor_task": "e2e-win-docs-doctor-o7"
     },
     {
       "id": "O-8",
@@ -496,6 +496,18 @@
       "status": "implemented-partial",
       "reason": "Harbor e2e-persistent-shell-reload-cwd: persistent shell preserves its changed working directory across a shell reload triggered by storeAs secret injection (2685 P-4, #2903)",
       "harbor_task": "e2e-persistent-shell-reload-cwd"
+    },
+    {
+      "id": "2672-M-6",
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-win-stdio-metachars-m6 (requires_host_os=windows, #2905): registers a stdio MCP server with arg a&b|c^d<e>f and verifies the spawned child receives the literal arg verbatim without cmd.exe shell splitting",
+      "harbor_task": "e2e-win-stdio-metachars-m6"
+    },
+    {
+      "id": "2672-D-4",
+      "status": "platform-specific",
+      "reason": "Skipped on GitHub-hosted windows-latest CI (#2905): windows-latest lacks a Linux Docker daemon for session containers (\\?\\ prefix stripping is unit-tested in Rust; live docker run requires Docker Desktop on a self-hosted Windows runner)",
+      "harbor_task": null
     }
   ]
 }

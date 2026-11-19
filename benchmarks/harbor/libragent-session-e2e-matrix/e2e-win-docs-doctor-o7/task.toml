@@ -1,0 +1,30 @@
+schema_version = "1.3"
+artifacts = []
+
+[task]
+name = "fritzprix/e2e-win-docs-doctor-o7"
+description = "2565 O-7 (Windows): docs skill doctor runs headlessly, prints 'Doctor: OK', and avoids NTFS junction loops"
+keywords = ["libragent", "session-e2e", "windows", "docs", "doctor"]
+
+[metadata]
+difficulty = "medium"
+category = "session-api-e2e"
+tags = ["matrix", "O-7", "platform-windows", "docs", "doctor"]
+
+[metadata.libragent_session_e2e]
+matrix_id = "O-7"
+requires_host_os = "windows"
+auto_answer_interactive = true
+approve_standard_tools = true
+reject_hard_approvals = false
+
+[verifier]
+timeout_sec = 240.0
+
+[agent]
+timeout_sec = 600.0
+
+[environment]
+network_mode = "default"
+build_timeout_sec = 300.0
+os = "linux"
