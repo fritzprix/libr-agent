@@ -72,6 +72,10 @@ task spec sets `resume_circuit_break = true` (the default).
 - `e2e-storeas-masked` — the agent runs a `storeAs` command; the harness answers
   the prompt with the synthetic secret, the value must reach the shell env, and
   the verifier fails if the secret literal appears anywhere in the trajectory.
+- `e2e-bool-string-coercion` — the agent sends `include_checked` as the string
+  `"true"`; the shared args helper must coerce it with its warning and the call
+  must run, and an `ui__askUser` question with the reserved-sounding key
+  `options` must reach the harness instead of being rejected by key-name rules.
 
 A task may pin its own session mode with `execution_mode` under
 `[metadata.libragent_session_e2e]`; otherwise it inherits

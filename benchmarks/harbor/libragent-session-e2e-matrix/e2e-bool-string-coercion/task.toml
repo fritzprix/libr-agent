@@ -1,0 +1,29 @@
+schema_version = "1.3"
+artifacts = []
+
+[task]
+name = "fritzprix/e2e-bool-string-coercion"
+description = "string-typed boolean tool argument is parsed with a warning and ui__askUser accepts a reserved-sounding question key"
+keywords = ["libragent", "session-e2e", "args", "boolean", "askuser"]
+
+[metadata]
+difficulty = "medium"
+category = "session-api-e2e"
+tags = ["matrix", "S-5", "args", "askuser"]
+
+[metadata.libragent_session_e2e]
+matrix_id = "S-5"
+auto_answer_interactive = true
+approve_standard_tools = true
+synthetic_secret_env = "LIBRAGENT_E2E_SYNTHETIC_SECRET"
+
+[verifier]
+timeout_sec = 180.0
+
+[agent]
+timeout_sec = 900.0
+
+[environment]
+network_mode = "no-network"
+build_timeout_sec = 300.0
+os = "linux"

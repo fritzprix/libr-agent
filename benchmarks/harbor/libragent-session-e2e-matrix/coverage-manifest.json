@@ -157,9 +157,9 @@
     },
     {
       "id": "S-5",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-bool-string-coercion: string \"true\" boolean coerced with helper warning and call runs; ui__askUser accepts reserved-sounding key 'options' (2672 S-5)",
+      "harbor_task": "e2e-bool-string-coercion"
     },
     {
       "id": "S-6",
