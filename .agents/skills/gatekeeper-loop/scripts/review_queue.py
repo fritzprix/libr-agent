@@ -120,17 +120,16 @@ def last_gatekeeper_marker_at(markers: list[dict]) -> str | None:
 
 
 def is_owner_timeline_actor(event: dict, owner_logins: set[str]) -> bool:
-    """True when a timeline event was triggered by the repo owner or an OWNER_ASSOCIATIONS member."""
+    """True when a timeline event was triggered by a repository owner login."""
     actor = event.get("actor") or {}
     login = actor.get("login") or ""
     if not login or login.endswith("[bot]"):
         return False
-    assoc = (event.get("actorAssociation") or event.get("actor_association") or "").upper()
-    return login in owner_logins or assoc in OWNER_ASSOCIATIONS
+    return login in owner_logins
 
 
 def escalation_resume_info(
-    verdicts: list[dict],
+    markers: list[dict],
     timeline_events: list[dict],
     *,
     owner_logins: set[str],
@@ -138,10 +137,13 @@ def escalation_resume_info(
 ) -> tuple[int, dict | None]:
     """Compute effective maxRounds from owner removals of `gatekeeper:escalated`.
 
-    Only the newest owner removal strictly after the latest `escalate` verdict counts.
-    Removing any other label (such as `gatekeeper:needs-human`) has no effect.
-    Returns `(effective_max_rounds, resume_event_or_None)`.
+    Only an owner removal strictly after the latest `escalate` verdict and
+    before the next gatekeeper marker (verdict or clean) counts, so the
+    gatekeeper's own label swap after posting a later verdict cannot grant
+    extra rounds. Removing any other label (such as `gatekeeper:needs-human`)
+    has no effect. Returns `(effective_max_rounds, resume_event_or_None)`.
     """
+    verdicts = [m for m in markers if m.get("verdict") != "clean"]
     latest_escalate = next(
         (v for v in reversed(verdicts) if v.get("verdict") == "escalate"),
         None,
@@ -150,6 +152,10 @@ def escalation_resume_info(
         return base_max_rounds, None
 
     escalate_at = latest_escalate.get("createdAt") or ""
+    next_marker_at = min(
+        (m["createdAt"] for m in markers if (m.get("createdAt") or "") > escalate_at),
+        default=None,
+    )
     matching = []
     for ev in timeline_events:
         if ev.get("event") != "unlabeled":
@@ -160,7 +166,7 @@ def escalation_resume_info(
         if not is_owner_timeline_actor(ev, owner_logins):
             continue
         created_at = ev.get("created_at") or ev.get("createdAt") or ""
-        if created_at > escalate_at:
+        if created_at > escalate_at and (next_marker_at is None or created_at < next_marker_at):
             matching.append((created_at, ev))
 
     if not matching:
@@ -265,14 +271,21 @@ def classify(
     if total_verdicts >= max_rounds and not approved_at_head:
         return "escalate", f"round limit ({max_rounds}) reached", 9
 
+    # A clean marker for this head on GitHub means the code review of this head is
+    # done, even after changes were requested at it (the worker answered without a
+    # new commit, for example by editing the PR body). The caller only passes a clean
+    # marker newer than both the last verdict and the worker's response to it.
+    clean_at_head = clean_head == head
+
     if last_verdict and last_verdict.get("verdict") == "escalate":
-        if escalation_resumed:
+        if not escalation_resumed:
+            return "escalate", "escalated; waiting for owner to remove gatekeeper:escalated", 9
+        if not clean_at_head:
             return (
                 "review",
                 f"escalation resumed by owner removing {ESCALATED_LABEL}; limit now {max_rounds} rounds",
                 0,
             )
-        return "escalate", "escalated; waiting for owner to remove gatekeeper:escalated", 9
 
     if at_head and last_verdict.get("verdict") == "approve":
         if base_changed:
@@ -282,12 +295,6 @@ def classify(
         if not ci_green:
             return "review", "approve without green CI at this head; replace it with a clean marker", 0
         return "approved", "approved at current head", 9
-
-    # A clean marker for this head on GitHub means the code review of this head is
-    # done, even after changes were requested at it (the worker answered without a
-    # new commit, for example by editing the PR body). The caller only passes a clean
-    # marker newer than both the last verdict and the worker's response to it.
-    clean_at_head = clean_head == head
 
     if at_head and last_verdict.get("verdict") == "changes-requested" and not clean_at_head:
         if worker_response is None:
@@ -429,7 +436,6 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
     last_gk_at = last_gatekeeper_marker_at(markers)
     owner = owner_comments_after(comments, me, last_gk_at)
 
-    cached_max_rounds = int(pr_state.get("maxRounds", MAX_ROUNDS))
     repo_info = parse_pr_repo(pr.get("url") or "")
     has_escalate_verdict = any(v.get("verdict") == "escalate" for v in verdicts)
     timeline_events = (
@@ -439,10 +445,10 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
     )
     owner_logins = {me} | ({repo_info[0]} if repo_info else set())
     effective_max_rounds, resume_event = escalation_resume_info(
-        verdicts,
+        markers,
         timeline_events,
         owner_logins=owner_logins,
-        base_max_rounds=max(MAX_ROUNDS, cached_max_rounds),
+        base_max_rounds=MAX_ROUNDS,
     )
 
     labels = sorted(label["name"] for label in pr.get("labels") or [])

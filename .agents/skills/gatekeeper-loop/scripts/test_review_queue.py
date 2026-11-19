@@ -2,14 +2,17 @@
 """Tests for gatekeeper-loop review_queue status determination."""
 from __future__ import annotations
 
+import json
 import unittest
 from pathlib import Path
 import sys
+from unittest.mock import patch
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
+import review_queue
 from review_queue import (
     ESCALATED_LABEL,
     PROTECTED_SKILL_PREFIXES,
@@ -18,6 +21,7 @@ from review_queue import (
     classify_sensitive_paths,
     determine_status,
     escalation_resume_info,
+    fetch_timeline_events,
     is_dev_base,
     is_rebased,
     last_gatekeeper_marker_at,
@@ -26,6 +30,7 @@ from review_queue import (
     owner_comments_after,
     parse_markers,
     posting_checks,
+    summarize,
     touches_human_only_paths,
 )
 
@@ -737,6 +742,117 @@ class EscalationResumeAndOwnerVisibilityTests(unittest.TestCase):
         owner = owner_comments_after(comments, "fritzprix", since)
         self.assertEqual(len(owner), 1)
         self.assertIn("Granting 2 extra rounds", owner[0]["body"])
+
+    def test_resumed_with_clean_marker_at_head_awaits_ci_then_approves(self) -> None:
+        """G1.1: clean marker at current head must not re-trigger full review after resume."""
+        verdicts = self._round5_verdicts()
+        status_pending, reason_pending, _ = classify(
+            **base_args(
+                head="h5",
+                last_verdict=verdicts[-1],
+                total_verdicts=len(verdicts),
+                max_rounds=7,
+                escalation_resumed=True,
+                clean_head="h5",
+                pending_checks=["Test (ubuntu-latest)"],
+            )
+        )
+        self.assertEqual(status_pending, "await-ci")
+        self.assertIn("waiting for pending CI", reason_pending)
+
+        status_green, reason_green, priority_green = classify(
+            **base_args(
+                head="h5",
+                last_verdict=verdicts[-1],
+                total_verdicts=len(verdicts),
+                max_rounds=7,
+                escalation_resumed=True,
+                clean_head="h5",
+                pending_checks=[],
+                failing_checks=[],
+            )
+        )
+        self.assertEqual(status_green, "review")
+        self.assertEqual(priority_green, 1)
+        self.assertIn("CI green at this head", reason_green)
+
+    def test_gatekeeper_label_swap_after_later_marker_does_not_grant_extra_rounds(self) -> None:
+        """G1.2: removal after a subsequent gatekeeper marker is the gatekeeper's own swap."""
+        markers = self._round5_verdicts() + [
+            {
+                "round": "6",
+                "verdict": "changes-requested",
+                "head": "h6",
+                "createdAt": "2026-11-19T06:00:00Z",
+            }
+        ]
+        # Gatekeeper swaps labels 5 seconds after posting round 6.
+        timeline = [
+            {
+                "event": "unlabeled",
+                "created_at": "2026-11-19T06:00:05Z",
+                "actor": {"login": "fritzprix"},
+                "label": {"name": ESCALATED_LABEL},
+            }
+        ]
+        max_rounds, resumed = escalation_resume_info(
+            markers, timeline, owner_logins={"fritzprix"}
+        )
+        self.assertEqual(max_rounds, 5)
+        self.assertIsNone(resumed)
+
+    def test_fetch_timeline_events_flattens_slurped_pages_and_summarize_uses_it(self) -> None:
+        """S1.3: multi-page --slurp timeline output is flattened and drives summarize()."""
+        page1 = [{"event": "labeled", "created_at": "2026-11-19T05:00:01Z"}]
+        page2 = [
+            {
+                "event": "unlabeled",
+                "created_at": "2026-11-19T06:00:00Z",
+                "actor": {"login": "fritzprix"},
+                "label": {"name": ESCALATED_LABEL},
+            }
+        ]
+
+        def fake_gh(*args):
+            if args[:3] == ("api", "--paginate", "--slurp"):
+                return json.dumps([page1, page2])
+            if args[:2] == ("pr", "view"):
+                comments = [
+                    {
+                        "author": {"login": "fritzprix"},
+                        "authorAssociation": "OWNER",
+                        "createdAt": f"2026-11-19T0{i}:00:00Z",
+                        "body": f"<!-- gatekeeper-loop: round={i} verdict={'escalate' if i == 5 else 'changes-requested'} head=h{i} base=dev/0.9.x -->",
+                    }
+                    for i in range(1, 6)
+                ]
+                return json.dumps({
+                    "number": 2906,
+                    "title": "Test PR",
+                    "url": "https://github.com/fritzprix/libr-agent/pull/2906",
+                    "headRefName": "feat/test",
+                    "headRefOid": "h5",
+                    "baseRefName": "dev/0.9.x",
+                    "isDraft": False,
+                    "mergeable": "MERGEABLE",
+                    "createdAt": "2026-11-19T00:00:00Z",
+                    "statusCheckRollup": [{"name": "Test", "conclusion": "SUCCESS"}],
+                    "comments": comments,
+                    "labels": [],
+                    "files": [{"path": "src/app.ts"}],
+                })
+            raise AssertionError(f"unexpected gh call: {args}")
+
+        with patch.object(review_queue, "gh", fake_gh):
+            events = fetch_timeline_events("fritzprix", "libr-agent", 2906)
+            self.assertEqual(len(events), 2)
+            self.assertEqual(events[1]["event"], "unlabeled")
+
+            entry = summarize(2906, "fritzprix", state={"prs": {"2906": {"maxRounds": 99}}})
+            # S1.1: stale state.json maxRounds=99 is ignored; timeline sets 5 + 2 = 7.
+            self.assertEqual(entry["maxRounds"], 7)
+            self.assertEqual(entry["status"], "review")
+            self.assertIsNotNone(entry["escalationResumed"])
 
 
 if __name__ == "__main__":
