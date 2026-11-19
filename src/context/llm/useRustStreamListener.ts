@@ -153,8 +153,10 @@ export function createRustStreamHandler(
 
       const nowMs = performance.now();
       const isLast = delta.finishReason !== undefined;
+      const hasUsage = delta.usage !== undefined;
       if (
         isLast ||
+        hasUsage ||
         turn.accumulator.shouldThrottleUpdate(
           turn.lastUpdateMs,
           nowMs,

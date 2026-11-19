@@ -114,6 +114,7 @@ fn usage_of(usage: &Value) -> Usage {
         cached_prompt_tokens,
         details: reasoning_tokens.map(|tokens| UsageDetails {
             reasoning_tokens: Some(tokens),
+            ..UsageDetails::default()
         }),
     }
 }

@@ -219,6 +219,66 @@ describe('Rust stream handler', () => {
 
     expect(hasEntry()).toBe(true);
   });
+
+  it('publishes a usage-only delta that arrives right after finishReason', () => {
+    const { handler, current } = setup();
+
+    handler.handleDelta(delta({ content: 'Hello' }, { provider: 'openai' }));
+    handler.handleDelta(
+      delta({ finishReason: 'stop' }, { provider: 'openai' }),
+    );
+    expect(current()?.usage).toBeUndefined();
+
+    // Arrives immediately (inside the 50ms throttle window) as OpenAI's trailing choices: [] chunk.
+    handler.handleDelta(
+      delta(
+        {
+          usage: {
+            promptTokens: 120,
+            completionTokens: 30,
+            totalTokens: 150,
+          },
+        },
+        { provider: 'openai' },
+      ),
+    );
+
+    expect(current()?.usage?.promptTokens).toBe(120);
+    expect(current()?.usage?.completionTokens).toBe(30);
+    expect(current()?.usage?.totalTokens).toBe(150);
+    expect(current()?.usage?.details?.evalDuration).toBeTypeOf('number');
+  });
+
+  it('preserves a backend-supplied evalDuration instead of overwriting it', () => {
+    const { handler, current } = setup();
+
+    handler.handleDelta(delta({ content: 'Hello' }, { provider: 'openai' }));
+    handler.handleDelta(
+      delta(
+        {
+          usage: {
+            promptTokens: 100,
+            completionTokens: 25,
+            totalTokens: 125,
+            details: {
+              evalDuration: 432.5,
+              promptEvalDuration: 88.0,
+              timeToFirstToken: 88.0,
+            },
+          },
+        },
+        { provider: 'openai' },
+      ),
+    );
+    // A subsequent chunk must not overwrite the provider/backend evalDuration.
+    handler.handleDelta(
+      delta({ finishReason: 'stop' }, { provider: 'openai' }),
+    );
+
+    expect(current()?.usage?.details?.evalDuration).toBe(432.5);
+    expect(current()?.usage?.details?.promptEvalDuration).toBe(88.0);
+    expect(current()?.usage?.details?.timeToFirstToken).toBe(88.0);
+  });
 });
 
 describe('useRustStreamListener', () => {

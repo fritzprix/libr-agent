@@ -124,7 +124,14 @@ pub struct Usage {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageDetails {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_tokens: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub eval_duration: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_eval_duration: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time_to_first_token: Option<f64>,
 }
 
 /// One fragment of a streamed tool call. Fragments with the same `index`
@@ -212,12 +219,27 @@ mod tests {
             cached_prompt_tokens: Some(8),
             details: Some(UsageDetails {
                 reasoning_tokens: Some(2),
+                eval_duration: Some(125.5),
+                prompt_eval_duration: Some(40.0),
+                time_to_first_token: Some(40.0),
             }),
             ..bare
         };
         let value = serde_json::to_value(&full).unwrap();
         assert_eq!(value["cachedPromptTokens"], 8);
         assert_eq!(value["details"]["reasoningTokens"], 2);
+        assert_eq!(value["details"]["evalDuration"], 125.5);
+        assert_eq!(value["details"]["promptEvalDuration"], 40.0);
+        assert_eq!(value["details"]["timeToFirstToken"], 40.0);
+
+        let timing_only = UsageDetails {
+            eval_duration: Some(12.0),
+            ..UsageDetails::default()
+        };
+        assert_eq!(
+            serde_json::to_value(&timing_only).unwrap(),
+            json!({ "evalDuration": 12.0 })
+        );
     }
 
     #[test]

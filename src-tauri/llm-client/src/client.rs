@@ -3,11 +3,11 @@
 use crate::error::{ErrorKind, LlmError};
 use crate::provider::ChatProvider;
 use crate::stream::LineBuffer;
-use crate::types::{ChatRequest, CompletedChat, StreamDelta};
+use crate::types::{ChatRequest, CompletedChat, StreamDelta, UsageDetails};
 use futures::StreamExt;
 use serde_json::Value;
 use std::sync::LazyLock;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Long generations are normal; this only bounds a stream that went silent.
 const READ_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
@@ -193,12 +193,16 @@ pub async fn complete_with_deltas(
         log::warn!("system proxy pre-resolve failed for LLM URL: {e}");
     }
     let body = provider.build_body(request);
+    let mut request_start = Instant::now();
     let response = match send_with_retries(client, provider, &url, &body, retry).await {
         Ok(response) => response,
         // A provider may know a change to the body that fixes the error; it is
         // sent once, whatever `retry` says.
         Err(error) => match provider.body_after_error(&body, &error) {
-            Some(fixed) => send_with_retries(client, provider, &url, &fixed, retry).await?,
+            Some(fixed) => {
+                request_start = Instant::now();
+                send_with_retries(client, provider, &url, &fixed, retry).await?
+            }
             None => return Err(error),
         },
     };
@@ -208,6 +212,13 @@ pub async fn complete_with_deltas(
     let mut lines = LineBuffer::default();
     let mut parser = provider.stream_parser();
     let mut bytes = response.bytes_stream();
+    let mut first_token_at: Option<Instant> = None;
+    let mut observe_and_emit = |delta: StreamDelta| {
+        if first_token_at.is_none() && has_token_output(&delta) {
+            first_token_at = Some(Instant::now());
+        }
+        on_delta(delta);
+    };
     'read: while let Some(chunk) = bytes.next().await {
         let chunk = chunk.map_err(|e| {
             network_error(format!(
@@ -217,7 +228,7 @@ pub async fn complete_with_deltas(
         })?;
         for line in lines.push(&chunk) {
             let step = parser.push_line(&line).map_err(stream_error)?;
-            step.deltas.into_iter().for_each(&mut on_delta);
+            step.deltas.into_iter().for_each(&mut observe_and_emit);
             if step.done {
                 break 'read;
             }
@@ -225,10 +236,50 @@ pub async fn complete_with_deltas(
     }
     if let Some(rest) = lines.finish() {
         let step = parser.push_line(&rest).map_err(stream_error)?;
-        step.deltas.into_iter().for_each(&mut on_delta);
+        step.deltas.into_iter().for_each(&mut observe_and_emit);
     }
 
-    Ok(parser.finish())
+    let finished_at = Instant::now();
+    let mut chat = parser.finish();
+    attach_timing(&mut chat, request_start, first_token_at, finished_at);
+    Ok(chat)
+}
+
+fn has_token_output(delta: &StreamDelta) -> bool {
+    delta.content.is_some() || delta.thinking.is_some() || !delta.tool_calls.is_empty()
+}
+
+fn attach_timing(
+    chat: &mut CompletedChat,
+    request_start: Instant,
+    first_token_at: Option<Instant>,
+    finished_at: Instant,
+) {
+    let Some(usage) = chat.usage.as_mut().filter(|u| u.completion_tokens > 0) else {
+        return;
+    };
+    let details = usage.details.get_or_insert_with(UsageDetails::default);
+    let total_ms = finished_at
+        .saturating_duration_since(request_start)
+        .as_secs_f64()
+        * 1000.0;
+    if let Some(first_token_at) = first_token_at {
+        let ttft_ms = first_token_at
+            .saturating_duration_since(request_start)
+            .as_secs_f64()
+            * 1000.0;
+        let eval_ms = finished_at
+            .saturating_duration_since(first_token_at)
+            .as_secs_f64()
+            * 1000.0;
+        if details.eval_duration.is_none() {
+            details.prompt_eval_duration.get_or_insert(ttft_ms);
+            details.eval_duration = Some(if eval_ms > 0.0 { eval_ms } else { total_ms });
+        }
+        details.time_to_first_token.get_or_insert(ttft_ms);
+    } else {
+        details.eval_duration.get_or_insert(total_ms);
+    }
 }
 
 #[cfg(test)]
@@ -339,11 +390,36 @@ mod tests {
         (streamed, deltas, plain)
     }
 
+    fn strip_timings(mut chat: CompletedChat) -> CompletedChat {
+        if let Some(usage) = chat.usage.as_mut() {
+            if let Some(details) = usage.details.as_mut() {
+                details.eval_duration = None;
+                details.prompt_eval_duration = None;
+                details.time_to_first_token = None;
+                if *details == UsageDetails::default() {
+                    usage.details = None;
+                }
+            }
+        }
+        chat
+    }
+
     #[tokio::test]
     async fn streamed_text_arrives_in_order_and_the_final_answer_equals_the_plain_call() {
         let (streamed, deltas, plain) =
             streamed_and_plain(include_str!("../tests/fixtures/vllm_reasoning.sse")).await;
 
+        let streamed_details = streamed
+            .usage
+            .as_ref()
+            .and_then(|u| u.details.as_ref())
+            .unwrap();
+        assert!(streamed_details.eval_duration.is_some_and(|ms| ms > 0.0));
+        assert!(streamed_details.prompt_eval_duration.is_some());
+        assert!(streamed_details.time_to_first_token.is_some());
+
+        let plain = strip_timings(plain);
+        let streamed = strip_timings(streamed);
         assert_eq!(streamed, plain);
         let pieces: Vec<&str> = deltas.iter().filter_map(|d| d.content.as_deref()).collect();
         assert_eq!(pieces.concat(), plain.content);
@@ -369,6 +445,15 @@ mod tests {
         let (streamed, deltas, plain) =
             streamed_and_plain(include_str!("../tests/fixtures/openai_tool_calls.sse")).await;
 
+        let streamed_details = streamed
+            .usage
+            .as_ref()
+            .and_then(|u| u.details.as_ref())
+            .unwrap();
+        assert!(streamed_details.eval_duration.is_some_and(|ms| ms > 0.0));
+
+        let plain = strip_timings(plain);
+        let streamed = strip_timings(streamed);
         assert_eq!(streamed, plain);
         assert_eq!(plain.tool_calls.len(), 2);
         for (index, call) in plain.tool_calls.iter().enumerate() {
@@ -380,6 +465,43 @@ mod tests {
                 .collect();
             assert_eq!(arguments, call.function.arguments);
         }
+    }
+
+    #[test]
+    fn attach_timing_skips_zero_completion_tokens_and_preserves_provider_eval_duration() {
+        let start = Instant::now();
+        let first = start + Duration::from_millis(50);
+        let end = first + Duration::from_millis(200);
+
+        let mut zero_completion = CompletedChat {
+            usage: Some(crate::types::Usage {
+                prompt_tokens: 10,
+                completion_tokens: 0,
+                total_tokens: 10,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        attach_timing(&mut zero_completion, start, Some(first), end);
+        assert!(zero_completion.usage.unwrap().details.is_none());
+
+        let mut provider_timed = CompletedChat {
+            usage: Some(crate::types::Usage {
+                prompt_tokens: 10,
+                completion_tokens: 5,
+                total_tokens: 15,
+                details: Some(UsageDetails {
+                    eval_duration: Some(999.0),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        attach_timing(&mut provider_timed, start, Some(first), end);
+        let details = provider_timed.usage.unwrap().details.unwrap();
+        assert_eq!(details.eval_duration, Some(999.0));
+        assert_eq!(details.time_to_first_token, Some(50.0));
     }
 
     #[tokio::test]
