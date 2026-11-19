@@ -29,11 +29,15 @@ RUN chmod 0755 /usr/local/bin/pkexec /usr/local/bin/e2e-askpass /usr/local/bin/e
 RUN mkdir -p /app /app/.e2e-privileged-logs \
     && : > /app/.e2e-privileged-logs/pkexec.log \
     && : > /app/.e2e-privileged-logs/askpass.log \
+    && : > /app/.e2e-privileged-logs/probe.log \
     && chown -R e2etest:e2etest /app
 
 # The log dir lives under /app (the workspace shared with the verifier
-# container) and the files exist from image build, so verifiers can tell
-# "never invoked" (exists + empty) apart from "unreachable" (missing).
+# container). Existence alone proves nothing - these files exist from image
+# build - so "never invoked" checks are only trusted together with a positive
+# control in the same trial: the sudo'd e2e-nopasswd-probe appends a record to
+# probe.log, proving the verifier sees what the agent's privileged shell wrote
+# (PR #2917 G2.2).
 ENV LIBRAGENT_E2E_PRIVILEGED_LOG_DIR=/app/.e2e-privileged-logs \
     LIBRAGENT_E2E_FAKE_PKEXEC_MODE=fail \
     LIBRAGENT_E2E_FAKE_ASKPASS_MODE=succeed

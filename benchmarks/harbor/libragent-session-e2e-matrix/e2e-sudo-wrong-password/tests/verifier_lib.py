@@ -122,10 +122,13 @@ PRIVILEGED_LOG_DIR = Path("/app/.e2e-privileged-logs")
 def privileged_log(name: str, *, expect_records: bool) -> list[dict]:
     """Read a shim log from the workspace shared with the verifier.
 
-    The image creates ``pkexec.log``/``askpass.log`` at build time, so a
-    missing file means the log was unreachable (wrong image, wrong mode),
-    NOT that the shim was never called. Existence is asserted, never
-    skipped; ``expect_records`` then decides empty vs non-empty (G1.3).
+    The image creates ``pkexec.log``/``askpass.log``/``probe.log`` at build
+    time, so existence alone proves nothing. A ``expect_records=False``
+    ("never invoked") check is only trustworthy together with a positive
+    control in the same trial: ``probe.log`` with ``expect_records=True``,
+    written by the sudo'd ``e2e-nopasswd-probe`` from the agent's own shell
+    (PR #2917 G2.2, asserted in e2e-sudo-setup-wizard-k2). A missing file
+    still means the trial did not run against the privileged image.
     """
     path = PRIVILEGED_LOG_DIR / name
     assert path.is_file(), (

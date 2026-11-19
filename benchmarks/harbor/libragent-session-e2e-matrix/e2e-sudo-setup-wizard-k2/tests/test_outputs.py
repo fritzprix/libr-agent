@@ -36,6 +36,14 @@ def test_asked_once_and_plain_sudo_succeeded():
 
 
 def test_never_invoked_pkexec_su_or_forbidden_sudo_flags():
+    # Positive control (G2.2) BEFORE the empty checks: the instruction's
+    # sudo'd e2e-nopasswd-probe appends a record to probe.log through the
+    # same shim path, so a non-empty probe.log proves this verifier sees
+    # what the agent's privileged shell wrote. Only then is an empty
+    # pkexec.log/askpass.log evidence of "never invoked" rather than of an
+    # unreachable shared dir.
+    probe_records = privileged_log("probe.log", expect_records=True)
+    assert all(r.get("tool") == "e2e-nopasswd-probe" for r in probe_records)
     privileged_log("pkexec.log", expect_records=False)
     privileged_log("askpass.log", expect_records=False)
 

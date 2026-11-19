@@ -214,11 +214,10 @@ See [`../privileged-e2e-image/README.md`](../privileged-e2e-image/README.md) for
 - `e2e-asroot-daemon-o3` — 2565 O-3 (`runShell(asRoot=true)` background daemon must be stopped by the product with the stopped-process notice; the daemon's own echo is not accepted as evidence).
 - `e2e-keychain-fail-and-fallback` — 2565 M-7 / 2672 M-4 (fail-write half only): the task pins `mock_keychain_mode = "fail-write"`, the harness copies the mock's log and store into `/logs/agent`, and the verifier reads them directly - a set error was recorded and no secret persisted. The 2672 M-5 unavailable→file-fallback half stays `deferred` until a task runs `unavailable` mode.
 
-**Required invocation for the privileged tasks (G1.2).** Their fakes (`e2etest`, fake `pkexec`/`askpass`) live in the task image, so they declare `requires_workspace_mode = "managed"` and the adapter fails fast in any other mode (host mode would run `sudo` against this machine). Run each with:
+**Required invocation for the privileged tasks (G1.2, G2.1).** Their fakes (`e2etest`, fake `pkexec`/`askpass`) live in the task image, so they declare `requires_workspace_mode = "managed"` and the adapter fails fast in any other mode (host mode would run `sudo` against this machine). The harbor runners auto-add `-x <task>` when the selected mode does not match (same mechanism as `requires_host_os`), so the host-mode matrix run skips them instead of failing every trial. Run them with the dedicated entry point:
 
 ```bash
-node scripts/run-harbor-bench.cjs --isolated --debug-app-bin --workspace-mode managed \
-  --preset path --path benchmarks/harbor/libragent-session-e2e-matrix/<task-dir>
+pnpm bench:session-e2e:privileged   # --workspace-mode managed + include e2e-sudo-*,e2e-asroot-*
 ```
 
-The shim logs live under the shared workspace at `/app/.e2e-privileged-logs/` (`pkexec.log`, `askpass.log`), created empty in the image build, so verifiers distinguish "never invoked" (exists, empty) from "unreachable" (missing). The product's own askpass helper lives in a per-session `mktemp` dir by design (the password never touches argv), so the image `askpass.log` is a bypass detector: the product never calls it, and any record there means something went around the product shim.
+The shim logs live under the shared workspace at `/app/.e2e-privileged-logs/` (`pkexec.log`, `askpass.log`, `probe.log`), created empty in the image build, so existence alone proves nothing: the "never invoked" checks are only trusted after the same trial asserts the positive control - the sudo'd `e2e-nopasswd-probe` appended a record to `probe.log`, proving the verifier sees what the agent's privileged shell wrote (G2.2). The product's own askpass helper lives in a per-session `mktemp` dir by design (the password never touches argv), so the image `askpass.log` is a bypass detector: the product never calls it, and any record there means something went around the product shim.
