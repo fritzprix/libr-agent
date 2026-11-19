@@ -26,10 +26,15 @@ COPY bin/e2e-askpass /usr/local/bin/e2e-askpass
 COPY bin/e2e-nopasswd-probe /usr/local/bin/e2e-nopasswd-probe
 RUN chmod 0755 /usr/local/bin/pkexec /usr/local/bin/e2e-askpass /usr/local/bin/e2e-nopasswd-probe
 
-RUN mkdir -p /app /tmp/e2e-privileged-logs \
-    && chown -R e2etest:e2etest /app /tmp/e2e-privileged-logs
+RUN mkdir -p /app /app/.e2e-privileged-logs \
+    && : > /app/.e2e-privileged-logs/pkexec.log \
+    && : > /app/.e2e-privileged-logs/askpass.log \
+    && chown -R e2etest:e2etest /app
 
-ENV LIBRAGENT_E2E_PRIVILEGED_LOG_DIR=/tmp/e2e-privileged-logs \
+# The log dir lives under /app (the workspace shared with the verifier
+# container) and the files exist from image build, so verifiers can tell
+# "never invoked" (exists + empty) apart from "unreachable" (missing).
+ENV LIBRAGENT_E2E_PRIVILEGED_LOG_DIR=/app/.e2e-privileged-logs \
     LIBRAGENT_E2E_FAKE_PKEXEC_MODE=fail \
     LIBRAGENT_E2E_FAKE_ASKPASS_MODE=succeed
 

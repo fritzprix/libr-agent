@@ -55,6 +55,7 @@ except ImportError:  # pragma: no cover
     httpx = None  # type: ignore[assignment]
 
 from benchmarks.harbor.session_e2e.automation import (
+    MOCK_KEYCHAIN_MODE_ENV,
     load_session_e2e_spec,
     resolve_pending_interactions,
 )
@@ -1595,6 +1596,33 @@ class LibrAgentHarborAdapter(BaseAgent):
             )
 
         trial_reset = resolve_trial_instance_reset(dict(os.environ))
+        # G1.2: tasks whose fakes live in the task image (privileged paths)
+        # declare requires_workspace_mode; running them in another mode would
+        # silently exercise the host instead, so fail fast before any work.
+        trial_spec = load_session_e2e_spec(self.logs_dir)
+        if trial_spec is not None and trial_spec.requires_workspace_mode:
+            current_mode = resolve_workspace_mode(dict(os.environ))
+            if current_mode != trial_spec.requires_workspace_mode:
+                raise RuntimeError(
+                    f"This task declares requires_workspace_mode="
+                    f'"{trial_spec.requires_workspace_mode}" but the bench runs '
+                    f"{current_mode!r}. Privileged-path tasks need the task "
+                    "image's fake pkexec/askpass, which only exists in the "
+                    "managed container. Run: node scripts/run-harbor-bench.cjs "
+                    "--isolated --debug-app-bin --workspace-mode managed "
+                    "--preset path --path <task-dir>"
+                )
+        # G1.4: a task may pin the instance's mock keychain mode. Apply it
+        # before the per-trial relaunch (and clear it for every other task)
+        # so the env var exists only for trials that observe the mock.
+        if trial_spec is not None and trial_spec.mock_keychain_mode:
+            os.environ[MOCK_KEYCHAIN_MODE_ENV] = trial_spec.mock_keychain_mode
+            safe_print(
+                f"[{self.name()}] Mock keychain mode override: "
+                f"{trial_spec.mock_keychain_mode}"
+            )
+        else:
+            os.environ.pop(MOCK_KEYCHAIN_MODE_ENV, None)
         if trial_reset is not None:
             await asyncio.to_thread(relaunch, trial_reset.layout, trial_reset.app_bin)
             try:
@@ -2183,6 +2211,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                     messages=messages,
                     resolved_interactions=session_e2e_actions,
                 )
+                self._copy_mock_keychain_artifacts(bench_instance)
 
             if telemetry.tool_calls_count == 0:
                 safe_print(
@@ -2358,6 +2387,18 @@ class LibrAgentHarborAdapter(BaseAgent):
             return resolve_env_auth_headers(os.environ)
         except BenchAuthError as exc:
             raise RuntimeError(f"{exc} {API_KEY_HINT}") from exc
+
+    def _copy_mock_keychain_artifacts(self, bench_instance: Any) -> None:
+        """Copy the instance's mock keychain log/store into this trial's
+        /logs/agent so the verifier can observe the mock directly (G1.4)."""
+        if bench_instance is None or not os.environ.get(MOCK_KEYCHAIN_MODE_ENV):
+            return
+        data_dir = bench_instance.layout.data_dir
+        for name in ("e2e_mock_keychain.log", "e2e_mock_keychain.json"):
+            src = data_dir / name
+            if src.is_file():
+                with contextlib.suppress(OSError):
+                    shutil.copy2(src, self.logs_dir / name)
 
     async def _write_session_e2e_evidence_best_effort(
         self,

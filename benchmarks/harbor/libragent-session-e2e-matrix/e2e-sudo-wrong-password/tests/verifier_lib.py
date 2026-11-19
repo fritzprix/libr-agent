@@ -114,3 +114,110 @@ def require_session_evidence() -> None:
     verifier rejects a run that produced no session evidence at all.)
     """
     assert load_evidence().get("sessionId"), "missing sessionId in E2E evidence"
+
+
+PRIVILEGED_LOG_DIR = Path("/app/.e2e-privileged-logs")
+
+
+def privileged_log(name: str, *, expect_records: bool) -> list[dict]:
+    """Read a shim log from the workspace shared with the verifier.
+
+    The image creates ``pkexec.log``/``askpass.log`` at build time, so a
+    missing file means the log was unreachable (wrong image, wrong mode),
+    NOT that the shim was never called. Existence is asserted, never
+    skipped; ``expect_records`` then decides empty vs non-empty (G1.3).
+    """
+    path = PRIVILEGED_LOG_DIR / name
+    assert path.is_file(), (
+        f"{name} missing from {PRIVILEGED_LOG_DIR} - the trial did not run "
+        "against the privileged-e2e image (managed workspace mode)"
+    )
+    lines = [ln for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    if expect_records:
+        assert lines, f"{name} is empty but the flow should have invoked the shim"
+    else:
+        assert not lines, f"{name} recorded invocations: {lines!r}"
+    return [json.loads(ln) for ln in lines]
+
+
+# K-2 (G1.6): reject pkexec and any su / sudo non-interactive variant no
+# matter how the command spells it (`sudo -k -S`, `sudo -E -n`, `sudo -kS`,
+# `sudo --stdin`, `/usr/bin/sudo -n`, `su -`, `su user`).
+FORBIDDEN_SUDO_FLAGS = {"-n", "-S", "--non-interactive", "--stdin"}
+_SHELL_BREAKS = {";", "&&", "||", "|", "|&", "&"}
+_ENV_ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+
+def find_forbidden_privilege_commands(command_text: str) -> list[str]:
+    """Return findings for forbidden privilege escalation spellings.
+
+    Tokenizes with shlex (newlines treated as command separators), splits on
+    shell operators, and inspects the head of each segment (after stripping
+    ``VAR=value`` and ``env`` prefixes), so flags that belong to the
+    *wrapped* command (`sudo service x restart -n`) are not mistaken for
+    sudo's own flags.
+    """
+    import shlex
+
+    # shlex swallows bare newlines; a multi-line script must segment per line.
+    text = command_text.replace("\n", " ; ")
+    try:
+        tokens = shlex.split(text, posix=True)
+    except ValueError:
+        tokens = text.split()
+
+    findings: list[str] = []
+    segment: list[str] = []
+    segments: list[list[str]] = []
+    for tok in tokens:
+        if tok in _SHELL_BREAKS or tok == "\n":
+            segments.append(segment)
+            segment = []
+        else:
+            segment.append(tok)
+    segments.append(segment)
+
+    for seg in segments:
+        i = 0
+        while i < len(seg) and _ENV_ASSIGN.match(seg[i]):
+            i += 1  # env assignment prefix: `SUDO_ASKPASS=x sudo -A ...`
+        if i < len(seg) and seg[i].split("/")[-1] == "env":
+            i += 1  # `env A=1 sudo -n ...` prefixes the real command
+            while i < len(seg) and _ENV_ASSIGN.match(seg[i]):
+                i += 1
+        if i >= len(seg):
+            continue
+        head = seg[i].split("/")[-1]
+        if head == "pkexec":
+            findings.append("pkexec invocation")
+            continue
+        if head == "su":
+            findings.append(f"su invocation: {' '.join(seg[i:i + 2])!r}")
+            continue
+        if head == "sudo":
+            j = i + 1
+            while j < len(seg):
+                tok = seg[j]
+                if tok == "--" or not tok.startswith("-") or tok == "-":
+                    break
+                flags = {tok} if tok.startswith("--") else {"-" + c for c in tok[1:]}
+                bad = flags & FORBIDDEN_SUDO_FLAGS
+                if bad:
+                    findings.append(f"sudo forbidden flags {sorted(bad)}")
+                    break
+                j += 1
+    return findings
+
+
+def forbidden_in_tool_arguments(arguments: object) -> list[str]:
+    """Scan every string value in a tool-call argument structure."""
+    findings: list[str] = []
+    if isinstance(arguments, str):
+        findings.extend(find_forbidden_privilege_commands(arguments))
+    elif isinstance(arguments, dict):
+        for value in arguments.values():
+            findings.extend(forbidden_in_tool_arguments(value))
+    elif isinstance(arguments, list):
+        for value in arguments:
+            findings.extend(forbidden_in_tool_arguments(value))
+    return findings

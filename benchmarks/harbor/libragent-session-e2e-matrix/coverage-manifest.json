@@ -212,7 +212,7 @@
     {
       "id": "M-7",
       "status": "implemented-partial",
-      "reason": "Harbor e2e-keychain-fail-and-fallback + debug-only LIBRAGENT_E2E_MOCK_KEYCHAIN=fail-write/unavailable (#2904, pinned by e2e_mock_keychain_tests)",
+      "reason": "Harbor e2e-keychain-fail-and-fallback + debug-only LIBRAGENT_E2E_MOCK_KEYCHAIN=fail-write (#2904, pinned by e2e_mock_keychain_tests): secret write attempted, failed, and never persisted (store copy read by the verifier)",
       "harbor_task": "e2e-keychain-fail-and-fallback"
     },
     {
@@ -475,9 +475,9 @@
     },
     {
       "id": "2672-M-5",
-      "status": "implemented-partial",
-      "reason": "Harbor e2e-keychain-fail-and-fallback + debug-only LIBRAGENT_E2E_MOCK_KEYCHAIN=unavailable (#2904): unavailable-keychain encrypted fallback half; post-restart half waits on S3 (2672 M-5)",
-      "harbor_task": "e2e-keychain-fail-and-fallback"
+      "status": "deferred",
+      "reason": "needs a task running LIBRAGENT_E2E_MOCK_KEYCHAIN=unavailable to prove the file-store fallback; the current e2e-keychain-fail-and-fallback runs fail-write only (2672 M-5)",
+      "harbor_task": null
     }
   ]
 }

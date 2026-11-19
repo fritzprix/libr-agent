@@ -13,6 +13,9 @@ tags = ["matrix", "M-7", "M-4", "M-5", "keychain", "privileged"]
 
 [metadata.libragent_session_e2e]
 matrix_id = "M-7"
+# The adapter relaunches the bench instance with this mock keychain mode
+# before the trial and copies the mock log/store into /logs/agent (G1.4).
+mock_keychain_mode = "fail-write"
 auto_answer_interactive = true
 approve_standard_tools = true
 reject_hard_approvals = false

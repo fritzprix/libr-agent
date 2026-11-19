@@ -27,15 +27,14 @@ def test_asroot_daemon_call_recorded_and_handled_cleanly():
     assert asroot_called, "agent never invoked workspace__runShell with asRoot=true"
 
     obs = "\n".join(observation_result_texts(steps)).lower()
-    assert any(
-        marker in obs
-        for marker in (
-            "stopped",
-            "asroot is only available",
-            "asroot is not available",
-            "daemon_launched",
-        )
-    ), f"expected stopped-process notice or managed-container refusal in observations: {obs[:400]!r}"
+    # G1.5: `daemon_launched` is echoed by the daemon command itself, so it
+    # proves the launch happened - exactly the failure O-3 tests for. Only
+    # the product's stopped-process notice passes (the task declares managed
+    # workspace mode, so the refusal path is not expected either).
+    assert "stopped" in obs, (
+        f"expected the stopped-process notice for the stray asRoot daemon "
+        f"in observations: {obs[:400]!r}"
+    )
 
     assert RESULT_FILE.is_file(), "o3_result.txt missing"
     assert RESULT_FILE.read_text(encoding="utf-8").strip() == "ASROOT_CHECKED"

@@ -13,6 +13,9 @@ tags = ["matrix", "K-2", "sudo", "setup-wizard", "privileged"]
 
 [metadata.libragent_session_e2e]
 matrix_id = "K-2"
+# The privileged fakes live in this task image; host mode would run
+# sudo against the host instead. The adapter fails fast on a mismatch (G1.2).
+requires_workspace_mode = "managed"
 auto_answer_interactive = true
 approve_standard_tools = true
 answer_value = "e2e-sudo-fixture"

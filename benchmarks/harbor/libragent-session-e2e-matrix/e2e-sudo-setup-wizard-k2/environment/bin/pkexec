@@ -4,7 +4,7 @@
 # returns according to LIBRAGENT_E2E_FAKE_PKEXEC_MODE (fail | succeed; default fail).
 set -euo pipefail
 
-LOG_DIR="${LIBRAGENT_E2E_PRIVILEGED_LOG_DIR:-/tmp/e2e-privileged-logs}"
+LOG_DIR="${LIBRAGENT_E2E_PRIVILEGED_LOG_DIR:-/app/.e2e-privileged-logs}"
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/pkexec.log"
 

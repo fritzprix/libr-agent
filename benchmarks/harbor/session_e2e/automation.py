@@ -32,6 +32,33 @@ class SessionE2eAutomationSpec:
     wait_for_overlapping_child_prompt: bool = False
     distinct_secret_per_prompt: bool = False
     terminate_child_on_prompt: bool = False
+    # G1.2: task refuses to run unless the bench uses this workspace mode
+    # ("managed" for the privileged tasks, whose fakes live in the task image).
+    requires_workspace_mode: str | None = None
+    # G1.4: per-task mock keychain mode ("succeed" | "fail-write" |
+    # "fail-read" | "unavailable"); applied to the instance env before the
+    # per-trial relaunch and cleared for every other task.
+    mock_keychain_mode: str | None = None
+
+
+MOCK_KEYCHAIN_MODES = ("succeed", "fail-write", "fail-read", "unavailable")
+MOCK_KEYCHAIN_MODE_ENV = "LIBRAGENT_E2E_MOCK_KEYCHAIN"
+
+
+def _clean_mock_keychain_mode(raw: object) -> str | None:
+    """Validate the task-declared mock keychain mode, failing fast on typos."""
+    if raw is None:
+        return None
+    if not isinstance(raw, str) or not raw.strip():
+        raise RuntimeError(
+            f"mock_keychain_mode must be one of {', '.join(MOCK_KEYCHAIN_MODES)} (got {raw!r})."
+        )
+    mode = raw.strip().lower()
+    if mode not in MOCK_KEYCHAIN_MODES:
+        raise RuntimeError(
+            f"mock_keychain_mode must be one of {', '.join(MOCK_KEYCHAIN_MODES)} (got {raw!r})."
+        )
+    return mode
 
 
 def _clean_execution_mode(raw: object) -> str | None:
@@ -89,6 +116,13 @@ def load_session_e2e_spec(logs_dir: Any) -> SessionE2eAutomationSpec | None:
         terminate_child_on_prompt=bool(
             spec.get("terminate_child_on_prompt", False)
         ),
+        requires_workspace_mode=(
+            str(spec["requires_workspace_mode"]).strip().lower()
+            if isinstance(spec.get("requires_workspace_mode"), str)
+            and str(spec["requires_workspace_mode"]).strip()
+            else None
+        ),
+        mock_keychain_mode=_clean_mock_keychain_mode(spec.get("mock_keychain_mode")),
     )
 
 

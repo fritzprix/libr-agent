@@ -139,3 +139,38 @@ fn mock_keychain_module_stays_compile_time_gated_to_debug_assertions() {
         "e2e_mock must stay gated behind #[cfg(debug_assertions)]"
     );
 }
+
+/// Gatekeeper G1.1: the mock shares the control plane's guard, so without an
+/// explicit `LIBRAGENT_DATA_DIR` it stays inactive — no temp-dir store, no
+/// temp-dir log, real keychain semantics apply.
+#[tokio::test]
+async fn mock_keychain_inactive_without_explicit_data_dir() {
+    let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _env = EnvGuard::set(&[
+        ("LIBRAGENT_E2E_CONTROL", Some("1")),
+        ("LIBRAGENT_E2E_MOCK_KEYCHAIN", Some("succeed")),
+        ("LIBRAGENT_DATA_DIR", None),
+        ("LIBRAGENT_E2E_MOCK_KEYCHAIN_LOG", None),
+    ]);
+
+    // The removed fallback location. If anything recreates it, that is the
+    // regression this test exists to catch.
+    let sentinel_dir = std::env::temp_dir().join("libragent-e2e-mock-keychain");
+    let sentinel_log = std::env::temp_dir().join("libragent-e2e-mock-keychain.log");
+    let _ = std::fs::remove_dir_all(&sentinel_dir);
+
+    let store = KeychainSecretStore;
+    // An active mock logs here on the first available() call; an inactive one
+    // must produce nothing at any predictable path.
+    let _ = store.available();
+
+    assert!(
+        !sentinel_dir.exists(),
+        "mock keychain must not create a temp-dir store without LIBRAGENT_DATA_DIR"
+    );
+    assert!(
+        !sentinel_log.exists(),
+        "mock keychain must not log to the temp dir without LIBRAGENT_DATA_DIR"
+    );
+    let _ = std::fs::remove_dir_all(&sentinel_dir);
+}
