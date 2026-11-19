@@ -39,6 +39,16 @@ class SessionE2eAutomationSpec:
     # "fail-read" | "unavailable"); applied to the instance env before the
     # per-trial relaunch and cleared for every other task.
     mock_keychain_mode: str | None = None
+    # Restart-dependent rows (#2903): after the session completes, the harness
+    # restarts the *same* bench instance in place and records a post-restart
+    # snapshot so the verifier can assert persistence without a second session.
+    restart_after_completion: bool = False
+    # Probes run against the restarted instance, recorded verbatim into
+    # session_e2e_restart_evidence.json. Each http probe is
+    # {name, path} (GET <api_url><path>); each sql probe is {name, query}
+    # (read-only SELECT against the instance DB).
+    post_restart_http_probes: tuple[dict[str, str], ...] = ()
+    post_restart_sql_probes: tuple[dict[str, str], ...] = ()
 
 
 MOCK_KEYCHAIN_MODES = ("succeed", "fail-write", "fail-read", "unavailable")
@@ -123,7 +133,25 @@ def load_session_e2e_spec(logs_dir: Any) -> SessionE2eAutomationSpec | None:
             else None
         ),
         mock_keychain_mode=_clean_mock_keychain_mode(spec.get("mock_keychain_mode")),
+        restart_after_completion=bool(spec.get("restart_after_completion", False)),
+        post_restart_http_probes=_probe_list(spec.get("post_restart_http_probes"), ("name", "path")),
+        post_restart_sql_probes=_probe_list(spec.get("post_restart_sql_probes"), ("name", "query")),
     )
+
+
+def _probe_list(raw: Any, required: tuple[str, ...]) -> tuple[dict[str, str], ...]:
+    """Validate declared restart probes; entries missing required string
+    fields are dropped rather than crashing the trial."""
+    if not isinstance(raw, list):
+        return ()
+    probes: list[dict[str, str]] = []
+    for entry in raw:
+        if not isinstance(entry, dict) or not all(
+            isinstance(entry.get(key), str) and entry.get(key).strip() for key in required
+        ):
+            continue
+        probes.append({key: str(entry[key]).strip() for key in required})
+    return tuple(probes)
 
 
 def _has_pending_prompt(snapshot: dict[str, Any]) -> bool:
