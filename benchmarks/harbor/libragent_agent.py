@@ -22,6 +22,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from collections.abc import Awaitable
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -338,7 +339,20 @@ WORKSPACE_MODE_ENV = "LIBRAGENT_HARBOR_WORKSPACE_MODE"
 WORKSPACE_MODES = ("managed", "host")
 
 
-def resolve_workspace_mode(env_map: dict[str, str]) -> str:
+def resolve_workspace_mode(env_map: dict[str, str], *, platform_name: str = sys.platform) -> str:
+    """Resolve the workspace mode, enforcing the host-mode safety contract.
+
+    host mode runs task commands on the machine that hosts the instance, so
+    it is accepted only with ``LIBRAGENT_BENCH_INSTANCE_SANDBOX=1``, which the
+    isolated launcher sets: on Linux the instance then runs inside a bubblewrap
+    filesystem sandbox and the task workspace is the run dir's ``app/`` (host
+    side of the sandbox's ``/app``); on Windows there is no bubblewrap and the
+    isolated instance itself is the safety condition (named job object +
+    redirected profiles), with the run dir's ``app/`` staged as the task
+    workspace. A plain (non-isolated) host run stays refused, and on Windows
+    host mode is additionally refused outside CI runners (``CI=true``), which
+    are disposable machines.
+    """
     mode = env_map.get(WORKSPACE_MODE_ENV, "").strip().lower() or "host"
     if mode not in WORKSPACE_MODES:
         raise RuntimeError(
@@ -350,12 +364,43 @@ def resolve_workspace_mode(env_map: dict[str, str]) -> str:
             "use `run-harbor-bench.cjs --isolated --workspace-mode host` so the bench "
             "instance runs in a filesystem sandbox, or pass `--workspace-mode managed`."
         )
+    if (
+        mode == "host"
+        and platform_name == "win32"
+        and env_map.get("CI", "").strip().lower() not in ("1", "true")
+    ):
+        raise RuntimeError(
+            f"{WORKSPACE_MODE_ENV}=host on Windows runs task commands directly on this "
+            "machine; allow it only on a disposable CI runner (CI=true), or pass "
+            "`--workspace-mode managed`."
+        )
     return mode
 
 
 def workspace_mode_name(mode: str) -> str:
     """Harbor-facing workspace mode label matching completed-trial metadata."""
     return "host-sync" if mode == "host" else mode
+
+
+def host_session_workspace_path(
+    sandbox_app_dir: Path | None,
+    local_workspace_str: str,
+    *,
+    platform_name: str = sys.platform,
+) -> str:
+    """The ``workspacePath`` sent to the app in host workspace mode.
+
+    Linux: the isolated instance runs inside bubblewrap, which mounts the run
+    dir's ``app/`` (``sandbox_app_dir``) at ``SANDBOX_WORKDIR`` inside the
+    sandbox, so the session must address the in-sandbox path. Windows: there
+    is no bubblewrap mount, so the app reads and writes the host run dir's
+    ``app/`` directly — send the host path (where files are staged and
+    harvested). A plain (non-isolated) host run has no ``sandbox_app_dir`` and
+    always uses the local path.
+    """
+    if sandbox_app_dir is not None and platform_name != "win32":
+        return SANDBOX_WORKDIR
+    return local_workspace_str
 
 
 def _environment_value(name: str) -> str | None:
@@ -1692,6 +1737,11 @@ class LibrAgentHarborAdapter(BaseAgent):
                     "Host workspace mode needs the isolated bench instance (--isolated)."
                 )
             if container_workdir.rstrip("/") != SANDBOX_WORKDIR:
+                # Platform-agnostic precondition: host mode stages the task
+                # workspace at the run dir's app/, which bubblewrap mounts at
+                # SANDBOX_WORKDIR on Linux and which the Windows host session
+                # addresses directly (see host_session_workspace_path). Tasks
+                # pinned to another container workdir do not fit this contract.
                 raise RuntimeError(
                     f"Host workspace mode mounts the task workspace at {SANDBOX_WORKDIR}; "
                     f"this task uses {container_workdir}."
@@ -1758,8 +1808,8 @@ class LibrAgentHarborAdapter(BaseAgent):
                 "manageLifecycle": True,
             }
         else:
-            payload["workspacePath"] = (
-                SANDBOX_WORKDIR if sandbox_app_dir is not None else local_workspace_str
+            payload["workspacePath"] = host_session_workspace_path(
+                sandbox_app_dir, local_workspace_str
             )
             payload["workspaceIsolation"] = "host"
 

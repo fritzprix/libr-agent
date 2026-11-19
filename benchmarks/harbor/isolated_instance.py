@@ -37,9 +37,16 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import win_process
+
 APP_IDENTIFIER = "com.fritzprix.libragent"
 DB_FILE_NAME = "libragent_v2.db"
 DEFAULT_PORT = 3031
+IS_WINDOWS = sys.platform == "win32"
+# Windows only: job object holding the whole instance tree. The per-launch
+# token in the name is what stop() authenticates against - never a process
+# name match. See win_process.py.
+INSTANCE_META_FILE_NAME = "instance.json"
 
 
 def safe_print(*args: object, **kwargs: object) -> None:
@@ -61,9 +68,12 @@ INSTANCE_ROOT_ENV = "LIBRAGENT_BENCH_INSTANCE_ROOT"
 # run has no per-launch key file, so it reads the key from these instead.
 ENV_KEY_VAR = "LIBRAGENT_SESSION_API_KEY"
 ENV_KEY_FILE_VAR = "LIBRAGENT_SESSION_API_KEY_FILE"
-# "1" runs the instance in a bubblewrap sandbox for host-workspace sessions: the
-# filesystem is read-only except the run dir, HOME and /tmp are throwaway, and
-# the run dir's app/ is mounted at /app (the workdir host-mode tasks refer to).
+# "1" means the instance is isolated against host-workspace sessions. Linux:
+# a bubblewrap sandbox - filesystem read-only except the run dir, HOME and
+# /tmp throwaway, the run dir's app/ mounted at /app (the workdir host-mode
+# tasks refer to). Windows: no bubblewrap; the isolated instance itself is the
+# safety condition (named job object + redirected profiles), so launch skips
+# the bwrap path and the task workspace is the run dir's app/ directly.
 INSTANCE_SANDBOX_ENV = "LIBRAGENT_BENCH_INSTANCE_SANDBOX"
 SANDBOX_WORKDIR = "/app"
 DEFAULT_LAUNCH_TIMEOUT_SEC = 120.0
@@ -146,6 +156,11 @@ class InstanceLayout:
         return self.root / "instance.pid"
 
     @property
+    def instance_meta(self) -> Path:
+        """Windows launch manifest (pid, creation time, job token); see :func:`read_instance_meta`."""
+        return self.root / INSTANCE_META_FILE_NAME
+
+    @property
     def log_file(self) -> Path:
         return self.root / "instance.log"
 
@@ -171,6 +186,11 @@ class InstanceLayout:
 
 
 def default_source_db() -> Path:
+    if IS_WINDOWS:
+        # dirs::data_dir() on Windows (src-tauri/src/profile.rs) is the
+        # Roaming AppData folder, so that is where the primary profile lives.
+        appdata = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
+        return Path(appdata) / APP_IDENTIFIER / DB_FILE_NAME
     data_home = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
     return Path(data_home) / APP_IDENTIFIER / DB_FILE_NAME
 
@@ -411,6 +431,8 @@ def reset_run_dir(layout: InstanceLayout) -> None:
     layout.data_dir.mkdir(parents=True)
     for directory in (layout.home_dir, layout.tmp_dir, layout.app_dir):
         directory.mkdir()
+    if IS_WINDOWS:
+        (layout.run_dir / "local-appdata").mkdir()
     shutil.copy2(layout.seed_db, layout.db_path)
 
 
@@ -446,6 +468,10 @@ def sandbox_command(layout: InstanceLayout, app_bin: Path, env: dict[str, str]) 
 
 
 def _check_sandbox_available() -> None:
+    if IS_WINDOWS:
+        raise InstanceError(
+            f"{INSTANCE_SANDBOX_ENV}=1 uses bubblewrap (bwrap), which is Linux-only."
+        )
     if shutil.which("bwrap") is None:
         raise InstanceError("Host-mode sandbox needs bubblewrap (bwrap) on PATH.")
     if not Path(SANDBOX_WORKDIR).is_dir():
@@ -494,6 +520,17 @@ def instance_env(layout: InstanceLayout, base: dict[str, str] | None = None) -> 
             "XDG_CONFIG_HOME": str((layout.run_dir / "xdg-config").resolve()),
         }
     )
+    if IS_WINDOWS:
+        # dirs::data_dir()/data_local_dir() (src-tauri/src/profile.rs and the
+        # WebView data) resolve to APPDATA / LOCALAPPDATA on Windows. Redirect
+        # them into the run dir, mirroring the XDG isolation above, so the
+        # primary profile's Roaming/Local AppData is never touched.
+        env["APPDATA"] = str(layout.xdg_data.resolve())
+        env["LOCALAPPDATA"] = str((layout.run_dir / "local-appdata").resolve())
+        env["USERPROFILE"] = str(layout.home_dir.resolve())
+        env["HOME"] = str(layout.home_dir.resolve())
+        env["TEMP"] = str(layout.tmp_dir.resolve())
+        env["TMP"] = str(layout.tmp_dir.resolve())
     return env
 
 
@@ -606,7 +643,33 @@ def _read_pid(layout: InstanceLayout) -> int | None:
         return None
 
 
+def read_instance_meta(layout: InstanceLayout) -> dict[str, object] | None:
+    """Windows launch manifest (pid, creation time, job name), or None."""
+    try:
+        meta = json.loads(layout.instance_meta.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return meta if isinstance(meta, dict) else None
+
+
+def _write_instance_meta(
+    layout: InstanceLayout, *, pid: int, created: int | None, job_name: str
+) -> None:
+    layout.instance_meta.unlink(missing_ok=True)
+    fd = os.open(layout.instance_meta, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        json.dump({"pid": pid, "created": created, "job": job_name}, handle)
+
+
+def _job_name(layout: InstanceLayout) -> str | None:
+    meta = read_instance_meta(layout)
+    job = meta.get("job") if meta else None
+    return job if isinstance(job, str) and job else None
+
+
 def _pid_alive(pid: int) -> bool:
+    if IS_WINDOWS:
+        return win_process.pid_alive(pid)
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -616,15 +679,29 @@ def _pid_alive(pid: int) -> bool:
     return True
 
 
+def _recorded_created(layout: InstanceLayout) -> int | None:
+    meta = read_instance_meta(layout)
+    created = meta.get("created") if meta else None
+    return created if isinstance(created, int) else None
+
+
 def instance_running(layout: InstanceLayout) -> bool:
     """Whether the launched instance process is still running.
 
     An instance launched by this process becomes our zombie when it exits, and
     a zombie still answers ``kill(pid, 0)``; ``waitpid`` reaps and detects it.
+    On Windows there is no /proc or waitpid, so a recycled PID is caught by
+    comparing the process creation time against the launch manifest; a missing
+    stamp fails closed (the instance is reported as not ours).
     """
     pid = _read_pid(layout)
     if pid is None:
         return False
+    if IS_WINDOWS:
+        if not win_process.pid_alive(pid):
+            return False
+        created = _recorded_created(layout)
+        return created is not None and win_process.process_creation_time(pid) == created
     with contextlib.suppress(ChildProcessError):
         if os.waitpid(pid, os.WNOHANG)[0] == pid:
             return False
@@ -641,22 +718,75 @@ def launch(layout: InstanceLayout, app_bin: Path, *, timeout_sec: float) -> int:
     if not app_bin.is_file():
         raise InstanceError(f"App binary not found: {app_bin}")
     env = instance_env(layout)
-    if sandbox_enabled(env):
+    # On Windows the sandbox flag means "isolated instance is the safety
+    # condition" (job object + redirected profiles, set unconditionally below),
+    # so there is no bubblewrap to check or wrap with.
+    if sandbox_enabled(env) and not IS_WINDOWS:
         _check_sandbox_available()
 
     reset_run_dir(layout)
     issue_api_key(layout)
     env["LIBRAGENT_SESSION_API_KEY_FILE"] = str(layout.app_key_input.resolve())
     llm = apply_prod_llm_settings(layout)
-    command = sandbox_command(layout, app_bin, env) if sandbox_enabled(env) else [str(app_bin.resolve())]
-    log = layout.log_file.open("wb")
-    process = subprocess.Popen(
-        command,
-        env=env,
-        stdout=log,
-        stderr=subprocess.STDOUT,
-        start_new_session=True,
+    command = (
+        sandbox_command(layout, app_bin, env)
+        if sandbox_enabled(env) and not IS_WINDOWS
+        else [str(app_bin.resolve())]
     )
+    log = layout.log_file.open("wb")
+    if IS_WINDOWS:
+        # A named job object is this instance's "data-dir token": every process
+        # in the tree (sidecars included) can only be stopped through the
+        # per-launch job name recorded in the manifest. CREATE_NEW_PROCESS_GROUP
+        # keeps console CTRL events from spilling into the runner.
+        # NOTE (S1.1 decision): we deliberately do NOT launch suspended. The
+        # app needs a full Tauri start before it can spawn the sidecar, so
+        # suspending here would only delay the same readiness we poll for
+        # after launch; a future change to the start path must keep the
+        # post-launch readiness poll (do not replace it with a suspend/resume
+        # assumption).
+        token = secrets.token_hex(8)
+        job_name = f"Local\\libragent-bench-{token}"
+        job = win_process.create_job(job_name)
+        try:
+            process = subprocess.Popen(
+                command,
+                env=env,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+            )
+            try:
+                win_process.assign_process(job, process.handle)
+            except Exception:
+                process.kill()
+                raise
+        finally:
+            win_process.close_handle(job)
+        created = win_process.process_creation_time(process.pid)
+        if created is None:
+            # Without the creation-time stamp, stop() could never tell this
+            # PID from a recycled one, so tear down what we just started.
+            process.kill()
+            win_process.terminate_job_by_name(job_name)
+            raise InstanceError(
+                f"Could not read the creation time of pid {process.pid}; refusing to run "
+                "an instance that stop() could not authenticate against PID reuse."
+            )
+        _write_instance_meta(
+            layout,
+            pid=process.pid,
+            created=created,
+            job_name=job_name,
+        )
+    else:
+        process = subprocess.Popen(
+            command,
+            env=env,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
     layout.pid_file.write_text(str(process.pid), encoding="utf-8")
 
     if not _wait_healthy(port, timeout_sec, process, auth_headers(layout)):
@@ -675,8 +805,12 @@ def instance_pids(layout: InstanceLayout, proc_root: Path = Path("/proc")) -> li
     """PIDs that inherited this instance's data dir, including detached sidecars.
 
     The browser sidecar runs in its own process group, so killing the app's group
-    leaves it (and its Chromium) writing into the run dir.
+    leaves it (and its Chromium) writing into the run dir. Windows has no /proc:
+    the named job object already contains every instance process, so the stop
+    path there uses :func:`_stop_windows` instead and this returns nothing.
     """
+    if IS_WINDOWS:
+        return []
     marker = f"LIBRAGENT_DATA_DIR={layout.data_dir.resolve()}".encode()
     pids: list[int] = []
     if not proc_root.is_dir():
@@ -710,11 +844,60 @@ def _terminate(pids: list[int], grace_sec: float) -> None:
 def _owns_pid(layout: InstanceLayout, pid: int, proc_root: Path = Path("/proc")) -> bool:
     """False when pid.pid is stale and its PID now belongs to an unrelated process.
 
-    Without /proc (macOS) ownership cannot be checked, so the recorded PID is trusted.
+    Without /proc (macOS) ownership cannot be checked, so the recorded PID is
+    trusted. On Windows ownership is the launch manifest and fails closed: the
+    creation-time stamp must exist and match the process behind the PID, so a
+    manifest that is missing or unreadable never authorizes a taskkill.
     """
+    if IS_WINDOWS:
+        created = _recorded_created(layout)
+        return created is not None and win_process.process_creation_time(pid) == created
     if not proc_root.is_dir():
         return True
     return pid in instance_pids(layout, proc_root=proc_root)
+
+
+def _stop_windows(layout: InstanceLayout, *, grace_sec: float) -> None:
+    """Stop the Windows instance tree via its named job object.
+
+    ``taskkill /PID`` (no /F) first gives the GUI a chance to shut down
+    cleanly; the job termination then guarantees every remaining process in
+    the tree dies, which is exactly what detached sidecars need.
+    """
+    pid = _read_pid(layout)
+    job_name = _job_name(layout)
+    owned = pid is not None and _pid_alive(pid) and _owns_pid(layout, pid)
+    stopped_graceful = False
+    if owned and pid is not None and grace_sec > 0:
+        subprocess.run(
+            ["taskkill", "/PID", str(pid)], capture_output=True, check=False, timeout=30
+        )
+        deadline = time.monotonic() + grace_sec
+        while time.monotonic() < deadline and _pid_alive(pid):
+            time.sleep(0.5)
+        stopped_graceful = not _pid_alive(pid)
+        if stopped_graceful:
+            safe_print(f"Stopped bench instance (pid {pid}, graceful taskkill).")
+    if stopped_graceful:
+        # The root died gracefully; sweep the job anyway for detached sidecars.
+        if job_name:
+            swept = win_process.terminate_job_by_name(job_name)
+            safe_print(
+                f"Job object {job_name}: {'swept (a sidecar or leftover was still alive)' if swept else 'no job (nothing left to sweep)'}."
+            )
+        else:
+            safe_print("No job object name in the instance meta; no sidecar sweep performed.")
+    elif job_name and win_process.terminate_job_by_name(job_name):
+        safe_print(f"Stopped bench instance tree via job object ({job_name}).")
+    elif owned and pid is not None:
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True, check=False, timeout=30
+        )
+        safe_print(f"Stopped bench instance (pid {pid}, forced taskkill fallback).")
+    else:
+        safe_print("No running bench instance.")
+    layout.pid_file.unlink(missing_ok=True)
+    layout.instance_meta.unlink(missing_ok=True)
 
 
 def stop(layout: InstanceLayout, *, grace_sec: float = 10.0) -> None:
@@ -724,6 +907,9 @@ def stop(layout: InstanceLayout, *, grace_sec: float = 10.0) -> None:
     data dir, plus processes whose environment contains this instance's
     ``LIBRAGENT_DATA_DIR``. Never selects a process by the ``libragent`` name.
     """
+    if IS_WINDOWS:
+        _stop_windows(layout, grace_sec=grace_sec)
+        return
     pid = _read_pid(layout)
     if pid is not None and _pid_alive(pid) and _owns_pid(layout, pid):
         with contextlib.suppress(ProcessLookupError):

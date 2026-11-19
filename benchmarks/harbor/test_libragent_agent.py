@@ -28,6 +28,7 @@ from benchmarks.harbor.libragent_agent import (
     extract_trajectory_error,
     extract_version_from_health_payload,
     format_harbor_model_name,
+    host_session_workspace_path,
     INSTANCE_SANDBOX_ENV,
     is_workflow_complete,
     load_post_idle_event,
@@ -964,9 +965,9 @@ def test_docker_inspect_helpers_read_container_config(
 
 
 def test_resolve_workspace_mode_defaults_to_host() -> None:
-    assert resolve_workspace_mode({INSTANCE_SANDBOX_ENV: "1"}) == "host"
+    assert resolve_workspace_mode({INSTANCE_SANDBOX_ENV: "1"}, platform_name="linux") == "host"
     with pytest.raises(RuntimeError, match="--isolated"):
-        resolve_workspace_mode({})
+        resolve_workspace_mode({}, platform_name="linux")
     assert resolve_workspace_mode({"LIBRAGENT_HARBOR_WORKSPACE_MODE": " Managed "}) == "managed"
 
 
@@ -988,9 +989,58 @@ def test_host_workspace_mode_requires_sandboxed_home() -> None:
             {
                 "LIBRAGENT_HARBOR_WORKSPACE_MODE": "host",
                 "LIBRAGENT_BENCH_INSTANCE_SANDBOX": "1",
-            }
+            },
+            platform_name="linux",
         )
         == "host"
+    )
+
+
+def test_windows_host_workspace_mode_requires_ci_runner() -> None:
+    env = {
+        "LIBRAGENT_HARBOR_WORKSPACE_MODE": "host",
+        "LIBRAGENT_BENCH_INSTANCE_SANDBOX": "1",
+    }
+    # On a Windows dev machine the isolated instance alone is not enough.
+    with pytest.raises(RuntimeError, match="disposable CI runner"):
+        resolve_workspace_mode(env, platform_name="win32")
+    # On a disposable CI runner (where the Windows job runs) it is accepted.
+    assert resolve_workspace_mode({**env, "CI": "true"}, platform_name="win32") == "host"
+    # A plain (non-isolated) host run stays refused even with CI set.
+    with pytest.raises(RuntimeError, match="filesystem sandbox"):
+        resolve_workspace_mode(
+            {"LIBRAGENT_HARBOR_WORKSPACE_MODE": "host", "CI": "true"}, platform_name="win32"
+        )
+
+
+def test_host_session_workspace_path_linux_bubblewrap_uses_sandbox_workdir() -> None:
+    # Linux host mode: bubblewrap mounts the run dir's app/ at /app inside the
+    # instance, so the session must address the in-sandbox path.
+    assert (
+        host_session_workspace_path(Path("/runs/a1/app"), "/runs/a1/app", platform_name="linux")
+        == "/app"
+    )
+
+
+def test_host_session_workspace_path_windows_host_uses_staged_host_dir() -> None:
+    # Windows host mode: no bubblewrap mount exists, so sending /app would
+    # point at the root of the current drive. The session must use the host
+    # run dir's app/ where the adapter stages and harvests files.
+    app_dir = Path("C:/harbor/runs/a1/app")
+    assert (
+        host_session_workspace_path(app_dir, str(app_dir), platform_name="win32")
+        == str(app_dir)
+    )
+
+
+def test_host_session_workspace_path_plain_host_run_uses_local_workspace() -> None:
+    # No sandbox_app_dir (non-isolated host run): always the local workspace.
+    assert (
+        host_session_workspace_path(None, "/home/user/ws", platform_name="linux")
+        == "/home/user/ws"
+    )
+    assert (
+        host_session_workspace_path(None, "C:\\ws", platform_name="win32") == "C:\\ws"
     )
 
 
