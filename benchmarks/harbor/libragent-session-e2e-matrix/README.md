@@ -71,6 +71,17 @@ task spec sets `resume_circuit_break = true` (the default).
 
 See [`coverage-manifest.json`](./coverage-manifest.json) for all **65 checklist IDs** from issue #2565 (`implemented` | `deferred` | `ui-only` | `platform-specific` | `needs-product`). The issue's **74 result slots** are pass/fail/skip/open tallies, not extra checklist rows.
 
+## Linux CI job (#2901)
+
+`ci.yml` carries a `Session API E2E (Linux isolated, debug)` job: it builds the
+debug binary, seeds the disposable instance, and runs the full matrix under
+Xvfb — the job fails the PR when a task fails. It is inert until the owner
+configures the secrets it reads: `SESSION_E2E_ASSISTANT_ID`, one of
+`SESSION_E2E_SEED_DB` / `SESSION_E2E_SEED_DB_B64` (the pruned seed profile),
+optionally `SESSION_E2E_MODEL`, `LIBRAGENT_SESSION_API_KEY`, and
+`LIBRAGENT_E2E_SYNTHETIC_SECRET` (synthetic fixture value only). LLM keys come
+from the seeded profile / CI secrets — never from a production profile.
+
 ## In-app orchestration (preferred)
 
 For **last release → HEAD** planning and **internal delegate self-E2E** (not Harbor-only), use the repo skill `release-head-self-e2e` (`.agents/skills/release-head-self-e2e/`). Harbor tasks remain the verifier-backed case library this skill pulls from.
