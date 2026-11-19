@@ -433,14 +433,15 @@ const debugAppBin = rawArgv.includes(DEBUG_APP_BIN_FLAG);
  */
 function applyWorkspaceMode(mode) {
   process.env.LIBRAGENT_HARBOR_WORKSPACE_MODE = mode;
-  // Read by the bench instance launcher and the Harbor adapter.
-  if (mode === 'host' && !isWindows) {
+  // Read by the bench instance launcher and the Harbor adapter. On Linux "1"
+  // puts the instance in a bubblewrap sandbox; on Windows there is no bwrap
+  // and the isolated instance itself is the safety condition (named job
+  // object + redirected profiles), so the flag is set there too and the
+  // adapter additionally refuses Windows host mode outside CI runners
+  // (libragent_agent.resolve_workspace_mode).
+  if (mode === 'host') {
     process.env.LIBRAGENT_BENCH_INSTANCE_SANDBOX = '1';
   } else {
-    // The host-mode sandbox is bubblewrap, Linux-only (isolated_instance
-    // refuses it elsewhere). On Windows, host-mode sessions run unsandboxed
-    // - fine for a disposable CI runner, and the operator's own machine is
-    // the same trust boundary the non-isolated path already assumes.
     delete process.env.LIBRAGENT_BENCH_INSTANCE_SANDBOX;
   }
 }

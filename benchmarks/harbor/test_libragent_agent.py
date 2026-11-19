@@ -964,9 +964,9 @@ def test_docker_inspect_helpers_read_container_config(
 
 
 def test_resolve_workspace_mode_defaults_to_host() -> None:
-    assert resolve_workspace_mode({INSTANCE_SANDBOX_ENV: "1"}) == "host"
+    assert resolve_workspace_mode({INSTANCE_SANDBOX_ENV: "1"}, platform_name="linux") == "host"
     with pytest.raises(RuntimeError, match="--isolated"):
-        resolve_workspace_mode({})
+        resolve_workspace_mode({}, platform_name="linux")
     assert resolve_workspace_mode({"LIBRAGENT_HARBOR_WORKSPACE_MODE": " Managed "}) == "managed"
 
 
@@ -988,10 +988,28 @@ def test_host_workspace_mode_requires_sandboxed_home() -> None:
             {
                 "LIBRAGENT_HARBOR_WORKSPACE_MODE": "host",
                 "LIBRAGENT_BENCH_INSTANCE_SANDBOX": "1",
-            }
+            },
+            platform_name="linux",
         )
         == "host"
     )
+
+
+def test_windows_host_workspace_mode_requires_ci_runner() -> None:
+    env = {
+        "LIBRAGENT_HARBOR_WORKSPACE_MODE": "host",
+        "LIBRAGENT_BENCH_INSTANCE_SANDBOX": "1",
+    }
+    # On a Windows dev machine the isolated instance alone is not enough.
+    with pytest.raises(RuntimeError, match="disposable CI runner"):
+        resolve_workspace_mode(env, platform_name="win32")
+    # On a disposable CI runner (where the Windows job runs) it is accepted.
+    assert resolve_workspace_mode({**env, "CI": "true"}, platform_name="win32") == "host"
+    # A plain (non-isolated) host run stays refused even with CI set.
+    with pytest.raises(RuntimeError, match="filesystem sandbox"):
+        resolve_workspace_mode(
+            {"LIBRAGENT_HARBOR_WORKSPACE_MODE": "host", "CI": "true"}, platform_name="win32"
+        )
 
 
 def test_copy_telemetry_to_context() -> None:

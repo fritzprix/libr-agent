@@ -22,6 +22,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from collections.abc import Awaitable
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -338,7 +339,20 @@ WORKSPACE_MODE_ENV = "LIBRAGENT_HARBOR_WORKSPACE_MODE"
 WORKSPACE_MODES = ("managed", "host")
 
 
-def resolve_workspace_mode(env_map: dict[str, str]) -> str:
+def resolve_workspace_mode(env_map: dict[str, str], *, platform_name: str = sys.platform) -> str:
+    """Resolve the workspace mode, enforcing the host-mode safety contract.
+
+    host mode runs task commands on the machine that hosts the instance, so
+    it is accepted only with ``LIBRAGENT_BENCH_INSTANCE_SANDBOX=1``, which the
+    isolated launcher sets: on Linux the instance then runs inside a bubblewrap
+    filesystem sandbox and the task workspace is the run dir's ``app/`` (host
+    side of the sandbox's ``/app``); on Windows there is no bubblewrap and the
+    isolated instance itself is the safety condition (named job object +
+    redirected profiles), with the run dir's ``app/`` staged as the task
+    workspace. A plain (non-isolated) host run stays refused, and on Windows
+    host mode is additionally refused outside CI runners (``CI=true``), which
+    are disposable machines.
+    """
     mode = env_map.get(WORKSPACE_MODE_ENV, "").strip().lower() or "host"
     if mode not in WORKSPACE_MODES:
         raise RuntimeError(
@@ -349,6 +363,16 @@ def resolve_workspace_mode(env_map: dict[str, str]) -> str:
             f"{WORKSPACE_MODE_ENV}=host runs task commands on this machine; "
             "use `run-harbor-bench.cjs --isolated --workspace-mode host` so the bench "
             "instance runs in a filesystem sandbox, or pass `--workspace-mode managed`."
+        )
+    if (
+        mode == "host"
+        and platform_name == "win32"
+        and env_map.get("CI", "").strip().lower() not in ("1", "true")
+    ):
+        raise RuntimeError(
+            f"{WORKSPACE_MODE_ENV}=host on Windows runs task commands directly on this "
+            "machine; allow it only on a disposable CI runner (CI=true), or pass "
+            "`--workspace-mode managed`."
         )
     return mode
 

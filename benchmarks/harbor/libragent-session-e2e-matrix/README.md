@@ -56,12 +56,15 @@ Profile isolation mirrors the Linux XDG setup: `APPDATA`, `LOCALAPPDATA`,
 `USERPROFILE`, `HOME`, `TEMP`/`TMP` are redirected into the run dir, and the
 primary profile (`%APPDATA%\com.fritzprix.libragent`) is refused just like the
 Linux one. The bubblewrap host-mode workspace sandbox is Linux-only; on
-Windows, host-mode sessions run unsandboxed (fine on a disposable CI runner).
+Windows the flag means the isolated instance itself is the safety condition
+(job object + redirected profiles), and the adapter refuses Windows host mode
+outside disposable CI runners (`CI=true`).
 
 The control-plane contract is shared across platforms: the debug-only,
-loopback, token-guarded S1/S3 HTTP routes (interaction polling, prompt and
-approval resolution, file-picker injection, in-place restart) behave the same
-on Windows — they are plain HTTP against the same debug binary. Only the S3
+loopback, token-guarded S1/S3 HTTP routes for interaction polling and prompt
+and approval resolution behave the same on Windows — they are plain HTTP
+against the same debug binary. The file-picker injection and in-place restart
+routes land with #2903 (PR #2916) and are not part of this change. Only the S3
 *window* size/visibility helper is Linux-side (X11); it has no Windows
 equivalent in the manager.
 

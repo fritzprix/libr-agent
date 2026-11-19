@@ -125,6 +125,43 @@ def test_instance_running_rejects_recycled_pid(tmp_path: Path, win: object) -> N
     assert instance_running(layout) is False
 
 
+def test_guards_fail_closed_without_created_stamp(tmp_path: Path, win: object) -> None:
+    """A manifest without a creation stamp never authorizes PID-targeted actions."""
+    layout = _layout(tmp_path)
+    layout.root.mkdir(parents=True)
+    layout.pid_file.write_text("4242", encoding="utf-8")
+    layout.instance_meta.write_text(
+        json.dumps({"pid": 4242, "created": None, "job": "Local\\libragent-bench-07"}),
+        encoding="utf-8",
+    )
+    assert _owns_pid(layout, 4242) is False
+    assert instance_running(layout) is False
+
+
+def test_stop_windows_null_created_never_taskkills(tmp_path: Path, win: object) -> None:
+    layout = _layout(tmp_path)
+    layout.root.mkdir(parents=True)
+    layout.pid_file.write_text("4242", encoding="utf-8")
+    layout.instance_meta.write_text(
+        json.dumps({"pid": 4242, "created": None, "job": "Local\\libragent-bench-08"}),
+        encoding="utf-8",
+    )
+    _stop_windows(layout, grace_sec=5.0)
+    # No verified stamp: the PID must never be touched, only the job token.
+    assert win["taskkill"] == []  # type: ignore[index]
+    assert win["terminated"] == ["Local\\libragent-bench-08"]  # type: ignore[index]
+
+
+def test_stop_windows_missing_manifest_never_taskkills(tmp_path: Path, win: object) -> None:
+    layout = _layout(tmp_path)
+    layout.root.mkdir(parents=True)
+    # Stale PID file with no manifest at all: nothing may be stopped by PID.
+    layout.pid_file.write_text("4242", encoding="utf-8")
+    _stop_windows(layout, grace_sec=5.0)
+    assert win["taskkill"] == []  # type: ignore[index]
+    assert win["terminated"] == []  # type: ignore[index]
+
+
 def test_owns_pid_uses_creation_time_guard(tmp_path: Path, win: object) -> None:
     layout = _layout(tmp_path)
     _write_manifest(layout, pid=7, created=111, job_name="Local\\libragent-bench-02")

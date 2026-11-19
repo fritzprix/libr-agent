@@ -68,9 +68,12 @@ INSTANCE_ROOT_ENV = "LIBRAGENT_BENCH_INSTANCE_ROOT"
 # run has no per-launch key file, so it reads the key from these instead.
 ENV_KEY_VAR = "LIBRAGENT_SESSION_API_KEY"
 ENV_KEY_FILE_VAR = "LIBRAGENT_SESSION_API_KEY_FILE"
-# "1" runs the instance in a bubblewrap sandbox for host-workspace sessions: the
-# filesystem is read-only except the run dir, HOME and /tmp are throwaway, and
-# the run dir's app/ is mounted at /app (the workdir host-mode tasks refer to).
+# "1" means the instance is isolated against host-workspace sessions. Linux:
+# a bubblewrap sandbox - filesystem read-only except the run dir, HOME and
+# /tmp throwaway, the run dir's app/ mounted at /app (the workdir host-mode
+# tasks refer to). Windows: no bubblewrap; the isolated instance itself is the
+# safety condition (named job object + redirected profiles), so launch skips
+# the bwrap path and the task workspace is the run dir's app/ directly.
 INSTANCE_SANDBOX_ENV = "LIBRAGENT_BENCH_INSTANCE_SANDBOX"
 SANDBOX_WORKDIR = "/app"
 DEFAULT_LAUNCH_TIMEOUT_SEC = 120.0
@@ -688,7 +691,8 @@ def instance_running(layout: InstanceLayout) -> bool:
     An instance launched by this process becomes our zombie when it exits, and
     a zombie still answers ``kill(pid, 0)``; ``waitpid`` reaps and detects it.
     On Windows there is no /proc or waitpid, so a recycled PID is caught by
-    comparing the process creation time against the launch manifest.
+    comparing the process creation time against the launch manifest; a missing
+    stamp fails closed (the instance is reported as not ours).
     """
     pid = _read_pid(layout)
     if pid is None:
@@ -697,7 +701,7 @@ def instance_running(layout: InstanceLayout) -> bool:
         if not win_process.pid_alive(pid):
             return False
         created = _recorded_created(layout)
-        return created is None or win_process.process_creation_time(pid) == created
+        return created is not None and win_process.process_creation_time(pid) == created
     with contextlib.suppress(ChildProcessError):
         if os.waitpid(pid, os.WNOHANG)[0] == pid:
             return False
@@ -714,14 +718,21 @@ def launch(layout: InstanceLayout, app_bin: Path, *, timeout_sec: float) -> int:
     if not app_bin.is_file():
         raise InstanceError(f"App binary not found: {app_bin}")
     env = instance_env(layout)
-    if sandbox_enabled(env):
+    # On Windows the sandbox flag means "isolated instance is the safety
+    # condition" (job object + redirected profiles, set unconditionally below),
+    # so there is no bubblewrap to check or wrap with.
+    if sandbox_enabled(env) and not IS_WINDOWS:
         _check_sandbox_available()
 
     reset_run_dir(layout)
     issue_api_key(layout)
     env["LIBRAGENT_SESSION_API_KEY_FILE"] = str(layout.app_key_input.resolve())
     llm = apply_prod_llm_settings(layout)
-    command = sandbox_command(layout, app_bin, env) if sandbox_enabled(env) else [str(app_bin.resolve())]
+    command = (
+        sandbox_command(layout, app_bin, env)
+        if sandbox_enabled(env) and not IS_WINDOWS
+        else [str(app_bin.resolve())]
+    )
     log = layout.log_file.open("wb")
     if IS_WINDOWS:
         # A named job object is this instance's "data-dir token": every process
@@ -746,10 +757,20 @@ def launch(layout: InstanceLayout, app_bin: Path, *, timeout_sec: float) -> int:
                 raise
         finally:
             win_process.close_handle(job)
+        created = win_process.process_creation_time(process.pid)
+        if created is None:
+            # Without the creation-time stamp, stop() could never tell this
+            # PID from a recycled one, so tear down what we just started.
+            process.kill()
+            win_process.terminate_job_by_name(job_name)
+            raise InstanceError(
+                f"Could not read the creation time of pid {process.pid}; refusing to run "
+                "an instance that stop() could not authenticate against PID reuse."
+            )
         _write_instance_meta(
             layout,
             pid=process.pid,
-            created=win_process.process_creation_time(process.pid),
+            created=created,
             job_name=job_name,
         )
     else:
@@ -818,12 +839,13 @@ def _owns_pid(layout: InstanceLayout, pid: int, proc_root: Path = Path("/proc"))
     """False when pid.pid is stale and its PID now belongs to an unrelated process.
 
     Without /proc (macOS) ownership cannot be checked, so the recorded PID is
-    trusted. On Windows ownership is the launch manifest: the recorded creation
-    time must match the process behind the PID (PID-reuse guard).
+    trusted. On Windows ownership is the launch manifest and fails closed: the
+    creation-time stamp must exist and match the process behind the PID, so a
+    manifest that is missing or unreadable never authorizes a taskkill.
     """
     if IS_WINDOWS:
         created = _recorded_created(layout)
-        return created is None or win_process.process_creation_time(pid) == created
+        return created is not None and win_process.process_creation_time(pid) == created
     if not proc_root.is_dir():
         return True
     return pid in instance_pids(layout, proc_root=proc_root)
@@ -839,6 +861,7 @@ def _stop_windows(layout: InstanceLayout, *, grace_sec: float) -> None:
     pid = _read_pid(layout)
     job_name = _job_name(layout)
     owned = pid is not None and _pid_alive(pid) and _owns_pid(layout, pid)
+    stopped_graceful = False
     if owned and pid is not None and grace_sec > 0:
         subprocess.run(
             ["taskkill", "/PID", str(pid)], capture_output=True, check=False, timeout=30
@@ -846,13 +869,20 @@ def _stop_windows(layout: InstanceLayout, *, grace_sec: float) -> None:
         deadline = time.monotonic() + grace_sec
         while time.monotonic() < deadline and _pid_alive(pid):
             time.sleep(0.5)
-    if job_name and win_process.terminate_job_by_name(job_name):
-        safe_print(f"Stopped bench instance job tree ({job_name}).")
+        stopped_graceful = not _pid_alive(pid)
+        if stopped_graceful:
+            safe_print(f"Stopped bench instance (pid {pid}, graceful taskkill).")
+    if stopped_graceful:
+        # The root died gracefully; sweep the job anyway for detached sidecars.
+        if job_name:
+            win_process.terminate_job_by_name(job_name)
+    elif job_name and win_process.terminate_job_by_name(job_name):
+        safe_print(f"Stopped bench instance tree via job object ({job_name}).")
     elif owned and pid is not None:
         subprocess.run(
             ["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True, check=False, timeout=30
         )
-        safe_print(f"Stopped bench instance (pid {pid}, taskkill fallback).")
+        safe_print(f"Stopped bench instance (pid {pid}, forced taskkill fallback).")
     else:
         safe_print("No running bench instance.")
     layout.pid_file.unlink(missing_ok=True)
