@@ -5,14 +5,17 @@ trajectory (tool-call arguments included), and workspace files — never
 assistant prose."""
 
 import json
+import os
 from pathlib import Path
 
 from verifier_lib import load_evidence, load_trajectory
 
 TEMPLATE = "{{secret:E2E_WEATHER_KEY}}"
-# The value the harness would inject if a prompt were answered. A correctly
-# behaved run never triggers a prompt here, so it must not appear anywhere.
-SECRET = "synthetic-e2e-fixture-only"
+# The value the harness would inject if a prompt were answered (env var when
+# set, else the automation fallback — see session_e2e/automation.py). A
+# correctly behaved run never triggers a prompt here, so it must not appear
+# anywhere.
+SECRET = os.environ.get("LIBRAGENT_E2E_SYNTHETIC_SECRET") or "e2e-synthetic-answer"
 REGISTERED = Path("/app/mcp_registered.txt")
 
 

@@ -35,10 +35,17 @@ fn tool_base_name(name: &str) -> &str {
 /// The circuit break currently waiting for a Resume, if any.
 ///
 /// Scans the recent messages backwards: an assistant tool call to
-/// `resumeCircuitBreak` means the break was already resumed; a call to
-/// `circuitBreak` reached first means it is still pending.
+/// `resumeCircuitBreak` means the break was already resumed; a new user
+/// message after the break means the session moved on without Resume; a
+/// call to `circuitBreak` reached first means it is still pending.
 pub fn pending_circuit_break(messages: &[Message]) -> Option<PendingCircuitBreak> {
     for message in messages.iter().rev().take(SCAN_WINDOW) {
+        if message.role == "user" {
+            // The user sent a new message after the break, so the workflow
+            // moved on: the break is no longer waiting for Resume and the
+            // harness must not inject one into a later turn.
+            return None;
+        }
         let Some(tool_calls) = message.tool_calls.as_ref() else {
             continue;
         };

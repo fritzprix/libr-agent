@@ -374,6 +374,19 @@ mod tests {
     }
 
     #[test]
+    fn break_followed_by_user_message_is_not_pending() {
+        let mut moved_on = circuit_break_call();
+        moved_on.role = "user".to_string();
+        moved_on.tool_calls = None;
+        let messages = vec![circuit_break_call(), moved_on];
+        assert!(
+            pending_circuit_break(&messages).is_none(),
+            "a new user message after the break means the session moved on; \
+             the harness must not inject Resume into a later turn"
+        );
+    }
+
+    #[test]
     fn no_circuit_break_means_nothing_pending() {
         let messages = vec![
             assistant_tool_call("workspace__runShell", r#"{"command":"ls"}"#, "call-a"),

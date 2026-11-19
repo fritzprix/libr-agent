@@ -4,6 +4,7 @@ appearing in the trajectory or tool results. Graded from harness evidence,
 tool results, and workspace files — never assistant prose."""
 
 import json
+import os
 from pathlib import Path
 
 from verifier_lib import (
@@ -13,9 +14,12 @@ from verifier_lib import (
     trajectory_steps,
 )
 
-# The value the harness injects as the storeAs answer. The README of the
-# dataset exports LIBRAGENT_E2E_SYNTHETIC_SECRET with this exact value.
-SECRET = "synthetic-e2e-fixture-only"
+# The exact value the harness injects as the storeAs answer: the env var when
+# set, else the automation fallback (see session_e2e/automation.py,
+# ``value=synthetic or "e2e-synthetic-answer"``). Reading it from the
+# environment keeps the leak check non-vacuous when the owner sets a
+# different secret in CI.
+SECRET = os.environ.get("LIBRAGENT_E2E_SYNTHETIC_SECRET") or "e2e-synthetic-answer"
 STORED = Path("/app/stored_env.txt")
 
 
