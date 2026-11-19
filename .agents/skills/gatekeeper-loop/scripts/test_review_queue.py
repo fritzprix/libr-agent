@@ -11,13 +11,16 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 from review_queue import (
+    ESCALATED_LABEL,
     PROTECTED_SKILL_PREFIXES,
     START_MARKER,
     classify,
     classify_sensitive_paths,
     determine_status,
+    escalation_resume_info,
     is_dev_base,
     is_rebased,
+    last_gatekeeper_marker_at,
     latest_clean_marker,
     markers_at_head,
     owner_comments_after,
@@ -588,6 +591,152 @@ class LatestCleanMarkerTests(unittest.TestCase):
         older = {"createdAt": "2026-01-01T09:00:00Z", "head": "a"}
         newer = {"createdAt": "2026-01-01T12:00:00Z", "head": "b"}
         self.assertEqual(latest_clean_marker([older, newer], None, None), newer)
+
+
+class EscalationResumeAndOwnerVisibilityTests(unittest.TestCase):
+    def _round5_verdicts(self) -> list[dict]:
+        return [
+            {"round": "1", "verdict": "changes-requested", "head": "h1", "createdAt": "2026-11-19T01:00:00Z"},
+            {"round": "2", "verdict": "changes-requested", "head": "h2", "createdAt": "2026-11-19T02:00:00Z"},
+            {"round": "3", "verdict": "changes-requested", "head": "h3", "createdAt": "2026-11-19T03:00:00Z"},
+            {"round": "4", "verdict": "changes-requested", "head": "h4", "createdAt": "2026-11-19T04:00:00Z"},
+            {"round": "5", "verdict": "escalate", "head": "h5", "createdAt": "2026-11-19T05:00:00Z"},
+        ]
+
+    def test_owner_removes_escalated_label_resumes_and_raises_limit_to_7(self) -> None:
+        verdicts = self._round5_verdicts()
+        timeline = [
+            {
+                "event": "unlabeled",
+                "created_at": "2026-11-19T06:00:00Z",
+                "actor": {"login": "fritzprix"},
+                "label": {"name": ESCALATED_LABEL},
+            }
+        ]
+        max_rounds, resumed = escalation_resume_info(
+            verdicts, timeline, owner_logins={"fritzprix"}
+        )
+        self.assertEqual(max_rounds, 7)
+        self.assertIsNotNone(resumed)
+
+        status, reason, priority = classify(
+            **base_args(
+                head="h5",
+                last_verdict=verdicts[-1],
+                total_verdicts=len(verdicts),
+                max_rounds=max_rounds,
+                escalation_resumed=resumed is not None,
+            )
+        )
+        self.assertEqual(status, "review")
+        self.assertEqual(priority, 0)
+        self.assertIn("7", reason)
+
+        # After 2 more verdicts (rounds 6 and 7), a new escalation requires another removal.
+        verdicts_after_7 = verdicts + [
+            {"round": "6", "verdict": "changes-requested", "head": "h6", "createdAt": "2026-11-19T07:00:00Z"},
+            {"round": "7", "verdict": "escalate", "head": "h7", "createdAt": "2026-11-19T08:00:00Z"},
+        ]
+        max_rounds2, resumed2 = escalation_resume_info(
+            verdicts_after_7, timeline, owner_logins={"fritzprix"}
+        )
+        self.assertIsNone(resumed2)
+        status2, _, _ = classify(
+            **base_args(
+                head="h7",
+                last_verdict=verdicts_after_7[-1],
+                total_verdicts=len(verdicts_after_7),
+                max_rounds=max_rounds2,
+                escalation_resumed=False,
+            )
+        )
+        self.assertEqual(status2, "escalate")
+
+    def test_non_owner_removal_does_not_resume(self) -> None:
+        verdicts = self._round5_verdicts()
+        timeline = [
+            {
+                "event": "unlabeled",
+                "created_at": "2026-11-19T06:00:00Z",
+                "actor": {"login": "random-contributor"},
+                "actorAssociation": "CONTRIBUTOR",
+                "label": {"name": ESCALATED_LABEL},
+            }
+        ]
+        max_rounds, resumed = escalation_resume_info(
+            verdicts, timeline, owner_logins={"fritzprix"}
+        )
+        self.assertEqual(max_rounds, 5)
+        self.assertIsNone(resumed)
+
+        status = determine_status(
+            **base_args(
+                head="h5",
+                last_verdict=verdicts[-1],
+                total_verdicts=len(verdicts),
+                max_rounds=max_rounds,
+                escalation_resumed=False,
+            )
+        )
+        self.assertEqual(status, "escalate")
+
+    def test_removing_needs_human_label_does_not_resume(self) -> None:
+        verdicts = self._round5_verdicts()
+        timeline = [
+            {
+                "event": "unlabeled",
+                "created_at": "2026-11-19T06:00:00Z",
+                "actor": {"login": "fritzprix"},
+                "label": {"name": "gatekeeper:needs-human"},
+            }
+        ]
+        max_rounds, resumed = escalation_resume_info(
+            verdicts, timeline, owner_logins={"fritzprix"}
+        )
+        self.assertEqual(max_rounds, 5)
+        self.assertIsNone(resumed)
+
+        status = determine_status(
+            **base_args(
+                head="h5",
+                last_verdict=verdicts[-1],
+                total_verdicts=len(verdicts),
+                max_rounds=max_rounds,
+                escalation_resumed=False,
+            )
+        )
+        self.assertEqual(status, "escalate")
+
+    def test_owner_comment_followed_by_worker_response_is_still_reported(self) -> None:
+        comments = [
+            {
+                "author": {"login": "fritzprix"},
+                "authorAssociation": "OWNER",
+                "createdAt": "2026-11-19T05:00:00Z",
+                "body": "<!-- gatekeeper-loop: round=5 verdict=escalate head=h5 -->\nEscalated.",
+            },
+            {
+                "author": {"login": "fritzprix"},
+                "authorAssociation": "OWNER",
+                "createdAt": "2026-11-19T05:30:00Z",
+                "body": "Granting 2 extra rounds; please keep the narrow scope.",
+                "url": "https://github.com/fritzprix/libr-agent/pull/2906#issuecomment-1",
+            },
+            {
+                "author": {"login": "fritzprix"},
+                "authorAssociation": "OWNER",
+                "createdAt": "2026-11-19T06:00:00Z",
+                "body": "<!-- worker-loop: response round=5 head=h6 -->\nFixed per owner note.",
+            },
+        ]
+        markers, responses = parse_markers(comments, "fritzprix")
+        self.assertEqual(len(markers), 1)
+        self.assertEqual(len(responses), 1)
+
+        since = last_gatekeeper_marker_at(markers)
+        owner = owner_comments_after(comments, "fritzprix", since)
+        self.assertEqual(len(owner), 1)
+        self.assertIn("Granting 2 extra rounds", owner[0]["body"])
 
 
 if __name__ == "__main__":

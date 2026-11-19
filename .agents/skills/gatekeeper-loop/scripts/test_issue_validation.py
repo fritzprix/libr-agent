@@ -11,9 +11,10 @@ from unittest.mock import patch
 import issue_validation
 
 
-def issue(number, labels, created="2026-10-30T00:00:00Z", state="OPEN", body="Finding.\n\nEvidence: a.py:1"):
+def issue(number, labels, created="2026-10-30T00:00:00Z", state="OPEN", body="Finding.\n\nEvidence: a.py:1", comments=None):
     return {"number": number, "title": f"Issue {number}", "state": state, "body": body,
-            "createdAt": created, "labels": [{"name": name} for name in labels]}
+            "createdAt": created, "labels": [{"name": name} for name in labels],
+            "comments": comments or []}
 
 
 class FakeGh:
@@ -66,6 +67,33 @@ class NextIssueTest(unittest.TestCase):
             code = issue_validation.main(["next"])
         self.assertEqual(code, 1)
         self.assertEqual(out.getvalue().strip(), "NONE")
+
+    def test_next_includes_issue_comments_with_author_date_and_body(self):
+        comments = [
+            {"author": {"login": "fritzprix"}, "createdAt": "2026-11-19T10:00:00Z",
+             "body": "Keep this scoped to async_exec.rs."},
+            {"author": {"login": "helper"}, "createdAt": "2026-11-19T11:00:00Z",
+             "body": "Confirmed locally."},
+        ]
+        fake = FakeGh([issue(2907, ["auto:producer", "auto:regression"], comments=comments)])
+        out = io.StringIO()
+        with patch.object(issue_validation, "gh", fake), contextlib.redirect_stdout(out):
+            code = issue_validation.main(["next"])
+        self.assertEqual(code, 0)
+        payload = json.loads(out.getvalue())
+        self.assertEqual(payload["number"], 2907)
+        self.assertEqual(
+            payload["comments"],
+            [
+                {"author": "fritzprix", "createdAt": "2026-11-19T10:00:00Z",
+                 "body": "Keep this scoped to async_exec.rs."},
+                {"author": "helper", "createdAt": "2026-11-19T11:00:00Z",
+                 "body": "Confirmed locally."},
+            ],
+        )
+        # Ensure `gh issue list` requested the `comments` field.
+        list_call = fake.calls[0]
+        self.assertIn("comments", list_call[list_call.index("--json") + 1])
 
 
 class JudgeTest(unittest.TestCase):
