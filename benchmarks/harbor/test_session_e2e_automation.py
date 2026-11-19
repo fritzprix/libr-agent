@@ -31,6 +31,7 @@ class FakeClient:
         self._interactions = interactions
         self._respond_payload = respond_payload
         self.respond_bodies: list[dict[str, Any]] = []
+        self.post_urls: list[str] = []
 
     async def get(self, url: str, headers: dict[str, str] | None = None) -> FakeResponse:
         return FakeResponse(self._interactions)
@@ -42,6 +43,7 @@ class FakeClient:
         json: dict[str, Any] | None = None,
     ) -> FakeResponse:
         self.respond_bodies.append(json or {})
+        self.post_urls.append(url)
         return FakeResponse(self._respond_payload)
 
 
@@ -98,3 +100,67 @@ async def test_delivered_answer_is_recorded_as_true(tmp_path, monkeypatch):
     assert actions == [
         {"kind": "userPrompt", "requestId": "req-1", "action": "answer", "delivered": True}
     ]
+
+
+@pytest.mark.asyncio
+async def test_pending_circuit_break_is_resumed(tmp_path, monkeypatch):
+    """A waiting ui__circuitBreak must be driven through the Resume endpoint (#2901)."""
+    data_dir = _instance_data_dir(tmp_path, monkeypatch)
+    client = FakeClient(
+        {
+            "pendingUserPrompt": None,
+            "pendingApprovals": [],
+            "pendingCircuitBreak": {
+                "toolName": "workspace__writeFile",
+                "repetitionCount": 5,
+                "toolCallId": "call-break",
+            },
+        },
+        {"ok": True, "resumedTool": "workspace__writeFile", "repetitionCount": 5},
+    )
+
+    actions = await resolve_pending_interactions(
+        client,
+        api_url="http://127.0.0.1:3031/api",
+        session_id="sess-1",
+        data_dir=data_dir,
+        spec=None,
+    )
+
+    assert actions == [
+        {
+            "kind": "circuitBreakResume",
+            "resumedTool": "workspace__writeFile",
+            "repetitionCount": 5,
+        }
+    ]
+    assert client.post_urls == [
+        "http://127.0.0.1:3031/api/e2e-control/sessions/sess-1/circuit-break-resume"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_circuit_break_resume_disabled_by_spec(tmp_path, monkeypatch):
+    """[metadata.libragent_session_e2e] resume_circuit_break=false must not resume."""
+    from benchmarks.harbor.session_e2e.automation import SessionE2eAutomationSpec
+
+    data_dir = _instance_data_dir(tmp_path, monkeypatch)
+    client = FakeClient(
+        {
+            "pendingUserPrompt": None,
+            "pendingApprovals": [],
+            "pendingCircuitBreak": {"toolName": "x", "repetitionCount": 5},
+        },
+        {"ok": True},
+    )
+
+    actions = await resolve_pending_interactions(
+        client,
+        api_url="http://127.0.0.1:3031/api",
+        session_id="sess-1",
+        data_dir=data_dir,
+        spec=SessionE2eAutomationSpec(resume_circuit_break=False),
+    )
+
+    assert actions == []
+    assert client.post_urls == []

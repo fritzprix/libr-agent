@@ -49,6 +49,24 @@ isolated instance**. Host-mode Windows runs therefore do not auto-resolve
 `requireUserInput` prompts yet — `e2e-interactive-echo` needs the isolated
 runner (Linux) until a Windows instance manager lands.
 
+## Circuit-breaker Resume (#2901)
+
+`ui__circuitBreak` stops the workflow and waits for a human Resume click. Debug
+builds additionally expose `POST /api/e2e-control/sessions/:ref/circuit-break-resume`
+(loopback, token-gated), which injects the exact `ui__resumeCircuitBreak`
+tool-call the GUI button sends. `POST /api/sessions/:id/resume` is a different
+reload path (#2898) and never touches the dialog. The poller sees the waiting
+break in `GET …/interactions` (`pendingCircuitBreak`) and resumes it when the
+task spec sets `resume_circuit_break = true` (the default).
+
+## New tasks (#2901)
+
+- `e2e-askuser-answer` — one `ui__askUser` question answered through the control
+  plane; the agent must write the delivered answer verbatim to `answer.txt`.
+- `e2e-circuit-break-resume` — trips the tool-loop guard with six identical
+  `workspace__writeFile` calls, gets resumed through the new endpoint, and must
+  finish by writing `break_marker.txt`.
+
 ## Coverage manifest
 
 See [`coverage-manifest.json`](./coverage-manifest.json) for all **65 checklist IDs** from issue #2565 (`implemented` | `deferred` | `ui-only` | `platform-specific` | `needs-product`). The issue's **74 result slots** are pass/fail/skip/open tallies, not extra checklist rows.

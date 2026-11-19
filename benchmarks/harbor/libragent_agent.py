@@ -1930,20 +1930,32 @@ class LibrAgentHarborAdapter(BaseAgent):
                                 )
                         else:
                             try:
-                                session_e2e_actions.extend(
-                                    await resolve_pending_interactions(
-                                        client,
-                                        api_url=self.api_url,
-                                        session_id=session_id,
-                                        data_dir=bench_instance.layout.data_dir,
-                                        spec=session_e2e_spec,
-                                    )
+                                resolved = await resolve_pending_interactions(
+                                    client,
+                                    api_url=self.api_url,
+                                    session_id=session_id,
+                                    data_dir=bench_instance.layout.data_dir,
+                                    spec=session_e2e_spec,
                                 )
+                                session_e2e_actions.extend(resolved)
                             except Exception as exc:
                                 safe_print(
                                     f"[{self.name()}] Warning: session E2E control "
                                     f"action failed: {exc}"
                                 )
+                            else:
+                                if any(
+                                    isinstance(a, dict)
+                                    and a.get("kind") == "circuitBreakResume"
+                                    for a in resolved
+                                ):
+                                    # Circuit-breaker Resume (#2901): the break
+                                    # settled the session to idle and the status
+                                    # read above is pre-resume; the injected
+                                    # ui__resumeCircuitBreak re-enters the
+                                    # workflow, so this poll must not complete
+                                    # the session.
+                                    continue
 
                     if current_status == "paused":
                         safe_print(

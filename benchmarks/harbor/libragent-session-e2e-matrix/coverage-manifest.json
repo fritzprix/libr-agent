@@ -13,9 +13,9 @@
     },
     {
       "id": "P-2",
-      "status": "deferred",
-      "reason": "needs Windows/Linux desktop debug instance + E2E control; task scaffold pending",
-      "harbor_task": null
+      "status": "implemented",
+      "reason": "partial: e2e-askuser-answer (ui__askUser single-question round trip via E2E control); option/cancel/multi-question variants pending",
+      "harbor_task": "e2e-askuser-answer"
     },
     {
       "id": "P-3",
