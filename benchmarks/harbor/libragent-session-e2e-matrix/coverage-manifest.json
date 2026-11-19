@@ -145,15 +145,15 @@
     },
     {
       "id": "S-3",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "2672 S-3 store path is exactly e2e-storeas-masked (B-12): one-off runShell storeAs answer reaches the shell env, a later command reads $E2E_STORED_SECRET and writes SECRET_PRESENT, and the recorded secret never appears in output or the trajectory; the reject paths passed earlier in #2565's Linux run",
+      "harbor_task": "e2e-storeas-masked"
     },
     {
       "id": "S-4",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "2672 S-4 masking-in-logs is exactly e2e-answer-masked-logs (P-9): command text and variable names may appear, but the verifier byte-scans every artifact under /logs/agent/ (trajectory, compaction summary, instance log) and fails if the recorded injected value appears in any of them",
+      "harbor_task": "e2e-answer-masked-logs"
     },
     {
       "id": "S-5",
@@ -338,7 +338,7 @@
     {
       "id": "X-2",
       "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
+      "reason": "needs harness multi-session support: 2565 X-2 requires sessions A and B to hold waiting prompts at once with B answered first, but the harness drives one Harbor session per task (no child-session discovery/polling in automation.py yet)",
       "harbor_task": null
     },
     {
@@ -350,7 +350,7 @@
     {
       "id": "X-4",
       "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
+      "reason": "unreachable from a single-session agent E2E flow: execute_tool_calls runs batched tool calls sequentially (src-tauri/src/agent/llm/tool_execution.rs), so a second prompt only arrives after the first resolves and can never observe the overlap; the one-prompt-at-a-time gate itself is pinned by unit test only_one_prompt_may_wait_per_session (src-tauri/src/agent/state/user_prompt.rs, runs via pnpm rust:test --lib)",
       "harbor_task": null
     },
     {
