@@ -400,6 +400,12 @@
       "status": "implemented-partial",
       "reason": "Harbor e2e-mcp-secret-template: MCP server registration stores the key as {{secret:NAME}} and never asks for the value in chat (2672 K-3)",
       "harbor_task": "e2e-mcp-secret-template"
+    },
+    {
+      "id": "K-1",
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-clarify-requirements: vague request triggers clarify; verifier requires delivered answers, skill load, maintained requirements.md (2672 K-1)",
+      "harbor_task": "e2e-clarify-requirements"
     }
   ]
 }

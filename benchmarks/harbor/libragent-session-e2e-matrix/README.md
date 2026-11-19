@@ -80,6 +80,10 @@ task spec sets `resume_circuit_break = true` (the default).
   key; the verifier requires the `{{secret:E2E_WEATHER_KEY}}` template in the
   trajectory (tool-call arguments included), rejects any chat prompt for the
   secret value, and fails if any secret literal appears anywhere.
+- `e2e-clarify-requirements` — a vague `기획해줘` request must trigger the
+  clarify flow; the verifier requires delivered clarification answers, the
+  clarify skill loaded, and a structured `requirements.md` maintained in the
+  workspace.
 
 A task may pin its own session mode with `execution_mode` under
 `[metadata.libragent_session_e2e]`; otherwise it inherits
