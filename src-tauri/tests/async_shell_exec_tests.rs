@@ -8,22 +8,18 @@
 //! 3. Non-zero exit (both immediate startup failure and delayed non-zero exit)
 //! 4. Cancellation via `stopProcess`
 
-mod common;
-
 use serde_json::json;
-use std::sync::Arc;
+use std::sync::{Arc, Once};
 use tauri_mcp_agent_lib::agent::concurrency::{
     ConcurrencyGate, DEFAULT_MAX_ACTIVE_AGENTS, DEFAULT_MAX_ACTIVE_PROCESSES,
     DEFAULT_MAX_SUSPENDED_AGENTS, DEFAULT_MAX_SUSPENDED_PROCESSES,
 };
 use tauri_mcp_agent_lib::agent::session_bus::SessionBus;
-use tauri_mcp_agent_lib::lifecycle::repositories::init_repositories;
 use tauri_mcp_agent_lib::mcp::builtin::workspace::WorkspaceServer;
 use tauri_mcp_agent_lib::mcp::types::{MCPContent, MCPResult};
 use tauri_mcp_agent_lib::session::SessionManager;
 use tauri_mcp_agent_lib::{init_concurrency_gate, init_session_bus};
 use tempfile::tempdir;
-use tokio::sync::OnceCell;
 
 fn extract_text(result: &MCPResult) -> String {
     result
@@ -39,11 +35,9 @@ fn extract_text(result: &MCPResult) -> String {
         .join("\n")
 }
 
-async fn ensure_runtime() {
-    static INIT: OnceCell<()> = OnceCell::const_new();
-    INIT.get_or_init(|| async {
-        let db = common::setup_test_db_with_migrations().await;
-        init_repositories(&db).await;
+fn ensure_runtime() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
         init_session_bus(SessionBus::new());
         init_concurrency_gate(ConcurrencyGate::new(
             DEFAULT_MAX_ACTIVE_AGENTS,
@@ -51,8 +45,7 @@ async fn ensure_runtime() {
             DEFAULT_MAX_ACTIVE_PROCESSES,
             DEFAULT_MAX_SUSPENDED_PROCESSES,
         ));
-    })
-    .await;
+    });
 }
 
 fn build_workspace_server(base_dir: &std::path::Path, session_id: &str) -> WorkspaceServer {
@@ -113,7 +106,7 @@ fn long_running_cmd() -> &'static str {
 
 #[tokio::test]
 async fn async_shell_command_exits_at_once_and_captures_stdout() {
-    ensure_runtime().await;
+    ensure_runtime();
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "async-shell-immediate-ok";
     let server = build_workspace_server(temp_dir.path(), session_id);
@@ -163,7 +156,7 @@ async fn async_shell_command_exits_at_once_and_captures_stdout() {
 
 #[tokio::test]
 async fn async_shell_command_runs_past_first_poll_then_finishes() {
-    ensure_runtime().await;
+    ensure_runtime();
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "async-shell-past-first-poll";
     let server = build_workspace_server(temp_dir.path(), session_id);
@@ -235,7 +228,7 @@ async fn async_shell_command_runs_past_first_poll_then_finishes() {
 
 #[tokio::test]
 async fn async_shell_non_zero_exit_reports_failure_for_immediate_and_delayed_commands() {
-    ensure_runtime().await;
+    ensure_runtime();
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "async-shell-non-zero";
     let server = build_workspace_server(temp_dir.path(), session_id);
@@ -329,7 +322,7 @@ async fn async_shell_non_zero_exit_reports_failure_for_immediate_and_delayed_com
 
 #[tokio::test]
 async fn async_shell_cancel_via_stop_process_terminates_running_command() {
-    ensure_runtime().await;
+    ensure_runtime();
     let temp_dir = tempdir().expect("temp dir");
     let session_id = "async-shell-cancel";
     let server = build_workspace_server(temp_dir.path(), session_id);
