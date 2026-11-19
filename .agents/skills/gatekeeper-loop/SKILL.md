@@ -32,7 +32,7 @@ Arm exactly like `worker-loop` (Cursor `loop` skill mechanics): check `pgrep -af
 
 ## State
 
-`.libragent/work/gatekeeper-loop/state.json` (git-ignored, resolved via `git rev-parse --git-common-dir` or `$LOOP_STATE_DIR`): `loopPid`, `issueValidation` (validated and rejected counts per producer task), and per PR the open findings (`G2.1: open|fixed|declined-accepted|disputed`) and dispute counts. A per-PR `maxRounds` raises the round limit (default 5); set it only when the user approves extra rounds. GitHub comments remain the source of truth; state only speeds up re-review. "Reviewed clean, waiting for CI" is **not** state-only: it is recorded as a `verdict=clean` marker comment (see comment-format.md), so a missing or lost `state.json` never causes a full re-review.
+`.libragent/work/gatekeeper-loop/state.json` (git-ignored, resolved via `git rev-parse --git-common-dir` or `$LOOP_STATE_DIR`): `loopPid`, `issueValidation` (validated and rejected counts per producer task), and per PR the open findings (`G2.1: open|fixed|declined-accepted|disputed`) and dispute counts. A per-PR `maxRounds` is only a cache of the effective round limit (default 5, raised by +2 each time the repository owner removes `gatekeeper:escalated` on GitHub — never edit `maxRounds` by hand). GitHub comments and timeline events remain the source of truth; state only speeds up re-review. "Reviewed clean, waiting for CI" is **not** state-only: it is recorded as a `verdict=clean` marker comment (see comment-format.md), so a missing or lost `state.json` never causes a full re-review.
 
 ## Tick procedure
 
@@ -63,7 +63,7 @@ Other statuses:
 - `await-ci` — a `verdict=clean` marker exists for this head; CI is pending, has not run, or cannot run (stacked PR). Remove any stale `gatekeeper:changes-requested` label (`gh pr edit N --remove-label gatekeeper:changes-requested`). If CI turned green, post `approve` (`gatekeeper:approved`), adding `gatekeeper:needs-human` when `humanOnly` or security-sensitive; if failed, diagnose failure and post `changes-requested`.
 - `wait-worker` — worker's turn (changes requested at current head without response, or merge conflicts).
 - `approved` — nothing to do; make sure the label is `gatekeeper:approved`. For any PR with `staleApprovedLabel: true` (status no longer `approved`), swap the label right away (`gatekeeper:changes-requested` if CI is failing, otherwise remove `gatekeeper:approved`) before reviewing, so a stale approve is never visible. The script already turns an approve back into `review` when the head changed (a push after an approve **always requires re-review**), CI fails or is not green at the head, the base changed (e.g. stacked PR retargeted), or the owner commented. For "approve without green CI at this head", post a `verdict=clean` marker for the head and remove `gatekeeper:approved`; do not re-review the diff.
-- `escalate` — post an `escalate` verdict if none exists yet and swap the label to `gatekeeper:escalated`. Note: An owner comment on an escalated PR resets status to `review` so the gatekeeper can incorporate owner direction.
+- `escalate` — post an `escalate` verdict if none exists yet and swap the label to `gatekeeper:escalated`. To resume an escalated PR for 2 extra rounds (effective `maxRounds = total verdicts at removal + 2`), the repository owner removes `gatekeeper:escalated` on GitHub; `review_queue.py` detects the owner's `unlabeled` timeline event and returns `status: review`. Each later escalation requires another removal, and removing `gatekeeper:needs-human` never resumes. On `escalate` and on resume, read the full PR conversation (`gh pr view N --comments`) and treat owner comments as required items.
 
 ### 2. Review (read-only)
 
@@ -72,7 +72,8 @@ Do not check out branches in `$MAIN` or in the worker worktree. Read through git
 ```bash
 git fetch origin <head> --quiet
 gh pr view N --json body,title,baseRefName      # claims + linked issue
-gh issue view <linked>                           # acceptance criteria
+gh pr view N --comments                         # full conversation (required on escalate/resume)
+gh issue view <linked> --comments               # acceptance criteria + owner notes
 gh pr diff N                                     # round 1: full diff
 git diff <reviewedHead>..origin/<head>           # round ≥ 2: incremental diff
 git show origin/<head>:<path>                    # surrounding code
@@ -80,7 +81,7 @@ git show origin/<head>:<path>                    # surrounding code
 
 If `rebased: true` (reviewedHead is not an ancestor of head, or no longer exists), a plain `reviewedHead..head` diff mixes in base-branch changes. Use `git range-diff <reviewedBase>...<reviewedHead> <newBase>...origin/<head>` when the old head is still available, otherwise do a full review.
 
-`ownerComments` lists unmarked owner/`@me` comments posted after the last marker. Treat each as a required item: answer it in the next verdict (as a `G` item, or in `### Checked` if already satisfied). Apply [references/review-rubric.md](references/review-rubric.md).
+`ownerComments` lists unmarked owner/`@me` comments posted after the last gatekeeper marker (worker response markers do not hide them). Treat each as a required item: answer it in the next verdict (as a `G` item, or in `### Checked` if already satisfied). Apply [references/review-rubric.md](references/review-rubric.md).
 
 Check build and test results in CI; do not run them locally. **However, CI does not replace code review (diff, design, acceptance criteria satisfaction, edge cases).** Perform code review directly regardless of CI status. If CI failed, analyze failure logs and include root cause and fix guidance in findings — see [references/pre-post-checklist.md](references/pre-post-checklist.md) § CI (be skeptical of worker explanations; timeout bumps on pre-existing tests need log proof and cross-PR reconciliation). Use the dedicated gatekeeper worktree only when local verification is strictly required (never run `pnpm refactor:validate`):
 
@@ -162,7 +163,7 @@ After the PRs, validate at most **one** issue filed by `producer-loop` (label `a
 python3 .agents/skills/gatekeeper-loop/scripts/issue_validation.py next
 ```
 
-`NONE` means there is nothing to validate. Otherwise read the issue (`gh issue view N`) and check the finding against the current code on `origin/<dev base>` (`git show`, `git grep`), read-only. This chat must not be the chat that filed the issue: validation needs a fresh session.
+`NONE` means there is nothing to validate. Otherwise read the issue and its full comment thread (`gh issue view N --comments`; `issue_validation.py next` also includes `comments` with author, date, and body) and check the finding against the current code on `origin/<dev base>` (`git show`, `git grep`), read-only. This chat must not be the chat that filed the issue: validation needs a fresh session.
 
 - **validated**: the evidence holds at the cited `file:line`, or you find it at another `file:line`.
 - **rejected**: you cannot reproduce it, it is already fixed, or it duplicates an open issue (name the issue).

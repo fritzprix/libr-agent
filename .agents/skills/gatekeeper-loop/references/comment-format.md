@@ -138,9 +138,9 @@ Every `G` item must be answered as **fixed** or **declined**. Suggestions may be
 | ------------------------------ | ---------- | ---------------------------------------------------------------------------------------- |
 | `gatekeeper:changes-requested` | gatekeeper | Latest verdict requests changes                                                          |
 | `gatekeeper:approved`          | gatekeeper | Approved at the current head; ready for a human merge                                    |
-| `gatekeeper:escalated`         | gatekeeper | Needs a maintainer decision                                                              |
-| `gatekeeper:needs-human`       | gatekeeper | Security-sensitive; a human must confirm before merge (kept alongside the verdict label) |
+| `gatekeeper:escalated`         | gatekeeper | Needs a maintainer decision; repository owner removes this label on GitHub to resume for +2 rounds |
+| `gatekeeper:needs-human`       | gatekeeper | Security-sensitive or loop-skill PR; human must confirm before merge (removing it never resumes an escalation) |
 
-Unmarked comments from the repo owner (or `@me`) posted after the last marker are read as required items and trigger a review.
+Unmarked comments from the repo owner (or `@me`) posted after the last gatekeeper marker are read as required items and trigger a review (worker response markers do not hide them).
 
 Keep exactly one of the first three labels on a PR; swap them with each verdict. Create missing labels once with `gh label create <name> --color <hex> --description <text>`.

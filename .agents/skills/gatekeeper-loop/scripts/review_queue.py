@@ -43,6 +43,8 @@ from comment_markers import START_MARKER, parse_markers  # noqa: E402
 from pr_turn import decide_pr_turn, format_turn_report  # noqa: E402
 
 MAX_ROUNDS = 5
+ESCALATED_LABEL = "gatekeeper:escalated"
+RESUME_EXTRA_ROUNDS = 2
 FAILED = {"FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE"}
 PENDING = {"PENDING", "QUEUED", "IN_PROGRESS", "WAITING", "EXPECTED", "REQUESTED"}
 PROTECTED_SKILL_PREFIXES = (
@@ -98,7 +100,7 @@ def is_dev_base(base: str) -> bool:
 
 
 def owner_comments_after(comments: list[dict], me: str, since: str | None) -> list[dict]:
-    """Unmarked comments from the owner/@me newer than the last marker comment."""
+    """Unmarked comments from the owner/@me newer than the last gatekeeper marker."""
     found = []
     for c in comments:
         login = (c.get("author") or {}).get("login") or ""
@@ -110,6 +112,97 @@ def owner_comments_after(comments: list[dict], me: str, since: str | None) -> li
             found.append({"author": login, "createdAt": c["createdAt"], "url": c.get("url"),
                           "body": (c.get("body") or "")[:500]})
     return found
+
+
+def last_gatekeeper_marker_at(markers: list[dict]) -> str | None:
+    """Timestamp of the newest gatekeeper marker (ignoring worker response markers)."""
+    return max((m["createdAt"] for m in markers), default=None)
+
+
+def is_owner_timeline_actor(event: dict, owner_logins: set[str]) -> bool:
+    """True when a timeline event was triggered by a repository owner login."""
+    actor = event.get("actor") or {}
+    login = actor.get("login") or ""
+    if not login or login.endswith("[bot]"):
+        return False
+    return login in owner_logins
+
+
+def escalation_resume_info(
+    markers: list[dict],
+    timeline_events: list[dict],
+    *,
+    owner_logins: set[str],
+    base_max_rounds: int = MAX_ROUNDS,
+) -> tuple[int, dict | None]:
+    """Compute effective maxRounds from owner removals of `gatekeeper:escalated`.
+
+    Only an owner removal strictly after the latest `escalate` verdict and
+    before the next gatekeeper marker (verdict or clean) counts, so the
+    gatekeeper's own label swap after posting a later verdict cannot grant
+    extra rounds. Removing any other label (such as `gatekeeper:needs-human`)
+    has no effect. Returns `(effective_max_rounds, resume_event_or_None)`.
+    """
+    verdicts = [m for m in markers if m.get("verdict") != "clean"]
+    latest_escalate = next(
+        (v for v in reversed(verdicts) if v.get("verdict") == "escalate"),
+        None,
+    )
+    if latest_escalate is None:
+        return base_max_rounds, None
+
+    escalate_at = latest_escalate.get("createdAt") or ""
+    next_marker_at = min(
+        (m["createdAt"] for m in markers if (m.get("createdAt") or "") > escalate_at),
+        default=None,
+    )
+    matching = []
+    for ev in timeline_events:
+        if ev.get("event") != "unlabeled":
+            continue
+        label_name = (ev.get("label") or {}).get("name")
+        if label_name != ESCALATED_LABEL:
+            continue
+        if not is_owner_timeline_actor(ev, owner_logins):
+            continue
+        created_at = ev.get("created_at") or ev.get("createdAt") or ""
+        if created_at > escalate_at and (next_marker_at is None or created_at < next_marker_at):
+            matching.append((created_at, ev))
+
+    if not matching:
+        return base_max_rounds, None
+
+    removal_at, newest = max(matching, key=lambda item: item[0])
+    verdicts_at_removal = sum(
+        1 for v in verdicts if (v.get("createdAt") or "") <= removal_at
+    )
+    effective = max(base_max_rounds, verdicts_at_removal + RESUME_EXTRA_ROUNDS)
+    actor = (newest.get("actor") or {}).get("login") or ""
+    return effective, {"actor": actor, "createdAt": removal_at, "label": ESCALATED_LABEL}
+
+
+def parse_pr_repo(pr_url: str) -> tuple[str, str] | None:
+    """Extract `(owner, repo)` from a GitHub PR URL."""
+    m = re.search(r"github\.com/([^/]+)/([^/]+)/pull/\d+", pr_url or "")
+    return (m.group(1), m.group(2)) if m else None
+
+
+def fetch_timeline_events(owner: str, repo: str, number: int) -> list[dict]:
+    """Fetch PR timeline events via `gh api --paginate --slurp`."""
+    raw = gh("api", "--paginate", "--slurp", f"repos/{owner}/{repo}/issues/{number}/timeline")
+    pages = json.loads(raw or "[]")
+    events: list[dict] = []
+    for page in pages:
+        if isinstance(page, list):
+            events.extend(page)
+        elif isinstance(page, dict):
+            events.append(page)
+    return events
+
+
+def save_state(path: Path, state: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
 def is_rebased(reviewed_head: str | None, head: str, is_ancestor) -> bool:
@@ -153,6 +246,7 @@ def classify(
     owner_comment: bool = False,
     ci_ran: bool = True,
     max_rounds: int = MAX_ROUNDS,
+    escalation_resumed: bool = False,
 ) -> tuple[str, str, int]:
     """Return (status, one-line reason, priority). Lower priority number is handled first.
 
@@ -177,6 +271,22 @@ def classify(
     if total_verdicts >= max_rounds and not approved_at_head:
         return "escalate", f"round limit ({max_rounds}) reached", 9
 
+    # A clean marker for this head on GitHub means the code review of this head is
+    # done, even after changes were requested at it (the worker answered without a
+    # new commit, for example by editing the PR body). The caller only passes a clean
+    # marker newer than both the last verdict and the worker's response to it.
+    clean_at_head = clean_head == head
+
+    if last_verdict and last_verdict.get("verdict") == "escalate":
+        if not escalation_resumed:
+            return "escalate", "escalated; waiting for owner to remove gatekeeper:escalated", 9
+        if not clean_at_head:
+            return (
+                "review",
+                f"escalation resumed by owner removing {ESCALATED_LABEL}; limit now {max_rounds} rounds",
+                0,
+            )
+
     if at_head and last_verdict.get("verdict") == "approve":
         if base_changed:
             return "review", f"base changed after approve ({reviewed_base} -> {base})", 0
@@ -185,12 +295,6 @@ def classify(
         if not ci_green:
             return "review", "approve without green CI at this head; replace it with a clean marker", 0
         return "approved", "approved at current head", 9
-
-    # A clean marker for this head on GitHub means the code review of this head is
-    # done, even after changes were requested at it (the worker answered without a
-    # new commit, for example by editing the PR body). The caller only passes a clean
-    # marker newer than both the last verdict and the worker's response to it.
-    clean_at_head = clean_head == head
 
     if at_head and last_verdict.get("verdict") == "changes-requested" and not clean_at_head:
         if worker_response is None:
@@ -329,8 +433,23 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
                        capture_output=True)
     rebased = is_rebased(reviewed_head, head, git_is_ancestor)
 
-    last_marker_at = max((m["createdAt"] for m in [*markers, *responses]), default=None)
-    owner = owner_comments_after(comments, me, last_marker_at)
+    last_gk_at = last_gatekeeper_marker_at(markers)
+    owner = owner_comments_after(comments, me, last_gk_at)
+
+    repo_info = parse_pr_repo(pr.get("url") or "")
+    has_escalate_verdict = any(v.get("verdict") == "escalate" for v in verdicts)
+    timeline_events = (
+        fetch_timeline_events(repo_info[0], repo_info[1], number)
+        if has_escalate_verdict and repo_info
+        else []
+    )
+    owner_logins = {me} | ({repo_info[0]} if repo_info else set())
+    effective_max_rounds, resume_event = escalation_resume_info(
+        markers,
+        timeline_events,
+        owner_logins=owner_logins,
+        base_max_rounds=MAX_ROUNDS,
+    )
 
     labels = sorted(label["name"] for label in pr.get("labels") or [])
     paths = [f["path"] for f in pr.get("files") or []]
@@ -354,7 +473,8 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
         rebased=rebased,
         owner_comment=bool(owner),
         ci_ran=bool(checks),
-        max_rounds=int(pr_state.get("maxRounds", MAX_ROUNDS)),
+        max_rounds=effective_max_rounds,
+        escalation_resumed=resume_event is not None,
     )
 
     if status != "review" or not reviewed_head or reviewed_head == head:
@@ -386,6 +506,8 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
         "priority": priority,
         "reviewMode": review_mode,
         "round": len(verdicts) + (1 if status in ("review", "await-ci") else 0),
+        "maxRounds": effective_max_rounds,
+        "escalationResumed": resume_event,
         "title": pr["title"],
         "head": pr["headRefName"],
         "headSha": head,
@@ -426,6 +548,15 @@ def main() -> None:
         numbers = [p["number"] for p in listed if not p["isDraft"]]
 
     summaries = [summarize(n, me, state) for n in numbers]
+    state_dirty = False
+    for entry in summaries:
+        if entry.get("escalationResumed"):
+            pr_entry = state.setdefault("prs", {}).setdefault(str(entry["number"]), {})
+            if pr_entry.get("maxRounds") != entry["maxRounds"]:
+                pr_entry["maxRounds"] = entry["maxRounds"]
+                state_dirty = True
+    if state_dirty:
+        save_state(args.state_file or get_default_state_file(), state)
     summaries.sort(key=lambda x: (x["priority"], x["createdAt"]))
     print(json.dumps(summaries, ensure_ascii=False, indent=2))
 

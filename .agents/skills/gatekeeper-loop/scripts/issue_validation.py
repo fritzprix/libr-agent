@@ -53,17 +53,34 @@ def is_unjudged_producer_issue(labels: list[str]) -> bool:
     return PRODUCER_LABEL in labels and not any(verdict in labels for verdict in VERDICTS)
 
 
+def format_issue_comments(raw_comments: list[dict]) -> list[dict]:
+    formatted = []
+    for c in raw_comments or []:
+        author = (c.get("author") or {}).get("login") or ""
+        formatted.append({
+            "author": author,
+            "createdAt": c.get("createdAt") or "",
+            "body": c.get("body") or "",
+        })
+    return formatted
+
+
 def next_issue() -> dict | None:
     out = gh("issue", "list", "--state", "open", "--label", PRODUCER_LABEL,
-             "--json", "number,title,labels,createdAt", "--limit", "100")
+             "--json", "number,title,labels,createdAt,comments", "--limit", "100")
     candidates = [issue for issue in json.loads(out or "[]")
                   if is_unjudged_producer_issue(label_names(issue))]
     if not candidates:
         return None
     oldest = min(candidates, key=lambda issue: (issue.get("createdAt") or "", issue["number"]))
     labels = label_names(oldest)
-    return {"number": oldest["number"], "title": oldest.get("title", ""),
-            "task": producer_task(labels), "labels": labels}
+    return {
+        "number": oldest["number"],
+        "title": oldest.get("title", ""),
+        "task": producer_task(labels),
+        "labels": labels,
+        "comments": format_issue_comments(oldest.get("comments") or []),
+    }
 
 
 def judge(number: int, verdict: str, reason: str, state: dict) -> dict:
