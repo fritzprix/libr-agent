@@ -93,6 +93,11 @@ task spec sets `resume_circuit_break = true` (the default).
   `multiSelect` question, and a free-text question; the harness answers with
   the task's `answer_value` (a JSON object keyed by question id), and the
   verifier grades the keyed result shapes in the delivered tool result.
+- `e2e-answer-masked-logs` — a `storeAs` prompt is answered with the synthetic
+  secret; the verifier proves the value reached the shell, then byte-scans
+  every harness artifact under `/logs/agent/` (trajectory, compaction summary,
+  instance log) and fails if the recorded `injectedValue` appears in any of
+  them — only the evidence record itself may hold the exact value.
 
 A task may pin its own session mode with `execution_mode` under
 `[metadata.libragent_session_e2e]`; otherwise it inherits

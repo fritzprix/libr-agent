@@ -55,9 +55,9 @@
     },
     {
       "id": "P-9",
-      "status": "deferred",
-      "reason": "needs Windows/Linux desktop debug instance + E2E control; task scaffold pending",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-answer-masked-logs: storeAs answer delivered, value reaches shell, and the recorded injected secret is byte-scanned absent from trajectory, compaction summary, and instance log under /logs/agent/",
+      "harbor_task": "e2e-answer-masked-logs"
     },
     {
       "id": "B-1",
