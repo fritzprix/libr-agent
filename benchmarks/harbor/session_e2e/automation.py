@@ -24,6 +24,7 @@ class SessionE2eAutomationSpec:
     approve_standard_tools: bool = True
     reject_hard_approvals: bool = False
     auto_answer_interactive: bool = True
+    resume_circuit_break: bool = True
 
 
 def load_session_e2e_spec(logs_dir: Any) -> SessionE2eAutomationSpec | None:
@@ -48,6 +49,7 @@ def load_session_e2e_spec(logs_dir: Any) -> SessionE2eAutomationSpec | None:
         approve_standard_tools=bool(spec.get("approve_standard_tools", True)),
         reject_hard_approvals=bool(spec.get("reject_hard_approvals", False)),
         auto_answer_interactive=bool(spec.get("auto_answer_interactive", True)),
+        resume_circuit_break=bool(spec.get("resume_circuit_break", True)),
     )
 
 
@@ -122,6 +124,17 @@ async def resolve_pending_interactions(
                 "toolCallId": tool_call_id,
                 "approvalKind": kind,
                 "approved": approved,
+            }
+        )
+
+    break_pending = snapshot.get("pendingCircuitBreak")
+    if isinstance(break_pending, dict) and (spec is None or spec.resume_circuit_break):
+        response = await control.resume_circuit_break(client, session_id)
+        actions.append(
+            {
+                "kind": "circuitBreakResume",
+                "resumedTool": response.get("resumedTool"),
+                "repetitionCount": response.get("repetitionCount"),
             }
         )
     return actions

@@ -21,11 +21,14 @@ mod tests {
         PendingUserPromptSummary, UserPromptAnswer, UserPromptKind, UserPromptPayload,
         USER_PROMPT_GONE_MESSAGE,
     };
+    use tauri_mcp_agent_lib::agent::types::{ToolCall, ToolCallFunction};
     use tauri_mcp_agent_lib::agent::AgentSessionManager;
+    use tauri_mcp_agent_lib::models::chat::Message;
     use tauri_mcp_agent_lib::server::access_guard::handle_rejection;
     use tauri_mcp_agent_lib::server::e2e_control::{
         capability_guard, constant_time_eq, e2e_control_guarded_routes_with_capability,
-        header_matches, plan_user_prompt_action, tool_approval_error_status, PlannedPromptAction,
+        header_matches, pending_circuit_break, plan_user_prompt_action,
+        resume_circuit_break_message, tool_approval_error_status, PlannedPromptAction,
         UserPromptBody, E2E_CONTROL_HEADER,
     };
     use warp::http::{HeaderMap, StatusCode};
@@ -299,5 +302,139 @@ mod tests {
             tool_approval_error_status("approval already resolved"),
             StatusCode::BAD_REQUEST
         );
+    }
+
+    // ------------------------------------------------------------------
+    // Circuit-breaker resume observation + injection (#2901).
+    // ------------------------------------------------------------------
+
+    fn assistant_tool_call(name: &str, arguments: &str, id: &str) -> Message {
+        let now = chrono::Utc::now().timestamp_millis();
+        Message {
+            id: format!("msg-{id}"),
+            session_id: "sess-1".to_string(),
+            role: "assistant".to_string(),
+            content: vec![],
+            tool_calls: Some(vec![ToolCall {
+                id: id.to_string(),
+                r#type: "function".to_string(),
+                function: ToolCallFunction {
+                    name: name.to_string(),
+                    arguments: arguments.to_string(),
+                },
+            }]),
+            tool_call_id: None,
+            is_streaming: None,
+            thinking: None,
+            thinking_signature: None,
+            assistant_id: None,
+            attachments: None,
+            tool_use: None,
+            usage: None,
+            prompt_tokens: None,
+            created_at: now,
+            updated_at: now,
+            source: None,
+            error: None,
+            metadata: None,
+        }
+    }
+
+    fn circuit_break_call() -> Message {
+        assistant_tool_call(
+            "ui__circuitBreak",
+            r#"{"toolName":"workspace__runShell","repetitionCount":5,"args":{}}"#,
+            "call-break",
+        )
+    }
+
+    #[test]
+    fn detects_circuit_break_waiting_for_resume() {
+        let messages = vec![
+            assistant_tool_call("workspace__runShell", r#"{"command":"ls"}"#, "call-a"),
+            circuit_break_call(),
+        ];
+        let pending = pending_circuit_break(&messages).expect("break must be pending");
+        assert_eq!(pending.tool_name, "workspace__runShell");
+        assert_eq!(pending.repetition_count, 5);
+        assert_eq!(pending.tool_call_id, "call-break");
+    }
+
+    #[test]
+    fn resume_tool_call_clears_pending_circuit_break() {
+        let messages = vec![
+            circuit_break_call(),
+            assistant_tool_call(
+                "ui__resumeCircuitBreak",
+                r#"{"toolName":"workspace__runShell","repetitionCount":5}"#,
+                "call-resume",
+            ),
+        ];
+        assert!(pending_circuit_break(&messages).is_none());
+    }
+
+    #[test]
+    fn no_circuit_break_means_nothing_pending() {
+        let messages = vec![
+            assistant_tool_call("workspace__runShell", r#"{"command":"ls"}"#, "call-a"),
+            assistant_tool_call("planning__addTodo", "{}", "call-b"),
+        ];
+        assert!(pending_circuit_break(&messages).is_none());
+    }
+
+    #[test]
+    fn malformed_circuit_break_args_still_resumeable() {
+        let messages = vec![assistant_tool_call(
+            "ui__circuitBreak",
+            "not-json",
+            "call-break",
+        )];
+        let pending = pending_circuit_break(&messages).expect("break must still be pending");
+        assert_eq!(pending.tool_name, "unknown");
+        assert_eq!(pending.repetition_count, 0);
+    }
+
+    #[test]
+    fn resume_message_reuses_the_gui_tool_call_shape() {
+        let message = resume_circuit_break_message("sess-1", "workspace__runShell", 5);
+        assert_eq!(message.session_id, "sess-1");
+        assert_eq!(message.role, "assistant");
+        assert!(message.content.is_empty());
+        let tool_calls = message.tool_calls.expect("resume injects a tool call");
+        assert_eq!(tool_calls.len(), 1);
+        let name = &tool_calls[0].function.name;
+        // The `ui__` prefix is what admits an idle UI-tool entry in
+        // `handle_llm_response`; the name must match the GUI button exactly.
+        assert!(name.starts_with("ui__"));
+        assert_eq!(name, "ui__resumeCircuitBreak");
+        let args: serde_json::Value = serde_json::from_str(&tool_calls[0].function.arguments)
+            .expect("arguments must be valid JSON");
+        assert_eq!(args["toolName"], "workspace__runShell");
+        assert_eq!(args["repetitionCount"], 5);
+    }
+
+    #[tokio::test]
+    async fn lan_host_rejects_circuit_break_resume_before_manager_extraction() {
+        let res = warp::test::request()
+            .method("POST")
+            .path("/api/e2e-control/sessions/sess-1/circuit-break-resume")
+            .remote_addr(LOOPBACK_PEER.parse().unwrap())
+            .header("host", LAN_HOST)
+            .header(E2E_CONTROL_HEADER, TOKEN)
+            .reply(&production_chain())
+            .await;
+        assert_eq!(res.status(), 403);
+    }
+
+    #[tokio::test]
+    async fn missing_token_rejects_circuit_break_resume() {
+        let res = warp::test::request()
+            .method("POST")
+            .path("/api/e2e-control/sessions/sess-1/circuit-break-resume")
+            .remote_addr(LOOPBACK_PEER.parse().unwrap())
+            .header("host", LOOPBACK_HOST)
+            .reply(&production_chain())
+            .await;
+        assert_eq!(res.status(), 403);
     }
 }

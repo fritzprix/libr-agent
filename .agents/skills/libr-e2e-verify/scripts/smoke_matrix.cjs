@@ -187,7 +187,7 @@ async function call(method, url, body, headers) {
 const capFile = dataDir ? path.join(dataDir, 'e2e_control.cap') : null;
 const cap = capFile && fs.existsSync(capFile) ? fs.readFileSync(capFile, 'utf8').trim() : null;
 const capHeaders = cap ? { 'X-LibrAgent-E2E-Control': cap } : {};
-const cp = { probed: false, enabled: false, status: 0, approved: 0, prompts: 0, failReason: null };
+const cp = { probed: false, enabled: false, status: 0, approved: 0, prompts: 0, resumed: 0, failReason: null };
 
 async function probeControlPlane() {
   const st = await call('GET', `${baseUrl}/api/e2e-control/status`, undefined, capHeaders);
@@ -236,6 +236,18 @@ async function driveInteractions() {
       capHeaders,
     );
     if (r.status === 200) cp.prompts += 1;
+  }
+  const breakPending = snap.pendingCircuitBreak || snap.pending_circuit_break;
+  if (breakPending) {
+    // Circuit-breaker Resume (#2901): same ui__resumeCircuitBreak path the GUI
+    // button drives; NOT the Session API reload POST /api/sessions/:id/resume.
+    const r = await call(
+      'POST',
+      `${baseUrl}/api/e2e-control/sessions/${sessionId}/circuit-break-resume`,
+      undefined,
+      capHeaders,
+    );
+    if (r.status === 200) cp.resumed += 1;
   }
 }
 

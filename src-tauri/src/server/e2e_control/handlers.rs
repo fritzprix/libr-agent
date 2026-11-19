@@ -3,8 +3,10 @@
 //! Routes let an unattended harness observe and answer the two blocking
 //! interactions a session can wait on:
 //!
-//! - the shared user prompt (#2543: `ui__askUser` / secret requests), and
-//! - pending tool-approval requests.
+//! - the shared user prompt (#2543: `ui__askUser` / secret requests),
+//! - pending tool-approval requests, and
+//! - a waiting circuit-breaker Resume (#2901, `ui__resumeCircuitBreak` path —
+//!   distinct from the Session API `POST /api/sessions/:id/resume` reload).
 //!
 //! Every route sits behind [`capability_guard`], a pure filter that takes the
 //! capability as a parameter — no env or process-global reads inside — so it
@@ -30,6 +32,9 @@ use crate::agent::session_manager::{
 use crate::agent::state::PendingUserPromptSummary;
 use crate::agent::AgentSessionManager;
 use crate::server::access_guard::AccessDenied;
+use crate::server::e2e_control::circuit_break::{
+    pending_circuit_break, resume_circuit_break_message, PendingCircuitBreak,
+};
 use crate::server::e2e_control::token::{capability_token, header_matches};
 use crate::server::handlers::helpers::resolve_http_session_ref;
 
@@ -77,6 +82,21 @@ pub struct SessionInteractionsSnapshot {
     pub session_id: String,
     pub pending_user_prompt: Option<PendingUserPromptSummary>,
     pub pending_approvals: Vec<PendingApprovalSummary>,
+    pub pending_circuit_break: Option<PendingCircuitBreak>,
+}
+
+/// The circuit break waiting for a Resume click, read from the session's
+/// in-memory message cache. `None` for an unknown session or no waiting break.
+async fn pending_circuit_break_in(
+    manager: &AgentSessionManager,
+    session_id: &str,
+) -> Option<PendingCircuitBreak> {
+    let messages = {
+        let active = manager.active_sessions().read().await;
+        active.get(session_id)?.messages.clone()
+    };
+    let messages = messages.read().await;
+    pending_circuit_break(&messages)
 }
 
 #[derive(Debug, Deserialize)]
@@ -134,6 +154,7 @@ async fn handle_get_interactions(
         session_id: session_id.clone(),
         pending_user_prompt: pending_user_prompt_in(manager.as_ref(), &session_id).await,
         pending_approvals: list_pending_approvals_in(manager.active_sessions(), &session_id).await,
+        pending_circuit_break: pending_circuit_break_in(manager.as_ref(), &session_id).await,
     };
     Ok(json_ok(&snapshot))
 }
@@ -210,6 +231,36 @@ async fn handle_tool_approval(
     }
 }
 
+/// Drive the circuit-breaker Resume path (#2901): inject the same assistant
+/// `ui__resumeCircuitBreak` tool-call message the GUI Resume button sends.
+/// Distinct from the Session API reload route `POST /api/sessions/:id/resume`
+/// (#2898), which does not touch the circuit-breaker dialog.
+async fn handle_circuit_break_resume(
+    session_ref: String,
+    manager: Arc<AgentSessionManager>,
+) -> Result<JsonReply, Infallible> {
+    let session_id = match resolve_http_session_ref(&session_ref).await {
+        Ok(id) => id,
+        Err((status, error)) => return Ok(json_error(status, error)),
+    };
+    let Some(pending) = pending_circuit_break_in(manager.as_ref(), &session_id).await else {
+        return Ok(json_error(
+            StatusCode::CONFLICT,
+            "no circuit breaker is waiting for resume on this session",
+        ));
+    };
+    let message =
+        resume_circuit_break_message(&session_id, &pending.tool_name, pending.repetition_count);
+    match manager.handle_llm_response(session_id, message).await {
+        Ok(()) => Ok(json_ok(&serde_json::json!({
+            "ok": true,
+            "resumedTool": pending.tool_name,
+            "repetitionCount": pending.repetition_count,
+        }))),
+        Err(error) => Ok(json_error(StatusCode::CONFLICT, error)),
+    }
+}
+
 /// Routes for the E2E control plane, using this process's capability token.
 /// Production wiring goes through
 /// [`e2e_control_guarded_routes`](super::e2e_control_guarded_routes), which
@@ -271,10 +322,26 @@ pub fn e2e_control_routes_with_capability(
         .and(warp::path::param::<String>())
         .and(warp::path("tool-approvals"))
         .and(warp::path::end())
-        .and(guarded)
-        .and(agent_manager)
+        .and(guarded.clone())
+        .and(agent_manager.clone())
         .and(super::super::routes::json_body())
         .and_then(handle_tool_approval);
 
-    status.or(interactions).or(user_prompt).or(tool_approval)
+    // POST /api/e2e-control/sessions/:ref/circuit-break-resume
+    let circuit_break_resume = warp::post()
+        .and(warp::path("api"))
+        .and(warp::path("e2e-control"))
+        .and(warp::path("sessions"))
+        .and(warp::path::param::<String>())
+        .and(warp::path("circuit-break-resume"))
+        .and(warp::path::end())
+        .and(guarded)
+        .and(agent_manager)
+        .and_then(handle_circuit_break_resume);
+
+    status
+        .or(interactions)
+        .or(user_prompt)
+        .or(tool_approval)
+        .or(circuit_break_resume)
 }

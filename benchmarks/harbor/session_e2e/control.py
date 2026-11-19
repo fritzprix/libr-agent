@@ -92,3 +92,17 @@ class E2eControlClient:
         )
         res.raise_for_status()
         return res.json()
+
+    async def resume_circuit_break(self, client: httpx.AsyncClient, session_id: str) -> dict[str, Any]:
+        """Drive the circuit-breaker Resume path (#2901).
+
+        Injects the same ``ui__resumeCircuitBreak`` tool call the GUI Resume
+        button sends. Distinct from ``POST /api/sessions/:id/resume``, which
+        reloads a paused/crashed session and never touches the dialog.
+        """
+        res = await client.post(
+            f"{self.api_url}/e2e-control/sessions/{session_id}/circuit-break-resume",
+            headers=self._headers(),
+        )
+        res.raise_for_status()
+        return res.json()
