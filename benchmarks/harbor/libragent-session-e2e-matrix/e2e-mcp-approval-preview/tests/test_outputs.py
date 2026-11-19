@@ -4,16 +4,54 @@
 - M-4: cancelling the MCP secret prompt aborts registration and writes no
   server row."""
 
+import re
 from pathlib import Path
 
 from verifier_lib import (
     load_evidence,
     load_trajectory,
-    observation_result_texts,
     trajectory_steps,
 )
 
 RESULT_FILE = Path("/app/mcp_cancel_result.txt")
+# USER_PROMPT_CANCELLED_MESSAGE in src-tauri/src/agent/state/user_prompt.rs.
+CANCELLED_MESSAGE = "User cancelled the prompt."
+LIST_CALL = re.compile(r"tool__listServers|tool__list\b")
+REGISTER_CALL = re.compile(r"tool__registerServer")
+
+
+def _call_scoped_observations(steps: list[dict], pattern: re.Pattern) -> list[str]:
+    """Text of tool results produced by calls whose function name matches.
+
+    The ATIF export links results to calls via ``observation.results[i].source_call_id``;
+    when that id is absent the result belongs to the same step's calls.
+    """
+    texts: list[str] = []
+    for step in steps:
+        call_ids = {
+            call.get("tool_call_id")
+            for call in step.get("tool_calls") or []
+            if pattern.search(str(call.get("function_name") or ""))
+        }
+        if not call_ids:
+            continue
+        for result in (step.get("observation") or {}).get("results") or []:
+            content = result.get("content")
+            if not isinstance(content, str):
+                continue
+            source = result.get("source_call_id")
+            if source is None or source in call_ids:
+                texts.append(content)
+    return texts
+
+
+def _call_count(steps: list[dict], pattern: re.Pattern) -> int:
+    return sum(
+        1
+        for step in steps
+        for call in step.get("tool_calls") or []
+        if pattern.search(str(call.get("function_name") or ""))
+    )
 
 
 def test_approval_preview_masks_literal_query_and_fragment_keeps_template():
@@ -60,10 +98,32 @@ def test_secret_prompt_cancelled_and_no_server_saved():
     assert RESULT_FILE.is_file(), "mcp_cancel_result.txt missing"
     assert RESULT_FILE.read_text(encoding="utf-8").strip() == "NOT_REGISTERED"
 
-    # Confirm the tool__list(external) observation does not list e2e-preview-cancel as registered.
-    obs = observation_result_texts(trajectory_steps(load_trajectory()))
-    assert obs, "expected tool observations in trajectory"
-    assert not any(
-        '"name": "e2e-preview-cancel"' in text or "e2e-preview-cancel (" in text
-        for text in obs
-    ), "e2e-preview-cancel appears to have been saved despite secret cancellation"
+    steps = trajectory_steps(load_trajectory())
+
+    # (a) The product itself must report the cancellation: the
+    # tool__registerServer observation carries the cancel error, so the
+    # verifier does not rely on any agent-written file.
+    assert _call_count(steps, REGISTER_CALL) >= 1, (
+        "expected a tool__registerServer call in the trajectory"
+    )
+    register_obs = _call_scoped_observations(steps, REGISTER_CALL)
+    assert register_obs, "no observation recorded for tool__registerServer"
+    assert any(CANCELLED_MESSAGE in text for text in register_obs), (
+        "the tool__registerServer observation must carry the cancellation error "
+        f"({CANCELLED_MESSAGE!r}); got: {register_obs!r}"
+    )
+
+    # (b) A tool__listServers(scope=external) call must have happened, and its
+    # real output (markdown rows '| External: <name> |' and the '• <name> →'
+    # id list) must not mention the cancelled server.
+    assert _call_count(steps, LIST_CALL) >= 1, (
+        "expected a tool__listServers call in the trajectory; the agent skipped "
+        "the registration-list verification"
+    )
+    list_obs = _call_scoped_observations(steps, LIST_CALL)
+    assert list_obs, "no observation recorded for tool__listServers"
+    for text in list_obs:
+        assert "e2e-preview-cancel" not in text, (
+            "e2e-preview-cancel appears in the tool__listServers output despite "
+            f"secret cancellation: {text!r}"
+        )

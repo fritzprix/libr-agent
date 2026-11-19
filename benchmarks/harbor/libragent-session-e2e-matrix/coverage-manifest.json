@@ -134,13 +134,13 @@
     {
       "id": "S-1",
       "status": "implemented-partial",
-      "reason": "Harbor e2e-skill-storeas-flows: TELEGRAM_API_HASH storeAs secret collection delivers distinct synthetic secret to persistent shell env (verified via SHA-256) with zero literal leak in /logs/agent/",
+      "reason": "Harbor e2e-skill-storeas-flows: generic storeAs mechanism with the telegram-cli skill's variable name (TELEGRAM_API_HASH) - distinct synthetic secret delivered to the persistent shell env (verified via SHA-256), zero literal leak in /logs/agent/; the skill's own instructions are not exercised",
       "harbor_task": "e2e-skill-storeas-flows"
     },
     {
       "id": "S-2",
       "status": "implemented-partial",
-      "reason": "Harbor e2e-skill-storeas-flows: X_PASSWORD storeAs secret collection delivers distinct synthetic secret to persistent shell env (verified via SHA-256) with zero literal leak in /logs/agent/",
+      "reason": "Harbor e2e-skill-storeas-flows: generic storeAs mechanism with the x-cli skill's variable name (X_PASSWORD) - distinct synthetic secret delivered to the persistent shell env (verified via SHA-256), zero literal leak in /logs/agent/; the skill's own instructions are not exercised",
       "harbor_task": "e2e-skill-storeas-flows"
     },
     {
@@ -164,7 +164,7 @@
     {
       "id": "S-6",
       "status": "implemented-partial",
-      "reason": "Harbor e2e-skill-storeas-flows: LIBRAGENT_GOOGLE_CLIENT_SECRET storeAs secret collection delivers distinct synthetic secret to persistent shell env (verified via SHA-256) with zero literal leak in /logs/agent/",
+      "reason": "Harbor e2e-skill-storeas-flows: generic storeAs mechanism with the calendar-mgmt skill's variable name (LIBRAGENT_GOOGLE_CLIENT_SECRET) - distinct synthetic secret delivered to the persistent shell env (verified via SHA-256), zero literal leak in /logs/agent/; the skill's own instructions are not exercised",
       "harbor_task": "e2e-skill-storeas-flows"
     },
     {
@@ -434,7 +434,7 @@
     {
       "id": "2685-E-3",
       "status": "implemented-partial",
-      "reason": "Harbor e2e-skill-storeas-flows: LIBRAGENT_EMAIL_PASSWORD storeAs flow delivers secret to persistent shell env without leaking literal into chat or logs; hidden-input pixels stay on S2 (2685 E-3 / 2565 S-5)",
+      "reason": "Harbor e2e-skill-storeas-flows: generic storeAs mechanism with the email-integration skill's variable name (LIBRAGENT_EMAIL_PASSWORD) - secret delivered to the persistent shell env without leaking the literal into chat or logs; hidden-input pixels stay on S2; the skill's own instructions are not exercised (2685 E-3 / 2565 S-5)",
       "harbor_task": "e2e-skill-storeas-flows"
     },
     {

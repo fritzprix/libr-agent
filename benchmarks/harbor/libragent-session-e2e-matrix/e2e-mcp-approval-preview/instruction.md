@@ -5,6 +5,7 @@ Step 1 — attempt to register an HTTP MCP server with both a literal query para
 a `{{secret:NAME}}` query param, and a URL fragment:
 
 Call `tool__registerServer` with:
+
 - `name`: `"e2e-preview-cancel"`
 - `transport`: `{"type": "http", "url": "https://127.0.0.1:9999/mcp?literal_key=plainSecret123&api_key={{secret:E2E_PREVIEW_KEY}}#fragSecret456"}`
 
@@ -14,7 +15,7 @@ after cancellation.
 
 Step 2 — verify no server row was saved:
 
-Call `tool__list` with `scope: "external"`. Confirm `"e2e-preview-cancel"` is NOT
+Call `tool__listServers` with `scope: "external"`. Confirm `"e2e-preview-cancel"` is NOT
 in the returned external server list.
 
 Step 3 — record completion:

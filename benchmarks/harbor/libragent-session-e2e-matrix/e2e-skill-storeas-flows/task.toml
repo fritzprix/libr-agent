@@ -3,7 +3,7 @@ artifacts = []
 
 [task]
 name = "fritzprix/e2e-skill-storeas-flows"
-description = "2565 S-1, S-2, S-5, S-6 & 2685 E-3: bundled-skill storeAs secret collection (TELEGRAM_API_HASH, X_PASSWORD, LIBRAGENT_EMAIL_PASSWORD, LIBRAGENT_GOOGLE_CLIENT_SECRET) delivers values to persistent shell env without leaking literals in trajectory or logs"
+description = "2565 S-1, S-2, S-5, S-6 & 2685 E-3: generic storeAs secret collection mechanism with the skills' variable names (TELEGRAM_API_HASH, X_PASSWORD, LIBRAGENT_EMAIL_PASSWORD, LIBRAGENT_GOOGLE_CLIENT_SECRET) delivers values to the persistent shell env without leaking literals in trajectory or logs; the skills' own instructions are not exercised"
 keywords = ["libragent", "session-e2e", "storeas", "skills", "secret"]
 
 [metadata]

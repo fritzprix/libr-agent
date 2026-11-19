@@ -1,7 +1,11 @@
-"""2565 S-1, S-2, S-5, S-6 & 2685 E-3: verifies that all four bundled-skill
-storeAs env vars receive their distinct synthetic values in the persistent
-shell and that none of the injected secret literals leak into any artifact
-under /logs/agent/."""
+"""2565 S-1, S-2, S-5, S-6 & 2685 E-3: verifies the generic storeAs secret
+collection mechanism under the four skills' variable names
+(TELEGRAM_API_HASH, X_PASSWORD, LIBRAGENT_EMAIL_PASSWORD,
+LIBRAGENT_GOOGLE_CLIENT_SECRET): each persistent shell env receives its
+distinct synthetic value and no injected secret literal leaks into any
+artifact under /logs/agent/. The bundled skills' own instructions are NOT
+exercised — the harness drives the workspace__runInPersistentShell calls
+directly, so this proves the storeAs mechanism, not the skills' text."""
 
 import hashlib
 from pathlib import Path
@@ -55,12 +59,12 @@ def test_no_secret_literal_leaked_in_logs():
     secrets = [str(a["injectedValue"]).encode("utf-8") for a in answers if a.get("injectedValue")]
     assert secrets, "expected recorded secrets for leak scan"
 
-    if LOGS_DIR.is_dir():
-        for artifact in LOGS_DIR.rglob("*"):
-            if not artifact.is_file() or artifact.resolve() == EVIDENCE.resolve():
-                continue
-            raw = artifact.read_bytes()
-            for secret in secrets:
-                assert secret not in raw, (
-                    f"synthetic skill secret leaked into log artifact {artifact}"
-                )
+    assert LOGS_DIR.is_dir(), f"log directory {LOGS_DIR} missing — leak scan would be skipped"
+    for artifact in LOGS_DIR.rglob("*"):
+        if not artifact.is_file() or artifact.resolve() == EVIDENCE.resolve():
+            continue
+        raw = artifact.read_bytes()
+        for secret in secrets:
+            assert secret not in raw, (
+                f"synthetic skill secret leaked into log artifact {artifact}"
+            )

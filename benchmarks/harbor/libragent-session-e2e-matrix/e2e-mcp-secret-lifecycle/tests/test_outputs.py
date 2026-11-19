@@ -7,13 +7,49 @@
   is unset in workspace__runShell)."""
 
 import json
+import re
 from pathlib import Path
 
-from verifier_lib import EVIDENCE, load_evidence, load_trajectory
+from verifier_lib import EVIDENCE, load_evidence, load_trajectory, trajectory_steps
 
 SEPARATE_FILE = Path("/app/store_separate.txt")
 LOGS_DIR = Path("/logs/agent")
 TEMPLATE = "{{secret:E2E_LIFECYCLE_KEY}}"
+STORAGE_CALL = re.compile(r"tool__registerServer|tool__updateServer")
+
+
+def _storage_call_blobs(steps: list[dict]) -> list[str]:
+    """JSON of every tool__registerServer/tool__updateServer call's arguments,
+    plus the text of the observations those calls produced.
+
+    Scoping the template check here keeps the assertion non-vacuous: the
+    template string also appears in the task instruction, so a whole-trajectory
+    match would hold even if the server was stored with a literal secret.
+    """
+    blobs: list[str] = []
+    call_ids: set[str] = set()
+    call_step_ids: set[int] = set()
+    for step in steps:
+        step_has_call = False
+        for call in step.get("tool_calls") or []:
+            if not STORAGE_CALL.search(str(call.get("function_name") or "")):
+                continue
+            blobs.append(json.dumps(call.get("arguments")))
+            call_id = call.get("tool_call_id")
+            if call_id:
+                call_ids.add(call_id)
+            step_has_call = True
+        if step_has_call:
+            call_step_ids.add(step.get("step_id"))
+    for step in steps:
+        for result in (step.get("observation") or {}).get("results") or []:
+            content = result.get("content")
+            if not isinstance(content, str):
+                continue
+            source = result.get("source_call_id")
+            if source in call_ids or (source is None and step.get("step_id") in call_step_ids):
+                blobs.append(content)
+    return blobs
 
 
 def _delivered_answers(evidence: dict) -> list[dict]:
@@ -42,8 +78,16 @@ def test_initial_register_and_reenter_secrets_both_prompted():
 
 
 def test_template_recorded_and_stores_are_separate():
-    traj_blob = json.dumps(load_trajectory())
-    assert TEMPLATE in traj_blob, f"missing {TEMPLATE} in trajectory"
+    blobs = _storage_call_blobs(trajectory_steps(load_trajectory()))
+    assert blobs, (
+        "expected at least one tool__registerServer/tool__updateServer call in "
+        "the trajectory"
+    )
+    assert any(TEMPLATE in blob for blob in blobs), (
+        f"missing {TEMPLATE} in the arguments or results of "
+        "tool__registerServer/tool__updateServer — the server was not stored "
+        "with the secret template"
+    )
     assert SEPARATE_FILE.is_file(), "store_separate.txt missing"
     assert SEPARATE_FILE.read_text(encoding="utf-8").strip() == "SEPARATE"
 
@@ -53,12 +97,12 @@ def test_no_secret_literal_leaked_in_logs_or_trajectory():
     secrets = [str(a["injectedValue"]).encode("utf-8") for a in answers if a.get("injectedValue")]
     assert secrets, "expected at least one recorded secret for leak scan"
 
-    if LOGS_DIR.is_dir():
-        for artifact in LOGS_DIR.rglob("*"):
-            if not artifact.is_file() or artifact.resolve() == EVIDENCE.resolve():
-                continue
-            raw = artifact.read_bytes()
-            for secret in secrets:
-                assert secret not in raw, (
-                    f"synthetic MCP secret leaked into log artifact {artifact}"
-                )
+    assert LOGS_DIR.is_dir(), f"log directory {LOGS_DIR} missing — leak scan would be skipped"
+    for artifact in LOGS_DIR.rglob("*"):
+        if not artifact.is_file() or artifact.resolve() == EVIDENCE.resolve():
+            continue
+        raw = artifact.read_bytes()
+        for secret in secrets:
+            assert secret not in raw, (
+                f"synthetic MCP secret leaked into log artifact {artifact}"
+            )

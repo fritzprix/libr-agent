@@ -1,8 +1,9 @@
-This task verifies the bundled-skill `storeAs` secret collection contract
-(2565 S-1, S-2, S-5, S-6 and 2685 E-3) in the persistent shell without making
-any network calls. An automated harness answers each password prompt with a
-distinct synthetic value. Never echo, cat, or print any secret value itself —
-only its SHA-256 hex digest.
+This task verifies the generic `storeAs` secret collection mechanism under
+the variable names used by existing skills (2565 S-1, S-2, S-5, S-6 and
+2685 E-3) in the persistent shell without making any network calls. The
+skills' own instructions are not exercised. An automated harness answers
+each password prompt with a distinct synthetic value. Never echo, cat, or
+print any secret value itself — only its SHA-256 hex digest.
 
 Run these four `workspace__runInPersistentShell` calls in order, each with
 `requireUserInput: true` and `inputType: "password"`:

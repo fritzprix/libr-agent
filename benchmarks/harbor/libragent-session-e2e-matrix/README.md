@@ -127,10 +127,11 @@ task spec sets `resume_circuit_break = true` (the default).
   secret store is separate from shell `storeAs` env, and byte-scans `/logs/agent/`
   for zero leaks.
 - `e2e-skill-storeas-flows` — 2565 S-1, S-2, S-5, S-6 & 2685 E-3: exercises the
-  four bundled-skill `storeAs` env vars (`TELEGRAM_API_HASH`, `X_PASSWORD`,
+  generic `storeAs` mechanism under the four skills' variable names
+  (`TELEGRAM_API_HASH`, `X_PASSWORD`,
   `LIBRAGENT_EMAIL_PASSWORD`, `LIBRAGENT_GOOGLE_CLIENT_SECRET`) with distinct
   synthetic values, verifying each via SHA-256 digest and byte-scanning
-  `/logs/agent/` for zero leaks.
+  `/logs/agent/` for zero leaks. The skills' own instructions are not exercised.
 
 A task may pin its own session mode with `execution_mode` under
 `[metadata.libragent_session_e2e]`; otherwise it inherits
