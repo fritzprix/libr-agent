@@ -592,6 +592,9 @@ def _client() -> E2eControlClient:
 
 @pytest.mark.asyncio
 async def test_interactions_uses_documented_path_and_capability_header():
+    # Pins the full documented snapshot shape (#2916 G1.4): every field the
+    # control.py module docstring documents must pass through unchanged,
+    # including pendingCircuitBreak (#2901).
     snapshot = {
         "sessionId": "sess-1",
         "pendingUserPrompt": {
@@ -600,7 +603,21 @@ async def test_interactions_uses_documented_path_and_capability_header():
             "payload": {},
             "createdAt": "2026-11-19T00:00:00Z",
         },
-        "pendingApprovals": [],
+        "pendingApprovals": [
+            {
+                "toolCallId": "tc-1",
+                "toolName": "workspace__runShell",
+                "reason": "requires approval",
+                "commandPreview": "sudo true",
+                "approvalKind": "tool",
+                "requestId": "req-2",
+            }
+        ],
+        "pendingCircuitBreak": {
+            "toolName": "workspace__writeFile",
+            "repetitionCount": 5,
+            "toolCallId": "tc-9",
+        },
     }
     fake = RecordingClient({"/interactions": snapshot})
 

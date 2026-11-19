@@ -384,7 +384,6 @@ pub fn e2e_control_routes_with_capability(
         .and(warp::path("tool-approvals"))
         .and(warp::path::end())
         .and(guarded.clone())
-        .and(guarded.clone())
         .and(agent_manager.clone())
         .and(super::super::routes::json_body())
         .and_then(handle_tool_approval);

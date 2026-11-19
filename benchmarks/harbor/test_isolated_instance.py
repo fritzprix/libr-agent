@@ -314,6 +314,34 @@ def test_set_window_requires_running_instance_and_xdotool(tmp_path: Path, monkey
         _kill_instance(child)
 
 
+def test_set_window_rejects_stale_pid_not_owned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#2916 G1.2: a pid file pointing at a live but unrelated process (PID
+    reuse) must be rejected by the ownership guard BEFORE xdotool runs, or a
+    stranger program's windows would be resized/minimized."""
+    import os
+    import subprocess
+
+    import benchmarks.harbor.isolated_instance as ii
+
+    layout = InstanceLayout(tmp_path / "bench")
+    layout.root.mkdir(parents=True, exist_ok=True)
+    # Live process whose environment does NOT carry this instance's data dir.
+    child = subprocess.Popen(["sleep", "60"], env=dict(os.environ))
+    layout.pid_file.write_text(str(child.pid), encoding="utf-8")
+    record: dict[str, object] = {}
+    monkeypatch.setattr(ii.shutil, "which", lambda name: "/usr/bin/xdotool")
+    monkeypatch.setattr(ii.subprocess, "run", _fake_window_run(record, _WindowProc()))
+    try:
+        with pytest.raises(InstanceError, match="stale"):
+            set_window(layout, visible=True)
+        assert record.get("calls", []) == []
+    finally:
+        child.kill()
+        child.wait()
+
+
 def test_restart_cli_subcommand_reports_missing_bin(seeded, tmp_path: Path) -> None:
     _, layout, _ = seeded
     reset_run_dir(layout)

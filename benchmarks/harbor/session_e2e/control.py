@@ -10,14 +10,19 @@ Endpoints (all require the ``X-LibrAgent-E2E-Control`` capability header;
 - ``GET  /api/e2e-control/status`` — ``{enabled, debugBuild, loopbackOnly,
   buildSha, buildDirty}``.
 - ``GET  /api/e2e-control/sessions/:ref/interactions`` — snapshot
-  ``{sessionId, pendingUserPrompt, pendingApprovals}`` where
-  ``pendingUserPrompt`` is ``null`` or ``{requestId, kind, payload,
-  createdAt}`` and ``pendingApprovals`` is a list of ``{toolCallId, toolName,
-  reason, commandPreview, approvalKind, requestId?}``.
+  ``{sessionId, pendingUserPrompt, pendingApprovals, pendingCircuitBreak}``
+  where ``pendingUserPrompt`` is ``null`` or ``{requestId, kind, payload,
+  createdAt}``, ``pendingApprovals`` is a list of ``{toolCallId, toolName,
+  reason, commandPreview, approvalKind, requestId?}``, and
+  ``pendingCircuitBreak`` is ``null`` or ``{toolName, repetitionCount,
+  toolCallId}`` (a waiting ``ui__circuitBreak``, #2901).
 - ``POST /api/e2e-control/sessions/:ref/user-prompts`` — body
   ``{requestId, action: "answer"|"cancel", value?}`` → ``{delivered}``.
 - ``POST /api/e2e-control/sessions/:ref/tool-approvals`` — body
   ``{toolCallId, approved}`` → ``{ok}``.
+- ``POST /api/e2e-control/sessions/:ref/circuit-break-resume`` — no body →
+  ``{ok, resumedTool, repetitionCount}``. Resumes the session's waiting
+  circuit break (#2901); ``{ok: false}`` when none is waiting.
 - ``POST /api/e2e-control/picker`` — body ``{path}`` or ``{cancel: true}``
   → ``{ok}``. Arms a one-shot override that resolves the *next* native
   open/save dialog (file attach, export, save-as) without a human. Arm it

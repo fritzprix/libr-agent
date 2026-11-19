@@ -992,9 +992,12 @@ def set_window(
 
     Windows are selected strictly by the instance PID (``xdotool search --all
     --pid <pid>``) — never by title or class — so a user's window can never be
-    matched. If xdotool is unavailable (no X11, other OS), raise
-    :class:`InstanceError`; the S5 Windows instance manager implements the
-    same contract by scoping to the PIDs it launched, no ``/proc`` needed.
+    matched. A stale pid file is rejected by the ownership guard (``_owns_pid``:
+    data-dir match on Linux, creation-time stamp on Windows), so a PID the OS
+    has since recycled never gets its windows resized or minimized. If xdotool
+    is unavailable (no X11, other OS), raise :class:`InstanceError`; the S5
+    Windows instance manager implements the same contract by scoping to the
+    PIDs it launched, no ``/proc`` needed.
     """
     if (width is None) != (height is None):
         raise InstanceError("--width and --height must be given together.")
@@ -1004,8 +1007,10 @@ def set_window(
         raise InstanceError("Window size must be at least 200x200.")
 
     pid = _read_pid(layout)
-    if pid is None or not _pid_alive(pid):
-        raise InstanceError("Bench instance is not running. Run 'launch' first.")
+    if pid is None or not _pid_alive(pid) or not _owns_pid(layout, pid):
+        raise InstanceError(
+            "Bench instance is not running (or its pid file is stale). Run 'launch' first."
+        )
     if shutil.which("xdotool") is None:
         raise InstanceError(
             "Window control needs xdotool on PATH (X11). On Wayland enable XWayland, "

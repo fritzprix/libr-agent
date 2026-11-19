@@ -9,7 +9,11 @@
  *
  * The probe command exists in every build and always answers `null` unless
  * the debug control plane armed an override, so production behavior is
- * unchanged: the real dialog opens.
+ * unchanged: the real dialog opens. Failures are deliberate and loud: the
+ * probe rides the same Tauri IPC as the dialog itself, so if the probe call
+ * or its payload validation rejects, the dialog call rejects too (the
+ * caller's existing catch surfaces it as a toast) rather than silently
+ * opening a dialog the harness can never answer.
  */
 import { open, type OpenDialogOptions } from '@tauri-apps/plugin-dialog';
 import { z } from 'zod';
