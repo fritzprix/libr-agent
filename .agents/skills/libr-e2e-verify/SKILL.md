@@ -63,6 +63,7 @@ DELETE /api/sessions/:id
 | See what blocks a session                         | `GET /api/e2e-control/sessions/:ref/interactions` → pending user prompt + pending approvals                                                       |
 | Answer or cancel a `ui__askUser` / storeAs prompt | `POST /api/e2e-control/sessions/:ref/user-prompts` with `{"requestId": "...", "action": "answer"}` or `"cancel"`, plus `"value"`                  |
 | Approve or deny a tool approval                   | `POST /api/e2e-control/sessions/:ref/tool-approvals` with `{"toolCallId": "...", "approved": true}` or `{"toolCallId": "...", "approved": false}` |
+| Resolve the next native file dialog (attach/save) | `POST /api/e2e-control/picker` with `{"path": "/abs/path"}` or `{"cancel": true}` — one-shot, arm it right before the action that opens the dialog      |
 
 Without the control plane, prompts and approvals block until a human answers or
 `yolo`/`unsafe` auto-approves them.

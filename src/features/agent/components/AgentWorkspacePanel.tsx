@@ -25,7 +25,7 @@ import { toast } from 'sonner';
 import { getLogger } from '@/lib/logger';
 import { useTranslation } from 'react-i18next';
 import { Input } from '@/components/ui/input';
-import { open } from '@tauri-apps/plugin-dialog';
+import { openDialog as open } from '@/lib/backend/dialog';
 import {
   checkDroppedPathType,
   registerDroppedFiles,

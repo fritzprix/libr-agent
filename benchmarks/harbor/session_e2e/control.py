@@ -18,6 +18,11 @@ Endpoints (all require the ``X-LibrAgent-E2E-Control`` capability header;
   ``{requestId, action: "answer"|"cancel", value?}`` → ``{delivered}``.
 - ``POST /api/e2e-control/sessions/:ref/tool-approvals`` — body
   ``{toolCallId, approved}`` → ``{ok}``.
+- ``POST /api/e2e-control/picker`` — body ``{path}`` or ``{cancel: true}``
+  → ``{ok}``. Arms a one-shot override that resolves the *next* native
+  open/save dialog (file attach, export, save-as) without a human. Arm it
+  immediately before the action that opens the dialog; an unconsumed override
+  is replaced by the next arm, never silently queued twice.
 
 Interval and eventual consistency: poll every ``DEFAULT_POLL_INTERVAL_SEC``
 (3.0 s, the bench default). A prompt or approval that just appeared or was
@@ -134,6 +139,30 @@ class E2eControlClient:
         res = await client.post(
             f"{self.api_url}/e2e-control/sessions/{session_id}/circuit-break-resume",
             headers=self._headers(),
+        )
+        res.raise_for_status()
+        return res.json()
+
+    async def arm_picker(
+        self,
+        client: httpx.AsyncClient,
+        *,
+        path: str | None = None,
+        cancel: bool = False,
+    ) -> dict[str, Any]:
+        """Arm the one-shot native-dialog override (#2903).
+
+        Give exactly one of ``path`` / ``cancel``. The next native open/save
+        dialog (frontend attach/export or the Rust save path) resolves with
+        it instead of waiting for a human.
+        """
+        if (path is not None) == bool(cancel):
+            raise ValueError("provide exactly one of path or cancel=True")
+        body: dict[str, Any] = {"cancel": True} if cancel else {"path": path}
+        res = await client.post(
+            f"{self.api_url}/e2e-control/picker",
+            headers=self._headers(),
+            json=body,
         )
         res.raise_for_status()
         return res.json()

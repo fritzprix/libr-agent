@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { open } from '@tauri-apps/plugin-dialog';
+import { openDialog as open } from '@/lib/backend/dialog';
 import { listen } from '@tauri-apps/api/event';
 import {
   exportOrgBundle,

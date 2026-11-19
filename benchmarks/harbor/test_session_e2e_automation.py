@@ -658,6 +658,35 @@ async def test_tool_approval_uses_documented_endpoint():
     assert req["json"] == {"toolCallId": "call-9", "approved": True}
 
 
+@pytest.mark.asyncio
+async def test_picker_arm_uses_documented_endpoint_and_body():
+    fake = RecordingClient({"/picker": {"ok": True}})
+
+    result = await _client().arm_picker(fake, path="/tmp/e2e-out.bin")
+
+    assert result == {"ok": True}
+    (req,) = fake.requests
+    assert req["method"] == "POST"
+    assert req["url"].endswith("/e2e-control/picker")
+    assert req["headers"] == {E2E_HEADER: "t" * 48}
+    assert req["json"] == {"path": "/tmp/e2e-out.bin"}
+
+    fake = RecordingClient({"/picker": {"ok": True}})
+    await _client().arm_picker(fake, cancel=True)
+    (req,) = fake.requests
+    assert req["json"] == {"cancel": True}
+
+
+@pytest.mark.asyncio
+async def test_picker_arm_requires_exactly_one_choice():
+    fake = RecordingClient({"/picker": {"ok": True}})
+    with pytest.raises(ValueError):
+        await _client().arm_picker(fake)
+    with pytest.raises(ValueError):
+        await _client().arm_picker(fake, path="/x", cancel=True)
+    assert fake.requests == []
+
+
 def test_poll_interval_matches_documented_default():
     # The contract documents 3.0 s as the default poll interval; the bench
     # poller must keep using exactly that constant.

@@ -30,6 +30,23 @@ pub(crate) async fn save_bytes_via_dialog(
     file_name: String,
     bytes: Vec<u8>,
 ) -> Result<String, String> {
+    // E2E test hook (#2903): when the debug control plane armed a picker
+    // override, resolve the dialog with it instead of waiting for a human.
+    match crate::e2e_picker::take_picker_override() {
+        Some(crate::e2e_picker::PickerOverride::Cancel) => {
+            return Ok("Download cancelled by user".to_string());
+        }
+        Some(crate::e2e_picker::PickerOverride::Path { path }) => {
+            let path_buf = std::path::PathBuf::from(&path);
+            tokio::fs::write(&path_buf, &bytes)
+                .await
+                .map_err(|e| format!("Failed to save file: {e}"))?;
+            log::info!("E2E picker override saved file to: {path_buf:?}");
+            return Ok(path_buf.to_string_lossy().into_owned());
+        }
+        None => {}
+    }
+
     let (tx, rx) = tokio::sync::oneshot::channel::<Result<Option<std::path::PathBuf>, String>>();
 
     app_handle
