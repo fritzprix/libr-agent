@@ -1725,11 +1725,22 @@ class LibrAgentHarborAdapter(BaseAgent):
         inferred_task_id, _ = _task_identity_from_logs_dir(self.logs_dir)
         task_id = context_task_id or inferred_task_id or "bench"
         max_input_context = resolve_max_input_context(task_id)
+        # A task may pin its own execution mode (e.g. the tool-approval task
+        # needs `normal` so approvals actually open); the session-e2e spec is
+        # loaded before the payload for exactly this reason. Validation goes
+        # through resolve_execution_mode so an invalid value fails fast.
+        session_e2e_spec = load_session_e2e_spec(self.logs_dir)
+        execution_mode = self.execution_mode
+        if session_e2e_spec is not None and session_e2e_spec.execution_mode:
+            execution_mode = resolve_execution_mode(session_e2e_spec.execution_mode)
+            safe_print(
+                f"[{self.name()}] Task executionMode override: {execution_mode}"
+            )
         payload: dict[str, Any] = {
             "assistantId": self.assistant_id,
             "name": f"Harbor Benchmark Task: {task_id}",
             "request": instruction,
-            "executionMode": self.execution_mode,
+            "executionMode": execution_mode,
         }
         if max_input_context is not None:
             payload["maxInputContext"] = max_input_context
@@ -1753,7 +1764,6 @@ class LibrAgentHarborAdapter(BaseAgent):
             payload["workspaceIsolation"] = "host"
 
         post_idle_event = load_post_idle_event(self.logs_dir)
-        session_e2e_spec = load_session_e2e_spec(self.logs_dir)
 
         async with httpx.AsyncClient(headers=self._api_headers(), timeout=600.0) as client:
             if managed_image is not None:
@@ -1930,20 +1940,55 @@ class LibrAgentHarborAdapter(BaseAgent):
                                 )
                         else:
                             try:
-                                session_e2e_actions.extend(
-                                    await resolve_pending_interactions(
-                                        client,
-                                        api_url=self.api_url,
-                                        session_id=session_id,
-                                        data_dir=bench_instance.layout.data_dir,
-                                        spec=session_e2e_spec,
-                                    )
+                                child_ids: list[str] = []
+                                if session_e2e_spec.resolve_child_interactions:
+                                    # 2565 X-2: child sessions of this session
+                                    # are resolved before it, so a companion's
+                                    # waiting prompt is answered first. A
+                                    # failed children fetch must not skip the
+                                    # primary's own prompt for this cycle, so
+                                    # it is handled on its own.
+                                    try:
+                                        children_res = await client.get(
+                                            f"{self.api_url}/sessions/{session_id}/children",
+                                            timeout=10.0,
+                                        )
+                                        children_res.raise_for_status()
+                                        raw_children = children_res.json().get("children") or []
+                                        child_ids = [str(c) for c in raw_children if c]
+                                    except Exception as child_exc:
+                                        safe_print(
+                                            f"[{self.name()}] Warning: session E2E "
+                                            f"children fetch failed; resolving the "
+                                            f"primary session only: {child_exc}"
+                                        )
+                                resolved = await resolve_pending_interactions(
+                                    client,
+                                    api_url=self.api_url,
+                                    session_id=session_id,
+                                    data_dir=bench_instance.layout.data_dir,
+                                    spec=session_e2e_spec,
+                                    child_session_ids=child_ids,
                                 )
+                                session_e2e_actions.extend(resolved)
                             except Exception as exc:
                                 safe_print(
                                     f"[{self.name()}] Warning: session E2E control "
                                     f"action failed: {exc}"
                                 )
+                            else:
+                                if any(
+                                    isinstance(a, dict)
+                                    and a.get("kind") == "circuitBreakResume"
+                                    for a in resolved
+                                ):
+                                    # Circuit-breaker Resume (#2901): the break
+                                    # settled the session to idle and the status
+                                    # read above is pre-resume; the injected
+                                    # ui__resumeCircuitBreak re-enters the
+                                    # workflow, so this poll must not complete
+                                    # the session.
+                                    continue
 
                     if current_status == "paused":
                         safe_print(

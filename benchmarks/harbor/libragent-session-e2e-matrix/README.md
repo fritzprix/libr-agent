@@ -49,9 +49,92 @@ isolated instance**. Host-mode Windows runs therefore do not auto-resolve
 `requireUserInput` prompts yet — `e2e-interactive-echo` needs the isolated
 runner (Linux) until a Windows instance manager lands.
 
+## Circuit-breaker Resume (#2901)
+
+`ui__circuitBreak` stops the workflow and waits for a human Resume click. Debug
+builds additionally expose `POST /api/e2e-control/sessions/:ref/circuit-break-resume`
+(loopback, token-gated), which injects the exact `ui__resumeCircuitBreak`
+tool-call the GUI button sends. `POST /api/sessions/:id/resume` is a different
+reload path (#2898) and never touches the dialog. The poller sees the waiting
+break in `GET …/interactions` (`pendingCircuitBreak`) and resumes it when the
+task spec sets `resume_circuit_break = true` (the default).
+
+## New tasks (#2901)
+
+- `e2e-askuser-answer` — one `ui__askUser` question answered through the control
+  plane; the agent must write the delivered answer verbatim to `answer.txt`.
+- `e2e-circuit-break-resume` — trips the tool-loop guard with six identical
+  `workspace__writeFile` calls, gets resumed through the new endpoint, and must
+  finish by writing `break_marker.txt`.
+- `e2e-tool-approval-normal` — pins `execution_mode = "normal"` so a workspace
+  write really opens a tool-approval request; the harness grants it through the
+  control plane and the verifier confirms the approved call executed.
+- `e2e-storeas-masked` — the agent runs a `storeAs` command; the harness answers
+  the prompt with the synthetic secret, the value must reach the shell env, and
+  the verifier fails if the secret literal appears anywhere in the trajectory.
+- `e2e-bool-string-coercion` — the agent sends `include_checked` as the string
+  `"true"`; the shared args helper must coerce it with its warning and the call
+  must run, and an `ui__askUser` question with the reserved-sounding key
+  `options` must reach the harness instead of being rejected by key-name rules.
+- `e2e-mcp-secret-template` — the agent registers an MCP server that needs a
+  key; the verifier requires the `{{secret:E2E_WEATHER_KEY}}` template in the
+  trajectory (tool-call arguments included), rejects any chat prompt for the
+  secret value, and fails if any secret literal appears anywhere.
+- `e2e-clarify-requirements` — a vague `기획해줘` request must trigger the
+  clarify flow; the verifier requires delivered clarification answers, the
+  clarify skill loaded, and a structured `requirements.md` maintained in the
+  workspace.
+- `e2e-askuser-cancel` — the harness cancels a waiting `ui__askUser` prompt
+  through the control plane (the same path the Cancel/Stop buttons drive,
+  `cancel_interactive = true`); the verifier requires the delivered cancel
+  record, an informational cancel tool result, and the agent continuing to
+  completion afterwards.
+- `e2e-askuser-options` — one `ui__askUser` call with an options question, a
+  `multiSelect` question, and a free-text question; the harness answers with
+  the task's `answer_value` (a JSON object keyed by question id), and the
+  verifier grades the keyed result shapes in the delivered tool result.
+- `e2e-answer-masked-logs` — a `storeAs` prompt is answered with the synthetic
+  secret; the verifier proves the value reached the shell, then byte-scans
+  every harness artifact under `/logs/agent/` (trajectory, compaction summary,
+  instance log) and fails if the recorded `injectedValue` appears in any of
+  them — only the evidence record itself may hold the exact value.
+- `e2e-two-session-prompts` — smoke test only (X-2 is `deferred` in the
+  coverage manifest): the parent spawns a child session and both hold waiting
+  `storeAs` prompts; with `resolve_child_interactions =
+true` the harness answers each child session before the primary and marks
+  child answers with a `-child` suffix. This exercises the harness plumbing
+  across sessions — it does not prove answer-channel isolation, since the
+  suffix is appended by the harness itself; the child's marker arrives via
+  the parent's `agent__checkSession` round trip.
+
+A task may pin its own session mode with `execution_mode` under
+`[metadata.libragent_session_e2e]`; otherwise it inherits
+`LIBRAGENT_EXECUTION_MODE` (unchanged behaviour for existing tasks).
+
 ## Coverage manifest
 
 See [`coverage-manifest.json`](./coverage-manifest.json) for all **65 checklist IDs** from issue #2565 (`implemented` | `deferred` | `ui-only` | `platform-specific` | `needs-product`). The issue's **74 result slots** are pass/fail/skip/open tallies, not extra checklist rows.
+
+## Release-build gating (2672 E-2)
+
+Release binaries cannot serve `/api/e2e-control/*` at all: the module
+declaration, the capability-token init, and both route-merge sites in
+`src-tauri/src/server/` are compile-time gated behind
+`#[cfg(debug_assertions)]`. `e2e_control_stays_compile_time_gated`
+(`src-tauri/tests/e2e_control_token_tests.rs`) pins every gate site, and
+`disabled_control_plane_answers_404_even_with_a_token` covers the debug
+runtime path where the control plane is off.
+
+## Linux CI job (#2901)
+
+`ci.yml` carries a `Session API E2E (Linux isolated, debug)` job: it builds the
+debug binary, seeds the disposable instance, and runs the full matrix under
+Xvfb — the job fails the PR when a task fails. It is inert until the owner
+configures the secrets it reads: `SESSION_E2E_ASSISTANT_ID`, one of
+`SESSION_E2E_SEED_DB` / `SESSION_E2E_SEED_DB_B64` (the pruned seed profile),
+optionally `SESSION_E2E_MODEL`, `LIBRAGENT_SESSION_API_KEY`, and
+`LIBRAGENT_E2E_SYNTHETIC_SECRET` (synthetic fixture value only). LLM keys come
+from the seeded profile / CI secrets — never from a production profile.
 
 ## In-app orchestration (preferred)
 

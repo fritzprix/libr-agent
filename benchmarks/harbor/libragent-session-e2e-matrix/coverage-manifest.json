@@ -13,15 +13,15 @@
     },
     {
       "id": "P-2",
-      "status": "deferred",
-      "reason": "needs Windows/Linux desktop debug instance + E2E control; task scaffold pending",
-      "harbor_task": null
+      "status": "implemented",
+      "reason": "partial: e2e-askuser-answer (ui__askUser single-question round trip via E2E control); option/cancel/multi-question variants pending",
+      "harbor_task": "e2e-askuser-answer"
     },
     {
       "id": "P-3",
-      "status": "deferred",
-      "reason": "needs Windows/Linux desktop debug instance + E2E control; task scaffold pending",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-askuser-cancel: harness cancels the waiting prompt through the control plane (same path the Stop button's cancel drives) and the agent continues; GUI Stop click itself remains manual",
+      "harbor_task": "e2e-askuser-cancel"
     },
     {
       "id": "P-4",
@@ -55,9 +55,9 @@
     },
     {
       "id": "P-9",
-      "status": "deferred",
-      "reason": "needs Windows/Linux desktop debug instance + E2E control; task scaffold pending",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-answer-masked-logs: storeAs answer delivered, value reaches shell, and the recorded injected secret is byte-scanned absent from trajectory, compaction summary, and instance log under /logs/agent/",
+      "harbor_task": "e2e-answer-masked-logs"
     },
     {
       "id": "B-1",
@@ -127,9 +127,9 @@
     },
     {
       "id": "B-12",
-      "status": "deferred",
-      "reason": "needs Windows/Linux desktop debug instance + E2E control; task scaffold pending",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-storeas-masked: storeAs prompt answered by harness, value reaches shell, secret masked in trajectory; graded from evidence/tool-results/files",
+      "harbor_task": "e2e-storeas-masked"
     },
     {
       "id": "S-1",
@@ -145,21 +145,21 @@
     },
     {
       "id": "S-3",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "2672 S-3 store path is exactly e2e-storeas-masked (B-12): one-off runShell storeAs answer reaches the shell env, a later command reads $E2E_STORED_SECRET and writes SECRET_PRESENT, and the recorded secret never appears in output or the trajectory; the reject paths passed earlier in #2565's Linux run",
+      "harbor_task": "e2e-storeas-masked"
     },
     {
       "id": "S-4",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "2672 S-4 masking-in-logs is exactly e2e-answer-masked-logs (P-9): command text and variable names may appear, but the verifier byte-scans every artifact under /logs/agent/ (trajectory, compaction summary, instance log) and fails if the recorded injected value appears in any of them",
+      "harbor_task": "e2e-answer-masked-logs"
     },
     {
       "id": "S-5",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-bool-string-coercion: string \"true\" boolean coerced with helper warning and call runs; ui__askUser accepts reserved-sounding key 'options' (2672 S-5)",
+      "harbor_task": "e2e-bool-string-coercion"
     },
     {
       "id": "S-6",
@@ -338,19 +338,19 @@
     {
       "id": "X-2",
       "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "reason": "kept as smoke test only (e2e-two-session-prompts): the current evidence does not prove two prompts were pending at once, nor that each session got its own answer; real X-2 coverage (overlapping pending prompts plus child evidence that depends on the answer) is follow-up work under #2901",
+      "harbor_task": "e2e-two-session-prompts"
     },
     {
       "id": "X-3",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Every Harbor session-E2E task (e2e-askuser-answer/options/cancel/storeas-masked) drives a Session-API-origin turn that waits on askUser/storeAs and resolves it through the control plane; what the channel shows remains manual",
+      "harbor_task": "e2e-askuser-answer"
     },
     {
       "id": "X-4",
       "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
+      "reason": "unreachable from a single-session agent E2E flow: execute_tool_calls runs batched tool calls sequentially (src-tauri/src/agent/llm/tool_execution.rs), so a second prompt only arrives after the first resolves and can never observe the overlap; the one-prompt-at-a-time gate itself is pinned by unit test only_one_prompt_may_wait_per_session (src-tauri/src/agent/state/user_prompt.rs, runs via pnpm rust:test --lib)",
       "harbor_task": null
     },
     {
@@ -367,21 +367,21 @@
     },
     {
       "id": "A-1",
-      "status": "ui-only",
-      "reason": "requires UI automation (pixels/keyboard); E2E control covers backend state only",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-askuser-options: options question answers with the chosen option string (wire contract); radio/Other rendering and Submit gating remain ui-only",
+      "harbor_task": "e2e-askuser-options"
     },
     {
       "id": "A-2",
-      "status": "ui-only",
-      "reason": "requires UI automation (pixels/keyboard); E2E control covers backend state only",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-askuser-options: multi-question ui__askUser result is JSON keyed by id with the multiSelect answer as a list; checkbox rendering remains ui-only",
+      "harbor_task": "e2e-askuser-options"
     },
     {
       "id": "A-3",
-      "status": "ui-only",
-      "reason": "requires UI automation (pixels/keyboard); E2E control covers backend state only",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-askuser-cancel: control-plane cancel -> informational tool result -> agent continues (marker file); dialog rendering remains ui-only",
+      "harbor_task": "e2e-askuser-cancel"
     },
     {
       "id": "A-4",
@@ -394,6 +394,30 @@
       "status": "ui-only",
       "reason": "requires UI automation (pixels/keyboard); E2E control covers backend state only",
       "harbor_task": null
+    },
+    {
+      "id": "K-3",
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-mcp-secret-template: MCP server registration stores the key as {{secret:NAME}} and never asks for the value in chat (2672 K-3)",
+      "harbor_task": "e2e-mcp-secret-template"
+    },
+    {
+      "id": "K-1",
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-clarify-requirements: vague request triggers clarify; verifier requires delivered answers, skill load, maintained requirements.md (2672 K-1)",
+      "harbor_task": "e2e-clarify-requirements"
+    },
+    {
+      "id": "E-2",
+      "status": "implemented-partial",
+      "reason": "Release binaries cannot serve /api/e2e-control/*: module, token init, and both route-merge sites are #[cfg(debug_assertions)]-gated; pinned by e2e_control_stays_compile_time_gated (source-grep pin) plus the runtime 404-without-capability test. Full evidence would need a cargo build --release + 404 check in CI. (2672 E-2)",
+      "harbor_task": null
+    },
+    {
+      "id": "C-4",
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-askuser-cancel: cancel a ui__askUser dialog via control plane -> informational result -> session continues without error state (2672 C-4)",
+      "harbor_task": "e2e-askuser-cancel"
     }
   ]
 }

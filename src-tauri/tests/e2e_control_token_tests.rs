@@ -21,12 +21,15 @@ mod tests {
         PendingUserPromptSummary, UserPromptAnswer, UserPromptKind, UserPromptPayload,
         USER_PROMPT_GONE_MESSAGE,
     };
+    use tauri_mcp_agent_lib::agent::types::{ToolCall, ToolCallFunction};
     use tauri_mcp_agent_lib::agent::AgentSessionManager;
+    use tauri_mcp_agent_lib::models::chat::Message;
     use tauri_mcp_agent_lib::server::access_guard::handle_rejection;
     use tauri_mcp_agent_lib::server::e2e_control::{
         capability_guard, constant_time_eq, e2e_control_guarded_routes_with_capability,
-        header_matches, plan_user_prompt_action, tool_approval_error_status, PlannedPromptAction,
-        UserPromptBody, E2E_CONTROL_HEADER,
+        header_matches, pending_circuit_break, plan_circuit_break_resume, plan_user_prompt_action,
+        resume_circuit_break_message, tool_approval_error_status, PlannedPromptAction,
+        SessionInteractionsSnapshot, UserPromptBody, E2E_CONTROL_HEADER,
     };
     use warp::http::{HeaderMap, StatusCode};
     use warp::Filter;
@@ -298,6 +301,236 @@ mod tests {
         assert_eq!(
             tool_approval_error_status("approval already resolved"),
             StatusCode::BAD_REQUEST
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // Circuit-breaker resume observation + injection (#2901).
+    // ------------------------------------------------------------------
+
+    fn assistant_tool_call(name: &str, arguments: &str, id: &str) -> Message {
+        let now = chrono::Utc::now().timestamp_millis();
+        Message {
+            id: format!("msg-{id}"),
+            session_id: "sess-1".to_string(),
+            role: "assistant".to_string(),
+            content: vec![],
+            tool_calls: Some(vec![ToolCall {
+                id: id.to_string(),
+                r#type: "function".to_string(),
+                function: ToolCallFunction {
+                    name: name.to_string(),
+                    arguments: arguments.to_string(),
+                },
+            }]),
+            tool_call_id: None,
+            is_streaming: None,
+            thinking: None,
+            thinking_signature: None,
+            assistant_id: None,
+            attachments: None,
+            tool_use: None,
+            usage: None,
+            prompt_tokens: None,
+            created_at: now,
+            updated_at: now,
+            source: None,
+            error: None,
+            metadata: None,
+        }
+    }
+
+    fn circuit_break_call() -> Message {
+        assistant_tool_call(
+            "ui__circuitBreak",
+            r#"{"toolName":"workspace__runShell","repetitionCount":5,"args":{}}"#,
+            "call-break",
+        )
+    }
+
+    #[test]
+    fn detects_circuit_break_waiting_for_resume() {
+        let messages = vec![
+            assistant_tool_call("workspace__runShell", r#"{"command":"ls"}"#, "call-a"),
+            circuit_break_call(),
+        ];
+        let pending = pending_circuit_break(&messages).expect("break must be pending");
+        assert_eq!(pending.tool_name, "workspace__runShell");
+        assert_eq!(pending.repetition_count, 5);
+        assert_eq!(pending.tool_call_id, "call-break");
+    }
+
+    #[test]
+    fn resume_tool_call_clears_pending_circuit_break() {
+        let messages = vec![
+            circuit_break_call(),
+            assistant_tool_call(
+                "ui__resumeCircuitBreak",
+                r#"{"toolName":"workspace__runShell","repetitionCount":5}"#,
+                "call-resume",
+            ),
+        ];
+        assert!(pending_circuit_break(&messages).is_none());
+    }
+
+    #[test]
+    fn break_followed_by_user_message_is_not_pending() {
+        let mut moved_on = circuit_break_call();
+        moved_on.role = "user".to_string();
+        moved_on.tool_calls = None;
+        let messages = vec![circuit_break_call(), moved_on];
+        assert!(
+            pending_circuit_break(&messages).is_none(),
+            "a new user message after the break means the session moved on; \
+             the harness must not inject Resume into a later turn"
+        );
+    }
+
+    #[test]
+    fn resume_plan_conflicts_when_nothing_pending() {
+        // The handler turns this Err into the route's 409 reply.
+        let err = plan_circuit_break_resume(None)
+            .expect_err("no pending break must not yield a resume plan");
+        assert_eq!(err.0, StatusCode::CONFLICT);
+        assert!(err.1.contains("no circuit breaker"));
+    }
+
+    #[test]
+    fn resume_plan_carries_pending_break_details() {
+        let messages = vec![circuit_break_call()];
+        let pending = pending_circuit_break(&messages).expect("break must be pending");
+        let (tool_name, repetition_count) =
+            plan_circuit_break_resume(Some(pending)).expect("pending break must yield a plan");
+        assert_eq!(tool_name, "workspace__runShell");
+        assert_eq!(repetition_count, 5);
+    }
+
+    #[test]
+    fn interactions_snapshot_serializes_pending_circuit_break_contract() {
+        // The harness (`session_e2e/automation.py`) reads `pendingCircuitBreak`
+        // from this JSON, so the camelCase wire contract is pinned here.
+        let messages = vec![circuit_break_call()];
+        let snapshot = SessionInteractionsSnapshot {
+            session_id: "sess-1".to_string(),
+            pending_user_prompt: None,
+            pending_approvals: vec![],
+            pending_circuit_break: pending_circuit_break(&messages),
+        };
+        let body = serde_json::to_value(&snapshot).unwrap();
+        let pending = &body["pendingCircuitBreak"];
+        assert_eq!(pending["toolName"], "workspace__runShell");
+        assert_eq!(pending["repetitionCount"], 5);
+        assert_eq!(pending["toolCallId"], "call-break");
+
+        let idle = SessionInteractionsSnapshot {
+            session_id: "sess-1".to_string(),
+            pending_user_prompt: None,
+            pending_approvals: vec![],
+            pending_circuit_break: None,
+        };
+        let body = serde_json::to_value(&idle).unwrap();
+        assert!(body["pendingCircuitBreak"].is_null());
+    }
+
+    #[test]
+    fn no_circuit_break_means_nothing_pending() {
+        let messages = vec![
+            assistant_tool_call("workspace__runShell", r#"{"command":"ls"}"#, "call-a"),
+            assistant_tool_call("planning__addTodo", "{}", "call-b"),
+        ];
+        assert!(pending_circuit_break(&messages).is_none());
+    }
+
+    #[test]
+    fn malformed_circuit_break_args_still_resumeable() {
+        let messages = vec![assistant_tool_call(
+            "ui__circuitBreak",
+            "not-json",
+            "call-break",
+        )];
+        let pending = pending_circuit_break(&messages).expect("break must still be pending");
+        assert_eq!(pending.tool_name, "unknown");
+        assert_eq!(pending.repetition_count, 0);
+    }
+
+    #[test]
+    fn resume_message_reuses_the_gui_tool_call_shape() {
+        let message = resume_circuit_break_message("sess-1", "workspace__runShell", 5);
+        assert_eq!(message.session_id, "sess-1");
+        assert_eq!(message.role, "assistant");
+        assert!(message.content.is_empty());
+        let tool_calls = message.tool_calls.expect("resume injects a tool call");
+        assert_eq!(tool_calls.len(), 1);
+        let name = &tool_calls[0].function.name;
+        // The `ui__` prefix is what admits an idle UI-tool entry in
+        // `handle_llm_response`; the name must match the GUI button exactly.
+        assert!(name.starts_with("ui__"));
+        assert_eq!(name, "ui__resumeCircuitBreak");
+        let args: serde_json::Value = serde_json::from_str(&tool_calls[0].function.arguments)
+            .expect("arguments must be valid JSON");
+        assert_eq!(args["toolName"], "workspace__runShell");
+        assert_eq!(args["repetitionCount"], 5);
+    }
+
+    #[tokio::test]
+    async fn lan_host_rejects_circuit_break_resume_before_manager_extraction() {
+        let res = warp::test::request()
+            .method("POST")
+            .path("/api/e2e-control/sessions/sess-1/circuit-break-resume")
+            .remote_addr(LOOPBACK_PEER.parse().unwrap())
+            .header("host", LAN_HOST)
+            .header(E2E_CONTROL_HEADER, TOKEN)
+            .reply(&production_chain())
+            .await;
+        assert_eq!(res.status(), 403);
+    }
+
+    #[tokio::test]
+    async fn missing_token_rejects_circuit_break_resume() {
+        let res = warp::test::request()
+            .method("POST")
+            .path("/api/e2e-control/sessions/sess-1/circuit-break-resume")
+            .remote_addr(LOOPBACK_PEER.parse().unwrap())
+            .header("host", LOOPBACK_HOST)
+            .reply(&production_chain())
+            .await;
+        assert_eq!(res.status(), 403);
+    }
+}
+
+/// E-2 (#2672): release builds must never serve `/api/e2e-control/*`.
+///
+/// The guarantee is compile-time: the module declaration, the capability
+/// token init, and both route-merge sites are gated behind
+/// `#[cfg(debug_assertions)]`, so release binaries cannot compile the
+/// routes in at all. Integration tests always run against a debug build
+/// and cannot link a release binary, so this test pins the source-level
+/// invariant directly: if any gate is removed and release could serve
+/// the control plane, this test fails.
+#[test]
+fn e2e_control_stays_compile_time_gated() {
+    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let gated_sites = [
+        ("src/server/mod.rs", "pub mod e2e_control;"),
+        ("src/server/mod.rs", "e2e_control::init_capability_token();"),
+        ("src/server/routes.rs", "let e2e_routes ="),
+        (
+            "src/server/routes.rs",
+            "let core = core.or(e2e_routes).boxed();",
+        ),
+    ];
+    for (file, needle) in gated_sites {
+        let source = std::fs::read_to_string(manifest.join(file))
+            .unwrap_or_else(|err| panic!("cannot read {file}: {err}"));
+        let gated = source
+            .lines()
+            .zip(source.lines().skip(1))
+            .any(|(prev, line)| line.contains(needle) && prev.trim() == "#[cfg(debug_assertions)]");
+        assert!(
+            gated,
+            "{file}: `{needle}` is no longer immediately preceded by \
+             #[cfg(debug_assertions)] — release builds could serve \
+             /api/e2e-control/* (2672 E-2)"
         );
     }
 }
