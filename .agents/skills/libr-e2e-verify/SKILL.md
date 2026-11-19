@@ -67,6 +67,20 @@ DELETE /api/sessions/:id
 Without the control plane, prompts and approvals block until a human answers or
 `yolo`/`unsafe` auto-approves them.
 
+### Polling contract
+
+There is no event stream; poll `interactions` every **3.0 s** (the bench
+default, `DEFAULT_POLL_INTERVAL_SEC`). The snapshot carries
+`pendingUserPrompt` (`null` or `{requestId, kind, payload, createdAt}`) and
+`pendingApprovals` (`[{toolCallId, toolName, reason, commandPreview,
+approvalKind, requestId?}]`). A prompt that just appeared or was just answered
+may lag one poll cycle — treat a single missed cycle as normal. A waiting
+prompt is stuck only after more than `LIBRAGENT_POLL_TIMEOUT_SEC` without an
+answer. `{delivered: false}` means the prompt was already gone: re-poll and
+judge from the fresh snapshot instead of retrying the same `requestId`. The
+authoritative contract lives in the `session_e2e/control.py` module docstring
+and is pinned by `benchmarks/harbor/test_session_e2e_automation.py`.
+
 ## Evidence and results
 
 - Extract the transcript **before** cleanup: `GET /api/sessions/:id/messages?limit=500`.
