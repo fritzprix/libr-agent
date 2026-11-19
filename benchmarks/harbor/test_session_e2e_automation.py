@@ -340,3 +340,209 @@ def test_execution_mode_defaults_to_none_on_spec():
     from benchmarks.harbor.session_e2e.automation import SessionE2eAutomationSpec
 
     assert SessionE2eAutomationSpec().execution_mode is None
+
+
+@pytest.mark.asyncio
+async def test_wait_for_overlapping_child_prompt_holds_until_both_pending(tmp_path, monkeypatch):
+    """2565 X-2: hold answers while only one session has a prompt; once both
+    have pending prompts in the same poll, answer child first and mark both
+    records with simultaneousPending=True."""
+    from benchmarks.harbor.session_e2e.automation import SessionE2eAutomationSpec
+
+    monkeypatch.setenv("LIBRAGENT_E2E_SYNTHETIC_SECRET", "x2-overlap-secret")
+    data_dir = _instance_data_dir(tmp_path, monkeypatch)
+
+    class RoutingClient:
+        def __init__(self, snapshots: dict[str, dict[str, Any]]) -> None:
+            self.snapshots = snapshots
+            self.posts: list[tuple[str, dict[str, Any]]] = []
+
+        async def get(self, url: str, headers: dict[str, str] | None = None) -> FakeResponse:
+            for sid, snap in self.snapshots.items():
+                if f"/sessions/{sid}/interactions" in url:
+                    return FakeResponse(snap)
+            return FakeResponse({"pendingUserPrompt": None, "pendingApprovals": []})
+
+        async def post(
+            self,
+            url: str,
+            headers: dict[str, str] | None = None,
+            json: dict[str, Any] | None = None,
+        ) -> FakeResponse:
+            self.posts.append((url, json or {}))
+            return FakeResponse({"delivered": True})
+
+    spec = SessionE2eAutomationSpec(
+        resolve_child_interactions=True,
+        wait_for_overlapping_child_prompt=True,
+    )
+
+    # Only primary pending -> held, no prompt answered yet.
+    client_one = RoutingClient(
+        {
+            "sess-a": {"pendingUserPrompt": {"requestId": "req-a"}, "pendingApprovals": []},
+            "sess-b": {"pendingUserPrompt": None, "pendingApprovals": []},
+        }
+    )
+    held = await resolve_pending_interactions(
+        client_one,
+        api_url="http://127.0.0.1:3031/api",
+        session_id="sess-a",
+        data_dir=data_dir,
+        spec=spec,
+        child_session_ids=["sess-b"],
+    )
+    assert held == []
+    assert client_one.posts == []
+
+    # Both pending -> child answered first, primary second, both flagged simultaneousPending.
+    client_both = RoutingClient(
+        {
+            "sess-a": {"pendingUserPrompt": {"requestId": "req-a"}, "pendingApprovals": []},
+            "sess-b": {"pendingUserPrompt": {"requestId": "req-b"}, "pendingApprovals": []},
+        }
+    )
+    actions = await resolve_pending_interactions(
+        client_both,
+        api_url="http://127.0.0.1:3031/api",
+        session_id="sess-a",
+        data_dir=data_dir,
+        spec=spec,
+        child_session_ids=["sess-b"],
+    )
+    assert [a["sessionId"] for a in actions] == ["sess-b", "sess-a"]
+    assert all(a.get("simultaneousPending") is True for a in actions)
+    assert actions[0]["injectedValue"] == "x2-overlap-secret-child"
+    assert actions[1]["injectedValue"] == "x2-overlap-secret"
+
+
+@pytest.mark.asyncio
+async def test_distinct_secret_per_prompt_increments_version_suffix(tmp_path, monkeypatch):
+    """2565 B-8 / M-8: successive prompts in the same session get distinct
+    injected values (-v1, -v2) when distinct_secret_per_prompt is enabled."""
+    from benchmarks.harbor.session_e2e.automation import SessionE2eAutomationSpec
+
+    monkeypatch.setenv("LIBRAGENT_E2E_SYNTHETIC_SECRET", "b8-secret")
+    data_dir = _instance_data_dir(tmp_path, monkeypatch)
+    spec = SessionE2eAutomationSpec(distinct_secret_per_prompt=True)
+
+    client1 = FakeClient(_snapshot(), {"delivered": True})
+    first = await resolve_pending_interactions(
+        client1,
+        api_url="http://127.0.0.1:3031/api",
+        session_id="sess-1",
+        data_dir=data_dir,
+        spec=spec,
+        prior_actions=[],
+    )
+    assert first[0]["injectedValue"] == "b8-secret-v1"
+
+    client2 = FakeClient(
+        {"pendingUserPrompt": {"requestId": "req-2", "kind": "secret"}, "pendingApprovals": []},
+        {"delivered": True},
+    )
+    second = await resolve_pending_interactions(
+        client2,
+        api_url="http://127.0.0.1:3031/api",
+        session_id="sess-1",
+        data_dir=data_dir,
+        spec=spec,
+        prior_actions=first,
+    )
+    assert second[0]["injectedValue"] == "b8-secret-v2"
+    assert first[0]["injectedValue"] != second[0]["injectedValue"]
+
+
+@pytest.mark.asyncio
+async def test_terminate_child_on_prompt_terminates_and_checks_cleared(tmp_path, monkeypatch):
+    """2565 P-6: when terminate_child_on_prompt is set, a child session waiting
+    on a prompt is terminated via POST /sessions/:id/terminate and verified cleared."""
+    from benchmarks.harbor.session_e2e.automation import SessionE2eAutomationSpec
+
+    data_dir = _instance_data_dir(tmp_path, monkeypatch)
+
+    class TermClient:
+        def __init__(self) -> None:
+            self.terminated = False
+            self.post_urls: list[str] = []
+
+        async def get(self, url: str, headers: dict[str, str] | None = None) -> FakeResponse:
+            if "/sessions/sess-child/interactions" in url:
+                if self.terminated:
+                    return FakeResponse({"pendingUserPrompt": None, "pendingApprovals": []})
+                return FakeResponse(
+                    {"pendingUserPrompt": {"requestId": "req-child"}, "pendingApprovals": []}
+                )
+            return FakeResponse({"pendingUserPrompt": None, "pendingApprovals": []})
+
+        async def post(
+            self,
+            url: str,
+            headers: dict[str, str] | None = None,
+            json: dict[str, Any] | None = None,
+        ) -> FakeResponse:
+            self.post_urls.append(url)
+            if url.endswith("/sessions/sess-child/terminate"):
+                self.terminated = True
+                return FakeResponse({"status": "terminated"})
+            return FakeResponse({"delivered": True})
+
+    client = TermClient()
+    actions = await resolve_pending_interactions(
+        client,
+        api_url="http://127.0.0.1:3031/api",
+        session_id="sess-parent",
+        data_dir=data_dir,
+        spec=SessionE2eAutomationSpec(
+            resolve_child_interactions=True,
+            terminate_child_on_prompt=True,
+        ),
+        child_session_ids=["sess-child"],
+    )
+    assert client.post_urls == ["http://127.0.0.1:3031/api/sessions/sess-child/terminate"]
+    assert actions == [
+        {
+            "kind": "terminateOnPrompt",
+            "sessionId": "sess-child",
+            "requestId": "req-child",
+            "terminated": True,
+            "promptCleared": True,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_tool_approval_records_tool_name_and_command_preview(tmp_path, monkeypatch):
+    """2672 M-3: toolApproval evidence records preserve toolName and
+    commandPreview so verifiers can assert preview masking."""
+    data_dir = _instance_data_dir(tmp_path, monkeypatch)
+    snapshot = {
+        "pendingUserPrompt": None,
+        "pendingApprovals": [
+            {
+                "toolCallId": "call-mcp-1",
+                "toolName": "tool__registerServer",
+                "approvalKind": "hard",
+                "commandPreview": "url=https://127.0.0.1:9999/mcp?literal=***&k={{secret:KEY}}#***",
+            }
+        ],
+    }
+    client = FakeClient(snapshot, {"approved": True})
+    actions = await resolve_pending_interactions(
+        client,
+        api_url="http://127.0.0.1:3031/api",
+        session_id="sess-1",
+        data_dir=data_dir,
+        spec=None,
+    )
+    assert actions == [
+        {
+            "kind": "toolApproval",
+            "sessionId": "sess-1",
+            "toolCallId": "call-mcp-1",
+            "approvalKind": "hard",
+            "approved": True,
+            "toolName": "tool__registerServer",
+            "commandPreview": "url=https://127.0.0.1:9999/mcp?literal=***&k={{secret:KEY}}#***",
+        }
+    ]

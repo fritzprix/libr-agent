@@ -1,0 +1,30 @@
+schema_version = "1.3"
+artifacts = []
+
+[task]
+name = "fritzprix/e2e-askuser-terminate-while-waiting"
+description = "2565 P-6 (prompt half): terminating a child session while it is waiting on ui__askUser removes the pending prompt cleanly without error"
+keywords = ["libragent", "session-e2e", "askuser", "terminate"]
+
+[metadata]
+difficulty = "medium"
+category = "session-api-e2e"
+tags = ["matrix", "P-6", "askuser", "terminate"]
+
+[metadata.libragent_session_e2e]
+matrix_id = "P-6"
+auto_answer_interactive = true
+approve_standard_tools = true
+resolve_child_interactions = true
+terminate_child_on_prompt = true
+
+[verifier]
+timeout_sec = 240.0
+
+[agent]
+timeout_sec = 600.0
+
+[environment]
+network_mode = "no-network"
+build_timeout_sec = 300.0
+os = "linux"

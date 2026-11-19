@@ -37,9 +37,9 @@
     },
     {
       "id": "P-6",
-      "status": "deferred",
-      "reason": "needs Windows/Linux desktop debug instance + E2E control; task scaffold pending",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-askuser-terminate-while-waiting: child session waiting on ui__askUser is terminated via POST /api/sessions/:id/terminate, pendingUserPrompt is verified cleared, and parent completes cleanly; Windows persistent-shell process half remains S5",
+      "harbor_task": "e2e-askuser-terminate-while-waiting"
     },
     {
       "id": "P-7",
@@ -103,9 +103,9 @@
     },
     {
       "id": "B-8",
-      "status": "deferred",
-      "reason": "needs Windows/Linux desktop debug instance + E2E control; task scaffold pending",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-storeas-replace: re-storing the same storeAs variable with a distinct synthetic value replaces the old value in the persistent shell (verified via SHA-256 digests), preserves cwd, and leaks neither literal",
+      "harbor_task": "e2e-storeas-replace"
     },
     {
       "id": "B-9",
@@ -133,15 +133,15 @@
     },
     {
       "id": "S-1",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-skill-storeas-flows: TELEGRAM_API_HASH storeAs secret collection delivers distinct synthetic secret to persistent shell env (verified via SHA-256) with zero literal leak in /logs/agent/",
+      "harbor_task": "e2e-skill-storeas-flows"
     },
     {
       "id": "S-2",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-skill-storeas-flows: X_PASSWORD storeAs secret collection delivers distinct synthetic secret to persistent shell env (verified via SHA-256) with zero literal leak in /logs/agent/",
+      "harbor_task": "e2e-skill-storeas-flows"
     },
     {
       "id": "S-3",
@@ -163,9 +163,9 @@
     },
     {
       "id": "S-6",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-skill-storeas-flows: LIBRAGENT_GOOGLE_CLIENT_SECRET storeAs secret collection delivers distinct synthetic secret to persistent shell env (verified via SHA-256) with zero literal leak in /logs/agent/",
+      "harbor_task": "e2e-skill-storeas-flows"
     },
     {
       "id": "S-7",
@@ -181,9 +181,9 @@
     },
     {
       "id": "M-2",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-mcp-secret-lifecycle: {{secret:NAME}} template stored on registration and byte-scanned absent from trajectory and all /logs/agent/ artifacts",
+      "harbor_task": "e2e-mcp-secret-lifecycle"
     },
     {
       "id": "M-3",
@@ -193,9 +193,9 @@
     },
     {
       "id": "M-4",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-mcp-approval-preview: cancelling the MCP secret prompt via the control plane aborts registration and leaves no server row written",
+      "harbor_task": "e2e-mcp-approval-preview"
     },
     {
       "id": "M-5",
@@ -205,9 +205,9 @@
     },
     {
       "id": "M-6",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-mcp-secret-lifecycle: HTTP URL {{secret:NAME}} query template registered and re-entered cleanly without leaking literal values",
+      "harbor_task": "e2e-mcp-secret-lifecycle"
     },
     {
       "id": "M-7",
@@ -217,9 +217,9 @@
     },
     {
       "id": "M-8",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-mcp-secret-lifecycle: tool__updateServer with reenterSecrets prompts a second time and delivers a distinct synthetic value",
+      "harbor_task": "e2e-mcp-secret-lifecycle"
     },
     {
       "id": "M-9",
@@ -337,8 +337,8 @@
     },
     {
       "id": "X-2",
-      "status": "deferred",
-      "reason": "kept as smoke test only (e2e-two-session-prompts): the current evidence does not prove two prompts were pending at once, nor that each session got its own answer; real X-2 coverage (overlapping pending prompts plus child evidence that depends on the answer) is follow-up work under #2901",
+      "status": "implemented",
+      "reason": "Harbor e2e-two-session-prompts: waits until both parent and child have pendingUserPrompt in the same poll cycle (simultaneousPending: true), answers child first with a distinct value, and verifies each session's SHA-256 env digest without leaking literals",
       "harbor_task": "e2e-two-session-prompts"
     },
     {
@@ -361,9 +361,9 @@
     },
     {
       "id": "X-6",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-mcp-secret-lifecycle: confirms MCP secret store is separate from shell storeAs env ($E2E_LIFECYCLE_KEY is unset in workspace__runShell)",
+      "harbor_task": "e2e-mcp-secret-lifecycle"
     },
     {
       "id": "A-1",
@@ -418,6 +418,42 @@
       "status": "implemented-partial",
       "reason": "Harbor e2e-askuser-cancel: cancel a ui__askUser dialog via control plane -> informational result -> session continues without error state (2672 C-4)",
       "harbor_task": "e2e-askuser-cancel"
+    },
+    {
+      "id": "C-1",
+      "status": "ui-only",
+      "reason": "old ui://interactive/ resource renders disabled form in chat UI; same check as 2565 A-5 (2672 C-1, S2 UI automation)",
+      "harbor_task": null
+    },
+    {
+      "id": "2672-M-3",
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-mcp-approval-preview: tool__registerServer approval commandPreview masks literal query param values and URL fragments as *** while keeping exact {{secret:NAME}} visible (2672 M-3)",
+      "harbor_task": "e2e-mcp-approval-preview"
+    },
+    {
+      "id": "2685-E-3",
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-skill-storeas-flows: LIBRAGENT_EMAIL_PASSWORD storeAs flow delivers secret to persistent shell env without leaking literal into chat or logs; hidden-input pixels stay on S2 (2685 E-3 / 2565 S-5)",
+      "harbor_task": "e2e-skill-storeas-flows"
+    },
+    {
+      "id": "E-1",
+      "status": "implemented",
+      "reason": "Harbor e2e-askuser-answer + e2e-tool-approval-normal: debug build with LIBRAGENT_E2E_CONTROL resolves pending askUser prompts and pending tool approvals through the control plane (2672 E-1)",
+      "harbor_task": "e2e-tool-approval-normal"
+    },
+    {
+      "id": "R-1",
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-circuit-break-resume: repeated identical failing/looping tool calls trip the circuit breaker and emit guidance text, then resume via POST /api/e2e-control/sessions/:ref/circuit-break-resume (2672 R-1)",
+      "harbor_task": "e2e-circuit-break-resume"
+    },
+    {
+      "id": "R-2",
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-tool-approval-normal: pins execution_mode=normal so a workspace tool requires approval and executes after control-plane approval (2672 R-2 normal approval half)",
+      "harbor_task": "e2e-tool-approval-normal"
     }
   ]
 }
