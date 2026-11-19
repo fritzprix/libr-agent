@@ -26,6 +26,7 @@ from benchmarks.harbor.isolated_instance import (
     restart,
     safe_print,
     sandbox_command,
+    set_window,
     stop,
 )
 
@@ -212,6 +213,105 @@ def test_restart_without_run_dir_is_rejected(seeded) -> None:
     _, layout, _ = seeded
     with pytest.raises(InstanceError, match="Run 'launch' first"):
         restart(layout, layout.root / "appbin", timeout_sec=1.0)
+
+
+class _WindowProc:
+    def __init__(self, returncode: int = 0, stderr: str = "") -> None:
+        self.returncode = returncode
+        self.stderr = stderr
+
+
+def _fake_window_run(record: dict[str, object], proc: _WindowProc):
+    calls: list[list[str]] = record.setdefault("calls", [])  # type: ignore[assignment]
+
+    def run(argv, **kwargs):  # noqa: ANN001, ANN202 - test seam
+        record["argv"] = argv
+        calls.append(argv)
+        return proc
+
+    return run
+
+
+def _running_instance(tmp_path: Path) -> tuple[InstanceLayout, subprocess.Popen[bytes]]:
+    """A real short-lived process recorded as the instance pid. Caller must kill it."""
+    import os
+    import subprocess
+
+    layout = InstanceLayout(tmp_path / "bench")
+    layout.root.mkdir(parents=True, exist_ok=True)
+    env = dict(os.environ, LIBRAGENT_DATA_DIR=str(layout.data_dir.resolve()))
+    child = subprocess.Popen(["sleep", "60"], env=env)
+    layout.pid_file.write_text(str(child.pid), encoding="utf-8")
+    return layout, child
+
+
+def _kill_instance(child: subprocess.Popen[bytes]) -> None:
+    child.kill()
+    child.wait()
+
+
+def test_set_window_builds_pid_scoped_xdotool_argv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import benchmarks.harbor.isolated_instance as ii
+
+    layout, child = _running_instance(tmp_path)
+    record: dict[str, object] = {}
+    monkeypatch.setattr(ii.shutil, "which", lambda name: "/usr/bin/xdotool")
+    monkeypatch.setattr(ii.subprocess, "run", _fake_window_run(record, _WindowProc()))
+    try:
+        set_window(layout, width=1280, height=800)
+        assert record["argv"] == [
+            "xdotool", "search", "--all", "--pid", str(child.pid), "windowsize", "1280", "800",
+        ]  # fmt: skip
+        set_window(layout, visible=False)
+        assert record["argv"] == ["xdotool", "search", "--all", "--pid", str(child.pid), "windowminimize"]
+        set_window(layout, width=1024, height=768, visible=True)
+        assert record["argv"] == [
+            "xdotool", "search", "--all", "--pid", str(child.pid),
+            "windowsize", "1024", "768", "windowmap", "windowraise",
+        ]  # fmt: skip
+        # Never selects windows by title/class: every call is --pid scoped.
+        calls = record["calls"]
+        assert isinstance(calls, list) and len(calls) == 3
+        assert all(argv[:4] == ["xdotool", "search", "--all", "--pid"] for argv in calls)
+    finally:
+        _kill_instance(child)
+
+
+def test_set_window_rejects_bad_arguments(tmp_path: Path) -> None:
+    layout, child = _running_instance(tmp_path)
+    try:
+        with pytest.raises(InstanceError, match="together"):
+            set_window(layout, width=800)
+        with pytest.raises(InstanceError, match="Nothing to set"):
+            set_window(layout)
+        with pytest.raises(InstanceError, match="200x200"):
+            set_window(layout, width=100, height=100)
+    finally:
+        _kill_instance(child)
+
+
+def test_set_window_requires_running_instance_and_xdotool(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import benchmarks.harbor.isolated_instance as ii
+
+    layout = InstanceLayout(tmp_path / "bench")
+    layout.root.mkdir(parents=True)
+    with pytest.raises(InstanceError, match="not running"):
+        set_window(layout, visible=True)
+
+    layout, child = _running_instance(tmp_path)
+    try:
+        monkeypatch.setattr(ii.shutil, "which", lambda name: None)
+        with pytest.raises(InstanceError, match="xdotool"):
+            set_window(layout, visible=True)
+        # xdotool failure surfaces as InstanceError with its stderr.
+        monkeypatch.setattr(ii.shutil, "which", lambda name: "/usr/bin/xdotool")
+        monkeypatch.setattr(
+            ii.subprocess, "run", _fake_window_run({}, _WindowProc(returncode=1, stderr="no display"))
+        )
+        with pytest.raises(InstanceError, match="no display"):
+            set_window(layout, visible=True)
+    finally:
+        _kill_instance(child)
 
 
 def test_restart_cli_subcommand_reports_missing_bin(seeded, tmp_path: Path) -> None:
