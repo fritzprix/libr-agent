@@ -40,9 +40,12 @@ def test_prompt_was_cancelled_and_delivered():
 
 def test_cancel_reached_the_agent_as_a_tool_result():
     texts = observation_result_texts(trajectory_steps(load_trajectory()))
-    assert any("cancel" in text.lower() for text in texts), (
-        "no tool result mentions the cancellation — the informational cancel "
-        "result never reached the agent as a tool result"
+    # USER_PROMPT_CANCELLED_MESSAGE in src-tauri/src/agent/state/user_prompt.rs —
+    # match the exact informational result, not any result that mentions the word.
+    assert any("User cancelled the prompt." in text for text in texts), (
+        "no tool result carries the informational cancel result "
+        "(USER_PROMPT_CANCELLED_MESSAGE) — the cancel never reached the agent "
+        "as a tool result"
     )
 
 

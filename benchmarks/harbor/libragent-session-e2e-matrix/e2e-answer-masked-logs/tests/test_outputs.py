@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 
 from verifier_lib import (
+    injected_values,
     load_evidence,
     load_trajectory,
     observation_result_texts,
@@ -18,23 +19,6 @@ from verifier_lib import (
 STORED = Path("/app/p9_env.txt")
 AGENT_LOGS = Path("/logs/agent")
 EVIDENCE_NAME = "session_e2e_evidence.json"
-
-
-def _injected_secret(evidence: dict) -> str | None:
-    """The exact (synthetic) value the harness injected as the storeAs answer.
-
-    The host harness reads ``LIBRAGENT_E2E_SYNTHETIC_SECRET`` and records the
-    value it sent in ``session_e2e_evidence.json`` as ``injectedValue``; this
-    verifier container cannot see that env var, so the evidence record — not
-    an env guess — is what keeps the leak check non-vacuous when CI sets a
-    different secret (gatekeeper G3.1).
-    """
-    for action in evidence.get("resolvedInteractions") or []:
-        if action.get("kind") == "userPrompt" and action.get("action") == "answer":
-            value = action.get("injectedValue")
-            if value:
-                return str(value)
-    return None
 
 
 def test_evidence_present():
@@ -76,18 +60,19 @@ def test_value_persisted_across_commands_without_being_printed():
 
 
 def test_secret_never_leaked_into_agent_logs():
-    recorded = _injected_secret(load_evidence())
+    recorded = injected_values(load_evidence())
     assert recorded, (
         "the harness did not record injectedValue for the answered prompt; "
         "without the exact injected value this leak check would be vacuous"
     )
     assert AGENT_LOGS.is_dir(), "harness log directory /logs/agent is not mounted"
-    needle = recorded.encode("utf-8")
+    needles = [value.encode("utf-8") for value in recorded]
     offenders = []
     for path in sorted(AGENT_LOGS.rglob("*")):
         if not path.is_file() or path.name == EVIDENCE_NAME:
             continue
-        if needle in path.read_bytes():
+        data = path.read_bytes()
+        if any(needle in data for needle in needles):
             offenders.append(str(path))
     assert not offenders, (
         "the synthetic storeAs secret leaked into: "

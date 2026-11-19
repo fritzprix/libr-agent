@@ -8,7 +8,7 @@ import json
 import os
 from pathlib import Path
 
-from verifier_lib import load_evidence, load_trajectory
+from verifier_lib import injected_values, load_evidence, load_trajectory
 
 TEMPLATE = "{{secret:E2E_WEATHER_KEY}}"
 REGISTERED = Path("/app/mcp_registered.txt")
@@ -18,19 +18,14 @@ def _secret_candidates(evidence: dict) -> list[str]:
     """Every value the harness injected (or would have injected).
 
     A correctly behaved run never triggers a prompt here; if one did, the
-    host harness records the exact synthetic value it sent as
-    ``injectedValue`` in the evidence. This container cannot see the host's
+    host harness records the exact synthetic value it sent (see
+    ``injected_values``). This container cannot see the host's
     ``LIBRAGENT_E2E_SYNTHETIC_SECRET``, so fall back to the automation
     default only when nothing was recorded (gatekeeper G3.1).
     """
-    recorded = [
-        str(action["injectedValue"])
-        for action in evidence.get("resolvedInteractions") or []
-        if action.get("injectedValue")
+    return injected_values(evidence) or [
+        os.environ.get("LIBRAGENT_E2E_SYNTHETIC_SECRET") or "e2e-synthetic-answer"
     ]
-    if recorded:
-        return recorded
-    return [os.environ.get("LIBRAGENT_E2E_SYNTHETIC_SECRET") or "e2e-synthetic-answer"]
 
 
 def test_evidence_present():
