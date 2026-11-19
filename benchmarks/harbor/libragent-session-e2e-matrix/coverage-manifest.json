@@ -127,9 +127,9 @@
     },
     {
       "id": "B-12",
-      "status": "deferred",
-      "reason": "needs Windows/Linux desktop debug instance + E2E control; task scaffold pending",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-storeas-masked: storeAs prompt answered by harness, value reaches shell, secret masked in trajectory; graded from evidence/tool-results/files",
+      "harbor_task": "e2e-storeas-masked"
     },
     {
       "id": "S-1",

@@ -69,6 +69,9 @@ task spec sets `resume_circuit_break = true` (the default).
 - `e2e-tool-approval-normal` — pins `execution_mode = "normal"` so a workspace
   write really opens a tool-approval request; the harness grants it through the
   control plane and the verifier confirms the approved call executed.
+- `e2e-storeas-masked` — the agent runs a `storeAs` command; the harness answers
+  the prompt with the synthetic secret, the value must reach the shell env, and
+  the verifier fails if the secret literal appears anywhere in the trajectory.
 
 A task may pin its own session mode with `execution_mode` under
 `[metadata.libragent_session_e2e]`; otherwise it inherits
