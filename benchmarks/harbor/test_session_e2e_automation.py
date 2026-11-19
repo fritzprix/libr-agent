@@ -79,7 +79,13 @@ async def test_undelivered_answer_is_recorded_as_false(tmp_path, monkeypatch):
     )
 
     assert actions == [
-        {"kind": "userPrompt", "requestId": "req-1", "action": "answer", "delivered": False}
+        {
+            "kind": "userPrompt",
+            "requestId": "req-1",
+            "action": "answer",
+            "delivered": False,
+            "injectedValue": "e2e-synthetic-answer",
+        }
     ]
     # The verifier's filter for a resolved prompt must find nothing here.
     assert not [
@@ -101,8 +107,39 @@ async def test_delivered_answer_is_recorded_as_true(tmp_path, monkeypatch):
     )
 
     assert actions == [
-        {"kind": "userPrompt", "requestId": "req-1", "action": "answer", "delivered": True}
+        {
+            "kind": "userPrompt",
+            "requestId": "req-1",
+            "action": "answer",
+            "delivered": True,
+            "injectedValue": "e2e-synthetic-answer",
+        }
     ]
+
+
+@pytest.mark.asyncio
+async def test_injected_value_records_the_env_synthetic_secret(tmp_path, monkeypatch):
+    # The verifier reads the exact injected value back from evidence
+    # (`injectedValue`); the container does not see the host env var.
+    from benchmarks.harbor.session_e2e.automation import SessionE2eAutomationSpec
+
+    data_dir = _instance_data_dir(tmp_path, monkeypatch)
+    monkeypatch.setenv("LIBRAGENT_E2E_SYNTHETIC_SECRET", "ci-set-fixture-9f3a")
+    client = FakeClient(_snapshot(), {"delivered": True})
+
+    actions = await resolve_pending_interactions(
+        client,
+        api_url="http://127.0.0.1:3031/api",
+        session_id="sess-1",
+        data_dir=data_dir,
+        spec=SessionE2eAutomationSpec(
+            auto_answer_interactive=True,
+            synthetic_secret_env="LIBRAGENT_E2E_SYNTHETIC_SECRET",
+        ),
+    )
+
+    assert actions[0]["injectedValue"] == "ci-set-fixture-9f3a"
+    assert client.respond_bodies[0]["value"] == "ci-set-fixture-9f3a"
 
 
 @pytest.mark.asyncio

@@ -4,7 +4,6 @@ appearing in the trajectory or tool results. Graded from harness evidence,
 tool results, and workspace files — never assistant prose."""
 
 import json
-import os
 from pathlib import Path
 
 from verifier_lib import (
@@ -14,13 +13,24 @@ from verifier_lib import (
     trajectory_steps,
 )
 
-# The exact value the harness injects as the storeAs answer: the env var when
-# set, else the automation fallback (see session_e2e/automation.py,
-# ``value=synthetic or "e2e-synthetic-answer"``). Reading it from the
-# environment keeps the leak check non-vacuous when the owner sets a
-# different secret in CI.
-SECRET = os.environ.get("LIBRAGENT_E2E_SYNTHETIC_SECRET") or "e2e-synthetic-answer"
 STORED = Path("/app/stored_env.txt")
+
+
+def _injected_secret(evidence: dict) -> str | None:
+    """The exact (synthetic) value the harness injected as the storeAs answer.
+
+    The host harness reads ``LIBRAGENT_E2E_SYNTHETIC_SECRET`` and records the
+    value it sent in ``session_e2e_evidence.json`` as ``injectedValue``; this
+    verifier container cannot see that env var, so the evidence record — not
+    an env guess — is what keeps the leak check non-vacuous when CI sets a
+    different secret (gatekeeper G3.1).
+    """
+    for action in evidence.get("resolvedInteractions") or []:
+        if action.get("kind") == "userPrompt" and action.get("action") == "answer":
+            value = action.get("injectedValue")
+            if value:
+                return str(value)
+    return None
 
 
 def test_evidence_present():
@@ -54,8 +64,13 @@ def test_secret_value_reached_the_shell():
 
 
 def test_secret_never_leaked_into_trajectory():
+    recorded = _injected_secret(load_evidence())
+    assert recorded, (
+        "the harness did not record injectedValue for the answered prompt; "
+        "without the exact injected value this leak check would be vacuous"
+    )
     trajectory_blob = json.dumps(load_trajectory())
-    assert SECRET not in trajectory_blob, (
+    assert recorded not in trajectory_blob, (
         "the synthetic secret leaked into the session trajectory — storeAs "
         "values must be masked in logs, tool results, and the assistant context"
     )

@@ -239,19 +239,20 @@ jobs:
     needs: test
     runs-on: ubuntu-22.04
     timeout-minutes: 60
-    env:
-      SESSION_E2E_ASSISTANT_ID: ${{ secrets.SESSION_E2E_ASSISTANT_ID }}
-      SESSION_E2E_SEED_DB: ${{ secrets.SESSION_E2E_SEED_DB }}
-      SESSION_E2E_SEED_DB_B64: ${{ secrets.SESSION_E2E_SEED_DB_B64 }}
-      SESSION_E2E_MODEL: ${{ secrets.SESSION_E2E_MODEL }}
-      LIBRAGENT_SESSION_API_KEY: ${{ secrets.LIBRAGENT_SESSION_API_KEY }}
-      # Only the synthetic fixture value, never a production credential.
-      LIBRAGENT_E2E_SYNTHETIC_SECRET: ${{ secrets.LIBRAGENT_E2E_SYNTHETIC_SECRET }}
 
     steps:
       - name: Skip when E2E secrets are not configured
         id: gate
-        run: echo "enabled=${{ env.SESSION_E2E_ASSISTANT_ID != '' && (env.SESSION_E2E_SEED_DB != '' || env.SESSION_E2E_SEED_DB_B64 != '') }}" >> "$GITHUB_OUTPUT"
+        env:
+          GATE_ASSISTANT_ID: ${{ secrets.SESSION_E2E_ASSISTANT_ID }}
+          GATE_SEED_DB: ${{ secrets.SESSION_E2E_SEED_DB }}
+          GATE_SEED_DB_B64: ${{ secrets.SESSION_E2E_SEED_DB_B64 }}
+        run: |
+          enabled=false
+          if [ -n "$GATE_ASSISTANT_ID" ] && { [ -n "$GATE_SEED_DB" ] || [ -n "$GATE_SEED_DB_B64" ]; }; then
+            enabled=true
+          fi
+          echo "enabled=$enabled" >> "$GITHUB_OUTPUT"
 
       - name: Notice
         if: steps.gate.outputs.enabled != 'true'
@@ -318,6 +319,10 @@ jobs:
 
       - name: Seed the disposable bench instance
         if: steps.gate.outputs.enabled == 'true'
+        env:
+          SESSION_E2E_ASSISTANT_ID: ${{ secrets.SESSION_E2E_ASSISTANT_ID }}
+          SESSION_E2E_SEED_DB: ${{ secrets.SESSION_E2E_SEED_DB }}
+          SESSION_E2E_SEED_DB_B64: ${{ secrets.SESSION_E2E_SEED_DB_B64 }}
         run: |
           if [ -n "${SESSION_E2E_SEED_DB:-}" ]; then
             source_db="$SESSION_E2E_SEED_DB"
@@ -334,6 +339,13 @@ jobs:
         env:
           LIBRAGENT_ASSISTANT_ID: ${{ secrets.SESSION_E2E_ASSISTANT_ID }}
           LIBRAGENT_MODEL: ${{ secrets.SESSION_E2E_MODEL }}
+          SESSION_E2E_ASSISTANT_ID: ${{ secrets.SESSION_E2E_ASSISTANT_ID }}
+          SESSION_E2E_SEED_DB: ${{ secrets.SESSION_E2E_SEED_DB }}
+          SESSION_E2E_SEED_DB_B64: ${{ secrets.SESSION_E2E_SEED_DB_B64 }}
+          SESSION_E2E_MODEL: ${{ secrets.SESSION_E2E_MODEL }}
+          LIBRAGENT_SESSION_API_KEY: ${{ secrets.LIBRAGENT_SESSION_API_KEY }}
+          # Only the synthetic fixture value, never a production credential.
+          LIBRAGENT_E2E_SYNTHETIC_SECRET: ${{ secrets.LIBRAGENT_E2E_SYNTHETIC_SECRET }}
         # --isolated + --debug-app-bin is the only fully unattended
         # combination: it launches the debug binary under a disposable
         # profile and refuses the primary one.

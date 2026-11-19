@@ -99,23 +99,30 @@ async def resolve_pending_interactions(
     if isinstance(prompt, dict) and (spec is None or spec.auto_answer_interactive):
         request_id = str(prompt.get("requestId", ""))
         if request_id:
+            injected = synthetic or "e2e-synthetic-answer"
             response = await control.respond_user_prompt(
                 client,
                 session_id,
                 request_id,
                 action="answer",
-                value=synthetic or "e2e-synthetic-answer",
+                value=injected,
             )
             # ``delivered: false`` means the answer never reached the session
             # (e.g. the prompt was already gone). Record it verbatim so the
             # task verifier can reject an undelivered answer instead of
-            # counting the attempt as resolved.
+            # counting the attempt as resolved. ``injectedValue`` pins the
+            # exact (synthetic) value the harness injected: the verifier
+            # runs inside the Harbor container without the host's
+            # ``LIBRAGENT_E2E_SYNTHETIC_SECRET``, so the evidence record —
+            # not a container env guess — is what makes leak checks like
+            # e2e-storeas-masked non-vacuous.
             actions.append(
                 {
                     "kind": "userPrompt",
                     "requestId": request_id,
                     "action": "answer",
                     "delivered": bool(response.get("delivered")),
+                    "injectedValue": injected,
                 }
             )
 

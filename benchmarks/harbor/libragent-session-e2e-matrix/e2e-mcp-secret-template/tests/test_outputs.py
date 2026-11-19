@@ -11,12 +11,26 @@ from pathlib import Path
 from verifier_lib import load_evidence, load_trajectory
 
 TEMPLATE = "{{secret:E2E_WEATHER_KEY}}"
-# The value the harness would inject if a prompt were answered (env var when
-# set, else the automation fallback — see session_e2e/automation.py). A
-# correctly behaved run never triggers a prompt here, so it must not appear
-# anywhere.
-SECRET = os.environ.get("LIBRAGENT_E2E_SYNTHETIC_SECRET") or "e2e-synthetic-answer"
 REGISTERED = Path("/app/mcp_registered.txt")
+
+
+def _secret_candidates(evidence: dict) -> list[str]:
+    """Every value the harness injected (or would have injected).
+
+    A correctly behaved run never triggers a prompt here; if one did, the
+    host harness records the exact synthetic value it sent as
+    ``injectedValue`` in the evidence. This container cannot see the host's
+    ``LIBRAGENT_E2E_SYNTHETIC_SECRET``, so fall back to the automation
+    default only when nothing was recorded (gatekeeper G3.1).
+    """
+    recorded = [
+        str(action["injectedValue"])
+        for action in evidence.get("resolvedInteractions") or []
+        if action.get("injectedValue")
+    ]
+    if recorded:
+        return recorded
+    return [os.environ.get("LIBRAGENT_E2E_SYNTHETIC_SECRET") or "e2e-synthetic-answer"]
 
 
 def test_evidence_present():
@@ -44,10 +58,11 @@ def test_agent_never_asked_for_the_secret_value():
         f"must reference the template only. Actions: {prompts!r}"
     )
     trajectory_blob = json.dumps(load_trajectory())
-    assert SECRET not in trajectory_blob, (
-        "the synthetic secret leaked into the trajectory; no real or "
-        "synthetic key value should ever reach this session"
-    )
+    for candidate in _secret_candidates(evidence):
+        assert candidate not in trajectory_blob, (
+            "the synthetic secret leaked into the trajectory; no real or "
+            "synthetic key value should ever reach this session"
+        )
 
 
 def test_registration_completed():
