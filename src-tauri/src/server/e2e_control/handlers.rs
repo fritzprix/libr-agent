@@ -248,8 +248,7 @@ async fn handle_circuit_break_resume(
         Ok(plan) => plan,
         Err((status, error)) => return Ok(json_error(status, error)),
     };
-    let message =
-        resume_circuit_break_message(&session_id, &tool_name, repetition_count);
+    let message = resume_circuit_break_message(&session_id, &tool_name, repetition_count);
     match manager.handle_llm_response(session_id, message).await {
         Ok(()) => Ok(json_ok(&serde_json::json!({
             "ok": true,

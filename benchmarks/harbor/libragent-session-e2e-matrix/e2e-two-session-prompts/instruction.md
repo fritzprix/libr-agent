@@ -1,6 +1,8 @@
-This task tests that two sessions can each hold a waiting input prompt at the
-same time and receive their own answer. An automated harness answers every
-waiting prompt; you must never print any prompt answer value yourself.
+This task is a smoke test for multi-session prompt answering: you spawn a
+companion session and an automated harness answers every waiting prompt. It
+checks that the harness plumbing works across sessions; it does not prove
+that the sessions' answer channels stay separate. You must never print any
+prompt answer value yourself.
 
 Step 1 — spawn a companion session:
 

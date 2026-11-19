@@ -3,8 +3,8 @@ artifacts = []
 
 [task]
 name = "fritzprix/e2e-two-session-prompts"
-description = "parent and child sessions each hold a waiting storeAs prompt; the harness answers both and each session receives its own answer"
-keywords = ["libragent", "session-e2e", "storeas", "multi-session", "isolation"]
+description = "smoke test: parent and child sessions each get a waiting storeAs prompt answered by the harness through the control plane (answer-channel isolation is not proven — see coverage manifest X-2)"
+keywords = ["libragent", "session-e2e", "storeas", "multi-session"]
 
 [metadata]
 difficulty = "medium"

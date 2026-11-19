@@ -98,9 +98,9 @@ async def resolve_pending_interactions(
     When ``resolve_child_interactions`` is on, the poller passes the session's
     child sessions (2565 X-2): every child is resolved **before** the primary
     session, so a waiting prompt in session B is answered ahead of session A,
-    and child answers carry a ``-child`` suffix on the injected value so a
-    verifier can prove each session received its own answer rather than a
-    cross-session one.
+    and child answers carry a ``-child`` suffix on the injected value. The
+    suffix is a harness marker for the evidence records — it does not prove
+    product answer-channel isolation.
     """
     if not e2e_control_configured(data_dir):
         return []
@@ -146,7 +146,11 @@ async def _resolve_one_session(
             # ui__askUser expects (2565 A-1/A-2 wire contract).
             override = spec.answer_value if spec is not None else None
             injected = override or synthetic or "e2e-synthetic-answer"
-            if is_child:
+            if is_child and override is None:
+                # The suffix distinguishes synthetic child answers in the
+                # evidence only. An answer_value override (e.g. a JSON object
+                # for a multi-question ui__askUser) must be injected verbatim,
+                # so it never gets the suffix.
                 injected = f"{injected}-child"
             response = await control.respond_user_prompt(
                 client,

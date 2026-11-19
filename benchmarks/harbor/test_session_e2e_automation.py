@@ -263,11 +263,11 @@ async def test_circuit_break_resume_disabled_by_spec(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_resolve_child_interactions_answers_child_session_first(tmp_path, monkeypatch):
-    """2565 X-2: with resolve_child_interactions, the child session's waiting
-    prompt is answered **before** the primary's, and the child's injected
-    value is suffixed so the verifier can prove each session got its own
-    answer. The -child suffix is the harness's isolation marker; the primary
-    keeps the plain value."""
+    """2565 X-2 (smoke): with resolve_child_interactions, the child session's
+    waiting prompt is answered **before** the primary's, and the child's
+    injected value is suffixed. The -child suffix is a harness marker on the
+    evidence records — it checks the harness plumbing, not product answer-
+    channel isolation. The primary keeps the plain value."""
     from benchmarks.harbor.session_e2e.automation import SessionE2eAutomationSpec
 
     monkeypatch.setenv("LIBRAGENT_E2E_SYNTHETIC_SECRET", "x2-fixture-7c")

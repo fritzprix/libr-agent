@@ -514,7 +514,10 @@ fn e2e_control_stays_compile_time_gated() {
         ("src/server/mod.rs", "pub mod e2e_control;"),
         ("src/server/mod.rs", "e2e_control::init_capability_token();"),
         ("src/server/routes.rs", "let e2e_routes ="),
-        ("src/server/routes.rs", "let core = core.or(e2e_routes).boxed();"),
+        (
+            "src/server/routes.rs",
+            "let core = core.or(e2e_routes).boxed();",
+        ),
     ];
     for (file, needle) in gated_sites {
         let source = std::fs::read_to_string(manifest.join(file))

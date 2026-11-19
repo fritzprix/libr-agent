@@ -1944,14 +1944,24 @@ class LibrAgentHarborAdapter(BaseAgent):
                                 if session_e2e_spec.resolve_child_interactions:
                                     # 2565 X-2: child sessions of this session
                                     # are resolved before it, so a companion's
-                                    # waiting prompt is answered first.
-                                    children_res = await client.get(
-                                        f"{self.api_url}/sessions/{session_id}/children",
-                                        timeout=10.0,
-                                    )
-                                    children_res.raise_for_status()
-                                    raw_children = children_res.json().get("children") or []
-                                    child_ids = [str(c) for c in raw_children if c]
+                                    # waiting prompt is answered first. A
+                                    # failed children fetch must not skip the
+                                    # primary's own prompt for this cycle, so
+                                    # it is handled on its own.
+                                    try:
+                                        children_res = await client.get(
+                                            f"{self.api_url}/sessions/{session_id}/children",
+                                            timeout=10.0,
+                                        )
+                                        children_res.raise_for_status()
+                                        raw_children = children_res.json().get("children") or []
+                                        child_ids = [str(c) for c in raw_children if c]
+                                    except Exception as child_exc:
+                                        safe_print(
+                                            f"[{self.name()}] Warning: session E2E "
+                                            f"children fetch failed; resolving the "
+                                            f"primary session only: {child_exc}"
+                                        )
                                 resolved = await resolve_pending_interactions(
                                     client,
                                     api_url=self.api_url,

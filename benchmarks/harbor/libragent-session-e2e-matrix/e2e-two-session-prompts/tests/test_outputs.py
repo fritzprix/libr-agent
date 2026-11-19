@@ -1,9 +1,11 @@
-"""2565 X-2: two sessions hold waiting storeAs prompts at once and each
-receives its own answer. Graded from harness evidence (per-session control
-records), the primary trajectory, and workspace files — never assistant
-prose. The harness resolves child sessions before the primary within a poll
-cycle and marks child answers with a ``-child`` suffix, so the evidence can
-prove the two answer channels never crossed. The child's own container is
+"""2565 X-2 (smoke test only): a parent session spawns a companion session
+and both hold waiting storeAs prompts; the harness answers each one. Graded
+from harness evidence (per-session control records), the primary trajectory,
+and workspace files — never assistant prose. This proves the harness plumbing
+works (each session's prompt was answered and delivered); it does NOT prove
+product answer-channel isolation — the ``-child`` suffix is appended by the
+harness itself and nothing here shows the two prompts were pending at once.
+Real X-2 coverage is follow-up work under #2901. The child's own container is
 not visible here; its marker arrives through the parent's
 ``agent__checkSession`` round trip."""
 
@@ -53,7 +55,7 @@ def test_both_sessions_prompts_answered():
         ), f"no delivered answer for session {sid}: {answers!r}"
 
 
-def test_each_session_got_its_own_answer_value():
+def test_harness_delivered_a_separate_answer_to_each_session():
     evidence = load_evidence()
     primary = evidence.get("sessionId")
     answers = _answers(evidence)
@@ -69,12 +71,13 @@ def test_each_session_got_its_own_answer_value():
         "every answered prompt must record its injectedValue: "
         f"primary={primary_vals!r} child={child_vals!r}"
     )
-    # The harness isolates the channels: child answers carry the -child
-    # suffix, the primary keeps the plain value.
+    # Smoke check on the harness itself: the -child suffix is appended by the
+    # harness (automation.py), so this validates the evidence plumbing, not
+    # product answer-channel isolation.
     assert all(str(v).endswith("-child") for v in child_vals)
     assert all(not str(v).endswith("-child") for v in primary_vals)
     assert primary_vals.isdisjoint(child_vals), (
-        "the two sessions must never share an injected answer value"
+        "the harness recorded the same injected answer value for both sessions"
     )
 
 
