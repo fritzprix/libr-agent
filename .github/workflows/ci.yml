@@ -363,3 +363,127 @@ jobs:
             .libragent/work/bench-instance/logs/
           if-no-files-found: ignore
           retention-days: 7
+
+  # E2E S5 (#2905): the same Session API matrix, unattended, on a Windows
+  # isolated instance. The manager there identifies the instance tree by a
+  # recorded PID + creation time + named job object token (never by image
+  # name) and redirects APPDATA/LOCALAPPDATA/USERPROFILE into the run dir,
+  # so the primary profile is refused exactly like on Linux. Windows-gated
+  # tasks (requires_host_os = "windows", e.g. e2e-b11-no-runshell) run here
+  # and are auto-excluded on Linux; the reverse gate excludes Linux-only
+  # tasks the same way.
+  session-e2e-windows:
+    name: Session API E2E (Windows isolated, debug)
+    needs: test
+    runs-on: windows-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Skip when E2E secrets are not configured
+        id: gate
+        env:
+          GATE_ASSISTANT_ID: ${{ secrets.SESSION_E2E_ASSISTANT_ID }}
+          GATE_SEED_DB: ${{ secrets.SESSION_E2E_SEED_DB }}
+          GATE_SEED_DB_B64: ${{ secrets.SESSION_E2E_SEED_DB_B64 }}
+        shell: bash
+        run: |
+          enabled=false
+          if [ -n "$GATE_ASSISTANT_ID" ] && { [ -n "$GATE_SEED_DB" ] || [ -n "$GATE_SEED_DB_B64" ]; }; then
+            enabled=true
+          fi
+          echo "enabled=$enabled" >> "$GITHUB_OUTPUT"
+
+      - name: Notice
+        if: steps.gate.outputs.enabled != 'true'
+        shell: bash
+        run: echo "::notice::Skipping Session API E2E (Windows) — set SESSION_E2E_ASSISTANT_ID + SESSION_E2E_SEED_DB (or _B64) to enable this job."
+
+      - name: Checkout
+        if: steps.gate.outputs.enabled == 'true'
+        uses: actions/checkout@v7
+
+      - name: Setup Rust
+        if: steps.gate.outputs.enabled == 'true'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        if: steps.gate.outputs.enabled == 'true'
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install pnpm
+        if: steps.gate.outputs.enabled == 'true'
+        uses: pnpm/action-setup@v5
+
+      - name: Setup Node.js
+        if: steps.gate.outputs.enabled == 'true'
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Setup Python
+        if: steps.gate.outputs.enabled == 'true'
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        if: steps.gate.outputs.enabled == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Build frontend
+        if: steps.gate.outputs.enabled == 'true'
+        run: pnpm build
+
+      - name: Build debug app binary
+        if: steps.gate.outputs.enabled == 'true'
+        # Debug builds carry the E2E control-plane routes; release builds must
+        # keep answering 404 for /api/e2e-control/* (2672 E-2).
+        run: node scripts/run-rust-command.cjs build
+
+      - name: Seed the disposable bench instance
+        if: steps.gate.outputs.enabled == 'true'
+        env:
+          SESSION_E2E_ASSISTANT_ID: ${{ secrets.SESSION_E2E_ASSISTANT_ID }}
+          SESSION_E2E_SEED_DB: ${{ secrets.SESSION_E2E_SEED_DB }}
+          SESSION_E2E_SEED_DB_B64: ${{ secrets.SESSION_E2E_SEED_DB_B64 }}
+        shell: bash
+        run: |
+          if [ -n "${SESSION_E2E_SEED_DB:-}" ]; then
+            source_db="$SESSION_E2E_SEED_DB"
+          else
+            source_db="$RUNNER_TEMP/seed.db"
+            printf '%s' "$SESSION_E2E_SEED_DB_B64" | base64 -d > "$source_db"
+          fi
+          python -m benchmarks.harbor.isolated_instance seed \
+            --assistant-id "$SESSION_E2E_ASSISTANT_ID" \
+            --source-db "$source_db"
+
+      - name: Run the Session API E2E matrix
+        if: steps.gate.outputs.enabled == 'true'
+        env:
+          LIBRAGENT_ASSISTANT_ID: ${{ secrets.SESSION_E2E_ASSISTANT_ID }}
+          LIBRAGENT_MODEL: ${{ secrets.SESSION_E2E_MODEL }}
+          SESSION_E2E_ASSISTANT_ID: ${{ secrets.SESSION_E2E_ASSISTANT_ID }}
+          SESSION_E2E_SEED_DB: ${{ secrets.SESSION_E2E_SEED_DB }}
+          SESSION_E2E_SEED_DB_B64: ${{ secrets.SESSION_E2E_SEED_DB_B64 }}
+          SESSION_E2E_MODEL: ${{ secrets.SESSION_E2E_MODEL }}
+          LIBRAGENT_SESSION_API_KEY: ${{ secrets.LIBRAGENT_SESSION_API_KEY }}
+          # Only the synthetic fixture value, never a production credential.
+          LIBRAGENT_E2E_SYNTHETIC_SECRET: ${{ secrets.LIBRAGENT_E2E_SYNTHETIC_SECRET }}
+        # No xvfb on Windows: the runner session serves the WebView headlessly,
+        # and --isolated + --debug-app-bin is again the only unattended path.
+        run: pnpm bench:session-e2e
+
+      - name: Upload bench results
+        if: always() && steps.gate.outputs.enabled == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: session-e2e-results-windows
+          path: |
+            .libragent/work/harbor/
+            .libragent/work/bench-instance/logs/
+          if-no-files-found: ignore
+          retention-days: 7

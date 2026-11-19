@@ -32,22 +32,42 @@ the trial log prints an explicit warning and the evidence file records
 Release builds and default dev runs (without `LIBRAGENT_E2E_CONTROL`) keep
 E2E control **disabled** (404).
 
-## Windows (host-mode, manual)
+## Windows (isolated, unattended) (#2905)
 
-`--isolated` does not run on Windows. To exercise the matrix there, start a
-**debug desktop instance** yourself with the opt-in flags and run Harbor in
-host mode against it:
+`--isolated` runs on Windows too. The same commands seed, launch, stop, and
+relaunch a disposable instance, and the harness answers prompts and approvals
+for **its own** instance exactly like on Linux:
 
 ```powershell
-$env:LIBRAGENT_E2E_CONTROL = "1"
-$env:LIBRAGENT_DATA_DIR = "C:\path\to\disposable\profile"
-pnpm tauri build --debug   # then launch that binary
+python -m benchmarks.harbor.isolated_instance seed --assistant-id <uuid>
+pnpm bench:session-e2e   # launches the debug binary under the disposable profile
 ```
 
-Caveat: the harness only answers prompts and approvals for **its own
-isolated instance**. Host-mode Windows runs therefore do not auto-resolve
-`requireUserInput` prompts yet — `e2e-interactive-echo` needs the isolated
-runner (Linux) until a Windows instance manager lands.
+Windows has no `/proc`, so the manager identifies the instance tree only by
+things it controls itself: a launch manifest (`instance.json`: PID, process
+creation time, per-launch job name) plus a **named job object** every process
+of the tree joins at launch. Stop first tries `taskkill /PID` (graceful), then
+terminates the job object — which also kills detached sidecars. A recycled PID
+is rejected via the creation-time stamp, and a stop can only reach the job
+whose random per-launch token is in the manifest. Processes are never selected
+by the `libragent` image name.
+
+Profile isolation mirrors the Linux XDG setup: `APPDATA`, `LOCALAPPDATA`,
+`USERPROFILE`, `HOME`, `TEMP`/`TMP` are redirected into the run dir, and the
+primary profile (`%APPDATA%\com.fritzprix.libragent`) is refused just like the
+Linux one. The bubblewrap host-mode workspace sandbox is Linux-only; on
+Windows, host-mode sessions run unsandboxed (fine on a disposable CI runner).
+
+The control-plane contract is shared across platforms: the debug-only,
+loopback, token-guarded S1/S3 HTTP routes (interaction polling, prompt and
+approval resolution, file-picker injection, in-place restart) behave the same
+on Windows — they are plain HTTP against the same debug binary. Only the S3
+*window* size/visibility helper is Linux-side (X11); it has no Windows
+equivalent in the manager.
+
+For interactive debugging the manual host-mode path still works: start a
+debug desktop instance yourself with `$env:LIBRAGENT_E2E_CONTROL = "1"` and a
+disposable `$env:LIBRAGENT_DATA_DIR`, then run Harbor in host mode against it.
 
 ## Circuit-breaker Resume (#2901)
 
@@ -135,6 +155,12 @@ configures the secrets it reads: `SESSION_E2E_ASSISTANT_ID`, one of
 optionally `SESSION_E2E_MODEL`, `LIBRAGENT_SESSION_API_KEY`, and
 `LIBRAGENT_E2E_SYNTHETIC_SECRET` (synthetic fixture value only). LLM keys come
 from the seeded profile / CI secrets — never from a production profile.
+
+A sibling `Session API E2E (Windows isolated, debug)` job (#2905) runs the same
+matrix on `windows-latest` against the Windows isolated manager described
+above, reading the same secrets. `requires_host_os = "windows"` tasks
+(e.g. `e2e-b11-no-runshell`) run there and are auto-excluded on Linux; tasks
+gated to other hosts are auto-excluded here the same way.
 
 ## In-app orchestration (preferred)
 
