@@ -84,6 +84,11 @@ task spec sets `resume_circuit_break = true` (the default).
   clarify flow; the verifier requires delivered clarification answers, the
   clarify skill loaded, and a structured `requirements.md` maintained in the
   workspace.
+- `e2e-askuser-cancel` — the harness cancels a waiting `ui__askUser` prompt
+  through the control plane (the same path the Cancel/Stop buttons drive,
+  `cancel_interactive = true`); the verifier requires the delivered cancel
+  record, an informational cancel tool result, and the agent continuing to
+  completion afterwards.
 
 A task may pin its own session mode with `execution_mode` under
 `[metadata.libragent_session_e2e]`; otherwise it inherits

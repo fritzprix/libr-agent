@@ -143,6 +143,30 @@ async def test_injected_value_records_the_env_synthetic_secret(tmp_path, monkeyp
 
 
 @pytest.mark.asyncio
+async def test_cancel_interactive_spec_cancels_the_prompt(tmp_path, monkeypatch):
+    """cancel_interactive=true must drive the control-plane cancel path
+    (2672 C-4 / 2565 A-3: dialog cancelled -> informational result -> the
+    session continues). No value, no injectedValue on a cancel."""
+    from benchmarks.harbor.session_e2e.automation import SessionE2eAutomationSpec
+
+    data_dir = _instance_data_dir(tmp_path, monkeypatch)
+    client = FakeClient(_snapshot(), {"delivered": True})
+
+    actions = await resolve_pending_interactions(
+        client,
+        api_url="http://127.0.0.1:3031/api",
+        session_id="sess-1",
+        data_dir=data_dir,
+        spec=SessionE2eAutomationSpec(cancel_interactive=True),
+    )
+
+    assert actions == [
+        {"kind": "userPrompt", "requestId": "req-1", "action": "cancel", "delivered": True}
+    ]
+    assert client.respond_bodies[0] == {"requestId": "req-1", "action": "cancel"}
+
+
+@pytest.mark.asyncio
 async def test_pending_circuit_break_is_resumed(tmp_path, monkeypatch):
     """A waiting ui__circuitBreak must be driven through the Resume endpoint (#2901)."""
     data_dir = _instance_data_dir(tmp_path, monkeypatch)

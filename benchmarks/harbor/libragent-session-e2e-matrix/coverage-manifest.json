@@ -19,9 +19,9 @@
     },
     {
       "id": "P-3",
-      "status": "deferred",
-      "reason": "needs Windows/Linux desktop debug instance + E2E control; task scaffold pending",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-askuser-cancel: harness cancels the waiting prompt through the control plane (same path the Stop button's cancel drives) and the agent continues; GUI Stop click itself remains manual",
+      "harbor_task": "e2e-askuser-cancel"
     },
     {
       "id": "P-4",
@@ -379,9 +379,9 @@
     },
     {
       "id": "A-3",
-      "status": "ui-only",
-      "reason": "requires UI automation (pixels/keyboard); E2E control covers backend state only",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-askuser-cancel: control-plane cancel -> informational tool result -> agent continues (marker file); dialog rendering remains ui-only",
+      "harbor_task": "e2e-askuser-cancel"
     },
     {
       "id": "A-4",
@@ -412,6 +412,12 @@
       "status": "implemented-partial",
       "reason": "Release binaries cannot serve /api/e2e-control/*: module, token init, and both route-merge sites are #[cfg(debug_assertions)]-gated; pinned by e2e_control_stays_compile_time_gated (source-grep pin) plus the runtime 404-without-capability test. Full evidence would need a cargo build --release + 404 check in CI. (2672 E-2)",
       "harbor_task": null
+    },
+    {
+      "id": "C-4",
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-askuser-cancel: cancel a ui__askUser dialog via control plane -> informational result -> session continues without error state (2672 C-4)",
+      "harbor_task": "e2e-askuser-cancel"
     }
   ]
 }

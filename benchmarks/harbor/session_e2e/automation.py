@@ -25,6 +25,7 @@ class SessionE2eAutomationSpec:
     reject_hard_approvals: bool = False
     auto_answer_interactive: bool = True
     resume_circuit_break: bool = True
+    cancel_interactive: bool = False
     execution_mode: str | None = None
 
 
@@ -64,6 +65,7 @@ def load_session_e2e_spec(logs_dir: Any) -> SessionE2eAutomationSpec | None:
         reject_hard_approvals=bool(spec.get("reject_hard_approvals", False)),
         auto_answer_interactive=bool(spec.get("auto_answer_interactive", True)),
         resume_circuit_break=bool(spec.get("resume_circuit_break", True)),
+        cancel_interactive=bool(spec.get("cancel_interactive", False)),
         execution_mode=_clean_execution_mode(spec.get("execution_mode")),
     )
 
@@ -99,13 +101,14 @@ async def resolve_pending_interactions(
     if isinstance(prompt, dict) and (spec is None or spec.auto_answer_interactive):
         request_id = str(prompt.get("requestId", ""))
         if request_id:
+            cancel = spec is not None and spec.cancel_interactive
             injected = synthetic or "e2e-synthetic-answer"
             response = await control.respond_user_prompt(
                 client,
                 session_id,
                 request_id,
-                action="answer",
-                value=injected,
+                action="cancel" if cancel else "answer",
+                value=None if cancel else injected,
             )
             # ``delivered: false`` means the answer never reached the session
             # (e.g. the prompt was already gone). Record it verbatim so the
@@ -116,15 +119,15 @@ async def resolve_pending_interactions(
             # ``LIBRAGENT_E2E_SYNTHETIC_SECRET``, so the evidence record —
             # not a container env guess — is what makes leak checks like
             # e2e-storeas-masked non-vacuous.
-            actions.append(
-                {
-                    "kind": "userPrompt",
-                    "requestId": request_id,
-                    "action": "answer",
-                    "delivered": bool(response.get("delivered")),
-                    "injectedValue": injected,
-                }
-            )
+            record = {
+                "kind": "userPrompt",
+                "requestId": request_id,
+                "action": "cancel" if cancel else "answer",
+                "delivered": bool(response.get("delivered")),
+            }
+            if not cancel:
+                record["injectedValue"] = injected
+            actions.append(record)
 
     for approval in snapshot.get("pendingApprovals") or []:
         tool_call_id = str(approval.get("toolCallId", ""))
