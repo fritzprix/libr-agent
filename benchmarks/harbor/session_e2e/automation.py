@@ -25,6 +25,20 @@ class SessionE2eAutomationSpec:
     reject_hard_approvals: bool = False
     auto_answer_interactive: bool = True
     resume_circuit_break: bool = True
+    execution_mode: str | None = None
+
+
+def _clean_execution_mode(raw: object) -> str | None:
+    """Task-level executionMode override (``normal`` | ``yolo`` | ``unsafe``).
+
+    Empty or absent means the task inherits the run's ``LIBRAGENT_EXECUTION_MODE``
+    — existing tasks are unaffected. Validation is the adapter's job
+    (``resolve_execution_mode``), so this stays a single trivial helper.
+    """
+    if not isinstance(raw, str):
+        return None
+    mode = raw.strip().lower()
+    return mode or None
 
 
 def load_session_e2e_spec(logs_dir: Any) -> SessionE2eAutomationSpec | None:
@@ -50,6 +64,7 @@ def load_session_e2e_spec(logs_dir: Any) -> SessionE2eAutomationSpec | None:
         reject_hard_approvals=bool(spec.get("reject_hard_approvals", False)),
         auto_answer_interactive=bool(spec.get("auto_answer_interactive", True)),
         resume_circuit_break=bool(spec.get("resume_circuit_break", True)),
+        execution_mode=_clean_execution_mode(spec.get("execution_mode")),
     )
 
 

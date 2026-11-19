@@ -12,7 +12,10 @@ from typing import Any
 
 import pytest
 
-from benchmarks.harbor.session_e2e.automation import resolve_pending_interactions
+from benchmarks.harbor.session_e2e.automation import (
+    _clean_execution_mode,
+    resolve_pending_interactions,
+)
 
 
 class FakeResponse:
@@ -164,3 +167,20 @@ async def test_circuit_break_resume_disabled_by_spec(tmp_path, monkeypatch):
 
     assert actions == []
     assert client.post_urls == []
+
+
+def test_execution_mode_override_parsing():
+    """A task's execution_mode is trimmed/lowercased; blank or non-string means inherit."""
+    assert _clean_execution_mode(" Normal ") == "normal"
+    assert _clean_execution_mode("yolo") == "yolo"
+    assert _clean_execution_mode("") is None
+    assert _clean_execution_mode("   ") is None
+    assert _clean_execution_mode(None) is None
+    assert _clean_execution_mode(7) is None
+
+
+def test_execution_mode_defaults_to_none_on_spec():
+    """Absent metadata key must not change the run-level execution mode."""
+    from benchmarks.harbor.session_e2e.automation import SessionE2eAutomationSpec
+
+    assert SessionE2eAutomationSpec().execution_mode is None

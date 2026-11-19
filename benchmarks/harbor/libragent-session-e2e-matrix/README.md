@@ -66,6 +66,13 @@ task spec sets `resume_circuit_break = true` (the default).
 - `e2e-circuit-break-resume` — trips the tool-loop guard with six identical
   `workspace__writeFile` calls, gets resumed through the new endpoint, and must
   finish by writing `break_marker.txt`.
+- `e2e-tool-approval-normal` — pins `execution_mode = "normal"` so a workspace
+  write really opens a tool-approval request; the harness grants it through the
+  control plane and the verifier confirms the approved call executed.
+
+A task may pin its own session mode with `execution_mode` under
+`[metadata.libragent_session_e2e]`; otherwise it inherits
+`LIBRAGENT_EXECUTION_MODE` (unchanged behaviour for existing tasks).
 
 ## Coverage manifest
 

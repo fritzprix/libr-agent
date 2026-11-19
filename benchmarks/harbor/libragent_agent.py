@@ -1725,11 +1725,22 @@ class LibrAgentHarborAdapter(BaseAgent):
         inferred_task_id, _ = _task_identity_from_logs_dir(self.logs_dir)
         task_id = context_task_id or inferred_task_id or "bench"
         max_input_context = resolve_max_input_context(task_id)
+        # A task may pin its own execution mode (e.g. the tool-approval task
+        # needs `normal` so approvals actually open); the session-e2e spec is
+        # loaded before the payload for exactly this reason. Validation goes
+        # through resolve_execution_mode so an invalid value fails fast.
+        session_e2e_spec = load_session_e2e_spec(self.logs_dir)
+        execution_mode = self.execution_mode
+        if session_e2e_spec is not None and session_e2e_spec.execution_mode:
+            execution_mode = resolve_execution_mode(session_e2e_spec.execution_mode)
+            safe_print(
+                f"[{self.name()}] Task executionMode override: {execution_mode}"
+            )
         payload: dict[str, Any] = {
             "assistantId": self.assistant_id,
             "name": f"Harbor Benchmark Task: {task_id}",
             "request": instruction,
-            "executionMode": self.execution_mode,
+            "executionMode": execution_mode,
         }
         if max_input_context is not None:
             payload["maxInputContext"] = max_input_context
@@ -1753,7 +1764,6 @@ class LibrAgentHarborAdapter(BaseAgent):
             payload["workspaceIsolation"] = "host"
 
         post_idle_event = load_post_idle_event(self.logs_dir)
-        session_e2e_spec = load_session_e2e_spec(self.logs_dir)
 
         async with httpx.AsyncClient(headers=self._api_headers(), timeout=600.0) as client:
             if managed_image is not None:
