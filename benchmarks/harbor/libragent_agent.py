@@ -382,6 +382,27 @@ def workspace_mode_name(mode: str) -> str:
     return "host-sync" if mode == "host" else mode
 
 
+def host_session_workspace_path(
+    sandbox_app_dir: Path | None,
+    local_workspace_str: str,
+    *,
+    platform_name: str = sys.platform,
+) -> str:
+    """The ``workspacePath`` sent to the app in host workspace mode.
+
+    Linux: the isolated instance runs inside bubblewrap, which mounts the run
+    dir's ``app/`` (``sandbox_app_dir``) at ``SANDBOX_WORKDIR`` inside the
+    sandbox, so the session must address the in-sandbox path. Windows: there
+    is no bubblewrap mount, so the app reads and writes the host run dir's
+    ``app/`` directly — send the host path (where files are staged and
+    harvested). A plain (non-isolated) host run has no ``sandbox_app_dir`` and
+    always uses the local path.
+    """
+    if sandbox_app_dir is not None and platform_name != "win32":
+        return SANDBOX_WORKDIR
+    return local_workspace_str
+
+
 def _environment_value(name: str) -> str | None:
     value = os.environ.get(name)
     if value is None:
@@ -1716,6 +1737,11 @@ class LibrAgentHarborAdapter(BaseAgent):
                     "Host workspace mode needs the isolated bench instance (--isolated)."
                 )
             if container_workdir.rstrip("/") != SANDBOX_WORKDIR:
+                # Platform-agnostic precondition: host mode stages the task
+                # workspace at the run dir's app/, which bubblewrap mounts at
+                # SANDBOX_WORKDIR on Linux and which the Windows host session
+                # addresses directly (see host_session_workspace_path). Tasks
+                # pinned to another container workdir do not fit this contract.
                 raise RuntimeError(
                     f"Host workspace mode mounts the task workspace at {SANDBOX_WORKDIR}; "
                     f"this task uses {container_workdir}."
@@ -1782,8 +1808,8 @@ class LibrAgentHarborAdapter(BaseAgent):
                 "manageLifecycle": True,
             }
         else:
-            payload["workspacePath"] = (
-                SANDBOX_WORKDIR if sandbox_app_dir is not None else local_workspace_str
+            payload["workspacePath"] = host_session_workspace_path(
+                sandbox_app_dir, local_workspace_str
             )
             payload["workspaceIsolation"] = "host"
 

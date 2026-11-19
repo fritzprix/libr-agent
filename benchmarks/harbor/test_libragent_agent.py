@@ -28,6 +28,7 @@ from benchmarks.harbor.libragent_agent import (
     extract_trajectory_error,
     extract_version_from_health_payload,
     format_harbor_model_name,
+    host_session_workspace_path,
     INSTANCE_SANDBOX_ENV,
     is_workflow_complete,
     load_post_idle_event,
@@ -1010,6 +1011,37 @@ def test_windows_host_workspace_mode_requires_ci_runner() -> None:
         resolve_workspace_mode(
             {"LIBRAGENT_HARBOR_WORKSPACE_MODE": "host", "CI": "true"}, platform_name="win32"
         )
+
+
+def test_host_session_workspace_path_linux_bubblewrap_uses_sandbox_workdir() -> None:
+    # Linux host mode: bubblewrap mounts the run dir's app/ at /app inside the
+    # instance, so the session must address the in-sandbox path.
+    assert (
+        host_session_workspace_path(Path("/runs/a1/app"), "/runs/a1/app", platform_name="linux")
+        == "/app"
+    )
+
+
+def test_host_session_workspace_path_windows_host_uses_staged_host_dir() -> None:
+    # Windows host mode: no bubblewrap mount exists, so sending /app would
+    # point at the root of the current drive. The session must use the host
+    # run dir's app/ where the adapter stages and harvests files.
+    app_dir = Path("C:/harbor/runs/a1/app")
+    assert (
+        host_session_workspace_path(app_dir, str(app_dir), platform_name="win32")
+        == str(app_dir)
+    )
+
+
+def test_host_session_workspace_path_plain_host_run_uses_local_workspace() -> None:
+    # No sandbox_app_dir (non-isolated host run): always the local workspace.
+    assert (
+        host_session_workspace_path(None, "/home/user/ws", platform_name="linux")
+        == "/home/user/ws"
+    )
+    assert (
+        host_session_workspace_path(None, "C:\\ws", platform_name="win32") == "C:\\ws"
+    )
 
 
 def test_copy_telemetry_to_context() -> None:

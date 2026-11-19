@@ -739,6 +739,12 @@ def launch(layout: InstanceLayout, app_bin: Path, *, timeout_sec: float) -> int:
         # in the tree (sidecars included) can only be stopped through the
         # per-launch job name recorded in the manifest. CREATE_NEW_PROCESS_GROUP
         # keeps console CTRL events from spilling into the runner.
+        # NOTE (S1.1 decision): we deliberately do NOT launch suspended. The
+        # app needs a full Tauri start before it can spawn the sidecar, so
+        # suspending here would only delay the same readiness we poll for
+        # after launch; a future change to the start path must keep the
+        # post-launch readiness poll (do not replace it with a suspend/resume
+        # assumption).
         token = secrets.token_hex(8)
         job_name = f"Local\\libragent-bench-{token}"
         job = win_process.create_job(job_name)
@@ -875,7 +881,12 @@ def _stop_windows(layout: InstanceLayout, *, grace_sec: float) -> None:
     if stopped_graceful:
         # The root died gracefully; sweep the job anyway for detached sidecars.
         if job_name:
-            win_process.terminate_job_by_name(job_name)
+            swept = win_process.terminate_job_by_name(job_name)
+            safe_print(
+                f"Job object {job_name}: {'swept (a sidecar or leftover was still alive)' if swept else 'no job (nothing left to sweep)'}."
+            )
+        else:
+            safe_print("No job object name in the instance meta; no sidecar sweep performed.")
     elif job_name and win_process.terminate_job_by_name(job_name):
         safe_print(f"Stopped bench instance tree via job object ({job_name}).")
     elif owned and pid is not None:
