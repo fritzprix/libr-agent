@@ -1969,6 +1969,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                                     data_dir=bench_instance.layout.data_dir,
                                     spec=session_e2e_spec,
                                     child_session_ids=child_ids,
+                                    prior_actions=session_e2e_actions,
                                 )
                                 session_e2e_actions.extend(resolved)
                             except Exception as exc:

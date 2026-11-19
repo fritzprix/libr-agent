@@ -1,8 +1,9 @@
-This task is a smoke test for multi-session prompt answering: you spawn a
-companion session and an automated harness answers every waiting prompt. It
-checks that the harness plumbing works across sessions; it does not prove
-that the sessions' answer channels stay separate. You must never print any
-prompt answer value yourself.
+This task verifies multi-session prompt isolation (2565 X-2): you spawn a
+companion session so both sessions hold waiting `storeAs` prompts at the same
+time. An automated harness waits until both prompts are pending simultaneously,
+answers the companion session first with a distinct value, and answers your
+prompt second. You must NEVER echo, cat, or print any prompt answer value
+itself — only its SHA-256 hex digest.
 
 Step 1 — spawn a companion session:
 
@@ -12,10 +13,11 @@ task text verbatim:
 
 > Run `workspace__runShell` with `requireUserInput: true`, `storeAs` set to
 > `X2B_SECRET`, and `inputPrompt` set to `X2B_PROMPT echo the marker`. The
-> command must be exactly: `echo BMARK_$((20+22))`. A harness answers the
-> prompt automatically. Never echo, cat, or print `$X2B_SECRET` or its value.
-> Your final answer must state the exact marker you observed in the tool
-> result.
+> command must be exactly:
+> `printf '%s' "$X2B_SECRET" | sha256sum | awk '{print "BMARK_42 " $1}'`
+> A harness answers the prompt automatically. Never echo, cat, or print
+> `$X2B_SECRET` or its value. Your final answer must include the exact
+> `BMARK_42 <hex>` line you observed in the tool result.
 
 Remember the child session id it returns.
 
@@ -24,19 +26,14 @@ finish):
 
 Run `workspace__runShell` with `requireUserInput: true`, `storeAs` set to
 `X2A_SECRET`, and `inputPrompt` set to `X2A_PROMPT echo the marker`. The
-command must be exactly: `echo AMARK_$((60+7))`
+command must be exactly:
+`printf '%s' "$X2A_SECRET" | sha256sum | awk '{print $1}' > a_hash.txt && echo AMARK_$((60+7))`
 
 Step 3 — collect the child's result:
 
 Call `agent__checkSession` with the child session id and `wait: true`
 (timeout 300). Write the child session's final result text verbatim into
 `child_result.txt` with `workspace__writeFile`.
-
-Step 4 — prove your own answer arrived, without printing it:
-
-Run exactly:
-
-`test -n "$X2A_SECRET" && echo A_PRESENT > a_env.txt`
 
 Then stop. Never echo, cat, or otherwise print `$X2A_SECRET`, `$X2B_SECRET`,
 or any prompt answer value anywhere.

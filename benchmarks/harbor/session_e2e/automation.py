@@ -29,6 +29,9 @@ class SessionE2eAutomationSpec:
     answer_value: str | None = None
     execution_mode: str | None = None
     resolve_child_interactions: bool = False
+    wait_for_overlapping_child_prompt: bool = False
+    distinct_secret_per_prompt: bool = False
+    terminate_child_on_prompt: bool = False
 
 
 def _clean_execution_mode(raw: object) -> str | None:
@@ -77,7 +80,21 @@ def load_session_e2e_spec(logs_dir: Any) -> SessionE2eAutomationSpec | None:
         resolve_child_interactions=bool(
             spec.get("resolve_child_interactions", False)
         ),
+        wait_for_overlapping_child_prompt=bool(
+            spec.get("wait_for_overlapping_child_prompt", False)
+        ),
+        distinct_secret_per_prompt=bool(
+            spec.get("distinct_secret_per_prompt", False)
+        ),
+        terminate_child_on_prompt=bool(
+            spec.get("terminate_child_on_prompt", False)
+        ),
     )
+
+
+def _has_pending_prompt(snapshot: dict[str, Any]) -> bool:
+    prompt = snapshot.get("pendingUserPrompt")
+    return isinstance(prompt, dict) and bool(str(prompt.get("requestId", "")))
 
 
 async def resolve_pending_interactions(
@@ -88,6 +105,7 @@ async def resolve_pending_interactions(
     data_dir: Path,
     spec: SessionE2eAutomationSpec | None,
     child_session_ids: list[str] | None = None,
+    prior_actions: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Answer/cancel waiting prompts and approve/deny pending tool approvals.
 
@@ -98,9 +116,11 @@ async def resolve_pending_interactions(
     When ``resolve_child_interactions`` is on, the poller passes the session's
     child sessions (2565 X-2): every child is resolved **before** the primary
     session, so a waiting prompt in session B is answered ahead of session A,
-    and child answers carry a ``-child`` suffix on the injected value. The
-    suffix is a harness marker for the evidence records — it does not prove
-    product answer-channel isolation.
+    and child answers carry a ``-child`` suffix on the injected value. When
+    ``wait_for_overlapping_child_prompt`` is also on, prompt answers are held
+    until at least one child and the primary session both have a pending prompt
+    in the same poll cycle, and each resulting answer record carries
+    ``simultaneousPending: true``.
     """
     if not e2e_control_configured(data_dir):
         return []
@@ -115,10 +135,32 @@ async def resolve_pending_interactions(
 
     actions: list[dict[str, Any]] = []
     child_ids = list(child_session_ids or []) if spec and spec.resolve_child_interactions else []
-    for sid, is_child in [(child, True) for child in child_ids] + [(session_id, False)]:
+    targets = [(child, True) for child in child_ids] + [(session_id, False)]
+
+    snapshots: dict[str, dict[str, Any]] = {}
+    allow_prompt_resolution = True
+    simultaneous_pending = False
+    if spec is not None and spec.wait_for_overlapping_child_prompt:
+        for sid, _ in targets:
+            snapshots[sid] = await control.interactions(client, sid)
+        primary_pending = _has_pending_prompt(snapshots.get(session_id, {}))
+        child_pending = any(_has_pending_prompt(snapshots.get(cid, {})) for cid in child_ids)
+        simultaneous_pending = primary_pending and child_pending
+        allow_prompt_resolution = simultaneous_pending
+
+    for sid, is_child in targets:
         actions.extend(
             await _resolve_one_session(
-                client, control, sid, spec, synthetic, is_child=is_child
+                client,
+                control,
+                sid,
+                spec,
+                synthetic,
+                is_child=is_child,
+                snapshot=snapshots.get(sid),
+                prior_actions=(list(prior_actions or []) + actions),
+                allow_prompt_resolution=allow_prompt_resolution,
+                simultaneous_pending=simultaneous_pending,
             )
         )
     return actions
@@ -132,14 +174,38 @@ async def _resolve_one_session(
     synthetic: str,
     *,
     is_child: bool,
+    snapshot: dict[str, Any] | None = None,
+    prior_actions: list[dict[str, Any]] | None = None,
+    allow_prompt_resolution: bool = True,
+    simultaneous_pending: bool = False,
 ) -> list[dict[str, Any]]:
-    snapshot = await control.interactions(client, session_id)
+    if snapshot is None:
+        snapshot = await control.interactions(client, session_id)
     actions: list[dict[str, Any]] = []
 
     prompt = snapshot.get("pendingUserPrompt")
-    if isinstance(prompt, dict) and (spec is None or spec.auto_answer_interactive):
+    if isinstance(prompt, dict) and allow_prompt_resolution:
         request_id = str(prompt.get("requestId", ""))
-        if request_id:
+        if request_id and is_child and spec is not None and spec.terminate_child_on_prompt:
+            term_res = await client.post(f"{control.api_url}/sessions/{session_id}/terminate")
+            term_res.raise_for_status()
+            prompt_cleared = True
+            try:
+                after = await control.interactions(client, session_id)
+                prompt_cleared = not _has_pending_prompt(after)
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code != 404:
+                    raise
+            actions.append(
+                {
+                    "kind": "terminateOnPrompt",
+                    "sessionId": session_id,
+                    "requestId": request_id,
+                    "terminated": True,
+                    "promptCleared": prompt_cleared,
+                }
+            )
+        elif request_id and (spec is None or spec.auto_answer_interactive):
             cancel = spec is not None and spec.cancel_interactive
             # A task's ``answer_value`` (task.toml metadata) overrides the
             # synthetic secret — e.g. the JSON-object answer a multi-question
@@ -152,6 +218,21 @@ async def _resolve_one_session(
                 # for a multi-question ui__askUser) must be injected verbatim,
                 # so it never gets the suffix.
                 injected = f"{injected}-child"
+            if (
+                not cancel
+                and override is None
+                and spec is not None
+                and spec.distinct_secret_per_prompt
+            ):
+                prior_count = sum(
+                    1
+                    for a in (prior_actions or [])
+                    if a.get("kind") == "userPrompt"
+                    and a.get("sessionId") == session_id
+                    and a.get("action") == "answer"
+                    and a.get("delivered") is True
+                )
+                injected = f"{injected}-v{prior_count + 1}"
             response = await control.respond_user_prompt(
                 client,
                 session_id,
@@ -168,7 +249,7 @@ async def _resolve_one_session(
             # ``LIBRAGENT_E2E_SYNTHETIC_SECRET``, so the evidence record —
             # not a container env guess — is what makes leak checks like
             # e2e-storeas-masked non-vacuous.
-            record = {
+            record: dict[str, Any] = {
                 "kind": "userPrompt",
                 "sessionId": session_id,
                 "requestId": request_id,
@@ -177,6 +258,8 @@ async def _resolve_one_session(
             }
             if not cancel:
                 record["injectedValue"] = injected
+            if simultaneous_pending:
+                record["simultaneousPending"] = True
             actions.append(record)
 
     for approval in snapshot.get("pendingApprovals") or []:
@@ -193,15 +276,18 @@ async def _resolve_one_session(
         await control.respond_tool_approval(
             client, session_id, tool_call_id, approved=approved
         )
-        actions.append(
-            {
-                "kind": "toolApproval",
-                "sessionId": session_id,
-                "toolCallId": tool_call_id,
-                "approvalKind": kind,
-                "approved": approved,
-            }
-        )
+        approval_record: dict[str, Any] = {
+            "kind": "toolApproval",
+            "sessionId": session_id,
+            "toolCallId": tool_call_id,
+            "approvalKind": kind,
+            "approved": approved,
+        }
+        if approval.get("toolName"):
+            approval_record["toolName"] = str(approval["toolName"])
+        if approval.get("commandPreview"):
+            approval_record["commandPreview"] = str(approval["commandPreview"])
+        actions.append(approval_record)
 
     break_pending = snapshot.get("pendingCircuitBreak")
     if isinstance(break_pending, dict) and (spec is None or spec.resume_circuit_break):

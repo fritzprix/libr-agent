@@ -98,14 +98,40 @@ task spec sets `resume_circuit_break = true` (the default).
   every harness artifact under `/logs/agent/` (trajectory, compaction summary,
   instance log) and fails if the recorded `injectedValue` appears in any of
   them — only the evidence record itself may hold the exact value.
-- `e2e-two-session-prompts` — smoke test only (X-2 is `deferred` in the
-  coverage manifest): the parent spawns a child session and both hold waiting
-  `storeAs` prompts; with `resolve_child_interactions =
-true` the harness answers each child session before the primary and marks
-  child answers with a `-child` suffix. This exercises the harness plumbing
-  across sessions — it does not prove answer-channel isolation, since the
-  suffix is appended by the harness itself; the child's marker arrives via
-  the parent's `agent__checkSession` round trip.
+- `e2e-two-session-prompts` — 2565 X-2: the parent spawns a child session and
+  both hold waiting `storeAs` prompts simultaneously. With
+  `resolve_child_interactions = true` and
+  `wait_for_overlapping_child_prompt = true`, the harness holds answers until
+  both sessions have a `pendingUserPrompt` in the same poll cycle
+  (`simultaneousPending: true`), answers the child first with a distinct value,
+  and answers the primary second. Each session writes the SHA-256 hex digest of
+  its env var so the verifier proves per-session answer isolation without
+  leaking literals.
+- `e2e-storeas-replace` — 2565 B-8: re-stores the same `storeAs` variable in
+  the persistent shell with a distinct second synthetic value
+  (`distinct_secret_per_prompt = true`), proving via SHA-256 digests that the
+  second value replaced the first while keeping `cwd` unchanged and leaking
+  neither literal.
+- `e2e-askuser-terminate-while-waiting` — 2565 P-6 (prompt half): a child
+  session blocks on `ui__askUser`; with `terminate_child_on_prompt = true`, the
+  harness terminates the child via `POST /api/sessions/:id/terminate`, verifies
+  `pendingUserPrompt` is cleared, and the parent completes cleanly.
+- `e2e-mcp-approval-preview` — 2672 M-3 + 2565 M-4: `tool__registerServer`
+  with a literal query param, URL fragment, and `{{secret:NAME}}` param; the
+  verifier asserts the `toolApproval` `commandPreview` masks literal values as
+  `***` while keeping `{{secret:NAME}}` visible, and that cancelling the secret
+  prompt writes no server row.
+- `e2e-mcp-secret-lifecycle` — 2565 M-2, M-6, M-8, X-6: registers an HTTP MCP
+  server with a URL `{{secret:NAME}}` template, updates it with
+  `reenterSecrets` (receiving a second distinct secret), verifies the MCP
+  secret store is separate from shell `storeAs` env, and byte-scans `/logs/agent/`
+  for zero leaks.
+- `e2e-skill-storeas-flows` — 2565 S-1, S-2, S-5, S-6 & 2685 E-3: exercises the
+  generic `storeAs` mechanism under the four skills' variable names
+  (`TELEGRAM_API_HASH`, `X_PASSWORD`,
+  `LIBRAGENT_EMAIL_PASSWORD`, `LIBRAGENT_GOOGLE_CLIENT_SECRET`) with distinct
+  synthetic values, verifying each via SHA-256 digest and byte-scanning
+  `/logs/agent/` for zero leaks. The skills' own instructions are not exercised.
 
 A task may pin its own session mode with `execution_mode` under
 `[metadata.libragent_session_e2e]`; otherwise it inherits

@@ -3,7 +3,7 @@ artifacts = []
 
 [task]
 name = "fritzprix/e2e-two-session-prompts"
-description = "smoke test: parent and child sessions each get a waiting storeAs prompt answered by the harness through the control plane (answer-channel isolation is not proven — see coverage manifest X-2)"
+description = "2565 X-2: parent and child sessions hold overlapping waiting storeAs prompts; harness answers child first and primary second; verifier proves simultaneous pending state, order, and per-session answer isolation via SHA-256 without leaking literals"
 keywords = ["libragent", "session-e2e", "storeas", "multi-session"]
 
 [metadata]
@@ -16,6 +16,7 @@ matrix_id = "X-2"
 auto_answer_interactive = true
 approve_standard_tools = true
 resolve_child_interactions = true
+wait_for_overlapping_child_prompt = true
 
 [verifier]
 timeout_sec = 240.0
