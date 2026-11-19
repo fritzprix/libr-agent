@@ -202,3 +202,22 @@ Task `e2e-b6-log-variable-ref` keeps the known **variable-reference vs literal**
 ## B-11 Windows host requirement (#2655)
 
 `e2e-b11-no-runshell` only has a passing path on a **Windows host** (the task exists because `workspace__runShell` is absent there). Its `task.toml` declares `requires_host_os = "windows"`; the harbor runners (`scripts/run-harbor-bench.sh` / `.ps1`, `path` preset) auto-add `-x e2e-b11-no-runshell` when the host OS does not match. The verifier asserts **tool calls and observations** (no successful `runShell`, no `submitInteractiveShellInput`, a successful PowerShell call), not blob string matching.
+
+## Privileged-path test container & mock keychain (#2904)
+
+See [`../privileged-e2e-image/README.md`](../privileged-e2e-image/README.md) for the **test-only** privileged container (`e2etest` with synthetic password `e2e-sudo-fixture`, scoped `NOPASSWD` probe, fake `pkexec`, fake `e2e-askpass`) and the debug-only `LIBRAGENT_E2E_MOCK_KEYCHAIN` backend (`succeed` | `fail-write` | `fail-read` | `unavailable`). Never use this image for real work and never enable `NOPASSWD` sudo or fake `pkexec` on a host machine.
+
+- `e2e-sudo-askpass-flow` — 2565 P-1, B-1 & 2672 S-2 (`SUDO_PASSWORD` via `storeAs` + follow-up plain `sudo` via askpass).
+- `e2e-sudo-wrong-password` — 2565 B-2 (wrong `SUDO_PASSWORD` fails cleanly without hanging or leaking; the sudo tool result itself must report the rejection).
+- `e2e-sudo-setup-wizard-k2` — 2672 K-2 (asks once for `SUDO_PASSWORD`, plain `sudo` only; the verifier tokenizes commands and rejects `sudo -n`/`-S`/`--stdin`/`--non-interactive` in any spelling, combined short flags, `env` prefixes, and any `su`/`pkexec`).
+- `e2e-sudo-cancel-x1` — 2565 X-1 (cancelling a waiting `SUDO_PASSWORD` prompt cleans up the prompt and leaves the persistent shell usable).
+- `e2e-asroot-daemon-o3` — 2565 O-3 (`runShell(asRoot=true)` background daemon must be stopped by the product with the stopped-process notice; the daemon's own echo is not accepted as evidence).
+- `e2e-keychain-fail-and-fallback` — 2565 M-7 / 2672 M-4 (fail-write half only): the task pins `mock_keychain_mode = "fail-write"`, the harness copies the mock's log and store into `/logs/agent`, and the verifier reads them directly - a set error was recorded and no secret persisted. The 2672 M-5 unavailable→file-fallback half stays `deferred` until a task runs `unavailable` mode.
+
+**Required invocation for the privileged tasks (G1.2, G2.1).** Their fakes (`e2etest`, fake `pkexec`/`askpass`) live in the task image, so they declare `requires_workspace_mode = "managed"` and the adapter fails fast in any other mode (host mode would run `sudo` against this machine). The harbor runners auto-add `-x <task>` when the selected mode does not match (same mechanism as `requires_host_os`), so the host-mode matrix run skips them instead of failing every trial. Run them with the dedicated entry point:
+
+```bash
+pnpm bench:session-e2e:privileged   # --workspace-mode managed + include e2e-sudo-*,e2e-asroot-*
+```
+
+The shim logs live under the shared workspace at `/app/.e2e-privileged-logs/` (`pkexec.log`, `askpass.log`, `probe.log`), created empty in the image build, so existence alone proves nothing: the "never invoked" checks are only trusted after the same trial asserts the positive control - the sudo'd `e2e-nopasswd-probe` appended a record to `probe.log`, proving the verifier sees what the agent's privileged shell wrote (G2.2). The product's own askpass helper lives in a per-session `mktemp` dir by design (the password never touches argv), so the image `askpass.log` is a bypass detector: the product never calls it, and any record there means something went around the product shim.

@@ -1,0 +1,32 @@
+schema_version = "1.3"
+artifacts = []
+
+[task]
+name = "fritzprix/e2e-sudo-cancel-x1"
+description = "2565 X-1: cancelling/stopping a waiting SUDO_PASSWORD prompt cleans up the prompt and leaves the persistent shell usable afterwards"
+keywords = ["libragent", "session-e2e", "sudo", "cancel", "privileged"]
+
+[metadata]
+difficulty = "easy"
+category = "session-api-e2e"
+tags = ["matrix", "X-1", "sudo", "cancel", "privileged"]
+
+[metadata.libragent_session_e2e]
+matrix_id = "X-1"
+# The privileged fakes live in this task image; host mode would run
+# sudo against the host instead. The adapter fails fast on a mismatch (G1.2).
+requires_workspace_mode = "managed"
+auto_answer_interactive = true
+approve_standard_tools = true
+cancel_interactive = true
+
+[verifier]
+timeout_sec = 240.0
+
+[agent]
+timeout_sec = 600.0
+
+[environment]
+network_mode = "no-network"
+build_timeout_sec = 300.0
+os = "linux"

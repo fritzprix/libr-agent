@@ -95,6 +95,27 @@ append_host_os_excludes() {
   done < <(find "$root" -mindepth 2 -maxdepth 2 -name task.toml 2>/dev/null | sort)
 }
 
+# Auto-exclude tasks whose task.toml declares requires_workspace_mode (under
+# [metadata.libragent_session_e2e]) but does not match the selected workspace
+# mode. The Harbor adapter raises in setup() on a mismatch, so a host-mode
+# run must skip the managed-only privileged tasks (e2e-sudo-*, e2e-asroot-*)
+# instead of failing every trial (PR #2917 G2.1). The mode comes from
+# LIBRAGENT_HARBOR_WORKSPACE_MODE, set by run-harbor-bench.cjs.
+append_workspace_mode_excludes() {
+  local root="$1"
+  local _mode _toml _want _name
+  _mode="${LIBRAGENT_HARBOR_WORKSPACE_MODE:-host}"
+  _mode="${_mode,,}"
+  _mode="${_mode//[[:space:]]/}"
+  while IFS= read -r _toml; do
+    _want=$(sed -n 's/^[[:space:]]*requires_workspace_mode[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$_toml" | head -n 1)
+    [[ -z "$_want" || "$_want" == "$_mode" ]] && continue
+    _name=$(basename "$(dirname "$_toml")")
+    echo "==> Excluding $_name (requires_workspace_mode=$_want, mode=$_mode)"
+    ARGS+=(-x "$_name")
+  done < <(find "$root" -mindepth 2 -maxdepth 2 -name task.toml 2>/dev/null | sort)
+}
+
 usage() {
   cat <<'EOF'
 Usage: scripts/run-harbor-bench.sh [options]
@@ -533,6 +554,7 @@ case "$PRESET" in
     [[ -n "$PATH_ARG" ]] || { echo "--path required for preset=path" >&2; exit 1; }
     ARGS+=(-p "$PATH_ARG")
     append_host_os_excludes "$PATH_ARG"
+    append_workspace_mode_excludes "$PATH_ARG"
     append_include_globs "$INCLUDE"
     [[ "$N_TASKS" -gt 0 ]] && ARGS+=(-l "$N_TASKS")
     ;;
