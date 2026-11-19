@@ -438,3 +438,37 @@ mod tests {
         assert_eq!(res.status(), 403);
     }
 }
+
+/// E-2 (#2672): release builds must never serve `/api/e2e-control/*`.
+///
+/// The guarantee is compile-time: the module declaration, the capability
+/// token init, and both route-merge sites are gated behind
+/// `#[cfg(debug_assertions)]`, so release binaries cannot compile the
+/// routes in at all. Integration tests always run against a debug build
+/// and cannot link a release binary, so this test pins the source-level
+/// invariant directly: if any gate is removed and release could serve
+/// the control plane, this test fails.
+#[test]
+fn e2e_control_stays_compile_time_gated() {
+    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let gated_sites = [
+        ("src/server/mod.rs", "pub mod e2e_control;"),
+        ("src/server/mod.rs", "e2e_control::init_capability_token();"),
+        ("src/server/routes.rs", "let e2e_routes ="),
+        ("src/server/routes.rs", "let core = core.or(e2e_routes).boxed();"),
+    ];
+    for (file, needle) in gated_sites {
+        let source = std::fs::read_to_string(manifest.join(file))
+            .unwrap_or_else(|err| panic!("cannot read {file}: {err}"));
+        let gated = source
+            .lines()
+            .zip(source.lines().skip(1))
+            .any(|(prev, line)| line.contains(needle) && prev.trim() == "#[cfg(debug_assertions)]");
+        assert!(
+            gated,
+            "{file}: `{needle}` is no longer immediately preceded by \
+             #[cfg(debug_assertions)] — release builds could serve \
+             /api/e2e-control/* (2672 E-2)"
+        );
+    }
+}

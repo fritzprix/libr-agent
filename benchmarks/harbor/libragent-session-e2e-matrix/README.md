@@ -93,6 +93,16 @@ A task may pin its own session mode with `execution_mode` under
 
 See [`coverage-manifest.json`](./coverage-manifest.json) for all **65 checklist IDs** from issue #2565 (`implemented` | `deferred` | `ui-only` | `platform-specific` | `needs-product`). The issue's **74 result slots** are pass/fail/skip/open tallies, not extra checklist rows.
 
+## Release-build gating (2672 E-2)
+
+Release binaries cannot serve `/api/e2e-control/*` at all: the module
+declaration, the capability-token init, and both route-merge sites in
+`src-tauri/src/server/` are compile-time gated behind
+`#[cfg(debug_assertions)]`. `e2e_control_stays_compile_time_gated`
+(`src-tauri/tests/e2e_control_token_tests.rs`) pins every gate site, and
+`disabled_control_plane_answers_404_even_with_a_token` covers the debug
+runtime path where the control plane is off.
+
 ## Linux CI job (#2901)
 
 `ci.yml` carries a `Session API E2E (Linux isolated, debug)` job: it builds the
