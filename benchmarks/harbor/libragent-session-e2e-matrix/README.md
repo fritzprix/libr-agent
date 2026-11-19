@@ -202,3 +202,14 @@ Task `e2e-b6-log-variable-ref` keeps the known **variable-reference vs literal**
 ## B-11 Windows host requirement (#2655)
 
 `e2e-b11-no-runshell` only has a passing path on a **Windows host** (the task exists because `workspace__runShell` is absent there). Its `task.toml` declares `requires_host_os = "windows"`; the harbor runners (`scripts/run-harbor-bench.sh` / `.ps1`, `path` preset) auto-add `-x e2e-b11-no-runshell` when the host OS does not match. The verifier asserts **tool calls and observations** (no successful `runShell`, no `submitInteractiveShellInput`, a successful PowerShell call), not blob string matching.
+
+## Privileged-path test container & mock keychain (#2904)
+
+See [`../privileged-e2e-image/README.md`](../privileged-e2e-image/README.md) for the **test-only** privileged container (`e2etest` with synthetic password `e2e-sudo-fixture`, scoped `NOPASSWD` probe, fake `pkexec`, fake `e2e-askpass`) and the debug-only `LIBRAGENT_E2E_MOCK_KEYCHAIN` backend (`succeed` | `fail-write` | `fail-read` | `unavailable`). Never use this image for real work and never enable `NOPASSWD` sudo or fake `pkexec` on a host machine.
+
+- `e2e-sudo-askpass-flow` — 2565 P-1, B-1 & 2672 S-2 (`SUDO_PASSWORD` via `storeAs` + follow-up plain `sudo` via askpass).
+- `e2e-sudo-wrong-password` — 2565 B-2 (wrong `SUDO_PASSWORD` fails cleanly without hanging or leaking).
+- `e2e-sudo-setup-wizard-k2` — 2672 K-2 (asks once for `SUDO_PASSWORD`, plain `sudo` only, asserts fake `pkexec` log empty and no `sudo -n`/`-S` or `su`).
+- `e2e-sudo-cancel-x1` — 2565 X-1 (cancelling a waiting `SUDO_PASSWORD` prompt cleans up the prompt and leaves the shell usable).
+- `e2e-asroot-daemon-o3` — 2565 O-3 (`runShell(asRoot=true)` background daemon stops stray process with notice in managed container or refuses cleanly outside).
+- `e2e-keychain-fail-and-fallback` — 2565 M-7 / 2672 M-4 & 2672 M-5 (unavailable-keychain fallback half; paired with `LIBRAGENT_E2E_MOCK_KEYCHAIN` and `e2e_mock_keychain_tests`).

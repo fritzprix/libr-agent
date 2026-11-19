@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# TEST-ONLY fake pkexec shim (#2904).
+# Records every invocation to $LIBRAGENT_E2E_PRIVILEGED_LOG_DIR/pkexec.log and
+# returns according to LIBRAGENT_E2E_FAKE_PKEXEC_MODE (fail | succeed; default fail).
+set -euo pipefail
+
+LOG_DIR="${LIBRAGENT_E2E_PRIVILEGED_LOG_DIR:-/tmp/e2e-privileged-logs}"
+mkdir -p "$LOG_DIR"
+LOG_FILE="$LOG_DIR/pkexec.log"
+
+python3 - "$LOG_FILE" "$@" <<'PY'
+import json, os, sys, time
+log_file = sys.argv[1]
+argv = sys.argv[2:]
+record = {
+    "tool": "pkexec",
+    "timestamp": time.time(),
+    "uid": os.getuid(),
+    "mode": os.environ.get("LIBRAGENT_E2E_FAKE_PKEXEC_MODE", "fail"),
+    "argv": argv,
+}
+with open(log_file, "a", encoding="utf-8") as fh:
+    fh.write(json.dumps(record) + "\n")
+PY
+
+MODE="${LIBRAGENT_E2E_FAKE_PKEXEC_MODE:-fail}"
+if [ "$MODE" = "succeed" ]; then
+  if [ "$#" -gt 0 ]; then
+    exec "$@"
+  fi
+  exit 0
+fi
+
+echo "e2e-fake-pkexec: refused (LIBRAGENT_E2E_FAKE_PKEXEC_MODE=$MODE)" >&2
+exit 126

@@ -7,9 +7,9 @@
   "cases": [
     {
       "id": "P-1",
-      "status": "deferred",
-      "reason": "needs Windows/Linux desktop debug instance + E2E control; task scaffold pending",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-sudo-askpass-flow (privileged test container #2904): sudo -k && sudo true prompts once for SUDO_PASSWORD via storeAs and succeeds via askpass; input masking pixels stay on S2",
+      "harbor_task": "e2e-sudo-askpass-flow"
     },
     {
       "id": "P-2",
@@ -61,15 +61,15 @@
     },
     {
       "id": "B-1",
-      "status": "platform-specific",
-      "reason": "Linux sudo/host path",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-sudo-askpass-flow (privileged test container #2904): correct synthetic SUDO_PASSWORD succeeds via askpass without hanging or leaking",
+      "harbor_task": "e2e-sudo-askpass-flow"
     },
     {
       "id": "B-2",
-      "status": "platform-specific",
-      "reason": "Linux sudo/host path",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-sudo-wrong-password (privileged test container #2904): wrong synthetic SUDO_PASSWORD returns cleanly without hanging or leaking",
+      "harbor_task": "e2e-sudo-wrong-password"
     },
     {
       "id": "B-3",
@@ -211,9 +211,9 @@
     },
     {
       "id": "M-7",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-keychain-fail-and-fallback + debug-only LIBRAGENT_E2E_MOCK_KEYCHAIN=fail-write/unavailable (#2904, pinned by e2e_mock_keychain_tests)",
+      "harbor_task": "e2e-keychain-fail-and-fallback"
     },
     {
       "id": "M-8",
@@ -283,9 +283,9 @@
     },
     {
       "id": "O-3",
-      "status": "platform-specific",
-      "reason": "Linux sudo/host path",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-asroot-daemon-o3 (#2904): runShell(asRoot=true) background daemon stops stray process with notice in managed container or refuses cleanly outside managed container",
+      "harbor_task": "e2e-asroot-daemon-o3"
     },
     {
       "id": "O-4",
@@ -331,9 +331,9 @@
     },
     {
       "id": "X-1",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-sudo-cancel-x1 (privileged test container #2904): cancelling a waiting SUDO_PASSWORD prompt cleans up the prompt and leaves the persistent shell usable",
+      "harbor_task": "e2e-sudo-cancel-x1"
     },
     {
       "id": "X-2",
@@ -454,6 +454,30 @@
       "status": "implemented-partial",
       "reason": "Harbor e2e-tool-approval-normal: pins execution_mode=normal so a workspace tool requires approval and executes after control-plane approval (2672 R-2 normal approval half)",
       "harbor_task": "e2e-tool-approval-normal"
+    },
+    {
+      "id": "2672-S-2",
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-sudo-askpass-flow (privileged test container #2904): runInPersistentShell storeAs SUDO_PASSWORD lets later plain sudo work via askpass (2672 S-2)",
+      "harbor_task": "e2e-sudo-askpass-flow"
+    },
+    {
+      "id": "2672-K-2",
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-sudo-setup-wizard-k2 (privileged test container #2904): asks once for SUDO_PASSWORD via storeAs, uses plain sudo, asserts fake pkexec log empty and no sudo -n/-S or su (2672 K-2)",
+      "harbor_task": "e2e-sudo-setup-wizard-k2"
+    },
+    {
+      "id": "2672-M-4",
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-keychain-fail-and-fallback + debug-only LIBRAGENT_E2E_MOCK_KEYCHAIN=fail-write (#2904, pinned by e2e_mock_keychain_tests) (2672 M-4)",
+      "harbor_task": "e2e-keychain-fail-and-fallback"
+    },
+    {
+      "id": "2672-M-5",
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-keychain-fail-and-fallback + debug-only LIBRAGENT_E2E_MOCK_KEYCHAIN=unavailable (#2904): unavailable-keychain encrypted fallback half; post-restart half waits on S3 (2672 M-5)",
+      "harbor_task": "e2e-keychain-fail-and-fallback"
     }
   ]
 }

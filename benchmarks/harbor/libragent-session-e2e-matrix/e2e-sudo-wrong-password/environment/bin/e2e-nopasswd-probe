@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# TEST-ONLY NOPASSWD sudo probe (#2904).
+set -euo pipefail
+echo "NOPASSWD_PROBE_UID=$(id -u)"
