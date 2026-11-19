@@ -409,8 +409,8 @@
     },
     {
       "id": "E-2",
-      "status": "implemented",
-      "reason": "Release binaries cannot serve /api/e2e-control/*: module, token init, and both route-merge sites are #[cfg(debug_assertions)]-gated; pinned by e2e_control_stays_compile_time_gated plus the runtime 404-without-capability test (2672 E-2)",
+      "status": "implemented-partial",
+      "reason": "Release binaries cannot serve /api/e2e-control/*: module, token init, and both route-merge sites are #[cfg(debug_assertions)]-gated; pinned by e2e_control_stays_compile_time_gated (source-grep pin) plus the runtime 404-without-capability test. Full evidence would need a cargo build --release + 404 check in CI. (2672 E-2)",
       "harbor_task": null
     }
   ]

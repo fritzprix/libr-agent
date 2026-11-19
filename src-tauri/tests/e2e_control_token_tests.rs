@@ -27,9 +27,9 @@ mod tests {
     use tauri_mcp_agent_lib::server::access_guard::handle_rejection;
     use tauri_mcp_agent_lib::server::e2e_control::{
         capability_guard, constant_time_eq, e2e_control_guarded_routes_with_capability,
-        header_matches, pending_circuit_break, plan_user_prompt_action,
+        header_matches, pending_circuit_break, plan_circuit_break_resume, plan_user_prompt_action,
         resume_circuit_break_message, tool_approval_error_status, PlannedPromptAction,
-        UserPromptBody, E2E_CONTROL_HEADER,
+        SessionInteractionsSnapshot, UserPromptBody, E2E_CONTROL_HEADER,
     };
     use warp::http::{HeaderMap, StatusCode};
     use warp::Filter;
@@ -384,6 +384,52 @@ mod tests {
             "a new user message after the break means the session moved on; \
              the harness must not inject Resume into a later turn"
         );
+    }
+
+    #[test]
+    fn resume_plan_conflicts_when_nothing_pending() {
+        // The handler turns this Err into the route's 409 reply.
+        let err = plan_circuit_break_resume(None)
+            .expect_err("no pending break must not yield a resume plan");
+        assert_eq!(err.0, StatusCode::CONFLICT);
+        assert!(err.1.contains("no circuit breaker"));
+    }
+
+    #[test]
+    fn resume_plan_carries_pending_break_details() {
+        let messages = vec![circuit_break_call()];
+        let pending = pending_circuit_break(&messages).expect("break must be pending");
+        let (tool_name, repetition_count) =
+            plan_circuit_break_resume(Some(pending)).expect("pending break must yield a plan");
+        assert_eq!(tool_name, "workspace__runShell");
+        assert_eq!(repetition_count, 5);
+    }
+
+    #[test]
+    fn interactions_snapshot_serializes_pending_circuit_break_contract() {
+        // The harness (`session_e2e/automation.py`) reads `pendingCircuitBreak`
+        // from this JSON, so the camelCase wire contract is pinned here.
+        let messages = vec![circuit_break_call()];
+        let snapshot = SessionInteractionsSnapshot {
+            session_id: "sess-1".to_string(),
+            pending_user_prompt: None,
+            pending_approvals: vec![],
+            pending_circuit_break: pending_circuit_break(&messages),
+        };
+        let body = serde_json::to_value(&snapshot).unwrap();
+        let pending = &body["pendingCircuitBreak"];
+        assert_eq!(pending["toolName"], "workspace__runShell");
+        assert_eq!(pending["repetitionCount"], 5);
+        assert_eq!(pending["toolCallId"], "call-break");
+
+        let idle = SessionInteractionsSnapshot {
+            session_id: "sess-1".to_string(),
+            pending_user_prompt: None,
+            pending_approvals: vec![],
+            pending_circuit_break: None,
+        };
+        let body = serde_json::to_value(&idle).unwrap();
+        assert!(body["pendingCircuitBreak"].is_null());
     }
 
     #[test]
