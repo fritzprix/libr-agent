@@ -76,6 +76,10 @@ task spec sets `resume_circuit_break = true` (the default).
   `"true"`; the shared args helper must coerce it with its warning and the call
   must run, and an `ui__askUser` question with the reserved-sounding key
   `options` must reach the harness instead of being rejected by key-name rules.
+- `e2e-mcp-secret-template` — the agent registers an MCP server that needs a
+  key; the verifier requires the `{{secret:E2E_WEATHER_KEY}}` template in the
+  trajectory (tool-call arguments included), rejects any chat prompt for the
+  secret value, and fails if any secret literal appears anywhere.
 
 A task may pin its own session mode with `execution_mode` under
 `[metadata.libragent_session_e2e]`; otherwise it inherits

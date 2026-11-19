@@ -394,6 +394,12 @@
       "status": "ui-only",
       "reason": "requires UI automation (pixels/keyboard); E2E control covers backend state only",
       "harbor_task": null
+    },
+    {
+      "id": "K-3",
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-mcp-secret-template: MCP server registration stores the key as {{secret:NAME}} and never asks for the value in chat (2672 K-3)",
+      "harbor_task": "e2e-mcp-secret-template"
     }
   ]
 }
