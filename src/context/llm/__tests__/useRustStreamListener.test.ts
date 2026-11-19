@@ -219,6 +219,35 @@ describe('Rust stream handler', () => {
 
     expect(hasEntry()).toBe(true);
   });
+
+  it('publishes a usage-only delta that arrives right after finishReason', () => {
+    const { handler, current } = setup();
+
+    handler.handleDelta(delta({ content: 'Hello' }, { provider: 'openai' }));
+    handler.handleDelta(
+      delta({ finishReason: 'stop' }, { provider: 'openai' }),
+    );
+    expect(current()?.usage).toBeUndefined();
+
+    // Arrives immediately (inside the 50ms throttle window) as OpenAI's trailing choices: [] chunk.
+    handler.handleDelta(
+      delta(
+        {
+          usage: {
+            promptTokens: 120,
+            completionTokens: 30,
+            totalTokens: 150,
+          },
+        },
+        { provider: 'openai' },
+      ),
+    );
+
+    expect(current()?.usage?.promptTokens).toBe(120);
+    expect(current()?.usage?.completionTokens).toBe(30);
+    expect(current()?.usage?.totalTokens).toBe(150);
+    expect(current()?.usage?.details?.evalDuration).toBeTypeOf('number');
+  });
 });
 
 describe('useRustStreamListener', () => {

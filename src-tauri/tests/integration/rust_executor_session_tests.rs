@@ -888,3 +888,53 @@ async fn compaction_request_carries_no_thinking_parameter() {
     assert!(body.get("thinking").is_none());
     assert_eq!(body["max_completion_tokens"], 1024);
 }
+
+#[tokio::test]
+async fn streamed_completion_records_usage_timing_details_on_saved_message() {
+    let _guard = TEST_GUARD.lock().await;
+    let session_id = "rust-executor-usage-timing";
+    let provider = mock_provider(vec![text_reply("Hello with timing.")]).await;
+    let sink = Arc::new(RecordingSink::default());
+    let _config = configure(config(provider.endpoint.clone()));
+    let user = message(session_id, "u1", "user", "hi", 1_000);
+
+    assert!(dispatch_completion(
+        app(),
+        &request(session_id, "resp-timing-1", PROVIDER, vec![user]),
+        deliver_to(&sink),
+    )
+    .await
+    .unwrap());
+    wait_for("the timed answer", || {
+        !sink.responses.lock().unwrap().is_empty()
+    })
+    .await;
+
+    let turn = sink.responses.lock().unwrap()[0].clone();
+    let usage = turn.usage.expect("saved assistant message carries usage");
+    let details = usage
+        .get("details")
+        .expect("saved usage carries timing details");
+    let eval_duration = details
+        .get("evalDuration")
+        .and_then(Value::as_f64)
+        .expect("evalDuration is a number");
+    assert!(
+        eval_duration > 0.0,
+        "expected evalDuration > 0, got {eval_duration}"
+    );
+    assert!(
+        details
+            .get("promptEvalDuration")
+            .and_then(Value::as_f64)
+            .is_some_and(|ms| ms >= 0.0),
+        "expected non-negative promptEvalDuration, got {details}"
+    );
+    assert!(
+        details
+            .get("timeToFirstToken")
+            .and_then(Value::as_f64)
+            .is_some_and(|ms| ms >= 0.0),
+        "expected non-negative timeToFirstToken, got {details}"
+    );
+}

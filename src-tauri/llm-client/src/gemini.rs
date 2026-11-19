@@ -372,6 +372,7 @@ fn usage_of(metadata: &Value) -> Usage {
         cached_prompt_tokens: count("cachedContentTokenCount"),
         details: count("thoughtsTokenCount").map(|tokens| UsageDetails {
             reasoning_tokens: Some(tokens),
+            ..UsageDetails::default()
         }),
     }
 }
