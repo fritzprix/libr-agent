@@ -22,7 +22,10 @@ Endpoints (all require the ``X-LibrAgent-E2E-Control`` capability header;
   ``{toolCallId, approved}`` → ``{ok}``.
 - ``POST /api/e2e-control/sessions/:ref/circuit-break-resume`` — no body →
   ``{ok, resumedTool, repetitionCount}``. Resumes the session's waiting
-  circuit break (#2901); ``{ok: false}`` when none is waiting.
+  circuit break (#2901). When none is waiting the route answers **HTTP 409**
+  with ``{error}`` (``"no circuit breaker is waiting for resume on this
+  session"``); the client calls ``raise_for_status()``, so a harness sees
+  ``httpx.HTTPStatusError`` — not ``{ok: false}``.
 - ``POST /api/e2e-control/picker`` — body ``{path}`` or ``{cancel: true}``
   → ``{ok}``. Arms a one-shot override that resolves the *next* native
   open/save dialog (file attach, export, save-as) without a human. Arm it

@@ -76,7 +76,8 @@ default, `DEFAULT_POLL_INTERVAL_SEC`). The snapshot carries
 `pendingApprovals` (`[{toolCallId, toolName, reason, commandPreview,
 approvalKind, requestId?}]`) and `pendingCircuitBreak` (`null` or
 `{toolName, repetitionCount, toolCallId}`) — a waiting `ui__circuitBreak` is
-cleared with `POST .../sessions/:ref/circuit-break-resume` (#2901). A prompt
+cleared with `POST .../sessions/:ref/circuit-break-resume` (#2901; the route
+answers HTTP 409 `{error}` when none is waiting). A prompt
 that just appeared or was just answered may lag one poll cycle — treat a
 single missed cycle as normal. A waiting prompt is stuck only after more than
 `LIBRAGENT_POLL_TIMEOUT_SEC` without an answer. `{delivered: false}` means the

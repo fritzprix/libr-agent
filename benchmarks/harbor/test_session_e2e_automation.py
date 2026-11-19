@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 
 from benchmarks.harbor.libragent_agent import DEFAULT_POLL_INTERVAL_SEC
@@ -673,6 +674,35 @@ async def test_tool_approval_uses_documented_endpoint():
     (req,) = fake.requests
     assert req["url"].endswith("/e2e-control/sessions/sess-1/tool-approvals")
     assert req["json"] == {"toolCallId": "call-9", "approved": True}
+
+
+@pytest.mark.asyncio
+async def test_circuit_break_resume_409_surfaces_as_http_status_error():
+    """Pins the documented no-circuit-break response (#2916 G2.1).
+
+    ``plan_circuit_break_resume`` answers HTTP 409 with ``{error}`` when no
+    circuit break is waiting; the contract says the client surfaces that via
+    ``raise_for_status()`` as ``httpx.HTTPStatusError`` — not as
+    ``{ok: false}``. Uses a real ``httpx.AsyncClient`` over a mock transport
+    so the actual ``raise_for_status`` path runs.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith(
+            "/e2e-control/sessions/sess-1/circuit-break-resume"
+        )
+        assert request.headers[E2E_HEADER] == "t" * 48
+        return httpx.Response(
+            409,
+            json={"error": "no circuit breaker is waiting for resume on this session"},
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        with pytest.raises(httpx.HTTPStatusError) as excinfo:
+            await _client().resume_circuit_break(http, "sess-1")
+
+    assert excinfo.value.response.status_code == 409
+    assert "no circuit breaker" in excinfo.value.response.json()["error"]
 
 
 @pytest.mark.asyncio
