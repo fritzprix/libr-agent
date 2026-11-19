@@ -1,0 +1,31 @@
+schema_version = "1.3"
+artifacts = []
+
+[task]
+name = "fritzprix/e2e-askuser-reload-submit"
+description = "2565 P-5 & X-5: ui__askUser prompt stays pending across session reload/re-poll, then submitting a structured JSON answer delivers and continues the turn"
+keywords = ["libragent", "session-e2e", "askuser", "reload", "prompt"]
+
+[metadata]
+difficulty = "medium"
+category = "session-api-e2e"
+tags = ["matrix", "P-5", "X-5", "askuser", "reload"]
+
+[metadata.libragent_session_e2e]
+matrix_id = "P-5"
+re_poll_prompt_before_answer = true
+answer_value = '{"choice":"alpha","note":"after-reload"}'
+auto_answer_interactive = true
+approve_standard_tools = true
+reject_hard_approvals = false
+
+[verifier]
+timeout_sec = 240.0
+
+[agent]
+timeout_sec = 480.0
+
+[environment]
+network_mode = "no-network"
+build_timeout_sec = 300.0
+os = "linux"

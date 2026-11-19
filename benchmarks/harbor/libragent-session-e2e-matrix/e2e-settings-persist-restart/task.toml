@@ -1,0 +1,37 @@
+schema_version = "1.3"
+artifacts = []
+
+[task]
+name = "fritzprix/e2e-settings-persist-restart"
+description = "2565 O-1 (restart half): settings database and startup-only configuration survive an in-place isolated instance restart"
+keywords = ["libragent", "session-e2e", "settings", "restart"]
+
+[metadata]
+difficulty = "easy"
+category = "session-api-e2e"
+tags = ["matrix", "O-1", "settings", "restart"]
+
+[metadata.libragent_session_e2e]
+matrix_id = "O-1"
+auto_answer_interactive = true
+approve_standard_tools = true
+reject_hard_approvals = false
+restart_after_completion = true
+post_restart_http_probes = [
+  { name = "health", path = "/health" },
+  { name = "preferred_model", path = "/settings/preferredModel" },
+]
+post_restart_sql_probes = [
+  { name = "settings_count", query = "SELECT count(*) FROM settings" },
+]
+
+[verifier]
+timeout_sec = 240.0
+
+[agent]
+timeout_sec = 360.0
+
+[environment]
+network_mode = "no-network"
+build_timeout_sec = 300.0
+os = "linux"

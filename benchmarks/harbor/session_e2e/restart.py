@@ -46,6 +46,7 @@ async def restart_and_snapshot(
     api_url: str,
     http_probes: tuple[dict[str, str], ...] = (),
     sql_probes: tuple[dict[str, str], ...] = (),
+    session_id: str | None = None,
     timeout_sec: float = 120.0,
 ) -> dict[str, Any]:
     """Restart the bench instance in place and record a post-restart snapshot.
@@ -75,9 +76,15 @@ async def restart_and_snapshot(
     headers = auth_headers(layout)
     async with httpx.AsyncClient(timeout=30.0) as client:
         for probe in http_probes:
-            entry: dict[str, Any] = {"name": probe["name"], "path": probe["path"]}
+            raw_path = probe["path"]
+            resolved_path = (
+                raw_path.replace("{session_id}", session_id)
+                if session_id
+                else raw_path
+            )
+            entry: dict[str, Any] = {"name": probe["name"], "path": resolved_path}
             try:
-                res = await client.get(f"{api_url.rstrip('/')}{probe['path']}", headers=headers)
+                res = await client.get(f"{api_url.rstrip('/')}{resolved_path}", headers=headers)
                 entry["status"] = res.status_code
                 with contextlib.suppress(ValueError):
                     entry["json"] = res.json()

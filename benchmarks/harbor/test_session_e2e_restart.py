@@ -195,3 +195,32 @@ def test_write_restart_evidence_lands_next_to_the_other_evidence(tmp_path: Path)
     assert path.name == "session_e2e_restart_evidence.json"
     assert path.parent == logs
     assert json.loads(path.read_text(encoding="utf-8")) == {"restartExecuted": True}
+
+
+@pytest.mark.asyncio
+async def test_restart_snapshot_substitutes_session_id_in_http_probes(
+    tmp_path: Path, monkeypatch, patched_restart
+) -> None:
+    layout = _layout_with_db(tmp_path)
+    layout.api_key_file.write_text("libr_key_post_restart\n", encoding="utf-8")
+    behavior = {
+        "/sessions/sess-42/messages": (200, {"messages": [{"role": "tool", "content": []}]}),
+    }
+    monkeypatch.setattr(
+        restart_mod.httpx,
+        "AsyncClient",
+        lambda **kw: _FakeClient(behavior, patched_restart["calls"]),
+    )
+
+    record = await restart_and_snapshot(
+        layout,
+        tmp_path / "appbin",
+        api_url="http://127.0.0.1:3031/api",
+        http_probes=({"name": "messages", "path": "/sessions/{session_id}/messages"},),
+        session_id="sess-42",
+    )
+
+    assert record["restartExecuted"] is True
+    assert record["http"][0]["path"] == "/sessions/sess-42/messages"
+    assert record["http"][0]["status"] == 200
+    assert record["http"][0]["json"]["messages"][0]["role"] == "tool"

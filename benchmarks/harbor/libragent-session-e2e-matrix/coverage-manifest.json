@@ -31,9 +31,9 @@
     },
     {
       "id": "P-5",
-      "status": "deferred",
-      "reason": "needs Windows/Linux desktop debug instance + E2E control; task scaffold pending",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-askuser-reload-submit: pending ui__askUser prompt survives session metadata refetch/re-poll and delivers its answer to continue the turn; GUI dialog re-render stays on S2 (#2903)",
+      "harbor_task": "e2e-askuser-reload-submit"
     },
     {
       "id": "P-6",
@@ -49,9 +49,9 @@
     },
     {
       "id": "P-8",
-      "status": "deferred",
-      "reason": "needs Windows/Linux desktop debug instance + E2E control; task scaffold pending",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-askuser-restart-orphan: isolated instance restarts in place while ui__askUser waits, and post-restart session messages contain User did not answer (app restarted). (#2903)",
+      "harbor_task": "e2e-askuser-restart-orphan"
     },
     {
       "id": "P-9",
@@ -122,7 +122,7 @@
     {
       "id": "B-11",
       "status": "implemented",
-      "reason": "Harbor e2e-b11-no-runshell (tool-call verifier); Windows host only — requires_host_os=windows, runners auto-exclude elsewhere (#2655)",
+      "reason": "Harbor e2e-b11-no-runshell (tool-call verifier); Windows host only \u2014 requires_host_os=windows, runners auto-exclude elsewhere (#2655)",
       "harbor_task": "e2e-b11-no-runshell"
     },
     {
@@ -271,9 +271,9 @@
     },
     {
       "id": "O-1",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-settings-persist-restart: settings DB and /api/settings/preferredModel survive an in-place isolated restart; visual restart badge/toast and Metric Display Mode removal stay on S2 (#2903)",
+      "harbor_task": "e2e-settings-persist-restart"
     },
     {
       "id": "O-2",
@@ -355,9 +355,9 @@
     },
     {
       "id": "X-5",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-askuser-reload-submit: reload/re-poll during ui__askUser followed by JSON answer submission delivers the structured payload to the tool call (#2903)",
+      "harbor_task": "e2e-askuser-reload-submit"
     },
     {
       "id": "X-6",
@@ -385,9 +385,9 @@
     },
     {
       "id": "A-4",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-askuser-restart-orphan: waiting prompt survives shutdown and startup recovery closes the orphaned tool call with User did not answer (app restarted). (2672 A-4, #2903)",
+      "harbor_task": "e2e-askuser-restart-orphan"
     },
     {
       "id": "A-5",
@@ -475,9 +475,27 @@
     },
     {
       "id": "2672-M-5",
-      "status": "deferred",
-      "reason": "needs a task running LIBRAGENT_E2E_MOCK_KEYCHAIN=unavailable to prove the file-store fallback; the current e2e-keychain-fail-and-fallback runs fail-write only (2672 M-5)",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-mcp-keychain-unavailable-restart: LIBRAGENT_E2E_MOCK_KEYCHAIN=unavailable stores the secret in encrypted_secrets fallback and survives an in-place restart without leaking literals (2672 M-5, #2903)",
+      "harbor_task": "e2e-mcp-keychain-unavailable-restart"
+    },
+    {
+      "id": "S3-PICKER",
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-picker-control-plane + Rust e2e_control_token_tests + dialog.test.ts: POST /api/e2e-control/picker arms path injection and cancel overrides unattended on an isolated debug instance; native OS dialog rendering stays on S2 (#2903)",
+      "harbor_task": "e2e-picker-control-plane"
+    },
+    {
+      "id": "2672-R-4",
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-mcp-secret-readback-restart: {{secret:NAME}} MCP server is stored masked in mcp_servers with secret_names and survives an in-place isolated restart with zero literal leaks (2672 R-4, #2903)",
+      "harbor_task": "e2e-mcp-secret-readback-restart"
+    },
+    {
+      "id": "2685-P-4",
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-persistent-shell-reload-cwd: persistent shell preserves its changed working directory across a shell reload triggered by storeAs secret injection (2685 P-4, #2903)",
+      "harbor_task": "e2e-persistent-shell-reload-cwd"
     }
   ]
 }

@@ -49,6 +49,17 @@ class SessionE2eAutomationSpec:
     # (read-only SELECT against the instance DB).
     post_restart_http_probes: tuple[dict[str, str], ...] = ()
     post_restart_sql_probes: tuple[dict[str, str], ...] = ()
+    # 2565 P-5 / X-5: observe pending prompt on poll 1, re-fetch session
+    # metadata without answering, then answer on poll 2 when the same
+    # requestId is still waiting.
+    re_poll_prompt_before_answer: bool = False
+    # 2565 P-8 / 2672 A-4: when a user prompt is waiting, restart the isolated
+    # instance in place instead of answering it, then snapshot post-restart
+    # messages to verify the restart tombstone.
+    restart_while_prompt_waiting: bool = False
+    # #2903 AC1: probe POST /api/e2e-control/picker (path + cancel) against
+    # the live isolated debug instance and record responses in evidence.
+    probe_picker_control: bool = False
 
 
 MOCK_KEYCHAIN_MODES = ("succeed", "fail-write", "fail-read", "unavailable")
@@ -136,6 +147,9 @@ def load_session_e2e_spec(logs_dir: Any) -> SessionE2eAutomationSpec | None:
         restart_after_completion=bool(spec.get("restart_after_completion", False)),
         post_restart_http_probes=_probe_list(spec.get("post_restart_http_probes"), ("name", "path")),
         post_restart_sql_probes=_probe_list(spec.get("post_restart_sql_probes"), ("name", "query")),
+        re_poll_prompt_before_answer=bool(spec.get("re_poll_prompt_before_answer", False)),
+        restart_while_prompt_waiting=bool(spec.get("restart_while_prompt_waiting", False)),
+        probe_picker_control=bool(spec.get("probe_picker_control", False)),
     )
 
 
@@ -248,6 +262,15 @@ async def _resolve_one_session(
     prompt = snapshot.get("pendingUserPrompt")
     if isinstance(prompt, dict) and allow_prompt_resolution:
         request_id = str(prompt.get("requestId", ""))
+        if request_id and not is_child and spec is not None and spec.restart_while_prompt_waiting:
+            actions.append(
+                {
+                    "kind": "restartOnPrompt",
+                    "sessionId": session_id,
+                    "requestId": request_id,
+                }
+            )
+            return actions
         if request_id and is_child and spec is not None and spec.terminate_child_on_prompt:
             term_res = await client.post(f"{control.api_url}/sessions/{session_id}/terminate")
             term_res.raise_for_status()
@@ -268,6 +291,32 @@ async def _resolve_one_session(
                 }
             )
         elif request_id and (spec is None or spec.auto_answer_interactive):
+            survived_repoll = False
+            if spec is not None and spec.re_poll_prompt_before_answer:
+                already_observed = any(
+                    a.get("kind") == "userPromptObserved"
+                    and a.get("sessionId") == session_id
+                    and a.get("requestId") == request_id
+                    for a in (prior_actions or [])
+                )
+                if not already_observed:
+                    refetched = False
+                    try:
+                        sess_res = await client.get(f"{control.api_url}/sessions/{session_id}")
+                        sess_res.raise_for_status()
+                        refetched = True
+                    except (httpx.HTTPError, OSError):
+                        refetched = False
+                    actions.append(
+                        {
+                            "kind": "userPromptObserved",
+                            "sessionId": session_id,
+                            "requestId": request_id,
+                            "sessionRefetched": refetched,
+                        }
+                    )
+                    return actions
+                survived_repoll = True
             cancel = spec is not None and spec.cancel_interactive
             # A task's ``answer_value`` (task.toml metadata) overrides the
             # synthetic secret — e.g. the JSON-object answer a multi-question
@@ -322,6 +371,8 @@ async def _resolve_one_session(
                 record["injectedValue"] = injected
             if simultaneous_pending:
                 record["simultaneousPending"] = True
+            if survived_repoll:
+                record["survivedRepoll"] = True
             actions.append(record)
 
     for approval in snapshot.get("pendingApprovals") or []:
