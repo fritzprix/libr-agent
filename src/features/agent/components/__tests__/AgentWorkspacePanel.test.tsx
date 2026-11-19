@@ -5,7 +5,7 @@ import { AgentFilePreviewHost } from '../AgentFilePreviewHost';
 import { AgentFilePreviewProvider } from '@/context/AgentFilePreviewContext';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import '@testing-library/jest-dom';
-import { open } from '@tauri-apps/plugin-dialog';
+import { openDialog } from '@/lib/backend/dialog';
 import type {
   DragAndDropEvent,
   DragAndDropPayload,
@@ -108,8 +108,8 @@ vi.mock('@/context/DnDContext', () => {
   };
 });
 
-vi.mock('@tauri-apps/plugin-dialog', () => ({
-  open: vi.fn(),
+vi.mock('@/lib/backend/dialog', () => ({
+  openDialog: vi.fn(),
 }));
 
 vi.mock('@tauri-apps/api/path', () => ({
@@ -223,7 +223,7 @@ describe('AgentWorkspacePanel', () => {
       fireEvent.click(uploadZone);
     });
 
-    expect(vi.mocked(open)).toHaveBeenCalledWith({
+    expect(vi.mocked(openDialog)).toHaveBeenCalledWith({
       multiple: true,
       title: 'agent.workspace.selectFilesTitle',
     });
@@ -243,7 +243,7 @@ describe('AgentWorkspacePanel', () => {
       fireEvent.keyDown(uploadZone, { key: 'Enter' });
     });
 
-    expect(vi.mocked(open)).toHaveBeenCalledWith({
+    expect(vi.mocked(openDialog)).toHaveBeenCalledWith({
       multiple: true,
       title: 'agent.workspace.selectFilesTitle',
     });
@@ -263,7 +263,7 @@ describe('AgentWorkspacePanel', () => {
       fireEvent.keyDown(uploadZone, { key: ' ' });
     });
 
-    expect(vi.mocked(open)).toHaveBeenCalledWith({
+    expect(vi.mocked(openDialog)).toHaveBeenCalledWith({
       multiple: true,
       title: 'agent.workspace.selectFilesTitle',
     });

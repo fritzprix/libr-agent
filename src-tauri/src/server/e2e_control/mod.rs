@@ -20,8 +20,9 @@ use crate::agent::AgentSessionManager;
 pub use circuit_break::{pending_circuit_break, resume_circuit_break_message, PendingCircuitBreak};
 pub use handlers::{
     capability_guard, e2e_control_routes, e2e_control_routes_with_capability,
-    plan_circuit_break_resume, plan_user_prompt_action, tool_approval_error_status,
-    E2eControlStatus, PlannedPromptAction, SessionInteractionsSnapshot, UserPromptBody,
+    plan_circuit_break_resume, plan_picker_override, plan_user_prompt_action,
+    tool_approval_error_status, E2eControlStatus, PickerBody, PlannedPromptAction,
+    SessionInteractionsSnapshot, UserPromptBody,
 };
 pub use token::{
     capability_token, constant_time_eq, e2e_control_enabled, header_matches, init_capability_token,

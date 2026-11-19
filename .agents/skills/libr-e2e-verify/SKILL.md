@@ -63,9 +63,28 @@ DELETE /api/sessions/:id
 | See what blocks a session                         | `GET /api/e2e-control/sessions/:ref/interactions` → pending user prompt + pending approvals                                                       |
 | Answer or cancel a `ui__askUser` / storeAs prompt | `POST /api/e2e-control/sessions/:ref/user-prompts` with `{"requestId": "...", "action": "answer"}` or `"cancel"`, plus `"value"`                  |
 | Approve or deny a tool approval                   | `POST /api/e2e-control/sessions/:ref/tool-approvals` with `{"toolCallId": "...", "approved": true}` or `{"toolCallId": "...", "approved": false}` |
+| Resolve the next native file dialog (attach/save) | `POST /api/e2e-control/picker` with `{"path": "/abs/path"}` or `{"cancel": true}` — one-shot, arm it right before the action that opens the dialog      |
 
 Without the control plane, prompts and approvals block until a human answers or
 `yolo`/`unsafe` auto-approves them.
+
+### Polling contract
+
+There is no event stream; poll `interactions` every **3.0 s** (the bench
+default, `DEFAULT_POLL_INTERVAL_SEC`). The snapshot carries
+`pendingUserPrompt` (`null` or `{requestId, kind, payload, createdAt}`),
+`pendingApprovals` (`[{toolCallId, toolName, reason, commandPreview,
+approvalKind, requestId?}]`) and `pendingCircuitBreak` (`null` or
+`{toolName, repetitionCount, toolCallId}`) — a waiting `ui__circuitBreak` is
+cleared with `POST .../sessions/:ref/circuit-break-resume` (#2901; the route
+answers HTTP 409 `{error}` when none is waiting). A prompt
+that just appeared or was just answered may lag one poll cycle — treat a
+single missed cycle as normal. A waiting prompt is stuck only after more than
+`LIBRAGENT_POLL_TIMEOUT_SEC` without an answer. `{delivered: false}` means the
+prompt was already gone: re-poll and judge from the fresh snapshot instead of
+retrying the same `requestId`. The authoritative contract lives in the
+`session_e2e/control.py` module docstring and is pinned by
+`benchmarks/harbor/test_session_e2e_automation.py`.
 
 ## Evidence and results
 

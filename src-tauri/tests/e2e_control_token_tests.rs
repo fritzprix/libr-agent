@@ -23,13 +23,15 @@ mod tests {
     };
     use tauri_mcp_agent_lib::agent::types::{ToolCall, ToolCallFunction};
     use tauri_mcp_agent_lib::agent::AgentSessionManager;
+    use tauri_mcp_agent_lib::e2e_picker::PickerOverride;
     use tauri_mcp_agent_lib::models::chat::Message;
     use tauri_mcp_agent_lib::server::access_guard::handle_rejection;
     use tauri_mcp_agent_lib::server::e2e_control::{
         capability_guard, constant_time_eq, e2e_control_guarded_routes_with_capability,
-        header_matches, pending_circuit_break, plan_circuit_break_resume, plan_user_prompt_action,
-        resume_circuit_break_message, tool_approval_error_status, PlannedPromptAction,
-        SessionInteractionsSnapshot, UserPromptBody, E2E_CONTROL_HEADER,
+        header_matches, pending_circuit_break, plan_circuit_break_resume, plan_picker_override,
+        plan_user_prompt_action, resume_circuit_break_message, tool_approval_error_status,
+        PickerBody, PlannedPromptAction, SessionInteractionsSnapshot, UserPromptBody,
+        E2E_CONTROL_HEADER,
     };
     use warp::http::{HeaderMap, StatusCode};
     use warp::Filter;
@@ -197,6 +199,132 @@ mod tests {
             .reply(&production_chain())
             .await;
         assert_eq!(res.status(), 403);
+    }
+
+    // ------------------------------------------------------------------
+    // Picker override route (#2903).
+    // ------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn picker_route_requires_the_full_guard_chain() {
+        // No capability → 403 through the production chain.
+        let res = warp::test::request()
+            .method("POST")
+            .path("/api/e2e-control/picker")
+            .remote_addr(LOOPBACK_PEER.parse().unwrap())
+            .header("host", LOOPBACK_HOST)
+            .json(&serde_json::json!({"path": "/tmp/whatever"}))
+            .reply(&production_chain())
+            .await;
+        assert_eq!(res.status(), 403);
+
+        // LAN Host → 403 even with a valid token (pins access_guard).
+        let res = warp::test::request()
+            .method("POST")
+            .path("/api/e2e-control/picker")
+            .remote_addr(LOOPBACK_PEER.parse().unwrap())
+            .header("host", LAN_HOST)
+            .header(E2E_CONTROL_HEADER, TOKEN)
+            .json(&serde_json::json!({"cancel": true}))
+            .reply(&production_chain())
+            .await;
+        assert_eq!(res.status(), 403);
+
+        // LAN peer → 403 even with a loopback Host and valid token.
+        let res = warp::test::request()
+            .method("POST")
+            .path("/api/e2e-control/picker")
+            .remote_addr(LAN_PEER.parse().unwrap())
+            .header("host", LOOPBACK_HOST)
+            .header(E2E_CONTROL_HEADER, TOKEN)
+            .json(&serde_json::json!({"cancel": true}))
+            .reply(&production_chain())
+            .await;
+        assert_eq!(res.status(), 403);
+    }
+
+    #[tokio::test]
+    async fn picker_route_arms_override_and_rejects_empty_body() {
+        // Drain anything a concurrent test left behind; we assert on ours below.
+        let _ = tauri_mcp_agent_lib::e2e_picker::take_picker_override();
+
+        let res = warp::test::request()
+            .method("POST")
+            .path("/api/e2e-control/picker")
+            .remote_addr(LOOPBACK_PEER.parse().unwrap())
+            .header("host", LOOPBACK_HOST)
+            .header(E2E_CONTROL_HEADER, TOKEN)
+            .json(&serde_json::json!({"path": "/tmp/e2e-picked.bin"}))
+            .reply(&production_chain())
+            .await;
+        assert_eq!(res.status(), 200);
+        assert_eq!(
+            tauri_mcp_agent_lib::e2e_picker::take_picker_override(),
+            Some(PickerOverride::Path {
+                path: "/tmp/e2e-picked.bin".to_string()
+            })
+        );
+
+        // A rejected body must not arm anything (same test: the global store
+        // is process-wide, so these assertions stay sequential here).
+        let res = warp::test::request()
+            .method("POST")
+            .path("/api/e2e-control/picker")
+            .remote_addr(LOOPBACK_PEER.parse().unwrap())
+            .header("host", LOOPBACK_HOST)
+            .header(E2E_CONTROL_HEADER, TOKEN)
+            .json(&serde_json::json!({}))
+            .reply(&production_chain())
+            .await;
+        assert_eq!(res.status(), 400);
+        assert!(tauri_mcp_agent_lib::e2e_picker::take_picker_override().is_none());
+    }
+
+    #[test]
+    fn plan_picker_override_accepts_exactly_one_choice() {
+        let body = PickerBody {
+            path: Some("/tmp/x".to_string()),
+            cancel: None,
+        };
+        assert_eq!(
+            plan_picker_override(&body).unwrap(),
+            PickerOverride::Path {
+                path: "/tmp/x".to_string()
+            }
+        );
+
+        let body = PickerBody {
+            path: None,
+            cancel: Some(true),
+        };
+        assert_eq!(plan_picker_override(&body).unwrap(), PickerOverride::Cancel);
+
+        let both = PickerBody {
+            path: Some("/tmp/x".to_string()),
+            cancel: Some(true),
+        };
+        assert_eq!(
+            plan_picker_override(&both).unwrap_err().0,
+            StatusCode::BAD_REQUEST
+        );
+
+        let neither = PickerBody {
+            path: None,
+            cancel: None,
+        };
+        assert_eq!(
+            plan_picker_override(&neither).unwrap_err().0,
+            StatusCode::BAD_REQUEST
+        );
+
+        let blank = PickerBody {
+            path: Some("  ".to_string()),
+            cancel: None,
+        };
+        assert_eq!(
+            plan_picker_override(&blank).unwrap_err().0,
+            StatusCode::BAD_REQUEST
+        );
     }
 
     // ------------------------------------------------------------------

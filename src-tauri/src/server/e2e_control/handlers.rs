@@ -8,6 +8,9 @@
 //! - a waiting circuit-breaker Resume (#2901, `ui__resumeCircuitBreak` path —
 //!   distinct from the Session API `POST /api/sessions/:id/resume` reload).
 //!
+//! Plus one dialog hook: `POST /picker` arms a one-shot override that
+//! resolves the next native open/save dialog (#2903).
+//!
 //! Every route sits behind [`capability_guard`], a pure filter that takes the
 //! capability as a parameter — no env or process-global reads inside — so it
 //! is directly unit-testable with `warp::test::request`:
@@ -199,6 +202,49 @@ async fn handle_user_prompt(
     Ok(json_ok(&serde_json::json!({ "delivered": delivered })))
 }
 
+/// Body for `POST /api/e2e-control/picker`: exactly one of `path` / `cancel`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PickerBody {
+    pub path: Option<String>,
+    pub cancel: Option<bool>,
+}
+
+/// Decide the picker override from the request body. Extracted as a pure
+/// function so the validation is covered by tests.
+pub fn plan_picker_override(
+    body: &PickerBody,
+) -> Result<crate::e2e_picker::PickerOverride, (StatusCode, String)> {
+    let cancel = body.cancel.unwrap_or(false);
+    match (
+        body.path.as_deref().filter(|p| !p.trim().is_empty()),
+        cancel,
+    ) {
+        (Some(path), false) => Ok(crate::e2e_picker::PickerOverride::Path {
+            path: path.to_string(),
+        }),
+        (None, true) => Ok(crate::e2e_picker::PickerOverride::Cancel),
+        (Some(_), true) => Err((
+            StatusCode::BAD_REQUEST,
+            "Provide either path or cancel, not both".to_string(),
+        )),
+        (None, false) => Err((
+            StatusCode::BAD_REQUEST,
+            "Provide path or cancel=true".to_string(),
+        )),
+    }
+}
+
+async fn handle_picker(body: PickerBody) -> Result<JsonReply, Infallible> {
+    match plan_picker_override(&body) {
+        Ok(override_) => {
+            crate::e2e_picker::set_picker_override(override_);
+            Ok(json_ok(&serde_json::json!({ "ok": true })))
+        }
+        Err((status, error)) => Ok(json_error(status, error)),
+    }
+}
+
 /// Map a tool-approval rejection message to the HTTP status the handler
 /// answers with. Extracted so the status mapping is covered by tests.
 pub fn tool_approval_error_status(message: &str) -> StatusCode {
@@ -350,13 +396,24 @@ pub fn e2e_control_routes_with_capability(
         .and(warp::path::param::<String>())
         .and(warp::path("circuit-break-resume"))
         .and(warp::path::end())
-        .and(guarded)
+        .and(guarded.clone())
         .and(agent_manager)
         .and_then(handle_circuit_break_resume);
+
+    // POST /api/e2e-control/picker (no agent manager: resolves the next native dialog)
+    let picker = warp::post()
+        .and(warp::path("api"))
+        .and(warp::path("e2e-control"))
+        .and(warp::path("picker"))
+        .and(warp::path::end())
+        .and(guarded)
+        .and(super::super::routes::json_body())
+        .and_then(handle_picker);
 
     status
         .or(interactions)
         .or(user_prompt)
         .or(tool_approval)
         .or(circuit_break_resume)
+        .or(picker)
 }

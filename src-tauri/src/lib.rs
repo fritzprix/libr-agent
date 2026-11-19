@@ -11,6 +11,7 @@ pub mod build_provenance;
 pub mod commands; // Make public for integration tests
 mod config;
 mod db_schema_validator; // Schema validation for database integrity
+pub mod e2e_picker; // File-dialog test hook armed by the debug E2E control plane (#2903)
 pub mod entity; // SeaORM entity definitions
 pub mod execution_mode;
 pub mod headless;
@@ -217,6 +218,7 @@ pub(crate) fn configure_tauri_builder(
             download_binary_file,
             download_text_pdf,
             download_workspace_file,
+            crate::e2e_picker::e2e_take_picker_override,
             export_and_download_zip,
             // Session management commands (still needed for workspace isolation)
             remove_session,

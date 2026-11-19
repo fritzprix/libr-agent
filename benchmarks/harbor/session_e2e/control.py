@@ -1,4 +1,48 @@
-"""Loopback E2E control HTTP client (debug builds + LIBRAGENT_E2E_CONTROL=1)."""
+"""Loopback E2E control HTTP client (debug builds + LIBRAGENT_E2E_CONTROL=1).
+
+Polling contract (#2903). There is no event stream; harnesses poll this
+surface. The contract below is what the client here and the Harbor poller
+(`benchmarks/harbor/libragent_agent.py`) rely on:
+
+Endpoints (all require the ``X-LibrAgent-E2E-Control`` capability header;
+``:ref`` is a full session id or a unique short ref resolved server-side):
+
+- ``GET  /api/e2e-control/status`` — ``{enabled, debugBuild, loopbackOnly,
+  buildSha, buildDirty}``.
+- ``GET  /api/e2e-control/sessions/:ref/interactions`` — snapshot
+  ``{sessionId, pendingUserPrompt, pendingApprovals, pendingCircuitBreak}``
+  where ``pendingUserPrompt`` is ``null`` or ``{requestId, kind, payload,
+  createdAt}``, ``pendingApprovals`` is a list of ``{toolCallId, toolName,
+  reason, commandPreview, approvalKind, requestId?}``, and
+  ``pendingCircuitBreak`` is ``null`` or ``{toolName, repetitionCount,
+  toolCallId}`` (a waiting ``ui__circuitBreak``, #2901).
+- ``POST /api/e2e-control/sessions/:ref/user-prompts`` — body
+  ``{requestId, action: "answer"|"cancel", value?}`` → ``{delivered}``.
+- ``POST /api/e2e-control/sessions/:ref/tool-approvals`` — body
+  ``{toolCallId, approved}`` → ``{ok}``.
+- ``POST /api/e2e-control/sessions/:ref/circuit-break-resume`` — no body →
+  ``{ok, resumedTool, repetitionCount}``. Resumes the session's waiting
+  circuit break (#2901). When none is waiting the route answers **HTTP 409**
+  with ``{error}`` (``"no circuit breaker is waiting for resume on this
+  session"``); the client calls ``raise_for_status()``, so a harness sees
+  ``httpx.HTTPStatusError`` — not ``{ok: false}``.
+- ``POST /api/e2e-control/picker`` — body ``{path}`` or ``{cancel: true}``
+  → ``{ok}``. Arms a one-shot override that resolves the *next* native
+  open/save dialog (file attach, export, save-as) without a human. Arm it
+  immediately before the action that opens the dialog; an unconsumed override
+  is replaced by the next arm, never silently queued twice.
+
+Interval and eventual consistency: poll every ``DEFAULT_POLL_INTERVAL_SEC``
+(3.0 s, the bench default). A prompt or approval that just appeared or was
+just answered may not be reflected in the snapshot until the next poll
+cycle; treat one missed cycle as normal, not as a failure.
+
+Timeout guidance: a waiting prompt is considered stuck when it survives more
+than ``LIBRAGENT_POLL_TIMEOUT_SEC`` (scaled agent timeout) without being
+answered; ``{delivered: false}`` means the prompt was already gone when the
+answer arrived — re-poll and judge from the fresh snapshot instead of
+retrying the same requestId.
+"""
 
 from __future__ import annotations
 
@@ -103,6 +147,30 @@ class E2eControlClient:
         res = await client.post(
             f"{self.api_url}/e2e-control/sessions/{session_id}/circuit-break-resume",
             headers=self._headers(),
+        )
+        res.raise_for_status()
+        return res.json()
+
+    async def arm_picker(
+        self,
+        client: httpx.AsyncClient,
+        *,
+        path: str | None = None,
+        cancel: bool = False,
+    ) -> dict[str, Any]:
+        """Arm the one-shot native-dialog override (#2903).
+
+        Give exactly one of ``path`` / ``cancel``. The next native open/save
+        dialog (frontend attach/export or the Rust save path) resolves with
+        it instead of waiting for a human.
+        """
+        if (path is not None) == bool(cancel):
+            raise ValueError("provide exactly one of path or cancel=True")
+        body: dict[str, Any] = {"cancel": True} if cancel else {"path": path}
+        res = await client.post(
+            f"{self.api_url}/e2e-control/picker",
+            headers=self._headers(),
+            json=body,
         )
         res.raise_for_status()
         return res.json()

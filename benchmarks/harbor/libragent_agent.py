@@ -56,6 +56,7 @@ except ImportError:  # pragma: no cover
 
 from benchmarks.harbor.session_e2e.automation import (
     MOCK_KEYCHAIN_MODE_ENV,
+    SessionE2eAutomationSpec,
     load_session_e2e_spec,
     resolve_pending_interactions,
 )
@@ -2212,6 +2213,12 @@ class LibrAgentHarborAdapter(BaseAgent):
                     resolved_interactions=session_e2e_actions,
                 )
                 self._copy_mock_keychain_artifacts(bench_instance)
+            if session_e2e_spec is not None and session_e2e_spec.restart_after_completion:
+                # Restart-dependent rows (#2903): restart the same bench
+                # instance in place and record the post-restart probes.
+                await self._write_session_e2e_restart_evidence_best_effort(
+                    spec=session_e2e_spec
+                )
 
             if telemetry.tool_calls_count == 0:
                 safe_print(
@@ -2454,6 +2461,43 @@ class LibrAgentHarborAdapter(BaseAgent):
             safe_print(
                 f"[{self.name()}] Warning: failed to write session E2E evidence: {exc}"
             )
+
+    async def _write_session_e2e_restart_evidence_best_effort(
+        self,
+        *,
+        spec: SessionE2eAutomationSpec,
+    ) -> None:
+        """Restart the bench instance in place and record the probe snapshot.
+
+        Restart-dependent tasks (#2903) grade persistence from
+        ``session_e2e_restart_evidence.json``; a failed restart is recorded
+        as ``restartExecuted: false`` with the error so the verifier fails
+        the row with evidence instead of the trial crashing.
+        """
+        trial_reset = resolve_trial_instance_reset(dict(os.environ))
+        from benchmarks.harbor.session_e2e.restart import (
+            restart_and_snapshot,
+            write_restart_evidence,
+        )
+
+        if trial_reset is None:
+            record: dict[str, Any] = {
+                "restartExecuted": False,
+                "error": "no isolated bench instance (LIBRAGENT_BENCH_INSTANCE_APP_BIN unset)",
+            }
+        else:
+            record = await restart_and_snapshot(
+                trial_reset.layout,
+                trial_reset.app_bin,
+                api_url=self.api_url,
+                http_probes=spec.post_restart_http_probes,
+                sql_probes=spec.post_restart_sql_probes,
+            )
+        path = write_restart_evidence(self.logs_dir, record)
+        safe_print(
+            f"[{self.name()}] Restart evidence written to {path} "
+            f"(restartExecuted={record.get('restartExecuted')})"
+        )
 
     async def _fetch_session_messages_best_effort(self, session_id: str) -> list[Any]:
         """GET session messages on a short-lived client; never raise."""

@@ -708,31 +708,13 @@ def instance_running(layout: InstanceLayout) -> bool:
     return _pid_alive(pid) and _owns_pid(layout, pid)
 
 
-def launch(layout: InstanceLayout, app_bin: Path, *, timeout_sec: float) -> int:
-    port = _read_seed_port(layout)
-    existing = _read_pid(layout)
-    if existing is not None and _pid_alive(existing):
-        raise InstanceError(f"Bench instance already running (pid {existing}). Run 'stop' first.")
-    if _port_in_use(port):
-        raise InstanceError(f"Port {port} is already in use; the bench instance would fall back to another port.")
-    if not app_bin.is_file():
-        raise InstanceError(f"App binary not found: {app_bin}")
-    env = instance_env(layout)
-    # On Windows the sandbox flag means "isolated instance is the safety
-    # condition" (job object + redirected profiles, set unconditionally below),
-    # so there is no bubblewrap to check or wrap with.
-    if sandbox_enabled(env) and not IS_WINDOWS:
-        _check_sandbox_available()
+def _spawn_app(layout: InstanceLayout, command: list[str], env: dict[str, str]) -> subprocess.Popen[bytes]:
+    """Start the app process. A seam so tests can observe the launch without a binary.
 
-    reset_run_dir(layout)
-    issue_api_key(layout)
-    env["LIBRAGENT_SESSION_API_KEY_FILE"] = str(layout.app_key_input.resolve())
-    llm = apply_prod_llm_settings(layout)
-    command = (
-        sandbox_command(layout, app_bin, env)
-        if sandbox_enabled(env) and not IS_WINDOWS
-        else [str(app_bin.resolve())]
-    )
+    On Windows the process is born into a named job object (the instance's
+    "data-dir token") and gets a creation-time stamp recorded in the instance
+    meta, so stop() can authenticate the PID against reuse.
+    """
     log = layout.log_file.open("wb")
     if IS_WINDOWS:
         # A named job object is this instance's "data-dir token": every process
@@ -779,14 +761,46 @@ def launch(layout: InstanceLayout, app_bin: Path, *, timeout_sec: float) -> int:
             created=created,
             job_name=job_name,
         )
-    else:
-        process = subprocess.Popen(
-            command,
-            env=env,
-            stdout=log,
-            stderr=subprocess.STDOUT,
-            start_new_session=True,
-        )
+        return process
+    return subprocess.Popen(
+        command,
+        env=env,
+        stdout=log,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+
+
+def _start(
+    layout: InstanceLayout, app_bin: Path, *, timeout_sec: float, reset_run: bool
+) -> int:
+    """Launch the instance on the current run dir; ``reset_run`` rebuilds it from the seed."""
+    port = _read_seed_port(layout)
+    existing = _read_pid(layout)
+    if existing is not None and _pid_alive(existing):
+        raise InstanceError(f"Bench instance already running (pid {existing}). Run 'stop' first.")
+    if _port_in_use(port):
+        raise InstanceError(f"Port {port} is already in use; the bench instance would fall back to another port.")
+    if not app_bin.is_file():
+        raise InstanceError(f"App binary not found: {app_bin}")
+    env = instance_env(layout)
+    # On Windows the sandbox flag means "isolated instance is the safety
+    # condition" (job object + redirected profiles, set unconditionally below),
+    # so there is no bubblewrap to check or wrap with.
+    if sandbox_enabled(env) and not IS_WINDOWS:
+        _check_sandbox_available()
+
+    if reset_run:
+        reset_run_dir(layout)
+    issue_api_key(layout)
+    env["LIBRAGENT_SESSION_API_KEY_FILE"] = str(layout.app_key_input.resolve())
+    llm = apply_prod_llm_settings(layout)
+    command = (
+        sandbox_command(layout, app_bin, env)
+        if sandbox_enabled(env) and not IS_WINDOWS
+        else [str(app_bin.resolve())]
+    )
+    process = _spawn_app(layout, command, env)
     layout.pid_file.write_text(str(process.pid), encoding="utf-8")
 
     if not _wait_healthy(port, timeout_sec, process, auth_headers(layout)):
@@ -799,6 +813,10 @@ def launch(layout: InstanceLayout, app_bin: Path, *, timeout_sec: float) -> int:
         + (" (MIXED)" if llm["mixed_models"] else "")
     )
     return process.pid
+
+
+def launch(layout: InstanceLayout, app_bin: Path, *, timeout_sec: float) -> int:
+    return _start(layout, app_bin, timeout_sec=timeout_sec, reset_run=True)
 
 
 def instance_pids(layout: InstanceLayout, proc_root: Path = Path("/proc")) -> list[int]:
@@ -941,6 +959,84 @@ def relaunch(layout: InstanceLayout, app_bin: Path, *, timeout_sec: float = DEFA
     return launch(layout, app_bin, timeout_sec=timeout_sec)
 
 
+def restart(
+    layout: InstanceLayout, app_bin: Path, *, timeout_sec: float = DEFAULT_LAUNCH_TIMEOUT_SEC
+) -> int:
+    """Restart the instance **in place**: same data dir, same run-dir state.
+
+    Unlike :func:`relaunch`, the run dir is not rebuilt from the seed, so
+    sessions, settings and files written during the run survive the restart.
+    This is the restart hook for the #2731 restart-dependent rows (secrets or
+    servers read back after a restart). Bench instances only — :func:`stop`
+    never selects a process by name, and ``_ensure_not_primary_profile`` in
+    :func:`reset_run_dir` guards the primary profile everywhere else.
+    """
+    stop(layout)
+    if not layout.run_dir.is_dir():
+        raise InstanceError("No run dir to restart. Run 'launch' first.")
+    port = _read_seed_port(layout)
+    deadline = time.monotonic() + 10.0
+    while _port_in_use(port) and time.monotonic() < deadline:
+        time.sleep(0.2)
+    return _start(layout, app_bin, timeout_sec=timeout_sec, reset_run=False)
+
+
+def set_window(
+    layout: InstanceLayout,
+    *,
+    width: int | None = None,
+    height: int | None = None,
+    visible: bool | None = None,
+) -> None:
+    """Show/hide or resize the **bench instance's** window (Linux/X11 via xdotool).
+
+    Windows are selected strictly by the instance PID (``xdotool search --all
+    --pid <pid>``) — never by title or class — so a user's window can never be
+    matched. A stale pid file is rejected by the ownership guard (``_owns_pid``:
+    data-dir match on Linux, creation-time stamp on Windows), so a PID the OS
+    has since recycled never gets its windows resized or minimized. If xdotool
+    is unavailable (no X11, other OS), raise :class:`InstanceError`; the S5
+    Windows instance manager implements the same contract by scoping to the
+    PIDs it launched, no ``/proc`` needed.
+    """
+    if (width is None) != (height is None):
+        raise InstanceError("--width and --height must be given together.")
+    if width is None and visible is None:
+        raise InstanceError("Nothing to set: pass --width/--height (both) and/or --visible.")
+    if width is not None and (width < 200 or (height or 0) < 200):
+        raise InstanceError("Window size must be at least 200x200.")
+
+    pid = _read_pid(layout)
+    if pid is None or not _pid_alive(pid) or not _owns_pid(layout, pid):
+        raise InstanceError(
+            "Bench instance is not running (or its pid file is stale). Run 'launch' first."
+        )
+    if shutil.which("xdotool") is None:
+        raise InstanceError(
+            "Window control needs xdotool on PATH (X11). On Wayland enable XWayland, "
+            "or run headless and set the window size via app settings instead."
+        )
+
+    actions: list[str] = []
+    if width is not None and height is not None:
+        actions += ["windowsize", str(width), str(height)]
+    if visible is True:
+        actions += ["windowmap", "windowraise"]
+    elif visible is False:
+        actions += ["windowminimize"]
+    # --all: also match minimized/unmapped windows, so hide-then-resize works.
+    result = subprocess.run(
+        ["xdotool", "search", "--all", "--pid", str(pid)] + actions,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.strip() or f"exit {result.returncode}"
+        raise InstanceError(f"Window control failed for pid {pid}: {detail}")
+    safe_print(f"Window set for bench instance pid {pid}: size={width}x{height} visible={visible}")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--root", type=Path, default=DEFAULT_ROOT, help="Bench instance root directory")
@@ -954,6 +1050,19 @@ def main(argv: list[str] | None = None) -> int:
     launch_cmd = sub.add_parser("launch", help="Start the app on a fresh copy of the seed")
     launch_cmd.add_argument("--app-bin", type=Path, required=True)
     launch_cmd.add_argument("--timeout", type=float, default=DEFAULT_LAUNCH_TIMEOUT_SEC)
+
+    restart_cmd = sub.add_parser(
+        "restart", help="Restart the instance in place (same data dir; run-dir state survives)"
+    )
+    restart_cmd.add_argument("--app-bin", type=Path, required=True)
+    restart_cmd.add_argument("--timeout", type=float, default=DEFAULT_LAUNCH_TIMEOUT_SEC)
+
+    window_cmd = sub.add_parser("window", help="Show/hide or resize the instance window (X11)")
+    window_cmd.add_argument("--width", type=int, default=None)
+    window_cmd.add_argument("--height", type=int, default=None)
+    visibility = window_cmd.add_mutually_exclusive_group()
+    visibility.add_argument("--visible", action="store_true", default=None)
+    visibility.add_argument("--hidden", action="store_true", default=None)
 
     stop_cmd = sub.add_parser("stop", help="Stop the running bench instance")
     stop_cmd.add_argument("--force", action="store_true", help="SIGKILL immediately instead of waiting for a graceful exit")
@@ -969,6 +1078,11 @@ def main(argv: list[str] | None = None) -> int:
             safe_print(json.dumps(summary, indent=2))
         elif args.command == "launch":
             launch(layout, args.app_bin, timeout_sec=args.timeout)
+        elif args.command == "restart":
+            restart(layout, args.app_bin, timeout_sec=args.timeout)
+        elif args.command == "window":
+            visible = True if args.visible else (False if args.hidden else None)
+            set_window(layout, width=args.width, height=args.height, visible=visible)
         elif args.command == "stop":
             stop(layout, grace_sec=0.0 if args.force else 10.0)
     except InstanceError as error:
