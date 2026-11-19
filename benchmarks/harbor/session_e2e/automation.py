@@ -28,6 +28,7 @@ class SessionE2eAutomationSpec:
     cancel_interactive: bool = False
     answer_value: str | None = None
     execution_mode: str | None = None
+    resolve_child_interactions: bool = False
 
 
 def _clean_execution_mode(raw: object) -> str | None:
@@ -73,6 +74,9 @@ def load_session_e2e_spec(logs_dir: Any) -> SessionE2eAutomationSpec | None:
             else None
         ),
         execution_mode=_clean_execution_mode(spec.get("execution_mode")),
+        resolve_child_interactions=bool(
+            spec.get("resolve_child_interactions", False)
+        ),
     )
 
 
@@ -83,12 +87,20 @@ async def resolve_pending_interactions(
     session_id: str,
     data_dir: Path,
     spec: SessionE2eAutomationSpec | None,
+    child_session_ids: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Answer/cancel waiting prompts and approve/deny pending tool approvals.
 
     ``data_dir`` is the trial instance's own data directory; the capability
     token is read only from there. Returns one record per action taken, so
     callers can persist the control activity as evidence.
+
+    When ``resolve_child_interactions`` is on, the poller passes the session's
+    child sessions (2565 X-2): every child is resolved **before** the primary
+    session, so a waiting prompt in session B is answered ahead of session A,
+    and child answers carry a ``-child`` suffix on the injected value so a
+    verifier can prove each session received its own answer rather than a
+    cross-session one.
     """
     if not e2e_control_configured(data_dir):
         return []
@@ -96,12 +108,33 @@ async def resolve_pending_interactions(
     if token is None:  # e2e_control_configured already checked this
         return []
     control = E2eControlClient(api_url, token=token)
-    snapshot = await control.interactions(client, session_id)
-    actions: list[dict[str, Any]] = []
 
     synthetic = ""
     if spec is not None:
         synthetic = os.environ.get(spec.synthetic_secret_env, "").strip()
+
+    actions: list[dict[str, Any]] = []
+    child_ids = list(child_session_ids or []) if spec and spec.resolve_child_interactions else []
+    for sid, is_child in [(child, True) for child in child_ids] + [(session_id, False)]:
+        actions.extend(
+            await _resolve_one_session(
+                client, control, sid, spec, synthetic, is_child=is_child
+            )
+        )
+    return actions
+
+
+async def _resolve_one_session(
+    client: httpx.AsyncClient,
+    control: E2eControlClient,
+    session_id: str,
+    spec: SessionE2eAutomationSpec | None,
+    synthetic: str,
+    *,
+    is_child: bool,
+) -> list[dict[str, Any]]:
+    snapshot = await control.interactions(client, session_id)
+    actions: list[dict[str, Any]] = []
 
     prompt = snapshot.get("pendingUserPrompt")
     if isinstance(prompt, dict) and (spec is None or spec.auto_answer_interactive):
@@ -113,6 +146,8 @@ async def resolve_pending_interactions(
             # ui__askUser expects (2565 A-1/A-2 wire contract).
             override = spec.answer_value if spec is not None else None
             injected = override or synthetic or "e2e-synthetic-answer"
+            if is_child:
+                injected = f"{injected}-child"
             response = await control.respond_user_prompt(
                 client,
                 session_id,
@@ -131,6 +166,7 @@ async def resolve_pending_interactions(
             # e2e-storeas-masked non-vacuous.
             record = {
                 "kind": "userPrompt",
+                "sessionId": session_id,
                 "requestId": request_id,
                 "action": "cancel" if cancel else "answer",
                 "delivered": bool(response.get("delivered")),
@@ -156,6 +192,7 @@ async def resolve_pending_interactions(
         actions.append(
             {
                 "kind": "toolApproval",
+                "sessionId": session_id,
                 "toolCallId": tool_call_id,
                 "approvalKind": kind,
                 "approved": approved,
@@ -168,6 +205,7 @@ async def resolve_pending_interactions(
         actions.append(
             {
                 "kind": "circuitBreakResume",
+                "sessionId": session_id,
                 "resumedTool": response.get("resumedTool"),
                 "repetitionCount": response.get("repetitionCount"),
             }

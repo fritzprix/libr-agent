@@ -81,6 +81,7 @@ async def test_undelivered_answer_is_recorded_as_false(tmp_path, monkeypatch):
     assert actions == [
         {
             "kind": "userPrompt",
+            "sessionId": "sess-1",
             "requestId": "req-1",
             "action": "answer",
             "delivered": False,
@@ -109,6 +110,7 @@ async def test_delivered_answer_is_recorded_as_true(tmp_path, monkeypatch):
     assert actions == [
         {
             "kind": "userPrompt",
+            "sessionId": "sess-1",
             "requestId": "req-1",
             "action": "answer",
             "delivered": True,
@@ -161,7 +163,13 @@ async def test_cancel_interactive_spec_cancels_the_prompt(tmp_path, monkeypatch)
     )
 
     assert actions == [
-        {"kind": "userPrompt", "requestId": "req-1", "action": "cancel", "delivered": True}
+        {
+            "kind": "userPrompt",
+            "sessionId": "sess-1",
+            "requestId": "req-1",
+            "action": "cancel",
+            "delivered": True,
+        }
     ]
     assert client.respond_bodies[0] == {"requestId": "req-1", "action": "cancel"}
 
@@ -216,6 +224,7 @@ async def test_pending_circuit_break_is_resumed(tmp_path, monkeypatch):
     assert actions == [
         {
             "kind": "circuitBreakResume",
+            "sessionId": "sess-1",
             "resumedTool": "workspace__writeFile",
             "repetitionCount": 5,
         }
@@ -250,6 +259,70 @@ async def test_circuit_break_resume_disabled_by_spec(tmp_path, monkeypatch):
 
     assert actions == []
     assert client.post_urls == []
+
+
+@pytest.mark.asyncio
+async def test_resolve_child_interactions_answers_child_session_first(tmp_path, monkeypatch):
+    """2565 X-2: with resolve_child_interactions, the child session's waiting
+    prompt is answered **before** the primary's, and the child's injected
+    value is suffixed so the verifier can prove each session got its own
+    answer. The -child suffix is the harness's isolation marker; the primary
+    keeps the plain value."""
+    from benchmarks.harbor.session_e2e.automation import SessionE2eAutomationSpec
+
+    monkeypatch.setenv("LIBRAGENT_E2E_SYNTHETIC_SECRET", "x2-fixture-7c")
+    data_dir = _instance_data_dir(tmp_path, monkeypatch)
+
+    seen_sessions: list[str] = []
+
+    class PerSessionClient(FakeClient):
+        async def get(self, url, headers=None):  # type: ignore[override]
+            sid = url.rsplit("/sessions/", 1)[1].split("/")[0]
+            seen_sessions.append(sid)
+            return FakeResponse(
+                {"pendingUserPrompt": {"requestId": f"req-{sid}", "kind": "secret"},
+                 "pendingApprovals": []}
+            )
+
+    client = PerSessionClient(_snapshot(), {"delivered": True})
+
+    actions = await resolve_pending_interactions(
+        client,
+        api_url="http://127.0.0.1:3031/api",
+        session_id="sess-a",
+        data_dir=data_dir,
+        spec=SessionE2eAutomationSpec(resolve_child_interactions=True),
+        child_session_ids=["sess-b"],
+    )
+
+    assert [a["sessionId"] for a in actions] == ["sess-b", "sess-a"]  # child answered first
+    assert actions[0]["injectedValue"] == "x2-fixture-7c-child"
+    assert actions[1]["injectedValue"] == "x2-fixture-7c"
+    assert client.respond_bodies[0]["value"] == "x2-fixture-7c-child"
+    assert client.respond_bodies[1]["value"] == "x2-fixture-7c"
+
+
+@pytest.mark.asyncio
+async def test_resolve_child_interactions_off_ignores_child_ids(tmp_path, monkeypatch):
+    """Without the flag, child_session_ids must be ignored entirely — one
+    interaction read and one answer, for the primary session only."""
+    from benchmarks.harbor.session_e2e.automation import SessionE2eAutomationSpec
+
+    data_dir = _instance_data_dir(tmp_path, monkeypatch)
+    client = FakeClient(_snapshot(), {"delivered": True})
+
+    actions = await resolve_pending_interactions(
+        client,
+        api_url="http://127.0.0.1:3031/api",
+        session_id="sess-1",
+        data_dir=data_dir,
+        spec=SessionE2eAutomationSpec(resolve_child_interactions=False),
+        child_session_ids=["sess-b", "sess-c"],
+    )
+
+    assert [a["sessionId"] for a in actions] == ["sess-1"]
+    assert client.respond_bodies == [{"requestId": "req-1", "action": "answer",
+                                      "value": "e2e-synthetic-answer"}]
 
 
 def test_execution_mode_override_parsing():

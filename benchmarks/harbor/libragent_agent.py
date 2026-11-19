@@ -1940,12 +1940,25 @@ class LibrAgentHarborAdapter(BaseAgent):
                                 )
                         else:
                             try:
+                                child_ids: list[str] = []
+                                if session_e2e_spec.resolve_child_interactions:
+                                    # 2565 X-2: child sessions of this session
+                                    # are resolved before it, so a companion's
+                                    # waiting prompt is answered first.
+                                    children_res = await client.get(
+                                        f"{self.api_url}/sessions/{session_id}/children",
+                                        timeout=10.0,
+                                    )
+                                    children_res.raise_for_status()
+                                    raw_children = children_res.json().get("children") or []
+                                    child_ids = [str(c) for c in raw_children if c]
                                 resolved = await resolve_pending_interactions(
                                     client,
                                     api_url=self.api_url,
                                     session_id=session_id,
                                     data_dir=bench_instance.layout.data_dir,
                                     spec=session_e2e_spec,
+                                    child_session_ids=child_ids,
                                 )
                                 session_e2e_actions.extend(resolved)
                             except Exception as exc:

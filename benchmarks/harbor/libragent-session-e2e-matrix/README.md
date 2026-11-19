@@ -98,6 +98,12 @@ task spec sets `resume_circuit_break = true` (the default).
   every harness artifact under `/logs/agent/` (trajectory, compaction summary,
   instance log) and fails if the recorded `injectedValue` appears in any of
   them — only the evidence record itself may hold the exact value.
+- `e2e-two-session-prompts` — the parent spawns a child session and both hold
+  waiting `storeAs` prompts at once (X-2); with `resolve_child_interactions =
+true` the harness answers each child session before the primary and marks
+  child answers with a `-child` suffix, so the evidence proves each session
+  received its own answer; the child's marker arrives via the parent's
+  `agent__checkSession` round trip.
 
 A task may pin its own session mode with `execution_mode` under
 `[metadata.libragent_session_e2e]`; otherwise it inherits

@@ -1,0 +1,29 @@
+schema_version = "1.3"
+artifacts = []
+
+[task]
+name = "fritzprix/e2e-two-session-prompts"
+description = "parent and child sessions each hold a waiting storeAs prompt; the harness answers both and each session receives its own answer"
+keywords = ["libragent", "session-e2e", "storeas", "multi-session", "isolation"]
+
+[metadata]
+difficulty = "medium"
+category = "session-api-e2e"
+tags = ["matrix", "X-2", "storeas", "multi-session"]
+
+[metadata.libragent_session_e2e]
+matrix_id = "X-2"
+auto_answer_interactive = true
+approve_standard_tools = true
+resolve_child_interactions = true
+
+[verifier]
+timeout_sec = 240.0
+
+[agent]
+timeout_sec = 900.0
+
+[environment]
+network_mode = "no-network"
+build_timeout_sec = 300.0
+os = "linux"

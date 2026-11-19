@@ -337,9 +337,9 @@
     },
     {
       "id": "X-2",
-      "status": "deferred",
-      "reason": "needs harness multi-session support: 2565 X-2 requires sessions A and B to hold waiting prompts at once with B answered first, but the harness drives one Harbor session per task (no child-session discovery/polling in automation.py yet)",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-two-session-prompts: parent spawns a child session, both hold waiting storeAs prompts at once; the harness's resolve_child_interactions answers children before the primary (order pinned by unit test) and suffixes child values with -child, so the evidence proves each session got its own answer; cross-talk check runs on the primary side only (child container is not mounted)",
+      "harbor_task": "e2e-two-session-prompts"
     },
     {
       "id": "X-3",
