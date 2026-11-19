@@ -114,7 +114,6 @@ export class StreamAccumulator {
   private repeatedTextIssueReported = false;
   private repeatedTextCheckCounter = 0;
   private reasoningBudgetIssueReported = false;
-  private hasProviderEvalDuration = false;
   private readonly reasoningBudgetThreshold?: number;
   private readonly reasoningBudgetMaxTokens?: number;
   private readonly reasoningBudgetMaxTokensSource?: MaxOutputTokensSource;
@@ -483,9 +482,6 @@ export class StreamAccumulator {
 
     if (chunk.usage) {
       const incomingUsage = chunk.usage;
-      if (incomingUsage.details?.evalDuration !== undefined) {
-        this.hasProviderEvalDuration = true;
-      }
       if (this.finalUsage) {
         this.finalUsage = {
           promptTokens:
@@ -514,7 +510,7 @@ export class StreamAccumulator {
       this.tryReportReasoningBudgetExceeded();
     }
 
-    if (this.finalUsage && !this.hasProviderEvalDuration) {
+    if (this.finalUsage) {
       if (!this.finalUsage.details) this.finalUsage.details = {};
       const currentTime = performance.now();
       this.finalUsage.details.evalDuration =

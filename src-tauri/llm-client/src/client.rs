@@ -193,6 +193,7 @@ pub async fn complete_with_deltas(
         log::warn!("system proxy pre-resolve failed for LLM URL: {e}");
     }
     let body = provider.build_body(request);
+    // Request start is taken before send_with_retries so TTFT includes any retry backoff.
     let mut request_start = Instant::now();
     let response = match send_with_retries(client, provider, &url, &body, retry).await {
         Ok(response) => response,
@@ -274,7 +275,7 @@ fn attach_timing(
             * 1000.0;
         if details.eval_duration.is_none() {
             details.prompt_eval_duration.get_or_insert(ttft_ms);
-            details.eval_duration = Some(if eval_ms > 0.0 { eval_ms } else { total_ms });
+            details.eval_duration = Some(eval_ms);
         }
         details.time_to_first_token.get_or_insert(ttft_ms);
     } else {

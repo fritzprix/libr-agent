@@ -248,37 +248,6 @@ describe('Rust stream handler', () => {
     expect(current()?.usage?.totalTokens).toBe(150);
     expect(current()?.usage?.details?.evalDuration).toBeTypeOf('number');
   });
-
-  it('preserves a backend-supplied evalDuration instead of overwriting it', () => {
-    const { handler, current } = setup();
-
-    handler.handleDelta(delta({ content: 'Hello' }, { provider: 'openai' }));
-    handler.handleDelta(
-      delta(
-        {
-          usage: {
-            promptTokens: 100,
-            completionTokens: 25,
-            totalTokens: 125,
-            details: {
-              evalDuration: 432.5,
-              promptEvalDuration: 88.0,
-              timeToFirstToken: 88.0,
-            },
-          },
-        },
-        { provider: 'openai' },
-      ),
-    );
-    // A subsequent chunk must not overwrite the provider/backend evalDuration.
-    handler.handleDelta(
-      delta({ finishReason: 'stop' }, { provider: 'openai' }),
-    );
-
-    expect(current()?.usage?.details?.evalDuration).toBe(432.5);
-    expect(current()?.usage?.details?.promptEvalDuration).toBe(88.0);
-    expect(current()?.usage?.details?.timeToFirstToken).toBe(88.0);
-  });
 });
 
 describe('useRustStreamListener', () => {
