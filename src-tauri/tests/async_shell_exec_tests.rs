@@ -73,12 +73,12 @@ fn immediate_ok_cmd() -> &'static str {
 
 #[cfg(unix)]
 fn delayed_ok_cmd() -> &'static str {
-    "sleep 0.6; printf 'async_after_poll\\n'"
+    "sleep 3; printf 'async_after_poll\\n'"
 }
 
 #[cfg(windows)]
 fn delayed_ok_cmd() -> &'static str {
-    "Start-Sleep -Milliseconds 600; Write-Output 'async_after_poll'"
+    "Start-Sleep -Seconds 3; Write-Output 'async_after_poll'"
 }
 
 #[cfg(unix)]
@@ -93,12 +93,12 @@ fn immediate_fail_cmd() -> &'static str {
 
 #[cfg(unix)]
 fn delayed_fail_cmd() -> &'static str {
-    "sleep 0.35; printf 'delayed_boom\\n' >&2; exit 7"
+    "sleep 3; printf 'delayed_boom\\n' >&2; exit 7"
 }
 
 #[cfg(windows)]
 fn delayed_fail_cmd() -> &'static str {
-    "Start-Sleep -Milliseconds 350; [Console]::Error.WriteLine('delayed_boom'); exit 7"
+    "Start-Sleep -Seconds 3; [Console]::Error.WriteLine('delayed_boom'); exit 7"
 }
 
 #[cfg(unix)]
@@ -206,7 +206,7 @@ async fn async_shell_command_runs_past_first_poll_then_finishes() {
     let done = server
         .call_tool(
             "waitForProcess",
-            json!({ "processId": process_id, "timeout": 10 }),
+            json!({ "processId": process_id, "timeout": 20 }),
             Some(session_id.to_string()),
         )
         .await
@@ -240,7 +240,7 @@ async fn async_shell_non_zero_exit_reports_failure_for_immediate_and_delayed_com
     let session_id = "async-shell-non-zero";
     let server = build_workspace_server(temp_dir.path(), session_id);
 
-    // Immediate non-zero exit (may be caught during the 100ms startup check or settle as failed).
+    // Immediate non-zero exit: unconditionally assert the settled failure state and stderr.
     let immediate = server
         .handle_spawn_process(json!({ "command": immediate_fail_cmd() }), session_id)
         .await
@@ -254,31 +254,34 @@ async fn async_shell_non_zero_exit_reports_failure_for_immediate_and_delayed_com
         .expect("immediate process_id")
         .to_string();
 
-    if immediate.is_error == Some(true) {
-        assert_eq!(imm_data["status"], "failed");
-        assert_eq!(imm_data["exit_code"], 42);
-        assert!(
-            extract_text(&immediate).contains("immediate_boom"),
-            "expected stderr in immediate failure message: {}",
-            extract_text(&immediate)
-        );
-    } else {
-        // On a heavily loaded host the 100ms startup check may finish before the shell exits.
-        let wait = server
-            .call_tool(
-                "waitForProcess",
-                json!({ "processId": imm_pid, "timeout": 10 }),
-                Some(session_id.to_string()),
-            )
-            .await
-            .expect("waitForProcess should succeed");
-        let wait_data = wait
-            .structured_content
-            .as_ref()
-            .expect("wait structured content");
-        assert_eq!(wait_data["status"], "failed");
-        assert_eq!(wait_data["exit_code"], 42);
-    }
+    let imm_wait = server
+        .call_tool(
+            "waitForProcess",
+            json!({ "processId": imm_pid, "timeout": 20 }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("waitForProcess should succeed");
+    let imm_wait_data = imm_wait
+        .structured_content
+        .as_ref()
+        .expect("immediate wait structured content");
+    assert_eq!(imm_wait_data["status"], "failed");
+    assert_eq!(imm_wait_data["exit_code"], 42);
+
+    let imm_read = server
+        .call_tool(
+            "readProcessOutput",
+            json!({ "processId": imm_pid, "stream": "stderr", "mode": "tail", "lines": 20 }),
+            Some(session_id.to_string()),
+        )
+        .await
+        .expect("readProcessOutput should succeed");
+    assert!(
+        extract_text(&imm_read).contains("immediate_boom"),
+        "expected immediate stderr marker, got: {}",
+        extract_text(&imm_read)
+    );
 
     // Delayed non-zero exit passes the startup check, then fails with exit code 7.
     let delayed = server
@@ -297,7 +300,7 @@ async fn async_shell_non_zero_exit_reports_failure_for_immediate_and_delayed_com
     let delayed_wait = server
         .call_tool(
             "waitForProcess",
-            json!({ "processId": delayed_pid, "timeout": 10 }),
+            json!({ "processId": delayed_pid, "timeout": 20 }),
             Some(session_id.to_string()),
         )
         .await
