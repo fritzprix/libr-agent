@@ -167,6 +167,28 @@ async def test_cancel_interactive_spec_cancels_the_prompt(tmp_path, monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_answer_value_overrides_the_synthetic_secret(tmp_path, monkeypatch):
+    """A task's answer_value must be injected verbatim (multi-question
+    ui__askUser expects a JSON object keyed by question id, 2565 A-1/A-2)."""
+    from benchmarks.harbor.session_e2e.automation import SessionE2eAutomationSpec
+
+    data_dir = _instance_data_dir(tmp_path, monkeypatch)
+    client = FakeClient(_snapshot(), {"delivered": True})
+    answer = '{"city":"Seoul","toppings":["Cheese","Onion"],"note":"e2e-note"}'
+
+    actions = await resolve_pending_interactions(
+        client,
+        api_url="http://127.0.0.1:3031/api",
+        session_id="sess-1",
+        data_dir=data_dir,
+        spec=SessionE2eAutomationSpec(answer_value=answer),
+    )
+
+    assert actions[0]["injectedValue"] == answer
+    assert client.respond_bodies[0]["value"] == answer
+
+
+@pytest.mark.asyncio
 async def test_pending_circuit_break_is_resumed(tmp_path, monkeypatch):
     """A waiting ui__circuitBreak must be driven through the Resume endpoint (#2901)."""
     data_dir = _instance_data_dir(tmp_path, monkeypatch)

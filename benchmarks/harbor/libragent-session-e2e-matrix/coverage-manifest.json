@@ -343,9 +343,9 @@
     },
     {
       "id": "X-3",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Every Harbor session-E2E task (e2e-askuser-answer/options/cancel/storeas-masked) drives a Session-API-origin turn that waits on askUser/storeAs and resolves it through the control plane; what the channel shows remains manual",
+      "harbor_task": "e2e-askuser-answer"
     },
     {
       "id": "X-4",
@@ -367,15 +367,15 @@
     },
     {
       "id": "A-1",
-      "status": "ui-only",
-      "reason": "requires UI automation (pixels/keyboard); E2E control covers backend state only",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-askuser-options: options question answers with the chosen option string (wire contract); radio/Other rendering and Submit gating remain ui-only",
+      "harbor_task": "e2e-askuser-options"
     },
     {
       "id": "A-2",
-      "status": "ui-only",
-      "reason": "requires UI automation (pixels/keyboard); E2E control covers backend state only",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-askuser-options: multi-question ui__askUser result is JSON keyed by id with the multiSelect answer as a list; checkbox rendering remains ui-only",
+      "harbor_task": "e2e-askuser-options"
     },
     {
       "id": "A-3",

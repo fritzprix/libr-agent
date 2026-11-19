@@ -26,6 +26,7 @@ class SessionE2eAutomationSpec:
     auto_answer_interactive: bool = True
     resume_circuit_break: bool = True
     cancel_interactive: bool = False
+    answer_value: str | None = None
     execution_mode: str | None = None
 
 
@@ -66,6 +67,11 @@ def load_session_e2e_spec(logs_dir: Any) -> SessionE2eAutomationSpec | None:
         auto_answer_interactive=bool(spec.get("auto_answer_interactive", True)),
         resume_circuit_break=bool(spec.get("resume_circuit_break", True)),
         cancel_interactive=bool(spec.get("cancel_interactive", False)),
+        answer_value=(
+            str(spec["answer_value"])
+            if isinstance(spec.get("answer_value"), (str, int, float))
+            else None
+        ),
         execution_mode=_clean_execution_mode(spec.get("execution_mode")),
     )
 
@@ -102,7 +108,11 @@ async def resolve_pending_interactions(
         request_id = str(prompt.get("requestId", ""))
         if request_id:
             cancel = spec is not None and spec.cancel_interactive
-            injected = synthetic or "e2e-synthetic-answer"
+            # A task's ``answer_value`` (task.toml metadata) overrides the
+            # synthetic secret — e.g. the JSON-object answer a multi-question
+            # ui__askUser expects (2565 A-1/A-2 wire contract).
+            override = spec.answer_value if spec is not None else None
+            injected = override or synthetic or "e2e-synthetic-answer"
             response = await control.respond_user_prompt(
                 client,
                 session_id,

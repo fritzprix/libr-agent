@@ -89,6 +89,10 @@ task spec sets `resume_circuit_break = true` (the default).
   `cancel_interactive = true`); the verifier requires the delivered cancel
   record, an informational cancel tool result, and the agent continuing to
   completion afterwards.
+- `e2e-askuser-options` — one `ui__askUser` call with an options question, a
+  `multiSelect` question, and a free-text question; the harness answers with
+  the task's `answer_value` (a JSON object keyed by question id), and the
+  verifier grades the keyed result shapes in the delivered tool result.
 
 A task may pin its own session mode with `execution_mode` under
 `[metadata.libragent_session_e2e]`; otherwise it inherits
