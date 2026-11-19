@@ -12,10 +12,12 @@ from typing import Any
 
 import pytest
 
+from benchmarks.harbor.libragent_agent import DEFAULT_POLL_INTERVAL_SEC
 from benchmarks.harbor.session_e2e.automation import (
     _clean_execution_mode,
     resolve_pending_interactions,
 )
+from benchmarks.harbor.session_e2e.control import E2E_HEADER, E2eControlClient
 
 
 class FakeResponse:
@@ -546,3 +548,117 @@ async def test_tool_approval_records_tool_name_and_command_preview(tmp_path, mon
             "commandPreview": "url=https://127.0.0.1:9999/mcp?literal=***&k={{secret:KEY}}#***",
         }
     ]
+
+
+# --- Polling contract (#2903) ------------------------------------------------
+#
+# The module docstring of ``benchmarks/harbor/session_e2e/control.py`` is the
+# documented polling contract: endpoint paths, the capability header, the
+# snapshot shape, and the poll interval. These tests pin the client half of
+# that contract so a silent drift between docstring and code fails here.
+
+
+class RecordingClient(FakeClient):
+    """FakeClient that also records every request URL and header."""
+
+    def __init__(self, responses: dict[str, dict[str, Any]]) -> None:
+        super().__init__({}, {})
+        self._responses = responses
+        self.requests: list[dict[str, Any]] = []
+
+    def _match(self, url: str) -> dict[str, Any]:
+        for fragment, payload in self._responses.items():
+            if fragment in url:
+                return payload
+        raise AssertionError(f"unexpected url: {url}")
+
+    async def get(self, url: str, headers: dict[str, str] | None = None) -> FakeResponse:
+        self.requests.append({"method": "GET", "url": url, "headers": headers})
+        return FakeResponse(self._match(url))
+
+    async def post(
+        self,
+        url: str,
+        headers: dict[str, str] | None = None,
+        json: dict[str, Any] | None = None,
+    ) -> FakeResponse:
+        self.requests.append({"method": "POST", "url": url, "headers": headers, "json": json})
+        return FakeResponse(self._match(url))
+
+
+def _client() -> E2eControlClient:
+    return E2eControlClient("http://127.0.0.1:3031/api", token="t" * 48)
+
+
+@pytest.mark.asyncio
+async def test_interactions_uses_documented_path_and_capability_header():
+    snapshot = {
+        "sessionId": "sess-1",
+        "pendingUserPrompt": {
+            "requestId": "req-1",
+            "kind": "ask_user",
+            "payload": {},
+            "createdAt": "2026-11-19T00:00:00Z",
+        },
+        "pendingApprovals": [],
+    }
+    fake = RecordingClient({"/interactions": snapshot})
+
+    result = await _client().interactions(fake, "sess-1")
+
+    assert result == snapshot  # snapshot passes through unchanged
+    (req,) = fake.requests
+    assert req["method"] == "GET"
+    assert req["url"].endswith("/e2e-control/sessions/sess-1/interactions")
+    assert req["headers"] == {E2E_HEADER: "t" * 48}
+
+
+@pytest.mark.asyncio
+async def test_user_prompt_response_sends_documented_body():
+    fake = RecordingClient({"/user-prompts": {"delivered": True}})
+
+    result = await _client().respond_user_prompt(fake, "sess-1", "req-1", value="42")
+
+    assert result == {"delivered": True}
+    (req,) = fake.requests
+    assert req["method"] == "POST"
+    assert req["url"].endswith("/e2e-control/sessions/sess-1/user-prompts")
+    assert req["headers"] == {E2E_HEADER: "t" * 48}
+    assert req["json"] == {"requestId": "req-1", "action": "answer", "value": "42"}
+
+
+@pytest.mark.asyncio
+async def test_cancel_action_and_gone_prompt_passthrough():
+    fake = RecordingClient({"/user-prompts": {"delivered": False}})
+
+    result = await _client().respond_user_prompt(
+        fake,
+        "sess-1",
+        "req-1",
+        action="cancel",
+    )
+
+    # {delivered: false} means the prompt was already gone; the client must
+    # pass it through untouched so the poller re-polls instead of retrying.
+    assert result == {"delivered": False}
+    (req,) = fake.requests
+    assert req["json"] == {"requestId": "req-1", "action": "cancel"}
+    assert "value" not in req["json"]
+
+
+@pytest.mark.asyncio
+async def test_tool_approval_uses_documented_endpoint():
+    fake = RecordingClient({"/tool-approvals": {"ok": True}})
+
+    result = await _client().respond_tool_approval(fake, "sess-1", "call-9", approved=True)
+
+    assert result == {"ok": True}
+    (req,) = fake.requests
+    assert req["url"].endswith("/e2e-control/sessions/sess-1/tool-approvals")
+    assert req["json"] == {"toolCallId": "call-9", "approved": True}
+
+
+def test_poll_interval_matches_documented_default():
+    # The contract documents 3.0 s as the default poll interval; the bench
+    # poller must keep using exactly that constant.
+    assert DEFAULT_POLL_INTERVAL_SEC == 3.0

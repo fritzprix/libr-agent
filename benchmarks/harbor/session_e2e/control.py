@@ -1,4 +1,35 @@
-"""Loopback E2E control HTTP client (debug builds + LIBRAGENT_E2E_CONTROL=1)."""
+"""Loopback E2E control HTTP client (debug builds + LIBRAGENT_E2E_CONTROL=1).
+
+Polling contract (#2903). There is no event stream; harnesses poll this
+surface. The contract below is what the client here and the Harbor poller
+(`benchmarks/harbor/libragent_agent.py`) rely on:
+
+Endpoints (all require the ``X-LibrAgent-E2E-Control`` capability header;
+``:ref`` is a full session id or a unique short ref resolved server-side):
+
+- ``GET  /api/e2e-control/status`` — ``{enabled, debugBuild, loopbackOnly,
+  buildSha, buildDirty}``.
+- ``GET  /api/e2e-control/sessions/:ref/interactions`` — snapshot
+  ``{sessionId, pendingUserPrompt, pendingApprovals}`` where
+  ``pendingUserPrompt`` is ``null`` or ``{requestId, kind, payload,
+  createdAt}`` and ``pendingApprovals`` is a list of ``{toolCallId, toolName,
+  reason, commandPreview, approvalKind, requestId?}``.
+- ``POST /api/e2e-control/sessions/:ref/user-prompts`` — body
+  ``{requestId, action: "answer"|"cancel", value?}`` → ``{delivered}``.
+- ``POST /api/e2e-control/sessions/:ref/tool-approvals`` — body
+  ``{toolCallId, approved}`` → ``{ok}``.
+
+Interval and eventual consistency: poll every ``DEFAULT_POLL_INTERVAL_SEC``
+(3.0 s, the bench default). A prompt or approval that just appeared or was
+just answered may not be reflected in the snapshot until the next poll
+cycle; treat one missed cycle as normal, not as a failure.
+
+Timeout guidance: a waiting prompt is considered stuck when it survives more
+than ``LIBRAGENT_POLL_TIMEOUT_SEC`` (scaled agent timeout) without being
+answered; ``{delivered: false}`` means the prompt was already gone when the
+answer arrived — re-poll and judge from the fresh snapshot instead of
+retrying the same requestId.
+"""
 
 from __future__ import annotations
 
