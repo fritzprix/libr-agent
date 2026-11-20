@@ -380,26 +380,36 @@ impl EphemeralHeadlessRuntime {
 /// `EBWebView`.
 fn removal_failure_message(path: &Path, err: &std::io::Error) -> String {
     let survivors = surviving_entries(path);
+    // The SQLite hint only helps when a database file actually survived
+    // (gatekeeper S1.2); a WebView-only leftover gets no misleading advice.
+    let hint = if survivors.iter().any(|name| name.contains(".db")) {
+        " (SQLite handles show up as *.db/*.db-wal/*.db-shm, the WebView as webview-cache)"
+    } else {
+        ""
+    };
     format!(
         "warning: failed to remove ephemeral headless directory {path:?}: {err}; \
-         surviving entries: {survivors:?} \
-         (SQLite handles show up as *.db/*.db-wal/*.db-shm, the WebView as webview-cache)"
+         surviving entries: {survivors:?}{hint}"
     )
 }
 
-/// Top-level entries still under `path` after a failed removal (empty if the
-/// directory is gone or unreadable).
+/// Entries still under `path` (up to two levels deep, so a database in a
+/// subdirectory is named as `<subdir>/<name>.db-wal` itself) after a failed
+/// removal (empty if the directory is gone or unreadable).
 fn surviving_entries(path: &Path) -> Vec<String> {
-    match std::fs::read_dir(path) {
-        Ok(entries) => entries
-            .filter_map(|entry| {
-                entry
-                    .ok()
-                    .map(|entry| entry.file_name().to_string_lossy().into_owned())
-            })
-            .collect(),
-        Err(_) => Vec::new(),
-    }
+    walkdir::WalkDir::new(path)
+        .min_depth(1)
+        .max_depth(2)
+        .into_iter()
+        .filter_map(|entry| entry.ok())
+        .filter_map(|entry| {
+            entry
+                .path()
+                .strip_prefix(path)
+                .ok()
+                .map(|rel| rel.to_string_lossy().into_owned())
+        })
+        .collect()
 }
 
 const REMOVAL_RETRY_ATTEMPTS: u32 = 40;
@@ -407,8 +417,7 @@ const REMOVAL_RETRY_INTERVAL: Duration = Duration::from_millis(50);
 
 /// Remove `path` recursively, yielding to the async runtime between attempts.
 ///
-/// Must be used from async teardown paths (see `remove_temp_dir_with_retry`
-/// for the sync fallback). The SQLite pool close in `cleanup_headless_run`
+/// The SQLite pool close in `cleanup_headless_run`
 /// only marks the pool closed; each connection's driver task drops the file
 /// handle when it next gets polled. A blocking `std::thread::sleep` on the
 /// runtime thread (which is what the old retry did) starves exactly those
@@ -423,29 +432,6 @@ pub(super) async fn remove_temp_dir_with_retry_async(path: &Path) {
             Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => break,
             Err(_) if attempt + 1 < REMOVAL_RETRY_ATTEMPTS => {
                 tokio::time::sleep(REMOVAL_RETRY_INTERVAL).await;
-            }
-            Err(err) => {
-                eprintln!("{}", removal_failure_message(path, &err));
-            }
-        }
-    }
-}
-
-/// Synchronous variant of [`remove_temp_dir_with_retry_async`] for teardown
-/// points that run outside a driving runtime — e.g. the hidden-WebView second
-/// pass after `run_return`, where no runtime owns the current thread.
-///
-/// Used by every headless teardown path because SQLite and WebView file
-/// handles are released asynchronously after close: a single best-effort
-/// delete races with handle release and leaves the directory behind on
-/// Windows (Linux silently unlinks open files and never notices).
-pub(super) fn remove_temp_dir_with_retry(path: &Path) {
-    for attempt in 0..REMOVAL_RETRY_ATTEMPTS {
-        match std::fs::remove_dir_all(path) {
-            Ok(()) => break,
-            Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => break,
-            Err(_) if attempt + 1 < REMOVAL_RETRY_ATTEMPTS => {
-                std::thread::sleep(REMOVAL_RETRY_INTERVAL);
             }
             Err(err) => {
                 eprintln!("{}", removal_failure_message(path, &err));
@@ -491,12 +477,22 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("sessions.db-wal"), b"held").unwrap();
         std::fs::create_dir_all(dir.path().join("webview-cache")).unwrap();
+        // A database below a subdirectory must be named itself, not just the
+        // directory (gatekeeper S1.1).
+        std::fs::create_dir_all(dir.path().join("nested")).unwrap();
+        std::fs::write(dir.path().join("nested").join("headless.db"), b"held").unwrap();
 
         let mut entries = surviving_entries(dir.path());
         entries.sort();
+        let separator = std::path::MAIN_SEPARATOR;
         assert_eq!(
             entries,
-            vec!["sessions.db-wal".to_string(), "webview-cache".to_string()]
+            vec![
+                "nested".to_string(),
+                format!("nested{separator}headless.db"),
+                "sessions.db-wal".to_string(),
+                "webview-cache".to_string(),
+            ]
         );
 
         let err = std::io::Error::from(std::io::ErrorKind::Other);
@@ -509,9 +505,78 @@ mod tests {
             message.contains("webview-cache"),
             "message names the holder: {message}"
         );
+        assert!(
+            message.contains("headless.db"),
+            "message names nested holders: {message}"
+        );
+        assert!(
+            message.contains("SQLite handles"),
+            "db survivors carry the SQLite hint: {message}"
+        );
 
         let missing = dir.path().join("nope");
         assert!(surviving_entries(&missing).is_empty());
+    }
+
+    #[test]
+    fn removal_failure_message_skips_sqlite_hint_without_db_survivors() {
+        // Gatekeeper S1.2: a WebView-only leftover must not get SQLite advice.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("EBWebView")).unwrap();
+
+        let err = std::io::Error::from(std::io::ErrorKind::Other);
+        let message = removal_failure_message(dir.path(), &err);
+        assert!(message.contains("EBWebView"), "names the holder: {message}");
+        assert!(
+            !message.contains("SQLite handles"),
+            "no misleading SQLite hint: {message}"
+        );
+    }
+
+    /// Gatekeeper G1.2: regression through the real `cleanup_headless_run`
+    /// with a real SeaORM SQLite pool in the temp dir, on a current-thread
+    /// runtime — the same shape as the production teardown. `db.close()`
+    /// only marks the pool closed; the connections' driver tasks drop the
+    /// file handles when the runtime next polls them. A blocking sleep in
+    /// the retry starved exactly those tasks on Windows, where deletion
+    /// fails while any handle is open, and the directory survived the whole
+    /// 2 s window (#2919). Windows-only because Linux unlinks open files
+    /// silently, so the assertion is only meaningful where the flake lived.
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn cleanup_headless_run_removes_temp_dir_with_real_sqlite_pool() {
+        use sea_orm::EntityTrait;
+
+        let temp_dir = TempDir::new().unwrap();
+        let db = init_ephemeral_database(&temp_dir.path().join("headless.db"))
+            .await
+            .unwrap();
+        // Force a real query so the pool has an established connection whose
+        // driver task holds the database file handles.
+        let _ = crate::entity::session::Entity::find()
+            .one(&db)
+            .await
+            .unwrap();
+
+        let session_repo: Arc<dyn SessionRepository> =
+            Arc::new(SqliteSessionRepository::new(db.clone()));
+        let active_sessions: Arc<RwLock<HashMap<String, AgentSession>>> =
+            Arc::new(RwLock::new(HashMap::new()));
+
+        cleanup_headless_run(
+            "cleanup-sqlite-pool-test",
+            &session_repo,
+            &active_sessions,
+            &db,
+            &temp_dir,
+        )
+        .await;
+
+        assert!(
+            !temp_dir.path().exists(),
+            "temp dir must be gone after cleanup; survivors: {:?}",
+            surviving_entries(temp_dir.path())
+        );
     }
 
     /// Regression test for #2919: the retry must yield to the runtime between
