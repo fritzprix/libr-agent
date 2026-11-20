@@ -4,6 +4,7 @@ mod directories;
 mod github;
 mod importing;
 mod outbox;
+mod plugin_commands;
 mod plugin_manifest;
 mod plugin_sources;
 mod scanning;
@@ -37,6 +38,9 @@ pub use importing::{
     reset_user_skills, skill_storage_directory_name,
 };
 pub use outbox::{install_outbox, SKILL_OUTBOX_RELATIVE_DIR};
+pub use plugin_commands::{
+    expand_plugin_command, list_plugin_commands, plugin_command_names, PluginCommandInfo,
+};
 pub use plugin_sources::{delete_plugin_source, list_plugin_source_overviews};
 pub use scanning::{
     copy_dir_recursive, get_skill_content, get_skill_content_from_roots, parse_skill_metadata,

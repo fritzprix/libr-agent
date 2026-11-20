@@ -87,6 +87,8 @@ export interface SkillImportPreview {
   conflicts: SkillImportConflict[];
   hooks: HookPreviewEntry[];
   hooksRequireApproval: boolean;
+  /** Slash command names the plugin's `commands/` provides (#2922). */
+  pluginCommands?: string[];
   /** Present when the source carried a `.claude-plugin/plugin.json`. */
   pluginManifest?: PluginManifestSummary;
 }

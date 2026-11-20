@@ -389,4 +389,84 @@ describe('useChatSubmit', () => {
       { sessionId: 'session-1', commandText: '/plugin uninstall my-plugin' },
     );
   });
+
+  it('sends an expanded plugin command as an ordinary chat message (#2922)', async () => {
+    mockState.safeInvoke.mockResolvedValue({
+      success: true,
+      message: '',
+      expandedPrompt: 'Run the demo with a b',
+    });
+    const { result } = renderHook(() => useChatSubmit(baseProps()));
+
+    act(() => {
+      result.current.setInput('/demo a b');
+    });
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    expect(mockState.submit).toHaveBeenCalledTimes(1);
+    const message = mockState.submit.mock.calls[0][0];
+    expect(message.content[0].text).toBe('Run the demo with a b');
+    expect(mockState.toastSuccess).not.toHaveBeenCalled();
+    expect(result.current.input).toBe('');
+  });
+
+  it('restores the typed plugin command when nothing was sent (#2922)', async () => {
+    mockState.safeInvoke.mockResolvedValue({
+      success: true,
+      message: '',
+      expandedPrompt: 'Run the demo with a b',
+    });
+    const { result } = renderHook(() =>
+      useChatSubmit({ ...baseProps(), isProxyReady: false }),
+    );
+
+    act(() => {
+      result.current.setInput('/demo a b');
+    });
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    expect(mockState.toastError).toHaveBeenCalledWith(
+      'agent.input.proxyNotReadyToast',
+    );
+    expect(mockState.submit).not.toHaveBeenCalled();
+    expect(result.current.input).toBe('/demo a b');
+  });
+
+  it('notifies onPluginCommandsChanged after reload and plugin commands (#2922)', async () => {
+    const onPluginCommandsChanged = vi.fn();
+    const { result } = renderHook(() =>
+      useChatSubmit({ ...baseProps(), onPluginCommandsChanged }),
+    );
+
+    for (const command of ['/reload', '/plugin uninstall my-plugin']) {
+      act(() => {
+        result.current.setInput(command);
+      });
+      await act(async () => {
+        await result.current.handleSubmit();
+      });
+    }
+
+    expect(onPluginCommandsChanged).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not notify onPluginCommandsChanged for plain commands', async () => {
+    const onPluginCommandsChanged = vi.fn();
+    const { result } = renderHook(() =>
+      useChatSubmit({ ...baseProps(), onPluginCommandsChanged }),
+    );
+
+    act(() => {
+      result.current.setInput('/permission yolo');
+    });
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    expect(onPluginCommandsChanged).not.toHaveBeenCalled();
+  });
 });

@@ -898,7 +898,8 @@
       "importSuccessWithOverwriteAndSkipped_one": "已导入 {{count}} 个技能（已覆盖 {{overwrittenCount}} 个，已跳过 {{skippedCount}} 个）",
       "importSuccessWithOverwriteAndSkipped_other": "已导入 {{count}} 个技能（已覆盖 {{overwrittenCount}} 个，已跳过 {{skippedCount}} 个）",
       "importSkippedOnly_one": "已跳过 {{count}} 个冲突技能",
-      "importSkippedOnly_other": "已跳过 {{count}} 个冲突技能"
+      "importSkippedOnly_other": "已跳过 {{count}} 个冲突技能",
+      "commandsToInstall": "要安装的斜杠命令"
     },
     "dev": {
       "devOnly": "仅限开发",

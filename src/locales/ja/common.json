@@ -898,7 +898,8 @@
       "importSuccessWithOverwriteAndSkipped_one": "{{count}} 個のスキルをインポートしました ({{overwrittenCount}} 個上書き、{{skippedCount}} 個スキップ)",
       "importSuccessWithOverwriteAndSkipped_other": "{{count}} 個のスキルをインポートしました ({{overwrittenCount}} 個上書き、{{skippedCount}} 個スキップ)",
       "importSkippedOnly_one": "競合する {{count}} 個のスキルをスキップしました",
-      "importSkippedOnly_other": "競合する {{count}} 個のスキルをスキップしました"
+      "importSkippedOnly_other": "競合する {{count}} 個のスキルをスキップしました",
+      "commandsToInstall": "インストールするスラッシュコマンド"
     },
     "dev": {
       "devOnly": "開発専用",

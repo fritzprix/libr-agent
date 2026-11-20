@@ -898,7 +898,8 @@
       "importSuccessWithOverwriteAndSkipped_one": "{{count}} Skill importiert ({{overwrittenCount}} überschrieben, {{skippedCount}} übersprungen)",
       "importSuccessWithOverwriteAndSkipped_other": "{{count}} Skills importiert ({{overwrittenCount}} überschrieben, {{skippedCount}} übersprungen)",
       "importSkippedOnly_one": "{{count}} in Konflikt stehender Skill übersprungen",
-      "importSkippedOnly_other": "{{count}} in Konflikt stehende Skills übersprungen"
+      "importSkippedOnly_other": "{{count}} in Konflikt stehende Skills übersprungen",
+      "commandsToInstall": "Zu installierende Slash-Befehle"
     },
     "dev": {
       "devOnly": "NUR ENTWICKLUNG",

@@ -86,6 +86,24 @@ export function SkillsConflictDialog({
                   ) : null}
                 </div>
               ) : null}
+              {pendingInstall?.preview.pluginCommands &&
+              pendingInstall.preview.pluginCommands.length > 0 ? (
+                <div className="rounded-md border bg-muted/20 p-3 text-sm space-y-2">
+                  <p className="font-medium">
+                    {t(
+                      'settings.skills.commandsToInstall',
+                      'Slash commands to install',
+                    )}
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {pendingInstall.preview.pluginCommands.map((command) => (
+                      <Badge key={command} variant="secondary">
+                        /{command}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
               {discoveredSkills.length > 0 ? (
                 <div className="rounded-md border bg-muted/20 p-3 text-sm space-y-2">
                   <p className="font-medium">
