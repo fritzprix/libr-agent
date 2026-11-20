@@ -173,19 +173,6 @@ async fn prepare_compaction_request(
         retry_attempt,
     } = input;
 
-    let mut pre_compact_params = crate::services::hooks::HookEnvelopeParams::new(
-        session_id,
-        std::path::PathBuf::from("."),
-        crate::services::hooks::HookEvent::PreCompact,
-    );
-    pre_compact_params.compact_source = Some("auto".to_string());
-    crate::services::hooks::notify_stub_event(
-        crate::services::hooks::HookEvent::PreCompact,
-        session_id,
-        pre_compact_params,
-    )
-    .await;
-
     // Snapshot goal/todos before clear_todos_after_successful_compaction runs post-persist.
     let planning_seeds = load_compaction_planning_seeds(session_id).await;
 

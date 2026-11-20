@@ -139,6 +139,33 @@ pub async fn start_workflow(
 
     // --- STANDARD START WORKFLOW (Idle/Paused) ---
 
+    // UserPromptSubmit hook (#2925): runs before queueing/sending the prompt.
+    // A `block` decision stops the prompt and returns the reason; `additionalContext`
+    // is queued into per-turn volatile hook context for this turn's LLM request.
+    crate::services::hooks::reset_stop_hook_continuations(&session_id);
+    let prompt_text = user_message
+        .content
+        .iter()
+        .find_map(|c| match c {
+            crate::mcp::types::MCPContent::Text { text } => Some(text.clone()),
+            _ => None,
+        })
+        .unwrap_or_default();
+    let mut prompt_submit_params = crate::services::hooks::HookEnvelopeParams::new(
+        &session_id,
+        std::path::PathBuf::from("."),
+        crate::services::hooks::HookEvent::UserPromptSubmit,
+    );
+    prompt_submit_params.prompt = Some(prompt_text);
+    let prompt_hook_outcome = crate::services::hooks::dispatch_hook_event(
+        crate::services::hooks::HookEvent::UserPromptSubmit,
+        "",
+        &prompt_submit_params,
+        &session_id,
+    )
+    .await;
+    evaluate_user_prompt_hook_outcome(&session_id, prompt_hook_outcome)?;
+
     // Update status to Queued immediately
     crate::agent::lifecycle::update_session_status(
         session_repo,
@@ -168,29 +195,6 @@ pub async fn start_workflow(
         &user_message,
     )
     .await?;
-
-    // UserPromptSubmit hook stub (#2812): dispatched so the stub path is
-    // exercised on every real prompt submit; no command runs in v1.
-    let prompt_text = user_message
-        .content
-        .iter()
-        .find_map(|c| match c {
-            crate::mcp::types::MCPContent::Text { text } => Some(text.clone()),
-            _ => None,
-        })
-        .unwrap_or_default();
-    let mut prompt_submit_params = crate::services::hooks::HookEnvelopeParams::new(
-        &session_id,
-        std::path::PathBuf::from("."),
-        crate::services::hooks::HookEvent::UserPromptSubmit,
-    );
-    prompt_submit_params.prompt = Some(prompt_text);
-    crate::services::hooks::notify_stub_event(
-        crate::services::hooks::HookEvent::UserPromptSubmit,
-        &session_id,
-        prompt_submit_params,
-    )
-    .await;
 
     log::info!(
         "Queued workflow for session: {} with message: {}",
@@ -450,4 +454,61 @@ pub(crate) async fn ensure_proxy_ready(
     proxy_manager
         .wait_until_proxy_ready(session_id, timeout_secs)
         .await
+}
+
+/// Apply `UserPromptSubmit` hook outcome before queueing the prompt (#2925 G1.2).
+pub(crate) fn evaluate_user_prompt_hook_outcome(
+    session_id: &str,
+    outcome: crate::services::hooks::HookDispatchResult,
+) -> Result<(), String> {
+    if outcome.decision == Some(crate::services::hooks::HookDecision::Block) {
+        let reason = outcome
+            .reason
+            .filter(|r| !r.trim().is_empty())
+            .unwrap_or_else(|| "Prompt blocked by UserPromptSubmit hook.".to_string());
+        return Err(reason);
+    }
+    if let Some(ctx) = outcome.joined_additional_context() {
+        crate::services::hooks::push_turn_hook_context(session_id, &ctx);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod user_prompt_hook_tests {
+    use super::evaluate_user_prompt_hook_outcome;
+    use crate::services::hooks::{
+        clear_hook_context, take_turn_hook_context, HookDecision, HookDispatchResult,
+    };
+
+    #[test]
+    fn block_returns_reason_without_queueing_turn_context() {
+        let sid = "start-hook-block-test";
+        clear_hook_context(sid);
+        let outcome = HookDispatchResult {
+            additional_context: vec!["should not be queued".to_string()],
+            decision: Some(HookDecision::Block),
+            reason: Some("prompt rejected by policy".to_string()),
+        };
+        let err = evaluate_user_prompt_hook_outcome(sid, outcome).unwrap_err();
+        assert_eq!(err, "prompt rejected by policy");
+        assert!(take_turn_hook_context(sid).is_none());
+    }
+
+    #[test]
+    fn non_blocking_outcome_queues_turn_context() {
+        let sid = "start-hook-ctx-test";
+        clear_hook_context(sid);
+        let outcome = HookDispatchResult {
+            additional_context: vec!["inject for this turn".to_string()],
+            decision: None,
+            reason: None,
+        };
+        evaluate_user_prompt_hook_outcome(sid, outcome).unwrap();
+        assert_eq!(
+            take_turn_hook_context(sid).as_deref(),
+            Some("inject for this turn")
+        );
+        clear_hook_context(sid);
+    }
 }

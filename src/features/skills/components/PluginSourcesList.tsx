@@ -13,6 +13,18 @@ interface PluginSourcesListProps {
   onRemove: (sourceId: string) => void | Promise<void>;
 }
 
+const EXECUTED_HOOK_EVENTS = new Set([
+  'SessionStart',
+  'SessionEnd',
+  'UserPromptSubmit',
+  'PreToolUse',
+  'PostToolUse',
+  'Stop',
+  'SubagentStop',
+  'PreCompact',
+  'Notification',
+]);
+
 export function PluginSourcesList({
   sources,
   isBusy,
@@ -121,14 +133,14 @@ export function PluginSourcesList({
                           <li key={event}>
                             {event}
                             <span className="ml-2 text-xs">
-                              ({event === 'SessionStart'
+                              ({EXECUTED_HOOK_EVENTS.has(event)
                                 ? t(
                                     'settings.skills.hookStatusExecuted',
-                                    'Runs on SessionStart',
+                                    'Executed',
                                   )
                                 : t(
                                     'settings.skills.hookStatusStubbed',
-                                    'Not yet executed',
+                                    'Not supported',
                                   )})
                             </span>
                           </li>

@@ -319,6 +319,23 @@ pub async fn settle_session_and_go_idle_with_dispatcher(
         return Ok(true);
     }
 
+    // Stop / SubagentStop hook (#2925): run before settling to Idle. If a hook
+    // returns `decision: "block"` and the per-turn continuation cap has not
+    // been reached, feed the block reason back and continue the turn.
+    if maybe_continue_from_stop_hook(
+        session_repo,
+        active_sessions,
+        proxy_manager,
+        app_handle,
+        session_id,
+    )
+    .await?
+    {
+        return Ok(true);
+    }
+
+    crate::services::hooks::reset_stop_hook_continuations(session_id);
+
     transition_to_terminal_status_and_emit(
         session_repo,
         active_sessions,
@@ -332,10 +349,6 @@ pub async fn settle_session_and_go_idle_with_dispatcher(
         "WorkflowCompleted",
     )
     .await?;
-
-    // Stop / SubagentStop hook stub (#2812): dispatched once the session
-    // has actually settled to Idle; no command runs in v1.
-    notify_settle_hook_stub(active_sessions, session_id).await;
 
     Ok(false)
 }
@@ -380,14 +393,16 @@ pub(crate) fn settle_stub_event(
     }
 }
 
-/// Dispatch the `Stop` (top-level session) or `SubagentStop` (session
-/// spawned by `agent__spawnSession`) plugin hook stub once a workflow has
-/// settled to Idle (#2812). The stub only logs "not yet executed" and
-/// prepares the stdin envelope; no hook command runs in v1.
-async fn notify_settle_hook_stub(
+/// Dispatch `Stop` (top-level session) or `SubagentStop` (child session) before
+/// settling to Idle (#2925). Returns `Ok(true)` if a hook returned `block` and
+/// the turn was continued (bounded by `MAX_STOP_HOOK_CONTINUATIONS`).
+async fn maybe_continue_from_stop_hook(
+    session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    proxy_manager: &Arc<MCPServiceProxyManager>,
+    app_handle: &AppHandle,
     session_id: &str,
-) {
+) -> Result<bool, String> {
     let parent_session_id = {
         let active = active_sessions.read().await;
         active
@@ -400,10 +415,65 @@ async fn notify_settle_hook_stub(
         std::path::PathBuf::from("."),
         event,
     );
+    params.stop_hook_active = crate::services::hooks::stop_hook_continuation_count(session_id) > 0;
     if parent_session_id.is_some() {
         params.child_session_id = Some(session_id.to_string());
     }
-    crate::services::hooks::notify_stub_event(event, session_id, params).await;
+    let outcome = crate::services::hooks::dispatch_hook_event(event, "", &params, session_id).await;
+
+    if evaluate_stop_hook_outcome(session_id, event, outcome) {
+        crate::agent::llm::request_llm_completion_with_recovery(
+            session_repo,
+            active_sessions,
+            proxy_manager,
+            app_handle,
+            session_id.to_string(),
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+        return Ok(true);
+    }
+
+    Ok(false)
+}
+
+/// Evaluate a `Stop` / `SubagentStop` hook result against `MAX_STOP_HOOK_CONTINUATIONS`
+/// (#2925 G1.2). Returns `true` and queues continuation feedback when the turn should
+/// continue; returns `false` once no block is requested or the cap is reached.
+pub(crate) fn evaluate_stop_hook_outcome(
+    session_id: &str,
+    event: crate::services::hooks::HookEvent,
+    outcome: crate::services::hooks::HookDispatchResult,
+) -> bool {
+    if outcome.decision != Some(crate::services::hooks::HookDecision::Block) {
+        return false;
+    }
+    if !crate::services::hooks::try_increment_stop_hook_continuations(session_id) {
+        log::info!(
+            "{} hook returned block for session {} but reached MAX_STOP_HOOK_CONTINUATIONS ({}); settling to Idle",
+            event.as_str(),
+            session_id,
+            crate::services::hooks::MAX_STOP_HOOK_CONTINUATIONS
+        );
+        return false;
+    }
+    if let Some(ctx) = outcome.joined_additional_context() {
+        crate::services::hooks::push_turn_hook_context(session_id, &ctx);
+    }
+    let reason = outcome
+        .reason
+        .filter(|r| !r.trim().is_empty())
+        .unwrap_or_else(|| {
+            format!(
+                "{} hook requested continuation before stopping.",
+                event.as_str()
+            )
+        });
+    crate::services::hooks::push_turn_hook_context(
+        session_id,
+        &format!("[{} hook]: {}", event.as_str(), reason),
+    );
+    true
 }
 
 /// Finalize a failed workflow only after terminal messages are durable.
@@ -889,5 +959,48 @@ mod tests {
             settle_stub_event(Some("parent-session")),
             crate::services::hooks::HookEvent::SubagentStop
         );
+    }
+
+    #[test]
+    fn evaluate_stop_hook_outcome_continues_up_to_cap_then_settles() {
+        use crate::services::hooks::{
+            clear_hook_context, take_turn_hook_context, HookDecision, HookDispatchResult,
+            HookEvent, MAX_STOP_HOOK_CONTINUATIONS,
+        };
+
+        let sid = "finish-stop-hook-cap-test";
+        clear_hook_context(sid);
+
+        for i in 1..=MAX_STOP_HOOK_CONTINUATIONS {
+            let cont = super::evaluate_stop_hook_outcome(
+                sid,
+                HookEvent::Stop,
+                HookDispatchResult {
+                    additional_context: vec![],
+                    decision: Some(HookDecision::Block),
+                    reason: Some(format!("keep going #{i}")),
+                },
+            );
+            assert!(cont, "continuation #{i} must be allowed");
+            let ctx = take_turn_hook_context(sid).expect("feedback queued");
+            assert!(ctx.contains(&format!("keep going #{i}")));
+        }
+
+        // Next block exceeds MAX_STOP_HOOK_CONTINUATIONS -> must settle to Idle.
+        let over_cap = super::evaluate_stop_hook_outcome(
+            sid,
+            HookEvent::Stop,
+            HookDispatchResult {
+                additional_context: vec![],
+                decision: Some(HookDecision::Block),
+                reason: Some("one too many".to_string()),
+            },
+        );
+        assert!(
+            !over_cap,
+            "must not continue past MAX_STOP_HOOK_CONTINUATIONS"
+        );
+        assert!(take_turn_hook_context(sid).is_none());
+        clear_hook_context(sid);
     }
 }

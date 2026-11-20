@@ -3,7 +3,7 @@ use super::context::{
     finish_hook_replacement,
 };
 use super::envelope::{build_envelope_value, HookEnvelopeParams, SessionStartSource};
-use super::output::{normalize, HookOutput};
+use super::output::{normalize, HookDecision, HookOutput};
 use super::registry::{
     approval_hash_key, approval_hash_value, get_session_plugins_directory,
     get_user_plugins_directory, list_effective_approved_sources_in,
@@ -117,6 +117,58 @@ pub async fn run_session_start_with_sources(
     finish_hook_replacement(session_id);
 }
 
+/// Aggregated result of running all matching approved hook handlers for one event (#2925).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HookDispatchResult {
+    pub additional_context: Vec<String>,
+    pub decision: Option<HookDecision>,
+    pub reason: Option<String>,
+}
+
+impl HookDispatchResult {
+    /// Merge one handler's output into the aggregated result.
+    ///
+    /// Precedence: `Block` > `Ask` > `Allow`. The first `Block` reason wins.
+    pub fn merge(&mut self, output: HookOutput) {
+        if let Some(ctx) = output
+            .additional_context
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            self.additional_context.push(ctx.to_string());
+        }
+
+        if let Some(next_decision) = output.decision {
+            let replace = matches!(
+                (self.decision, next_decision),
+                (None, _)
+                    | (
+                        Some(HookDecision::Allow),
+                        HookDecision::Ask | HookDecision::Block
+                    )
+                    | (Some(HookDecision::Ask), HookDecision::Block)
+            );
+            if replace {
+                self.decision = Some(next_decision);
+                if output.reason.is_some() {
+                    self.reason = output.reason.clone();
+                }
+            }
+        } else if self.reason.is_none() && output.reason.is_some() {
+            self.reason = output.reason;
+        }
+    }
+
+    pub fn joined_additional_context(&self) -> Option<String> {
+        if self.additional_context.is_empty() {
+            None
+        } else {
+            Some(self.additional_context.join("\n\n"))
+        }
+    }
+}
+
 pub async fn notify_stub_event(event: HookEvent, session_id: &str, mut params: HookEnvelopeParams) {
     if event.dispatch_mode() != HookDispatchMode::Stub {
         return;
@@ -144,7 +196,7 @@ pub async fn dispatch_hook_event(
     matcher_value: &str,
     envelope_params: &HookEnvelopeParams,
     session_id: &str,
-) {
+) -> HookDispatchResult {
     let plugins_dir = match get_user_plugins_directory() {
         Ok(dir) => dir,
         Err(e) => {
@@ -153,19 +205,25 @@ pub async fn dispatch_hook_event(
                 event.as_str(),
                 session_id
             );
-            return;
+            return HookDispatchResult::default();
         }
     };
     let session_plugins_dir = get_session_plugins_directory(session_id).ok();
+    let mut resolved_params = envelope_params.clone();
+    if resolved_params.cwd == Path::new(".") {
+        if let Ok(cwd) = resolve_session_cwd(session_id, None).await {
+            resolved_params.cwd = cwd;
+        }
+    }
     dispatch_hook_event_with_sources(
         &plugins_dir,
         session_plugins_dir.as_deref(),
         event,
         matcher_value,
-        envelope_params,
+        &resolved_params,
         session_id,
     )
-    .await;
+    .await
 }
 
 pub async fn dispatch_hook_event_in(
@@ -174,7 +232,7 @@ pub async fn dispatch_hook_event_in(
     matcher_value: &str,
     envelope_params: &HookEnvelopeParams,
     session_id: &str,
-) {
+) -> HookDispatchResult {
     dispatch_hook_event_with_sources(
         plugins_dir,
         None,
@@ -183,7 +241,7 @@ pub async fn dispatch_hook_event_in(
         envelope_params,
         session_id,
     )
-    .await;
+    .await
 }
 
 pub async fn dispatch_hook_event_with_sources(
@@ -193,7 +251,8 @@ pub async fn dispatch_hook_event_with_sources(
     matcher_value: &str,
     envelope_params: &HookEnvelopeParams,
     session_id: &str,
-) {
+) -> HookDispatchResult {
+    let mut aggregated = HookDispatchResult::default();
     match event.dispatch_mode() {
         HookDispatchMode::Stub => {
             log::info!(
@@ -201,7 +260,7 @@ pub async fn dispatch_hook_event_with_sources(
                 event.as_str(),
                 session_id
             );
-            return;
+            return aggregated;
         }
         HookDispatchMode::Execute => {}
     }
@@ -211,10 +270,11 @@ pub async fn dispatch_hook_event_with_sources(
         Ok(s) => s,
         Err(e) => {
             log::warn!(
-                "SessionStart hooks skipped for {}: envelope JSON encode failed: {e}",
+                "{} hooks skipped for {}: envelope JSON encode failed: {e}",
+                event.as_str(),
                 session_id
             );
-            return;
+            return aggregated;
         }
     };
 
@@ -245,35 +305,46 @@ pub async fn dispatch_hook_event_with_sources(
                     );
                     continue;
                 }
-                run_matching_handler(session_id, root, handler, &envelope_json).await;
+                if let Some(output) =
+                    run_matching_handler(session_id, event, root, handler, &envelope_json).await
+                {
+                    aggregated.merge(output);
+                }
             }
         }
     }
+    aggregated
 }
 
 async fn run_matching_handler(
     session_id: &str,
+    event: HookEvent,
     plugin_root: &Path,
     handler: &HookHandler,
     envelope_json: &str,
-) {
-    match run_hook_handler(plugin_root, handler, envelope_json).await {
+) -> Option<HookOutput> {
+    match run_hook_handler(event, plugin_root, handler, envelope_json).await {
         HookRunOutcome::Applied(output) => {
-            if let Some(ctx) = output
-                .additional_context
-                .as_ref()
-                .map(|s| s.trim())
-                .filter(|s| !s.is_empty())
-            {
-                append_hook_context(session_id, ctx);
+            if event == HookEvent::SessionStart {
+                if let Some(ctx) = output
+                    .additional_context
+                    .as_ref()
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty())
+                {
+                    append_hook_context(session_id, ctx);
+                }
             }
+            Some(output)
         }
         HookRunOutcome::Skipped(reason) => {
             log::debug!(
-                "hook handler skipped for session {}: {}",
+                "hook handler ({}) skipped for session {}: {}",
+                event.as_str(),
                 session_id,
                 reason
             );
+            None
         }
     }
 }
@@ -284,6 +355,7 @@ enum HookRunOutcome {
 }
 
 async fn run_hook_handler(
+    event: HookEvent,
     plugin_root: &Path,
     handler: &HookHandler,
     envelope_json: &str,
@@ -351,7 +423,7 @@ async fn run_hook_handler(
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let parsed = normalize(&stdout, HookEvent::SessionStart);
+    let parsed = normalize(&stdout, event);
     HookRunOutcome::Applied(parsed)
 }
 
@@ -508,11 +580,20 @@ mod tests {
     }
 
     #[test]
-    fn stub_dispatch_mode_does_not_run_handlers() {
-        assert_eq!(
-            HookEvent::PreToolUse.dispatch_mode(),
-            HookDispatchMode::Stub
-        );
+    fn all_supported_events_use_execute_dispatch_mode() {
+        for event in [
+            HookEvent::SessionStart,
+            HookEvent::SessionEnd,
+            HookEvent::UserPromptSubmit,
+            HookEvent::PreToolUse,
+            HookEvent::PostToolUse,
+            HookEvent::Stop,
+            HookEvent::SubagentStop,
+            HookEvent::PreCompact,
+            HookEvent::Notification,
+        ] {
+            assert_eq!(event.dispatch_mode(), HookDispatchMode::Execute);
+        }
     }
 
     #[tokio::test]
@@ -774,56 +855,238 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stub_event_logs_without_spawning() {
-        let marker_dir = tempfile::tempdir().expect("marker dir");
-        let marker = marker_dir.path().join("spawned.txt");
-        let marker_str = marker.to_string_lossy().replace('\\', "\\\\");
-        let hooks_json = format!(
-            r#"{{ "hooks": {{ "PreToolUse": [ {{ "command": "echo spawned > \"{}\"" }} ] }} }}"#,
-            marker_str
-        );
+    async fn pre_tool_use_deny_blocks_matched_tool_and_skips_unmatched() {
+        let json_out = r#"{"hookSpecificOutput":{"permissionDecision":"deny","permissionDecisionReason":"blocked by test policy"}}"#;
+        let ps = format!("Write-Output '{json_out}'");
+        let sh = format!("printf '%s' '{json_out}'");
+        let hooks_json = serde_json::json!({
+            "hooks": {
+                "PreToolUse": [{
+                    "matcher": "workspace__runShell",
+                    "hooks": [{
+                        "type": "command",
+                        "command": sh,
+                        "powershell": ps,
+                    }]
+                }]
+            }
+        })
+        .to_string();
         let (temp, root) = setup_approved_plugin(&hooks_json);
 
-        let sid = "stub-session";
-        let params = HookEnvelopeParams::new(sid, root, HookEvent::PreToolUse);
-        dispatch_hook_event_in(temp.path(), HookEvent::PreToolUse, "Bash", &params, sid).await;
-        notify_stub_event(HookEvent::PreToolUse, sid, params).await;
+        let sid = format!("pre-tool-{}", uuid::Uuid::new_v4());
+        let params = HookEnvelopeParams::new(&sid, root.clone(), HookEvent::PreToolUse);
+        let matched = dispatch_hook_event_in(
+            temp.path(),
+            HookEvent::PreToolUse,
+            "workspace__runShell",
+            &params,
+            &sid,
+        )
+        .await;
+        assert_eq!(matched.decision, Some(HookDecision::Block));
+        assert_eq!(matched.reason.as_deref(), Some("blocked by test policy"));
 
-        assert!(!marker.exists(), "stub event must not spawn a process");
-        clear_hook_context(sid);
+        let unmatched = dispatch_hook_event_in(
+            temp.path(),
+            HookEvent::PreToolUse,
+            "workspace__readFile",
+            &params,
+            &sid,
+        )
+        .await;
+        assert_eq!(unmatched.decision, None);
+        clear_hook_context(&sid);
     }
 
-    /// Criterion 7: a source that declares a stub event with a command that
-    /// would write a marker must not create that file when routed through
-    /// `notify_stub_event` (no spawn, no stdout apply).
     #[tokio::test]
-    async fn notify_stub_event_does_not_run_declared_handler() {
-        let marker_dir = tempfile::tempdir().expect("marker dir");
-        let marker = marker_dir.path().join("session-end-ran.txt");
-        let marker_str = marker.to_string_lossy().replace('\\', "\\\\");
-        #[cfg(windows)]
-        let command = format!("cmd /c echo ran> \"{}\"", marker_str);
-        #[cfg(not(windows))]
-        let command = format!("sh -c 'echo ran > \"{}\"'", marker_str);
-        let hooks_json = format!(
-            r#"{{ "hooks": {{ "SessionEnd": [ {{ "command": "{}" }} ] }} }}"#,
-            command.replace('\\', "\\\\").replace('"', "\\\"")
-        );
-        let (_temp, root) = setup_approved_plugin(&hooks_json);
+    async fn user_prompt_submit_returns_additional_context_and_block() {
+        let json_out = r#"{"additionalContext":"turn-only extra context"}"#;
+        let ps = format!("Write-Output '{json_out}'");
+        let sh = format!("printf '%s' '{json_out}'");
+        let hooks_json = serde_json::json!({
+            "hooks": {
+                "UserPromptSubmit": [{
+                    "hooks": [{
+                        "type": "command",
+                        "command": sh,
+                        "powershell": ps,
+                    }]
+                }]
+            }
+        })
+        .to_string();
+        let (temp, root) = setup_approved_plugin(&hooks_json);
 
-        let sid = format!("stub-session-end-{}", uuid::Uuid::new_v4());
-        let params = HookEnvelopeParams::new(&sid, root, HookEvent::SessionEnd);
-        notify_stub_event(HookEvent::SessionEnd, &sid, params).await;
-
-        assert!(
-            !marker.exists(),
-            "notify_stub_event must not spawn the declared SessionEnd command"
-        );
+        let sid = format!("prompt-submit-{}", uuid::Uuid::new_v4());
+        let mut params = HookEnvelopeParams::new(&sid, root, HookEvent::UserPromptSubmit);
+        params.prompt = Some("hello".to_string());
+        let outcome =
+            dispatch_hook_event_in(temp.path(), HookEvent::UserPromptSubmit, "", &params, &sid)
+                .await;
         assert_eq!(
-            HookEvent::SessionEnd.dispatch_mode(),
-            HookDispatchMode::Stub
+            outcome.joined_additional_context().as_deref(),
+            Some("turn-only extra context")
+        );
+        assert_eq!(outcome.decision, None);
+        // Must NOT pollute persistent SessionStart context store.
+        assert!(get_hook_context(&sid).is_none());
+        clear_hook_context(&sid);
+    }
+
+    #[tokio::test]
+    async fn post_tool_use_and_stop_and_session_end_and_notification_and_pre_compact_execute() {
+        let marker_dir = tempfile::tempdir().expect("marker dir");
+        let end_marker = marker_dir.path().join("session-end.txt");
+        let notif_marker = marker_dir.path().join("notif.txt");
+        let compact_marker = marker_dir.path().join("compact.txt");
+
+        let end_str = end_marker.to_string_lossy().to_string();
+        let notif_str = notif_marker.to_string_lossy().to_string();
+        let compact_str = compact_marker.to_string_lossy().to_string();
+
+        let stop_json = r#"{"decision":"block","reason":"verify tests before stopping"}"#;
+        let post_json = r#"{"additionalContext":"post-tool hint"}"#;
+
+        let hooks_json = serde_json::json!({
+            "hooks": {
+                "Stop": [{
+                    "command": format!("printf '%s' '{stop_json}'"),
+                    "powershell": format!("Write-Output '{stop_json}'"),
+                }],
+                "PostToolUse": [{
+                    "matcher": "workspace__writeFile",
+                    "hooks": [{
+                        "type": "command",
+                        "command": format!("printf '%s' '{post_json}'"),
+                        "powershell": format!("Write-Output '{post_json}'"),
+                    }]
+                }],
+                "SessionEnd": [{
+                    "command": format!("sh -c 'echo end > \"{end_str}\"'"),
+                    "powershell": format!("Set-Content -Path '{end_str}' -Value 'end'"),
+                }],
+                "Notification": [{
+                    "matcher": "permission",
+                    "hooks": [{
+                        "type": "command",
+                        "command": format!("sh -c 'echo notif > \"{notif_str}\"'"),
+                        "powershell": format!("Set-Content -Path '{notif_str}' -Value 'notif'"),
+                    }]
+                }],
+                "PreCompact": [{
+                    "matcher": "auto",
+                    "hooks": [{
+                        "type": "command",
+                        "command": format!("sh -c 'echo compact > \"{compact_str}\"'"),
+                        "powershell": format!("Set-Content -Path '{compact_str}' -Value 'compact'"),
+                    }]
+                }]
+            }
+        })
+        .to_string();
+        let (temp, root) = setup_approved_plugin(&hooks_json);
+        let sid = format!("multi-event-{}", uuid::Uuid::new_v4());
+
+        let stop_res = dispatch_hook_event_in(
+            temp.path(),
+            HookEvent::Stop,
+            "",
+            &HookEnvelopeParams::new(&sid, root.clone(), HookEvent::Stop),
+            &sid,
+        )
+        .await;
+        assert_eq!(stop_res.decision, Some(HookDecision::Block));
+        assert_eq!(
+            stop_res.reason.as_deref(),
+            Some("verify tests before stopping")
+        );
+
+        let post_res = dispatch_hook_event_in(
+            temp.path(),
+            HookEvent::PostToolUse,
+            "workspace__writeFile",
+            &HookEnvelopeParams::new(&sid, root.clone(), HookEvent::PostToolUse),
+            &sid,
+        )
+        .await;
+        assert_eq!(
+            post_res.joined_additional_context().as_deref(),
+            Some("post-tool hint")
+        );
+
+        let _ = dispatch_hook_event_in(
+            temp.path(),
+            HookEvent::SessionEnd,
+            "delete",
+            &HookEnvelopeParams::new(&sid, root.clone(), HookEvent::SessionEnd),
+            &sid,
+        )
+        .await;
+        assert!(end_marker.is_file(), "SessionEnd handler should execute");
+
+        let _ = dispatch_hook_event_in(
+            temp.path(),
+            HookEvent::Notification,
+            "permission",
+            &HookEnvelopeParams::new(&sid, root.clone(), HookEvent::Notification),
+            &sid,
+        )
+        .await;
+        assert!(
+            notif_marker.is_file(),
+            "Notification handler should execute"
+        );
+
+        let _ = dispatch_hook_event_in(
+            temp.path(),
+            HookEvent::PreCompact,
+            "auto",
+            &HookEnvelopeParams::new(&sid, root, HookEvent::PreCompact),
+            &sid,
+        )
+        .await;
+        assert!(
+            compact_marker.is_file(),
+            "PreCompact handler should execute"
         );
         clear_hook_context(&sid);
+    }
+
+    #[test]
+    fn decision_aggregation_precedence_is_block_over_ask_over_allow() {
+        let mut res = HookDispatchResult::default();
+        res.merge(HookOutput {
+            decision: Some(HookDecision::Allow),
+            reason: Some("allowed".to_string()),
+            ..HookOutput::default()
+        });
+        assert_eq!(res.decision, Some(HookDecision::Allow));
+
+        res.merge(HookOutput {
+            decision: Some(HookDecision::Ask),
+            reason: Some("confirm".to_string()),
+            ..HookOutput::default()
+        });
+        assert_eq!(res.decision, Some(HookDecision::Ask));
+        assert_eq!(res.reason.as_deref(), Some("confirm"));
+
+        res.merge(HookOutput {
+            decision: Some(HookDecision::Block),
+            reason: Some("denied".to_string()),
+            ..HookOutput::default()
+        });
+        assert_eq!(res.decision, Some(HookDecision::Block));
+        assert_eq!(res.reason.as_deref(), Some("denied"));
+
+        // Subsequent Allow/Ask cannot downgrade Block.
+        res.merge(HookOutput {
+            decision: Some(HookDecision::Allow),
+            reason: Some("too late".to_string()),
+            ..HookOutput::default()
+        });
+        assert_eq!(res.decision, Some(HookDecision::Block));
+        assert_eq!(res.reason.as_deref(), Some("denied"));
     }
     // --- #2825 session-scoped plugin sources ---------------------------------
 

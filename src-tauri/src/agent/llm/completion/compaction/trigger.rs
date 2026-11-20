@@ -253,6 +253,23 @@ pub(crate) async fn try_trigger_preflight_compaction(
         split_candidates
     );
 
+    // Dispatch PreCompact once per compaction attempt (before the split-backoff
+    // and overflow-recovery ladder) with the actual trigger ("auto" vs "manual", #2925).
+    let compact_trigger = pre_compact_trigger_label(resume_completion_after_compact);
+    let mut pre_compact_params = crate::services::hooks::HookEnvelopeParams::new(
+        session_id,
+        std::path::PathBuf::from("."),
+        crate::services::hooks::HookEvent::PreCompact,
+    );
+    pre_compact_params.compact_source = Some(compact_trigger.to_string());
+    let _ = crate::services::hooks::dispatch_hook_event(
+        crate::services::hooks::HookEvent::PreCompact,
+        compact_trigger,
+        &pre_compact_params,
+        session_id,
+    )
+    .await;
+
     let mut prepared_attempt = None;
     let mut chosen_split_idx = preferred_split_idx;
     for split_idx in split_candidates
@@ -569,6 +586,14 @@ pub async fn trigger_preflight_compaction_for_session(
     .await
 }
 
+pub(crate) fn pre_compact_trigger_label(resume_completion_after_compact: bool) -> &'static str {
+    if resume_completion_after_compact {
+        "auto"
+    } else {
+        "manual"
+    }
+}
+
 pub async fn trigger_manual_compaction_for_session(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     app_handle: &AppHandle,
@@ -594,4 +619,15 @@ pub async fn trigger_manual_compaction_for_session(
         },
     )
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pre_compact_trigger_label;
+
+    #[test]
+    fn pre_compact_trigger_distinguishes_auto_and_manual() {
+        assert_eq!(pre_compact_trigger_label(true), "auto");
+        assert_eq!(pre_compact_trigger_label(false), "manual");
+    }
 }
