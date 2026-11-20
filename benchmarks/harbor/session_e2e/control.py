@@ -31,6 +31,11 @@ Endpoints (all require the ``X-LibrAgent-E2E-Control`` capability header;
   open/save dialog (file attach, export, save-as) without a human. Arm it
   immediately before the action that opens the dialog; an unconsumed override
   is replaced by the next arm, never silently queued twice.
+- ``POST /api/e2e-control/window`` — body ``{visible?, width?, height?}``
+  (at least one field; ``width``/``height`` are logical pixels and must be
+  given together) → ``{visible, width, height}`` reflecting the *actual*
+  post-apply state (window managers clamp requests). Show/hide and resize
+  of the isolated instance's main window (#2903 AC2).
 
 Interval and eventual consistency: poll every ``DEFAULT_POLL_INTERVAL_SEC``
 (3.0 s, the bench default). A prompt or approval that just appeared or was
@@ -185,6 +190,39 @@ class E2eControlClient:
         res = await client.post(
             f"{self.api_url}/e2e-control/picker/take",
             headers=self._headers(),
+        )
+        res.raise_for_status()
+        return res.json()
+
+    async def set_window(
+        self,
+        client: httpx.AsyncClient,
+        *,
+        visible: bool | None = None,
+        width: float | None = None,
+        height: float | None = None,
+    ) -> dict[str, Any]:
+        """Show/hide and resize the isolated instance's main window (#2903 AC2).
+
+        Give at least one field; ``width``/``height`` are logical pixels and
+        must be given together. The reply carries the *actual* post-apply
+        state — window managers clamp requests — so verify against the
+        response, not the request.
+        """
+        if visible is None and width is None and height is None:
+            raise ValueError("provide visible and/or width+height")
+        if (width is None) != (height is None):
+            raise ValueError("width and height must be given together")
+        body: dict[str, Any] = {}
+        if visible is not None:
+            body["visible"] = visible
+        if width is not None and height is not None:
+            body["width"] = width
+            body["height"] = height
+        res = await client.post(
+            f"{self.api_url}/e2e-control/window",
+            headers=self._headers(),
+            json=body,
         )
         res.raise_for_status()
         return res.json()

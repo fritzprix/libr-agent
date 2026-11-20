@@ -11,6 +11,9 @@
 //! Plus one dialog hook: `POST /picker` arms a one-shot override that
 //! resolves the next native open/save dialog (#2903).
 //!
+//! Plus one window hook: `POST /window` shows/hides and resizes the main
+//! window of the isolated debug instance (#2903 AC2).
+//!
 //! Every route sits behind [`capability_guard`], a pure filter that takes the
 //! capability as a parameter — no env or process-global reads inside — so it
 //! is directly unit-testable with `warp::test::request`:
@@ -252,6 +255,109 @@ async fn handle_picker_take() -> Result<JsonReply, Infallible> {
     Ok(json_ok(&serde_json::json!({ "override": override_ })))
 }
 
+/// Body for `POST /api/e2e-control/window` (#2903 AC2): show/hide and resize
+/// of the isolated instance's main window. At least one field is required;
+/// `width` / `height` are logical pixels (window size) and must be given
+/// together.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowBody {
+    pub visible: Option<bool>,
+    pub width: Option<f64>,
+    pub height: Option<f64>,
+}
+
+/// Upper bound for a requested window size in logical pixels. Larger values
+/// are harness bugs; answering 400 beats an opaque OS-level failure.
+const MAX_WINDOW_SIZE: f64 = 16_384.0;
+
+/// Validation decision for a window request, kept pure so the guard-chain
+/// tests can pin it without a live window.
+#[derive(Debug, PartialEq)]
+pub enum WindowPlan {
+    Apply {
+        visible: Option<bool>,
+        width: Option<f64>,
+        height: Option<f64>,
+    },
+    Reject(&'static str),
+}
+
+pub fn plan_window(body: &WindowBody) -> WindowPlan {
+    if body.visible.is_none() && body.width.is_none() && body.height.is_none() {
+        return WindowPlan::Reject("Provide visible, width+height, or both");
+    }
+    if body.width.is_some() != body.height.is_some() {
+        return WindowPlan::Reject("Provide width and height together");
+    }
+    for size in [body.width, body.height].into_iter().flatten() {
+        if !(size.is_finite() && size > 0.0 && size <= MAX_WINDOW_SIZE) {
+            return WindowPlan::Reject("width and height must be in (0, 16384]");
+        }
+    }
+    WindowPlan::Apply {
+        visible: body.visible,
+        width: body.width,
+        height: body.height,
+    }
+}
+
+/// Show/hide and resize the main window of the isolated instance (#2903).
+/// Replies with the actual post-apply state — window managers clamp size
+/// requests, so the read-back is what the harness should trust.
+async fn handle_window(body: WindowBody) -> Result<JsonReply, Infallible> {
+    use tauri::Manager;
+
+    let (visible, width, height) = match plan_window(&body) {
+        WindowPlan::Apply {
+            visible,
+            width,
+            height,
+        } => (visible, width, height),
+        WindowPlan::Reject(message) => return Ok(json_error(StatusCode::BAD_REQUEST, message)),
+    };
+    let Some(app) = crate::state::get_app_handle() else {
+        return Ok(json_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "No running Tauri app in this process",
+        ));
+    };
+    let Some(window) = app.get_webview_window("main") else {
+        return Ok(json_error(StatusCode::NOT_FOUND, "main window not found"));
+    };
+    if let Some(visible) = visible {
+        let result = if visible {
+            window.show()
+        } else {
+            window.hide()
+        };
+        if let Err(error) = result {
+            return Ok(json_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("show/hide failed: {error}"),
+            ));
+        }
+    }
+    if let (Some(width), Some(height)) = (width, height) {
+        if let Err(error) = window.set_size(tauri::LogicalSize::new(width, height)) {
+            return Ok(json_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("set_size failed: {error}"),
+            ));
+        }
+    }
+    let visible = window.is_visible().unwrap_or(false);
+    let logical = match (window.outer_size(), window.scale_factor()) {
+        (Ok(size), Ok(scale)) => Some((size.width as f64 / scale, size.height as f64 / scale)),
+        _ => None,
+    };
+    Ok(json_ok(&serde_json::json!({
+        "visible": visible,
+        "width": logical.map(|(width, _)| width),
+        "height": logical.map(|(_, height)| height),
+    })))
+}
+
 /// Map a tool-approval rejection message to the HTTP status the handler
 /// answers with. Extracted so the status mapping is covered by tests.
 pub fn tool_approval_error_status(message: &str) -> StatusCode {
@@ -424,8 +530,18 @@ pub fn e2e_control_routes_with_capability(
         .and(warp::path("picker"))
         .and(warp::path("take"))
         .and(warp::path::end())
-        .and(guarded)
+        .and(guarded.clone())
         .and_then(handle_picker_take);
+
+    // POST /api/e2e-control/window (no agent manager: show/hide + resize the main window, #2903)
+    let window = warp::post()
+        .and(warp::path("api"))
+        .and(warp::path("e2e-control"))
+        .and(warp::path("window"))
+        .and(warp::path::end())
+        .and(guarded)
+        .and(super::super::routes::json_body())
+        .and_then(handle_window);
 
     status
         .or(interactions)
@@ -434,4 +550,5 @@ pub fn e2e_control_routes_with_capability(
         .or(circuit_break_resume)
         .or(picker)
         .or(picker_take)
+        .or(window)
 }

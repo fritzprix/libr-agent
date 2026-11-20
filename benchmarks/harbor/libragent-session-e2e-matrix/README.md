@@ -64,9 +64,10 @@ The control-plane contract is shared across platforms: the debug-only,
 loopback, token-guarded S1/S3 HTTP routes for interaction polling and prompt
 and approval resolution behave the same on Windows — they are plain HTTP
 against the same debug binary. The file-picker injection and in-place restart
-routes land with #2903 (PR #2916) and are not part of this change. Only the S3
-*window* size/visibility helper is Linux-side (X11); it has no Windows
-equivalent in the manager.
+routes land with #2903 (PR #2916) and are not part of this change. Window
+show/hide and resize now ride the same debug HTTP plane via
+`POST /api/e2e-control/window` (#2903 AC2, Tauri-side, so both platforms);
+the older X11 window-size helper stays Linux-side manager scaffolding only.
 
 For interactive debugging the manual host-mode path still works: start a
 debug desktop instance yourself with `$env:LIBRAGENT_E2E_CONTROL = "1"` and a
@@ -178,6 +179,11 @@ A task may pin its own session mode with `execution_mode` under
 - `e2e-picker-control-plane` — #2903 AC1: probes `POST /api/e2e-control/picker`
   with both a path override and `cancel: true` on the live isolated debug
   instance (`probe_picker_control = true`).
+- Window control (#2903 AC2, no Harbor task yet): `POST /api/e2e-control/window`
+  shows/hides and resizes the isolated instance's main window and
+  replies with the actual post-apply state;
+  `session_e2e.control.E2eControlClient.set_window` is the client. The
+  window-state Harbor/UI task is deferred to #2902 (S2).
 - `e2e-askuser-reload-submit` — 2565 P-5 & X-5: holds a waiting `ui__askUser`
   prompt across a session metadata refetch/re-poll
   (`re_poll_prompt_before_answer = true`), then delivers a structured JSON
