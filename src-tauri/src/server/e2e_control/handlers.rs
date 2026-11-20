@@ -346,16 +346,37 @@ async fn handle_window(body: WindowBody) -> Result<JsonReply, Infallible> {
             ));
         }
     }
-    let visible = window.is_visible().unwrap_or(false);
-    let logical = match (window.outer_size(), window.scale_factor()) {
-        (Ok(size), Ok(scale)) => Some((size.width as f64 / scale, size.height as f64 / scale)),
-        _ => None,
-    };
-    Ok(json_ok(&serde_json::json!({
+    let reply = window_state_reply(
+        window.is_visible(),
+        window.outer_size().map(|size| (size.width, size.height)),
+        window.scale_factor(),
+    );
+    Ok(match reply {
+        Ok(state) => json_ok(&state),
+        Err(message) => json_error(StatusCode::INTERNAL_SERVER_ERROR, message),
+    })
+}
+
+/// Build the `200` reply of `POST /api/e2e-control/window` from the read-back
+/// calls (#2903 G1.1). Any failed call yields an error naming it, so a `200`
+/// always carries real values. `size` is the physical outer size in pixels;
+/// the reply converts it to logical pixels with `scale`.
+pub fn window_state_reply<E: std::fmt::Display>(
+    visible: Result<bool, E>,
+    size: Result<(u32, u32), E>,
+    scale: Result<f64, E>,
+) -> Result<serde_json::Value, String> {
+    let visible = visible.map_err(|error| format!("is_visible failed: {error}"))?;
+    let (width, height) = size.map_err(|error| format!("outer_size failed: {error}"))?;
+    let scale = scale.map_err(|error| format!("scale_factor failed: {error}"))?;
+    if !(scale.is_finite() && scale > 0.0) {
+        return Err(format!("scale_factor failed: invalid scale {scale}"));
+    }
+    Ok(serde_json::json!({
         "visible": visible,
-        "width": logical.map(|(width, _)| width),
-        "height": logical.map(|(_, height)| height),
-    })))
+        "width": f64::from(width) / scale,
+        "height": f64::from(height) / scale,
+    }))
 }
 
 /// Map a tool-approval rejection message to the HTTP status the handler

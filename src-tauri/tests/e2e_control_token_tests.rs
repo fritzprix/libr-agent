@@ -30,8 +30,8 @@ mod tests {
         capability_guard, constant_time_eq, e2e_control_guarded_routes_with_capability,
         header_matches, pending_circuit_break, plan_circuit_break_resume, plan_picker_override,
         plan_user_prompt_action, plan_window, resume_circuit_break_message,
-        tool_approval_error_status, PickerBody, PlannedPromptAction, SessionInteractionsSnapshot,
-        UserPromptBody, WindowBody, WindowPlan, E2E_CONTROL_HEADER,
+        tool_approval_error_status, window_state_reply, PickerBody, PlannedPromptAction,
+        SessionInteractionsSnapshot, UserPromptBody, WindowBody, WindowPlan, E2E_CONTROL_HEADER,
     };
     use warp::http::{HeaderMap, StatusCode};
     use warp::Filter;
@@ -437,6 +437,34 @@ mod tests {
                 matches!(plan_window(&body), WindowPlan::Reject(_)),
                 "body {body:?} must be rejected"
             );
+        }
+    }
+
+    #[test]
+    fn window_state_reply_reports_the_read_back_in_logical_pixels() {
+        // The read-back (clamped by the window manager), not the request,
+        // is what the reply carries: 1000x700 physical at scale 2.0.
+        let reply = window_state_reply::<String>(Ok(true), Ok((1000, 700)), Ok(2.0)).unwrap();
+        assert_eq!(
+            reply,
+            serde_json::json!({ "visible": true, "width": 500.0, "height": 350.0 })
+        );
+    }
+
+    #[test]
+    fn window_state_reply_names_the_failing_read_back_call() {
+        let err = window_state_reply(Err("boom"), Ok((10, 10)), Ok(1.0)).unwrap_err();
+        assert!(
+            err.contains("is_visible failed") && err.contains("boom"),
+            "{err}"
+        );
+        let err = window_state_reply(Ok(true), Err("boom"), Ok(1.0)).unwrap_err();
+        assert!(err.contains("outer_size failed"), "{err}");
+        let err = window_state_reply(Ok(true), Ok((10, 10)), Err("boom")).unwrap_err();
+        assert!(err.contains("scale_factor failed"), "{err}");
+        for bad in [0.0, -1.0, f64::NAN] {
+            let err = window_state_reply::<String>(Ok(true), Ok((10, 10)), Ok(bad)).unwrap_err();
+            assert!(err.contains("scale_factor failed"), "{err}");
         }
     }
 

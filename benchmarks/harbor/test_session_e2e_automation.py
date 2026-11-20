@@ -734,6 +734,38 @@ async def test_picker_arm_requires_exactly_one_choice():
     assert fake.requests == []
 
 
+@pytest.mark.asyncio
+async def test_set_window_uses_documented_endpoint_and_sends_only_given_fields():
+    state = {"visible": True, "width": 800.0, "height": 600.0}
+    fake = RecordingClient({"/window": state})
+
+    result = await _client().set_window(fake, width=800, height=600)
+
+    assert result == state
+    (req,) = fake.requests
+    assert req["method"] == "POST"
+    assert req["url"].endswith("/e2e-control/window")
+    assert req["headers"] == {E2E_HEADER: "t" * 48}
+    assert req["json"] == {"width": 800, "height": 600}
+
+    fake = RecordingClient({"/window": state})
+    await _client().set_window(fake, visible=False)
+    (req,) = fake.requests
+    assert req["json"] == {"visible": False}
+
+
+@pytest.mark.asyncio
+async def test_set_window_rejects_empty_or_lone_dimension():
+    fake = RecordingClient({"/window": {}})
+    with pytest.raises(ValueError):
+        await _client().set_window(fake)
+    with pytest.raises(ValueError):
+        await _client().set_window(fake, width=800)
+    with pytest.raises(ValueError):
+        await _client().set_window(fake, height=600)
+    assert fake.requests == []
+
+
 def test_poll_interval_matches_documented_default():
     # The contract documents 3.0 s as the default poll interval; the bench
     # poller must keep using exactly that constant.

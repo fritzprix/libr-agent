@@ -183,7 +183,10 @@ A task may pin its own session mode with `execution_mode` under
   shows/hides and resizes the isolated instance's main window and
   replies with the actual post-apply state;
   `session_e2e.control.E2eControlClient.set_window` is the client. The
-  window-state Harbor/UI task is deferred to #2902 (S2).
+  window-state Harbor/UI task is deferred to #2902 (S2), which will be its
+  first caller. The HTTP route works inside the app on every platform; the
+  X11 `set_window` in `isolated_instance.py` is the Linux manager-side
+  fallback.
 - `e2e-askuser-reload-submit` — 2565 P-5 & X-5: holds a waiting `ui__askUser`
   prompt across a session metadata refetch/re-poll
   (`re_poll_prompt_before_answer = true`), then delivers a structured JSON
