@@ -81,12 +81,24 @@ export interface PluginManifestSummary {
   description?: string;
 }
 
+/** One plugin-declared MCP server in the install preview (#2924). */
+export interface McpServerPreviewEntry {
+  name: string;
+  transport: 'stdio' | 'http';
+  command?: string;
+  url?: string;
+}
+
 export interface SkillImportPreview {
   kind: SkillImportKind;
   discoveredSkills: SkillImportCandidate[];
   conflicts: SkillImportConflict[];
   hooks: HookPreviewEntry[];
   hooksRequireApproval: boolean;
+  /** MCP servers the plugin declares (#2924). */
+  mcpServers?: McpServerPreviewEntry[];
+  /** Starting the plugin's MCP servers needs install-time approval (#2924). */
+  mcpRequireApproval?: boolean;
   /** Slash command names the plugin's `commands/` provides (#2922). */
   pluginCommands?: string[];
   /** Present when the source carried a `.claude-plugin/plugin.json`. */

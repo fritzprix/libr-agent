@@ -514,6 +514,18 @@ pub(crate) async fn import_mcp_data(
             continue;
         }
 
+        // #2924 (D2): an import must never overwrite a plugin-owned server;
+        // those rows change only with their plugin.
+        if let Some(existing_model) = existing.as_ref() {
+            if let Some(owner) = crate::mcp::types::plugin_source_of(&existing_model.config) {
+                errors.push(format!(
+                    "Skipped MCP server '{}': owned by plugin '{}' (read-only)",
+                    r.name, owner
+                ));
+                continue;
+            }
+        }
+
         let now = chrono::Utc::now().timestamp_millis();
         if let Some(existing_model) = existing {
             let mut active: mcp_server::ActiveModel = existing_model.into();

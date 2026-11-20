@@ -63,6 +63,12 @@ pub async fn delete_plugin_source(source_id: String) -> Result<(), String> {
     let record = get_source(&source_id)?;
     let user_dir = get_user_skills_directory()?;
     remove_skill_names_from_user_skills(&user_dir, &record.manifest.skill_names)?;
+    // #2924: removing the plugin also stops and removes the global MCP
+    // servers it owned. Session-scoped servers never entered the global
+    // store; their session plugin dir (and proxy) is torn down separately.
+    if !record.manifest.mcp_servers.is_empty() {
+        super::plugin_mcp::remove_global_plugin_mcp_servers(&source_id).await?;
+    }
     delete_source(&source_id)?;
     // #2812 criterion 4: uninstalling a source must not leave its hook
     // bootstrap in any open session's prompt slot.

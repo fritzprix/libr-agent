@@ -145,6 +145,25 @@ pub struct MCPServerConfig {
     pub provenance: Option<ServerProvenance>,
 }
 
+/// Ownership marker for MCP servers installed by a plugin (#2924).
+///
+/// Stored as `pluginSource: "plugin:<source_id>"` inside the server's config
+/// JSON, so no schema migration is needed and the marker survives raw-JSON
+/// updates. Plugin-owned servers are read-only: update, delete, and import
+/// paths reject them, and only the plugin's uninstall removes them.
+pub const PLUGIN_SOURCE_KEY: &str = "pluginSource";
+
+/// Marker prefix for `pluginSource` values (`plugin:<source_id>`).
+pub const PLUGIN_SOURCE_PREFIX: &str = "plugin:";
+
+/// Returns the `plugin:<source_id>` owner marker from a stored MCP server
+/// config JSON, or `None` when the row is not plugin-owned.
+pub fn plugin_source_of(config_json: &str) -> Option<String> {
+    let value = serde_json::from_str::<serde_json::Value>(config_json).ok()?;
+    let owner = value.get(PLUGIN_SOURCE_KEY)?.as_str()?;
+    (!owner.is_empty()).then(|| owner.to_string())
+}
+
 /// Represents metadata annotations for an `MCPTool`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MCPToolAnnotations {

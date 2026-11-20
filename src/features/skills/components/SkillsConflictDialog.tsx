@@ -42,9 +42,15 @@ export function SkillsConflictDialog({
 }: SkillsConflictDialogProps) {
   const { t } = useTranslation('common');
   const hasHooks = (pendingInstall?.preview.hooks.length ?? 0) > 0;
+  const mcpServers = pendingInstall?.preview.mcpServers ?? [];
+  const hasMcp = mcpServers.length > 0;
+  const requiresApproval = hasHooks || hasMcp;
   const discoveredSkills = pendingInstall?.preview.discoveredSkills ?? [];
-  const title = hasHooks
-    ? t('settings.skills.installConfirmTitle', 'Review skills and hooks')
+  const title = requiresApproval
+    ? t(
+        'settings.skills.installConfirmTitle',
+        'Review skills, hooks, and MCP servers',
+      )
     : t('settings.skills.conflictTitle', 'Replace conflicting skills?');
 
   return (
@@ -53,10 +59,10 @@ export function SkillsConflictDialog({
         <AlertDialogHeader className="px-6 pt-6 pb-4">
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>
-            {hasHooks
+            {requiresApproval
               ? t(
                   'settings.skills.installConfirmDescription',
-                  'Confirm which skills to install and whether approved plugin hooks may run during your sessions.',
+                  'Confirm which skills to install and whether approved plugin hooks and MCP servers may run during your sessions.',
                 )
               : t(
                   'settings.skills.conflictDescription',
@@ -138,7 +144,10 @@ export function SkillsConflictDialog({
                         ) : null}
                         <Badge variant="secondary">
                           {hook.executionStatus === 'executed'
-                            ? t('settings.skills.hookStatusExecuted', 'Executed')
+                            ? t(
+                                'settings.skills.hookStatusExecuted',
+                                'Executed',
+                              )
                             : t(
                                 'settings.skills.hookStatusStubbed',
                                 'Not supported',
@@ -150,40 +159,81 @@ export function SkillsConflictDialog({
                       </p>
                     </div>
                   ))}
-                  <label className="flex items-start gap-3 cursor-pointer pt-2">
-                    <Checkbox
-                      checked={pendingInstall?.approveHooks ?? false}
-                      onCheckedChange={(checked) =>
-                        onApproveHooksChange(checked === true)
-                      }
-                      className="mt-0.5"
-                    />
-                    <div>
-                      <p className="font-medium">
-                        {t(
-                          'settings.skills.approveHooksLabel',
-                          'Allow hooks to run',
-                        )}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {t(
-                          'settings.skills.approveHooksHint',
-                          'Supported hook events run automatically during the session once approved. Unsupported events are skipped.',
-                        )}
-                      </p>
-                      {pendingInstall?.preview.hooks.some(
-                        (hook) => hook.event === 'PreToolUse',
-                      ) ? (
-                        <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
-                          {t(
-                            'settings.skills.approveHooksToolApprovalHint',
-                            'This plugin includes PreToolUse hooks that can allow, ask for confirmation on, or block tool calls.',
-                          )}
-                        </p>
-                      ) : null}
-                    </div>
-                  </label>
                 </div>
+              ) : null}
+              {hasMcp ? (
+                <div className="rounded-md border bg-muted/20 p-3 text-sm space-y-3">
+                  <p className="font-medium">
+                    {t(
+                      'settings.skills.mcpServersToInstall',
+                      'Plugin MCP servers',
+                    )}
+                  </p>
+                  {mcpServers.map((server) => (
+                    <div
+                      key={`${server.name}-${server.transport}`}
+                      className="min-w-0 space-y-1 border-t border-border/60 pt-2 first:border-t-0 first:pt-0"
+                    >
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <span className="font-medium">{server.name}</span>
+                        <Badge variant="secondary">{server.transport}</Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground break-all font-mono">
+                        {server.command ?? server.url}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              {requiresApproval ? (
+                <label className="flex items-start gap-3 cursor-pointer pt-2">
+                  <Checkbox
+                    checked={pendingInstall?.approveHooks ?? false}
+                    onCheckedChange={(checked) =>
+                      onApproveHooksChange(checked === true)
+                    }
+                    className="mt-0.5"
+                  />
+                  <div>
+                    <p className="font-medium">
+                      {hasHooks && hasMcp
+                        ? t(
+                            'settings.skills.approveHooksMcpLabel',
+                            'Allow hooks to run and MCP servers to start',
+                          )
+                        : hasMcp
+                          ? t(
+                              'settings.skills.approveMcpLabel',
+                              'Allow MCP servers to start',
+                            )
+                          : t(
+                              'settings.skills.approveHooksLabel',
+                              'Allow hooks to run',
+                            )}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {hasMcp
+                        ? t(
+                            'settings.skills.approveMcpHint',
+                            'Approved MCP servers start automatically when a session opens. Approved hook events also run automatically; unsupported ones are skipped.',
+                          )
+                        : t(
+                            'settings.skills.approveHooksHint',
+                            'Supported hook events run automatically during the session once approved. Unsupported events are skipped.',
+                          )}
+                    </p>
+                    {pendingInstall?.preview.hooks.some(
+                      (hook) => hook.event === 'PreToolUse',
+                    ) ? (
+                      <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                        {t(
+                          'settings.skills.approveHooksToolApprovalHint',
+                          'This plugin includes PreToolUse hooks that can allow, ask for confirmation on, or block tool calls.',
+                        )}
+                      </p>
+                    ) : null}
+                  </div>
+                </label>
               ) : null}
               {userConflicts.length > 0 && (
                 <div className="rounded-md border bg-muted/20 p-3 text-sm space-y-3">
@@ -255,7 +305,7 @@ export function SkillsConflictDialog({
           <AlertDialogCancel disabled={isInstallingLocal || isInstallingGithub}>
             {t('common.cancel', 'Cancel')}
           </AlertDialogCancel>
-          {hasHooks ? (
+          {requiresApproval ? (
             <Button
               type="button"
               variant="outline"
@@ -270,7 +320,7 @@ export function SkillsConflictDialog({
               )}
               {t(
                 'settings.skills.installWithoutHooks',
-                'Install without hook approval',
+                'Install without approval',
               )}
             </Button>
           ) : null}
@@ -278,7 +328,7 @@ export function SkillsConflictDialog({
             disabled={
               isInstallingLocal ||
               isInstallingGithub ||
-              (hasHooks && !pendingInstall?.approveHooks)
+              (requiresApproval && !pendingInstall?.approveHooks)
             }
             onClick={(event) => {
               event.preventDefault();
@@ -293,13 +343,18 @@ export function SkillsConflictDialog({
                   'settings.skills.installWithHooks',
                   'Install and approve hooks',
                 )
-              : userConflicts.length > 0 &&
-                  (pendingInstall?.selectedOverwriteNames.length ?? 0) > 0
-                ? t('settings.skills.replaceConflicts', 'Replace and install')
-                : t(
-                    'settings.skills.installNonConflicting',
-                    'Install remaining skills',
-                  )}
+              : hasMcp
+                ? t(
+                    'settings.skills.installWithMcp',
+                    'Install and approve servers',
+                  )
+                : userConflicts.length > 0 &&
+                    (pendingInstall?.selectedOverwriteNames.length ?? 0) > 0
+                  ? t('settings.skills.replaceConflicts', 'Replace and install')
+                  : t(
+                      'settings.skills.installNonConflicting',
+                      'Install remaining skills',
+                    )}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

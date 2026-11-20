@@ -3,6 +3,7 @@ use crate::agent::runtime_state::{
     SessionRuntimeServerState, SessionRuntimeServerStatus, SessionRuntimeTransport,
 };
 use crate::mcp::secret_templates::{fill_secrets, mask_values, secret_store, FilledConfig};
+use crate::mcp::types::{plugin_source_of, PLUGIN_SOURCE_PREFIX};
 use crate::mcp::utils::unique_session_server_name;
 use crate::repositories::mcp_server_repository::MCPServerRepository;
 use crate::state::get_mcp_server_repository;
@@ -97,10 +98,33 @@ pub(super) async fn load_requested_server_configs(
                     "Session {} has no external MCP servers configured (mcp_server_ids is empty)",
                     session_id
                 );
-            } else {
-                let mut taken_session_names = HashSet::new();
-                for model in models {
-                    if !mcp_server_ids.contains(&model.id) {
+            }
+
+            // #2924: session-scoped plugin servers shadow global sources of
+            // the same source_id, so a session never runs a global plugin's
+            // servers twice.
+            let session_store =
+                crate::services::hooks::registry::get_session_plugins_directory(session_id).ok();
+            let shadowed_source_ids: HashSet<String> = session_store
+                .as_ref()
+                .map(|dir| {
+                    crate::services::hooks::registry::list_sources_in(dir)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|r| r.manifest.source_id)
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            let mut taken_session_names = HashSet::new();
+            for model in models {
+                // Assistant-bound servers load by ID (SSOT). Plugin-owned
+                // servers (#2924) are active for every session that has not
+                // shadowed their plugin, regardless of assistant binding.
+                let owner = plugin_source_of(&model.config);
+                let plugin_owned = owner.is_some();
+                if !mcp_server_ids.contains(&model.id) {
+                    if !plugin_owned {
                         log::debug!(
                             "Skipping MCP server '{}' (ID: {}) - not in session assistant mcp_server_ids (SSOT)",
                             model.name,
@@ -108,64 +132,137 @@ pub(super) async fn load_requested_server_configs(
                         );
                         continue;
                     }
+                    let owner_source = owner
+                        .as_deref()
+                        .and_then(|o| o.strip_prefix(PLUGIN_SOURCE_PREFIX))
+                        .unwrap_or_default();
+                    if shadowed_source_ids.contains(owner_source) {
+                        log::debug!(
+                            "Skipping plugin MCP server '{}' (ID: {}) - session installs plugin {}",
+                            model.name,
+                            model.id,
+                            owner_source
+                        );
+                        continue;
+                    }
+                }
 
-                    let parsed = match serde_json::from_str::<crate::mcp::types::MCPServerConfig>(
-                        &model.config,
-                    ) {
+                let parsed =
+                    match serde_json::from_str::<crate::mcp::types::MCPServerConfig>(&model.config)
+                    {
                         Ok(config) => fill_secrets(secret_store(), &model.id, &config)
                             .await
                             .map(FilledConfig::into_parts),
                         Err(error) => Err(error.to_string()),
                     };
-                    match parsed {
-                        Ok((mut config, values)) => {
-                            let raw_name = config.name.unwrap_or_else(|| model.name.clone());
-                            let server_name = unique_session_server_name(
-                                &raw_name,
-                                &model.id,
-                                &mut taken_session_names,
-                            );
-                            if server_name != raw_name {
-                                log::info!(
-                                    "Sanitized MCP server name '{}' → '{}' for session {} (ID: {})",
-                                    raw_name,
-                                    server_name,
-                                    session_id,
-                                    model.id
-                                );
-                            }
-                            // Session runtime / tool prefix key only — DB row name is left unchanged
-                            // so legacy display names with spaces remain intact.
-                            config.name = Some(server_name.clone());
-                            server_name_to_id.insert(server_name.clone(), model.id.clone());
-                            if !values.is_empty() {
-                                secret_values.insert(server_name.clone(), values);
-                            }
-
-                            log::debug!(
-                                "Loading MCP server '{}' (raw: '{}', ID: {}) into session {}",
-                                server_name,
+                match parsed {
+                    Ok((mut config, values)) => {
+                        let raw_name = config.name.unwrap_or_else(|| model.name.clone());
+                        let server_name = unique_session_server_name(
+                            &raw_name,
+                            &model.id,
+                            &mut taken_session_names,
+                        );
+                        if server_name != raw_name {
+                            log::info!(
+                                "Sanitized MCP server name '{}' → '{}' for session {} (ID: {})",
                                 raw_name,
-                                model.id,
-                                session_id
+                                server_name,
+                                session_id,
+                                model.id
                             );
+                        }
+                        // Session runtime / tool prefix key only — DB row name is left unchanged
+                        // so legacy display names with spaces remain intact.
+                        config.name = Some(server_name.clone());
+                        server_name_to_id.insert(server_name.clone(), model.id.clone());
+                        if !values.is_empty() {
+                            secret_values.insert(server_name.clone(), values);
+                        }
 
-                            match config.transport {
-                                crate::mcp::types::TransportConfig::Stdio { .. } => {
-                                    stdio_configs.insert(server_name, config);
-                                }
-                                crate::mcp::types::TransportConfig::Http { .. } => {
-                                    http_configs.insert(server_name, config);
-                                }
+                        log::debug!(
+                            "Loading MCP server '{}' (raw: '{}', ID: {}) into session {}",
+                            server_name,
+                            raw_name,
+                            model.id,
+                            session_id
+                        );
+
+                        match config.transport {
+                            crate::mcp::types::TransportConfig::Stdio { .. } => {
+                                stdio_configs.insert(server_name, config);
+                            }
+                            crate::mcp::types::TransportConfig::Http { .. } => {
+                                http_configs.insert(server_name, config);
                             }
                         }
+                    }
+                    Err(error) => {
+                        log::warn!(
+                            "Failed to load config for MCP server '{}' (ID: {}): {}",
+                            model.name,
+                            model.id,
+                            error
+                        );
+                    }
+                }
+            }
+
+            // #2924 (D1): session-scoped plugin servers never enter the global
+            // store; load them straight from this session's plugin store with
+            // `${CLAUDE_PLUGIN_ROOT}` resolved against each installed root.
+            if let Some(store) = session_store.as_ref() {
+                let (servers, roots) =
+                    crate::services::skill_service::session_plugin_mcp_servers(store);
+                for (source_id, snapshot) in servers {
+                    let Some(root) = roots.get(&source_id) else {
+                        continue;
+                    };
+                    let config_json =
+                        match crate::services::skill_service::snapshot_to_mcp_config_json(
+                            &snapshot, root, &source_id,
+                        ) {
+                            Ok(json) => json,
+                            Err(error) => {
+                                log::warn!(
+                                    "Session {}: plugin {} MCP server '{}' skipped: {}",
+                                    session_id,
+                                    source_id,
+                                    snapshot.name,
+                                    error
+                                );
+                                continue;
+                            }
+                        };
+                    let config = match serde_json::from_value::<crate::mcp::types::MCPServerConfig>(
+                        config_json,
+                    ) {
+                        Ok(config) => config,
                         Err(error) => {
                             log::warn!(
-                                "Failed to load config for MCP server '{}' (ID: {}): {}",
-                                model.name,
-                                model.id,
+                                "Session {}: plugin {} MCP server '{}' invalid config skipped: {}",
+                                session_id,
+                                source_id,
+                                snapshot.name,
                                 error
                             );
+                            continue;
+                        }
+                    };
+                    let pseudo_id =
+                        format!("{}{}:{}", PLUGIN_SOURCE_PREFIX, source_id, snapshot.name);
+                    let raw_name = snapshot.name.clone();
+                    let server_name =
+                        unique_session_server_name(&raw_name, &pseudo_id, &mut taken_session_names);
+                    let mut config = config;
+                    config.name = Some(server_name.clone());
+                    server_name_to_id.insert(server_name.clone(), pseudo_id);
+                    match config.transport {
+                        crate::mcp::types::TransportConfig::Stdio { .. } => {
+                            stdio_configs.insert(server_name, config);
+                        }
+                        crate::mcp::types::TransportConfig::Http { .. } => {
+                            http_configs.insert(server_name, config);
                         }
                     }
                 }

@@ -341,6 +341,13 @@ export interface MCPServerEntity {
   toolCount?: number;
   verificationStatus?: 'pending' | 'success' | 'error';
   lastVerificationError?: string;
+
+  /**
+   * Owner marker `plugin:<source_id>` for servers installed by a plugin
+   * (#2924). Read-only: edit and delete are rejected by the backend and the
+   * server is removed only with its plugin.
+   */
+  pluginSource?: string;
 }
 
 export interface Assistant {

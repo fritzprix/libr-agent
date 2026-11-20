@@ -401,6 +401,15 @@ impl McpServerService {
             .map_err(|e| format!("DB error: {}", e))?
             .ok_or_else(|| format!("MCP server '{}' not found", id))?;
 
+        // #2924 (D2): plugin-owned servers are read-only here. They change
+        // only with the plugin that installed them (re-install / uninstall).
+        if let Some(owner) = crate::mcp::types::plugin_source_of(&existing.config) {
+            return Err(format!(
+                "MCP server '{}' is owned by plugin '{}' and cannot be edited. Manage it through the plugin (uninstall the plugin to remove it).",
+                existing.name, owner
+            ));
+        }
+
         let existing_config_val: Value = serde_json::from_str(&existing.config)
             .map_err(|e| format!("Failed to parse existing config from DB: {}", e))?;
         let final_config_val = match config.as_ref() {
@@ -479,9 +488,46 @@ impl McpServerService {
         Self::delete_server_config_with_store(repo, secret_store(), id).await
     }
 
+    /// Delete a plugin-owned MCP server row (plugin uninstall path only).
+    /// Refuses rows that are not plugin-owned — normal removals keep going
+    /// through [`Self::delete_server_config`], which rejects plugin-owned
+    /// rows (#2924 D2).
+    pub(crate) async fn delete_plugin_owned_server(id: &str) -> Result<(), String> {
+        let repo = crate::state::get_mcp_server_repository();
+        let model = repo
+            .get(id)
+            .await
+            .map_err(|e| format!("DB error: {}", e))?
+            .ok_or_else(|| format!("MCP server '{}' not found", id))?;
+        if crate::mcp::types::plugin_source_of(&model.config).is_none() {
+            return Err(format!(
+                "MCP server '{}' is not plugin-owned; delete it through the normal flow",
+                model.name
+            ));
+        }
+        Self::delete_server_config_inner(repo, secret_store(), id).await
+    }
+
     /// [`Self::delete_server_config`] with the secret store passed in. Deleting the row
     /// also drops its `encrypted_secrets`.
     pub(crate) async fn delete_server_config_with_store(
+        repo: &dyn MCPServerRepository,
+        store: &dyn SecretStore,
+        id: &str,
+    ) -> Result<(), String> {
+        // #2924 (D2): plugin-owned servers are removed only with their plugin.
+        if let Ok(Some(model)) = repo.get(id).await {
+            if let Some(owner) = crate::mcp::types::plugin_source_of(&model.config) {
+                return Err(format!(
+                    "MCP server '{}' is owned by plugin '{}' and cannot be deleted. Uninstall the plugin to remove it.",
+                    model.name, owner
+                ));
+            }
+        }
+        Self::delete_server_config_inner(repo, store, id).await
+    }
+
+    async fn delete_server_config_inner(
         repo: &dyn MCPServerRepository,
         store: &dyn SecretStore,
         id: &str,

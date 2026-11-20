@@ -1,9 +1,10 @@
 use super::cache::{invalidate_skill_scan_cache, scan_skills_internal_cached};
 use super::contracts::{
-    DiscoveredSkillRoot, HookPreviewEntry, HookPreviewExecutionStatus, PluginManifestSummary,
-    PreparedSkillImport, SkillImportCandidate, SkillImportConflict, SkillImportKind,
-    SkillImportPreview, SkillImportResult, SkillMetadata, GITHUB_DOWNLOAD_CONNECT_TIMEOUT_SECS,
-    GITHUB_DOWNLOAD_TIMEOUT_SECS, MAX_GITHUB_ARCHIVE_BYTES, SKILL_FILE_NAME,
+    DiscoveredSkillRoot, HookPreviewEntry, HookPreviewExecutionStatus, McpServerPreviewEntry,
+    PluginManifestSummary, PreparedSkillImport, SkillImportCandidate, SkillImportConflict,
+    SkillImportKind, SkillImportPreview, SkillImportResult, SkillMetadata,
+    GITHUB_DOWNLOAD_CONNECT_TIMEOUT_SECS, GITHUB_DOWNLOAD_TIMEOUT_SECS, MAX_GITHUB_ARCHIVE_BYTES,
+    SKILL_FILE_NAME,
 };
 use super::directories::{
     get_assistant_skills_directory, get_system_skills_directory, get_user_skills_directory,
@@ -11,9 +12,10 @@ use super::directories::{
 };
 use super::github::parse_github_repo_url;
 use super::plugin_manifest::{self, PluginManifest};
+use super::plugin_mcp::{collect_plugin_mcp_servers, sync_global_plugin_mcp_servers};
 use super::scanning::{copy_dir_recursive, parse_skill_metadata};
 use crate::services::hooks::registry::{
-    get_user_plugins_directory, save_source_in, PluginMetadata, PluginSourceManifest,
+    get_source, get_user_plugins_directory, save_source_in, PluginMetadata, PluginSourceManifest,
 };
 use crate::services::hooks::schema::{HookDispatchMode, HooksConfig};
 use crate::session::get_session_manager;
@@ -474,12 +476,37 @@ pub(super) async fn build_import_preview(
         .as_ref()
         .map(build_hook_preview_entries)
         .unwrap_or_default();
-    let kind = if hooks.is_empty() {
+    // #2924: preview the plugin's declared MCP servers (name + command/URL)
+    // so the user sees what the plugin can run before approving the install.
+    let declared_servers = collect_plugin_mcp_servers(&prepared.scan_root, manifest.as_ref())?;
+    let mcp_servers = declared_servers
+        .iter()
+        .map(|server| McpServerPreviewEntry {
+            name: server.name.clone(),
+            transport: if server.entry.get("url").and_then(|v| v.as_str()).is_some() {
+                "http".to_string()
+            } else {
+                "stdio".to_string()
+            },
+            command: server
+                .entry
+                .get("command")
+                .and_then(|v| v.as_str())
+                .map(|v| v.to_string()),
+            url: server
+                .entry
+                .get("url")
+                .and_then(|v| v.as_str())
+                .map(|v| v.to_string()),
+        })
+        .collect::<Vec<_>>();
+    let kind = if hooks.is_empty() && mcp_servers.is_empty() {
         SkillImportKind::SkillBundle
     } else {
         SkillImportKind::Plugin
     };
     let hooks_require_approval = !hooks.is_empty();
+    let mcp_require_approval = !mcp_servers.is_empty();
 
     Ok(SkillImportPreview {
         kind,
@@ -487,6 +514,8 @@ pub(super) async fn build_import_preview(
         conflicts,
         hooks,
         hooks_require_approval,
+        mcp_servers,
+        mcp_require_approval,
         plugin_commands: super::plugin_commands::plugin_command_names(
             &prepared.scan_root,
             manifest.as_ref(),
@@ -570,14 +599,49 @@ async fn install_user_prepared_skills(
         plugins_dir: get_user_plugins_directory()?,
         always_record_source: false,
     };
-    install_prepared_import(
+    let source_key = prepared.source_key.clone();
+    let result = install_prepared_import(
         prepared,
         preview,
         overwrite_existing,
         excluded_skill_names,
         approve_hooks,
         target,
-    )
+    );
+    // #2924 (D1/D2): a global install puts the plugin's approved servers into
+    // the global MCP server store as plugin-owned rows. Session-scoped
+    // installs never reach this function, so they never touch the global
+    // store. Best-effort: a store-sync failure must not report the file
+    // install itself as failed; the next install of the same source re-syncs.
+    if result.is_ok() {
+        if let Err(error) = sync_installed_plugin_mcp_servers(&source_key).await {
+            log::warn!(
+                "Installed plugin {} but could not sync its MCP servers to the global store: {}",
+                source_key,
+                error
+            );
+        }
+    }
+    result
+}
+
+/// Copy the approved MCP servers of a just-installed global plugin source
+/// into the global MCP server store (D2). Reads back the persisted source
+/// record, so it must run after `install_plugin_source`.
+async fn sync_installed_plugin_mcp_servers(source_key: &str) -> Result<(), String> {
+    let source_id = plugin_source_id(source_key);
+    let record = get_source(&source_id)?;
+    if record.manifest.mcp_servers.is_empty() {
+        return Ok(());
+    }
+    if !record.manifest.mcp_approved {
+        log::info!(
+            "Plugin {} declares MCP servers but they were not approved at install; not starting them",
+            source_id
+        );
+        return Ok(());
+    }
+    sync_global_plugin_mcp_servers(&source_id, &record.root_dir, &record.manifest.mcp_servers).await
 }
 
 pub(super) fn install_prepared_import(
@@ -1083,6 +1147,11 @@ fn install_plugin_source(
         _ => BTreeMap::new(),
     };
 
+    // #2924 (D3): one install-time approval covers hooks and MCP servers
+    // alike — the dialog shows both before the user agrees.
+    let mcp_servers = collect_plugin_mcp_servers(scan_root, manifest.as_ref())?;
+    let mcp_approved = approve_hooks && !mcp_servers.is_empty();
+
     save_source_in(
         plugins_dir,
         PluginSourceManifest {
@@ -1100,6 +1169,8 @@ fn install_plugin_source(
             created_at: chrono::Utc::now().timestamp(),
             plugin: plugin_metadata_from_manifest(manifest.as_ref()),
             hook_files: hook_file_paths,
+            mcp_servers,
+            mcp_approved,
         },
     )?;
 
@@ -1139,6 +1210,58 @@ mod hook_preview_tests {
         write_valid_skill(dir.path(), "alpha");
         let hooks = try_load_plugin_hooks(dir.path(), None).unwrap();
         assert!(hooks.is_none());
+    }
+
+    // #2924 (D3): install persists the declared MCP servers, and the
+    // install-time approval flag covers them alongside hooks.
+    #[test]
+    fn install_persists_mcp_snapshot_and_approval() {
+        let dir = tempfile::tempdir().unwrap();
+        write_valid_skill(dir.path(), "alpha");
+        fs::write(
+            dir.path().join(".mcp.json"),
+            r#"{"mcpServers":{"fetch":{"command":"uvx","args":["srv"]}}}"#,
+        )
+        .unwrap();
+
+        let plugins = tempfile::tempdir().unwrap();
+        let source_key = "https://example.com/mcp-plugin";
+        install_plugin_source(
+            dir.path(),
+            source_key,
+            &["alpha".to_string()],
+            true,
+            plugins.path(),
+        )
+        .unwrap();
+        let record = crate::services::hooks::registry::get_source_in(
+            plugins.path(),
+            &plugin_source_id(source_key),
+        )
+        .unwrap();
+        assert_eq!(record.manifest.mcp_servers.len(), 1);
+        assert_eq!(record.manifest.mcp_servers[0].name, "fetch");
+        assert_eq!(record.manifest.mcp_servers[0].entry["command"], "uvx");
+        assert!(record.manifest.mcp_approved);
+
+        // Without approval the snapshot is still recorded (so the install is
+        // inspectable) but the servers are never started.
+        let plugins2 = tempfile::tempdir().unwrap();
+        install_plugin_source(
+            dir.path(),
+            source_key,
+            &["alpha".to_string()],
+            false,
+            plugins2.path(),
+        )
+        .unwrap();
+        let record = crate::services::hooks::registry::get_source_in(
+            plugins2.path(),
+            &plugin_source_id(source_key),
+        )
+        .unwrap();
+        assert_eq!(record.manifest.mcp_servers.len(), 1);
+        assert!(!record.manifest.mcp_approved);
     }
 
     #[test]

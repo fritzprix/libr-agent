@@ -12,6 +12,9 @@ export function shouldPromptSkillInstall(
   return (
     preview.kind === 'plugin' ||
     preview.hooks.length > 0 ||
+    // #2924: a plugin that declares MCP servers needs the install dialog so
+    // the user can approve starting them.
+    preview.mcpRequireApproval === true ||
     userConflictCount > 0
   );
 }

@@ -645,6 +645,8 @@ mod tests {
         save_source_in(
             temp.path(),
             PluginSourceManifest {
+                mcp_servers: Vec::new(),
+                mcp_approved: false,
                 source_url: "test://local".to_string(),
                 source_id,
                 skill_names: vec![],
