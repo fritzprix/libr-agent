@@ -32,9 +32,15 @@ async fn test_resolve_skills_global_only() {
     let user = TempDir::new().unwrap();
     create_skill(system.path(), "skill-a", "Skill A", "Description A");
 
-    let result = resolve_skills(system.path().to_owned(), user.path().to_owned(), None, None)
-        .await
-        .unwrap();
+    let result = resolve_skills(
+        system.path().to_owned(),
+        user.path().to_owned(),
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].name, "Skill A");
@@ -64,6 +70,7 @@ async fn test_resolve_skills_assistant_adds_to_global() {
         system.path().to_owned(),
         user.path().to_owned(),
         Some(assistant.path().to_owned()),
+        None,
         None,
     )
     .await
@@ -98,6 +105,7 @@ async fn test_resolve_skills_empty_assistant_falls_back_to_global() {
         user.path().to_owned(),
         Some(assistant.path().to_owned()),
         None,
+        None,
     )
     .await
     .unwrap();
@@ -123,6 +131,7 @@ async fn test_resolve_skills_nonexistent_assistant_falls_back_to_global() {
         user.path().to_owned(),
         Some(nonexistent_assistant),
         None,
+        None,
     )
     .await
     .unwrap();
@@ -138,7 +147,7 @@ async fn test_resolve_skills_both_nonexistent_returns_empty() {
     let user = base.path().join("no_user");
     let assistant = base.path().join("no_assistant");
 
-    let result = resolve_skills(system, user, Some(assistant), None)
+    let result = resolve_skills(system, user, Some(assistant), None, None)
         .await
         .unwrap();
 
@@ -151,7 +160,9 @@ async fn test_resolve_skills_no_assistant_dir_returns_empty_if_no_global() {
     let system = base.path().join("nonexistent-system");
     let user = base.path().join("nonexistent-user");
 
-    let result = resolve_skills(system, user, None, None).await.unwrap();
+    let result = resolve_skills(system, user, None, None, None)
+        .await
+        .unwrap();
 
     assert!(result.is_empty());
 }
@@ -165,9 +176,15 @@ async fn test_resolve_skills_results_sorted_by_name() {
     create_skill(system.path(), "aaa", "Aaa Skill", "First alphabetically");
     create_skill(system.path(), "mmm", "Mmm Skill", "Middle alphabetically");
 
-    let result = resolve_skills(system.path().to_owned(), user.path().to_owned(), None, None)
-        .await
-        .unwrap();
+    let result = resolve_skills(
+        system.path().to_owned(),
+        user.path().to_owned(),
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(result.len(), 3);
     assert_eq!(result[0].name, "Aaa Skill");
@@ -192,6 +209,7 @@ async fn test_resolve_skills_multiple_assistant_skills_preserve_global() {
         system.path().to_owned(),
         user.path().to_owned(),
         Some(assistant.path().to_owned()),
+        None,
         None,
     )
     .await
@@ -240,6 +258,7 @@ async fn test_resolve_skills_same_name_collision_prefers_assistant() {
         user.path().to_owned(),
         Some(assistant.path().to_owned()),
         None,
+        None,
     )
     .await
     .unwrap();
@@ -283,6 +302,7 @@ async fn test_resolve_skills_same_name_collision_prefers_workspace() {
         user.path().to_owned(),
         Some(assistant.path().to_owned()),
         Some(workspace_dir),
+        None,
     )
     .await
     .unwrap();
@@ -305,9 +325,15 @@ async fn test_resolve_skills_same_name_collision_prefers_user_over_system() {
     );
     create_skill(user.path(), "shared-skill", "Shared Skill", "User version");
 
-    let result = resolve_skills(system.path().to_owned(), user.path().to_owned(), None, None)
-        .await
-        .unwrap();
+    let result = resolve_skills(
+        system.path().to_owned(),
+        user.path().to_owned(),
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].description, "User version");
@@ -339,6 +365,7 @@ async fn test_resolve_skills_agent_auto_discover() {
         user.path().to_owned(),
         None,
         Some(workspace_dir),
+        None,
     )
     .await
     .unwrap();
@@ -382,6 +409,7 @@ async fn test_resolve_skills_managed_layers_assign_alias_paths() {
         user.path().to_owned(),
         Some(assistant.path().to_owned()),
         Some(workspace_dir),
+        None,
     )
     .await
     .unwrap();
@@ -434,6 +462,7 @@ async fn test_resolve_skills_same_name_collision_agent_precedence() {
             user.path().to_owned(),
             None,
             Some(workspace_dir),
+            None,
         )
         .await
         .unwrap();
@@ -459,6 +488,7 @@ async fn test_resolve_skills_same_name_collision_agent_precedence() {
             user.path().to_owned(),
             None,
             Some(workspace_dir),
+            None,
         )
         .await
         .unwrap();
@@ -482,6 +512,7 @@ async fn test_resolve_skills_same_name_collision_agent_precedence() {
             user.path().to_owned(),
             None,
             Some(workspace_dir),
+            None,
         )
         .await
         .unwrap();
@@ -525,6 +556,7 @@ async fn test_resolve_skills_agent_auto_discover_all_patterns() {
             user.path().to_owned(),
             None,
             Some(workspace_dir),
+            None,
         )
         .await
         .unwrap();
@@ -590,6 +622,7 @@ async fn test_resolve_skills_workspace_root_fallback() {
         user.path().to_owned(),
         None,
         Some(nested_dir),
+        None,
     )
     .await;
 
