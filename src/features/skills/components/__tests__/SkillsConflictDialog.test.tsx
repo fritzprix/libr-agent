@@ -8,7 +8,22 @@ import { SkillsConflictDialog } from '../SkillsConflictDialog';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (_key: string, fallback?: string) => fallback ?? _key,
+    t: (
+      _key: string,
+      fallbackOrOptions?: string | Record<string, unknown>,
+    ) => {
+      if (typeof fallbackOrOptions === 'string') return fallbackOrOptions;
+      if (fallbackOrOptions && typeof fallbackOrOptions === 'object') {
+        const { defaultValue, ...vars } = fallbackOrOptions as {
+          defaultValue?: string;
+        } & Record<string, unknown>;
+        if (!defaultValue) return _key;
+        return defaultValue.replace(/\{\{(\w+)\}\}/g, (_m, name: string) =>
+          String(vars[name] ?? ''),
+        );
+      }
+      return _key;
+    },
   }),
 }));
 
@@ -207,20 +222,40 @@ describe('SkillsConflictDialog MCP server approval (#2924)', () => {
     hooks: [],
     hooksRequireApproval: false,
     mcpServers: [
-      { name: 'fetch', transport: 'stdio' as const, command: 'uvx mcp-fetch' },
-      { name: 'remote', transport: 'http' as const, url: 'https://x/mcp' },
+      {
+        name: 'fetch',
+        transport: 'stdio' as const,
+        command: 'uvx',
+        args: 'mcp-fetch --max 10',
+        envNames: ['API_KEY', 'TOKEN'],
+      },
+      {
+        name: 'remote',
+        transport: 'http' as const,
+        url: 'https://x/mcp',
+        headerNames: ['Authorization'],
+      },
     ],
     mcpRequireApproval: true,
   };
 
-  it('shows each declared server with its command or URL', () => {
+  it('shows each declared server with its full command line and URL', () => {
     renderDialog(buildPendingInstall(mcpPreview));
 
     expect(screen.getByText('Plugin MCP servers')).toBeInTheDocument();
     expect(screen.getByText('fetch')).toBeInTheDocument();
-    expect(screen.getByText('uvx mcp-fetch')).toBeInTheDocument();
+    expect(screen.getByText('uvx mcp-fetch --max 10')).toBeInTheDocument();
     expect(screen.getByText('remote')).toBeInTheDocument();
     expect(screen.getByText('https://x/mcp')).toBeInTheDocument();
+  });
+
+  // Gatekeeper G1.3: the disclosure shows declared env/header NAMES so the
+  // one-time approval is informed (values are never carried to the UI).
+  it('discloses declared env and header names (G1.3)', () => {
+    renderDialog(buildPendingInstall(mcpPreview));
+
+    expect(screen.getByText('env: API_KEY, TOKEN')).toBeInTheDocument();
+    expect(screen.getByText('headers: Authorization')).toBeInTheDocument();
   });
 
   it('requires approval when only MCP servers are present (no hooks)', () => {
@@ -241,7 +276,7 @@ describe('SkillsConflictDialog MCP server approval (#2924)', () => {
     renderDialog(
       buildPendingInstall({
         mcpServers: [
-          { name: 'fetch', transport: 'stdio', command: 'uvx mcp-fetch' },
+          { name: 'fetch', transport: 'stdio', command: 'uvx', args: 'mcp-fetch' },
         ],
         mcpRequireApproval: true,
       }),

@@ -641,3 +641,110 @@ mod verify_tests {
         assert!(!error.contains("the-secret-value"), "{error}");
     }
 }
+
+// #2924 (D2, gatekeeper G1.4): plugin-owned MCP server rows are read-only —
+// they change only through the plugin lifecycle (install/update/uninstall).
+#[cfg(test)]
+mod plugin_guard_tests {
+    use super::*;
+    use crate::repositories::mcp_server_repository::SqliteMCPServerRepository;
+
+    async fn memory_db() -> sea_orm::DatabaseConnection {
+        use sea_orm_migration::MigratorTrait;
+        crate::lifecycle::database::register_sqlite_vec();
+        let db = sea_orm::Database::connect("sqlite::memory:")
+            .await
+            .expect("memory db");
+        crate::migration::Migrator::up(&db, None)
+            .await
+            .expect("migrations");
+        db
+    }
+
+    fn plugin_config(name: &str, owner: &str) -> serde_json::Value {
+        serde_json::json!({
+            "name": name,
+            "transport": { "type": "http", "url": format!("https://{name}.example/mcp") },
+            "pluginSource": format!("plugin:{owner}")
+        })
+    }
+
+    fn plain_config(name: &str) -> serde_json::Value {
+        serde_json::json!({
+            "name": name,
+            "transport": { "type": "http", "url": format!("https://{name}.example/mcp") }
+        })
+    }
+
+    #[tokio::test]
+    async fn update_refuses_plugin_owned_servers_only() {
+        let db = memory_db().await;
+        let repo = SqliteMCPServerRepository::new(db);
+        let owned = repo
+            .create("owned", plugin_config("owned", "plugin-ee00000000000001"))
+            .await
+            .unwrap();
+        let error = McpServerService::update_server_config(
+            &repo,
+            owned.id.clone(),
+            None,
+            Some(plugin_config("owned", "plugin-ee00000000000001")),
+            SaveVerification::Pending,
+        )
+        .await
+        .expect_err("plugin-owned rows must not be editable");
+        assert!(error.contains("owned by plugin"), "{error}");
+        assert!(error.contains("plugin-ee00000000000001"), "{error}");
+
+        // Non-plugin rows keep working through the normal edit path.
+        let normal = repo.create("normal", plain_config("normal")).await.unwrap();
+        let updated = McpServerService::update_server_config(
+            &repo,
+            normal.id.clone(),
+            Some("renamed".to_string()),
+            None,
+            SaveVerification::Pending,
+        )
+        .await
+        .expect("name-only update of a normal row");
+        assert_eq!(updated.name, "renamed");
+    }
+
+    #[tokio::test]
+    async fn normal_delete_refuses_plugin_owned_but_uninstall_path_removes_it() {
+        let _guard = crate::state::lock_test_global_state().await;
+        let db = memory_db().await;
+        let repo = SqliteMCPServerRepository::new(db.clone());
+        crate::state::set_mcp_server_repository(SqliteMCPServerRepository::new(db));
+
+        let owned = repo
+            .create(
+                "owned-del",
+                plugin_config("owned-del", "plugin-ee00000000000002"),
+            )
+            .await
+            .unwrap();
+        let error = McpServerService::delete_server_config_with_store(
+            &repo,
+            &crate::mcp::secret_templates::MemorySecretStore::default(),
+            &owned.id,
+        )
+        .await
+        .expect_err("plugin-owned rows must not be deletable from the UI path");
+        assert!(error.contains("cannot be deleted"), "{error}");
+        assert!(error.contains("Uninstall the plugin"), "{error}");
+
+        // The plugin-uninstall path removes the row it owns.
+        McpServerService::delete_plugin_owned_server(&owned.id)
+            .await
+            .expect("uninstall path may delete owned rows");
+        assert!(repo.get(&owned.id).await.unwrap().is_none());
+
+        // …and refuses rows it does not own.
+        let normal = repo.create("plain", plain_config("plain")).await.unwrap();
+        let error = McpServerService::delete_plugin_owned_server(&normal.id)
+            .await
+            .expect_err("only plugin-owned rows go through this path");
+        assert!(error.contains("not plugin-owned"), "{error}");
+    }
+}

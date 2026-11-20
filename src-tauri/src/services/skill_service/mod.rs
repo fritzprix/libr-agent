@@ -54,4 +54,4 @@ pub use session_plugins::{
 };
 
 pub(crate) use cache::scan_skills_internal_cached;
-pub(crate) use plugin_mcp::{session_plugin_mcp_servers, snapshot_to_mcp_config_json};
+pub(crate) use plugin_mcp::{build_session_plugin_server_configs, SessionPluginServerConfig};

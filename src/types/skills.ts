@@ -86,7 +86,13 @@ export interface McpServerPreviewEntry {
   name: string;
   transport: 'stdio' | 'http';
   command?: string;
+  /** Command arguments joined with spaces, as declared (#2924 D3). */
+  args?: string;
+  /** Environment variable NAMES the server sets (values never shown). */
+  envNames?: string[];
   url?: string;
+  /** HTTP header NAMES the server sends (values never shown). */
+  headerNames?: string[];
 }
 
 export interface SkillImportPreview {
@@ -109,6 +115,9 @@ export interface SkillImportResult {
   importedNames: string[];
   overwrittenNames: string[];
   skippedNames: string[];
+  /** Non-fatal problems the user must see, e.g. an approved plugin MCP
+   *  server that could not be installed (#2924 gatekeeper G1.2). */
+  warnings?: string[];
 }
 
 /** Where an active plugin was installed. Mirrors Rust `PluginScope`. */

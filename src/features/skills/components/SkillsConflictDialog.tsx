@@ -179,8 +179,27 @@ export function SkillsConflictDialog({
                         <Badge variant="secondary">{server.transport}</Badge>
                       </div>
                       <p className="text-xs text-muted-foreground break-all font-mono">
-                        {server.command ?? server.url}
+                        {[server.command ?? server.url, server.args]
+                          .filter(Boolean)
+                          .join(' ')}
                       </p>
+                      {server.envNames || server.headerNames ? (
+                        <p className="text-xs text-muted-foreground break-all">
+                          {server.envNames
+                            ? t('settings.skills.mcpEnvNames', {
+                                names: server.envNames.join(', '),
+                                defaultValue: 'env: {{names}}',
+                              })
+                            : null}
+                          {server.envNames && server.headerNames ? ' · ' : null}
+                          {server.headerNames
+                            ? t('settings.skills.mcpHeaderNames', {
+                                names: server.headerNames.join(', '),
+                                defaultValue: 'headers: {{names}}',
+                              })
+                            : null}
+                        </p>
+                      ) : null}
                     </div>
                   ))}
                 </div>

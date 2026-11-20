@@ -13,12 +13,12 @@
 //! plugin); a **session-scoped** plugin's servers are never copied there —
 //! session load reads them straight from the session's plugin store.
 
-use super::plugin_manifest::{McpServersDecl, PluginManifest};
+use super::plugin_manifest::{validate_component_path, McpServersDecl, PluginManifest};
 use crate::mcp::types::PLUGIN_SOURCE_KEY;
 use crate::mcp::utils::sanitize_mcp_server_name;
 use crate::services::hooks::registry::PluginMcpServerSnapshot;
 use serde_json::{Map, Value};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 
 /// Default server-declaration file at the plugin root (Claude Code spec).
@@ -61,6 +61,14 @@ pub fn collect_plugin_mcp_servers(
     };
 
     let default_file = scan_root.join(PLUGIN_MCP_FILE);
+    if default_file
+        .symlink_metadata()
+        .is_ok_and(|m| m.is_symlink())
+    {
+        return Err(format!(
+            "{PLUGIN_MCP_FILE}: symlinks are refused in a plugin source (gatekeeper S1.1)"
+        ));
+    }
     if default_file.is_file() {
         merge_entries(&default_file, PLUGIN_MCP_FILE.to_string())?;
     }
@@ -78,7 +86,18 @@ pub fn collect_plugin_mcp_servers(
             }
             McpServersDecl::Paths(paths) => {
                 for raw in paths.to_vec() {
+                    // Same hostile-path rule as the other manifest component
+                    // paths (#2921): `./`-relative, no traversal, and no
+                    // symlink that could read a file from outside the plugin
+                    // root (gatekeeper S1.1).
+                    validate_component_path(&raw)
+                        .map_err(|error| format!("plugin manifest mcpServers: {error}"))?;
                     let resolved = scan_root.join(&raw);
+                    if resolved.symlink_metadata().is_ok_and(|m| m.is_symlink()) {
+                        return Err(format!(
+                            "plugin manifest mcpServers path {raw:?} is a symlink; refused"
+                        ));
+                    }
                     if !resolved.is_file() {
                         return Err(format!(
                             "plugin manifest mcpServers path {raw:?} not found in the plugin"
@@ -228,43 +247,54 @@ pub fn snapshot_to_mcp_config_json(
     entry_to_mcp_config_json(&snapshot.name, &resolved, source_id)
 }
 
-/// Install (or refresh) a global plugin's approved servers as plugin-owned
-/// rows in the global MCP server store. Replaces every row previously owned
-/// by `source_id`, so re-install and update stay idempotent.
-pub async fn sync_global_plugin_mcp_servers(
+/// Create the plugin-owned rows for `servers` in the global MCP server
+/// store. Callers must remove any rows previously owned by `source_id`
+/// first (see [`remove_global_plugin_mcp_servers`]) so re-install and
+/// update converge exactly on `servers` (gatekeeper G1.1).
+///
+/// Returns one warning per server that could not be installed; the caller
+/// must surface them to the user — the user approved these servers, so a
+/// silent drop is not acceptable (gatekeeper G1.2). A failure to read or
+/// write the store itself is an `Err`.
+pub async fn create_plugin_mcp_server_rows(
     source_id: &str,
     plugin_root: &Path,
     servers: &[PluginMcpServerSnapshot],
-) -> Result<(), String> {
+) -> Result<Vec<String>, String> {
     use crate::services::{McpServerService, SaveVerification};
     let repo = crate::state::get_mcp_server_repository();
 
-    remove_global_plugin_mcp_servers(source_id).await?;
-
+    let mut warnings = Vec::new();
     for snapshot in servers {
-        let config = snapshot_to_mcp_config_json(snapshot, plugin_root, source_id)?;
         let name = sanitize_mcp_server_name(&snapshot.name);
-        match McpServerService::create_server_config(
-            repo,
-            name.clone(),
-            config,
-            SaveVerification::Pending,
-        )
-        .await
-        {
-            Ok(model) => {
-                McpServerService::schedule_background_probe(model.id);
-            }
+        let outcome: Result<String, String> = async {
+            let config = snapshot_to_mcp_config_json(snapshot, plugin_root, source_id)?;
+            let model = McpServerService::create_server_config(
+                repo,
+                name.clone(),
+                config,
+                SaveVerification::Pending,
+            )
+            .await?;
+            Ok(model.id)
+        }
+        .await;
+        match outcome {
+            Ok(id) => McpServerService::schedule_background_probe(id),
             Err(error) => {
                 log::warn!(
                     "Plugin {source_id}: could not install MCP server '{}' into the global store: {}",
                     snapshot.name,
                     error
                 );
+                warnings.push(format!(
+                    "Plugin {source_id}: MCP server '{}' was approved but could not be installed into the global store: {error}",
+                    snapshot.name
+                ));
             }
         }
     }
-    Ok(())
+    Ok(warnings)
 }
 
 /// Delete every global MCP server row owned by `source_id` (plugin uninstall).
@@ -287,8 +317,10 @@ pub async fn remove_global_plugin_mcp_servers(source_id: &str) -> Result<(), Str
 
 /// Approved MCP servers effective for one session, from the session's own
 /// plugin store only (#2924 D1: session servers never enter the global
-/// store). Returns `(source_id, snapshot)` pairs plus the set of source ids
-/// present in the session store, which shadow same-id global plugins.
+/// store). Returns `(source_id, snapshot)` pairs plus the map of all source
+/// ids present in the session store (approved or not) with their installed
+/// roots — the same-id set that shadows global plugins and resolves
+/// `${CLAUDE_PLUGIN_ROOT}`. Unapproved snapshots are skipped.
 pub fn session_plugin_mcp_servers(
     session_store: &Path,
 ) -> (
@@ -316,6 +348,79 @@ pub fn session_plugin_mcp_servers(
         }
     }
     (out, roots)
+}
+
+/// One session-scoped plugin MCP server resolved for session load (#2924 D1):
+/// the store config JSON (plugin-root placeholders expanded, plugin-source
+/// marker set) plus the runtime name and pseudo-id the session proxy keys it
+/// under (`plugin:<source_id>:<name>` — no DB row exists for these).
+pub struct SessionPluginServerConfig {
+    pub server_name: String,
+    pub pseudo_id: String,
+    pub config: crate::mcp::types::MCPServerConfig,
+}
+
+/// Load every approved session-plugin server from one session plugin store
+/// into ready-to-connect configs (the D1 loader used by
+/// `load_requested_server_configs`). Invalid entries are skipped with a
+/// warning; `taken_session_names` keeps runtime names unique across the
+/// session's servers, same as DB-loaded servers.
+pub fn build_session_plugin_server_configs(
+    session_store: &Path,
+    session_id: &str,
+    taken_session_names: &mut HashSet<String>,
+) -> Vec<SessionPluginServerConfig> {
+    use crate::mcp::types::MCPServerConfig;
+    use crate::mcp::utils::unique_session_server_name;
+
+    let (servers, roots) = session_plugin_mcp_servers(session_store);
+    let mut out = Vec::new();
+    for (source_id, snapshot) in servers {
+        let Some(root) = roots.get(&source_id) else {
+            continue;
+        };
+        let config_json = match snapshot_to_mcp_config_json(&snapshot, root, &source_id) {
+            Ok(json) => json,
+            Err(error) => {
+                log::warn!(
+                    "Session {}: plugin {} MCP server '{}' skipped: {}",
+                    session_id,
+                    source_id,
+                    snapshot.name,
+                    error
+                );
+                continue;
+            }
+        };
+        let mut config = match serde_json::from_value::<MCPServerConfig>(config_json) {
+            Ok(config) => config,
+            Err(error) => {
+                log::warn!(
+                    "Session {}: plugin {} MCP server '{}' invalid config skipped: {}",
+                    session_id,
+                    source_id,
+                    snapshot.name,
+                    error
+                );
+                continue;
+            }
+        };
+        let pseudo_id = format!(
+            "{}{}:{}",
+            crate::mcp::types::PLUGIN_SOURCE_PREFIX,
+            source_id,
+            snapshot.name
+        );
+        let server_name =
+            unique_session_server_name(&snapshot.name, &pseudo_id, taken_session_names);
+        config.name = Some(server_name.clone());
+        out.push(SessionPluginServerConfig {
+            server_name,
+            pseudo_id,
+            config,
+        });
+    }
+    out
 }
 
 #[cfg(test)]
@@ -416,6 +521,64 @@ mod tests {
         assert!(error.contains("command"), "{error}");
     }
 
+    // #2924 (gatekeeper S1.1): symlinked MCP declaration files are refused —
+    // a symlink could read a file from outside the plugin root.
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_declaration_files_are_refused() {
+        use std::os::unix::fs::symlink;
+
+        // `.mcp.json` itself is a symlink.
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("outside.json"),
+            r#"{"srv":{"command":"x"}}"#,
+        )
+        .unwrap();
+        symlink(
+            dir.path().join("outside.json"),
+            dir.path().join(".mcp.json"),
+        )
+        .unwrap();
+        let error = collect_plugin_mcp_servers(dir.path(), None).unwrap_err();
+        assert!(error.contains("symlink"), "{error}");
+
+        // A manifest `mcpServers` path resolves to a symlink.
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            ".claude-plugin/plugin.json",
+            r#"{"name":"p","mcpServers":"./linked.json"}"#,
+        );
+        fs::write(
+            dir.path().join("outside.json"),
+            r#"{"srv":{"command":"x"}}"#,
+        )
+        .unwrap();
+        symlink(
+            dir.path().join("outside.json"),
+            dir.path().join("linked.json"),
+        )
+        .unwrap();
+        let manifest = load_plugin_manifest(dir.path()).unwrap().expect("manifest");
+        let error = collect_plugin_mcp_servers(dir.path(), Some(&manifest)).unwrap_err();
+        assert!(error.contains("symlink"), "{error}");
+    }
+
+    // #2921 hostile-path rule also guards manifest `mcpServers` paths.
+    #[test]
+    fn manifest_mcp_servers_path_traversal_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            ".claude-plugin/plugin.json",
+            r#"{"name":"p","mcpServers":"./../evil.json"}"#,
+        );
+        let manifest = load_plugin_manifest(dir.path()).unwrap().expect("manifest");
+        let error = collect_plugin_mcp_servers(dir.path(), Some(&manifest)).unwrap_err();
+        assert!(error.contains("mcpServers"), "{error}");
+    }
+
     #[test]
     fn plugin_root_placeholders_resolve_everywhere() {
         let dir = tempfile::tempdir().unwrap();
@@ -460,5 +623,184 @@ mod tests {
             }
             _ => panic!("expected http"),
         }
+    }
+
+    /// Write a session-store source record the way `save_source_in` does:
+    /// `<base>/<source_id>/manifest.json` with a matching `source_id`.
+    fn write_store_manifest(
+        base: &Path,
+        source_id: &str,
+        mcp_approved: bool,
+        servers_json: &str,
+    ) -> std::path::PathBuf {
+        let root = base.join(source_id);
+        fs::create_dir_all(&root).unwrap();
+        fs::write(
+            root.join("manifest.json"),
+            format!(
+                r#"{{
+                  "source_url": "https://example.com/{source_id}",
+                  "source_id": "{source_id}",
+                  "skill_names": [],
+                  "hooks": null,
+                  "hooks_approved": false,
+                  "approval_hashes": {{}},
+                  "created_at": 0,
+                  "plugin": null,
+                  "hook_files": [],
+                  "mcp_servers": {servers_json},
+                  "mcp_approved": {mcp_approved}
+                }}"#
+            ),
+        )
+        .unwrap();
+        root
+    }
+
+    // #2924 (gatekeeper G1.4): session load reads only approved servers from
+    // the session store, resolves `${CLAUDE_PLUGIN_ROOT}` against the
+    // installed root, and keys entries with the plugin pseudo-id.
+    #[test]
+    fn session_plugin_configs_are_approved_only_and_root_resolved() {
+        let store = tempfile::tempdir().unwrap();
+        let approved_root = write_store_manifest(
+            store.path(),
+            "plugin-aaaa000000000000",
+            true,
+            r#"[{"name":"fetch","entry":{"command":"${CLAUDE_PLUGIN_ROOT}/bin/fetch","args":["--root","${CLAUDE_PLUGIN_ROOT}"]}}]"#,
+        );
+        write_store_manifest(
+            store.path(),
+            "plugin-bbbb000000000000",
+            false,
+            r#"[{"name":"secret","entry":{"command":"never-run"}}]"#,
+        );
+
+        let mut taken = std::collections::HashSet::new();
+        let configs = build_session_plugin_server_configs(store.path(), "sess-1", &mut taken);
+        assert_eq!(configs.len(), 1, "unapproved source servers are skipped");
+        let server = &configs[0];
+        assert_eq!(server.server_name, "fetch");
+        assert_eq!(server.pseudo_id, "plugin:plugin-aaaa000000000000:fetch");
+        let root = approved_root.to_string_lossy();
+        match &server.config.transport {
+            crate::mcp::types::TransportConfig::Stdio { command, args, .. } => {
+                assert_eq!(command, &format!("{root}/bin/fetch"));
+                assert_eq!(args, &vec![format!("--root"), root.to_string()]);
+            }
+            _ => panic!("expected stdio transport"),
+        }
+        // The store shape keeps the `pluginSource` marker (covered by
+        // `entry_converts_to_stored_config_json`); the in-memory session
+        // config identifies its owner through the pseudo-id instead.
+        assert!(server
+            .pseudo_id
+            .starts_with("plugin:plugin-aaaa000000000000:"));
+        // The session key is claimed so DB-loaded servers cannot collide.
+        assert!(taken.contains("fetch"));
+    }
+
+    async fn marker_count(db: &sea_orm::DatabaseConnection, marker: &str) -> usize {
+        use sea_orm::EntityTrait;
+        crate::entity::mcp_server::Entity::find()
+            .all(db)
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|row| {
+                crate::mcp::types::plugin_source_of(&row.config).as_deref() == Some(marker)
+            })
+            .count()
+    }
+
+    // #2924 (gatekeeper G1.1): re-install / update converges the global store
+    // exactly on the approved snapshot — create never self-removes, and
+    // remove deletes every owned row first.
+    #[tokio::test]
+    async fn create_and_remove_rows_converge_on_the_approved_snapshot() {
+        use sea_orm_migration::MigratorTrait;
+        let _guard = crate::state::lock_test_global_state().await;
+        crate::lifecycle::database::register_sqlite_vec();
+        let db = sea_orm::Database::connect("sqlite::memory:")
+            .await
+            .expect("memory db");
+        crate::migration::Migrator::up(&db, None)
+            .await
+            .expect("migrations");
+        crate::state::set_mcp_server_repository(
+            crate::repositories::mcp_server_repository::SqliteMCPServerRepository::new(db.clone()),
+        );
+
+        let source_id = "plugin-cc00000000000001";
+        let marker = plugin_source_marker(source_id);
+        let root = std::path::Path::new("/tmp/plugin-root-under-test");
+        let snapshot = |name: &str| PluginMcpServerSnapshot {
+            name: name.to_string(),
+            entry: serde_json::json!({"command": "true"}),
+        };
+
+        // First install: both approved servers become owned rows.
+        let warnings =
+            create_plugin_mcp_server_rows(source_id, root, &[snapshot("alpha"), snapshot("beta")])
+                .await
+                .expect("store write ok");
+        assert!(warnings.is_empty());
+        assert_eq!(marker_count(&db, &marker).await, 2);
+
+        // Update that drops "beta": removal runs first, so only the new
+        // snapshot survives (stale rows never keep running).
+        remove_global_plugin_mcp_servers(source_id)
+            .await
+            .expect("removal ok");
+        assert_eq!(marker_count(&db, &marker).await, 0);
+        let warnings = create_plugin_mcp_server_rows(source_id, root, &[snapshot("alpha")])
+            .await
+            .expect("store write ok");
+        assert!(warnings.is_empty());
+        assert_eq!(marker_count(&db, &marker).await, 1);
+
+        // Uninstall removes every owned row of the source.
+        remove_global_plugin_mcp_servers(source_id)
+            .await
+            .expect("removal ok");
+        assert_eq!(marker_count(&db, &marker).await, 0);
+    }
+
+    // #2924 (gatekeeper G1.2): an approved server that cannot be installed
+    // must come back as a reported warning — never a silent drop.
+    #[tokio::test]
+    async fn uninstallable_server_reports_a_warning() {
+        use sea_orm_migration::MigratorTrait;
+        let _guard = crate::state::lock_test_global_state().await;
+        crate::lifecycle::database::register_sqlite_vec();
+        let db = sea_orm::Database::connect("sqlite::memory:")
+            .await
+            .expect("memory db");
+        crate::migration::Migrator::up(&db, None)
+            .await
+            .expect("migrations");
+        crate::state::set_mcp_server_repository(
+            crate::repositories::mcp_server_repository::SqliteMCPServerRepository::new(db),
+        );
+
+        let root = std::path::Path::new("/tmp/plugin-root-under-test");
+        let good = PluginMcpServerSnapshot {
+            name: "good".to_string(),
+            entry: serde_json::json!({"command": "true"}),
+        };
+        let broken = PluginMcpServerSnapshot {
+            name: "broken".to_string(),
+            entry: serde_json::json!({"noTransport": true}),
+        };
+        let warnings =
+            create_plugin_mcp_server_rows("plugin-cc00000000000002", root, &[good, broken])
+                .await
+                .expect("the store itself stays healthy; only the row fails");
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(warnings[0].contains("broken"), "{warnings:?}");
+        assert!(
+            warnings[0].contains("could not be installed"),
+            "{warnings:?}"
+        );
     }
 }

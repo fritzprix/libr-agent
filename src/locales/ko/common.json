@@ -911,6 +911,8 @@
       "approveHooksMcpLabel": "훅 실행 및 MCP 서버 시작 허용",
       "approveMcpLabel": "MCP 서버 시작 허용",
       "approveMcpHint": "승인된 MCP 서버는 세션이 열릴 때 자동으로 시작됩니다. 승인된 훅 이벤트도 자동으로 실행되며, 지원되지 않는 이벤트는 건너뜁니다.",
+      "mcpEnvNames": "env: {{names}}",
+      "mcpHeaderNames": "headers: {{names}}",
       "installWithMcp": "설치하고 서버 승인",
       "approveHooksToolApprovalHint": "이 플러그인에는 도구 호출을 허용, 확인 요청 또는 차단할 수 있는 PreToolUse 훅이 포함되어 있습니다.",
       "installWithoutHooks": "훅 미승인으로 설치",

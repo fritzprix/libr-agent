@@ -911,6 +911,8 @@
       "approveHooksMcpLabel": "Allow hooks to run and MCP servers to start",
       "approveMcpLabel": "Allow MCP servers to start",
       "approveMcpHint": "Approved MCP servers start automatically when a session opens. Approved hook events also run automatically; unsupported ones are skipped.",
+      "mcpEnvNames": "env: {{names}}",
+      "mcpHeaderNames": "headers: {{names}}",
       "installWithMcp": "Install and approve servers",
       "approveHooksToolApprovalHint": "This plugin includes PreToolUse hooks that can allow, ask for confirmation on, or block tool calls.",
       "installWithoutHooks": "Install without hook approval",
