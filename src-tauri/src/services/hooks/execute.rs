@@ -140,12 +140,15 @@ impl HookDispatchResult {
         }
 
         if let Some(next_decision) = output.decision {
-            let replace = match (self.decision, next_decision) {
-                (None, _) => true,
-                (Some(HookDecision::Allow), HookDecision::Ask | HookDecision::Block) => true,
-                (Some(HookDecision::Ask), HookDecision::Block) => true,
-                _ => false,
-            };
+            let replace = matches!(
+                (self.decision, next_decision),
+                (None, _)
+                    | (
+                        Some(HookDecision::Allow),
+                        HookDecision::Ask | HookDecision::Block
+                    )
+                    | (Some(HookDecision::Ask), HookDecision::Block)
+            );
             if replace {
                 self.decision = Some(next_decision);
                 if output.reason.is_some() {
