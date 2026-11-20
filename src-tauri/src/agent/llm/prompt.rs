@@ -590,6 +590,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn turn_hook_context_is_injected_once_into_volatile_prompt() {
+        use crate::services::hooks::context::{clear_hook_context, push_turn_hook_context};
+
+        let sid = "prompt-turn-hook-context-once";
+        clear_hook_context(sid);
+        push_turn_hook_context(sid, "user-prompt-submit extra context");
+
+        let (cacheable_1, volatile_1) =
+            build_volatile_sections_split(None, None, None, Some(sid)).await;
+        assert!(!cacheable_1.contains("user-prompt-submit extra context"));
+        assert!(volatile_1.contains("## Plugin Hook Turn Context"));
+        assert!(volatile_1.contains("user-prompt-submit extra context"));
+
+        let (_cacheable_2, volatile_2) =
+            build_volatile_sections_split(None, None, None, Some(sid)).await;
+        assert!(
+            !volatile_2.contains("user-prompt-submit extra context"),
+            "turn hook context must be consumed on the first LLM request of the turn"
+        );
+        clear_hook_context(sid);
+    }
+
+    #[tokio::test]
     async fn first_prompt_waits_through_session_start_runner() {
         // #2812 G4.1: `run_session_start_in` arms a blank placeholder before
         // the command finishes. The prompt path must still wait and carry

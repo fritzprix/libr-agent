@@ -123,14 +123,12 @@ pub struct HookDispatchResult {
     pub additional_context: Vec<String>,
     pub decision: Option<HookDecision>,
     pub reason: Option<String>,
-    pub continue_loop: Option<bool>,
 }
 
 impl HookDispatchResult {
     /// Merge one handler's output into the aggregated result.
     ///
     /// Precedence: `Block` > `Ask` > `Allow`. The first `Block` reason wins.
-    /// Any `continue: false` sets `continue_loop = Some(false)`.
     pub fn merge(&mut self, output: HookOutput) {
         if let Some(ctx) = output
             .additional_context
@@ -156,12 +154,6 @@ impl HookDispatchResult {
             }
         } else if self.reason.is_none() && output.reason.is_some() {
             self.reason = output.reason;
-        }
-
-        if output.continue_loop == Some(false) {
-            self.continue_loop = Some(false);
-        } else if self.continue_loop.is_none() && output.continue_loop.is_some() {
-            self.continue_loop = output.continue_loop;
         }
     }
 

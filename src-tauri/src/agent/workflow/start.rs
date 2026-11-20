@@ -164,16 +164,7 @@ pub async fn start_workflow(
         &session_id,
     )
     .await;
-    if prompt_hook_outcome.decision == Some(crate::services::hooks::HookDecision::Block) {
-        let reason = prompt_hook_outcome
-            .reason
-            .filter(|r| !r.trim().is_empty())
-            .unwrap_or_else(|| "Prompt blocked by UserPromptSubmit hook.".to_string());
-        return Err(reason);
-    }
-    if let Some(ctx) = prompt_hook_outcome.joined_additional_context() {
-        crate::services::hooks::push_turn_hook_context(&session_id, &ctx);
-    }
+    evaluate_user_prompt_hook_outcome(&session_id, prompt_hook_outcome)?;
 
     // Update status to Queued immediately
     crate::agent::lifecycle::update_session_status(
@@ -463,4 +454,61 @@ pub(crate) async fn ensure_proxy_ready(
     proxy_manager
         .wait_until_proxy_ready(session_id, timeout_secs)
         .await
+}
+
+/// Apply `UserPromptSubmit` hook outcome before queueing the prompt (#2925 G1.2).
+pub(crate) fn evaluate_user_prompt_hook_outcome(
+    session_id: &str,
+    outcome: crate::services::hooks::HookDispatchResult,
+) -> Result<(), String> {
+    if outcome.decision == Some(crate::services::hooks::HookDecision::Block) {
+        let reason = outcome
+            .reason
+            .filter(|r| !r.trim().is_empty())
+            .unwrap_or_else(|| "Prompt blocked by UserPromptSubmit hook.".to_string());
+        return Err(reason);
+    }
+    if let Some(ctx) = outcome.joined_additional_context() {
+        crate::services::hooks::push_turn_hook_context(session_id, &ctx);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod user_prompt_hook_tests {
+    use super::evaluate_user_prompt_hook_outcome;
+    use crate::services::hooks::{
+        clear_hook_context, take_turn_hook_context, HookDecision, HookDispatchResult,
+    };
+
+    #[test]
+    fn block_returns_reason_without_queueing_turn_context() {
+        let sid = "start-hook-block-test";
+        clear_hook_context(sid);
+        let outcome = HookDispatchResult {
+            additional_context: vec!["should not be queued".to_string()],
+            decision: Some(HookDecision::Block),
+            reason: Some("prompt rejected by policy".to_string()),
+        };
+        let err = evaluate_user_prompt_hook_outcome(sid, outcome).unwrap_err();
+        assert_eq!(err, "prompt rejected by policy");
+        assert!(take_turn_hook_context(sid).is_none());
+    }
+
+    #[test]
+    fn non_blocking_outcome_queues_turn_context() {
+        let sid = "start-hook-ctx-test";
+        clear_hook_context(sid);
+        let outcome = HookDispatchResult {
+            additional_context: vec!["inject for this turn".to_string()],
+            decision: None,
+            reason: None,
+        };
+        evaluate_user_prompt_hook_outcome(sid, outcome).unwrap();
+        assert_eq!(
+            take_turn_hook_context(sid).as_deref(),
+            Some("inject for this turn")
+        );
+        clear_hook_context(sid);
+    }
 }

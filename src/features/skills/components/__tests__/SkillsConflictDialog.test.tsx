@@ -139,3 +139,39 @@ describe('SkillsConflictDialog long hook command wrapping (#2896)', () => {
     expect(matcher).toHaveClass('min-w-0');
   });
 });
+
+describe('SkillsConflictDialog PreToolUse tool-approval disclosure (#2925 D3)', () => {
+  it('shows tool-approval warning when preview contains a PreToolUse hook', () => {
+    renderDialog(
+      buildPendingInstall({
+        hooks: [
+          {
+            event: 'PreToolUse',
+            matcher: 'workspace__runShell',
+            command: 'echo check',
+            executionStatus: 'executed',
+          },
+        ],
+      }),
+    );
+
+    expect(
+      screen.getByText(
+        /approved plugin hooks may run during your sessions/i,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /PreToolUse hooks that can allow, ask for confirmation on, or block tool calls/i,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('omits tool-approval warning when preview has no PreToolUse hook', () => {
+    renderDialog(buildPendingInstall());
+
+    expect(
+      screen.queryByText(/PreToolUse hooks that can allow/i),
+    ).not.toBeInTheDocument();
+  });
+});

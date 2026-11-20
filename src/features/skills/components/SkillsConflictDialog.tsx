@@ -56,7 +56,7 @@ export function SkillsConflictDialog({
             {hasHooks
               ? t(
                   'settings.skills.installConfirmDescription',
-                  'Confirm which skills to install and whether plugin hooks may run on session start.',
+                  'Confirm which skills to install and whether approved plugin hooks may run during your sessions.',
                 )
               : t(
                   'settings.skills.conflictDescription',
@@ -131,9 +131,19 @@ export function SkillsConflictDialog({
                       <p className="text-xs text-muted-foreground">
                         {t(
                           'settings.skills.approveHooksHint',
-                          'Supported hook events run automatically once approved. Unsupported events are skipped.',
+                          'Supported hook events run automatically during the session once approved. Unsupported events are skipped.',
                         )}
                       </p>
+                      {pendingInstall?.preview.hooks.some(
+                        (hook) => hook.event === 'PreToolUse',
+                      ) ? (
+                        <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                          {t(
+                            'settings.skills.approveHooksToolApprovalHint',
+                            'This plugin includes PreToolUse hooks that can allow, ask for confirmation on, or block tool calls.',
+                          )}
+                        </p>
+                      ) : null}
                     </div>
                   </label>
                 </div>
