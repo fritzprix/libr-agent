@@ -179,12 +179,16 @@ async fn prepare_compaction_request(
         crate::services::hooks::HookEvent::PreCompact,
     );
     pre_compact_params.compact_source = Some("auto".to_string());
-    crate::services::hooks::notify_stub_event(
+    let pre_compact_outcome = crate::services::hooks::dispatch_hook_event(
         crate::services::hooks::HookEvent::PreCompact,
+        "auto",
+        &pre_compact_params,
         session_id,
-        pre_compact_params,
     )
     .await;
+    if let Some(ctx) = pre_compact_outcome.joined_additional_context() {
+        crate::services::hooks::push_turn_hook_context(session_id, &ctx);
+    }
 
     // Snapshot goal/todos before clear_todos_after_successful_compaction runs post-persist.
     let planning_seeds = load_compaction_planning_seeds(session_id).await;

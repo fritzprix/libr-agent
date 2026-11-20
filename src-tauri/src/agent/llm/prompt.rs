@@ -510,6 +510,13 @@ async fn build_volatile_sections_split(
                 cacheable_parts.push(trimmed.to_string());
             }
         }
+        if let Some(turn_context) = crate::services::hooks::take_turn_hook_context(session_id) {
+            let trimmed = turn_context.trim();
+            if !trimmed.is_empty() {
+                volatile_parts.push("\n\n## Plugin Hook Turn Context\n".to_string());
+                volatile_parts.push(trimmed.to_string());
+            }
+        }
     }
 
     // 5. Read-only Context Providers (time, skills, documentation, etc.)

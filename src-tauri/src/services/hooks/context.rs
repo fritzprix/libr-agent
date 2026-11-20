@@ -14,7 +14,20 @@ struct HookEntry {
     replace_next: bool,
 }
 
+/// Maximum number of times a `Stop` / `SubagentStop` hook returning `block`
+/// may continue a single turn before settling to Idle (#2925).
+pub const MAX_STOP_HOOK_CONTINUATIONS: u32 = 3;
+
 static HOOK_CONTEXT: std::sync::OnceLock<RwLock<HashMap<String, HookEntry>>> =
+    std::sync::OnceLock::new();
+
+/// Per-turn hook `additionalContext` (from `UserPromptSubmit`, `PreToolUse`,
+/// `PostToolUse`, `Stop` block) consumed on the next LLM request (#2925).
+static TURN_HOOK_CONTEXT: std::sync::OnceLock<RwLock<HashMap<String, Vec<String>>>> =
+    std::sync::OnceLock::new();
+
+/// Consecutive `Stop` / `SubagentStop` block continuations in the current turn (#2925).
+static STOP_HOOK_CONTINUATIONS: std::sync::OnceLock<RwLock<HashMap<String, u32>>> =
     std::sync::OnceLock::new();
 
 /// Sessions with a SessionStart hook run in flight (#2812 G3.1). The marker
@@ -25,6 +38,14 @@ static HOOK_INFLIGHT: std::sync::OnceLock<RwLock<HashSet<String>>> = std::sync::
 
 fn store() -> &'static RwLock<HashMap<String, HookEntry>> {
     HOOK_CONTEXT.get_or_init(|| RwLock::new(HashMap::new()))
+}
+
+fn turn_store() -> &'static RwLock<HashMap<String, Vec<String>>> {
+    TURN_HOOK_CONTEXT.get_or_init(|| RwLock::new(HashMap::new()))
+}
+
+fn stop_counter_store() -> &'static RwLock<HashMap<String, u32>> {
+    STOP_HOOK_CONTINUATIONS.get_or_init(|| RwLock::new(HashMap::new()))
 }
 
 fn inflight() -> &'static RwLock<HashSet<String>> {
@@ -54,6 +75,68 @@ pub fn clear_hook_context(session_id: &str) {
     if let Ok(mut map) = store().write() {
         map.remove(session_id);
     }
+    if let Ok(mut map) = turn_store().write() {
+        map.remove(session_id);
+    }
+    if let Ok(mut map) = stop_counter_store().write() {
+        map.remove(session_id);
+    }
+}
+
+/// Append per-turn hook context (consumed on the next LLM request via [`take_turn_hook_context`]).
+pub fn push_turn_hook_context(session_id: &str, text: &str) {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+    if let Ok(mut map) = turn_store().write() {
+        map.entry(session_id.to_string())
+            .or_default()
+            .push(trimmed.to_string());
+    }
+}
+
+/// Take and clear all queued per-turn hook context for `session_id`.
+pub fn take_turn_hook_context(session_id: &str) -> Option<String> {
+    let entries = turn_store()
+        .write()
+        .ok()
+        .and_then(|mut map| map.remove(session_id))?;
+    if entries.is_empty() {
+        None
+    } else {
+        Some(entries.join("\n\n"))
+    }
+}
+
+/// Current number of `Stop` / `SubagentStop` block continuations in this turn.
+pub fn stop_hook_continuation_count(session_id: &str) -> u32 {
+    stop_counter_store()
+        .read()
+        .ok()
+        .and_then(|map| map.get(session_id).copied())
+        .unwrap_or(0)
+}
+
+/// Reset the `Stop` / `SubagentStop` continuation counter for a new user turn.
+pub fn reset_stop_hook_continuations(session_id: &str) {
+    if let Ok(mut map) = stop_counter_store().write() {
+        map.remove(session_id);
+    }
+}
+
+/// Increment the `Stop` / `SubagentStop` continuation counter if below
+/// [`MAX_STOP_HOOK_CONTINUATIONS`]. Returns `true` when continuation is allowed.
+pub fn try_increment_stop_hook_continuations(session_id: &str) -> bool {
+    let Ok(mut map) = stop_counter_store().write() else {
+        return false;
+    };
+    let count = map.entry(session_id.to_string()).or_insert(0);
+    if *count >= MAX_STOP_HOOK_CONTINUATIONS {
+        return false;
+    }
+    *count += 1;
+    true
 }
 
 /// Drop every session's hook-context slot (#2812 criterion 4). Called when
@@ -62,6 +145,12 @@ pub fn clear_hook_context(session_id: &str) {
 /// their next SessionStart firing (resume / clear / compact).
 pub fn clear_all_hook_contexts() {
     if let Ok(mut map) = store().write() {
+        map.clear();
+    }
+    if let Ok(mut map) = turn_store().write() {
+        map.clear();
+    }
+    if let Ok(mut map) = stop_counter_store().write() {
         map.clear();
     }
 }
@@ -276,5 +365,38 @@ mod tests {
         clear_all_hook_contexts();
         assert!(get_hook_context(a).is_none());
         assert!(get_hook_context(b).is_none());
+    }
+
+    #[test]
+    fn turn_hook_context_is_consumed_once() {
+        let sid = "test-session-turn-ctx-1";
+        clear_hook_context(sid);
+        push_turn_hook_context(sid, "first");
+        push_turn_hook_context(sid, "   ");
+        push_turn_hook_context(sid, "second");
+        assert_eq!(
+            take_turn_hook_context(sid).as_deref(),
+            Some("first\n\nsecond")
+        );
+        assert!(take_turn_hook_context(sid).is_none());
+    }
+
+    #[test]
+    fn stop_hook_continuations_cap_and_reset() {
+        let sid = "test-session-stop-cap-1";
+        reset_stop_hook_continuations(sid);
+        for expected in 1..=MAX_STOP_HOOK_CONTINUATIONS {
+            assert!(try_increment_stop_hook_continuations(sid));
+            assert_eq!(stop_hook_continuation_count(sid), expected);
+        }
+        assert!(!try_increment_stop_hook_continuations(sid));
+        assert_eq!(
+            stop_hook_continuation_count(sid),
+            MAX_STOP_HOOK_CONTINUATIONS
+        );
+        reset_stop_hook_continuations(sid);
+        assert_eq!(stop_hook_continuation_count(sid), 0);
+        assert!(try_increment_stop_hook_continuations(sid));
+        reset_stop_hook_continuations(sid);
     }
 }

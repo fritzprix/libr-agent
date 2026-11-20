@@ -101,13 +101,10 @@ export function SkillsConflictDialog({
                         ) : null}
                         <Badge variant="secondary">
                           {hook.executionStatus === 'executed'
-                            ? t(
-                                'settings.skills.hookStatusExecuted',
-                                'Runs on SessionStart',
-                              )
+                            ? t('settings.skills.hookStatusExecuted', 'Executed')
                             : t(
                                 'settings.skills.hookStatusStubbed',
-                                'Not yet executed',
+                                'Not supported',
                               )}
                         </Badge>
                       </div>
@@ -134,7 +131,7 @@ export function SkillsConflictDialog({
                       <p className="text-xs text-muted-foreground">
                         {t(
                           'settings.skills.approveHooksHint',
-                          'Only SessionStart hooks run today. Other events stay stubbed until support ships.',
+                          'Supported hook events run automatically once approved. Unsupported events are skipped.',
                         )}
                       </p>
                     </div>

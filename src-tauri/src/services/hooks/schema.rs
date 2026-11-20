@@ -5,18 +5,6 @@ use std::path::Path;
 
 pub const DEFAULT_HOOK_TIMEOUT_SECS: u64 = 60;
 
-const SUPPORTED_EVENTS: &[&str] = &[
-    "SessionStart",
-    "SessionEnd",
-    "UserPromptSubmit",
-    "PreToolUse",
-    "PostToolUse",
-    "Stop",
-    "SubagentStop",
-    "PreCompact",
-    "Notification",
-];
-
 const RESERVED_UNKNOWN_EVENTS: &[(&str, &str)] = &[
     (
         "PostCompact",
@@ -71,11 +59,7 @@ impl HookEvent {
     }
 
     pub fn dispatch_mode(self) -> HookDispatchMode {
-        if self == Self::SessionStart {
-            HookDispatchMode::Execute
-        } else {
-            HookDispatchMode::Stub
-        }
+        HookDispatchMode::Execute
     }
 }
 
@@ -94,10 +78,20 @@ pub struct HookMatcherGroup {
     pub handlers: Vec<HookHandler>,
 }
 
+/// Summary of an unrecognized/newer hook event preserved for install preview
+/// so plugins declaring newer Claude Code events install cleanly instead of
+/// failing validation (#2925).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnsupportedHookEntry {
+    pub matcher: Option<String>,
+    pub command: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HooksConfig {
     pub version: Option<u32>,
     pub events: BTreeMap<HookEvent, Vec<HookMatcherGroup>>,
+    pub unsupported_events: BTreeMap<String, Vec<UnsupportedHookEntry>>,
 }
 
 pub fn load_hooks_from_root(root: &Path) -> Result<HooksConfig, String> {
@@ -108,6 +102,7 @@ pub fn load_hooks_from_root(root: &Path) -> Result<HooksConfig, String> {
     let mut merged = HooksConfig {
         version: None,
         events: BTreeMap::new(),
+        unsupported_events: BTreeMap::new(),
     };
     let mut found_any = false;
 
@@ -139,6 +134,12 @@ fn merge_hooks_config(dst: &mut HooksConfig, src: HooksConfig) -> Result<(), Str
     for (event, groups) in src.events {
         dst.events.entry(event).or_default().extend(groups);
     }
+    for (raw_event, entries) in src.unsupported_events {
+        dst.unsupported_events
+            .entry(raw_event)
+            .or_default()
+            .extend(entries);
+    }
     Ok(())
 }
 
@@ -169,28 +170,69 @@ fn parse_hooks_value(root: &Value, path: &Path) -> Result<HooksConfig, String> {
         .ok_or_else(|| format!("{}: \"hooks\" must be an object", path.display()))?;
 
     let mut events = BTreeMap::new();
+    let mut unsupported_events = BTreeMap::new();
 
     for (raw_key, groups_value) in hooks_obj {
-        if let Some(msg) = reserved_event_message(raw_key) {
-            return Err(format!(
-                "{}: unknown event \"{raw_key}\": {msg}",
-                path.display()
-            ));
+        match normalize_event_key(raw_key) {
+            Ok(event) => {
+                let groups = parse_matcher_groups(groups_value, event, path)?;
+                events.insert(event, groups);
+            }
+            Err(_) => {
+                let note = reserved_event_message(raw_key).unwrap_or("event not supported yet");
+                log::info!(
+                    "{}: recording unsupported hook event {:?} ({note})",
+                    path.display(),
+                    raw_key
+                );
+                let entries = collect_unsupported_entries(groups_value, note);
+                unsupported_events.insert(raw_key.clone(), entries);
+            }
         }
-
-        let event = normalize_event_key(raw_key).map_err(|e| {
-            format!(
-                "{}: unknown event \"{raw_key}\": {e}. Supported: {}",
-                path.display(),
-                SUPPORTED_EVENTS.join(", ")
-            )
-        })?;
-
-        let groups = parse_matcher_groups(groups_value, event, path)?;
-        events.insert(event, groups);
     }
 
-    Ok(HooksConfig { version, events })
+    Ok(HooksConfig {
+        version,
+        events,
+        unsupported_events,
+    })
+}
+
+fn collect_unsupported_entries(value: &Value, fallback_note: &str) -> Vec<UnsupportedHookEntry> {
+    let mut out = Vec::new();
+    if let Some(arr) = value.as_array() {
+        for group in arr {
+            let matcher = group
+                .get("matcher")
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
+            if let Some(hooks) = group.get("hooks").and_then(|v| v.as_array()) {
+                for h in hooks {
+                    let cmd = h
+                        .get("command")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(fallback_note)
+                        .to_string();
+                    out.push(UnsupportedHookEntry {
+                        matcher: matcher.clone(),
+                        command: cmd,
+                    });
+                }
+            } else if let Some(cmd) = group.get("command").and_then(|v| v.as_str()) {
+                out.push(UnsupportedHookEntry {
+                    matcher,
+                    command: cmd.to_string(),
+                });
+            }
+        }
+    }
+    if out.is_empty() {
+        out.push(UnsupportedHookEntry {
+            matcher: None,
+            command: format!("({fallback_note})"),
+        });
+    }
+    out
 }
 
 fn reserved_event_message(key: &str) -> Option<&'static str> {
@@ -417,7 +459,7 @@ mod tests {
         );
         assert_eq!(
             HookEvent::PreToolUse.dispatch_mode(),
-            HookDispatchMode::Stub
+            HookDispatchMode::Execute
         );
     }
 
@@ -461,12 +503,27 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unknown_and_reserved_events() {
-        for key in ["PostCompact", "SubagentStart", "bogusEvent"] {
-            let json = format!(r#"{{"hooks":{{"{key}":[]}}}}"#);
-            let err = parse_hooks_value(&serde_json::from_str(&json).unwrap(), Path::new("t.json"))
-                .unwrap_err();
-            assert!(err.contains(key), "error should mention {key}: {err}");
+    fn records_unknown_and_newer_events_as_unsupported_without_failing() {
+        for key in [
+            "PostCompact",
+            "SubagentStart",
+            "PostToolUseFailure",
+            "PermissionRequest",
+            "bogusEvent",
+        ] {
+            let json = format!(
+                r#"{{"hooks":{{"{key}":[{{"matcher":"Bash","hooks":[{{"type":"command","command":"echo hi"}}]}}],"SessionStart":[{{"hooks":[{{"type":"command","command":"echo start"}}]}}]}}}}"#
+            );
+            let cfg = parse_hooks_value(&serde_json::from_str(&json).unwrap(), Path::new("t.json"))
+                .expect("unknown/newer hook events should not fail install");
+            assert!(cfg.events.contains_key(&HookEvent::SessionStart));
+            let entries = cfg
+                .unsupported_events
+                .get(key)
+                .expect("unsupported event should be recorded");
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].matcher.as_deref(), Some("Bash"));
+            assert_eq!(entries[0].command, "echo hi");
         }
     }
 

@@ -201,10 +201,11 @@ async fn notify_session_end_stub(session_id: &str) {
         crate::services::hooks::HookEvent::SessionEnd,
     );
     params.session_end_reason = Some(crate::services::hooks::SessionEndReason::Delete);
-    crate::services::hooks::notify_stub_event(
+    let _ = crate::services::hooks::dispatch_hook_event(
         crate::services::hooks::HookEvent::SessionEnd,
+        "delete",
+        &params,
         session_id,
-        params,
     )
     .await;
 }

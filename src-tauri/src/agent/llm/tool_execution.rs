@@ -189,9 +189,7 @@ impl ToolExecutionContext<'_> {
             );
         }
 
-        // Notification hook stub (#2812): tool-approval requests dispatch
-        // the Notification event so the stub path is exercised; no command
-        // runs in v1.
+        // Notification hook (#2925): run approved Notification handlers; ignore decisions.
         let mut notification_params = crate::services::hooks::HookEnvelopeParams::new(
             self.session_id,
             std::path::PathBuf::from("."),
@@ -203,10 +201,11 @@ impl ToolExecutionContext<'_> {
             tool_name,
             description.as_deref().unwrap_or_default()
         ));
-        crate::services::hooks::notify_stub_event(
+        let _ = crate::services::hooks::dispatch_hook_event(
             crate::services::hooks::HookEvent::Notification,
+            "permission",
+            &notification_params,
             self.session_id,
-            notification_params,
         )
         .await;
 
@@ -627,15 +626,75 @@ pub async fn execute_tool_calls(
             continue;
         }
 
+        // PreToolUse hook (#2925): runs after hard security/root guards and before
+        // approval/execution. Applies matcher on `tool_name` and `permissionDecision`
+        // (allow / deny / ask).
+        let mut pre_tool_params = crate::services::hooks::HookEnvelopeParams::new(
+            &session_id,
+            std::path::PathBuf::from("."),
+            crate::services::hooks::HookEvent::PreToolUse,
+        );
+        pre_tool_params.tool_name = Some(tool_name.clone());
+        pre_tool_params.tool_input = Some(args.clone());
+        let pre_tool_outcome = crate::services::hooks::dispatch_hook_event(
+            crate::services::hooks::HookEvent::PreToolUse,
+            tool_name,
+            &pre_tool_params,
+            &session_id,
+        )
+        .await;
+        if let Some(ctx) = pre_tool_outcome.joined_additional_context() {
+            crate::services::hooks::push_turn_hook_context(&session_id, &ctx);
+        }
+        if pre_tool_outcome.decision == Some(crate::services::hooks::HookDecision::Block) {
+            let reason = pre_tool_outcome
+                .reason
+                .filter(|r| !r.trim().is_empty())
+                .unwrap_or_else(|| format!("Tool '{}' blocked by PreToolUse hook.", tool_name));
+            context
+                .continue_after_tool(
+                    tool_call_id,
+                    error_result(reason),
+                    "hook-blocked tool execution",
+                )
+                .await;
+            index += 1;
+            continue;
+        }
+
         let yolo_enabled = context.current_yolo_mode().await;
-        if let Some(approval_request) = crate::agent::tool_approvals::approval_request_for_runtime(
+        let is_hard_approval = matches!(
+            &policy_decision,
+            ToolExecutionPolicyDecision::RequireHardApproval(_)
+        );
+        let mut approval_request = crate::agent::tool_approvals::approval_request_for_runtime(
             &policy_decision,
             yolo_enabled,
             unsafe_enabled,
-        ) {
-            let approval_kind = match &policy_decision {
-                ToolExecutionPolicyDecision::RequireHardApproval(_) => PendingApprovalKind::Hard,
-                _ => PendingApprovalKind::Standard,
+        )
+        .cloned();
+        match pre_tool_outcome.decision {
+            Some(crate::services::hooks::HookDecision::Allow) if !is_hard_approval => {
+                approval_request = None;
+            }
+            Some(crate::services::hooks::HookDecision::Ask) if approval_request.is_none() => {
+                approval_request = Some(crate::agent::tool_approvals::ToolApprovalRequest {
+                    description: pre_tool_outcome
+                        .reason
+                        .filter(|r| !r.trim().is_empty())
+                        .unwrap_or_else(|| {
+                            format!("PreToolUse hook requested confirmation for {tool_name}")
+                        }),
+                    input_preview: args_str.to_string(),
+                });
+            }
+            _ => {}
+        }
+        if let Some(ref approval_request) = approval_request {
+            let approval_kind = if is_hard_approval {
+                PendingApprovalKind::Hard
+            } else {
+                PendingApprovalKind::Standard
             };
             match context
                 .request_approval(
@@ -694,20 +753,6 @@ pub async fn execute_tool_calls(
             }
         }
 
-        let mut pre_tool_params = crate::services::hooks::HookEnvelopeParams::new(
-            &session_id,
-            std::path::PathBuf::from("."),
-            crate::services::hooks::HookEvent::PreToolUse,
-        );
-        pre_tool_params.tool_name = Some(tool_name.clone());
-        pre_tool_params.tool_input = Some(args.clone());
-        crate::services::hooks::notify_stub_event(
-            crate::services::hooks::HookEvent::PreToolUse,
-            &session_id,
-            pre_tool_params,
-        )
-        .await;
-
         // `args` is moved into `execute_tool` below; keep a copy for the
         // PostToolUse hook envelope.
         let post_tool_input = args.clone();
@@ -734,23 +779,43 @@ pub async fn execute_tool_calls(
             .continue_after_tool(tool_call_id, result, "tool execution")
             .await;
 
-        // PostToolUse hook stub (#2812): dispatched after each tool
-        // completes; no command runs and no output is applied in v1.
-        let mut post_tool_params = crate::services::hooks::HookEnvelopeParams::new(
-            &session_id,
-            std::path::PathBuf::from("."),
-            crate::services::hooks::HookEvent::PostToolUse,
-        );
-        post_tool_params.tool_name = Some(tool_name.clone());
-        post_tool_params.tool_input = Some(post_tool_input);
-        post_tool_params.tool_response =
-            Some(serde_json::json!({ "is_error": tool_ended_with_error }));
-        crate::services::hooks::notify_stub_event(
-            crate::services::hooks::HookEvent::PostToolUse,
-            &session_id,
-            post_tool_params,
-        )
-        .await;
+        // PostToolUse hook (#2925): runs after a successful tool call. Adds
+        // `additionalContext` and `decision: "block"` feedback to the next LLM request.
+        if !tool_ended_with_error {
+            let mut post_tool_params = crate::services::hooks::HookEnvelopeParams::new(
+                &session_id,
+                std::path::PathBuf::from("."),
+                crate::services::hooks::HookEvent::PostToolUse,
+            );
+            post_tool_params.tool_name = Some(tool_name.clone());
+            post_tool_params.tool_input = Some(post_tool_input);
+            post_tool_params.tool_response = Some(serde_json::json!({ "is_error": false }));
+            let post_tool_outcome = crate::services::hooks::dispatch_hook_event(
+                crate::services::hooks::HookEvent::PostToolUse,
+                tool_name,
+                &post_tool_params,
+                &session_id,
+            )
+            .await;
+            if let Some(ctx) = post_tool_outcome.joined_additional_context() {
+                crate::services::hooks::push_turn_hook_context(&session_id, &ctx);
+            }
+            if post_tool_outcome.decision == Some(crate::services::hooks::HookDecision::Block) {
+                let reason = post_tool_outcome
+                    .reason
+                    .filter(|r| !r.trim().is_empty())
+                    .unwrap_or_else(|| {
+                        format!(
+                            "PostToolUse hook blocked continuation after '{}'.",
+                            tool_name
+                        )
+                    });
+                crate::services::hooks::push_turn_hook_context(
+                    &session_id,
+                    &format!("[PostToolUse hook block]: {reason}"),
+                );
+            }
+        }
         index += 1;
     }
 }

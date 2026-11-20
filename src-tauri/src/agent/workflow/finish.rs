@@ -319,6 +319,23 @@ pub async fn settle_session_and_go_idle_with_dispatcher(
         return Ok(true);
     }
 
+    // Stop / SubagentStop hook (#2925): run before settling to Idle. If a hook
+    // returns `decision: "block"` and the per-turn continuation cap has not
+    // been reached, feed the block reason back and continue the turn.
+    if maybe_continue_from_stop_hook(
+        session_repo,
+        active_sessions,
+        proxy_manager,
+        app_handle,
+        session_id,
+    )
+    .await?
+    {
+        return Ok(true);
+    }
+
+    crate::services::hooks::reset_stop_hook_continuations(session_id);
+
     transition_to_terminal_status_and_emit(
         session_repo,
         active_sessions,
@@ -332,10 +349,6 @@ pub async fn settle_session_and_go_idle_with_dispatcher(
         "WorkflowCompleted",
     )
     .await?;
-
-    // Stop / SubagentStop hook stub (#2812): dispatched once the session
-    // has actually settled to Idle; no command runs in v1.
-    notify_settle_hook_stub(active_sessions, session_id).await;
 
     Ok(false)
 }
@@ -380,14 +393,16 @@ pub(crate) fn settle_stub_event(
     }
 }
 
-/// Dispatch the `Stop` (top-level session) or `SubagentStop` (session
-/// spawned by `agent__spawnSession`) plugin hook stub once a workflow has
-/// settled to Idle (#2812). The stub only logs "not yet executed" and
-/// prepares the stdin envelope; no hook command runs in v1.
-async fn notify_settle_hook_stub(
+/// Dispatch `Stop` (top-level session) or `SubagentStop` (child session) before
+/// settling to Idle (#2925). Returns `Ok(true)` if a hook returned `block` and
+/// the turn was continued (bounded by `MAX_STOP_HOOK_CONTINUATIONS`).
+async fn maybe_continue_from_stop_hook(
+    session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    proxy_manager: &Arc<MCPServiceProxyManager>,
+    app_handle: &AppHandle,
     session_id: &str,
-) {
+) -> Result<bool, String> {
     let parent_session_id = {
         let active = active_sessions.read().await;
         active
@@ -400,10 +415,50 @@ async fn notify_settle_hook_stub(
         std::path::PathBuf::from("."),
         event,
     );
+    params.stop_hook_active = crate::services::hooks::stop_hook_continuation_count(session_id) > 0;
     if parent_session_id.is_some() {
         params.child_session_id = Some(session_id.to_string());
     }
-    crate::services::hooks::notify_stub_event(event, session_id, params).await;
+    let outcome = crate::services::hooks::dispatch_hook_event(event, "", &params, session_id).await;
+
+    if outcome.decision == Some(crate::services::hooks::HookDecision::Block) {
+        if crate::services::hooks::try_increment_stop_hook_continuations(session_id) {
+            if let Some(ctx) = outcome.joined_additional_context() {
+                crate::services::hooks::push_turn_hook_context(session_id, &ctx);
+            }
+            let reason = outcome
+                .reason
+                .filter(|r| !r.trim().is_empty())
+                .unwrap_or_else(|| {
+                    format!(
+                        "{} hook requested continuation before stopping.",
+                        event.as_str()
+                    )
+                });
+            crate::services::hooks::push_turn_hook_context(
+                session_id,
+                &format!("[{} hook]: {}", event.as_str(), reason),
+            );
+            crate::agent::llm::request_llm_completion_with_recovery(
+                session_repo,
+                active_sessions,
+                proxy_manager,
+                app_handle,
+                session_id.to_string(),
+            )
+            .await
+            .map_err(|error| error.to_string())?;
+            return Ok(true);
+        }
+        log::info!(
+            "{} hook returned block for session {} but reached MAX_STOP_HOOK_CONTINUATIONS ({}); settling to Idle",
+            event.as_str(),
+            session_id,
+            crate::services::hooks::MAX_STOP_HOOK_CONTINUATIONS
+        );
+    }
+
+    Ok(false)
 }
 
 /// Finalize a failed workflow only after terminal messages are durable.

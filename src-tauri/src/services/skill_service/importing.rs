@@ -839,6 +839,18 @@ fn build_hook_preview_entries(config: &HooksConfig) -> Vec<HookPreviewEntry> {
             }
         }
     }
+    for (raw_event, unsupported) in &config.unsupported_events {
+        for item in unsupported {
+            entries.push(HookPreviewEntry {
+                event: raw_event.clone(),
+                matcher: item.matcher.clone(),
+                command: item.command.clone(),
+                powershell: None,
+                script_body: None,
+                execution_status: HookPreviewExecutionStatus::Stubbed,
+            });
+        }
+    }
     entries.sort_by(|a, b| {
         a.event
             .cmp(&b.event)
