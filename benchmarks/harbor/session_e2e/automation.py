@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import csv
+import io
 import os
 import subprocess
 import sys
@@ -72,7 +74,9 @@ class SessionE2eAutomationSpec:
     # child session parked on ui__askUser, also verify the child's persistent
     # PowerShell shell — whose PID the child recorded in the shared workspace
     # (p6_shell_pid.txt) — is alive before termination, dies with the session,
-    # and stays dead through a settle window (no respawn).
+    # and the same PID stays dead through a settle window. The no-replacement
+    # guarantee itself is owned by the backend: force_kill_shell +
+    # force_kills_persistent_shell_without_leaving_manager_entry (Rust tests).
     check_persistent_shell_after_terminate: bool = False
 
 
@@ -229,33 +233,68 @@ def _read_persistent_shell_pid(workspace_dir: Path) -> int | None:
     return int(raw) if raw.isdigit() else None
 
 
-def _process_is_alive(pid: int) -> bool:
-    if sys.platform == "win32":
-        try:
-            res = subprocess.run(
-                ["tasklist", "/FI", f"PID eq {pid}", "/NH"],
-                capture_output=True,
-                text=True,
-                timeout=15,
-                check=False,
-            )
-        except (OSError, subprocess.TimeoutExpired):
-            return False
-        return any(token == str(pid) for token in (res.stdout or "").split())
+PROCESS_GONE_TIMEOUT_SEC = 10.0
+PROCESS_SETTLE_SEC = 2.0
+
+
+def _windows_process_is_alive(pid: int) -> bool | None:
+    """True: PID present. False: tasklist ran fine and did not list it.
+    None: the probe itself failed (missing tasklist, timeout, nonzero exit)
+    — callers surface that as unknown, never as "gone".
+
+    CSV output is parsed row by row and only the PID column may match, so a
+    session number or memory figure can never be mistaken for the PID.
+    """
+    try:
+        res = subprocess.run(
+            ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if res.returncode != 0:
+        return None
+    for row in csv.reader(io.StringIO(res.stdout or "")):
+        if len(row) >= 2 and row[1].strip() == str(pid):
+            return True
+    return False
+
+
+def _posix_process_is_alive(pid: int) -> bool | None:
     try:
         os.kill(pid, 0)
-    except OSError:
+    except ProcessLookupError:
         return False
+    except PermissionError:
+        # EPERM: the process exists, it is just not ours to signal.
+        return True
+    except OSError:
+        return None
     return True
 
 
-async def _wait_process_gone(pid: int, timeout_sec: float) -> bool:
+def _process_is_alive(pid: int) -> bool | None:
+    if sys.platform == "win32":
+        return _windows_process_is_alive(pid)
+    return _posix_process_is_alive(pid)
+
+
+async def _wait_process_gone(pid: int, timeout_sec: float) -> bool | None:
+    """True: gone (confirmed). False: still alive when the window closed.
+    None: the aliveness probe kept failing — recorded verbatim so the
+    verifier sees a failed probe instead of a silent "gone".
+    """
     deadline = time.monotonic() + timeout_sec
-    while time.monotonic() < deadline:
-        if not _process_is_alive(pid):
+    while True:
+        alive = await asyncio.to_thread(_process_is_alive, pid)
+        if alive is False:
             return True
+        if time.monotonic() >= deadline:
+            return None if alive is None else False
         await asyncio.sleep(0.25)
-    return not _process_is_alive(pid)
 
 
 async def resolve_pending_interactions(
@@ -392,12 +431,16 @@ async def _resolve_one_session(
                 if exc.response.status_code != 404:
                     raise
             if shell_pid is not None:
-                gone = await _wait_process_gone(shell_pid, timeout_sec=10.0)
+                gone = await _wait_process_gone(shell_pid, timeout_sec=PROCESS_GONE_TIMEOUT_SEC)
                 shell_checks["shellGoneAfterTerminate"] = gone
-                await asyncio.sleep(2.0)
-                shell_checks["shellStillGoneAfterSettle"] = gone and not _process_is_alive(
-                    shell_pid
-                )
+                if gone is True:
+                    await asyncio.sleep(PROCESS_SETTLE_SEC)
+                    settle_alive = await asyncio.to_thread(_process_is_alive, shell_pid)
+                    shell_checks["shellStillGoneAfterSettle"] = (
+                        None if settle_alive is None else settle_alive is False
+                    )
+                else:
+                    shell_checks["shellStillGoneAfterSettle"] = gone
             actions.append(
                 {
                     "kind": "terminateOnPrompt",

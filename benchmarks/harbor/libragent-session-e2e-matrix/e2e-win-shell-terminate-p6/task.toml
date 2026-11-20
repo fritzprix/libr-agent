@@ -3,7 +3,7 @@ artifacts = []
 
 [task]
 name = "fritzprix/e2e-win-shell-terminate-p6"
-description = "2565 P-6 (Windows process half): a child session's persistent PowerShell shell is alive while the child waits on ui__askUser and is force-killed when the harness terminates the child; it never respawns"
+description = "2565 P-6 (Windows process half): a child session's persistent PowerShell shell is alive while the child waits on ui__askUser and is force-killed when the harness terminates the child; the recorded PID stays gone through a settle window (the no-replacement guarantee itself is owned by the backend force_kill_shell unit test)"
 keywords = ["libragent", "session-e2e", "askuser", "terminate", "persistent-shell", "windows"]
 
 [metadata]

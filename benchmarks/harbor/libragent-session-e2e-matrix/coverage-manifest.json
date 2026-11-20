@@ -38,7 +38,7 @@
     {
       "id": "P-6",
       "status": "implemented-partial",
-      "reason": "Harbor e2e-askuser-terminate-while-waiting: child session waiting on ui__askUser is terminated via POST /api/sessions/:id/terminate, pendingUserPrompt is verified cleared, and parent completes cleanly; Windows persistent-shell process half (2565 P-6, #2905) covered by e2e-win-shell-terminate-p6 with check_persistent_shell_after_terminate (shell alive while the prompt waits, force-killed by session terminate, gone and still gone after settle); #2731 ledger retag awaits a passing unattended run (SESSION_E2E secrets)",
+      "reason": "Harbor e2e-askuser-terminate-while-waiting: child session waiting on ui__askUser is terminated via POST /api/sessions/:id/terminate, pendingUserPrompt is verified cleared, and parent completes cleanly; Windows persistent-shell process half (2565 P-6, #2905) covered by e2e-win-shell-terminate-p6 with check_persistent_shell_after_terminate (shell alive while the prompt waits, force-killed by session terminate, same PID gone and still gone after settle; the no-replacement guarantee is owned by the backend unit test force_kills_persistent_shell_without_leaving_manager_entry); #2731 ledger retag awaits a passing unattended run (SESSION_E2E secrets)",
       "harbor_task": "e2e-askuser-terminate-while-waiting"
     },
     {

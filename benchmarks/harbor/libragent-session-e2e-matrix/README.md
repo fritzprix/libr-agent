@@ -84,7 +84,9 @@ Windows-gated tasks (`requires_host_os = "windows"`, auto-excluded on Linux):
   session's persistent PowerShell shell records its PID into the shared
   workspace, and with `check_persistent_shell_after_terminate = true` the
   harness proves it is alive while the child waits on `ui__askUser`, gone
-  after `terminate_child_on_prompt`, and still gone after a settle window.
+  after `terminate_child_on_prompt`, and the same PID still gone after a
+  settle window (no-replacement itself is owned by the backend
+  `force_kill_shell` unit test `force_kills_persistent_shell_without_leaving_manager_entry`).
 - **2672 D-4 (explicitly skipped on `windows-latest`)**: GitHub-hosted
   `windows-latest` runners do not provide a Linux Docker daemon for session
   containers; `\\?\` prefix stripping is covered by Rust unit tests, while live

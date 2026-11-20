@@ -1,7 +1,10 @@
 This task verifies the Windows persistent-shell process half of 2565 P-6.
 An automated harness watches the child session's waiting `ui__askUser` prompt,
 records whether the child's persistent PowerShell shell is alive, terminates the
-child session, and then checks that the shell's process is gone and stays gone.
+child session, and then checks that the recorded process id is gone and stays
+gone through a settle window. The no-replacement guarantee itself is owned by
+the backend unit test `force_kills_persistent_shell_without_leaving_manager_entry`
+over `force_kill_shell`; this task does not re-prove it.
 
 Step 1 — spawn a child session that parks on `ui__askUser` after touching a
 persistent shell:

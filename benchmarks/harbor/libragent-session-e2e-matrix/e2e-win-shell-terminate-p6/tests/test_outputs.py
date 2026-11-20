@@ -1,14 +1,19 @@
 """2565 P-6 (Windows process half): the child session's persistent PowerShell
 shell is alive while the child waits on ui__askUser, and after the harness
-terminates the child the shell PID is gone, stays gone after a settle window,
-and never respawns.
+terminates the child the recorded shell PID is gone and stays gone through a
+settle window.
+
+Scope note: this task proves "alive while waiting, killed by terminate, same
+PID stays gone". It cannot see a replacement shell (a respawn would carry a
+new PID); the no-replacement guarantee is owned by the backend unit test
+``force_kills_persistent_shell_without_leaving_manager_entry``
+(``workspace_server/tests.rs``) over ``force_kill_shell``.
 
 The harness (automation.py ``check_persistent_shell_after_terminate``) reads
 ``p6_shell_pid.txt`` from the shared workspace — the child is spawned with
 ``workspaceOverride: "current"`` so it lands in this task's workspace, which
-is mounted here at /app. The respawn guard is the settle re-check plus the
-backend's own entry-removal guarantee (force_kill_shell +
-force_kills_persistent_shell_without_leaving_manager_entry)."""
+is mounted here at /app. Probe failures surface as null flags (the verifier
+requires strict True), so a failed probe can never pass."""
 
 from pathlib import Path
 
@@ -55,7 +60,7 @@ def test_evidence_records_shell_lifecycle_across_terminate():
         f"persistent shell survived session termination: {rec!r}"
     )
     assert rec.get("shellStillGoneAfterSettle") is True, (
-        f"persistent shell respawned after termination: {rec!r}"
+        f"recorded shell PID was alive again after the settle window: {rec!r}"
     )
 
 
