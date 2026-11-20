@@ -402,9 +402,11 @@ async fn handle_os_input(
         ));
     };
     if let Err(error) = window.set_focus() {
+        // #2902 S2.1: "could not focus" gets the same 409 as "not focused"
+        // so clients handle one refusal status for the whole focus gate.
         return Ok(json_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            format!("set_focus failed: {error}"),
+            StatusCode::CONFLICT,
+            format!("set_focus failed: {error}; cannot verify this window holds focus"),
         ));
     }
     let mut focused = false;

@@ -55,7 +55,10 @@ Endpoints (all require the ``X-LibrAgent-E2E-Control`` capability header;
   coordinates fall back to OS input (``delivery="os"``) only while the
   instance window is focused and topmost at that point, else ``409``
   (#2902). Actions: click, double_click, right_click, middle_click, move,
-  hover, type, key, scroll — there is no ``drag``.
+  hover, type, key, scroll — there is no ``drag``. Pointer actions and
+  ``scroll`` require a target (``selector``/``testId`` or ``x``/``y``); only
+  ``type``/``key`` may aim at the free cursor, because a wheel event lands on
+  the window under the pointer rather than the focused one.
 - ``POST /api/e2e-control/ui/restart`` — no body →
   ``{ok, restarting, note}``. Restarts the isolated instance in place (#2902).
 - ``POST /api/e2e-control/ui/wait`` — body ``{condition, sessionId?,

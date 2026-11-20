@@ -180,12 +180,21 @@ export function collectInspectableElements(selector?: string | null) {
   });
 }
 
+/**
+ * Report rejections must stay visible (#2902 S2.2): the Rust command
+ * rejects unregistered / already-resolved request ids, and a spoofing or
+ * replay attempt should show up in the webview console instead of vanishing.
+ */
+function reportRejection(error: unknown): void {
+  console.warn('[e2e-ui-bridge] e2e_ui_report rejected:', error);
+}
+
 async function handleInspect(detail: InspectEvent): Promise<void> {
   const elements = collectInspectableElements(detail.selector);
   await invoke('e2e_ui_report', {
     requestId: detail.requestId,
     payload: { elements },
-  }).catch(() => {});
+  }).catch(reportRejection);
 }
 
 export interface InputEvent {
@@ -461,7 +470,7 @@ async function handleInput(detail: InputEvent): Promise<void> {
     await invoke('e2e_ui_report', {
       requestId: detail.requestId,
       payload: { found: false },
-    }).catch(() => {});
+    }).catch(reportRejection);
     return;
   }
   if (typeof el.scrollIntoView === 'function') {
@@ -477,7 +486,7 @@ async function handleInput(detail: InputEvent): Promise<void> {
       description,
       rect: rectOf(el),
     },
-  }).catch(() => {});
+  }).catch(reportRejection);
 }
 
 interface NavigateEvent {

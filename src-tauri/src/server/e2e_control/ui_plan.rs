@@ -279,13 +279,16 @@ pub const POINTER_ACTIONS: [&str; 5] = [
     "middle_click",
     "move",
 ];
-/// Actions that need no pointer coordinate.
+/// Actions that need no pointer coordinate because the focused window
+/// receives them (`type`/`key` go to the focused window). `scroll` is NOT
+/// here: a wheel event lands on the window under the **pointer**, not the
+/// focused one, so it must carry a verifiable target point (#2902 G2.1).
 pub const NO_TARGET_ACTIONS: [&str; 2] = ["type", "key"];
 
 /// Validate and normalize a `ui/input` body. `hover` maps to `move` (the
-/// desktop handler has no separate hover). Pointer actions must target an
-/// element or explicit window coordinates — never the free cursor — so input
-/// always lands inside this instance's window.
+/// desktop handler has no separate hover). Pointer actions and `scroll` must
+/// target an element or explicit window coordinates — never the free cursor
+/// — so input always lands inside this instance's window.
 pub fn plan_input(body: &InputBody) -> Result<InputPlan, (StatusCode, String)> {
     let action = match body.action.trim().to_ascii_lowercase().as_str() {
         "hover" => "move".to_string(),
@@ -339,7 +342,7 @@ pub fn plan_input(body: &InputBody) -> Result<InputPlan, (StatusCode, String)> {
             x: body.x.unwrap(),
             y: body.y.unwrap(),
         }
-    } else if POINTER_ACTIONS.contains(&action.as_str()) {
+    } else if POINTER_ACTIONS.contains(&action.as_str()) || action == "scroll" {
         return Err((
             StatusCode::BAD_REQUEST,
             format!(
@@ -643,6 +646,14 @@ mod tests {
         assert_eq!(error.0, StatusCode::BAD_REQUEST);
         assert!(error.1.contains("needs a target"));
 
+        // #2902 G2.1: a target-less scroll would land the wheel event in
+        // whatever window sits under the user's pointer — refuse it.
+        let mut scroll = body("scroll");
+        scroll.scroll_amount = Some(5);
+        let scroll_err = plan_input(&scroll).unwrap_err();
+        assert_eq!(scroll_err.0, StatusCode::BAD_REQUEST);
+        assert!(scroll_err.1.contains("needs a target"));
+
         let mut drag = body("drag");
         drag.x = Some(10);
         drag.y = Some(20);
@@ -681,10 +692,10 @@ mod tests {
     fn plan_input_validates_action_payloads() {
         assert!(plan_input(&body("type")).unwrap_err().1.contains("text"));
         assert!(plan_input(&body("key")).unwrap_err().1.contains("key"));
-        assert!(plan_input(&body("scroll"))
-            .unwrap_err()
-            .1
-            .contains("scrollAmount"));
+        let mut scroll = body("scroll");
+        scroll.x = Some(10);
+        scroll.y = Some(20);
+        assert!(plan_input(&scroll).unwrap_err().1.contains("scrollAmount"));
         assert!(plan_input(&body("telekinesis")).is_err());
         let mut b = body("type");
         b.text = Some("dummy-token-abcd".to_string());
@@ -692,8 +703,57 @@ mod tests {
     }
 
     #[test]
+    fn plan_input_scroll_targets_viewport_and_occluded_point_is_refused() {
+        // #2902 G2.1: a viewport scroll carries a target point into
+        // `verify_window_input_safety`, so a foreign window covering the
+        // point refuses the wheel event (409) like any pointer action.
+        let mut b = body("scroll");
+        b.x = Some(50);
+        b.y = Some(40);
+        b.scroll_amount = Some(-3);
+        let plan = plan_input(&b).unwrap();
+        assert_eq!(plan.target, InputTarget::Viewport { x: 50, y: 40 });
+
+        let own_window = ZOrderedWindowFact {
+            id: 10,
+            pid: 42,
+            minimized: false,
+            x: 0,
+            y: 0,
+            width: 800,
+            height: 600,
+        };
+        let foreign_overlay = ZOrderedWindowFact {
+            id: 99,
+            pid: 999,
+            minimized: false,
+            x: 20,
+            y: 20,
+            width: 200,
+            height: 200,
+        };
+        let err = verify_window_input_safety(
+            true,
+            &[foreign_overlay, own_window.clone()],
+            42,
+            Some((50, 40)),
+        )
+        .unwrap_err();
+        assert_eq!(err.0, StatusCode::CONFLICT);
+        assert!(err.1.contains("occluded by topmost window 99"));
+
+        // Same scroll over the own window alone is allowed.
+        assert!(
+            verify_window_input_safety(true, &[own_window], 42, Some((50, 40))).is_ok(),
+            "scroll over own window must pass safety"
+        );
+    }
+
+    #[test]
     fn desktop_args_carry_plan_fields() {
         let mut b = body("scroll");
+        b.x = Some(10);
+        b.y = Some(20);
         b.scroll_amount = Some(-3);
         b.axis = Some("vertical".to_string());
         let plan = plan_input(&b).unwrap();
