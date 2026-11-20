@@ -1,3 +1,4 @@
+use super::session_plugins_guard::refuse_session_plugins_write;
 use super::user_skills_guard::{refuse_user_skills_write, USER_SKILLS_WRITE_REJECTED_MARKER};
 use super::WorkspaceServer;
 use crate::SecureFileManager;
@@ -215,6 +216,15 @@ impl WorkspaceServer {
             effective_path,
         )?;
         refuse_user_skills_write(&validated)?;
+        // #2942 gatekeeper G1.1: the session plugin store is service-owned —
+        // install/uninstall are the only writers, and they keep hook approval
+        // outside the workspace. File tools must not plant or rewrite plugin
+        // files under `.libragent/plugins`.
+        if let Ok(plugins_dir) =
+            crate::services::hooks::registry::get_session_plugins_directory(&target_session_id)
+        {
+            refuse_session_plugins_write(&validated, &plugins_dir)?;
+        }
         Ok(validated)
     }
 

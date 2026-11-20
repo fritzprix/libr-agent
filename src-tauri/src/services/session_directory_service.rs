@@ -236,6 +236,12 @@ Write-Host "Available tools: python3, typescript/deno, shell commands"
             .join(crate::services::hooks::registry::LEGACY_SESSION_PLUGINS_DIR_NAME)
             .join(session_id);
         if plugins_dir.exists() {
+            // #2942 S1.2: log the legacy-directory removal so operators can
+            // tell a deleted leftover from "never existed".
+            log::info!(
+                "[session_plugins] removing legacy session plugin store {} during workspace removal",
+                plugins_dir.display()
+            );
             tokio::fs::remove_dir_all(&plugins_dir)
                 .await
                 .map_err(|e| format!("Failed to remove session plugins directory: {e}"))?;

@@ -4,6 +4,7 @@ mod linked_worktree_tests;
 mod path_validation;
 pub(crate) mod retained;
 mod service_context;
+mod session_plugins_guard;
 mod teamwork_paths;
 mod user_skills_guard;
 

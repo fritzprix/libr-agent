@@ -18,8 +18,7 @@
 use super::plugin_manifest::{load_plugin_manifest, PluginManifest};
 use super::session_plugins::PluginScope;
 use crate::services::hooks::registry::{
-    get_session_plugins_directory, get_user_plugins_directory, list_session_store_sources,
-    list_sources_in, PluginSourceRecord,
+    get_user_plugins_directory, list_sources_in, PluginSourceRecord,
 };
 use log::warn;
 use serde::Serialize;
@@ -244,15 +243,20 @@ fn is_safe_namespace(name: &str) -> bool {
 /// effective plugins and does not collide with a built-in.
 pub fn list_plugin_commands(session_id: &str) -> Result<Vec<PluginCommandInfo>, String> {
     let global_dir = get_user_plugins_directory()?;
-    let session_dir = get_session_plugins_directory(session_id)?;
-    Ok(list_in_dirs(&global_dir, &session_dir))
+    // #2942 gatekeeper G1.3: one session plugin read path — load_session_plugins
+    // resolves the store manifest with the out-of-workspace trust overlay, so
+    // command discovery sees exactly the records the hook/skill loaders see.
+    let session_records = super::session_plugins::load_session_plugins(session_id)?;
+    Ok(list_in_dirs(&global_dir, session_records))
 }
 
-fn list_in_dirs(global_dir: &Path, session_dir: &Path) -> Vec<PluginCommandInfo> {
+fn list_in_dirs(
+    global_dir: &Path,
+    session_records: Vec<PluginSourceRecord>,
+) -> Vec<PluginCommandInfo> {
     let mut records: Vec<(PluginSourceRecord, PluginScope)> = Vec::new();
     // Session plugins load through the store manifest (#2942); broken or
     // deleted entries are skipped with a log line, never an error.
-    let session_records = list_session_store_sources(session_dir);
     let shadowed: Vec<String> = session_records
         .iter()
         .map(|r| r.manifest.source_id.clone())
@@ -344,11 +348,16 @@ pub fn expand_plugin_command(
     command_text: &str,
 ) -> Result<Option<String>, String> {
     let global_dir = get_user_plugins_directory()?;
-    let session_dir = get_session_plugins_directory(session_id)?;
-    Ok(expand_in_dirs(&global_dir, &session_dir, command_text))
+    // #2942 gatekeeper G1.3: one session plugin read path (see list_plugin_commands).
+    let session_records = super::session_plugins::load_session_plugins(session_id)?;
+    Ok(expand_in_dirs(&global_dir, session_records, command_text))
 }
 
-fn expand_in_dirs(global_dir: &Path, session_dir: &Path, command_text: &str) -> Option<String> {
+fn expand_in_dirs(
+    global_dir: &Path,
+    session_records: Vec<PluginSourceRecord>,
+    command_text: &str,
+) -> Option<String> {
     let trimmed = command_text.trim();
     let head = trimmed.strip_prefix('/')?;
     if head.is_empty()
@@ -375,7 +384,7 @@ fn expand_in_dirs(global_dir: &Path, session_dir: &Path, command_text: &str) -> 
         return None;
     }
 
-    let records = effective_records(global_dir, session_dir);
+    let records = effective_records(global_dir, session_records);
     let (plugin_filter, command_name) = match token.split_once(':') {
         Some((plugin, name)) => (Some(plugin), name),
         None => (None, token),
@@ -425,9 +434,10 @@ fn expand_in_dirs(global_dir: &Path, session_dir: &Path, command_text: &str) -> 
     }
 }
 
-fn effective_records(global_dir: &Path, session_dir: &Path) -> Vec<PluginSourceRecord> {
-    // Session plugins load through the store manifest (#2942).
-    let mut records: Vec<PluginSourceRecord> = list_session_store_sources(session_dir);
+fn effective_records(
+    global_dir: &Path,
+    mut records: Vec<PluginSourceRecord>,
+) -> Vec<PluginSourceRecord> {
     let shadowed: Vec<String> = records
         .iter()
         .map(|r| r.manifest.source_id.clone())
@@ -476,7 +486,8 @@ fn substitute_arguments(body: &str, args: &str) -> String {
 mod tests {
     use super::*;
     use crate::services::hooks::registry::{
-        save_source_in, upsert_session_store_entry, PluginSourceManifest, PluginSourceRecord,
+        list_session_store_sources, save_source_in, upsert_session_store_entry,
+        PluginSourceManifest, PluginSourceRecord,
     };
     use std::collections::BTreeMap;
 
@@ -513,7 +524,8 @@ mod tests {
                 source_url: url.to_string(),
                 installed_at: 0,
             },
-        );
+        )
+        .unwrap();
         for (rel, content) in files {
             let path = record.root_dir.join(rel);
             fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -587,7 +599,7 @@ mod tests {
             "https://github.com/acme/b",
             &[("commands/dup.md", "d2")],
         );
-        let out = list_in_dirs(&global, &session);
+        let out = list_in_dirs(&global, list_session_store_sources(None, &session));
         let labels: Vec<&str> = out.iter().map(|c| c.label.as_str()).collect();
         assert!(labels.contains(&"/hello"), "{labels:?}");
         assert!(labels.contains(&"/a:hello"), "{labels:?}");
@@ -622,7 +634,7 @@ mod tests {
             "https://github.com/acme/shadow",
             &[("commands/hello.md", HELLO)],
         );
-        let out = list_in_dirs(&global, &session);
+        let out = list_in_dirs(&global, list_session_store_sources(None, &session));
         let hello = out.iter().filter(|c| c.name == "hello").collect::<Vec<_>>();
         // Shadowed source appears once (session), so the bare label survives.
         assert_eq!(hello.len(), 2, "bare + namespaced: {out:?}");
@@ -654,13 +666,30 @@ mod tests {
             "https://github.com/acme/e",
             &[("commands/hello.md", HELLO)],
         );
-        let expanded = expand_in_dirs(&global, &session, "/hello world").unwrap();
+        let expanded = expand_in_dirs(
+            &global,
+            list_session_store_sources(None, &session),
+            "/hello world",
+        )
+        .unwrap();
         assert_eq!(expanded, "Hello world!");
-        let namespaced = expand_in_dirs(&global, &session, "/e:hello world").unwrap();
+        let namespaced = expand_in_dirs(
+            &global,
+            list_session_store_sources(None, &session),
+            "/e:hello world",
+        )
+        .unwrap();
         assert_eq!(namespaced, "Hello world!");
-        assert!(expand_in_dirs(&global, &session, "/nope").is_none());
+        assert!(
+            expand_in_dirs(&global, list_session_store_sources(None, &session), "/nope").is_none()
+        );
         // Built-ins are never expanded by plugin resolution.
-        assert!(expand_in_dirs(&global, &session, "/clear").is_none());
+        assert!(expand_in_dirs(
+            &global,
+            list_session_store_sources(None, &session),
+            "/clear"
+        )
+        .is_none());
     }
 
     #[test]

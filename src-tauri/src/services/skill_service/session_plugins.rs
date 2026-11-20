@@ -23,8 +23,9 @@ use super::importing::{
 use super::plugin_sources::hook_events_for_record;
 use crate::services::hooks::registry::SessionPluginStoreEntry;
 use crate::services::hooks::registry::{
-    delete_source_in, get_session_plugins_directory, get_source_in, get_user_plugins_directory,
-    list_session_store_sources, list_sources_in, remove_session_store_entry,
+    delete_source_in, get_session_plugin_trust_dir, get_session_plugins_directory, get_source_in,
+    get_user_plugins_directory, list_session_store_sources, list_sources_in,
+    move_session_approval_to_trust, remove_session_plugin_trust, remove_session_store_entry,
     upsert_session_store_entry, PluginSourceRecord,
 };
 use crate::services::hooks::{clear_hook_context, spawn_session_start, SessionStartSource};
@@ -88,12 +89,16 @@ pub struct SessionPluginsOverview {
 struct SessionPluginDirs {
     skills: PathBuf,
     plugins: PathBuf,
+    /// Out-of-workspace trust store for this session's plugin approvals
+    /// (#2942 gatekeeper G1.1): never inside the session workspace.
+    trust: PathBuf,
 }
 
 fn session_dirs(session_id: &str) -> Result<SessionPluginDirs, String> {
     Ok(SessionPluginDirs {
         skills: get_workspace_skills_directory_for_session(session_id)?,
         plugins: get_session_plugins_directory(session_id)?,
+        trust: get_session_plugin_trust_dir(session_id)?,
     })
 }
 
@@ -110,10 +115,12 @@ fn session_same_source_skill_names(plugins_dir: &Path, source_key: &str) -> Vec<
 /// load and by the command/hook/MCP loaders: resolve every store-manifest
 /// entry through the plugin source store. An entry whose plugin directory was
 /// deleted or whose manifest is broken is skipped with a log line; the load
-/// itself never fails (#2942 D1 failure policy).
+/// itself never fails (#2942 D1 failure policy). Approval is overlaid from
+/// the out-of-workspace trust store (`trust_dir`, #2942 gatekeeper G1.1).
 pub fn load_session_plugins(session_id: &str) -> Result<Vec<PluginSourceRecord>, String> {
     let plugins_dir = get_session_plugins_directory(session_id)?;
-    Ok(list_session_store_sources(&plugins_dir))
+    let trust_dir = get_session_plugin_trust_dir(session_id)?;
+    Ok(list_session_store_sources(Some(&trust_dir), &plugins_dir))
 }
 
 pub async fn preview_session_plugin_install(
@@ -190,14 +197,33 @@ fn install_prepared_with_dirs(
             always_record_source: true,
         },
     )?;
-    upsert_session_store_entry(
+    // #2942 gatekeeper G1.1: move the approval data out of the workspace
+    // manifest into the out-of-workspace trust store before the plugin can
+    // be loaded, so nothing inside the session workspace grants approval.
+    if let Err(error) = move_session_approval_to_trust(&dirs.trust, &dirs.plugins, &source_id) {
+        cleanup_failed_session_install(dirs, &source_id);
+        return Err(format!(
+            "Plugin files were installed but their approval could not be recorded outside the \
+             session workspace, so the install was rolled back: {error}"
+        ));
+    }
+    // #2942 gatekeeper G1.2: a plugin missing from the store manifest is
+    // never loaded, so a manifest write failure is an install failure —
+    // report it and remove the just-written source instead of lying.
+    if let Err(error) = upsert_session_store_entry(
         &dirs.plugins,
         SessionPluginStoreEntry {
             source_id: source_id.clone(),
             source_url: source_url.clone(),
             installed_at: chrono::Utc::now().timestamp(),
         },
-    );
+    ) {
+        cleanup_failed_session_install(dirs, &source_id);
+        return Err(format!(
+            "Plugin files were installed but the session plugin store manifest could not be \
+             written, so the install was rolled back: {error}"
+        ));
+    }
     append_history(
         &dirs.plugins,
         SessionPluginHistoryEntry {
@@ -208,6 +234,14 @@ fn install_prepared_with_dirs(
         },
     );
     Ok(result)
+}
+
+/// Roll back a session install whose post-install bookkeeping failed (#2942
+/// gatekeeper G1.2): without the manifest entry and trust record the plugin
+/// would never load, so leaving its files behind only hides the failure.
+fn cleanup_failed_session_install(dirs: &SessionPluginDirs, source_id: &str) {
+    let _ = delete_source_in(&dirs.plugins, source_id);
+    let _ = remove_session_plugin_trust(&dirs.trust, source_id);
 }
 
 /// Remove a session plugin by source URL, source id, or repository name.
@@ -259,7 +293,10 @@ fn uninstall_with_dirs(
     let entry = entry_from_record(&record, PluginScope::Session);
     remove_skill_names_from_user_skills(&dirs.skills, &record.manifest.skill_names)?;
     delete_source_in(&dirs.plugins, &record.manifest.source_id)?;
-    remove_session_store_entry(&dirs.plugins, &record.manifest.source_id);
+    // #2942: the trust record goes with the plugin, and a store-manifest
+    // rewrite failure is reported, not swallowed (gatekeeper G1.2).
+    remove_session_plugin_trust(&dirs.trust, &record.manifest.source_id)?;
+    remove_session_store_entry(&dirs.plugins, &record.manifest.source_id)?;
     append_history(
         &dirs.plugins,
         SessionPluginHistoryEntry {
@@ -275,13 +312,19 @@ fn uninstall_with_dirs(
 pub fn list_session_plugins(session_id: &str) -> Result<SessionPluginsOverview, String> {
     let session_dir = get_session_plugins_directory(session_id)?;
     let global_dir = get_user_plugins_directory()?;
-    build_overview(&global_dir, &session_dir)
+    // #2942 G1.3: one read path for session plugins — load_session_plugins.
+    let session_records = load_session_plugins(session_id)?;
+    build_overview(&global_dir, &session_records, &session_dir)
 }
 
-fn build_overview(global_dir: &Path, session_dir: &Path) -> Result<SessionPluginsOverview, String> {
-    // Session plugins come from the store manifest (#2942); global stores keep
-    // directory discovery because they have no per-session manifest.
-    let session_records = list_session_store_sources(session_dir);
+fn build_overview(
+    global_dir: &Path,
+    session_records: &[PluginSourceRecord],
+    session_dir: &Path,
+) -> Result<SessionPluginsOverview, String> {
+    // Session plugins come from the store manifest + trust overlay (#2942);
+    // global stores keep directory discovery because they have no per-session
+    // manifest.
     let shadowed: HashSet<String> = session_records
         .iter()
         .map(|r| r.manifest.source_id.clone())
@@ -369,7 +412,8 @@ mod tests {
     use crate::services::hooks::context::{clear_hook_context, get_hook_context};
     use crate::services::hooks::execute::run_session_start_with_sources;
     use crate::services::hooks::registry::{
-        compute_handler_approval_hashes, read_store_manifest, save_source_in, PluginSourceManifest,
+        compute_handler_approval_hashes, read_session_plugin_trust, read_store_manifest,
+        save_source_in, PluginSourceManifest, SESSION_STORE_MANIFEST_FILE,
     };
     use crate::services::hooks::schema::load_hooks_from_root;
     use crate::services::skill_service::contracts::SkillImportKind;
@@ -387,6 +431,9 @@ mod tests {
         let dirs = SessionPluginDirs {
             skills: root.path().join("workspace/.libragent/skills"),
             plugins: root.path().join("session_plugins/s1"),
+            // Stands in for `{data_dir}/session_plugin_trust/s1` (G1.1):
+            // deliberately NOT under the plugin/workspace dirs.
+            trust: root.path().join("data/session_plugin_trust/s1"),
         };
         let temp_imports = root.path().join("imports");
         fs::create_dir_all(&temp_imports).unwrap();
@@ -395,6 +442,13 @@ mod tests {
             dirs,
             temp_imports,
         }
+    }
+
+    /// The overview the way the production reader builds it: store-manifest
+    /// records with the trust overlay (G1.1), then the global merge.
+    fn overview_for(fx: &Fixture, global_dir: &Path) -> SessionPluginsOverview {
+        let records = list_session_store_sources(Some(&fx.dirs.trust), &fx.dirs.plugins);
+        build_overview(global_dir, &records, &fx.dirs.plugins).unwrap()
     }
 
     /// Write a plugin repo with one skill and an optional SessionStart hook.
@@ -482,7 +536,7 @@ mod tests {
         install_from_dir(&fx, &repo, true).unwrap();
 
         let global = tempfile::tempdir().unwrap();
-        let overview = build_overview(global.path(), &fx.dirs.plugins).unwrap();
+        let overview = overview_for(&fx, global.path());
         assert_eq!(overview.active.len(), 1);
         let entry = &overview.active[0];
         assert_eq!(entry.scope, PluginScope::Session);
@@ -504,13 +558,13 @@ mod tests {
         install_from_dir(&fx, &repo, false).unwrap();
 
         let global = tempfile::tempdir().unwrap();
-        let overview = build_overview(global.path(), &fx.dirs.plugins).unwrap();
+        let overview = overview_for(&fx, global.path());
         assert_eq!(overview.active.len(), 1);
         assert!(overview.active[0].hook_events.is_empty());
         assert!(!overview.active[0].hooks_approved);
 
         uninstall_with_dirs(&fx.dirs, &repo.to_string_lossy()).unwrap();
-        let overview = build_overview(global.path(), &fx.dirs.plugins).unwrap();
+        let overview = overview_for(&fx, global.path());
         assert!(overview.active.is_empty());
     }
 
@@ -527,7 +581,7 @@ mod tests {
         assert_eq!(fs::read_dir(&fx.dirs.skills).unwrap().count(), 0);
 
         let global = tempfile::tempdir().unwrap();
-        let overview = build_overview(global.path(), &fx.dirs.plugins).unwrap();
+        let overview = overview_for(&fx, global.path());
         assert!(overview.active.is_empty());
         let actions: Vec<_> = overview.history.iter().map(|h| h.action).collect();
         assert_eq!(
@@ -576,9 +630,7 @@ mod tests {
         let fx = fixture();
         let repo = write_plugin_repo(fx.root.path(), "alpha", Some("session-hook"));
         install_from_dir(&fx, &repo, true).unwrap();
-        let session_entry = &build_overview(Path::new("/nonexistent"), &fx.dirs.plugins)
-            .unwrap()
-            .active[0];
+        let session_entry = &overview_for(&fx, Path::new("/nonexistent")).active[0];
 
         let global = tempfile::tempdir().unwrap();
         // Same source id as the session install => shadowed.
@@ -596,7 +648,7 @@ mod tests {
             "other",
         );
 
-        let overview = build_overview(global.path(), &fx.dirs.plugins).unwrap();
+        let overview = overview_for(&fx, global.path());
         let scopes: Vec<_> = overview
             .active
             .iter()
@@ -616,8 +668,8 @@ mod tests {
         install_from_dir(&fx_a, &repo, true).unwrap();
 
         let global = tempfile::tempdir().unwrap();
-        let a = build_overview(global.path(), &fx_a.dirs.plugins).unwrap();
-        let b = build_overview(global.path(), &fx_b.dirs.plugins).unwrap();
+        let a = overview_for(&fx_a, global.path());
+        let b = overview_for(&fx_b, global.path());
         assert_eq!(a.active.len(), 1);
         assert!(b.active.is_empty() && b.history.is_empty());
         assert!(!fx_b.dirs.skills.exists());
@@ -647,7 +699,7 @@ mod tests {
         // skipped with a log line, the overview still loads (D1 policy).
         fs::remove_dir_all(fx.dirs.plugins.join(&source_id)).unwrap();
         let global = tempfile::tempdir().unwrap();
-        let overview = build_overview(global.path(), &fx.dirs.plugins).unwrap();
+        let overview = overview_for(&fx, global.path());
         assert!(overview.active.is_empty());
         assert_eq!(overview.history.len(), 1, "history still readable");
     }
@@ -674,10 +726,10 @@ mod tests {
 
         // Simulate removing only the manifest entry: the plugin must not load
         // even though its files are still on disk (#2942 load-from-manifest).
-        remove_session_store_entry(&fx.dirs.plugins, &source_id);
+        remove_session_store_entry(&fx.dirs.plugins, &source_id).unwrap();
         assert!(fx.dirs.plugins.join(&source_id).is_dir());
         let global = tempfile::tempdir().unwrap();
-        let overview = build_overview(global.path(), &fx.dirs.plugins).unwrap();
+        let overview = overview_for(&fx, global.path());
         assert!(overview.active.is_empty());
     }
 
@@ -694,6 +746,7 @@ mod tests {
         run_session_start_with_sources(
             global.path(),
             Some(&fx.dirs.plugins),
+            Some(&fx.dirs.trust),
             &sid,
             SessionStartSource::Resume,
             Some(fx.root.path().to_path_buf()),
@@ -718,6 +771,7 @@ mod tests {
         run_session_start_with_sources(
             global.path(),
             Some(&fx.dirs.plugins),
+            Some(&fx.dirs.trust),
             &sid,
             SessionStartSource::Resume,
             Some(fx.root.path().to_path_buf()),
@@ -725,5 +779,58 @@ mod tests {
         .await;
         assert!(get_hook_context(&sid).is_none_or(|t| t.trim().is_empty()));
         clear_hook_context(&sid);
+    }
+
+    // --- #2942 gatekeeper G1.1 / G1.2 -----------------------------------------
+
+    #[test]
+    fn install_moves_approval_out_of_the_workspace_manifest() {
+        let fx = fixture();
+        let repo = write_plugin_repo(fx.root.path(), "alpha", Some("hi"));
+        install_from_dir(&fx, &repo, true).unwrap();
+        let source_id = read_store_manifest(&fx.dirs.plugins)[0].source_id.clone();
+
+        // The workspace manifest on disk grants nothing: approval fields are
+        // scrubbed at install, so a rewritten workspace file alone can never
+        // re-approve hooks (#2942 gatekeeper G1.1).
+        let on_disk = get_source_in(&fx.dirs.plugins, &source_id).unwrap();
+        assert!(!on_disk.manifest.hooks_approved);
+        assert!(on_disk.manifest.approval_hashes.is_empty());
+
+        // Approval lives only in the out-of-workspace trust record, and its
+        // hashes still match the installed handlers.
+        let trust = read_session_plugin_trust(&fx.dirs.trust, &source_id);
+        assert!(trust.hooks_approved);
+        let root = fx.dirs.plugins.join(&source_id);
+        let cfg = load_hooks_from_root(&root).unwrap();
+        assert_eq!(
+            trust.approval_hashes,
+            compute_handler_approval_hashes(&root, &cfg)
+        );
+
+        // The single reader overlays the trust back onto the record.
+        let global = tempfile::tempdir().unwrap();
+        let overview = overview_for(&fx, global.path());
+        assert!(overview.active[0].hooks_approved);
+    }
+
+    #[test]
+    fn blocked_store_manifest_fails_install_and_cleans_up() {
+        let fx = fixture();
+        // A directory sitting where store-manifest.json must be written makes
+        // every manifest write fail. The install must report failure and roll
+        // back the just-written source instead of claiming success (#2942
+        // gatekeeper G1.2).
+        fs::create_dir_all(fx.dirs.plugins.join(SESSION_STORE_MANIFEST_FILE)).unwrap();
+        let repo = write_plugin_repo(fx.root.path(), "alpha", None);
+        let err = install_from_dir(&fx, &repo, false).unwrap_err();
+        assert!(err.contains("store manifest"), "{err}");
+        assert!(
+            list_sources_in(&fx.dirs.plugins).unwrap().is_empty(),
+            "a rolled-back install must not leave the plugin source behind"
+        );
+        if fx.dirs.trust.exists() {
+            assert_eq!(fs::read_dir(&fx.dirs.trust).unwrap().count(), 0);
+        }
     }
 }
