@@ -21,6 +21,17 @@ pub fn list_plugin_source_overviews() -> Result<Vec<PluginSourceOverview>, Strin
                 skill_names: record.manifest.skill_names.clone(),
                 hook_events,
                 hooks_approved: record.manifest.hooks_approved,
+                plugin_name: record.manifest.plugin.as_ref().map(|p| p.name.clone()),
+                plugin_version: record
+                    .manifest
+                    .plugin
+                    .as_ref()
+                    .and_then(|p| p.version.clone()),
+                plugin_description: record
+                    .manifest
+                    .plugin
+                    .as_ref()
+                    .and_then(|p| p.description.clone()),
             }
         })
         .collect::<Vec<_>>();

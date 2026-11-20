@@ -96,8 +96,8 @@ pub async fn preview_session_plugin_install(
     repo_url: String,
 ) -> Result<SkillImportPreview, String> {
     let dirs = session_dirs(&session_id)?;
-    let prepared = prepare_github_skill_import(repo_url).await?;
-    build_import_preview(&prepared, &dirs.skills, "workspace", "workspace").await
+    let mut prepared = prepare_github_skill_import(repo_url).await?;
+    build_import_preview(&mut prepared, &dirs.skills, "workspace", "workspace").await
 }
 
 /// Install a plugin for one session, then fire SessionStart with
@@ -110,8 +110,9 @@ pub async fn install_session_plugin(
     approve_hooks: Option<bool>,
 ) -> Result<SkillImportResult, String> {
     let dirs = session_dirs(&session_id)?;
-    let prepared = prepare_github_skill_import(repo_url).await?;
-    let preview = build_import_preview(&prepared, &dirs.skills, "workspace", "workspace").await?;
+    let mut prepared = prepare_github_skill_import(repo_url).await?;
+    let preview =
+        build_import_preview(&mut prepared, &dirs.skills, "workspace", "workspace").await?;
     let result = install_prepared_with_dirs(
         &dirs,
         prepared,
@@ -384,6 +385,7 @@ mod tests {
             conflicts: vec![],
             hooks: vec![],
             hooks_require_approval: has_hooks,
+            plugin_manifest: None,
         };
         install_prepared_with_dirs(&fx.dirs, prepared, preview, false, vec![], approve_hooks)
     }
@@ -408,6 +410,7 @@ mod tests {
                 hooks_approved: true,
                 approval_hashes: hashes,
                 created_at: 1,
+                plugin: None,
             },
         )
         .unwrap();
@@ -485,6 +488,7 @@ mod tests {
                 hooks_approved: false,
                 approval_hashes: Default::default(),
                 created_at: 0,
+                plugin: None,
             },
             root_dir: PathBuf::new(),
         };

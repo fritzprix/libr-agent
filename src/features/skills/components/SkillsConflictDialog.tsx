@@ -67,6 +67,25 @@ export function SkillsConflictDialog({
         <div className="min-h-0 overflow-hidden px-6">
           <ScrollArea className="h-full pr-4">
             <div className="space-y-3 pb-1">
+              {pendingInstall?.preview.pluginManifest ? (
+                <div className="rounded-md border bg-muted/20 p-3 text-sm space-y-1">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <p className="font-medium">
+                      {pendingInstall.preview.pluginManifest.name}
+                    </p>
+                    {pendingInstall.preview.pluginManifest.version ? (
+                      <Badge variant="secondary">
+                        v{pendingInstall.preview.pluginManifest.version}
+                      </Badge>
+                    ) : null}
+                  </div>
+                  {pendingInstall.preview.pluginManifest.description ? (
+                    <p className="text-xs text-muted-foreground">
+                      {pendingInstall.preview.pluginManifest.description}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
               {discoveredSkills.length > 0 ? (
                 <div className="rounded-md border bg-muted/20 p-3 text-sm space-y-2">
                   <p className="font-medium">

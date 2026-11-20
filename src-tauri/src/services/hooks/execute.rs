@@ -543,6 +543,7 @@ mod tests {
                 hooks_approved: true,
                 approval_hashes: hashes,
                 created_at: 0,
+                plugin: None,
             },
         )
         .unwrap();
@@ -566,6 +567,7 @@ mod tests {
                 hooks_approved: true,
                 approval_hashes: hashes,
                 created_at: 0,
+                plugin: None,
             },
         )
         .unwrap();
@@ -636,6 +638,7 @@ mod tests {
                     hooks_approved: true,
                     approval_hashes: hashes,
                     created_at: 0,
+                    plugin: None,
                 },
             )
             .unwrap();
@@ -840,6 +843,7 @@ mod tests {
                 hooks_approved: true,
                 approval_hashes: hashes,
                 created_at: 0,
+                plugin: None,
             },
         )
         .unwrap();
@@ -1112,6 +1116,7 @@ mod tests {
                 hooks_approved: approved,
                 approval_hashes: hashes,
                 created_at: 0,
+                plugin: None,
             },
         )
         .unwrap();

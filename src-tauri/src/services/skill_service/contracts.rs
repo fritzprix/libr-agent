@@ -42,6 +42,14 @@ pub struct PluginSourceOverview {
     pub skill_names: Vec<String>,
     pub hook_events: Vec<String>,
     pub hooks_approved: bool,
+    /// Manifest `name` from `.claude-plugin/plugin.json` (#2921), when the
+    /// plugin carried one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plugin_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plugin_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plugin_description: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -102,6 +110,17 @@ pub struct HookPreviewEntry {
     pub execution_status: HookPreviewExecutionStatus,
 }
 
+/// Manifest fields shown in the install preview (#2921).
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginManifestSummary {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct SkillImportPreview {
@@ -110,6 +129,9 @@ pub struct SkillImportPreview {
     pub conflicts: Vec<SkillImportConflict>,
     pub hooks: Vec<HookPreviewEntry>,
     pub hooks_require_approval: bool,
+    /// `.claude-plugin/plugin.json` summary, when the source carried one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plugin_manifest: Option<PluginManifestSummary>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

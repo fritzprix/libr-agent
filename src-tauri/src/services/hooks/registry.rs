@@ -23,6 +23,31 @@ pub struct PluginSourceManifest {
     pub hooks_approved: bool,
     pub approval_hashes: BTreeMap<String, String>,
     pub created_at: i64,
+    /// Metadata parsed from `.claude-plugin/plugin.json` (#2921). `None` for
+    /// sources installed without a manifest (including all pre-#2921 stores).
+    #[serde(default)]
+    pub plugin: Option<PluginMetadata>,
+}
+
+/// Display metadata read from a plugin's `.claude-plugin/plugin.json`
+/// (#2921), persisted with the source so the Skills view can show it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PluginMetadata {
+    pub name: String,
+    #[serde(default)]
+    pub version: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub author: Option<String>,
+    #[serde(default)]
+    pub homepage: Option<String>,
+    #[serde(default)]
+    pub repository: Option<String>,
+    #[serde(default)]
+    pub license: Option<String>,
+    #[serde(default)]
+    pub keywords: Vec<String>,
 }
 
 /// Serializable snapshot of validated hook configuration (for manifest storage).
