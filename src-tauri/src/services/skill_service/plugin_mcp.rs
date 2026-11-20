@@ -321,20 +321,21 @@ pub async fn remove_global_plugin_mcp_servers(source_id: &str) -> Result<(), Str
 /// ids present in the session store (approved or not) with their installed
 /// roots — the same-id set that shadows global plugins and resolves
 /// `${CLAUDE_PLUGIN_ROOT}`. Unapproved snapshots are skipped.
+///
+/// Approval is read through [`list_session_store_sources`], i.e. from the
+/// out-of-workspace trust record overlaid on the store manifest (#2942
+/// S3.2): the store now lives in the agent-writable session workspace, so
+/// its own `mcp_approved` field is never trusted. `trust_dir: None` means
+/// no approval can exist — every server is skipped.
 pub fn session_plugin_mcp_servers(
     session_store: &Path,
+    trust_dir: Option<&Path>,
 ) -> (
     Vec<(String, PluginMcpServerSnapshot)>,
     BTreeMap<String, std::path::PathBuf>,
 ) {
-    use crate::services::hooks::registry::list_sources_in;
-    let records = list_sources_in(session_store).unwrap_or_else(|error| {
-        log::warn!(
-            "Failed to read session plugin store at {}: {error}",
-            session_store.display()
-        );
-        Vec::new()
-    });
+    use crate::services::hooks::registry::list_session_store_sources;
+    let records = list_session_store_sources(trust_dir, session_store);
     let mut out = Vec::new();
     let mut roots = BTreeMap::new();
     for record in records {
@@ -364,16 +365,18 @@ pub struct SessionPluginServerConfig {
 /// into ready-to-connect configs (the D1 loader used by
 /// `load_requested_server_configs`). Invalid entries are skipped with a
 /// warning; `taken_session_names` keeps runtime names unique across the
-/// session's servers, same as DB-loaded servers.
+/// session's servers, same as DB-loaded servers. `trust_dir` is the
+/// out-of-workspace trust record directory for this session (#2942 S3.2).
 pub fn build_session_plugin_server_configs(
     session_store: &Path,
     session_id: &str,
+    trust_dir: Option<&Path>,
     taken_session_names: &mut HashSet<String>,
 ) -> Vec<SessionPluginServerConfig> {
     use crate::mcp::types::MCPServerConfig;
     use crate::mcp::utils::unique_session_server_name;
 
-    let (servers, roots) = session_plugin_mcp_servers(session_store);
+    let (servers, roots) = session_plugin_mcp_servers(session_store, trust_dir);
     let mut out = Vec::new();
     for (source_id, snapshot) in servers {
         let Some(root) = roots.get(&source_id) else {
@@ -659,14 +662,18 @@ mod tests {
 
     // #2924 (gatekeeper G1.4): session load reads only approved servers from
     // the session store, resolves `${CLAUDE_PLUGIN_ROOT}` against the
-    // installed root, and keys entries with the plugin pseudo-id.
+    // installed root, and keys entries with the plugin pseudo-id. Approval
+    // comes only from the trust record (#2942 S3.2), so both manifests carry
+    // the scrubbed (false) flag like real session installs do.
     #[test]
     fn session_plugin_configs_are_approved_only_and_root_resolved() {
         let store = tempfile::tempdir().unwrap();
+        let trust_root = tempfile::tempdir().unwrap();
+        let trust_dir = trust_root.path().join("sess-1");
         let approved_root = write_store_manifest(
             store.path(),
             "plugin-aaaa000000000000",
-            true,
+            false,
             r#"[{"name":"fetch","entry":{"command":"${CLAUDE_PLUGIN_ROOT}/bin/fetch","args":["--root","${CLAUDE_PLUGIN_ROOT}"]}}]"#,
         );
         write_store_manifest(
@@ -675,9 +682,17 @@ mod tests {
             false,
             r#"[{"name":"secret","entry":{"command":"never-run"}}]"#,
         );
+        add_store_entry(store.path(), "plugin-aaaa000000000000");
+        add_store_entry(store.path(), "plugin-bbbb000000000000");
+        record_mcp_trust(&trust_dir, "plugin-aaaa000000000000", true);
 
         let mut taken = std::collections::HashSet::new();
-        let configs = build_session_plugin_server_configs(store.path(), "sess-1", &mut taken);
+        let configs = build_session_plugin_server_configs(
+            store.path(),
+            "sess-1",
+            Some(&trust_dir),
+            &mut taken,
+        );
         assert_eq!(configs.len(), 1, "unapproved source servers are skipped");
         let server = &configs[0];
         assert_eq!(server.server_name, "fetch");
@@ -698,6 +713,81 @@ mod tests {
             .starts_with("plugin:plugin-aaaa000000000000:"));
         // The session key is claimed so DB-loaded servers cannot collide.
         assert!(taken.contains("fetch"));
+    }
+
+    /// #2942 S3.2 fixture: list a plugin in the store manifest (session
+    /// load is manifest-driven, #2942 D1) so the loader can see it.
+    fn add_store_entry(base: &Path, source_id: &str) {
+        crate::services::hooks::registry::upsert_session_store_entry(
+            base,
+            crate::services::hooks::registry::SessionPluginStoreEntry {
+                source_id: source_id.to_string(),
+                source_url: format!("https://example.com/{source_id}"),
+                installed_at: 0,
+            },
+        )
+        .unwrap();
+    }
+
+    /// #2942 S3.2 fixture: write the out-of-workspace trust record that is
+    /// the only authority for MCP-server approval.
+    fn record_mcp_trust(trust_dir: &Path, source_id: &str, approved: bool) {
+        crate::services::hooks::registry::record_session_plugin_trust(
+            trust_dir,
+            source_id,
+            &crate::services::hooks::registry::SessionPluginTrust {
+                mcp_approved: approved,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    }
+
+    // #2942 S3.2: the session store now lives in the agent-writable
+    // workspace, so a tampered workspace manifest claiming mcp_approved=true
+    // must never start a server — only the out-of-workspace trust record
+    // can approve.
+    #[test]
+    fn tampered_session_manifest_cannot_start_plugin_mcp_servers() {
+        let store = tempfile::tempdir().unwrap();
+        let trust_root = tempfile::tempdir().unwrap();
+        let trust_dir = trust_root.path().join("sess-9");
+        let id = "plugin-cccc000000000000";
+        write_store_manifest(
+            store.path(),
+            id,
+            true, // tampered: the agent flipped the workspace flag
+            r#"[{"name":"evil","entry":{"command":"never-run"}}]"#,
+        );
+        add_store_entry(store.path(), id);
+
+        let mut taken = std::collections::HashSet::new();
+        // No trust record: tampering alone starts nothing, both with the
+        // real (empty) trust dir and with none at all.
+        let configs = build_session_plugin_server_configs(
+            store.path(),
+            "sess-9",
+            Some(&trust_dir),
+            &mut taken,
+        );
+        assert!(
+            configs.is_empty(),
+            "workspace tampering must not approve servers"
+        );
+        let configs = build_session_plugin_server_configs(store.path(), "sess-9", None, &mut taken);
+        assert!(configs.is_empty());
+
+        // Genuine approval through the trust record starts the server.
+        record_mcp_trust(&trust_dir, id, true);
+        let configs = build_session_plugin_server_configs(
+            store.path(),
+            "sess-9",
+            Some(&trust_dir),
+            &mut taken,
+        );
+        assert_eq!(configs.len(), 1);
+        assert_eq!(configs[0].server_name, "evil");
+        assert_eq!(configs[0].pseudo_id, "plugin:plugin-cccc000000000000:evil");
     }
 
     async fn marker_count(db: &sea_orm::DatabaseConnection, marker: &str) -> usize {

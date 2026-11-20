@@ -1249,6 +1249,8 @@ mod tests {
                 created_at: 0,
                 plugin: None,
                 hook_files: vec![],
+                mcp_servers: vec![],
+                mcp_approved: false,
             },
         )
         .unwrap();
@@ -1267,6 +1269,7 @@ mod tests {
             &SessionPluginTrust {
                 hooks_approved: approved,
                 approval_hashes: hashes,
+                mcp_approved: false,
             },
         )
         .unwrap();
@@ -1362,6 +1365,8 @@ mod tests {
                 created_at: 0,
                 plugin: None,
                 hook_files: vec![],
+                mcp_servers: vec![],
+                mcp_approved: false,
             },
         )
         .unwrap();

@@ -129,6 +129,11 @@ pub(super) async fn load_requested_server_configs(
             // servers twice.
             let session_store =
                 crate::services::hooks::registry::get_session_plugins_directory(session_id).ok();
+            // #2942 S3.2: the store lives in the agent-writable workspace,
+            // so MCP-server approval is read only from the out-of-workspace
+            // trust records below.
+            let session_trust =
+                crate::services::hooks::registry::get_session_plugin_trust_dir(session_id).ok();
             let shadowed_source_ids: HashSet<String> = session_store
                 .as_ref()
                 .map(|dir| session_store_source_ids(dir.as_path()))
@@ -233,6 +238,7 @@ pub(super) async fn load_requested_server_configs(
                 for server in crate::services::skill_service::build_session_plugin_server_configs(
                     store,
                     session_id,
+                    session_trust.as_deref(),
                     &mut taken_session_names,
                 ) {
                     let SessionPluginServerConfig {

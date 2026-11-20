@@ -176,14 +176,22 @@ pub fn get_session_plugin_trust_dir(session_id: &str) -> Result<PathBuf, String>
 
 /// Approval state of one session-installed plugin, stored outside the
 /// session workspace (see [`SESSION_PLUGIN_TRUST_DIR_NAME`]). This is the
-/// only authority for hook approval: the workspace manifest's own approval
-/// fields are scrubbed at install and ignored at load.
+/// only authority for hook and MCP-server approval: the workspace
+/// manifest's own approval fields are scrubbed at install and ignored at
+/// load (#2942 S3.2 carries `mcp_approved` here too, so the store moving
+/// into the agent-writable workspace cannot weaken #2924 D3).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SessionPluginTrust {
     #[serde(default)]
     pub hooks_approved: bool,
     #[serde(default)]
     pub approval_hashes: BTreeMap<String, String>,
+    /// Whether the user approved starting this plugin's MCP servers
+    /// (#2924 D3, carried out of the workspace store by #2942 S3.2). Same
+    /// rule as hooks: the workspace manifest's own flag is scrubbed at
+    /// install and ignored at load; only this record can approve.
+    #[serde(default)]
+    pub mcp_approved: bool,
 }
 
 fn trust_file_path(trust_dir: &Path, source_id: &str) -> PathBuf {
@@ -240,11 +248,13 @@ pub fn move_session_approval_to_trust(
     let trust = SessionPluginTrust {
         hooks_approved: record.manifest.hooks_approved,
         approval_hashes: record.manifest.approval_hashes.clone(),
+        mcp_approved: record.manifest.mcp_approved,
     };
     record_session_plugin_trust(trust_dir, source_id, &trust)?;
     let mut scrubbed = record.manifest;
     scrubbed.hooks_approved = false;
     scrubbed.approval_hashes.clear();
+    scrubbed.mcp_approved = false;
     let manifest_path = plugins_dir.join(source_id).join(MANIFEST_FILE);
     let json =
         serde_json::to_string_pretty(&scrubbed).map_err(|e| format!("serialize manifest: {e}"))?;
@@ -342,6 +352,7 @@ pub fn list_session_store_sources(
                     .unwrap_or_default();
                 record.manifest.hooks_approved = trust.hooks_approved;
                 record.manifest.approval_hashes = trust.approval_hashes;
+                record.manifest.mcp_approved = trust.mcp_approved;
                 Some(record)
             }
             Err(error) => {
@@ -746,7 +757,9 @@ mod tests {
     }
 
     /// #2942 gatekeeper G1.4 fixtures: a manifest with optional inline
-    /// approval, without touching the real install pipeline.
+    /// approval, without touching the real install pipeline. `mcp_approved`
+    /// mirrors the D3 install gate (approval covers MCP servers too,
+    /// #2942 S3.2).
     fn test_manifest(source_id: &str, approved: bool) -> PluginSourceManifest {
         PluginSourceManifest {
             source_url: "https://example.com/p".to_string(),
@@ -762,6 +775,15 @@ mod tests {
             created_at: 0,
             plugin: None,
             hook_files: vec![],
+            mcp_servers: if approved {
+                vec![PluginMcpServerSnapshot {
+                    name: "srv".to_string(),
+                    entry: serde_json::json!({ "command": "bin/srv" }),
+                }]
+            } else {
+                vec![]
+            },
+            mcp_approved: approved,
         }
     }
 
@@ -811,14 +833,17 @@ mod tests {
 
         let before = get_source_in(base.path(), &id).unwrap();
         assert!(before.manifest.hooks_approved);
+        assert!(before.manifest.mcp_approved);
 
         move_session_approval_to_trust(&trust_dir, base.path(), &id).unwrap();
 
         let scrubbed = get_source_in(base.path(), &id).unwrap();
         assert!(!scrubbed.manifest.hooks_approved);
         assert!(scrubbed.manifest.approval_hashes.is_empty());
+        assert!(!scrubbed.manifest.mcp_approved);
         let trust_record = read_session_plugin_trust(&trust_dir, &id);
         assert!(trust_record.hooks_approved);
+        assert!(trust_record.mcp_approved);
         assert_eq!(
             trust_record.approval_hashes,
             before.manifest.approval_hashes
@@ -827,6 +852,7 @@ mod tests {
         let with_trust = list_session_store_sources(Some(&trust_dir), base.path());
         assert_eq!(with_trust.len(), 1);
         assert!(with_trust[0].manifest.hooks_approved);
+        assert!(with_trust[0].manifest.mcp_approved);
         assert_eq!(
             with_trust[0].manifest.approval_hashes,
             before.manifest.approval_hashes
@@ -836,17 +862,57 @@ mod tests {
                 .manifest
                 .hooks_approved
         );
+        assert!(
+            !list_session_store_sources(None, base.path())[0]
+                .manifest
+                .mcp_approved
+        );
         let other_trust = trust_root.path().join("s2");
         assert!(
             !list_session_store_sources(Some(&other_trust), base.path())[0]
                 .manifest
                 .hooks_approved
         );
+        assert!(
+            !list_session_store_sources(Some(&other_trust), base.path())[0]
+                .manifest
+                .mcp_approved
+        );
 
         // Uninstall removes the trust record; a missing file reads as
         // unapproved (fail-safe).
         remove_session_plugin_trust(&trust_dir, &id).unwrap();
         assert!(!read_session_plugin_trust(&trust_dir, &id).hooks_approved);
+        assert!(!read_session_plugin_trust(&trust_dir, &id).mcp_approved);
         remove_session_plugin_trust(&trust_dir, &id).unwrap();
+    }
+
+    #[test]
+    fn tampered_workspace_mcp_approved_flag_is_ignored() {
+        // #2942 S3.2: the session store now lives in the agent-writable
+        // workspace, so flipping mcp_approved in the workspace manifest
+        // (without touching {data_dir}) must never approve a server.
+        let base = tempfile::tempdir().unwrap();
+        let trust_dir = tempfile::tempdir().unwrap().path().join("s1");
+        let id = format!("plugin-{}", "c".repeat(16));
+        save_source_in(base.path(), test_manifest(&id, false)).unwrap();
+        upsert_session_store_entry(base.path(), entry(&id)).unwrap();
+
+        // Tamper: rewrite the workspace manifest as if the user had approved.
+        let manifest_path = base.path().join(&id).join(MANIFEST_FILE);
+        let raw = fs::read_to_string(&manifest_path).unwrap();
+        let mut json: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        json["mcp_approved"] = serde_json::Value::Bool(true);
+        fs::write(&manifest_path, serde_json::to_string_pretty(&json).unwrap()).unwrap();
+
+        // Load with the (empty) trust dir and without one: stays unapproved.
+        let records = list_session_store_sources(Some(&trust_dir), base.path());
+        assert_eq!(records.len(), 1);
+        assert!(!records[0].manifest.mcp_approved);
+        assert!(
+            !list_session_store_sources(None, base.path())[0]
+                .manifest
+                .mcp_approved
+        );
     }
 }
