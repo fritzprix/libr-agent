@@ -508,6 +508,12 @@
       "status": "platform-specific",
       "reason": "Skipped on GitHub-hosted windows-latest CI (#2905): windows-latest lacks a Linux Docker daemon for session containers (\\?\\ prefix stripping is unit-tested in Rust; live docker run requires Docker Desktop on a self-hosted Windows runner)",
       "harbor_task": null
+    },
+    {
+      "id": "S3-WINDOW",
+      "status": "implemented-partial",
+      "reason": "POST /api/e2e-control/window shows/hides and resizes the isolated debug instance's main window (guard chain and validation pinned by e2e_control_token_tests) and session_e2e.control.E2eControlClient.set_window drives it (no caller yet on purpose: it is the client for the deferred #2902 window-state task); the Harbor/UI window-state task is deferred to #2902 (S2) per the issue (#2903 AC2)",
+      "harbor_task": null
     }
   ]
 }

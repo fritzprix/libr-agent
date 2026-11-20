@@ -29,9 +29,9 @@ mod tests {
     use tauri_mcp_agent_lib::server::e2e_control::{
         capability_guard, constant_time_eq, e2e_control_guarded_routes_with_capability,
         header_matches, pending_circuit_break, plan_circuit_break_resume, plan_picker_override,
-        plan_user_prompt_action, resume_circuit_break_message, tool_approval_error_status,
-        PickerBody, PlannedPromptAction, SessionInteractionsSnapshot, UserPromptBody,
-        E2E_CONTROL_HEADER,
+        plan_user_prompt_action, plan_window, resume_circuit_break_message,
+        tool_approval_error_status, window_state_reply, PickerBody, PlannedPromptAction,
+        SessionInteractionsSnapshot, UserPromptBody, WindowBody, WindowPlan, E2E_CONTROL_HEADER,
     };
     use warp::http::{HeaderMap, StatusCode};
     use warp::Filter;
@@ -293,6 +293,179 @@ mod tests {
             .await;
         assert_eq!(res.status(), 400);
         assert!(tauri_mcp_agent_lib::e2e_picker::take_picker_override().is_none());
+    }
+
+    // ------------------------------------------------------------------
+    // Window control (#2903 AC2).
+    // ------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn window_route_requires_the_full_guard_chain() {
+        // Missing capability → 403 through the production chain.
+        let res = warp::test::request()
+            .method("POST")
+            .path("/api/e2e-control/window")
+            .remote_addr(LOOPBACK_PEER.parse().unwrap())
+            .header("host", LOOPBACK_HOST)
+            .json(&serde_json::json!({"visible": false}))
+            .reply(&production_chain())
+            .await;
+        assert_eq!(res.status(), 403);
+
+        // LAN Host → 403 even with a valid token (pins access_guard).
+        let res = warp::test::request()
+            .method("POST")
+            .path("/api/e2e-control/window")
+            .remote_addr(LOOPBACK_PEER.parse().unwrap())
+            .header("host", LAN_HOST)
+            .header(E2E_CONTROL_HEADER, TOKEN)
+            .json(&serde_json::json!({"visible": false}))
+            .reply(&production_chain())
+            .await;
+        assert_eq!(res.status(), 403);
+
+        // LAN peer → 403 even with a loopback Host and valid token.
+        let res = warp::test::request()
+            .method("POST")
+            .path("/api/e2e-control/window")
+            .remote_addr(LAN_PEER.parse().unwrap())
+            .header("host", LOOPBACK_HOST)
+            .header(E2E_CONTROL_HEADER, TOKEN)
+            .json(&serde_json::json!({"visible": false}))
+            .reply(&production_chain())
+            .await;
+        assert_eq!(res.status(), 403);
+    }
+
+    #[tokio::test]
+    async fn window_route_rejects_invalid_bodies_with_400() {
+        for body in [
+            serde_json::json!({}),
+            serde_json::json!({"width": 800.0}),
+            serde_json::json!({"width": 0.0, "height": 600.0}),
+            serde_json::json!({"width": 20000.0, "height": 600.0}),
+        ] {
+            let res = warp::test::request()
+                .method("POST")
+                .path("/api/e2e-control/window")
+                .remote_addr(LOOPBACK_PEER.parse().unwrap())
+                .header("host", LOOPBACK_HOST)
+                .header(E2E_CONTROL_HEADER, TOKEN)
+                .json(&body)
+                .reply(&production_chain())
+                .await;
+            assert_eq!(res.status(), 400, "body {body} must be rejected");
+        }
+    }
+
+    #[tokio::test]
+    async fn window_route_answers_503_without_a_running_tauri_app() {
+        // Integration tests never set the process-global AppHandle, so a
+        // valid request reaches the handler's "no app" branch and answers
+        // 503 — proving the guards and body validation passed through.
+        let res = warp::test::request()
+            .method("POST")
+            .path("/api/e2e-control/window")
+            .remote_addr(LOOPBACK_PEER.parse().unwrap())
+            .header("host", LOOPBACK_HOST)
+            .header(E2E_CONTROL_HEADER, TOKEN)
+            .json(&serde_json::json!({"visible": true}))
+            .reply(&production_chain())
+            .await;
+        assert_eq!(res.status(), 503);
+    }
+
+    #[test]
+    fn plan_window_validates_before_touching_a_window() {
+        assert_eq!(
+            plan_window(&WindowBody {
+                visible: Some(false),
+                width: None,
+                height: None,
+            }),
+            WindowPlan::Apply {
+                visible: Some(false),
+                width: None,
+                height: None,
+            },
+        );
+        assert_eq!(
+            plan_window(&WindowBody {
+                visible: Some(true),
+                width: Some(1280.0),
+                height: Some(720.0),
+            }),
+            WindowPlan::Apply {
+                visible: Some(true),
+                width: Some(1280.0),
+                height: Some(720.0),
+            },
+        );
+        for body in [
+            WindowBody {
+                visible: None,
+                width: None,
+                height: None,
+            },
+            WindowBody {
+                visible: None,
+                width: Some(800.0),
+                height: None,
+            },
+            WindowBody {
+                visible: None,
+                width: None,
+                height: Some(600.0),
+            },
+            WindowBody {
+                visible: None,
+                width: Some(0.0),
+                height: Some(600.0),
+            },
+            WindowBody {
+                visible: None,
+                width: Some(f64::NAN),
+                height: Some(600.0),
+            },
+            WindowBody {
+                visible: None,
+                width: Some(16_385.0),
+                height: Some(600.0),
+            },
+        ] {
+            assert!(
+                matches!(plan_window(&body), WindowPlan::Reject(_)),
+                "body {body:?} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn window_state_reply_reports_the_read_back_in_logical_pixels() {
+        // The read-back (clamped by the window manager), not the request,
+        // is what the reply carries: 1000x700 physical at scale 2.0.
+        let reply = window_state_reply::<String>(Ok(true), Ok((1000, 700)), Ok(2.0)).unwrap();
+        assert_eq!(
+            reply,
+            serde_json::json!({ "visible": true, "width": 500.0, "height": 350.0 })
+        );
+    }
+
+    #[test]
+    fn window_state_reply_names_the_failing_read_back_call() {
+        let err = window_state_reply(Err("boom"), Ok((10, 10)), Ok(1.0)).unwrap_err();
+        assert!(
+            err.contains("is_visible failed") && err.contains("boom"),
+            "{err}"
+        );
+        let err = window_state_reply(Ok(true), Err("boom"), Ok(1.0)).unwrap_err();
+        assert!(err.contains("outer_size failed"), "{err}");
+        let err = window_state_reply(Ok(true), Ok((10, 10)), Err("boom")).unwrap_err();
+        assert!(err.contains("scale_factor failed"), "{err}");
+        for bad in [0.0, -1.0, f64::NAN] {
+            let err = window_state_reply::<String>(Ok(true), Ok((10, 10)), Ok(bad)).unwrap_err();
+            assert!(err.contains("scale_factor failed"), "{err}");
+        }
     }
 
     #[test]
