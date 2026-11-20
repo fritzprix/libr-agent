@@ -22,6 +22,31 @@ fn alias_write_manager(root: PathBuf) -> SecureFileManager {
     SecureFileManager::new_scoped_with_base_dir(root).with_git_metadata_write_guard(Vec::new())
 }
 
+/// The paired write guards every file-tool write passes through: user skills
+/// and the session plugin store (#2942 gatekeeper G1.1). The plugin store is
+/// service-owned — install/uninstall are the only writers, and they keep hook
+/// approval outside the workspace, so file tools must not plant or rewrite
+/// plugin files under `.libragent/plugins`.
+///
+/// `plugins_dir` is the resolved session plugin store for the target session.
+/// When it cannot be resolved, the session-plugin check is skipped with a
+/// visible warning (#2942 gatekeeper S2.2) rather than failing open silently.
+fn refuse_reserved_write_paths(
+    validated: &std::path::Path,
+    plugins_dir: Result<PathBuf, String>,
+) -> Result<(), String> {
+    refuse_user_skills_write(validated)?;
+    match plugins_dir {
+        Ok(dir) => refuse_session_plugins_write(validated, &dir),
+        Err(error) => {
+            log::warn!(
+                "[session_plugins] file-write guard for the session plugin store skipped: {error}"
+            );
+            Ok(())
+        }
+    }
+}
+
 impl WorkspaceServer {
     pub async fn validate_read_path_with_skill_access(
         &self,
@@ -215,16 +240,10 @@ impl WorkspaceServer {
             &file_manager,
             effective_path,
         )?;
-        refuse_user_skills_write(&validated)?;
-        // #2942 gatekeeper G1.1: the session plugin store is service-owned —
-        // install/uninstall are the only writers, and they keep hook approval
-        // outside the workspace. File tools must not plant or rewrite plugin
-        // files under `.libragent/plugins`.
-        if let Ok(plugins_dir) =
-            crate::services::hooks::registry::get_session_plugins_directory(&target_session_id)
-        {
-            refuse_session_plugins_write(&validated, &plugins_dir)?;
-        }
+        refuse_reserved_write_paths(
+            &validated,
+            crate::services::hooks::registry::get_session_plugins_directory(&target_session_id),
+        )?;
         Ok(validated)
     }
 
@@ -630,5 +649,49 @@ mod guidance_tests {
         assert!(confused_harness_alias_hint("harness/")
             .expect("hint")
             .contains("@harness"));
+    }
+}
+
+#[cfg(test)]
+mod reserved_write_guard_tests {
+    use super::super::session_plugins_guard::SESSION_PLUGINS_WRITE_REJECTED_MARKER;
+    use super::refuse_reserved_write_paths;
+    use crate::services::hooks::registry::session_store_dir_in;
+
+    #[test]
+    fn write_guard_refuses_paths_under_the_session_plugin_store() {
+        // #2942 gatekeeper G2.1: the guard must run on the write path with
+        // the same `session_store_dir_in` join `get_session_plugins_directory`
+        // resolves at runtime — hand-built paths in the guard's own unit
+        // tests would still pass if this wiring were deleted.
+        let workspace = tempfile::tempdir().unwrap();
+        let store = session_store_dir_in(workspace.path());
+        std::fs::create_dir_all(store.join("plugin-abc")).unwrap();
+
+        let inside = vec![
+            store.clone(),
+            store.join("plugin-abc/manifest.json"),
+            store.join("plugin-new/hooks/hooks.json"),
+        ];
+        for target in &inside {
+            let error = refuse_reserved_write_paths(target, Ok(store.clone()))
+                .expect_err("writes into the session plugin store must be refused");
+            assert!(
+                error.contains(SESSION_PLUGINS_WRITE_REJECTED_MARKER),
+                "{error}"
+            );
+        }
+
+        // Paths outside the store pass the session-plugin guard.
+        refuse_reserved_write_paths(&workspace.path().join("src/main.rs"), Ok(store.clone()))
+            .expect("normal workspace writes must not be refused");
+
+        // #2942 S2.2: an unresolvable store warns and skips the check
+        // instead of silently failing open or hard-failing the write.
+        refuse_reserved_write_paths(
+            &store.join("plugin-x/SKILL.md"),
+            Err("no manager".to_string()),
+        )
+        .expect("unresolved store must warn-skip, not block");
     }
 }

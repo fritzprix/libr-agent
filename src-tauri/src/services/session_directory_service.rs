@@ -246,6 +246,20 @@ Write-Host "Available tools: python3, typescript/deno, shell commands"
                 .await
                 .map_err(|e| format!("Failed to remove session plugins directory: {e}"))?;
         }
+
+        // #2942 S2.3: hook approval records live outside the workspace
+        // (`session_plugin_trust/<session_id>`), so they do not go away with
+        // the workspace — delete them here, or a recycled session id would
+        // inherit another session's approvals.
+        let trust_dir = self
+            .base_data_dir
+            .join(crate::services::hooks::registry::SESSION_PLUGIN_TRUST_DIR_NAME)
+            .join(session_id);
+        if trust_dir.exists() {
+            tokio::fs::remove_dir_all(&trust_dir)
+                .await
+                .map_err(|e| format!("Failed to remove session plugin trust directory: {e}"))?;
+        }
         Ok(())
     }
 
@@ -328,8 +342,17 @@ mod tests {
         let service = super::SessionDirectoryService::new(temp.path().to_path_buf()).unwrap();
         let workspace = temp.path().join("workspaces").join("s1");
         let plugins = temp.path().join("session_plugins").join("s1");
+        // #2942 S2.3: out-of-workspace trust records must die with the session.
+        let trust = temp
+            .path()
+            .join(crate::services::hooks::registry::SESSION_PLUGIN_TRUST_DIR_NAME)
+            .join("s1");
         let other = temp.path().join("session_plugins").join("s2");
-        for dir in [&workspace, &plugins, &other] {
+        let other_trust = temp
+            .path()
+            .join(crate::services::hooks::registry::SESSION_PLUGIN_TRUST_DIR_NAME)
+            .join("s2");
+        for dir in [&workspace, &plugins, &trust, &other, &other_trust] {
             std::fs::create_dir_all(dir).unwrap();
         }
 
@@ -337,6 +360,11 @@ mod tests {
 
         assert!(!workspace.exists());
         assert!(!plugins.exists(), "session plugin store must be cleaned up");
+        assert!(!trust.exists(), "session plugin trust must be cleaned up");
         assert!(other.exists(), "other sessions' stores must be untouched");
+        assert!(
+            other_trust.exists(),
+            "other sessions' trust must be untouched"
+        );
     }
 }

@@ -413,7 +413,7 @@ mod tests {
     use crate::services::hooks::execute::run_session_start_with_sources;
     use crate::services::hooks::registry::{
         compute_handler_approval_hashes, read_session_plugin_trust, read_store_manifest,
-        save_source_in, PluginSourceManifest, SESSION_STORE_MANIFEST_FILE,
+        save_source_in, session_store_dir_in, PluginSourceManifest, SESSION_STORE_MANIFEST_FILE,
     };
     use crate::services::hooks::schema::load_hooks_from_root;
     use crate::services::skill_service::contracts::SkillImportKind;
@@ -424,6 +424,27 @@ mod tests {
         root: TempDir,
         dirs: SessionPluginDirs,
         temp_imports: PathBuf,
+    }
+
+    #[test]
+    fn installer_plugins_dir_is_the_guarded_session_store_dir() {
+        // #2942 gatekeeper G2.1: the file-write guard protects
+        // `session_store_dir_in(session workspace)`, and the installer's
+        // `SessionPluginDirs.plugins` comes from `get_session_plugins_directory`
+        // — whose only join is that same `session_store_dir_in`. Pin the
+        // shared path (and that the store stays inside the workspace while
+        // trust stays outside) so the guard and the installer cannot drift
+        // apart unnoticed.
+        let ws = tempfile::tempdir().unwrap();
+        let store = session_store_dir_in(ws.path());
+        assert!(store.starts_with(ws.path()));
+
+        let dirs = SessionPluginDirs {
+            skills: ws.path().join(".libragent/skills"),
+            plugins: store.clone(),
+            trust: ws.path().join("outside-workspace-trust"),
+        };
+        assert_eq!(dirs.plugins, session_store_dir_in(ws.path()));
     }
 
     fn fixture() -> Fixture {

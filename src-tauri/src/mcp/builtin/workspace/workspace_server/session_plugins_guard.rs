@@ -4,6 +4,13 @@
 //! a file-tool edit there could plant a plugin whose files a rewritten
 //! manifest would still describe as approved. Reads are unaffected; only the
 //! refusal carries the recovery guidance.
+//!
+//! Known caveat (#2942 worker note, kept visible for the next reader): this
+//! guard covers the file tools only. `workspace__runShell` can still reach
+//! the store with plain shell commands; the security boundary is that hook
+//! *approval* lives outside the workspace (`session_plugin_trust`, #2942
+//! G1.1), so files planted by any means stay unapproved until a user approves
+//! them through the install flow.
 
 use super::user_skills_guard::resolve_lenient;
 use crate::mcp::builtin::utils::relative_path_under_base;
