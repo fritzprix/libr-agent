@@ -65,12 +65,25 @@ loopback, token-guarded S1/S3 HTTP routes for interaction polling and prompt
 and approval resolution behave the same on Windows — they are plain HTTP
 against the same debug binary. The file-picker injection and in-place restart
 routes land with #2903 (PR #2916) and are not part of this change. Only the S3
-_window_ size/visibility helper is Linux-side (X11); it has no Windows
+*window* size/visibility helper is Linux-side (X11); it has no Windows
 equivalent in the manager.
 
 For interactive debugging the manual host-mode path still works: start a
 debug desktop instance yourself with `$env:LIBRAGENT_E2E_CONTROL = "1"` and a
 disposable `$env:LIBRAGENT_DATA_DIR`, then run Harbor in host mode against it.
+
+Windows-gated tasks (`requires_host_os = "windows"`, auto-excluded on Linux):
+
+- `e2e-b11-no-runshell` — B-11: `workspace__runShell` unavailable on Windows,
+  `submitInteractiveShellInput` absent, PowerShell fallback succeeds.
+- `e2e-win-stdio-metachars-m6` — 2672 M-6: stdio MCP server argument
+  `a&b|c^d<e>f` reaches the spawned child verbatim without `cmd.exe` splitting.
+- `e2e-win-docs-doctor-o7` — 2565 O-7: `docs` skill `scripts/doctor.ps1`
+  prints `Doctor: OK` with no NTFS junction loop.
+- **2672 D-4 (explicitly skipped on `windows-latest`)**: GitHub-hosted
+  `windows-latest` runners do not provide a Linux Docker daemon for session
+  containers; `\\?\` prefix stripping is covered by Rust unit tests, while live
+  `docker run` requires Docker Desktop on a self-hosted Windows runner.
 
 ## Circuit-breaker Resume (#2901)
 
