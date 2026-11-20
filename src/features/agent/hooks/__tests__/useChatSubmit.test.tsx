@@ -412,6 +412,30 @@ describe('useChatSubmit', () => {
     expect(result.current.input).toBe('');
   });
 
+  it('restores the typed plugin command when nothing was sent (#2922)', async () => {
+    mockState.safeInvoke.mockResolvedValue({
+      success: true,
+      message: '',
+      expandedPrompt: 'Run the demo with a b',
+    });
+    const { result } = renderHook(() =>
+      useChatSubmit({ ...baseProps(), isProxyReady: false }),
+    );
+
+    act(() => {
+      result.current.setInput('/demo a b');
+    });
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    expect(mockState.toastError).toHaveBeenCalledWith(
+      'agent.input.proxyNotReadyToast',
+    );
+    expect(mockState.submit).not.toHaveBeenCalled();
+    expect(result.current.input).toBe('/demo a b');
+  });
+
   it('notifies onPluginCommandsChanged after reload and plugin commands (#2922)', async () => {
     const onPluginCommandsChanged = vi.fn();
     const { result } = renderHook(() =>

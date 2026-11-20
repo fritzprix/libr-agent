@@ -75,9 +75,10 @@ pub fn discover_command_files(
             for raw in paths.to_vec() {
                 let inner = raw.strip_prefix("./").unwrap_or(&raw);
                 let target = root.join(inner);
-                if target.is_dir() {
+                if is_plain_dir(&target) {
                     files.extend(collect_markdown(&target));
-                } else if target.is_file() && target.extension().map(|e| e == "md").unwrap_or(false)
+                } else if is_plain_file(&target)
+                    && target.extension().map(|e| e == "md").unwrap_or(false)
                 {
                     files.push(target);
                 }
@@ -90,6 +91,15 @@ pub fn discover_command_files(
     let mut commands: Vec<DiscoveredCommand> = Vec::new();
     let mut seen: Vec<String> = Vec::new();
     for path in files {
+        // Plugin content is untrusted: never follow a symlink out of the
+        // plugin root (a link to a private file would be sent to the LLM).
+        if !is_plain_file(&path) || !stays_within(root, &path) {
+            warn!(
+                "Skipping plugin command outside plugin root: {}",
+                path.display()
+            );
+            continue;
+        }
         let Some(name) = path.file_stem().and_then(|s| s.to_str()) else {
             continue;
         };
@@ -130,9 +140,12 @@ fn split_frontmatter(raw: &str) -> (std::collections::BTreeMap<String, String>, 
     else {
         return (map, normalized.to_string());
     };
-    for line in rest.lines() {
-        if line == "---" || line.trim_end_matches('\r') == "---" {
-            let body = rest.split(line).nth(1).unwrap_or("");
+    let mut offset = 0;
+    for raw_line in rest.split_inclusive('\n') {
+        offset += raw_line.len();
+        let line = raw_line.trim_end_matches(['\n', '\r']);
+        if line == "---" {
+            let body = &rest[offset..];
             return (map, body.trim_start_matches(['\n', '\r']).to_string());
         }
         if let Some((key, value)) = line.split_once(':') {
@@ -155,9 +168,35 @@ fn split_frontmatter(raw: &str) -> (std::collections::BTreeMap<String, String>, 
 /// Collect `*.md` files under `dir` recursively, sorted by path.
 fn collect_markdown(dir: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
+    if !is_plain_dir(dir) {
+        return out;
+    }
     collect_markdown_into(dir, &mut out);
     out.sort();
     out
+}
+
+/// True for a real directory, not a symlink to one.
+fn is_plain_dir(path: &Path) -> bool {
+    fs::symlink_metadata(path)
+        .map(|m| m.file_type().is_dir())
+        .unwrap_or(false)
+}
+
+/// True for a regular file, not a symlink.
+fn is_plain_file(path: &Path) -> bool {
+    fs::symlink_metadata(path)
+        .map(|m| m.file_type().is_file())
+        .unwrap_or(false)
+}
+
+/// Canonical `path` must resolve under canonical `root` (catches symlinked
+/// intermediate directories).
+fn stays_within(root: &Path, path: &Path) -> bool {
+    match (fs::canonicalize(root), fs::canonicalize(path)) {
+        (Ok(root), Ok(path)) => path.starts_with(root),
+        _ => false,
+    }
 }
 
 fn collect_markdown_into(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -166,9 +205,9 @@ fn collect_markdown_into(dir: &Path, out: &mut Vec<PathBuf>) {
     };
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.is_dir() {
+        if is_plain_dir(&path) {
             collect_markdown_into(&path, out);
-        } else if path.extension().map(|e| e == "md").unwrap_or(false) {
+        } else if is_plain_file(&path) && path.extension().map(|e| e == "md").unwrap_or(false) {
             out.push(path);
         }
     }
@@ -362,6 +401,9 @@ fn expand_in_dirs(global_dir: &Path, session_dir: &Path, command_text: &str) -> 
         0 => None,
         1 => {
             let (_, command) = candidate_bodies.pop().unwrap();
+            if !is_plain_file(&command.path) {
+                return None;
+            }
             let raw = fs::read_to_string(&command.path).ok()?;
             let (_frontmatter, body) = split_frontmatter(&raw);
             Some(substitute_arguments(body.trim(), args))
@@ -615,6 +657,49 @@ mod tests {
         let (map, body) = split_frontmatter("---\ndescription: d\n---\nBody text\n");
         assert_eq!(map.get("description").map(String::as_str), Some("d"));
         assert_eq!(body, "Body text\n");
+    }
+
+    #[test]
+    fn frontmatter_body_keeps_inner_rules_and_crlf() {
+        let (map, body) = split_frontmatter("---\ndescription: a --- b\n---\nBody\n---\nMore\n");
+        assert_eq!(map.get("description").map(String::as_str), Some("a --- b"));
+        assert_eq!(body, "Body\n---\nMore\n");
+        let (map, body) =
+            split_frontmatter("---\r\ndescription: d\r\n---\r\nBody\r\n---\r\nMore\r\n");
+        assert_eq!(map.get("description").map(String::as_str), Some("d"));
+        assert_eq!(body, "Body\r\n---\r\nMore\r\n");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_files_and_dirs_are_not_discovered() {
+        use std::os::unix::fs::symlink;
+        let outside = tempfile::tempdir().unwrap();
+        fs::write(outside.path().join("secret.md"), "SECRET").unwrap();
+        fs::create_dir_all(outside.path().join("dir")).unwrap();
+        fs::write(outside.path().join("dir/inner.md"), "SECRET").unwrap();
+
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("commands")).unwrap();
+        fs::write(root.path().join("commands/ok.md"), "fine").unwrap();
+        symlink(
+            outside.path().join("secret.md"),
+            root.path().join("commands/notes.md"),
+        )
+        .unwrap();
+        symlink(
+            outside.path().join("dir"),
+            root.path().join("commands/linked"),
+        )
+        .unwrap();
+
+        let names = plugin_command_names(root.path(), None);
+        assert_eq!(names, vec!["ok".to_string()]);
+
+        // A symlinked commands/ directory yields nothing at all.
+        let root2 = tempfile::tempdir().unwrap();
+        symlink(outside.path().join("dir"), root2.path().join("commands")).unwrap();
+        assert!(plugin_command_names(root2.path(), None).is_empty());
     }
 
     #[test]

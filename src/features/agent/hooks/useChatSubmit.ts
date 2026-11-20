@@ -87,10 +87,10 @@ export function useChatSubmit({
    * message (pending files still attach to it).
    */
   const sendChatText = useCallback(
-    async (text: string) => {
+    async (text: string): Promise<boolean> => {
       if (!session?.id) {
         logger.info('Submit ignored: no session');
-        return;
+        return false;
       }
 
       if (!isProxyReady) {
@@ -98,7 +98,7 @@ export function useChatSubmit({
           'Submit ignored: proxy not ready (MCP discovery unfinished)',
         );
         toast.error(t('agent.input.proxyNotReadyToast'));
-        return;
+        return false;
       }
 
       if (
@@ -117,7 +117,7 @@ export function useChatSubmit({
         toast.error(
           'First input is too large to start this session. Split it up or raise Max Input Context in Settings.',
         );
-        return;
+        return false;
       }
 
       let attachedFileRefs: AttachmentReference[] = [];
@@ -135,7 +135,7 @@ export function useChatSubmit({
         } catch (err) {
           logger.error('Error uploading pending files:', err);
           toast.error('Failed to upload files. Please try again.');
-          return;
+          return false;
         }
       }
 
@@ -185,6 +185,7 @@ export function useChatSubmit({
       setInput(''); // Clear input immediately for better UX
       clearPendingFiles();
 
+      let sent = false;
       try {
         await submit(userMessage);
         logger.info('Message submitted successfully');
@@ -204,6 +205,7 @@ export function useChatSubmit({
         }
 
         await onSubmitted?.();
+        sent = true;
       } catch (err) {
         // Restore input on error
         setInput(currentInput);
@@ -212,6 +214,7 @@ export function useChatSubmit({
         isSubmittingRef.current = false;
         setIsSubmitting(false);
       }
+      return sent;
     },
     [
       input,
@@ -304,7 +307,10 @@ export function useChatSubmit({
             if (result.expandedPrompt != null) {
               // Plugin slash command (#2922): send the expanded Markdown
               // body as an ordinary chat message; pending files still attach.
-              await sendChatText(result.expandedPrompt);
+              const sent = await sendChatText(result.expandedPrompt);
+              if (!sent) {
+                setInput(currentInput); // Nothing was sent: keep the typed command
+              }
               return;
             }
             if (messageText !== '/clear') {
