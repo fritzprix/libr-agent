@@ -80,6 +80,11 @@ Windows-gated tasks (`requires_host_os = "windows"`, auto-excluded on Linux):
   `a&b|c^d<e>f` reaches the spawned child verbatim without `cmd.exe` splitting.
 - `e2e-win-docs-doctor-o7` — 2565 O-7: `docs` skill `scripts/doctor.ps1`
   prints `Doctor: OK` with no NTFS junction loop.
+- `e2e-win-shell-terminate-p6` — 2565 P-6 (Windows process half): the child
+  session's persistent PowerShell shell records its PID into the shared
+  workspace, and with `check_persistent_shell_after_terminate = true` the
+  harness proves it is alive while the child waits on `ui__askUser`, gone
+  after `terminate_child_on_prompt`, and still gone after a settle window.
 - **2672 D-4 (explicitly skipped on `windows-latest`)**: GitHub-hosted
   `windows-latest` runners do not provide a Linux Docker daemon for session
   containers; `\\?\` prefix stripping is covered by Rust unit tests, while live
@@ -151,7 +156,9 @@ task spec sets `resume_circuit_break = true` (the default).
 - `e2e-askuser-terminate-while-waiting` — 2565 P-6 (prompt half): a child
   session blocks on `ui__askUser`; with `terminate_child_on_prompt = true`, the
   harness terminates the child via `POST /api/sessions/:id/terminate`, verifies
-  `pendingUserPrompt` is cleared, and the parent completes cleanly.
+  `pendingUserPrompt` is cleared, and the parent completes cleanly. The Windows
+  process half of P-6 is covered by `e2e-win-shell-terminate-p6` (see the
+  Windows-gated list above).
 - `e2e-mcp-approval-preview` — 2672 M-3 + 2565 M-4: `tool__registerServer`
   with a literal query param, URL fragment, and `{{secret:NAME}}` param; the
   verifier asserts the `toolApproval` `commandPreview` masks literal values as

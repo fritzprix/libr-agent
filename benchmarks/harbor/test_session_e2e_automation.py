@@ -856,3 +856,79 @@ async def test_picker_take_uses_documented_endpoint():
     assert req["method"] == "POST"
     assert req["url"].endswith("/e2e-control/picker/take")
     assert req["headers"] == {E2E_HEADER: "t" * 48}
+
+
+@pytest.mark.asyncio
+async def test_terminate_checks_persistent_shell_lifecycle(tmp_path, monkeypatch):
+    """2565 P-6 Windows half (#2905): with check_persistent_shell_after_terminate,
+    the terminateOnPrompt evidence records the persistent shell PID from the
+    shared workspace, alive while the child prompt waits, gone after terminate,
+    and still gone after the settle window."""
+    from benchmarks.harbor.session_e2e import automation
+    from benchmarks.harbor.session_e2e.automation import SessionE2eAutomationSpec
+
+    data_dir = _instance_data_dir(tmp_path, monkeypatch)
+    workspace = data_dir / "workspaces" / "sess-parent"
+    workspace.mkdir(parents=True)
+    (workspace / "p6_shell_pid.txt").write_text("4242\n", encoding="ascii")
+
+    alive_calls: list[int] = []
+
+    def fake_alive(pid: int) -> bool:
+        alive_calls.append(pid)
+        return len(alive_calls) == 1  # alive only while the prompt waits
+
+    monkeypatch.setattr(automation, "_process_is_alive", fake_alive)
+
+    class TermClient:
+        def __init__(self) -> None:
+            self.terminated = False
+            self.post_urls: list[str] = []
+
+        async def get(self, url: str, headers: dict[str, str] | None = None) -> FakeResponse:
+            if "/sessions/sess-child/interactions" in url:
+                if self.terminated:
+                    return FakeResponse({"pendingUserPrompt": None, "pendingApprovals": []})
+                return FakeResponse(
+                    {"pendingUserPrompt": {"requestId": "req-child"}, "pendingApprovals": []}
+                )
+            return FakeResponse({"pendingUserPrompt": None, "pendingApprovals": []})
+
+        async def post(
+            self,
+            url: str,
+            headers: dict[str, str] | None = None,
+            json: dict[str, Any] | None = None,
+        ) -> FakeResponse:
+            self.post_urls.append(url)
+            if url.endswith("/sessions/sess-child/terminate"):
+                self.terminated = True
+                return FakeResponse({"status": "terminated"})
+            return FakeResponse({"delivered": True})
+
+    client = TermClient()
+    actions = await resolve_pending_interactions(
+        client,
+        api_url="http://127.0.0.1:3031/api",
+        session_id="sess-parent",
+        data_dir=data_dir,
+        spec=SessionE2eAutomationSpec(
+            resolve_child_interactions=True,
+            terminate_child_on_prompt=True,
+            check_persistent_shell_after_terminate=True,
+        ),
+        child_session_ids=["sess-child"],
+    )
+    assert actions == [
+        {
+            "kind": "terminateOnPrompt",
+            "sessionId": "sess-child",
+            "requestId": "req-child",
+            "terminated": True,
+            "promptCleared": True,
+            "shellPid": 4242,
+            "shellAliveWhileWaiting": True,
+            "shellGoneAfterTerminate": True,
+            "shellStillGoneAfterSettle": True,
+        }
+    ]
