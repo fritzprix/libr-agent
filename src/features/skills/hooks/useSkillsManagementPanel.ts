@@ -19,6 +19,7 @@ import { isScopedSkillsKey } from '@/features/agent/hooks/useScopedSkills';
 import {
   formatImportSuccess,
   getSkillsStatusMessage,
+  notifyImportWarnings,
   shouldPromptSkillInstall,
 } from '../skills-management-utils';
 import type {
@@ -187,6 +188,7 @@ export function useSkillsManagementPanel() {
               result.skippedNames.length,
             ),
           );
+          notifyImportWarnings(result);
           await refresh();
         } catch (error) {
           logger.error('Failed to import dropped skills', error);
@@ -268,6 +270,7 @@ export function useSkillsManagementPanel() {
           result.skippedNames.length,
         ),
       );
+      notifyImportWarnings(result);
       setRepoUrl('');
       await refresh();
     } catch (error) {
@@ -304,6 +307,7 @@ export function useSkillsManagementPanel() {
           result.skippedNames.length,
         ),
       );
+      notifyImportWarnings(result);
       if (kind === 'github') {
         setRepoUrl('');
       }
@@ -365,6 +369,7 @@ export function useSkillsManagementPanel() {
           result.skippedNames.length,
         ),
       );
+      notifyImportWarnings(result);
       if (kind === 'github') {
         setRepoUrl('');
       }

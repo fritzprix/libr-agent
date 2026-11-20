@@ -60,8 +60,18 @@ impl PluginAuthor {
     }
 }
 
+/// The manifest `mcpServers` field (#2924): one path or an array of paths
+/// to server-declaration files, or an inline `{name: entry}` map. Untagged
+/// so an object value falls through to the `Inline` arm.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum McpServersDecl {
+    Paths(ComponentPaths),
+    Inline(std::collections::BTreeMap<String, serde_json::Value>),
+}
+
 /// Parsed `.claude-plugin/plugin.json`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PluginManifest {
     pub name: String,
     #[serde(default)]
@@ -87,7 +97,7 @@ pub struct PluginManifest {
     #[serde(default)]
     pub hooks: Option<ComponentPaths>,
     #[serde(default, rename = "mcpServers")]
-    pub mcp_servers: Option<ComponentPaths>,
+    pub mcp_servers: Option<McpServersDecl>,
 }
 
 /// Where the manifest lives relative to a plugin root.
@@ -158,7 +168,6 @@ pub fn validate_manifest_paths(manifest: &PluginManifest) -> Result<(), String> 
         ("commands", &manifest.commands),
         ("agents", &manifest.agents),
         ("hooks", &manifest.hooks),
-        ("mcpServers", &manifest.mcp_servers),
     ];
     for (field, paths) in fields {
         if let Some(paths) = paths {
@@ -166,6 +175,12 @@ pub fn validate_manifest_paths(manifest: &PluginManifest) -> Result<(), String> 
                 validate_component_path(&raw)
                     .map_err(|error| format!("plugin manifest {field}: {error}"))?;
             }
+        }
+    }
+    if let Some(McpServersDecl::Paths(paths)) = &manifest.mcp_servers {
+        for raw in paths.to_vec() {
+            validate_component_path(&raw)
+                .map_err(|error| format!("plugin manifest mcpServers: {error}"))?;
         }
     }
     Ok(())

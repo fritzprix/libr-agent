@@ -538,6 +538,8 @@ mod tests {
         save_source_in(
             temp,
             PluginSourceManifest {
+                mcp_servers: Vec::new(),
+                mcp_approved: false,
                 source_url: "test://local".to_string(),
                 source_id,
                 skill_names: vec![],
@@ -563,6 +565,8 @@ mod tests {
         save_source_in(
             temp.path(),
             PluginSourceManifest {
+                mcp_servers: Vec::new(),
+                mcp_approved: false,
                 source_url: "test://local".to_string(),
                 source_id,
                 skill_names: vec![],
@@ -635,6 +639,8 @@ mod tests {
             save_source_in(
                 temp.path(),
                 PluginSourceManifest {
+                    mcp_servers: Vec::new(),
+                    mcp_approved: false,
                     source_url: "test://local".to_string(),
                     source_id,
                     skill_names: vec![],
@@ -841,6 +847,8 @@ mod tests {
         save_source_in(
             temp.path(),
             PluginSourceManifest {
+                mcp_servers: Vec::new(),
+                mcp_approved: false,
                 source_url: "test://local".to_string(),
                 source_id,
                 skill_names: vec![],
@@ -892,6 +900,8 @@ mod tests {
         save_source_in(
             temp.path(),
             PluginSourceManifest {
+                mcp_servers: Vec::new(),
+                mcp_approved: false,
                 source_url: "test://manifest-only".to_string(),
                 source_id,
                 skill_names: vec![],
@@ -1170,6 +1180,8 @@ mod tests {
         save_source_in(
             base,
             PluginSourceManifest {
+                mcp_servers: Vec::new(),
+                mcp_approved: false,
                 source_url: format!("test://{echo}"),
                 source_id: source_id.to_string(),
                 skill_names: vec![],

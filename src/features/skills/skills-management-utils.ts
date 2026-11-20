@@ -1,5 +1,6 @@
 import type { TFunction } from 'i18next';
-import type { SkillImportPreview } from '@/types/skills';
+import { toast } from 'sonner';
+import type { SkillImportPreview, SkillImportResult } from '@/types/skills';
 import type {
   SkillsStatusMessage,
   SkillsVerificationStatus,
@@ -12,6 +13,9 @@ export function shouldPromptSkillInstall(
   return (
     preview.kind === 'plugin' ||
     preview.hooks.length > 0 ||
+    // #2924: a plugin that declares MCP servers needs the install dialog so
+    // the user can approve starting them.
+    preview.mcpRequireApproval === true ||
     userConflictCount > 0
   );
 }
@@ -68,6 +72,15 @@ export function formatImportSuccess(
     defaultValue_one: 'Imported {{count}} skill',
     defaultValue_other: 'Imported {{count}} skills',
   });
+}
+
+/// Surface non-fatal install warnings (#2924 gatekeeper G1.2): the install
+/// itself succeeded, but items the user approved (e.g. plugin MCP servers)
+/// may not be running — the user must see why.
+export function notifyImportWarnings(result: SkillImportResult): void {
+  for (const warning of result.warnings ?? []) {
+    toast.warning(warning, { duration: 10_000 });
+  }
 }
 
 export function getSkillsStatusMessage(

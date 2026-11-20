@@ -8,7 +8,22 @@ import { SkillsConflictDialog } from '../SkillsConflictDialog';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (_key: string, fallback?: string) => fallback ?? _key,
+    t: (
+      _key: string,
+      fallbackOrOptions?: string | Record<string, unknown>,
+    ) => {
+      if (typeof fallbackOrOptions === 'string') return fallbackOrOptions;
+      if (fallbackOrOptions && typeof fallbackOrOptions === 'object') {
+        const { defaultValue, ...vars } = fallbackOrOptions as {
+          defaultValue?: string;
+        } & Record<string, unknown>;
+        if (!defaultValue) return _key;
+        return defaultValue.replace(/\{\{(\w+)\}\}/g, (_m, name: string) =>
+          String(vars[name] ?? ''),
+        );
+      }
+      return _key;
+    },
   }),
 }));
 
@@ -88,7 +103,7 @@ describe('SkillsConflictDialog footer layout (#2896)', () => {
 
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: 'Install without hook approval' }),
+      screen.getByRole('button', { name: 'Install without approval' }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: 'Install and approve hooks' }),
@@ -106,7 +121,7 @@ describe('SkillsConflictDialog footer layout (#2896)', () => {
 
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
     expect(
-      screen.queryByRole('button', { name: 'Install without hook approval' }),
+      screen.queryByRole('button', { name: 'Install without approval' }),
     ).not.toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: 'Install remaining skills' }),
@@ -157,7 +172,7 @@ describe('SkillsConflictDialog PreToolUse tool-approval disclosure (#2925 D3)', 
 
     expect(
       screen.getByText(
-        /approved plugin hooks may run during your sessions/i,
+        /approved plugin hooks and MCP servers may run during your sessions/i,
       ),
     ).toBeInTheDocument();
     expect(
@@ -198,5 +213,89 @@ describe('SkillsConflictDialog plugin manifest summary (#2921)', () => {
     renderDialog(buildPendingInstall());
 
     expect(screen.queryByText('superpowers')).not.toBeInTheDocument();
+  });
+});
+
+// #2924: plugin-declared MCP servers must be shown and approved at install.
+describe('SkillsConflictDialog MCP server approval (#2924)', () => {
+  const mcpPreview = {
+    hooks: [],
+    hooksRequireApproval: false,
+    mcpServers: [
+      {
+        name: 'fetch',
+        transport: 'stdio' as const,
+        command: 'uvx',
+        args: 'mcp-fetch --max 10',
+        envNames: ['API_KEY', 'TOKEN'],
+      },
+      {
+        name: 'remote',
+        transport: 'http' as const,
+        url: 'https://x/mcp',
+        headerNames: ['Authorization'],
+      },
+    ],
+    mcpRequireApproval: true,
+  };
+
+  it('shows each declared server with its full command line and URL', () => {
+    renderDialog(buildPendingInstall(mcpPreview));
+
+    expect(screen.getByText('Plugin MCP servers')).toBeInTheDocument();
+    expect(screen.getByText('fetch')).toBeInTheDocument();
+    expect(screen.getByText('uvx mcp-fetch --max 10')).toBeInTheDocument();
+    expect(screen.getByText('remote')).toBeInTheDocument();
+    expect(screen.getByText('https://x/mcp')).toBeInTheDocument();
+  });
+
+  // Gatekeeper G1.3: the disclosure shows declared env/header NAMES so the
+  // one-time approval is informed (values are never carried to the UI).
+  it('discloses declared env and header names (G1.3)', () => {
+    renderDialog(buildPendingInstall(mcpPreview));
+
+    expect(screen.getByText('env: API_KEY, TOKEN')).toBeInTheDocument();
+    expect(screen.getByText('headers: Authorization')).toBeInTheDocument();
+  });
+
+  it('requires approval when only MCP servers are present (no hooks)', () => {
+    renderDialog(buildPendingInstall(mcpPreview));
+
+    expect(
+      screen.getByText('Allow MCP servers to start'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Install without approval' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Install and approve servers' }),
+    ).toBeInTheDocument();
+  });
+
+  it('uses the combined hooks-and-servers label when both are present', () => {
+    renderDialog(
+      buildPendingInstall({
+        mcpServers: [
+          { name: 'fetch', transport: 'stdio', command: 'uvx', args: 'mcp-fetch' },
+        ],
+        mcpRequireApproval: true,
+      }),
+    );
+
+    expect(
+      screen.getByText('Allow hooks to run and MCP servers to start'),
+    ).toBeInTheDocument();
+    // The hooks footer label wins when hooks exist.
+    expect(
+      screen.getByRole('button', { name: 'Install and approve hooks' }),
+    ).toBeInTheDocument();
+  });
+
+  it('omits the MCP block when the plugin declares no servers', () => {
+    renderDialog(buildPendingInstall());
+
+    expect(
+      screen.queryByText('Plugin MCP servers'),
+    ).not.toBeInTheDocument();
   });
 });

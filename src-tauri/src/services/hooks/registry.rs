@@ -39,6 +39,25 @@ pub struct PluginSourceManifest {
     /// discovery, which is what those installs could only have had.
     #[serde(default)]
     pub hook_files: Vec<String>,
+    /// MCP servers the plugin declared (`.mcp.json` + manifest
+    /// `mcpServers`, #2924), stored as the raw declared entries so session
+    /// load can resolve `${CLAUDE_PLUGIN_ROOT}` against this record's
+    /// installed root. Empty on stores recorded before #2924.
+    #[serde(default)]
+    pub mcp_servers: Vec<PluginMcpServerSnapshot>,
+    /// Whether the user approved starting these servers at install (D3:
+    /// one-time approval, same gate as hooks).
+    #[serde(default)]
+    pub mcp_approved: bool,
+}
+
+/// One plugin-declared MCP server as declared on disk (#2924). `entry` is
+/// the raw declared JSON object (`command`/`args`/`env` or `url`/`headers`),
+/// kept unresolved so `${CLAUDE_PLUGIN_ROOT}` expands per installed root.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PluginMcpServerSnapshot {
+    pub name: String,
+    pub entry: serde_json::Value,
 }
 
 /// Display metadata read from a plugin's `.claude-plugin/plugin.json`
@@ -449,6 +468,8 @@ mod tests {
         let record = save_source_in(
             base.path(),
             PluginSourceManifest {
+                mcp_servers: Vec::new(),
+                mcp_approved: false,
                 source_url: "https://example.com/p".to_string(),
                 source_id: source_id.clone(),
                 skill_names: vec!["alpha".to_string()],

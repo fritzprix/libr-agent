@@ -258,4 +258,64 @@ describe('ServerCard', () => {
     ).toBeInTheDocument();
     expect(screen.queryByText(/api_key=secret/)).not.toBeInTheDocument();
   });
+
+  // #2924 (D2, gatekeeper G1.4): plugin-owned servers are read-only in the
+  // UI — they show a badge and their Edit/Delete actions are disabled.
+  describe('plugin-owned servers (#2924)', () => {
+    const pluginServer: MCPServerEntity = {
+      ...baseServer,
+      pluginSource: 'plugin:plugin-0123456789abcdef',
+    };
+
+    it('shows the Plugin badge for plugin-owned servers', () => {
+      renderCard(
+        <ServerCard
+          server={pluginServer}
+          onEdit={noop}
+          onDelete={noop}
+          onToggleActive={noop}
+        />,
+      );
+
+      expect(screen.getByText('Plugin')).toBeInTheDocument();
+    });
+
+    it('disables Edit and Delete and never fires their handlers', () => {
+      const onEdit = vi.fn();
+      const onDelete = vi.fn();
+      renderCard(
+        <ServerCard
+          server={pluginServer}
+          onEdit={onEdit}
+          onDelete={onDelete}
+          onToggleActive={noop}
+        />,
+      );
+
+      const editButton = screen.getByText('Edit').closest('button');
+      const deleteButton = screen.getByText('Delete').closest('button');
+      expect(editButton).toBeDisabled();
+      expect(deleteButton).toBeDisabled();
+
+      fireEvent.click(editButton!);
+      fireEvent.click(deleteButton!);
+      expect(onEdit).not.toHaveBeenCalled();
+      expect(onDelete).not.toHaveBeenCalled();
+    });
+
+    it('keeps Edit and Delete enabled for normal servers', () => {
+      renderCard(
+        <ServerCard
+          server={baseServer}
+          onEdit={noop}
+          onDelete={noop}
+          onToggleActive={noop}
+        />,
+      );
+
+      expect(screen.queryByText('Plugin')).not.toBeInTheDocument();
+      expect(screen.getByText('Edit').closest('button')).not.toBeDisabled();
+      expect(screen.getByText('Delete').closest('button')).not.toBeDisabled();
+    });
+  });
 });

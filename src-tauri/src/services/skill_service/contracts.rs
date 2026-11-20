@@ -121,6 +121,33 @@ pub struct PluginManifestSummary {
     pub description: Option<String>,
 }
 
+/// One plugin-declared MCP server shown in the install preview (#2924).
+/// `command` is set for stdio servers, `url` for HTTP servers. The approval
+/// dialog must show everything the plugin can run (D3), so `args` (joined)
+/// and the `env` / header **names** (never values) are shown as well
+/// (gatekeeper G1.3).
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct McpServerPreviewEntry {
+    pub name: String,
+    /// "stdio" or "http".
+    pub transport: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    /// Command arguments joined with spaces, as declared (raw `${...}`
+    /// placeholders included), so the user sees the full command line.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub args: Option<String>,
+    /// Environment variable names the server sets (values are not shown).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub env_names: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    /// HTTP header names the server sends (values are not shown).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub header_names: Option<Vec<String>>,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct SkillImportPreview {
@@ -129,6 +156,13 @@ pub struct SkillImportPreview {
     pub conflicts: Vec<SkillImportConflict>,
     pub hooks: Vec<HookPreviewEntry>,
     pub hooks_require_approval: bool,
+    /// MCP servers the plugin declares (`#2924`): `.mcp.json` at the plugin
+    /// root plus manifest `mcpServers`, in declaration order. Starting them
+    /// requires the same install-time approval as hooks (D3).
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub mcp_servers: Vec<McpServerPreviewEntry>,
+    #[serde(default)]
+    pub mcp_require_approval: bool,
     /// Slash command names provided by the plugin's `commands/` directory
     /// (or manifest `commands` paths), offered as `/<name>` after install
     /// (#2922). Sorted, deduplicated.
@@ -145,6 +179,11 @@ pub struct SkillImportResult {
     pub imported_names: Vec<String>,
     pub overwritten_names: Vec<String>,
     pub skipped_names: Vec<String>,
+    /// Non-fatal problems the user must see (e.g. an approved plugin MCP
+    /// server that could not be installed into the global store, #2924
+    /// gatekeeper G1.2). The install succeeded; these items need attention.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub warnings: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]

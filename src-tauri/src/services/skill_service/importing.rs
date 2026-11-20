@@ -1,9 +1,10 @@
 use super::cache::{invalidate_skill_scan_cache, scan_skills_internal_cached};
 use super::contracts::{
-    DiscoveredSkillRoot, HookPreviewEntry, HookPreviewExecutionStatus, PluginManifestSummary,
-    PreparedSkillImport, SkillImportCandidate, SkillImportConflict, SkillImportKind,
-    SkillImportPreview, SkillImportResult, SkillMetadata, GITHUB_DOWNLOAD_CONNECT_TIMEOUT_SECS,
-    GITHUB_DOWNLOAD_TIMEOUT_SECS, MAX_GITHUB_ARCHIVE_BYTES, SKILL_FILE_NAME,
+    DiscoveredSkillRoot, HookPreviewEntry, HookPreviewExecutionStatus, McpServerPreviewEntry,
+    PluginManifestSummary, PreparedSkillImport, SkillImportCandidate, SkillImportConflict,
+    SkillImportKind, SkillImportPreview, SkillImportResult, SkillMetadata,
+    GITHUB_DOWNLOAD_CONNECT_TIMEOUT_SECS, GITHUB_DOWNLOAD_TIMEOUT_SECS, MAX_GITHUB_ARCHIVE_BYTES,
+    SKILL_FILE_NAME,
 };
 use super::directories::{
     get_assistant_skills_directory, get_system_skills_directory, get_user_skills_directory,
@@ -11,9 +12,11 @@ use super::directories::{
 };
 use super::github::parse_github_repo_url;
 use super::plugin_manifest::{self, PluginManifest};
+use super::plugin_mcp::{collect_plugin_mcp_servers, create_plugin_mcp_server_rows};
 use super::scanning::{copy_dir_recursive, parse_skill_metadata};
 use crate::services::hooks::registry::{
-    get_user_plugins_directory, save_source_in, PluginMetadata, PluginSourceManifest,
+    get_source, get_user_plugins_directory, save_source_in, PluginMetadata, PluginSourceManifest,
+    PluginSourceRecord,
 };
 use crate::services::hooks::schema::{HookDispatchMode, HooksConfig};
 use crate::session::get_session_manager;
@@ -474,12 +477,18 @@ pub(super) async fn build_import_preview(
         .as_ref()
         .map(build_hook_preview_entries)
         .unwrap_or_default();
-    let kind = if hooks.is_empty() {
+    // #2924 (D3, gatekeeper G1.3): preview everything the plugin can run —
+    // command with its full argument line, env variable names, and HTTP
+    // header names (values never) — so the one-time approval is informed.
+    let declared_servers = collect_plugin_mcp_servers(&prepared.scan_root, manifest.as_ref())?;
+    let mcp_servers = build_mcp_preview_entries(&declared_servers);
+    let kind = if hooks.is_empty() && mcp_servers.is_empty() {
         SkillImportKind::SkillBundle
     } else {
         SkillImportKind::Plugin
     };
     let hooks_require_approval = !hooks.is_empty();
+    let mcp_require_approval = !mcp_servers.is_empty();
 
     Ok(SkillImportPreview {
         kind,
@@ -487,6 +496,8 @@ pub(super) async fn build_import_preview(
         conflicts,
         hooks,
         hooks_require_approval,
+        mcp_servers,
+        mcp_require_approval,
         plugin_commands: super::plugin_commands::plugin_command_names(
             &prepared.scan_root,
             manifest.as_ref(),
@@ -570,14 +581,79 @@ async fn install_user_prepared_skills(
         plugins_dir: get_user_plugins_directory()?,
         always_record_source: false,
     };
-    install_prepared_import(
+    let source_key = prepared.source_key.clone();
+    let result = install_prepared_import(
         prepared,
         preview,
         overwrite_existing,
         excluded_skill_names,
         approve_hooks,
         target,
-    )
+    );
+    // #2924 (D1/D2): a global install puts the plugin's approved servers into
+    // the global MCP server store as plugin-owned rows. Session-scoped
+    // installs never reach this function, so they never touch the global
+    // store. A store failure must not report the file install itself as
+    // failed, but it must be reported to the user (gatekeeper G1.2): the
+    // servers they approved are not running, so the result carries warnings.
+    match result {
+        Ok(mut result) => {
+            result.warnings = match sync_installed_plugin_mcp_servers(&source_key).await {
+                Ok(warnings) => warnings,
+                Err(error) => {
+                    log::warn!(
+                        "Installed plugin {} but could not sync its MCP servers to the global store: {}",
+                        source_key,
+                        error
+                    );
+                    // The sync may have stopped after removing some rows
+                    // (gatekeeper S2.1): say so, and that a re-install heals it.
+                    vec![format!(
+                        "Plugin installed, but its MCP servers could not be synced to the global store: {error}. Re-installing the plugin re-syncs them."
+                    )]
+                }
+            };
+            Ok(result)
+        }
+        error => error,
+    }
+}
+
+/// Re-sync one plugin source's rows in the global MCP server store after an
+/// install/update (D2). Reads back the persisted source record, so it must
+/// run after `install_plugin_source`.
+///
+/// Existing rows owned by this source are ALWAYS removed first — even when
+/// the new snapshot is empty or unapproved — so an update that drops servers
+/// or a re-install without approval cannot leave stale rows running
+/// (gatekeeper G1.1). Returns per-server warnings for approved servers that
+/// could not be installed (gatekeeper G1.2).
+async fn sync_installed_plugin_mcp_servers(source_key: &str) -> Result<Vec<String>, String> {
+    let source_id = plugin_source_id(source_key);
+    let record = get_source(&source_id)?;
+    sync_plugin_mcp_rows_from_record(&record).await
+}
+
+/// The sync body once the persisted source record is read (see
+/// [`sync_installed_plugin_mcp_servers`]). Extracted so the remove-before-
+/// every-return rule (gatekeeper G1.1) is testable through the record
+/// itself, without a global plugin directory (gatekeeper G2.1).
+pub(super) async fn sync_plugin_mcp_rows_from_record(
+    record: &PluginSourceRecord,
+) -> Result<Vec<String>, String> {
+    let source_id = &record.manifest.source_id;
+    super::plugin_mcp::remove_global_plugin_mcp_servers(source_id).await?;
+    if record.manifest.mcp_servers.is_empty() {
+        return Ok(Vec::new());
+    }
+    if !record.manifest.mcp_approved {
+        log::info!(
+            "Plugin {} declares MCP servers but they were not approved at install; not starting them",
+            source_id
+        );
+        return Ok(Vec::new());
+    }
+    create_plugin_mcp_server_rows(source_id, &record.root_dir, &record.manifest.mcp_servers).await
 }
 
 pub(super) fn install_prepared_import(
@@ -721,6 +797,7 @@ fn install_prepared_skills_to_directory(
         imported_names,
         overwritten_names,
         skipped_names: Vec::new(),
+        warnings: Vec::new(),
     })
 }
 
@@ -920,6 +997,70 @@ fn try_load_plugin_hooks(
     crate::services::hooks::schema::load_hooks_from_config_files(&files).map(Some)
 }
 
+/// #2924 (D3, gatekeeper G1.3): preview everything the plugin can run —
+/// command with its full argument line, env variable names, and HTTP header
+/// names (values never) — so the one-time approval is informed.
+fn build_mcp_preview_entries(
+    servers: &[crate::services::hooks::registry::PluginMcpServerSnapshot],
+) -> Vec<McpServerPreviewEntry> {
+    servers
+        .iter()
+        .map(|server| {
+            let entry = &server.entry;
+            let declared_names = |field: &str| -> Option<Vec<String>> {
+                let mut names: Vec<String> = entry
+                    .get(field)
+                    .and_then(|v| v.as_object())
+                    .map(|map| map.keys().cloned().collect())
+                    .unwrap_or_default();
+                (!names.is_empty()).then(|| {
+                    names.sort();
+                    names
+                })
+            };
+            let args = entry
+                .get("args")
+                .and_then(|v| v.as_array())
+                .map(|items| {
+                    // Quote arguments containing whitespace so the joined
+                    // line stays unambiguous (gatekeeper S2.2).
+                    items
+                        .iter()
+                        .filter_map(|item| item.as_str())
+                        .map(|arg| {
+                            if arg.contains(char::is_whitespace) {
+                                format!("\"{arg}\"")
+                            } else {
+                                arg.to_string()
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+                .filter(|joined| !joined.is_empty());
+            McpServerPreviewEntry {
+                name: server.name.clone(),
+                transport: if entry.get("url").and_then(|v| v.as_str()).is_some() {
+                    "http".to_string()
+                } else {
+                    "stdio".to_string()
+                },
+                command: entry
+                    .get("command")
+                    .and_then(|v| v.as_str())
+                    .map(|v| v.to_string()),
+                args,
+                env_names: declared_names("env"),
+                url: entry
+                    .get("url")
+                    .and_then(|v| v.as_str())
+                    .map(|v| v.to_string()),
+                header_names: declared_names("headers"),
+            }
+        })
+        .collect()
+}
+
 fn build_hook_preview_entries(config: &HooksConfig) -> Vec<HookPreviewEntry> {
     let mut entries = Vec::new();
     for (event, groups) in &config.events {
@@ -1083,6 +1224,11 @@ fn install_plugin_source(
         _ => BTreeMap::new(),
     };
 
+    // #2924 (D3): one install-time approval covers hooks and MCP servers
+    // alike — the dialog shows both before the user agrees.
+    let mcp_servers = collect_plugin_mcp_servers(scan_root, manifest.as_ref())?;
+    let mcp_approved = approve_hooks && !mcp_servers.is_empty();
+
     save_source_in(
         plugins_dir,
         PluginSourceManifest {
@@ -1100,6 +1246,8 @@ fn install_plugin_source(
             created_at: chrono::Utc::now().timestamp(),
             plugin: plugin_metadata_from_manifest(manifest.as_ref()),
             hook_files: hook_file_paths,
+            mcp_servers,
+            mcp_approved,
         },
     )?;
 
@@ -1139,6 +1287,114 @@ mod hook_preview_tests {
         write_valid_skill(dir.path(), "alpha");
         let hooks = try_load_plugin_hooks(dir.path(), None).unwrap();
         assert!(hooks.is_none());
+    }
+
+    // #2924 (D3): install persists the declared MCP servers, and the
+    // install-time approval flag covers them alongside hooks.
+    #[test]
+    fn install_persists_mcp_snapshot_and_approval() {
+        let dir = tempfile::tempdir().unwrap();
+        write_valid_skill(dir.path(), "alpha");
+        fs::write(
+            dir.path().join(".mcp.json"),
+            r#"{"mcpServers":{"fetch":{"command":"uvx","args":["srv"]}}}"#,
+        )
+        .unwrap();
+
+        let plugins = tempfile::tempdir().unwrap();
+        let source_key = "https://example.com/mcp-plugin";
+        install_plugin_source(
+            dir.path(),
+            source_key,
+            &["alpha".to_string()],
+            true,
+            plugins.path(),
+        )
+        .unwrap();
+        let record = crate::services::hooks::registry::get_source_in(
+            plugins.path(),
+            &plugin_source_id(source_key),
+        )
+        .unwrap();
+        assert_eq!(record.manifest.mcp_servers.len(), 1);
+        assert_eq!(record.manifest.mcp_servers[0].name, "fetch");
+        assert_eq!(record.manifest.mcp_servers[0].entry["command"], "uvx");
+        assert!(record.manifest.mcp_approved);
+
+        // Without approval the snapshot is still recorded (so the install is
+        // inspectable) but the servers are never started.
+        let plugins2 = tempfile::tempdir().unwrap();
+        install_plugin_source(
+            dir.path(),
+            source_key,
+            &["alpha".to_string()],
+            false,
+            plugins2.path(),
+        )
+        .unwrap();
+        let record = crate::services::hooks::registry::get_source_in(
+            plugins2.path(),
+            &plugin_source_id(source_key),
+        )
+        .unwrap();
+        assert_eq!(record.manifest.mcp_servers.len(), 1);
+        assert!(!record.manifest.mcp_approved);
+    }
+
+    // #2924 (gatekeeper G1.3): the install preview shows the full command
+    // line and declared env/header NAMES — never their values.
+    #[test]
+    fn mcp_preview_shows_args_and_names_not_values() {
+        use crate::services::hooks::registry::PluginMcpServerSnapshot;
+        let servers = vec![
+            PluginMcpServerSnapshot {
+                name: "local".to_string(),
+                entry: serde_json::json!({
+                    "command": "uvx",
+                    "args": ["mcp-fetch", "--max", "10", "--path", "/tmp/my dir"],
+                    "env": { "Z_TOKEN": "super-secret", "A_KEY": "another-secret" }
+                }),
+            },
+            PluginMcpServerSnapshot {
+                name: "remote".to_string(),
+                entry: serde_json::json!({
+                    "url": "https://x.example/mcp",
+                    "headers": { "Authorization": "Bearer tok" }
+                }),
+            },
+        ];
+        let entries = build_mcp_preview_entries(&servers);
+        assert_eq!(entries.len(), 2);
+
+        let local = &entries[0];
+        assert_eq!(local.transport, "stdio");
+        assert_eq!(local.command.as_deref(), Some("uvx"));
+        assert_eq!(
+            local.args.as_deref(),
+            Some("mcp-fetch --max 10 --path \"/tmp/my dir\""),
+            "arguments with whitespace are quoted (S2.2)"
+        );
+        assert_eq!(
+            local.env_names.as_deref(),
+            Some(&["A_KEY".to_string(), "Z_TOKEN".to_string()][..]),
+            "names only, sorted"
+        );
+        assert!(local.url.is_none());
+
+        let remote = &entries[1];
+        assert_eq!(remote.transport, "http");
+        assert_eq!(remote.url.as_deref(), Some("https://x.example/mcp"));
+        assert_eq!(
+            remote.header_names.as_deref(),
+            Some(&["Authorization".to_string()][..])
+        );
+        assert!(remote.args.is_none());
+
+        // The preview struct itself never carries the declared values.
+        let serialized = serde_json::to_string(&entries).unwrap();
+        assert!(!serialized.contains("super-secret"), "{serialized}");
+        assert!(!serialized.contains("another-secret"), "{serialized}");
+        assert!(!serialized.contains("Bearer tok"), "{serialized}");
     }
 
     #[test]

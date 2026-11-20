@@ -411,6 +411,8 @@ mod tests {
             conflicts: vec![],
             hooks: vec![],
             hooks_require_approval: has_hooks,
+            mcp_servers: vec![],
+            mcp_require_approval: false,
             plugin_commands: vec![],
             plugin_manifest: None,
         };
@@ -430,6 +432,8 @@ mod tests {
         save_source_in(
             global,
             PluginSourceManifest {
+                mcp_servers: Vec::new(),
+                mcp_approved: false,
                 source_url: url.to_string(),
                 source_id: source_id.to_string(),
                 skill_names: vec![],
@@ -509,6 +513,8 @@ mod tests {
     fn matches_target_by_id_url_or_repo_name() {
         let record = PluginSourceRecord {
             manifest: PluginSourceManifest {
+                mcp_servers: Vec::new(),
+                mcp_approved: false,
                 source_url: "https://github.com/obra/Superpowers/".to_string(),
                 source_id: "plugin-0123456789abcdef".to_string(),
                 skill_names: vec![],
