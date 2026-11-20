@@ -15,7 +15,7 @@ use super::scanning::{copy_dir_recursive, parse_skill_metadata};
 use crate::services::hooks::registry::{
     get_user_plugins_directory, save_source_in, PluginMetadata, PluginSourceManifest,
 };
-use crate::services::hooks::schema::{load_hooks_from_root, HookDispatchMode, HooksConfig};
+use crate::services::hooks::schema::{HookDispatchMode, HooksConfig};
 use crate::session::get_session_manager;
 use crate::state::wait_for_managed_skills_sync;
 use log::warn;
@@ -379,23 +379,51 @@ async fn build_user_import_preview(
     prepared: &mut PreparedSkillImport,
 ) -> Result<SkillImportPreview, String> {
     let user_dir = get_user_skills_directory()?;
-    build_import_preview(prepared, &user_dir, "global", "user").await
+    let system_dir = get_system_skills_directory()?;
+    let same_source = same_source_skill_names(&prepared.source_key);
+    build_import_preview(
+        prepared,
+        &user_dir,
+        "global",
+        "user",
+        &system_dir,
+        &same_source,
+    )
+    .await
+}
+
+/// Skill names recorded in the plugin source manifest for this source key,
+/// i.e. the skills this same plugin installed on a previous install. They
+/// must never count as #2921 namespace collisions: a re-install or update of
+/// a manifest plugin has to keep the existing overwrite-conflict flow rather
+/// than renaming its own skills to `plugin:skill` and installing a duplicate
+/// next to the stale copy (gatekeeper G1.1).
+fn same_source_skill_names(source_key: &str) -> Vec<String> {
+    crate::services::hooks::registry::get_source(&plugin_source_id(source_key))
+        .map(|record| record.manifest.skill_names)
+        .unwrap_or_default()
 }
 
 /// Build an import preview whose conflicts are computed against the bundled
-/// system skills plus the target skills directory (`source_tag`/`origin_tag`
-/// label that directory's existing skills in the reported conflicts).
+/// system skills (`system_skills_dir`) plus the target skills directory
+/// (`source_tag`/`origin_tag` label that directory's existing skills in the
+/// reported conflicts).
 ///
 /// When the source carries a `.claude-plugin/plugin.json` (#2921), its
 /// component paths are validated here (preview-time validation errors), its
-/// `hooks` paths replace the default hook discovery, and plugin skills whose
-/// names collide with existing skills are renamed to `plugin:skill` — in the
-/// staging copy, so the same names carry into the install.
+/// `hooks` files are added to the default `hooks/hooks.json` discovery, and
+/// plugin skills whose names collide with other skills are renamed to
+/// `plugin:skill` — in the staging copy, so the same names carry into the
+/// install. `same_source_skills` (from the plugin's own source manifest) are
+/// excluded from the collision set so re-installs keep overwrite semantics.
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn build_import_preview(
     prepared: &mut PreparedSkillImport,
     target_skills_dir: &Path,
     source_tag: &str,
     origin_tag: &str,
+    system_skills_dir: &Path,
+    same_source_skills: &[String],
 ) -> Result<SkillImportPreview, String> {
     wait_for_managed_skills_sync().await;
 
@@ -404,9 +432,8 @@ pub(super) async fn build_import_preview(
         plugin_manifest::validate_manifest_paths(manifest)?;
     }
 
-    let system_dir = get_system_skills_directory()?;
     let system_skills = scan_skills_internal_cached(
-        &system_dir,
+        system_skills_dir,
         Some("global".to_string()),
         Some("system".to_string()),
     )
@@ -419,10 +446,15 @@ pub(super) async fn build_import_preview(
     .await?;
 
     if let Some(manifest) = &manifest {
+        let same_source_lower: HashSet<String> = same_source_skills
+            .iter()
+            .map(|name| name.to_lowercase())
+            .collect();
         let existing_lower: HashSet<String> = system_skills
             .iter()
             .chain(user_skills.iter())
             .map(|skill| skill.name.to_lowercase())
+            .filter(|name| !same_source_lower.contains(name))
             .collect();
         namescope_plugin_skills(prepared, &manifest.name, &existing_lower)?;
     }
@@ -836,10 +868,29 @@ fn try_load_plugin_hooks(
     scan_root: &Path,
     manifest: Option<&PluginManifest>,
 ) -> Result<Option<HooksConfig>, String> {
+    let hooks_dir = scan_root.join("hooks");
+    let default_main = hooks_dir.join("hooks.json");
+    let mut files: Vec<PathBuf> = Vec::new();
+    for candidate in [
+        default_main.as_path(),
+        hooks_dir.join("hooks-cursor.json").as_path(),
+    ] {
+        if candidate.is_file() {
+            files.push(candidate.to_path_buf());
+        }
+    }
+
+    // Spec (plugins-reference): `hooks/hooks.json` is auto-loaded and the
+    // manifest `hooks` field lists ADDITIONAL hook files; a manifest entry
+    // that duplicates the default is rejected (gatekeeper S1.1).
     if let Some(paths) = plugin_manifest::hook_config_paths(manifest) {
-        let mut files = Vec::new();
         for raw in paths {
             let resolved = scan_root.join(&raw);
+            if resolved == default_main {
+                return Err(format!(
+                    "plugin manifest hooks path {raw:?} duplicates the default hooks/hooks.json"
+                ));
+            }
             if !resolved.is_file() {
                 return Err(format!(
                     "plugin manifest hooks path {raw:?} not found in the plugin"
@@ -847,19 +898,12 @@ fn try_load_plugin_hooks(
             }
             files.push(resolved);
         }
-        return crate::services::hooks::schema::load_hooks_from_config_files(&files).map(Some);
     }
 
-    let hooks_dir = scan_root.join("hooks");
-    if !hooks_dir.is_dir() {
+    if files.is_empty() {
         return Ok(None);
     }
-    let has_config =
-        hooks_dir.join("hooks.json").is_file() || hooks_dir.join("hooks-cursor.json").is_file();
-    if !has_config {
-        return Ok(None);
-    }
-    load_hooks_from_root(scan_root).map(Some)
+    crate::services::hooks::schema::load_hooks_from_config_files(&files).map(Some)
 }
 
 fn build_hook_preview_entries(config: &HooksConfig) -> Vec<HookPreviewEntry> {
@@ -928,8 +972,10 @@ fn namescope_plugin_skills(
     Ok(())
 }
 
-/// Replace the `name:` line inside a skill's YAML frontmatter with
-/// `new_name`, keeping every other line byte-identical where possible.
+/// Replace the top-level `name:` line inside a skill's YAML frontmatter with
+/// `new_name`, keeping every other line — and the original line endings —
+/// byte-identical where possible. Only a non-indented `name:` matches: an
+/// indented one belongs to a nested map, not the skill name (gatekeeper S1.2).
 fn rewrite_skill_frontmatter_name(skill_file: &Path, new_name: &str) -> Result<(), String> {
     let raw = fs::read_to_string(skill_file)
         .map_err(|error| format!("read {}: {error}", skill_file.display()))?;
@@ -945,11 +991,15 @@ fn rewrite_skill_frontmatter_name(skill_file: &Path, new_name: &str) -> Result<(
     let quoted = serde_json::to_string(new_name).map_err(|error| error.to_string())?;
     let mut replaced = false;
     let rewritten = frontmatter
-        .lines()
+        .split('\n')
         .map(|line| {
-            if !replaced && line.trim_start().starts_with("name:") {
+            let (body, eol) = match line.strip_suffix('\r') {
+                Some(body) => (body, "\r"),
+                None => (line, ""),
+            };
+            if !replaced && body.starts_with("name:") {
                 replaced = true;
-                format!("name: {quoted}")
+                format!("name: {quoted}{eol}")
             } else {
                 line.to_string()
             }
@@ -1108,7 +1158,7 @@ mod hook_preview_tests {
     }
 
     #[test]
-    fn manifest_hooks_paths_replace_the_default_discovery() {
+    fn manifest_hooks_paths_add_to_the_default_discovery() {
         let dir = tempfile::tempdir().unwrap();
         write_valid_skill(dir.path(), "alpha");
         let hooks_dir = dir.path().join("hooks");
@@ -1134,8 +1184,31 @@ mod hook_preview_tests {
             .unwrap()
             .expect("hooks");
         let entries = build_hook_preview_entries(&cfg);
-        assert_eq!(entries.len(), 1, "custom file replaces the default");
-        assert_eq!(entries[0].command, "echo custom");
+        assert_eq!(entries.len(), 2, "manifest hooks add to the default");
+        let commands: Vec<&str> = entries.iter().map(|e| e.command.as_str()).collect();
+        assert_eq!(commands, ["echo custom", "echo default"]);
+    }
+
+    #[test]
+    fn manifest_hooks_path_duplicating_the_default_is_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        write_valid_skill(dir.path(), "alpha");
+        let hooks_dir = dir.path().join("hooks");
+        fs::create_dir_all(&hooks_dir).unwrap();
+        fs::write(
+            hooks_dir.join("hooks.json"),
+            r#"{"hooks":{"SessionStart":[{"command":"echo default"}]}}"#,
+        )
+        .unwrap();
+        write_manifest(
+            dir.path(),
+            r#"{ "name": "p", "hooks": "./hooks/hooks.json" }"#,
+        );
+        let manifest = plugin_manifest::load_plugin_manifest(dir.path())
+            .unwrap()
+            .expect("manifest");
+        let err = try_load_plugin_hooks(dir.path(), Some(&manifest)).unwrap_err();
+        assert!(err.contains("duplicates"), "error explains the rule: {err}");
     }
 
     #[test]
@@ -1199,5 +1272,176 @@ mod hook_preview_tests {
                 .unwrap();
         assert_eq!(rewritten.name, "superpowers:alpha");
         assert_eq!(rewritten.description, "test");
+    }
+
+    #[test]
+    fn namescope_rewrite_preserves_crlf_and_ignores_nested_name() {
+        let temp = tempfile::tempdir().unwrap();
+        let staging = temp.path().join("staging");
+        fs::create_dir_all(&staging).unwrap();
+        let root_dir = staging.join("alpha");
+        fs::create_dir_all(&root_dir).unwrap();
+        let skill_file = root_dir.join(SKILL_FILE_NAME);
+        fs::write(
+            &skill_file,
+            "---\r\nname: alpha\r\ndescription: test\r\nmetadata:\r\n  name: nested\r\n---\r\nbody\r\n",
+        )
+        .unwrap();
+
+        let mut prepared = PreparedSkillImport {
+            _temp_dir: temp,
+            scan_root: staging.clone(),
+            source_key: "test://plugin".to_string(),
+            discovered_skills: vec![DiscoveredSkillRoot {
+                metadata: SkillMetadata {
+                    name: "alpha".to_string(),
+                    description: "test".to_string(),
+                    path: skill_file.to_string_lossy().to_string(),
+                    alias_path: None,
+                    source: None,
+                    origin: None,
+                },
+                root_dir,
+            }],
+        };
+        let existing: HashSet<String> = ["alpha".to_string()].into();
+
+        namescope_plugin_skills(&mut prepared, "p", &existing).unwrap();
+
+        let raw = fs::read_to_string(&skill_file).unwrap();
+        assert!(
+            raw.contains("name: \"p:alpha\"\r\n"),
+            "top-level name rewritten with CRLF kept: {raw:?}"
+        );
+        assert!(
+            raw.contains("  name: nested"),
+            "nested name must not be rewritten: {raw:?}"
+        );
+        assert!(raw.ends_with("body\r\n"), "trailing CRLF kept: {raw:?}");
+        let rewritten = parse_skill_metadata(&skill_file).unwrap();
+        assert_eq!(rewritten.name, "p:alpha");
+    }
+
+    fn staged_prepared(temp: tempfile::TempDir, skill_names: &[&str]) -> PreparedSkillImport {
+        let scan_root = temp.path().join("staging");
+        fs::create_dir_all(&scan_root).unwrap();
+        let discovered_skills = skill_names
+            .iter()
+            .map(|name| staged_skill(&scan_root, name))
+            .collect();
+        PreparedSkillImport {
+            _temp_dir: temp,
+            scan_root,
+            source_key: "test://plugin".to_string(),
+            discovered_skills,
+        }
+    }
+
+    // Gatekeeper G1.2: preview-level coverage through the real
+    // build_import_preview with injected directories.
+
+    #[tokio::test]
+    async fn preview_reinstall_same_source_keeps_overwrite_conflict() {
+        let mut prepared = staged_prepared(tempfile::tempdir().unwrap(), &["alpha"]);
+        write_manifest(&prepared.scan_root, r#"{ "name": "p" }"#);
+        let target = tempfile::tempdir().unwrap();
+        let system = tempfile::tempdir().unwrap();
+        // The same plugin's own skill is already installed in the target dir.
+        write_valid_skill(&target.path().join("alpha"), "alpha");
+
+        let preview = build_import_preview(
+            &mut prepared,
+            target.path(),
+            "global",
+            "user",
+            system.path(),
+            &["alpha".to_string()],
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            preview.discovered_skills[0].name, "alpha",
+            "own previous install must not trigger the plugin: rename"
+        );
+        assert_eq!(preview.conflicts.len(), 1);
+        assert_eq!(preview.conflicts[0].name, "alpha");
+    }
+
+    #[tokio::test]
+    async fn preview_bundled_collision_renames_without_conflict() {
+        let mut prepared = staged_prepared(tempfile::tempdir().unwrap(), &["alpha"]);
+        write_manifest(&prepared.scan_root, r#"{ "name": "p" }"#);
+        let target = tempfile::tempdir().unwrap();
+        let system = tempfile::tempdir().unwrap();
+        write_valid_skill(&system.path().join("alpha"), "alpha");
+
+        let preview = build_import_preview(
+            &mut prepared,
+            target.path(),
+            "global",
+            "user",
+            system.path(),
+            &[],
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(preview.discovered_skills[0].name, "p:alpha");
+        assert!(
+            preview.conflicts.is_empty(),
+            "rename resolves the bundled collision: {:?}",
+            preview.conflicts
+        );
+    }
+
+    #[tokio::test]
+    async fn preview_reports_plugin_manifest_summary() {
+        let mut prepared = staged_prepared(tempfile::tempdir().unwrap(), &["alpha"]);
+        write_manifest(
+            &prepared.scan_root,
+            r#"{ "name": "p", "version": "1.2.3", "description": "A plugin" }"#,
+        );
+        let target = tempfile::tempdir().unwrap();
+        let system = tempfile::tempdir().unwrap();
+
+        let preview = build_import_preview(
+            &mut prepared,
+            target.path(),
+            "global",
+            "user",
+            system.path(),
+            &[],
+        )
+        .await
+        .unwrap();
+
+        let summary = preview.plugin_manifest.expect("manifest summary");
+        assert_eq!(summary.name, "p");
+        assert_eq!(summary.version.as_deref(), Some("1.2.3"));
+        assert_eq!(summary.description.as_deref(), Some("A plugin"));
+    }
+
+    #[tokio::test]
+    async fn preview_fails_on_manifest_path_outside_root() {
+        let mut prepared = staged_prepared(tempfile::tempdir().unwrap(), &["alpha"]);
+        write_manifest(
+            &prepared.scan_root,
+            r#"{ "name": "p", "skills": "../evil" }"#,
+        );
+        let target = tempfile::tempdir().unwrap();
+        let system = tempfile::tempdir().unwrap();
+
+        let err = build_import_preview(
+            &mut prepared,
+            target.path(),
+            "global",
+            "user",
+            system.path(),
+            &[],
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("skills"), "error names the field: {err}");
     }
 }

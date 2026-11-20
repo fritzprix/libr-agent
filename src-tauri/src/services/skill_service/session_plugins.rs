@@ -10,7 +10,7 @@
 
 use super::cache::invalidate_skill_scan_cache;
 use super::contracts::{PreparedSkillImport, SkillImportPreview, SkillImportResult};
-use super::directories::get_workspace_skills_directory_for_session;
+use super::directories::{get_system_skills_directory, get_workspace_skills_directory_for_session};
 use super::github::parse_github_repo_url;
 use super::importing::{
     build_import_preview, install_prepared_import, plugin_source_id, prepare_github_skill_import,
@@ -18,8 +18,8 @@ use super::importing::{
 };
 use super::plugin_sources::hook_events_for_root;
 use crate::services::hooks::registry::{
-    delete_source_in, get_session_plugins_directory, get_user_plugins_directory, list_sources_in,
-    PluginSourceRecord,
+    delete_source_in, get_session_plugins_directory, get_source_in, get_user_plugins_directory,
+    list_sources_in, PluginSourceRecord,
 };
 use crate::services::hooks::{clear_hook_context, spawn_session_start, SessionStartSource};
 use log::warn;
@@ -91,13 +91,31 @@ fn session_dirs(session_id: &str) -> Result<SessionPluginDirs, String> {
     })
 }
 
+/// Skill names recorded in this session's plugin-source store for the same
+/// source key. Re-installs of the same manifest plugin must not namespace-
+/// rename against their own previously installed skills (gatekeeper G1.1).
+fn session_same_source_skill_names(plugins_dir: &Path, source_key: &str) -> Vec<String> {
+    get_source_in(plugins_dir, &plugin_source_id(source_key))
+        .map(|record| record.manifest.skill_names)
+        .unwrap_or_default()
+}
+
 pub async fn preview_session_plugin_install(
     session_id: String,
     repo_url: String,
 ) -> Result<SkillImportPreview, String> {
     let dirs = session_dirs(&session_id)?;
     let mut prepared = prepare_github_skill_import(repo_url).await?;
-    build_import_preview(&mut prepared, &dirs.skills, "workspace", "workspace").await
+    let same_source = session_same_source_skill_names(&dirs.plugins, &prepared.source_key);
+    build_import_preview(
+        &mut prepared,
+        &dirs.skills,
+        "workspace",
+        "workspace",
+        &get_system_skills_directory()?,
+        &same_source,
+    )
+    .await
 }
 
 /// Install a plugin for one session, then fire SessionStart with
@@ -111,8 +129,16 @@ pub async fn install_session_plugin(
 ) -> Result<SkillImportResult, String> {
     let dirs = session_dirs(&session_id)?;
     let mut prepared = prepare_github_skill_import(repo_url).await?;
-    let preview =
-        build_import_preview(&mut prepared, &dirs.skills, "workspace", "workspace").await?;
+    let same_source = session_same_source_skill_names(&dirs.plugins, &prepared.source_key);
+    let preview = build_import_preview(
+        &mut prepared,
+        &dirs.skills,
+        "workspace",
+        "workspace",
+        &get_system_skills_directory()?,
+        &same_source,
+    )
+    .await?;
     let result = install_prepared_with_dirs(
         &dirs,
         prepared,

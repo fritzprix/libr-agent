@@ -383,3 +383,50 @@ pub fn list_approved_plugin_roots() -> Vec<PathBuf> {
         .map(|r| r.root_dir)
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// #2921 (gatekeeper G1.2): `.claude-plugin/plugin.json` metadata must
+    /// survive `save_source_in`/`get_source_in` so the Skills view can show
+    /// plugin name/version/description across restarts.
+    #[test]
+    fn plugin_metadata_roundtrips_through_source_store() {
+        let base = tempfile::tempdir().unwrap();
+        let source_id = format!("plugin-{}", "0".repeat(16));
+        let record = save_source_in(
+            base.path(),
+            PluginSourceManifest {
+                source_url: "https://example.com/p".to_string(),
+                source_id: source_id.clone(),
+                skill_names: vec!["alpha".to_string()],
+                hooks: None,
+                hooks_approved: false,
+                approval_hashes: BTreeMap::new(),
+                created_at: 0,
+                plugin: Some(PluginMetadata {
+                    name: "superpowers".to_string(),
+                    version: Some("1.2.3".to_string()),
+                    description: Some("Skills for agents".to_string()),
+                    author: Some("Jesse Vincent".to_string()),
+                    homepage: None,
+                    repository: None,
+                    license: None,
+                    keywords: vec!["skills".to_string()],
+                }),
+            },
+        )
+        .unwrap();
+        assert!(record.manifest.plugin.is_some());
+
+        let loaded = get_source_in(base.path(), &source_id).unwrap();
+        let plugin = loaded.manifest.plugin.expect("plugin metadata persisted");
+        assert_eq!(plugin.name, "superpowers");
+        assert_eq!(plugin.version.as_deref(), Some("1.2.3"));
+        assert_eq!(plugin.description.as_deref(), Some("Skills for agents"));
+        assert_eq!(plugin.author.as_deref(), Some("Jesse Vincent"));
+        assert_eq!(plugin.keywords, vec!["skills".to_string()]);
+        assert_eq!(loaded.manifest.skill_names, vec!["alpha".to_string()]);
+    }
+}

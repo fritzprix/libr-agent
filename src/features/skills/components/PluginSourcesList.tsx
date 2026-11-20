@@ -49,10 +49,7 @@ export function PluginSourcesList({
           const expanded = expandedId === source.id;
           const canUpdate = source.sourceUrl.startsWith('https://github.com');
           return (
-            <div
-              key={source.id}
-              className="rounded-md border bg-background p-3"
-            >
+            <div key={source.id} className="rounded-md border bg-background p-3">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0 space-y-1">
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -91,7 +88,9 @@ export function PluginSourcesList({
                     variant="outline"
                     size="sm"
                     disabled={isBusy}
-                    onClick={() => setExpandedId(expanded ? null : source.id)}
+                    onClick={() =>
+                      setExpandedId(expanded ? null : source.id)
+                    }
                   >
                     <ChevronDown
                       className={cn(

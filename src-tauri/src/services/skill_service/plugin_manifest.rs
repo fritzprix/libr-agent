@@ -7,6 +7,10 @@
 //! fields (`skills`, `commands`, `agents`, `hooks`, `mcpServers`) must follow
 //! the spec path rules: start with `./` and stay inside the plugin root.
 //!
+//! Per the spec, `hooks/hooks.json` (and `hooks/hooks-cursor.json`) are
+//! always auto-loaded; the manifest `hooks` field lists ADDITIONAL hook
+//! config files on top of those defaults (add-semantics, not replacement).
+//!
 //! Spec: <https://code.claude.com/docs/en/plugins-reference>
 
 use serde::{Deserialize, Serialize};
@@ -167,9 +171,11 @@ pub fn validate_manifest_paths(manifest: &PluginManifest) -> Result<(), String> 
     Ok(())
 }
 
-/// Custom `hooks` file paths from the manifest. `None` means keep the
-/// default `hooks/hooks.json` discovery. When `Some`, these paths replace
-/// the default location as the spec defines.
+/// Custom `hooks` file paths from the manifest. `None` means only the
+/// default `hooks/hooks.json` discovery applies. When `Some`, these files
+/// are loaded IN ADDITION to the defaults (the defaults are always
+/// auto-loaded per the spec); a manifest entry that duplicates a default,
+/// or a missing file, is a preview-time error in the caller.
 pub fn hook_config_paths(manifest: Option<&PluginManifest>) -> Option<Vec<String>> {
     manifest.and_then(|m| m.hooks.as_ref()).map(|p| p.to_vec())
 }
