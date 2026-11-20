@@ -1,8 +1,8 @@
 use super::cache::{invalidate_skill_scan_cache, scan_skills_internal_cached};
 use super::contracts::{
-    DiscoveredSkillRoot, HookPreviewEntry, HookPreviewExecutionStatus, PreparedSkillImport,
-    SkillImportCandidate, SkillImportConflict, SkillImportKind, SkillImportPreview,
-    SkillImportResult, SkillMetadata, GITHUB_DOWNLOAD_CONNECT_TIMEOUT_SECS,
+    DiscoveredSkillRoot, HookPreviewEntry, HookPreviewExecutionStatus, PluginManifestSummary,
+    PreparedSkillImport, SkillImportCandidate, SkillImportConflict, SkillImportKind,
+    SkillImportPreview, SkillImportResult, SkillMetadata, GITHUB_DOWNLOAD_CONNECT_TIMEOUT_SECS,
     GITHUB_DOWNLOAD_TIMEOUT_SECS, MAX_GITHUB_ARCHIVE_BYTES, SKILL_FILE_NAME,
 };
 use super::directories::{
@@ -10,11 +10,12 @@ use super::directories::{
     resolve_skills,
 };
 use super::github::parse_github_repo_url;
+use super::plugin_manifest::{self, PluginManifest};
 use super::scanning::{copy_dir_recursive, parse_skill_metadata};
 use crate::services::hooks::registry::{
-    get_user_plugins_directory, save_source_in, PluginSourceManifest,
+    get_user_plugins_directory, save_source_in, PluginMetadata, PluginSourceManifest,
 };
-use crate::services::hooks::schema::{load_hooks_from_root, HookDispatchMode, HooksConfig};
+use crate::services::hooks::schema::{HookDispatchMode, HooksConfig};
 use crate::session::get_session_manager;
 use crate::state::wait_for_managed_skills_sync;
 use log::warn;
@@ -29,8 +30,8 @@ use uuid::Uuid;
 use walkdir::WalkDir;
 
 pub async fn preview_user_skill_import(file_path: String) -> Result<SkillImportPreview, String> {
-    let prepared = prepare_local_skill_import(file_path).await?;
-    build_user_import_preview(&prepared).await
+    let mut prepared = prepare_local_skill_import(file_path).await?;
+    build_user_import_preview(&mut prepared).await
 }
 
 pub async fn import_user_skills(
@@ -39,8 +40,8 @@ pub async fn import_user_skills(
     excluded_skill_names: Option<Vec<String>>,
     approve_hooks: Option<bool>,
 ) -> Result<SkillImportResult, String> {
-    let prepared = prepare_local_skill_import(file_path).await?;
-    let preview = build_user_import_preview(&prepared).await?;
+    let mut prepared = prepare_local_skill_import(file_path).await?;
+    let preview = build_user_import_preview(&mut prepared).await?;
     install_user_prepared_skills(
         prepared,
         preview,
@@ -52,8 +53,8 @@ pub async fn import_user_skills(
 }
 
 pub async fn preview_github_skill_install(repo_url: String) -> Result<SkillImportPreview, String> {
-    let prepared = prepare_github_skill_import(repo_url).await?;
-    build_user_import_preview(&prepared).await
+    let mut prepared = prepare_github_skill_import(repo_url).await?;
+    build_user_import_preview(&mut prepared).await
 }
 
 pub async fn install_github_skills(
@@ -62,8 +63,8 @@ pub async fn install_github_skills(
     excluded_skill_names: Option<Vec<String>>,
     approve_hooks: Option<bool>,
 ) -> Result<SkillImportResult, String> {
-    let prepared = prepare_github_skill_import(repo_url).await?;
-    let preview = build_user_import_preview(&prepared).await?;
+    let mut prepared = prepare_github_skill_import(repo_url).await?;
+    let preview = build_user_import_preview(&mut prepared).await?;
     install_user_prepared_skills(
         prepared,
         preview,
@@ -375,27 +376,63 @@ pub(super) async fn prepare_github_skill_import(
 }
 
 async fn build_user_import_preview(
-    prepared: &PreparedSkillImport,
+    prepared: &mut PreparedSkillImport,
 ) -> Result<SkillImportPreview, String> {
     let user_dir = get_user_skills_directory()?;
-    build_import_preview(prepared, &user_dir, "global", "user").await
+    let system_dir = get_system_skills_directory()?;
+    let same_source = same_source_skill_names(&prepared.source_key);
+    build_import_preview(
+        prepared,
+        &user_dir,
+        "global",
+        "user",
+        &system_dir,
+        &same_source,
+    )
+    .await
+}
+
+/// Skill names recorded in the plugin source manifest for this source key,
+/// i.e. the skills this same plugin installed on a previous install. They
+/// must never count as #2921 namespace collisions: a re-install or update of
+/// a manifest plugin has to keep the existing overwrite-conflict flow rather
+/// than renaming its own skills to `plugin:skill` and installing a duplicate
+/// next to the stale copy (gatekeeper G1.1).
+fn same_source_skill_names(source_key: &str) -> Vec<String> {
+    crate::services::hooks::registry::get_source(&plugin_source_id(source_key))
+        .map(|record| record.manifest.skill_names)
+        .unwrap_or_default()
 }
 
 /// Build an import preview whose conflicts are computed against the bundled
-/// system skills plus the target skills directory (`source_tag`/`origin_tag`
-/// label that directory's existing skills in the reported conflicts).
+/// system skills (`system_skills_dir`) plus the target skills directory
+/// (`source_tag`/`origin_tag` label that directory's existing skills in the
+/// reported conflicts).
+///
+/// When the source carries a `.claude-plugin/plugin.json` (#2921), its
+/// component paths are validated here (preview-time validation errors), its
+/// `hooks` files are added to the default `hooks/hooks.json` discovery, and
+/// plugin skills whose names collide with other skills are renamed to
+/// `plugin:skill` — in the staging copy, so the same names carry into the
+/// install. `same_source_skills` (from the plugin's own source manifest) are
+/// excluded from the collision set so re-installs keep overwrite semantics.
 pub(super) async fn build_import_preview(
-    prepared: &PreparedSkillImport,
+    prepared: &mut PreparedSkillImport,
     target_skills_dir: &Path,
     source_tag: &str,
     origin_tag: &str,
+    system_skills_dir: &Path,
+    same_source_skills: &[String],
 ) -> Result<SkillImportPreview, String> {
-    let discovered_skills = &prepared.discovered_skills;
     wait_for_managed_skills_sync().await;
 
-    let system_dir = get_system_skills_directory()?;
+    let manifest = plugin_manifest::load_plugin_manifest(&prepared.scan_root)?;
+    if let Some(manifest) = &manifest {
+        plugin_manifest::validate_manifest_paths(manifest)?;
+    }
+
     let system_skills = scan_skills_internal_cached(
-        &system_dir,
+        system_skills_dir,
         Some("global".to_string()),
         Some("system".to_string()),
     )
@@ -407,7 +444,22 @@ pub(super) async fn build_import_preview(
     )
     .await?;
 
-    let discovered_candidates = discovered_skills
+    if let Some(manifest) = &manifest {
+        let same_source_lower: HashSet<String> = same_source_skills
+            .iter()
+            .map(|name| name.to_lowercase())
+            .collect();
+        let existing_lower: HashSet<String> = system_skills
+            .iter()
+            .chain(user_skills.iter())
+            .map(|skill| skill.name.to_lowercase())
+            .filter(|name| !same_source_lower.contains(name))
+            .collect();
+        namescope_plugin_skills(prepared, &manifest.name, &existing_lower)?;
+    }
+
+    let discovered_candidates = prepared
+        .discovered_skills
         .iter()
         .map(|skill| SkillImportCandidate {
             name: skill.metadata.name.clone(),
@@ -417,7 +469,7 @@ pub(super) async fn build_import_preview(
     let conflicts =
         build_skill_import_conflicts(&discovered_candidates, &system_skills, &user_skills);
 
-    let hooks_config = try_load_plugin_hooks(&prepared.scan_root)?;
+    let hooks_config = try_load_plugin_hooks(&prepared.scan_root, manifest.as_ref())?;
     let hooks = hooks_config
         .as_ref()
         .map(build_hook_preview_entries)
@@ -435,6 +487,11 @@ pub(super) async fn build_import_preview(
         conflicts,
         hooks,
         hooks_require_approval,
+        plugin_manifest: manifest.as_ref().map(|manifest| PluginManifestSummary {
+            name: manifest.name.clone(),
+            version: manifest.version.clone(),
+            description: manifest.description.clone(),
+        }),
     })
 }
 
@@ -806,17 +863,57 @@ fn find_archive_root(extract_dir: &Path) -> Result<PathBuf, String> {
     }
 }
 
-fn try_load_plugin_hooks(scan_root: &Path) -> Result<Option<HooksConfig>, String> {
+/// Hook config files for a plugin root, in load order: the auto-loaded
+/// `hooks/hooks.json` / `hooks-cursor.json` plus the files the manifest's
+/// `hooks` field declares (spec plugins-reference add-semantics). A manifest
+/// entry duplicating the default or missing on disk is an error (S1.1).
+/// Install persists these paths (relative to the root) so dispatch and the
+/// Skills overview load exactly what the user approved (gatekeeper G2.2).
+fn collect_plugin_hook_files(
+    scan_root: &Path,
+    manifest: Option<&PluginManifest>,
+) -> Result<Vec<PathBuf>, String> {
     let hooks_dir = scan_root.join("hooks");
-    if !hooks_dir.is_dir() {
+    let default_main = hooks_dir.join("hooks.json");
+    let mut files: Vec<PathBuf> = Vec::new();
+    for candidate in [
+        default_main.as_path(),
+        hooks_dir.join("hooks-cursor.json").as_path(),
+    ] {
+        if candidate.is_file() {
+            files.push(candidate.to_path_buf());
+        }
+    }
+
+    if let Some(paths) = plugin_manifest::hook_config_paths(manifest) {
+        for raw in paths {
+            let resolved = scan_root.join(&raw);
+            if resolved == default_main {
+                return Err(format!(
+                    "plugin manifest hooks path {raw:?} duplicates the default hooks/hooks.json"
+                ));
+            }
+            if !resolved.is_file() {
+                return Err(format!(
+                    "plugin manifest hooks path {raw:?} not found in the plugin"
+                ));
+            }
+            files.push(resolved);
+        }
+    }
+
+    Ok(files)
+}
+
+fn try_load_plugin_hooks(
+    scan_root: &Path,
+    manifest: Option<&PluginManifest>,
+) -> Result<Option<HooksConfig>, String> {
+    let files = collect_plugin_hook_files(scan_root, manifest)?;
+    if files.is_empty() {
         return Ok(None);
     }
-    let has_config =
-        hooks_dir.join("hooks.json").is_file() || hooks_dir.join("hooks-cursor.json").is_file();
-    if !has_config {
-        return Ok(None);
-    }
-    load_hooks_from_root(scan_root).map(Some)
+    crate::services::hooks::schema::load_hooks_from_config_files(&files).map(Some)
 }
 
 fn build_hook_preview_entries(config: &HooksConfig) -> Vec<HookPreviewEntry> {
@@ -865,6 +962,86 @@ pub(super) fn plugin_source_id(source_key: &str) -> String {
     format!("plugin-{}", &format!("{:x}", digest)[..16])
 }
 
+/// Rename plugin skills whose names collide with existing skills to
+/// `<plugin-name>:<skill-name>` (Claude Code's namespace convention, #2921),
+/// rewriting the staged `SKILL.md` so the installed skill carries the
+/// namespaced name. Neither side hides the other afterwards.
+fn namescope_plugin_skills(
+    prepared: &mut PreparedSkillImport,
+    plugin_name: &str,
+    existing_lower: &HashSet<String>,
+) -> Result<(), String> {
+    for skill in &mut prepared.discovered_skills {
+        if !existing_lower.contains(&skill.metadata.name.to_lowercase()) {
+            continue;
+        }
+        let renamed = format!("{}:{}", plugin_name, skill.metadata.name);
+        rewrite_skill_frontmatter_name(&skill.root_dir.join(SKILL_FILE_NAME), &renamed)?;
+        skill.metadata.name = renamed;
+    }
+    Ok(())
+}
+
+/// Replace the top-level `name:` line inside a skill's YAML frontmatter with
+/// `new_name`, keeping every other line — and the original line endings —
+/// byte-identical where possible. Only a non-indented `name:` matches: an
+/// indented one belongs to a nested map, not the skill name (gatekeeper S1.2).
+fn rewrite_skill_frontmatter_name(skill_file: &Path, new_name: &str) -> Result<(), String> {
+    let raw = fs::read_to_string(skill_file)
+        .map_err(|error| format!("read {}: {error}", skill_file.display()))?;
+    let content = raw.strip_prefix('\u{feff}').unwrap_or(&raw);
+    let rest = content
+        .strip_prefix("---")
+        .ok_or_else(|| format!("{}: missing YAML frontmatter", skill_file.display()))?;
+    let end = rest
+        .find("\n---")
+        .ok_or_else(|| format!("{}: missing YAML frontmatter end", skill_file.display()))?;
+    let (frontmatter, tail) = (&rest[..end], &rest[end..]);
+    // A JSON string is a valid YAML double-quoted scalar for any name.
+    let quoted = serde_json::to_string(new_name).map_err(|error| error.to_string())?;
+    let mut replaced = false;
+    let rewritten = frontmatter
+        .split('\n')
+        .map(|line| {
+            let (body, eol) = match line.strip_suffix('\r') {
+                Some(body) => (body, "\r"),
+                None => (line, ""),
+            };
+            if !replaced && body.starts_with("name:") {
+                replaced = true;
+                format!("name: {quoted}{eol}")
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    if !replaced {
+        return Err(format!(
+            "{}: no name field in frontmatter",
+            skill_file.display()
+        ));
+    }
+    fs::write(skill_file, format!("---{rewritten}{tail}")).map_err(|error| error.to_string())
+}
+
+fn plugin_metadata_from_manifest(manifest: Option<&PluginManifest>) -> Option<PluginMetadata> {
+    let manifest = manifest?;
+    Some(PluginMetadata {
+        name: manifest.name.clone(),
+        version: manifest.version.clone(),
+        description: manifest.description.clone(),
+        author: manifest
+            .author
+            .as_ref()
+            .map(|author| author.display_name().to_string()),
+        homepage: manifest.homepage.clone(),
+        repository: manifest.repository.clone(),
+        license: manifest.license.clone(),
+        keywords: manifest.keywords.clone().unwrap_or_default(),
+    })
+}
+
 fn install_plugin_source(
     scan_root: &Path,
     source_key: &str,
@@ -872,7 +1049,20 @@ fn install_plugin_source(
     approve_hooks: bool,
     plugins_dir: &Path,
 ) -> Result<(), String> {
-    let config = try_load_plugin_hooks(scan_root)?;
+    let manifest = plugin_manifest::load_plugin_manifest(scan_root)?;
+    let hook_files = collect_plugin_hook_files(scan_root, manifest.as_ref())?;
+    let config = if hook_files.is_empty() {
+        None
+    } else {
+        Some(crate::services::hooks::schema::load_hooks_from_config_files(&hook_files)?)
+    };
+    // Relative, slash-separated for the source store: dispatch loads exactly
+    // these files from the installed root (gatekeeper G2.2).
+    let hook_file_paths: Vec<String> = hook_files
+        .iter()
+        .filter_map(|file| file.strip_prefix(scan_root).ok())
+        .map(|rel| rel.to_string_lossy().replace('\\', "/"))
+        .collect();
 
     let source_id = plugin_source_id(source_key);
     let target = plugins_dir.join(&source_id);
@@ -904,6 +1094,8 @@ fn install_plugin_source(
             hooks_approved,
             approval_hashes,
             created_at: chrono::Utc::now().timestamp(),
+            plugin: plugin_metadata_from_manifest(manifest.as_ref()),
+            hook_files: hook_file_paths,
         },
     )?;
 
@@ -941,7 +1133,7 @@ mod hook_preview_tests {
     fn skill_bundle_when_no_hooks_present() {
         let dir = tempfile::tempdir().unwrap();
         write_valid_skill(dir.path(), "alpha");
-        let hooks = try_load_plugin_hooks(dir.path()).unwrap();
+        let hooks = try_load_plugin_hooks(dir.path(), None).unwrap();
         assert!(hooks.is_none());
     }
 
@@ -956,7 +1148,9 @@ mod hook_preview_tests {
             r#"{"hooks":{"SessionStart":[{"command":"echo hi"}]}}"#,
         )
         .unwrap();
-        let cfg = try_load_plugin_hooks(dir.path()).unwrap().expect("hooks");
+        let cfg = try_load_plugin_hooks(dir.path(), None)
+            .unwrap()
+            .expect("hooks");
         let entries = build_hook_preview_entries(&cfg);
         assert_eq!(entries.len(), 1);
         assert_eq!(
@@ -976,7 +1170,358 @@ mod hook_preview_tests {
             r#"{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"x","timeout":0}]}]}}"#,
         )
         .unwrap();
-        let err = try_load_plugin_hooks(dir.path()).unwrap_err();
+        let err = try_load_plugin_hooks(dir.path(), None).unwrap_err();
         assert!(err.contains("timeout"));
+    }
+
+    fn write_manifest(root: &Path, json: &str) {
+        let dir = root.join(".claude-plugin");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("plugin.json"), json).unwrap();
+    }
+
+    #[test]
+    fn manifest_hooks_paths_add_to_the_default_discovery() {
+        let dir = tempfile::tempdir().unwrap();
+        write_valid_skill(dir.path(), "alpha");
+        let hooks_dir = dir.path().join("hooks");
+        fs::create_dir_all(&hooks_dir).unwrap();
+        fs::write(
+            hooks_dir.join("hooks.json"),
+            r#"{"hooks":{"SessionStart":[{"command":"echo default"}]}}"#,
+        )
+        .unwrap();
+        fs::write(
+            hooks_dir.join("custom.json"),
+            r#"{"hooks":{"SessionStart":[{"command":"echo custom"}]}}"#,
+        )
+        .unwrap();
+        write_manifest(
+            dir.path(),
+            r#"{ "name": "p", "hooks": "./hooks/custom.json" }"#,
+        );
+        let manifest = plugin_manifest::load_plugin_manifest(dir.path())
+            .unwrap()
+            .expect("manifest");
+        let cfg = try_load_plugin_hooks(dir.path(), Some(&manifest))
+            .unwrap()
+            .expect("hooks");
+        let entries = build_hook_preview_entries(&cfg);
+        assert_eq!(entries.len(), 2, "manifest hooks add to the default");
+        let commands: Vec<&str> = entries.iter().map(|e| e.command.as_str()).collect();
+        assert_eq!(commands, ["echo custom", "echo default"]);
+    }
+
+    #[test]
+    fn manifest_hooks_path_duplicating_the_default_is_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        write_valid_skill(dir.path(), "alpha");
+        let hooks_dir = dir.path().join("hooks");
+        fs::create_dir_all(&hooks_dir).unwrap();
+        fs::write(
+            hooks_dir.join("hooks.json"),
+            r#"{"hooks":{"SessionStart":[{"command":"echo default"}]}}"#,
+        )
+        .unwrap();
+        write_manifest(
+            dir.path(),
+            r#"{ "name": "p", "hooks": "./hooks/hooks.json" }"#,
+        );
+        let manifest = plugin_manifest::load_plugin_manifest(dir.path())
+            .unwrap()
+            .expect("manifest");
+        let err = try_load_plugin_hooks(dir.path(), Some(&manifest)).unwrap_err();
+        assert!(err.contains("duplicates"), "error explains the rule: {err}");
+    }
+
+    #[test]
+    fn manifest_hooks_path_missing_is_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        write_valid_skill(dir.path(), "alpha");
+        write_manifest(
+            dir.path(),
+            r#"{ "name": "p", "hooks": "./hooks/missing.json" }"#,
+        );
+        let manifest = plugin_manifest::load_plugin_manifest(dir.path())
+            .unwrap()
+            .expect("manifest");
+        let err = try_load_plugin_hooks(dir.path(), Some(&manifest)).unwrap_err();
+        assert!(err.contains("missing.json"), "error names the path: {err}");
+    }
+
+    fn staged_skill(dir: &std::path::Path, name: &str) -> DiscoveredSkillRoot {
+        let root_dir = dir.join(name);
+        write_valid_skill(&root_dir, name);
+        DiscoveredSkillRoot {
+            metadata: SkillMetadata {
+                name: name.to_string(),
+                description: "test".to_string(),
+                path: root_dir.join(SKILL_FILE_NAME).to_string_lossy().to_string(),
+                alias_path: None,
+                source: None,
+                origin: None,
+            },
+            root_dir,
+        }
+    }
+
+    #[test]
+    fn namescope_plugin_skills_renames_only_collisions() {
+        let temp = tempfile::tempdir().unwrap();
+        let staging = temp.path().join("staging");
+        fs::create_dir_all(&staging).unwrap();
+
+        let mut prepared = PreparedSkillImport {
+            _temp_dir: temp,
+            scan_root: staging.clone(),
+            source_key: "test://plugin".to_string(),
+            discovered_skills: vec![
+                staged_skill(&staging, "alpha"),
+                staged_skill(&staging, "beta"),
+            ],
+        };
+        let existing: HashSet<String> = ["ALPHA".to_string().to_lowercase()].into();
+
+        namescope_plugin_skills(&mut prepared, "superpowers", &existing).unwrap();
+
+        assert_eq!(
+            prepared.discovered_skills[0].metadata.name,
+            "superpowers:alpha"
+        );
+        assert_eq!(prepared.discovered_skills[1].metadata.name, "beta");
+        // The rename must be on disk so the install carries it.
+        let rewritten =
+            parse_skill_metadata(&prepared.discovered_skills[0].root_dir.join(SKILL_FILE_NAME))
+                .unwrap();
+        assert_eq!(rewritten.name, "superpowers:alpha");
+        assert_eq!(rewritten.description, "test");
+    }
+
+    #[test]
+    fn namescope_rewrite_preserves_crlf_and_ignores_nested_name() {
+        let temp = tempfile::tempdir().unwrap();
+        let staging = temp.path().join("staging");
+        fs::create_dir_all(&staging).unwrap();
+        let root_dir = staging.join("alpha");
+        fs::create_dir_all(&root_dir).unwrap();
+        let skill_file = root_dir.join(SKILL_FILE_NAME);
+        fs::write(
+            &skill_file,
+            "---\r\nname: alpha\r\ndescription: test\r\nmetadata:\r\n  name: nested\r\n---\r\nbody\r\n",
+        )
+        .unwrap();
+
+        let mut prepared = PreparedSkillImport {
+            _temp_dir: temp,
+            scan_root: staging.clone(),
+            source_key: "test://plugin".to_string(),
+            discovered_skills: vec![DiscoveredSkillRoot {
+                metadata: SkillMetadata {
+                    name: "alpha".to_string(),
+                    description: "test".to_string(),
+                    path: skill_file.to_string_lossy().to_string(),
+                    alias_path: None,
+                    source: None,
+                    origin: None,
+                },
+                root_dir,
+            }],
+        };
+        let existing: HashSet<String> = ["alpha".to_string()].into();
+
+        namescope_plugin_skills(&mut prepared, "p", &existing).unwrap();
+
+        let raw = fs::read_to_string(&skill_file).unwrap();
+        assert!(
+            raw.contains("name: \"p:alpha\"\r\n"),
+            "top-level name rewritten with CRLF kept: {raw:?}"
+        );
+        assert!(
+            raw.contains("  name: nested"),
+            "nested name must not be rewritten: {raw:?}"
+        );
+        assert!(raw.ends_with("body\r\n"), "trailing CRLF kept: {raw:?}");
+        let rewritten = parse_skill_metadata(&skill_file).unwrap();
+        assert_eq!(rewritten.name, "p:alpha");
+    }
+
+    fn staged_prepared(temp: tempfile::TempDir, skill_names: &[&str]) -> PreparedSkillImport {
+        let scan_root = temp.path().join("staging");
+        fs::create_dir_all(&scan_root).unwrap();
+        let discovered_skills = skill_names
+            .iter()
+            .map(|name| staged_skill(&scan_root, name))
+            .collect();
+        PreparedSkillImport {
+            _temp_dir: temp,
+            scan_root,
+            source_key: "test://plugin".to_string(),
+            discovered_skills,
+        }
+    }
+
+    // Gatekeeper G1.2: preview-level coverage through the real
+    // build_import_preview with injected directories.
+
+    #[tokio::test]
+    async fn preview_reinstall_same_source_keeps_overwrite_conflict() {
+        let mut prepared = staged_prepared(tempfile::tempdir().unwrap(), &["alpha"]);
+        write_manifest(&prepared.scan_root, r#"{ "name": "p" }"#);
+        let target = tempfile::tempdir().unwrap();
+        let system = tempfile::tempdir().unwrap();
+        // The same plugin's own skill is already installed in the target dir.
+        write_valid_skill(&target.path().join("alpha"), "alpha");
+
+        let preview = build_import_preview(
+            &mut prepared,
+            target.path(),
+            "global",
+            "user",
+            system.path(),
+            &["alpha".to_string()],
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            preview.discovered_skills[0].name, "alpha",
+            "own previous install must not trigger the plugin: rename"
+        );
+        assert_eq!(preview.conflicts.len(), 1);
+        assert_eq!(preview.conflicts[0].name, "alpha");
+    }
+
+    #[tokio::test]
+    async fn preview_bundled_collision_renames_without_conflict() {
+        let mut prepared = staged_prepared(tempfile::tempdir().unwrap(), &["alpha"]);
+        write_manifest(&prepared.scan_root, r#"{ "name": "p" }"#);
+        let target = tempfile::tempdir().unwrap();
+        let system = tempfile::tempdir().unwrap();
+        write_valid_skill(&system.path().join("alpha"), "alpha");
+
+        let preview = build_import_preview(
+            &mut prepared,
+            target.path(),
+            "global",
+            "user",
+            system.path(),
+            &[],
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(preview.discovered_skills[0].name, "p:alpha");
+        assert!(
+            preview.conflicts.is_empty(),
+            "rename resolves the bundled collision: {:?}",
+            preview.conflicts
+        );
+    }
+
+    #[tokio::test]
+    async fn preview_reports_plugin_manifest_summary() {
+        let mut prepared = staged_prepared(tempfile::tempdir().unwrap(), &["alpha"]);
+        write_manifest(
+            &prepared.scan_root,
+            r#"{ "name": "p", "version": "1.2.3", "description": "A plugin" }"#,
+        );
+        let target = tempfile::tempdir().unwrap();
+        let system = tempfile::tempdir().unwrap();
+
+        let preview = build_import_preview(
+            &mut prepared,
+            target.path(),
+            "global",
+            "user",
+            system.path(),
+            &[],
+        )
+        .await
+        .unwrap();
+
+        let summary = preview.plugin_manifest.expect("manifest summary");
+        assert_eq!(summary.name, "p");
+        assert_eq!(summary.version.as_deref(), Some("1.2.3"));
+        assert_eq!(summary.description.as_deref(), Some("A plugin"));
+    }
+
+    #[tokio::test]
+    async fn preview_fails_on_manifest_path_outside_root() {
+        let mut prepared = staged_prepared(tempfile::tempdir().unwrap(), &["alpha"]);
+        write_manifest(
+            &prepared.scan_root,
+            r#"{ "name": "p", "skills": "../evil" }"#,
+        );
+        let target = tempfile::tempdir().unwrap();
+        let system = tempfile::tempdir().unwrap();
+
+        let err = build_import_preview(
+            &mut prepared,
+            target.path(),
+            "global",
+            "user",
+            system.path(),
+            &[],
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("skills"), "error names the field: {err}");
+    }
+
+    /// Gatekeeper G2.2: a real install of a plugin whose hooks are declared
+    /// only in `.claude-plugin/plugin.json` must persist those files in the
+    /// source manifest, so the record-aware loader (dispatch and overview)
+    /// sees exactly the config the user approved.
+    #[test]
+    fn install_persists_manifest_only_hook_files() {
+        use crate::services::hooks::registry::{get_source_in, hook_config_for_record};
+        use crate::services::hooks::schema::HookEvent;
+
+        let temp = tempfile::tempdir().unwrap();
+        let scan_root = temp.path().join("plugin");
+        let plugins_dir = temp.path().join("store");
+        fs::create_dir_all(scan_root.join("custom-hooks")).unwrap();
+        fs::write(
+            scan_root.join("custom-hooks").join("extra.json"),
+            r#"{"hooks":{"SessionStart":[{"command":"echo manifest only"}]}}"#,
+        )
+        .unwrap();
+        write_manifest(
+            &scan_root,
+            r#"{ "name": "p", "hooks": "./custom-hooks/extra.json" }"#,
+        );
+
+        install_plugin_source(
+            &scan_root,
+            "test://manifest-only-hooks",
+            &[],
+            true,
+            &plugins_dir,
+        )
+        .unwrap();
+
+        let record = get_source_in(
+            &plugins_dir,
+            &plugin_source_id("test://manifest-only-hooks"),
+        )
+        .unwrap();
+        assert_eq!(
+            record.manifest.hook_files,
+            vec!["custom-hooks/extra.json".to_string()],
+            "install persists the manifest hook file relative to the root"
+        );
+        assert!(record.manifest.hooks_approved);
+        assert!(
+            !record.manifest.approval_hashes.is_empty(),
+            "manifest-only handlers get approval hashes"
+        );
+
+        let cfg = hook_config_for_record(&record).unwrap();
+        assert!(cfg.events.contains_key(&HookEvent::SessionStart));
+        assert_eq!(
+            super::super::plugin_sources::hook_events_for_record(&record),
+            vec!["SessionStart".to_string()],
+            "overview lists manifest-declared events"
+        );
     }
 }

@@ -175,3 +175,28 @@ describe('SkillsConflictDialog PreToolUse tool-approval disclosure (#2925 D3)', 
     ).not.toBeInTheDocument();
   });
 });
+
+// #2921: the install preview must surface the plugin manifest summary.
+describe('SkillsConflictDialog plugin manifest summary (#2921)', () => {
+  it('renders the manifest name, version, and description', () => {
+    renderDialog(
+      buildPendingInstall({
+        pluginManifest: {
+          name: 'superpowers',
+          version: '1.2.3',
+          description: 'Skills for agents',
+        },
+      }),
+    );
+
+    expect(screen.getByText('superpowers')).toBeInTheDocument();
+    expect(screen.getByText('v1.2.3')).toBeInTheDocument();
+    expect(screen.getByText('Skills for agents')).toBeInTheDocument();
+  });
+
+  it('omits the manifest block when the plugin carries no manifest', () => {
+    renderDialog(buildPendingInstall());
+
+    expect(screen.queryByText('superpowers')).not.toBeInTheDocument();
+  });
+});

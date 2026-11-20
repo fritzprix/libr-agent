@@ -35,6 +35,10 @@ export interface PluginSourceOverview {
   skillNames: string[];
   hookEvents: string[];
   hooksApproved: boolean;
+  /** Manifest `name` from `.claude-plugin/plugin.json`, when present. */
+  pluginName?: string;
+  pluginVersion?: string;
+  pluginDescription?: string;
 }
 
 export interface ManagedSkillsOverview {
@@ -70,12 +74,21 @@ export interface HookPreviewEntry {
   executionStatus: HookPreviewExecutionStatus;
 }
 
+/** `.claude-plugin/plugin.json` summary shown in the install preview (#2921). */
+export interface PluginManifestSummary {
+  name: string;
+  version?: string;
+  description?: string;
+}
+
 export interface SkillImportPreview {
   kind: SkillImportKind;
   discoveredSkills: SkillImportCandidate[];
   conflicts: SkillImportConflict[];
   hooks: HookPreviewEntry[];
   hooksRequireApproval: boolean;
+  /** Present when the source carried a `.claude-plugin/plugin.json`. */
+  pluginManifest?: PluginManifestSummary;
 }
 
 export interface SkillImportResult {

@@ -46,3 +46,46 @@ describe('PluginSourcesList hook status markers', () => {
     expect(screen.getByText(/Not supported/)).toBeInTheDocument();
   });
 });
+
+// #2921: manifest metadata from `.claude-plugin/plugin.json` must be shown
+// instead of the raw source id.
+describe('PluginSourcesList plugin manifest display (#2921)', () => {
+  it('shows the manifest name, version, and description', () => {
+    render(
+      <PluginSourcesList
+        sources={[
+          source({
+            pluginName: 'superpowers',
+            pluginVersion: '1.2.3',
+            pluginDescription: 'Skills for agents',
+          }),
+        ]}
+        isBusy={false}
+        removingId={null}
+        onUpdate={vi.fn()}
+        onRemove={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('superpowers')).toBeInTheDocument();
+    expect(screen.getByText('v1.2.3')).toBeInTheDocument();
+    expect(screen.getByText('Skills for agents')).toBeInTheDocument();
+    expect(
+      screen.queryByText('plugin-aabbccddeeff0011'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('falls back to the source id when the plugin has no manifest', () => {
+    render(
+      <PluginSourcesList
+        sources={[source()]}
+        isBusy={false}
+        removingId={null}
+        onUpdate={vi.fn()}
+        onRemove={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('plugin-aabbccddeeff0011')).toBeInTheDocument();
+  });
+});

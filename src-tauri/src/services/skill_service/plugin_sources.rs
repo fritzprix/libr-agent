@@ -1,8 +1,9 @@
 use super::contracts::PluginSourceOverview;
 use super::directories::get_user_skills_directory;
 use super::importing::remove_skill_names_from_user_skills;
-use crate::services::hooks::registry::{delete_source, get_source, list_sources};
-use crate::services::hooks::schema::load_hooks_from_root;
+use crate::services::hooks::registry::{
+    delete_source, get_source, hook_config_for_record, list_sources, PluginSourceRecord,
+};
 
 pub fn list_plugin_source_overviews() -> Result<Vec<PluginSourceOverview>, String> {
     let records = list_sources()?;
@@ -13,7 +14,7 @@ pub fn list_plugin_source_overviews() -> Result<Vec<PluginSourceOverview>, Strin
                 .manifest
                 .hooks
                 .as_ref()
-                .map(|_| hook_events_for_root(&record.root_dir))
+                .map(|_| hook_events_for_record(&record))
                 .unwrap_or_default();
             PluginSourceOverview {
                 id: record.manifest.source_id.clone(),
@@ -21,6 +22,17 @@ pub fn list_plugin_source_overviews() -> Result<Vec<PluginSourceOverview>, Strin
                 skill_names: record.manifest.skill_names.clone(),
                 hook_events,
                 hooks_approved: record.manifest.hooks_approved,
+                plugin_name: record.manifest.plugin.as_ref().map(|p| p.name.clone()),
+                plugin_version: record
+                    .manifest
+                    .plugin
+                    .as_ref()
+                    .and_then(|p| p.version.clone()),
+                plugin_description: record
+                    .manifest
+                    .plugin
+                    .as_ref()
+                    .and_then(|p| p.description.clone()),
             }
         })
         .collect::<Vec<_>>();
@@ -28,8 +40,11 @@ pub fn list_plugin_source_overviews() -> Result<Vec<PluginSourceOverview>, Strin
     Ok(out)
 }
 
-pub(super) fn hook_events_for_root(root: &std::path::Path) -> Vec<String> {
-    load_hooks_from_root(root)
+/// Hook events a source declares, loaded through the same record-aware
+/// loader as dispatch so manifest-declared hook files are listed too
+/// (gatekeeper G2.2).
+pub(super) fn hook_events_for_record(record: &PluginSourceRecord) -> Vec<String> {
+    hook_config_for_record(record)
         .ok()
         .map(|cfg| {
             let mut events: Vec<String> = cfg

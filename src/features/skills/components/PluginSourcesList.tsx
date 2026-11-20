@@ -52,7 +52,21 @@ export function PluginSourcesList({
             <div key={source.id} className="rounded-md border bg-background p-3">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0 space-y-1">
-                  <p className="text-sm font-medium break-all">{source.id}</p>
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <p className="text-sm font-medium break-all">
+                      {source.pluginName ?? source.id}
+                    </p>
+                    {source.pluginVersion ? (
+                      <span className="text-xs text-muted-foreground">
+                        v{source.pluginVersion}
+                      </span>
+                    ) : null}
+                  </div>
+                  {source.pluginDescription ? (
+                    <p className="text-xs text-muted-foreground">
+                      {source.pluginDescription}
+                    </p>
+                  ) : null}
                   <p className="text-xs text-muted-foreground break-all">
                     {source.sourceUrl}
                   </p>

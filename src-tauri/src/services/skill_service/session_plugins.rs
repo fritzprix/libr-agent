@@ -10,16 +10,16 @@
 
 use super::cache::invalidate_skill_scan_cache;
 use super::contracts::{PreparedSkillImport, SkillImportPreview, SkillImportResult};
-use super::directories::get_workspace_skills_directory_for_session;
+use super::directories::{get_system_skills_directory, get_workspace_skills_directory_for_session};
 use super::github::parse_github_repo_url;
 use super::importing::{
     build_import_preview, install_prepared_import, plugin_source_id, prepare_github_skill_import,
     remove_skill_names_from_user_skills, ImportTarget,
 };
-use super::plugin_sources::hook_events_for_root;
+use super::plugin_sources::hook_events_for_record;
 use crate::services::hooks::registry::{
-    delete_source_in, get_session_plugins_directory, get_user_plugins_directory, list_sources_in,
-    PluginSourceRecord,
+    delete_source_in, get_session_plugins_directory, get_source_in, get_user_plugins_directory,
+    list_sources_in, PluginSourceRecord,
 };
 use crate::services::hooks::{clear_hook_context, spawn_session_start, SessionStartSource};
 use log::warn;
@@ -91,13 +91,31 @@ fn session_dirs(session_id: &str) -> Result<SessionPluginDirs, String> {
     })
 }
 
+/// Skill names recorded in this session's plugin-source store for the same
+/// source key. Re-installs of the same manifest plugin must not namespace-
+/// rename against their own previously installed skills (gatekeeper G1.1).
+fn session_same_source_skill_names(plugins_dir: &Path, source_key: &str) -> Vec<String> {
+    get_source_in(plugins_dir, &plugin_source_id(source_key))
+        .map(|record| record.manifest.skill_names)
+        .unwrap_or_default()
+}
+
 pub async fn preview_session_plugin_install(
     session_id: String,
     repo_url: String,
 ) -> Result<SkillImportPreview, String> {
     let dirs = session_dirs(&session_id)?;
-    let prepared = prepare_github_skill_import(repo_url).await?;
-    build_import_preview(&prepared, &dirs.skills, "workspace", "workspace").await
+    let mut prepared = prepare_github_skill_import(repo_url).await?;
+    let same_source = session_same_source_skill_names(&dirs.plugins, &prepared.source_key);
+    build_import_preview(
+        &mut prepared,
+        &dirs.skills,
+        "workspace",
+        "workspace",
+        &get_system_skills_directory()?,
+        &same_source,
+    )
+    .await
 }
 
 /// Install a plugin for one session, then fire SessionStart with
@@ -110,8 +128,17 @@ pub async fn install_session_plugin(
     approve_hooks: Option<bool>,
 ) -> Result<SkillImportResult, String> {
     let dirs = session_dirs(&session_id)?;
-    let prepared = prepare_github_skill_import(repo_url).await?;
-    let preview = build_import_preview(&prepared, &dirs.skills, "workspace", "workspace").await?;
+    let mut prepared = prepare_github_skill_import(repo_url).await?;
+    let same_source = session_same_source_skill_names(&dirs.plugins, &prepared.source_key);
+    let preview = build_import_preview(
+        &mut prepared,
+        &dirs.skills,
+        "workspace",
+        "workspace",
+        &get_system_skills_directory()?,
+        &same_source,
+    )
+    .await?;
     let result = install_prepared_with_dirs(
         &dirs,
         prepared,
@@ -259,7 +286,7 @@ fn entry_from_record(record: &PluginSourceRecord, scope: PluginScope) -> Session
         installed_at: manifest.created_at,
         skill_names: manifest.skill_names.clone(),
         hook_events: if manifest.hooks.is_some() {
-            hook_events_for_root(&record.root_dir)
+            hook_events_for_record(record)
         } else {
             Vec::new()
         },
@@ -384,6 +411,7 @@ mod tests {
             conflicts: vec![],
             hooks: vec![],
             hooks_require_approval: has_hooks,
+            plugin_manifest: None,
         };
         install_prepared_with_dirs(&fx.dirs, prepared, preview, false, vec![], approve_hooks)
     }
@@ -408,6 +436,8 @@ mod tests {
                 hooks_approved: true,
                 approval_hashes: hashes,
                 created_at: 1,
+                plugin: None,
+                hook_files: vec![],
             },
         )
         .unwrap();
@@ -485,6 +515,8 @@ mod tests {
                 hooks_approved: false,
                 approval_hashes: Default::default(),
                 created_at: 0,
+                plugin: None,
+                hook_files: vec![],
             },
             root_dir: PathBuf::new(),
         };

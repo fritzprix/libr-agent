@@ -4,6 +4,7 @@ mod directories;
 mod github;
 mod importing;
 mod outbox;
+mod plugin_manifest;
 mod plugin_sources;
 mod scanning;
 mod session_plugins;

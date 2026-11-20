@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub const DEFAULT_HOOK_TIMEOUT_SECS: u64 = 60;
 
@@ -124,6 +124,26 @@ pub fn load_hooks_from_root(root: &Path) -> Result<HooksConfig, String> {
         ));
     }
 
+    Ok(merged)
+}
+
+/// Load and merge explicit hook config files — the custom `hooks` paths a
+/// `.claude-plugin/plugin.json` manifest declares (#2921). The files
+/// replace the default `hooks/hooks.json` discovery, so at least one must
+/// exist (callers validate existence before calling).
+pub fn load_hooks_from_config_files(files: &[PathBuf]) -> Result<HooksConfig, String> {
+    if files.is_empty() {
+        return Err("no hook config files given".to_string());
+    }
+    let mut merged = HooksConfig {
+        version: None,
+        events: BTreeMap::new(),
+        unsupported_events: BTreeMap::new(),
+    };
+    for file in files {
+        let piece = parse_hooks_file(file)?;
+        merge_hooks_config(&mut merged, piece)?;
+    }
     Ok(merged)
 }
 

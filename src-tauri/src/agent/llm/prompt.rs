@@ -652,6 +652,8 @@ mod tests {
                 hooks_approved: true,
                 approval_hashes: hashes,
                 created_at: 0,
+                plugin: None,
+                hook_files: vec![],
             },
         )
         .unwrap();
