@@ -57,7 +57,9 @@ Profile isolation mirrors the Linux XDG setup: `APPDATA`, `LOCALAPPDATA`,
 primary profile (`%APPDATA%\com.fritzprix.libragent`) is refused just like the
 Linux one. The bubblewrap host-mode workspace sandbox is Linux-only; on
 Windows the flag means the isolated instance itself is the safety condition
-(job object + redirected profiles).
+(job object + redirected profiles). Because Windows has no bubblewrap
+filesystem sandbox, `libragent_agent.py` refuses `LIBRAGENT_HARBOR_WORKSPACE_MODE=host`
+on `win32` with `RuntimeError` (`LIBRAGENT_HARBOR_WORKSPACE_MODE=host on Windows runs task commands directly on this machine; allow it only on a disposable CI runner (CI=true), or pass --workspace-mode managed.`) unless `--workspace-mode managed` is used or `CI=true` is set explicitly on a throwaway/disposable Windows machine.
 
 The control-plane contract is shared across platforms: the debug-only,
 loopback, token-guarded S1/S3 HTTP routes for interaction polling and prompt
@@ -240,7 +242,7 @@ When running locally:
 1. Build the debug binary (`node scripts/run-rust-command.cjs build`).
 2. Seed the disposable bench instance from your local profile (`pnpm bench:instance:seed --assistant-id <uuid>` on Linux, or `python -m benchmarks.harbor.isolated_instance seed --assistant-id <uuid>` on Windows). The source database is read-only; LLM keys stay inside the local isolated profile only.
 3. Set a synthetic test secret (`export LIBRAGENT_E2E_SYNTHETIC_SECRET="dummy-token-abcd"`) — never a real credential — and run `pnpm bench:session-e2e:n1` or `pnpm bench:session-e2e` (or drive the isolated instance directly from an external multimodal agent via `libr-e2e-verify` and `release-head-self-e2e`).
-4. `requires_host_os = "windows"` tasks (e.g. `e2e-b11-no-runshell`) run on a local Windows host and are auto-excluded on Linux; Linux-only tasks are auto-excluded on Windows the same way.
+4. `requires_host_os = "windows"` tasks (e.g. `e2e-b11-no-runshell`) run on a local Windows host and are auto-excluded on Linux; Linux-only tasks are auto-excluded on Windows the same way. On Windows, default `host` workspace mode raises `RuntimeError` (`LIBRAGENT_HARBOR_WORKSPACE_MODE=host on Windows runs task commands directly on this machine…`) because there is no bubblewrap sandbox: pass `--workspace-mode managed` (requires Docker Desktop), or set `CI=true` only on a throwaway/disposable Windows machine where unsandboxed host commands are acceptable.
 
 ## In-app orchestration (preferred)
 
