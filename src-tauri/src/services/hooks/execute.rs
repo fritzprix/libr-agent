@@ -280,7 +280,9 @@ pub async fn dispatch_hook_event_with_sources(
 
     for record in list_effective_approved_sources_in(plugins_dir, session_plugins_dir) {
         let root = &record.root_dir;
-        let config = match super::schema::load_hooks_from_root(root) {
+        // Load exactly the files validated and approved at install, manifest
+        // `hooks` entries included — not just the default discovery (G2.2).
+        let config = match super::registry::hook_config_for_record(&record) {
             Ok(c) => c,
             Err(e) => {
                 log::warn!("skip plugin hooks under {}: {}", root.display(), e);
@@ -544,6 +546,7 @@ mod tests {
                 approval_hashes: hashes,
                 created_at: 0,
                 plugin: None,
+                hook_files: vec![],
             },
         )
         .unwrap();
@@ -568,6 +571,7 @@ mod tests {
                 approval_hashes: hashes,
                 created_at: 0,
                 plugin: None,
+                hook_files: vec![],
             },
         )
         .unwrap();
@@ -639,6 +643,7 @@ mod tests {
                     approval_hashes: hashes,
                     created_at: 0,
                     plugin: None,
+                    hook_files: vec![],
                 },
             )
             .unwrap();
@@ -844,6 +849,7 @@ mod tests {
                 approval_hashes: hashes,
                 created_at: 0,
                 plugin: None,
+                hook_files: vec![],
             },
         )
         .unwrap();
@@ -855,6 +861,61 @@ mod tests {
         clear_hook_context(&sid);
         run_session_start_in(temp.path(), &sid, SessionStartSource::Startup, Some(root)).await;
         assert!(get_hook_context(&sid).is_none());
+        clear_hook_context(&sid);
+    }
+
+    /// Gatekeeper G2.2: a plugin whose hooks are declared only through
+    /// `.claude-plugin/plugin.json` must still dispatch. The old runtime
+    /// loader discovered only `hooks/hooks.json`, so handlers approved at
+    /// install from a manifest-declared file never ran.
+    #[tokio::test]
+    async fn manifest_only_hook_files_are_dispatched() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source_id = "plugin-2233445566778899".to_string();
+        let root = temp.path().join(&source_id);
+        fs::create_dir_all(root.join("custom-hooks")).unwrap();
+        fs::write(
+            root.join("custom-hooks").join("extra.json"),
+            r#"{ "hooks": { "SessionStart": [ { "command": "echo manifest only body" } ] } }"#,
+        )
+        .unwrap();
+        fs::create_dir_all(root.join(".claude-plugin")).unwrap();
+        fs::write(
+            root.join(".claude-plugin").join("plugin.json"),
+            r#"{ "name": "p", "hooks": "./custom-hooks/extra.json" }"#,
+        )
+        .unwrap();
+
+        let files = vec![root.join("custom-hooks").join("extra.json")];
+        let cfg = crate::services::hooks::schema::load_hooks_from_config_files(&files).unwrap();
+        let hashes = compute_handler_approval_hashes(&root, &cfg);
+        save_source_in(
+            temp.path(),
+            PluginSourceManifest {
+                source_url: "test://manifest-only".to_string(),
+                source_id,
+                skill_names: vec![],
+                hooks: Some(crate::services::hooks::registry::HooksConfigSnapshot {
+                    version: cfg.version,
+                    validated: true,
+                }),
+                hooks_approved: true,
+                approval_hashes: hashes,
+                created_at: 0,
+                plugin: None,
+                hook_files: vec!["custom-hooks/extra.json".to_string()],
+            },
+        )
+        .unwrap();
+
+        let sid = format!("hook-manifest-only-{}", uuid::Uuid::new_v4());
+        clear_hook_context(&sid);
+        run_session_start_in(temp.path(), &sid, SessionStartSource::Startup, Some(root)).await;
+        assert_eq!(
+            get_hook_context(&sid).as_deref(),
+            Some("manifest only body"),
+            "dispatch must load the persisted hook_files, not just hooks/hooks.json"
+        );
         clear_hook_context(&sid);
     }
 
@@ -1117,6 +1178,7 @@ mod tests {
                 approval_hashes: hashes,
                 created_at: 0,
                 plugin: None,
+                hook_files: vec![],
             },
         )
         .unwrap();

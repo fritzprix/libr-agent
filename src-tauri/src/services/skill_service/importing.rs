@@ -416,7 +416,6 @@ fn same_source_skill_names(source_key: &str) -> Vec<String> {
 /// `plugin:skill` — in the staging copy, so the same names carry into the
 /// install. `same_source_skills` (from the plugin's own source manifest) are
 /// excluded from the collision set so re-installs keep overwrite semantics.
-#[allow(clippy::too_many_arguments)]
 pub(super) async fn build_import_preview(
     prepared: &mut PreparedSkillImport,
     target_skills_dir: &Path,
@@ -864,10 +863,16 @@ fn find_archive_root(extract_dir: &Path) -> Result<PathBuf, String> {
     }
 }
 
-fn try_load_plugin_hooks(
+/// Hook config files for a plugin root, in load order: the auto-loaded
+/// `hooks/hooks.json` / `hooks-cursor.json` plus the files the manifest's
+/// `hooks` field declares (spec plugins-reference add-semantics). A manifest
+/// entry duplicating the default or missing on disk is an error (S1.1).
+/// Install persists these paths (relative to the root) so dispatch and the
+/// Skills overview load exactly what the user approved (gatekeeper G2.2).
+fn collect_plugin_hook_files(
     scan_root: &Path,
     manifest: Option<&PluginManifest>,
-) -> Result<Option<HooksConfig>, String> {
+) -> Result<Vec<PathBuf>, String> {
     let hooks_dir = scan_root.join("hooks");
     let default_main = hooks_dir.join("hooks.json");
     let mut files: Vec<PathBuf> = Vec::new();
@@ -880,9 +885,6 @@ fn try_load_plugin_hooks(
         }
     }
 
-    // Spec (plugins-reference): `hooks/hooks.json` is auto-loaded and the
-    // manifest `hooks` field lists ADDITIONAL hook files; a manifest entry
-    // that duplicates the default is rejected (gatekeeper S1.1).
     if let Some(paths) = plugin_manifest::hook_config_paths(manifest) {
         for raw in paths {
             let resolved = scan_root.join(&raw);
@@ -900,6 +902,14 @@ fn try_load_plugin_hooks(
         }
     }
 
+    Ok(files)
+}
+
+fn try_load_plugin_hooks(
+    scan_root: &Path,
+    manifest: Option<&PluginManifest>,
+) -> Result<Option<HooksConfig>, String> {
+    let files = collect_plugin_hook_files(scan_root, manifest)?;
     if files.is_empty() {
         return Ok(None);
     }
@@ -1040,7 +1050,19 @@ fn install_plugin_source(
     plugins_dir: &Path,
 ) -> Result<(), String> {
     let manifest = plugin_manifest::load_plugin_manifest(scan_root)?;
-    let config = try_load_plugin_hooks(scan_root, manifest.as_ref())?;
+    let hook_files = collect_plugin_hook_files(scan_root, manifest.as_ref())?;
+    let config = if hook_files.is_empty() {
+        None
+    } else {
+        Some(crate::services::hooks::schema::load_hooks_from_config_files(&hook_files)?)
+    };
+    // Relative, slash-separated for the source store: dispatch loads exactly
+    // these files from the installed root (gatekeeper G2.2).
+    let hook_file_paths: Vec<String> = hook_files
+        .iter()
+        .filter_map(|file| file.strip_prefix(scan_root).ok())
+        .map(|rel| rel.to_string_lossy().replace('\\', "/"))
+        .collect();
 
     let source_id = plugin_source_id(source_key);
     let target = plugins_dir.join(&source_id);
@@ -1073,6 +1095,7 @@ fn install_plugin_source(
             approval_hashes,
             created_at: chrono::Utc::now().timestamp(),
             plugin: plugin_metadata_from_manifest(manifest.as_ref()),
+            hook_files: hook_file_paths,
         },
     )?;
 
@@ -1443,5 +1466,62 @@ mod hook_preview_tests {
         .await
         .unwrap_err();
         assert!(err.contains("skills"), "error names the field: {err}");
+    }
+
+    /// Gatekeeper G2.2: a real install of a plugin whose hooks are declared
+    /// only in `.claude-plugin/plugin.json` must persist those files in the
+    /// source manifest, so the record-aware loader (dispatch and overview)
+    /// sees exactly the config the user approved.
+    #[test]
+    fn install_persists_manifest_only_hook_files() {
+        use crate::services::hooks::registry::{get_source_in, hook_config_for_record};
+        use crate::services::hooks::schema::HookEvent;
+
+        let temp = tempfile::tempdir().unwrap();
+        let scan_root = temp.path().join("plugin");
+        let plugins_dir = temp.path().join("store");
+        fs::create_dir_all(scan_root.join("custom-hooks")).unwrap();
+        fs::write(
+            scan_root.join("custom-hooks").join("extra.json"),
+            r#"{"hooks":{"SessionStart":[{"command":"echo manifest only"}]}}"#,
+        )
+        .unwrap();
+        write_manifest(
+            &scan_root,
+            r#"{ "name": "p", "hooks": "./custom-hooks/extra.json" }"#,
+        );
+
+        install_plugin_source(
+            &scan_root,
+            "test://manifest-only-hooks",
+            &[],
+            true,
+            &plugins_dir,
+        )
+        .unwrap();
+
+        let record = get_source_in(
+            &plugins_dir,
+            &plugin_source_id("test://manifest-only-hooks"),
+        )
+        .unwrap();
+        assert_eq!(
+            record.manifest.hook_files,
+            vec!["custom-hooks/extra.json".to_string()],
+            "install persists the manifest hook file relative to the root"
+        );
+        assert!(record.manifest.hooks_approved);
+        assert!(
+            !record.manifest.approval_hashes.is_empty(),
+            "manifest-only handlers get approval hashes"
+        );
+
+        let cfg = hook_config_for_record(&record).unwrap();
+        assert!(cfg.events.contains_key(&HookEvent::SessionStart));
+        assert_eq!(
+            super::super::plugin_sources::hook_events_for_record(&record),
+            vec!["SessionStart".to_string()],
+            "overview lists manifest-declared events"
+        );
     }
 }

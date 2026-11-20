@@ -16,7 +16,7 @@ use super::importing::{
     build_import_preview, install_prepared_import, plugin_source_id, prepare_github_skill_import,
     remove_skill_names_from_user_skills, ImportTarget,
 };
-use super::plugin_sources::hook_events_for_root;
+use super::plugin_sources::hook_events_for_record;
 use crate::services::hooks::registry::{
     delete_source_in, get_session_plugins_directory, get_source_in, get_user_plugins_directory,
     list_sources_in, PluginSourceRecord,
@@ -286,7 +286,7 @@ fn entry_from_record(record: &PluginSourceRecord, scope: PluginScope) -> Session
         installed_at: manifest.created_at,
         skill_names: manifest.skill_names.clone(),
         hook_events: if manifest.hooks.is_some() {
-            hook_events_for_root(&record.root_dir)
+            hook_events_for_record(record)
         } else {
             Vec::new()
         },
@@ -437,6 +437,7 @@ mod tests {
                 approval_hashes: hashes,
                 created_at: 1,
                 plugin: None,
+                hook_files: vec![],
             },
         )
         .unwrap();
@@ -515,6 +516,7 @@ mod tests {
                 approval_hashes: Default::default(),
                 created_at: 0,
                 plugin: None,
+                hook_files: vec![],
             },
             root_dir: PathBuf::new(),
         };

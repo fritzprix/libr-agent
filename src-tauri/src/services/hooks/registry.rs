@@ -1,4 +1,6 @@
-use super::schema::{load_hooks_from_root, HookEvent, HookHandler, HooksConfig};
+use super::schema::{
+    load_hooks_from_config_files, load_hooks_from_root, HookEvent, HookHandler, HooksConfig,
+};
 use crate::session::get_session_manager;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -27,6 +29,16 @@ pub struct PluginSourceManifest {
     /// sources installed without a manifest (including all pre-#2921 stores).
     #[serde(default)]
     pub plugin: Option<PluginMetadata>,
+    /// Hook config files, relative to the installed root, in load order:
+    /// the auto-loaded `hooks/hooks.json` / `hooks-cursor.json` that
+    /// existed at install plus the files the manifest's `hooks` field
+    /// declares (#2921). Install persists this list so dispatch and the
+    /// Skills overview load exactly the config the user approved, instead
+    /// of re-discovering only the defaults (gatekeeper G2.2). Empty on
+    /// stores recorded before the list existed: fall back to default
+    /// discovery, which is what those installs could only have had.
+    #[serde(default)]
+    pub hook_files: Vec<String>,
 }
 
 /// Display metadata read from a plugin's `.claude-plugin/plugin.json`
@@ -167,8 +179,21 @@ pub fn save_source_in(
     let root_dir = base.join(&manifest.source_id);
     fs::create_dir_all(&root_dir).map_err(|e| format!("create {}: {e}", root_dir.display()))?;
 
-    // Validate hooks on disk when present.
-    let hooks_snapshot = if root_dir.join("hooks").is_dir() {
+    // Validate hooks on disk: exactly the persisted file list when present
+    // (manifest-declared files included, gatekeeper G2.2), else the default
+    // `hooks/` discovery for legacy stores.
+    let hooks_snapshot = if !manifest.hook_files.is_empty() {
+        let files: Vec<PathBuf> = manifest
+            .hook_files
+            .iter()
+            .map(|rel| root_dir.join(rel))
+            .collect();
+        let cfg = load_hooks_from_config_files(&files)?;
+        Some(HooksConfigSnapshot {
+            version: cfg.version,
+            validated: true,
+        })
+    } else if root_dir.join("hooks").is_dir() {
         let cfg = load_hooks_from_root(&root_dir)?;
         Some(HooksConfigSnapshot {
             version: cfg.version,
@@ -193,6 +218,23 @@ pub fn save_source_in(
         manifest: to_store,
         root_dir,
     })
+}
+
+/// Load a source's hook config exactly the way it was validated and approved
+/// at install: the persisted `hook_files` when present, falling back to the
+/// default `hooks/` discovery for stores recorded before the list existed
+/// (gatekeeper G2.2 — one loader for install, dispatch and overview).
+pub fn hook_config_for_record(record: &PluginSourceRecord) -> Result<HooksConfig, String> {
+    if record.manifest.hook_files.is_empty() {
+        return load_hooks_from_root(&record.root_dir);
+    }
+    let files: Vec<PathBuf> = record
+        .manifest
+        .hook_files
+        .iter()
+        .map(|rel| record.root_dir.join(rel))
+        .collect();
+    load_hooks_from_config_files(&files)
 }
 
 pub fn delete_source(source_id: &str) -> Result<(), String> {
@@ -395,6 +437,15 @@ mod tests {
     fn plugin_metadata_roundtrips_through_source_store() {
         let base = tempfile::tempdir().unwrap();
         let source_id = format!("plugin-{}", "0".repeat(16));
+        // The persisted hook_files list is validated against disk at save,
+        // so lay down the file it names.
+        let source_root = base.path().join(&source_id);
+        fs::create_dir_all(source_root.join("hooks")).unwrap();
+        fs::write(
+            source_root.join("hooks").join("hooks.json"),
+            r#"{"hooks":{"SessionStart":[{"command":"echo hi"}]}}"#,
+        )
+        .unwrap();
         let record = save_source_in(
             base.path(),
             PluginSourceManifest {
@@ -405,6 +456,7 @@ mod tests {
                 hooks_approved: false,
                 approval_hashes: BTreeMap::new(),
                 created_at: 0,
+                hook_files: vec!["./hooks/hooks.json".to_string()],
                 plugin: Some(PluginMetadata {
                     name: "superpowers".to_string(),
                     version: Some("1.2.3".to_string()),
@@ -421,12 +473,23 @@ mod tests {
         assert!(record.manifest.plugin.is_some());
 
         let loaded = get_source_in(base.path(), &source_id).unwrap();
-        let plugin = loaded.manifest.plugin.expect("plugin metadata persisted");
+        let plugin = loaded
+            .manifest
+            .plugin
+            .as_ref()
+            .expect("plugin metadata persisted");
         assert_eq!(plugin.name, "superpowers");
         assert_eq!(plugin.version.as_deref(), Some("1.2.3"));
         assert_eq!(plugin.description.as_deref(), Some("Skills for agents"));
         assert_eq!(plugin.author.as_deref(), Some("Jesse Vincent"));
         assert_eq!(plugin.keywords, vec!["skills".to_string()]);
         assert_eq!(loaded.manifest.skill_names, vec!["alpha".to_string()]);
+        assert_eq!(
+            loaded.manifest.hook_files,
+            vec!["./hooks/hooks.json".to_string()],
+        );
+
+        let cfg = hook_config_for_record(&loaded).unwrap();
+        assert!(cfg.events.contains_key(&HookEvent::SessionStart));
     }
 }
