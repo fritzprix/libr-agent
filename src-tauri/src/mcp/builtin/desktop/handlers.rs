@@ -1,9 +1,79 @@
 use enigo::{Axis, Button, Coordinate, Direction, Enigo, Key, Keyboard, Mouse, Settings};
 use serde_json::Value;
-use xcap::Monitor;
+use xcap::{Monitor, Window};
 
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
 use crate::mcp::types::MCPResult;
+
+/// Pick a window owned by `target_pid` from `(window_id, pid, minimized)` facts.
+///
+/// Prefers a non-minimized window owned by `target_pid` and falls back to a
+/// minimized one. Never matches by window title (#2902).
+pub fn pick_window_by_pid(windows: &[(u32, u32, bool)], target_pid: u32) -> Option<u32> {
+    windows
+        .iter()
+        .find(|(_, pid, minimized)| *pid == target_pid && !*minimized)
+        .or_else(|| windows.iter().find(|(_, pid, _)| *pid == target_pid))
+        .map(|(id, _, _)| *id)
+}
+
+/// Clamp an absolute point into a window rectangle `[origin.0 .. origin.0 + size.0 - 1,
+/// origin.1 .. origin.1 + size.1 - 1]` so window-scoped input never leaves the
+/// target PID's window (#2902).
+pub fn clamp_to_window_bounds(
+    origin: (i32, i32),
+    size: (u32, u32),
+    point: (i32, i32),
+) -> (i32, i32) {
+    let max_x = origin.0.saturating_add(size.0 as i32 - 1).max(origin.0);
+    let max_y = origin.1.saturating_add(size.1 as i32 - 1).max(origin.1);
+    (
+        point.0.clamp(origin.0, max_x),
+        point.1.clamp(origin.1, max_y),
+    )
+}
+
+/// Screen origin `(x, y)` and `(width, height)` of a window.
+pub type WindowBounds = ((i32, i32), (u32, u32));
+
+/// Resolve the screen origin and size of the window owned by `target_pid` via
+/// `xcap::Window::all()`, selecting strictly by PID (never by title).
+pub fn window_bounds_by_pid(target_pid: u32) -> Result<WindowBounds, String> {
+    let windows = Window::all().map_err(|e| format!("Failed to enumerate windows: {e}"))?;
+    let facts: Vec<(u32, u32, bool)> = windows
+        .iter()
+        .filter_map(|w| {
+            let id = w.id().ok()?;
+            let pid = w.pid().ok()?;
+            let minimized = w.is_minimized().unwrap_or(false);
+            Some((id, pid, minimized))
+        })
+        .collect();
+    let id = pick_window_by_pid(&facts, target_pid)
+        .ok_or_else(|| format!("No window is owned by pid {target_pid}"))?;
+    let win = windows
+        .iter()
+        .find(|w| w.id().ok() == Some(id))
+        .ok_or_else(|| format!("Window {id} for pid {target_pid} vanished"))?;
+    let x = win
+        .x()
+        .map_err(|e| format!("Failed to read window X for pid {target_pid}: {e}"))?;
+    let y = win
+        .y()
+        .map_err(|e| format!("Failed to read window Y for pid {target_pid}: {e}"))?;
+    let w = win
+        .width()
+        .map_err(|e| format!("Failed to read window width for pid {target_pid}: {e}"))?;
+    let h = win
+        .height()
+        .map_err(|e| format!("Failed to read window height for pid {target_pid}: {e}"))?;
+    if w == 0 || h == 0 {
+        return Err(format!(
+            "Window {id} for pid {target_pid} has zero size ({w}x{h})"
+        ));
+    }
+    Ok(((x, y), (w, h)))
+}
 
 /// Parse a string into an `enigo::Button`.
 fn parse_button(s: &str) -> Result<Button, String> {
@@ -370,6 +440,68 @@ pub async fn handle_computer_control(args: Value) -> Result<MCPResult, String> {
             );
         }
     };
+
+    // Optional PID-scoped window clamp (#2902): when `window_pid` is set,
+    // coordinates are clamped to that PID's window so input can never touch
+    // another process's windows.
+    let window_scope_bounds: Option<WindowBounds> = if let Some(pid_val) = args.get("window_pid") {
+        let Some(pid_u64) = pid_val.as_u64().filter(|&v| v > 0 && v <= u32::MAX as u64) else {
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                "Parameter 'window_pid' must be a positive 32-bit integer PID.",
+                ToolGroup::Desktop,
+            )
+            .to_mcp_result());
+        };
+        let target_pid = pid_u64 as u32;
+        let fallback_bounds = args
+            .get("window_origin")
+            .and_then(|v| v.as_array())
+            .zip(args.get("window_size").and_then(|v| v.as_array()))
+            .and_then(|(orig, sz)| {
+                if orig.len() == 2 && sz.len() == 2 {
+                    let ox = orig[0].as_i64()? as i32;
+                    let oy = orig[1].as_i64()? as i32;
+                    let sw = u32::try_from(sz[0].as_u64()?).ok()?.max(1);
+                    let sh = u32::try_from(sz[1].as_u64()?).ok()?.max(1);
+                    Some(((ox, oy), (sw, sh)))
+                } else {
+                    None
+                }
+            });
+        match fallback_bounds {
+            Some(bounds) => Some(bounds),
+            None => match window_bounds_by_pid(target_pid) {
+                Ok(bounds) => Some(bounds),
+                Err(e) => {
+                    return Ok(guided_error(
+                        ErrorCategory::ResourceNotFound,
+                        e,
+                        ToolGroup::Desktop,
+                    )
+                    .to_mcp_result());
+                }
+            },
+        }
+    } else {
+        None
+    };
+
+    let (x, y) = match (x, y, window_scope_bounds) {
+        (Some(px), Some(py), Some((origin, size))) => {
+            let (cx, cy) = clamp_to_window_bounds(origin, size, (px, py));
+            (Some(cx), Some(cy))
+        }
+        (ox, oy, _) => (ox, oy),
+    };
+    let (start_x, start_y) = match (start_x, start_y, window_scope_bounds) {
+        (Some(px), Some(py), Some((origin, size))) => {
+            let (cx, cy) = clamp_to_window_bounds(origin, size, (px, py));
+            (Some(cx), Some(cy))
+        }
+        (ox, oy, _) => (ox, oy),
+    };
+    let skip_monitor_validation = window_scope_bounds.is_some();
     let button_str = args
         .get("button")
         .and_then(|v| v.as_str())
@@ -419,20 +551,26 @@ pub async fn handle_computer_control(args: Value) -> Result<MCPResult, String> {
                     .to_mcp_result());
                 }
             };
-            if let Err(e) = validate_coordinates(target_x, target_y) {
-                return Ok(
-                    guided_error(ErrorCategory::InvalidInput, e, ToolGroup::Desktop)
-                        .to_mcp_result(),
-                );
-            }
-        }
-        "click" | "double_click" | "right_click" | "middle_click" | "mouse_down" | "mouse_up" => {
-            if let (Some(target_x), Some(target_y)) = (x, y) {
+            if !skip_monitor_validation {
                 if let Err(e) = validate_coordinates(target_x, target_y) {
                     return Ok(
                         guided_error(ErrorCategory::InvalidInput, e, ToolGroup::Desktop)
                             .to_mcp_result(),
                     );
+                }
+            }
+        }
+        "click" | "double_click" | "right_click" | "middle_click" | "mouse_down" | "mouse_up" => {
+            if let (Some(target_x), Some(target_y)) = (x, y) {
+                if !skip_monitor_validation {
+                    if let Err(e) = validate_coordinates(target_x, target_y) {
+                        return Ok(guided_error(
+                            ErrorCategory::InvalidInput,
+                            e,
+                            ToolGroup::Desktop,
+                        )
+                        .to_mcp_result());
+                    }
                 }
             } else if (x.is_some() && y.is_none()) || (x.is_none() && y.is_some()) {
                 return Ok(guided_error(
@@ -455,18 +593,24 @@ pub async fn handle_computer_control(args: Value) -> Result<MCPResult, String> {
                     .to_mcp_result());
                 }
             };
-            if let Err(e) = validate_coordinates(dest_x, dest_y) {
-                return Ok(
-                    guided_error(ErrorCategory::InvalidInput, e, ToolGroup::Desktop)
-                        .to_mcp_result(),
-                );
-            }
-            if let (Some(s_x), Some(s_y)) = (start_x, start_y) {
-                if let Err(e) = validate_coordinates(s_x, s_y) {
+            if !skip_monitor_validation {
+                if let Err(e) = validate_coordinates(dest_x, dest_y) {
                     return Ok(
                         guided_error(ErrorCategory::InvalidInput, e, ToolGroup::Desktop)
                             .to_mcp_result(),
                     );
+                }
+            }
+            if let (Some(s_x), Some(s_y)) = (start_x, start_y) {
+                if !skip_monitor_validation {
+                    if let Err(e) = validate_coordinates(s_x, s_y) {
+                        return Ok(guided_error(
+                            ErrorCategory::InvalidInput,
+                            e,
+                            ToolGroup::Desktop,
+                        )
+                        .to_mcp_result());
+                    }
                 }
             } else if (start_x.is_some() && start_y.is_none())
                 || (start_x.is_none() && start_y.is_some())

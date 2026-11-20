@@ -25,7 +25,7 @@ pub const E2E_CONTROL_CAPABILITY_FILE: &str = "e2e_control.cap";
 static CAPABILITY: OnceLock<Option<String>> = OnceLock::new();
 
 /// The explicit data-directory override, if the operator set one.
-fn explicit_data_dir() -> Option<std::path::PathBuf> {
+pub fn explicit_data_dir() -> Option<std::path::PathBuf> {
     std::env::var_os("LIBRAGENT_DATA_DIR")
         .filter(|value| !value.is_empty())
         .map(std::path::PathBuf::from)

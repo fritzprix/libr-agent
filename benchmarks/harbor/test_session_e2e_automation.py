@@ -766,6 +766,121 @@ async def test_set_window_rejects_empty_or_lone_dimension():
     assert fake.requests == []
 
 
+@pytest.mark.asyncio
+async def test_ui_screenshot_uses_documented_endpoint_and_optional_base64():
+    payload = {"path": "/tmp/e2e_captures/ui-1.png", "width": 1280, "height": 720, "bytes": 4096}
+    fake = RecordingClient({"/e2e-control/ui/screenshot": payload})
+
+    result = await _client().ui_screenshot(fake)
+    assert result == payload
+    (req,) = fake.requests
+    assert req["method"] == "GET"
+    assert req["url"].endswith("/e2e-control/ui/screenshot")
+    assert req["headers"] == {E2E_HEADER: "t" * 48}
+
+    fake = RecordingClient({"/e2e-control/ui/screenshot": {**payload, "base64": "iVBORw=="}})
+    await _client().ui_screenshot(fake, include_base64=True)
+    (req,) = fake.requests
+    assert req["url"].endswith("/e2e-control/ui/screenshot?includeBase64=true")
+
+
+@pytest.mark.asyncio
+async def test_ui_navigate_sends_documented_body_and_validates_inputs():
+    reply = {"ok": True, "path": "/agent/sess-1", "panel": "planning"}
+    fake = RecordingClient({"/e2e-control/ui/navigate": reply})
+
+    result = await _client().ui_navigate(fake, session_id="sess-1", panel="planning")
+    assert result == reply
+    (req,) = fake.requests
+    assert req["method"] == "POST"
+    assert req["url"].endswith("/e2e-control/ui/navigate")
+    assert req["headers"] == {E2E_HEADER: "t" * 48}
+    assert req["json"] == {"sessionId": "sess-1", "panel": "planning"}
+
+    fake_err = RecordingClient({"/e2e-control/ui/navigate": {}})
+    with pytest.raises(ValueError):
+        await _client().ui_navigate(fake_err)
+    with pytest.raises(ValueError):
+        await _client().ui_navigate(fake_err, path="/settings", session_id="sess-1")
+    assert fake_err.requests == []
+
+
+@pytest.mark.asyncio
+async def test_ui_elements_sends_optional_selector_and_timeout():
+    reply = {"elements": [{"role": "button", "label": "Run"}], "count": 1}
+    fake = RecordingClient({"/e2e-control/ui/elements": reply})
+
+    result = await _client().ui_elements(fake, selector="button", timeout_ms=3000)
+    assert result == reply
+    (req,) = fake.requests
+    assert req["method"] == "POST"
+    assert req["url"].endswith("/e2e-control/ui/elements")
+    assert req["headers"] == {E2E_HEADER: "t" * 48}
+    assert req["json"] == {"selector": "button", "timeoutMs": 3000}
+
+
+@pytest.mark.asyncio
+async def test_ui_input_sends_documented_body_and_validates_coordinates():
+    reply = {"ok": True, "result": "Successfully typed 16 characters"}
+    fake = RecordingClient({"/e2e-control/ui/input": reply})
+
+    result = await _client().ui_input(
+        fake,
+        "type",
+        selector="#user-prompt-input",
+        text="dummy-token-abcd",
+    )
+    assert result == reply
+    (req,) = fake.requests
+    assert req["method"] == "POST"
+    assert req["url"].endswith("/e2e-control/ui/input")
+    assert req["headers"] == {E2E_HEADER: "t" * 48}
+    assert req["json"] == {
+        "action": "type",
+        "selector": "#user-prompt-input",
+        "text": "dummy-token-abcd",
+    }
+
+    fake_err = RecordingClient({"/e2e-control/ui/input": {}})
+    with pytest.raises(ValueError):
+        await _client().ui_input(fake_err, "")
+    with pytest.raises(ValueError):
+        await _client().ui_input(fake_err, "click", x=10)
+    assert fake_err.requests == []
+
+
+@pytest.mark.asyncio
+async def test_ui_restart_and_ui_wait_use_documented_endpoints():
+    restart_reply = {"ok": True, "restarting": True, "note": "re-read cap"}
+    fake = RecordingClient({"/e2e-control/ui/restart": restart_reply})
+    assert await _client().ui_restart(fake) == restart_reply
+    (req,) = fake.requests
+    assert req["method"] == "POST"
+    assert req["url"].endswith("/e2e-control/ui/restart")
+    assert req["headers"] == {E2E_HEADER: "t" * 48}
+
+    wait_reply = {
+        "condition": "dialog-open",
+        "satisfied": True,
+        "timedOut": False,
+        "waitedMs": 12,
+        "state": {"dialogOpen": True},
+    }
+    fake = RecordingClient({"/e2e-control/ui/wait": wait_reply})
+    assert await _client().ui_wait(fake, "dialog-open", timeout_ms=2000) == wait_reply
+    (req,) = fake.requests
+    assert req["method"] == "POST"
+    assert req["url"].endswith("/e2e-control/ui/wait")
+    assert req["json"] == {"condition": "dialog-open", "timeoutMs": 2000}
+
+    fake_err = RecordingClient({"/e2e-control/ui/wait": {}})
+    with pytest.raises(ValueError):
+        await _client().ui_wait(fake_err, "")
+    with pytest.raises(ValueError):
+        await _client().ui_wait(fake_err, "prompt-pending")
+    assert fake_err.requests == []
+
+
 def test_poll_interval_matches_documented_default():
     # The contract documents 3.0 s as the default poll interval; the bench
     # poller must keep using exactly that constant.

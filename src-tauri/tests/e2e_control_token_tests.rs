@@ -27,11 +27,15 @@ mod tests {
     use tauri_mcp_agent_lib::models::chat::Message;
     use tauri_mcp_agent_lib::server::access_guard::handle_rejection;
     use tauri_mcp_agent_lib::server::e2e_control::{
-        capability_guard, constant_time_eq, e2e_control_guarded_routes_with_capability,
-        header_matches, pending_circuit_break, plan_circuit_break_resume, plan_picker_override,
+        capability_guard, clamp_to_viewport, constant_time_eq, desktop_args,
+        e2e_control_guarded_routes_with_capability, element_center, header_matches,
+        parse_wait_condition, pending_circuit_break, pick_own_window, plan_circuit_break_resume,
+        plan_input, plan_navigate, plan_navigate_path, plan_panel_name, plan_picker_override,
         plan_user_prompt_action, plan_window, resume_circuit_break_message,
-        tool_approval_error_status, window_state_reply, PickerBody, PlannedPromptAction,
-        SessionInteractionsSnapshot, UserPromptBody, WindowBody, WindowPlan, E2E_CONTROL_HEADER,
+        tool_approval_error_status, verify_window_input_safety, window_state_reply,
+        window_viewport_geometry, InputBody, InputTarget, NavigateBody, NavigatePlan, PickerBody,
+        PlannedPromptAction, SessionInteractionsSnapshot, UserPromptBody, ViewportRect,
+        WaitCondition, WindowBody, WindowPlan, ZOrderedWindowFact, E2E_CONTROL_HEADER,
     };
     use warp::http::{HeaderMap, StatusCode};
     use warp::Filter;
@@ -896,6 +900,375 @@ mod tests {
         assert_eq!(take_empty.status(), 200);
         let body: serde_json::Value = serde_json::from_slice(take_empty.body()).unwrap();
         assert_eq!(body, serde_json::json!({ "override": null }));
+    }
+
+    // ------------------------------------------------------------------
+    // UI automation routes (#2902): screenshot, navigate, elements, input,
+    // restart, wait.
+    // ------------------------------------------------------------------
+
+    fn disabled_production_chain(
+    ) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
+        e2e_control_guarded_routes_with_capability(None, forbidden_manager())
+            .recover(handle_rejection)
+    }
+
+    #[tokio::test]
+    async fn ui_routes_answer_404_when_control_plane_is_disabled() {
+        let chain = disabled_production_chain();
+        for (method, path, body) in [
+            ("GET", "/api/e2e-control/ui/screenshot", None),
+            (
+                "POST",
+                "/api/e2e-control/ui/navigate",
+                Some(serde_json::json!({"path": "/settings"})),
+            ),
+            (
+                "POST",
+                "/api/e2e-control/ui/elements",
+                Some(serde_json::json!({})),
+            ),
+            (
+                "POST",
+                "/api/e2e-control/ui/input",
+                Some(serde_json::json!({"action": "type", "text": "dummy-token-abcd"})),
+            ),
+            ("POST", "/api/e2e-control/ui/restart", None),
+            (
+                "POST",
+                "/api/e2e-control/ui/wait",
+                Some(serde_json::json!({"condition": "dialog-open", "timeoutMs": 0})),
+            ),
+        ] {
+            let mut req = warp::test::request()
+                .method(method)
+                .path(path)
+                .remote_addr(LOOPBACK_PEER.parse().unwrap())
+                .header("host", LOOPBACK_HOST)
+                .header(E2E_CONTROL_HEADER, TOKEN);
+            if let Some(json_body) = body {
+                req = req.json(&json_body);
+            }
+            let res = req.reply(&chain).await;
+            assert_eq!(
+                res.status(),
+                404,
+                "{method} {path} must answer 404 when disabled"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn ui_routes_require_the_full_guard_chain() {
+        let chain = production_chain();
+        for (method, path, body) in [
+            ("GET", "/api/e2e-control/ui/screenshot", None),
+            (
+                "POST",
+                "/api/e2e-control/ui/navigate",
+                Some(serde_json::json!({"path": "/settings"})),
+            ),
+            (
+                "POST",
+                "/api/e2e-control/ui/elements",
+                Some(serde_json::json!({})),
+            ),
+            (
+                "POST",
+                "/api/e2e-control/ui/input",
+                Some(serde_json::json!({"action": "type", "text": "dummy-token-abcd"})),
+            ),
+            ("POST", "/api/e2e-control/ui/restart", None),
+            (
+                "POST",
+                "/api/e2e-control/ui/wait",
+                Some(serde_json::json!({"condition": "dialog-open", "timeoutMs": 0})),
+            ),
+        ] {
+            // Missing capability token -> 403.
+            let mut no_tok = warp::test::request()
+                .method(method)
+                .path(path)
+                .remote_addr(LOOPBACK_PEER.parse().unwrap())
+                .header("host", LOOPBACK_HOST);
+            if let Some(ref json_body) = body {
+                no_tok = no_tok.json(json_body);
+            }
+            assert_eq!(
+                no_tok.reply(&chain).await.status(),
+                403,
+                "{method} {path} without token must be 403"
+            );
+
+            // LAN Host header -> 403 even with valid token.
+            let mut lan_host = warp::test::request()
+                .method(method)
+                .path(path)
+                .remote_addr(LOOPBACK_PEER.parse().unwrap())
+                .header("host", LAN_HOST)
+                .header(E2E_CONTROL_HEADER, TOKEN);
+            if let Some(ref json_body) = body {
+                lan_host = lan_host.json(json_body);
+            }
+            assert_eq!(
+                lan_host.reply(&chain).await.status(),
+                403,
+                "{method} {path} with LAN Host must be 403"
+            );
+
+            // LAN peer -> 403 even with loopback Host and valid token.
+            let mut lan_peer = warp::test::request()
+                .method(method)
+                .path(path)
+                .remote_addr(LAN_PEER.parse().unwrap())
+                .header("host", LOOPBACK_HOST)
+                .header(E2E_CONTROL_HEADER, TOKEN);
+            if let Some(ref json_body) = body {
+                lan_peer = lan_peer.json(json_body);
+            }
+            assert_eq!(
+                lan_peer.reply(&chain).await.status(),
+                403,
+                "{method} {path} with LAN peer must be 403"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn ui_routes_reject_invalid_bodies_and_answer_503_without_app_handle() {
+        let chain = production_chain();
+
+        // Invalid navigate bodies -> 400.
+        for bad_nav in [
+            serde_json::json!({}),
+            serde_json::json!({"path": ""}),
+            serde_json::json!({"path": "https://evil.example.com"}),
+            serde_json::json!({"path": "//evil.example.com"}),
+            serde_json::json!({"path": "/agent", "sessionId": "sess-1"}),
+            serde_json::json!({"panel": "unknown-panel"}),
+        ] {
+            let res = warp::test::request()
+                .method("POST")
+                .path("/api/e2e-control/ui/navigate")
+                .remote_addr(LOOPBACK_PEER.parse().unwrap())
+                .header("host", LOOPBACK_HOST)
+                .header(E2E_CONTROL_HEADER, TOKEN)
+                .json(&bad_nav)
+                .reply(&chain)
+                .await;
+            assert_eq!(
+                res.status(),
+                400,
+                "navigate body {bad_nav} must be rejected with 400"
+            );
+        }
+
+        // Valid navigate body without a running Tauri app -> 503.
+        let res = warp::test::request()
+            .method("POST")
+            .path("/api/e2e-control/ui/navigate")
+            .remote_addr(LOOPBACK_PEER.parse().unwrap())
+            .header("host", LOOPBACK_HOST)
+            .header(E2E_CONTROL_HEADER, TOKEN)
+            .json(&serde_json::json!({"path": "/settings", "panel": "planning"}))
+            .reply(&chain)
+            .await;
+        assert_eq!(res.status(), 503);
+
+        // Invalid input bodies -> 400 (including undocumented `drag`, #2902 G1.2).
+        for bad_input in [
+            serde_json::json!({"action": "click"}),
+            serde_json::json!({"action": "click", "x": 10}),
+            serde_json::json!({"action": "drag", "x": 10, "y": 20}),
+            serde_json::json!({"action": "type"}),
+            serde_json::json!({"action": "key"}),
+            serde_json::json!({"action": "scroll", "x": 10, "y": 20}),
+            serde_json::json!({"action": "unknown"}),
+        ] {
+            let res = warp::test::request()
+                .method("POST")
+                .path("/api/e2e-control/ui/input")
+                .remote_addr(LOOPBACK_PEER.parse().unwrap())
+                .header("host", LOOPBACK_HOST)
+                .header(E2E_CONTROL_HEADER, TOKEN)
+                .json(&bad_input)
+                .reply(&chain)
+                .await;
+            assert_eq!(
+                res.status(),
+                400,
+                "input body {bad_input} must be rejected with 400"
+            );
+        }
+
+        // Valid input, elements, screenshot, and restart without a Tauri app -> 503.
+        let res = warp::test::request()
+            .method("POST")
+            .path("/api/e2e-control/ui/input")
+            .remote_addr(LOOPBACK_PEER.parse().unwrap())
+            .header("host", LOOPBACK_HOST)
+            .header(E2E_CONTROL_HEADER, TOKEN)
+            .json(&serde_json::json!({"action": "type", "text": "dummy-token-abcd"}))
+            .reply(&chain)
+            .await;
+        assert_eq!(res.status(), 503);
+
+        let res = warp::test::request()
+            .method("POST")
+            .path("/api/e2e-control/ui/elements")
+            .remote_addr(LOOPBACK_PEER.parse().unwrap())
+            .header("host", LOOPBACK_HOST)
+            .header(E2E_CONTROL_HEADER, TOKEN)
+            .json(&serde_json::json!({}))
+            .reply(&chain)
+            .await;
+        assert_eq!(res.status(), 503);
+
+        let res = warp::test::request()
+            .method("GET")
+            .path("/api/e2e-control/ui/screenshot")
+            .remote_addr(LOOPBACK_PEER.parse().unwrap())
+            .header("host", LOOPBACK_HOST)
+            .header(E2E_CONTROL_HEADER, TOKEN)
+            .reply(&chain)
+            .await;
+        assert_eq!(res.status(), 503);
+
+        let res = warp::test::request()
+            .method("POST")
+            .path("/api/e2e-control/ui/restart")
+            .remote_addr(LOOPBACK_PEER.parse().unwrap())
+            .header("host", LOOPBACK_HOST)
+            .header(E2E_CONTROL_HEADER, TOKEN)
+            .reply(&chain)
+            .await;
+        assert_eq!(res.status(), 503);
+    }
+
+    #[test]
+    fn ui_pure_helpers_enforce_pid_scoping_and_validation() {
+        // PID-only window selection: never matches another PID.
+        let windows = [(1, 100, false), (2, 200, true), (3, 200, false)];
+        assert_eq!(pick_own_window(&windows, 200), Some(3));
+        assert_eq!(pick_own_window(&windows, 999), None);
+
+        // Element center + viewport clamp keep coordinates inside the window.
+        let rect = ViewportRect {
+            x: 20,
+            y: 40,
+            width: 100,
+            height: 60,
+        };
+        assert_eq!(element_center((1000, 500), &rect), (1070, 570));
+        assert_eq!(
+            clamp_to_viewport((1000, 500), (800, 600), (50, 50)),
+            (1000, 500)
+        );
+        assert_eq!(
+            clamp_to_viewport((1000, 500), (800, 600), (9999, 9999)),
+            (1799, 1099)
+        );
+
+        // Window geometry read-back rejects errors and invalid scales/sizes.
+        assert_eq!(
+            window_viewport_geometry::<&str>(Ok((10, 20)), Ok((800, 600)), Ok(2.0)).unwrap(),
+            ((10, 20), (800, 600), 2.0)
+        );
+        assert!(window_viewport_geometry(Err("no pos"), Ok((800, 600)), Ok(1.0)).is_err());
+        assert!(window_viewport_geometry::<&str>(Ok((0, 0)), Ok((0, 600)), Ok(1.0)).is_err());
+        assert!(window_viewport_geometry::<&str>(Ok((0, 0)), Ok((800, 600)), Ok(-1.0)).is_err());
+
+        // Navigation planning.
+        assert_eq!(plan_navigate_path("/settings").unwrap(), "/settings");
+        assert_eq!(plan_panel_name(" Processes ").unwrap(), "processes");
+        assert_eq!(
+            plan_navigate(&NavigateBody {
+                path: None,
+                session_id: Some("sess-42".to_string()),
+                panel: Some("planning".to_string()),
+            })
+            .unwrap(),
+            NavigatePlan {
+                path: None,
+                session_ref: Some("sess-42".to_string()),
+                panel: Some("planning".to_string()),
+            }
+        );
+
+        // Input planning + desktop_args.
+        let plan = plan_input(&InputBody {
+            action: "hover".to_string(),
+            selector: None,
+            test_id: Some("header-status-badge-planning".to_string()),
+            x: None,
+            y: None,
+            text: None,
+            key: None,
+            modifiers: vec![],
+            scroll_amount: None,
+            axis: None,
+            button: None,
+        })
+        .unwrap();
+        assert_eq!(plan.action, "move");
+        assert_eq!(
+            plan.target,
+            InputTarget::Element {
+                selector: None,
+                test_id: Some("header-status-badge-planning".to_string()),
+            }
+        );
+        let args = desktop_args(&plan, Some((320, 240)));
+        assert_eq!(args["action"], "move");
+        assert_eq!(args["x"], 320);
+        assert_eq!(args["y"], 240);
+
+        // Wait conditions.
+        assert_eq!(
+            parse_wait_condition("dialog-open").unwrap(),
+            WaitCondition::DialogOpen
+        );
+        assert_eq!(
+            parse_wait_condition("prompt-pending").unwrap(),
+            WaitCondition::PromptPending
+        );
+        assert!(parse_wait_condition("invalid").is_err());
+
+        // Focus & z-order occlusion safety (#2902 G1.1).
+        let own_win = ZOrderedWindowFact {
+            id: 1,
+            pid: 200,
+            minimized: false,
+            x: 100,
+            y: 100,
+            width: 800,
+            height: 600,
+        };
+        let foreign_win = ZOrderedWindowFact {
+            id: 2,
+            pid: 999,
+            minimized: false,
+            x: 150,
+            y: 150,
+            width: 300,
+            height: 300,
+        };
+        assert!(
+            verify_window_input_safety(true, &[own_win, foreign_win], 200, Some((200, 200)))
+                .is_ok()
+        );
+        assert_eq!(
+            verify_window_input_safety(true, &[foreign_win, own_win], 200, Some((200, 200)))
+                .unwrap_err()
+                .0,
+            StatusCode::CONFLICT
+        );
+        assert_eq!(
+            verify_window_input_safety(false, &[own_win], 200, None)
+                .unwrap_err()
+                .0,
+            StatusCode::CONFLICT
+        );
     }
 }
 

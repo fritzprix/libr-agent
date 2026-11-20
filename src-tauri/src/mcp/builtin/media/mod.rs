@@ -1,9 +1,10 @@
 mod handlers;
 mod tools;
 
-// Re-export for browser screenshot and other crates that need temp media persistence
+// Re-export for browser screenshot, E2E window capture, and other modules
 // without reaching into the private `handlers` module.
 pub(crate) use handlers::persist_media_to_temp_file;
+pub use handlers::{encode_png_base64, encode_rgba_png};
 
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{BuiltinServerMetadata, MCPResult, ServiceContext};
