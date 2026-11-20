@@ -1,20 +1,35 @@
-"""Independent graders for Session API E2E Harbor tasks."""
+"""Trajectory helpers for the B-11 verifier.
+
+Slim on purpose: only what ``test_outputs.py`` here needs. The fuller
+verifier library lives in the dataset-level ``shared/`` helpers and is not
+duplicated in this task.
+
+B-11 checks *tool calls and their observations*, not a lowercased blob of
+the whole trajectory: the instruction itself names ``workspace__runShell``
+and the agent may quote it while explaining the fallback, which blob
+matching miscounts (see issue #2655).
+"""
 
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
-EVIDENCE = Path("/logs/agent/session_e2e_evidence.json")
 TRAJECTORY = Path("/logs/agent/trajectory.json")
-WORKSPACE = Path("/app")
 
+#: The forbidden synchronous bash tool (any builtin-server prefix allowed).
+RUN_SHELL_SUFFIX = "runshell"
 
-def load_evidence() -> dict:
-    if not EVIDENCE.is_file():
-        return {}
-    return json.loads(EVIDENCE.read_text(encoding="utf-8"))
+#: Interactive shell submit must not exist at all (regression guard).
+INTERACTIVE_SUBMIT_SUFFIX = "submitinteractiveshellinput"
+
+#: The Windows tool profile the task expects the agent to fall back to.
+POWERSHELL_SUFFIXES = frozenset(
+    {
+        "runpowershell",
+        "runinpersistentpowershell",
+    }
+)
 
 
 def load_trajectory() -> dict:
@@ -23,94 +38,83 @@ def load_trajectory() -> dict:
     return json.loads(TRAJECTORY.read_text(encoding="utf-8"))
 
 
-def injected_values(evidence: dict) -> list[str]:
-    """Exact values the harness recorded as answers it injected (``injectedValue``).
-
-    The host harness reads ``LIBRAGENT_E2E_SYNTHETIC_SECRET`` and records the
-    value it sent in ``session_e2e_evidence.json``; this verifier container
-    cannot see that env var, so the evidence record — not an env guess — is
-    what keeps leak checks non-vacuous when CI sets a different secret
-    (gatekeeper G3.1).
-    """
-    return [
-        str(action["injectedValue"])
-        for action in evidence.get("resolvedInteractions") or []
-        if action.get("injectedValue")
-    ]
-
-
-def tool_result_texts(messages: list[dict]) -> list[str]:
-    texts: list[str] = []
-    for msg in messages:
-        for block in msg.get("content") or []:
-            if not isinstance(block, dict):
-                continue
-            if block.get("type") == "tool_result":
-                text = block.get("text") or ""
-                if isinstance(text, str):
-                    texts.append(text)
-    return texts
-
-
 def trajectory_steps(trajectory: dict) -> list[dict]:
     return list(trajectory.get("steps") or [])
 
 
-def observation_result_texts(steps: list[dict]) -> list[str]:
-    """Text of every tool result, from the ATIF ``observation`` blocks.
+def tool_calls(steps: list[dict]) -> list[dict]:
+    """Every declared tool call, from ``step["tool_calls"]``."""
+    calls: list[dict] = []
+    for step in steps:
+        for call in step.get("tool_calls") or []:
+            if isinstance(call, dict):
+                calls.append(call)
+    return calls
 
-    The exported trajectory stores tool results as
-    ``step["observation"]["results"][i]["content"]`` (a plain string), not on
-    the tool call itself — reading the latter silently yields nothing.
+
+def call_function_name(call: dict) -> str:
+    return str(call.get("function_name") or "")
+
+
+def call_matches(call: dict, suffixes: frozenset[str] | str) -> bool:
+    name = call_function_name(call).lower()
+    if isinstance(suffixes, str):
+        suffixes = frozenset({suffixes})
+    return any(name.endswith(suffix) for suffix in suffixes)
+
+
+def observation_results_by_call_id(steps: list[dict]) -> dict[str, dict]:
+    """Map ``tool_call_id`` -> first observation result object.
+
+    Tool results live in ``step["observation"]["results"][i]`` with
+    ``source_call_id`` pointing back at the declaring tool call — not on
+    the call itself.
     """
-    texts: list[str] = []
+    by_id: dict[str, dict] = {}
     for step in steps:
         observation = step.get("observation") or {}
         for result in observation.get("results") or []:
-            content = result.get("content")
-            if isinstance(content, str) and content:
-                texts.append(content)
-            elif isinstance(content, list):
-                for item in content:
-                    if isinstance(item, dict) and item.get("text"):
-                        texts.append(str(item["text"]))
-    return texts
-
-
-def assert_no_synthetic_literal_in_transcript(
-    blob: str, *, literal: str, allow_name: str
-) -> None:
-    """Fail if the synthetic secret literal appears; variable names are allowed."""
-    if not literal:
-        return
-    if literal in blob:
-        raise AssertionError("synthetic secret literal leaked in transcript")
-    if allow_name and allow_name in blob:
-        return
-
-
-def extract_run_powershell_results(steps: list[dict]) -> list[str]:
-    outputs: list[str] = []
-    pattern = re.compile(r"runPowerShell|runInPersistentPowerShell", re.I)
-    for step in steps:
-        for call in step.get("tool_calls") or []:
-            name = str(call.get("name") or call.get("tool_name") or "")
-            if not pattern.search(name):
+            if not isinstance(result, dict):
                 continue
-            result = call.get("result") or {}
-            content = result.get("content") if isinstance(result, dict) else None
-            if isinstance(content, list):
-                for item in content:
-                    if isinstance(item, dict) and item.get("text"):
-                        outputs.append(str(item["text"]))
-    return outputs
+            call_id = result.get("source_call_id")
+            if isinstance(call_id, str) and call_id and call_id not in by_id:
+                by_id[call_id] = result
+    return by_id
 
 
-def require_session_evidence() -> None:
-    """Baseline contract: a passing trial must have evidence with a sessionId.
+def result_content_text(result: dict) -> str:
+    content = result.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict) and item.get("text"):
+                parts.append(str(item["text"]))
+        return "\n".join(parts)
+    return ""
 
-    (Formerly ``negative_control_stale_execution_must_fail``, which
-    overstated what this checks: no stale id is involved — it only proves the
-    verifier rejects a run that produced no session evidence at all.)
+
+def result_succeeded(result: dict) -> bool:
+    """True unless the trajectory marks the result as a tool error.
+
+    The harbor adapter writes ``extra.tool_error`` (bool) per observation
+    result; when that field is absent (e.g. a Rust-side export without it),
+    fall back to the same content heuristics the adapter uses. A call with
+    no observation at all is unresolved, never "successful".
     """
-    assert load_evidence().get("sessionId"), "missing sessionId in E2E evidence"
+    extra = result.get("extra")
+    if isinstance(extra, dict) and isinstance(extra.get("tool_error"), bool):
+        return not extra["tool_error"]
+    text = result_content_text(result).lstrip()
+    if text.startswith(("✗", "❌")):
+        return False
+    lowered = text.lower()
+    return not (
+        lowered.startswith("command failed")
+        or lowered.startswith("file operation failed")
+        or lowered.startswith("error:")
+        or "failed with exit code" in lowered
+    )

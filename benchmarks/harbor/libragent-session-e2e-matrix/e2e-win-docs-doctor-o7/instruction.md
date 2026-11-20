@@ -1,7 +1,8 @@
-This task verifies 2565 O-7 on Windows: the `docs` skill doctor runs cleanly without an NTFS junction loop and reports `Doctor: OK`.
+This task verifies 2565 O-7 on Windows: the `docs` skill's documented Windows doctor script runs cleanly without an NTFS junction loop and reports `Doctor: OK`.
 
-Step 1 — Load the `docs` skill (`getSkillContent` for `"docs"`) to locate its `scripts/convert.py` path.
+Step 1 — Load the `docs` skill (`getSkillContent` for `"docs"`) to locate its `<skill-base-dir>`.
 
-Step 2 — Run the `docs` skill doctor (`python <skill-base-dir>/scripts/convert.py --doctor`) using a PowerShell workspace tool, capturing stdout and stderr into `o7_doctor_output.txt` in the workspace.
+Step 2 — Using a PowerShell workspace tool (`workspace__runPowerShell` or `workspace__runInPersistentPowerShell`), run the documented Windows doctor command:
+`powershell -NoProfile -ExecutionPolicy Bypass -File "<skill-base-dir>/scripts/doctor.ps1"`
 
-Step 3 — Stop once `o7_doctor_output.txt` is written.
+Step 3 — Once the command completes and prints `Doctor: OK`, stop.
