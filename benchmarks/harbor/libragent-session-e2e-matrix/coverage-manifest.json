@@ -38,7 +38,7 @@
     {
       "id": "P-6",
       "status": "implemented-partial",
-      "reason": "Harbor e2e-askuser-terminate-while-waiting: child session waiting on ui__askUser is terminated via POST /api/sessions/:id/terminate, pendingUserPrompt is verified cleared, and parent completes cleanly; Windows persistent-shell process half (2565 P-6, #2905) covered by e2e-win-shell-terminate-p6 with check_persistent_shell_after_terminate (shell alive while the prompt waits, force-killed by session terminate, same PID gone and still gone after settle; the no-replacement guarantee is owned by the backend unit test force_kills_persistent_shell_without_leaving_manager_entry); #2731 ledger retag awaits a passing unattended run (SESSION_E2E secrets)",
+      "reason": "Harbor e2e-askuser-terminate-while-waiting: child session waiting on ui__askUser is terminated via POST /api/sessions/:id/terminate, pendingUserPrompt is verified cleared, and parent completes cleanly; Windows persistent-shell process half (2565 P-6, #2905) covered by e2e-win-shell-terminate-p6 with check_persistent_shell_after_terminate (shell alive while the prompt waits, force-killed by session terminate, same PID gone and still gone after settle; the no-replacement guarantee is owned by the backend unit test force_kills_persistent_shell_without_leaving_manager_entry); #2731 ledger retag awaits a passing local unattended run on an isolated debug profile (#2936)",
       "harbor_task": "e2e-askuser-terminate-while-waiting"
     },
     {
@@ -410,7 +410,7 @@
     {
       "id": "E-2",
       "status": "implemented-partial",
-      "reason": "Release binaries cannot serve /api/e2e-control/*: module, token init, and both route-merge sites are #[cfg(debug_assertions)]-gated; pinned by e2e_control_stays_compile_time_gated (source-grep pin) plus the runtime 404-without-capability test. Full evidence would need a cargo build --release + 404 check in CI. (2672 E-2)",
+      "reason": "Release binaries cannot serve /api/e2e-control/*: module, token init, and both route-merge sites are #[cfg(debug_assertions)]-gated; pinned by e2e_control_stays_compile_time_gated (source-grep pin) plus the runtime 404-without-capability test. Full evidence comes from a local release build 404 check against an isolated profile. (2672 E-2)",
       "harbor_task": null
     },
     {
@@ -506,7 +506,7 @@
     {
       "id": "2672-D-4",
       "status": "platform-specific",
-      "reason": "Skipped on GitHub-hosted windows-latest CI (#2905): windows-latest lacks a Linux Docker daemon for session containers (\\?\\ prefix stripping is unit-tested in Rust; live docker run requires Docker Desktop on a self-hosted Windows runner)",
+      "reason": "Requires a local Windows host with Docker Desktop running Linux containers (#2905): \\?\\ prefix stripping is unit-tested in Rust, while live docker run is verified locally on a Windows machine with Docker Desktop",
       "harbor_task": null
     },
     {
