@@ -10,7 +10,7 @@ use crate::headless::ephemeral_db::{
 use crate::headless::inspect::emit_startup_error;
 use crate::headless::runner::spawn_interrupt_watcher;
 use crate::headless::runtime::{
-    cleanup_headless_run, remove_temp_dir_with_retry, EphemeralHeadlessRuntime,
+    cleanup_headless_run, remove_temp_dir_with_retry_async, EphemeralHeadlessRuntime,
 };
 use crate::models::chat::{Message, MessageSource};
 use std::sync::Arc;
@@ -138,7 +138,10 @@ pub fn run_headless_with_hidden_webview(args: HeadlessArgs) -> i32 {
     // processes still held open during the first pass (mostly Windows).
     app.run_return(|_app_handle, _event| {});
 
-    remove_temp_dir_with_retry(&temp_dir_path);
+    // Same retry as the async teardown paths (gatekeeper G1.1): the runtime
+    // is a global (not owned by the just-exited event loop), so `block_on`
+    // here drives the yielding retry for handles the WebView released late.
+    tauri::async_runtime::block_on(remove_temp_dir_with_retry_async(&temp_dir_path));
 
     let code = *exit_code_holder.lock().unwrap();
     std::process::exit(code);

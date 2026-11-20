@@ -374,23 +374,67 @@ impl EphemeralHeadlessRuntime {
     }
 }
 
-/// Remove `path` recursively with a bounded retry, reporting the final
-/// failure on `stderr` instead of swallowing it.
+/// Describe a failed ephemeral-dir removal, naming the surviving entries so
+/// the log identifies the handle holder (#2919 requirement 3): SQLite shows
+/// up as `*.db`, `*.db-wal`, `*.db-shm`; the WebView as `webview-cache` /
+/// `EBWebView`.
+fn removal_failure_message(path: &Path, err: &std::io::Error) -> String {
+    let survivors = surviving_entries(path);
+    // The SQLite hint only helps when a database file actually survived
+    // (gatekeeper S1.2); a WebView-only leftover gets no misleading advice.
+    let hint = if survivors.iter().any(|name| name.contains(".db")) {
+        " (SQLite handles show up as *.db/*.db-wal/*.db-shm, the WebView as webview-cache)"
+    } else {
+        ""
+    };
+    format!(
+        "warning: failed to remove ephemeral headless directory {path:?}: {err}; \
+         surviving entries: {survivors:?}{hint}"
+    )
+}
+
+/// Entries still under `path` (up to two levels deep, so a database in a
+/// subdirectory is named as `<subdir>/<name>.db-wal` itself) after a failed
+/// removal (empty if the directory is gone or unreadable).
+fn surviving_entries(path: &Path) -> Vec<String> {
+    walkdir::WalkDir::new(path)
+        .min_depth(1)
+        .max_depth(2)
+        .into_iter()
+        .filter_map(|entry| entry.ok())
+        .filter_map(|entry| {
+            entry
+                .path()
+                .strip_prefix(path)
+                .ok()
+                .map(|rel| rel.to_string_lossy().into_owned())
+        })
+        .collect()
+}
+
+const REMOVAL_RETRY_ATTEMPTS: u32 = 40;
+const REMOVAL_RETRY_INTERVAL: Duration = Duration::from_millis(50);
+
+/// Remove `path` recursively, yielding to the async runtime between attempts.
 ///
-/// Used by every headless teardown path because SQLite and WebView file
-/// handles are released asynchronously after close: a single best-effort
-/// delete races with handle release and leaves the directory behind on
-/// Windows (Linux silently unlinks open files and never notices).
-pub(super) fn remove_temp_dir_with_retry(path: &Path) {
-    for attempt in 0..40u32 {
+/// The SQLite pool close in `cleanup_headless_run`
+/// only marks the pool closed; each connection's driver task drops the file
+/// handle when it next gets polled. A blocking `std::thread::sleep` on the
+/// runtime thread (which is what the old retry did) starves exactly those
+/// tasks, so every attempt raced the still-open handle and the ephemeral
+/// directory survived the whole window on Windows (#2919). An async sleep
+/// lets the releasing tasks run, so the directory becomes removable within
+/// the first few attempts.
+pub(super) async fn remove_temp_dir_with_retry_async(path: &Path) {
+    for attempt in 0..REMOVAL_RETRY_ATTEMPTS {
         match std::fs::remove_dir_all(path) {
             Ok(()) => break,
             Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => break,
-            Err(_) if attempt < 39 => {
-                std::thread::sleep(Duration::from_millis(50));
+            Err(_) if attempt + 1 < REMOVAL_RETRY_ATTEMPTS => {
+                tokio::time::sleep(REMOVAL_RETRY_INTERVAL).await;
             }
             Err(err) => {
-                eprintln!("warning: failed to remove ephemeral headless directory {path:?}: {err}");
+                eprintln!("{}", removal_failure_message(path, &err));
             }
         }
     }
@@ -418,6 +462,146 @@ pub async fn cleanup_headless_run(
     // Remove the temp dir explicitly instead of relying on the implicit
     // `TempDir` drop so the retry above runs while the caller can still
     // report the outcome; the later `TempDir::drop` sees `NotFound` and
-    // treats it as success.
-    remove_temp_dir_with_retry(temp_dir.path());
+    // treats it as success. The async retry yields between attempts so the
+    // SQLite driver tasks can actually finish releasing their handles
+    // (#2919).
+    remove_temp_dir_with_retry_async(temp_dir.path()).await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn surviving_entries_names_the_files_and_the_failure_message_carries_them() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("sessions.db-wal"), b"held").unwrap();
+        std::fs::create_dir_all(dir.path().join("webview-cache")).unwrap();
+        // A database below a subdirectory must be named itself, not just the
+        // directory (gatekeeper S1.1).
+        std::fs::create_dir_all(dir.path().join("nested")).unwrap();
+        std::fs::write(dir.path().join("nested").join("headless.db"), b"held").unwrap();
+
+        let mut entries = surviving_entries(dir.path());
+        entries.sort();
+        let separator = std::path::MAIN_SEPARATOR;
+        assert_eq!(
+            entries,
+            vec![
+                "nested".to_string(),
+                format!("nested{separator}headless.db"),
+                "sessions.db-wal".to_string(),
+                "webview-cache".to_string(),
+            ]
+        );
+
+        let err = std::io::Error::from(std::io::ErrorKind::Other);
+        let message = removal_failure_message(dir.path(), &err);
+        assert!(
+            message.contains("sessions.db-wal"),
+            "message names the holder: {message}"
+        );
+        assert!(
+            message.contains("webview-cache"),
+            "message names the holder: {message}"
+        );
+        assert!(
+            message.contains("headless.db"),
+            "message names nested holders: {message}"
+        );
+        assert!(
+            message.contains("SQLite handles"),
+            "db survivors carry the SQLite hint: {message}"
+        );
+
+        let missing = dir.path().join("nope");
+        assert!(surviving_entries(&missing).is_empty());
+    }
+
+    #[test]
+    fn removal_failure_message_skips_sqlite_hint_without_db_survivors() {
+        // Gatekeeper S1.2: a WebView-only leftover must not get SQLite advice.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("EBWebView")).unwrap();
+
+        let err = std::io::Error::from(std::io::ErrorKind::Other);
+        let message = removal_failure_message(dir.path(), &err);
+        assert!(message.contains("EBWebView"), "names the holder: {message}");
+        assert!(
+            !message.contains("SQLite handles"),
+            "no misleading SQLite hint: {message}"
+        );
+    }
+
+    /// Gatekeeper G1.2: regression through the real `cleanup_headless_run`
+    /// with a real SeaORM SQLite pool in the temp dir, on a current-thread
+    /// runtime — the same shape as the production teardown. `db.close()`
+    /// only marks the pool closed; the connections' driver tasks drop the
+    /// file handles when the runtime next polls them. A blocking sleep in
+    /// the retry starved exactly those tasks on Windows, where deletion
+    /// fails while any handle is open, and the directory survived the whole
+    /// 2 s window (#2919). Windows-only because Linux unlinks open files
+    /// silently, so the assertion is only meaningful where the flake lived.
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn cleanup_headless_run_removes_temp_dir_with_real_sqlite_pool() {
+        use sea_orm::EntityTrait;
+
+        let temp_dir = TempDir::new().unwrap();
+        let db = init_ephemeral_database(&temp_dir.path().join("headless.db"))
+            .await
+            .unwrap();
+        // Force a real query so the pool has an established connection whose
+        // driver task holds the database file handles.
+        let _ = crate::entity::session::Entity::find()
+            .one(&db)
+            .await
+            .unwrap();
+
+        let session_repo: Arc<dyn SessionRepository> =
+            Arc::new(SqliteSessionRepository::new(db.clone()));
+        let active_sessions: Arc<RwLock<HashMap<String, AgentSession>>> =
+            Arc::new(RwLock::new(HashMap::new()));
+
+        cleanup_headless_run(
+            "cleanup-sqlite-pool-test",
+            &session_repo,
+            &active_sessions,
+            &db,
+            &temp_dir,
+        )
+        .await;
+
+        assert!(
+            !temp_dir.path().exists(),
+            "temp dir must be gone after cleanup; survivors: {:?}",
+            surviving_entries(temp_dir.path())
+        );
+    }
+
+    /// Regression test for #2919: the retry must yield to the runtime between
+    /// attempts. A concurrent task removes the blocking file 150 ms in; the
+    /// old blocking `std::thread::sleep` retry starved that task on a
+    /// current-thread runtime and the directory survived the whole window.
+    #[tokio::test]
+    async fn async_retry_yields_so_a_concurrent_releaser_can_finish() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path().to_path_buf();
+        let blocker = dir_path.join("sessions.db-wal");
+        std::fs::write(&blocker, b"held").unwrap();
+
+        let blocker_for_task = blocker.clone();
+        let releaser = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(150)).await;
+            let _ = std::fs::remove_file(&blocker_for_task);
+        });
+
+        remove_temp_dir_with_retry_async(&dir_path).await;
+        releaser.await.unwrap();
+
+        assert!(
+            !dir_path.exists(),
+            "async retry must yield so the concurrent releaser can run (#2919)"
+        );
+    }
 }
