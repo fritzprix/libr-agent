@@ -65,7 +65,7 @@ loopback, token-guarded S1/S3 HTTP routes for interaction polling and prompt
 and approval resolution behave the same on Windows — they are plain HTTP
 against the same debug binary. The file-picker injection and in-place restart
 routes land with #2903 (PR #2916) and are not part of this change. Only the S3
-*window* size/visibility helper is Linux-side (X11); it has no Windows
+_window_ size/visibility helper is Linux-side (X11); it has no Windows
 equivalent in the manager.
 
 For interactive debugging the manual host-mode path still works: start a
@@ -159,6 +159,34 @@ task spec sets `resume_circuit_break = true` (the default).
 A task may pin its own session mode with `execution_mode` under
 `[metadata.libragent_session_e2e]`; otherwise it inherits
 `LIBRAGENT_EXECUTION_MODE` (unchanged behaviour for existing tasks).
+
+## Control-plane & restart tasks (#2903)
+
+- `e2e-picker-control-plane` — #2903 AC1: probes `POST /api/e2e-control/picker`
+  with both a path override and `cancel: true` on the live isolated debug
+  instance (`probe_picker_control = true`).
+- `e2e-askuser-reload-submit` — 2565 P-5 & X-5: holds a waiting `ui__askUser`
+  prompt across a session metadata refetch/re-poll
+  (`re_poll_prompt_before_answer = true`), then delivers a structured JSON
+  answer and confirms the turn continues.
+- `e2e-askuser-restart-orphan` — 2565 P-8 & 2672 A-4: restarts the isolated
+  instance in place while `ui__askUser` is waiting
+  (`restart_while_prompt_waiting = true`) and verifies post-restart
+  `/api/sessions/:id/messages` contains
+  `User did not answer (app restarted).`.
+- `e2e-mcp-keychain-unavailable-restart` — 2672 M-5: runs with
+  `mock_keychain_mode = "unavailable"`, restarts the instance in place, and
+  verifies the MCP server row persists with non-empty `encrypted_secrets`
+  fallback and zero literal leaks.
+- `e2e-mcp-secret-readback-restart` — 2672 R-4: registers a `{{secret:NAME}}`
+  MCP server with `mock_keychain_mode = "succeed"`, restarts in place, and
+  verifies the masked config and `secret_names` survive with zero literal leaks.
+- `e2e-persistent-shell-reload-cwd` — 2685 P-4: changes persistent shell
+  working directory, triggers shell reload via `storeAs`, and verifies `pwd`
+  preserves the earlier directory.
+- `e2e-settings-persist-restart` — 2565 O-1 (restart half): restarts the
+  isolated instance in place and verifies `/api/settings/preferredModel` and the
+  `settings` table survive restart (visual restart badge/toast stays on S2).
 
 ## Coverage manifest
 

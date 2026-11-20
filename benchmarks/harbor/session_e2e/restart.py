@@ -46,6 +46,8 @@ async def restart_and_snapshot(
     api_url: str,
     http_probes: tuple[dict[str, str], ...] = (),
     sql_probes: tuple[dict[str, str], ...] = (),
+    pre_restart_http_puts: tuple[dict[str, Any], ...] = (),
+    session_id: str | None = None,
     timeout_sec: float = 120.0,
 ) -> dict[str, Any]:
     """Restart the bench instance in place and record a post-restart snapshot.
@@ -60,9 +62,39 @@ async def restart_and_snapshot(
         "restartExecuted": False,
         "dataDir": str(layout.data_dir.resolve()),
         "probedAt": datetime.now(timezone.utc).isoformat(),
+        "preRestart": [],
         "http": [],
         "sql": [],
     }
+    if pre_restart_http_puts:
+        pre_headers = auth_headers(layout)
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            for put_spec in pre_restart_http_puts:
+                raw_path = put_spec["path"]
+                entry: dict[str, Any] = {"name": put_spec["name"], "path": raw_path}
+                if "{session_id}" in raw_path and not session_id:
+                    entry["error"] = "probe path requires session_id, but session_id was not provided"
+                    record["preRestart"].append(entry)
+                    continue
+                resolved_path = (
+                    raw_path.replace("{session_id}", session_id)
+                    if session_id
+                    else raw_path
+                )
+                entry["path"] = resolved_path
+                try:
+                    res = await client.put(
+                        f"{api_url.rstrip('/')}{resolved_path}",
+                        headers=pre_headers,
+                        json=put_spec["body"],
+                    )
+                    entry["status"] = res.status_code
+                    with contextlib.suppress(ValueError):
+                        entry["json"] = res.json()
+                except (httpx.HTTPError, OSError) as error:
+                    entry["error"] = f"{type(error).__name__}: {error}"
+                record["preRestart"].append(entry)
+
     try:
         pid = restart(layout, app_bin, timeout_sec=timeout_sec)
     except (InstanceError, OSError, TimeoutError) as error:
@@ -75,9 +107,24 @@ async def restart_and_snapshot(
     headers = auth_headers(layout)
     async with httpx.AsyncClient(timeout=30.0) as client:
         for probe in http_probes:
-            entry: dict[str, Any] = {"name": probe["name"], "path": probe["path"]}
+            raw_path = probe["path"]
+            if "{session_id}" in raw_path and not session_id:
+                record["http"].append(
+                    {
+                        "name": probe["name"],
+                        "path": raw_path,
+                        "error": "probe path requires session_id, but session_id was not provided",
+                    }
+                )
+                continue
+            resolved_path = (
+                raw_path.replace("{session_id}", session_id)
+                if session_id
+                else raw_path
+            )
+            entry: dict[str, Any] = {"name": probe["name"], "path": resolved_path}
             try:
-                res = await client.get(f"{api_url.rstrip('/')}{probe['path']}", headers=headers)
+                res = await client.get(f"{api_url.rstrip('/')}{resolved_path}", headers=headers)
                 entry["status"] = res.status_code
                 with contextlib.suppress(ValueError):
                     entry["json"] = res.json()

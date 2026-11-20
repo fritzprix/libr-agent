@@ -205,8 +205,21 @@ mod tests {
     // Picker override route (#2903).
     // ------------------------------------------------------------------
 
+    /// `e2e_picker::OVERRIDE` is a process-wide singleton, so every test in
+    /// this file that arms or takes through the picker routes must hold this
+    /// lock for its whole arm→take sequence; cargo runs `#[tokio::test]`s in
+    /// parallel within one binary (#2929 G2.1).
+    static PICKER_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn lock_picker_store() -> std::sync::MutexGuard<'static, ()> {
+        PICKER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     #[tokio::test]
     async fn picker_route_requires_the_full_guard_chain() {
+        let _store = lock_picker_store();
         // No capability → 403 through the production chain.
         let res = warp::test::request()
             .method("POST")
@@ -245,7 +258,9 @@ mod tests {
 
     #[tokio::test]
     async fn picker_route_arms_override_and_rejects_empty_body() {
-        // Drain anything a concurrent test left behind; we assert on ours below.
+        let _store = lock_picker_store();
+        // Drain anything a test from an earlier run or another thread left
+        // behind; we hold the lock, so nothing can arm until we are done.
         let _ = tauri_mcp_agent_lib::e2e_picker::take_picker_override();
 
         let res = warp::test::request()
@@ -623,6 +638,91 @@ mod tests {
             .reply(&production_chain())
             .await;
         assert_eq!(res.status(), 403);
+    }
+
+    #[tokio::test]
+    async fn picker_arm_and_take_consumes_path_and_cancel_once() {
+        let _store = lock_picker_store();
+        // Drain anything a test from an earlier run or another thread left
+        // behind; we hold the lock, so nothing can arm until we are done.
+        let _ = tauri_mcp_agent_lib::e2e_picker::take_picker_override();
+        let chain = production_chain();
+
+        // Missing token on /picker/take is rejected.
+        let unauth = warp::test::request()
+            .method("POST")
+            .path("/api/e2e-control/picker/take")
+            .remote_addr(LOOPBACK_PEER.parse().unwrap())
+            .header("host", LOOPBACK_HOST)
+            .reply(&chain)
+            .await;
+        assert_eq!(unauth.status(), 403);
+
+        // Arm path -> consume -> returns path; second consume is null.
+        let arm_path = warp::test::request()
+            .method("POST")
+            .path("/api/e2e-control/picker")
+            .remote_addr(LOOPBACK_PEER.parse().unwrap())
+            .header("host", LOOPBACK_HOST)
+            .header(E2E_CONTROL_HEADER, TOKEN)
+            .json(&serde_json::json!({ "path": "/tmp/e2e-picker-probe.txt" }))
+            .reply(&chain)
+            .await;
+        assert_eq!(arm_path.status(), 200);
+
+        let take_path = warp::test::request()
+            .method("POST")
+            .path("/api/e2e-control/picker/take")
+            .remote_addr(LOOPBACK_PEER.parse().unwrap())
+            .header("host", LOOPBACK_HOST)
+            .header(E2E_CONTROL_HEADER, TOKEN)
+            .reply(&chain)
+            .await;
+        assert_eq!(take_path.status(), 200);
+        let body: serde_json::Value = serde_json::from_slice(take_path.body()).unwrap();
+        assert_eq!(
+            body,
+            serde_json::json!({ "override": { "action": "path", "path": "/tmp/e2e-picker-probe.txt" } })
+        );
+
+        // Arm cancel -> consume -> returns cancel; next consume is null.
+        let arm_cancel = warp::test::request()
+            .method("POST")
+            .path("/api/e2e-control/picker")
+            .remote_addr(LOOPBACK_PEER.parse().unwrap())
+            .header("host", LOOPBACK_HOST)
+            .header(E2E_CONTROL_HEADER, TOKEN)
+            .json(&serde_json::json!({ "cancel": true }))
+            .reply(&chain)
+            .await;
+        assert_eq!(arm_cancel.status(), 200);
+
+        let take_cancel = warp::test::request()
+            .method("POST")
+            .path("/api/e2e-control/picker/take")
+            .remote_addr(LOOPBACK_PEER.parse().unwrap())
+            .header("host", LOOPBACK_HOST)
+            .header(E2E_CONTROL_HEADER, TOKEN)
+            .reply(&chain)
+            .await;
+        assert_eq!(take_cancel.status(), 200);
+        let body: serde_json::Value = serde_json::from_slice(take_cancel.body()).unwrap();
+        assert_eq!(
+            body,
+            serde_json::json!({ "override": { "action": "cancel" } })
+        );
+
+        let take_empty = warp::test::request()
+            .method("POST")
+            .path("/api/e2e-control/picker/take")
+            .remote_addr(LOOPBACK_PEER.parse().unwrap())
+            .header("host", LOOPBACK_HOST)
+            .header(E2E_CONTROL_HEADER, TOKEN)
+            .reply(&chain)
+            .await;
+        assert_eq!(take_empty.status(), 200);
+        let body: serde_json::Value = serde_json::from_slice(take_empty.body()).unwrap();
+        assert_eq!(body, serde_json::json!({ "override": null }));
     }
 }
 

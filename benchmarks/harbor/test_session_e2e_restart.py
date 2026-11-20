@@ -195,3 +195,111 @@ def test_write_restart_evidence_lands_next_to_the_other_evidence(tmp_path: Path)
     assert path.name == "session_e2e_restart_evidence.json"
     assert path.parent == logs
     assert json.loads(path.read_text(encoding="utf-8")) == {"restartExecuted": True}
+
+
+@pytest.mark.asyncio
+async def test_restart_snapshot_substitutes_session_id_in_http_probes(
+    tmp_path: Path, monkeypatch, patched_restart
+) -> None:
+    layout = _layout_with_db(tmp_path)
+    layout.api_key_file.write_text("libr_key_post_restart\n", encoding="utf-8")
+    behavior = {
+        "/sessions/sess-42/messages": (200, {"messages": [{"role": "tool", "content": []}]}),
+    }
+    monkeypatch.setattr(
+        restart_mod.httpx,
+        "AsyncClient",
+        lambda **kw: _FakeClient(behavior, patched_restart["calls"]),
+    )
+
+    record = await restart_and_snapshot(
+        layout,
+        tmp_path / "appbin",
+        api_url="http://127.0.0.1:3031/api",
+        http_probes=({"name": "messages", "path": "/sessions/{session_id}/messages"},),
+        session_id="sess-42",
+    )
+
+    assert record["restartExecuted"] is True
+    assert record["http"][0]["path"] == "/sessions/sess-42/messages"
+    assert record["http"][0]["status"] == 200
+    assert record["http"][0]["json"]["messages"][0]["role"] == "tool"
+
+
+@pytest.mark.asyncio
+async def test_restart_snapshot_records_error_for_unresolved_session_id(
+    tmp_path: Path, monkeypatch, patched_restart
+) -> None:
+    layout = _layout_with_db(tmp_path)
+    layout.api_key_file.write_text("libr_key_post_restart\n", encoding="utf-8")
+    monkeypatch.setattr(
+        restart_mod.httpx,
+        "AsyncClient",
+        lambda **kw: _FakeClient({}, patched_restart["calls"]),
+    )
+
+    record = await restart_and_snapshot(
+        layout,
+        tmp_path / "appbin",
+        api_url="http://127.0.0.1:3031/api",
+        http_probes=({"name": "messages", "path": "/sessions/{session_id}/messages"},),
+        session_id=None,
+    )
+
+    assert record["restartExecuted"] is True
+    assert "session_id" in record["http"][0]["error"]
+    assert patched_restart["calls"] == []
+
+
+@pytest.mark.asyncio
+async def test_restart_snapshot_executes_pre_restart_puts_before_restart(
+    tmp_path: Path, monkeypatch, patched_restart
+) -> None:
+    layout = _layout_with_db(tmp_path)
+    layout.api_key_file.write_text("libr_key_pre\n", encoding="utf-8")
+    events: list[str] = []
+
+    class _PutGetClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def put(self, url: str, headers: dict[str, str] | None = None, json: Any = None):
+            events.append(f"put:{url}")
+            return _FakeResponse(200, json)
+
+        async def get(self, url: str, headers: dict[str, str] | None = None):
+            events.append(f"get:{url}")
+            return _FakeResponse(200, {"low": {"model": "sentinel", "provider": "openai"}})
+
+    def tracking_restart(layout: InstanceLayout, app_bin: Path, *, timeout_sec: float) -> int:
+        events.append("restart")
+        layout.api_key_file.write_text("libr_key_post\n", encoding="utf-8")
+        return 7777
+
+    monkeypatch.setattr(restart_mod, "restart", tracking_restart)
+    monkeypatch.setattr(restart_mod.httpx, "AsyncClient", lambda **kw: _PutGetClient())
+
+    record = await restart_and_snapshot(
+        layout,
+        tmp_path / "appbin",
+        api_url="http://127.0.0.1:3031/api",
+        pre_restart_http_puts=(
+            {
+                "name": "write_mapping",
+                "path": "/settings/complexityModelMapping",
+                "body": {"low": {"model": "sentinel", "provider": "openai"}},
+            },
+        ),
+        http_probes=({"name": "read_mapping", "path": "/settings/complexityModelMapping"},),
+    )
+
+    assert events == [
+        "put:http://127.0.0.1:3031/api/settings/complexityModelMapping",
+        "restart",
+        "get:http://127.0.0.1:3031/api/settings/complexityModelMapping",
+    ]
+    assert record["preRestart"][0]["status"] == 200
+    assert record["http"][0]["json"]["low"]["model"] == "sentinel"

@@ -738,3 +738,121 @@ def test_poll_interval_matches_documented_default():
     # The contract documents 3.0 s as the default poll interval; the bench
     # poller must keep using exactly that constant.
     assert DEFAULT_POLL_INTERVAL_SEC == 3.0
+
+
+@pytest.mark.asyncio
+async def test_re_poll_prompt_before_answer_defers_first_poll_then_answers(tmp_path, monkeypatch):
+    """2565 P-5 / X-5: first poll records userPromptObserved + refetches session
+    without answering; second poll answers and sets survivedRepoll=True."""
+    from benchmarks.harbor.session_e2e.automation import SessionE2eAutomationSpec
+
+    data_dir = _instance_data_dir(tmp_path, monkeypatch)
+
+    class RepollClient:
+        def __init__(self) -> None:
+            self.gets: list[str] = []
+            self.posts: list[tuple[str, dict[str, Any]]] = []
+
+        async def get(self, url: str, headers: dict[str, str] | None = None) -> FakeResponse:
+            self.gets.append(url)
+            if url.endswith("/interactions"):
+                return FakeResponse(
+                    {"pendingUserPrompt": {"requestId": "req-p5"}, "pendingApprovals": []}
+                )
+            return FakeResponse({"id": "sess-p5", "status": "busy"})
+
+        async def post(
+            self,
+            url: str,
+            headers: dict[str, str] | None = None,
+            json: dict[str, Any] | None = None,
+        ) -> FakeResponse:
+            self.posts.append((url, json or {}))
+            return FakeResponse({"delivered": True})
+
+    client = RepollClient()
+    spec = SessionE2eAutomationSpec(
+        re_poll_prompt_before_answer=True,
+        answer_value='{"choice":"alpha"}',
+    )
+
+    first = await resolve_pending_interactions(
+        client,
+        api_url="http://127.0.0.1:3031/api",
+        session_id="sess-p5",
+        data_dir=data_dir,
+        spec=spec,
+        prior_actions=[],
+    )
+    assert len(first) == 1
+    assert first[0]["kind"] == "userPromptObserved"
+    assert first[0]["requestId"] == "req-p5"
+    assert first[0]["sessionRefetched"] is True
+    assert client.posts == []
+    assert any(u.endswith("/sessions/sess-p5") for u in client.gets)
+
+    second = await resolve_pending_interactions(
+        client,
+        api_url="http://127.0.0.1:3031/api",
+        session_id="sess-p5",
+        data_dir=data_dir,
+        spec=spec,
+        prior_actions=first,
+    )
+    assert len(second) == 1
+    assert second[0]["kind"] == "userPrompt"
+    assert second[0]["delivered"] is True
+    assert second[0]["survivedRepoll"] is True
+    assert second[0]["injectedValue"] == '{"choice":"alpha"}'
+    assert len(client.posts) == 1
+
+
+@pytest.mark.asyncio
+async def test_restart_while_prompt_waiting_emits_restart_without_answering(tmp_path, monkeypatch):
+    """2565 P-8 / 2672 A-4: restart_while_prompt_waiting emits restartOnPrompt
+    and never submits an answer or cancel."""
+    from benchmarks.harbor.session_e2e.automation import SessionE2eAutomationSpec
+
+    data_dir = _instance_data_dir(tmp_path, monkeypatch)
+
+    class WaitingClient:
+        def __init__(self) -> None:
+            self.posts: list[tuple[str, dict[str, Any]]] = []
+
+        async def get(self, url: str, headers: dict[str, str] | None = None) -> FakeResponse:
+            return FakeResponse(
+                {"pendingUserPrompt": {"requestId": "req-p8"}, "pendingApprovals": []}
+            )
+
+        async def post(
+            self,
+            url: str,
+            headers: dict[str, str] | None = None,
+            json: dict[str, Any] | None = None,
+        ) -> FakeResponse:
+            self.posts.append((url, json or {}))
+            return FakeResponse({"delivered": True})
+
+    client = WaitingClient()
+    actions = await resolve_pending_interactions(
+        client,
+        api_url="http://127.0.0.1:3031/api",
+        session_id="sess-p8",
+        data_dir=data_dir,
+        spec=SessionE2eAutomationSpec(restart_while_prompt_waiting=True),
+    )
+    assert actions == [{"kind": "restartOnPrompt", "sessionId": "sess-p8", "requestId": "req-p8"}]
+    assert client.posts == []
+
+
+@pytest.mark.asyncio
+async def test_picker_take_uses_documented_endpoint():
+    fake = RecordingClient({"/picker/take": {"override": {"action": "path", "path": "/tmp/a"}}})
+
+    result = await _client().take_picker(fake)
+
+    assert result == {"override": {"action": "path", "path": "/tmp/a"}}
+    (req,) = fake.requests
+    assert req["method"] == "POST"
+    assert req["url"].endswith("/e2e-control/picker/take")
+    assert req["headers"] == {E2E_HEADER: "t" * 48}

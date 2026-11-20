@@ -1895,6 +1895,7 @@ class LibrAgentHarborAdapter(BaseAgent):
             poll_interval = self.poll_interval_sec
             bench_instance = resolve_trial_instance_reset(dict(os.environ))
             session_e2e_actions: list[dict[str, Any]] = []
+            restarted_during_prompt = False
             e2e_control_warned = False
             seen_non_idle = False
             completed = False
@@ -2059,6 +2060,23 @@ class LibrAgentHarborAdapter(BaseAgent):
                             else:
                                 if any(
                                     isinstance(a, dict)
+                                    and a.get("kind") == "restartOnPrompt"
+                                    for a in resolved
+                                ):
+                                    # 2565 P-8 / 2672 A-4: restart the isolated
+                                    # instance in place while the prompt is
+                                    # waiting, then refresh client auth headers
+                                    # for post-restart message harvest.
+                                    await self._write_session_e2e_restart_evidence_best_effort(
+                                        spec=session_e2e_spec,
+                                        session_id=session_id,
+                                    )
+                                    client.headers.update(self._api_headers())
+                                    restarted_during_prompt = True
+                                    completed = True
+                                    break
+                                if any(
+                                    isinstance(a, dict)
                                     and a.get("kind") == "circuitBreakResume"
                                     for a in resolved
                                 ):
@@ -2211,13 +2229,19 @@ class LibrAgentHarborAdapter(BaseAgent):
                     session_id=session_id,
                     messages=messages,
                     resolved_interactions=session_e2e_actions,
+                    spec=session_e2e_spec,
                 )
                 self._copy_mock_keychain_artifacts(bench_instance)
-            if session_e2e_spec is not None and session_e2e_spec.restart_after_completion:
+            if (
+                session_e2e_spec is not None
+                and session_e2e_spec.restart_after_completion
+                and not restarted_during_prompt
+            ):
                 # Restart-dependent rows (#2903): restart the same bench
                 # instance in place and record the post-restart probes.
                 await self._write_session_e2e_restart_evidence_best_effort(
-                    spec=session_e2e_spec
+                    spec=session_e2e_spec,
+                    session_id=session_id,
                 )
 
             if telemetry.tool_calls_count == 0:
@@ -2414,6 +2438,7 @@ class LibrAgentHarborAdapter(BaseAgent):
         session_id: str,
         messages: list[Any],
         resolved_interactions: list[dict[str, Any]],
+        spec: SessionE2eAutomationSpec | None = None,
     ) -> None:
         """Persist session E2E evidence for the task verifier.
 
@@ -2447,13 +2472,31 @@ class LibrAgentHarborAdapter(BaseAgent):
             else None
         )
         if control_configured and token is not None:
+            control = E2eControlClient(self.api_url, token=token)
             try:
-                control = E2eControlClient(self.api_url, token=token)
                 payload["interactions"] = await control.interactions(
                     client, session_id
                 )
             except Exception as exc:
                 payload["interactionsError"] = str(exc)
+            if spec is not None and spec.probe_picker_control:
+                try:
+                    path_res = await control.arm_picker(
+                        client, path="/tmp/e2e-picker-probe.txt"
+                    )
+                    path_taken = await control.take_picker(client)
+                    cancel_res = await control.arm_picker(client, cancel=True)
+                    cancel_taken = await control.take_picker(client)
+                    after_taken = await control.take_picker(client)
+                    payload["pickerProbe"] = {
+                        "pathArmed": path_res,
+                        "pathTaken": path_taken,
+                        "cancelArmed": cancel_res,
+                        "cancelTaken": cancel_taken,
+                        "afterTaken": after_taken,
+                    }
+                except Exception as exc:
+                    payload["pickerProbeError"] = str(exc)
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
@@ -2466,6 +2509,7 @@ class LibrAgentHarborAdapter(BaseAgent):
         self,
         *,
         spec: SessionE2eAutomationSpec,
+        session_id: str | None = None,
     ) -> None:
         """Restart the bench instance in place and record the probe snapshot.
 
@@ -2492,6 +2536,8 @@ class LibrAgentHarborAdapter(BaseAgent):
                 api_url=self.api_url,
                 http_probes=spec.post_restart_http_probes,
                 sql_probes=spec.post_restart_sql_probes,
+                pre_restart_http_puts=spec.pre_restart_http_puts,
+                session_id=session_id,
             )
         path = write_restart_evidence(self.logs_dir, record)
         safe_print(
