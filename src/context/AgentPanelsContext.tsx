@@ -2,9 +2,11 @@ import React, {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
 } from 'react';
+import { E2E_PANEL_EVENT } from '@/lib/e2e-ui-bridge';
 import { getLogger } from '@/lib/logger';
 
 const logger = getLogger('AgentPanelsContext');
@@ -241,6 +243,33 @@ export function AgentPanelsProvider({ children }: AgentPanelsProviderProps) {
       };
     });
   }, []);
+
+  useEffect(() => {
+    const applyPanel = (panel: string | null | undefined) => {
+      if (!panel) return;
+      if (panel === 'close') {
+        closeShell();
+      } else if ((AGENT_PANEL_IDS as readonly string[]).includes(panel)) {
+        openPanel(panel as AgentPanelId);
+      }
+    };
+    if (typeof window !== 'undefined' && window.__LIBRAGENT_E2E_PENDING_PANEL) {
+      const pending = window.__LIBRAGENT_E2E_PENDING_PANEL;
+      window.__LIBRAGENT_E2E_PENDING_PANEL = null;
+      applyPanel(pending);
+    }
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ panel?: string }>).detail;
+      if (typeof window !== 'undefined') {
+        window.__LIBRAGENT_E2E_PENDING_PANEL = null;
+      }
+      applyPanel(detail?.panel);
+    };
+    window.addEventListener(E2E_PANEL_EVENT, handler);
+    return () => {
+      window.removeEventListener(E2E_PANEL_EVENT, handler);
+    };
+  }, [closeShell, openPanel]);
 
   const value = useMemo<AgentPanelsContextValue>(
     () => ({

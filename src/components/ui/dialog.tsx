@@ -6,6 +6,7 @@ import { XIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/lib/utils';
+import { reportDialogOpenChange } from '@/lib/e2e-ui-bridge';
 
 function Dialog({
   ...props
@@ -58,6 +59,12 @@ function DialogContent({
   showCloseButton?: boolean;
 }) {
   const { t } = useTranslation();
+  React.useEffect(() => {
+    reportDialogOpenChange(true);
+    return () => {
+      reportDialogOpenChange(false);
+    };
+  }, []);
   return (
     <DialogPortal data-slot="dialog-portal">
       <DialogOverlay />

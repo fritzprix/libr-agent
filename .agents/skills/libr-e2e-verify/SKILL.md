@@ -58,12 +58,27 @@ DELETE /api/sessions/:id
 
 ## Blocking interactions over HTTP (debug control plane)
 
-| Need                                              | Call                                                                                                                                              |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| See what blocks a session                         | `GET /api/e2e-control/sessions/:ref/interactions` → pending user prompt + pending approvals                                                       |
-| Answer or cancel a `ui__askUser` / storeAs prompt | `POST /api/e2e-control/sessions/:ref/user-prompts` with `{"requestId": "...", "action": "answer"}` or `"cancel"`, plus `"value"`                  |
-| Approve or deny a tool approval                   | `POST /api/e2e-control/sessions/:ref/tool-approvals` with `{"toolCallId": "...", "approved": true}` or `{"toolCallId": "...", "approved": false}` |
-| Resolve the next native file dialog (attach/save) | `POST /api/e2e-control/picker` with `{"path": "/abs/path"}` or `{"cancel": true}` — one-shot, arm it right before the action that opens the dialog      |
+| Need                                              | Call                                                                                                                                               |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| See what blocks a session                         | `GET /api/e2e-control/sessions/:ref/interactions` → pending user prompt + pending approvals + pending circuit break                                |
+| Answer or cancel a `ui__askUser` / storeAs prompt | `POST /api/e2e-control/sessions/:ref/user-prompts` with `{"requestId": "...", "action": "answer"}` or `"cancel"`, plus `"value"`                   |
+| Approve or deny a tool approval                   | `POST /api/e2e-control/sessions/:ref/tool-approvals` with `{"toolCallId": "...", "approved": true}` or `{"toolCallId": "...", "approved": false}`  |
+| Resume a waiting circuit breaker                  | `POST /api/e2e-control/sessions/:ref/circuit-break-resume` (no body; answers `409` if none is waiting)                                             |
+| Resolve the next native file dialog (attach/save) | `POST /api/e2e-control/picker` with `{"path": "/abs/path"}` or `{"cancel": true}` — one-shot, arm it right before the action that opens the dialog |
+| Show/hide or resize the isolated main window      | `POST /api/e2e-control/window` with `{"visible": true, "width": 1280, "height": 800}` → returns actual `{visible, width, height}`                  |
+
+## GUI automation over HTTP (debug control plane, #2902)
+
+All `/api/e2e-control/ui/*` routes require a debug build, `LIBRAGENT_E2E_CONTROL=1`, an explicit `LIBRAGENT_DATA_DIR`, loopback peer + Host, and the `X-LibrAgent-E2E-Control` capability header. Release builds return `404`. LibrAgent never judges pass/fail: the external multimodal agent operates the isolated GUI through these routes, takes window-only screenshots, and judges visually from the saved PNG files.
+
+| Need                                      | Call                                                                                                                                                                                                                                                                                                                      |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Capture the isolated instance window only | `GET /api/e2e-control/ui/screenshot` (`?includeBase64=true` optional) → `{path, width, height, bytes, base64?}` written under `<LIBRAGENT_DATA_DIR>/e2e_captures/` (PID-scoped; never captures the full monitor or by title)                                                                                              |
+| Navigate to a route, session, or panel    | `POST /api/e2e-control/ui/navigate` with `{"path": "/settings"}`, `{"sessionId": "<id>", "panel": "planning"}`, or `{"panel": "processes"\|"planning"\|"workspace"\|"close"}` → `{ok, path, panel}`                                                                                                                       |
+| Inspect interactable elements             | `POST /api/e2e-control/ui/elements` with `{"selector"?: "...", "timeoutMs"?: 5000}` → `{elements: [{role, tag, label, id?, testId?, inputType?, disabled, bounds: {x, y, width, height}, visible}], count}`                                                                                                               |
+| Click, type, key, scroll, or hover        | `POST /api/e2e-control/ui/input` with `{"action": "click"\|"type"\|"key"\|"scroll"\|"hover", "selector"?: "...", "testId"?: "...", "x"?: 0, "y"?: 0, "text"?: "dummy-token-abcd", "key"?: "Enter", "modifiers"?: ["Ctrl"], "scrollAmount"?: 5, "axis"?: "vertical"}` → `{ok, result}` (window-scoped to the isolated PID) |
+| Wait for a session or dialog state        | `POST /api/e2e-control/ui/wait` with `{"condition": "session-idle"\|"prompt-pending"\|"approval-pending"\|"circuit-break-pending"\|"dialog-open", "sessionId"?: "<id>", "timeoutMs"?: 15000, "pollMs"?: 250}` → `{condition, satisfied, timedOut, waitedMs, state}`                                                       |
+| Restart the isolated instance in place    | `POST /api/e2e-control/ui/restart` (no body) → `{ok, restarting, note}` (deletes `e2e_control.cap` before re-exec; re-read `<LIBRAGENT_DATA_DIR>/e2e_control.cap` once the restarted instance is healthy)                                                                                                                 |
 
 Without the control plane, prompts and approvals block until a human answers or
 `yolo`/`unsafe` auto-approves them.
@@ -97,9 +112,8 @@ retrying the same `requestId`. The authoritative contract lives in the
 
 ## Item classification
 
-- `[auto]` — observable over HTTP: session status, transcript content, tool output, log greps.
-- `[manual]` — visual/rendering assertions (masked input, scroll, viewport), unless a screenshot + vision step is added.
-- `[manual]` — OS-level steps (sudo, OS keychain), unless the runner provides them.
+- `[auto]` — observable over HTTP: session status, transcript content, tool output, log greps, or visual/GUI items that the external agent reaches and captures through `/api/e2e-control/ui/*`.
+- `blocked` — items that cannot be automated yet, with a linked issue that tracks the missing piece. `[manual]` is not a valid final state.
 
 ## Cleanup discipline
 

@@ -9,6 +9,7 @@
 mod circuit_break;
 mod handlers;
 mod token;
+pub mod ui;
 
 use std::convert::Infallible;
 use std::sync::Arc;
@@ -25,8 +26,14 @@ pub use handlers::{
     PlannedPromptAction, SessionInteractionsSnapshot, UserPromptBody, WindowBody, WindowPlan,
 };
 pub use token::{
-    capability_token, constant_time_eq, e2e_control_enabled, header_matches, init_capability_token,
-    E2E_CONTROL_CAPABILITY_FILE, E2E_CONTROL_HEADER,
+    capability_token, constant_time_eq, e2e_control_enabled, explicit_data_dir, header_matches,
+    init_capability_token, E2E_CONTROL_CAPABILITY_FILE, E2E_CONTROL_HEADER,
+};
+pub use ui::{
+    clamp_to_viewport, desktop_args, element_center, parse_wait_condition, pick_own_window,
+    plan_input, plan_navigate, plan_navigate_path, plan_panel_name, window_viewport_geometry,
+    ElementsBody, InputBody, InputPlan, InputTarget, NavigateBody, NavigatePlan, ViewportRect,
+    WaitBody, WaitCondition,
 };
 
 /// The production guard chain for the E2E control plane: loopback Host/Origin

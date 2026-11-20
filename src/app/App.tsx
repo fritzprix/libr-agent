@@ -22,6 +22,7 @@ import { applyUiScale } from '@/lib/ui-scale';
 import { useUiScaleShortcuts } from '@/hooks/use-ui-scale-shortcuts';
 import { emitFrontendReadyOnce } from './frontend-ready';
 import { AppControlBridge } from '@/features/app-control/useAppControlBridge';
+import { E2eUiBridge } from '@/lib/e2e-ui-bridge';
 import '../styles/globals.css';
 
 // Lazy-load route components to reduce initial bundle and improve first paint
@@ -156,6 +157,7 @@ function App() {
                   <MCPServerProvider>
                     <AgentSessionListProvider>
                       <AppControlBridge />
+                      <E2eUiBridge />
                       {/* min-h-0 overrides SidebarProvider default `min-h-svh`
                           (twMerge same-group). Without it the shell grows past
                           the WebView and the document paints a window-edge bar. */}

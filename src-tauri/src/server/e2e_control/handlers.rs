@@ -112,13 +112,13 @@ pub struct ToolApprovalBody {
     pub approved: bool,
 }
 
-type JsonReply = warp::reply::WithStatus<warp::reply::Json>;
+pub(crate) type JsonReply = warp::reply::WithStatus<warp::reply::Json>;
 
-fn json_ok<T: Serialize>(body: &T) -> JsonReply {
+pub(crate) fn json_ok<T: Serialize>(body: &T) -> JsonReply {
     warp::reply::with_status(warp::reply::json(body), StatusCode::OK)
 }
 
-fn json_error(status: StatusCode, error: impl Into<String>) -> JsonReply {
+pub(crate) fn json_error(status: StatusCode, error: impl Into<String>) -> JsonReply {
     warp::reply::with_status(
         warp::reply::json(&serde_json::json!({ "error": error.into() })),
         status,
@@ -473,94 +473,99 @@ pub fn e2e_control_routes_with_capability(
     capability: Option<String>,
     agent_manager: impl Filter<Extract = (Arc<AgentSessionManager>,), Error = Infallible> + Clone + Send,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-    let guarded = capability_guard(capability);
+    let guarded = capability_guard(capability.clone());
 
     // GET /api/e2e-control/status
-    let status = warp::get()
-        .and(warp::path("api"))
+    let status = warp::path("api")
         .and(warp::path("e2e-control"))
         .and(warp::path("status"))
         .and(warp::path::end())
         .and(guarded.clone())
+        .and(warp::get())
         .and_then(handle_status);
 
     // GET /api/e2e-control/sessions/:ref/interactions
-    let interactions = warp::get()
-        .and(warp::path("api"))
+    let interactions = warp::path("api")
         .and(warp::path("e2e-control"))
         .and(warp::path("sessions"))
         .and(warp::path::param::<String>())
         .and(warp::path("interactions"))
         .and(warp::path::end())
         .and(guarded.clone())
+        .and(warp::get())
         .and(agent_manager.clone())
         .and_then(handle_get_interactions);
 
     // POST /api/e2e-control/sessions/:ref/user-prompts
-    let user_prompt = warp::post()
-        .and(warp::path("api"))
+    let user_prompt = warp::path("api")
         .and(warp::path("e2e-control"))
         .and(warp::path("sessions"))
         .and(warp::path::param::<String>())
         .and(warp::path("user-prompts"))
         .and(warp::path::end())
         .and(guarded.clone())
+        .and(warp::post())
         .and(agent_manager.clone())
         .and(super::super::routes::json_body())
         .and_then(handle_user_prompt);
 
     // POST /api/e2e-control/sessions/:ref/tool-approvals
-    let tool_approval = warp::post()
-        .and(warp::path("api"))
+    let tool_approval = warp::path("api")
         .and(warp::path("e2e-control"))
         .and(warp::path("sessions"))
         .and(warp::path::param::<String>())
         .and(warp::path("tool-approvals"))
         .and(warp::path::end())
         .and(guarded.clone())
+        .and(warp::post())
         .and(agent_manager.clone())
         .and(super::super::routes::json_body())
         .and_then(handle_tool_approval);
 
     // POST /api/e2e-control/sessions/:ref/circuit-break-resume
-    let circuit_break_resume = warp::post()
-        .and(warp::path("api"))
+    let circuit_break_resume = warp::path("api")
         .and(warp::path("e2e-control"))
         .and(warp::path("sessions"))
         .and(warp::path::param::<String>())
         .and(warp::path("circuit-break-resume"))
         .and(warp::path::end())
         .and(guarded.clone())
-        .and(agent_manager)
+        .and(warp::post())
+        .and(agent_manager.clone())
         .and_then(handle_circuit_break_resume);
 
+    // UI automation routes (#2902) live in `ui.rs` and use the same
+    // `capability_guard(capability)` filter, so the pins in the gating tests
+    // cover them.
+    let ui = super::ui::ui_routes(capability.clone(), agent_manager);
+
     // POST /api/e2e-control/picker (no agent manager: resolves the next native dialog)
-    let picker = warp::post()
-        .and(warp::path("api"))
+    let picker = warp::path("api")
         .and(warp::path("e2e-control"))
         .and(warp::path("picker"))
         .and(warp::path::end())
         .and(guarded.clone())
+        .and(warp::post())
         .and(super::super::routes::json_body())
         .and_then(handle_picker);
 
     // POST /api/e2e-control/picker/take (consume one-shot override for verification/cleanup)
-    let picker_take = warp::post()
-        .and(warp::path("api"))
+    let picker_take = warp::path("api")
         .and(warp::path("e2e-control"))
         .and(warp::path("picker"))
         .and(warp::path("take"))
         .and(warp::path::end())
         .and(guarded.clone())
+        .and(warp::post())
         .and_then(handle_picker_take);
 
     // POST /api/e2e-control/window (no agent manager: show/hide + resize the main window, #2903)
-    let window = warp::post()
-        .and(warp::path("api"))
+    let window = warp::path("api")
         .and(warp::path("e2e-control"))
         .and(warp::path("window"))
         .and(warp::path::end())
         .and(guarded)
+        .and(warp::post())
         .and(super::super::routes::json_body())
         .and_then(handle_window);
 
@@ -572,4 +577,5 @@ pub fn e2e_control_routes_with_capability(
         .or(picker)
         .or(picker_take)
         .or(window)
+        .or(ui)
 }

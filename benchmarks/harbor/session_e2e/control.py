@@ -36,6 +36,28 @@ Endpoints (all require the ``X-LibrAgent-E2E-Control`` capability header;
   given together) → ``{visible, width, height}`` reflecting the *actual*
   post-apply state (window managers clamp requests). Show/hide and resize
   of the isolated instance's main window (#2903 AC2).
+- ``GET  /api/e2e-control/ui/screenshot`` — query ``?includeBase64=true|false``
+  → ``{path, width, height, bytes, base64?}``. Captures the isolated
+  instance's own window (selected strictly by PID, never by window title) and
+  writes the PNG under ``<LIBRAGENT_DATA_DIR>/e2e_captures/`` (#2902).
+- ``POST /api/e2e-control/ui/navigate`` — body ``{path?, sessionId?, panel?}``
+  (at least one field; ``path`` and ``sessionId`` are mutually exclusive;
+  ``panel`` is ``"workspace"|"processes"|"planning"|"close"``) →
+  ``{ok, path, panel}`` (#2902).
+- ``POST /api/e2e-control/ui/elements`` — body ``{selector?, timeoutMs?}``
+  → ``{elements, count}`` where each element carries ``{role, tag, label,
+  id?, testId?, inputType?, disabled, bounds, rect, visible}`` (#2902).
+- ``POST /api/e2e-control/ui/input`` — body ``{action, selector?, testId?,
+  x?, y?, text?, key?, modifiers?, scrollAmount?, axis?, button?}`` →
+  ``{ok, result}``. Delivers window-scoped input (click, double_click,
+  right_click, middle_click, move, hover, type, key, scroll) to the isolated
+  instance window (#2902).
+- ``POST /api/e2e-control/ui/restart`` — no body →
+  ``{ok, restarting, note}``. Restarts the isolated instance in place (#2902).
+- ``POST /api/e2e-control/ui/wait`` — body ``{condition, sessionId?,
+  timeoutMs?, pollMs?}`` (``condition`` is ``"session-idle"|"prompt-pending"|
+  "approval-pending"|"circuit-break-pending"|"dialog-open"``) →
+  ``{condition, satisfied, timedOut, waitedMs, state}`` (#2902).
 
 Interval and eventual consistency: poll every ``DEFAULT_POLL_INTERVAL_SEC``
 (3.0 s, the bench default). A prompt or approval that just appeared or was
@@ -221,6 +243,162 @@ class E2eControlClient:
             body["height"] = height
         res = await client.post(
             f"{self.api_url}/e2e-control/window",
+            headers=self._headers(),
+            json=body,
+        )
+        res.raise_for_status()
+        return res.json()
+
+    async def ui_screenshot(
+        self,
+        client: httpx.AsyncClient,
+        *,
+        include_base64: bool = False,
+    ) -> dict[str, Any]:
+        """Capture the isolated instance's window to PNG (#2902).
+
+        Selects the window strictly by the instance's own PID (never by
+        title). Writes the PNG under ``<LIBRAGENT_DATA_DIR>/e2e_captures/``
+        and returns ``{path, width, height, bytes, base64?}``.
+        """
+        url = f"{self.api_url}/e2e-control/ui/screenshot"
+        if include_base64:
+            url = f"{url}?includeBase64=true"
+        res = await client.get(url, headers=self._headers())
+        res.raise_for_status()
+        return res.json()
+
+    async def ui_navigate(
+        self,
+        client: httpx.AsyncClient,
+        *,
+        path: str | None = None,
+        session_id: str | None = None,
+        panel: str | None = None,
+    ) -> dict[str, Any]:
+        """Navigate to an in-app route, focus a session, and/or open a panel (#2902)."""
+        if path is None and session_id is None and panel is None:
+            raise ValueError("provide path, session_id, and/or panel")
+        if path is not None and session_id is not None:
+            raise ValueError("provide either path or session_id, not both")
+        body: dict[str, Any] = {}
+        if path is not None:
+            body["path"] = path
+        if session_id is not None:
+            body["sessionId"] = session_id
+        if panel is not None:
+            body["panel"] = panel
+        res = await client.post(
+            f"{self.api_url}/e2e-control/ui/navigate",
+            headers=self._headers(),
+            json=body,
+        )
+        res.raise_for_status()
+        return res.json()
+
+    async def ui_elements(
+        self,
+        client: httpx.AsyncClient,
+        *,
+        selector: str | None = None,
+        timeout_ms: int | None = None,
+    ) -> dict[str, Any]:
+        """List interactable elements (role, label, testId, bounds) (#2902)."""
+        body: dict[str, Any] = {}
+        if selector is not None:
+            body["selector"] = selector
+        if timeout_ms is not None:
+            body["timeoutMs"] = timeout_ms
+        res = await client.post(
+            f"{self.api_url}/e2e-control/ui/elements",
+            headers=self._headers(),
+            json=body,
+        )
+        res.raise_for_status()
+        return res.json()
+
+    async def ui_input(
+        self,
+        client: httpx.AsyncClient,
+        action: str,
+        *,
+        selector: str | None = None,
+        test_id: str | None = None,
+        x: int | None = None,
+        y: int | None = None,
+        text: str | None = None,
+        key: str | None = None,
+        modifiers: list[str] | None = None,
+        scroll_amount: int | None = None,
+        axis: str | None = None,
+        button: str | None = None,
+    ) -> dict[str, Any]:
+        """Deliver window-scoped input to the isolated instance (#2902)."""
+        if not action or not action.strip():
+            raise ValueError("action must not be empty")
+        if (x is None) != (y is None):
+            raise ValueError("x and y must be given together")
+        body: dict[str, Any] = {"action": action}
+        if selector is not None:
+            body["selector"] = selector
+        if test_id is not None:
+            body["testId"] = test_id
+        if x is not None and y is not None:
+            body["x"] = x
+            body["y"] = y
+        if text is not None:
+            body["text"] = text
+        if key is not None:
+            body["key"] = key
+        if modifiers is not None:
+            body["modifiers"] = modifiers
+        if scroll_amount is not None:
+            body["scrollAmount"] = scroll_amount
+        if axis is not None:
+            body["axis"] = axis
+        if button is not None:
+            body["button"] = button
+        res = await client.post(
+            f"{self.api_url}/e2e-control/ui/input",
+            headers=self._headers(),
+            json=body,
+        )
+        res.raise_for_status()
+        return res.json()
+
+    async def ui_restart(self, client: httpx.AsyncClient) -> dict[str, Any]:
+        """Restart the isolated instance in place over HTTP (#2902)."""
+        res = await client.post(
+            f"{self.api_url}/e2e-control/ui/restart",
+            headers=self._headers(),
+        )
+        res.raise_for_status()
+        return res.json()
+
+    async def ui_wait(
+        self,
+        client: httpx.AsyncClient,
+        condition: str,
+        *,
+        session_id: str | None = None,
+        timeout_ms: int | None = None,
+        poll_ms: int | None = None,
+    ) -> dict[str, Any]:
+        """Wait for a session or UI condition with a timeout (#2902)."""
+        if not condition or not condition.strip():
+            raise ValueError("condition must not be empty")
+        norm = condition.strip().lower()
+        if norm != "dialog-open" and not (session_id and session_id.strip()):
+            raise ValueError(f"condition '{condition}' requires session_id")
+        body: dict[str, Any] = {"condition": condition}
+        if session_id is not None:
+            body["sessionId"] = session_id
+        if timeout_ms is not None:
+            body["timeoutMs"] = timeout_ms
+        if poll_ms is not None:
+            body["pollMs"] = poll_ms
+        res = await client.post(
+            f"{self.api_url}/e2e-control/ui/wait",
             headers=self._headers(),
             json=body,
         )
