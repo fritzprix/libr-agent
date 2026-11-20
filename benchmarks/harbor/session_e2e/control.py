@@ -174,3 +174,17 @@ class E2eControlClient:
         )
         res.raise_for_status()
         return res.json()
+
+    async def take_picker(self, client: httpx.AsyncClient) -> dict[str, Any]:
+        """Consume the currently armed one-shot picker override (#2903).
+
+        Drives the same ``take_picker_override()`` store as the native save/open
+        consumers and returns ``{"override": {"action": "path", "path": ...} |
+        {"action": "cancel"} | null}``.
+        """
+        res = await client.post(
+            f"{self.api_url}/e2e-control/picker/take",
+            headers=self._headers(),
+        )
+        res.raise_for_status()
+        return res.json()

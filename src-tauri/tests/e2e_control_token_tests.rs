@@ -624,6 +624,87 @@ mod tests {
             .await;
         assert_eq!(res.status(), 403);
     }
+
+    #[tokio::test]
+    async fn picker_arm_and_take_consumes_path_and_cancel_once() {
+        let chain = production_chain();
+
+        // Missing token on /picker/take is rejected.
+        let unauth = warp::test::request()
+            .method("POST")
+            .path("/api/e2e-control/picker/take")
+            .remote_addr(LOOPBACK_PEER.parse().unwrap())
+            .header("host", LOOPBACK_HOST)
+            .reply(&chain)
+            .await;
+        assert_eq!(unauth.status(), 403);
+
+        // Arm path -> consume -> returns path; second consume is null.
+        let arm_path = warp::test::request()
+            .method("POST")
+            .path("/api/e2e-control/picker")
+            .remote_addr(LOOPBACK_PEER.parse().unwrap())
+            .header("host", LOOPBACK_HOST)
+            .header(E2E_CONTROL_HEADER, TOKEN)
+            .json(&serde_json::json!({ "path": "/tmp/e2e-picker-probe.txt" }))
+            .reply(&chain)
+            .await;
+        assert_eq!(arm_path.status(), 200);
+
+        let take_path = warp::test::request()
+            .method("POST")
+            .path("/api/e2e-control/picker/take")
+            .remote_addr(LOOPBACK_PEER.parse().unwrap())
+            .header("host", LOOPBACK_HOST)
+            .header(E2E_CONTROL_HEADER, TOKEN)
+            .reply(&chain)
+            .await;
+        assert_eq!(take_path.status(), 200);
+        let body: serde_json::Value = serde_json::from_slice(take_path.body()).unwrap();
+        assert_eq!(
+            body,
+            serde_json::json!({ "override": { "action": "path", "path": "/tmp/e2e-picker-probe.txt" } })
+        );
+
+        // Arm cancel -> consume -> returns cancel; next consume is null.
+        let arm_cancel = warp::test::request()
+            .method("POST")
+            .path("/api/e2e-control/picker")
+            .remote_addr(LOOPBACK_PEER.parse().unwrap())
+            .header("host", LOOPBACK_HOST)
+            .header(E2E_CONTROL_HEADER, TOKEN)
+            .json(&serde_json::json!({ "cancel": true }))
+            .reply(&chain)
+            .await;
+        assert_eq!(arm_cancel.status(), 200);
+
+        let take_cancel = warp::test::request()
+            .method("POST")
+            .path("/api/e2e-control/picker/take")
+            .remote_addr(LOOPBACK_PEER.parse().unwrap())
+            .header("host", LOOPBACK_HOST)
+            .header(E2E_CONTROL_HEADER, TOKEN)
+            .reply(&chain)
+            .await;
+        assert_eq!(take_cancel.status(), 200);
+        let body: serde_json::Value = serde_json::from_slice(take_cancel.body()).unwrap();
+        assert_eq!(
+            body,
+            serde_json::json!({ "override": { "action": "cancel" } })
+        );
+
+        let take_empty = warp::test::request()
+            .method("POST")
+            .path("/api/e2e-control/picker/take")
+            .remote_addr(LOOPBACK_PEER.parse().unwrap())
+            .header("host", LOOPBACK_HOST)
+            .header(E2E_CONTROL_HEADER, TOKEN)
+            .reply(&chain)
+            .await;
+        assert_eq!(take_empty.status(), 200);
+        let body: serde_json::Value = serde_json::from_slice(take_empty.body()).unwrap();
+        assert_eq!(body, serde_json::json!({ "override": null }));
+    }
 }
 
 /// E-2 (#2672): release builds must never serve `/api/e2e-control/*`.

@@ -3,7 +3,7 @@ artifacts = []
 
 [task]
 name = "fritzprix/e2e-settings-persist-restart"
-description = "2565 O-1 (restart half): settings database and startup-only configuration survive an in-place isolated instance restart"
+description = "2565 O-1 (restart half): writing a sentinel setting via PUT /api/settings/complexityModelMapping survives an in-place isolated instance restart"
 keywords = ["libragent", "session-e2e", "settings", "restart"]
 
 [metadata]
@@ -17,12 +17,15 @@ auto_answer_interactive = true
 approve_standard_tools = true
 reject_hard_approvals = false
 restart_after_completion = true
+pre_restart_http_puts = [
+  { name = "write_complexity_mapping", path = "/settings/complexityModelMapping", body = { low = { model = "e2e-o1-restart-sentinel", provider = "openai" } } },
+]
 post_restart_http_probes = [
   { name = "health", path = "/health" },
-  { name = "preferred_model", path = "/settings/preferredModel" },
+  { name = "complexity_mapping", path = "/settings/complexityModelMapping" },
 ]
 post_restart_sql_probes = [
-  { name = "settings_count", query = "SELECT count(*) FROM settings" },
+  { name = "complexity_row", query = "SELECT key, value FROM settings WHERE key = 'complexityModelMapping'" },
 ]
 
 [verifier]

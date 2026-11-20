@@ -245,6 +245,13 @@ async fn handle_picker(body: PickerBody) -> Result<JsonReply, Infallible> {
     }
 }
 
+/// Consume the currently armed one-shot picker override (same `take_picker_override`
+/// path used by `download_commands::save_bytes_via_dialog` and the frontend wrapper).
+async fn handle_picker_take() -> Result<JsonReply, Infallible> {
+    let override_ = crate::e2e_picker::take_picker_override();
+    Ok(json_ok(&serde_json::json!({ "override": override_ })))
+}
+
 /// Map a tool-approval rejection message to the HTTP status the handler
 /// answers with. Extracted so the status mapping is covered by tests.
 pub fn tool_approval_error_status(message: &str) -> StatusCode {
@@ -406,9 +413,19 @@ pub fn e2e_control_routes_with_capability(
         .and(warp::path("e2e-control"))
         .and(warp::path("picker"))
         .and(warp::path::end())
-        .and(guarded)
+        .and(guarded.clone())
         .and(super::super::routes::json_body())
         .and_then(handle_picker);
+
+    // POST /api/e2e-control/picker/take (consume one-shot override for verification/cleanup)
+    let picker_take = warp::post()
+        .and(warp::path("api"))
+        .and(warp::path("e2e-control"))
+        .and(warp::path("picker"))
+        .and(warp::path("take"))
+        .and(warp::path::end())
+        .and(guarded)
+        .and_then(handle_picker_take);
 
     status
         .or(interactions)
@@ -416,4 +433,5 @@ pub fn e2e_control_routes_with_capability(
         .or(tool_approval)
         .or(circuit_break_resume)
         .or(picker)
+        .or(picker_take)
 }

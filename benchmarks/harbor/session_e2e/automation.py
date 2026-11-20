@@ -49,6 +49,10 @@ class SessionE2eAutomationSpec:
     # (read-only SELECT against the instance DB).
     post_restart_http_probes: tuple[dict[str, str], ...] = ()
     post_restart_sql_probes: tuple[dict[str, str], ...] = ()
+    # Optional HTTP PUT requests executed right BEFORE restarting the instance
+    # (each {name, path, body}), recorded in session_e2e_restart_evidence.json
+    # under "preRestart" so verifiers can assert a written value survives restart.
+    pre_restart_http_puts: tuple[dict[str, Any], ...] = ()
     # 2565 P-5 / X-5: observe pending prompt on poll 1, re-fetch session
     # metadata without answering, then answer on poll 2 when the same
     # requestId is still waiting.
@@ -147,6 +151,7 @@ def load_session_e2e_spec(logs_dir: Any) -> SessionE2eAutomationSpec | None:
         restart_after_completion=bool(spec.get("restart_after_completion", False)),
         post_restart_http_probes=_probe_list(spec.get("post_restart_http_probes"), ("name", "path")),
         post_restart_sql_probes=_probe_list(spec.get("post_restart_sql_probes"), ("name", "query")),
+        pre_restart_http_puts=_http_put_list(spec.get("pre_restart_http_puts")),
         re_poll_prompt_before_answer=bool(spec.get("re_poll_prompt_before_answer", False)),
         restart_while_prompt_waiting=bool(spec.get("restart_while_prompt_waiting", False)),
         probe_picker_control=bool(spec.get("probe_picker_control", False)),
@@ -166,6 +171,31 @@ def _probe_list(raw: Any, required: tuple[str, ...]) -> tuple[dict[str, str], ..
             continue
         probes.append({key: str(entry[key]).strip() for key in required})
     return tuple(probes)
+
+
+def _http_put_list(raw: Any) -> tuple[dict[str, Any], ...]:
+    """Validate pre-restart HTTP PUT specs ({name, path, body})."""
+    if not isinstance(raw, list):
+        return ()
+    puts: list[dict[str, Any]] = []
+    for entry in raw:
+        if (
+            not isinstance(entry, dict)
+            or not isinstance(entry.get("name"), str)
+            or not entry["name"].strip()
+            or not isinstance(entry.get("path"), str)
+            or not entry["path"].strip()
+            or "body" not in entry
+        ):
+            continue
+        puts.append(
+            {
+                "name": entry["name"].strip(),
+                "path": entry["path"].strip(),
+                "body": entry["body"],
+            }
+        )
+    return tuple(puts)
 
 
 def _has_pending_prompt(snapshot: dict[str, Any]) -> bool:

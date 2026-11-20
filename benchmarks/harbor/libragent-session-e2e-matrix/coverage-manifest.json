@@ -272,7 +272,7 @@
     {
       "id": "O-1",
       "status": "implemented-partial",
-      "reason": "Harbor e2e-settings-persist-restart: settings DB and /api/settings/preferredModel survive an in-place isolated restart; visual restart badge/toast and Metric Display Mode removal stay on S2 (#2903)",
+      "reason": "Harbor e2e-settings-persist-restart: writes a sentinel via PUT /api/settings/complexityModelMapping pre-restart and asserts the same sentinel survives an in-place isolated restart in both HTTP GET and SQLite settings; visual restart badge/toast and Metric Display Mode removal stay on S2 (#2903)",
       "harbor_task": "e2e-settings-persist-restart"
     },
     {
@@ -476,13 +476,13 @@
     {
       "id": "2672-M-5",
       "status": "implemented-partial",
-      "reason": "Harbor e2e-mcp-keychain-unavailable-restart: LIBRAGENT_E2E_MOCK_KEYCHAIN=unavailable stores the secret in encrypted_secrets fallback and survives an in-place restart without leaking literals (2672 M-5, #2903)",
+      "reason": "Harbor e2e-mcp-keychain-unavailable-restart: LIBRAGENT_E2E_MOCK_KEYCHAIN=unavailable stores the secret in encrypted_secrets fallback and verifies the row and {{secret:NAME}} template survive an in-place restart without leaking literals (endpoint is intentionally unreachable under network_mode=no-network, so live post-restart server connection is narrowed out; 2672 M-5, #2903)",
       "harbor_task": "e2e-mcp-keychain-unavailable-restart"
     },
     {
       "id": "S3-PICKER",
       "status": "implemented-partial",
-      "reason": "Harbor e2e-picker-control-plane + Rust e2e_control_token_tests + dialog.test.ts: POST /api/e2e-control/picker arms path injection and cancel overrides unattended on an isolated debug instance; native OS dialog rendering stays on S2 (#2903)",
+      "reason": "Harbor e2e-picker-control-plane + Rust e2e_control_token_tests + dialog.test.ts: POST /api/e2e-control/picker arms path and cancel overrides and POST /api/e2e-control/picker/take consumes each once (leaving no override armed) on an isolated debug instance; native OS dialog rendering stays on S2 (#2903)",
       "harbor_task": "e2e-picker-control-plane"
     },
     {

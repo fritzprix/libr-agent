@@ -2484,10 +2484,16 @@ class LibrAgentHarborAdapter(BaseAgent):
                     path_res = await control.arm_picker(
                         client, path="/tmp/e2e-picker-probe.txt"
                     )
+                    path_taken = await control.take_picker(client)
                     cancel_res = await control.arm_picker(client, cancel=True)
+                    cancel_taken = await control.take_picker(client)
+                    after_taken = await control.take_picker(client)
                     payload["pickerProbe"] = {
                         "pathArmed": path_res,
+                        "pathTaken": path_taken,
                         "cancelArmed": cancel_res,
+                        "cancelTaken": cancel_taken,
+                        "afterTaken": after_taken,
                     }
                 except Exception as exc:
                     payload["pickerProbeError"] = str(exc)
@@ -2530,6 +2536,7 @@ class LibrAgentHarborAdapter(BaseAgent):
                 api_url=self.api_url,
                 http_probes=spec.post_restart_http_probes,
                 sql_probes=spec.post_restart_sql_probes,
+                pre_restart_http_puts=spec.pre_restart_http_puts,
                 session_id=session_id,
             )
         path = write_restart_evidence(self.logs_dir, record)

@@ -843,3 +843,16 @@ async def test_restart_while_prompt_waiting_emits_restart_without_answering(tmp_
     )
     assert actions == [{"kind": "restartOnPrompt", "sessionId": "sess-p8", "requestId": "req-p8"}]
     assert client.posts == []
+
+
+@pytest.mark.asyncio
+async def test_picker_take_uses_documented_endpoint():
+    fake = RecordingClient({"/picker/take": {"override": {"action": "path", "path": "/tmp/a"}}})
+
+    result = await _client().take_picker(fake)
+
+    assert result == {"override": {"action": "path", "path": "/tmp/a"}}
+    (req,) = fake.requests
+    assert req["method"] == "POST"
+    assert req["url"].endswith("/e2e-control/picker/take")
+    assert req["headers"] == {E2E_HEADER: "t" * 48}
