@@ -57,8 +57,7 @@ Profile isolation mirrors the Linux XDG setup: `APPDATA`, `LOCALAPPDATA`,
 primary profile (`%APPDATA%\com.fritzprix.libragent`) is refused just like the
 Linux one. The bubblewrap host-mode workspace sandbox is Linux-only; on
 Windows the flag means the isolated instance itself is the safety condition
-(job object + redirected profiles), and the adapter refuses Windows host mode
-outside disposable CI runners (`CI=true`).
+(job object + redirected profiles).
 
 The control-plane contract is shared across platforms: the debug-only,
 loopback, token-guarded S1/S3 HTTP routes for interaction polling and prompt
@@ -88,10 +87,9 @@ Windows-gated tasks (`requires_host_os = "windows"`, auto-excluded on Linux):
   after `terminate_child_on_prompt`, and the same PID still gone after a
   settle window (no-replacement itself is owned by the backend
   `force_kill_shell` unit test `force_kills_persistent_shell_without_leaving_manager_entry`).
-- **2672 D-4 (explicitly skipped on `windows-latest`)**: GitHub-hosted
-  `windows-latest` runners do not provide a Linux Docker daemon for session
-  containers; `\\?\` prefix stripping is covered by Rust unit tests, while live
-  `docker run` requires Docker Desktop on a self-hosted Windows runner.
+- **2672 D-4 (Windows Docker Desktop required)**: `\\?\` prefix stripping is
+  covered by Rust unit tests, while live `docker run` requires a local Windows
+  host with Docker Desktop running Linux containers.
 
 ## Circuit-breaker Resume (#2901)
 
@@ -233,22 +231,16 @@ declaration, the capability-token init, and both route-merge sites in
 `disabled_control_plane_answers_404_even_with_a_token` covers the debug
 runtime path where the control plane is off.
 
-## Linux CI job (#2901)
+## Local execution only (#2939)
 
-`ci.yml` carries a `Session API E2E (Linux isolated, debug)` job: it builds the
-debug binary, seeds the disposable instance, and runs the full matrix under
-Xvfb — the job fails the PR when a task fails. It is inert until the owner
-configures the secrets it reads: `SESSION_E2E_ASSISTANT_ID`, one of
-`SESSION_E2E_SEED_DB` / `SESSION_E2E_SEED_DB_B64` (the pruned seed profile),
-optionally `SESSION_E2E_MODEL`, `LIBRAGENT_SESSION_API_KEY`, and
-`LIBRAGENT_E2E_SYNTHETIC_SECRET` (synthetic fixture value only). LLM keys come
-from the seeded profile / CI secrets — never from a production profile.
+Session API E2E runs **locally only** on a debug build (`node scripts/run-rust-command.cjs build`) with an isolated profile (`--isolated`, or `LIBRAGENT_DATA_DIR` with throwaway `HOME`/XDG/AppData directories). It does not run in GitHub CI, and no `SESSION_E2E_*` secrets or LLM API keys are configured in CI or stored in the repository.
 
-A sibling `Session API E2E (Windows isolated, debug)` job (#2905) runs the same
-matrix on `windows-latest` against the Windows isolated manager described
-above, reading the same secrets. `requires_host_os = "windows"` tasks
-(e.g. `e2e-b11-no-runshell`) run there and are auto-excluded on Linux; tasks
-gated to other hosts are auto-excluded here the same way.
+When running locally:
+
+1. Build the debug binary (`node scripts/run-rust-command.cjs build`).
+2. Seed the disposable bench instance from your local profile (`pnpm bench:instance:seed --assistant-id <uuid>` on Linux, or `python -m benchmarks.harbor.isolated_instance seed --assistant-id <uuid>` on Windows). The source database is read-only; LLM keys stay inside the local isolated profile only.
+3. Set a synthetic test secret (`export LIBRAGENT_E2E_SYNTHETIC_SECRET="dummy-token-abcd"`) — never a real credential — and run `pnpm bench:session-e2e:n1` or `pnpm bench:session-e2e` (or drive the isolated instance directly from an external multimodal agent via `libr-e2e-verify` and `release-head-self-e2e`).
+4. `requires_host_os = "windows"` tasks (e.g. `e2e-b11-no-runshell`) run on a local Windows host and are auto-excluded on Linux; Linux-only tasks are auto-excluded on Windows the same way.
 
 ## In-app orchestration (preferred)
 
