@@ -888,3 +888,209 @@ async def test_picker_take_uses_documented_endpoint():
     assert req["method"] == "POST"
     assert req["url"].endswith("/e2e-control/picker/take")
     assert req["headers"] == {E2E_HEADER: "t" * 48}
+
+
+@pytest.mark.asyncio
+async def test_terminate_checks_persistent_shell_lifecycle(tmp_path, monkeypatch):
+    """2565 P-6 Windows half (#2905): with check_persistent_shell_after_terminate,
+    the terminateOnPrompt evidence records the persistent shell PID from the
+    shared workspace, alive while the child prompt waits, gone after terminate,
+    and still gone after the settle window."""
+    from benchmarks.harbor.session_e2e import automation
+    from benchmarks.harbor.session_e2e.automation import SessionE2eAutomationSpec
+
+    data_dir = _instance_data_dir(tmp_path, monkeypatch)
+    workspace = data_dir / "workspaces" / "sess-parent"
+    workspace.mkdir(parents=True)
+    (workspace / "p6_shell_pid.txt").write_text("4242\n", encoding="ascii")
+
+    alive_calls: list[int] = []
+
+    def fake_alive(pid: int) -> bool:
+        alive_calls.append(pid)
+        return len(alive_calls) == 1  # alive only while the prompt waits
+
+    monkeypatch.setattr(automation, "_process_is_alive", fake_alive)
+    monkeypatch.setattr(automation, "PROCESS_GONE_TIMEOUT_SEC", 0.0)
+    monkeypatch.setattr(automation, "PROCESS_SETTLE_SEC", 0.0)
+
+    class TermClient:
+        def __init__(self) -> None:
+            self.terminated = False
+            self.post_urls: list[str] = []
+
+        async def get(self, url: str, headers: dict[str, str] | None = None) -> FakeResponse:
+            if "/sessions/sess-child/interactions" in url:
+                if self.terminated:
+                    return FakeResponse({"pendingUserPrompt": None, "pendingApprovals": []})
+                return FakeResponse(
+                    {"pendingUserPrompt": {"requestId": "req-child"}, "pendingApprovals": []}
+                )
+            return FakeResponse({"pendingUserPrompt": None, "pendingApprovals": []})
+
+        async def post(
+            self,
+            url: str,
+            headers: dict[str, str] | None = None,
+            json: dict[str, Any] | None = None,
+        ) -> FakeResponse:
+            self.post_urls.append(url)
+            if url.endswith("/sessions/sess-child/terminate"):
+                self.terminated = True
+                return FakeResponse({"status": "terminated"})
+            return FakeResponse({"delivered": True})
+
+    client = TermClient()
+    actions = await resolve_pending_interactions(
+        client,
+        api_url="http://127.0.0.1:3031/api",
+        session_id="sess-parent",
+        data_dir=data_dir,
+        spec=SessionE2eAutomationSpec(
+            resolve_child_interactions=True,
+            terminate_child_on_prompt=True,
+            check_persistent_shell_after_terminate=True,
+        ),
+        child_session_ids=["sess-child"],
+    )
+    assert actions == [
+        {
+            "kind": "terminateOnPrompt",
+            "sessionId": "sess-child",
+            "requestId": "req-child",
+            "terminated": True,
+            "promptCleared": True,
+            "shellPid": 4242,
+            "shellAliveWhileWaiting": True,
+            "shellGoneAfterTerminate": True,
+            "shellStillGoneAfterSettle": True,
+        }
+    ]
+
+
+class _TasklistDone:
+    def __init__(self, stdout: str, returncode: int = 0) -> None:
+        self.stdout = stdout
+        self.returncode = returncode
+
+
+def test_windows_process_probe_matches_pid_column_only(monkeypatch):
+    """G1.2: the tasklist probe compares the PID column only — the session
+    number "1" or the memory figure "12,340 K" must never match a PID."""
+    from benchmarks.harbor.session_e2e import automation
+
+    def fake_run(argv, **kwargs):
+        assert argv[0] == "tasklist"
+        assert "/FO" in argv and "CSV" in argv  # structured output, not whitespace
+        return _TasklistDone('"powershell.exe","4242","Console","1","12,340 K"\r\n')
+
+    monkeypatch.setattr(automation.subprocess, "run", fake_run)
+    assert automation._windows_process_is_alive(4242) is True
+    assert automation._windows_process_is_alive(1) is False  # session column
+    assert automation._windows_process_is_alive(340) is False  # memory column
+
+
+def test_windows_process_probe_not_found_and_failure_paths(monkeypatch):
+    """G1.2: not-found is False; a failed probe (OSError, timeout, nonzero
+    exit) is None — never silently "gone"."""
+    from benchmarks.harbor.session_e2e import automation
+
+    def not_found(argv, **kwargs):
+        return _TasklistDone("INFO: No tasks are running which match the specified criteria.\r\n")
+
+    monkeypatch.setattr(automation.subprocess, "run", not_found)
+    assert automation._windows_process_is_alive(4242) is False
+
+    def os_error(argv, **kwargs):
+        raise OSError("tasklist.exe not found")
+
+    monkeypatch.setattr(automation.subprocess, "run", os_error)
+    assert automation._windows_process_is_alive(4242) is None
+
+    def timeout(argv, **kwargs):
+        raise automation.subprocess.TimeoutExpired(cmd="tasklist", timeout=15)
+
+    monkeypatch.setattr(automation.subprocess, "run", timeout)
+    assert automation._windows_process_is_alive(4242) is None
+
+    def nonzero(argv, **kwargs):
+        return _TasklistDone("", returncode=1)
+
+    monkeypatch.setattr(automation.subprocess, "run", nonzero)
+    assert automation._windows_process_is_alive(4242) is None
+
+
+def test_read_persistent_shell_pid_failure_cases(tmp_path):
+    """G1.2: missing file, non-ASCII bytes, and non-numeric content all
+    yield None instead of raising; a valid PID parses."""
+    from benchmarks.harbor.session_e2e.automation import _read_persistent_shell_pid
+
+    assert _read_persistent_shell_pid(tmp_path) is None  # file missing
+    pid_file = tmp_path / "p6_shell_pid.txt"
+    pid_file.write_bytes(b"\xff\xfe\x00\x01")
+    assert _read_persistent_shell_pid(tmp_path) is None  # non-ASCII bytes
+    pid_file.write_text("not-a-pid\n", encoding="ascii")
+    assert _read_persistent_shell_pid(tmp_path) is None  # non-numeric
+    pid_file.write_text("4242\n", encoding="ascii")
+    assert _read_persistent_shell_pid(tmp_path) == 4242
+
+
+@pytest.mark.asyncio
+async def test_probe_failure_is_recorded_not_silently_gone(tmp_path, monkeypatch):
+    """G1.2: when the aliveness probe itself fails, the evidence must carry
+    null flags — a failed probe is never reported as 'alive' or 'gone'."""
+    from benchmarks.harbor.session_e2e import automation
+    from benchmarks.harbor.session_e2e.automation import SessionE2eAutomationSpec
+
+    data_dir = _instance_data_dir(tmp_path, monkeypatch)
+    workspace = data_dir / "workspaces" / "sess-parent"
+    workspace.mkdir(parents=True)
+    (workspace / "p6_shell_pid.txt").write_text("4242\n", encoding="ascii")
+
+    monkeypatch.setattr(automation, "_process_is_alive", lambda pid: None)
+    monkeypatch.setattr(automation, "PROCESS_GONE_TIMEOUT_SEC", 0.0)
+    monkeypatch.setattr(automation, "PROCESS_SETTLE_SEC", 0.0)
+
+    class TermClient:
+        def __init__(self) -> None:
+            self.terminated = False
+
+        async def get(self, url: str, headers: dict[str, str] | None = None) -> FakeResponse:
+            if "/sessions/sess-child/interactions" in url:
+                if self.terminated:
+                    return FakeResponse({"pendingUserPrompt": None, "pendingApprovals": []})
+                return FakeResponse(
+                    {"pendingUserPrompt": {"requestId": "req-child"}, "pendingApprovals": []}
+                )
+            return FakeResponse({"pendingUserPrompt": None, "pendingApprovals": []})
+
+        async def post(
+            self,
+            url: str,
+            headers: dict[str, str] | None = None,
+            json: dict[str, Any] | None = None,
+        ) -> FakeResponse:
+            if url.endswith("/sessions/sess-child/terminate"):
+                self.terminated = True
+                return FakeResponse({"status": "terminated"})
+            return FakeResponse({"delivered": True})
+
+    client = TermClient()
+    actions = await resolve_pending_interactions(
+        client,
+        api_url="http://127.0.0.1:3031/api",
+        session_id="sess-parent",
+        data_dir=data_dir,
+        spec=SessionE2eAutomationSpec(
+            resolve_child_interactions=True,
+            terminate_child_on_prompt=True,
+            check_persistent_shell_after_terminate=True,
+        ),
+        child_session_ids=["sess-child"],
+    )
+    (rec,) = actions
+    assert rec["kind"] == "terminateOnPrompt"
+    assert rec["shellPid"] == 4242
+    assert rec["shellAliveWhileWaiting"] is None
+    assert rec["shellGoneAfterTerminate"] is None
+    assert rec["shellStillGoneAfterSettle"] is None

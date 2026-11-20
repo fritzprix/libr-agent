@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
+import csv
+import io
 import os
+import subprocess
+import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -64,6 +70,14 @@ class SessionE2eAutomationSpec:
     # #2903 AC1: probe POST /api/e2e-control/picker (path + cancel) against
     # the live isolated debug instance and record responses in evidence.
     probe_picker_control: bool = False
+    # 2565 P-6 Windows process half (#2905): when the harness terminates a
+    # child session parked on ui__askUser, also verify the child's persistent
+    # PowerShell shell — whose PID the child recorded in the shared workspace
+    # (p6_shell_pid.txt) — is alive before termination, dies with the session,
+    # and the same PID stays dead through a settle window. The no-replacement
+    # guarantee itself is owned by the backend: force_kill_shell +
+    # force_kills_persistent_shell_without_leaving_manager_entry (Rust tests).
+    check_persistent_shell_after_terminate: bool = False
 
 
 MOCK_KEYCHAIN_MODES = ("succeed", "fail-write", "fail-read", "unavailable")
@@ -155,6 +169,9 @@ def load_session_e2e_spec(logs_dir: Any) -> SessionE2eAutomationSpec | None:
         re_poll_prompt_before_answer=bool(spec.get("re_poll_prompt_before_answer", False)),
         restart_while_prompt_waiting=bool(spec.get("restart_while_prompt_waiting", False)),
         probe_picker_control=bool(spec.get("probe_picker_control", False)),
+        check_persistent_shell_after_terminate=bool(
+            spec.get("check_persistent_shell_after_terminate", False)
+        ),
     )
 
 
@@ -203,6 +220,83 @@ def _has_pending_prompt(snapshot: dict[str, Any]) -> bool:
     return isinstance(prompt, dict) and bool(str(prompt.get("requestId", "")))
 
 
+PERSISTENT_SHELL_PID_FILE = "p6_shell_pid.txt"
+
+
+def _read_persistent_shell_pid(workspace_dir: Path) -> int | None:
+    """Read the persistent shell PID the task recorded in the shared workspace."""
+    try:
+        raw = (workspace_dir / PERSISTENT_SHELL_PID_FILE).read_text(encoding="ascii")
+    except (OSError, UnicodeDecodeError):
+        return None
+    raw = raw.strip()
+    return int(raw) if raw.isdigit() else None
+
+
+PROCESS_GONE_TIMEOUT_SEC = 10.0
+PROCESS_SETTLE_SEC = 2.0
+
+
+def _windows_process_is_alive(pid: int) -> bool | None:
+    """True: PID present. False: tasklist ran fine and did not list it.
+    None: the probe itself failed (missing tasklist, timeout, nonzero exit)
+    — callers surface that as unknown, never as "gone".
+
+    CSV output is parsed row by row and only the PID column may match, so a
+    session number or memory figure can never be mistaken for the PID.
+    """
+    try:
+        res = subprocess.run(
+            ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if res.returncode != 0:
+        return None
+    for row in csv.reader(io.StringIO(res.stdout or "")):
+        if len(row) >= 2 and row[1].strip() == str(pid):
+            return True
+    return False
+
+
+def _posix_process_is_alive(pid: int) -> bool | None:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # EPERM: the process exists, it is just not ours to signal.
+        return True
+    except OSError:
+        return None
+    return True
+
+
+def _process_is_alive(pid: int) -> bool | None:
+    if sys.platform == "win32":
+        return _windows_process_is_alive(pid)
+    return _posix_process_is_alive(pid)
+
+
+async def _wait_process_gone(pid: int, timeout_sec: float) -> bool | None:
+    """True: gone (confirmed). False: still alive when the window closed.
+    None: the aliveness probe kept failing — recorded verbatim so the
+    verifier sees a failed probe instead of a silent "gone".
+    """
+    deadline = time.monotonic() + timeout_sec
+    while True:
+        alive = await asyncio.to_thread(_process_is_alive, pid)
+        if alive is False:
+            return True
+        if time.monotonic() >= deadline:
+            return None if alive is None else False
+        await asyncio.sleep(0.25)
+
+
 async def resolve_pending_interactions(
     client: httpx.AsyncClient,
     *,
@@ -239,6 +333,15 @@ async def resolve_pending_interactions(
     if spec is not None:
         synthetic = os.environ.get(spec.synthetic_secret_env, "").strip()
 
+    # The persistent-shell PID file lives in the PRIMARY session's workspace:
+    # the child is spawned with workspaceOverride "current", so its shell
+    # writes into the same directory (<data_dir>/workspaces/<session_id>).
+    primary_workspace_dir = (
+        data_dir / "workspaces" / session_id
+        if spec is not None and spec.check_persistent_shell_after_terminate
+        else None
+    )
+
     actions: list[dict[str, Any]] = []
     child_ids = list(child_session_ids or []) if spec and spec.resolve_child_interactions else []
     targets = [(child, True) for child in child_ids] + [(session_id, False)]
@@ -267,6 +370,7 @@ async def resolve_pending_interactions(
                 prior_actions=(list(prior_actions or []) + actions),
                 allow_prompt_resolution=allow_prompt_resolution,
                 simultaneous_pending=simultaneous_pending,
+                primary_workspace_dir=primary_workspace_dir,
             )
         )
     return actions
@@ -284,6 +388,7 @@ async def _resolve_one_session(
     prior_actions: list[dict[str, Any]] | None = None,
     allow_prompt_resolution: bool = True,
     simultaneous_pending: bool = False,
+    primary_workspace_dir: Path | None = None,
 ) -> list[dict[str, Any]]:
     if snapshot is None:
         snapshot = await control.interactions(client, session_id)
@@ -302,6 +407,20 @@ async def _resolve_one_session(
             )
             return actions
         if request_id and is_child and spec is not None and spec.terminate_child_on_prompt:
+            shell_checks: dict[str, Any] = {}
+            shell_pid: int | None = None
+            if spec.check_persistent_shell_after_terminate:
+                shell_pid = (
+                    _read_persistent_shell_pid(primary_workspace_dir)
+                    if primary_workspace_dir is not None
+                    else None
+                )
+                shell_checks = {
+                    "shellPid": shell_pid,
+                    "shellAliveWhileWaiting": (
+                        _process_is_alive(shell_pid) if shell_pid is not None else False
+                    ),
+                }
             term_res = await client.post(f"{control.api_url}/sessions/{session_id}/terminate")
             term_res.raise_for_status()
             prompt_cleared = True
@@ -311,6 +430,17 @@ async def _resolve_one_session(
             except httpx.HTTPStatusError as exc:
                 if exc.response.status_code != 404:
                     raise
+            if shell_pid is not None:
+                gone = await _wait_process_gone(shell_pid, timeout_sec=PROCESS_GONE_TIMEOUT_SEC)
+                shell_checks["shellGoneAfterTerminate"] = gone
+                if gone is True:
+                    await asyncio.sleep(PROCESS_SETTLE_SEC)
+                    settle_alive = await asyncio.to_thread(_process_is_alive, shell_pid)
+                    shell_checks["shellStillGoneAfterSettle"] = (
+                        None if settle_alive is None else settle_alive is False
+                    )
+                else:
+                    shell_checks["shellStillGoneAfterSettle"] = gone
             actions.append(
                 {
                     "kind": "terminateOnPrompt",
@@ -318,6 +448,7 @@ async def _resolve_one_session(
                     "requestId": request_id,
                     "terminated": True,
                     "promptCleared": prompt_cleared,
+                    **shell_checks,
                 }
             )
         elif request_id and (spec is None or spec.auto_answer_interactive):
