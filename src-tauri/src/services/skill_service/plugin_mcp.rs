@@ -766,6 +766,80 @@ mod tests {
         assert_eq!(marker_count(&db, &marker).await, 0);
     }
 
+    // #2924 (gatekeeper G2.1): the install-path re-sync itself (not just its
+    // helpers) must remove every owned row BEFORE any early return — an
+    // unapproved re-install, a dropped server, or an empty snapshot must
+    // never leave stale rows in the global store.
+    #[tokio::test]
+    async fn re_sync_through_the_install_sync_path_converges() {
+        use crate::services::hooks::registry::{PluginSourceManifest, PluginSourceRecord};
+        use crate::services::skill_service::importing::sync_plugin_mcp_rows_from_record;
+        use sea_orm_migration::MigratorTrait;
+        let _guard = crate::state::lock_test_global_state().await;
+        crate::lifecycle::database::register_sqlite_vec();
+        let db = sea_orm::Database::connect("sqlite::memory:")
+            .await
+            .expect("memory db");
+        crate::migration::Migrator::up(&db, None)
+            .await
+            .expect("migrations");
+        crate::state::set_mcp_server_repository(
+            crate::repositories::mcp_server_repository::SqliteMCPServerRepository::new(db.clone()),
+        );
+
+        let source_id = "plugin-cc00000000000003";
+        let marker = plugin_source_marker(source_id);
+        let snapshot = |name: &str| PluginMcpServerSnapshot {
+            name: name.to_string(),
+            entry: serde_json::json!({"command": "true"}),
+        };
+        let record = |approved: bool, servers: Vec<PluginMcpServerSnapshot>| PluginSourceRecord {
+            manifest: PluginSourceManifest {
+                source_url: "https://example.com/resync".to_string(),
+                source_id: source_id.to_string(),
+                skill_names: vec![],
+                hooks: None,
+                hooks_approved: false,
+                approval_hashes: Default::default(),
+                created_at: 0,
+                plugin: None,
+                hook_files: vec![],
+                mcp_servers: servers,
+                mcp_approved: approved,
+            },
+            root_dir: std::path::PathBuf::from("/tmp/plugin-root-under-test"),
+        };
+
+        // (1) Approved install with two servers → two owned rows.
+        sync_plugin_mcp_rows_from_record(&record(true, vec![snapshot("alpha"), snapshot("beta")]))
+            .await
+            .expect("sync ok");
+        assert_eq!(marker_count(&db, &marker).await, 2);
+
+        // (2) Re-sync without approval → every stale row is gone, none created.
+        sync_plugin_mcp_rows_from_record(&record(false, vec![snapshot("alpha"), snapshot("beta")]))
+            .await
+            .expect("sync ok");
+        assert_eq!(marker_count(&db, &marker).await, 0);
+
+        // Re-approve to seed the rows again, then (3) re-sync with "beta"
+        // dropped → exactly the new snapshot survives.
+        sync_plugin_mcp_rows_from_record(&record(true, vec![snapshot("alpha"), snapshot("beta")]))
+            .await
+            .expect("sync ok");
+        assert_eq!(marker_count(&db, &marker).await, 2);
+        sync_plugin_mcp_rows_from_record(&record(true, vec![snapshot("alpha")]))
+            .await
+            .expect("sync ok");
+        assert_eq!(marker_count(&db, &marker).await, 1);
+
+        // (4) Re-sync with an empty snapshot → zero rows.
+        sync_plugin_mcp_rows_from_record(&record(true, vec![]))
+            .await
+            .expect("sync ok");
+        assert_eq!(marker_count(&db, &marker).await, 0);
+    }
+
     // #2924 (gatekeeper G1.2): an approved server that cannot be installed
     // must come back as a reported warning — never a silent drop.
     #[tokio::test]

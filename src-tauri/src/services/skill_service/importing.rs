@@ -16,6 +16,7 @@ use super::plugin_mcp::{collect_plugin_mcp_servers, create_plugin_mcp_server_row
 use super::scanning::{copy_dir_recursive, parse_skill_metadata};
 use crate::services::hooks::registry::{
     get_source, get_user_plugins_directory, save_source_in, PluginMetadata, PluginSourceManifest,
+    PluginSourceRecord,
 };
 use crate::services::hooks::schema::{HookDispatchMode, HooksConfig};
 use crate::session::get_session_manager;
@@ -605,8 +606,10 @@ async fn install_user_prepared_skills(
                         source_key,
                         error
                     );
+                    // The sync may have stopped after removing some rows
+                    // (gatekeeper S2.1): say so, and that a re-install heals it.
                     vec![format!(
-                        "Plugin installed, but its MCP servers could not be synced to the global store: {error}"
+                        "Plugin installed, but its MCP servers could not be synced to the global store: {error}. Re-installing the plugin re-syncs them."
                     )]
                 }
             };
@@ -628,7 +631,18 @@ async fn install_user_prepared_skills(
 async fn sync_installed_plugin_mcp_servers(source_key: &str) -> Result<Vec<String>, String> {
     let source_id = plugin_source_id(source_key);
     let record = get_source(&source_id)?;
-    super::plugin_mcp::remove_global_plugin_mcp_servers(&source_id).await?;
+    sync_plugin_mcp_rows_from_record(&record).await
+}
+
+/// The sync body once the persisted source record is read (see
+/// [`sync_installed_plugin_mcp_servers`]). Extracted so the remove-before-
+/// every-return rule (gatekeeper G1.1) is testable through the record
+/// itself, without a global plugin directory (gatekeeper G2.1).
+pub(super) async fn sync_plugin_mcp_rows_from_record(
+    record: &PluginSourceRecord,
+) -> Result<Vec<String>, String> {
+    let source_id = &record.manifest.source_id;
+    super::plugin_mcp::remove_global_plugin_mcp_servers(source_id).await?;
     if record.manifest.mcp_servers.is_empty() {
         return Ok(Vec::new());
     }
@@ -639,7 +653,7 @@ async fn sync_installed_plugin_mcp_servers(source_key: &str) -> Result<Vec<Strin
         );
         return Ok(Vec::new());
     }
-    create_plugin_mcp_server_rows(&source_id, &record.root_dir, &record.manifest.mcp_servers).await
+    create_plugin_mcp_server_rows(source_id, &record.root_dir, &record.manifest.mcp_servers).await
 }
 
 pub(super) fn install_prepared_import(
@@ -1008,9 +1022,18 @@ fn build_mcp_preview_entries(
                 .get("args")
                 .and_then(|v| v.as_array())
                 .map(|items| {
+                    // Quote arguments containing whitespace so the joined
+                    // line stays unambiguous (gatekeeper S2.2).
                     items
                         .iter()
                         .filter_map(|item| item.as_str())
+                        .map(|arg| {
+                            if arg.contains(char::is_whitespace) {
+                                format!("\"{arg}\"")
+                            } else {
+                                arg.to_string()
+                            }
+                        })
                         .collect::<Vec<_>>()
                         .join(" ")
                 })
@@ -1328,7 +1351,7 @@ mod hook_preview_tests {
                 name: "local".to_string(),
                 entry: serde_json::json!({
                     "command": "uvx",
-                    "args": ["mcp-fetch", "--max", "10"],
+                    "args": ["mcp-fetch", "--max", "10", "--path", "/tmp/my dir"],
                     "env": { "Z_TOKEN": "super-secret", "A_KEY": "another-secret" }
                 }),
             },
@@ -1346,7 +1369,11 @@ mod hook_preview_tests {
         let local = &entries[0];
         assert_eq!(local.transport, "stdio");
         assert_eq!(local.command.as_deref(), Some("uvx"));
-        assert_eq!(local.args.as_deref(), Some("mcp-fetch --max 10"));
+        assert_eq!(
+            local.args.as_deref(),
+            Some("mcp-fetch --max 10 --path \"/tmp/my dir\""),
+            "arguments with whitespace are quoted (S2.2)"
+        );
         assert_eq!(
             local.env_names.as_deref(),
             Some(&["A_KEY".to_string(), "Z_TOKEN".to_string()][..]),
