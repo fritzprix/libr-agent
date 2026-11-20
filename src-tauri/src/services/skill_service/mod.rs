@@ -28,9 +28,10 @@ pub use directories::{
     build_skill_alias_path, collect_allowed_skill_roots, collect_skill_alias_roots,
     extract_skill_alias_relative_path, get_assistant_skills_directory,
     get_default_skills_directory, get_legacy_global_skills_directory, get_managed_skills_overview,
-    get_managed_skills_overview_for_directories, get_system_skills_directory,
-    get_user_skills_directory, get_workspace_skills_directory_for_session,
-    get_workspace_skills_directory_from_path, resolve_skill_directories, resolve_skills,
+    get_managed_skills_overview_for_directories, get_session_plugin_skills_directory_for_session,
+    get_system_skills_directory, get_user_skills_directory,
+    get_workspace_skills_directory_for_session, get_workspace_skills_directory_from_path,
+    resolve_skill_directories, resolve_skills,
 };
 pub use github::parse_github_repo_url;
 pub use importing::{

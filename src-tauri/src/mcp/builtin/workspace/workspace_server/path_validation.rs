@@ -660,12 +660,15 @@ mod reserved_write_guard_tests {
 
     #[test]
     fn write_guard_refuses_paths_under_the_session_plugin_store() {
-        // #2942 gatekeeper G2.1: the guard must run on the write path with
-        // the same `session_store_dir_in` join `get_session_plugins_directory`
-        // resolves at runtime — hand-built paths in the guard's own unit
-        // tests would still pass if this wiring were deleted.
-        let workspace = tempfile::tempdir().unwrap();
-        let store = session_store_dir_in(workspace.path());
+        // #2942 gatekeeper G2.1 + G3.4: the guard must run on the write path
+        // with the same `session_store_dir_in` join
+        // `get_session_plugins_directory` resolves at runtime — which is over
+        // the DEFAULT session workspace directory (`workspaces/<session_id>`),
+        // never the current/override workspace (D1 revised). Hand-built paths
+        // in the guard's own unit tests would still pass if this wiring were
+        // deleted.
+        let default_workspace = tempfile::tempdir().unwrap();
+        let store = session_store_dir_in(default_workspace.path());
         std::fs::create_dir_all(store.join("plugin-abc")).unwrap();
 
         let inside = vec![
@@ -683,8 +686,11 @@ mod reserved_write_guard_tests {
         }
 
         // Paths outside the store pass the session-plugin guard.
-        refuse_reserved_write_paths(&workspace.path().join("src/main.rs"), Ok(store.clone()))
-            .expect("normal workspace writes must not be refused");
+        refuse_reserved_write_paths(
+            &default_workspace.path().join("src/main.rs"),
+            Ok(store.clone()),
+        )
+        .expect("normal workspace writes must not be refused");
 
         // #2942 S2.2: an unresolvable store warns and skips the check
         // instead of silently failing open or hard-failing the write.

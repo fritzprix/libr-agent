@@ -2,19 +2,31 @@
 //! #2942).
 //!
 //! A session install reuses the global plugin pipeline from `importing.rs`
-//! with a different target: plugin sources go to the session workspace hidden
-//! directory (`<workspace>/.libragent/plugins`, owner decision D1) and skills
-//! go to the session's workspace skills directory, which already outranks
-//! global skills. Session load reads the store manifest
-//! (`store-manifest.json`); entries whose plugin directory is missing or
-//! broken are skipped with a log line and never fail the load.
+//! with a different target: plugin sources go to the **default** session
+//! workspace directory
+//! (`{data_dir}/workspaces/<session_id>/.libragent/plugins`, owner decision
+//! D1 as revised in #2942) and plugin skills go to the matching
+//! `.libragent/skills` directory under that same default directory, which is
+//! scanned as its own session-plugin layer and outranks global skills.
+//! Nothing is written under the current (possibly overridden) workspace, so
+//! a workspace change can never make session plugins disappear. Session load
+//! reads the store manifest (`store-manifest.json`); entries whose plugin
+//! directory is missing or broken are skipped with a log line and never fail
+//! the load.
+//!
+//! Headless limit (#2942 G3.5): a headless run uses an ephemeral data dir
+//! and its write-back copies DB rows only (`headless/writeback.rs`), so
+//! plugins installed during an ephemeral headless run are not written back
+//! to the real profile.
 //!
 //! Precedence: a session install wins over a global install with the same
 //! `source_id` for that session only (`hooks::registry::list_effective_approved_sources_in`).
 
 use super::cache::invalidate_skill_scan_cache;
 use super::contracts::{PreparedSkillImport, SkillImportPreview, SkillImportResult};
-use super::directories::{get_system_skills_directory, get_workspace_skills_directory_for_session};
+use super::directories::{
+    get_session_plugin_skills_directory_for_session, get_system_skills_directory,
+};
 use super::github::parse_github_repo_url;
 use super::importing::{
     build_import_preview, install_prepared_import, plugin_source_id, prepare_github_skill_import,
@@ -95,11 +107,21 @@ struct SessionPluginDirs {
 }
 
 fn session_dirs(session_id: &str) -> Result<SessionPluginDirs, String> {
-    Ok(SessionPluginDirs {
-        skills: get_workspace_skills_directory_for_session(session_id)?,
+    let dirs = SessionPluginDirs {
+        // #2942 G3.2: plugin skills resolve under the default session
+        // workspace directory, not the current (possibly overridden) one.
+        skills: get_session_plugin_skills_directory_for_session(session_id)?,
         plugins: get_session_plugins_directory(session_id)?,
         trust: get_session_plugin_trust_dir(session_id)?,
-    })
+    };
+    // #2942 G3.3(b): the default directory is created at session creation,
+    // but the store itself is created lazily — make sure the install targets
+    // exist before writing into them.
+    fs::create_dir_all(&dirs.plugins)
+        .map_err(|e| format!("Failed to create session plugin store: {e}"))?;
+    fs::create_dir_all(&dirs.skills)
+        .map_err(|e| format!("Failed to create session plugin skills dir: {e}"))?;
+    Ok(dirs)
 }
 
 /// Skill names recorded in this session's plugin-source store for the same
@@ -413,7 +435,7 @@ mod tests {
     use crate::services::hooks::execute::run_session_start_with_sources;
     use crate::services::hooks::registry::{
         compute_handler_approval_hashes, read_session_plugin_trust, read_store_manifest,
-        save_source_in, session_store_dir_in, PluginSourceManifest, SESSION_STORE_MANIFEST_FILE,
+        save_source_in, PluginSourceManifest, SESSION_STORE_MANIFEST_FILE,
     };
     use crate::services::hooks::schema::load_hooks_from_root;
     use crate::services::skill_service::contracts::SkillImportKind;
@@ -426,26 +448,11 @@ mod tests {
         temp_imports: PathBuf,
     }
 
-    #[test]
-    fn installer_plugins_dir_is_the_guarded_session_store_dir() {
-        // #2942 gatekeeper G2.1: the file-write guard protects
-        // `session_store_dir_in(session workspace)`, and the installer's
-        // `SessionPluginDirs.plugins` comes from `get_session_plugins_directory`
-        // — whose only join is that same `session_store_dir_in`. Pin the
-        // shared path (and that the store stays inside the workspace while
-        // trust stays outside) so the guard and the installer cannot drift
-        // apart unnoticed.
-        let ws = tempfile::tempdir().unwrap();
-        let store = session_store_dir_in(ws.path());
-        assert!(store.starts_with(ws.path()));
-
-        let dirs = SessionPluginDirs {
-            skills: ws.path().join(".libragent/skills"),
-            plugins: store.clone(),
-            trust: ws.path().join("outside-workspace-trust"),
-        };
-        assert_eq!(dirs.plugins, session_store_dir_in(ws.path()));
-    }
+    // #2942 G3.6/S3.1: the resolver's override-independence (the property the
+    // guard and the installer both rely on) is pinned by
+    // `session::manager::tests::default_workspace_dir_never_follows_workspace_override`,
+    // which drives the real SessionManager across register/hydrate/cancel —
+    // replacing the former path-identity assertion.
 
     fn fixture() -> Fixture {
         let root = tempfile::tempdir().unwrap();

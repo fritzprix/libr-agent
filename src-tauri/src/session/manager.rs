@@ -113,6 +113,16 @@ impl SessionManager {
         &self.directory_service
     }
 
+    /// Default session workspace directory (`{data_dir}/workspaces/<session_id>`),
+    /// the SSOT parent of the session plugin store (#2942 D1, revised by the
+    /// owner). Deterministic from the session id alone: it never follows a
+    /// workspace override, pool hydration, or a workspace change, so session
+    /// plugins survive any workspace move.
+    pub fn get_session_default_workspace_dir_unverified(&self, session_id: &str) -> PathBuf {
+        self.directory_service
+            .get_workspace_dir_unverified(session_id)
+    }
+
     pub fn list_sessions(&self) -> Result<Vec<String>, String> {
         // We still need to read the directory to list sessions, but we use the base path from service
         let workspaces_dir = self
@@ -376,9 +386,13 @@ impl SessionManager {
         Ok(removed_count)
     }
 
-    /// Remove a specific session
+    /// Remove a specific session. Idempotent for sessions absent from the
+    /// pool (#2942 G3.3(d)): after an app restart the session is not in the
+    /// pool, yet deletion must still remove the default workspace directory
+    /// (which holds the session plugin store, #2942 D1 revised).
     pub async fn remove_session(&self, session_id: &str) -> Result<(), String> {
-        // Remove session from pool, returning error if not found
+        // Remove session from pool if present; absence is not an error —
+        // the default directory removal below is deterministic anyway.
         let workspace_info = {
             let mut pool = self
                 .workspace_pool
@@ -388,7 +402,7 @@ impl SessionManager {
             pool.remove(session_id)
         };
 
-        if let Some(info) = workspace_info {
+        if let Some(info) = &workspace_info {
             // Safety: Never delete workspace overrides (user-provided custom directories)
             if let Some(workspace_override) = &info.workspace_override {
                 info!(
@@ -396,19 +410,17 @@ impl SessionManager {
                     session_id, workspace_override
                 );
             }
-
-            // Always remove the default isolated workspace directory
-            // (it's safe to call even if the directory was never created)
-            self.directory_service.remove_workspace(session_id).await?;
-
-            info!(
-                "Removed session '{}' (internal workspace cleaned)",
-                session_id
-            );
-            Ok(())
-        } else {
-            Err(format!("Session '{session_id}' not found in pool"))
         }
+
+        // Always remove the default isolated workspace directory
+        // (it's safe to call even if the directory was never created)
+        self.directory_service.remove_workspace(session_id).await?;
+
+        info!(
+            "Removed session '{}' (internal workspace cleaned)",
+            session_id
+        );
+        Ok(())
     }
 
     /// Get session statistics
@@ -435,5 +447,78 @@ impl SessionManager {
             active_sessions,
             pool_sessions,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn default_workspace_dir_never_follows_workspace_override() {
+        // #2942 G3.1/G3.6 (owner D1 revised): the session plugin store
+        // resolves under the default directory, so it must stay put across
+        // override registration, pool hydration, and override cancellation
+        // — while the current workspace follows the override.
+        let temp = tempfile::tempdir().unwrap();
+        let base = temp.path().join("data");
+        let manager = SessionManager::new_with_base_dir(base.clone()).unwrap();
+        let sid = "session-1";
+        let default_dir = base.join("workspaces").join(sid);
+
+        // No override, pool empty: default == current (hydration creates it).
+        assert_eq!(
+            manager.get_session_default_workspace_dir_unverified(sid),
+            default_dir
+        );
+        assert_eq!(manager.get_session_workspace_dir_by_id(sid), default_dir);
+        assert!(default_dir.exists(), "hydration must create the directory");
+
+        let override_dir = temp.path().join("elsewhere");
+        std::fs::create_dir_all(&override_dir).unwrap();
+        manager
+            .register_session_override(sid, override_dir.clone())
+            .await
+            .unwrap();
+
+        // With override registered: current follows the override (G3.3(a):
+        // registration also ensures the default directory exists), while the
+        // store parent stays pinned to the default directory.
+        assert_eq!(manager.get_session_workspace_dir_by_id(sid), override_dir);
+        assert_eq!(
+            manager.get_session_default_workspace_dir_unverified(sid),
+            default_dir
+        );
+        assert!(default_dir.exists());
+
+        // After cancel_override: both point back at the default directory.
+        manager.remove_workspace_override(sid).await.unwrap();
+        assert_eq!(manager.get_session_workspace_dir_by_id(sid), default_dir);
+        assert_eq!(
+            manager.get_session_default_workspace_dir_unverified(sid),
+            default_dir
+        );
+    }
+
+    #[tokio::test]
+    async fn remove_session_removes_default_dir_even_when_not_in_pool() {
+        // #2942 G3.3(d): after an app restart the session is not in the
+        // pool, yet delete must still remove the default workspace directory
+        // — and with it the session plugin store inside it.
+        let temp = tempfile::tempdir().unwrap();
+        let base = temp.path().join("data");
+        let manager = SessionManager::new_with_base_dir(base.clone()).unwrap();
+        let sid = "ghost-session";
+        let default_dir = base.join("workspaces").join(sid);
+        let store = default_dir.join(".libragent").join("plugins");
+        std::fs::create_dir_all(&store).unwrap();
+
+        assert!(manager.workspace_pool.read().unwrap().get(sid).is_none());
+        manager.remove_session(sid).await.unwrap();
+
+        assert!(
+            !default_dir.exists(),
+            "not-in-pool delete must still remove the default directory"
+        );
     }
 }

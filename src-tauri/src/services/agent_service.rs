@@ -77,6 +77,26 @@ impl AgentService {
             Self::validate_and_register_workspace_override(path_str, session_id).await?;
         }
 
+        // #2942 G3.3(a): the default session workspace directory
+        // (`{data_dir}/workspaces/<session_id>`) is the SSOT parent of the
+        // session plugin store (D1 revised), so create it at session
+        // creation — with or without a workspace override. Previously it was
+        // only created lazily or as a side effect of override registration.
+        if let Ok(session_manager) = crate::session::get_session_manager() {
+            let sid = session_id.to_string();
+            let result = tokio::task::spawn_blocking(move || {
+                session_manager
+                    .get_directory_service()
+                    .get_workspace_dir(&sid)
+            })
+            .await;
+            if let Err(error) = result {
+                log::warn!(
+                    "Failed to ensure default session workspace directory for {session_id}: {error}"
+                );
+            }
+        }
+
         Ok((mode, docker))
     }
 

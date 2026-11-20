@@ -228,9 +228,10 @@ Write-Host "Available tools: python3, typescript/deno, shell commands"
                 .map_err(|e| format!("Failed to remove workspace directory: {e}"))?;
         }
 
-        // Legacy session-scoped plugin store (#2825, moved into the session
-        // workspace by #2942). The current store lives inside the workspace and
-        // is removed with it; this only cleans up leftovers from old versions.
+        // Legacy session-scoped plugin store (#2825, moved by #2942). The
+        // current store lives under the default session workspace directory
+        // (`workspaces/<session_id>/.libragent/plugins`) and is removed with
+        // it; this only cleans up leftovers from old versions.
         let plugins_dir = self
             .base_data_dir
             .join(crate::services::hooks::registry::LEGACY_SESSION_PLUGINS_DIR_NAME)

@@ -12,14 +12,16 @@ use std::path::{Path, PathBuf};
 pub const USER_PLUGINS_DIR_NAME: &str = "user_plugins";
 /// Legacy location of per-session plugin stores
 /// (`{data_dir}/session_plugins/{session_id}/`, #2825). #2942 moved the store
-/// into the session workspace hidden directory (see
+/// into the **default** session workspace directory (see
 /// `SESSION_WORKSPACE_PLUGINS_DIR`); this constant now only drives cleanup of
 /// leftover legacy stores on session deletion. Existing legacy entries are
 /// ignored, not migrated (documented in the #2942 PR).
 pub const LEGACY_SESSION_PLUGINS_DIR_NAME: &str = "session_plugins";
-/// Hidden-directory name under the session workspace that holds the
-/// session-scoped plugin store (`<workspace>/.libragent/plugins`), the same
-/// hidden-directory family tool-result spillover uses (`#2942`, owner D1).
+/// Hidden-directory name holding the session-scoped plugin store under the
+/// **default** session workspace directory
+/// (`{data_dir}/workspaces/<session_id>/.libragent/plugins`, #2942 D1
+/// revised). Unlike tool-result spillover (which follows the current
+/// workspace), the store never moves with a workspace override.
 pub const SESSION_WORKSPACE_PLUGINS_DIR: &str = "plugins";
 const MANIFEST_FILE: &str = "manifest.json";
 
@@ -108,25 +110,37 @@ pub fn get_user_plugins_directory() -> Result<PathBuf, String> {
         .join(USER_PLUGINS_DIR_NAME))
 }
 
-/// Directory holding the plugins installed for one session only (#2825),
-/// located in the session workspace hidden directory
-/// (`<session_workspace>/.libragent/plugins`) per owner decision D1 (#2942).
-/// Session deletion removes the store together with the workspace
+/// Directory holding the plugins installed for one session only (#2825).
+/// Per the revised owner decision D1 (#2942), the store lives under the
+/// **default** session workspace directory
+/// (`{data_dir}/workspaces/<session_id>/.libragent/plugins`), never under
+/// the current (possibly overridden) workspace — a workspace change can
+/// therefore never make session plugins disappear. Session deletion removes
+/// the store together with the default directory
 /// (`SessionDirectoryService::remove_workspace`).
+/// Headless limit (#2942 G3.5): a headless run uses an ephemeral data dir
+/// and its write-back copies DB rows only
+/// (`headless/writeback.rs::write_back_*`), so plugins installed during an
+/// ephemeral headless run are not written back to the real profile.
 pub fn get_session_plugins_directory(session_id: &str) -> Result<PathBuf, String> {
     validate_session_id(session_id)?;
     let session_manager = get_session_manager()?;
+    // #2942 G3.1: resolve from the session id only. The previous
+    // `get_session_workspace_dir_by_id` returned the override once hydrated,
+    // so the same session could resolve to two different stores.
     Ok(session_store_dir_in(
-        &session_manager.get_session_workspace_dir_by_id(session_id),
+        &session_manager.get_session_default_workspace_dir_unverified(session_id),
     ))
 }
 
-/// Pure location of one session workspace's plugin store
-/// (`<workspace_root>/.libragent/plugins`), the join used by
+/// Pure location of one session's plugin store
+/// (`<default_workspace_root>/.libragent/plugins`), the join used by
 /// [`get_session_plugins_directory`] (extracted for direct testing, #2942
-/// gatekeeper G1.4).
-pub fn session_store_dir_in(workspace_root: &Path) -> PathBuf {
-    workspace_root
+/// gatekeeper G1.4). `default_workspace_root` must be the **default**
+/// session workspace directory (`workspaces/<session_id>`), not the
+/// current/override workspace (#2942 D1 revised).
+pub fn session_store_dir_in(default_workspace_root: &Path) -> PathBuf {
+    default_workspace_root
         .join(".libragent")
         .join(SESSION_WORKSPACE_PLUGINS_DIR)
 }
@@ -251,7 +265,8 @@ pub struct SessionPluginStoreEntry {
 }
 
 /// File name of the session plugin store manifest inside the session plugin
-/// directory (`<workspace>/.libragent/plugins/store-manifest.json`).
+/// directory (`workspaces/<session_id>/.libragent/plugins/store-manifest.json`
+/// — the default session workspace directory, #2942 D1 revised).
 pub const SESSION_STORE_MANIFEST_FILE: &str = "store-manifest.json";
 
 /// Read the session plugin store manifest. A missing or unreadable file

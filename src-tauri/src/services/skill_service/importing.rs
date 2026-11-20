@@ -133,7 +133,7 @@ pub async fn copy_global_to_assistant(
 ) -> Result<String, String> {
     let system_dir = get_system_skills_directory()?;
     let user_dir = get_user_skills_directory()?;
-    let global_skills = resolve_skills(system_dir, user_dir, None, None).await?;
+    let global_skills = resolve_skills(system_dir, user_dir, None, None, None).await?;
     let source_skill = global_skills
         .into_iter()
         .find(|skill| skill.name.eq_ignore_ascii_case(&skill_name))

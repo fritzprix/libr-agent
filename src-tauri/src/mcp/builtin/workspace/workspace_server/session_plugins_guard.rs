@@ -1,5 +1,7 @@
 //! File tools never write into a session's plugin store
-//! (`<workspace>/.libragent/plugins`, #2942). The store is written only by the
+//! (`{data_dir}/workspaces/<session_id>/.libragent/plugins` — the
+//! **default** session workspace directory, #2942 D1 revised). The store is
+//! written only by the
 //! install/uninstall services, which keep hook approval outside the workspace;
 //! a file-tool edit there could plant a plugin whose files a rewritten
 //! manifest would still describe as approved. Reads are unaffected; only the
