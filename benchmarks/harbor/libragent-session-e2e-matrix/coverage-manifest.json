@@ -482,7 +482,7 @@
     {
       "id": "S3-PICKER",
       "status": "implemented-partial",
-      "reason": "Harbor e2e-picker-control-plane + Rust e2e_control_token_tests + dialog.test.ts: POST /api/e2e-control/picker arms path and cancel overrides and POST /api/e2e-control/picker/take consumes each once (leaving no override armed) on an isolated debug instance; native OS dialog rendering stays on S2 (#2903)",
+      "reason": "Harbor e2e-picker-control-plane + Rust e2e_control_token_tests + dialog.test.ts: POST /api/e2e-control/picker arms path and cancel overrides and POST /api/e2e-control/picker/take consumes each once (leaving no override armed) as a control-plane store round-trip on an isolated debug instance; native OS dialog rendering stays on S2 (#2903)",
       "harbor_task": "e2e-picker-control-plane"
     },
     {

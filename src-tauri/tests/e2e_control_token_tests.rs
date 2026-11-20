@@ -205,8 +205,21 @@ mod tests {
     // Picker override route (#2903).
     // ------------------------------------------------------------------
 
+    /// `e2e_picker::OVERRIDE` is a process-wide singleton, so every test in
+    /// this file that arms or takes through the picker routes must hold this
+    /// lock for its whole arm→take sequence; cargo runs `#[tokio::test]`s in
+    /// parallel within one binary (#2929 G2.1).
+    static PICKER_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn lock_picker_store() -> std::sync::MutexGuard<'static, ()> {
+        PICKER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     #[tokio::test]
     async fn picker_route_requires_the_full_guard_chain() {
+        let _store = lock_picker_store();
         // No capability → 403 through the production chain.
         let res = warp::test::request()
             .method("POST")
@@ -245,7 +258,9 @@ mod tests {
 
     #[tokio::test]
     async fn picker_route_arms_override_and_rejects_empty_body() {
-        // Drain anything a concurrent test left behind; we assert on ours below.
+        let _store = lock_picker_store();
+        // Drain anything a test from an earlier run or another thread left
+        // behind; we hold the lock, so nothing can arm until we are done.
         let _ = tauri_mcp_agent_lib::e2e_picker::take_picker_override();
 
         let res = warp::test::request()
@@ -627,6 +642,10 @@ mod tests {
 
     #[tokio::test]
     async fn picker_arm_and_take_consumes_path_and_cancel_once() {
+        let _store = lock_picker_store();
+        // Drain anything a test from an earlier run or another thread left
+        // behind; we hold the lock, so nothing can arm until we are done.
+        let _ = tauri_mcp_agent_lib::e2e_picker::take_picker_override();
         let chain = production_chain();
 
         // Missing token on /picker/take is rejected.
