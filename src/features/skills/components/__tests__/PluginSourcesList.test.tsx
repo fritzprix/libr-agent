@@ -18,14 +18,14 @@ function source(
     id: 'plugin-aabbccddeeff0011',
     sourceUrl: 'https://github.com/example/plugin',
     skillNames: ['demo'],
-    hookEvents: ['SessionStart', 'SessionEnd'],
+    hookEvents: ['SessionStart', 'SessionEnd', 'PostToolUseFailure'],
     hooksApproved: true,
     ...overrides,
   };
 }
 
 describe('PluginSourcesList hook status markers', () => {
-  it('shows executed marker for SessionStart and stub marker for other events', () => {
+  it('shows executed marker for supported events and not-supported marker for unsupported events', () => {
     render(
       <PluginSourcesList
         sources={[source()]}
@@ -40,8 +40,9 @@ describe('PluginSourcesList hook status markers', () => {
     fireEvent.click(screen.getAllByRole('button')[0]);
 
     expect(screen.getByText('SessionStart')).toBeInTheDocument();
-    expect(screen.getByText(/Runs on SessionStart/)).toBeInTheDocument();
     expect(screen.getByText('SessionEnd')).toBeInTheDocument();
-    expect(screen.getByText(/Not yet executed/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Executed/)).toHaveLength(2);
+    expect(screen.getByText('PostToolUseFailure')).toBeInTheDocument();
+    expect(screen.getByText(/Not supported/)).toBeInTheDocument();
   });
 });
