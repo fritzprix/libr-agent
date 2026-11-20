@@ -3,13 +3,14 @@
  * control plane (`/api/e2e-control/ui/*`).
  *
  * The Rust side emits Tauri events (`e2e-navigate`, `e2e-inspect`,
- * `e2e-target`, `e2e-after-input`); this module answers them inside the
- * running UI:
+ * `e2e-input`); this module answers them inside the running UI:
  *
  * - navigate: push a router path and/or open an agent side panel,
  * - inspect: enumerate interactable elements (role / label / test id /
  *   viewport bounds) so an external agent can pick targets without guessing,
- * - target: resolve one selector / test id to an integer viewport rect.
+ * - input: resolve one selector / test id and dispatch the action as DOM
+ *   events inside this webview — the default element-input path per the
+ *   #2902 owner ruling; OS-level input is never used for these.
  *
  * Answers travel back through the `e2e_ui_report` Tauri command, which is
  * inert unless the control plane is enabled. The whole bridge stays
@@ -187,7 +188,7 @@ async function handleInspect(detail: InspectEvent): Promise<void> {
   }).catch(() => {});
 }
 
-export interface TargetEvent {
+export interface InputEvent {
   requestId: string;
   selector?: string | null;
   testId?: string | null;
@@ -197,18 +198,10 @@ export interface TargetEvent {
   modifiers?: string[];
   scrollAmount?: number | null;
   axis?: string | null;
+  button?: string | null;
 }
 
-interface PendingTargetRecord {
-  el: Element;
-  osClicked: boolean;
-  osKeyed: boolean;
-  initialValue: string | null;
-}
-
-const pendingTargets = new Map<string, PendingTargetRecord>();
-
-export function resolveTarget(detail: TargetEvent): Element | null {
+export function resolveTarget(detail: InputEvent): Element | null {
   const candidates: Element[] = [];
   if (detail.selector) {
     try {
@@ -278,7 +271,191 @@ function setReactInputValue(
   el.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
-async function handleTarget(detail: TargetEvent): Promise<void> {
+function modifierFlags(detail: Pick<InputEvent, 'modifiers'>) {
+  const mods = (detail.modifiers || []).map((m) => m.toLowerCase());
+  return {
+    ctrlKey: mods.includes('ctrl') || mods.includes('control'),
+    altKey: mods.includes('alt') || mods.includes('option'),
+    shiftKey: mods.includes('shift'),
+    metaKey:
+      mods.includes('meta') ||
+      mods.includes('cmd') ||
+      mods.includes('command') ||
+      mods.includes('super'),
+  };
+}
+
+/** Button index of a pointer action (0 left, 1 middle, 2 right). */
+export function pointerButton(action: string): number {
+  if (action === 'right_click') return 2;
+  if (action === 'middle_click') return 1;
+  return 0;
+}
+
+function mouseInit(
+  detail: InputEvent,
+  button: number,
+  buttons: number,
+): MouseEventInit {
+  return {
+    bubbles: true,
+    cancelable: true,
+    button,
+    buttons,
+    ...modifierFlags(detail),
+  };
+}
+
+function pointerInit(
+  detail: InputEvent,
+  button: number,
+  buttons: number,
+): PointerEventInit {
+  return {
+    ...mouseInit(detail, button, buttons),
+    pointerId: 1,
+    pointerType: 'mouse',
+    isPrimary: true,
+  };
+}
+
+/**
+ * Pointer events where the webview supports them, otherwise the plain
+ * MouseEvent equivalent so dispatch never throws on older engines (tests).
+ */
+function newPointerEvent(type: string, init: PointerEventInit): Event {
+  if (typeof PointerEvent !== 'undefined') {
+    return new PointerEvent(type, init);
+  }
+  return new MouseEvent(type, init);
+}
+
+/**
+ * Dispatch one `ui/input` action to `el` as DOM events inside this webview —
+ * the default element-input path (#2902 owner ruling: OS-level input is
+ * never used for element targets). Returns a short description of what was
+ * dispatched.
+ */
+export function dispatchDomInput(el: Element, detail: InputEvent): string {
+  const action = (detail.action || '').toLowerCase();
+  const target = el as HTMLElement;
+
+  if (action === 'move' || action === 'hover') {
+    target.dispatchEvent(
+      newPointerEvent('pointerover', pointerInit(detail, 0, 0)),
+    );
+    target.dispatchEvent(new MouseEvent('mouseover', mouseInit(detail, 0, 0)));
+    target.dispatchEvent(
+      newPointerEvent('pointermove', pointerInit(detail, 0, 0)),
+    );
+    target.dispatchEvent(new MouseEvent('mousemove', mouseInit(detail, 0, 0)));
+    return 'move: pointerover,mouseover,pointermove,mousemove';
+  }
+
+  if (
+    action === 'click' ||
+    action === 'double_click' ||
+    action === 'right_click' ||
+    action === 'middle_click'
+  ) {
+    const button = pointerButton(action);
+    const pressed = button === 1 ? 4 : button === 2 ? 2 : 1;
+    if (typeof target.focus === 'function') target.focus();
+    target.dispatchEvent(
+      newPointerEvent('pointerdown', pointerInit(detail, button, pressed)),
+    );
+    target.dispatchEvent(
+      new MouseEvent('mousedown', mouseInit(detail, button, pressed)),
+    );
+    target.dispatchEvent(
+      newPointerEvent('pointerup', pointerInit(detail, button, 0)),
+    );
+    target.dispatchEvent(
+      new MouseEvent('mouseup', mouseInit(detail, button, 0)),
+    );
+    if (action === 'right_click') {
+      target.dispatchEvent(
+        new MouseEvent('contextmenu', mouseInit(detail, button, 0)),
+      );
+      return 'right_click: pointerdown,mousedown,pointerup,mouseup,contextmenu';
+    }
+    target.dispatchEvent(new MouseEvent('click', mouseInit(detail, button, 0)));
+    if (action === 'double_click') {
+      target.dispatchEvent(
+        newPointerEvent('pointerdown', pointerInit(detail, button, pressed)),
+      );
+      target.dispatchEvent(
+        new MouseEvent('mousedown', mouseInit(detail, button, pressed)),
+      );
+      target.dispatchEvent(
+        newPointerEvent('pointerup', pointerInit(detail, button, 0)),
+      );
+      target.dispatchEvent(
+        new MouseEvent('mouseup', mouseInit(detail, button, 0)),
+      );
+      target.dispatchEvent(
+        new MouseEvent('click', { ...mouseInit(detail, button, 0), detail: 2 }),
+      );
+      target.dispatchEvent(
+        new MouseEvent('dblclick', {
+          ...mouseInit(detail, button, 0),
+          detail: 2,
+        }),
+      );
+      return 'double_click: (pointerdown,mousedown,pointerup,mouseup,click) x2,dblclick';
+    }
+    return `${action}: pointerdown,mousedown,pointerup,mouseup,click`;
+  }
+
+  if (action === 'type') {
+    const text = detail.text || '';
+    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+      setReactInputValue(el, el.value + text);
+      return `type: input+change (${text.length} chars appended)`;
+    }
+    if (target.isContentEditable) {
+      target.textContent = (target.textContent || '') + text;
+      target.dispatchEvent(new Event('input', { bubbles: true }));
+      return `type: text+input (${text.length} chars appended)`;
+    }
+    return 'type: target is not editable';
+  }
+
+  if (action === 'key') {
+    if (typeof target.focus === 'function') target.focus();
+    const init: KeyboardEventInit = {
+      key: detail.key || '',
+      bubbles: true,
+      cancelable: true,
+      ...modifierFlags(detail),
+    };
+    target.dispatchEvent(new KeyboardEvent('keydown', init));
+    target.dispatchEvent(new KeyboardEvent('keyup', init));
+    return `key: keydown,keyup (${detail.key})`;
+  }
+
+  if (action === 'scroll') {
+    const amount = detail.scrollAmount ?? 0;
+    const container =
+      findScrollableContainer(el) ??
+      (document.scrollingElement as HTMLElement | null);
+    if (container) {
+      const delta = amount * 120;
+      if ((detail.axis || 'vertical').toLowerCase() === 'horizontal') {
+        container.scrollLeft += delta;
+      } else {
+        container.scrollTop += delta;
+      }
+      container.dispatchEvent(new Event('scroll', { bubbles: true }));
+      return `scroll: ${delta >= 0 ? '+' : ''}${delta}px ${detail.axis || 'vertical'}`;
+    }
+    return 'scroll: no scrollable container found';
+  }
+
+  return `unsupported action '${action}'`;
+}
+
+async function handleInput(detail: InputEvent): Promise<void> {
   const el = resolveTarget(detail);
   if (!el) {
     await invoke('e2e_ui_report', {
@@ -290,128 +467,17 @@ async function handleTarget(detail: TargetEvent): Promise<void> {
   if (typeof el.scrollIntoView === 'function') {
     el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
-  if (
-    el instanceof HTMLElement &&
-    (detail.action === 'type' || detail.action === 'key')
-  ) {
-    el.focus();
-  }
-  const record: PendingTargetRecord = {
-    el,
-    osClicked: false,
-    osKeyed: false,
-    initialValue:
-      el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement
-        ? el.value
-        : null,
-  };
-  el.addEventListener(
-    'click',
-    () => {
-      record.osClicked = true;
+  const description = dispatchDomInput(el, detail);
+  await invoke('e2e_ui_report', {
+    requestId: detail.requestId,
+    payload: {
+      found: true,
+      dispatched: !description.startsWith('unsupported action'),
+      action: detail.action,
+      description,
+      rect: rectOf(el),
     },
-    { once: true, capture: true },
-  );
-  window.addEventListener(
-    'keydown',
-    () => {
-      record.osKeyed = true;
-    },
-    { once: true, capture: true },
-  );
-  pendingTargets.set(detail.requestId, record);
-
-  const payload = { found: true, rect: rectOf(el) };
-  await invoke('e2e_ui_report', { requestId: detail.requestId, payload }).catch(
-    () => {},
-  );
-}
-
-interface AfterInputEvent {
-  requestId?: string | null;
-  action?: string | null;
-  text?: string | null;
-  key?: string | null;
-  modifiers?: string[];
-  scrollAmount?: number | null;
-  axis?: string | null;
-}
-
-export function applyAfterInputFallback(detail: AfterInputEvent): void {
-  const record = detail.requestId
-    ? pendingTargets.get(detail.requestId)
-    : undefined;
-  if (detail.requestId) {
-    pendingTargets.delete(detail.requestId);
-  }
-
-  const action = (detail.action || '').toLowerCase();
-  if (action === 'click' && record && !record.osClicked) {
-    const target = record.el;
-    if (target instanceof HTMLElement) {
-      target.focus();
-      target.dispatchEvent(
-        new PointerEvent('pointerdown', { bubbles: true, cancelable: true }),
-      );
-      target.dispatchEvent(
-        new MouseEvent('mousedown', { bubbles: true, cancelable: true }),
-      );
-      target.dispatchEvent(
-        new PointerEvent('pointerup', { bubbles: true, cancelable: true }),
-      );
-      target.dispatchEvent(
-        new MouseEvent('mouseup', { bubbles: true, cancelable: true }),
-      );
-      target.click();
-    }
-  } else if (action === 'type' && detail.text) {
-    const el =
-      record?.el ??
-      (document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null);
-    if (
-      (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) &&
-      el.value === (record?.initialValue ?? '')
-    ) {
-      el.focus();
-      setReactInputValue(el, (record?.initialValue ?? '') + detail.text);
-    }
-  } else if (action === 'scroll' && typeof detail.scrollAmount === 'number') {
-    const baseEl = record?.el ?? document.scrollingElement ?? document.body;
-    const container = baseEl ? findScrollableContainer(baseEl) : null;
-    if (container) {
-      const delta = detail.scrollAmount * 120;
-      if ((detail.axis || 'vertical').toLowerCase() === 'horizontal') {
-        container.scrollLeft += delta;
-      } else {
-        container.scrollTop += delta;
-      }
-      container.dispatchEvent(new Event('scroll', { bubbles: true }));
-    }
-  } else if (action === 'key' && detail.key && (!record || !record.osKeyed)) {
-    const target =
-      (record?.el instanceof HTMLElement ? record.el : null) ??
-      (document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : document.body);
-    const mods = (detail.modifiers || []).map((m) => m.toLowerCase());
-    const init: KeyboardEventInit = {
-      key: detail.key,
-      bubbles: true,
-      cancelable: true,
-      ctrlKey: mods.includes('ctrl') || mods.includes('control'),
-      altKey: mods.includes('alt') || mods.includes('option'),
-      shiftKey: mods.includes('shift'),
-      metaKey:
-        mods.includes('meta') ||
-        mods.includes('cmd') ||
-        mods.includes('command') ||
-        mods.includes('super'),
-    };
-    target.dispatchEvent(new KeyboardEvent('keydown', init));
-    target.dispatchEvent(new KeyboardEvent('keyup', init));
-  }
+  }).catch(() => {});
 }
 
 interface NavigateEvent {
@@ -471,13 +537,8 @@ export function E2eUiBridge(): null {
           }),
         );
         unlisten.push(
-          await listen<TargetEvent>('e2e-target', (event) => {
-            void handleTarget(event.payload);
-          }),
-        );
-        unlisten.push(
-          await listen<AfterInputEvent>('e2e-after-input', (event) => {
-            applyAfterInputFallback(event.payload);
+          await listen<InputEvent>('e2e-input', (event) => {
+            void handleInput(event.payload);
           }),
         );
       })

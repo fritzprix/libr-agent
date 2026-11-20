@@ -10,6 +10,7 @@ mod circuit_break;
 mod handlers;
 mod token;
 pub mod ui;
+pub mod ui_plan;
 
 use std::convert::Infallible;
 use std::sync::Arc;
@@ -31,9 +32,9 @@ pub use token::{
 };
 pub use ui::{
     clamp_to_viewport, desktop_args, element_center, parse_wait_condition, pick_own_window,
-    plan_input, plan_navigate, plan_navigate_path, plan_panel_name, window_viewport_geometry,
-    ElementsBody, InputBody, InputPlan, InputTarget, NavigateBody, NavigatePlan, ViewportRect,
-    WaitBody, WaitCondition,
+    plan_input, plan_navigate, plan_navigate_path, plan_panel_name, verify_window_input_safety,
+    window_viewport_geometry, ElementsBody, InputBody, InputPlan, InputTarget, NavigateBody,
+    NavigatePlan, ViewportGeometry, ViewportRect, WaitBody, WaitCondition, ZOrderedWindowFact,
 };
 
 /// The production guard chain for the E2E control plane: loopback Host/Origin

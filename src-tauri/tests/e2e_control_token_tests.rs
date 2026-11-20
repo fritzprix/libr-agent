@@ -32,10 +32,10 @@ mod tests {
         parse_wait_condition, pending_circuit_break, pick_own_window, plan_circuit_break_resume,
         plan_input, plan_navigate, plan_navigate_path, plan_panel_name, plan_picker_override,
         plan_user_prompt_action, plan_window, resume_circuit_break_message,
-        tool_approval_error_status, window_state_reply, window_viewport_geometry, InputBody,
-        InputTarget, NavigateBody, NavigatePlan, PickerBody, PlannedPromptAction,
-        SessionInteractionsSnapshot, UserPromptBody, ViewportRect, WaitCondition, WindowBody,
-        WindowPlan, E2E_CONTROL_HEADER,
+        tool_approval_error_status, verify_window_input_safety, window_state_reply,
+        window_viewport_geometry, InputBody, InputTarget, NavigateBody, NavigatePlan, PickerBody,
+        PlannedPromptAction, SessionInteractionsSnapshot, UserPromptBody, ViewportRect,
+        WaitCondition, WindowBody, WindowPlan, ZOrderedWindowFact, E2E_CONTROL_HEADER,
     };
     use warp::http::{HeaderMap, StatusCode};
     use warp::Filter;
@@ -1075,10 +1075,11 @@ mod tests {
             .await;
         assert_eq!(res.status(), 503);
 
-        // Invalid input bodies -> 400.
+        // Invalid input bodies -> 400 (including undocumented `drag`, #2902 G1.2).
         for bad_input in [
             serde_json::json!({"action": "click"}),
             serde_json::json!({"action": "click", "x": 10}),
+            serde_json::json!({"action": "drag", "x": 10, "y": 20}),
             serde_json::json!({"action": "type"}),
             serde_json::json!({"action": "key"}),
             serde_json::json!({"action": "scroll", "x": 10, "y": 20}),
@@ -1232,6 +1233,42 @@ mod tests {
             WaitCondition::PromptPending
         );
         assert!(parse_wait_condition("invalid").is_err());
+
+        // Focus & z-order occlusion safety (#2902 G1.1).
+        let own_win = ZOrderedWindowFact {
+            id: 1,
+            pid: 200,
+            minimized: false,
+            x: 100,
+            y: 100,
+            width: 800,
+            height: 600,
+        };
+        let foreign_win = ZOrderedWindowFact {
+            id: 2,
+            pid: 999,
+            minimized: false,
+            x: 150,
+            y: 150,
+            width: 300,
+            height: 300,
+        };
+        assert!(
+            verify_window_input_safety(true, &[own_win, foreign_win], 200, Some((200, 200)))
+                .is_ok()
+        );
+        assert_eq!(
+            verify_window_input_safety(true, &[foreign_win, own_win], 200, Some((200, 200)))
+                .unwrap_err()
+                .0,
+            StatusCode::CONFLICT
+        );
+        assert_eq!(
+            verify_window_input_safety(false, &[own_win], 200, None)
+                .unwrap_err()
+                .0,
+            StatusCode::CONFLICT
+        );
     }
 }
 

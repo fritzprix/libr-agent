@@ -49,9 +49,13 @@ Endpoints (all require the ``X-LibrAgent-E2E-Control`` capability header;
   id?, testId?, inputType?, disabled, bounds, rect, visible}`` (#2902).
 - ``POST /api/e2e-control/ui/input`` — body ``{action, selector?, testId?,
   x?, y?, text?, key?, modifiers?, scrollAmount?, axis?, button?}`` →
-  ``{ok, result}``. Delivers window-scoped input (click, double_click,
-  right_click, middle_click, move, hover, type, key, scroll) to the isolated
-  instance window (#2902).
+  ``{ok, delivery, ...}``. Element targets (``selector``/``testId``) are
+  dispatched as DOM events inside the isolated instance's webview
+  (``delivery="dom"``) — no OS-level input is used for them. Raw ``x``/``y``
+  coordinates fall back to OS input (``delivery="os"``) only while the
+  instance window is focused and topmost at that point, else ``409``
+  (#2902). Actions: click, double_click, right_click, middle_click, move,
+  hover, type, key, scroll — there is no ``drag``.
 - ``POST /api/e2e-control/ui/restart`` — no body →
   ``{ok, restarting, note}``. Restarts the isolated instance in place (#2902).
 - ``POST /api/e2e-control/ui/wait`` — body ``{condition, sessionId?,
