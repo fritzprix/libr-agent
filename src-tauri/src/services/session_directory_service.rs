@@ -228,10 +228,12 @@ Write-Host "Available tools: python3, typescript/deno, shell commands"
                 .map_err(|e| format!("Failed to remove workspace directory: {e}"))?;
         }
 
-        // Session-scoped plugin store (#2825) lives outside the workspace.
+        // Legacy session-scoped plugin store (#2825, moved into the session
+        // workspace by #2942). The current store lives inside the workspace and
+        // is removed with it; this only cleans up leftovers from old versions.
         let plugins_dir = self
             .base_data_dir
-            .join(crate::services::hooks::registry::SESSION_PLUGINS_DIR_NAME)
+            .join(crate::services::hooks::registry::LEGACY_SESSION_PLUGINS_DIR_NAME)
             .join(session_id);
         if plugins_dir.exists() {
             tokio::fs::remove_dir_all(&plugins_dir)

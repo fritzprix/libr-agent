@@ -522,7 +522,8 @@ mod tests {
     use super::*;
     use crate::services::hooks::context::{await_hook_run, clear_hook_context, get_hook_context};
     use crate::services::hooks::registry::{
-        compute_handler_approval_hashes, save_source_in, PluginSourceManifest,
+        compute_handler_approval_hashes, save_source_in, upsert_session_store_entry,
+        PluginSourceManifest, SessionPluginStoreEntry,
     };
     use crate::services::hooks::schema::load_hooks_from_root;
     use std::fs;
@@ -1194,6 +1195,17 @@ mod tests {
             },
         )
         .unwrap();
+        // Session stores load through the store manifest (#2942). This helper
+        // is used for both global and session dirs; the manifest is only ever
+        // read from session stores, so recording it for both is harmless.
+        upsert_session_store_entry(
+            base,
+            SessionPluginStoreEntry {
+                source_id: source_id.to_string(),
+                source_url: format!("test://{echo}"),
+                installed_at: 0,
+            },
+        );
         root
     }
 

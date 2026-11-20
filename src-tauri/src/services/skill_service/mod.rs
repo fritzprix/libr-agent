@@ -11,6 +11,7 @@ mod plugin_sources;
 mod scanning;
 mod session_plugins;
 
+pub use crate::services::hooks::registry::SessionPluginStoreEntry;
 pub use cache::{
     clear_skill_scan_cache_entries, invalidate_skill_scan_cache, prewarm_managed_skill_scans,
 };
@@ -48,9 +49,9 @@ pub use scanning::{
     scan_skills_directory,
 };
 pub use session_plugins::{
-    install_session_plugin, list_session_plugins, preview_session_plugin_install,
-    uninstall_session_plugin, PluginScope, SessionPluginAction, SessionPluginEntry,
-    SessionPluginHistoryEntry, SessionPluginsOverview,
+    install_session_plugin, list_session_plugins, load_session_plugins,
+    preview_session_plugin_install, uninstall_session_plugin, PluginScope, SessionPluginAction,
+    SessionPluginEntry, SessionPluginHistoryEntry, SessionPluginsOverview,
 };
 
 pub(crate) use cache::scan_skills_internal_cached;

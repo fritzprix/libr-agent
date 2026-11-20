@@ -18,7 +18,8 @@
 use super::plugin_manifest::{load_plugin_manifest, PluginManifest};
 use super::session_plugins::PluginScope;
 use crate::services::hooks::registry::{
-    get_session_plugins_directory, get_user_plugins_directory, list_sources_in, PluginSourceRecord,
+    get_session_plugins_directory, get_user_plugins_directory, list_session_store_sources,
+    list_sources_in, PluginSourceRecord,
 };
 use log::warn;
 use serde::Serialize;
@@ -249,10 +250,9 @@ pub fn list_plugin_commands(session_id: &str) -> Result<Vec<PluginCommandInfo>, 
 
 fn list_in_dirs(global_dir: &Path, session_dir: &Path) -> Vec<PluginCommandInfo> {
     let mut records: Vec<(PluginSourceRecord, PluginScope)> = Vec::new();
-    let session_records = list_sources_in(session_dir).unwrap_or_else(|error| {
-        warn!("session plugin store {}: {error}", session_dir.display());
-        Vec::new()
-    });
+    // Session plugins load through the store manifest (#2942); broken or
+    // deleted entries are skipped with a log line, never an error.
+    let session_records = list_session_store_sources(session_dir);
     let shadowed: Vec<String> = session_records
         .iter()
         .map(|r| r.manifest.source_id.clone())
@@ -426,7 +426,8 @@ fn expand_in_dirs(global_dir: &Path, session_dir: &Path, command_text: &str) -> 
 }
 
 fn effective_records(global_dir: &Path, session_dir: &Path) -> Vec<PluginSourceRecord> {
-    let mut records: Vec<PluginSourceRecord> = list_sources_in(session_dir).unwrap_or_default();
+    // Session plugins load through the store manifest (#2942).
+    let mut records: Vec<PluginSourceRecord> = list_session_store_sources(session_dir);
     let shadowed: Vec<String> = records
         .iter()
         .map(|r| r.manifest.source_id.clone())
@@ -475,7 +476,7 @@ fn substitute_arguments(body: &str, args: &str) -> String {
 mod tests {
     use super::*;
     use crate::services::hooks::registry::{
-        save_source_in, PluginSourceManifest, PluginSourceRecord,
+        save_source_in, upsert_session_store_entry, PluginSourceManifest, PluginSourceRecord,
     };
     use std::collections::BTreeMap;
 
@@ -502,6 +503,17 @@ mod tests {
 
     fn install(dir: &Path, id: &str, url: &str, files: &[(&str, &str)]) -> PluginSourceRecord {
         let record = save_source_in(dir, manifest(id, url)).unwrap();
+        // Session stores load through the store manifest (#2942); keep the
+        // helper usable for both global and session dirs (the manifest is
+        // only ever read from session stores).
+        upsert_session_store_entry(
+            dir,
+            crate::services::hooks::registry::SessionPluginStoreEntry {
+                source_id: id.to_string(),
+                source_url: url.to_string(),
+                installed_at: 0,
+            },
+        );
         for (rel, content) in files {
             let path = record.root_dir.join(rel);
             fs::create_dir_all(path.parent().unwrap()).unwrap();

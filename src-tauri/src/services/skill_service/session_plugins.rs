@@ -1,9 +1,13 @@
-//! Session-scoped plugin install / uninstall / list (#2825).
+//! Session-scoped plugin install / uninstall / list (#2825, storage moved by
+//! #2942).
 //!
 //! A session install reuses the global plugin pipeline from `importing.rs`
-//! with a different target: plugin sources go to the session's own store
-//! (`{data_dir}/session_plugins/{session_id}/`) and skills go to the session's
-//! workspace skills directory, which already outranks global skills.
+//! with a different target: plugin sources go to the session workspace hidden
+//! directory (`<workspace>/.libragent/plugins`, owner decision D1) and skills
+//! go to the session's workspace skills directory, which already outranks
+//! global skills. Session load reads the store manifest
+//! (`store-manifest.json`); entries whose plugin directory is missing or
+//! broken are skipped with a log line and never fail the load.
 //!
 //! Precedence: a session install wins over a global install with the same
 //! `source_id` for that session only (`hooks::registry::list_effective_approved_sources_in`).
@@ -17,9 +21,11 @@ use super::importing::{
     remove_skill_names_from_user_skills, ImportTarget,
 };
 use super::plugin_sources::hook_events_for_record;
+use crate::services::hooks::registry::SessionPluginStoreEntry;
 use crate::services::hooks::registry::{
     delete_source_in, get_session_plugins_directory, get_source_in, get_user_plugins_directory,
-    list_sources_in, PluginSourceRecord,
+    list_session_store_sources, list_sources_in, remove_session_store_entry,
+    upsert_session_store_entry, PluginSourceRecord,
 };
 use crate::services::hooks::{clear_hook_context, spawn_session_start, SessionStartSource};
 use log::warn;
@@ -100,6 +106,16 @@ fn session_same_source_skill_names(plugins_dir: &Path, source_key: &str) -> Vec<
         .unwrap_or_default()
 }
 
+/// The read API for a session's plugin components (#2942), used by session
+/// load and by the command/hook/MCP loaders: resolve every store-manifest
+/// entry through the plugin source store. An entry whose plugin directory was
+/// deleted or whose manifest is broken is skipped with a log line; the load
+/// itself never fails (#2942 D1 failure policy).
+pub fn load_session_plugins(session_id: &str) -> Result<Vec<PluginSourceRecord>, String> {
+    let plugins_dir = get_session_plugins_directory(session_id)?;
+    Ok(list_session_store_sources(&plugins_dir))
+}
+
 pub async fn preview_session_plugin_install(
     session_id: String,
     repo_url: String,
@@ -174,6 +190,14 @@ fn install_prepared_with_dirs(
             always_record_source: true,
         },
     )?;
+    upsert_session_store_entry(
+        &dirs.plugins,
+        SessionPluginStoreEntry {
+            source_id: source_id.clone(),
+            source_url: source_url.clone(),
+            installed_at: chrono::Utc::now().timestamp(),
+        },
+    );
     append_history(
         &dirs.plugins,
         SessionPluginHistoryEntry {
@@ -235,6 +259,7 @@ fn uninstall_with_dirs(
     let entry = entry_from_record(&record, PluginScope::Session);
     remove_skill_names_from_user_skills(&dirs.skills, &record.manifest.skill_names)?;
     delete_source_in(&dirs.plugins, &record.manifest.source_id)?;
+    remove_session_store_entry(&dirs.plugins, &record.manifest.source_id);
     append_history(
         &dirs.plugins,
         SessionPluginHistoryEntry {
@@ -254,7 +279,9 @@ pub fn list_session_plugins(session_id: &str) -> Result<SessionPluginsOverview, 
 }
 
 fn build_overview(global_dir: &Path, session_dir: &Path) -> Result<SessionPluginsOverview, String> {
-    let session_records = list_sources_in(session_dir)?;
+    // Session plugins come from the store manifest (#2942); global stores keep
+    // directory discovery because they have no per-session manifest.
+    let session_records = list_session_store_sources(session_dir);
     let shadowed: HashSet<String> = session_records
         .iter()
         .map(|r| r.manifest.source_id.clone())
@@ -342,7 +369,7 @@ mod tests {
     use crate::services::hooks::context::{clear_hook_context, get_hook_context};
     use crate::services::hooks::execute::run_session_start_with_sources;
     use crate::services::hooks::registry::{
-        compute_handler_approval_hashes, save_source_in, PluginSourceManifest,
+        compute_handler_approval_hashes, read_store_manifest, save_source_in, PluginSourceManifest,
     };
     use crate::services::hooks::schema::load_hooks_from_root;
     use crate::services::skill_service::contracts::SkillImportKind;
@@ -594,6 +621,64 @@ mod tests {
         assert_eq!(a.active.len(), 1);
         assert!(b.active.is_empty() && b.history.is_empty());
         assert!(!fx_b.dirs.skills.exists());
+    }
+
+    #[test]
+    fn install_writes_store_manifest_entry() {
+        let fx = fixture();
+        let repo = write_plugin_repo(fx.root.path(), "alpha", None);
+        install_from_dir(&fx, &repo, false).unwrap();
+
+        let entries = read_store_manifest(&fx.dirs.plugins);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].source_url, repo.to_string_lossy());
+        assert!(entries[0].installed_at > 0);
+        assert!(fx.dirs.plugins.join(&entries[0].source_id).exists());
+    }
+
+    #[test]
+    fn manifest_entry_with_missing_dir_is_skipped_without_failing() {
+        let fx = fixture();
+        let repo = write_plugin_repo(fx.root.path(), "alpha", None);
+        install_from_dir(&fx, &repo, false).unwrap();
+        let source_id = read_store_manifest(&fx.dirs.plugins)[0].source_id.clone();
+
+        // Simulate the user deleting the plugin directory: the entry is
+        // skipped with a log line, the overview still loads (D1 policy).
+        fs::remove_dir_all(fx.dirs.plugins.join(&source_id)).unwrap();
+        let global = tempfile::tempdir().unwrap();
+        let overview = build_overview(global.path(), &fx.dirs.plugins).unwrap();
+        assert!(overview.active.is_empty());
+        assert_eq!(overview.history.len(), 1, "history still readable");
+    }
+
+    #[test]
+    fn uninstall_removes_manifest_entry_and_files() {
+        let fx = fixture();
+        let repo = write_plugin_repo(fx.root.path(), "alpha", None);
+        install_from_dir(&fx, &repo, false).unwrap();
+        let source_id = read_store_manifest(&fx.dirs.plugins)[0].source_id.clone();
+
+        uninstall_with_dirs(&fx.dirs, &repo.to_string_lossy()).unwrap();
+
+        assert!(read_store_manifest(&fx.dirs.plugins).is_empty());
+        assert!(!fx.dirs.plugins.join(&source_id).exists());
+    }
+
+    #[test]
+    fn directory_without_manifest_entry_is_not_loaded() {
+        let fx = fixture();
+        let repo = write_plugin_repo(fx.root.path(), "alpha", None);
+        install_from_dir(&fx, &repo, false).unwrap();
+        let source_id = read_store_manifest(&fx.dirs.plugins)[0].source_id.clone();
+
+        // Simulate removing only the manifest entry: the plugin must not load
+        // even though its files are still on disk (#2942 load-from-manifest).
+        remove_session_store_entry(&fx.dirs.plugins, &source_id);
+        assert!(fx.dirs.plugins.join(&source_id).is_dir());
+        let global = tempfile::tempdir().unwrap();
+        let overview = build_overview(global.path(), &fx.dirs.plugins).unwrap();
+        assert!(overview.active.is_empty());
     }
 
     #[tokio::test]

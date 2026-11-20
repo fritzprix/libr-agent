@@ -2,6 +2,7 @@ use super::schema::{
     load_hooks_from_config_files, load_hooks_from_root, HookEvent, HookHandler, HooksConfig,
 };
 use crate::session::get_session_manager;
+use log::warn;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashSet};
@@ -9,11 +10,17 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 pub const USER_PLUGINS_DIR_NAME: &str = "user_plugins";
-/// Per-session plugin stores live at `{data_dir}/session_plugins/{session_id}/`.
-/// They are deliberately kept outside the agent-writable workspace so the agent
-/// cannot rewrite a hook script together with its approval manifest. Session
-/// deletion removes the store (`SessionDirectoryService::remove_workspace`).
-pub const SESSION_PLUGINS_DIR_NAME: &str = "session_plugins";
+/// Legacy location of per-session plugin stores
+/// (`{data_dir}/session_plugins/{session_id}/`, #2825). #2942 moved the store
+/// into the session workspace hidden directory (see
+/// `SESSION_WORKSPACE_PLUGINS_DIR`); this constant now only drives cleanup of
+/// leftover legacy stores on session deletion. Existing legacy entries are
+/// ignored, not migrated (documented in the #2942 PR).
+pub const LEGACY_SESSION_PLUGINS_DIR_NAME: &str = "session_plugins";
+/// Hidden-directory name under the session workspace that holds the
+/// session-scoped plugin store (`<workspace>/.libragent/plugins`), the same
+/// hidden-directory family tool-result spillover uses (`#2942`, owner D1).
+pub const SESSION_WORKSPACE_PLUGINS_DIR: &str = "plugins";
 const MANIFEST_FILE: &str = "manifest.json";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -101,9 +108,11 @@ pub fn get_user_plugins_directory() -> Result<PathBuf, String> {
         .join(USER_PLUGINS_DIR_NAME))
 }
 
-/// Directory holding the plugins installed for one session only (#2825).
-///
-/// Anchored at the app data dir (see [`SESSION_PLUGINS_DIR_NAME`]).
+/// Directory holding the plugins installed for one session only (#2825),
+/// located in the session workspace hidden directory
+/// (`<session_workspace>/.libragent/plugins`) per owner decision D1 (#2942).
+/// Session deletion removes the store together with the workspace
+/// (`SessionDirectoryService::remove_workspace`).
 pub fn get_session_plugins_directory(session_id: &str) -> Result<PathBuf, String> {
     if session_id.is_empty()
         || session_id == "."
@@ -114,9 +123,97 @@ pub fn get_session_plugins_directory(session_id: &str) -> Result<PathBuf, String
     }
     let session_manager = get_session_manager()?;
     Ok(session_manager
-        .get_base_data_dir()
-        .join(SESSION_PLUGINS_DIR_NAME)
-        .join(session_id))
+        .get_session_workspace_dir_by_id(session_id)
+        .join(".libragent")
+        .join(SESSION_WORKSPACE_PLUGINS_DIR))
+}
+
+/// One entry of the session plugin store manifest (#2942, owner D1): every
+/// plugin installed into a session's plugin directory is listed here, and
+/// session load reads plugins from this manifest instead of scanning the
+/// directory.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionPluginStoreEntry {
+    pub source_id: String,
+    pub source_url: String,
+    /// Unix seconds.
+    pub installed_at: i64,
+}
+
+/// File name of the session plugin store manifest inside the session plugin
+/// directory (`<workspace>/.libragent/plugins/store-manifest.json`).
+pub const SESSION_STORE_MANIFEST_FILE: &str = "store-manifest.json";
+
+/// Read the session plugin store manifest. A missing or unreadable file
+/// yields an empty list (with a log line) — never a load failure (#2942 D1).
+pub fn read_store_manifest(plugins_dir: &Path) -> Vec<SessionPluginStoreEntry> {
+    let path = plugins_dir.join(SESSION_STORE_MANIFEST_FILE);
+    let Ok(raw) = fs::read_to_string(&path) else {
+        return Vec::new();
+    };
+    serde_json::from_str(&raw).unwrap_or_else(|error| {
+        warn!("Ignoring unreadable {}: {}", path.display(), error);
+        Vec::new()
+    })
+}
+
+/// Best-effort manifest rewrite: an install that already landed on disk must
+/// not be reported as failed because the manifest write hit an error.
+fn write_store_manifest(plugins_dir: &Path, entries: &[SessionPluginStoreEntry]) {
+    let write = fs::create_dir_all(plugins_dir)
+        .map_err(|e| e.to_string())
+        .and_then(|_| serde_json::to_string_pretty(entries).map_err(|e| e.to_string()))
+        .and_then(|json| {
+            fs::write(plugins_dir.join(SESSION_STORE_MANIFEST_FILE), json)
+                .map_err(|e| e.to_string())
+        });
+    if let Err(error) = write {
+        warn!("Failed to write session plugin store manifest: {}", error);
+    }
+}
+
+/// Record (or refresh) one plugin in the session plugin store manifest.
+pub fn upsert_session_store_entry(plugins_dir: &Path, entry: SessionPluginStoreEntry) {
+    let mut entries = read_store_manifest(plugins_dir);
+    match entries.iter_mut().find(|e| e.source_id == entry.source_id) {
+        Some(existing) => *existing = entry,
+        None => entries.push(entry),
+    }
+    write_store_manifest(plugins_dir, &entries);
+}
+
+/// Remove one plugin from the session plugin store manifest (uninstall).
+pub fn remove_session_store_entry(plugins_dir: &Path, source_id: &str) {
+    let mut entries = read_store_manifest(plugins_dir);
+    let before = entries.len();
+    entries.retain(|e| e.source_id != source_id);
+    if entries.len() != before {
+        write_store_manifest(plugins_dir, &entries);
+    }
+}
+
+/// Session plugin records resolved through the store manifest (#2942).
+/// An entry whose plugin directory was deleted or whose manifest is broken
+/// is skipped with a log line; the caller's load never fails (#2942 D1
+/// failure policy). This is the manifest-driven replacement for
+/// [`list_sources_in`] on a session plugin directory.
+pub fn list_session_store_sources(plugins_dir: &Path) -> Vec<PluginSourceRecord> {
+    read_store_manifest(plugins_dir)
+        .into_iter()
+        .filter_map(|entry| match get_source_in(plugins_dir, &entry.source_id) {
+            Ok(record) => Some(record),
+            Err(error) => {
+                warn!(
+                    "Skipping session plugin '{}' ({}): {}; session load continues",
+                    entry.source_id,
+                    plugins_dir.display(),
+                    error
+                );
+                None
+            }
+        })
+        .collect()
 }
 
 pub fn validate_source_id(source_id: &str) -> Result<(), String> {
@@ -409,15 +506,7 @@ pub fn list_effective_approved_sources_in(
     session_base: Option<&Path>,
 ) -> Vec<PluginSourceRecord> {
     let session_sources = match session_base {
-        Some(base) => list_sources_in(base).unwrap_or_else(|error| {
-            // An unreadable session store must not silently re-enable the
-            // global plugins this session opted out of (#2825 review S1.1).
-            log::warn!(
-                "Failed to read session plugin store at {}: {error}; global plugins apply unshadowed",
-                base.display()
-            );
-            Vec::new()
-        }),
+        Some(base) => list_session_store_sources(base),
         None => Vec::new(),
     };
     let shadowed: HashSet<String> = session_sources
