@@ -138,6 +138,7 @@ pub fn load_hooks_from_config_files(files: &[PathBuf]) -> Result<HooksConfig, St
     let mut merged = HooksConfig {
         version: None,
         events: BTreeMap::new(),
+        unsupported_events: BTreeMap::new(),
     };
     for file in files {
         let piece = parse_hooks_file(file)?;
