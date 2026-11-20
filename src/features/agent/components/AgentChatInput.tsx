@@ -26,6 +26,7 @@ import { useChatSubmit } from '../hooks/useChatSubmit';
 import { useSessionPluginInstall } from '../hooks/useSessionPluginInstall';
 import { SkillsConflictDialog } from '@/features/skills/components/SkillsConflictDialog';
 import { useInputToken } from '../hooks/useInputToken';
+import { usePluginCommands } from '../hooks/usePluginCommands';
 import { usePlaybookSearch } from '../hooks/usePlaybookSearch';
 import { InputTokenDropdown } from './InputTokenDropdown';
 import {
@@ -82,6 +83,12 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
   });
   const { availableTools: tools } = useSessionAgentTools();
 
+  // Plugin slash commands for the `/` dropdown (#2922).
+  const {
+    commands: pluginCommands,
+    refresh: refreshPluginCommands,
+  } = usePluginCommands(session?.id);
+
   const {
     stage,
     typeResults,
@@ -92,7 +99,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     onTypeSelect,
     onArgSelect,
     onDismiss,
-  } = useInputToken(skills, tools);
+  } = useInputToken(skills, tools, pluginCommands);
 
   // null = dropdown not active; string (incl. '') = active with current query
   const fileQuery =
@@ -143,6 +150,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     onClearSession: clearSessionHistory,
     onExecutionModeChange: applyExecutionMode,
     onPluginInstall: startPluginInstall,
+    onPluginCommandsChanged: refreshPluginCommands,
   });
 
   const attachedFiles = pendingFiles;

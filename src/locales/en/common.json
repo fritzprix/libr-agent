@@ -915,7 +915,8 @@
       "hooksNotApproved": "Hooks installed but not approved to run",
       "hookEvents": "Hook events",
       "pluginSourceUpdated": "Plugin updated.",
-      "pluginSourceRemoved": "Plugin source removed."
+      "pluginSourceRemoved": "Plugin source removed.",
+      "commandsToInstall": "Slash commands to install"
     },
     "dev": {
       "devOnly": "DEV ONLY",

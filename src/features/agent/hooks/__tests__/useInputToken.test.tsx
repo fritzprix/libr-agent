@@ -105,6 +105,49 @@ describe('useInputToken', () => {
     expect(result.current.commandResults).toHaveLength(0);
   });
 
+  it('merges plugin slash commands into the command dropdown (#2922)', () => {
+    const pluginCommands = [
+      {
+        label: '/hello',
+        name: 'hello',
+        pluginName: 'acme',
+        description: 'Say hello',
+        argumentHint: '<name>',
+        scope: 'global' as const,
+      },
+      {
+        label: '/acme:hello',
+        name: 'hello',
+        pluginName: 'acme',
+        description: 'Say hello',
+        scope: 'global' as const,
+      },
+    ];
+    const { result } = renderHook(() =>
+      useInputToken([], [], pluginCommands),
+    );
+
+    act(() => {
+      result.current.onInputChange('/hello', 6);
+    });
+
+    const ids = result.current.commandResults.map((c) => c.id);
+    expect(ids).toEqual(['/hello', '/acme:hello']);
+    expect(result.current.commandResults[0].description).toBe(
+      'Say hello <name>',
+    );
+  });
+
+  it('keeps plugin command dropdown empty without plugin commands', () => {
+    const { result } = renderHook(() => useInputToken([], []));
+
+    act(() => {
+      result.current.onInputChange('/hello', 6);
+    });
+
+    expect(result.current.commandResults).toHaveLength(0);
+  });
+
   it('keeps filtered result array references stable across parent re-renders', () => {
     const { result, rerender } = renderHook(
       ({ skills, tools }) => useInputToken(skills, tools),

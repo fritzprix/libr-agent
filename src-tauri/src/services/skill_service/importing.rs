@@ -487,6 +487,10 @@ pub(super) async fn build_import_preview(
         conflicts,
         hooks,
         hooks_require_approval,
+        plugin_commands: super::plugin_commands::plugin_command_names(
+            &prepared.scan_root,
+            manifest.as_ref(),
+        ),
         plugin_manifest: manifest.as_ref().map(|manifest| PluginManifestSummary {
             name: manifest.name.clone(),
             version: manifest.version.clone(),

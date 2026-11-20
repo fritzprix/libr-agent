@@ -898,7 +898,8 @@
       "importSuccessWithOverwriteAndSkipped_one": "{{count}} compétence importée ({{overwrittenCount}} écrasée, {{skippedCount}} ignorée)",
       "importSuccessWithOverwriteAndSkipped_other": "{{count}} compétences importées ({{overwrittenCount}} écrasées, {{skippedCount}} ignorées)",
       "importSkippedOnly_one": "{{count}} compétence en conflit ignorée",
-      "importSkippedOnly_other": "{{count}} compétences en conflit ignorées"
+      "importSkippedOnly_other": "{{count}} compétences en conflit ignorées",
+      "commandsToInstall": "Commandes obliques à installer"
     },
     "dev": {
       "devOnly": "DEV UNIQUEMENT",

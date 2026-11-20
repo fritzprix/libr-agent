@@ -915,7 +915,8 @@
       "hooksNotApproved": "훅이 설치되었으나 실행 승인되지 않았습니다",
       "hookEvents": "훅 이벤트",
       "pluginSourceUpdated": "플러그인을 업데이트했습니다.",
-      "pluginSourceRemoved": "플러그인 소스를 제거했습니다."
+      "pluginSourceRemoved": "플러그인 소스를 제거했습니다.",
+      "commandsToInstall": "설치할 슬래시 명령"
     },
     "dev": {
       "devOnly": "DEV ONLY",

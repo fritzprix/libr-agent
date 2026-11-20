@@ -129,6 +129,11 @@ pub struct SkillImportPreview {
     pub conflicts: Vec<SkillImportConflict>,
     pub hooks: Vec<HookPreviewEntry>,
     pub hooks_require_approval: bool,
+    /// Slash command names provided by the plugin's `commands/` directory
+    /// (or manifest `commands` paths), offered as `/<name>` after install
+    /// (#2922). Sorted, deduplicated.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub plugin_commands: Vec<String>,
     /// `.claude-plugin/plugin.json` summary, when the source carried one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plugin_manifest: Option<PluginManifestSummary>,

@@ -898,7 +898,8 @@
       "importSuccessWithOverwriteAndSkipped_one": "{{count}} habilidade importada ({{overwrittenCount}} substituída, {{skippedCount}} ignorada)",
       "importSuccessWithOverwriteAndSkipped_other": "{{count}} habilidades importadas ({{overwrittenCount}} substituídas, {{skippedCount}} ignoradas)",
       "importSkippedOnly_one": "{{count}} habilidade em conflito ignorada",
-      "importSkippedOnly_other": "{{count}} habilidades em conflito ignoradas"
+      "importSkippedOnly_other": "{{count}} habilidades em conflito ignoradas",
+      "commandsToInstall": "Comandos de barra a instalar"
     },
     "dev": {
       "devOnly": "SOMENTE DEV",

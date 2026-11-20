@@ -2,6 +2,10 @@ import { useState, useCallback, useRef, useMemo } from 'react';
 import type { SkillMetadata } from '@/types/skills';
 import type { MCPTool } from '@/lib/mcp';
 import type { Playbook } from '@/types/playbook';
+import {
+  pluginCommandToEntry,
+  type PluginSlashCommand,
+} from '../lib/plugin-command';
 
 /** Stage of the input token UX state machine. */
 type TokenStage =
@@ -88,6 +92,7 @@ export interface UseInputTokenResult {
 export function useInputToken(
   skills: SkillMetadata[],
   tools: MCPTool[] = [],
+  pluginCommands: PluginSlashCommand[] = [],
 ): UseInputTokenResult {
   const [stage, setStage] = useState<TokenStage>({ kind: 'idle' });
   // Keep a ref for non-reactive use in callbacks
@@ -266,6 +271,9 @@ export function useInputToken(
         label: '/plugin list',
         description: 'List active global and session plugins',
       },
+      // Plugin slash commands (#2922); the backend already hides bare names
+      // that collide with built-ins or are ambiguous across plugins.
+      ...pluginCommands.map(pluginCommandToEntry),
     ];
     if (stage.kind === 'typing-command') {
       return commands.filter((c) =>
@@ -273,7 +281,7 @@ export function useInputToken(
       );
     }
     return [];
-  }, [stage]);
+  }, [stage, pluginCommands]);
 
   return {
     stage,

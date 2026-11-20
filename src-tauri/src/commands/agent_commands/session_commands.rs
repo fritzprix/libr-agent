@@ -565,9 +565,22 @@ pub async fn agent_factory_reset(
 }
 
 #[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CommandResult {
     pub success: bool,
     pub message: String,
+    /// Set when the command was a plugin slash command (#2922): the expanded
+    /// Markdown body, ready to send as an ordinary chat message.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expanded_prompt: Option<String>,
+}
+
+/// List the plugin slash commands available to a session (#2922).
+#[command]
+pub async fn agent_list_plugin_commands(
+    session_id: String,
+) -> Result<Vec<crate::services::skill_service::PluginCommandInfo>, String> {
+    crate::services::skill_service::list_plugin_commands(&session_id)
 }
 
 /// Execute a CLI command like /clear or /permission yolo for a session
@@ -581,8 +594,24 @@ pub async fn agent_execute_command(
     use crate::agent::command_parser::{Command, PluginCommand};
     use crate::services::skill_service::{self, PluginScope};
 
-    let command = Command::parse(&command_text)
-        .ok_or_else(|| format!("Invalid or unrecognized command: {}", command_text))?;
+    let command = Command::parse(&command_text);
+    let command = match command {
+        Some(command) => command,
+        None => {
+            // Plugin slash commands (#2922) expand into the prompt only after
+            // built-in parsing fails, so a plugin can never shadow a built-in.
+            if let Some(expanded) =
+                crate::services::skill_service::expand_plugin_command(&session_id, &command_text)?
+            {
+                return Ok(CommandResult {
+                    success: true,
+                    message: String::new(),
+                    expanded_prompt: Some(expanded),
+                });
+            }
+            return Err(format!("Invalid or unrecognized command: {}", command_text));
+        }
+    };
 
     match command {
         Command::Clear => {
@@ -590,6 +619,7 @@ pub async fn agent_execute_command(
 
             Ok(CommandResult {
                 success: true,
+                expanded_prompt: None,
                 message:
                     "Session history, planning data, and browser session cleared successfully."
                         .to_string(),
@@ -600,6 +630,7 @@ pub async fn agent_execute_command(
 
             Ok(CommandResult {
                 success: true,
+                expanded_prompt: None,
                 message: "Session tools and workspace context reloaded. Conversation history kept."
                     .to_string(),
             })
@@ -618,6 +649,7 @@ pub async fn agent_execute_command(
 
             Ok(CommandResult {
                 success: true,
+                expanded_prompt: None,
                 message: format!("Permission mode updated to {}.", mode_str),
             })
         }
@@ -629,6 +661,7 @@ pub async fn agent_execute_command(
             let removed = skill_service::uninstall_session_plugin(&session_id, &target)?;
             Ok(CommandResult {
                 success: true,
+                expanded_prompt: None,
                 message: format!("Removed session plugin {}.", removed.source_url),
             })
         }
@@ -652,6 +685,7 @@ pub async fn agent_execute_command(
             };
             Ok(CommandResult {
                 success: true,
+                expanded_prompt: None,
                 message,
             })
         }
