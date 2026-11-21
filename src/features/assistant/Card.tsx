@@ -141,6 +141,21 @@ export default function AssistantCard({
                     {t('assistant.card.protected')}
                   </Badge>
                 )}
+                {assistant.pluginSource && (
+                  <Badge
+                    variant="secondary"
+                    className="text-[9px] uppercase font-bold tracking-widest h-4 px-1.5 font-sans"
+                    title={t(
+                      'assistant.card.pluginOwnedHint',
+                      'Installed by a plugin. Edit is disabled; uninstall the plugin to remove it.',
+                    )}
+                  >
+                    {t('assistant.card.pluginOwned', 'Plugin: {{name}}', {
+                      name:
+                        assistant.pluginSourceName || assistant.pluginSource,
+                    })}
+                  </Badge>
+                )}
               </div>
               <p className="text-xs text-muted-foreground/70 font-sans line-clamp-1 italic">
                 {isExpanded
@@ -266,15 +281,17 @@ export default function AssistantCard({
         <div className="flex flex-wrap gap-2 relative z-10">
           {!showDeleteConfirm ? (
             <>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => setEdit(true)}
-                className="rounded-lg px-4 font-bold font-sans text-xs bg-muted/50 hover:bg-muted"
-              >
-                <Edit size={14} className="mr-1.5 opacity-70" />
-                {t('assistant.card.edit')}
-              </Button>
+              {!assistant.pluginSource && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setEdit(true)}
+                  className="rounded-lg px-4 font-bold font-sans text-xs bg-muted/50 hover:bg-muted"
+                >
+                  <Edit size={14} className="mr-1.5 opacity-70" />
+                  {t('assistant.card.edit')}
+                </Button>
+              )}
 
               <Button
                 size="sm"

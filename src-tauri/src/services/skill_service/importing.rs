@@ -502,6 +502,10 @@ pub(super) async fn build_import_preview(
             &prepared.scan_root,
             manifest.as_ref(),
         ),
+        plugin_agents: super::plugin_agents::plugin_agent_previews(
+            &prepared.scan_root,
+            manifest.as_ref(),
+        ),
         plugin_manifest: manifest.as_ref().map(|manifest| PluginManifestSummary {
             name: manifest.name.clone(),
             version: manifest.version.clone(),
@@ -613,6 +617,20 @@ async fn install_user_prepared_skills(
                     )]
                 }
             };
+            // #2923 (D2): a global install also syncs the plugin's `agents/`
+            // definitions into the assistant store as plugin-owned rows.
+            // Same reporting rule as the MCP sync above: the file install
+            // succeeded, so the failure is a warning, not an error.
+            if let Err(error) = sync_installed_plugin_agents(&source_key).await {
+                log::warn!(
+                    "Installed plugin {} but could not sync its agents to the assistant store: {}",
+                    source_key,
+                    error
+                );
+                result.warnings.push(format!(
+                    "Plugin installed, but its agents could not be synced to the assistant store: {error}. Re-installing the plugin re-syncs them."
+                ));
+            }
             Ok(result)
         }
         error => error,
@@ -632,6 +650,15 @@ async fn sync_installed_plugin_mcp_servers(source_key: &str) -> Result<Vec<Strin
     let source_id = plugin_source_id(source_key);
     let record = get_source(&source_id)?;
     sync_plugin_mcp_rows_from_record(&record).await
+}
+
+/// Re-sync one plugin source's plugin-agent rows in the assistant store
+/// after a global install/update (#2923 D2). Reads back the persisted
+/// source record, so it must run after `install_prepared_import`.
+async fn sync_installed_plugin_agents(source_key: &str) -> Result<(), String> {
+    let source_id = plugin_source_id(source_key);
+    let record = get_source(&source_id)?;
+    super::plugin_agents::sync_global_plugin_agents(&record).await
 }
 
 /// The sync body once the persisted source record is read (see

@@ -107,8 +107,26 @@ export interface SkillImportPreview {
   mcpRequireApproval?: boolean;
   /** Slash command names the plugin's `commands/` provides (#2922). */
   pluginCommands?: string[];
+  /** Subagent definitions the plugin's `agents/` provides (#2923). */
+  pluginAgents?: PluginAgentPreview[];
   /** Present when the source carried a `.claude-plugin/plugin.json`. */
   pluginManifest?: PluginManifestSummary;
+}
+
+/** One `agents/*.md` subagent definition shown in the install preview
+ *  (#2923). `unmappedTools` are Claude Code tools with no LibrAgent
+ *  mapping: they are shown here and never silently granted.
+ *  `grantedServices` are the LibrAgent builtin services the declared
+ *  `tools` map to (gatekeeper G1.2: the user must see what IS granted;
+ *  `workspace` includes file writes and shell). `grantsAllServices` is
+ *  true when the definition has no `tools` line at all. */
+export interface PluginAgentPreview {
+  name: string;
+  description: string;
+  unmappedTools: string[];
+  grantedServices: string[];
+  grantsAllServices: boolean;
+  model?: string;
 }
 
 export interface SkillImportResult {

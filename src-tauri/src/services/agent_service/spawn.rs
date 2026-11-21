@@ -32,7 +32,9 @@ impl AgentService {
             return Err("maxInputContext must be greater than 0".to_string());
         }
 
-        let assistant = load_assistant(&body.assistant_id).await?;
+        let assistant =
+            load_assistant_or_plugin_agent(&body.assistant_id, body.parent_session_id.as_deref())
+                .await?;
         let session_id = generate_spawn_session_id();
         let initial_request = body
             .request
@@ -218,6 +220,46 @@ async fn load_assistant(assistant_id: &str) -> Result<AssistantModel, String> {
         .await
         .map_err(|e| format!("Failed to fetch assistant: {}", e))?
         .ok_or_else(|| format!("Assistant not found: {}", assistant_id))
+}
+
+/// Resolve an assistant id, including plugin-owned ids (#2923).
+///
+/// `plugin:<source_id>:<agent>` ids resolve in this order:
+/// 1. the parent session's session plugin store (session-scope plugin
+///    agents shadow the global store, D1/D2), then
+/// 2. the global assistant store (a global plugin's synced row, D2).
+///
+/// The `"Assistant not found:"` error prefix is kept for the MCP spawn
+/// handler's guided error mapping.
+async fn load_assistant_or_plugin_agent(
+    assistant_id: &str,
+    parent_session_id: Option<&str>,
+) -> Result<AssistantModel, String> {
+    use crate::repositories::assistant_repository::AssistantRepository;
+
+    if let Some((source_id, agent)) =
+        crate::services::skill_service::parse_plugin_agent_id(assistant_id)
+    {
+        if let Some(parent_id) = parent_session_id {
+            if let Some(model) = crate::services::skill_service::resolve_session_plugin_assistant(
+                parent_id, source_id, agent,
+            ) {
+                return Ok(model);
+            }
+        }
+        if let Some(row) = crate::state::get_assistant_repository()
+            .get_assistant(assistant_id)
+            .await
+            .map_err(|e| format!("Failed to fetch assistant: {e}"))?
+        {
+            return Ok(row);
+        }
+        return Err(format!(
+            "Assistant not found: {} (plugin agent unavailable: its plugin is not installed for this session)",
+            assistant_id
+        ));
+    }
+    load_assistant(assistant_id).await
 }
 
 async fn load_parent_session(

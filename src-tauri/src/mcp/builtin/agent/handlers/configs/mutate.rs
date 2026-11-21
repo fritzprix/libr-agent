@@ -282,6 +282,14 @@ pub async fn update_agent(
 
     let repo = crate::repositories::SqliteAssistantRepository::new(server.get_db().clone());
 
+    // #2923 D2: plugin-owned agent configs are read-only for users and
+    // agents alike; they change only with their plugin.
+    if let Err(err_msg) =
+        crate::services::skill_service::reject_plugin_agent_mutation(&request.id, None)
+    {
+        return Ok(invalid_input_error(&err_msg, ToolGroup::Agent));
+    }
+
     let existing_model = repo
         .get_assistant(&request.id)
         .await
@@ -417,5 +425,51 @@ pub async fn update_agent(
             "List agent configurations to verify the configuration still exists".to_string(),
         ])
         .to_mcp_result()),
+    }
+}
+
+// #2923 (D2, gatekeeper G1.3): agent__updateAgent refuses plugin-owned ids
+// through the real handler, not just through the pure guard helper.
+#[cfg(test)]
+mod plugin_guard_tests {
+    use super::*;
+    use crate::mcp::types::MCPContent;
+    use std::sync::Arc;
+
+    async fn server() -> AgentServer {
+        let db = sea_orm::Database::connect("sqlite::memory:")
+            .await
+            .expect("memory db");
+        AgentServer::new("caller".to_string(), Arc::new(db), None)
+            .await
+            .expect("server")
+    }
+
+    fn texts(result: &MCPResult) -> String {
+        result
+            .content
+            .iter()
+            .flatten()
+            .filter_map(|item| match item {
+                MCPContent::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn update_agent_refuses_plugin_owned_ids() {
+        let server = server().await;
+        let result = update_agent(
+            &server,
+            json!({ "id": "plugin:plugin-aa:reviewer", "description": "hijack" }),
+            Some("caller".to_string()),
+        )
+        .await
+        .expect("the guard must answer, not fail the tool");
+        assert_eq!(result.is_error, Some(true));
+        let text = texts(&result);
+        assert!(text.contains("read-only"), "{text}");
+        assert!(text.contains("plugin:plugin-aa:reviewer"), "{text}");
     }
 }

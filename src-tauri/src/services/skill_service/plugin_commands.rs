@@ -131,7 +131,7 @@ pub fn discover_command_files(
 /// Minimal `---`-delimited frontmatter reader: `key: value` lines only,
 /// quotes stripped. Anything before the closing fence is not part of the
 /// body. A file without frontmatter returns an empty map and the full text.
-fn split_frontmatter(raw: &str) -> (std::collections::BTreeMap<String, String>, String) {
+pub(crate) fn split_frontmatter(raw: &str) -> (std::collections::BTreeMap<String, String>, String) {
     let normalized = raw.strip_prefix('\u{feff}').unwrap_or(raw);
     let mut map = std::collections::BTreeMap::new();
     let Some(rest) = normalized
@@ -166,7 +166,7 @@ fn split_frontmatter(raw: &str) -> (std::collections::BTreeMap<String, String>, 
 }
 
 /// Collect `*.md` files under `dir` recursively, sorted by path.
-fn collect_markdown(dir: &Path) -> Vec<PathBuf> {
+pub(crate) fn collect_markdown(dir: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     if !is_plain_dir(dir) {
         return out;
@@ -177,14 +177,14 @@ fn collect_markdown(dir: &Path) -> Vec<PathBuf> {
 }
 
 /// True for a real directory, not a symlink to one.
-fn is_plain_dir(path: &Path) -> bool {
+pub(crate) fn is_plain_dir(path: &Path) -> bool {
     fs::symlink_metadata(path)
         .map(|m| m.file_type().is_dir())
         .unwrap_or(false)
 }
 
 /// True for a regular file, not a symlink.
-fn is_plain_file(path: &Path) -> bool {
+pub(crate) fn is_plain_file(path: &Path) -> bool {
     fs::symlink_metadata(path)
         .map(|m| m.file_type().is_file())
         .unwrap_or(false)
@@ -192,7 +192,7 @@ fn is_plain_file(path: &Path) -> bool {
 
 /// Canonical `path` must resolve under canonical `root` (catches symlinked
 /// intermediate directories).
-fn stays_within(root: &Path, path: &Path) -> bool {
+pub(crate) fn stays_within(root: &Path, path: &Path) -> bool {
     match (fs::canonicalize(root), fs::canonicalize(path)) {
         (Ok(root), Ok(path)) => path.starts_with(root),
         _ => false,
@@ -215,7 +215,7 @@ fn collect_markdown_into(dir: &Path, out: &mut Vec<PathBuf>) {
 
 /// Plugin display name (namespace) for a source record: the manifest name
 /// when present, else the repository name, else the source id.
-fn plugin_namespace(record: &PluginSourceRecord) -> String {
+pub(crate) fn plugin_namespace(record: &PluginSourceRecord) -> String {
     if let Some(name) = record.manifest.plugin.as_ref().map(|p| p.name.as_str()) {
         if is_safe_namespace(name) {
             return name.to_string();
@@ -336,7 +336,7 @@ fn list_in_dirs(
 /// `.claude-plugin/plugin.json` when one survived install; otherwise default
 /// `commands/` discovery. The install record persists only display
 /// metadata (`PluginMetadata`), so discovery reads the manifest from disk.
-fn manifest_for_discovery(record: &PluginSourceRecord) -> Option<PluginManifest> {
+pub(crate) fn manifest_for_discovery(record: &PluginSourceRecord) -> Option<PluginManifest> {
     load_plugin_manifest(&record.root_dir).ok().flatten()
 }
 

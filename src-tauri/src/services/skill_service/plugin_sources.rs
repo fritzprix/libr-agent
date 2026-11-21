@@ -69,6 +69,10 @@ pub async fn delete_plugin_source(source_id: String) -> Result<(), String> {
     if !record.manifest.mcp_servers.is_empty() {
         super::plugin_mcp::remove_global_plugin_mcp_servers(&source_id).await?;
     }
+    // #2923 (D2): the plugin's `agents/` assistant rows go with it, and only
+    // with it. The marker sweep needs no agent list, so it runs even when
+    // the installed tree no longer contains the agents directory.
+    super::plugin_agents::remove_global_plugin_agents(&source_id).await?;
     delete_source(&source_id)?;
     // #2812 criterion 4: uninstalling a source must not leave its hook
     // bootstrap in any open session's prompt slot.
