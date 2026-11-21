@@ -912,11 +912,19 @@
       "userConfigHint": "这些值会在插件运行时提供给插件。敏感值保存在此计算机的安全存储中，不会再次显示。",
       "userConfigMissing": "必填：{{names}}",
       "pluginDisabledBadge": "已停用",
+      "pluginUpdateAria": "更新插件",
+      "pluginOwnedBadge": "插件",
+      "pluginOwnedTooltip": "由插件安装。删除该插件才能将其删除。",
       "disablePlugin": "停用插件",
       "enablePlugin": "启用插件",
       "pluginDetails": "详情",
       "pluginSourceEnabled": "插件已启用。",
-      "pluginSourceDisabled": "插件已停用。它仍保持安装；重新打开会话或输入 /reload 后生效。"
+      "pluginSourceDisabled": "插件已停用。它仍保持安装；重新打开会话或输入 /reload 后生效。",
+      "pluginUpdateNoticeTitle": "要更新这个插件吗？",
+      "pluginUpdateNoticeBody": "更新会重新下载插件。它可能改变插件的 MCP 服务器和钩子，它们可以在你的电脑上运行代码。同意即批准整个更新，包括任何变更的 MCP 服务器和钩子。",
+      "pluginUpdateAgree": "同意并更新",
+      "pluginUpdateAvailable": "有可用更新",
+      "pluginUpdatedReload": "插件已更新。将在下次打开会话时生效；输入 /reload 立即应用。"
     },
     "dev": {
       "devOnly": "仅限开发",

@@ -24,6 +24,7 @@ import { useTranslation } from 'react-i18next';
 import { useAgentFileAttachment } from '../hooks/useAgentFileAttachment';
 import { useChatSubmit } from '../hooks/useChatSubmit';
 import { useSessionPluginInstall } from '../hooks/useSessionPluginInstall';
+import { PluginUpdateNoticeDialog } from '@/features/skills/components/PluginUpdateNoticeDialog';
 import { SkillsConflictDialog } from '@/features/skills/components/SkillsConflictDialog';
 import { useInputToken } from '../hooks/useInputToken';
 import { usePluginCommands } from '../hooks/usePluginCommands';
@@ -134,8 +135,12 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     await refreshSkills();
   }, [refreshSkills]);
 
-  const { startInstall: startPluginInstall, dialogProps: pluginDialogProps } =
-    useSessionPluginInstall(session?.id);
+  const {
+    startInstall: startPluginInstall,
+    startUpdate: startPluginUpdate,
+    dialogProps: pluginDialogProps,
+    updateNoticeProps: pluginUpdateNoticeProps,
+  } = useSessionPluginInstall(session?.id);
 
   const { input, setInput, handleSubmit } = useChatSubmit({
     session,
@@ -150,6 +155,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     onClearSession: clearSessionHistory,
     onExecutionModeChange: applyExecutionMode,
     onPluginInstall: startPluginInstall,
+    onPluginUpdate: startPluginUpdate,
     onPluginCommandsChanged: refreshPluginCommands,
   });
 
@@ -658,6 +664,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
       {pluginDialogProps.pendingInstall ? (
         <SkillsConflictDialog {...pluginDialogProps} />
       ) : null}
+      <PluginUpdateNoticeDialog {...pluginUpdateNoticeProps} />
     </div>
   );
 }

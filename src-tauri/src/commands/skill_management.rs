@@ -1,5 +1,6 @@
 use crate::services::skill_service::{
-    self, PluginSourceOverview, SessionPluginsOverview, SkillImportPreview, SkillImportResult,
+    self, PluginSourceOverview, PluginUpdateStatus, SessionPluginEntry, SessionPluginsOverview,
+    SkillImportPreview, SkillImportResult,
 };
 
 #[tauri::command]
@@ -138,4 +139,23 @@ pub async fn list_session_plugins(session_id: String) -> Result<SessionPluginsOv
 #[tauri::command]
 pub async fn set_plugin_source_enabled(source_id: String, enabled: bool) -> Result<(), String> {
     skill_service::set_plugin_enabled(&source_id, enabled)
+}
+
+/// Check every global plugin for a newer source (#2927 D6 update indicator).
+/// Only plugins with a recorded install commit are queried; any remote
+/// failure reports "no update" rather than guessing.
+#[tauri::command]
+pub async fn check_plugin_source_updates() -> Result<Vec<PluginUpdateStatus>, String> {
+    skill_service::check_plugin_source_updates().await
+}
+
+/// Resolve a `/plugin update <name|url>` target to the installed plugin
+/// (#2927 item 4), so the chat input can run the update flow with its source
+/// URL and scope (session install first, then global).
+#[tauri::command]
+pub async fn resolve_plugin_target(
+    session_id: String,
+    target: String,
+) -> Result<SessionPluginEntry, String> {
+    skill_service::resolve_plugin_by_target(&session_id, &target)
 }

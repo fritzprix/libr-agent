@@ -42,6 +42,8 @@ interface SkillsManagementPanelContentProps
   isResettingUserSkills: boolean;
   pluginSources: PluginSourceOverview[];
   removingPluginSourceId: string | null;
+  /** Source ids with a newer commit on GitHub (#2927 D6 badge). */
+  updatesAvailable?: Record<string, boolean>;
   onUpdatePluginSource: (sourceUrl: string) => void | Promise<void>;
   onTogglePluginSourceEnabled: (
     sourceId: string,
@@ -87,6 +89,7 @@ export function SkillsManagementPanelContent({
   isResettingUserSkills,
   pluginSources,
   removingPluginSourceId,
+  updatesAvailable,
   onUpdatePluginSource,
   onTogglePluginSourceEnabled,
   onRemovePluginSource,
@@ -273,6 +276,7 @@ export function SkillsManagementPanelContent({
         sources={pluginSources}
         isBusy={isInstallingGithub || isInstallingLocal}
         removingId={removingPluginSourceId}
+        updatesAvailable={updatesAvailable}
         onUpdate={onUpdatePluginSource}
         onToggleEnabled={onTogglePluginSourceEnabled}
         onRemove={onRemovePluginSource}

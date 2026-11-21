@@ -9,6 +9,8 @@ interface PluginSourcesListProps {
   sources: PluginSourceOverview[];
   isBusy: boolean;
   removingId: string | null;
+  /** Source ids with a newer commit on GitHub (#2927 D6 badge). */
+  updatesAvailable?: Record<string, boolean>;
   onUpdate: (sourceUrl: string) => void | Promise<void>;
   onToggleEnabled: (sourceId: string, enabled: boolean) => void | Promise<void>;
   onRemove: (sourceId: string) => void | Promise<void>;
@@ -30,6 +32,7 @@ export function PluginSourcesList({
   sources,
   isBusy,
   removingId,
+  updatesAvailable = {},
   onUpdate,
   onToggleEnabled,
   onRemove,
@@ -72,6 +75,14 @@ export function PluginSourcesList({
                         {t('settings.skills.pluginDisabledBadge', 'disabled')}
                       </span>
                     )}
+                    {updatesAvailable[source.id] ? (
+                      <span className="rounded bg-primary/10 px-1.5 py-0.5 text-xs text-primary">
+                        {t(
+                          'settings.skills.pluginUpdateAvailable',
+                          'update available',
+                        )}
+                      </span>
+                    ) : null}
                   </div>
                   {source.pluginDescription ? (
                     <p className="text-xs text-muted-foreground">
@@ -144,6 +155,14 @@ export function PluginSourcesList({
                       variant="outline"
                       size="sm"
                       disabled={isBusy}
+                      aria-label={t(
+                        'settings.skills.pluginUpdateAria',
+                        'Update plugin',
+                      )}
+                      title={t(
+                        'settings.skills.pluginUpdateAria',
+                        'Update plugin',
+                      )}
                       onClick={() => void onUpdate(source.sourceUrl)}
                     >
                       <RefreshCw className="w-4 h-4" />

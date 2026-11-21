@@ -6,13 +6,23 @@ import { getLogger } from '@/lib/logger';
 import {
   installSessionPlugin,
   previewSessionPluginInstall,
+  resolvePluginTarget,
 } from '@/lib/backend/skills';
 import type { PendingInstall } from '@/features/skills/skills-management-types';
+import type { PluginScope } from '@/types/skills';
 import {
   defaultPluginOptions,
   formatImportSuccess,
+  notifyImportWarnings,
   shouldPromptSkillInstall,
 } from '@/features/skills/skills-management-utils';
+import {
+  planPluginUpdate,
+  pendingInstallForUpdate,
+  installPluginUpdate,
+  toastPluginUpdated,
+  notifyPluginUpdated,
+} from '@/features/skills/plugin-update-flow';
 import type { SkillImportConflict } from '@/types/skills';
 import { isScopedSkillsKey } from './useScopedSkills';
 import { isSessionPluginsKey } from './useSessionPlugins';
@@ -211,6 +221,103 @@ export function useSessionPluginInstall(sessionId: string | undefined) {
     }
   }, []);
 
+  // --- `/plugin update` (#2927 item 4, D6) -------------------------------
+  // Resolve the target -> D6 notice -> ONE Agree -> re-download with the
+  // install-time approvals already given. User-data conflicts still get the
+  // review dialog; hooks/MCP are covered by the Agree.
+  const [pendingUpdate, setPendingUpdate] = useState<{
+    sourceUrl: string;
+    scope: PluginScope;
+  } | null>(null);
+
+  /** Resolves true when the command was consumed (notice opened or error). */
+  const startUpdate = useCallback(
+    async (target: string): Promise<boolean> => {
+      if (!sessionId || isInstalling) {
+        return false;
+      }
+      try {
+        const entry = await resolvePluginTarget(sessionId, target);
+        setPendingUpdate({ sourceUrl: entry.sourceUrl, scope: entry.scope });
+        return true;
+      } catch (error) {
+        logger.error('Failed to resolve plugin update target', error);
+        toast.error(errorMessage(error));
+        return false;
+      }
+    },
+    [isInstalling, sessionId],
+  );
+
+  const runUpdateAfterAgree = useCallback(async () => {
+    if (!sessionId || !pendingUpdate || isInstalling) {
+      return;
+    }
+    const { sourceUrl, scope } = pendingUpdate;
+    setIsInstalling(true);
+    try {
+      const plan = await planPluginUpdate(
+        sourceUrl,
+        scope,
+        sessionId,
+        t,
+      );
+      if (!plan) {
+        return;
+      }
+      setPendingUpdate(null);
+      if (plan.userConflictNames.length > 0) {
+        // The D6 Agree already covers hooks and MCP servers; this dialog is
+        // only for skills that belong to the user, not to the plugin.
+        setPendingInstall(pendingInstallForUpdate(plan, sourceUrl));
+        return;
+      }
+      if (scope === 'session') {
+        const result = await installSessionPlugin(
+          sessionId,
+          sourceUrl,
+          false,
+          plan.systemConflictNames,
+          true,
+          {},
+        );
+        notifyImportWarnings(result);
+        await refreshAfterChange();
+      } else {
+        const result = await installPluginUpdate(plan, sourceUrl);
+        notifyImportWarnings(result);
+        await refreshAfterChange();
+      }
+      toastPluginUpdated(t);
+      // #2954 G1.3: the install commit changed, so the D6 badge in the
+      // Skills panel must re-check (this hook cannot touch its state).
+      notifyPluginUpdated();
+    } catch (error) {
+      logger.error('Failed to update plugin', error);
+      toast.error(errorMessage(error));
+    } finally {
+      setIsInstalling(false);
+    }
+  }, [
+    isInstalling,
+    pendingUpdate,
+    refreshAfterChange,
+    sessionId,
+    t,
+  ]);
+
+  /** Props for `PluginUpdateNoticeDialog` (#2927 D6). */
+  const updateNoticeProps = {
+    pendingUpdateUrl: pendingUpdate?.sourceUrl ?? null,
+    isBusy: isInstalling,
+    onOpenChange: (open: boolean) => {
+      if (!open) {
+        setPendingUpdate(null);
+      }
+    },
+    onAgree: runUpdateAfterAgree,
+  };
+
   /** Props for `SkillsConflictDialog`. */
   const dialogProps = {
     pendingInstall,
@@ -226,5 +333,5 @@ export function useSessionPluginInstall(sessionId: string | undefined) {
     onConfirmWithoutHooks: () => confirm(false),
   };
 
-  return { startInstall, dialogProps };
+  return { startInstall, startUpdate, dialogProps, updateNoticeProps };
 }

@@ -2,6 +2,8 @@ import { safeInvoke } from './core';
 import type {
   ManagedSkillsOverview,
   PluginSourceOverview,
+  PluginUpdateStatus,
+  SessionPluginEntry,
   SkillImportPreview,
   SkillImportResult,
   SessionPluginsOverview,
@@ -121,6 +123,29 @@ export async function setPluginSourceEnabled(
   enabled: boolean,
 ): Promise<void> {
   return safeInvoke<void>('set_plugin_source_enabled', { sourceId, enabled });
+}
+
+/**
+ * Check every global plugin for a newer source (#2927 D6 update indicator).
+ * Only plugins with a recorded install commit are queried; a failed remote
+ * check reports "no update".
+ */
+export async function checkPluginSourceUpdates(): Promise<PluginUpdateStatus[]> {
+  return safeInvoke<PluginUpdateStatus[]>('check_plugin_source_updates');
+}
+
+/**
+ * Resolve a `/plugin update <name|git-url>` target to the installed plugin
+ * (#2927 item 4): the session install wins, then a global one.
+ */
+export async function resolvePluginTarget(
+  sessionId: string,
+  target: string,
+): Promise<SessionPluginEntry> {
+  return safeInvoke<SessionPluginEntry>('resolve_plugin_target', {
+    sessionId,
+    target,
+  });
 }
 
 /** Previews a GitHub plugin install scoped to a single session. */

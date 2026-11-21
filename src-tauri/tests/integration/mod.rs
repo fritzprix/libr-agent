@@ -74,6 +74,7 @@ pub mod planning_duplicate_tests;
 pub mod planning_error_handling_tests;
 pub mod planning_todo_id_tests;
 pub mod playbook_integration_test;
+pub mod plugin_skill_owner_tests;
 pub mod proxy_readiness_state_tests;
 pub mod read_file_chunking_tests;
 pub mod read_file_empty_file_tests;

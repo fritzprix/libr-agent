@@ -912,11 +912,19 @@
       "userConfigHint": "Ces valeurs sont transmises au plugin lors de son exécution. Une valeur sensible est conservée dans le stockage sécurisé de cet ordinateur et n'est plus jamais affichée.",
       "userConfigMissing": "Obligatoire : {{names}}",
       "pluginDisabledBadge": "désactivé",
+      "pluginUpdateAria": "Mettre à jour le plugin",
+      "pluginOwnedBadge": "plugin",
+      "pluginOwnedTooltip": "Installé par un plugin. Supprimez le plugin pour l'effacer.",
       "disablePlugin": "Désactiver le plugin",
       "enablePlugin": "Activer le plugin",
       "pluginDetails": "Détails",
       "pluginSourceEnabled": "Plugin activé.",
-      "pluginSourceDisabled": "Plugin désactivé. Il reste installé ; redémarre une session ou tape /reload pour l'appliquer."
+      "pluginSourceDisabled": "Plugin désactivé. Il reste installé ; redémarre une session ou tape /reload pour l'appliquer.",
+      "pluginUpdateNoticeTitle": "Mettre à jour ce plugin ?",
+      "pluginUpdateNoticeBody": "Une mise à jour retélécharge le plugin. Elle peut modifier les serveurs MCP et les hooks du plugin, et ceux-ci peuvent exécuter du code sur votre machine. Accepter approuve toute la mise à jour, y compris les serveurs MCP et hooks modifiés.",
+      "pluginUpdateAgree": "Accepter et mettre à jour",
+      "pluginUpdateAvailable": "mise à jour disponible",
+      "pluginUpdatedReload": "Plugin mis à jour. Il s'applique à la réouverture d'une session ; tapez /reload pour l'appliquer maintenant."
     },
     "dev": {
       "devOnly": "DEV UNIQUEMENT",

@@ -657,6 +657,13 @@ pub async fn agent_execute_command(
             "/plugin install needs hook approval; run it from the chat input of the desktop app."
                 .to_string(),
         ),
+        // #2927 item 4: the desktop input intercepts `/plugin update` the
+        // same way (D6 notice -> preview -> install), so it never executes
+        // through this generic command path.
+        Command::Plugin(PluginCommand::Update { .. }) => Err(
+            "/plugin update needs update approval; run it from the chat input of the desktop app."
+                .to_string(),
+        ),
         Command::Plugin(PluginCommand::Uninstall { target }) => {
             let removed = skill_service::uninstall_session_plugin(&session_id, &target).await?;
             Ok(CommandResult {

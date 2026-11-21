@@ -6,6 +6,9 @@ import { useSessionPluginInstall } from '../useSessionPluginInstall';
 const mockState = vi.hoisted(() => ({
   preview: vi.fn(),
   install: vi.fn(),
+  previewGitHub: vi.fn(),
+  installGitHub: vi.fn(),
+  resolveTarget: vi.fn(),
   mutate: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
@@ -41,6 +44,12 @@ vi.mock('@/lib/backend/skills', () => ({
   previewSessionPluginInstall: (...args: unknown[]) =>
     mockState.preview(...args),
   installSessionPlugin: (...args: unknown[]) => mockState.install(...args),
+  previewGitHubSkillInstall: (...args: unknown[]) =>
+    mockState.previewGitHub(...args),
+  installGitHubSkills: (...args: unknown[]) =>
+    mockState.installGitHub(...args),
+  resolvePluginTarget: (...args: unknown[]) =>
+    mockState.resolveTarget(...args),
 }));
 
 const URL = 'https://github.com/o/r';
@@ -64,6 +73,16 @@ describe('useSessionPluginInstall', () => {
       importedNames: ['alpha'],
       overwrittenNames: [],
       skippedNames: [],
+    });
+    mockState.installGitHub.mockResolvedValue({
+      importedNames: ['alpha'],
+      overwrittenNames: [],
+      skippedNames: [],
+      warnings: [],
+    });
+    mockState.resolveTarget.mockResolvedValue({
+      sourceUrl: URL,
+      scope: 'session',
     });
   });
 
@@ -167,5 +186,98 @@ describe('useSessionPluginInstall', () => {
     });
     expect(consumed).toBe(false);
     expect(mockState.preview).not.toHaveBeenCalled();
+  });
+
+  // --- `/plugin update` (#2927 D6, #2954 G1.5-FE) -------------------------
+
+  it('startUpdate resolves the target and opens the update notice', async () => {
+    const { result } = renderHook(() => useSessionPluginInstall('s1'));
+
+    let consumed = false;
+    await act(async () => {
+      consumed = await result.current.startUpdate('my-plugin');
+    });
+
+    expect(consumed).toBe(true);
+    expect(mockState.resolveTarget).toHaveBeenCalledWith('s1', 'my-plugin');
+    expect(result.current.updateNoticeProps.pendingUpdateUrl).toBe(URL);
+    expect(mockState.install).not.toHaveBeenCalled();
+  });
+
+  it('runUpdateAfterAgree installs with approveHooks=true and excludes system conflicts', async () => {
+    mockState.preview.mockResolvedValue(
+      preview({
+        conflicts: [
+          { name: 'sys', existingOrigin: 'system', existingPath: '/sys' },
+        ],
+      }),
+    );
+    const { result } = renderHook(() => useSessionPluginInstall('s1'));
+
+    await act(async () => {
+      await result.current.startUpdate('my-plugin');
+    });
+    await act(async () => {
+      await result.current.updateNoticeProps.onAgree();
+    });
+
+    expect(mockState.install).toHaveBeenCalledWith(
+      's1',
+      URL,
+      false,
+      ['sys'],
+      true,
+      {},
+    );
+    expect(mockState.installGitHub).not.toHaveBeenCalled();
+    expect(result.current.updateNoticeProps.pendingUpdateUrl).toBeNull();
+    expect(result.current.dialogProps.pendingInstall).toBeNull();
+  });
+
+  it('global-scope update uses the shared GitHub path and signals the D6 badge', async () => {
+    mockState.resolveTarget.mockResolvedValue({
+      sourceUrl: URL,
+      scope: 'global',
+    });
+    mockState.previewGitHub.mockResolvedValue(preview({}));
+    const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+    const { result } = renderHook(() => useSessionPluginInstall('s1'));
+
+    await act(async () => {
+      await result.current.startUpdate('my-plugin');
+    });
+    await act(async () => {
+      await result.current.updateNoticeProps.onAgree();
+    });
+
+    expect(mockState.install).not.toHaveBeenCalled();
+    expect(mockState.installGitHub).toHaveBeenCalledWith(URL, true, [], true, {});
+    const events = dispatchSpy.mock.calls.map((call) => call[0].type);
+    expect(events).toContain('libragent:plugin-updated');
+    dispatchSpy.mockRestore();
+  });
+
+  it('update with reviewable conflicts opens the dialog with approveHooks preset', async () => {
+    mockState.preview.mockResolvedValue(
+      preview({
+        conflicts: [
+          { name: 'mine', existingOrigin: 'workspace', existingPath: '/ws' },
+        ],
+      }),
+    );
+    const { result } = renderHook(() => useSessionPluginInstall('s1'));
+
+    await act(async () => {
+      await result.current.startUpdate('my-plugin');
+    });
+    await act(async () => {
+      await result.current.updateNoticeProps.onAgree();
+    });
+
+    expect(mockState.install).not.toHaveBeenCalled();
+    const pending = result.current.dialogProps.pendingInstall;
+    expect(pending?.kind).toBe('github');
+    expect(pending?.selectedOverwriteNames).toEqual(['mine']);
+    expect(pending?.approveHooks).toBe(true);
   });
 });

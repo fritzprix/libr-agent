@@ -168,6 +168,9 @@ pub async fn preview_session_plugin_install(
         "workspace",
         &get_system_skills_directory()?,
         &same_source,
+        // Session plugin skills carry no owner marker (D2), so there is no
+        // owning source id to exempt here.
+        None,
     )
     .await
 }
@@ -193,6 +196,8 @@ pub async fn install_session_plugin(
         "workspace",
         &get_system_skills_directory()?,
         &same_source,
+        // Session plugin skills carry no owner marker (D2).
+        None,
     )
     .await?;
     // #2926: check the values the user entered before anything is written, so a
@@ -259,6 +264,10 @@ fn install_prepared_with_dirs(
             skills_dir: dirs.skills.clone(),
             plugins_dir: dirs.plugins.clone(),
             always_record_source: true,
+            // Session plugin skills live in the session's own skill layer,
+            // not in shared user storage; the #2927 D2 read-only marker is
+            // only for user-owned global skills.
+            owner_source_id: None,
         },
     )?;
     // #2942 gatekeeper G1.1: move the approval data out of the workspace
@@ -465,7 +474,11 @@ fn uninstall_with_dirs(
     };
 
     let entry = entry_from_record(&record, PluginScope::Session);
-    remove_skill_names_from_user_skills(&dirs.skills, &record.manifest.skill_names)?;
+    remove_skill_names_from_user_skills(
+        &dirs.skills,
+        &record.manifest.skill_names,
+        &record.manifest.source_id,
+    )?;
     delete_source_in(&dirs.plugins, &record.manifest.source_id)?;
     // #2942: the trust record goes with the plugin, and a store-manifest
     // rewrite failure is reported, not swallowed (gatekeeper G1.2).
@@ -614,6 +627,33 @@ fn matching_records(base: &Path, target: &str) -> Result<Vec<PluginSourceRecord>
         .into_iter()
         .filter(|record| matches_target(record, target))
         .collect())
+}
+
+/// Resolve a `/plugin update` target to its installed plugin (#2927 item 4).
+/// The chat input needs the source URL and the scope before it can run the
+/// update flow, and the match order is exactly what enable and disable use:
+/// session install first, then global.
+pub fn resolve_plugin_by_target(
+    session_id: &str,
+    target: &str,
+) -> Result<SessionPluginEntry, String> {
+    let target = target.trim();
+    if target.is_empty() {
+        return Err("Specify a plugin name, git URL, or id".to_string());
+    }
+    let dirs = session_dirs(session_id)?;
+    let global_dir = get_user_plugins_directory()?;
+    let (scope, source_id) = resolve_plugin_target(&dirs, &global_dir, target)?;
+    let record = match scope {
+        PluginScope::Session => load_session_plugins(session_id)?
+            .into_iter()
+            .find(|record| record.manifest.source_id == source_id)
+            .ok_or_else(|| {
+                format!("Plugin {source_id} matched but is missing from the session store")
+            })?,
+        PluginScope::Global => get_source_in(&global_dir, &source_id)?,
+    };
+    Ok(entry_from_record(&record, scope))
 }
 
 fn single_match(

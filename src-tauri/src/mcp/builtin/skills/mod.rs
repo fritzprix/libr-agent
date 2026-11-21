@@ -231,6 +231,7 @@ mod tests {
             alias_path: Some("@system-skills/delegate/SKILL.md".to_string()),
             source: None,
             origin: None,
+            plugin_owner: None,
         }
     }
 
