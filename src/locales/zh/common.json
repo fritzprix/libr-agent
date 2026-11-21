@@ -86,7 +86,9 @@
       "description": "描述",
       "fullConfiguration": "完整配置",
       "expand": "展开配置",
-      "collapse": "折叠配置"
+      "collapse": "折叠配置",
+      "pluginOwned": "插件：{{name}}",
+      "pluginOwnedHint": "由插件安装。编辑已禁用；卸载插件即可将其移除。"
     }
   },
   "status": {
@@ -899,7 +901,9 @@
       "importSuccessWithOverwriteAndSkipped_other": "已导入 {{count}} 个技能（已覆盖 {{overwrittenCount}} 个，已跳过 {{skippedCount}} 个）",
       "importSkippedOnly_one": "已跳过 {{count}} 个冲突技能",
       "importSkippedOnly_other": "已跳过 {{count}} 个冲突技能",
-      "commandsToInstall": "要安装的斜杠命令"
+      "commandsToInstall": "要安装的斜杠命令",
+      "agentsToInstall": "要安装的子代理",
+      "agentUnmappedTools": "没有映射的工具不会被授予：{{tools}}"
     },
     "dev": {
       "devOnly": "仅限开发",

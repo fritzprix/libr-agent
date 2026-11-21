@@ -86,7 +86,9 @@
       "description": "Description",
       "fullConfiguration": "Configuration complète",
       "expand": "Développer la configuration",
-      "collapse": "Réduire la configuration"
+      "collapse": "Réduire la configuration",
+      "pluginOwned": "Plugin : {{name}}",
+      "pluginOwnedHint": "Installé par un plugin. La modification est désactivée ; désinstallez le plugin pour le supprimer."
     }
   },
   "status": {
@@ -899,7 +901,9 @@
       "importSuccessWithOverwriteAndSkipped_other": "{{count}} compétences importées ({{overwrittenCount}} écrasées, {{skippedCount}} ignorées)",
       "importSkippedOnly_one": "{{count}} compétence en conflit ignorée",
       "importSkippedOnly_other": "{{count}} compétences en conflit ignorées",
-      "commandsToInstall": "Commandes obliques à installer"
+      "commandsToInstall": "Commandes obliques à installer",
+      "agentsToInstall": "Sous-agents à installer",
+      "agentUnmappedTools": "Les outils sans correspondance ne sont pas accordés : {{tools}}"
     },
     "dev": {
       "devOnly": "DEV UNIQUEMENT",

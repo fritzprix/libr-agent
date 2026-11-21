@@ -110,6 +110,36 @@ export function SkillsConflictDialog({
                   </div>
                 </div>
               ) : null}
+              {pendingInstall?.preview.pluginAgents &&
+              pendingInstall.preview.pluginAgents.length > 0 ? (
+                <div className="rounded-md border bg-muted/20 p-3 text-sm space-y-2">
+                  <p className="font-medium">
+                    {t(
+                      'settings.skills.agentsToInstall',
+                      'Subagents to install',
+                    )}
+                  </p>
+                  {pendingInstall.preview.pluginAgents.map((agent) => (
+                    <div key={agent.name}>
+                      <p className="font-medium">{agent.name}</p>
+                      {agent.description ? (
+                        <p className="text-xs text-muted-foreground">
+                          {agent.description}
+                        </p>
+                      ) : null}
+                      {agent.unmappedTools.length > 0 ? (
+                        <p className="text-xs text-destructive">
+                          {t(
+                            'settings.skills.agentUnmappedTools',
+                            'Tools with no mapping are not granted: {{tools}}',
+                            { tools: agent.unmappedTools.join(', ') },
+                          )}
+                        </p>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
               {discoveredSkills.length > 0 ? (
                 <div className="rounded-md border bg-muted/20 p-3 text-sm space-y-2">
                   <p className="font-medium">

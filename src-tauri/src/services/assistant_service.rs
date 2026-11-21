@@ -30,6 +30,9 @@ impl AssistantService {
         name: String,
         config: Value,
     ) -> Result<AssistantModel, String> {
+        // #2923 D2: `plugin:` ids and the pluginSource marker are reserved
+        // for plugin install flows; user creation is rejected.
+        crate::services::skill_service::reject_plugin_agent_mutation(&id, Some(&config))?;
         let name = normalize_assistant_name(&name)?;
         let config_str = config.to_string();
 
@@ -44,6 +47,8 @@ impl AssistantService {
         name: Option<String>,
         config: Option<Value>,
     ) -> Result<AssistantModel, String> {
+        // #2923 D2: plugin-owned assistants are read-only for users.
+        crate::services::skill_service::reject_plugin_agent_mutation(id, config.as_ref())?;
         let name = normalize_optional_assistant_name(name)?;
         let config_str = config.map(|c| c.to_string());
 
@@ -53,6 +58,8 @@ impl AssistantService {
     }
 
     pub async fn delete_assistant(repo: &dyn AssistantRepository, id: &str) -> Result<(), String> {
+        // #2923 D2: removed only together with the owning plugin.
+        crate::services::skill_service::reject_plugin_agent_mutation(id, None)?;
         repo.delete_assistant(id)
             .await
             .map_err(|e| format!("Failed to delete assistant: {}", e))
@@ -125,6 +132,12 @@ impl AssistantService {
         let mut results = Vec::new();
 
         for payload in assistants {
+            // #2923 D2: an import/batch upsert may not create or overwrite
+            // plugin-owned assistants, and may not spoof the marker.
+            crate::services::skill_service::reject_plugin_agent_mutation(
+                &payload.id,
+                Some(&payload.config),
+            )?;
             let normalized_name = normalize_assistant_name(&payload.name)?;
             let config_str = payload.config.to_string();
 

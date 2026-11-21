@@ -86,7 +86,9 @@
       "description": "Descripción",
       "fullConfiguration": "Configuración completa",
       "expand": "Expandir configuración",
-      "collapse": "Contraer configuración"
+      "collapse": "Contraer configuración",
+      "pluginOwned": "Plugin: {{name}}",
+      "pluginOwnedHint": "Instalado por un plugin. La edición está desactivada; desinstala el plugin para eliminarlo."
     }
   },
   "status": {
@@ -899,7 +901,9 @@
       "importSuccessWithOverwriteAndSkipped_other": "{{count}} habilidades importadas ({{overwrittenCount}} sobrescritas, {{skippedCount}} omitidas)",
       "importSkippedOnly_one": "{{count}} habilidad en conflicto omitida",
       "importSkippedOnly_other": "{{count}} habilidades en conflicto omitidas",
-      "commandsToInstall": "Comandos de barra para instalar"
+      "commandsToInstall": "Comandos de barra para instalar",
+      "agentsToInstall": "Subagentes que se instalarán",
+      "agentUnmappedTools": "Las herramientas sin mapeo no se otorgan: {{tools}}"
     },
     "dev": {
       "devOnly": "SOLO DESARROLLO",

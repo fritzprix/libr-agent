@@ -56,6 +56,9 @@ async fn load_assistant_by_id(assistant_id: &str) -> Result<Option<AssistantMode
 ///
 /// Loads live assistant settings from the assistants table (SSOT) using
 /// `sessions.assistant_id`, then overlays session lineage/org columns.
+/// Plugin-owned ids (`plugin:<source_id>:<agent>`, #2923) resolve from the
+/// parent session's plugin store first, then the global store, so a
+/// session-scoped plugin agent survives resume without a global copy (D1).
 pub async fn resolve_agent_config(session: &SessionMetadata) -> Result<AgentConfig, String> {
     let assistant_id = extract_assistant_id_from_session(session).ok_or_else(|| {
         format!(
@@ -64,16 +67,40 @@ pub async fn resolve_agent_config(session: &SessionMetadata) -> Result<AgentConf
         )
     })?;
 
-    let assistant = load_assistant_by_id(&assistant_id).await?.ok_or_else(|| {
-        format!(
-            "Assistant {} not found for session {}",
-            assistant_id, session.id
-        )
-    })?;
+    let assistant = load_assistant_or_plugin(&assistant_id, session)
+        .await?
+        .ok_or_else(|| {
+            format!(
+                "Assistant {} not found for session {}",
+                assistant_id, session.id
+            )
+        })?;
 
     let mut config = build_agent_config_from_assistant(&assistant)?;
     apply_session_lineage(&mut config, session);
     Ok(config)
+}
+
+/// Assistant-row lookup for config resolution, with the #2923 plugin-agent
+/// fallback. Session-scope plugin agents are synthesized from the parent
+/// session's plugin store (spawn wrote no global row for them); global
+/// plugin agents are ordinary rows.
+async fn load_assistant_or_plugin(
+    assistant_id: &str,
+    session: &SessionMetadata,
+) -> Result<Option<AssistantModel>, String> {
+    if let Some((source_id, agent)) =
+        crate::services::skill_service::parse_plugin_agent_id(assistant_id)
+    {
+        if let Some(parent_id) = session.parent_session_id.as_deref() {
+            if let Some(model) = crate::services::skill_service::resolve_session_plugin_assistant(
+                parent_id, source_id, agent,
+            ) {
+                return Ok(Some(model));
+            }
+        }
+    }
+    load_assistant_by_id(assistant_id).await
 }
 
 /// Resolve builtin + external MCP bindings for a session from assistant SSOT.

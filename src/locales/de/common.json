@@ -86,7 +86,9 @@
       "description": "Beschreibung",
       "fullConfiguration": "Vollständige Konfiguration",
       "expand": "Konfiguration erweitern",
-      "collapse": "Konfiguration einklappen"
+      "collapse": "Konfiguration einklappen",
+      "pluginOwned": "Plugin: {{name}}",
+      "pluginOwnedHint": "Von einem Plugin installiert. Bearbeiten ist deaktiviert; deinstallieren Sie das Plugin, um es zu entfernen."
     }
   },
   "status": {
@@ -899,7 +901,9 @@
       "importSuccessWithOverwriteAndSkipped_other": "{{count}} Skills importiert ({{overwrittenCount}} überschrieben, {{skippedCount}} übersprungen)",
       "importSkippedOnly_one": "{{count}} in Konflikt stehender Skill übersprungen",
       "importSkippedOnly_other": "{{count}} in Konflikt stehende Skills übersprungen",
-      "commandsToInstall": "Zu installierende Slash-Befehle"
+      "commandsToInstall": "Zu installierende Slash-Befehle",
+      "agentsToInstall": "Zu installierende Subagents",
+      "agentUnmappedTools": "Tools ohne Mapping werden nicht gewährt: {{tools}}"
     },
     "dev": {
       "devOnly": "NUR ENTWICKLUNG",

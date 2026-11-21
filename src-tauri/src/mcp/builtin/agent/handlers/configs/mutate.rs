@@ -282,6 +282,14 @@ pub async fn update_agent(
 
     let repo = crate::repositories::SqliteAssistantRepository::new(server.get_db().clone());
 
+    // #2923 D2: plugin-owned agent configs are read-only for users and
+    // agents alike; they change only with their plugin.
+    if let Err(err_msg) =
+        crate::services::skill_service::reject_plugin_agent_mutation(&request.id, None)
+    {
+        return Ok(invalid_input_error(&err_msg, ToolGroup::Agent));
+    }
+
     let existing_model = repo
         .get_assistant(&request.id)
         .await

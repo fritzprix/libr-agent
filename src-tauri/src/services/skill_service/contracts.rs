@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tempfile::TempDir;
 
+use super::plugin_agents::PluginAgentPreview;
+
 pub const SKILL_FILE_NAME: &str = "SKILL.md";
 pub const USER_SKILLS_DIR_NAME: &str = "user_skills";
 pub const SYSTEM_SKILLS_DIR_NAME: &str = "system_skills";
@@ -168,6 +170,11 @@ pub struct SkillImportPreview {
     /// (#2922). Sorted, deduplicated.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub plugin_commands: Vec<String>,
+    /// Subagent definitions provided by the plugin's `agents/` directory
+    /// (or manifest `agents` paths) (#2923). Each entry lists the tools
+    /// that have no LibrAgent mapping and will therefore NOT be granted.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub plugin_agents: Vec<PluginAgentPreview>,
     /// `.claude-plugin/plugin.json` summary, when the source carried one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plugin_manifest: Option<PluginManifestSummary>,

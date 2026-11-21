@@ -86,7 +86,9 @@
       "description": "説明",
       "fullConfiguration": "完全な設定",
       "expand": "設定を展開",
-      "collapse": "設定を折りたたむ"
+      "collapse": "設定を折りたたむ",
+      "pluginOwned": "プラグイン: {{name}}",
+      "pluginOwnedHint": "プラグインによりインストールされました。編集は無効です。プラグインをアンインストールすると削除されます。"
     }
   },
   "status": {
@@ -899,7 +901,9 @@
       "importSuccessWithOverwriteAndSkipped_other": "{{count}} 個のスキルをインポートしました ({{overwrittenCount}} 個上書き、{{skippedCount}} 個スキップ)",
       "importSkippedOnly_one": "競合する {{count}} 個のスキルをスキップしました",
       "importSkippedOnly_other": "競合する {{count}} 個のスキルをスキップしました",
-      "commandsToInstall": "インストールするスラッシュコマンド"
+      "commandsToInstall": "インストールするスラッシュコマンド",
+      "agentsToInstall": "インストールされるサブエージェント",
+      "agentUnmappedTools": "マッピングのないツールは付与されません: {{tools}}"
     },
     "dev": {
       "devOnly": "開発専用",

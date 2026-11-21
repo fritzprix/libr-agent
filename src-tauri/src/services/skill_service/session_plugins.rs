@@ -523,6 +523,7 @@ mod tests {
             mcp_servers: vec![],
             mcp_require_approval: false,
             plugin_commands: vec![],
+            plugin_agents: vec![],
             plugin_manifest: None,
         };
         install_prepared_with_dirs(&fx.dirs, prepared, preview, false, vec![], approve_hooks)

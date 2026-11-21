@@ -86,7 +86,9 @@
       "description": "Description",
       "fullConfiguration": "Full Configuration",
       "expand": "Expand configuration",
-      "collapse": "Collapse configuration"
+      "collapse": "Collapse configuration",
+      "pluginOwned": "Plugin: {{name}}",
+      "pluginOwnedHint": "Installed by a plugin. Edit is disabled; uninstall the plugin to remove it."
     }
   },
   "status": {
@@ -923,7 +925,9 @@
       "hookEvents": "Hook events",
       "pluginSourceUpdated": "Plugin updated.",
       "pluginSourceRemoved": "Plugin source removed.",
-      "commandsToInstall": "Slash commands to install"
+      "commandsToInstall": "Slash commands to install",
+      "agentsToInstall": "Subagents to install",
+      "agentUnmappedTools": "Tools with no mapping are not granted: {{tools}}"
     },
     "dev": {
       "devOnly": "DEV ONLY",

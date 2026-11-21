@@ -4,6 +4,7 @@ mod directories;
 mod github;
 mod importing;
 mod outbox;
+mod plugin_agents;
 mod plugin_commands;
 mod plugin_manifest;
 mod plugin_mcp;
@@ -41,6 +42,11 @@ pub use importing::{
     reset_user_skills, skill_storage_directory_name,
 };
 pub use outbox::{install_outbox, SKILL_OUTBOX_RELATIVE_DIR};
+pub use plugin_agents::{
+    declared_plugin_agent_model, is_plugin_agent_id, parse_plugin_agent_id,
+    plugin_model_to_complexity, reject_plugin_agent_mutation, resolve_session_plugin_assistant,
+    session_plugin_agent_infos, session_store_source_ids, PluginAgentListInfo,
+};
 pub use plugin_commands::{
     expand_plugin_command, list_plugin_commands, plugin_command_names, PluginCommandInfo,
 };
