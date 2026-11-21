@@ -3,7 +3,7 @@
 //! Mirrors the frontend converter (`src/lib/ai-service/openai/message-converter.ts`):
 //! user / assistant / tool turns, tool calls, reasoning, images, and audio.
 
-use crate::types::{ChatMessage, ChatRequest, ContentPart, Role, ToolSpec};
+use crate::types::{ChatMessage, ChatRequest, ContentPart, Role, ToolCall, ToolSpec};
 use serde_json::{json, Value};
 
 pub(crate) fn text_of(content: &[ContentPart]) -> String {
@@ -88,6 +88,26 @@ pub(crate) fn tool_name_for<'a>(earlier: &'a [ChatMessage], tool_call_id: &str) 
     })
 }
 
+/// A tool call as the OpenAI wire format expects it. `function.arguments` must
+/// be a JSON object string: some OpenAI-compatible servers (for example, vLLM)
+/// parse it and fail with HTTP 500 when it is not. Arguments that are not a
+/// JSON object are sent as `{}`, the same as `anthropic.rs` and `gemini.rs` do.
+fn wire_tool_call(call: &ToolCall) -> Value {
+    let mut wire = json!(call);
+    let is_object = serde_json::from_str::<Value>(&call.function.arguments)
+        .is_ok_and(|arguments| arguments.is_object());
+    if !is_object {
+        if !call.function.arguments.trim().is_empty() {
+            log::warn!(
+                "Tool call {} has arguments that are not a JSON object; sent as {{}}",
+                call.id
+            );
+        }
+        wire["function"]["arguments"] = json!("{}");
+    }
+    wire
+}
+
 pub(crate) fn chat_messages(system_prompt: Option<&str>, messages: &[ChatMessage]) -> Vec<Value> {
     let mut out = Vec::with_capacity(messages.len() + 1);
     if let Some(prompt) = system_prompt.filter(|prompt| !prompt.is_empty()) {
@@ -110,7 +130,8 @@ pub(crate) fn chat_messages(system_prompt: Option<&str>, messages: &[ChatMessage
                     Value::String(text)
                 };
                 if !message.tool_calls.is_empty() {
-                    assistant["tool_calls"] = json!(message.tool_calls);
+                    assistant["tool_calls"] =
+                        Value::Array(message.tool_calls.iter().map(wire_tool_call).collect());
                 }
                 if let Some(thinking) = message.thinking.as_ref().filter(|t| !t.is_empty()) {
                     assistant["reasoning_content"] = json!(thinking);
@@ -320,6 +341,43 @@ mod tests {
             out[1],
             json!({ "role": "tool", "tool_call_id": "call_1", "content": "file body" })
         );
+    }
+
+    #[test]
+    fn tool_call_arguments_that_are_not_a_json_object_are_sent_as_an_empty_object() {
+        let mut assistant = message(Role::Assistant, Vec::new());
+        let with_arguments = |id: &str, arguments: &str| {
+            let mut tool_call = call(id, "workspace__spawnProcess");
+            tool_call.function.arguments = arguments.to_string();
+            tool_call
+        };
+        assistant.tool_calls = vec![
+            with_arguments("valid", r#"{"command":"ls"}"#),
+            with_arguments("marker", "<redacted: 41216 bytes, truncated>"),
+            with_arguments("truncated", r#"{"command":"cargo test"#),
+            with_arguments("array", "[1, 2]"),
+            with_arguments("empty", ""),
+        ];
+
+        let out = chat_messages(None, &[assistant]);
+        let arguments: Vec<&str> = out[0]["tool_calls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|tool_call| tool_call["function"]["arguments"].as_str().unwrap())
+            .collect();
+
+        assert_eq!(
+            arguments,
+            vec![r#"{"command":"ls"}"#, "{}", "{}", "{}", "{}"]
+        );
+        // The id and name stay, so the tool result keeps its pairing.
+        assert_eq!(out[0]["tool_calls"][1]["id"], "marker");
+        assert_eq!(
+            out[0]["tool_calls"][1]["function"]["name"],
+            "workspace__spawnProcess"
+        );
+        assert_eq!(out[0]["tool_calls"][1]["type"], "function");
     }
 
     #[test]

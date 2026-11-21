@@ -89,10 +89,17 @@ impl UiServer {
             }
         };
 
-        let warning_message = format!(
-            "⚠️ Circuit Breaker Triggered\n\nThe tool \"{}\" has been called {} times consecutively with identical parameters.\n\nThis usually indicates the agent is stuck in a loop. Please review the situation and click Resume to continue.",
-            tool_name, repetition_count
-        );
+        // Callers other than the identical-call loop guard (for example, the
+        // invalid tool-call arguments guard) give their own reason.
+        let warning_message = match args.get("reason").and_then(|v| v.as_str()) {
+            Some(reason) if !reason.trim().is_empty() => {
+                format!("⚠️ Circuit Breaker Triggered\n\n{}", reason)
+            }
+            _ => format!(
+                "⚠️ Circuit Breaker Triggered\n\nThe tool \"{}\" has been called {} times consecutively with identical parameters.\n\nThis usually indicates the agent is stuck in a loop. Please review the situation and click Resume to continue.",
+                tool_name, repetition_count
+            ),
+        };
 
         Ok(crate::mcp::builtin::utils::create_resource_response(
             &format!("ui://circuit-break/{}", uuid::Uuid::new_v4()),

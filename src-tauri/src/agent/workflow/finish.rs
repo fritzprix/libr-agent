@@ -833,6 +833,7 @@ mod tests {
             repeated_text_loop_retry_count: Arc::new(RwLock::new(0)),
             reasoning_budget_retry_count: Arc::new(RwLock::new(0)),
             malformed_tool_markup_retry_count: Arc::new(RwLock::new(0)),
+            invalid_tool_args_retry_count: Arc::new(RwLock::new(0)),
             pending_events: Arc::new(RwLock::new(PendingEventManager::new())),
             pending_approvals: Arc::new(RwLock::new(HashMap::new())),
             pending_user_prompt: crate::agent::state::new_user_prompt_slot(),

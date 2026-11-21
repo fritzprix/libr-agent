@@ -446,37 +446,8 @@ pub(crate) async fn preprocess_assistant_tool_calls(
                 );
                 emit_circuit_breaker_triggered(session_id, &tool_name, count, "hardBreak");
 
-                let ui_alias_enabled = match session_metadata.as_ref() {
-                    Some(metadata) => match crate::agent::resolve_agent_config(metadata).await {
-                        Ok(config) => circuit_breaker::is_builtin_alias_enabled(&config, "ui"),
-                        Err(error) => {
-                            log::warn!(
-                                    "Failed to resolve agent config for circuit breaker in session {}: {}",
-                                    session_id,
-                                    error
-                                );
-                            true
-                        }
-                    },
-                    None => true,
-                };
-
-                if ui_alias_enabled {
-                    let circuit_break_call = ToolCall {
-                        id: uuid::Uuid::new_v4().to_string(),
-                        function: ToolCallFunction {
-                            name: "ui__circuitBreak".to_string(),
-                            arguments: serde_json::json!({
-                                "toolName": tool_name,
-                                "repetitionCount": count,
-                                "args": args
-                            })
-                            .to_string(),
-                        },
-                        r#type: "function".to_string(),
-                    };
-
-                    tool_calls[index] = circuit_break_call;
+                if ui_alias_enabled(session_metadata.as_ref(), session_id).await {
+                    tool_calls[index] = circuit_break_tool_call(&tool_name, count, &args, None);
                     tool_calls.truncate(index + 1);
                 } else {
                     log::warn!(
@@ -572,6 +543,195 @@ pub(crate) async fn preprocess_assistant_tool_calls(
         tool_loop_resample,
         forced_stop,
     }
+}
+
+/// Whether the `ui` builtin is on for the session, so the interactive
+/// `ui__circuitBreak` call can be used. Defaults to `true` when the agent
+/// config cannot be resolved.
+async fn ui_alias_enabled(
+    session_metadata: Option<&crate::repositories::SessionMetadata>,
+    session_id: &str,
+) -> bool {
+    let Some(metadata) = session_metadata else {
+        return true;
+    };
+    match crate::agent::resolve_agent_config(metadata).await {
+        Ok(config) => circuit_breaker::is_builtin_alias_enabled(&config, "ui"),
+        Err(error) => {
+            log::warn!(
+                "Failed to resolve agent config for circuit breaker in session {}: {}",
+                session_id,
+                error
+            );
+            true
+        }
+    }
+}
+
+/// The `ui__circuitBreak` call that stops the workflow. `reason`, when set,
+/// replaces the default "identical parameters" warning text.
+fn circuit_break_tool_call(
+    tool_name: &str,
+    count: usize,
+    args: &str,
+    reason: Option<&str>,
+) -> ToolCall {
+    let mut arguments = serde_json::json!({
+        "toolName": tool_name,
+        "repetitionCount": count,
+        "args": args
+    });
+    if let Some(reason) = reason {
+        arguments["reason"] = serde_json::json!(reason);
+    }
+    ToolCall {
+        id: uuid::Uuid::new_v4().to_string(),
+        function: ToolCallFunction {
+            name: "ui__circuitBreak".to_string(),
+            arguments: arguments.to_string(),
+        },
+        r#type: "function".to_string(),
+    }
+}
+
+/// Clean resamples allowed after a reply whose tool-call arguments are not a
+/// valid JSON object. When the original reply and all resamples fail, the
+/// circuit breaker stops the turn.
+pub const INVALID_TOOL_ARGS_MAX_RESAMPLES: u32 = 3;
+
+/// Result of [`apply_invalid_tool_args_policy`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InvalidToolArgsOutcome {
+    /// No tool call has invalid arguments. Continue as usual.
+    Valid,
+    /// Discard the reply (do not cache, persist, or execute it) and request a
+    /// new completion for the same history.
+    Resample {
+        tool_name: String,
+        attempt: u32,
+        max_resamples: u32,
+    },
+    /// The resample budget is spent. The reply now holds a circuit break (or a
+    /// text-only stop) instead of the invalid tool calls.
+    CircuitBreak { tool_name: String, attempts: u32 },
+}
+
+/// Decide what to do with a reply whose tool-call arguments are cut off (for
+/// example, at the output-token limit) or are not a JSON object.
+///
+/// Such a reply must not go into history: the arguments are not executable,
+/// and replaying them makes some OpenAI-compatible servers fail with HTTP 500.
+/// The reply is resampled up to [`INVALID_TOOL_ARGS_MAX_RESAMPLES`] times.
+/// After that, the invalid calls are replaced with `ui__circuitBreak` (valid
+/// JSON arguments only), so the workflow stops with a clear message.
+pub(crate) async fn apply_invalid_tool_args_policy(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+    assistant_message: &mut Message,
+) -> InvalidToolArgsOutcome {
+    let invalid = assistant_message.tool_calls.as_deref().and_then(|calls| {
+        calls.iter().find_map(|call| {
+            crate::agent::llm::tool_args_validation::inspect_tool_call_arguments(
+                &call.function.arguments,
+            )
+            .err()
+            .map(|(kind, _)| {
+                (
+                    call.function.name.clone(),
+                    call.function.arguments.len(),
+                    kind,
+                )
+            })
+        })
+    });
+
+    let (session_metadata, retry_count) = {
+        let sessions = active_sessions.read().await;
+        let Some(session) = sessions.get(session_id) else {
+            return InvalidToolArgsOutcome::Valid;
+        };
+        (
+            session.metadata.clone(),
+            session.invalid_tool_args_retry_count.clone(),
+        )
+    };
+
+    let Some((tool_name, raw_len, kind)) = invalid else {
+        *retry_count.write().await = 0;
+        return InvalidToolArgsOutcome::Valid;
+    };
+    let safe_tool = circuit_breaker::sanitize_circuit_breaker_log_tool_name(&tool_name);
+
+    {
+        let mut count = retry_count.write().await;
+        if *count < INVALID_TOOL_ARGS_MAX_RESAMPLES {
+            *count += 1;
+            log::warn!(
+                "Invalid tool-call arguments for session {} tool {} ({}, {} bytes). Discarding the reply and resampling ({}/{}).",
+                session_id,
+                safe_tool,
+                kind.as_error_kind(),
+                raw_len,
+                *count,
+                INVALID_TOOL_ARGS_MAX_RESAMPLES
+            );
+            return InvalidToolArgsOutcome::Resample {
+                tool_name,
+                attempt: *count,
+                max_resamples: INVALID_TOOL_ARGS_MAX_RESAMPLES,
+            };
+        }
+        *count = 0;
+    }
+
+    let attempts = INVALID_TOOL_ARGS_MAX_RESAMPLES + 1;
+    log::warn!(
+        "Circuit breaker triggered for session {} tool {}: invalid tool-call arguments in {} replies in a row ({})",
+        session_id,
+        safe_tool,
+        attempts,
+        kind.as_error_kind()
+    );
+    emit_circuit_breaker_triggered(session_id, &tool_name, attempts as usize, "invalidToolArgs");
+
+    let args_marker = if kind.is_truncated() {
+        crate::agent::llm::tool_args_validation::redact_tool_call_arguments(raw_len)
+    } else {
+        format!("<redacted: {} bytes, malformed>", raw_len)
+    };
+    let reason = format!(
+        "The model sent invalid arguments for the tool \"{}\" in {} replies in a row ({}). The tool was not run. The workflow stopped to prevent a provider error. Click Resume to continue, or change your request.",
+        safe_tool,
+        attempts,
+        kind.as_error_kind()
+    );
+
+    if ui_alias_enabled(Some(&session_metadata), session_id).await {
+        assistant_message.tool_calls = Some(vec![circuit_break_tool_call(
+            &tool_name,
+            attempts as usize,
+            &args_marker,
+            Some(&reason),
+        )]);
+    } else {
+        assistant_message.tool_calls = None;
+        assistant_message.content = vec![crate::mcp::types::MCPContent::Text {
+            text: format!("⚠️ Circuit breaker triggered: {reason}"),
+        }];
+    }
+
+    InvalidToolArgsOutcome::CircuitBreak {
+        tool_name,
+        attempts,
+    }
+}
+
+pub async fn apply_invalid_tool_args_policy_for_testing(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+    assistant_message: &mut Message,
+) -> InvalidToolArgsOutcome {
+    apply_invalid_tool_args_policy(active_sessions, session_id, assistant_message).await
 }
 
 fn hard_break_applied_ui_circuit_break(assistant_message: &Message) -> bool {

@@ -6,7 +6,7 @@
 
 use crate::mcp::types::{MCPContent, MCPTool};
 use crate::models::chat::{Message, MessageSource};
-use llm_client::{ChatMessage, ChatRequest, ContentPart, Role, ThinkingEffort, ToolSpec};
+use llm_client::{ChatMessage, ChatRequest, ContentPart, Role, ThinkingEffort, ToolCall, ToolSpec};
 use serde_json::{json, Value};
 
 /// Text parts of a message, joined by newlines. Non-text parts are skipped.
@@ -80,6 +80,30 @@ fn content_part(item: &MCPContent) -> ContentPart {
     }
 }
 
+/// A stored tool call as it can go to a provider. History written before
+/// invalid tool-call arguments were resampled can hold a cut-off JSON string or
+/// a `<redacted: N bytes, truncated>` marker; sending that makes some providers
+/// fail with HTTP 500. Such arguments are sent as `{}`. The id and name stay, so
+/// the paired tool result still matches (same as `repairMalformedToolCalls` in
+/// `message-normalizer.ts`).
+fn sendable_tool_call(message_id: &str, tool_call: &ToolCall) -> ToolCall {
+    if crate::agent::llm::tool_args_validation::inspect_tool_call_arguments(
+        &tool_call.function.arguments,
+    )
+    .is_ok()
+    {
+        return tool_call.clone();
+    }
+    log::warn!(
+        "Message {} tool call {} has arguments that are not a JSON object; sent as {{}}",
+        message_id,
+        tool_call.id
+    );
+    let mut sendable = tool_call.clone();
+    sendable.function.arguments = "{}".to_string();
+    sendable
+}
+
 fn chat_message(message: &Message) -> Option<ChatMessage> {
     let role = if matches!(message.source, Some(MessageSource::Ui)) {
         Role::User
@@ -100,7 +124,12 @@ fn chat_message(message: &Message) -> Option<ChatMessage> {
     Some(ChatMessage {
         role,
         content: message.content.iter().map(content_part).collect(),
-        tool_calls: message.tool_calls.clone().unwrap_or_default(),
+        tool_calls: message
+            .tool_calls
+            .iter()
+            .flatten()
+            .map(|tool_call| sendable_tool_call(&message.id, tool_call))
+            .collect(),
         tool_call_id: message.tool_call_id.clone(),
         thinking: message.thinking.clone(),
         thinking_signature: message.thinking_signature.clone(),
@@ -243,6 +272,39 @@ mod tests {
 
         assert_eq!(request.messages.len(), 1);
         assert_eq!(request.messages[0].role, Role::User);
+    }
+
+    #[test]
+    fn stored_tool_call_arguments_that_are_not_a_json_object_are_sent_as_an_empty_object() {
+        let messages = vec![message(json!({
+            "id": "a1", "sessionId": "s", "role": "assistant", "content": [],
+            "toolCalls": [
+                {
+                    "id": "call_ok", "type": "function",
+                    "function": { "name": "workspace__readFile", "arguments": "{\"path\":\"a\"}" },
+                },
+                {
+                    "id": "call_marker", "type": "function",
+                    "function": {
+                        "name": "workspace__spawnProcess",
+                        "arguments": "<redacted: 41216 bytes, truncated>",
+                    },
+                },
+                {
+                    "id": "call_cut", "type": "function",
+                    "function": { "name": "workspace__spawnProcess", "arguments": "{\"command\":\"car" },
+                },
+            ],
+        }))];
+
+        let request = request(None, &messages);
+        let calls = &request.messages[0].tool_calls;
+
+        assert_eq!(calls[0].function.arguments, r#"{"path":"a"}"#);
+        assert_eq!(calls[1].function.arguments, "{}");
+        assert_eq!(calls[1].id, "call_marker");
+        assert_eq!(calls[1].function.name, "workspace__spawnProcess");
+        assert_eq!(calls[2].function.arguments, "{}");
     }
 
     #[test]

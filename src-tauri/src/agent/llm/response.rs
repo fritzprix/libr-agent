@@ -203,6 +203,7 @@ async fn reset_streaming_recovery_retry_counts(
         *session.repeated_text_loop_retry_count.write().await = 0;
         *session.reasoning_budget_retry_count.write().await = 0;
         *session.malformed_tool_markup_retry_count.write().await = 0;
+        *session.invalid_tool_args_retry_count.write().await = 0;
     }
 }
 
@@ -243,6 +244,57 @@ pub async fn initialize_pending_execution_for_testing(
         tool_calls,
     )
     .await;
+}
+
+/// Request a new completion after a reply with invalid tool-call arguments was
+/// discarded. The reply was not cached, emitted, or persisted.
+#[allow(clippy::too_many_arguments)]
+async fn resample_after_invalid_tool_args(
+    session_repo: &Arc<dyn SessionRepository>,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    proxy_manager: &Arc<MCPServiceProxyManager>,
+    app_handle: &AppHandle,
+    session_id: &str,
+    tool_name: &str,
+    attempt: u32,
+    max_resamples: u32,
+) -> Result<(), String> {
+    {
+        let active = active_sessions.read().await;
+        let Some(session) = active.get(session_id) else {
+            return Err(format!("Session not found: {}", session_id));
+        };
+        if session.cancellation_token.is_cancelled() {
+            log::info!(
+                "Workflow was cancelled for session {}. Discarding the reply with invalid tool-call arguments without a resample.",
+                session_id
+            );
+            return Ok(());
+        }
+    }
+
+    log::warn!(
+        "Resampling session {} after invalid tool-call arguments for {} ({}/{})",
+        session_id,
+        crate::agent::llm::circuit_breaker::sanitize_circuit_breaker_log_tool_name(tool_name),
+        attempt,
+        max_resamples
+    );
+
+    crate::agent::llm::request_llm_completion_with_recovery(
+        session_repo,
+        active_sessions,
+        proxy_manager,
+        app_handle,
+        session_id.to_string(),
+    )
+    .await
+    .map_err(|error| {
+        format!(
+            "Failed to request LLM completion after invalid tool-call arguments: {}",
+            error
+        )
+    })
 }
 
 /// Handle an LLM response from the frontend
@@ -334,11 +386,32 @@ pub async fn handle_llm_response(
         .await?;
     }
 
-    // [Truncated/Malformed tool-args] Keep the tool call in history with redacted
-    // argument values and do not retry silently. Let execute_tool_calls return a
-    // guided tool-error result with budget, truncation, and split-work guidance.
-    if let Some(tool_calls) = assistant_message.tool_calls.as_mut() {
-        crate::agent::llm::tool_args_validation::redact_invalid_tool_call_args(tool_calls);
+    // [Truncated/Malformed tool-args] A reply whose tool-call arguments are not a
+    // JSON object (usually cut off at the output-token limit by degenerate
+    // generation) never goes into history. Resample it a bounded number of times;
+    // after that the policy replaces the calls with a circuit break.
+    if let response_circuit_breaker::InvalidToolArgsOutcome::Resample {
+        tool_name,
+        attempt,
+        max_resamples,
+    } = response_circuit_breaker::apply_invalid_tool_args_policy(
+        active_sessions,
+        &session_id,
+        &mut assistant_message,
+    )
+    .await
+    {
+        return resample_after_invalid_tool_args(
+            session_repo,
+            active_sessions,
+            proxy_manager,
+            app_handle,
+            &session_id,
+            &tool_name,
+            attempt,
+            max_resamples,
+        )
+        .await;
     }
 
     // [Circuit Breaker] Pre-process: Check for loops and inject circuit breaker if needed
