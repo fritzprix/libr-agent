@@ -658,7 +658,7 @@ pub async fn agent_execute_command(
                 .to_string(),
         ),
         Command::Plugin(PluginCommand::Uninstall { target }) => {
-            let removed = skill_service::uninstall_session_plugin(&session_id, &target)?;
+            let removed = skill_service::uninstall_session_plugin(&session_id, &target).await?;
             Ok(CommandResult {
                 success: true,
                 expanded_prompt: None,

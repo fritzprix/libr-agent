@@ -178,6 +178,31 @@ pub struct SkillImportPreview {
     /// `.claude-plugin/plugin.json` summary, when the source carried one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plugin_manifest: Option<PluginManifestSummary>,
+    /// `userConfig` options the plugin asks for (#2926), in key order. The
+    /// install dialog collects them and passes the answers back as
+    /// `plugin_options`; a `sensitive` one uses masked input and is kept in
+    /// secure storage, never in a plain file.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub user_config: Vec<UserConfigPreviewEntry>,
+}
+
+/// One `userConfig` option shown at install (#2926).
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct UserConfigPreviewEntry {
+    /// Manifest key; also the `${user_config.<key>}` placeholder name.
+    pub key: String,
+    /// Label to show (the manifest `title`, else the key).
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// `string` | `number` | `boolean` | `directory` | `file`.
+    pub value_type: String,
+    /// Masked input and secure storage.
+    pub sensitive: bool,
+    pub required: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

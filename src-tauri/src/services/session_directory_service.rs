@@ -269,6 +269,15 @@ Write-Host "Available tools: python3, typescript/deno, shell commands"
                 .map_err(|e| format!("Failed to remove session plugins directory: {e}"))?;
         }
 
+        // #2926 gatekeeper G1.3: session plugin runtime state lives beside
+        // the data dir, not in the workspace — the `CLAUDE_ENV_FILE`
+        // directory, session-scope plugin data dirs, session-scoped secure
+        // option values, and their option cache. Purge them before the
+        // trust directory is deleted (the sweep reads the sidecars there),
+        // so a deleted session leaves nothing behind.
+        crate::services::skill_service::purge_session_plugin_state(&self.base_data_dir, session_id)
+            .await?;
+
         // #2942 S2.3: hook approval records live outside the workspace
         // (`session_plugin_trust/<session_id>`), so they do not go away with
         // the workspace — delete them here, or a recycled session id would
@@ -369,24 +378,65 @@ mod tests {
             .path()
             .join(crate::services::hooks::registry::SESSION_PLUGIN_TRUST_DIR_NAME)
             .join("s1");
+        // #2926 gatekeeper G1.3: so must the `CLAUDE_ENV_FILE` directory and
+        // the session-scope plugin data tree.
+        let env_dir = temp
+            .path()
+            .join(crate::services::hooks::registry::PLUGIN_ENV_DIR_NAME)
+            .join("s1");
+        let plugin_data = temp
+            .path()
+            .join(crate::services::hooks::registry::PLUGIN_DATA_DIR_NAME)
+            .join("sessions")
+            .join("s1");
         let other = temp.path().join("session_plugins").join("s2");
         let other_trust = temp
             .path()
             .join(crate::services::hooks::registry::SESSION_PLUGIN_TRUST_DIR_NAME)
             .join("s2");
-        for dir in [&workspace, &plugins, &trust, &other, &other_trust] {
+        let other_env = temp
+            .path()
+            .join(crate::services::hooks::registry::PLUGIN_ENV_DIR_NAME)
+            .join("s2");
+        let other_data = temp
+            .path()
+            .join(crate::services::hooks::registry::PLUGIN_DATA_DIR_NAME)
+            .join("sessions")
+            .join("s2");
+        for dir in [
+            &workspace,
+            &plugins,
+            &trust,
+            &env_dir,
+            &plugin_data,
+            &other,
+            &other_trust,
+            &other_env,
+            &other_data,
+        ] {
             std::fs::create_dir_all(dir).unwrap();
         }
+        std::fs::write(env_dir.join("session-start.env"), "A=1\n").unwrap();
 
         service.remove_workspace("s1").await.unwrap();
 
         assert!(!workspace.exists());
         assert!(!plugins.exists(), "session plugin store must be cleaned up");
         assert!(!trust.exists(), "session plugin trust must be cleaned up");
+        assert!(
+            !env_dir.exists(),
+            "session CLAUDE_ENV_FILE dir must be cleaned up"
+        );
+        assert!(
+            !plugin_data.exists(),
+            "session-scope plugin data dirs must be cleaned up"
+        );
         assert!(other.exists(), "other sessions' stores must be untouched");
         assert!(
             other_trust.exists(),
             "other sessions' trust must be untouched"
         );
+        assert!(other_env.exists(), "other sessions' env dir untouched");
+        assert!(other_data.exists(), "other sessions' data untouched");
     }
 }

@@ -9,6 +9,7 @@ import {
 } from '@/lib/backend/skills';
 import type { PendingInstall } from '@/features/skills/skills-management-types';
 import {
+  defaultPluginOptions,
   formatImportSuccess,
   shouldPromptSkillInstall,
 } from '@/features/skills/skills-management-utils';
@@ -62,6 +63,7 @@ export function useSessionPluginInstall(sessionId: string | undefined) {
       approveHooks: boolean,
       overwritable: SkillImportConflict[],
       system: SkillImportConflict[],
+      pluginOptions: Record<string, string> = {},
     ) => {
       if (!sessionId) {
         return;
@@ -78,6 +80,7 @@ export function useSessionPluginInstall(sessionId: string | undefined) {
         overwriteNames.length > 0,
         excluded,
         approveHooks,
+        pluginOptions,
       );
       toast.success(
         formatImportSuccess(
@@ -118,6 +121,7 @@ export function useSessionPluginInstall(sessionId: string | undefined) {
             preview,
             selectedOverwriteNames: overwritable.map((c) => c.name),
             approveHooks: false,
+            pluginOptions: defaultPluginOptions(preview),
           });
           return true;
         }
@@ -153,6 +157,7 @@ export function useSessionPluginInstall(sessionId: string | undefined) {
           approveHooks,
           overwritableConflicts,
           systemConflicts,
+          pendingInstall.pluginOptions,
         );
         setPendingInstall(null);
       } catch (error) {
@@ -188,6 +193,18 @@ export function useSessionPluginInstall(sessionId: string | undefined) {
     );
   }, []);
 
+  /** Record one `userConfig` answer (#2926). */
+  const setPluginOption = useCallback((key: string, value: string) => {
+    setPendingInstall((current) =>
+      current
+        ? {
+            ...current,
+            pluginOptions: { ...current.pluginOptions, [key]: value },
+          }
+        : current,
+    );
+  }, []);
+
   const handleOpenChange = useCallback((open: boolean) => {
     if (!open) {
       setPendingInstall(null);
@@ -204,6 +221,7 @@ export function useSessionPluginInstall(sessionId: string | undefined) {
     onOpenChange: handleOpenChange,
     onToggleOverwrite: toggleOverwrite,
     onApproveHooksChange: setApproveHooks,
+    onUserConfigChange: setPluginOption,
     onConfirm: () => confirm(pendingInstall?.approveHooks ?? false),
     onConfirmWithoutHooks: () => confirm(false),
   };

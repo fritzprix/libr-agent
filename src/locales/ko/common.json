@@ -931,7 +931,10 @@
       "agentGrantedServices": "허용되는 서비스: {{services}}",
       "agentGrantsAllServices": "tools 줄이 없음: 모든 LibrAgent 서비스가 허용됩니다.",
       "agentGrantsNoServices": "허용되는 서비스 없음 (매핑된 도구 없음).",
-      "agentWorkspaceGrantNote": "workspace 서비스는 파일 쓰기 및 셸 실행을 포함합니다."
+      "agentWorkspaceGrantNote": "workspace 서비스는 파일 쓰기 및 셸 실행을 포함합니다.",
+      "userConfigTitle": "이 플러그인이 요청하는 설정",
+      "userConfigHint": "이 값은 플러그인이 실행될 때 전달됩니다. 민감한 값은 이 컴퓨터의 보안 저장소에 보관되며 다시 표시되지 않습니다.",
+      "userConfigMissing": "필수: {{names}}"
     },
     "dev": {
       "devOnly": "DEV ONLY",

@@ -288,6 +288,16 @@ pub async fn dispatch_hook_event_with_sources(
         }
     };
 
+    // `CLAUDE_ENV_FILE` (#2926): only a SessionStart run gets one, and it is
+    // truncated first so a stale file from an earlier run cannot leak values
+    // into this session. Its `NAME=value` lines are applied to later shell
+    // tool calls of the session once the hooks have run.
+    let env_file = if event == HookEvent::SessionStart {
+        prepare_session_env_file(session_id)
+    } else {
+        None
+    };
+
     for record in
         list_effective_approved_sources_in(plugins_dir, session_plugins_dir, session_trust_dir)
     {
@@ -303,6 +313,44 @@ pub async fn dispatch_hook_event_with_sources(
         };
         let Some(groups) = config.events.get(&event) else {
             continue;
+        };
+        // #2926: the variables this plugin's hooks run with. `userConfig`
+        // values live in the option sidecar (plain values) and secure storage
+        // (sensitive values); a secure-store read failure warns and leaves
+        // that option absent rather than skipping the hook. A session-scope
+        // sidecar is read from that session's trust directory, never from the
+        // agent-writable workspace store (#2926 gatekeeper G1.1), and its
+        // secure namespace is scoped to the session (G1.2).
+        let session_scope =
+            session_plugins_dir.is_some_and(|base| record.root_dir.starts_with(base));
+        let (options, warning) = if session_scope {
+            crate::services::skill_service::load_plugin_option_values(
+                session_trust_dir.unwrap_or(session_plugins_dir.unwrap_or(plugins_dir)),
+                &record.manifest.source_id,
+                Some(session_id),
+            )
+            .await
+        } else {
+            crate::services::skill_service::load_plugin_option_values(
+                plugins_dir,
+                &record.manifest.source_id,
+                None,
+            )
+            .await
+        };
+        if let Some(warning) = warning {
+            log::warn!("{warning}");
+        }
+        let env = HookEnv {
+            plugin_root: root.clone(),
+            data_dir: plugin_data_dir_for(&record, session_id, session_plugins_dir),
+            project_dir: envelope_params
+                .cwd
+                .to_str()
+                .map(str::to_string)
+                .unwrap_or_default(),
+            env_file: env_file.clone(),
+            options,
         };
         for group in groups {
             if !matcher_matches(group.matcher.as_deref(), matcher_value) {
@@ -320,24 +368,87 @@ pub async fn dispatch_hook_event_with_sources(
                     continue;
                 }
                 if let Some(output) =
-                    run_matching_handler(session_id, event, root, handler, &envelope_json).await
+                    run_matching_handler(session_id, event, &env, handler, &envelope_json).await
                 {
                     aggregated.merge(output);
                 }
             }
         }
     }
+    if let Some(path) = env_file {
+        super::plugin_env::apply_env_file(session_id, &path);
+    }
     aggregated
+}
+
+/// Create (or truncate) the session's `CLAUDE_ENV_FILE` and return it. A
+/// failure only costs the plugin-variable feature, so it is logged, not fatal.
+fn prepare_session_env_file(session_id: &str) -> Option<PathBuf> {
+    let path = super::registry::get_session_plugin_env_file(session_id).ok()?;
+    if let Some(parent) = path.parent() {
+        if let Err(error) = std::fs::create_dir_all(parent) {
+            log::warn!(
+                "CLAUDE_ENV_FILE unavailable for session {}: create {}: {}",
+                session_id,
+                parent.display(),
+                error
+            );
+            return None;
+        }
+    }
+    match std::fs::write(&path, "") {
+        Ok(()) => Some(path),
+        Err(error) => {
+            log::warn!(
+                "CLAUDE_ENV_FILE unavailable for session {}: truncate {}: {}",
+                session_id,
+                path.display(),
+                error
+            );
+            None
+        }
+    }
+}
+
+/// `${CLAUDE_PLUGIN_DATA}` of one source record (#2926): a session-store
+/// record gets the session's data dir, anything else the global one. A path
+/// that cannot be resolved falls back to the plugin root's sibling
+/// `.plugin-data`, so a hook still gets a writable directory instead of none.
+fn plugin_data_dir_for(
+    record: &crate::services::hooks::registry::PluginSourceRecord,
+    session_id: &str,
+    session_plugins_dir: Option<&Path>,
+) -> PathBuf {
+    use super::registry::{get_session_plugin_data_dir, get_user_plugin_data_dir};
+    let session_scope = session_plugins_dir.is_some_and(|base| record.root_dir.starts_with(base));
+    let resolved = if session_scope {
+        get_session_plugin_data_dir(session_id, &record.manifest.source_id)
+    } else {
+        get_user_plugin_data_dir(&record.manifest.source_id)
+    };
+    resolved.unwrap_or_else(|_| fallback_plugin_data_dir(record))
+}
+
+/// Data directory used when the data-dir root is unavailable (unit tests with
+/// no session manager): keep the location stable per plugin source.
+fn fallback_plugin_data_dir(
+    record: &crate::services::hooks::registry::PluginSourceRecord,
+) -> PathBuf {
+    record
+        .root_dir
+        .parent()
+        .map(|base| base.join(format!("{}-data", record.manifest.source_id)))
+        .unwrap_or_else(|| record.root_dir.join(".plugin-data"))
 }
 
 async fn run_matching_handler(
     session_id: &str,
     event: HookEvent,
-    plugin_root: &Path,
+    env: &HookEnv,
     handler: &HookHandler,
     envelope_json: &str,
 ) -> Option<HookOutput> {
-    match run_hook_handler(event, plugin_root, handler, envelope_json).await {
+    match run_hook_handler(event, env, handler, envelope_json).await {
         HookRunOutcome::Applied(output) => {
             if event == HookEvent::SessionStart {
                 if let Some(ctx) = output
@@ -370,7 +481,7 @@ enum HookRunOutcome {
 
 async fn run_hook_handler(
     event: HookEvent,
-    plugin_root: &Path,
+    env: &HookEnv,
     handler: &HookHandler,
     envelope_json: &str,
 ) -> HookRunOutcome {
@@ -381,7 +492,7 @@ async fn run_hook_handler(
     };
     let deadline = Duration::from_secs(timeout_secs);
 
-    let mut child = match build_hook_command(plugin_root, handler) {
+    let mut child = match build_hook_command(env, handler) {
         Ok(mut cmd) => match cmd
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -441,26 +552,78 @@ async fn run_hook_handler(
     HookRunOutcome::Applied(parsed)
 }
 
-fn build_hook_command(plugin_root: &Path, handler: &HookHandler) -> Result<Command, String> {
-    let root_str = plugin_root.to_string_lossy();
+/// Environment a hook process runs with (#2926).
+///
+/// Before this, a hook saw only the plugin root aliases. The plugin variables
+/// a Claude Code plugin can rely on are set here: `${CLAUDE_PLUGIN_DATA}`,
+/// `CLAUDE_PROJECT_DIR`, `CLAUDE_ENV_FILE` (for `SessionStart` only), and one
+/// `CLAUDE_PLUGIN_OPTION_<KEY>` per resolved `userConfig` value.
+struct HookEnv {
+    plugin_root: PathBuf,
+    /// Per-plugin data directory, created before the hook runs.
+    data_dir: PathBuf,
+    /// The session's workspace directory (`CLAUDE_PROJECT_DIR`).
+    project_dir: String,
+    /// `CLAUDE_ENV_FILE`; only a `SessionStart` run gets one.
+    env_file: Option<PathBuf>,
+    /// Resolved `userConfig` values, keyed by the manifest key.
+    options: std::collections::BTreeMap<String, String>,
+}
+
+impl HookEnv {
+    /// Apply the plugin variables to a hook command. A data directory that
+    /// cannot be created is logged and not fatal: the hook still runs, it just
+    /// cannot write plugin data.
+    fn apply(&self, cmd: &mut Command) {
+        let root = self.plugin_root.to_string_lossy();
+        cmd.env("LIBRAGENT_PLUGIN_ROOT", root.as_ref());
+        cmd.env("CLAUDE_PLUGIN_ROOT", root.as_ref());
+        cmd.env("CURSOR_PLUGIN_ROOT", root.as_ref());
+
+        if let Err(error) = crate::services::hooks::registry::ensure_plugin_data_dir(&self.data_dir)
+        {
+            log::warn!("CLAUDE_PLUGIN_DATA is unusable for this hook: {error}");
+        }
+        let data = self.data_dir.to_string_lossy();
+        cmd.env("LIBRAGENT_PLUGIN_DATA", data.as_ref());
+        cmd.env("CLAUDE_PLUGIN_DATA", data.as_ref());
+
+        cmd.env("LIBRAGENT_PROJECT_DIR", &self.project_dir);
+        cmd.env("CLAUDE_PROJECT_DIR", &self.project_dir);
+
+        if let Some(env_file) = self.env_file.as_deref() {
+            let path = env_file.to_string_lossy();
+            cmd.env("LIBRAGENT_ENV_FILE", path.as_ref());
+            cmd.env("CLAUDE_ENV_FILE", path.as_ref());
+        }
+
+        for (key, value) in &self.options {
+            if let Some(name) = crate::services::skill_service::option_env_name(key) {
+                cmd.env(name, value);
+            }
+        }
+    }
+}
+
+fn build_hook_command(env: &HookEnv, handler: &HookHandler) -> Result<Command, String> {
+    let mut cmd = build_hook_shell_command(&env.plugin_root, handler)?;
+    env.apply(&mut cmd);
+    Ok(cmd)
+}
+
+fn build_hook_shell_command(plugin_root: &Path, handler: &HookHandler) -> Result<Command, String> {
     #[cfg(target_os = "windows")]
     {
         if let Some(ps) = handler.powershell.as_deref() {
             let script = expand_plugin_root_placeholders(ps, plugin_root);
             let mut cmd = Command::new("powershell.exe");
             cmd.args(["-NoProfile", "-Command", &script]);
-            cmd.env("LIBRAGENT_PLUGIN_ROOT", root_str.as_ref());
-            cmd.env("CLAUDE_PLUGIN_ROOT", root_str.as_ref());
-            cmd.env("CURSOR_PLUGIN_ROOT", root_str.as_ref());
             cmd.current_dir(plugin_root);
             return Ok(cmd);
         }
         let script = expand_plugin_root_placeholders(&handler.command, plugin_root);
         let mut cmd = Command::new("cmd.exe");
         cmd.args(["/C", &script]);
-        cmd.env("LIBRAGENT_PLUGIN_ROOT", root_str.as_ref());
-        cmd.env("CLAUDE_PLUGIN_ROOT", root_str.as_ref());
-        cmd.env("CURSOR_PLUGIN_ROOT", root_str.as_ref());
         cmd.current_dir(plugin_root);
         Ok(cmd)
     }
@@ -477,9 +640,6 @@ fn build_hook_command(plugin_root: &Path, handler: &HookHandler) -> Result<Comma
             c.args(["-c", &script]);
             c
         };
-        cmd.env("LIBRAGENT_PLUGIN_ROOT", root_str.as_ref());
-        cmd.env("CLAUDE_PLUGIN_ROOT", root_str.as_ref());
-        cmd.env("CURSOR_PLUGIN_ROOT", root_str.as_ref());
         cmd.current_dir(plugin_root);
         Ok(cmd)
     }
@@ -594,6 +754,91 @@ mod tests {
         )
         .unwrap();
         (temp, root)
+    }
+
+    /// #2926: a hook process gets `CLAUDE_PLUGIN_DATA`, `CLAUDE_PROJECT_DIR`,
+    /// `CLAUDE_ENV_FILE`, and `CLAUDE_PLUGIN_OPTION_<KEY>`; what the hook
+    /// writes to the env file reaches the session's later shell calls.
+    #[cfg(not(target_os = "windows"))]
+    #[tokio::test]
+    async fn plugin_variables_reach_the_hook_process() {
+        let dump_dir = tempfile::tempdir().expect("tempdir");
+        let dump_path = dump_dir.path().join("env-dump.txt");
+        let hooks_json = format!(
+            r#"{{ "hooks": {{ "SessionStart": [ {{ "command": "printf '%s|%s|%s|%s\n' \"$CLAUDE_PLUGIN_DATA\" \"$CLAUDE_PROJECT_DIR\" \"$CLAUDE_ENV_FILE\" \"$CLAUDE_PLUGIN_OPTION_GREETING\" > {dump}; printf 'PLUGIN_TOKEN=from-hook\n' >> \"$CLAUDE_ENV_FILE\"" }} ] }} }}"#,
+            dump = dump_path.to_string_lossy()
+        );
+        let (temp, root) = setup_approved_plugin(&hooks_json);
+        // The plugin's non-sensitive `userConfig` value, as an install leaves it.
+        let source_id = root.file_name().unwrap().to_string_lossy().to_string();
+        std::fs::write(
+            temp.path().join(format!("{source_id}.options.json")),
+            r#"{ "values": { "greeting": "hello" }, "sensitiveKeys": [] }"#,
+        )
+        .unwrap();
+        // The session's workspace: the directory the session works in, which
+        // is a different place from the plugin's install root.
+        let workspace = temp.path().join("session-workspace");
+        fs::create_dir_all(&workspace).unwrap();
+
+        let sid = format!("hook-env-{}", uuid::Uuid::new_v4());
+        crate::services::hooks::plugin_env::clear_session_plugin_env(&sid);
+        run_session_start_in(
+            temp.path(),
+            &sid,
+            SessionStartSource::Startup,
+            Some(workspace.clone()),
+        )
+        .await;
+
+        let dump = std::fs::read_to_string(&dump_path).expect("hook wrote its environment");
+        let parts = dump.trim().split('|').collect::<Vec<_>>();
+        assert_eq!(parts.len(), 4, "unexpected dump: {dump}");
+
+        // `${CLAUDE_PLUGIN_DATA}` exists and is writable, and the data written
+        // there survives (it is a real directory, not a temp file).
+        let data_dir = std::path::PathBuf::from(parts[0]);
+        assert!(!parts[0].is_empty(), "CLAUDE_PLUGIN_DATA was not set");
+        std::fs::write(data_dir.join("kept.txt"), "kept").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(data_dir.join("kept.txt")).unwrap(),
+            "kept"
+        );
+
+        // AC2 (#2926 gatekeeper G1.4): `CLAUDE_PROJECT_DIR` is the session's
+        // workspace — the directory the session works in — and must be
+        // distinct from the plugin's install root.
+        assert_eq!(std::path::PathBuf::from(parts[1]), workspace);
+        assert_ne!(
+            std::path::PathBuf::from(parts[1]),
+            root,
+            "CLAUDE_PROJECT_DIR must be the session workspace, not the plugin root"
+        );
+
+        // `CLAUDE_ENV_FILE` is a real file the hook appended to.
+        assert!(!parts[2].is_empty(), "CLAUDE_ENV_FILE was not set");
+        assert!(std::path::Path::new(parts[2]).is_file());
+
+        // The plugin option is exported with the documented name.
+        assert_eq!(parts[3], "hello");
+
+        // The variable the hook wrote to the env file is available to the
+        // session afterwards, and a shell spawn merges it into its env.
+        let vars = crate::services::hooks::plugin_env::session_plugin_env(&sid);
+        assert_eq!(
+            vars.get("PLUGIN_TOKEN").map(String::as_str),
+            Some("from-hook")
+        );
+        let shell_manager =
+            crate::mcp::builtin::workspace::persistent_shell::PersistentShellManager::new();
+        let secrets = shell_manager.session_secrets(&sid).await;
+        assert_eq!(
+            secrets.get("PLUGIN_TOKEN").map(String::as_str),
+            Some("from-hook"),
+            "a later shell call of the session sees the env-file variable"
+        );
+
+        crate::services::hooks::plugin_env::clear_session_plugin_env(&sid);
     }
 
     #[test]

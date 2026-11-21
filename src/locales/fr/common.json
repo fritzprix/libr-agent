@@ -907,7 +907,10 @@
       "agentGrantedServices": "Services accordés : {{services}}",
       "agentGrantsAllServices": "Aucune ligne tools : tous les services LibrAgent seront accordés.",
       "agentGrantsNoServices": "Aucun service accordé (aucun outil mappé).",
-      "agentWorkspaceGrantNote": "Le service workspace inclut l’écriture de fichiers et l’exécution de commandes shell."
+      "agentWorkspaceGrantNote": "Le service workspace inclut l’écriture de fichiers et l’exécution de commandes shell.",
+      "userConfigTitle": "Configuration demandée par ce plugin",
+      "userConfigHint": "Ces valeurs sont transmises au plugin lors de son exécution. Une valeur sensible est conservée dans le stockage sécurisé de cet ordinateur et n'est plus jamais affichée.",
+      "userConfigMissing": "Obligatoire : {{names}}"
     },
     "dev": {
       "devOnly": "DEV UNIQUEMENT",

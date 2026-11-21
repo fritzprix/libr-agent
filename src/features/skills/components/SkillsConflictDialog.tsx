@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { Loader2 } from 'lucide-react';
-import { Badge, Checkbox, ScrollArea } from '@/components/ui';
+import { Badge, Checkbox, Input, ScrollArea } from '@/components/ui';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import type { SkillImportConflict } from '@/types/skills';
+import { missingRequiredPluginOptions } from '../skills-management-utils';
 import type { PendingInstall } from '../skills-management-types';
 
 interface SkillsConflictDialogProps {
@@ -24,6 +25,7 @@ interface SkillsConflictDialogProps {
   onOpenChange: (open: boolean) => void;
   onToggleOverwrite: (skillName: string) => void;
   onApproveHooksChange: (approved: boolean) => void;
+  onUserConfigChange: (key: string, value: string) => void;
   onConfirm: () => Promise<void> | void;
   onConfirmWithoutHooks: () => Promise<void> | void;
 }
@@ -37,6 +39,7 @@ export function SkillsConflictDialog({
   onOpenChange,
   onToggleOverwrite,
   onApproveHooksChange,
+  onUserConfigChange,
   onConfirm,
   onConfirmWithoutHooks,
 }: SkillsConflictDialogProps) {
@@ -45,6 +48,13 @@ export function SkillsConflictDialog({
   const mcpServers = pendingInstall?.preview.mcpServers ?? [];
   const hasMcp = mcpServers.length > 0;
   const requiresApproval = hasHooks || hasMcp;
+  const userConfig = pendingInstall?.preview.userConfig ?? [];
+  const pluginOptions = pendingInstall?.pluginOptions ?? {};
+  // #2926: a required option without a value blocks the install; the backend
+  // rejects it anyway, so say so here instead of failing after the download.
+  const missingOptions = pendingInstall
+    ? missingRequiredPluginOptions(pendingInstall.preview, pluginOptions)
+    : [];
   const discoveredSkills = pendingInstall?.preview.discoveredSkills ?? [];
   const title = requiresApproval
     ? t(
@@ -266,6 +276,63 @@ export function SkillsConflictDialog({
                   ))}
                 </div>
               ) : null}
+              {userConfig.length > 0 ? (
+                <div className="rounded-md border bg-muted/20 p-3 text-sm space-y-3">
+                  <p className="font-medium">
+                    {t(
+                      'settings.skills.userConfigTitle',
+                      'Configuration this plugin asks for',
+                    )}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {t(
+                      'settings.skills.userConfigHint',
+                      "These values are given to the plugin when it runs. A sensitive value is stored in this computer's secure storage and is never shown again.",
+                    )}
+                  </p>
+                  {userConfig.map((entry) => (
+                    <div key={entry.key} className="space-y-1">
+                      <label
+                        className="block font-medium"
+                        htmlFor={`plugin-option-${entry.key}`}
+                      >
+                        {entry.title}
+                        {entry.required ? ' *' : ''}
+                      </label>
+                      {entry.description ? (
+                        <p className="text-xs text-muted-foreground">
+                          {entry.description}
+                        </p>
+                      ) : null}
+                      <Input
+                        id={`plugin-option-${entry.key}`}
+                        type={
+                          entry.sensitive
+                            ? 'password'
+                            : entry.valueType === 'number'
+                              ? 'number'
+                              : 'text'
+                        }
+                        autoComplete="off"
+                        spellCheck={false}
+                        value={pluginOptions[entry.key] ?? entry.default ?? ''}
+                        placeholder={entry.default ?? entry.key}
+                        onChange={(event) =>
+                          onUserConfigChange(entry.key, event.target.value)
+                        }
+                      />
+                    </div>
+                  ))}
+                  {missingOptions.length > 0 ? (
+                    <p className="text-xs text-amber-600 dark:text-amber-400">
+                      {t('settings.skills.userConfigMissing', {
+                        names: missingOptions.join(', '),
+                        defaultValue: 'Required: {{names}}',
+                      })}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
               {requiresApproval ? (
                 <label className="flex items-start gap-3 cursor-pointer pt-2">
                   <Checkbox
@@ -409,6 +476,7 @@ export function SkillsConflictDialog({
             disabled={
               isInstallingLocal ||
               isInstallingGithub ||
+              missingOptions.length > 0 ||
               (requiresApproval && !pendingInstall?.approveHooks)
             }
             onClick={(event) => {

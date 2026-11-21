@@ -140,14 +140,21 @@ impl PersistentShellManager {
         forget_log_secrets(session_id);
     }
 
-    /// The session's `storeAs` values, for the env of a shell this session spawns.
+    /// The session's `storeAs` values plus its plugin environment
+    /// (`CLAUDE_ENV_FILE`, #2926), for the env of a shell this session spawns.
+    /// A `storeAs` value wins over a plugin variable of the same name.
     pub async fn session_secrets(&self, session_id: &str) -> SecretMap {
-        self.session_states
+        let mut secrets = self
+            .session_states
             .lock()
             .await
             .get(session_id)
             .map(|state| state.secrets.clone())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        for (name, value) in crate::services::hooks::plugin_env::session_plugin_env(session_id) {
+            secrets.entry(name).or_insert(value);
+        }
+        secrets
     }
 
     /// Replaces each stored value of the session in `text` with `***`.

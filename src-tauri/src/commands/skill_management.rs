@@ -63,12 +63,14 @@ pub async fn install_github_skills(
     overwrite_existing: bool,
     excluded_skill_names: Option<Vec<String>>,
     approve_hooks: Option<bool>,
+    plugin_options: Option<std::collections::BTreeMap<String, String>>,
 ) -> Result<SkillImportResult, String> {
     skill_service::install_github_skills(
         repo_url,
         overwrite_existing,
         excluded_skill_names,
         approve_hooks,
+        plugin_options,
     )
     .await
 }
@@ -111,6 +113,7 @@ pub async fn install_session_plugin(
     overwrite_existing: bool,
     excluded_skill_names: Option<Vec<String>>,
     approve_hooks: Option<bool>,
+    plugin_options: Option<std::collections::BTreeMap<String, String>>,
 ) -> Result<SkillImportResult, String> {
     skill_service::install_session_plugin(
         session_id,
@@ -118,6 +121,7 @@ pub async fn install_session_plugin(
         overwrite_existing,
         excluded_skill_names,
         approve_hooks,
+        plugin_options,
     )
     .await
 }

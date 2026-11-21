@@ -240,7 +240,9 @@ pub(super) async fn load_requested_server_configs(
                     session_id,
                     session_trust.as_deref(),
                     &mut taken_session_names,
-                ) {
+                )
+                .await
+                {
                     let SessionPluginServerConfig {
                         server_name,
                         pseudo_id,

@@ -51,6 +51,7 @@ function buildPendingInstall(
     sourceValue: 'https://github.com/obra/superpowers',
     approveHooks: true,
     selectedOverwriteNames: [],
+    pluginOptions: {},
     preview: {
       kind: 'plugin',
       discoveredSkills: [{ name: 'brainstorming', description: 'Draft ideas' }],
@@ -79,6 +80,7 @@ function renderDialog(pendingInstall: PendingInstall | null) {
       onOpenChange={vi.fn()}
       onToggleOverwrite={vi.fn()}
       onApproveHooksChange={vi.fn()}
+      onUserConfigChange={vi.fn()}
       onConfirm={vi.fn()}
       onConfirmWithoutHooks={vi.fn()}
     />,

@@ -907,7 +907,10 @@
       "agentGrantedServices": "Gewährte Dienste: {{services}}",
       "agentGrantsAllServices": "Keine tools-Zeile: Alle LibrAgent-Dienste werden gewährt.",
       "agentGrantsNoServices": "Keine Dienste gewährt (kein Tool-Mapping).",
-      "agentWorkspaceGrantNote": "Der Workspace-Dienst umfasst Dateischreibzugriffe und Shell-Ausführung."
+      "agentWorkspaceGrantNote": "Der Workspace-Dienst umfasst Dateischreibzugriffe und Shell-Ausführung.",
+      "userConfigTitle": "Konfiguration, die dieses Plugin anfordert",
+      "userConfigHint": "Diese Werte erhält das Plugin bei der Ausführung. Ein sensibler Wert wird im sicheren Speicher dieses Computers abgelegt und nie wieder angezeigt.",
+      "userConfigMissing": "Erforderlich: {{names}}"
     },
     "dev": {
       "devOnly": "NUR ENTWICKLUNG",

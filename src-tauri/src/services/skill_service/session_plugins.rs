@@ -43,7 +43,7 @@ use crate::services::hooks::registry::{
 use crate::services::hooks::{clear_hook_context, spawn_session_start, SessionStartSource};
 use log::warn;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -171,7 +171,9 @@ pub async fn install_session_plugin(
     overwrite_existing: bool,
     excluded_skill_names: Option<Vec<String>>,
     approve_hooks: Option<bool>,
+    plugin_options: Option<BTreeMap<String, String>>,
 ) -> Result<SkillImportResult, String> {
+    let plugin_options = plugin_options.unwrap_or_default();
     let dirs = session_dirs(&session_id)?;
     let mut prepared = prepare_github_skill_import(repo_url).await?;
     let same_source = session_same_source_skill_names(&dirs.plugins, &prepared.source_key);
@@ -184,6 +186,11 @@ pub async fn install_session_plugin(
         &same_source,
     )
     .await?;
+    // #2926: check the values the user entered before anything is written, so a
+    // missing required option fails the install cleanly.
+    let user_config =
+        super::importing::prepare_plugin_user_config(&prepared.scan_root, &plugin_options)?;
+    let source_id = plugin_source_id(&prepared.source_key);
     let result = install_prepared_with_dirs(
         &dirs,
         prepared,
@@ -192,6 +199,32 @@ pub async fn install_session_plugin(
         excluded_skill_names.unwrap_or_default(),
         approve_hooks.unwrap_or(false),
     )?;
+    let mut result = result;
+    if let Some((manifest, values)) = user_config {
+        // #2926 gatekeeper G1.1: a session's option sidecar lives in that
+        // session's out-of-workspace trust directory, never in the
+        // agent-writable plugin store; G1.2: the secure namespace is scoped
+        // to this session.
+        if let Err(error) = super::importing::save_plugin_user_config(
+            &dirs.trust,
+            &source_id,
+            Some(&session_id),
+            &manifest,
+            &values,
+        )
+        .await
+        {
+            log::warn!(
+                "session {}: plugin {} installed but its userConfig values were not saved: {}",
+                session_id,
+                source_id,
+                error
+            );
+            result.warnings.push(format!(
+                "Plugin installed, but its configuration values could not be saved: {error}. Re-install the plugin and enter them again."
+            ));
+        }
+    }
     invalidate_skill_scan_cache();
     spawn_session_start(&session_id, SessionStartSource::Resume);
     Ok(result)
@@ -270,16 +303,126 @@ fn cleanup_failed_session_install(dirs: &SessionPluginDirs, source_id: &str) {
 ///
 /// The session's hook-context slot is dropped and SessionStart re-run so the
 /// removed plugin's bootstrap does not linger while global plugins re-apply.
-pub fn uninstall_session_plugin(
+pub async fn uninstall_session_plugin(
     session_id: &str,
     target: &str,
 ) -> Result<SessionPluginEntry, String> {
     let dirs = session_dirs(session_id)?;
     let removed = uninstall_with_dirs(&dirs, target)?;
+    // `get_session_plugin_data_dir` needs the session manager, which unit
+    // tests do not have, so the resolved location (possibly absent) is
+    // injected into the cleanup body — tests run the same body with a temp
+    // directory (#2926 gatekeeper G1.4 AC5).
+    let data_dir =
+        crate::services::hooks::registry::get_session_plugin_data_dir(session_id, &removed.id).ok();
+    cleanup_removed_session_plugin(&dirs.trust, data_dir.as_deref(), session_id, &removed.id).await;
     invalidate_skill_scan_cache();
     clear_hook_context(session_id);
     spawn_session_start(session_id, SessionStartSource::Resume);
     Ok(removed)
+}
+
+/// Delete everything a session plugin keeps outside the plugin source itself:
+/// its `${CLAUDE_PLUGIN_DATA}` directory, its option sidecar in the trust
+/// directory, and — scoped to this session — its sensitive `userConfig`
+/// values (#2926 gatekeeper G1.2: a session uninstall removes exactly its
+/// own secrets; a global install of the same source is untouched).
+async fn cleanup_removed_session_plugin(
+    trust_dir: &Path,
+    data_dir: Option<&Path>,
+    session_id: &str,
+    source_id: &str,
+) {
+    if let Some(dir) = data_dir {
+        if let Err(error) = super::plugin_sources::remove_plugin_data_dir(dir) {
+            log::warn!(
+                "session {}: plugin {} data dir left behind: {}",
+                session_id,
+                source_id,
+                error
+            );
+        }
+    }
+    let saved = super::plugin_options::read_saved_options(trust_dir, source_id);
+    if let Err(error) = super::plugin_options::remove_saved_options(trust_dir, source_id) {
+        log::warn!(
+            "session {}: plugin {} stored options left behind: {}",
+            session_id,
+            source_id,
+            error
+        );
+    }
+    if let Err(error) = super::plugin_options::delete_sensitive_options(
+        source_id,
+        Some(session_id),
+        &saved.sensitive_keys,
+    )
+    .await
+    {
+        log::warn!(
+            "session {}: plugin {} secure option values left behind: {}",
+            session_id,
+            source_id,
+            error
+        );
+    }
+}
+
+/// Remove every trace of one session's plugin runtime state from the app
+/// data directory (#2926 gatekeeper G1.3), called by
+/// `SessionDirectoryService::remove_workspace` **before** it deletes the
+/// trust directory: the session-scoped sensitive option values (whose key
+/// names are read from each sidecar in the trust directory), the option
+/// cache entries for that store (S1.3), the in-memory `CLAUDE_ENV_FILE`
+/// variables, the `CLAUDE_ENV_FILE` directory itself, and the
+/// `${CLAUDE_PLUGIN_DATA}` tree. A missing directory is fine; real failures
+/// are collected and returned so nothing silently lingers behind a deleted
+/// session.
+pub async fn purge_session_plugin_state(
+    base_data_dir: &Path,
+    session_id: &str,
+) -> Result<(), String> {
+    use crate::services::hooks::registry::{
+        PLUGIN_DATA_DIR_NAME, PLUGIN_ENV_DIR_NAME, SESSION_PLUGIN_TRUST_DIR_NAME,
+    };
+    crate::services::hooks::plugin_env::clear_session_plugin_env(session_id);
+    let trust_dir = base_data_dir
+        .join(SESSION_PLUGIN_TRUST_DIR_NAME)
+        .join(session_id);
+    let mut failures: Vec<String> = Vec::new();
+    for source_id in super::plugin_options::list_sidecar_source_ids(&trust_dir) {
+        let saved = super::plugin_options::read_saved_options(&trust_dir, &source_id);
+        if let Err(error) = super::plugin_options::delete_sensitive_options(
+            &source_id,
+            Some(session_id),
+            &saved.sensitive_keys,
+        )
+        .await
+        {
+            failures.push(format!(
+                "session {session_id}: plugin {source_id} secure option values: {error}"
+            ));
+        }
+    }
+    super::plugin_options::forget_cached_store(&trust_dir);
+    for dir in [
+        base_data_dir.join(PLUGIN_ENV_DIR_NAME).join(session_id),
+        base_data_dir
+            .join(PLUGIN_DATA_DIR_NAME)
+            .join("sessions")
+            .join(session_id),
+    ] {
+        match tokio::fs::remove_dir_all(&dir).await {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => failures.push(format!("remove {}: {error}", dir.display())),
+        }
+    }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(failures.join("; "))
+    }
 }
 
 fn uninstall_with_dirs(
@@ -525,6 +668,7 @@ mod tests {
             plugin_commands: vec![],
             plugin_agents: vec![],
             plugin_manifest: None,
+            user_config: vec![],
         };
         install_prepared_with_dirs(&fx.dirs, prepared, preview, false, vec![], approve_hooks)
     }
@@ -861,5 +1005,157 @@ mod tests {
         if fx.dirs.trust.exists() {
             assert_eq!(fs::read_dir(&fx.dirs.trust).unwrap().count(), 0);
         }
+    }
+
+    // --- #2926 gatekeeper G1.2 / G1.3 / G1.4 AC5 ------------------------------
+
+    fn sensitive_manifest() -> super::super::plugin_manifest::PluginManifest {
+        let mut user_config = BTreeMap::new();
+        user_config.insert(
+            "token".to_string(),
+            super::super::plugin_manifest::UserConfigSpec {
+                sensitive: true,
+                required: true,
+                ..Default::default()
+            },
+        );
+        super::super::plugin_manifest::PluginManifest {
+            name: "p".into(),
+            version: None,
+            description: None,
+            author: None,
+            homepage: None,
+            repository: None,
+            license: None,
+            keywords: None,
+            skills: None,
+            commands: None,
+            agents: None,
+            hooks: None,
+            mcp_servers: None,
+            user_config,
+        }
+    }
+
+    /// AC5 + G1.2: the cleanup body a session uninstall runs (with a test-
+    /// injected data dir, since `get_session_plugin_data_dir` needs a real
+    /// session manager) removes the plugin's `${CLAUDE_PLUGIN_DATA}` tree,
+    /// its trust-dir sidecar, and exactly its own session-scoped secrets.
+    #[tokio::test]
+    async fn session_uninstall_removes_data_dir_sidecar_and_scoped_secrets() {
+        let temp = tempfile::tempdir().unwrap();
+        let session = "uninstall-cleanup-s1";
+        let source_id = "plugin-uninstall-cleanup";
+        let trust_dir = temp.path().join("session_plugin_trust").join(session);
+        let data_dir = temp
+            .path()
+            .join("plugin_data/sessions")
+            .join(session)
+            .join(source_id);
+        fs::create_dir_all(data_dir.join("keep")).unwrap();
+        fs::write(data_dir.join("keep/state.txt"), "state").unwrap();
+
+        let manifest = sensitive_manifest();
+        let values = BTreeMap::from([("token".to_string(), "s3cr3t".to_string())]);
+        let saved = super::super::plugin_options::persist_options(
+            source_id,
+            Some(session),
+            &manifest,
+            &values,
+        )
+        .await
+        .unwrap();
+        super::super::plugin_options::write_saved_options(&trust_dir, source_id, &saved).unwrap();
+        super::super::plugin_options::clear_cache_for_test();
+
+        cleanup_removed_session_plugin(&trust_dir, Some(&data_dir), session, source_id).await;
+
+        assert!(
+            !data_dir.exists(),
+            "AC5: a session uninstall must remove the plugin's `${{CLAUDE_PLUGIN_DATA}}` directory"
+        );
+        assert!(
+            !super::super::plugin_options::options_path(&trust_dir, source_id).exists(),
+            "the trust-dir option sidecar must go with the plugin"
+        );
+        let (after, _) =
+            super::super::plugin_options::load_option_values(&trust_dir, source_id, Some(session))
+                .await;
+        assert!(
+            !after.contains_key("token"),
+            "G1.2: a session uninstall must delete its session-scoped secret"
+        );
+    }
+
+    /// G1.3: session deletion leaves no plugin runtime state behind — not
+    /// the env-file directory, not the session-scope plugin data tree, not
+    /// the in-memory env variables, and not the session-scoped secrets.
+    #[tokio::test]
+    async fn purge_session_plugin_state_leaves_nothing_behind() {
+        let temp = tempfile::tempdir().unwrap();
+        let base = temp.path();
+        let session = "purge-s1";
+        let source_id = "plugin-purge-test";
+        let trust_dir = base
+            .join(crate::services::hooks::registry::SESSION_PLUGIN_TRUST_DIR_NAME)
+            .join(session);
+        let env_dir = base
+            .join(crate::services::hooks::registry::PLUGIN_ENV_DIR_NAME)
+            .join(session);
+        let data_dir = base
+            .join(crate::services::hooks::registry::PLUGIN_DATA_DIR_NAME)
+            .join("sessions")
+            .join(session)
+            .join(source_id);
+        for dir in [&trust_dir, &env_dir, &data_dir] {
+            fs::create_dir_all(dir).unwrap();
+        }
+        fs::write(env_dir.join("session-start.env"), "A=1").unwrap();
+        fs::write(data_dir.join("blob"), "x").unwrap();
+        crate::services::hooks::plugin_env::set_session_plugin_env(
+            session,
+            BTreeMap::from([("A".to_string(), "1".to_string())]),
+        );
+
+        let manifest = sensitive_manifest();
+        let values = BTreeMap::from([("token".to_string(), "purge-me".to_string())]);
+        let saved = super::super::plugin_options::persist_options(
+            source_id,
+            Some(session),
+            &manifest,
+            &values,
+        )
+        .await
+        .unwrap();
+        super::super::plugin_options::write_saved_options(&trust_dir, source_id, &saved).unwrap();
+        // Prime the option cache so the purge must clear it (S1.3).
+        let (before, _) =
+            super::super::plugin_options::load_option_values(&trust_dir, source_id, Some(session))
+                .await;
+        assert_eq!(before.get("token").map(String::as_str), Some("purge-me"));
+
+        purge_session_plugin_state(base, session).await.unwrap();
+
+        assert!(!env_dir.exists(), "the CLAUDE_ENV_FILE dir must not linger");
+        assert!(
+            !base
+                .join(crate::services::hooks::registry::PLUGIN_DATA_DIR_NAME)
+                .join("sessions")
+                .join(session)
+                .exists(),
+            "the session-scope plugin data tree must not linger"
+        );
+        assert!(
+            crate::services::hooks::plugin_env::session_plugin_env(session).is_empty(),
+            "the in-memory env variables must not linger"
+        );
+        super::super::plugin_options::clear_cache_for_test();
+        let (after, _) =
+            super::super::plugin_options::load_option_values(&trust_dir, source_id, Some(session))
+                .await;
+        assert!(
+            !after.contains_key("token"),
+            "session deletion must remove the session-scoped secrets"
+        );
     }
 }

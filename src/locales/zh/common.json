@@ -907,7 +907,10 @@
       "agentGrantedServices": "授予的服务：{{services}}",
       "agentGrantsAllServices": "没有 tools 行：将授予所有 LibrAgent 服务。",
       "agentGrantsNoServices": "未授予任何服务（没有可映射的工具）。",
-      "agentWorkspaceGrantNote": "workspace 服务包含文件写入和 shell 执行。"
+      "agentWorkspaceGrantNote": "workspace 服务包含文件写入和 shell 执行。",
+      "userConfigTitle": "此插件请求的配置",
+      "userConfigHint": "这些值会在插件运行时提供给插件。敏感值保存在此计算机的安全存储中，不会再次显示。",
+      "userConfigMissing": "必填：{{names}}"
     },
     "dev": {
       "devOnly": "仅限开发",

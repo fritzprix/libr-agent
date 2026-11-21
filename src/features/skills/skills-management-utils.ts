@@ -6,6 +6,31 @@ import type {
   SkillsVerificationStatus,
 } from './skills-management-types';
 
+/** Initial answers for a plugin's `userConfig` options (#2926): the manifest
+ *  defaults, so the install dialog opens with sensible values. */
+export function defaultPluginOptions(
+  preview: SkillImportPreview,
+): Record<string, string> {
+  const options: Record<string, string> = {};
+  for (const entry of preview.userConfig ?? []) {
+    options[entry.key] = entry.default ?? '';
+  }
+  return options;
+}
+
+/** Required options the user has not answered yet (#2926). While this is not
+ *  empty, the install dialog must not confirm: the backend rejects the install
+ *  without them. */
+export function missingRequiredPluginOptions(
+  preview: SkillImportPreview,
+  values: Record<string, string>,
+): string[] {
+  return (preview.userConfig ?? [])
+    .filter((entry) => entry.required)
+    .filter((entry) => !(values[entry.key] ?? entry.default ?? '').trim())
+    .map((entry) => entry.title || entry.key);
+}
+
 export function shouldPromptSkillInstall(
   preview: SkillImportPreview,
   userConflictCount: number,

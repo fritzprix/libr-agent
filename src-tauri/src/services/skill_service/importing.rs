@@ -12,7 +12,7 @@ use super::directories::{
 };
 use super::github::parse_github_repo_url;
 use super::plugin_manifest::{self, PluginManifest};
-use super::plugin_mcp::{collect_plugin_mcp_servers, create_plugin_mcp_server_rows};
+use super::plugin_mcp::collect_plugin_mcp_servers;
 use super::scanning::{copy_dir_recursive, parse_skill_metadata};
 use crate::services::hooks::registry::{
     get_source, get_user_plugins_directory, save_source_in, PluginMetadata, PluginSourceManifest,
@@ -51,6 +51,9 @@ pub async fn import_user_skills(
         overwrite_existing,
         excluded_skill_names.unwrap_or_default(),
         approve_hooks.unwrap_or(false),
+        // A local archive install collects no `userConfig` values; a plugin
+        // that requires one fails with a clear message instead (#2926).
+        BTreeMap::new(),
     )
     .await
 }
@@ -65,6 +68,7 @@ pub async fn install_github_skills(
     overwrite_existing: bool,
     excluded_skill_names: Option<Vec<String>>,
     approve_hooks: Option<bool>,
+    plugin_options: Option<BTreeMap<String, String>>,
 ) -> Result<SkillImportResult, String> {
     let mut prepared = prepare_github_skill_import(repo_url).await?;
     let preview = build_user_import_preview(&mut prepared).await?;
@@ -74,8 +78,62 @@ pub async fn install_github_skills(
         overwrite_existing,
         excluded_skill_names.unwrap_or_default(),
         approve_hooks.unwrap_or(false),
+        plugin_options.unwrap_or_default(),
     )
     .await
+}
+
+/// A plugin manifest plus its resolved `userConfig` values (#2926).
+pub(super) type ResolvedPluginOptions = (PluginManifest, BTreeMap<String, String>);
+
+/// Check the `userConfig` values an install was given against the plugin
+/// manifest **before** anything is written (#2926), so a missing required
+/// option or a wrongly shaped value fails the install cleanly. Returns the
+/// manifest and resolved values when the plugin declares options.
+pub(super) fn prepare_plugin_user_config(
+    scan_root: &Path,
+    provided: &BTreeMap<String, String>,
+) -> Result<Option<ResolvedPluginOptions>, String> {
+    let Some(manifest) = plugin_manifest::load_plugin_manifest(scan_root)? else {
+        return Ok(None);
+    };
+    if manifest.user_config.is_empty() {
+        return Ok(None);
+    }
+    plugin_manifest::validate_user_config(&manifest)?;
+    let values = plugin_manifest::resolve_user_config_values(&manifest, provided)?;
+    Ok(Some((manifest, values)))
+}
+
+/// Persist resolved `userConfig` values for an installed plugin (#2926): the
+/// non-sensitive ones in the store's option sidecar, the sensitive ones in
+/// secure storage. The sidecar sits next to the store entry so a plugin update
+/// (which replaces the installed directory) keeps its options; for a session
+/// install that "store entry" lives in the session's out-of-workspace trust
+/// directory (#2926 gatekeeper G1.1), and `session_id` scopes the secure
+/// namespace (G1.2). `None` is the global install.
+pub(super) async fn save_plugin_user_config(
+    store_dir: &Path,
+    source_id: &str,
+    session_id: Option<&str>,
+    manifest: &PluginManifest,
+    values: &BTreeMap<String, String>,
+) -> Result<(), String> {
+    let saved =
+        super::plugin_options::persist_options(source_id, session_id, manifest, values).await?;
+    if let Err(error) = super::plugin_options::write_saved_options(store_dir, source_id, &saved) {
+        // #2926 gatekeeper S1.2: the sidecar write failed after the secure
+        // values were already stored — roll them back so a failed install
+        // leaves nothing behind in secure storage.
+        super::plugin_options::discard_persisted_options(
+            source_id,
+            session_id,
+            &saved.sensitive_keys,
+        )
+        .await;
+        return Err(error);
+    }
+    Ok(())
 }
 
 fn invalidate_skill_cache_after_success<T>(result: Result<T, String>) -> Result<T, String> {
@@ -489,6 +547,29 @@ pub(super) async fn build_import_preview(
     };
     let hooks_require_approval = !hooks.is_empty();
     let mcp_require_approval = !mcp_servers.is_empty();
+    // #2926: the values the plugin asks for. The install dialog collects them;
+    // a sensitive one is masked there and stored in secure storage.
+    let user_config = manifest
+        .as_ref()
+        .map(|manifest| {
+            manifest
+                .user_config
+                .iter()
+                .map(|(key, spec)| super::contracts::UserConfigPreviewEntry {
+                    key: key.clone(),
+                    title: spec.display_title(key).to_string(),
+                    description: spec.description.clone(),
+                    value_type: spec
+                        .value_type
+                        .clone()
+                        .unwrap_or_else(|| "string".to_string()),
+                    sensitive: spec.sensitive,
+                    required: spec.required,
+                    default: spec.default.clone(),
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
 
     Ok(SkillImportPreview {
         kind,
@@ -498,6 +579,7 @@ pub(super) async fn build_import_preview(
         hooks_require_approval,
         mcp_servers,
         mcp_require_approval,
+        user_config,
         plugin_commands: super::plugin_commands::plugin_command_names(
             &prepared.scan_root,
             manifest.as_ref(),
@@ -579,12 +661,17 @@ async fn install_user_prepared_skills(
     overwrite_existing: bool,
     excluded_skill_names: Vec<String>,
     approve_hooks: bool,
+    plugin_options: BTreeMap<String, String>,
 ) -> Result<SkillImportResult, String> {
     let target = ImportTarget {
         skills_dir: get_user_skills_directory()?,
         plugins_dir: get_user_plugins_directory()?,
         always_record_source: false,
     };
+    // #2926: check the values the user entered before anything is written, so a
+    // missing required option does not leave a half-installed plugin behind.
+    let user_config = prepare_plugin_user_config(&prepared.scan_root, &plugin_options)?;
+    let store_dir = target.plugins_dir.clone();
     let source_key = prepared.source_key.clone();
     let result = install_prepared_import(
         prepared,
@@ -602,7 +689,32 @@ async fn install_user_prepared_skills(
     // servers they approved are not running, so the result carries warnings.
     match result {
         Ok(mut result) => {
-            result.warnings = match sync_installed_plugin_mcp_servers(&source_key).await {
+            // #2926: options are saved before the MCP sync below, because a
+            // plugin server may reference those values.
+            if let Some((manifest, values)) = user_config {
+                match save_plugin_user_config(
+                    &store_dir,
+                    &plugin_source_id(&source_key),
+                    None,
+                    &manifest,
+                    &values,
+                )
+                .await
+                {
+                    Ok(()) => {}
+                    Err(error) => {
+                        log::warn!(
+                            "Installed plugin {} but could not save its userConfig values: {}",
+                            source_key,
+                            error
+                        );
+                        result.warnings.push(format!(
+                            "Plugin installed, but its configuration values could not be saved: {error}. Re-install the plugin and enter them again."
+                        ));
+                    }
+                }
+            }
+            let mcp_warnings = match sync_installed_plugin_mcp_servers(&source_key).await {
                 Ok(warnings) => warnings,
                 Err(error) => {
                     log::warn!(
@@ -617,6 +729,7 @@ async fn install_user_prepared_skills(
                     )]
                 }
             };
+            result.warnings.extend(mcp_warnings);
             // #2923 (D2): a global install also syncs the plugin's `agents/`
             // definitions into the assistant store as plugin-owned rows.
             // Same reporting rule as the MCP sync above: the file install
@@ -680,7 +793,28 @@ pub(super) async fn sync_plugin_mcp_rows_from_record(
         );
         return Ok(Vec::new());
     }
-    create_plugin_mcp_server_rows(source_id, &record.root_dir, &record.manifest.mcp_servers).await
+    // #2926: a plugin-declared server may reference its data directory and its
+    // `userConfig` values, exactly like its hooks may.
+    let data_dir = crate::services::hooks::registry::get_user_plugin_data_dir(source_id).ok();
+    let (options, warning) = match crate::services::hooks::registry::get_user_plugins_directory() {
+        Ok(store_dir) => {
+            super::plugin_options::load_option_values(&store_dir, source_id, None).await
+        }
+        Err(_) => (BTreeMap::new(), None),
+    };
+    if let Some(warning) = warning {
+        log::warn!("{warning}");
+    }
+    super::plugin_mcp::create_plugin_mcp_server_rows_in(
+        source_id,
+        &super::plugin_mcp::PluginExpansion {
+            root: &record.root_dir,
+            data_dir: data_dir.as_deref(),
+            options: &options,
+        },
+        &record.manifest.mcp_servers,
+    )
+    .await
 }
 
 pub(super) fn install_prepared_import(

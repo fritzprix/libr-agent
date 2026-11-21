@@ -8,6 +8,7 @@ mod plugin_agents;
 mod plugin_commands;
 mod plugin_manifest;
 mod plugin_mcp;
+mod plugin_options;
 mod plugin_sources;
 mod scanning;
 mod session_plugins;
@@ -51,6 +52,11 @@ pub use plugin_agents::{
 pub use plugin_commands::{
     expand_plugin_command, list_plugin_commands, plugin_command_names, PluginCommandInfo,
 };
+pub use plugin_manifest::{option_env_name, resolve_user_config_values, UserConfigSpec};
+pub use plugin_options::{
+    delete_sensitive_options, load_option_values as load_plugin_option_values, persist_options,
+    read_saved_options, remove_saved_options, write_saved_options, SavedPluginOptions,
+};
 pub use plugin_sources::{delete_plugin_source, list_plugin_source_overviews};
 pub use scanning::{
     copy_dir_recursive, get_skill_content, get_skill_content_from_roots, parse_skill_metadata,
@@ -58,8 +64,9 @@ pub use scanning::{
 };
 pub use session_plugins::{
     install_session_plugin, list_session_plugins, load_session_plugins,
-    preview_session_plugin_install, uninstall_session_plugin, PluginScope, SessionPluginAction,
-    SessionPluginEntry, SessionPluginHistoryEntry, SessionPluginsOverview,
+    preview_session_plugin_install, purge_session_plugin_state, uninstall_session_plugin,
+    PluginScope, SessionPluginAction, SessionPluginEntry, SessionPluginHistoryEntry,
+    SessionPluginsOverview,
 };
 
 pub(crate) use cache::scan_skills_internal_cached;

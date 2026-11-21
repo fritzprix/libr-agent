@@ -907,7 +907,10 @@
       "agentGrantedServices": "付与されるサービス: {{services}}",
       "agentGrantsAllServices": "tools 行がありません: すべての LibrAgent サービスが付与されます。",
       "agentGrantsNoServices": "付与されるサービスはありません（マッピングされるツールがありません）。",
-      "agentWorkspaceGrantNote": "workspace サービスにはファイル書き込みとシェル実行が含まれます。"
+      "agentWorkspaceGrantNote": "workspace サービスにはファイル書き込みとシェル実行が含まれます。",
+      "userConfigTitle": "このプラグインが求める設定",
+      "userConfigHint": "これらの値はプラグインの実行時に渡されます。機密値はこのコンピューターの安全な保管場所に保存され、二度と表示されません。",
+      "userConfigMissing": "必須: {{names}}"
     },
     "dev": {
       "devOnly": "開発専用",

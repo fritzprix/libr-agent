@@ -73,12 +73,50 @@ pub async fn delete_plugin_source(source_id: String) -> Result<(), String> {
     // with it. The marker sweep needs no agent list, so it runs even when
     // the installed tree no longer contains the agents directory.
     super::plugin_agents::remove_global_plugin_agents(&source_id).await?;
+    // #2926: uninstall is the only thing that removes `${CLAUDE_PLUGIN_DATA}`
+    // (a plugin update keeps it) and the plugin's stored `userConfig` values:
+    // the sidecar next to the store entry and the sensitive values in secure
+    // storage.
+    remove_global_plugin_data(&source_id)?;
+    let store_dir = crate::services::hooks::registry::get_user_plugins_directory()?;
+    let saved = super::plugin_options::read_saved_options(&store_dir, &source_id);
+    if let Err(error) = super::plugin_options::remove_saved_options(&store_dir, &source_id) {
+        log::warn!("plugin {source_id}: could not remove stored options: {error}");
+    }
+    if let Err(error) =
+        super::plugin_options::delete_sensitive_options(&source_id, None, &saved.sensitive_keys)
+            .await
+    {
+        log::warn!("plugin {source_id}: could not delete secure option values: {error}");
+    }
     delete_source(&source_id)?;
     // #2812 criterion 4: uninstalling a source must not leave its hook
     // bootstrap in any open session's prompt slot.
     on_plugin_source_uninstalled();
     super::cache::invalidate_skill_scan_cache();
     Ok(())
+}
+
+/// Delete a global plugin's `${CLAUDE_PLUGIN_DATA}` directory (#2926). A
+/// missing directory is fine; a real failure is returned so the caller can
+/// report that uninstall left data behind.
+pub fn remove_global_plugin_data(source_id: &str) -> Result<(), String> {
+    use crate::services::hooks::registry::get_user_plugin_data_dir;
+    let dir = match get_user_plugin_data_dir(source_id) {
+        Ok(dir) => dir,
+        // No session manager (unit tests): nothing can have been created.
+        Err(_) => return Ok(()),
+    };
+    remove_plugin_data_dir(&dir)
+}
+
+/// Remove one plugin data directory, ignoring a missing one.
+pub fn remove_plugin_data_dir(dir: &std::path::Path) -> Result<(), String> {
+    match std::fs::remove_dir_all(dir) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!("remove plugin data dir {}: {error}", dir.display())),
+    }
 }
 
 /// Drop every session's hook-context slot after a plugin source uninstall.
