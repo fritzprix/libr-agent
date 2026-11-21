@@ -235,6 +235,12 @@ impl SecurityValidator {
             )));
         }
 
+        // The sensitive-path policy is string-shape based (`/home/<user>/.aws`, `/etc/shadow`,
+        // …), so the raw form must be checked too: canonicalizing an existing prefix can
+        // rewrite a home-relative shape (macOS resolves `/home` through a firmlink to
+        // `/System/Volumes/Data/home`) and would otherwise let a protected path slip past
+        // the policy (#2953 macOS). A path counts as protected if either form matches.
+        self.ensure_not_sensitive_path(&absolute_path, user_path)?;
         self.ensure_not_sensitive_path(&early_containment_path, user_path)?;
 
         // SecurityValidator only validates paths. Directory creation is handled explicitly by callers.
