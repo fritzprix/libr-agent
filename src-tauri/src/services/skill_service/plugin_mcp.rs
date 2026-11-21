@@ -453,7 +453,8 @@ pub fn session_plugin_mcp_records(
     for record in records {
         let source_id = record.manifest.source_id.clone();
         roots.insert(source_id, record.root_dir.clone());
-        if !record.manifest.mcp_approved {
+        // #2927: a disabled plugin contributes no servers, approved or not.
+        if !record.manifest.mcp_approved || !record.manifest.enabled {
             continue;
         }
         for snapshot in record.manifest.mcp_servers.clone() {
@@ -788,7 +789,9 @@ mod tests {
                   "plugin": null,
                   "hook_files": [],
                   "mcp_servers": {servers_json},
-                  "mcp_approved": {mcp_approved}
+                  "mcp_approved": {mcp_approved},
+                  "enabled": true,
+                  "installed_commit": null
                 }}"#
             ),
         )
@@ -878,6 +881,57 @@ mod tests {
             },
         )
         .unwrap();
+    }
+
+    /// #2927 fixture: turn one session plugin off the way `/plugin disable`
+    /// does — through the trust record, which is the only authority
+    /// (gatekeeper G1.1) — without re-running an install.
+    fn disable_store_source(trust_dir: &Path, base: &Path, source_id: &str) {
+        crate::services::hooks::registry::set_session_source_enabled_in(
+            trust_dir, base, source_id, false,
+        )
+        .unwrap();
+    }
+
+    /// #2927: a disabled session plugin contributes no MCP servers even when
+    /// its approval record still says yes (D4: the state flag wins, the
+    /// approval and the DB rows stay for a later re-enable).
+    #[test]
+    fn disabled_plugin_contributes_no_mcp_servers() {
+        let store = tempfile::tempdir().unwrap();
+        let trust_root = tempfile::tempdir().unwrap();
+        let trust_dir = trust_root.path().join("sess-7");
+        let enabled_id = "plugin-aaaa000000000000";
+        let disabled_id = "plugin-bbbb000000000000";
+        write_store_manifest(
+            store.path(),
+            enabled_id,
+            false,
+            r#"[{"name":"enabled","entry":{"command":"bin/enabled"}}]"#,
+        );
+        write_store_manifest(
+            store.path(),
+            disabled_id,
+            false,
+            r#"[{"name":"disabled","entry":{"command":"bin/disabled"}}]"#,
+        );
+        add_store_entry(store.path(), enabled_id);
+        add_store_entry(store.path(), disabled_id);
+        record_mcp_trust(&trust_dir, enabled_id, true);
+        record_mcp_trust(&trust_dir, disabled_id, true);
+        disable_store_source(&trust_dir, store.path(), disabled_id);
+
+        let (servers, roots) = session_plugin_mcp_records(store.path(), Some(&trust_dir));
+        let names: Vec<&str> = servers
+            .iter()
+            .map(|(_, snapshot)| snapshot.name.as_str())
+            .collect();
+        assert_eq!(names, vec!["enabled"], "disabled plugin servers: {names:?}");
+        assert_eq!(servers[0].0.manifest.source_id, enabled_id);
+        assert!(
+            roots.contains_key(disabled_id),
+            "the disabled plugin still shadows the global copy of its source_id"
+        );
     }
 
     // #2942 S3.2: the session store now lives in the agent-writable
@@ -1099,6 +1153,8 @@ mod tests {
                 hook_files: vec![],
                 mcp_servers: servers,
                 mcp_approved: approved,
+                enabled: true,
+                installed_commit: None,
             },
             root_dir: std::path::PathBuf::from("/tmp/plugin-root-under-test"),
         };

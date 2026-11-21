@@ -46,6 +46,7 @@ function SkillsManagementPanelComponent({
     setPendingApproveHooks,
     setPendingPluginOption,
     handleReinstallPluginSource,
+    handleTogglePluginSourceEnabled,
     handleDeletePluginSource,
     handleDeleteUserSkill,
     handleResetUserSkills,
@@ -70,6 +71,9 @@ function SkillsManagementPanelComponent({
         pluginSources={pluginSources}
         removingPluginSourceId={isDeletingSkill}
         onUpdatePluginSource={(url) => void handleReinstallPluginSource(url)}
+        onTogglePluginSourceEnabled={(id, enabled) =>
+          void handleTogglePluginSourceEnabled(id, enabled)
+        }
         onRemovePluginSource={(id) => void handleDeletePluginSource(id)}
         onRepoUrlChange={setRepoUrl}
         onRefresh={() => void refresh()}

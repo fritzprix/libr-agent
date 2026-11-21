@@ -320,6 +320,7 @@ mod tests {
             hooks: None,
             mcp_servers: None,
             user_config,
+            default_enabled: None,
         }
     }
 

@@ -38,7 +38,7 @@ use crate::services::hooks::registry::{
     delete_source_in, get_session_plugin_trust_dir, get_session_plugins_directory, get_source_in,
     get_user_plugins_directory, list_session_store_sources, list_sources_in,
     move_session_approval_to_trust, remove_session_plugin_trust, remove_session_store_entry,
-    upsert_session_store_entry, PluginSourceRecord,
+    set_session_source_enabled_in, upsert_session_store_entry, PluginSourceRecord,
 };
 use crate::services::hooks::{clear_hook_context, spawn_session_start, SessionStartSource};
 use log::warn;
@@ -75,6 +75,15 @@ pub struct SessionPluginEntry {
     pub skill_names: Vec<String>,
     pub hook_events: Vec<String>,
     pub hooks_approved: bool,
+    /// Whether the plugin is enabled (#2927). A disabled plugin is still
+    /// installed; it just contributes nothing to the session.
+    pub enabled: bool,
+    /// Manifest `version` from `.claude-plugin/plugin.json` (#2921).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    /// Source commit recorded at install (#2927), when it is known.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub commit: Option<String>,
 }
 
 /// Append-only record of a session install/uninstall.
@@ -526,11 +535,102 @@ fn entry_from_record(record: &PluginSourceRecord, scope: PluginScope) -> Session
             Vec::new()
         },
         hooks_approved: manifest.hooks_approved,
+        enabled: manifest.enabled,
+        version: manifest.plugin.as_ref().and_then(|p| p.version.clone()),
+        commit: manifest.installed_commit.clone(),
     }
 }
 
 fn normalize_url(url: &str) -> String {
     url.trim().trim_end_matches('/').to_ascii_lowercase()
+}
+
+/// Turn one plugin on or off by name, URL, or source id (#2927).
+///
+/// A session install is matched first (it is what `/plugin` manages), then a
+/// global install, so one command covers both scopes. The files stay on disk
+/// either way; the change applies when a session opens or on `/reload`
+/// (owner decision D5).
+pub fn set_plugin_enabled_by_target(
+    session_id: &str,
+    target: &str,
+    enabled: bool,
+) -> Result<SessionPluginEntry, String> {
+    let target = target.trim();
+    if target.is_empty() {
+        return Err("Specify a plugin name, git URL, or id".to_string());
+    }
+    let dirs = session_dirs(session_id)?;
+    let global_dir = get_user_plugins_directory()?;
+    let (scope, source_id) = resolve_plugin_target(&dirs, &global_dir, target)?;
+    match scope {
+        PluginScope::Session => {
+            // #2927 gatekeeper G1.1: a session plugin's state is trust data,
+            // never the agent-writable workspace manifest.
+            let saved =
+                set_session_source_enabled_in(&dirs.trust, &dirs.plugins, &source_id, enabled)?;
+            clear_hook_context(session_id);
+            Ok(entry_from_record(&saved, PluginScope::Session))
+        }
+        PluginScope::Global => {
+            crate::services::skill_service::set_plugin_enabled(&source_id, enabled)?;
+            let saved = get_source_in(&global_dir, &source_id)?;
+            Ok(entry_from_record(&saved, PluginScope::Global))
+        }
+    }
+}
+
+/// Which installed plugin a `/plugin enable|disable` target means: a session
+/// install first (it is what `/plugin` manages), then a global install. Split
+/// from the command so the match order and its errors are testable without an
+/// app data directory (gatekeeper G1.2).
+fn resolve_plugin_target(
+    dirs: &SessionPluginDirs,
+    global_dir: &Path,
+    target: &str,
+) -> Result<(PluginScope, String), String> {
+    let session_match = matching_records(&dirs.plugins, target)?;
+    if !session_match.is_empty() {
+        return Ok((
+            PluginScope::Session,
+            single_match(session_match, target)?.manifest.source_id,
+        ));
+    }
+    let global_match = matching_records(global_dir, target)?;
+    if global_match.is_empty() {
+        return Err(format!(
+            "No plugin matching '{target}' is installed. Global plugins are managed under \
+             Extensions → Skills."
+        ));
+    }
+    Ok((
+        PluginScope::Global,
+        single_match(global_match, target)?.manifest.source_id,
+    ))
+}
+
+fn matching_records(base: &Path, target: &str) -> Result<Vec<PluginSourceRecord>, String> {
+    Ok(list_sources_in(base)?
+        .into_iter()
+        .filter(|record| matches_target(record, target))
+        .collect())
+}
+
+fn single_match(
+    mut matches: Vec<PluginSourceRecord>,
+    target: &str,
+) -> Result<PluginSourceRecord, String> {
+    match matches.len() {
+        1 => Ok(matches.remove(0)),
+        _ => {
+            let urls = matches
+                .iter()
+                .map(|r| r.manifest.source_url.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            Err(format!("'{target}' is ambiguous: {urls}"))
+        }
+    }
 }
 
 fn matches_target(record: &PluginSourceRecord, target: &str) -> bool {
@@ -697,6 +797,8 @@ mod tests {
                 created_at: 1,
                 plugin: None,
                 hook_files: vec![],
+                enabled: true,
+                installed_commit: None,
             },
         )
         .unwrap();
@@ -778,6 +880,8 @@ mod tests {
                 created_at: 0,
                 plugin: None,
                 hook_files: vec![],
+                enabled: true,
+                installed_commit: None,
             },
             root_dir: PathBuf::new(),
         };
@@ -796,6 +900,81 @@ mod tests {
         let err = uninstall_with_dirs(&fx.dirs, "nope").unwrap_err();
         assert!(err.contains("No plugin matching"));
         assert!(uninstall_with_dirs(&fx.dirs, "  ").is_err());
+    }
+
+    /// One installed source manifest in `base`, for target-resolution tests
+    /// that only need names and ids on disk.
+    fn write_source_manifest(base: &Path, source_id: &str, url: &str, enabled: bool) {
+        fs::create_dir_all(base).unwrap();
+        save_source_in(
+            base,
+            PluginSourceManifest {
+                source_url: url.to_string(),
+                source_id: source_id.to_string(),
+                skill_names: vec![],
+                hooks: None,
+                hooks_approved: false,
+                approval_hashes: Default::default(),
+                created_at: 0,
+                hook_files: vec![],
+                plugin: None,
+                mcp_servers: vec![],
+                mcp_approved: false,
+                enabled,
+                installed_commit: None,
+            },
+        )
+        .unwrap();
+    }
+
+    // #2927 gatekeeper G1.2: `/plugin enable|disable` resolves a session
+    // install first (what the session shows), then a global install, and
+    // refuses to guess between two matches.
+    #[test]
+    fn enable_target_resolves_session_then_global() {
+        let fx = fixture();
+        let global = tempfile::tempdir().unwrap();
+        let shared = "https://github.com/acme/shared";
+        let shared_id = plugin_source_id(shared);
+        write_source_manifest(&fx.dirs.plugins, &shared_id, shared, true);
+        write_source_manifest(global.path(), &shared_id, shared, true);
+        let global_only = "https://github.com/acme/global-only";
+        let global_only_id = plugin_source_id(global_only);
+        write_source_manifest(global.path(), &global_only_id, global_only, false);
+
+        // Same source in both scopes: the session copy answers.
+        assert_eq!(
+            resolve_plugin_target(&fx.dirs, global.path(), shared).unwrap(),
+            (PluginScope::Session, shared_id.clone())
+        );
+        // Session plugins are matched by id and repo name too.
+        assert_eq!(
+            resolve_plugin_target(&fx.dirs, global.path(), "shared").unwrap(),
+            (PluginScope::Session, shared_id.clone())
+        );
+        // Nothing session-scoped matches, so the global copy answers.
+        assert_eq!(
+            resolve_plugin_target(&fx.dirs, global.path(), "global-only").unwrap(),
+            (PluginScope::Global, global_only_id.clone())
+        );
+        assert_eq!(
+            resolve_plugin_target(&fx.dirs, global.path(), global_only).unwrap(),
+            (PluginScope::Global, global_only_id)
+        );
+
+        // Two session installs matching one name is ambiguous, not a guess.
+        write_source_manifest(
+            &fx.dirs.plugins,
+            "plugin-1111111111111111",
+            "https://github.com/other/shared",
+            true,
+        );
+        let err = resolve_plugin_target(&fx.dirs, global.path(), "shared").unwrap_err();
+        assert!(err.contains("ambiguous"), "{err}");
+
+        // A target nothing knows is an error that says so.
+        let err = resolve_plugin_target(&fx.dirs, global.path(), "missing").unwrap_err();
+        assert!(err.contains("No plugin matching"), "{err}");
     }
 
     #[test]
@@ -1034,6 +1213,7 @@ mod tests {
             hooks: None,
             mcp_servers: None,
             user_config,
+            default_enabled: None,
         }
     }
 

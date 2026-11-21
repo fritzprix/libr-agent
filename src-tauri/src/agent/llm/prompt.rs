@@ -656,6 +656,8 @@ mod tests {
                 created_at: 0,
                 plugin: None,
                 hook_files: vec![],
+                enabled: true,
+                installed_commit: None,
             },
         )
         .unwrap();

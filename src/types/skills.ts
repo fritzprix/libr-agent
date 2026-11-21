@@ -39,6 +39,10 @@ export interface PluginSourceOverview {
   pluginName?: string;
   pluginVersion?: string;
   pluginDescription?: string;
+  /** Whether the plugin is enabled (#2927). */
+  enabled: boolean;
+  /** Source commit recorded at install, when GitHub exposed one (#2927). */
+  installedCommit?: string;
 }
 
 export interface ManagedSkillsOverview {
@@ -162,11 +166,20 @@ export interface SessionPluginEntry {
   id: string;
   sourceUrl: string;
   scope: PluginScope;
-  /** ISO-8601 timestamp of the install. */
-  installedAt: string;
+  /**
+   * Unix **seconds** of the install (the backend `i64`). Multiply by 1000
+   * before building a `Date` — it is not an ISO string (#2927).
+   */
+  installedAt: number;
   skillNames: string[];
   hookEvents: string[];
   hooksApproved: boolean;
+  /** Whether the plugin is enabled (#2927). */
+  enabled: boolean;
+  /** Manifest `version` from `.claude-plugin/plugin.json`, when present. */
+  version?: string;
+  /** Source commit recorded at install, when it is known (#2927). */
+  commit?: string;
 }
 
 export type SessionPluginAction = 'install' | 'uninstall';
@@ -176,8 +189,8 @@ export interface SessionPluginHistoryEntry {
   sourceId: string;
   sourceUrl: string;
   action: SessionPluginAction;
-  /** ISO-8601 timestamp of the action. */
-  at: string;
+  /** Unix **seconds** of the action (the backend `i64`), not an ISO string. */
+  at: number;
 }
 
 /** Mirrors Rust `SessionPluginsOverview` (camelCase). */

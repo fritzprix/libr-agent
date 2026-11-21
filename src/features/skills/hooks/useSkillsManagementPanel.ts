@@ -12,6 +12,7 @@ import {
   previewGitHubSkillInstall,
   previewUserSkillImport,
   resetUserSkills,
+  setPluginSourceEnabled,
 } from '@/lib/backend/skills';
 import { getLogger } from '@/lib/logger';
 import { useSkillsDirectory } from '@/features/settings/hooks/useSkillsDirectory';
@@ -457,6 +458,33 @@ export function useSkillsManagementPanel() {
     [isInstallingGithub, isInstallingLocal, refresh, t],
   );
 
+  const handleTogglePluginSourceEnabled = useCallback(
+    async (sourceId: string, enabled: boolean) => {
+      if (isDeletingSkill) {
+        return;
+      }
+      setIsDeletingSkill(sourceId);
+      try {
+        await setPluginSourceEnabled(sourceId, enabled);
+        toast.success(
+          enabled
+            ? t('settings.skills.pluginSourceEnabled', 'Plugin enabled.')
+            : t(
+                'settings.skills.pluginSourceDisabled',
+                'Plugin disabled. It stays installed; restart a session or type /reload to apply.',
+              ),
+        );
+        await refresh();
+      } catch (error) {
+        logger.error('Failed to change plugin enabled state', error);
+        toast.error(error instanceof Error ? error.message : String(error));
+      } finally {
+        setIsDeletingSkill(null);
+      }
+    },
+    [isDeletingSkill, refresh, t],
+  );
+
   const handleDeletePluginSource = useCallback(
     async (sourceId: string) => {
       if (isDeletingSkill) {
@@ -565,6 +593,7 @@ export function useSkillsManagementPanel() {
     setPendingPluginOption,
     confirmPendingInstallWithoutHooks,
     handleReinstallPluginSource,
+    handleTogglePluginSourceEnabled,
     handleDeletePluginSource,
     handleDeleteUserSkill,
     handleResetUserSkills,

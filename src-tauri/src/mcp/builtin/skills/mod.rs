@@ -172,6 +172,14 @@ impl BuiltinMCPServer for SkillsServer {
             }
         };
 
+        // #2927: a disabled plugin keeps its skills on disk but contributes
+        // none of them to the prompt.
+        let disabled_plugin_skills =
+            crate::services::skill_service::disabled_plugin_skill_names(&self.session_id);
+        if !disabled_plugin_skills.is_empty() {
+            skills.retain(|s| !disabled_plugin_skills.contains(&s.name));
+        }
+
         // Filter disabled skills using the assistant_id already resolved above.
         if let Some(id) = assistant_id {
             let repo = crate::state::get_assistant_repository();

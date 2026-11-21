@@ -262,6 +262,10 @@ fn list_in_dirs(
         .map(|r| r.manifest.source_id.clone())
         .collect();
     for record in session_records {
+        // #2927: a disabled plugin offers no commands, in any scope.
+        if !record.manifest.enabled {
+            continue;
+        }
         records.push((record, PluginScope::Session));
     }
     let global_records = list_sources_in(global_dir).unwrap_or_else(|error| {
@@ -269,7 +273,7 @@ fn list_in_dirs(
         Vec::new()
     });
     for record in global_records {
-        if shadowed.contains(&record.manifest.source_id) {
+        if shadowed.contains(&record.manifest.source_id) || !record.manifest.enabled {
             continue;
         }
         records.push((record, PluginScope::Global));
@@ -504,6 +508,8 @@ mod tests {
             hook_files: vec![],
             mcp_servers: vec![],
             mcp_approved: false,
+            enabled: true,
+            installed_commit: None,
         }
     }
 
@@ -536,6 +542,64 @@ mod tests {
 
     const HELLO: &str =
         "---\ndescription: Say hello\nargument-hint: <name>\n---\nHello $ARGUMENTS!\n";
+
+    /// #2927 fixture: an installed plugin that the user has switched off.
+    fn install_disabled(
+        dir: &Path,
+        id: &str,
+        url: &str,
+        files: &[(&str, &str)],
+    ) -> PluginSourceRecord {
+        install(dir, id, url, files);
+        crate::services::hooks::registry::set_source_enabled_in(dir, id, false).unwrap()
+    }
+
+    /// #2927: a disabled plugin offers no commands in either scope, while an
+    /// enabled neighbour keeps working.
+    #[test]
+    fn disabled_plugin_offers_no_commands() {
+        let global = tempfile::tempdir().unwrap();
+        let session = tempfile::tempdir().unwrap();
+        install(
+            global.path(),
+            &source_id(6),
+            "https://github.com/acme/keep",
+            &[("commands/keep.md", "---\ndescription: keep\n---\nKeep\n")],
+        );
+        install_disabled(
+            global.path(),
+            &source_id(7),
+            "https://github.com/acme/dropped",
+            &[(
+                "commands/dropped.md",
+                "---\ndescription: dropped\n---\nDropped\n",
+            )],
+        );
+        let session_disabled = install_disabled(
+            session.path(),
+            &source_id(8),
+            "https://github.com/acme/sessiondropped",
+            &[(
+                "commands/sessiondropped.md",
+                "---\ndescription: s\n---\nS\n",
+            )],
+        );
+
+        let out = list_in_dirs(global.path(), vec![session_disabled]);
+        let names: Vec<&str> = out.iter().map(|c| c.name.as_str()).collect();
+        assert!(
+            names.contains(&"keep"),
+            "enabled plugin commands: {names:?}"
+        );
+        assert!(
+            !names.iter().any(|name| name.contains("dropped")),
+            "disabled plugins must offer no commands: {names:?}"
+        );
+        assert!(
+            out.iter().all(|command| command.name == "keep"),
+            "only the enabled command survives: {out:?}"
+        );
+    }
 
     #[test]
     fn discovers_default_commands_dir() {

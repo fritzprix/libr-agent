@@ -12,6 +12,14 @@ pub enum PluginCommand {
     Uninstall {
         target: String,
     },
+    /// Turn a session or global plugin on/off (#2927). No approval needed:
+    /// the files stay, so this is a state flag, not an install.
+    Enable {
+        target: String,
+    },
+    Disable {
+        target: String,
+    },
     List,
 }
 
@@ -68,6 +76,12 @@ impl Command {
                     "uninstall" if !arg.is_empty() => {
                         Some(Command::Plugin(PluginCommand::Uninstall { target: arg }))
                     }
+                    "enable" if !arg.is_empty() => {
+                        Some(Command::Plugin(PluginCommand::Enable { target: arg }))
+                    }
+                    "disable" if !arg.is_empty() => {
+                        Some(Command::Plugin(PluginCommand::Disable { target: arg }))
+                    }
                     _ => None,
                 }
             }
@@ -86,6 +100,8 @@ impl Command {
             },
             Command::Plugin(PluginCommand::Install { .. }) => "/plugin install".to_string(),
             Command::Plugin(PluginCommand::Uninstall { .. }) => "/plugin uninstall".to_string(),
+            Command::Plugin(PluginCommand::Enable { .. }) => "/plugin enable".to_string(),
+            Command::Plugin(PluginCommand::Disable { .. }) => "/plugin disable".to_string(),
             Command::Plugin(PluginCommand::List) => "/plugin list".to_string(),
         }
     }
@@ -114,6 +130,12 @@ impl Command {
             }
             Command::Plugin(PluginCommand::Uninstall { .. }) => {
                 "Remove a session plugin by git URL or name".to_string()
+            }
+            Command::Plugin(PluginCommand::Enable { .. }) => {
+                "Turn an installed plugin back on without downloading it again".to_string()
+            }
+            Command::Plugin(PluginCommand::Disable { .. }) => {
+                "Turn an installed plugin off but keep its files".to_string()
             }
             Command::Plugin(PluginCommand::List) => {
                 "List plugins active in this session (global or session)".to_string()
@@ -190,5 +212,43 @@ mod tests {
         assert_eq!(Command::parse("/plugin uninstall"), None);
         assert_eq!(Command::parse("/plugin list extra"), None);
         assert_eq!(Command::parse("/plugin bogus x"), None);
+    }
+
+    // #2927 gatekeeper G1.2: `/plugin enable|disable` parse, keep the
+    // argument as typed, and reject a missing one.
+    #[test]
+    fn test_parse_plugin_enable_and_disable() {
+        assert_eq!(
+            Command::parse("/plugin enable superpowers"),
+            Some(Command::Plugin(PluginCommand::Enable {
+                target: "superpowers".to_string()
+            }))
+        );
+        assert_eq!(
+            Command::parse("  /plugin DISABLE https://github.com/Obra/Superpowers  "),
+            Some(Command::Plugin(PluginCommand::Disable {
+                target: "https://github.com/Obra/Superpowers".to_string()
+            }))
+        );
+        assert_eq!(
+            Command::Plugin(PluginCommand::Enable {
+                target: "x".to_string()
+            })
+            .display_name(),
+            "/plugin enable"
+        );
+        assert_eq!(
+            Command::Plugin(PluginCommand::Disable {
+                target: "x".to_string()
+            })
+            .display_name(),
+            "/plugin disable"
+        );
+
+        // No plugin named: nothing to enable, so the command is not parsed and
+        // the user is not told a plugin was switched.
+        assert_eq!(Command::parse("/plugin enable"), None);
+        assert_eq!(Command::parse("/plugin disable"), None);
+        assert_eq!(Command::parse("/plugin enable   "), None);
     }
 }

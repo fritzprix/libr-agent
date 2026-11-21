@@ -910,7 +910,13 @@
       "agentWorkspaceGrantNote": "El servicio workspace incluye escritura de archivos y ejecución de shell.",
       "userConfigTitle": "Configuración que solicita este plugin",
       "userConfigHint": "Estos valores se entregan al plugin cuando se ejecuta. Un valor sensible se guarda en el almacenamiento seguro de este equipo y nunca se vuelve a mostrar.",
-      "userConfigMissing": "Obligatorio: {{names}}"
+      "userConfigMissing": "Obligatorio: {{names}}",
+      "pluginDisabledBadge": "desactivado",
+      "disablePlugin": "Desactivar plugin",
+      "enablePlugin": "Activar plugin",
+      "pluginDetails": "Detalles",
+      "pluginSourceEnabled": "Plugin activado.",
+      "pluginSourceDisabled": "Plugin desactivado. Sigue instalado; reinicia una sesión o escribe /reload para aplicarlo."
     },
     "dev": {
       "devOnly": "SOLO DESARROLLO",
@@ -1578,7 +1584,9 @@
         "hooksNotApproved": "no aprobados",
         "history": "Historial de instalación",
         "actionInstall": "Instalado",
-        "actionUninstall": "Desinstalado"
+        "actionUninstall": "Desinstalado",
+        "disabled": "desactivado",
+        "version": "Versión"
       }
     },
     "panels": {
