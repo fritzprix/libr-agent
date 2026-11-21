@@ -176,12 +176,33 @@ Write-Host "Available tools: python3, typescript/deno, shell commands"
     pub fn get_workspace_dir(&self, session_id: &str) -> PathBuf {
         let workspace_dir = self.get_workspace_dir_unverified(session_id);
 
-        // Ensure directory exists if we are calculating it
+        // Ensure directory exists if we are calculating it. Lenient by
+        // contract: callers still get the path and a creation failure is
+        // logged; use `ensure_workspace_dir` where the failure must be
+        // reported (#2942 G5.1).
         if !workspace_dir.exists() {
-            let _ = fs::create_dir_all(&workspace_dir);
+            if let Err(error) = self.ensure_workspace_dir(session_id) {
+                log::warn!("{error}");
+            }
         }
 
         workspace_dir
+    }
+
+    /// Ensure the session's default workspace directory exists, reporting
+    /// any creation failure (#2942 G5.1). Reporting variant of
+    /// [`get_workspace_dir`](Self::get_workspace_dir): this directory is the
+    /// SSOT parent of the session plugin store (D1 revised), so session
+    /// creation must be able to observe a failure instead of losing it.
+    pub fn ensure_workspace_dir(&self, session_id: &str) -> Result<PathBuf, String> {
+        let workspace_dir = self.get_workspace_dir_unverified(session_id);
+        fs::create_dir_all(&workspace_dir).map_err(|error| {
+            format!(
+                "Failed to create session workspace directory {}: {error}",
+                workspace_dir.display()
+            )
+        })?;
+        Ok(workspace_dir)
     }
 
     /// Get session workspace directory path without ensuring it exists or performing any I/O.

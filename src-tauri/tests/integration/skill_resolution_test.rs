@@ -710,3 +710,126 @@ fn test_extract_skill_alias_relative_path() {
     assert_eq!(extract_skill_alias_relative_path("/tmp/out.txt"), None);
     assert_eq!(extract_skill_alias_relative_path(""), None);
 }
+
+// ---- Session-plugin skills layer (#2942 G3.2, tests per G5.2) ----
+//
+// The 5th `resolve_skills` argument is the session-plugin skills directory
+// derived from the DEFAULT session workspace directory
+// (`{data_dir}/workspaces/<sid>/.libragent/skills`); `workspace_dir` is the
+// live (possibly overridden) workspace's skills directory.
+
+/// (1)+(2) With a workspace override that differs from the default
+/// directory, a plugin skill under the default directory is still returned
+/// as a session-plugin skill, and a skill under the override stays a
+/// workspace skill.
+#[tokio::test]
+async fn test_resolve_skills_session_plugin_layer_survives_workspace_override() {
+    let system = TempDir::new().unwrap();
+    let user = TempDir::new().unwrap();
+    let default_dir = TempDir::new().unwrap(); // simulates {data_dir}/workspaces/<sid>
+    let override_dir = TempDir::new().unwrap(); // the current, overridden workspace
+
+    let plugin_skills = default_dir.path().join(".libragent").join("skills");
+    create_skill(
+        &plugin_skills,
+        "plugin-skill",
+        "Plugin Skill",
+        "Installed by a session plugin",
+    );
+    let ws_skills = override_dir.path().join(".libragent").join("skills");
+    create_skill(
+        &ws_skills,
+        "ws-skill",
+        "Workspace Skill",
+        "User file in the current workspace",
+    );
+
+    let result = resolve_skills(
+        system.path().to_owned(),
+        user.path().to_owned(),
+        None,
+        Some(ws_skills),
+        Some(plugin_skills),
+    )
+    .await
+    .unwrap();
+
+    let plugin = result
+        .iter()
+        .find(|s| s.name == "Plugin Skill")
+        .expect("plugin skill must survive a workspace override");
+    assert_eq!(plugin.origin.as_deref(), Some("session_plugin"));
+    assert_eq!(plugin.source.as_deref(), Some("workspace"));
+    assert!(
+        plugin.alias_path.is_none(),
+        "the session-plugin layer carries no alias prefix"
+    );
+
+    let ws = result
+        .iter()
+        .find(|s| s.name == "Workspace Skill")
+        .expect("override-workspace skill must load as workspace");
+    assert_eq!(ws.origin.as_deref(), Some("workspace"));
+    assert_eq!(
+        ws.alias_path.as_deref(),
+        Some("@workspace-skills/ws-skill/SKILL.md")
+    );
+}
+
+/// (3) The session-plugin layer is skipped when it equals the live
+/// workspace layer (no override): the skill appears exactly once, as a
+/// workspace skill.
+#[tokio::test]
+async fn test_resolve_skills_session_plugin_layer_dedupes_against_workspace() {
+    let system = TempDir::new().unwrap();
+    let user = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+    let ws_skills = workspace.path().join(".libragent").join("skills");
+    create_skill(&ws_skills, "one-skill", "One Skill", "Single copy");
+
+    let result = resolve_skills(
+        system.path().to_owned(),
+        user.path().to_owned(),
+        None,
+        Some(ws_skills.clone()),
+        Some(ws_skills),
+    )
+    .await
+    .unwrap();
+
+    let hits: Vec<_> = result.iter().filter(|s| s.name == "One Skill").collect();
+    assert_eq!(hits.len(), 1, "the identical layer must be skipped");
+    assert_eq!(hits[0].origin.as_deref(), Some("workspace"));
+}
+
+/// (4) Precedence: session-plugin skills merge by name like workspace
+/// skills — they win over user/system globals on collision.
+#[tokio::test]
+async fn test_resolve_skills_session_plugin_wins_over_global_on_collision() {
+    let system = TempDir::new().unwrap();
+    let user = TempDir::new().unwrap();
+    let default_dir = TempDir::new().unwrap();
+    let plugin_skills = default_dir.path().join(".libragent").join("skills");
+
+    create_skill(user.path(), "shared-skill", "Shared Skill", "User version");
+    create_skill(
+        &plugin_skills,
+        "shared-skill",
+        "Shared Skill",
+        "Plugin version",
+    );
+
+    let result = resolve_skills(
+        system.path().to_owned(),
+        user.path().to_owned(),
+        None,
+        None,
+        Some(plugin_skills),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].description, "Plugin version");
+    assert_eq!(result[0].origin.as_deref(), Some("session_plugin"));
+}
