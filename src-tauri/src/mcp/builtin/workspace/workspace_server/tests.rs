@@ -230,3 +230,59 @@ fn test_extract_absolute_teamwork_relative_path_for_new_files() {
         "parent-dir components after the teamwork root must be rejected"
     );
 }
+
+// #2946: the manager the file tools get must accept writes in the OS temp
+// directory (where a shell without our env lands) and in the session scratch
+// directory (`TMPDIR`), and still refuse a path nobody allowed. The session
+// manager and the workspace live under `target/`, so the scratch directory is
+// outside the OS temp directory and its acceptance cannot come from that root.
+#[tokio::test]
+async fn file_tool_manager_allows_os_temp_and_scratch_writes() {
+    let session_id = "temp-roots-session";
+    let base_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("target")
+        .join("session-scratch-wiring-tests")
+        .join(format!("run-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base_dir);
+
+    let session_manager = Arc::new(
+        crate::session::SessionManager::new_with_base_dir(base_dir.clone())
+            .expect("session manager"),
+    );
+    let scratch = session_manager.get_session_scratch_dir_unverified(session_id);
+    std::fs::create_dir_all(&scratch).expect("scratch dir");
+
+    // The roots the session adds are exactly the OS temp dir and its scratch dir.
+    assert_eq!(
+        super::file_tool_extra_roots(&session_manager, session_id),
+        vec![std::env::temp_dir(), scratch.clone()]
+    );
+
+    let server = WorkspaceServer::new(session_id.to_string(), session_manager.clone());
+    let manager = server.get_file_tool_manager(session_id).await;
+    let validator = manager.get_security_validator();
+
+    for dir in [std::env::temp_dir(), scratch.clone()] {
+        let target = dir.join("libragent-scratch-wiring-probe.txt");
+        validator
+            .validate_path_for_write(&target.display().to_string())
+            .unwrap_or_else(|error| panic!("{dir:?} must be writable: {error}"));
+        std::fs::write(&target, b"ok").expect("probe write");
+        std::fs::remove_file(&target).expect("probe cleanup");
+    }
+
+    // A directory nobody allowed is still refused.
+    let outside = base_dir.join("outside").join("note.txt");
+    let error = validator
+        .validate_path_for_write(&outside.display().to_string())
+        .expect_err("an unrelated outside path stays refused");
+    assert!(
+        matches!(
+            error,
+            crate::mcp::builtin::utils::SecurityError::OutsideWorkspaceRoot(_)
+        ),
+        "expected OutsideWorkspaceRoot, got {error:?}"
+    );
+
+    std::fs::remove_dir_all(&base_dir).expect("test data cleanup");
+}

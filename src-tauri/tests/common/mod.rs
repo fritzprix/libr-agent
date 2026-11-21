@@ -1,5 +1,6 @@
 use sea_orm::{Database, DatabaseConnection};
 use sea_orm_migration::MigratorTrait;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 #[cfg(not(windows))]
 use std::sync::Once;
@@ -25,6 +26,21 @@ pub fn register_sqlite_vec() {
             )));
         });
     }
+}
+
+/// A fresh fixture directory under `target/`, deliberately outside the OS temp
+/// directory (#2946 makes the OS temp directory an accepted file-tool root, so a
+/// `tempdir()` fixture can no longer stand in for "a directory nobody allowed";
+/// on macOS `tempdir()` is also the non-canonical `/var/folders/…` form of that
+/// root, which matches nothing). Unique per process; stale remnants are cleared.
+pub fn outside_os_temp_dir(tag: &str) -> PathBuf {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("target")
+        .join("outside-os-temp-fixtures")
+        .join(format!("{tag}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("fixture dir");
+    dir
 }
 
 /// Setup an isolated shared-memory SQLite database for testing.

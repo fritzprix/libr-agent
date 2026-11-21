@@ -42,6 +42,27 @@ pub(crate) fn file_tool_manager(
     manager.with_git_metadata_write_guard(git_dirs)
 }
 
+/// Temp directories the file tools may also read and write (#2946), next to the
+/// workspace root.
+///
+/// The OS temp directory is allowed, not remapped. Remapping would make a path
+/// mean two things at once: a script the agent wrote to `/tmp/a.py` and then ran
+/// would read a different file than the one `readFile` wrote. The shell runs with
+/// the user's permissions anyway, so this grants no new access.
+///
+/// The session scratch directory is added for the same reason: with a workspace
+/// override it is outside the current workspace, yet the shell's `TMPDIR` points
+/// at it, so file tools must be able to reach it too.
+pub(crate) fn file_tool_extra_roots(
+    session_manager: &SessionManager,
+    session_id: &str,
+) -> Vec<std::path::PathBuf> {
+    vec![
+        std::env::temp_dir(),
+        session_manager.get_session_scratch_dir_unverified(session_id),
+    ]
+}
+
 /// Clear the workspace context cache. Safe to call from background process tasks.
 pub(crate) async fn clear_context_cache(cache: &ContextCache) {
     *cache.write().await = None;
@@ -155,12 +176,13 @@ impl WorkspaceServer {
 
     /// The scoped manager used to validate file tool paths: the workspace root plus,
     /// when the `allowLinkedWorktrees` setting is on, the linked git worktrees of the
-    /// workspace repository.
+    /// workspace repository, plus the temp roots below.
     pub(crate) async fn get_file_tool_manager(&self, session_id: &str) -> SecureFileManager {
         let allow = crate::models::system_settings::SystemSettings::load_global()
             .await
             .allow_linked_worktrees;
         file_tool_manager(self.get_workspace_dir(session_id), allow)
+            .with_extra_roots(file_tool_extra_roots(&self.session_manager, session_id))
     }
 
     #[allow(dead_code)]

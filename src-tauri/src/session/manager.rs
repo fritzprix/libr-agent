@@ -123,6 +123,16 @@ impl SessionManager {
             .get_workspace_dir_unverified(session_id)
     }
 
+    /// The session scratch directory
+    /// (`{data_dir}/workspaces/<session_id>/.libragent/tmp`, #2946) that the
+    /// shell's `TMPDIR` / `TEMP` / `TMP` point at. Like
+    /// [`get_session_default_workspace_dir_unverified`](Self::get_session_default_workspace_dir_unverified),
+    /// it never follows a workspace override and it goes away with the session.
+    pub fn get_session_scratch_dir_unverified(&self, session_id: &str) -> PathBuf {
+        self.directory_service
+            .get_scratch_dir_unverified(session_id)
+    }
+
     pub fn list_sessions(&self) -> Result<Vec<String>, String> {
         // We still need to read the directory to list sessions, but we use the base path from service
         let workspaces_dir = self

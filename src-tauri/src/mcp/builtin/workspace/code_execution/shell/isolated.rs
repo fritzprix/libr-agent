@@ -49,6 +49,7 @@ impl WorkspaceServer {
             return Ok(result);
         }
         utils::add_wake_url_env(&session_id, &mut env_vars).await;
+        utils::add_session_temp_env(&session_id, is_docker, &mut env_vars);
         let secrets = self.shell_manager.session_secrets(&session_id).await;
         let logged_command = mask_secrets(command, &secrets);
 

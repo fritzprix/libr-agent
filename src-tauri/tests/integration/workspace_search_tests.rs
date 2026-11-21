@@ -1,3 +1,4 @@
+use crate::common;
 use serde_json::json;
 use std::sync::Arc;
 use tauri_mcp_agent_lib::mcp::builtin::workspace::WorkspaceServer;
@@ -1815,15 +1816,19 @@ async fn glob_and_grep_report_missing_search_root() {
     assert!(extract_text_content(&grep).contains("not found"));
 }
 
+// The session data directory and the unrelated directory both live under `target/`
+// (`common::outside_os_temp_dir`): #2946 makes the OS temp directory an accepted file
+// tool root, so a `tempdir()` fixture is no longer "outside"; the rejection this test
+// checks would not be the one the guard computes.
 #[tokio::test]
 async fn search_rejection_for_data_dir_paths_names_skill_roots() {
-    let temp_dir = tempdir().expect("temp dir");
+    let temp_dir = common::outside_os_temp_dir("data-dir");
     let session_id = "data-dir-rejection-test";
-    let server = build_workspace_server(temp_dir.path(), session_id);
+    let server = build_workspace_server(&temp_dir, session_id);
 
     let data_dir_result = server
         .handle_glob_files(
-            json!({ "path": temp_dir.path().to_string_lossy(), "filePattern": "*.db" }),
+            json!({ "path": temp_dir.to_string_lossy(), "filePattern": "*.db" }),
             Some(session_id.to_string()),
         )
         .await
@@ -1834,10 +1839,10 @@ async fn search_rejection_for_data_dir_paths_names_skill_roots() {
         "Expected data-dir rejection naming skill roots: {text}"
     );
 
-    let elsewhere = tempdir().expect("other dir");
+    let elsewhere = common::outside_os_temp_dir("elsewhere");
     let other_result = server
         .handle_glob_files(
-            json!({ "path": elsewhere.path().to_string_lossy(), "filePattern": "*.db" }),
+            json!({ "path": elsewhere.to_string_lossy(), "filePattern": "*.db" }),
             Some(session_id.to_string()),
         )
         .await

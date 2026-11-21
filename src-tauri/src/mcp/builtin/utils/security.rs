@@ -131,13 +131,16 @@ impl SecurityValidator {
         self
     }
 
-    /// Also accept paths under `roots` in the containment checks. Roots that cannot be
-    /// canonicalized are dropped.
+    /// Also accept paths under `roots` in the containment checks, on top of any roots
+    /// already accepted (#2946 adds the OS temp directory beside linked worktrees).
+    /// Roots that cannot be canonicalized are dropped.
     pub fn with_extra_roots(mut self, roots: Vec<PathBuf>) -> Self {
-        self.extra_roots = roots
+        let accepted: Vec<PathBuf> = roots
             .into_iter()
             .filter_map(|root| root.canonicalize().ok())
+            .filter(|root| !self.extra_roots.contains(root))
             .collect();
+        self.extra_roots.extend(accepted);
         self
     }
 
@@ -214,10 +217,11 @@ impl SecurityValidator {
 
         // Prefer a canonical path for the early containment check. On macOS, tempfile and
         // file:// URLs often use `/var/folders/...` while `base_dir` is stored as the
-        // canonical `/private/var/folders/...` form after construction.
-        let early_containment_path = absolute_path
-            .canonicalize()
-            .unwrap_or_else(|_| absolute_path.clone());
+        // canonical `/private/var/folders/...` form after construction. A write target
+        // usually does not exist yet, so resolve the longest existing prefix instead of
+        // falling back to the raw path (which would miss the `/var` -> `/private/var` link
+        // and report a legitimate temp-dir write as outside every allowed root).
+        let early_containment_path = canonicalize_existing_prefix(&absolute_path);
 
         // Only paths whose raw and canonical forms both lie outside `base_dir` are direct
         // external paths (`OutsideWorkspaceRoot`); paths inside `base_dir` that resolve outside
@@ -231,6 +235,12 @@ impl SecurityValidator {
             )));
         }
 
+        // The sensitive-path policy is string-shape based (`/home/<user>/.aws`, `/etc/shadow`,
+        // …), so the raw form must be checked too: canonicalizing an existing prefix can
+        // rewrite a home-relative shape (macOS resolves `/home` through a firmlink to
+        // `/System/Volumes/Data/home`) and would otherwise let a protected path slip past
+        // the policy (#2953 macOS). A path counts as protected if either form matches.
+        self.ensure_not_sensitive_path(&absolute_path, user_path)?;
         self.ensure_not_sensitive_path(&early_containment_path, user_path)?;
 
         // SecurityValidator only validates paths. Directory creation is handled explicitly by callers.
@@ -285,11 +295,15 @@ impl SecurityValidator {
                     self.ensure_not_sensitive_path(&canon, user_path)?;
                 }
 
+                // The target does not exist yet, so compare the canonical form of its
+                // existing prefix (the same form the allowed roots are stored in) against
+                // the roots. The raw path misses links like macOS `/var` -> `/private/var`
+                // and would refuse a legitimate first write into an allowed temp root.
+                let prefix_canonical = canonicalize_existing_prefix(&absolute_path);
                 tracing::debug!(
-                    "File doesn't exist yet, using non-canonical path: '{:?}'",
-                    absolute_path
+                    "File doesn't exist yet, using existing-prefix canonical path: '{prefix_canonical:?}'"
                 );
-                absolute_path.clone()
+                prefix_canonical
             }
         };
 
@@ -299,7 +313,12 @@ impl SecurityValidator {
             )));
         }
 
-        self.ensure_not_sensitive_path(&canonical_path, user_path)?;
+        // Last gate before Ok: check both forms at the final check as well, so the
+        // sensitive-path guarantee here stands on its own instead of depending on the
+        // earlier check (#2953 G5.1).
+        for candidate in [&absolute_path, &canonical_path] {
+            self.ensure_not_sensitive_path(candidate, user_path)?;
+        }
 
         tracing::debug!("Path validation successful: '{:?}'", absolute_path);
         Ok(absolute_path)
@@ -454,5 +473,83 @@ mod parent_traversal_tests {
             .validate_path_for_write("a/../../x")
             .expect_err("relative path that climbs out is rejected");
         assert!(matches!(climbing, SecurityError::PathTraversal(_)));
+    }
+
+    // #2946: the write guard also allows the OS temp directory (the shell runs
+    // with the user's permissions and writes there; remapping it would make a
+    // script and `readFile` see different files) and the session scratch
+    // directory. Roots added later stack on the ones already accepted.
+    #[test]
+    fn temp_and_scratch_roots_are_writable_beside_the_workspace() {
+        let parent = tempdir().expect("tempdir");
+        let repo = main_repo(parent.path());
+        add_worktree(&repo, "w");
+        let os_temp = tempdir().expect("tempdir");
+        let scratch = tempdir().expect("tempdir");
+        let unrelated = tempdir().expect("tempdir");
+
+        let manager = file_tool_manager(repo.clone(), true).with_extra_roots(vec![
+            os_temp.path().to_path_buf(),
+            scratch.path().to_path_buf(),
+        ]);
+        let validator = manager.get_security_validator();
+
+        for dir in [os_temp.path(), scratch.path()] {
+            let target = dir.join("note.txt");
+            let path = target.display().to_string();
+            let accepted = validator
+                .validate_path_for_write(&path)
+                .unwrap_or_else(|error| panic!("{dir:?} must be writable: {error}"));
+            assert!(accepted.ends_with("note.txt"));
+        }
+
+        // The linked worktree root accepted earlier is not lost by the second call.
+        let repo_path = repo.display().to_string();
+        let base = crate::mcp::builtin::utils::strip_windows_verbatim_prefix(&repo_path);
+        validator
+            .validate_path_for_write(&format!("{base}/../repo.worktrees/w/a.rs"))
+            .expect("linked worktree root survives with_extra_roots");
+
+        // A directory nobody allowed is still refused.
+        let outside = unrelated.path().join("note.txt");
+        let error = validator
+            .validate_path_for_write(&outside.display().to_string())
+            .expect_err("an unrelated outside path stays refused");
+        assert!(matches!(error, SecurityError::OutsideWorkspaceRoot(_)));
+    }
+
+    // The final containment check must compare the canonical form of the target's
+    // existing prefix against the roots, not the raw path. On macOS `tempdir()` is
+    // `/var/folders/…` while roots are stored canonicalized (`/private/var/…`); a
+    // `link -> real` symlink root reproduces the same mismatch on any unix job for
+    // a file that does not exist yet (#2953 G3.1).
+    #[cfg(unix)]
+    #[test]
+    fn new_file_through_an_allowed_symlink_root_is_accepted() {
+        use std::os::unix::fs::symlink;
+        let parent = tempdir().expect("tempdir");
+        let repo = main_repo(parent.path());
+        let real = parent.path().join("real");
+        std::fs::create_dir_all(&real).expect("real dir");
+        let link = parent.path().join("link");
+        symlink(&real, &link).expect("symlink link -> real");
+
+        let manager = file_tool_manager(repo.clone(), true).with_extra_roots(vec![link.clone()]);
+        let validator = manager.get_security_validator();
+
+        // The target does not exist yet and its raw form goes through the symlink.
+        validator
+            .validate_path_for_write(&link.join("new.txt").display().to_string())
+            .expect("a new file through an allowed symlink root must be writable");
+
+        // A workspace symlink pointing somewhere unrelated is still refused.
+        let unrelated = parent.path().join("unrelated");
+        std::fs::create_dir_all(&unrelated).expect("unrelated dir");
+        let evil = repo.join("evil");
+        symlink(&unrelated, &evil).expect("symlink evil -> unrelated");
+        let error = validator
+            .validate_path_for_write(&evil.join("x.txt").display().to_string())
+            .expect_err("a workspace symlink to an unrelated target stays refused");
+        assert!(matches!(error, SecurityError::PathTraversal(_)));
     }
 }

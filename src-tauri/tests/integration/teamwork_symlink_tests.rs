@@ -247,9 +247,13 @@ async fn test_absolute_path_write_under_teamwork_root() {
     common::register_sqlite_vec();
     let db = common::setup_test_db_with_migrations().await;
     let repo = SqliteSessionRepository::new(db);
-    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    // The whole fixture lives outside the OS temp directory: #2946 made the OS temp
+    // directory an accepted file-tool root, so neither the "outside" path nor the
+    // `..`-escape target could sit in a `tempdir()` fixture — both would land in an
+    // allowed root and the scoped write validation would (correctly) accept them.
+    let temp_dir = common::outside_os_temp_dir("teamwork-abs-write");
 
-    let base_dir = temp_dir.path().join("session-root");
+    let base_dir = temp_dir.join("session-root");
     let session_manager = SessionManager::new_with_base_dir(base_dir.clone()).unwrap();
     let session_id = "absolute-write-session";
     let org_root_id = "absolute-write-session";
@@ -314,7 +318,7 @@ async fn test_absolute_path_write_under_teamwork_root() {
     }
 
     // Absolute path outside teamwork root must not be accepted by the teamwork write path.
-    let outside = temp_dir.path().join("outside.md");
+    let outside = temp_dir.join("outside.md");
     let outside_str = outside.to_string_lossy().to_string();
     let outside_result = server
         .validate_write_path_with_teamwork_access(&outside_str, None)

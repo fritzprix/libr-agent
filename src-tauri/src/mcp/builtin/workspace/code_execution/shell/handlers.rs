@@ -286,7 +286,7 @@ impl WorkspaceServer {
         }
 
         // Parse optional environment variables
-        let env_vars = args
+        let mut env_vars: std::collections::HashMap<String, String> = args
             .get("env")
             .and_then(|v| v.as_object())
             .map(|obj| {
@@ -352,6 +352,9 @@ impl WorkspaceServer {
         ) {
             return Ok(result);
         }
+
+        // #2946: temp files belong to the session, not to the shared OS temp dir.
+        utils::add_session_temp_env(session_id, is_docker, &mut env_vars);
 
         // Ask only after every other check passed, so a rejected call opens no prompt.
         let stored_name = if require_input.value {

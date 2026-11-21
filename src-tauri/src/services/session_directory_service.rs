@@ -115,6 +115,12 @@ Write-Host "Available tools: python3, typescript/deno, shell commands"
             .await
             .map_err(|e| format!("Failed to create session directory '{session_id}': {e}"))?;
 
+        // #2946: the scratch directory exists from the moment the session does,
+        // so a shell or file tool never has to create it first.
+        tokio::fs::create_dir_all(self.get_scratch_dir_unverified(session_id))
+            .await
+            .map_err(|e| format!("Failed to create session scratch directory: {e}"))?;
+
         // Copy from template if available (async)
         let template_path_option = {
             if let Ok(template_lock) = self.template_workspace.read() {
@@ -194,6 +200,7 @@ Write-Host "Available tools: python3, typescript/deno, shell commands"
     /// [`get_workspace_dir`](Self::get_workspace_dir): this directory is the
     /// SSOT parent of the session plugin store (D1 revised), so session
     /// creation must be able to observe a failure instead of losing it.
+    /// The session scratch directory (#2946) is created with it.
     pub fn ensure_workspace_dir(&self, session_id: &str) -> Result<PathBuf, String> {
         let workspace_dir = self.get_workspace_dir_unverified(session_id);
         fs::create_dir_all(&workspace_dir).map_err(|error| {
@@ -202,12 +209,33 @@ Write-Host "Available tools: python3, typescript/deno, shell commands"
                 workspace_dir.display()
             )
         })?;
+        let scratch_dir = self.get_scratch_dir_unverified(session_id);
+        fs::create_dir_all(&scratch_dir).map_err(|error| {
+            format!(
+                "Failed to create session scratch directory {}: {error}",
+                scratch_dir.display()
+            )
+        })?;
         Ok(workspace_dir)
     }
 
     /// Get session workspace directory path without ensuring it exists or performing any I/O.
     pub fn get_workspace_dir_unverified(&self, session_id: &str) -> PathBuf {
         self.base_data_dir.join("workspaces").join(session_id)
+    }
+
+    /// The session scratch directory
+    /// (`{data_dir}/workspaces/<session_id>/.libragent/tmp`, #2946): where the
+    /// agent and its shell should put temporary files.
+    ///
+    /// It sits under the **default** session workspace directory, so it never
+    /// follows a workspace override and it is removed with the session (see
+    /// [`remove_workspace`](Self::remove_workspace), which deletes the whole
+    /// default directory tree).
+    pub fn get_scratch_dir_unverified(&self, session_id: &str) -> PathBuf {
+        self.get_workspace_dir_unverified(session_id)
+            .join(".libragent")
+            .join("tmp")
     }
 
     /// Get the app-local teamwork artifact directory for a governing/root session.
@@ -365,6 +393,38 @@ mod tests {
             !resolved.starts_with(base),
             "platform default should not be the data dir"
         );
+    }
+
+    // #2946: the scratch directory is where the shell's TMPDIR points, so it
+    // must exist from session creation and go away with the session.
+    #[tokio::test]
+    async fn scratch_dir_is_created_with_the_session_and_removed_with_it() {
+        let temp = tempfile::tempdir().unwrap();
+        let service = super::SessionDirectoryService::new(temp.path().to_path_buf()).unwrap();
+
+        service.create_session_workspace("s1").await.unwrap();
+        let scratch = service.get_scratch_dir_unverified("s1");
+        assert_eq!(
+            scratch,
+            temp.path()
+                .join("workspaces")
+                .join("s1")
+                .join(".libragent")
+                .join("tmp")
+        );
+        assert!(scratch.is_dir(), "created with the session workspace");
+
+        // The sync path (session registration) creates it too, even when the
+        // workspace directory already existed without it.
+        std::fs::remove_dir_all(&scratch).unwrap();
+        service.ensure_workspace_dir("s1").unwrap();
+        assert!(
+            scratch.is_dir(),
+            "ensure_workspace_dir creates the scratch dir"
+        );
+
+        service.remove_workspace("s1").await.unwrap();
+        assert!(!scratch.exists(), "the scratch dir dies with the session");
     }
 
     #[tokio::test]
