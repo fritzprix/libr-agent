@@ -856,6 +856,8 @@ mod tests {
                 hook_files: Vec::new(),
                 mcp_servers: Vec::new(),
                 mcp_approved: false,
+                enabled: true,
+                installed_commit: None,
             },
             root_dir: root.to_path_buf(),
         }
