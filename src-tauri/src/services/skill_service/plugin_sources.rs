@@ -2,7 +2,8 @@ use super::contracts::PluginSourceOverview;
 use super::directories::get_user_skills_directory;
 use super::importing::remove_skill_names_from_user_skills;
 use crate::services::hooks::registry::{
-    delete_source, get_source, hook_config_for_record, list_sources, PluginSourceRecord,
+    delete_source, get_source, hook_config_for_record, list_sources, list_sources_in,
+    PluginSourceRecord,
 };
 
 pub fn list_plugin_source_overviews() -> Result<Vec<PluginSourceOverview>, String> {
@@ -33,6 +34,8 @@ pub fn list_plugin_source_overviews() -> Result<Vec<PluginSourceOverview>, Strin
                     .plugin
                     .as_ref()
                     .and_then(|p| p.description.clone()),
+                enabled: record.manifest.enabled,
+                installed_commit: record.manifest.installed_commit.clone(),
             }
         })
         .collect::<Vec<_>>();
@@ -126,10 +129,139 @@ pub(crate) fn on_plugin_source_uninstalled() {
     crate::services::hooks::clear_all_hook_contexts();
 }
 
+/// Source ids of global plugins that are installed but disabled (#2927).
+/// Their plugin-owned MCP servers stay in the DB and are skipped at load, so
+/// enabling again needs no re-creation.
+pub fn disabled_global_plugin_source_ids() -> std::collections::HashSet<String> {
+    match crate::services::hooks::registry::get_user_plugins_directory() {
+        Ok(base) => list_sources_in(&base)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|r| !r.manifest.enabled)
+            .map(|r| r.manifest.source_id)
+            .collect(),
+        Err(_) => std::collections::HashSet::new(),
+    }
+}
+
+/// Turn one global plugin on or off (#2927). The plugin keeps its files,
+/// approval records, data directory, and MCP server rows; loaders skip it
+/// while it is disabled. An open session picks the change up when it opens
+/// again or on `/reload` (owner decision D5).
+pub fn set_plugin_enabled(source_id: &str, enabled: bool) -> Result<(), String> {
+    let base = crate::services::hooks::registry::get_user_plugins_directory()?;
+    crate::services::hooks::registry::set_source_enabled_in(&base, source_id, enabled)?;
+    // Hooks stop now rather than at the next session open: the bootstrap text
+    // a disabled plugin wrote is stale in every open session's prompt slot.
+    on_plugin_source_uninstalled();
+    Ok(())
+}
+
+/// Turn one session plugin on or off (#2927). Same rule as the global setter:
+/// files stay, loaders skip, and the running session applies it on `/reload`
+/// or when it opens again (D5 keeps the prompt cache intact).
+pub fn set_session_plugin_enabled(
+    session_id: &str,
+    source_id: &str,
+    enabled: bool,
+) -> Result<(), String> {
+    let plugins_dir = crate::services::hooks::registry::get_session_plugins_directory(session_id)?;
+    crate::services::hooks::registry::set_source_enabled_in(&plugins_dir, source_id, enabled)?;
+    crate::services::hooks::clear_hook_context(session_id);
+    Ok(())
+}
+
+/// Skill names that only disabled plugins provide for one session (#2927).
+///
+/// A disabled plugin keeps its files, so its skills still exist on disk; the
+/// skills prompt must drop them by name. A session install shadows a global
+/// install with the same `source_id` (same rule as hooks), so a disabled
+/// global copy does not hide an enabled session copy.
+pub fn disabled_plugin_skill_names(session_id: &str) -> std::collections::HashSet<String> {
+    let session_records =
+        super::session_plugins::load_session_plugins(session_id).unwrap_or_default();
+    let global_records = match crate::services::hooks::registry::get_user_plugins_directory() {
+        Ok(base) => list_sources_in(&base).unwrap_or_default(),
+        Err(_) => Vec::new(),
+    };
+    disabled_skill_names_in(&session_records, &global_records)
+}
+
+/// The name filter behind [`disabled_plugin_skill_names`], split out so the
+/// shadowing rule is testable without a real app data directory.
+fn disabled_skill_names_in(
+    session_records: &[PluginSourceRecord],
+    global_records: &[PluginSourceRecord],
+) -> std::collections::HashSet<String> {
+    use std::collections::HashSet;
+
+    let mut names = HashSet::new();
+    for record in session_records.iter().filter(|r| !r.manifest.enabled) {
+        names.extend(record.manifest.skill_names.iter().cloned());
+    }
+    let shadowed: HashSet<String> = session_records
+        .iter()
+        .map(|r| r.manifest.source_id.clone())
+        .collect();
+    for record in global_records.iter().filter(|r| !r.manifest.enabled) {
+        if shadowed.contains(&record.manifest.source_id) {
+            continue;
+        }
+        names.extend(record.manifest.skill_names.iter().cloned());
+    }
+    names
+}
+
 #[cfg(test)]
 mod tests {
-    use super::on_plugin_source_uninstalled;
+    use super::{disabled_skill_names_in, on_plugin_source_uninstalled};
+    use crate::services::hooks::registry::{PluginSourceManifest, PluginSourceRecord};
     use crate::services::hooks::{clear_hook_context, get_hook_context, set_hook_context};
+    use std::collections::BTreeMap;
+    use std::path::PathBuf;
+
+    fn record(source_id: &str, skills: &[&str], enabled: bool) -> PluginSourceRecord {
+        PluginSourceRecord {
+            manifest: PluginSourceManifest {
+                source_url: format!("https://example.com/{source_id}"),
+                source_id: source_id.to_string(),
+                skill_names: skills.iter().map(|s| s.to_string()).collect(),
+                hooks: None,
+                hooks_approved: false,
+                approval_hashes: BTreeMap::new(),
+                created_at: 0,
+                plugin: None,
+                hook_files: vec![],
+                mcp_servers: vec![],
+                mcp_approved: false,
+                enabled,
+                installed_commit: None,
+            },
+            root_dir: PathBuf::from("/nonexistent"),
+        }
+    }
+
+    /// #2927: a disabled plugin hides its skills from the prompt, in either
+    /// scope, while an enabled copy of the same source stays visible.
+    #[test]
+    fn disabled_plugins_hide_their_skills() {
+        let session = vec![
+            record("plugin-aaaa000000000000", &["session-off"], false),
+            record("plugin-bbbb000000000000", &["session-on"], true),
+        ];
+        let global = vec![
+            // Shadowed by the session entry above: its skills stay hidden
+            // even though the session copy is disabled.
+            record("plugin-aaaa000000000000", &["global-shadowed"], false),
+            record("plugin-cccc000000000000", &["global-off"], false),
+            record("plugin-dddd000000000000", &["global-on"], true),
+        ];
+
+        let hidden = disabled_skill_names_in(&session, &global);
+        let mut names: Vec<&str> = hidden.iter().map(String::as_str).collect();
+        names.sort_unstable();
+        assert_eq!(names, vec!["global-off", "session-off"]);
+    }
 
     #[test]
     fn uninstall_purge_clears_hook_contexts() {

@@ -9,9 +9,20 @@ const timeFormatter = new Intl.DateTimeFormat(undefined, {
   timeStyle: 'short',
 });
 
-function formatTime(iso: string): string {
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? iso : timeFormatter.format(date);
+function formatTime(unixSeconds: number): string {
+  // The backend sends unix seconds (#2927 fixed the ISO-string assumption).
+  const date = new Date(unixSeconds * 1000);
+  return Number.isNaN(date.getTime()) ? String(unixSeconds) : timeFormatter.format(date);
+}
+
+function pluginVersionLabel(plugin: SessionPluginEntry): string {
+  if (plugin.version) {
+    return `v${plugin.version}`;
+  }
+  if (plugin.commit) {
+    return plugin.commit.slice(0, 7);
+  }
+  return '—';
 }
 
 function PluginRow({ plugin }: { plugin: SessionPluginEntry }) {
@@ -33,8 +44,18 @@ function PluginRow({ plugin }: { plugin: SessionPluginEntry }) {
             ? t('agent.toolsModal.plugins.scopeSession')
             : t('agent.toolsModal.plugins.scopeGlobal')}
         </Badge>
+        {plugin.enabled ? null : (
+          <Badge
+            variant="secondary"
+            className="shrink-0 text-xs uppercase tracking-wide"
+          >
+            {t('agent.toolsModal.plugins.disabled', 'disabled')}
+          </Badge>
+        )}
       </div>
       <p className="text-xs text-muted-foreground">
+        {t('agent.toolsModal.plugins.version', 'Version')}:{' '}
+        {pluginVersionLabel(plugin)} ·{' '}
         {t('agent.toolsModal.plugins.installedAt', {
           time: formatTime(plugin.installedAt),
         })}

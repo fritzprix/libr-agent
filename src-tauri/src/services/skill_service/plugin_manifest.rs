@@ -180,6 +180,17 @@ pub struct PluginManifest {
     /// when the plugin declares none.
     #[serde(default, rename = "userConfig")]
     pub user_config: BTreeMap<String, UserConfigSpec>,
+    /// Spec `defaultEnabled` (#2927): the state a fresh install starts in.
+    /// Absent means enabled, which is what every plugin did before #2927.
+    #[serde(default, rename = "defaultEnabled")]
+    pub default_enabled: Option<bool>,
+}
+
+impl PluginManifest {
+    /// The enabled state a fresh install starts in (#2927).
+    pub fn starts_enabled(&self) -> bool {
+        self.default_enabled.unwrap_or(true)
+    }
 }
 
 /// Where the manifest lives relative to a plugin root.

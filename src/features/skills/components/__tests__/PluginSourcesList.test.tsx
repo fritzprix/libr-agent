@@ -20,6 +20,7 @@ function source(
     skillNames: ['demo'],
     hookEvents: ['SessionStart', 'SessionEnd', 'PostToolUseFailure'],
     hooksApproved: true,
+    enabled: true,
     ...overrides,
   };
 }
@@ -32,18 +33,62 @@ describe('PluginSourcesList hook status markers', () => {
         isBusy={false}
         removingId={null}
         onUpdate={vi.fn()}
+        onToggleEnabled={vi.fn()}
         onRemove={vi.fn()}
       />,
     );
 
-    // First action button expands the source row (chevron).
-    fireEvent.click(screen.getAllByRole('button')[0]);
+    // The details button expands the source row.
+    fireEvent.click(screen.getByRole('button', { name: 'Details' }));
 
     expect(screen.getByText('SessionStart')).toBeInTheDocument();
     expect(screen.getByText('SessionEnd')).toBeInTheDocument();
     expect(screen.getAllByText(/Executed/)).toHaveLength(2);
     expect(screen.getByText('PostToolUseFailure')).toBeInTheDocument();
     expect(screen.getByText(/Not supported/)).toBeInTheDocument();
+  });
+});
+
+// #2927: the enable toggle flips one plugin without downloading it again.
+describe('PluginSourcesList enabled state (#2927)', () => {
+  it('offers to disable an enabled plugin and reports the target', () => {
+    const onToggleEnabled = vi.fn();
+    render(
+      <PluginSourcesList
+        sources={[source()]}
+        isBusy={false}
+        removingId={null}
+        onUpdate={vi.fn()}
+        onToggleEnabled={onToggleEnabled}
+        onRemove={vi.fn()}
+      />,
+    );
+
+    const toggle = screen.getByRole('button', { name: 'Disable plugin' });
+    expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(toggle);
+    expect(onToggleEnabled).toHaveBeenCalledWith(
+      'plugin-aabbccddeeff0011',
+      false,
+    );
+  });
+
+  it('shows a disabled plugin as disabled and offers to enable it', () => {
+    render(
+      <PluginSourcesList
+        sources={[source({ enabled: false })]}
+        isBusy={false}
+        removingId={null}
+        onUpdate={vi.fn()}
+        onToggleEnabled={vi.fn()}
+        onRemove={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('disabled')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Enable plugin' }),
+    ).toBeInTheDocument();
   });
 });
 
@@ -63,6 +108,7 @@ describe('PluginSourcesList plugin manifest display (#2921)', () => {
         isBusy={false}
         removingId={null}
         onUpdate={vi.fn()}
+        onToggleEnabled={vi.fn()}
         onRemove={vi.fn()}
       />,
     );
@@ -82,6 +128,7 @@ describe('PluginSourcesList plugin manifest display (#2921)', () => {
         isBusy={false}
         removingId={null}
         onUpdate={vi.fn()}
+        onToggleEnabled={vi.fn()}
         onRemove={vi.fn()}
       />,
     );

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronDown, Loader2, RefreshCw, Trash2 } from 'lucide-react';
+import { ChevronDown, Loader2, RefreshCw, ToggleLeft, ToggleRight, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { cn } from '@/lib/utils';
 import type { PluginSourceOverview } from '@/types/skills';
@@ -10,6 +10,7 @@ interface PluginSourcesListProps {
   isBusy: boolean;
   removingId: string | null;
   onUpdate: (sourceUrl: string) => void | Promise<void>;
+  onToggleEnabled: (sourceId: string, enabled: boolean) => void | Promise<void>;
   onRemove: (sourceId: string) => void | Promise<void>;
 }
 
@@ -30,6 +31,7 @@ export function PluginSourcesList({
   isBusy,
   removingId,
   onUpdate,
+  onToggleEnabled,
   onRemove,
 }: PluginSourcesListProps) {
   const { t } = useTranslation('common');
@@ -60,7 +62,16 @@ export function PluginSourcesList({
                       <span className="text-xs text-muted-foreground">
                         v{source.pluginVersion}
                       </span>
+                    ) : source.installedCommit ? (
+                      <span className="text-xs text-muted-foreground">
+                        {source.installedCommit.slice(0, 7)}
+                      </span>
                     ) : null}
+                    {source.enabled ? null : (
+                      <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                        {t('settings.skills.pluginDisabledBadge', 'disabled')}
+                      </span>
+                    )}
                   </div>
                   {source.pluginDescription ? (
                     <p className="text-xs text-muted-foreground">
@@ -87,7 +98,35 @@ export function PluginSourcesList({
                     type="button"
                     variant="outline"
                     size="sm"
+                    disabled={isBusy || removingId === source.id}
+                    aria-pressed={source.enabled}
+                    aria-label={
+                      source.enabled
+                        ? t('settings.skills.disablePlugin', 'Disable plugin')
+                        : t('settings.skills.enablePlugin', 'Enable plugin')
+                    }
+                    title={
+                      source.enabled
+                        ? t('settings.skills.disablePlugin', 'Disable plugin')
+                        : t('settings.skills.enablePlugin', 'Enable plugin')
+                    }
+                    onClick={() =>
+                      void onToggleEnabled(source.id, !source.enabled)
+                    }
+                  >
+                    {source.enabled ? (
+                      <ToggleRight className="w-4 h-4" />
+                    ) : (
+                      <ToggleLeft className="w-4 h-4" />
+                    )}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
                     disabled={isBusy}
+                    aria-label={t('settings.skills.pluginDetails', 'Details')}
+                    title={t('settings.skills.pluginDetails', 'Details')}
                     onClick={() =>
                       setExpandedId(expanded ? null : source.id)
                     }

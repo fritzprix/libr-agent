@@ -43,6 +43,10 @@ interface SkillsManagementPanelContentProps
   pluginSources: PluginSourceOverview[];
   removingPluginSourceId: string | null;
   onUpdatePluginSource: (sourceUrl: string) => void | Promise<void>;
+  onTogglePluginSourceEnabled: (
+    sourceId: string,
+    enabled: boolean,
+  ) => void | Promise<void>;
   onRemovePluginSource: (sourceId: string) => void | Promise<void>;
   onRepoUrlChange: (value: string) => void;
   onRefresh: () => void;
@@ -84,6 +88,7 @@ export function SkillsManagementPanelContent({
   pluginSources,
   removingPluginSourceId,
   onUpdatePluginSource,
+  onTogglePluginSourceEnabled,
   onRemovePluginSource,
   onRepoUrlChange,
   onRefresh,
@@ -269,6 +274,7 @@ export function SkillsManagementPanelContent({
         isBusy={isInstallingGithub || isInstallingLocal}
         removingId={removingPluginSourceId}
         onUpdate={onUpdatePluginSource}
+        onToggleEnabled={onTogglePluginSourceEnabled}
         onRemove={onRemovePluginSource}
       />
 

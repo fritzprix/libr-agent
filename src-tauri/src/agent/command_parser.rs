@@ -12,6 +12,14 @@ pub enum PluginCommand {
     Uninstall {
         target: String,
     },
+    /// Turn a session or global plugin on/off (#2927). No approval needed:
+    /// the files stay, so this is a state flag, not an install.
+    Enable {
+        target: String,
+    },
+    Disable {
+        target: String,
+    },
     List,
 }
 
@@ -68,6 +76,12 @@ impl Command {
                     "uninstall" if !arg.is_empty() => {
                         Some(Command::Plugin(PluginCommand::Uninstall { target: arg }))
                     }
+                    "enable" if !arg.is_empty() => {
+                        Some(Command::Plugin(PluginCommand::Enable { target: arg }))
+                    }
+                    "disable" if !arg.is_empty() => {
+                        Some(Command::Plugin(PluginCommand::Disable { target: arg }))
+                    }
                     _ => None,
                 }
             }
@@ -86,6 +100,8 @@ impl Command {
             },
             Command::Plugin(PluginCommand::Install { .. }) => "/plugin install".to_string(),
             Command::Plugin(PluginCommand::Uninstall { .. }) => "/plugin uninstall".to_string(),
+            Command::Plugin(PluginCommand::Enable { .. }) => "/plugin enable".to_string(),
+            Command::Plugin(PluginCommand::Disable { .. }) => "/plugin disable".to_string(),
             Command::Plugin(PluginCommand::List) => "/plugin list".to_string(),
         }
     }
@@ -114,6 +130,12 @@ impl Command {
             }
             Command::Plugin(PluginCommand::Uninstall { .. }) => {
                 "Remove a session plugin by git URL or name".to_string()
+            }
+            Command::Plugin(PluginCommand::Enable { .. }) => {
+                "Turn an installed plugin back on without downloading it again".to_string()
+            }
+            Command::Plugin(PluginCommand::Disable { .. }) => {
+                "Turn an installed plugin off but keep its files".to_string()
             }
             Command::Plugin(PluginCommand::List) => {
                 "List plugins active in this session (global or session)".to_string()

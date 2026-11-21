@@ -723,6 +723,8 @@ mod tests {
                 created_at: 0,
                 plugin: None,
                 hook_files: vec![],
+                enabled: true,
+                installed_commit: None,
             },
         )
         .unwrap();
@@ -750,6 +752,8 @@ mod tests {
                 created_at: 0,
                 plugin: None,
                 hook_files: vec![],
+                enabled: true,
+                installed_commit: None,
             },
         )
         .unwrap();
@@ -909,6 +913,8 @@ mod tests {
                     created_at: 0,
                     plugin: None,
                     hook_files: vec![],
+                    enabled: true,
+                    installed_commit: None,
                 },
             )
             .unwrap();
@@ -1117,6 +1123,8 @@ mod tests {
                 created_at: 0,
                 plugin: None,
                 hook_files: vec![],
+                enabled: true,
+                installed_commit: None,
             },
         )
         .unwrap();
@@ -1173,6 +1181,8 @@ mod tests {
                 created_at: 0,
                 plugin: None,
                 hook_files: vec!["custom-hooks/extra.json".to_string()],
+                enabled: true,
+                installed_commit: None,
             },
         )
         .unwrap();
@@ -1453,6 +1463,8 @@ mod tests {
                 created_at: 0,
                 plugin: None,
                 hook_files: vec![],
+                enabled: true,
+                installed_commit: None,
             },
         )
         .unwrap();
@@ -1496,6 +1508,8 @@ mod tests {
                 hook_files: vec![],
                 mcp_servers: vec![],
                 mcp_approved: false,
+                enabled: true,
+                installed_commit: None,
             },
         )
         .unwrap();
@@ -1612,6 +1626,8 @@ mod tests {
                 hook_files: vec![],
                 mcp_servers: vec![],
                 mcp_approved: false,
+                enabled: true,
+                installed_commit: None,
             },
         )
         .unwrap();

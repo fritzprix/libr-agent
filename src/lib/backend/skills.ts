@@ -111,6 +111,18 @@ export async function deletePluginSource(sourceId: string): Promise<void> {
   return safeInvoke<void>('delete_plugin_source', { sourceId });
 }
 
+/**
+ * Turn a global plugin on or off (#2927). Its files stay in place, so
+ * enabling again needs no download; an open session applies the change when
+ * it opens again or on `/reload`.
+ */
+export async function setPluginSourceEnabled(
+  sourceId: string,
+  enabled: boolean,
+): Promise<void> {
+  return safeInvoke<void>('set_plugin_source_enabled', { sourceId, enabled });
+}
+
 /** Previews a GitHub plugin install scoped to a single session. */
 export async function previewSessionPluginInstall(
   sessionId: string,

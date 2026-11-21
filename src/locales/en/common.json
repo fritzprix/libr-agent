@@ -934,7 +934,13 @@
       "agentWorkspaceGrantNote": "The workspace service includes file writes and shell execution.",
       "userConfigTitle": "Configuration this plugin asks for",
       "userConfigHint": "These values are given to the plugin when it runs. A sensitive value is stored in this computer's secure storage and is never shown again.",
-      "userConfigMissing": "Required: {{names}}"
+      "userConfigMissing": "Required: {{names}}",
+      "pluginDisabledBadge": "disabled",
+      "disablePlugin": "Disable plugin",
+      "enablePlugin": "Enable plugin",
+      "pluginDetails": "Details",
+      "pluginSourceEnabled": "Plugin enabled.",
+      "pluginSourceDisabled": "Plugin disabled. It stays installed; restart a session or type /reload to apply."
     },
     "dev": {
       "devOnly": "DEV ONLY",
@@ -1604,7 +1610,9 @@
         "hooksNotApproved": "not approved",
         "history": "Install history",
         "actionInstall": "Installed",
-        "actionUninstall": "Uninstalled"
+        "actionUninstall": "Uninstalled",
+        "disabled": "disabled",
+        "version": "Version"
       }
     },
     "panels": {

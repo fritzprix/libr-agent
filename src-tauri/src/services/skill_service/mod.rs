@@ -57,16 +57,19 @@ pub use plugin_options::{
     delete_sensitive_options, load_option_values as load_plugin_option_values, persist_options,
     read_saved_options, remove_saved_options, write_saved_options, SavedPluginOptions,
 };
-pub use plugin_sources::{delete_plugin_source, list_plugin_source_overviews};
+pub use plugin_sources::{
+    delete_plugin_source, disabled_global_plugin_source_ids, disabled_plugin_skill_names,
+    list_plugin_source_overviews, set_plugin_enabled, set_session_plugin_enabled,
+};
 pub use scanning::{
     copy_dir_recursive, get_skill_content, get_skill_content_from_roots, parse_skill_metadata,
     scan_skills_directory,
 };
 pub use session_plugins::{
     install_session_plugin, list_session_plugins, load_session_plugins,
-    preview_session_plugin_install, purge_session_plugin_state, uninstall_session_plugin,
-    PluginScope, SessionPluginAction, SessionPluginEntry, SessionPluginHistoryEntry,
-    SessionPluginsOverview,
+    preview_session_plugin_install, purge_session_plugin_state, set_plugin_enabled_by_target,
+    uninstall_session_plugin, PluginScope, SessionPluginAction, SessionPluginEntry,
+    SessionPluginHistoryEntry, SessionPluginsOverview,
 };
 
 pub(crate) use cache::scan_skills_internal_cached;

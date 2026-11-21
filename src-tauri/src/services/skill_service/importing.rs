@@ -1371,6 +1371,18 @@ fn install_plugin_source(
         .collect();
 
     let source_id = plugin_source_id(source_key);
+    // #2927: an update keeps the state the user chose; a fresh install starts
+    // in the manifest's `defaultEnabled` state (enabled when it says nothing).
+    let previous_enabled = crate::services::hooks::registry::get_source_in(plugins_dir, &source_id)
+        .ok()
+        .map(|record| record.manifest.enabled);
+    let enabled = previous_enabled.unwrap_or_else(|| {
+        manifest
+            .as_ref()
+            .map(PluginManifest::starts_enabled)
+            .unwrap_or(true)
+    });
+    let installed_commit = commit_from_archive_root(scan_root);
     let target = plugins_dir.join(&source_id);
     if target.exists() {
         fs::remove_dir_all(&target).map_err(|e| e.to_string())?;
@@ -1409,10 +1421,31 @@ fn install_plugin_source(
             hook_files: hook_file_paths,
             mcp_servers,
             mcp_approved,
+            enabled,
+            installed_commit,
         },
     )?;
 
     Ok(())
+}
+
+/// The commit GitHub put in a zipball root name (`<owner>-<repo>-<sha>`),
+/// when the archive carries one (#2927). A branch archive is named
+/// `<repo>-<branch>` and yields `None`. The plugin root is often the zipball
+/// root itself, so its own name is checked before its ancestors.
+fn commit_from_archive_root(scan_root: &Path) -> Option<String> {
+    for ancestor in scan_root.ancestors().take(3) {
+        let Some(name) = ancestor.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        let Some((_, sha)) = name.rsplit_once('-') else {
+            continue;
+        };
+        if sha.len() == 40 && sha.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Some(sha.to_ascii_lowercase());
+        }
+    }
+    None
 }
 
 pub(super) fn remove_skill_names_from_user_skills(
@@ -1440,6 +1473,32 @@ mod hook_preview_tests {
             format!("---\nname: {name}\ndescription: test\n---\n"),
         )
         .unwrap();
+    }
+
+    // #2927: GitHub serves an API zipball as `<owner>-<repo>-<sha>`, so the
+    // installed commit is readable from the archive root without a git call.
+    #[test]
+    fn installed_commit_reads_zipball_root_name() {
+        let sha = "0123456789abcdef0123456789abcdef01234567";
+        let dir = tempfile::tempdir().unwrap();
+        let zipball = dir.path().join(format!("acme-myrepo-{sha}"));
+        fs::create_dir_all(zipball.join("plugin")).unwrap();
+
+        assert_eq!(
+            commit_from_archive_root(&zipball).as_deref(),
+            Some(sha),
+            "the archive root is usually the plugin root itself"
+        );
+        assert_eq!(
+            commit_from_archive_root(&zipball.join("plugin")).as_deref(),
+            Some(sha),
+            "a nested plugin root still sees the archive root"
+        );
+        // Branch archives carry no commit, and neither does a plain checkout.
+        let branch = dir.path().join("myrepo-main");
+        fs::create_dir_all(&branch).unwrap();
+        assert_eq!(commit_from_archive_root(&branch), None);
+        assert_eq!(commit_from_archive_root(dir.path()), None);
     }
 
     #[test]

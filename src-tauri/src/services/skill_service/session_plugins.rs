@@ -75,6 +75,15 @@ pub struct SessionPluginEntry {
     pub skill_names: Vec<String>,
     pub hook_events: Vec<String>,
     pub hooks_approved: bool,
+    /// Whether the plugin is enabled (#2927). A disabled plugin is still
+    /// installed; it just contributes nothing to the session.
+    pub enabled: bool,
+    /// Manifest `version` from `.claude-plugin/plugin.json` (#2921).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    /// Source commit recorded at install (#2927), when it is known.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub commit: Option<String>,
 }
 
 /// Append-only record of a session install/uninstall.
@@ -526,11 +535,79 @@ fn entry_from_record(record: &PluginSourceRecord, scope: PluginScope) -> Session
             Vec::new()
         },
         hooks_approved: manifest.hooks_approved,
+        enabled: manifest.enabled,
+        version: manifest.plugin.as_ref().and_then(|p| p.version.clone()),
+        commit: manifest.installed_commit.clone(),
     }
 }
 
 fn normalize_url(url: &str) -> String {
     url.trim().trim_end_matches('/').to_ascii_lowercase()
+}
+
+/// Turn one plugin on or off by name, URL, or source id (#2927).
+///
+/// A session install is matched first (it is what `/plugin` manages), then a
+/// global install, so one command covers both scopes. The files stay on disk
+/// either way; the change applies when a session opens or on `/reload`
+/// (owner decision D5).
+pub fn set_plugin_enabled_by_target(
+    session_id: &str,
+    target: &str,
+    enabled: bool,
+) -> Result<SessionPluginEntry, String> {
+    let target = target.trim();
+    if target.is_empty() {
+        return Err("Specify a plugin name, git URL, or id".to_string());
+    }
+    let dirs = session_dirs(session_id)?;
+    let session_match = matching_records(&dirs.plugins, target)?;
+    if !session_match.is_empty() {
+        let record = single_match(session_match, target)?;
+        let saved = crate::services::hooks::registry::set_source_enabled_in(
+            &dirs.plugins,
+            &record.manifest.source_id,
+            enabled,
+        )?;
+        crate::services::hooks::clear_hook_context(session_id);
+        return Ok(entry_from_record(&saved, PluginScope::Session));
+    }
+    let global_dir = get_user_plugins_directory()?;
+    let global_match = matching_records(&global_dir, target)?;
+    if global_match.is_empty() {
+        return Err(format!(
+            "No plugin matching '{target}' is installed. Global plugins are managed under \
+             Extensions → Skills."
+        ));
+    }
+    let record = single_match(global_match, target)?;
+    crate::services::skill_service::set_plugin_enabled(&record.manifest.source_id, enabled)?;
+    let saved = get_source_in(&global_dir, &record.manifest.source_id).unwrap_or(record);
+    Ok(entry_from_record(&saved, PluginScope::Global))
+}
+
+fn matching_records(base: &Path, target: &str) -> Result<Vec<PluginSourceRecord>, String> {
+    Ok(list_sources_in(base)?
+        .into_iter()
+        .filter(|record| matches_target(record, target))
+        .collect())
+}
+
+fn single_match(
+    mut matches: Vec<PluginSourceRecord>,
+    target: &str,
+) -> Result<PluginSourceRecord, String> {
+    match matches.len() {
+        1 => Ok(matches.remove(0)),
+        _ => {
+            let urls = matches
+                .iter()
+                .map(|r| r.manifest.source_url.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            Err(format!("'{target}' is ambiguous: {urls}"))
+        }
+    }
 }
 
 fn matches_target(record: &PluginSourceRecord, target: &str) -> bool {
@@ -697,6 +774,8 @@ mod tests {
                 created_at: 1,
                 plugin: None,
                 hook_files: vec![],
+                enabled: true,
+                installed_commit: None,
             },
         )
         .unwrap();
@@ -778,6 +857,8 @@ mod tests {
                 created_at: 0,
                 plugin: None,
                 hook_files: vec![],
+                enabled: true,
+                installed_commit: None,
             },
             root_dir: PathBuf::new(),
         };
@@ -1034,6 +1115,7 @@ mod tests {
             hooks: None,
             mcp_servers: None,
             user_config,
+            default_enabled: None,
         }
     }
 

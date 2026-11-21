@@ -52,6 +52,12 @@ pub struct PluginSourceOverview {
     pub plugin_version: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plugin_description: Option<String>,
+    /// Whether the plugin is enabled (#2927). A disabled plugin keeps its
+    /// files and contributes no skills, hooks, commands, or MCP servers.
+    pub enabled: bool,
+    /// Source commit recorded at install (#2927), when GitHub exposed one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub installed_commit: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

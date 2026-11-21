@@ -665,6 +665,30 @@ pub async fn agent_execute_command(
                 message: format!("Removed session plugin {}.", removed.source_url),
             })
         }
+        Command::Plugin(PluginCommand::Enable { target }) => {
+            let entry = skill_service::set_plugin_enabled_by_target(&session_id, &target, true)?;
+            Ok(CommandResult {
+                success: true,
+                expanded_prompt: None,
+                message: format!(
+                    "Enabled {}. What the plugin provides applies when the session opens again; \
+                     type /reload to apply it now.",
+                    describe_plugin_entry(&entry)
+                ),
+            })
+        }
+        Command::Plugin(PluginCommand::Disable { target }) => {
+            let entry = skill_service::set_plugin_enabled_by_target(&session_id, &target, false)?;
+            Ok(CommandResult {
+                success: true,
+                expanded_prompt: None,
+                message: format!(
+                    "Disabled {}. It stays installed; its hooks and skills stop when the session \
+                     opens again. Type /reload to apply it now.",
+                    describe_plugin_entry(&entry)
+                ),
+            })
+        }
         Command::Plugin(PluginCommand::List) => {
             let overview = skill_service::list_session_plugins(&session_id)?;
             let message = if overview.active.is_empty() {
@@ -678,7 +702,16 @@ pub async fn agent_execute_command(
                             PluginScope::Global => "global",
                             PluginScope::Session => "session",
                         };
-                        format!("[{scope}] {}", plugin.source_url)
+                        let state = if plugin.enabled {
+                            "enabled"
+                        } else {
+                            "disabled"
+                        };
+                        format!(
+                            "[{scope}] {} ({state}, {})",
+                            plugin.source_url,
+                            describe_plugin_version(plugin)
+                        )
                     })
                     .collect::<Vec<_>>()
                     .join("\n")
@@ -689,6 +722,28 @@ pub async fn agent_execute_command(
                 message,
             })
         }
+    }
+}
+
+/// Name shown for one plugin in a command message (#2927).
+fn describe_plugin_entry(entry: &crate::services::skill_service::SessionPluginEntry) -> String {
+    format!(
+        "plugin {} ({})",
+        entry.source_url,
+        describe_plugin_version(entry)
+    )
+}
+
+/// Installed version, else the short source commit, else "version unknown"
+/// (#2927 acceptance: `/plugin list` shows version or commit).
+fn describe_plugin_version(entry: &crate::services::skill_service::SessionPluginEntry) -> String {
+    if let Some(version) = entry.version.as_deref() {
+        return format!("v{version}");
+    }
+    match entry.commit.as_deref() {
+        Some(commit) if commit.len() >= 7 => format!("commit {}", &commit[..7]),
+        Some(commit) => format!("commit {commit}"),
+        None => "version unknown".to_string(),
     }
 }
 

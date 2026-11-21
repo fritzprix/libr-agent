@@ -58,6 +58,22 @@ pub struct PluginSourceManifest {
     /// one-time approval, same gate as hooks).
     #[serde(default)]
     pub mcp_approved: bool,
+    /// Whether the plugin is enabled (#2927). A disabled plugin keeps its
+    /// files but contributes no skills, hooks, commands, or MCP servers.
+    /// Stores recorded before #2927 have no field and load as enabled, so an
+    /// upgrade never disables a working plugin.
+    #[serde(default = "enabled_by_default")]
+    pub enabled: bool,
+    /// The source commit the plugin was installed from (#2927), when it is
+    /// known: GitHub serves an API zipball as `<owner>-<repo>-<sha>`, so the
+    /// archive root name carries it. `None` for a branch archive or a store
+    /// recorded before #2927.
+    #[serde(default)]
+    pub installed_commit: Option<String>,
+}
+
+fn enabled_by_default() -> bool {
+    true
 }
 
 /// One plugin-declared MCP server as declared on disk (#2924). `entry` is
@@ -710,7 +726,7 @@ pub fn list_approved_sources_in(base: &Path) -> Vec<PluginSourceRecord> {
     list_sources_in(base)
         .unwrap_or_default()
         .into_iter()
-        .filter(|r| r.manifest.hooks_approved)
+        .filter(|r| r.manifest.hooks_approved && r.manifest.enabled)
         .collect()
 }
 
@@ -740,7 +756,7 @@ pub fn list_effective_approved_sources_in(
     out.extend(
         session_sources
             .into_iter()
-            .filter(|r| r.manifest.hooks_approved),
+            .filter(|r| r.manifest.hooks_approved && r.manifest.enabled),
     );
     out
 }
@@ -749,9 +765,25 @@ pub fn list_approved_plugin_roots() -> Vec<PathBuf> {
     list_sources()
         .unwrap_or_default()
         .into_iter()
-        .filter(|r| r.manifest.hooks_approved)
+        .filter(|r| r.manifest.hooks_approved && r.manifest.enabled)
         .map(|r| r.root_dir)
         .collect()
+}
+
+/// Turn one installed plugin on or off (#2927). The files stay in place, so
+/// enabling again needs no download; loaders read `manifest.enabled` and skip
+/// a disabled plugin. Returns the saved record.
+pub fn set_source_enabled_in(
+    base: &Path,
+    source_id: &str,
+    enabled: bool,
+) -> Result<PluginSourceRecord, String> {
+    let mut record = get_source_in(base, source_id)?;
+    if record.manifest.enabled == enabled {
+        return Ok(record);
+    }
+    record.manifest.enabled = enabled;
+    save_source_in(base, record.manifest)
 }
 
 #[cfg(test)]
@@ -797,6 +829,8 @@ mod tests {
                     license: None,
                     keywords: vec!["skills".to_string()],
                 }),
+                enabled: true,
+                installed_commit: None,
             },
         )
         .unwrap();
@@ -821,6 +855,65 @@ mod tests {
 
         let cfg = hook_config_for_record(&loaded).unwrap();
         assert!(cfg.events.contains_key(&HookEvent::SessionStart));
+    }
+
+    /// #2927: a disabled plugin keeps its files and approval record, but the
+    /// hook loaders skip it, and the flag round-trips through the store.
+    #[test]
+    fn disabled_source_is_skipped_by_hook_loaders() {
+        let base = tempfile::tempdir().unwrap();
+        let source_id = format!("plugin-{}", "1".repeat(16));
+        save_source_in(base.path(), test_manifest(&source_id, true)).unwrap();
+        assert_eq!(list_approved_sources_in(base.path()).len(), 1);
+
+        let disabled = set_source_enabled_in(base.path(), &source_id, false).unwrap();
+        assert!(!disabled.manifest.enabled);
+        assert!(
+            list_approved_sources_in(base.path()).is_empty(),
+            "a disabled plugin must contribute no hooks"
+        );
+
+        let still_stored = get_source_in(base.path(), &source_id).unwrap();
+        assert!(!still_stored.manifest.enabled);
+        assert!(
+            still_stored.manifest.hooks_approved,
+            "disabling keeps the one-time approval record"
+        );
+        assert!(
+            still_stored.root_dir.is_dir(),
+            "disabling keeps the installed files"
+        );
+
+        let enabled_again = set_source_enabled_in(base.path(), &source_id, true).unwrap();
+        assert!(enabled_again.manifest.enabled);
+        assert_eq!(list_approved_sources_in(base.path()).len(), 1);
+    }
+
+    /// #2927: a store recorded before the flag existed has no `enabled` key
+    /// and must load enabled, so an upgrade never silently disables a plugin.
+    #[test]
+    fn legacy_manifest_without_enabled_field_loads_enabled() {
+        let base = tempfile::tempdir().unwrap();
+        let source_id = format!("plugin-{}", "2".repeat(16));
+        let root = base.path().join(&source_id);
+        fs::create_dir_all(&root).unwrap();
+        fs::write(
+            root.join(MANIFEST_FILE),
+            format!(
+                r#"{{"source_url":"https://example.com/p","source_id":"{source_id}",
+                    "skill_names":["alpha"],"hooks":null,"hooks_approved":true,
+                    "approval_hashes":{{}},"created_at":0}}"#
+            ),
+        )
+        .unwrap();
+
+        let record = get_source_in(base.path(), &source_id).unwrap();
+        assert!(
+            record.manifest.enabled,
+            "pre-#2927 stores must load enabled"
+        );
+        assert_eq!(record.manifest.installed_commit, None);
+        assert_eq!(list_approved_sources_in(base.path()).len(), 1);
     }
 
     /// #2942 gatekeeper G1.4 fixtures: a manifest with optional inline
@@ -851,6 +944,8 @@ mod tests {
                 vec![]
             },
             mcp_approved: approved,
+            enabled: true,
+            installed_commit: None,
         }
     }
 

@@ -910,7 +910,13 @@
       "agentWorkspaceGrantNote": "workspace サービスにはファイル書き込みとシェル実行が含まれます。",
       "userConfigTitle": "このプラグインが求める設定",
       "userConfigHint": "これらの値はプラグインの実行時に渡されます。機密値はこのコンピューターの安全な保管場所に保存され、二度と表示されません。",
-      "userConfigMissing": "必須: {{names}}"
+      "userConfigMissing": "必須: {{names}}",
+      "pluginDisabledBadge": "無効",
+      "disablePlugin": "プラグインを無効にする",
+      "enablePlugin": "プラグインを有効にする",
+      "pluginDetails": "詳細",
+      "pluginSourceEnabled": "プラグインを有効にしました。",
+      "pluginSourceDisabled": "プラグインを無効にしました。インストールは残ります。セッションを開き直すか /reload を入力すると反映されます。"
     },
     "dev": {
       "devOnly": "開発専用",
@@ -1578,7 +1584,9 @@
         "hooksNotApproved": "未承認",
         "history": "インストール履歴",
         "actionInstall": "インストール",
-        "actionUninstall": "アンインストール"
+        "actionUninstall": "アンインストール",
+        "disabled": "無効",
+        "version": "バージョン"
       }
     },
     "panels": {

@@ -94,6 +94,16 @@ pub(super) fn skip_shadowed_plugin_server(
     shadowed_source_ids.contains(owner_source)
 }
 
+/// Whether a global plugin's MCP servers must not load for this session
+/// (#2927): the plugin is installed but disabled, so its servers stay out of
+/// every session until it is enabled again.
+pub(super) fn skip_disabled_plugin_server(
+    owner_source: &str,
+    disabled_source_ids: &HashSet<String>,
+) -> bool {
+    disabled_source_ids.contains(owner_source)
+}
+
 pub(super) async fn load_requested_server_configs(
     mcp_server_ids: &[String],
     tool_ids: &[String],
@@ -138,6 +148,9 @@ pub(super) async fn load_requested_server_configs(
                 .as_ref()
                 .map(|dir| session_store_source_ids(dir.as_path()))
                 .unwrap_or_default();
+            // #2927: a disabled global plugin contributes no MCP servers.
+            let disabled_source_ids =
+                crate::services::skill_service::disabled_global_plugin_source_ids();
 
             let mut taken_session_names = HashSet::new();
             for model in models {
@@ -146,6 +159,19 @@ pub(super) async fn load_requested_server_configs(
                 // shadowed their plugin, regardless of assistant binding.
                 let owner = plugin_source_of(&model.config);
                 let plugin_owned = owner.is_some();
+                let owner_source = owner
+                    .as_deref()
+                    .and_then(|o| o.strip_prefix(PLUGIN_SOURCE_PREFIX))
+                    .unwrap_or_default();
+                if plugin_owned && skip_disabled_plugin_server(owner_source, &disabled_source_ids) {
+                    log::debug!(
+                        "Skipping plugin MCP server '{}' (ID: {}) - plugin {} is disabled",
+                        model.name,
+                        model.id,
+                        owner_source
+                    );
+                    continue;
+                }
                 if !mcp_server_ids.contains(&model.id) {
                     if !plugin_owned {
                         log::debug!(
@@ -155,10 +181,6 @@ pub(super) async fn load_requested_server_configs(
                         );
                         continue;
                     }
-                    let owner_source = owner
-                        .as_deref()
-                        .and_then(|o| o.strip_prefix(PLUGIN_SOURCE_PREFIX))
-                        .unwrap_or_default();
                     if skip_shadowed_plugin_server(owner_source, &shadowed_source_ids) {
                         log::debug!(
                             "Skipping plugin MCP server '{}' (ID: {}) - session installs plugin {}",

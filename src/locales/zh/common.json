@@ -910,7 +910,13 @@
       "agentWorkspaceGrantNote": "workspace 服务包含文件写入和 shell 执行。",
       "userConfigTitle": "此插件请求的配置",
       "userConfigHint": "这些值会在插件运行时提供给插件。敏感值保存在此计算机的安全存储中，不会再次显示。",
-      "userConfigMissing": "必填：{{names}}"
+      "userConfigMissing": "必填：{{names}}",
+      "pluginDisabledBadge": "已停用",
+      "disablePlugin": "停用插件",
+      "enablePlugin": "启用插件",
+      "pluginDetails": "详情",
+      "pluginSourceEnabled": "插件已启用。",
+      "pluginSourceDisabled": "插件已停用。它仍保持安装；重新打开会话或输入 /reload 后生效。"
     },
     "dev": {
       "devOnly": "仅限开发",
@@ -1578,7 +1584,9 @@
         "hooksNotApproved": "未批准",
         "history": "安装记录",
         "actionInstall": "已安装",
-        "actionUninstall": "已卸载"
+        "actionUninstall": "已卸载",
+        "disabled": "已停用",
+        "version": "版本"
       }
     },
     "panels": {

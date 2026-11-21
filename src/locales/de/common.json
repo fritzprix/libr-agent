@@ -910,7 +910,13 @@
       "agentWorkspaceGrantNote": "Der Workspace-Dienst umfasst Dateischreibzugriffe und Shell-Ausführung.",
       "userConfigTitle": "Konfiguration, die dieses Plugin anfordert",
       "userConfigHint": "Diese Werte erhält das Plugin bei der Ausführung. Ein sensibler Wert wird im sicheren Speicher dieses Computers abgelegt und nie wieder angezeigt.",
-      "userConfigMissing": "Erforderlich: {{names}}"
+      "userConfigMissing": "Erforderlich: {{names}}",
+      "pluginDisabledBadge": "deaktiviert",
+      "disablePlugin": "Plugin deaktivieren",
+      "enablePlugin": "Plugin aktivieren",
+      "pluginDetails": "Details",
+      "pluginSourceEnabled": "Plugin aktiviert.",
+      "pluginSourceDisabled": "Plugin deaktiviert. Es bleibt installiert; starte eine Sitzung neu oder tippe /reload, um es anzuwenden."
     },
     "dev": {
       "devOnly": "NUR ENTWICKLUNG",
@@ -1578,7 +1584,9 @@
         "hooksNotApproved": "nicht genehmigt",
         "history": "Installationsverlauf",
         "actionInstall": "Installiert",
-        "actionUninstall": "Deinstalliert"
+        "actionUninstall": "Deinstalliert",
+        "disabled": "deaktiviert",
+        "version": "Version"
       }
     },
     "panels": {
