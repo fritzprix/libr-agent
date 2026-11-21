@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { SkillsListModal } from '@/features/settings/components/SkillsListModal';
 import { cn } from '@/lib/utils';
+import { PluginUpdateNoticeDialog } from './components/PluginUpdateNoticeDialog';
 import { SkillsConflictDialog } from './components/SkillsConflictDialog';
 import { SkillsManagementPanelContent } from './components/SkillsManagementPanelContent';
 import { SkillsResetDialog } from './components/SkillsResetDialog';
@@ -46,10 +47,14 @@ function SkillsManagementPanelComponent({
     setPendingApproveHooks,
     setPendingPluginOption,
     handleReinstallPluginSource,
+    confirmPluginUpdate,
     handleTogglePluginSourceEnabled,
     handleDeletePluginSource,
     handleDeleteUserSkill,
     handleResetUserSkills,
+    pendingUpdateUrl,
+    setPendingUpdateUrl,
+    updatesAvailable,
   } = useSkillsManagementPanel();
 
   return (
@@ -69,6 +74,7 @@ function SkillsManagementPanelComponent({
         isInstallingLocal={isInstallingLocal}
         isResettingUserSkills={isResettingUserSkills}
         pluginSources={pluginSources}
+        updatesAvailable={updatesAvailable}
         removingPluginSourceId={isDeletingSkill}
         onUpdatePluginSource={(url) => void handleReinstallPluginSource(url)}
         onTogglePluginSourceEnabled={(id, enabled) =>
@@ -108,6 +114,17 @@ function SkillsManagementPanelComponent({
         onUserConfigChange={setPendingPluginOption}
         onConfirm={confirmPendingInstall}
         onConfirmWithoutHooks={confirmPendingInstallWithoutHooks}
+      />
+
+      <PluginUpdateNoticeDialog
+        pendingUpdateUrl={pendingUpdateUrl}
+        isBusy={isInstallingGithub || isInstallingLocal}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingUpdateUrl(null);
+          }
+        }}
+        onAgree={confirmPluginUpdate}
       />
 
       <SkillsResetDialog

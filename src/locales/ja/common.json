@@ -912,11 +912,19 @@
       "userConfigHint": "これらの値はプラグインの実行時に渡されます。機密値はこのコンピューターの安全な保管場所に保存され、二度と表示されません。",
       "userConfigMissing": "必須: {{names}}",
       "pluginDisabledBadge": "無効",
+      "pluginUpdateAria": "プラグインを更新",
+      "pluginOwnedBadge": "プラグイン",
+      "pluginOwnedTooltip": "プラグインがインストールしたスキルです。削除するにはプラグインを削除してください。",
       "disablePlugin": "プラグインを無効にする",
       "enablePlugin": "プラグインを有効にする",
       "pluginDetails": "詳細",
       "pluginSourceEnabled": "プラグインを有効にしました。",
-      "pluginSourceDisabled": "プラグインを無効にしました。インストールは残ります。セッションを開き直すか /reload を入力すると反映されます。"
+      "pluginSourceDisabled": "プラグインを無効にしました。インストールは残ります。セッションを開き直すか /reload を入力すると反映されます。",
+      "pluginUpdateNoticeTitle": "このプラグインを更新しますか？",
+      "pluginUpdateNoticeBody": "更新はプラグインを再ダウンロードします。プラグインのMCPサーバーとフックが変わる可能性があり、それらはあなたのマシンでコードを実行できます。同意すると、変更されたMCPサーバーとフックを含む更新全体を承認します。",
+      "pluginUpdateAgree": "同意して更新",
+      "pluginUpdateAvailable": "更新あり",
+      "pluginUpdatedReload": "プラグインを更新しました。セッションを再度開いたときに適用されます。今すぐ適用するには /reload を入力してください。"
     },
     "dev": {
       "devOnly": "開発専用",

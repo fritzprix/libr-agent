@@ -4,7 +4,7 @@ use super::contracts::{
     PluginManifestSummary, PreparedSkillImport, SkillImportCandidate, SkillImportConflict,
     SkillImportKind, SkillImportPreview, SkillImportResult, SkillMetadata,
     GITHUB_DOWNLOAD_CONNECT_TIMEOUT_SECS, GITHUB_DOWNLOAD_TIMEOUT_SECS, MAX_GITHUB_ARCHIVE_BYTES,
-    SKILL_FILE_NAME,
+    PLUGIN_SKILL_OWNER_FILE, SKILL_FILE_NAME,
 };
 use super::directories::{
     get_assistant_skills_directory, get_system_skills_directory, get_user_skills_directory,
@@ -169,6 +169,16 @@ impl Drop for SkillCacheInvalidationGuard {
 
 pub async fn delete_user_skill(skill_name: String) -> Result<String, String> {
     let user_dir = get_user_skills_directory()?;
+    // #2927 D2: a plugin-owned skill is read-only for the user. It goes only
+    // with its plugin, so a lone delete is rejected with the owner named.
+    if let Some(root) = find_skill_root_by_name(&user_dir, &skill_name)? {
+        if let Some(owner) = read_skill_owner_marker(&root) {
+            return Err(format!(
+                "Skill '{skill_name}' is owned by plugin {owner}. Disable or uninstall the \
+                 plugin to remove it."
+            ));
+        }
+    }
     invalidate_skill_cache_after_success(remove_skill_name_from_directory(&user_dir, &skill_name))
         .map(|_| format!("Successfully deleted user skill '{}'", skill_name))
 }
@@ -213,6 +223,10 @@ pub async fn copy_global_to_assistant(
     let storage_name = skill_storage_directory_name(&source_skill.name)?;
     let target_path = assistant_skills_dir.join(storage_name);
     invalidate_skill_cache_after_success(copy_dir_recursive(&source_root, &target_path))?;
+    // #2927 D2: a copy into an assistant is the user's own skill; the
+    // plugin-owner marker must not travel with it, or the assistant copy
+    // would inherit the plugin's read-only rule.
+    let _ = fs::remove_file(target_path.join(PLUGIN_SKILL_OWNER_FILE));
 
     Ok(format!(
         "Successfully copied skill '{}' to assistant '{}'",
@@ -258,7 +272,7 @@ pub async fn import_assistant_skills(
 ) -> Result<String, String> {
     let assistant_skills_dir = get_assistant_skills_directory(&assistant_id)?;
     let prepared = prepare_local_skill_import(file_path).await?;
-    let result = install_prepared_skills_to_directory(&prepared, assistant_skills_dir, true)?;
+    let result = install_prepared_skills_to_directory(&prepared, assistant_skills_dir, true, None)?;
     Ok(format!(
         "Successfully imported {} skills",
         result.imported_names.len()
@@ -653,6 +667,11 @@ pub(super) struct ImportTarget {
     /// Record a plugin-source manifest even for hook-less skill bundles, so
     /// the install is listable and removable (session-scoped installs).
     pub(super) always_record_source: bool,
+    /// Source id of the plugin whose skills are being installed (#2927 D2).
+    /// When set, every installed skill directory gets the plugin-owner
+    /// marker, and overwriting a skill owned by a **different** plugin is
+    /// rejected. `None` for user imports, which can never own skills.
+    pub(super) owner_source_id: Option<String>,
 }
 
 async fn install_user_prepared_skills(
@@ -663,10 +682,15 @@ async fn install_user_prepared_skills(
     approve_hooks: bool,
     plugin_options: BTreeMap<String, String>,
 ) -> Result<SkillImportResult, String> {
+    // #2927 D2: only a plugin install owns its skills; a plain skill-bundle
+    // import into user storage stays user-owned.
+    let owner_source_id =
+        (preview.kind == SkillImportKind::Plugin).then(|| plugin_source_id(&prepared.source_key));
     let target = ImportTarget {
         skills_dir: get_user_skills_directory()?,
         plugins_dir: get_user_plugins_directory()?,
         always_record_source: false,
+        owner_source_id,
     };
     // #2926: check the values the user entered before anything is written, so a
     // missing required option does not leave a half-installed plugin behind.
@@ -880,8 +904,12 @@ pub(super) fn install_prepared_import(
         source_key: source_key.clone(),
         discovered_skills: selected_skills,
     };
-    let mut result =
-        install_prepared_skills_to_directory(&prepared, target.skills_dir, overwrite_existing)?;
+    let mut result = install_prepared_skills_to_directory(
+        &prepared,
+        target.skills_dir,
+        overwrite_existing,
+        target.owner_source_id.as_deref(),
+    )?;
 
     if preview.kind == SkillImportKind::Plugin || target.always_record_source {
         install_plugin_source(
@@ -911,10 +939,17 @@ pub(super) fn install_prepared_import(
 
 /// Borrows `prepared` so the caller keeps its staging temp dir alive until
 /// follow-up steps (e.g. copying the plugin source) are done.
+///
+/// `owner` (#2927 D2) is the source id of a plugin whose skills are being
+/// installed. Every copied skill directory then carries the plugin-owner
+/// marker, overwriting a skill owned by a **different** plugin is rejected,
+/// and re-installing the same plugin (an update) may replace its own skills.
+/// `None` means a user import: plugin-owned skills are never overwritten.
 fn install_prepared_skills_to_directory(
     prepared: &PreparedSkillImport,
     target_dir: PathBuf,
     overwrite_existing: bool,
+    owner: Option<&str>,
 ) -> Result<SkillImportResult, String> {
     fs::create_dir_all(&target_dir).map_err(|error| error.to_string())?;
 
@@ -932,6 +967,7 @@ fn install_prepared_skills_to_directory(
                     skill.metadata.name
                 ));
             }
+            check_overwrite_allowed(&existing_root, &skill.metadata.name, owner)?;
             fs::remove_dir_all(existing_root).map_err(|error| error.to_string())?;
             cache_invalidation_guard.mark_mutated();
             overwritten_names.push(skill.metadata.name.clone());
@@ -945,11 +981,15 @@ fn install_prepared_skills_to_directory(
                     target_path.display()
                 ));
             }
+            check_overwrite_allowed(&target_path, &skill.metadata.name, owner)?;
             fs::remove_dir_all(&target_path).map_err(|error| error.to_string())?;
             cache_invalidation_guard.mark_mutated();
         }
 
         copy_dir_recursive(&skill.root_dir, &target_path)?;
+        if let Some(owner) = owner {
+            write_skill_owner_marker(&target_path, owner)?;
+        }
         cache_invalidation_guard.mark_mutated();
         imported_names.push(skill.metadata.name.clone());
     }
@@ -960,6 +1000,45 @@ fn install_prepared_skills_to_directory(
         skipped_names: Vec::new(),
         warnings: Vec::new(),
     })
+}
+
+/// Write the plugin-owner marker (#2927 D2) into a freshly installed skill
+/// directory. A failure is fatal for the install: without the marker the
+/// skill is unprotected, and uninstall would fall back to name matching.
+pub(super) fn write_skill_owner_marker(skill_dir: &Path, source_id: &str) -> Result<(), String> {
+    fs::write(skill_dir.join(PLUGIN_SKILL_OWNER_FILE), source_id).map_err(|error| {
+        format!(
+            "write plugin-owner marker in {}: {error}",
+            skill_dir.display()
+        )
+    })
+}
+
+/// Read the plugin-owner marker of a skill directory (#2927 D2). `None` when
+/// the skill is not plugin-owned (no marker, or an unreadable one).
+pub(super) fn read_skill_owner_marker(skill_dir: &Path) -> Option<String> {
+    let raw = fs::read_to_string(skill_dir.join(PLUGIN_SKILL_OWNER_FILE)).ok()?;
+    let owner = raw.trim().to_string();
+    (!owner.is_empty()).then_some(owner)
+}
+
+/// Reject overwriting a skill directory another plugin owns (#2927 D2). The
+/// owning plugin itself may re-install over its own skills (that is exactly
+/// what an update is), and a user-owned directory is always replaceable.
+fn check_overwrite_allowed(
+    existing_root: &Path,
+    skill_name: &str,
+    owner: Option<&str>,
+) -> Result<(), String> {
+    if let Some(existing_owner) = read_skill_owner_marker(existing_root) {
+        if Some(existing_owner.as_str()) != owner {
+            return Err(format!(
+                "Skill '{skill_name}' is owned by plugin {existing_owner}. Update or uninstall \
+                 that plugin instead of overwriting this skill."
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn discover_existing_skill_roots(root_path: &Path) -> Result<HashMap<String, PathBuf>, String> {
@@ -1451,9 +1530,22 @@ fn commit_from_archive_root(scan_root: &Path) -> Option<String> {
 pub(super) fn remove_skill_names_from_user_skills(
     user_dir: &Path,
     skill_names: &[String],
+    plugin_id: &str,
 ) -> Result<(), String> {
     let mut cache_invalidation_guard = SkillCacheInvalidationGuard::new();
     for name in skill_names {
+        // #2927 D2: a skill whose directory carries a marker for a *different*
+        // plugin must survive this uninstall. A markerless directory is a
+        // pre-#2927 plugin skill (sanctioned imports can no longer overwrite
+        // a plugin-owned skill), so it still goes by name — which is exactly
+        // what those installs could only ever have had.
+        if let Some(root) = find_skill_root_by_name(user_dir, name)? {
+            if let Some(owner) = read_skill_owner_marker(&root) {
+                if owner != plugin_id {
+                    continue;
+                }
+            }
+        }
         if remove_skill_name_from_directory(user_dir, name).is_ok() {
             cache_invalidation_guard.mark_mutated();
         }
@@ -1473,6 +1565,113 @@ mod hook_preview_tests {
             format!("---\nname: {name}\ndescription: test\n---\n"),
         )
         .unwrap();
+    }
+
+    // #2927 D2: a plugin install marks every skill directory it writes, the
+    // owning plugin (an update) may replace its own, and neither another
+    // plugin nor a user import may overwrite a marked skill.
+    #[test]
+    fn plugin_install_marks_skills_and_only_the_owner_may_replace() {
+        let temp = tempfile::tempdir().unwrap();
+        let staging = temp.path().join("staging");
+        let staged = staging.join("alpha");
+        write_valid_skill(&staged, "alpha");
+        let prepared = PreparedSkillImport {
+            _temp_dir: temp,
+            scan_root: staging.clone(),
+            source_key: "https://github.com/acme/plugin".to_string(),
+            discovered_skills: vec![DiscoveredSkillRoot {
+                metadata: parse_skill_metadata(&staged.join(SKILL_FILE_NAME)).unwrap(),
+                root_dir: staged,
+            }],
+        };
+        let target = tempfile::tempdir().unwrap();
+
+        install_prepared_skills_to_directory(
+            &prepared,
+            target.path().to_path_buf(),
+            false,
+            Some("plugin-acme"),
+        )
+        .unwrap();
+        // Skills install under their storage name (`<slug>-<digest>`), not
+        // the bare skill name.
+        let installed = target
+            .path()
+            .join(skill_storage_directory_name("alpha").unwrap());
+        assert_eq!(
+            read_skill_owner_marker(&installed).as_deref(),
+            Some("plugin-acme"),
+            "every skill the plugin installs carries its owner marker"
+        );
+
+        install_prepared_skills_to_directory(
+            &prepared,
+            target.path().to_path_buf(),
+            true,
+            Some("plugin-acme"),
+        )
+        .unwrap();
+        assert_eq!(
+            read_skill_owner_marker(&installed).as_deref(),
+            Some("plugin-acme"),
+            "an update replaces the plugin's own skill and re-marks it"
+        );
+
+        for intruder in [Some("plugin-other"), None] {
+            let error = install_prepared_skills_to_directory(
+                &prepared,
+                target.path().to_path_buf(),
+                true,
+                intruder,
+            )
+            .unwrap_err();
+            assert!(error.contains("owned by plugin plugin-acme"), "{error}");
+        }
+        assert_eq!(
+            read_skill_owner_marker(&installed).as_deref(),
+            Some("plugin-acme"),
+            "rejected installs must leave the owned skill intact"
+        );
+    }
+
+    // #2927 D2: uninstall removes the plugin's own skills (and pre-#2927
+    // markerless ones) but never a skill marked for another plugin.
+    #[test]
+    fn uninstall_removes_own_skills_but_not_other_owners() {
+        let user = tempfile::tempdir().unwrap();
+
+        let mine = user.path().join("mine");
+        write_valid_skill(&mine, "mine");
+        write_skill_owner_marker(&mine, "plugin-mine").unwrap();
+
+        let theirs = user.path().join("theirs");
+        write_valid_skill(&theirs, "theirs");
+        write_skill_owner_marker(&theirs, "plugin-theirs").unwrap();
+
+        let legacy = user.path().join("legacy");
+        write_valid_skill(&legacy, "legacy");
+
+        remove_skill_names_from_user_skills(
+            user.path(),
+            &[
+                "mine".to_string(),
+                "theirs".to_string(),
+                "legacy".to_string(),
+            ],
+            "plugin-mine",
+        )
+        .unwrap();
+
+        assert!(!mine.exists(), "the plugin's own skills go with it");
+        assert!(
+            theirs.exists(),
+            "a skill another plugin owns must survive this uninstall"
+        );
+        assert!(
+            !legacy.exists(),
+            "a markerless skill is a pre-#2927 install and goes by name"
+        );
     }
 
     // #2927: GitHub serves an API zipball as `<owner>-<repo>-<sha>`, so the
@@ -1740,6 +1939,7 @@ mod hook_preview_tests {
                 alias_path: None,
                 source: None,
                 origin: None,
+                plugin_owner: None,
             },
             root_dir,
         }
@@ -1803,6 +2003,7 @@ mod hook_preview_tests {
                     alias_path: None,
                     source: None,
                     origin: None,
+                    plugin_owner: None,
                 },
                 root_dir,
             }],

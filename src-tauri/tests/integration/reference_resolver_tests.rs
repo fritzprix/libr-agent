@@ -182,6 +182,7 @@ fn test_format_skill_reference_block_prefers_alias_when_available() {
         alias_path: Some("@system-skills/teamwork/SKILL.md".to_string()),
         source: Some("global".to_string()),
         origin: Some("system".to_string()),
+        plugin_owner: None,
     };
 
     let result = format_skill_reference_block(&skill, false);

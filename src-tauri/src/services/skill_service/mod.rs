@@ -19,8 +19,8 @@ pub use cache::{
 };
 pub use contracts::{
     GitHubRepoSpec, HookPreviewEntry, HookPreviewExecutionStatus, ManagedSkillsOverview,
-    PluginSourceOverview, SkillAliasRoot, SkillImportCandidate, SkillImportConflict,
-    SkillImportKind, SkillImportPreview, SkillImportResult, SkillMetadata,
+    PluginSourceOverview, PluginUpdateStatus, SkillAliasRoot, SkillImportCandidate,
+    SkillImportConflict, SkillImportKind, SkillImportPreview, SkillImportResult, SkillMetadata,
     ASSISTANT_SKILLS_ALIAS_PREFIX, LEGACY_SYSTEM_SKILLS_DIR_NAME,
     MANAGED_SYSTEM_SKILLS_MANIFEST_FILE_NAME, SKILL_FILE_NAME, SYSTEM_SKILLS_ALIAS_PREFIX,
     SYSTEM_SKILLS_DIR_NAME, USER_SKILLS_ALIAS_PREFIX, USER_SKILLS_DIR_NAME,
@@ -58,8 +58,8 @@ pub use plugin_options::{
     read_saved_options, remove_saved_options, write_saved_options, SavedPluginOptions,
 };
 pub use plugin_sources::{
-    delete_plugin_source, disabled_global_plugin_source_ids, disabled_plugin_skill_names,
-    list_plugin_source_overviews, set_plugin_enabled,
+    check_plugin_source_updates, delete_plugin_source, disabled_global_plugin_source_ids,
+    disabled_plugin_skill_names, list_plugin_source_overviews, set_plugin_enabled,
 };
 pub use scanning::{
     copy_dir_recursive, get_skill_content, get_skill_content_from_roots, parse_skill_metadata,
@@ -67,9 +67,9 @@ pub use scanning::{
 };
 pub use session_plugins::{
     install_session_plugin, list_session_plugins, load_session_plugins,
-    preview_session_plugin_install, purge_session_plugin_state, set_plugin_enabled_by_target,
-    uninstall_session_plugin, PluginScope, SessionPluginAction, SessionPluginEntry,
-    SessionPluginHistoryEntry, SessionPluginsOverview,
+    preview_session_plugin_install, purge_session_plugin_state, resolve_plugin_by_target,
+    set_plugin_enabled_by_target, uninstall_session_plugin, PluginScope, SessionPluginAction,
+    SessionPluginEntry, SessionPluginHistoryEntry, SessionPluginsOverview,
 };
 
 pub(crate) use cache::scan_skills_internal_cached;

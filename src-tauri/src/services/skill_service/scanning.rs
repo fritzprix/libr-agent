@@ -1,10 +1,21 @@
-use super::contracts::{SkillFrontmatter, SkillMetadata, SKILL_FILE_NAME};
+use super::contracts::{SkillFrontmatter, SkillMetadata, PLUGIN_SKILL_OWNER_FILE, SKILL_FILE_NAME};
 use super::directories::{collect_allowed_skill_roots, resolve_skill_directories};
 use log::{info, warn};
 use std::ffi::OsStr;
 use std::fs::{self};
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
+
+/// Read the plugin-owner marker (#2927 D2) of the skill directory that
+/// contains `skill_md_path`. `None` when the skill is not plugin-owned or the
+/// marker is unreadable — an owner file that cannot be read must not make a
+/// working skill invisible.
+pub fn plugin_owner_of_skill_dir(skill_md_path: &Path) -> Option<String> {
+    let marker = skill_md_path.parent()?.join(PLUGIN_SKILL_OWNER_FILE);
+    let raw = fs::read_to_string(marker).ok()?;
+    let owner = raw.trim().to_string();
+    (!owner.is_empty()).then_some(owner)
+}
 
 pub async fn scan_skills_directory(directory: &Path) -> Result<Vec<SkillMetadata>, String> {
     scan_skills_internal(directory, None, None).await
@@ -38,6 +49,7 @@ pub(crate) async fn scan_skills_internal(
                     Ok(mut metadata) => {
                         metadata.source = source_tag_owned.clone();
                         metadata.origin = origin_tag_owned.clone();
+                        metadata.plugin_owner = plugin_owner_of_skill_dir(path);
                         skills.push(metadata);
                     }
                     Err(error) => {
@@ -82,6 +94,7 @@ pub fn parse_skill_metadata(path: &Path) -> Result<SkillMetadata, String> {
                 alias_path: None,
                 source: None,
                 origin: None,
+                plugin_owner: None,
             });
         }
     }

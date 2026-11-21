@@ -912,11 +912,19 @@
       "userConfigHint": "Estos valores se entregan al plugin cuando se ejecuta. Un valor sensible se guarda en el almacenamiento seguro de este equipo y nunca se vuelve a mostrar.",
       "userConfigMissing": "Obligatorio: {{names}}",
       "pluginDisabledBadge": "desactivado",
+      "pluginUpdateAria": "Actualizar complemento",
+      "pluginOwnedBadge": "complemento",
+      "pluginOwnedTooltip": "Instalado por un complemento. Elimine el complemento para borrarlo.",
       "disablePlugin": "Desactivar plugin",
       "enablePlugin": "Activar plugin",
       "pluginDetails": "Detalles",
       "pluginSourceEnabled": "Plugin activado.",
-      "pluginSourceDisabled": "Plugin desactivado. Sigue instalado; reinicia una sesión o escribe /reload para aplicarlo."
+      "pluginSourceDisabled": "Plugin desactivado. Sigue instalado; reinicia una sesión o escribe /reload para aplicarlo.",
+      "pluginUpdateNoticeTitle": "¿Actualizar este plugin?",
+      "pluginUpdateNoticeBody": "Una actualización vuelve a descargar el plugin. Puede cambiar los servidores MCP y los hooks del plugin, y estos pueden ejecutar código en tu equipo. Aceptar aprueba toda la actualización, incluidos los servidores MCP y hooks modificados.",
+      "pluginUpdateAgree": "Aceptar y actualizar",
+      "pluginUpdateAvailable": "actualización disponible",
+      "pluginUpdatedReload": "Plugin actualizado. Se aplica cuando se vuelva a abrir una sesión; escribe /reload para aplicarlo ahora."
     },
     "dev": {
       "devOnly": "SOLO DESARROLLO",

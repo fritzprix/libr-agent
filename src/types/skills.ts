@@ -27,6 +27,18 @@ export interface SkillMetadata {
    * - 'workspace': Workspace-local skill.
    */
   origin?: 'system' | 'user' | 'assistant' | 'workspace';
+  /**
+   * Source id of the plugin that owns this skill (#2927 D2). A plugin-owned
+   * skill is read-only: delete, update, and import-overwrite are rejected,
+   * and it is removed only with the plugin.
+   */
+  pluginOwner?: string;
+}
+
+/** Whether a global plugin has a newer source on GitHub (#2927 D6). */
+export interface PluginUpdateStatus {
+  sourceId: string;
+  updateAvailable: boolean;
 }
 
 export interface PluginSourceOverview {

@@ -198,6 +198,7 @@ mod tests {
             alias_path: Some("@system-skills/delegate/SKILL.md".to_string()),
             source: None,
             origin: None,
+            plugin_owner: None,
         };
 
         let output = format_skill_reference_block(&skill, false);
@@ -222,6 +223,7 @@ mod tests {
             alias_path: Some(alias_path.to_string()),
             source: None,
             origin: None,
+            plugin_owner: None,
         }
     }
 
