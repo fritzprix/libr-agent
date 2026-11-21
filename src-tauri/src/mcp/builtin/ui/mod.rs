@@ -51,6 +51,10 @@ impl UiServer {
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
         let args_str = args.get("args").and_then(|v| v.as_str()).unwrap_or("");
+        // Callers other than the identical-call loop guard (for example, the
+        // invalid tool-call arguments guard) give their own reason. When set,
+        // the card shows it instead of the identical-parameters wording.
+        let reason = non_empty_string_arg(&args, "reason");
 
         // Handlebars {{toolName}}/{{args}} HTML-escape once. Triple-stash {{{contextJson}}}
         // is raw — neutralize </script> breakouts from LLM-controlled strings.
@@ -70,6 +74,7 @@ impl UiServer {
             "toolName": tool_name,
             "repetitionCount": repetition_count,
             "args": args_str,
+            "reason": reason.unwrap_or(""),
             "contextJson": context_json_for_script,
         });
 
@@ -89,13 +94,9 @@ impl UiServer {
             }
         };
 
-        // Callers other than the identical-call loop guard (for example, the
-        // invalid tool-call arguments guard) give their own reason.
-        let warning_message = match args.get("reason").and_then(|v| v.as_str()) {
-            Some(reason) if !reason.trim().is_empty() => {
-                format!("⚠️ Circuit Breaker Triggered\n\n{}", reason)
-            }
-            _ => format!(
+        let warning_message = match reason {
+            Some(reason) => format!("⚠️ Circuit Breaker Triggered\n\n{}", reason),
+            None => format!(
                 "⚠️ Circuit Breaker Triggered\n\nThe tool \"{}\" has been called {} times consecutively with identical parameters.\n\nThis usually indicates the agent is stuck in a loop. Please review the situation and click Resume to continue.",
                 tool_name, repetition_count
             ),
@@ -477,6 +478,79 @@ mod tests {
                 _ => None,
             })
             .expect("warning text content")
+    }
+
+    fn embedded_html(result: MCPResult) -> String {
+        result
+            .content
+            .expect("content")
+            .into_iter()
+            .find_map(|item| match item {
+                MCPContent::Resource { resource, .. } => resource
+                    .get("text")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string),
+                _ => None,
+            })
+            .expect("embedded HTML resource")
+    }
+
+    #[test]
+    fn circuit_break_card_shows_reason_instead_of_loop_text() {
+        // The chat UI renders the HTML card, so the reason must be in the
+        // card, not only in the tool result text (#2955).
+        let html = embedded_html(
+            UiServer::new()
+                .circuit_break(json!({
+                    "toolName": "workspace__writeFile",
+                    "repetitionCount": 4,
+                    "args": "{\"path\": \"a",
+                    "reason": "The model sent invalid arguments for the tool \"workspace__writeFile\" in 4 replies in a row (truncated_tool_args_string).",
+                }))
+                .expect("resource response"),
+        );
+        assert!(html.contains("invalid arguments for the tool"));
+        assert!(html.contains("truncated_tool_args_string"));
+        assert!(!html.contains("identical\n        parameters"));
+        assert!(!html.contains("stuck in a loop"));
+    }
+
+    #[test]
+    fn circuit_break_card_keeps_loop_text_without_reason() {
+        for args in [
+            json!({ "toolName": "workspace__writeFile", "repetitionCount": 5, "args": "{}" }),
+            json!({
+                "toolName": "workspace__writeFile",
+                "repetitionCount": 5,
+                "args": "{}",
+                "reason": "   ",
+            }),
+        ] {
+            let html = embedded_html(
+                UiServer::new()
+                    .circuit_break(args)
+                    .expect("resource response"),
+            );
+            assert!(html.contains("identical\n        parameters"));
+            assert!(html.contains("stuck in a loop"));
+        }
+    }
+
+    #[test]
+    fn circuit_break_card_html_escapes_reason() {
+        // reason is LLM/caller-controlled; the card must not render it raw.
+        let html = embedded_html(
+            UiServer::new()
+                .circuit_break(json!({
+                    "toolName": "x__y",
+                    "repetitionCount": 4,
+                    "args": "{}",
+                    "reason": "bad <script>alert(1)</script> args",
+                }))
+                .expect("resource response"),
+        );
+        assert!(html.contains("&lt;script&gt;"));
+        assert!(!html.contains("<script>alert(1)</script>"));
     }
 
     #[test]
