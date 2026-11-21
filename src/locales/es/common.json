@@ -907,7 +907,10 @@
       "agentGrantedServices": "Servicios concedidos: {{services}}",
       "agentGrantsAllServices": "Sin línea tools: se concederán todos los servicios de LibrAgent.",
       "agentGrantsNoServices": "No se concede ningún servicio (ningún tool tiene mapeo).",
-      "agentWorkspaceGrantNote": "El servicio workspace incluye escritura de archivos y ejecución de shell."
+      "agentWorkspaceGrantNote": "El servicio workspace incluye escritura de archivos y ejecución de shell.",
+      "userConfigTitle": "Configuración que solicita este plugin",
+      "userConfigHint": "Estos valores se entregan al plugin cuando se ejecuta. Un valor sensible se guarda en el almacenamiento seguro de este equipo y nunca se vuelve a mostrar.",
+      "userConfigMissing": "Obligatorio: {{names}}"
     },
     "dev": {
       "devOnly": "SOLO DESARROLLO",

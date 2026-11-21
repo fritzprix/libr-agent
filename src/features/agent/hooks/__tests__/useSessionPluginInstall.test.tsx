@@ -77,7 +77,14 @@ describe('useSessionPluginInstall', () => {
     });
 
     expect(consumed).toBe(true);
-    expect(mockState.install).toHaveBeenCalledWith('s1', URL, false, [], false);
+    expect(mockState.install).toHaveBeenCalledWith(
+      's1',
+      URL,
+      false,
+      [],
+      false,
+      {},
+    );
     expect(result.current.dialogProps.pendingInstall).toBeNull();
   });
 
@@ -110,7 +117,14 @@ describe('useSessionPluginInstall', () => {
       await result.current.dialogProps.onConfirm();
     });
 
-    expect(mockState.install).toHaveBeenCalledWith('s1', URL, false, [], true);
+    expect(mockState.install).toHaveBeenCalledWith(
+      's1',
+      URL,
+      false,
+      [],
+      true,
+      {},
+    );
     expect(result.current.dialogProps.pendingInstall).toBeNull();
   });
 
@@ -141,6 +155,7 @@ describe('useSessionPluginInstall', () => {
       false,
       ['sys', 'mine'],
       false,
+      {},
     );
   });
 

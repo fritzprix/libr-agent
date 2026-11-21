@@ -111,6 +111,22 @@ export interface SkillImportPreview {
   pluginAgents?: PluginAgentPreview[];
   /** Present when the source carried a `.claude-plugin/plugin.json`. */
   pluginManifest?: PluginManifestSummary;
+  /** `userConfig` options the plugin asks for (#2926). */
+  userConfig?: UserConfigPreviewEntry[];
+}
+
+/** One `userConfig` option asked for at install (#2926). Mirrors Rust
+ *  `UserConfigPreviewEntry`. */
+export interface UserConfigPreviewEntry {
+  key: string;
+  title: string;
+  description?: string;
+  /** 'string' | 'number' | 'boolean' | 'directory' | 'file' */
+  valueType: string;
+  /** Masked input; stored in secure storage, never in a plain file. */
+  sensitive: boolean;
+  required: boolean;
+  default?: string;
 }
 
 /** One `agents/*.md` subagent definition shown in the install preview

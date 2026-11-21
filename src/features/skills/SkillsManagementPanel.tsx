@@ -44,6 +44,7 @@ function SkillsManagementPanelComponent({
     confirmPendingInstallWithoutHooks,
     togglePendingOverwrite,
     setPendingApproveHooks,
+    setPendingPluginOption,
     handleReinstallPluginSource,
     handleDeletePluginSource,
     handleDeleteUserSkill,
@@ -100,6 +101,7 @@ function SkillsManagementPanelComponent({
         }}
         onToggleOverwrite={togglePendingOverwrite}
         onApproveHooksChange={setPendingApproveHooks}
+        onUserConfigChange={setPendingPluginOption}
         onConfirm={confirmPendingInstall}
         onConfirmWithoutHooks={confirmPendingInstallWithoutHooks}
       />

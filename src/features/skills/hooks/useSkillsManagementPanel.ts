@@ -17,6 +17,7 @@ import { getLogger } from '@/lib/logger';
 import { useSkillsDirectory } from '@/features/settings/hooks/useSkillsDirectory';
 import { isScopedSkillsKey } from '@/features/agent/hooks/useScopedSkills';
 import {
+  defaultPluginOptions,
   formatImportSuccess,
   getSkillsStatusMessage,
   notifyImportWarnings,
@@ -86,6 +87,7 @@ export function useSkillsManagementPanel() {
       sourceValue: string,
       overwriteNames: string[],
       approveHooks: boolean,
+      pluginOptions: Record<string, string> = {},
       extraExcludedNames: string[] = [],
     ) => {
       const userConflictNames = new Set(
@@ -114,6 +116,7 @@ export function useSkillsManagementPanel() {
             shouldOverwrite,
             excludedNames,
             approveHooks,
+            pluginOptions,
           );
     },
     [pendingInstallSystemConflicts, pendingInstallUserConflicts],
@@ -167,6 +170,7 @@ export function useSkillsManagementPanel() {
                 (conflict) => conflict.name,
               ),
               approveHooks: false,
+              pluginOptions: defaultPluginOptions(preview),
             });
             return;
           }
@@ -250,6 +254,7 @@ export function useSkillsManagementPanel() {
             (conflict) => conflict.name,
           ),
           approveHooks: false,
+          pluginOptions: defaultPluginOptions(preview),
         });
         return;
       }
@@ -298,6 +303,7 @@ export function useSkillsManagementPanel() {
         sourceValue,
         pendingInstall.selectedOverwriteNames,
         pendingInstall.approveHooks,
+        pendingInstall.pluginOptions,
       );
       toast.success(
         formatImportSuccess(
@@ -345,6 +351,19 @@ export function useSkillsManagementPanel() {
     );
   }, []);
 
+  /** Record one `userConfig` answer (#2926). A sensitive answer stays in this
+   *  in-memory dialog state and is sent straight to secure storage. */
+  const setPendingPluginOption = useCallback((key: string, value: string) => {
+    setPendingInstall((current) =>
+      current
+        ? {
+            ...current,
+            pluginOptions: { ...current.pluginOptions, [key]: value },
+          }
+        : current,
+    );
+  }, []);
+
   const confirmPendingInstallWithoutHooks = useCallback(async () => {
     if (!pendingInstall) {
       return;
@@ -360,6 +379,7 @@ export function useSkillsManagementPanel() {
         sourceValue,
         pendingInstall.selectedOverwriteNames,
         false,
+        pendingInstall.pluginOptions,
       );
       toast.success(
         formatImportSuccess(
@@ -391,7 +411,10 @@ export function useSkillsManagementPanel() {
       }
       setIsInstallingGithub(true);
       const toastId = toast.loading(
-        t('settings.skills.githubInspecting', 'Inspecting GitHub repository...'),
+        t(
+          'settings.skills.githubInspecting',
+          'Inspecting GitHub repository...',
+        ),
       );
       try {
         const preview = await previewGitHubSkillInstall(sourceUrl);
@@ -406,6 +429,7 @@ export function useSkillsManagementPanel() {
             preview,
             selectedOverwriteNames: userConflicts.map((c) => c.name),
             approveHooks: false,
+            pluginOptions: defaultPluginOptions(preview),
           });
           return;
         }
@@ -417,7 +441,9 @@ export function useSkillsManagementPanel() {
             .map((c) => c.name),
           false,
         );
-        toast.success(t('settings.skills.pluginSourceUpdated', 'Plugin updated.'));
+        toast.success(
+          t('settings.skills.pluginSourceUpdated', 'Plugin updated.'),
+        );
         await refresh();
       } catch (error) {
         logger.error('Failed to update plugin source', error);
@@ -536,6 +562,7 @@ export function useSkillsManagementPanel() {
     confirmPendingInstall,
     togglePendingOverwrite,
     setPendingApproveHooks,
+    setPendingPluginOption,
     confirmPendingInstallWithoutHooks,
     handleReinstallPluginSource,
     handleDeletePluginSource,

@@ -92,12 +92,14 @@ export async function installGitHubSkills(
   overwriteExisting: boolean,
   excludedSkillNames?: string[],
   approveHooks?: boolean,
+  pluginOptions?: Record<string, string>,
 ): Promise<SkillImportResult> {
   return safeInvoke<SkillImportResult>('install_github_skills', {
     repoUrl,
     overwriteExisting,
     excludedSkillNames,
     approveHooks,
+    pluginOptions,
   });
 }
 
@@ -127,6 +129,7 @@ export async function installSessionPlugin(
   overwriteExisting: boolean,
   excludedSkillNames?: string[],
   approveHooks?: boolean,
+  pluginOptions?: Record<string, string>,
 ): Promise<SkillImportResult> {
   return safeInvoke<SkillImportResult>('install_session_plugin', {
     sessionId,
@@ -134,6 +137,7 @@ export async function installSessionPlugin(
     overwriteExisting,
     excludedSkillNames,
     approveHooks,
+    pluginOptions,
   });
 }
 

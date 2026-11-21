@@ -8,6 +8,7 @@ mod plugin_agents;
 mod plugin_commands;
 mod plugin_manifest;
 mod plugin_mcp;
+mod plugin_options;
 mod plugin_sources;
 mod scanning;
 mod session_plugins;
@@ -50,6 +51,11 @@ pub use plugin_agents::{
 };
 pub use plugin_commands::{
     expand_plugin_command, list_plugin_commands, plugin_command_names, PluginCommandInfo,
+};
+pub use plugin_manifest::{option_env_name, resolve_user_config_values, UserConfigSpec};
+pub use plugin_options::{
+    delete_sensitive_options, load_option_values as load_plugin_option_values, persist_options,
+    read_saved_options, remove_saved_options, write_saved_options, SavedPluginOptions,
 };
 pub use plugin_sources::{delete_plugin_source, list_plugin_source_overviews};
 pub use scanning::{

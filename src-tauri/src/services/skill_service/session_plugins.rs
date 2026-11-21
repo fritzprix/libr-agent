@@ -43,7 +43,7 @@ use crate::services::hooks::registry::{
 use crate::services::hooks::{clear_hook_context, spawn_session_start, SessionStartSource};
 use log::warn;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -171,7 +171,9 @@ pub async fn install_session_plugin(
     overwrite_existing: bool,
     excluded_skill_names: Option<Vec<String>>,
     approve_hooks: Option<bool>,
+    plugin_options: Option<BTreeMap<String, String>>,
 ) -> Result<SkillImportResult, String> {
+    let plugin_options = plugin_options.unwrap_or_default();
     let dirs = session_dirs(&session_id)?;
     let mut prepared = prepare_github_skill_import(repo_url).await?;
     let same_source = session_same_source_skill_names(&dirs.plugins, &prepared.source_key);
@@ -184,6 +186,11 @@ pub async fn install_session_plugin(
         &same_source,
     )
     .await?;
+    // #2926: check the values the user entered before anything is written, so a
+    // missing required option fails the install cleanly.
+    let user_config =
+        super::importing::prepare_plugin_user_config(&prepared.scan_root, &plugin_options)?;
+    let source_id = plugin_source_id(&prepared.source_key);
     let result = install_prepared_with_dirs(
         &dirs,
         prepared,
@@ -192,6 +199,23 @@ pub async fn install_session_plugin(
         excluded_skill_names.unwrap_or_default(),
         approve_hooks.unwrap_or(false),
     )?;
+    let mut result = result;
+    if let Some((manifest, values)) = user_config {
+        if let Err(error) =
+            super::importing::save_plugin_user_config(&dirs.plugins, &source_id, &manifest, &values)
+                .await
+        {
+            log::warn!(
+                "session {}: plugin {} installed but its userConfig values were not saved: {}",
+                session_id,
+                source_id,
+                error
+            );
+            result.warnings.push(format!(
+                "Plugin installed, but its configuration values could not be saved: {error}. Re-install the plugin and enter them again."
+            ));
+        }
+    }
     invalidate_skill_scan_cache();
     spawn_session_start(&session_id, SessionStartSource::Resume);
     Ok(result)
@@ -276,6 +300,33 @@ pub fn uninstall_session_plugin(
 ) -> Result<SessionPluginEntry, String> {
     let dirs = session_dirs(session_id)?;
     let removed = uninstall_with_dirs(&dirs, target)?;
+    // #2926: the plugin's session data directory (`${CLAUDE_PLUGIN_DATA}`)
+    // goes with the plugin. Its sensitive `userConfig` values are keyed by
+    // source id, which the same plugin may also hold as a global install, so
+    // only a global uninstall clears them; a session uninstall leaves them
+    // available for a later reinstall.
+    if let Ok(data_dir) =
+        crate::services::hooks::registry::get_session_plugin_data_dir(session_id, &removed.id)
+    {
+        if let Err(error) = super::plugin_sources::remove_plugin_data_dir(&data_dir) {
+            log::warn!(
+                "session {}: plugin {} data dir left behind: {}",
+                session_id,
+                removed.id,
+                error
+            );
+        }
+    }
+    // The session store's option sidecar goes with the plugin; its secure
+    // values stay (see above).
+    if let Err(error) = super::plugin_options::remove_saved_options(&dirs.plugins, &removed.id) {
+        log::warn!(
+            "session {}: plugin {} stored options left behind: {}",
+            session_id,
+            removed.id,
+            error
+        );
+    }
     invalidate_skill_scan_cache();
     clear_hook_context(session_id);
     spawn_session_start(session_id, SessionStartSource::Resume);
@@ -525,6 +576,7 @@ mod tests {
             plugin_commands: vec![],
             plugin_agents: vec![],
             plugin_manifest: None,
+            user_config: vec![],
         };
         install_prepared_with_dirs(&fx.dirs, prepared, preview, false, vec![], approve_hooks)
     }

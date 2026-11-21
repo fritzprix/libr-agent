@@ -14,6 +14,7 @@
 //! Spec: <https://code.claude.com/docs/en/plugins-reference>
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
@@ -70,7 +71,84 @@ pub enum McpServersDecl {
     Inline(std::collections::BTreeMap<String, serde_json::Value>),
 }
 
+/// One entry of the manifest `userConfig` map (#2926): a value the plugin
+/// needs from the user before it can run. The spec defines `type`, `title`,
+/// `description`, `sensitive`, `required`, and `default`.
+/// Spec: <https://code.claude.com/docs/en/plugins-reference> (User
+/// configuration).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UserConfigSpec {
+    /// `string` | `number` | `boolean` | `directory` | `file`. Unknown values
+    /// are kept as-is and treated as `string`.
+    #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
+    pub value_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// A sensitive value is asked for with masked input and stored in the OS
+    /// keychain, never in the plugin manifest.
+    #[serde(default)]
+    pub sensitive: bool,
+    #[serde(default)]
+    pub required: bool,
+    /// Default shown to the user and used when the value is optional and
+    /// empty. Scalars (string/number/bool) are stored in their string form.
+    #[serde(default, deserialize_with = "de_scalar_string")]
+    pub default: Option<String>,
+}
+
+impl UserConfigSpec {
+    /// Human label for the option, falling back to the key.
+    pub fn display_title<'a>(&'a self, key: &'a str) -> &'a str {
+        self.title.as_deref().unwrap_or(key)
+    }
+}
+
+/// Accept a string, number, or boolean `default` and keep it as a string
+/// (the form an environment variable needs).
+fn de_scalar_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde_json::Value;
+    let value = Option::<Value>::deserialize(deserializer)?;
+    Ok(match value {
+        None | Some(Value::Null) => None,
+        Some(Value::String(text)) => Some(text),
+        Some(Value::Bool(flag)) => Some(flag.to_string()),
+        Some(Value::Number(number)) => Some(number.to_string()),
+        Some(other) => Some(other.to_string()),
+    })
+}
+
+/// Environment-variable name a plugin option is exported as
+/// (`CLAUDE_PLUGIN_OPTION_<KEY>`, upper-cased with non-alphanumerics mapped
+/// to `_`). `None` when the key has no usable alphanumeric characters.
+pub fn option_env_name(key: &str) -> Option<String> {
+    let mut name = String::with_capacity(key.len());
+    for ch in key.chars() {
+        if ch.is_ascii_alphanumeric() {
+            name.push(ch.to_ascii_uppercase());
+        } else {
+            name.push('_');
+        }
+    }
+    let trimmed = name.trim_matches('_');
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(format!("CLAUDE_PLUGIN_OPTION_{trimmed}"))
+}
+
+/// `${user_config.KEY}` placeholder form used inside hook and MCP
+/// declarations.
+pub fn user_config_placeholder(key: &str) -> String {
+    format!("${{user_config.{key}}}")
+}
+
 /// Parsed `.claude-plugin/plugin.json`.
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PluginManifest {
     pub name: String,
@@ -98,6 +176,10 @@ pub struct PluginManifest {
     pub hooks: Option<ComponentPaths>,
     #[serde(default, rename = "mcpServers")]
     pub mcp_servers: Option<McpServersDecl>,
+    /// `userConfig`: values the plugin needs from the user (#2926). Empty
+    /// when the plugin declares none.
+    #[serde(default, rename = "userConfig")]
+    pub user_config: BTreeMap<String, UserConfigSpec>,
 }
 
 /// Where the manifest lives relative to a plugin root.
@@ -193,6 +275,71 @@ pub fn validate_manifest_paths(manifest: &PluginManifest) -> Result<(), String> 
 /// or a missing file, is a preview-time error in the caller.
 pub fn hook_config_paths(manifest: Option<&PluginManifest>) -> Option<Vec<String>> {
     manifest.and_then(|m| m.hooks.as_ref()).map(|p| p.to_vec())
+}
+
+/// Validate the `userConfig` map (#2926): every key must map to a usable
+/// `CLAUDE_PLUGIN_OPTION_*` name, no two keys may collide after that mapping,
+/// and a declared `type` must be one the spec defines.
+pub fn validate_user_config(manifest: &PluginManifest) -> Result<(), String> {
+    let mut seen: BTreeMap<String, String> = BTreeMap::new();
+    for (key, spec) in &manifest.user_config {
+        let name = option_env_name(key).ok_or_else(|| {
+            format!("plugin userConfig key {key:?} cannot be exported as an environment variable")
+        })?;
+        if let Some(previous) = seen.insert(name.clone(), key.clone()) {
+            return Err(format!(
+                "plugin userConfig keys {previous:?} and {key:?} both export {name}"
+            ));
+        }
+        if let Some(value_type) = spec.value_type.as_deref() {
+            if !matches!(
+                value_type,
+                "string" | "number" | "boolean" | "directory" | "file"
+            ) {
+                return Err(format!(
+                    "plugin userConfig {key:?} has unknown type {value_type:?}"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Resolve the values of a manifest's `userConfig` from what the user entered
+/// (#2926): a declared default fills an omitted optional option, a `required`
+/// option without a value is an error, and `number`/`boolean` values must have
+/// the declared shape. Unknown keys in `provided` are dropped — an install
+/// never persists a value the manifest does not declare.
+pub fn resolve_user_config_values(
+    manifest: &PluginManifest,
+    provided: &BTreeMap<String, String>,
+) -> Result<BTreeMap<String, String>, String> {
+    let mut out = BTreeMap::new();
+    for (key, spec) in &manifest.user_config {
+        let entered = provided
+            .get(key)
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        let value = match entered {
+            Some(value) => value,
+            None => match spec.default.as_ref().map(|d| d.trim()) {
+                Some(default) if !default.is_empty() => default.to_string(),
+                _ if spec.required => return Err(format!("plugin option {key:?} is required")),
+                _ => continue,
+            },
+        };
+        match spec.value_type.as_deref() {
+            Some("number") if value.parse::<f64>().is_err() => {
+                return Err(format!("plugin option {key:?} must be a number"));
+            }
+            Some("boolean") if !matches!(value.as_str(), "true" | "false") => {
+                return Err(format!("plugin option {key:?} must be true or false"));
+            }
+            _ => {}
+        }
+        out.insert(key.clone(), value);
+    }
+    Ok(out)
 }
 
 #[cfg(test)]

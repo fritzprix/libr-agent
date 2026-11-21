@@ -35,6 +35,71 @@ const PLUGIN_ROOT_PLACEHOLDERS: [&str; 6] = [
     "$CURSOR_PLUGIN_ROOT",
 ];
 
+/// Placeholder names expanded to the plugin's `${CLAUDE_PLUGIN_DATA}`
+/// directory (#2926).
+const PLUGIN_DATA_PLACEHOLDERS: [&str; 4] = [
+    "${CLAUDE_PLUGIN_DATA}",
+    "$CLAUDE_PLUGIN_DATA",
+    "${LIBRAGENT_PLUGIN_DATA}",
+    "$LIBRAGENT_PLUGIN_DATA",
+];
+
+/// Shared empty option map for expansions that carry no `userConfig` values.
+#[cfg(test)]
+fn no_options() -> &'static BTreeMap<String, String> {
+    static EMPTY: once_cell::sync::Lazy<BTreeMap<String, String>> =
+        once_cell::sync::Lazy::new(BTreeMap::new);
+    &EMPTY
+}
+
+/// What a plugin-declared MCP server entry may reference (#2926): the
+/// installed root, the plugin data directory, and the resolved `userConfig`
+/// values (`${user_config.KEY}` and `CLAUDE_PLUGIN_OPTION_*`).
+///
+/// `CLAUDE_PROJECT_DIR` is deliberately absent: an MCP server config is
+/// loaded per server (global store) as well as per session, so it has no
+/// single project directory. The spec defines it for hooks, where it is set.
+pub struct PluginExpansion<'a> {
+    pub root: &'a Path,
+    pub data_dir: Option<&'a Path>,
+    pub options: &'a BTreeMap<String, String>,
+}
+
+impl<'a> PluginExpansion<'a> {
+    /// Root-only expansion (no plugin data, no options).
+    #[cfg(test)]
+    pub fn root_only(root: &'a Path) -> Self {
+        Self {
+            root,
+            data_dir: None,
+            options: no_options(),
+        }
+    }
+
+    fn replacements(&self) -> Vec<(String, String)> {
+        let root = self.root.to_string_lossy().to_string();
+        let mut pairs: Vec<(String, String)> = PLUGIN_ROOT_PLACEHOLDERS
+            .iter()
+            .map(|placeholder| ((*placeholder).to_string(), root.clone()))
+            .collect();
+        if let Some(data_dir) = self.data_dir {
+            let data = data_dir.to_string_lossy().to_string();
+            pairs.extend(
+                PLUGIN_DATA_PLACEHOLDERS
+                    .iter()
+                    .map(|placeholder| ((*placeholder).to_string(), data.clone())),
+            );
+        }
+        pairs.extend(self.options.iter().map(|(key, value)| {
+            (
+                super::plugin_manifest::user_config_placeholder(key),
+                value.clone(),
+            )
+        }));
+        pairs
+    }
+}
+
 /// Server names in declaration order plus the raw declared entry, later
 /// declarations replacing earlier ones by name.
 pub fn collect_plugin_mcp_servers(
@@ -158,28 +223,38 @@ fn validate_entry_shape(name: &str, entry: &Value, source_label: &str) -> Result
 
 /// Expand the plugin-root placeholders in every string of `entry` (command,
 /// args, env values, url, headers — wherever they appear).
+#[cfg(test)]
 pub fn resolve_plugin_root(entry: &Value, plugin_root: &Path) -> Value {
-    let root = plugin_root.to_string_lossy();
-    resolve_value(entry, &root)
+    resolve_plugin_placeholders(entry, &PluginExpansion::root_only(plugin_root))
 }
 
-fn resolve_value(value: &Value, root: &str) -> Value {
+/// Expand every placeholder a plugin entry may use (#2926): the root aliases,
+/// `${CLAUDE_PLUGIN_DATA}`, and `${user_config.KEY}`.
+pub fn resolve_plugin_placeholders(entry: &Value, expansion: &PluginExpansion<'_>) -> Value {
+    let pairs = expansion.replacements();
+    resolve_value(entry, &pairs)
+}
+
+fn resolve_value(value: &Value, pairs: &[(String, String)]) -> Value {
     match value {
         Value::String(text) => {
             let mut expanded = text.clone();
-            for placeholder in PLUGIN_ROOT_PLACEHOLDERS {
-                if expanded.contains(placeholder) {
-                    expanded = expanded.replace(placeholder, root);
+            for (placeholder, replacement) in pairs {
+                if expanded.contains(placeholder.as_str()) {
+                    expanded = expanded.replace(placeholder.as_str(), replacement);
                 }
             }
             Value::String(expanded)
         }
-        Value::Array(items) => {
-            Value::Array(items.iter().map(|item| resolve_value(item, root)).collect())
-        }
+        Value::Array(items) => Value::Array(
+            items
+                .iter()
+                .map(|item| resolve_value(item, pairs))
+                .collect(),
+        ),
         Value::Object(map) => Value::Object(
             map.iter()
-                .map(|(key, item)| (key.clone(), resolve_value(item, root)))
+                .map(|(key, item)| (key.clone(), resolve_value(item, pairs)))
                 .collect(),
         ),
         other => other.clone(),
@@ -188,10 +263,23 @@ fn resolve_value(value: &Value, root: &str) -> Value {
 
 /// Convert one resolved plugin entry into the `MCPServerConfig` JSON shape
 /// the global MCP server store keeps (`{"name", "transport": {...}}`).
+#[cfg(test)]
 pub fn entry_to_mcp_config_json(
     name: &str,
     resolved_entry: &Value,
     source_id: &str,
+) -> Result<Value, String> {
+    entry_to_mcp_config_json_with(name, resolved_entry, source_id, no_options())
+}
+
+/// As [`entry_to_mcp_config_json`], plus the plugin's `userConfig` values
+/// exported to a stdio server as `CLAUDE_PLUGIN_OPTION_<KEY>` (#2926). An
+/// entry that declares the same variable itself keeps its own value.
+pub fn entry_to_mcp_config_json_with(
+    name: &str,
+    resolved_entry: &Value,
+    source_id: &str,
+    options: &BTreeMap<String, String>,
 ) -> Result<Value, String> {
     let obj = resolved_entry
         .as_object()
@@ -216,11 +304,16 @@ pub fn entry_to_mcp_config_json(
             .cloned()
             .unwrap_or_default();
         transport.insert("args".into(), Value::Array(args));
-        let env = match obj.get("env") {
-            Some(Value::Object(env)) => Value::Object(env.clone()),
-            _ => Value::Object(Map::new()),
+        let mut env = match obj.get("env") {
+            Some(Value::Object(env)) => env.clone(),
+            _ => Map::new(),
         };
-        transport.insert("env".into(), env);
+        for (key, value) in options {
+            if let Some(env_name) = super::plugin_manifest::option_env_name(key) {
+                env.entry(env_name).or_insert(Value::String(value.clone()));
+            }
+        }
+        transport.insert("env".into(), Value::Object(env));
     }
     let mut config = Map::new();
     config.insert("name".into(), Value::String(name.to_string()));
@@ -237,14 +330,15 @@ pub fn plugin_source_marker(source_id: &str) -> String {
     format!("plugin:{source_id}")
 }
 
-/// Build the config JSON for one snapshot against one installed root.
-pub fn snapshot_to_mcp_config_json(
+/// Build the config JSON for one snapshot with the full plugin expansion
+/// (root, `${CLAUDE_PLUGIN_DATA}`, and `userConfig` values, #2926).
+pub fn snapshot_to_mcp_config_json_in(
     snapshot: &PluginMcpServerSnapshot,
-    plugin_root: &Path,
+    expansion: &PluginExpansion<'_>,
     source_id: &str,
 ) -> Result<Value, String> {
-    let resolved = resolve_plugin_root(&snapshot.entry, plugin_root);
-    entry_to_mcp_config_json(&snapshot.name, &resolved, source_id)
+    let resolved = resolve_plugin_placeholders(&snapshot.entry, expansion);
+    entry_to_mcp_config_json_with(&snapshot.name, &resolved, source_id, expansion.options)
 }
 
 /// Create the plugin-owned rows for `servers` in the global MCP server
@@ -256,9 +350,21 @@ pub fn snapshot_to_mcp_config_json(
 /// must surface them to the user — the user approved these servers, so a
 /// silent drop is not acceptable (gatekeeper G1.2). A failure to read or
 /// write the store itself is an `Err`.
+#[cfg(test)]
 pub async fn create_plugin_mcp_server_rows(
     source_id: &str,
     plugin_root: &Path,
+    servers: &[PluginMcpServerSnapshot],
+) -> Result<Vec<String>, String> {
+    create_plugin_mcp_server_rows_in(source_id, &PluginExpansion::root_only(plugin_root), servers)
+        .await
+}
+
+/// As [`create_plugin_mcp_server_rows`], with the plugin's data directory and
+/// `userConfig` values available to each entry (#2926).
+pub async fn create_plugin_mcp_server_rows_in(
+    source_id: &str,
+    expansion: &PluginExpansion<'_>,
     servers: &[PluginMcpServerSnapshot],
 ) -> Result<Vec<String>, String> {
     use crate::services::{McpServerService, SaveVerification};
@@ -268,7 +374,7 @@ pub async fn create_plugin_mcp_server_rows(
     for snapshot in servers {
         let name = sanitize_mcp_server_name(&snapshot.name);
         let outcome: Result<String, String> = async {
-            let config = snapshot_to_mcp_config_json(snapshot, plugin_root, source_id)?;
+            let config = snapshot_to_mcp_config_json_in(snapshot, expansion, source_id)?;
             let model = McpServerService::create_server_config(
                 repo,
                 name.clone(),
@@ -327,11 +433,17 @@ pub async fn remove_global_plugin_mcp_servers(source_id: &str) -> Result<(), Str
 /// S3.2): the store now lives in the agent-writable session workspace, so
 /// its own `mcp_approved` field is never trusted. `trust_dir: None` means
 /// no approval can exist — every server is skipped.
-pub fn session_plugin_mcp_servers(
+/// Approved MCP servers effective for one session, keeping each one's whole
+/// source record so load can also apply the plugin's `userConfig` values and
+/// `${CLAUDE_PLUGIN_DATA}` (#2926).
+pub fn session_plugin_mcp_records(
     session_store: &Path,
     trust_dir: Option<&Path>,
 ) -> (
-    Vec<(String, PluginMcpServerSnapshot)>,
+    Vec<(
+        crate::services::hooks::registry::PluginSourceRecord,
+        PluginMcpServerSnapshot,
+    )>,
     BTreeMap<String, std::path::PathBuf>,
 ) {
     use crate::services::hooks::registry::list_session_store_sources;
@@ -340,12 +452,12 @@ pub fn session_plugin_mcp_servers(
     let mut roots = BTreeMap::new();
     for record in records {
         let source_id = record.manifest.source_id.clone();
-        roots.insert(source_id.clone(), record.root_dir);
+        roots.insert(source_id, record.root_dir.clone());
         if !record.manifest.mcp_approved {
             continue;
         }
         for snapshot in record.manifest.mcp_servers.clone() {
-            out.push((source_id.clone(), snapshot));
+            out.push((record.clone(), snapshot));
         }
     }
     (out, roots)
@@ -367,7 +479,7 @@ pub struct SessionPluginServerConfig {
 /// warning; `taken_session_names` keeps runtime names unique across the
 /// session's servers, same as DB-loaded servers. `trust_dir` is the
 /// out-of-workspace trust record directory for this session (#2942 S3.2).
-pub fn build_session_plugin_server_configs(
+pub async fn build_session_plugin_server_configs(
     session_store: &Path,
     session_id: &str,
     trust_dir: Option<&Path>,
@@ -376,13 +488,30 @@ pub fn build_session_plugin_server_configs(
     use crate::mcp::types::MCPServerConfig;
     use crate::mcp::utils::unique_session_server_name;
 
-    let (servers, roots) = session_plugin_mcp_servers(session_store, trust_dir);
+    let (records, _roots) = session_plugin_mcp_records(session_store, trust_dir);
     let mut out = Vec::new();
-    for (source_id, snapshot) in servers {
-        let Some(root) = roots.get(&source_id) else {
-            continue;
-        };
-        let config_json = match snapshot_to_mcp_config_json(&snapshot, root, &source_id) {
+    for (record, snapshot) in records {
+        let source_id = record.manifest.source_id.clone();
+        let root = record.root_dir.clone();
+        // #2926: session-scope plugins get their session data dir and their
+        // resolved `userConfig` values, exactly like their hooks do.
+        let (options, warning) =
+            super::plugin_options::load_option_values(session_store, &source_id).await;
+        if let Some(warning) = warning {
+            log::warn!("{warning}");
+        }
+        let data_dir =
+            crate::services::hooks::registry::get_session_plugin_data_dir(session_id, &source_id)
+                .ok();
+        let config_json = match snapshot_to_mcp_config_json_in(
+            &snapshot,
+            &PluginExpansion {
+                root: &root,
+                data_dir: data_dir.as_deref(),
+                options: &options,
+            },
+            &source_id,
+        ) {
             Ok(json) => json,
             Err(error) => {
                 log::warn!(
@@ -665,8 +794,8 @@ mod tests {
     // installed root, and keys entries with the plugin pseudo-id. Approval
     // comes only from the trust record (#2942 S3.2), so both manifests carry
     // the scrubbed (false) flag like real session installs do.
-    #[test]
-    fn session_plugin_configs_are_approved_only_and_root_resolved() {
+    #[tokio::test]
+    async fn session_plugin_configs_are_approved_only_and_root_resolved() {
         let store = tempfile::tempdir().unwrap();
         let trust_root = tempfile::tempdir().unwrap();
         let trust_dir = trust_root.path().join("sess-1");
@@ -692,7 +821,8 @@ mod tests {
             "sess-1",
             Some(&trust_dir),
             &mut taken,
-        );
+        )
+        .await;
         assert_eq!(configs.len(), 1, "unapproved source servers are skipped");
         let server = &configs[0];
         assert_eq!(server.server_name, "fetch");
@@ -747,8 +877,8 @@ mod tests {
     // workspace, so a tampered workspace manifest claiming mcp_approved=true
     // must never start a server — only the out-of-workspace trust record
     // can approve.
-    #[test]
-    fn tampered_session_manifest_cannot_start_plugin_mcp_servers() {
+    #[tokio::test]
+    async fn tampered_session_manifest_cannot_start_plugin_mcp_servers() {
         let store = tempfile::tempdir().unwrap();
         let trust_root = tempfile::tempdir().unwrap();
         let trust_dir = trust_root.path().join("sess-9");
@@ -769,12 +899,14 @@ mod tests {
             "sess-9",
             Some(&trust_dir),
             &mut taken,
-        );
+        )
+        .await;
         assert!(
             configs.is_empty(),
             "workspace tampering must not approve servers"
         );
-        let configs = build_session_plugin_server_configs(store.path(), "sess-9", None, &mut taken);
+        let configs =
+            build_session_plugin_server_configs(store.path(), "sess-9", None, &mut taken).await;
         assert!(configs.is_empty());
 
         // Genuine approval through the trust record starts the server.
@@ -784,7 +916,8 @@ mod tests {
             "sess-9",
             Some(&trust_dir),
             &mut taken,
-        );
+        )
+        .await;
         assert_eq!(configs.len(), 1);
         assert_eq!(configs[0].server_name, "evil");
         assert_eq!(configs[0].pseudo_id, "plugin:plugin-cccc000000000000:evil");

@@ -931,7 +931,10 @@
       "agentGrantedServices": "Granted services: {{services}}",
       "agentGrantsAllServices": "No tools line: all LibrAgent services will be granted.",
       "agentGrantsNoServices": "No services granted (no tool maps).",
-      "agentWorkspaceGrantNote": "The workspace service includes file writes and shell execution."
+      "agentWorkspaceGrantNote": "The workspace service includes file writes and shell execution.",
+      "userConfigTitle": "Configuration this plugin asks for",
+      "userConfigHint": "These values are given to the plugin when it runs. A sensitive value is stored in this computer's secure storage and is never shown again.",
+      "userConfigMissing": "Required: {{names}}"
     },
     "dev": {
       "devOnly": "DEV ONLY",
