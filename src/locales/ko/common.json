@@ -927,7 +927,11 @@
       "pluginSourceRemoved": "플러그인 소스를 제거했습니다.",
       "commandsToInstall": "설치할 슬래시 명령",
       "agentsToInstall": "설치될 서브에이전트",
-      "agentUnmappedTools": "매핑이 없는 도구는 허용되지 않습니다: {{tools}}"
+      "agentUnmappedTools": "매핑이 없는 도구는 허용되지 않습니다 (Bash(git:*) 같은 제한 항목은 매핑 없는 것으로 처리): {{tools}}",
+      "agentGrantedServices": "허용되는 서비스: {{services}}",
+      "agentGrantsAllServices": "tools 줄이 없음: 모든 LibrAgent 서비스가 허용됩니다.",
+      "agentGrantsNoServices": "허용되는 서비스 없음 (매핑된 도구 없음).",
+      "agentWorkspaceGrantNote": "workspace 서비스는 파일 쓰기 및 셸 실행을 포함합니다."
     },
     "dev": {
       "devOnly": "DEV ONLY",

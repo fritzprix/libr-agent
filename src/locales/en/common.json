@@ -927,7 +927,11 @@
       "pluginSourceRemoved": "Plugin source removed.",
       "commandsToInstall": "Slash commands to install",
       "agentsToInstall": "Subagents to install",
-      "agentUnmappedTools": "Tools with no mapping are not granted: {{tools}}"
+      "agentUnmappedTools": "Tools with no mapping are not granted (restricted entries such as Bash(git:*) count as unmapped): {{tools}}",
+      "agentGrantedServices": "Granted services: {{services}}",
+      "agentGrantsAllServices": "No tools line: all LibrAgent services will be granted.",
+      "agentGrantsNoServices": "No services granted (no tool maps).",
+      "agentWorkspaceGrantNote": "The workspace service includes file writes and shell execution."
     },
     "dev": {
       "devOnly": "DEV ONLY",

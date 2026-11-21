@@ -127,11 +127,43 @@ export function SkillsConflictDialog({
                           {agent.description}
                         </p>
                       ) : null}
+                      {agent.grantsAllServices ? (
+                        <p className="text-xs text-amber-600 dark:text-amber-400">
+                          {t(
+                            'settings.skills.agentGrantsAllServices',
+                            'No tools line: all LibrAgent services will be granted.',
+                          )}
+                        </p>
+                      ) : agent.grantedServices.length > 0 ? (
+                        <p className="text-xs text-muted-foreground">
+                          {t(
+                            'settings.skills.agentGrantedServices',
+                            'Granted services: {{services}}',
+                            { services: agent.grantedServices.join(', ') },
+                          )}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          {t(
+                            'settings.skills.agentGrantsNoServices',
+                            'No services granted (no tool maps).',
+                          )}
+                        </p>
+                      )}
+                      {agent.grantsAllServices ||
+                      agent.grantedServices.includes('workspace') ? (
+                        <p className="text-xs text-amber-600 dark:text-amber-400">
+                          {t(
+                            'settings.skills.agentWorkspaceGrantNote',
+                            'The workspace service includes file writes and shell execution.',
+                          )}
+                        </p>
+                      ) : null}
                       {agent.unmappedTools.length > 0 ? (
                         <p className="text-xs text-destructive">
                           {t(
                             'settings.skills.agentUnmappedTools',
-                            'Tools with no mapping are not granted: {{tools}}',
+                            'Tools with no mapping are not granted (restricted entries such as Bash(git:*) count as unmapped): {{tools}}',
                             { tools: agent.unmappedTools.join(', ') },
                           )}
                         </p>

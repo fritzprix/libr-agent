@@ -903,7 +903,11 @@
       "importSkippedOnly_other": "{{count}} in Konflikt stehende Skills übersprungen",
       "commandsToInstall": "Zu installierende Slash-Befehle",
       "agentsToInstall": "Zu installierende Subagents",
-      "agentUnmappedTools": "Tools ohne Mapping werden nicht gewährt: {{tools}}"
+      "agentUnmappedTools": "Tools ohne Mapping werden nicht gewährt (eingeschränkte Einträge wie Bash(git:*) zählen als unmapped): {{tools}}",
+      "agentGrantedServices": "Gewährte Dienste: {{services}}",
+      "agentGrantsAllServices": "Keine tools-Zeile: Alle LibrAgent-Dienste werden gewährt.",
+      "agentGrantsNoServices": "Keine Dienste gewährt (kein Tool-Mapping).",
+      "agentWorkspaceGrantNote": "Der Workspace-Dienst umfasst Dateischreibzugriffe und Shell-Ausführung."
     },
     "dev": {
       "devOnly": "NUR ENTWICKLUNG",

@@ -903,7 +903,11 @@
       "importSkippedOnly_other": "{{count}} habilidades en conflicto omitidas",
       "commandsToInstall": "Comandos de barra para instalar",
       "agentsToInstall": "Subagentes que se instalarán",
-      "agentUnmappedTools": "Las herramientas sin mapeo no se otorgan: {{tools}}"
+      "agentUnmappedTools": "Las herramientas sin mapeo no se otorgan (entradas restringidas como Bash(git:*) cuentan como sin mapeo): {{tools}}",
+      "agentGrantedServices": "Servicios concedidos: {{services}}",
+      "agentGrantsAllServices": "Sin línea tools: se concederán todos los servicios de LibrAgent.",
+      "agentGrantsNoServices": "No se concede ningún servicio (ningún tool tiene mapeo).",
+      "agentWorkspaceGrantNote": "El servicio workspace incluye escritura de archivos y ejecución de shell."
     },
     "dev": {
       "devOnly": "SOLO DESARROLLO",

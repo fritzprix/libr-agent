@@ -903,7 +903,11 @@
       "importSkippedOnly_other": "已跳过 {{count}} 个冲突技能",
       "commandsToInstall": "要安装的斜杠命令",
       "agentsToInstall": "要安装的子代理",
-      "agentUnmappedTools": "没有映射的工具不会被授予：{{tools}}"
+      "agentUnmappedTools": "没有映射的工具不会被授予（如 Bash(git:*) 等受限条目视为无映射）：{{tools}}",
+      "agentGrantedServices": "授予的服务：{{services}}",
+      "agentGrantsAllServices": "没有 tools 行：将授予所有 LibrAgent 服务。",
+      "agentGrantsNoServices": "未授予任何服务（没有可映射的工具）。",
+      "agentWorkspaceGrantNote": "workspace 服务包含文件写入和 shell 执行。"
     },
     "dev": {
       "devOnly": "仅限开发",

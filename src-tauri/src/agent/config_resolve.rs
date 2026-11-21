@@ -249,4 +249,46 @@ mod tests {
             stable_prompt_source_key(&second)
         );
     }
+
+    // #2923 (D1/D2, gatekeeper G1.3): session resolution of a plugin-owned
+    // id must skip a missing or broken session plugin store and fall back
+    // to the global row instead of failing resume.
+    #[tokio::test]
+    async fn plugin_agent_id_falls_back_to_global_row_when_session_store_missing() {
+        let _guard = crate::state::lock_test_global_state().await;
+        use crate::repositories::assistant_repository::AssistantRepository;
+        use sea_orm_migration::MigratorTrait;
+        crate::lifecycle::database::register_sqlite_vec();
+        let db = sea_orm::Database::connect("sqlite::memory:")
+            .await
+            .expect("memory db");
+        crate::migration::Migrator::up(&db, None)
+            .await
+            .expect("migrations");
+        crate::state::set_assistant_repository(
+            crate::repositories::assistant_repository::SqliteAssistantRepository::new(db),
+        );
+        crate::state::get_assistant_repository()
+            .create_assistant(
+                "plugin:plugin-ee00000000000001:reviewer".to_string(),
+                "reviewer".to_string(),
+                serde_json::json!({ "systemPrompt": "from global row" }).to_string(),
+            )
+            .await
+            .unwrap();
+
+        // "parent-1" has no session plugin store (and the test data dir has
+        // none either): the session-plugin lookup resolves to nothing and
+        // resolution falls back to the global row.
+        let session =
+            sample_session_metadata(Some("plugin:plugin-ee00000000000001:reviewer".to_string()));
+        let config = resolve_agent_config(&session)
+            .await
+            .expect("a missing session plugin must not fail resume");
+        assert_eq!(
+            config.id.as_deref(),
+            Some("plugin:plugin-ee00000000000001:reviewer")
+        );
+        assert_eq!(config.system_prompt, "from global row");
+    }
 }

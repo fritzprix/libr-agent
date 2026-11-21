@@ -11,8 +11,14 @@ vi.mock('react-i18next', () => ({
     t: (
       _key: string,
       fallbackOrOptions?: string | Record<string, unknown>,
+      options?: Record<string, unknown>,
     ) => {
-      if (typeof fallbackOrOptions === 'string') return fallbackOrOptions;
+      if (typeof fallbackOrOptions === 'string') {
+        if (!options) return fallbackOrOptions;
+        return fallbackOrOptions.replace(/\{\{(\w+)\}\}/g, (_m, name: string) =>
+          String(options[name] ?? ''),
+        );
+      }
       if (fallbackOrOptions && typeof fallbackOrOptions === 'object') {
         const { defaultValue, ...vars } = fallbackOrOptions as {
           defaultValue?: string;
@@ -296,6 +302,94 @@ describe('SkillsConflictDialog MCP server approval (#2924)', () => {
 
     expect(
       screen.queryByText('Plugin MCP servers'),
+    ).not.toBeInTheDocument();
+  });
+});
+
+// #2923 gatekeeper G1.2: the preview must disclose the LibrAgent services a
+// subagent IS granted, not only the tools that are dropped as unmapped.
+describe('SkillsConflictDialog plugin agent grant disclosure (#2923 G1.2)', () => {
+  it('shows granted services and the workspace caveat for mapped tools', () => {
+    renderDialog(
+      buildPendingInstall({
+        pluginAgents: [
+          {
+            name: 'reviewer',
+            description: 'Reviews code',
+            unmappedTools: ['CustomLint'],
+            grantedServices: ['workspace'],
+            grantsAllServices: false,
+          },
+        ],
+      }),
+    );
+
+    expect(screen.getByText('Subagents to install')).toBeInTheDocument();
+    expect(screen.getByText('reviewer')).toBeInTheDocument();
+    expect(
+      screen.getByText('Granted services: workspace'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'The workspace service includes file writes and shell execution.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Tools with no mapping are not granted (restricted entries such as Bash(git:*) count as unmapped): CustomLint',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('discloses the all-services grant when the definition has no tools line', () => {
+    renderDialog(
+      buildPendingInstall({
+        pluginAgents: [
+          {
+            name: 'plain',
+            description: '',
+            unmappedTools: [],
+            grantedServices: [],
+            grantsAllServices: true,
+          },
+        ],
+      }),
+    );
+
+    expect(
+      screen.getByText(
+        'No tools line: all LibrAgent services will be granted.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'The workspace service includes file writes and shell execution.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('states an explicit none grant when no declared tool maps', () => {
+    renderDialog(
+      buildPendingInstall({
+        pluginAgents: [
+          {
+            name: 'custom',
+            description: '',
+            unmappedTools: ['MyTool'],
+            grantedServices: [],
+            grantsAllServices: false,
+          },
+        ],
+      }),
+    );
+
+    expect(
+      screen.getByText('No services granted (no tool maps).'),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        'The workspace service includes file writes and shell execution.',
+      ),
     ).not.toBeInTheDocument();
   });
 });
