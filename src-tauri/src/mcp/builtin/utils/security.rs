@@ -313,7 +313,12 @@ impl SecurityValidator {
             )));
         }
 
-        self.ensure_not_sensitive_path(&canonical_path, user_path)?;
+        // Last gate before Ok: check both forms at the final check as well, so the
+        // sensitive-path guarantee here stands on its own instead of depending on the
+        // earlier check (#2953 G5.1).
+        for candidate in [&absolute_path, &canonical_path] {
+            self.ensure_not_sensitive_path(candidate, user_path)?;
+        }
 
         tracing::debug!("Path validation successful: '{:?}'", absolute_path);
         Ok(absolute_path)

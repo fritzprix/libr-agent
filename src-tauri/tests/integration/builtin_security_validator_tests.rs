@@ -191,6 +191,38 @@ fn test_symlink_to_sensitive_target_is_blocked() {
     ));
 }
 
+/// The `~/.ssh` test above skips when `~/.ssh` is missing (as on CI runners), so it does not
+/// exercise the sensitive-path check there. `/etc/ssh` exists on both ubuntu and macOS
+/// runners, making this deterministic on CI: a workspace symlink through a sensitive
+/// directory must be denied for an existing target (canonical form) and for a not-yet-existing
+/// write target (existing-prefix canonical form) — the shape of the #2953 G5.1 regression.
+#[test]
+#[cfg(unix)]
+fn test_symlink_to_sensitive_dir_is_blocked_on_all_unix_runners() {
+    use std::os::unix::fs::symlink;
+    if !std::path::Path::new("/etc/ssh").is_dir() {
+        return;
+    }
+
+    let temp_dir = tempdir().expect("temp dir");
+    let validator = SecurityValidator::new_with_base_dir(temp_dir.path().to_path_buf());
+    let link_path = temp_dir.path().join("etc_ssh_link");
+    symlink("/etc/ssh", &link_path).expect("create symlink");
+
+    // Existing file reached through the symlink: the fully canonical form must be denied.
+    assert!(matches!(
+        validator.validate_path("etc_ssh_link/ssh_config"),
+        Err(SecurityError::AccessDenied(_))
+    ));
+
+    // Not-yet-existing write target through the symlink: the existing-prefix canonical form
+    // must be denied as well.
+    assert!(matches!(
+        validator.validate_path_for_write("etc_ssh_link/missing.conf"),
+        Err(SecurityError::AccessDenied(_))
+    ));
+}
+
 #[test]
 #[cfg(unix)]
 fn test_dangling_symlink_parent_is_rejected() {
