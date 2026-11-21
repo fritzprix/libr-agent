@@ -127,11 +127,18 @@ impl ReferenceResolver for SkillReferenceResolver {
         });
         let workspace_dir =
             skill_service::get_workspace_skills_directory_for_session(&self.session_id).ok();
+        let session_plugin_skills_dir =
+            skill_service::get_session_plugin_skills_directory_for_session(&self.session_id).ok();
 
-        let skills =
-            skill_service::resolve_skills(system_dir, user_dir, assistant_dir, workspace_dir)
-                .await
-                .ok()?;
+        let skills = skill_service::resolve_skills(
+            system_dir,
+            user_dir,
+            assistant_dir,
+            workspace_dir,
+            session_plugin_skills_dir,
+        )
+        .await
+        .ok()?;
 
         let find = |name: &str| {
             skills

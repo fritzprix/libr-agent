@@ -77,7 +77,59 @@ impl AgentService {
             Self::validate_and_register_workspace_override(path_str, session_id).await?;
         }
 
+        // #2942 G3.3(a): the default session workspace directory
+        // (`{data_dir}/workspaces/<session_id>`) is the SSOT parent of the
+        // session plugin store (D1 revised), so create it at session
+        // creation — with or without a workspace override. Previously it was
+        // only created lazily or as a side effect of override registration.
+        // #2942 G5.1: every failure layer is reported — no manager, spawn
+        // (JoinError), and the inner directory-creation error.
+        match crate::session::get_session_manager() {
+            Ok(session_manager) => {
+                let sid = session_id.to_string();
+                let result = tokio::task::spawn_blocking(move || {
+                    Self::ensure_default_session_workspace_dir(
+                        session_manager.get_directory_service(),
+                        &sid,
+                    )
+                })
+                .await;
+                match result {
+                    Ok(Ok(())) => {}
+                    Ok(Err(error)) => {
+                        log::warn!(
+                            "Failed to ensure default session workspace directory for {session_id}: {error}"
+                        );
+                    }
+                    Err(join_error) => {
+                        log::warn!(
+                            "Default session workspace directory task failed for {session_id}: {join_error}"
+                        );
+                    }
+                }
+            }
+            Err(error) => {
+                log::warn!(
+                    "Session manager unavailable; default session workspace directory not ensured for {session_id}: {error}"
+                );
+            }
+        }
+
         Ok((mode, docker))
+    }
+
+    /// Create the default session workspace directory, reporting failures
+    /// (#2942 G5.1). Takes the directory service directly so the success and
+    /// failure paths are testable without the global session manager; the
+    /// directory is keyed by session id only, so an active workspace
+    /// override never changes (or skips) it.
+    fn ensure_default_session_workspace_dir(
+        directory_service: &crate::services::session_directory_service::SessionDirectoryService,
+        session_id: &str,
+    ) -> Result<(), String> {
+        directory_service
+            .ensure_workspace_dir(session_id)
+            .map(|_| ())
     }
 
     /// Create a new agent session
@@ -318,6 +370,52 @@ impl AgentService {
 mod tests {
     use super::*;
     use crate::models::workspace_isolation::DEFAULT_SESSION_IMAGE;
+
+    // #2942 G5.1: the default-session-directory step of prepare_workspace_setup
+    // is tested through the extracted helper (the gatekeeper-permitted seam:
+    // the global session manager is unavailable in unit tests). The helper is
+    // what `prepare_workspace_setup` calls after override registration, and it
+    // is keyed by session id only — with or without an override it creates the
+    // same `workspaces/<session_id>/` — so these two tests cover both required
+    // observations: creation succeeds, and failure is reported not dropped.
+    #[test]
+    fn ensure_default_session_workspace_dir_creates_the_default_dir() {
+        let base = tempfile::tempdir().unwrap();
+        let service = crate::services::session_directory_service::SessionDirectoryService::new(
+            base.path().to_path_buf(),
+        )
+        .unwrap();
+        let sid = "sess-ensure-ok";
+
+        AgentService::ensure_default_session_workspace_dir(&service, sid).unwrap();
+
+        assert!(base.path().join("workspaces").join(sid).is_dir());
+    }
+
+    #[test]
+    fn ensure_default_session_workspace_dir_reports_creation_failure() {
+        let base = tempfile::tempdir().unwrap();
+        let service = crate::services::session_directory_service::SessionDirectoryService::new(
+            base.path().to_path_buf(),
+        )
+        .unwrap();
+        let blocked = "sess-ensure-blocked";
+        // A regular file at the directory's path makes creation fail
+        // deterministically; the error must be returned, not swallowed.
+        std::fs::write(
+            base.path().join("workspaces").join(blocked),
+            "not a directory",
+        )
+        .unwrap();
+
+        let error =
+            AgentService::ensure_default_session_workspace_dir(&service, blocked).unwrap_err();
+
+        assert!(
+            error.contains(blocked),
+            "error must name the session dir: {error}"
+        );
+    }
 
     fn docker_request(
         config: Option<DockerWorkspaceConfig>,

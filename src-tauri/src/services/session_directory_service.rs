@@ -176,12 +176,33 @@ Write-Host "Available tools: python3, typescript/deno, shell commands"
     pub fn get_workspace_dir(&self, session_id: &str) -> PathBuf {
         let workspace_dir = self.get_workspace_dir_unverified(session_id);
 
-        // Ensure directory exists if we are calculating it
+        // Ensure directory exists if we are calculating it. Lenient by
+        // contract: callers still get the path and a creation failure is
+        // logged; use `ensure_workspace_dir` where the failure must be
+        // reported (#2942 G5.1).
         if !workspace_dir.exists() {
-            let _ = fs::create_dir_all(&workspace_dir);
+            if let Err(error) = self.ensure_workspace_dir(session_id) {
+                log::warn!("{error}");
+            }
         }
 
         workspace_dir
+    }
+
+    /// Ensure the session's default workspace directory exists, reporting
+    /// any creation failure (#2942 G5.1). Reporting variant of
+    /// [`get_workspace_dir`](Self::get_workspace_dir): this directory is the
+    /// SSOT parent of the session plugin store (D1 revised), so session
+    /// creation must be able to observe a failure instead of losing it.
+    pub fn ensure_workspace_dir(&self, session_id: &str) -> Result<PathBuf, String> {
+        let workspace_dir = self.get_workspace_dir_unverified(session_id);
+        fs::create_dir_all(&workspace_dir).map_err(|error| {
+            format!(
+                "Failed to create session workspace directory {}: {error}",
+                workspace_dir.display()
+            )
+        })?;
+        Ok(workspace_dir)
     }
 
     /// Get session workspace directory path without ensuring it exists or performing any I/O.
@@ -228,15 +249,38 @@ Write-Host "Available tools: python3, typescript/deno, shell commands"
                 .map_err(|e| format!("Failed to remove workspace directory: {e}"))?;
         }
 
-        // Session-scoped plugin store (#2825) lives outside the workspace.
+        // Legacy session-scoped plugin store (#2825, moved by #2942). The
+        // current store lives under the default session workspace directory
+        // (`workspaces/<session_id>/.libragent/plugins`) and is removed with
+        // it; this only cleans up leftovers from old versions.
         let plugins_dir = self
             .base_data_dir
-            .join(crate::services::hooks::registry::SESSION_PLUGINS_DIR_NAME)
+            .join(crate::services::hooks::registry::LEGACY_SESSION_PLUGINS_DIR_NAME)
             .join(session_id);
         if plugins_dir.exists() {
+            // #2942 S1.2: log the legacy-directory removal so operators can
+            // tell a deleted leftover from "never existed".
+            log::info!(
+                "[session_plugins] removing legacy session plugin store {} during workspace removal",
+                plugins_dir.display()
+            );
             tokio::fs::remove_dir_all(&plugins_dir)
                 .await
                 .map_err(|e| format!("Failed to remove session plugins directory: {e}"))?;
+        }
+
+        // #2942 S2.3: hook approval records live outside the workspace
+        // (`session_plugin_trust/<session_id>`), so they do not go away with
+        // the workspace — delete them here, or a recycled session id would
+        // inherit another session's approvals.
+        let trust_dir = self
+            .base_data_dir
+            .join(crate::services::hooks::registry::SESSION_PLUGIN_TRUST_DIR_NAME)
+            .join(session_id);
+        if trust_dir.exists() {
+            tokio::fs::remove_dir_all(&trust_dir)
+                .await
+                .map_err(|e| format!("Failed to remove session plugin trust directory: {e}"))?;
         }
         Ok(())
     }
@@ -320,8 +364,17 @@ mod tests {
         let service = super::SessionDirectoryService::new(temp.path().to_path_buf()).unwrap();
         let workspace = temp.path().join("workspaces").join("s1");
         let plugins = temp.path().join("session_plugins").join("s1");
+        // #2942 S2.3: out-of-workspace trust records must die with the session.
+        let trust = temp
+            .path()
+            .join(crate::services::hooks::registry::SESSION_PLUGIN_TRUST_DIR_NAME)
+            .join("s1");
         let other = temp.path().join("session_plugins").join("s2");
-        for dir in [&workspace, &plugins, &other] {
+        let other_trust = temp
+            .path()
+            .join(crate::services::hooks::registry::SESSION_PLUGIN_TRUST_DIR_NAME)
+            .join("s2");
+        for dir in [&workspace, &plugins, &trust, &other, &other_trust] {
             std::fs::create_dir_all(dir).unwrap();
         }
 
@@ -329,6 +382,11 @@ mod tests {
 
         assert!(!workspace.exists());
         assert!(!plugins.exists(), "session plugin store must be cleaned up");
+        assert!(!trust.exists(), "session plugin trust must be cleaned up");
         assert!(other.exists(), "other sessions' stores must be untouched");
+        assert!(
+            other_trust.exists(),
+            "other sessions' trust must be untouched"
+        );
     }
 }

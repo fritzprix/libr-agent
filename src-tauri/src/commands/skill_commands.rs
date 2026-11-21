@@ -39,7 +39,17 @@ pub async fn get_aggregated_skills(
     // UI callers (e.g. @skill: autocomplete) must see skill folders added on disk
     // since the last scan. Runtime paths that call resolve_skills keep the cache.
     skill_service::clear_skill_scan_cache_entries();
-    skill_service::resolve_skills(system_dir, user_dir, assistant_dir, workspace_dir).await
+    let session_plugin_skills_dir = session_id
+        .as_deref()
+        .and_then(|id| skill_service::get_session_plugin_skills_directory_for_session(id).ok());
+    skill_service::resolve_skills(
+        system_dir,
+        user_dir,
+        assistant_dir,
+        workspace_dir,
+        session_plugin_skills_dir,
+    )
+    .await
 }
 
 #[tauri::command]

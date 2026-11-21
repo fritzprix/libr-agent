@@ -127,6 +127,14 @@ impl BuiltinMCPServer for SkillsServer {
                 &self.session_id,
             )
             .ok();
+        // #2942 G3.2: session plugin skills live under the default session
+        // workspace directory, so they load even when the current workspace
+        // is an override.
+        let session_plugin_skills_dir =
+            crate::services::skill_service::get_session_plugin_skills_directory_for_session(
+                &self.session_id,
+            )
+            .ok();
 
         // Determine assistant skills directory if assistant_id is provided
         let assistant_skills_dir = if let Some(id) = assistant_id {
@@ -149,6 +157,7 @@ impl BuiltinMCPServer for SkillsServer {
             user_skills_dir,
             assistant_skills_dir,
             workspace_skills_dir,
+            session_plugin_skills_dir,
         )
         .await
         {
